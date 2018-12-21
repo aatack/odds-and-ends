@@ -13,6 +13,12 @@ class WordSearch(object):
         Return True iff the word is present in one of the
         vertical columns or horizontal rows of the grid.
         """
+        word_length = len(word)
+        if word_length > WordSearch.ROW_LENGTH:
+            return False
+        elif word_length == 0:
+            raise Exception('Input word should not be empty.')
+
         for string in self.strings
             if word in string:
                 return True
