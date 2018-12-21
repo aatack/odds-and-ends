@@ -2,7 +2,7 @@ from random import choice
 
 
 class WordSearch(object):
-    ROW_LENGTH = 30
+    ROW_LENGTH = 10000
 
     def __init__(self, grid):
         """
