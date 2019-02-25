@@ -58,3 +58,31 @@ def load_items():
 
 items = {item.id: item for item in [Item.from_json(x) for x in load_items()]}
 items_by_name = {item.name: item for item in items.values()}
+
+
+def merge_item_sets(a, b):
+    """Merge two item sets."""
+    c = a.copy()
+    for item, quantity in b.items():
+        if item in c:
+            c[item] += quantity
+        else:
+            c[item] = quantity
+    return c
+
+
+def items_missing_from_set(a, b):
+    """Return two items sets that detail the items that are exclusively in that set."""
+    a_ = {}
+    for item, quantity in a.items():
+        if item in b:
+            a_[item] = min([a[item], b[item]])
+        else:
+            a_[item] = quantity
+    b_ = {}
+    for item, quantity in b.items():
+        if item in a:
+            b_[item] = min([b[item], a[item]])
+        else:
+            b_[item] = quantity
+    return a_, b_
