@@ -1,7 +1,6 @@
 module Fractory.Flow where
 
 data Medium = Item | Chest | Tank
-data RealNumber = RealNumber Int Int
 
 data Flow = Flow { item :: String
                  , frequency :: Rational
