@@ -20,18 +20,6 @@ class Item:
         return Item(j['id'], j['name'], j['type'], j['wiki_link'], j['category'],
             Recipe.from_json(j['recipe']))
 
-    def raw_ingredients(self, leftovers=None, item_lookup=None):
-        """
-        Determine the raw ingredients needed to produce the item.
-        
-        To use leftovers, specify the leftovers as an empty dictionary.  To
-        exclude leftovers, set it to None instead.
-        """
-        if self.raw:
-            return {self.id: 1}
-        else:
-            raise NotImplementedError()
-
 
 class Recipe:
     
@@ -45,7 +33,7 @@ class Recipe:
     def from_json(j):
         """Parse a recipe from a JSON object."""
         return Recipe(j['time'], j['yield'],
-            [{i['id']: i['amount']} for i in j['ingredients']])
+            {i['id']: i['amount'] for i in j['ingredients']})
 
 
 def load_items():
@@ -61,7 +49,7 @@ items_by_name = {item.name: item for item in items.values()}
 
 
 def union(a, b):
-    """Return the union of two item sets."""
+    """Return a list of the total items in both sets."""
     c = a.copy()
     for item, quantity in b.items():
         if item in c:
@@ -72,7 +60,7 @@ def union(a, b):
 
 
 def intersection(a, b):
-    """Return the intersection of two item sets."""
+    """Return the set of items that are in both sets."""
     c = {}
     for item, quantity in a.items():
         if item in b:
@@ -89,3 +77,30 @@ def difference(a, b):
         elif item not in b:
             c[item] = quantity
     return c
+
+
+def multiply(a, k):
+    """Multiply all quantities in an item set by a fixed amount."""
+    return {item: quantity * k for item, quantity in a.items()}
+
+
+def raw_ingredients_exact(item_set):
+    """Determine the raw ingredients required to make the items in the set."""
+    remaining = item_set.copy()
+    raw_ingredients = {}
+    while any(remaining):
+        item, quantity = list(remaining.items())[0]
+        item_object = items[item]
+        del remaining[item]
+        if item_object.raw:
+            raw_ingredients = union(raw_ingredients, {item: quantity})
+        else:
+            item_list = item_object.recipe.ingredients.items()
+            for ingredient, ingredient_quantity in item_list:
+                remaining = union(remaining, multiply(
+                    {ingredient: ingredient_quantity},
+                    quantity / item_object.recipe.quantity))
+    return raw_ingredients
+
+
+print(raw_ingredients_exact({'production-science-pack': 1}))
