@@ -3,7 +3,6 @@ import urllib.request
 
 
 class Item:
-
     def __init__(self, id, name, item_type, wiki_link, category, recipe):
         """Create a data object representing a Factorio item."""
         self.id = id
@@ -17,12 +16,17 @@ class Item:
     @staticmethod
     def from_json(j):
         """Parse an item from a JSON object."""
-        return Item(j['id'], j['name'], j['type'], j['wiki_link'], j['category'],
-            Recipe.from_json(j['recipe']))
+        return Item(
+            j["id"],
+            j["name"],
+            j["type"],
+            j["wiki_link"],
+            j["category"],
+            Recipe.from_json(j["recipe"]),
+        )
 
 
 class Recipe:
-    
     def __init__(self, time, quantity, ingredients):
         """Create a data object representing an item's recipe."""
         self.time = time
@@ -32,14 +36,15 @@ class Recipe:
     @staticmethod
     def from_json(j):
         """Parse a recipe from a JSON object."""
-        return Recipe(j['time'], j['yield'],
-            {i['id']: i['amount'] for i in j['ingredients']})
+        return Recipe(
+            j["time"], j["yield"], {i["id"]: i["amount"] for i in j["ingredients"]}
+        )
 
 
 def load_items():
     """Load items from the online database."""
     response = urllib.request.urlopen(
-        'https://kevinta893.github.io/factorio-recipes-json/recipes.json'
+        "https://kevinta893.github.io/factorio-recipes-json/recipes.json"
     )
     return loads(response.read().decode())
 
@@ -97,10 +102,11 @@ def raw_ingredients_exact(item_set):
         else:
             item_list = item_object.recipe.ingredients.items()
             for ingredient, ingredient_quantity in item_list:
-                remaining = union(remaining, multiply(
-                    {ingredient: ingredient_quantity},
-                    quantity / item_object.recipe.quantity))
+                remaining = union(
+                    remaining,
+                    multiply(
+                        {ingredient: ingredient_quantity},
+                        quantity / item_object.recipe.quantity,
+                    ),
+                )
     return raw_ingredients
-
-
-print(raw_ingredients_exact({'production-science-pack': 1}))
