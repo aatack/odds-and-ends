@@ -10,8 +10,14 @@ function love.load()
 
     dg = 0.01
 
-    plotter = Plotter:new(0, 1, 0, 1, 100, love.graphics.getWidth() - 100, 100, love.graphics.getHeight() - 100)
-    marble = Marble:new(function (x) return 0.5 - 0.3 * math.sin(3 + 8 * x - 1.5 * math.cos(t)) end)
+    plotter = Plotter:new(0, 1, 0, 1, 100,
+        love.graphics.getWidth() - 100, 100,
+        love.graphics.getHeight() - 100)
+    marble = Marble:new(
+        function(x)
+            return 0.5 - 0.3 * math.sin(3 + 8 * x - 1.5 * math.cos(t))
+        end
+    )
 end
 
 function love.update(dt)
@@ -27,19 +33,35 @@ function love.update(dt)
         debugOpened = false
     end
 
-    if love.keyboard.isDown("escape") then
-        love.event.quit()
+    for k, f in pairs(held) do
+        if heldKeys[k] ~= nil then f() end
     end
-    if love.keyboard.isDown("a") then
-        marble.position = marble.position - dg
+end
+
+pressed = {
+    escape = function () love.event.quit() end,
+}
+released = {}
+
+heldKeys = {}
+held = {
+    a = function () marble.position = marble.position - dg end,
+    d = function () marble.position = marble.position + dg end,
+    s = function () marble:step(0.01) end,
+}
+
+function love.keypressed(key, _, _)
+    if pressed[key] ~= nil then
+        pressed[key]()
     end
-    if love.keyboard.isDown("d") then
-        marble.position = marble.position + dg
+    heldKeys[key] = true
+end
+
+function love.keyreleased(key, _, _)
+    if released[key] ~= nil then
+        released[key]()
     end
-    if love.keyboard.isDown("s") then
-        -- marble:stepWithVelocity(0.005, 0.005, 0.99)
-        marble:step(0.01)
-    end
+    heldKeys[key] = nil
 end
 
 function love.draw()
