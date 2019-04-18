@@ -13,7 +13,7 @@ end
 function firstDerivative(f)
     local epsilon = Marble.epsilon
     return function(x)
-        return 0.5 * (f(x + 0.5 * epsilon) - f(x - 0.5 * epsilon)) / epsilon
+        return (f(x + 0.5 * epsilon) - f(x - 0.5 * epsilon)) / epsilon
     end
 end
 
@@ -24,6 +24,34 @@ function secondDerivative(f)
     end
 end
 
-function drawMarble(params)
+function Marble:firstOrderApproximation(pivot)
+    local slope = self.lossDerivative(pivot)
+    local base = self.loss(pivot)
+    return function(x)
+        local dx = x - pivot
+        return base + dx * slope
+    end
+end
 
+function Marble:secondOrderApproximation(pivot)
+    local curve = self.lossSecondDerivative(pivot)
+    local slope = self.lossDerivative(pivot)
+    local base = self.loss(pivot)
+    return function(x)
+        local dx = x - pivot
+        return base + dx * slope + dx * dx * curve
+    end
+end
+
+function Marble:plot(plotter, pivot, axes)
+    plotter:plotFunction(self.loss)
+    if pivot ~= nil then
+        local range = 0.2 * plotter.xRange
+        local plotParams = {lower = pivot - range, upper = pivot + range}
+        plotter:plotFunction(self:firstOrderApproximation(pivot), plotParams)
+        plotter:plotFunction(self:secondOrderApproximation(pivot), plotParams)
+    end
+    if axes or false then
+        plotter:axes()
+    end
 end

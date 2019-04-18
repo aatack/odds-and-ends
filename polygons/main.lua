@@ -8,8 +8,11 @@ function love.load()
     debugOpened = false
     love.window.setFullscreen(true)
 
+    p = 0.5
+    dp = 0.01
+
     plotter = Plotter:new(0, 1, 0, 1, 100, love.graphics.getWidth() - 100, 100, love.graphics.getHeight() - 100)
-    marble = Marble:new(function (x) return 0.5 - 0.5 * math.sin(3 * x) end)
+    marble = Marble:new(function (x) return 0.5 - 0.3 * math.sin(8 * x) end)
 end
 
 function love.update(dt)
@@ -28,6 +31,12 @@ function love.update(dt)
     if love.keyboard.isDown("escape") then
         love.event.quit()
     end
+    if love.keyboard.isDown("a") then
+        p = p - dp
+    end
+    if love.keyboard.isDown("d") then
+        p = p + dp
+    end
 end
 
 function love.draw()
@@ -36,8 +45,7 @@ function love.draw()
         love.graphics.print("FPS: " .. fps, 5, 25)
     end
 
-    plotter:axes()
-    plotter:plotFunction(marble.loss)
+    marble:plot(plotter, p)
 end
 
 function love.conf(game)
