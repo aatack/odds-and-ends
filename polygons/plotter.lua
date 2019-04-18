@@ -60,7 +60,9 @@ function Plotter:plotFunction(f, params)
     local n = n or 100
     for x = params.lower or self.xMin,
             params.upper or self.xMax,
-            params.step or self.xRange * 0.005 do
+            ((params.upper or self.xMax) - (params.lower or self.xMin))
+                / (params.steps or 200)
+    do
         table.insert(points, {x, f(x)})
     end
     self:line(points)

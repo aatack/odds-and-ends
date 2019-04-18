@@ -1,3 +1,6 @@
+require "marble"
+require "plotter"
+
 function love.load()
     t = 0
     fps = 0
@@ -5,9 +8,8 @@ function love.load()
     debugOpened = false
     love.window.setFullscreen(true)
 
-    polygon = testPolygon()
-    setTotalTargetAngle(polygon)
-    setStartingAngles(polygon)
+    plotter = Plotter:new(0, 1, 0, 1, 100, love.graphics.getWidth() - 100, 100, love.graphics.getHeight() - 100)
+    marble = Marble:new(function (x) return 0.5 - 0.5 * math.sin(3 * x) end)
 end
 
 function love.update(dt)
@@ -23,7 +25,7 @@ function love.update(dt)
         debugOpened = false
     end
 
-    if love.keyboard.isDown("pause") then
+    if love.keyboard.isDown("escape") then
         love.event.quit()
     end
 end
@@ -34,64 +36,10 @@ function love.draw()
         love.graphics.print("FPS: " .. fps, 5, 25)
     end
 
-    drawPolygonTarget(polygon, 0, 0, 200)
-    drawPolygonStart(polygon, 400, 0, 200)
+    plotter:axes()
+    plotter:plotFunction(marble.loss)
 end
 
-function polygonNode(targetLength, targetAngle)
-    return {
-        targetLength = targetLength,
-        targetAngle = targetAngle
-    }
-end
-
-function setTotalTargetAngle(polygon)
-    local sum = 0
-    for _, node in ipairs(polygon) do
-        sum = sum + node.targetAngle
-    end
-    polygon.totalTargetAngle = sum
-end
-
-function setStartingAngles(polygon)
-    for _, node in ipairs(polygon) do
-        node.startingAngle = node.targetAngle / polygon.totalTargetAngle
-    end
-end
-
-function testPolygon()
-    return {
-        polygonNode(1, 0.2),
-        polygonNode(1.2, 0.2),
-        polygonNode(1.5, 0.2),
-        polygonNode(1.3, 0.2)
-    }
-end
-
-function drawPolygonTarget(polygon, translateX, translateY, scale)
-    local x = love.graphics.getWidth() / 2 + translateX
-    local y = love.graphics.getHeight() / 2 + translateY
-    local t = 0
-    for _, node in ipairs(polygon) do
-        t = t + node.targetAngle
-        newX = x + node.targetLength * math.cos(t * 2 * math.pi) * scale
-        newY = y + node.targetLength * math.sin(t * 2 * math.pi) * scale
-        love.graphics.line(x, y, newX, newY)
-        x = newX
-        y = newY
-    end
-end
-
-function drawPolygonStart(polygon, translateX, translateY, scale)
-    local x = love.graphics.getWidth() / 2 + translateX
-    local y = love.graphics.getHeight() / 2 + translateY
-    local t = 0
-    for _, node in ipairs(polygon) do
-        t = t + node.startingAngle
-        newX = x + node.targetLength * math.cos(t * 2 * math.pi) * scale
-        newY = y + node.targetLength * math.sin(t * 2 * math.pi) * scale
-        love.graphics.line(x, y, newX, newY)
-        x = newX
-        y = newY
-    end
+function love.conf(game)
+    game.console = true
 end
