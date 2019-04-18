@@ -68,6 +68,12 @@ function Plotter:plotFunction(f, params)
     self:line(points)
 end
 
+function Plotter:dot(point, size)
+    if self:contains(point) then
+        love.graphics.circle("fill", self:xCoord(point[1]), self:yCoord(point[2]), size or 5)
+    end
+end
+
 function Plotter:axes()
     if self.xMin <= 0 and 0 <= self.xMax then
         self:segment({0, self.yMin}, {0, self.yMax})

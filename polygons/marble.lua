@@ -1,4 +1,8 @@
-Marble = {epsilon = 1e-4}
+Marble = {
+    position = 0,
+    velocity = 0,
+    epsilon = 1e-4
+}
 
 function Marble:new(loss, lossDerivative, lossSecondDerivative)
     o = {}
@@ -43,15 +47,27 @@ function Marble:secondOrderApproximation(pivot)
     end
 end
 
-function Marble:plot(plotter, pivot, axes)
+function Marble:plot(plotter, axes)
     plotter:plotFunction(self.loss)
-    if pivot ~= nil then
-        local range = 0.2 * plotter.xRange
-        local plotParams = {lower = pivot - range, upper = pivot + range}
-        plotter:plotFunction(self:firstOrderApproximation(pivot), plotParams)
-        plotter:plotFunction(self:secondOrderApproximation(pivot), plotParams)
+    if self.position ~= nil then
+        local range = 0.1 * plotter.xRange
+        local plotParams = {lower = self.position - range, upper = self.position + range}
+        plotter:plotFunction(self:firstOrderApproximation(self.position), plotParams)
+        plotter:plotFunction(self:secondOrderApproximation(self.position), plotParams)
     end
     if axes or false then
         plotter:axes()
     end
+    if self.position ~= nil then
+        plotter:dot({self.position, self.loss(self.position)})
+    end
+end
+
+function Marble:step(learningRate)
+    self.position = self.position - learningRate * self.lossDerivative(self.position)
+end
+
+function Marble:stepWithVelocity(vl, pl, damping)
+    self.velocity = (self.velocity - vl * self.lossDerivative(self.position)) * damping
+    self.position = self.position + pl * self.velocity
 end

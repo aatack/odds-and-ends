@@ -8,11 +8,10 @@ function love.load()
     debugOpened = false
     love.window.setFullscreen(true)
 
-    p = 0.5
-    dp = 0.01
+    dg = 0.01
 
     plotter = Plotter:new(0, 1, 0, 1, 100, love.graphics.getWidth() - 100, 100, love.graphics.getHeight() - 100)
-    marble = Marble:new(function (x) return 0.5 - 0.3 * math.sin(8 * x) end)
+    marble = Marble:new(function (x) return 0.5 - 0.3 * math.sin(3 + 8 * x - 1.5 * math.cos(t)) end)
 end
 
 function love.update(dt)
@@ -32,10 +31,14 @@ function love.update(dt)
         love.event.quit()
     end
     if love.keyboard.isDown("a") then
-        p = p - dp
+        marble.position = marble.position - dg
     end
     if love.keyboard.isDown("d") then
-        p = p + dp
+        marble.position = marble.position + dg
+    end
+    if love.keyboard.isDown("s") then
+        -- marble:stepWithVelocity(0.005, 0.005, 0.99)
+        marble:step(0.01)
     end
 end
 
@@ -45,7 +48,7 @@ function love.draw()
         love.graphics.print("FPS: " .. fps, 5, 25)
     end
 
-    marble:plot(plotter, p)
+    marble:plot(plotter)
 end
 
 function love.conf(game)
