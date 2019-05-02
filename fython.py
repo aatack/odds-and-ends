@@ -64,3 +64,26 @@ def partition(predicate, collection):
     else:
         return collection, None if predicate(collection) else None, collection
     return positives, negatives
+
+
+def list_wrap(value):
+    """
+    Wrap the given value in a list if it is not one already.
+    """
+    return value if isinstance(value, list) else [value]
+
+
+def switch(cases):
+    """
+    Given a list of pairs of lambdas, create a function which takes a value and
+    works through the list until it finds a case that matches.  It then applies
+    the second lambda in that pair to the value and returns the result.
+    """
+
+    def switch_call(value):
+        for case, result in cases:
+            if case(value):
+                return result(value)
+        raise ValueError("non-exhaustive switch case")
+
+    return switch_call
