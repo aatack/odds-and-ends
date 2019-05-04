@@ -1,4 +1,3 @@
-from wise.util.tensors import glorot_initialised_vars
 import tensorflow as tf
 
 
@@ -175,6 +174,41 @@ def make_input_node(argument):
         return tf.placeholder(tf.float32, shape=argument)
     else:
         return argument
+
+
+def glorot_initialised_vars(name, shape):
+    """
+    String -> [Int] -> tf.Variable
+    Return a tensor of variables which are initialised according to the
+    Glorot variable initialisation algorithm.
+    """
+    return tf.get_variable(
+        name, shape=shape, dtype=tf.float32, initializer=tf.glorot_normal_initializer()
+    )
+
+
+def build_autoencoder(input_dict):
+    """
+    Build an autoencoder from a dictionary of parameters.
+
+    The input dictionary should contain a value for the input, as well
+    as an encoder and decoder network.  Values will be added for the
+    latent and reconstruction nodes.
+    """
+    copy = {
+        "input": input_dict["input"],
+        "encoder": input_dict["encoder"],
+        "decoder": input_dict["decoder"],
+    }
+    copy["encoder"]["input"] = copy["input"]
+    copy["encoder"] = build_feedforward_network(copy["encoder"])
+    copy["latent"] = copy["encoder"]["output"]
+
+    copy["decoder"]["input"] = copy["latent"]
+    copy["decoder"] = build_feedforward_network(copy["decoder"])
+    copy["reconstruction"] = copy["decoder"]["output"]
+
+    return copy
 
 
 def name_extender(input_dict, delimiter="."):
