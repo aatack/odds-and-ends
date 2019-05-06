@@ -78,5 +78,18 @@ def create_classifier(parameters, input_node):
         input_node=input_node,
     )
     transposed_output = tf.transpose(classifier["output"])
-    classifier["outputs"] = [transposed_output[i] for i in range(parameters.n_classes)]
+    classifier["individual_likelihoods"] = [
+        transposed_output[i] for i in range(parameters.n_classes)
+    ]
     return classifier
+
+
+def create_composite_reconstruction(decoders, individual_likelihoods):
+    """Multiply each reconstructed input by its likelihood and sum the results."""
+    return tf.reduce_sum(
+        [
+            tf.multiply(decoder["output"], likelihood)
+            for decoder, likelihood in zip(decoders, individual_likelihoods)
+        ],
+        axis=0,
+    )
