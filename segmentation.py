@@ -13,6 +13,7 @@ class SegmentationParameters:
         latent_activation="tanh",
         reconstruction_activation="sigmoid",
         classifier_layers=None,
+        reconstructed_likelihood_transform=lambda x: x,
     ):
         """Data class for holding parameters associated with segmentation."""
         self.n_classes = n_classes
@@ -35,6 +36,8 @@ class SegmentationParameters:
             if classifier_layers is not None
             else None
         )
+
+        self.reconstructed_likelihood_transform = reconstructed_likelihood_transform
 
     def default_input_node(self):
         """Create a default placeholder node for the inputs."""
@@ -115,4 +118,12 @@ def create_individual_reconstruction_losses(input_node, decoders):
     return [
         create_individual_reconstruction_loss(input_node, decoder)
         for decoder in decoders
+    ]
+
+
+def create_reconstructed_likelihoods(parameters, individual_reconstruction_losses):
+    """Map individual reconstruction losses to [1, 0]."""
+    return [
+        tf.exp(-parameters.reconstructed_likelihood_transform(reconstruction_loss))
+        for reconstruction_loss in individual_reconstruction_losses
     ]
