@@ -1,4 +1,5 @@
 import reusablenet as rnet
+import tensorflow as tf
 
 
 class SegmentationParameters:
@@ -11,6 +12,7 @@ class SegmentationParameters:
         decoder_layers=None,
         latent_activation="tanh",
         reconstruction_activation="sigmoid",
+        classifier_layers=None,
     ):
         """Data class for holding parameters associated with segmentation."""
         self.n_classes = n_classes
@@ -27,6 +29,12 @@ class SegmentationParameters:
         self.decoder_layers = (
             decoder_layers if decoder_layers is not None else encoder_layers[::-1]
         ) + [(self.input_dimension, self.reconstruction_activation)]
+
+        self.classifier_layers = (
+            classifier_layers + [(self.n_classes, "softmax")]
+            if classifier_layers is not None
+            else None
+        )
 
     def default_input_node(self):
         """Create a default placeholder node for the inputs."""
@@ -57,3 +65,18 @@ def create_decoders(parameters, encoders):
         )
         for encoder, i in zip(encoders, range(len(encoders)))
     ]
+
+
+def create_classifier(parameters, input_node):
+    """Create a classification network for the classes."""
+    if parameters.classifier_layers is None:
+        raise Exception("classifier layers unspecified in parameters")
+    classifier = rnet.feedforward_network(
+        "classifier",
+        parameters.input_dimension,
+        parameters.classifier_layers,
+        input_node=input_node,
+    )
+    transposed_output = tf.transpose(classifier["output"])
+    classifier["outputs"] = [transposed_output[i] for i in range(parameters.n_classes)]
+    return classifier

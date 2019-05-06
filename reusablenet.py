@@ -48,6 +48,7 @@ def build_feedforward_layer(input_dict):
         "relu": tf.nn.relu,
         "leaky-relu": tf.nn.leaky_relu,
         "tanh": tf.nn.tanh,
+        "softmax": tf.nn.softmax,
     }[input_dict["activation"]]
 
     copy = deep_copy(input_dict)
