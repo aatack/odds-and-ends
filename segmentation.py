@@ -44,3 +44,16 @@ def create_encoders(parameters, input_node):
         )
         for i in range(parameters.n_classes)
     ]
+
+
+def create_decoders(parameters, encoders):
+    """Create a decoder for each encoder."""
+    return [
+        rnet.feedforward_network(
+            "class_{}_decoder".format(i),
+            parameters.latent_dimension,
+            parameters.decoder_layers,
+            input_node=encoder["output"],
+        )
+        for encoder, i in zip(encoders, range(len(encoders)))
+    ]
