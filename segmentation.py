@@ -16,6 +16,8 @@ class SegmentationParameters:
         reconstructed_likelihood_transform=lambda x: x,
     ):
         """Data class for holding parameters associated with segmentation."""
+        self.epsilon = 1e-4
+
         self.n_classes = n_classes
 
         self.input_dimension = input_dimension
@@ -139,4 +141,15 @@ def create_reconstructed_likelihoods(parameters, individual_reconstruction_losse
                 ]
             )
         )
+    )
+
+
+def probability_mass_entropy(parameters, probability_mass_distribution):
+    """Calculate the entropy of a p.m.f."""
+    return tf.reduce_sum(
+        -tf.multiply(
+            probability_mass_distribution,
+            tf.log(probability_mass_distribution) + parameters.epsilon,
+        ),
+        axis=1,
     )
