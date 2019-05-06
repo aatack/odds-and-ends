@@ -14,10 +14,10 @@ class SegmentationParameters:
         reconstruction_activation="sigmoid",
         classifier_layers=None,
         reconstructed_likelihood_transform=lambda x: x,
+        entropy_weight=1.0,
+        epsilon=1e-4,
     ):
         """Data class for holding parameters associated with segmentation."""
-        self.epsilon = 1e-4
-
         self.n_classes = n_classes
 
         self.input_dimension = input_dimension
@@ -33,13 +33,18 @@ class SegmentationParameters:
             decoder_layers if decoder_layers is not None else encoder_layers[::-1]
         ) + [(self.input_dimension, self.reconstruction_activation)]
 
+        self.use_classifier = classifier_layers is not None
         self.classifier_layers = (
             classifier_layers + [(self.n_classes, "softmax")]
-            if classifier_layers is not None
+            if self.use_classifier
             else None
         )
 
         self.reconstructed_likelihood_transform = reconstructed_likelihood_transform
+
+        self.entropy_weight = entropy_weight
+
+        self.epsilon = epsilon
 
     def default_input_node(self):
         """Create a default placeholder node for the inputs."""
@@ -76,17 +81,12 @@ def create_classifier(parameters, input_node):
     """Create a classification network for the classes."""
     if parameters.classifier_layers is None:
         raise Exception("classifier layers unspecified in parameters")
-    classifier = rnet.feedforward_network(
+    return rnet.feedforward_network(
         "classifier",
         parameters.input_dimension,
         parameters.classifier_layers,
         input_node=input_node,
     )
-    transposed_output = tf.transpose(classifier["output"])
-    classifier["individual_likelihoods"] = [
-        transposed_output[i] for i in range(parameters.n_classes)
-    ]
-    return classifier
 
 
 def create_composite_reconstruction(decoders, individual_likelihoods):
@@ -144,6 +144,12 @@ def create_reconstructed_likelihoods(parameters, individual_reconstruction_losse
     )
 
 
+def explode_likelihoods(parameters, likelihoods):
+    """Explode likelihoods into individual scalar tensors."""
+    transposed_likelihoods = tf.transpose(likelihoods)
+    return [transposed_likelihoods[i] for i in range(parameters.n_classes)]
+
+
 def probability_mass_entropy(parameters, probability_mass_distribution):
     """Calculate the entropy of a p.m.f."""
     return tf.reduce_sum(
@@ -153,3 +159,47 @@ def probability_mass_entropy(parameters, probability_mass_distribution):
         ),
         axis=1,
     )
+
+
+class DiscreteSegmenter:
+    def __init__(self, parameters, input_node=None):
+        """Create an object to perform discrete class segmentation on data."""
+        self.parameters = parameters
+        self.placeholder = (
+            input_node
+            if input_node is not None
+            else self.parameters.default_input_node()
+        )
+
+        self.encoders = create_encoders(self.parameters, self.placeholder)
+        self.decoders = create_decoders(self.parameters, self.encoders)
+
+        self.individual_likelihoods = (
+            create_classifier(self.parameters, self.placeholder)["output"]
+            if self.parameters.use_classifier
+            else create_reconstructed_likelihoods(
+                self.parameters,
+                create_individual_reconstruction_losses(
+                    self.placeholder, self.decoders
+                ),
+            )
+        )
+        self.exploded_likelihoods = explode_likelihoods(
+            self.parameters, self.individual_likelihoods
+        )
+
+        self.composite_reconstruction = create_composite_reconstruction(
+            self.decoders, self.exploded_likelihoods
+        )
+        self.composite_reconstruction_loss = create_composite_reconstruction_loss(
+            self.placeholder, self.composite_reconstruction
+        )
+
+        self.entropy_loss = probability_mass_entropy(
+            self.parameters, self.individual_likelihoods
+        )
+
+        self.loss = tf.reduce_mean(
+            self.composite_reconstruction_loss
+            + self.parameters.entropy_weight * self.entropy_loss
+        )
