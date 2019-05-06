@@ -93,3 +93,26 @@ def create_composite_reconstruction(decoders, individual_likelihoods):
         ],
         axis=0,
     )
+
+
+def create_composite_reconstruction_loss(input_node, composite_reconstruction):
+    """Create a node that records an overall reconstruction loss."""
+    return tf.losses.mean_squared_error(
+        tf.tile(input_node, [1, tf.shape(composite_reconstruction)[0]]),
+        composite_reconstruction,
+    )
+
+
+def create_individual_reconstruction_loss(input_node, decoder):
+    """Create a node that records the reconstruction loss of a single decoder."""
+    return tf.losses.mean_squared_error(
+        tf.tile(input_node, [1, tf.shape(decoder["output"])[0]]), decoder["output"]
+    )
+
+
+def create_individual_reconstruction_losses(input_node, decoders):
+    """Create nodes for the reconstruction loss of a number of decoders."""
+    return [
+        create_individual_reconstruction_loss(input_node, decoder)
+        for decoder in decoders
+    ]
