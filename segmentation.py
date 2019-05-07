@@ -234,7 +234,7 @@ class DiscreteSegmenter:
         examples_seen = 0
         while examples_seen < self.parameters.steps_per_epoch:
             self.parameters.session.run(
-                self.loss,
+                self.optimiser,
                 feed_dict={self.placeholder: self.parameters.training_batch()},
             )
             examples_seen += self.parameters.steps_per_epoch
