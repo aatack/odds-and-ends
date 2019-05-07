@@ -249,3 +249,14 @@ class DiscreteSegmenter:
             "entropy_loss": evaluation[1],
             "loss": evaluation[2],
         }
+
+    def train(self, epochs, evaluation_frequency=None):
+        """Train the segmenter for a certain number of epochs."""
+        for epoch in range(epochs):
+            evaluate = (
+                evaluation_frequency is not None and epoch % evaluation_frequency == 0
+            )
+            evaluation = self.perform_epoch(evaluate=evaluate)
+            if evaluate:
+                evaluation["epoch"] = epoch
+                print(evaluation)
