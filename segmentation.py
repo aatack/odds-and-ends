@@ -1,6 +1,7 @@
 from random import choice
 import reusablenet as rnet
 import tensorflow as tf
+import numpy as np
 
 
 class SegmentationParameters:
@@ -283,3 +284,21 @@ class DiscreteSegmenter:
         return self.parameters.session.run(
             self.individual_likelihoods, feed_dict={self.placeholder: examples}
         )
+
+
+def get_mnist_data(scale):
+    """Get training and test MNIST data, downsampling images."""
+    mnist = tf.keras.datasets.mnist
+    (x_train, _), (x_test, _) = mnist.load_data()
+    x_train, x_test = x_train / 255.0, x_test / 255.0
+
+    def downsample(data):
+        return data[:, ::scale, ::scale]
+
+    def flatten(data):
+        return np.reshape(data, [data.shape[0], data.shape[1] * data.shape[2]])
+
+    def process(data):
+        return flatten(downsample(data))
+
+    return process(x_train), process(x_test)
