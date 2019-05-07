@@ -18,7 +18,6 @@ class SegmentationParameters:
         reconstruction_activation="sigmoid",
         classifier_layers=None,
         reconstructed_likelihood_transform=lambda x: x,
-        entropy_weight=1.0,
         epsilon=1e-4,
         session=None,
         steps_per_epoch=8192,
@@ -48,8 +47,6 @@ class SegmentationParameters:
         )
 
         self.reconstructed_likelihood_transform = reconstructed_likelihood_transform
-
-        self.entropy_weight = entropy_weight
 
         self.epsilon = epsilon
 
@@ -220,9 +217,9 @@ class DiscreteSegmenter:
             self.parameters, self.individual_likelihoods
         )
 
+        self.entropy_weight = rnet.make_input_node([])
         self.loss = tf.reduce_mean(
-            self.composite_reconstruction_loss
-            + self.parameters.entropy_weight * self.entropy_loss
+            self.composite_reconstruction_loss + self.entropy_weight * self.entropy_loss
         )
         self.optimiser = tf.train.AdamOptimizer().minimize(self.loss)
 
@@ -235,34 +232,48 @@ class DiscreteSegmenter:
         """Initialise training."""
         self.parameters.session.run(tf.global_variables_initializer())
 
-    def perform_epoch(self, evaluate=True):
+    def perform_epoch(self, entropy_weight, evaluate=True):
         """Perform a single epoch of training."""
         examples_seen = 0
         while examples_seen < self.parameters.steps_per_epoch:
             self.parameters.session.run(
                 self.optimiser,
-                feed_dict={self.placeholder: self.parameters.training_batch()},
+                feed_dict={
+                    self.placeholder: self.parameters.training_batch(),
+                    self.entropy_weight: entropy_weight,
+                },
             )
             examples_seen += self.parameters.steps_per_epoch
         if not evaluate:
             return {}
         evaluation = self.parameters.session.run(
             [self.composite_reconstruction_loss, self.entropy_loss, self.loss],
-            feed_dict={self.placeholder: self.parameters.training_batch()},
+            feed_dict={
+                self.placeholder: self.parameters.training_batch(),
+                self.entropy_weight: entropy_weight,
+            },
         )
         return {
             "reconstruction_loss": evaluation[0],
             "entropy_loss": evaluation[1],
             "loss": evaluation[2],
+            "entropy_weight": entropy_weight,
         }
 
-    def train(self, epochs, evaluation_frequency=None):
+    def train(
+        self,
+        epochs,
+        entropy_weight_function=lambda w: w ** 4,
+        evaluation_frequency=None,
+    ):
         """Train the segmenter for a certain number of epochs."""
         for epoch in range(epochs):
             evaluate = (
                 evaluation_frequency is not None and epoch % evaluation_frequency == 0
             )
-            evaluation = self.perform_epoch(evaluate=evaluate)
+            evaluation = self.perform_epoch(
+                entropy_weight_function(epoch / epochs), evaluate=evaluate
+            )
             if evaluate:
                 evaluation["epoch"] = epoch
                 print(evaluation)
