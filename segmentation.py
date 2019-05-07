@@ -1,3 +1,4 @@
+from random import choice
 import reusablenet as rnet
 import tensorflow as tf
 
@@ -9,6 +10,8 @@ class SegmentationParameters:
         input_dimension,
         latent_dimension,
         encoder_layers,
+        training_examples,
+        validation_examples,
         decoder_layers=None,
         latent_activation="tanh",
         reconstruction_activation="sigmoid",
@@ -16,6 +19,9 @@ class SegmentationParameters:
         reconstructed_likelihood_transform=lambda x: x,
         entropy_weight=1.0,
         epsilon=1e-4,
+        session=None,
+        steps_per_epoch=8192,
+        batch_size=32,
     ):
         """Data class for holding parameters associated with segmentation."""
         self.n_classes = n_classes
@@ -46,9 +52,26 @@ class SegmentationParameters:
 
         self.epsilon = epsilon
 
+        self.session = session if session is not None else tf.Session()
+
+        self.training_examples = training_examples
+        self.validation_examples = validation_examples
+        self.steps_per_epoch = steps_per_epoch
+        self.batch_size = batch_size
+
     def default_input_node(self):
         """Create a default placeholder node for the inputs."""
         return rnet.make_input_node([None, self.input_dimension])
+
+    def training_batch(self, size=None):
+        """Retrieve a batch of training examples."""
+        return [choice(self.training_examples) for _ in range(size or self.batch_size)]
+
+    def validation_batch(self, size=None):
+        """Retrieve a batch of validation examples."""
+        return [
+            choice(self.validation_examples) for _ in range(size or self.batch_size)
+        ]
 
 
 def create_encoders(parameters, input_node):
@@ -89,11 +112,14 @@ def create_classifier(parameters, input_node):
     )
 
 
-def create_composite_reconstruction(decoders, individual_likelihoods):
+def create_composite_reconstruction(parameters, decoders, individual_likelihoods):
     """Multiply each reconstructed input by its likelihood and sum the results."""
     return tf.reduce_sum(
         [
-            tf.multiply(decoder["output"], likelihood)
+            tf.multiply(
+                tf.tile(tf.expand_dims(likelihood, 1), [1, parameters.input_dimension]),
+                decoder["output"],
+            )
             for decoder, likelihood in zip(decoders, individual_likelihoods)
         ],
         axis=0,
@@ -102,20 +128,12 @@ def create_composite_reconstruction(decoders, individual_likelihoods):
 
 def create_composite_reconstruction_loss(input_node, composite_reconstruction):
     """Create a node that records an overall reconstruction loss."""
-    return tf.losses.mean_squared_error(
-        tf.tile(input_node, [1, tf.shape(composite_reconstruction)[0]]),
-        composite_reconstruction,
-    )
+    return tf.losses.mean_squared_error(input_node, composite_reconstruction)
 
 
 def create_individual_reconstruction_loss(input_node, decoder):
     """Create a node that records the reconstruction loss of a single decoder."""
-    return 0.5 * tf.reduce_mean(
-        tf.square(
-            tf.tile(input_node, [1, tf.shape(decoder["output"])[0]]) - decoder["output"]
-        ),
-        axis=1,
-    )
+    return 0.5 * tf.reduce_mean(tf.square(input_node - decoder["output"]), axis=1)
 
 
 def create_individual_reconstruction_losses(input_node, decoders):
@@ -152,12 +170,14 @@ def explode_likelihoods(parameters, likelihoods):
 
 def probability_mass_entropy(parameters, probability_mass_distribution):
     """Calculate the entropy of a p.m.f."""
-    return tf.reduce_sum(
-        -tf.multiply(
-            probability_mass_distribution,
-            tf.log(probability_mass_distribution) + parameters.epsilon,
-        ),
-        axis=1,
+    return tf.reduce_mean(
+        tf.reduce_sum(
+            -tf.multiply(
+                probability_mass_distribution,
+                tf.log(probability_mass_distribution) + parameters.epsilon,
+            ),
+            axis=1,
+        )
     )
 
 
@@ -189,7 +209,7 @@ class DiscreteSegmenter:
         )
 
         self.composite_reconstruction = create_composite_reconstruction(
-            self.decoders, self.exploded_likelihoods
+            self.parameters, self.decoders, self.exploded_likelihoods
         )
         self.composite_reconstruction_loss = create_composite_reconstruction_loss(
             self.placeholder, self.composite_reconstruction
@@ -203,3 +223,29 @@ class DiscreteSegmenter:
             self.composite_reconstruction_loss
             + self.parameters.entropy_weight * self.entropy_loss
         )
+        self.optimiser = tf.train.AdamOptimizer().minimize(self.loss)
+
+    def initialise(self):
+        """Initialise training."""
+        self.parameters.session.run(tf.global_variables_initializer())
+
+    def perform_epoch(self, evaluate=True):
+        """Perform a single epoch of training."""
+        examples_seen = 0
+        while examples_seen < self.parameters.steps_per_epoch:
+            self.parameters.session.run(
+                self.loss,
+                feed_dict={self.placeholder: self.parameters.training_batch()},
+            )
+            examples_seen += self.parameters.steps_per_epoch
+        if not evaluate:
+            return {}
+        evaluation = self.parameters.session.run(
+            [self.composite_reconstruction_loss, self.entropy_loss, self.loss],
+            feed_dict={self.placeholder: self.parameters.training_batch()},
+        )
+        return {
+            "reconstruction_loss": evaluation[0],
+            "entropy_loss": evaluation[1],
+            "loss": evaluation[2],
+        }
