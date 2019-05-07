@@ -225,6 +225,11 @@ class DiscreteSegmenter:
         )
         self.optimiser = tf.train.AdamOptimizer().minimize(self.loss)
 
+        self.classification = tf.argmax(self.individual_likelihoods, axis=1)
+        self.profile_node = tf.reduce_mean(
+            tf.one_hot(self.classification, self.parameters.n_classes), axis=0
+        )
+
     def initialise(self):
         """Initialise training."""
         self.parameters.session.run(tf.global_variables_initializer())
@@ -260,3 +265,21 @@ class DiscreteSegmenter:
             if evaluate:
                 evaluation["epoch"] = epoch
                 print(evaluation)
+
+    def classify(self, examples):
+        """Determine the class that best describes each example."""
+        return self.parameters.session.run(
+            self.classification, feed_dict={self.placeholder: examples}
+        )
+
+    def profile(self, examples):
+        """Return, for each class, the proportion of data fitting into that class."""
+        return self.parameters.session.run(
+            self.profile_node, feed_dict={self.placeholder: examples}
+        )
+
+    def get_classification_probabilities(self, examples):
+        """Return the probability that each example is in each class."""
+        return self.parameters.session.run(
+            self.individual_likelihoods, feed_dict={self.placeholder: examples}
+        )
