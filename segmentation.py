@@ -313,3 +313,23 @@ def get_mnist_data(scale):
         return flatten(downsample(data))
 
     return process(x_train), process(x_test)
+
+
+def main():
+    """Run a test of the segmentation algorithm."""
+    classify = True
+    tr, val = get_mnist_data(4)
+    pars = (
+        SegmentationParameters(
+            10, 49, 4, [(10, "leaky-relu")], tr, val, classifier_layers=[]
+        )
+        if classify
+        else SegmentationParameters(10, 49, 1, [], tr, val)
+    )
+    pars.entropy_weight = 0.001
+    seg = DiscreteSegmenter(pars)
+
+    seg.initialise()
+    seg.train(2000, evaluation_frequency=100)
+    print(seg.profile(tr))
+    print(seg.get_classification_probabilities([tr[0]]))
