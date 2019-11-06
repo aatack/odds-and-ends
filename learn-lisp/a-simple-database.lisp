@@ -32,8 +32,8 @@
         (with-standard-io-syntax
             (setf *db* (read in)))))
 
-(defun select (predicate)
-    (remove-if-not predicate *db*))
+(defun select (selector)
+    (remove-if-not selector *db*))
 
 (defun where (&key title artist rating (ripped nil ripped-p))
     #'(lambda (cd)
@@ -42,6 +42,17 @@
             (if artist (equal (getf cd :artist) artist) t)
             (if rating (equal (getf cd :rating) rating) t)
             (if ripped-p (equal (getf cd :ripped) ripped) t))))
+
+(defun update (selector &key title artist rating (ripped nil ripped-p))
+    (setf *db*
+        (mapcar
+            #'(lambda (row)
+                (when (funcall selector row)
+                    (if title (setf (getf row :title) title))
+                    (if artist (setf (getf row :artist) artist))
+                    (if rating (setf (getf row :rating) rating))
+                    (if ripped-p (setf (getf row :ripped) ripped)))
+            row) *db*)))
 
 (load-db "learn-lisp/serialisation-test.db")
 (dump-db)
