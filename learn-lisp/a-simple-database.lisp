@@ -27,7 +27,10 @@
         :if-exists :supersede)
     (with-standard-io-syntax (print *db* out))))
 
-(dump-db)
-(add-record (prompt-for-cd))
-(save-db "learn-lisp/serialisation-test.db")
+(defun load-db (file-name)
+    (with-open-file (in file-name)
+        (with-standard-io-syntax
+            (setf *db* (read in)))))
+
+(load-db "learn-lisp/serialisation-test.db")
 (dump-db)
