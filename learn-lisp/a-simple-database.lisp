@@ -21,6 +21,13 @@
         (or (parse-integer (prompt-read "Rating") :junk-allowed t) 0)
         (y-or-n-p "Ripped")))
 
+(defun save-db (file-name)
+    (with-open-file (out file-name
+        :direction :output
+        :if-exists :supersede)
+    (with-standard-io-syntax (print *db* out))))
+
 (dump-db)
 (add-record (prompt-for-cd))
+(save-db "learn-lisp/serialisation-test.db")
 (dump-db)
