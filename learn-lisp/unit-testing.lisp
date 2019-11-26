@@ -14,7 +14,7 @@
   `(let ,(loop for n in names collect `(,n (gensym)))
      ,@body))
 
-(defmacro combine-results (&body forms)
+(defmacro non-terminating-and (&body forms)
   "Return t iff all forms evaluate to t."
   (use-gensyms (result)
     `(let ((,result t))
