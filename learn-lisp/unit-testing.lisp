@@ -1,12 +1,14 @@
+(defvar *stack-trace* nil)
+
 (defun report-result (form)
   "Check that a form evaluates to t, printing a helpful readout."
   (let ((result (eval form)))
-    (format t "~%~:[FAIL~;Pass~] --- ~a" result form)
+    (format t "~%~:[FAIL~;Pass~] --- ~a: ~a" result *stack-trace* form)
     result))
 
 (defmacro check (&rest forms)
   "Evaluate a list of forms and return their results."
-  `(progn
+  `(non-terminating-and
      ,@(loop for f in forms collect `(report-result ',f))))
 
 (defmacro use-gensyms (names &body body)
@@ -21,4 +23,24 @@
       ,@(loop for f in forms collect `(unless ,f (setf ,result nil)))
       ,result)))
 
-(defvar test-forms '((= 1 2) (= 2 2) (= 3 2)))
+(defmacro deftest (name parameters docstring &body body)
+  "Define a test function that runs and reports a suite of tests."
+  `(defun ,name ,parameters ,docstring
+      (let ((*stack-trace* ',name))
+        ,@body)))
+
+(deftest test-+ ()
+  "Run some simple tests for the addition operator."
+  (check
+    (= (+ 1 2) 3)
+    (= (+ 1 2 3) 6)
+    (= (+ -1 -3) -4)))
+
+(deftest test-* ()
+  "Run some simple tests for the multiplication operator."
+  (check
+    (= (* 2 2) 4)
+    (= (* 3 5) 15)))
+
+(test-+)
+(test-*)
