@@ -1,5 +1,9 @@
+# Build files
 *__pycache__*
 
+# Databases
 *.db
 
+# Entry points
+main.bat
 main.lisp
