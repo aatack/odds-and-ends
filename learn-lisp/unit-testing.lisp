@@ -26,7 +26,7 @@
 (defmacro deftest (name parameters docstring &body body)
   "Define a test function that runs and reports a suite of tests."
   `(defun ,name ,parameters ,docstring
-      (let ((*stack-trace* ',name))
+      (let ((*stack-trace* (append *stack-trace* (list ',name))))
         ,@body)))
 
 (deftest test-+ ()
@@ -42,5 +42,7 @@
     (= (* 2 2) 4)
     (= (* 3 5) 15)))
 
-(test-+)
-(test-*)
+(deftest test-arithmetic ()
+  "Run some simple tests for arithmetic operators."
+  (test-+)
+  (test-*))
