@@ -12,7 +12,7 @@
         (when (wild-pathname-p pathname)
             (error "Can't reliably convert wild pathnames."))
         (if (not (directory-pathname-p name))
-            make-pathname (
+            (make-pathname
                 :directory (append
                     (or (pathname-directory pathname) (list :relative))
                     (list (file-namestring pathname)))
