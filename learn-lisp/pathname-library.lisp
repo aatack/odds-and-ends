@@ -20,3 +20,39 @@
                 :type nil
                 :defaults pathname)
             pathname)))
+
+(defun directory-wildcard (directory-name)
+    (make-pathname
+        :name :wild
+        :type #-clisp :wild #+clisp nil
+        :defaults (pathname-as-directory directory-name)))
+
+(defun list-directory (directory-name)
+    (when (wild-pathname-p directory-name)
+        (error "Can only list concrete directory names."))
+    (let ((wildcard (directory-wildcard directory-name)))
+    
+        #+(or sbcl cmu lispworks)
+        (directory wildcard)
+
+        #+openmcl
+        (directory wildcard :directories t)
+
+        #+allegro
+        (directory wildcard :directories-are-files nil)
+
+        #+clisp
+        (nconc
+            (directory wildcard)
+            (directory (clisp-subdirectories-wildcard wildcard)))
+
+        #-(or sbcl cmu lispworks openmcl allegro clisp)
+        (error "list-directory not implemented.")))
+
+#+clisp
+(defun clisp-subdirectories-wildcard (wildcard)
+    (make-pathname
+        :directory (append (pathname-directory wildcard) (list :wild))
+        :name nil
+        :type nil
+        :defaults wildcard))
