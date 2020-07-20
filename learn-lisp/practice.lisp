@@ -7,3 +7,15 @@
   (if (or (null input) (atom input))
     (eql target input)
     (eval `(or ,@(mapcar (lambda (child) (presentp target child)) input)))))
+
+(defun dotree ((item tree) function)
+  `(dolist (i ,tree)
+    (if (listp i)
+      (dotree ,item i)
+      ,function)))
+
+(defun duplicate-entires (input)
+  "Determine whether a tree contains duplicate entries."
+  nil)
+
+
