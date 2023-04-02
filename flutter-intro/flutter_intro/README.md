@@ -2,6 +2,8 @@
 
 A new Flutter project.
 
+[Link to tutorial](https://codelabs.developers.google.com/codelabs/flutter-codelab-first#0).
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.
