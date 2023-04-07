@@ -182,22 +182,38 @@ class FavouritesPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     var state = context.watch<AppState>();
+    final theme = Theme.of(context);
 
     return Padding(
       padding: const EdgeInsets.all(20.0),
       child: state.favourites.isNotEmpty
-          ? ListView(children: [
-              Expanded(
-                child: Wrap(
-                  children: state.favourites
-                      .map((wordPair) => Favourite(pair: wordPair))
-                      .toList(),
-                ),
-              )
-            ])
+          ? ListView(
+              children: [
+                Expanded(
+                  child: Wrap(
+                    children: state.favourites
+                        .map((wordPair) => Favourite(pair: wordPair))
+                        .toList(),
+                  ),
+                )
+              ],
+            )
           : Container(
               constraints: BoxConstraints.expand(),
-              child: Text("No favourites saved yet.")),
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: Row(
+                  children: [
+                    Expanded(
+                        child: Container(
+                      color: theme.colorScheme.onPrimary,
+                      padding: EdgeInsets.all(10.0),
+                      child: Text("No favourites saved yet."),
+                    )),
+                  ],
+                ),
+              ),
+            ),
     );
   }
 }
