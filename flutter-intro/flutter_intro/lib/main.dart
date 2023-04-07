@@ -184,16 +184,20 @@ class FavouritesPage extends StatelessWidget {
     var state = context.watch<AppState>();
 
     return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: ListView(children: [
-        Expanded(
-          child: Wrap(
-            children: state.favourites
-                .map((wordPair) => Favourite(pair: wordPair))
-                .toList(),
-          ),
-        )
-      ]),
+      padding: const EdgeInsets.all(20.0),
+      child: state.favourites.isNotEmpty
+          ? ListView(children: [
+              Expanded(
+                child: Wrap(
+                  children: state.favourites
+                      .map((wordPair) => Favourite(pair: wordPair))
+                      .toList(),
+                ),
+              )
+            ])
+          : Container(
+              constraints: BoxConstraints.expand(),
+              child: Text("No favourites saved yet.")),
     );
   }
 }
@@ -211,17 +215,16 @@ class Favourite extends StatelessWidget {
       color: theme.colorScheme.onPrimary,
     );
 
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: Card(
-        color: theme.colorScheme.primary,
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Text(
-            pair.asLowerCase,
-            style: style,
-            semanticsLabel: "${pair.first} ${pair.second}",
-          ),
+    // It would be good to find a way to simply scale down a `BigCard` by 50%
+    return Card(
+      color: theme.colorScheme.primary,
+      child: Padding(
+        padding: const EdgeInsets.all(10.0),
+        child: Text(
+          pair.asLowerCase,
+          style: style,
+          semanticsLabel: "${pair.first} ${pair.second}",
+          textScaleFactor: 0.5,
         ),
       ),
     );
