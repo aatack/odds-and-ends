@@ -12,7 +12,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (context) => MyAppState(),
+      create: (context) => AppState(),
       child: MaterialApp(
         title: 'Namer App',
         theme: ThemeData(
@@ -20,13 +20,13 @@ class MyApp extends StatelessWidget {
           colorScheme: ColorScheme.fromSeed(
               seedColor: Color.fromARGB(255, 171, 217, 255)),
         ),
-        home: MyHomePage(),
+        home: HomePage(),
       ),
     );
   }
 }
 
-class MyAppState extends ChangeNotifier {
+class AppState extends ChangeNotifier {
   var current = WordPair.random();
 
   void getNext() {
@@ -46,10 +46,45 @@ class MyAppState extends ChangeNotifier {
   }
 }
 
-class MyHomePage extends StatelessWidget {
+class HomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    var appState = context.watch<MyAppState>();
+    return Scaffold(
+      body: Row(children: [
+        SafeArea(
+          child: NavigationRail(
+            extended: false,
+            destinations: [
+              NavigationRailDestination(
+                icon: Icon(Icons.home),
+                label: Text("Home"),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.favorite),
+                label: Text("Favourites"),
+              ),
+            ],
+            selectedIndex: 0,
+            onDestinationSelected: (index) {
+              print("Selected $index");
+            },
+          ),
+        ),
+        Expanded(
+          child: Container(
+            color: Theme.of(context).colorScheme.primaryContainer,
+            child: GeneratorPage(),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class GeneratorPage extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    var appState = context.watch<AppState>();
     var pair = appState.current;
 
     IconData icon;
