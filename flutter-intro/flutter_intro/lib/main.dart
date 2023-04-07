@@ -44,6 +44,11 @@ class AppState extends ChangeNotifier {
     }
     notifyListeners();
   }
+
+  void dropFavourite(WordPair pair) {
+    favourites.remove(pair);
+    notifyListeners();
+  }
 }
 
 class HomePage extends StatefulWidget {
@@ -192,7 +197,15 @@ class FavouritesPage extends StatelessWidget {
                 Expanded(
                   child: Wrap(
                     children: state.favourites
-                        .map((wordPair) => Favourite(pair: wordPair))
+                        .map((pair) => MouseRegion(
+                              cursor: SystemMouseCursors.click,
+                              child: GestureDetector(
+                                onTap: () {
+                                  state.dropFavourite(pair);
+                                },
+                                child: Favourite(pair: pair),
+                              ),
+                            ))
                         .toList(),
                   ),
                 )
