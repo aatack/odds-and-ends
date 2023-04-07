@@ -62,7 +62,7 @@ class _HomePageState extends State<HomePage> {
         page = GeneratorPage();
         break;
       case 1:
-        page = Placeholder();
+        page = FavouritesPage();
         break;
       default:
         throw UnimplementedError("No widget for $selectedIndex");
@@ -150,6 +150,56 @@ class BigCard extends StatelessWidget {
     super.key,
     required this.pair,
   });
+
+  final WordPair pair;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    final style = theme.textTheme.displayMedium!.copyWith(
+      color: theme.colorScheme.onPrimary,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: Card(
+        color: theme.colorScheme.primary,
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Text(
+            pair.asLowerCase,
+            style: style,
+            semanticsLabel: "${pair.first} ${pair.second}",
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class FavouritesPage extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    var state = context.watch<AppState>();
+
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: ListView(children: [
+        Expanded(
+          child: Wrap(
+            children: state.favourites
+                .map((wordPair) => Favourite(pair: wordPair))
+                .toList(),
+          ),
+        )
+      ]),
+    );
+  }
+}
+
+class Favourite extends StatelessWidget {
+  const Favourite({super.key, required this.pair});
 
   final WordPair pair;
 
