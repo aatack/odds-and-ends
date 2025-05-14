@@ -35,6 +35,11 @@ class SignedDistanceFunction:
     def grow(self, distance: float) -> "SignedDistanceFunction":
         return SignedDistanceFunction(lambda x, y, z: self.function(x, y, z) - distance)
 
+    def clip(self, max_x: float) -> "SignedDistanceFunction":
+        return SignedDistanceFunction(
+            lambda x, y, z: (max_x - x) if x < max_x else self.function(x, y, z)
+        )
+
 
 def point() -> SignedDistanceFunction:
     return SignedDistanceFunction(lambda x, y, z: sqrt(x**2 + y**2 + z**2))
