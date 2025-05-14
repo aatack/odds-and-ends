@@ -11,32 +11,20 @@ class SignedDistanceFunction:
 
     def mesh(
         self,
+        bounds: float = 1,
+        *,
         x: int | None = None,
         y: int | None = None,
         z: int | None = None,
-        distance: float = 1e5,
-        buffer: float = 0.1,
     ) -> pv.MultiBlock:
         x = x or y or z or 50
         y = y or x or z or 50
         z = z or x or y or 50
 
         xs, ys, zs = np.meshgrid(
-            np.linspace(
-                -distance + self.function(-distance, 0, 0) - buffer,
-                distance - self.function(distance, 0, 0) + buffer,
-                x,
-            ),
-            np.linspace(
-                -distance + self.function(0, -distance, 0) - buffer,
-                distance - self.function(0, distance, 0) + buffer,
-                y,
-            ),
-            np.linspace(
-                -distance + self.function(0, 0, -distance) - buffer,
-                distance - self.function(0, 0, distance) + buffer,
-                z,
-            ),
+            np.linspace(-bounds, bounds, x),
+            np.linspace(-bounds, bounds, y),
+            np.linspace(-bounds, bounds, z),
         )
 
         coordinates = np.vstack([xs.ravel(), ys.ravel(), zs.ravel()]).T
@@ -59,6 +47,16 @@ class SignedDistanceFunction:
     def clip(self, max_x: float) -> "SignedDistanceFunction":
         return SignedDistanceFunction(
             lambda x, y, z: (max_x - x) if x < max_x else self.function(x, y, z)
+        )
+
+    def distort(
+        self,
+        coordinate_transform: Callable[
+            [float, float, float], tuple[float, float, float]
+        ],
+    ) -> "SignedDistanceFunction":
+        return SignedDistanceFunction(
+            lambda x, y, z: self.function(*coordinate_transform(x, y, z))
         )
 
 
