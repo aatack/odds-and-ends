@@ -32,10 +32,13 @@ class SignedDistanceFunction:
 
         return grid.contour([0.0], scalars="sdf")
 
+    def grow(self, distance: float) -> "SignedDistanceFunction":
+        return SignedDistanceFunction(lambda x, y, z: self.function(x, y, z) - distance)
+
 
 def point() -> SignedDistanceFunction:
     return SignedDistanceFunction(lambda x, y, z: sqrt(x**2 + y**2 + z**2))
 
 
 def sphere(radius: float) -> SignedDistanceFunction:
-    return SignedDistanceFunction(lambda x, y, z: sqrt(x**2 + y**2 + z**2) - radius)
+    return point().grow(radius)
