@@ -1401,6 +1401,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "ipykernel" },
+    { name = "numpy" },
     { name = "pyvista", extra = ["jupyter"] },
     { name = "trame" },
     { name = "vtk" },
@@ -1409,6 +1410,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "ipykernel", specifier = ">=6.29.5" },
+    { name = "numpy", specifier = ">=2.2.5" },
     { name = "pyvista", extras = ["jupyter"], specifier = ">=0.45.2" },
     { name = "trame", specifier = ">=3.9.0" },
     { name = "vtk", specifier = ">=9.4.2" },

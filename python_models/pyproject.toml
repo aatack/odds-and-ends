@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "ipykernel>=6.29.5",
+    "numpy>=2.2.5",
     "pyvista[jupyter]>=0.45.2",
     "trame>=3.9.0",
     "vtk>=9.4.2",
