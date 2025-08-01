@@ -10,7 +10,7 @@ def get_class_probability(image: torch.Tensor, class_name: str) -> torch.Tensor:
 
 
 def maximise_probability(image: torch.Tensor, class_name: str) -> torch.Tensor:
-    parameter = torch.nn.parameter.Parameter(image)
+    parameter = torch.nn.parameter.Parameter(image.clone())
     optimiser = Adam(params=[parameter], lr=3e-4)
     criterion = torch.nn.BCELoss()
 
