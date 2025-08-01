@@ -1,3 +1,4 @@
+import itertools
 from typing import NamedTuple
 import torch
 from adversarial_image_classification.class_names import get_class_names
@@ -29,12 +30,20 @@ def get_class_probability(image: torch.Tensor, class_name: str) -> torch.Tensor:
     return build_model()(image)[get_class_names().index(class_name)]
 
 
-def maximise_probability(image: torch.Tensor, class_name: str) -> AdversarialNoise:
+def maximise_probability(
+    image: torch.Tensor,
+    class_name: str,
+    desired_probability: float = 0.8,
+    max_iterations: int | None = 200,
+) -> AdversarialNoise:
     noise = torch.nn.parameter.Parameter(torch.zeros_like(image))
     optimiser = Adam(params=[noise], lr=3e-4)
     criterion = torch.nn.BCELoss()
 
-    for _ in tqdm(range(100)):
+    for step in tqdm(itertools.count()):
+        if max_iterations is not None and step > max_iterations:
+            break
+
         optimiser.zero_grad()
         probability = get_class_probability(
             (image + _constrain_noise(noise)).clamp(0, 1), class_name
@@ -42,6 +51,9 @@ def maximise_probability(image: torch.Tensor, class_name: str) -> AdversarialNoi
         loss = criterion(probability, torch.tensor(1.0))
         loss.backward()
         optimiser.step()
+
+        if probability >= desired_probability:
+            break
 
     return AdversarialNoise(class_name, image, _constrain_noise(noise.data))
 
