@@ -58,20 +58,23 @@ def maximise_probability(
     optimiser = Adam(params=[noise], lr=3e-4)
     criterion = torch.nn.BCELoss()
 
-    for step in tqdm(itertools.count()):
-        if max_iterations is not None and step > max_iterations:
-            break
+    try:
+        for step in tqdm(itertools.count()):
+            if max_iterations is not None and step > max_iterations:
+                break
 
-        optimiser.zero_grad()
-        probability = get_class_probability(
-            (image + _constrain_noise(noise)).clamp(0, 1), class_name
-        )
-        loss = criterion(probability, torch.tensor(1.0))
-        loss.backward()
-        optimiser.step()
+            optimiser.zero_grad()
+            probability = get_class_probability(
+                (image + _constrain_noise(noise)).clamp(0, 1), class_name
+            )
+            loss = criterion(probability, torch.tensor(1.0))
+            loss.backward()
+            optimiser.step()
 
-        if probability >= desired_probability:
-            break
+            if probability >= desired_probability:
+                break
+    except KeyboardInterrupt:
+        pass
 
     return AdversarialNoise(class_name, image, _constrain_noise(noise.data))
 
