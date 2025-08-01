@@ -14,7 +14,7 @@ class AdversarialNoise(NamedTuple):
 
     @property
     def output_image(self) -> torch.Tensor:
-        return self.input_image + self.noise
+        return (self.input_image + self.noise).clamp(0, 1)
 
     @property
     def initial_probability(self) -> float:
@@ -34,15 +34,14 @@ def maximise_probability(image: torch.Tensor, class_name: str) -> AdversarialNoi
     optimiser = Adam(params=[noise], lr=3e-4)
     criterion = torch.nn.BCELoss()
 
-    for _ in tqdm(range(20)):
+    for _ in tqdm(range(100)):
         optimiser.zero_grad()
-        probability = get_class_probability(image + _constrain_noise(noise), class_name)
+        probability = get_class_probability(
+            (image + _constrain_noise(noise)).clamp(0, 1), class_name
+        )
         loss = criterion(probability, torch.tensor(1.0))
         loss.backward()
         optimiser.step()
-
-    print(noise.min(), noise.max())
-    print(_constrain_noise(noise.data).min(), _constrain_noise(noise.data).max())
 
     return AdversarialNoise(class_name, image, _constrain_noise(noise.data))
 
