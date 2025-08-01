@@ -2,9 +2,11 @@ import itertools
 from typing import NamedTuple
 import torch
 from adversarial_image_classification.class_names import get_class_names
+from adversarial_image_classification.helpers import render_tensor
 from adversarial_image_classification.model import build_model
 from torch.optim import Adam
 from tqdm import tqdm
+from PIL.Image import Image
 
 
 class AdversarialNoise(NamedTuple):
@@ -24,6 +26,22 @@ class AdversarialNoise(NamedTuple):
     @property
     def final_probability(self) -> float:
         return get_class_probability(self.output_image, self.target_class).item()
+
+    def check(self) -> Image:
+        # Image should be classified as the target class
+        assert self.final_probability > 0.5
+
+        # Image should be within reasonable bounds
+        assert self.output_image.min() >= 0
+        assert self.output_image.max() <= 1
+
+        # The noise should have changed the image - otherwise something's gone badly
+        # wrong
+        assert self.noise.abs().sum() > 0
+
+        # Return the image (automatically rendered inside notebooks) for a visual check
+        # that the image looks like the original input image
+        return render_tensor(self.output_image)
 
 
 def get_class_probability(image: torch.Tensor, class_name: str) -> torch.Tensor:
