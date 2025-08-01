@@ -80,4 +80,5 @@ def maximise_probability(
 
 
 def _constrain_noise(noise: torch.Tensor) -> torch.Tensor:
-    return torch.nn.functional.tanh(noise) * 0.1
+    limit = 0.1  # Higher values cause faster convergence
+    return torch.nn.functional.tanh(noise) * limit
