@@ -10,6 +10,12 @@ from PIL.Image import Image
 
 
 class AdversarialNoise(NamedTuple):
+    """
+    Data pertaining to an adversarially altered image.
+
+    Call `check()` to ensure the alteration satisfies some basic constraints.
+    """
+
     target_class: str
 
     input_image: torch.Tensor
@@ -54,6 +60,16 @@ def maximise_probability(
     desired_probability: float = 0.8,
     max_iterations: int | None = 200,
 ) -> AdversarialNoise:
+    """
+    Adversarially generate noise that makes an image "look like" something else.
+
+    Noise is added to the input image such that it's visually indistinguishable from the
+    original image to a human, but fools a computer vision model into thinking it's
+    something else.
+
+    The target class can be anything from the list of ImageNet classes - see
+    `get_class_names`.
+    """
     noise = torch.nn.parameter.Parameter(torch.zeros_like(image))
     optimiser = Adam(params=[noise], lr=3e-4)
     criterion = torch.nn.BCELoss()

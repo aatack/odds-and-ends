@@ -5,6 +5,7 @@ import torchvision
 
 @lru_cache
 def build_model() -> torch.nn.Sequential:
+    """Load the EfficientNet B0 model for classifying images."""
     model = torchvision.models.efficientnet_b0(
         weights=torchvision.models.EfficientNet_B0_Weights.IMAGENET1K_V1
     )

@@ -4,6 +4,7 @@ import requests
 
 @lru_cache
 def get_class_names() -> list[str]:
+    """Load the possible ImageNet image class names."""
     response = requests.get(
         "https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt"
     )
