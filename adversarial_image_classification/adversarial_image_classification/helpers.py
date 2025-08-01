@@ -12,6 +12,6 @@ def paste_image() -> torch.Tensor:
 
 def render_tensor(image: torch.Tensor, normalise: bool = False) -> Image:
     if normalise:
-        image -= image.min()
-        image /= image.max()
+        image = image - image.min()
+        image = image / image.max()
     return ToPILImage()(image)
