@@ -14,6 +14,8 @@ class Log(BaseModel):
     duration_seconds: float
 
 
+USER_IDS = [f"user-{uuid4()}" for _ in range(25)]
+
 METHOD_NAMES = [
     "create_workflow",
     "update_workflow_status",
@@ -34,7 +36,7 @@ def _generate_log(day: date) -> Log:
             datetime(day.year, day.month, day.day)
             + timedelta(seconds=random.uniform(0, 86400))
         ),
-        user_id=f"user-{uuid4()}",
+        user_id=random.choice(USER_IDS),
         method_name=random.choice(METHOD_NAMES),
         duration_seconds=abs(random.normalvariate(3, 1)),
     )
