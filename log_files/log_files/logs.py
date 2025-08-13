@@ -3,15 +3,9 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 import random
 from uuid import uuid4
-from pydantic import AwareDatetime, BaseModel
 import pytz
 
-
-class Log(BaseModel):
-    timestamp: AwareDatetime
-    user_id: str
-    method_name: str
-    duration_seconds: float
+from log_files.models import Log
 
 
 USER_IDS = [f"user-{uuid4()}" for _ in range(25)]

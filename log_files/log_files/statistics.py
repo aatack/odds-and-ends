@@ -2,11 +2,11 @@ import bisect
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Literal
-from log_files.logs import Log
 import statistics
 
 from log_files.models import (
     BusiestPeriod,
+    Log,
     MethodDurations,
     UserActivity,
     UserDurations,

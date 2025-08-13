@@ -2,6 +2,13 @@ from datetime import date
 from pydantic import AwareDatetime, BaseModel
 
 
+class Log(BaseModel):
+    timestamp: AwareDatetime
+    user_id: str
+    method_name: str
+    duration_seconds: float
+
+
 class MethodDurations(BaseModel):
     method_name: str
 
