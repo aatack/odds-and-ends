@@ -51,10 +51,11 @@ def _serialise_logs(logs: list[Log]) -> str:
 def generate_log_files(
     path: Path | str = Path(__file__).parent.parent / "data",
 ) -> None:
-    Path(path).mkdir(parents=True, exist_ok=True)
+    path = Path(path)
+    path.mkdir(parents=True, exist_ok=True)
     for day_number in range(3, 8):
         day = date(2025, 8, day_number)
-        (Path(path) / str(day)).write_text(
+        (path / str(day)).write_text(
             _serialise_logs(
                 [_generate_log(day) for _ in range(random.randint(6000, 12000))]
             )
@@ -62,11 +63,17 @@ def generate_log_files(
 
 
 def deserialise_logs(path: Path | str) -> Iterator[Log]:
-    for log in Path(path).read_text().splitlines():
-        timestamp, user_id, method_name, duration_seconds = log.split(":")
-        yield Log(
-            timestamp=pytz.utc.localize(datetime.fromtimestamp(int(timestamp))),
-            user_id=user_id,
-            method_name=method_name,
-            duration_seconds=float(duration_seconds),
-        )
+    path = Path(path)
+    if path.is_dir():
+        for subpath in path.glob("**/*"):
+            yield from deserialise_logs(subpath)
+
+    else:
+        for log in path.read_text().splitlines():
+            timestamp, user_id, method_name, duration_seconds = log.split(":")
+            yield Log(
+                timestamp=pytz.utc.localize(datetime.fromtimestamp(int(timestamp))),
+                user_id=user_id,
+                method_name=method_name,
+                duration_seconds=float(duration_seconds),
+            )
