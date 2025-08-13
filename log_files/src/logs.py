@@ -1,4 +1,6 @@
+from collections.abc import Iterator
 from datetime import date, datetime, timedelta
+from pathlib import Path
 import random
 from uuid import uuid4
 from pydantic import AwareDatetime, BaseModel
@@ -36,3 +38,35 @@ def _generate_log(day: date) -> Log:
         method_name=random.choice(METHOD_NAMES),
         duration_seconds=abs(random.normalvariate(3, 1)),
     )
+
+
+def _serialise_logs(logs: list[Log]) -> str:
+    return "\n".join(
+        f"{log.timestamp.timestamp():.0f}:{log.user_id}:"
+        f"{log.method_name}:{log.duration_seconds:.5f}"
+        for log in sorted(logs, key=lambda log: log.timestamp)
+    )
+
+
+def generate_log_files(
+    path: Path | str = Path(__file__).parent.parent / "data",
+) -> None:
+    Path(path).mkdir(parents=True, exist_ok=True)
+    for day_number in range(3, 8):
+        day = date(2025, 8, day_number)
+        (Path(path) / str(day)).write_text(
+            _serialise_logs(
+                [_generate_log(day) for _ in range(random.randint(6000, 12000))]
+            )
+        )
+
+
+def deserialise_logs(path: Path | str) -> Iterator[Log]:
+    for log in Path(path).read_text().splitlines():
+        timestamp, user_id, method_name, duration_seconds = log.split(":")
+        yield Log(
+            timestamp=pytz.utc.localize(datetime.fromtimestamp(int(timestamp))),
+            user_id=user_id,
+            method_name=method_name,
+            duration_seconds=float(duration_seconds),
+        )
