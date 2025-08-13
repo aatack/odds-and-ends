@@ -1,10 +1,11 @@
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Literal
 from log_files.logs import Log
 import statistics
 
 from log_files.models import (
+    BusiestPeriod,
     MethodDurations,
     UserActivity,
     UserDurations,
@@ -79,3 +80,31 @@ def longest_methods(logs: list[Log], *, method: Literal["total", "mean"]) -> lis
         name
         for name, _ in sorted(times.items(), key=lambda pair: pair[1], reverse=True)
     ][:3]
+
+
+def busiest_periods(logs: list[Log], period_minutes: int = 30) -> list[BusiestPeriod]:
+    period = timedelta(minutes=period_minutes)
+
+    day_timestamps: dict[date, list[datetime]] = defaultdict(list)
+    for log in logs:
+        day_timestamps[log.timestamp.date()].append(log.timestamp)
+
+    return [
+        BusiestPeriod(
+            day=day,
+            start=(start := _busiest_period_start(timestamps, period)),
+            end=start + period,
+        )
+        for day, timestamps in day_timestamps.items()
+    ]
+
+
+def _busiest_period_start(timestamps: list[datetime], period: timedelta) -> datetime:
+    # If this ends up being too slow, it could be drastically accelerated by first
+    # putting the timestamps into an index
+    return max(
+        timestamps,
+        key=lambda timestamp: len(
+            [t for t in timestamps if timestamp <= t < timestamp + period]
+        ),
+    )

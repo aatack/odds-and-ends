@@ -1,5 +1,5 @@
 from datetime import date
-from pydantic import BaseModel
+from pydantic import AwareDatetime, BaseModel
 
 
 class MethodDurations(BaseModel):
@@ -20,3 +20,10 @@ class UserDurations(BaseModel):
 
     total_time_seconds: float
     mean_time_seconds: float
+
+
+class BusiestPeriod(BaseModel):
+    day: date
+
+    start: AwareDatetime
+    end: AwareDatetime
