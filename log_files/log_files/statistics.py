@@ -14,6 +14,7 @@ from log_files.models import (
 
 
 def method_statistics(logs: list[Log]) -> list[MethodStatistics]:
+    """Compute runtime statistics for each method."""
     method_durations: dict[str, list[float]] = defaultdict(list)
     for log in logs:
         method_durations[log.method_name].append(log.duration_seconds)
@@ -30,6 +31,7 @@ def method_statistics(logs: list[Log]) -> list[MethodStatistics]:
 
 
 def user_activity(logs: list[Log]) -> list[UserActivity]:
+    """Find the days during which each user was active."""
     user_days: dict[str, set[date]] = defaultdict(set)
     for log in logs:
         user_days[log.user_id].add(log.timestamp.date())
@@ -43,6 +45,12 @@ def user_activity(logs: list[Log]) -> list[UserActivity]:
 def user_runtimes(
     logs: list[Log], *, sort_by: Literal["all", "highest", "lowest"] = "all"
 ) -> list[UserRuntime]:
+    """
+    List users along with the total and mean time they spend running tasks.
+
+    If `highest` or `lowest` is passed to the `sort_by` parameter, the five highest- or
+    lowest-runtime users will be returned.  Otherwise, all users will be returned.
+    """
     user_logs: dict[str, list[float]] = defaultdict(list)
     for log in logs:
         user_logs[log.user_id].append(log.duration_seconds)
@@ -70,6 +78,9 @@ def user_runtimes(
 def longest_running_methods(
     logs: list[Log], *, by: Literal["total", "mean"]
 ) -> list[str]:
+    """
+    Determine the three methods with the longest runtimes, by total or mean runtime.
+    """
     method_runtimes: dict[str, list[float]] = defaultdict(list)
     for log in logs:
         method_runtimes[log.method_name].append(log.duration_seconds)
@@ -86,6 +97,7 @@ def longest_running_methods(
 
 
 def busiest_periods(logs: list[Log], period_minutes: int = 30) -> list[Period]:
+    """For each day, find the period with the most individual log entries."""
     period = timedelta(minutes=period_minutes)
 
     day_timestamps: dict[date, list[datetime]] = defaultdict(list)
@@ -117,6 +129,7 @@ def _busiest_period_start(timestamps: list[datetime], period: timedelta) -> date
 
 
 def busiest_day_by_active_users(logs: list[Log]) -> date:
+    """Find the day with the largest number of active users."""
     day_users: dict[date, set[str]] = defaultdict(set)
     for log in logs:
         day_users[log.timestamp.date()].add(log.user_id)
@@ -124,6 +137,7 @@ def busiest_day_by_active_users(logs: list[Log]) -> date:
 
 
 def busiest_day_by_total_time(logs: list[Log]) -> date:
+    """Find the day with the most time spent running tasks."""
     day_time: dict[date, float] = defaultdict(lambda: 0)
     for log in logs:
         day_time[log.timestamp.date()] += log.duration_seconds

@@ -48,6 +48,7 @@ def _serialise_logs(logs: list[Log]) -> str:
 def generate_log_files(
     path: Path | str = Path(__file__).parent.parent / "data",
 ) -> None:
+    """Randomly generate files containing logs for a few different days."""
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
     for day_number in range(3, 8):
@@ -60,6 +61,12 @@ def generate_log_files(
 
 
 def deserialise_logs(path: Path | str) -> Iterator[Log]:
+    """
+    Load logs from one or more log files.
+
+    If a file is passed, that file will be loaded.  If a directory is passed, files in
+    that directory will all be loaded recursively.
+    """
     path = Path(path)
     if path.is_dir():
         for subpath in path.glob("**/*"):
