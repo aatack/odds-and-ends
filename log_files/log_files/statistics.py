@@ -67,13 +67,13 @@ def user_durations(
         return durations
 
 
-def longest_methods(logs: list[Log], *, method: Literal["total", "mean"]) -> list[str]:
+def longest_methods(logs: list[Log], *, by: Literal["total", "mean"]) -> list[str]:
     method_times: dict[str, list[float]] = defaultdict(list)
     for log in logs:
         method_times[log.method_name].append(log.duration_seconds)
 
     times = {
-        method_name: (sum if method == "total" else statistics.mean)(times)
+        method_name: (sum if by == "total" else statistics.mean)(times)
         for method_name, times in method_times.items()
     }
 
@@ -112,3 +112,17 @@ def _busiest_period_start(timestamps: list[datetime], period: timedelta) -> date
         )
 
     return max(timestamps, key=timestamps_in_period)
+
+
+def busiest_day_by_active_users(logs: list[Log]) -> date:
+    day_users: dict[date, set[str]] = defaultdict(set)
+    for log in logs:
+        day_users[log.timestamp.date()].add(log.user_id)
+    return max(day_users.items(), key=lambda pair: len(pair[1]))[0]
+
+
+def busiest_day_by_total_time(logs: list[Log]) -> date:
+    day_time: dict[date, float] = defaultdict(lambda: 0)
+    for log in logs:
+        day_time[log.timestamp.date()] += log.duration_seconds
+    return max(day_time.items(), key=lambda pair: pair[1])[0]
