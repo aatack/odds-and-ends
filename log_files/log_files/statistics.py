@@ -1,3 +1,4 @@
+import bisect
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Literal
@@ -100,11 +101,14 @@ def busiest_periods(logs: list[Log], period_minutes: int = 30) -> list[BusiestPe
 
 
 def _busiest_period_start(timestamps: list[datetime], period: timedelta) -> datetime:
-    # If this ends up being too slow, it could be drastically accelerated by first
-    # putting the timestamps into an index
-    return max(
-        timestamps,
-        key=lambda timestamp: len(
-            [t for t in timestamps if timestamp <= t < timestamp + period]
-        ),
-    )
+    # Index the timestamps to make the whole operation much faster
+    indexed_timestamps = sorted(timestamps)
+
+    def timestamps_in_period(start: datetime) -> int:
+        return (
+            bisect.bisect_right(indexed_timestamps, start + period)
+            - bisect.bisect_right(indexed_timestamps, start)
+            + 1
+        )
+
+    return max(timestamps, key=timestamps_in_period)
