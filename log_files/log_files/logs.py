@@ -43,7 +43,8 @@ def _generate_log(day: date) -> Log:
 def _serialise_logs(logs: list[Log]) -> str:
     return "\n".join(
         f"{log.timestamp.timestamp():.0f}:{log.user_id}:"
-        f"{log.method_name}:{log.duration_seconds:.5f}"
+        # Round to two decimal places so that mode statistics are meaningful
+        f"{log.method_name}:{log.duration_seconds:.2f}"
         for log in sorted(logs, key=lambda log: log.timestamp)
     )
 
