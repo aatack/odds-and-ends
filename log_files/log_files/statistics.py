@@ -1,14 +1,13 @@
 from collections import defaultdict
 from datetime import date
+from typing import Literal
 from log_files.logs import Log
 import statistics
 
 from log_files.models import (
-    LongestMethods,
     MethodDurations,
     UserActivity,
     UserDurations,
-    UserDurationsData,
 )
 
 
@@ -39,7 +38,9 @@ def user_activity(logs: list[Log]) -> list[UserActivity]:
     ]
 
 
-def user_durations(logs: list[Log]) -> UserDurationsData:
+def user_durations(
+    logs: list[Log], *, sort_by: Literal["all", "highest", "lowest"] = "all"
+) -> list[UserDurations]:
     user_logs: dict[str, list[float]] = defaultdict(list)
     for log in logs:
         user_logs[log.user_id].append(log.duration_seconds)
@@ -56,35 +57,25 @@ def user_durations(logs: list[Log]) -> UserDurationsData:
         key=lambda user: user.total_time_seconds,
     )
 
-    return UserDurationsData(
-        users=durations, highest=durations[-5:][::-1], lowest=durations[:5]
-    )
+    if sort_by == "highest":
+        return durations[-5:][::-1]
+    elif sort_by == "lowest":
+        return durations[:5]
+    else:
+        return durations
 
 
-def longest_methods(logs: list[Log]) -> LongestMethods:
+def longest_methods(logs: list[Log], *, method: Literal["total", "mean"]) -> list[str]:
     method_times: dict[str, list[float]] = defaultdict(list)
     for log in logs:
         method_times[log.method_name].append(log.duration_seconds)
 
-    total_times = {
-        method_name: sum(times) for method_name, times in method_times.items()
-    }
-    mean_times = {
-        method_name: statistics.mean(times)
+    times = {
+        method_name: (sum if method == "total" else statistics.mean)(times)
         for method_name, times in method_times.items()
     }
 
-    return LongestMethods(
-        longest_total_time=[
-            name
-            for name, _ in sorted(
-                total_times.items(), key=lambda pair: pair[1], reverse=True
-            )
-        ][:3],
-        longest_mean_time=[
-            name
-            for name, _ in sorted(
-                mean_times.items(), key=lambda pair: pair[1], reverse=True
-            )
-        ][:3],
-    )
+    return [
+        name
+        for name, _ in sorted(times.items(), key=lambda pair: pair[1], reverse=True)
+    ][:3]

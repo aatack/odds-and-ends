@@ -20,15 +20,3 @@ class UserDurations(BaseModel):
 
     total_time_seconds: float
     mean_time_seconds: float
-
-
-class UserDurationsData(BaseModel):
-    users: list[UserDurations]
-
-    highest: list[UserDurations]
-    lowest: list[UserDurations]
-
-
-class LongestMethods(BaseModel):
-    longest_total_time: list[str]
-    longest_mean_time: list[str]
