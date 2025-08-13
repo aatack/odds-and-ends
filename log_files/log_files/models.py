@@ -27,3 +27,8 @@ class UserDurationsData(BaseModel):
 
     highest: list[UserDurations]
     lowest: list[UserDurations]
+
+
+class LongestMethods(BaseModel):
+    longest_total_time: list[str]
+    longest_mean_time: list[str]

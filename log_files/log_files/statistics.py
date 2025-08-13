@@ -4,6 +4,7 @@ from log_files.logs import Log
 import statistics
 
 from log_files.models import (
+    LongestMethods,
     MethodDurations,
     UserActivity,
     UserDurations,
@@ -57,4 +58,33 @@ def user_durations(logs: list[Log]) -> UserDurationsData:
 
     return UserDurationsData(
         users=durations, highest=durations[-5:][::-1], lowest=durations[:5]
+    )
+
+
+def longest_methods(logs: list[Log]) -> LongestMethods:
+    method_times: dict[str, list[float]] = defaultdict(list)
+    for log in logs:
+        method_times[log.method_name].append(log.duration_seconds)
+
+    total_times = {
+        method_name: sum(times) for method_name, times in method_times.items()
+    }
+    mean_times = {
+        method_name: statistics.mean(times)
+        for method_name, times in method_times.items()
+    }
+
+    return LongestMethods(
+        longest_total_time=[
+            name
+            for name, _ in sorted(
+                total_times.items(), key=lambda pair: pair[1], reverse=True
+            )
+        ][:3],
+        longest_mean_time=[
+            name
+            for name, _ in sorted(
+                mean_times.items(), key=lambda pair: pair[1], reverse=True
+            )
+        ][:3],
     )
