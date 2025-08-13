@@ -5,21 +5,21 @@ from typing import Literal
 import statistics
 
 from log_files.models import (
-    BusiestPeriod,
+    Period,
     Log,
-    MethodDurations,
+    MethodStatistics,
     UserActivity,
-    UserDurations,
+    UserRuntime,
 )
 
 
-def method_durations(logs: list[Log]) -> list[MethodDurations]:
+def method_statistics(logs: list[Log]) -> list[MethodStatistics]:
     method_durations: dict[str, list[float]] = defaultdict(list)
     for log in logs:
         method_durations[log.method_name].append(log.duration_seconds)
 
     return [
-        MethodDurations(
+        MethodStatistics(
             method_name=method_name,
             mean=statistics.mean(durations),
             median=statistics.median(durations),
@@ -40,16 +40,16 @@ def user_activity(logs: list[Log]) -> list[UserActivity]:
     ]
 
 
-def user_durations(
+def user_runtimes(
     logs: list[Log], *, sort_by: Literal["all", "highest", "lowest"] = "all"
-) -> list[UserDurations]:
+) -> list[UserRuntime]:
     user_logs: dict[str, list[float]] = defaultdict(list)
     for log in logs:
         user_logs[log.user_id].append(log.duration_seconds)
 
     durations = sorted(
         [
-            UserDurations(
+            UserRuntime(
                 user_id=user,
                 total_time_seconds=sum(durations),
                 mean_time_seconds=statistics.mean(durations),
@@ -67,14 +67,16 @@ def user_durations(
         return durations
 
 
-def longest_methods(logs: list[Log], *, by: Literal["total", "mean"]) -> list[str]:
-    method_times: dict[str, list[float]] = defaultdict(list)
+def longest_running_methods(
+    logs: list[Log], *, by: Literal["total", "mean"]
+) -> list[str]:
+    method_runtimes: dict[str, list[float]] = defaultdict(list)
     for log in logs:
-        method_times[log.method_name].append(log.duration_seconds)
+        method_runtimes[log.method_name].append(log.duration_seconds)
 
     times = {
-        method_name: (sum if by == "total" else statistics.mean)(times)
-        for method_name, times in method_times.items()
+        method_name: (sum if by == "total" else statistics.mean)(runtimes)
+        for method_name, runtimes in method_runtimes.items()
     }
 
     return [
@@ -83,7 +85,7 @@ def longest_methods(logs: list[Log], *, by: Literal["total", "mean"]) -> list[st
     ][:3]
 
 
-def busiest_periods(logs: list[Log], period_minutes: int = 30) -> list[BusiestPeriod]:
+def busiest_periods(logs: list[Log], period_minutes: int = 30) -> list[Period]:
     period = timedelta(minutes=period_minutes)
 
     day_timestamps: dict[date, list[datetime]] = defaultdict(list)
@@ -91,7 +93,7 @@ def busiest_periods(logs: list[Log], period_minutes: int = 30) -> list[BusiestPe
         day_timestamps[log.timestamp.date()].append(log.timestamp)
 
     return [
-        BusiestPeriod(
+        Period(
             day=day,
             start=(start := _busiest_period_start(timestamps, period)),
             end=start + period,

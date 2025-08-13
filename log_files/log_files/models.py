@@ -9,7 +9,7 @@ class Log(BaseModel):
     duration_seconds: float
 
 
-class MethodDurations(BaseModel):
+class MethodStatistics(BaseModel):
     method_name: str
 
     mean: float
@@ -22,14 +22,14 @@ class UserActivity(BaseModel):
     days_active: list[date]
 
 
-class UserDurations(BaseModel):
+class UserRuntime(BaseModel):
     user_id: str
 
     total_time_seconds: float
     mean_time_seconds: float
 
 
-class BusiestPeriod(BaseModel):
+class Period(BaseModel):
     day: date
 
     start: AwareDatetime
