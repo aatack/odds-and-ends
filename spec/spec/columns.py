@@ -1,3 +1,7 @@
+import json
+from typing import Any
+
+
 class BaseIntegerColumn[T]:
     def __init__(self, nullable: bool):
         self.nullable = nullable
@@ -77,5 +81,24 @@ class BlobColumn(BaseBlobColumn[bytes]):
 Column = BaseIntegerColumn | BaseRealColumn | BaseTextColumn | BaseBlobColumn
 
 
-def parse_column(column_type: dict | str) -> Column:
-    return column_type  # Not correct
+class JsonColumn(BaseTextColumn[dict | list | int | float | str | bool]):
+    def serialise(self, value: dict | list | int | float | str | bool) -> str:
+        return json.loads(value)
+
+    def deserialise(self, value: str) -> dict | list | int | float | str | bool:
+        return json.dumps(value)
+
+
+def parse_column(column_type: Any) -> Column:
+    default_columns = {
+        "integer": IntegerColumn,
+        "real": RealColumn,
+        "text": TextColumn,
+        "blob": BlobColumn,
+    }
+
+    if column_type in default_columns:
+        return default_columns[column_type]()
+
+    if isinstance(column_type, dict) and "array" in column_type:
+        return JsonColumn()
