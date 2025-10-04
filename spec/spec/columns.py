@@ -1,4 +1,7 @@
 class BaseIntegerColumn[T]:
+    def __init__(self, nullable: bool):
+        self.nullable = nullable
+
     def serialise(self, value: T) -> int:
         raise NotImplementedError()
 
@@ -15,6 +18,9 @@ class IntegerColumn(BaseIntegerColumn[int]):
 
 
 class BaseRealColumn[T]:
+    def __init__(self, nullable: bool):
+        self.nullable = nullable
+
     def serialise(self, value: T) -> float:
         raise NotImplementedError()
 
@@ -31,6 +37,9 @@ class RealColumn(BaseRealColumn[float]):
 
 
 class BaseTextColumn[T]:
+    def __init__(self, nullable: bool):
+        self.nullable = nullable
+
     def serialise(self, value: T) -> str:
         raise NotImplementedError()
 
@@ -47,6 +56,9 @@ class TextColumn(BaseTextColumn[str]):
 
 
 class BaseBlobColumn[T]:
+    def __init__(self, nullable: bool):
+        self.nullable = nullable
+
     def serialise(self, value: T) -> bytes:
         raise NotImplementedError()
 
@@ -60,3 +72,10 @@ class BlobColumn(BaseBlobColumn[bytes]):
 
     def deserialise(self, value: bytes) -> bytes:
         return value
+
+
+Column = BaseIntegerColumn | BaseRealColumn | BaseTextColumn | BaseBlobColumn
+
+
+def parse_column(column_type: dict | str) -> Column:
+    return column_type  # Not correct

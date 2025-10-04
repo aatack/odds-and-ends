@@ -3,9 +3,7 @@ import json
 from pathlib import Path
 from typing import NamedTuple
 
-
-class Column(NamedTuple):
-    pass
+from spec.columns import Column, parse_column
 
 
 class Table(NamedTuple):
@@ -38,7 +36,3 @@ def generate_schema(migrations: Path | str):
                         tables[table].columns[column_name] = parse_column(column_type)
 
     return dict(tables)
-
-
-def parse_column(column_type: dict | str) -> Column:
-    return column_type  # Not correct
