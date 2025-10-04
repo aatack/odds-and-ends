@@ -1,7 +1,4 @@
 class BaseIntegerColumn[T]:
-    def __init__(self, nullable: bool):
-        self.nullable = nullable
-
     def serialise(self, value: T) -> int:
         raise NotImplementedError()
 
@@ -10,9 +7,6 @@ class BaseIntegerColumn[T]:
 
 
 class BaseRealColumn[T]:
-    def __init__(self, nullable: bool):
-        self.nullable = nullable
-
     def serialise(self, value: T) -> float:
         raise NotImplementedError()
 
@@ -21,9 +15,6 @@ class BaseRealColumn[T]:
 
 
 class BaseTextColumn[T]:
-    def __init__(self, nullable: bool):
-        self.nullable = nullable
-
     def serialise(self, value: T) -> str:
         raise NotImplementedError()
 
@@ -32,9 +23,6 @@ class BaseTextColumn[T]:
 
 
 class BaseBlobColumn[T]:
-    def __init__(self, nullable: bool):
-        self.nullable = nullable
-
     def serialise(self, value: T) -> bytes:
         raise NotImplementedError()
 
