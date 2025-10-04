@@ -1,6 +1,6 @@
 {
   "item": {
-    "user": "*user",
+    "user": "user",
     "timestamp": "timestamp",
     "status": { "enum": ["open", "closed", "pending"] },
     "superfluous_key": "number",
