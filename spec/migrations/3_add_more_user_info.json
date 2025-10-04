@@ -1,0 +1,6 @@
+{
+  "user": {
+    "permissions": { "array": { "enum": ["admin", "edit", "read"] } },
+    "__index": { "name": ["first_name"] }
+  }
+}
