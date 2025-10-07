@@ -97,8 +97,8 @@ def parse_column(column_type: Any) -> Column:
         "blob": BlobColumn,
     }
 
-    if column_type in default_columns:
-        return default_columns[column_type]()
+    if isinstance(column_type, str) and column_type in default_columns:
+        return default_columns[column_type](False)
 
     if isinstance(column_type, dict) and "array" in column_type:
-        return JsonColumn()
+        return JsonColumn(False)
