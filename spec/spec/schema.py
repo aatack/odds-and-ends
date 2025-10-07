@@ -3,12 +3,27 @@ import json
 from pathlib import Path
 from typing import NamedTuple
 
-from spec.columns import Column, parse_column
+from spec.columns import Column
 
 
 class Table(NamedTuple):
     columns: dict[str, Column]
     indices: dict[str, list[str]]
+
+    @property
+    def sql(self) -> str:
+        assert "id" not in self.columns
+        columns = [
+            "id text primary key",
+            *(
+                f"{column_name} {column_type}{'' if column_type.nullable else ' not null'}"
+                for column_name, column_type in self.columns.items()
+            ),
+        ]
+
+        return """
+
+        """
 
 
 def generate_schema(migrations: Path | str):

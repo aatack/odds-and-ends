@@ -1,104 +1,83 @@
-import json
-from typing import Any
+from typing import Any, NamedTuple
 
 
-class BaseIntegerColumn[T]:
-    def __init__(self, nullable: bool):
-        self.nullable = nullable
-
-    def serialise(self, value: T) -> int:
-        raise NotImplementedError()
-
-    def deserialise(self, value: int) -> T:
-        raise NotImplementedError()
+class NullableColumn(NamedTuple):
+    type: "Column"
 
 
-class IntegerColumn(BaseIntegerColumn[int]):
-    def serialise(self, value: int) -> int:
-        return value
-
-    def deserialise(self, value: int) -> int:
-        return value
+class TextColumn(NamedTuple):
+    pass
 
 
-class BaseRealColumn[T]:
-    def __init__(self, nullable: bool):
-        self.nullable = nullable
-
-    def serialise(self, value: T) -> float:
-        raise NotImplementedError()
-
-    def deserialise(self, value: float) -> T:
-        raise NotImplementedError()
+class IntegerColumn(NamedTuple):
+    pass
 
 
-class RealColumn(BaseRealColumn[float]):
-    def serialise(self, value: float) -> float:
-        return value
-
-    def deserialise(self, value: float) -> float:
-        return value
+class RealColumn(NamedTuple):
+    pass
 
 
-class BaseTextColumn[T]:
-    def __init__(self, nullable: bool):
-        self.nullable = nullable
-
-    def serialise(self, value: T) -> str:
-        raise NotImplementedError()
-
-    def deserialise(self, value: str) -> T:
-        raise NotImplementedError()
+class BlobColumn(NamedTuple):
+    pass
 
 
-class TextColumn(BaseTextColumn[str]):
-    def serialise(self, value: str) -> str:
-        return value
-
-    def deserialise(self, value: str) -> str:
-        return value
+class TimestampColumn(NamedTuple):
+    pass
 
 
-class BaseBlobColumn[T]:
-    def __init__(self, nullable: bool):
-        self.nullable = nullable
-
-    def serialise(self, value: T) -> bytes:
-        raise NotImplementedError()
-
-    def deserialise(self, value: bytes) -> T:
-        raise NotImplementedError()
+class JsonColumn(NamedTuple):
+    pass
 
 
-class BlobColumn(BaseBlobColumn[bytes]):
-    def serialise(self, value: bytes) -> bytes:
-        return value
-
-    def deserialise(self, value: bytes) -> bytes:
-        return value
+class ArrayColumn(NamedTuple):
+    type: "Column"
 
 
-Column = BaseIntegerColumn | BaseRealColumn | BaseTextColumn | BaseBlobColumn
+class PointerColumn(NamedTuple):
+    table: str
 
 
-class JsonColumn(BaseTextColumn[dict | list | int | float | str | bool]):
-    def serialise(self, value: dict | list | int | float | str | bool) -> str:
-        return json.loads(value)
-
-    def deserialise(self, value: str) -> dict | list | int | float | str | bool:
-        return json.dumps(value)
+Column = (
+    NullableColumn
+    | TextColumn
+    | IntegerColumn
+    | RealColumn
+    | BlobColumn
+    | TimestampColumn
+    | JsonColumn
+    | PointerColumn
+    | ArrayColumn
+)
 
 
 def parse_column(column_type: Any) -> Column:
-    default_columns = {
-        "integer": IntegerColumn,
-        "real": RealColumn,
-        "text": TextColumn,
-        "blob": BlobColumn,
-    }
+    if column_type == "text":
+        return TextColumn()
 
-    if isinstance(column_type, str) and column_type in default_columns:
-        return default_columns[column_type](False)
+    elif column_type == "integer":
+        return IntegerColumn()
 
-    if isinstance(column_type, dict) and "array" in column_type:
-        return JsonColumn(False)
+    elif column_type == "real":
+        return RealColumn()
+
+    elif column_type == "blob":
+        return BlobColumn()
+
+    elif column_type == "timestamp":
+        return TimestampColumn()
+
+    elif column_type == "json":
+        return JsonColumn()
+
+    elif isinstance(column_type, str):
+        return PointerColumn(column_type)
+
+    elif isinstance(column_type, dict):
+        if "nullable" in column_type:
+            return NullableColumn(parse_column(column_type["nullable"]))
+
+        if "array" in column_type:
+            return ArrayColumn(parse_column(column_type["array"]))
+
+    else:
+        raise ValueError(f"Could not parse column type: {column_type}")
