@@ -22,7 +22,12 @@ class Table(NamedTuple):
             ),
         ]
 
-        return [f"create table {name} (\n  {'\n  '.join(columns)}\n)", *()]
+        indices = [
+            f"create index {index_name}\n  on {name} ({', '.join(index_columns)});"
+            for index_name, index_columns in self.indices.items()
+        ]
+
+        return [f"create table {name} (\n  {'\n  '.join(columns)}\n);", *indices]
 
 
 def generate_schema(migrations: Path | str):
