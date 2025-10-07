@@ -10,20 +10,19 @@ class Table(NamedTuple):
     columns: dict[str, Column]
     indices: dict[str, list[str]]
 
-    @property
-    def sql(self) -> str:
+    def sql(self, name: str) -> list[str]:
         assert "id" not in self.columns
         columns = [
-            "id text primary key",
+            "id text primary key,",
             *(
-                f"{column_name} {column_type}{'' if column_type.nullable else ' not null'}"
-                for column_name, column_type in self.columns.items()
+                f"{column_name} {column_type.sql}{',' if index < len(self.columns) else ''}"
+                for index, (column_name, column_type) in enumerate(
+                    self.columns.items(), start=1
+                )
             ),
         ]
 
-        return """
-
-        """
+        return [f"create table {name} (\n  {'\n  '.join(columns)}\n)", *()]
 
 
 def generate_schema(migrations: Path | str):

@@ -52,6 +52,7 @@ class JsonColumn(NamedTuple):
 
 
 class ArrayColumn(NamedTuple):
+    type: "Column"
 
     @property
     def sql(self) -> str:
@@ -59,6 +60,7 @@ class ArrayColumn(NamedTuple):
 
 
 class PointerColumn(NamedTuple):
+    table: str
 
     @property
     def sql(self) -> str:
@@ -82,30 +84,29 @@ def parse_column(column_type: Any) -> Column:
     if column_type == "text":
         return TextColumn()
 
-    elif column_type == "integer":
+    if column_type == "integer":
         return IntegerColumn()
 
-    elif column_type == "real":
+    if column_type == "real":
         return RealColumn()
 
-    elif column_type == "blob":
+    if column_type == "blob":
         return BlobColumn()
 
-    elif column_type == "timestamp":
+    if column_type == "timestamp":
         return TimestampColumn()
 
-    elif column_type == "json":
+    if column_type == "json":
         return JsonColumn()
 
-    elif isinstance(column_type, str):
+    if isinstance(column_type, str):
         return PointerColumn(column_type)
 
-    elif isinstance(column_type, dict):
+    if isinstance(column_type, dict):
         if "nullable" in column_type:
             return NullableColumn(parse_column(column_type["nullable"]))
 
         if "array" in column_type:
             return ArrayColumn(parse_column(column_type["array"]))
 
-    else:
-        raise ValueError(f"Could not parse column type: {column_type}")
+    raise ValueError(f"Could not parse column type: {column_type}")

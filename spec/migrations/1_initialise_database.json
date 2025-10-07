@@ -2,7 +2,7 @@
   "item": {
     "user": "user",
     "timestamp": "timestamp",
-    "status": { "enum": ["open", "closed", "pending"] },
+    "status": "text",
     "superfluous_key": "number",
     "__index": {
       "timestamp": ["timestamp"],
