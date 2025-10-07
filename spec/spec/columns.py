@@ -4,37 +4,65 @@ from typing import Any, NamedTuple
 class NullableColumn(NamedTuple):
     type: "Column"
 
+    @property
+    def sql(self) -> str:
+        return self.type.sql.removesuffix(" not null")
+
 
 class TextColumn(NamedTuple):
-    pass
+
+    @property
+    def sql(self) -> str:
+        return "text not null"
 
 
 class IntegerColumn(NamedTuple):
-    pass
+
+    @property
+    def sql(self) -> str:
+        return "integer not null"
 
 
 class RealColumn(NamedTuple):
-    pass
+
+    @property
+    def sql(self) -> str:
+        return "real not null"
 
 
 class BlobColumn(NamedTuple):
-    pass
+
+    @property
+    def sql(self) -> str:
+        return "blob not null"
 
 
 class TimestampColumn(NamedTuple):
-    pass
+
+    @property
+    def sql(self) -> str:
+        return "text not null"
 
 
 class JsonColumn(NamedTuple):
-    pass
+
+    @property
+    def sql(self) -> str:
+        return "text not null"
 
 
 class ArrayColumn(NamedTuple):
-    type: "Column"
+
+    @property
+    def sql(self) -> str:
+        return "text not null"
 
 
 class PointerColumn(NamedTuple):
-    table: str
+
+    @property
+    def sql(self) -> str:
+        return "text not null"
 
 
 Column = (

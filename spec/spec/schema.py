@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from typing import NamedTuple
 
-from spec.columns import Column
+from spec.columns import Column, parse_column
 
 
 class Table(NamedTuple):
