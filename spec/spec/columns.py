@@ -109,4 +109,9 @@ def parse_column(column_type: Any) -> Column:
         if "array" in column_type:
             return ArrayColumn(parse_column(column_type["array"]))
 
+        if "pointer" in column_type:
+            table = column_type["pointer"]
+            assert isinstance(table, str)
+            return PointerColumn(table)
+
     raise ValueError(f"Could not parse column type: {column_type}")
