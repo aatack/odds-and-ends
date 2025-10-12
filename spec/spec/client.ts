@@ -19,3 +19,18 @@ const SCHEMA = {
     },
   },
 };
+
+type Uuid = string;
+
+type Item = {
+  user: Uuid;
+  timestamp: Date;
+  status: string;
+};
+
+type User = {
+  firstName: string;
+  lastName: string;
+  dateOfBirth: Date;
+  permissions: string[];
+};
