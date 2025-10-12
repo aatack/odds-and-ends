@@ -20,13 +20,13 @@ const SCHEMA = {
   },
 };
 
-type Query<T> = { eq: T } | { in: T[] } | { gt?: T; lt?: T; gte?: T; lte?: T };
-type Mutation<T> =
+type Get<T> = { eq: T } | { in: T[] } | { gt?: T; lt?: T; gte?: T; lte?: T };
+type Update<T> =
   | { set: T }
   | { add?: T; remove?: T }
   | { inc?: number; dec?: number }
   | { lua: string }
-  | Mutation<T>[];
+  | Update<T>[];
 
 type Uuid = string;
 type Pointer<T> = { id: Uuid; data?: T };
@@ -39,15 +39,16 @@ type Item = {
 };
 
 type User = {
+  id: Uuid;
   firstName: string;
   lastName: string;
   dateOfBirth: Date;
   permissions: string[];
 };
 
-export const readItem = (
+export const getItem = (
   query: Partial<{
-    [K in keyof Item]: Query<Item[K]>;
+    [K in keyof Item]: Get<Item[K]>;
   }>,
   options?: {
     orderBy?: (keyof Item)[];
@@ -58,13 +59,15 @@ export const readItem = (
   throw new Error("Not implemented");
 };
 
-export const mutateItem = (items: {
-  [id: Uuid]: { [K in keyof Item]: Mutation<Item[K]> };
+export const updateItem = (items: {
+  [id: Uuid]: { [K in keyof Item]: Update<Item[K]> };
 }) => {};
 
-readItem(
+getItem(
   { timestamp: { lt: new Date() }, status: { eq: "active" } },
   {
     orderBy: ["status", "timestamp"],
   }
 );
+
+export const setItem = (items: { [id: Uuid]: Item | null }) => {};
