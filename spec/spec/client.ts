@@ -21,6 +21,12 @@ const SCHEMA = {
 };
 
 type Query<T> = { eq: T } | { in: T[] } | { gt?: T; lt?: T; gte?: T; lte?: T };
+type Mutation<T> =
+  | { set: T }
+  | { add?: T; remove?: T }
+  | { increment: number }
+  | { decrement: number }
+  | Mutation<T>[];
 
 type Uuid = string;
 type Pointer<T> = { id: Uuid; data?: T };
@@ -39,14 +45,24 @@ type User = {
   permissions: string[];
 };
 
-export const queryItems = (
+export const readItem = (
   query: Partial<{
     [K in keyof Item]: Query<Item[K]>;
   }>,
-  options?: { orderBy?: (keyof Item)[]; expand?: {} }
-) => {};
+  options?: {
+    orderBy?: (keyof Item)[];
+    expand?: (keyof Item)[];
+    then?: (items: Item[]) => Item[];
+  }
+): Promise<Item[]> => {
+  throw new Error("Not implemented");
+};
 
-queryItems(
+export const mutateItem = (items: {
+  [id: Uuid]: { [K in keyof Item]: Mutation<Item[K]> };
+}) => {};
+
+readItem(
   { timestamp: { lt: new Date() }, status: { eq: "active" } },
   {
     orderBy: ["status", "timestamp"],
