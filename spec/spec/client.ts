@@ -24,8 +24,8 @@ type Query<T> = { eq: T } | { in: T[] } | { gt?: T; lt?: T; gte?: T; lte?: T };
 type Mutation<T> =
   | { set: T }
   | { add?: T; remove?: T }
-  | { increment: number }
-  | { decrement: number }
+  | { inc?: number; dec?: number }
+  | { lua: string }
   | Mutation<T>[];
 
 type Uuid = string;
