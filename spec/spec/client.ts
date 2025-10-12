@@ -23,9 +23,11 @@ const SCHEMA = {
 type Query<T> = { eq: T } | { in: T[] } | { gt?: T; lt?: T; gte?: T; lte?: T };
 
 type Uuid = string;
+type Pointer<T> = { id: Uuid; data?: T };
 
 type Item = {
-  user: Uuid;
+  id: Uuid;
+  user: Pointer<User>;
   timestamp: Date;
   status: string;
 };
