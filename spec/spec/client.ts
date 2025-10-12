@@ -20,7 +20,7 @@ const SCHEMA = {
   },
 };
 
-type Query<T> = { in: T[] } | { gt?: T; lt?: T; gte?: T; lte?: T };
+type Query<T> = { eq: T } | { in: T[] } | { gt?: T; lt?: T; gte?: T; lte?: T };
 
 type Uuid = string;
 
@@ -40,7 +40,13 @@ type User = {
 export const queryItems = (
   query: Partial<{
     [K in keyof Item]: Query<Item[K]>;
-  }>
+  }>,
+  options?: { orderBy?: (keyof Item)[]; expand?: {} }
 ) => {};
 
-queryItems({ timestamp: { lt: new Date("") } });
+queryItems(
+  { timestamp: { lt: new Date() }, status: { eq: "active" } },
+  {
+    orderBy: ["status", "timestamp"],
+  }
+);
