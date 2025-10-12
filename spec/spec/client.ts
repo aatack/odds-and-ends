@@ -20,6 +20,8 @@ const SCHEMA = {
   },
 };
 
+type Query<T> = { in: T[] } | { gt?: T; lt?: T; gte?: T; lte?: T };
+
 type Uuid = string;
 
 type Item = {
@@ -34,3 +36,11 @@ type User = {
   dateOfBirth: Date;
   permissions: string[];
 };
+
+export const queryItems = (
+  query: Partial<{
+    [K in keyof Item]: Query<Item[K]>;
+  }>
+) => {};
+
+queryItems({ timestamp: { lt: new Date("") } });
