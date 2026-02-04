@@ -1,14 +1,12 @@
-import React, { useRef, useMemo } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Environment, ContactShadows } from "@react-three/drei";
+import { useRef } from "react";
 import * as THREE from "three";
 
 // --- Configuration based on our computed parameters ---
 const PARAMS = {
   bladeCount: 40, // Derived from Solidity (1.37)
-  height: 2.5, // Aspect Ratio (2.53)
+  height: 3.5, // Aspect Ratio (2.53)
   twist: 0.38, // ~21.6 degrees in radians
-  hubRadius: 2,
+  hubRadius: 1,
   metalColor: "#777",
 };
 
