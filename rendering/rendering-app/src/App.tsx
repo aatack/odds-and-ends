@@ -2,10 +2,12 @@ import { Canvas } from "@react-three/fiber";
 import "./App.css";
 import { Environment, OrbitControls } from "@react-three/drei";
 import { TurbineStage } from "./core-stage";
-import { Sword } from "./sword";
+import { Sword, SwordLod } from "./sword";
 import { Shield } from "./shield";
 
 function App() {
+  const lowDetail = false;
+
   return (
     <div style={{ width: "100%", height: "100%", background: "white" }}>
       <Canvas>
@@ -25,7 +27,7 @@ function App() {
         {/* <TurbineStage /> */}
         <group>
           <group position={[2, 0, 0]}>
-            <Sword />
+            {lowDetail ? <SwordLod /> : <Sword />}
           </group>
           <Shield />
         </group>

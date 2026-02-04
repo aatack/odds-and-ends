@@ -88,3 +88,43 @@ export function Sword() {
     </group>
   );
 }
+
+export function SwordLod() {
+  const dullProps = { metalness: 0, roughness: 1 };
+
+  // Extremely simplified geometries for distance viewing
+  const geoms = useMemo(
+    () => ({
+      // Blade: Lower segments (3 instead of 4)
+      blade: new THREE.CylinderGeometry(0, 0.4, 3, 3),
+      // Crossguard: A single box replacing the hub, 2 quillons, and gem
+      crossguard: new THREE.BoxGeometry(0.8, 0.2, 0.15),
+      // Handle: Combining grip and pommel into one tapered cylinder
+      handle: new THREE.CylinderGeometry(0.1, 0.2, 1.2, 4),
+    }),
+    []
+  );
+
+  return (
+    <group>
+      {/* Blade */}
+      <mesh
+        position={[0, 1.5, 0]}
+        scale={[0.4, 1, 0.2]}
+        geometry={geoms.blade}
+      >
+        <meshStandardMaterial color="#94a3b8" {...dullProps} />
+      </mesh>
+
+      {/* Simplified Crossguard (Gold) */}
+      <mesh position={[0, 0, 0]} geometry={geoms.crossguard}>
+        <meshStandardMaterial color="#a16207" {...dullProps} />
+      </mesh>
+
+      {/* Simplified Handle (Brown) */}
+      <mesh position={[0, -0.6, 0]} geometry={geoms.handle}>
+        <meshStandardMaterial color="#451a03" {...dullProps} />
+      </mesh>
+    </group>
+  );
+}
