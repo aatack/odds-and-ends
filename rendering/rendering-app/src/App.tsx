@@ -4,6 +4,7 @@ import { Environment, OrbitControls } from "@react-three/drei";
 import { TurbineStage } from "./core-stage";
 import { Sword, SwordLod } from "./sword";
 import { Shield } from "./shield";
+import { SorcererStaff } from "./staff";
 
 function App() {
   const lowDetail = false;
@@ -30,6 +31,9 @@ function App() {
             {lowDetail ? <SwordLod /> : <Sword />}
           </group>
           <Shield />
+          <group position={[-2, 0, 0]}>
+            <SorcererStaff />
+          </group>
         </group>
       </Canvas>
     </div>

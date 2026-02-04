@@ -15,7 +15,7 @@ export function JitteredMesh({
 
     const geom = geometry.clone();
     const pos = geom.attributes.position;
-    const jitterAmount = 0.02;
+    const jitterAmount = 0.00;
     const jitterCache: Record<string, { x: number; y: number; z: number }> = {};
 
     for (let i = 0; i < pos.count; i++) {
