@@ -3,6 +3,7 @@ import "./App.css";
 import { Environment, OrbitControls } from "@react-three/drei";
 import { TurbineStage } from "./core-stage";
 import { Sword } from "./sword";
+import { Shield } from "./shield";
 
 function App() {
   return (
@@ -22,7 +23,8 @@ function App() {
         <OrbitControls makeDefault enableDamping={false} />
 
         {/* <TurbineStage /> */}
-        <Sword />
+        {/* <Sword /> */}
+        <Shield />
       </Canvas>
     </div>
   );
