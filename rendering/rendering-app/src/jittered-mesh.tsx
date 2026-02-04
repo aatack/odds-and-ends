@@ -1,24 +1,19 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useMemo } from "react";
 import { Edges } from "@react-three/drei";
 import * as THREE from "three";
 
 export function JitteredMesh({
   geometry,
-  material,
+  material, // Receiving the <meshStandardMaterial /> here
   position,
   rotation,
   scale,
   edgeColor,
 }: any) {
-  const meshRef = useRef<THREE.Mesh>(null!);
-  // We use a key or state to force the Edges component to re-calculate
-  const [ready, setReady] = useState(false);
+  const jitteredGeom = useMemo(() => {
+    if (!geometry) return null;
 
-  useLayoutEffect(() => {
-    if (!meshRef.current) return;
-
-    // 1. IMPORTANT: Clone the geometry so we don't mutate the source prop
-    const geom = meshRef.current.geometry.clone();
+    const geom = geometry.clone();
     const pos = geom.attributes.position;
     const jitterAmount = 0.02;
     const jitterCache: Record<string, { x: number; y: number; z: number }> = {};
@@ -43,21 +38,17 @@ export function JitteredMesh({
 
     pos.needsUpdate = true;
     geom.computeVertexNormals();
-
-    // 2. Assign the jittered geometry back to the mesh
-    meshRef.current.geometry = geom;
-
-    // 3. Signal that Edges can now be rendered against the new geometry
-    setReady(true);
+    return geom;
   }, [geometry]);
 
   return (
-    <mesh ref={meshRef} position={position} rotation={rotation} scale={scale}>
-      {/* We pass the original geometry here, but the Effect replaces it immediately */}
-      {geometry}
+    <mesh position={position} rotation={rotation} scale={scale}>
+      <primitive object={jitteredGeom} attach="geometry" />
+      {/* Render the material prop as a child. 
+          R3F sees this JSX element and attaches it to the parent mesh.
+      */}
       {material}
-      {/* Only render Edges once the geometry has been jittered */}
-      {ready && <Edges threshold={5} color={edgeColor} />}
+      <Edges threshold={5} color={edgeColor} />
     </mesh>
   );
 }
