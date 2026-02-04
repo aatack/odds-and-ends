@@ -2,27 +2,22 @@ import { Canvas } from "@react-three/fiber";
 import "./App.css";
 import { OrbitControls, PerspectiveCamera } from "@react-three/drei";
 import { useState } from "react";
+import { TurbineStage } from "./core-stage";
 
 function App() {
   const [hovered, setHovered] = useState(false);
 
   return (
-    <div style={{ width: "100%", height: "100%", background: "#222" }}>
+    <div style={{ width: "100%", height: "100%", background: "white" }}>
       <Canvas>
         <ambientLight intensity={0.5} />
-        <PerspectiveCamera makeDefault position={[5, 3, 4]}>
-          <directionalLight position={[0, 0, 2]} intensity={0.5} />
-        </PerspectiveCamera>
+        <directionalLight position={[0, 0, 2]} intensity={0.5} />
+        <directionalLight position={[0, 0, -2]} intensity={0.5} />
+        <directionalLight position={[0, 2, 0]} intensity={0.5} />
 
         <OrbitControls makeDefault enableDamping={false} />
 
-        <mesh
-          onPointerEnter={() => setHovered(true)}
-          onPointerLeave={() => setHovered(false)}
-        >
-          <boxGeometry args={[1, 1, 1]} />
-          <meshStandardMaterial color={hovered ? "orange" : "lightblue"} />
-        </mesh>
+        <TurbineStage />
       </Canvas>
     </div>
   );
