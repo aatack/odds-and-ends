@@ -5,7 +5,7 @@ import * as THREE from "three";
 const PARAMS = {
   bladeCount: 40, // Derived from Solidity (1.37)
   height: 3.5, // Aspect Ratio (2.53)
-  twist: 0.38, // ~21.6 degrees in radians
+  twist: 0.6, // ~21.6 degrees in radians
   hubRadius: 1,
   metalColor: "#777",
 };
@@ -51,7 +51,7 @@ function Blade({ index }: { index: number }) {
       >
         {/* We use 20 segments along width (x) to ensure the twist is smooth */}
         <boxGeometry args={[PARAMS.height, 0.6, 0.05, 20, 1, 1]} />
-        <TwistedMaterial color={"grey"} twist={PARAMS.twist} />
+        <TwistedMaterial color={"black"} twist={PARAMS.twist} />
       </mesh>
     </group>
   );
@@ -67,7 +67,7 @@ export function TurbineStage() {
         <cylinderGeometry
           args={[PARAMS.hubRadius + 0.1, PARAMS.hubRadius + 0.1, 0.8, 64]}
         />
-        <meshStandardMaterial color="grey" />
+        <meshStandardMaterial color="black" />
       </mesh>
 
       {/* Blade Array */}
