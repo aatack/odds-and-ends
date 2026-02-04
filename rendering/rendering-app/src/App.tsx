@@ -2,6 +2,7 @@ import { Canvas } from "@react-three/fiber";
 import "./App.css";
 import { Environment, OrbitControls } from "@react-three/drei";
 import { TurbineStage } from "./core-stage";
+import { Sword } from "./sword";
 
 function App() {
   return (
@@ -20,7 +21,8 @@ function App() {
 
         <OrbitControls makeDefault enableDamping={false} />
 
-        <TurbineStage />
+        {/* <TurbineStage /> */}
+        <Sword />
       </Canvas>
     </div>
   );
