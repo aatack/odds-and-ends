@@ -1,43 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
-import { Edges } from "@react-three/drei";
-import * as THREE from "three";
-
-function JitteredMesh({
-  geometry,
-  material,
-  position,
-  rotation,
-  scale,
-  edgeColor,
-}: any) {
-  const meshRef = useRef<THREE.Mesh>(null!);
-
-  useLayoutEffect(() => {
-    const geom = meshRef.current.geometry;
-    const pos = geom.attributes.position;
-    const jitter = 0.00; // Subtle jitter to match the new shield style
-
-    for (let i = 0; i < pos.count; i++) {
-      pos.setXYZ(
-        i,
-        pos.getX(i) + (Math.random() - 0.5) * jitter,
-        pos.getY(i) + (Math.random() - 0.5) * jitter,
-        pos.getZ(i) + (Math.random() - 0.5) * jitter
-      );
-    }
-
-    pos.needsUpdate = true;
-    geom.computeVertexNormals();
-  }, []);
-
-  return (
-    <mesh ref={meshRef} position={position} rotation={rotation} scale={scale}>
-      {geometry}
-      {material}
-      <Edges threshold={5} color={edgeColor} />
-    </mesh>
-  );
-}
+import { JitteredMesh } from "./jittered-mesh";
 
 export function Sword() {
   const edgeColor = "#111111";
