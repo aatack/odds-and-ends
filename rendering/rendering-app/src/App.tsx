@@ -23,8 +23,12 @@ function App() {
         <OrbitControls makeDefault enableDamping={false} />
 
         {/* <TurbineStage /> */}
-        {/* <Sword /> */}
-        <Shield />
+        <group>
+          <group position={[2, 0, 0]}>
+            <Sword />
+          </group>
+          <Shield />
+        </group>
       </Canvas>
     </div>
   );

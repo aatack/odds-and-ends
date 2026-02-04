@@ -13,14 +13,10 @@ function JitteredMesh({
   const meshRef = useRef<THREE.Mesh>(null!);
 
   useLayoutEffect(() => {
-    // We do NOT call toNonIndexed() here.
-    // This ensures shared vertices move as one unit.
     const geom = meshRef.current.geometry;
     const pos = geom.attributes.position;
-    const jitter = 0.05;
+    const jitter = 0.00; // Subtle jitter to match the new shield style
 
-    // Use a Map to ensure we don't double-jitter vertices if they are indexed
-    // Though for standard geometries, iterating once is usually sufficient
     for (let i = 0; i < pos.count; i++) {
       pos.setXYZ(
         i,
@@ -49,36 +45,40 @@ export function Sword() {
 
   return (
     <group>
+      {/* Blade */}
       <JitteredMesh
         position={[0, 1.5, 0]}
-        scale={[0.6, 1, 0.2]}
+        scale={[0.4, 1, 0.2]}
         geometry={<cylinderGeometry args={[0, 0.4, 3, 4]} />}
         material={<meshStandardMaterial color="#94a3b8" {...dullProps} />}
         edgeColor={edgeColor}
       />
 
+      {/* Crossguard - Now slimmer and shorter (0.2 height, 0.8 width) */}
       <JitteredMesh
         position={[0, 0, 0]}
         rotation={[0, 0, Math.PI / 2]}
-        geometry={<boxGeometry args={[0.3, 1.2, 0.2]} />}
+        geometry={<boxGeometry args={[0.2, 0.8, 0.15]} />}
         material={<meshStandardMaterial color="#a16207" {...dullProps} />}
         edgeColor={edgeColor}
       />
 
+      {/* Gem */}
       <JitteredMesh
-        position={[0, 0, 0.12]}
-        geometry={<sphereGeometry args={[0.12, 6, 4]} />}
+        position={[0, 0, 0.1]}
+        geometry={<sphereGeometry args={[0.1, 6, 4]} />}
         material={
           <meshStandardMaterial
             color="#06b6d4"
             emissive="#06b6d4"
-            emissiveIntensity={0.5}
+            emissiveIntensity={0.8}
             {...dullProps}
           />
         }
         edgeColor={edgeColor}
       />
 
+      {/* Grip */}
       <JitteredMesh
         position={[0, -0.5, 0]}
         scale={[0.9, 1, 0.9]}
@@ -87,6 +87,7 @@ export function Sword() {
         edgeColor={edgeColor}
       />
 
+      {/* Pommel */}
       <JitteredMesh
         position={[0, -0.9, 0]}
         geometry={<sphereGeometry args={[0.18, 5, 5]} />}
