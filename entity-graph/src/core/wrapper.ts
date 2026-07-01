@@ -19,10 +19,17 @@ export interface QueryResult {
   parentId: string | null
 }
 
+export interface StackFrame {
+  id: string
+  depth: number
+  parentId: string | null
+  path: string[]
+}
+
 export interface QueryPage {
   results: QueryResult[]
-  /** Non-null when the limit was reached; pass as `resumePath` to continue. */
-  continuationPath: string[] | null
+  /** Non-null when the limit was reached; pass back as `continuationStack` to resume. */
+  continuationStack: StackFrame[] | null
 }
 
 // ---------------------------------------------------------------------------
@@ -118,20 +125,22 @@ export class EntityWrapper {
       maxDepth?: number
       collapsed?: string[]
       limit?: number
-      resumePath?: string[]
+      continuationStack?: StackFrame[]
     } = {},
   ): Promise<QueryPage> {
-    const { maxDepth, collapsed = [], limit = 1000 } = options
+    const { maxDepth, collapsed = [], limit = 1000, continuationStack } = options
     const collapsedSet = new Set(collapsed)
     const results: QueryResult[] = []
 
-    type Frame = { id: string; depth: number; parentId: string | null; path: string[] }
-    const stack: Frame[] = [{ id: rootId, depth: 0, parentId: null, path: [rootId] }]
+    // Resume from a serialised stack snapshot, or start fresh from the root.
+    const stack: StackFrame[] = continuationStack
+      ? continuationStack.map((f) => ({ ...f, path: [...f.path] }))
+      : [{ id: rootId, depth: 0, parentId: null, path: [rootId] }]
 
     while (stack.length > 0) {
       if (results.length >= limit) {
-        const top = stack[stack.length - 1]
-        return { results, continuationPath: top.path }
+        // Snapshot the remaining stack so the caller can resume exactly here.
+        return { results, continuationStack: stack.map((f) => ({ ...f, path: [...f.path] })) }
       }
 
       const { id, depth, parentId, path } = stack.pop()!
@@ -153,7 +162,7 @@ export class EntityWrapper {
       }
     }
 
-    return { results, continuationPath: null }
+    return { results, continuationStack: null }
   }
 
   /** Creates a new entity with the given values and optional parent link. Returns the new entity ID. */

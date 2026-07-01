@@ -1,5 +1,5 @@
 import type { AppEvent } from '../../core/events'
-import type { Entity, QueryPage } from '../../core/wrapper'
+import type { Entity, QueryPage, StackFrame } from '../../core/wrapper'
 
 interface SourceConfig {
   id: string
@@ -22,7 +22,7 @@ interface EntityGraphAPI {
   readEntities: (ids: string[], sourceIds?: string[]) => Promise<Record<string, Entity>>
   resolveQuery: (
     rootId: string,
-    options: { maxDepth?: number; collapsed?: string[]; limit?: number },
+    options: { maxDepth?: number; collapsed?: string[]; limit?: number; continuationStack?: StackFrame[] },
     sourceIds?: string[],
   ) => Promise<QueryPage>
   createEntity: (values: Record<string, unknown>, parentId?: string, sourceIds?: string[]) => Promise<string>

@@ -1,8 +1,8 @@
 import React, { useState } from 'react'
-import type { Entity, QueryResult } from '../../../core/wrapper'
+import type { Entity, QueryResult, StackFrame } from '../../../core/wrapper'
 
 interface Props {
-  onResolve: (rootId: string, opts: { maxDepth?: number; limit?: number }) => Promise<{ results: QueryResult[]; continuationPath: string[] | null }>
+  onResolve: (rootId: string, opts: { maxDepth?: number; limit?: number; continuationStack?: StackFrame[] }) => Promise<{ results: QueryResult[]; continuationStack: StackFrame[] | null }>
   onReadEntities: (ids: string[]) => Promise<Record<string, Entity>>
 }
 
@@ -63,22 +63,23 @@ export function QueryExplorer({ onResolve }: Props) {
   const [rootId, setRootId]         = useState('')
   const [maxDepth, setMaxDepth]     = useState('')
   const [limit, setLimit]           = useState('100')
-  const [results, setResults]       = useState<QueryResult[] | null>(null)
-  const [continuation, setContinuation] = useState<string[] | null>(null)
-  const [loading, setLoading]       = useState(false)
-  const [error, setError]           = useState<string | null>(null)
+  const [results, setResults]           = useState<QueryResult[] | null>(null)
+  const [continuation, setContinuation] = useState<StackFrame[] | null>(null)
+  const [loading, setLoading]           = useState(false)
+  const [error, setError]               = useState<string | null>(null)
 
-  const run = async (resumePath?: string[]) => {
+  const run = async (continuationStack?: StackFrame[]) => {
     if (!rootId.trim()) return
     setError(null); setLoading(true)
     try {
       const opts = {
         maxDepth: maxDepth ? parseInt(maxDepth, 10) : undefined,
         limit:    limit    ? parseInt(limit, 10)    : 100,
+        continuationStack,
       }
-      const page = await onResolve(resumePath ? resumePath[resumePath.length - 1] : rootId.trim(), opts)
-      setResults((prev) => resumePath && prev ? [...prev, ...page.results] : page.results)
-      setContinuation(page.continuationPath)
+      const page = await onResolve(rootId.trim(), opts)
+      setResults((prev) => continuationStack && prev ? [...prev, ...page.results] : page.results)
+      setContinuation(page.continuationStack)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
