@@ -1,5 +1,5 @@
-import { mkdirSync, dirname } from 'fs'
-import { resolve } from 'path'
+import { mkdirSync } from 'fs'
+import { resolve, dirname } from 'path'
 import Database from 'better-sqlite3'
 import type { AppEvent, ValueEvent, LinkEvent } from '../events'
 import type { EntityInterface } from './index'
