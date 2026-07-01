@@ -24,7 +24,8 @@ export class SqliteInterface implements EntityInterface {
   private db: Database.Database
 
   constructor(path: string) {
-    mkdirSync(dirname(resolve(path)), { recursive: true })
+    const dir = dirname(resolve(path))
+    if (dir !== dirname(dir)) mkdirSync(dir, { recursive: true })
     this.db = new Database(path)
     this.db.pragma('journal_mode = WAL')
     this.init()
