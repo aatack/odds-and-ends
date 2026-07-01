@@ -1,3 +1,5 @@
+import { mkdirSync, dirname } from 'fs'
+import { resolve } from 'path'
 import Database from 'better-sqlite3'
 import type { AppEvent, ValueEvent, LinkEvent } from '../events'
 import type { EntityInterface } from './index'
@@ -22,6 +24,7 @@ export class SqliteInterface implements EntityInterface {
   private db: Database.Database
 
   constructor(path: string) {
+    mkdirSync(dirname(resolve(path)), { recursive: true })
     this.db = new Database(path)
     this.db.pragma('journal_mode = WAL')
     this.init()
