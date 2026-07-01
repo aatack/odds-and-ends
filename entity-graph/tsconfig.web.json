@@ -14,5 +14,5 @@
       "@core/*": ["./src/core/*"]
     }
   },
-  "include": ["src/renderer/src/**/*"]
+  "include": ["src/renderer/src/**/*", "src/core/**/*"]
 }
