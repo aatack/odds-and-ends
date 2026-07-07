@@ -1,9 +1,14 @@
 import React, { useState } from 'react'
 import type { Entity, QueryResult, StackFrame } from '../../../core/wrapper'
+import { EditorView } from '../views/Editor'
+import type { EditorActions } from '../views/useEditor'
+
+type RenderMode = 'debug' | 'editor'
 
 interface Props {
   onResolve: (rootId: string, opts: { maxDepth?: number; limit?: number; continuationStack?: StackFrame[] }) => Promise<{ results: QueryResult[]; continuationStack: StackFrame[] | null }>
   onReadEntities: (ids: string[]) => Promise<Record<string, Entity>>
+  editorActions: EditorActions
 }
 
 function EntityCard({ result }: { result: QueryResult }) {
@@ -59,7 +64,7 @@ function EntityCard({ result }: { result: QueryResult }) {
   )
 }
 
-export function QueryExplorer({ onResolve }: Props) {
+export function QueryExplorer({ onResolve, editorActions }: Props) {
   const [rootId, setRootId]         = useState('')
   const [maxDepth, setMaxDepth]     = useState('')
   const [limit, setLimit]           = useState('100')
@@ -67,6 +72,18 @@ export function QueryExplorer({ onResolve }: Props) {
   const [continuation, setContinuation] = useState<StackFrame[] | null>(null)
   const [loading, setLoading]           = useState(false)
   const [error, setError]               = useState<string | null>(null)
+  const [mode, setMode]                 = useState<RenderMode>('debug')
+  // Entity id / depth committed via "Resolve" — what the editor renders from.
+  const [submitted, setSubmitted]       = useState<{ rootId: string; maxDepth?: number } | null>(null)
+
+  const resolve = () => {
+    const rid = rootId.trim()
+    if (!rid) return
+    setSubmitted({ rootId: rid, maxDepth: maxDepth ? parseInt(maxDepth, 10) : undefined })
+    setResults(null)
+    setContinuation(null)
+    run()
+  }
 
   const run = async (continuationStack?: StackFrame[]) => {
     if (!rootId.trim()) return
@@ -111,20 +128,40 @@ export function QueryExplorer({ onResolve }: Props) {
             <input className="input" type="number" min="1" value={limit} onChange={(e) => setLimit(e.target.value)} />
           </div>
         </div>
-        <div className="flex gap-2">
-          <button className="btn-primary" onClick={() => { setResults(null); setContinuation(null); run() }} disabled={loading || !rootId.trim()}>
+        <div className="flex items-center gap-2">
+          <button className="btn-primary" onClick={resolve} disabled={loading || !rootId.trim()}>
             {loading ? 'Loading…' : 'Resolve'}
           </button>
-          {results && (
-            <button className="btn-secondary" onClick={() => { setResults(null); setContinuation(null) }}>
+          {(results || submitted) && (
+            <button
+              className="btn-secondary"
+              onClick={() => { setResults(null); setContinuation(null); setSubmitted(null) }}
+            >
               Clear
             </button>
           )}
+          <div className="ml-auto inline-flex rounded-md border border-gray-300 overflow-hidden shadow-xs">
+            {(['debug', 'editor'] as RenderMode[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={`px-3 py-1.5 text-text-sm font-medium capitalize transition-colors ${
+                  mode === m ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
         </div>
         {error && <p className="text-text-sm text-error-500">{error}</p>}
       </div>
 
-      {results !== null && (
+      {mode === 'editor' && submitted && (
+        <EditorView rootId={submitted.rootId} maxDepth={submitted.maxDepth} actions={editorActions} />
+      )}
+
+      {mode === 'debug' && results !== null && (
         <div className="space-y-2">
           <div className="flex items-center justify-between px-1">
             <p className="text-text-sm text-gray-600">{results.length} entities</p>
