@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { SourceManager } from './components/SourceManager'
 import { EventEditor } from './components/EventEditor'
 import { QueryExplorer } from './components/QueryExplorer'
 import type { AppEvent } from '../../core/events'
+import type { EditorActions } from './views/useEditor'
 
 interface SourceConfig {
   id: string
@@ -52,6 +53,20 @@ export default function App() {
     (ids: string[]) => api.readEntities(ids),
     [],
   )
+
+  // Actions the editor view needs. `text` writes and (un)links are raw events so
+  // they carry the current author; create/move go through the wrapper helpers.
+  const editorActions = useMemo<EditorActions>(() => ({
+    resolveQuery: (rootId, opts) => api.resolveQuery(rootId, opts),
+    writeText: (entityId, text) =>
+      api.writeEvents([{ type: 'value', timestamp: Date.now(), author: user, entityId, key: 'text', value: text }]),
+    createChild: (parentId, text) => api.createEntity({ text }, parentId),
+    moveEntity: (entityId, from, to) => api.moveEntity(entityId, from, to),
+    linkEntities: (sourceId, destId) =>
+      api.writeEvents([{ type: 'link', timestamp: Date.now(), author: user, sourceId, destinationId: destId, action: 0 }]),
+    unlink: (parentId, childId) =>
+      api.writeEvents([{ type: 'link', timestamp: Date.now(), author: user, sourceId: parentId, destinationId: childId, action: 1 }]),
+  }), [user])
 
   const saveUser = async () => {
     await api.setUser(userInput.trim() || 'anonymous')
@@ -126,7 +141,7 @@ export default function App() {
         {tab === 'query' && (
           sources.length === 0
             ? <EmptyState message="Add a source first." onGoTo={() => setTab('sources')} />
-            : <QueryExplorer onResolve={resolveQuery} onReadEntities={readEntities} />
+            : <QueryExplorer onResolve={resolveQuery} onReadEntities={readEntities} editorActions={editorActions} />
         )}
         {tab === 'events' && (
           sources.length === 0
