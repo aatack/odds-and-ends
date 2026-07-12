@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "main": "out/main/index.js",
+  "workspaces": [
+    "server"
+  ],
   "scripts": {
     "dev": "electron-vite dev",
     "dev:no-sandbox": "electron-vite dev -- --no-sandbox",
@@ -31,6 +34,8 @@
     "electron-store": "^8.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "uuid": "^10.0.0"
+    "uuid": "^10.0.0",
+    "zod": "^3.23.8",
+    "zod-to-json-schema": "^3.23.2"
   }
 }

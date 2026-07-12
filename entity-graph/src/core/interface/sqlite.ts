@@ -2,7 +2,7 @@ import { mkdirSync } from 'fs'
 import { resolve, dirname } from 'path'
 import Database from 'better-sqlite3'
 import type { AppEvent, ValueEvent, LinkEvent } from '../events'
-import type { EntityInterface } from './index'
+import type { DumpableInterface } from './index'
 
 interface ValueRow {
   timestamp: number
@@ -20,7 +20,7 @@ interface LinkRow {
   action: number
 }
 
-export class SqliteInterface implements EntityInterface {
+export class SqliteInterface implements DumpableInterface {
   private db: Database.Database
 
   constructor(path: string) {
@@ -105,6 +105,44 @@ export class SqliteInterface implements EntityInterface {
     }
 
     return result
+  }
+
+  async readAllEvents(): Promise<AppEvent[]> {
+    const events: AppEvent[] = []
+
+    const valueRows = this.db
+      .prepare<[], ValueRow>(
+        `SELECT timestamp, author, entity_id, key, value FROM value_events`
+      )
+      .all()
+    for (const row of valueRows) {
+      events.push({
+        type: 'value',
+        timestamp: row.timestamp,
+        author: row.author,
+        entityId: row.entity_id,
+        key: row.key,
+        value: JSON.parse(row.value),
+      })
+    }
+
+    const linkRows = this.db
+      .prepare<[], LinkRow>(
+        `SELECT timestamp, author, source_id, destination_id, action FROM link_events`
+      )
+      .all()
+    for (const row of linkRows) {
+      events.push({
+        type: 'link',
+        timestamp: row.timestamp,
+        author: row.author,
+        sourceId: row.source_id,
+        destinationId: row.destination_id,
+        action: row.action as 0 | 1 | 2 | 3,
+      })
+    }
+
+    return events
   }
 
   async writeEvents(events: AppEvent[]): Promise<void> {
