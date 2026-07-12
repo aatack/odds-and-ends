@@ -32,6 +32,7 @@ Source-scoped (bearer token for that source):
 - `GET  /:sourceId/debug` — interactive per-source console (HTML; prompts for a token)
 
 Admin (bearer `ADMIN_TOKEN`):
+- `GET  /admin` — source management console (HTML; prompts for the admin token): list / create / edit / delete sources and issue / revoke tokens
 - `GET/POST /admin/sources`, `GET/PUT/DELETE /admin/sources/:id`
 - `POST/GET /admin/sources/:id/tokens`, `DELETE /admin/tokens/:token`
 

@@ -3,6 +3,7 @@ import { ZodError } from 'zod'
 import { toolMeta } from '../../src/core/source/index'
 import { ConfigDb, RESERVED_IDS, type SourceConfig } from './config'
 import { Registry, SourceNotFoundError } from './registry'
+import { registerAdmin } from './admin'
 import { registerDebug } from './debug'
 import { registerMcp } from './mcp'
 
@@ -86,7 +87,8 @@ export function buildApp(opts: AppOptions): FastifyInstance {
     }
   )
 
-  // Debug page (HTML, no token — the page prompts for one) and MCP endpoint.
+  // Static HTML consoles (no token — they prompt for one) and the MCP endpoint.
+  registerAdmin(app)
   registerDebug(app)
   registerMcp(app, { db, registry })
 
