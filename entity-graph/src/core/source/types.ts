@@ -52,6 +52,12 @@ export interface Source {
   tools(): ToolDef[]
   /** Look up a tool by id, validate args, invoke it. */
   call(toolId: string, args: unknown): Promise<unknown>
+  /**
+   * Optionally (re)load any tools discovered asynchronously — user-defined
+   * tools from the store (Sqlite) or a remote registry (Remote). The registry
+   * calls this after building a source. Sources with only static tools omit it.
+   */
+  refresh?(): Promise<void>
 }
 
 export class ToolNotFoundError extends Error {

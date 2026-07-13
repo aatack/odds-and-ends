@@ -60,7 +60,9 @@ describe('RemoteSource passthrough', () => {
   it('discovers remote tools and round-trips calls', async () => {
     const remote = new RemoteSource('r', 'R', `http://127.0.0.1:${port}/src`, token)
     await remote.refresh()
-    expect(remote.tools().map((t) => t.id).sort()).toEqual(['readEvents', 'writeLink', 'writeValue'])
+    expect(remote.tools().map((t) => t.id)).toEqual(
+      expect.arrayContaining(['readEvents', 'writeLink', 'writeValue', 'query', 'createEntity'])
+    )
 
     const events = (await remote.call('readEvents', { entityIds: ['e1'] })) as any[]
     expect(events.map((e) => e.value)).toEqual(['old', 'new'])
@@ -103,7 +105,9 @@ describe('MCP endpoint', () => {
     await client.connect(transport)
 
     const { tools } = await client.listTools()
-    expect(tools.map((t) => t.name).sort()).toEqual(['readEvents', 'writeLink', 'writeValue'])
+    expect(tools.map((t) => t.name)).toEqual(
+      expect.arrayContaining(['readEvents', 'writeLink', 'writeValue', 'query', 'createEntity'])
+    )
 
     const res: any = await client.callTool({ name: 'readEvents', arguments: { entityIds: ['e1'] } })
     const events = JSON.parse(res.content[0].text)

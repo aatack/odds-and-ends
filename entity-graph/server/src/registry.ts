@@ -35,6 +35,9 @@ export class Registry {
     this.building.add(id)
     try {
       const src = await this.build(row)
+      // (Re)load any async tools: user-defined tools (Sqlite) or a remote
+      // registry (Remote). Tolerate failure so a broken source still builds.
+      await src.refresh?.().catch(() => undefined)
       this.cache.set(id, src)
       return src
     } finally {
@@ -59,12 +62,9 @@ export class Registry {
           deny: cfg.deny,
           maxSafety: cfg.maxSafety,
         })
-      case 'remote': {
-        const remote = new RemoteSource(row.id, row.label, cfg.url, cfg.token)
-        // Populate the tool cache; tolerate an unreachable remote at build time.
-        await remote.refresh().catch(() => undefined)
-        return remote
-      }
+      case 'remote':
+        // `get()` calls `refresh()` after build to populate the tool cache.
+        return new RemoteSource(row.id, row.label, cfg.url, cfg.token)
     }
   }
 

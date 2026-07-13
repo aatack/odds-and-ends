@@ -24,6 +24,7 @@ export class FrozenSource extends ToolSource {
         name: t.name,
         description: t.description,
         args: t.args,
+        jsonSchema: t.jsonSchema,
         safety: t.safety,
         handler: (args) => this.child.call(t.id, args),
       }

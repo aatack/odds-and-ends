@@ -1,5 +1,5 @@
 import type { AppEvent } from '../events'
-import { standardTools, type EventBacking } from './standardTools'
+import { readEventsTool } from './defaultTools'
 import { ToolSource, type Source, type ToolDef } from './types'
 
 /**
@@ -22,15 +22,8 @@ export class CombinedSource extends ToolSource {
     private children: Source[]
   ) {
     super()
-    const readBacking: EventBacking = {
-      readEvents: (ids) => this.gather({ entityIds: ids }),
-      readAllEvents: () => this.gather({}),
-      writeEvents: async () => {
-        throw new Error('CombinedSource read backing cannot write')
-      },
-    }
-    // standardTools returns [readEvents, writeValue, writeLink]; we only need read.
-    this.combinedRead = standardTools(readBacking)[0]
+    // A single `readEvents` tool that unions across children (raw, child order).
+    this.combinedRead = readEventsTool((ids) => this.gather({ entityIds: ids }))
   }
 
   private async gather(args: { entityIds?: string[] }): Promise<AppEvent[]> {
@@ -46,6 +39,7 @@ export class CombinedSource extends ToolSource {
       name: t.name,
       description: t.description,
       args: t.args,
+      jsonSchema: t.jsonSchema,
       safety: t.safety,
       handler: (args) => child.call(t.id, args),
     }
