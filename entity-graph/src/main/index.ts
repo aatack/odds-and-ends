@@ -1,22 +1,15 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
-import Store from 'electron-store'
 import { v4 as uuidv4 } from 'uuid'
 import type { Connection, NewConnection } from '../core/client'
+import { store } from './store'
+import { ServerManager } from './servers'
 
 // ---------------------------------------------------------------------------
-// Persistence
+// Local server processes
 // ---------------------------------------------------------------------------
 
-interface AppConfig {
-  connections: Connection[]
-  activeId: string | null
-  user: string
-}
-
-const store = new Store<AppConfig>({
-  defaults: { connections: [], activeId: null, user: 'anonymous' },
-})
+const servers = new ServerManager()
 
 // ---------------------------------------------------------------------------
 // HTTP proxy — the app has no local backend; every data operation is forwarded
@@ -130,6 +123,16 @@ ipcMain.handle('source:call', (_e, connId: string, tool: string, args: unknown) 
 )
 
 // ---------------------------------------------------------------------------
+// IPC — local server processes
+// ---------------------------------------------------------------------------
+
+ipcMain.handle('server:listLocal', () => servers.list())
+ipcMain.handle('server:createLocal', (_e, label: string) => servers.create(label))
+ipcMain.handle('server:startLocal', (_e, id: string) => servers.start(id))
+ipcMain.handle('server:stopLocal', (_e, id: string) => servers.stop(id))
+ipcMain.handle('server:removeLocal', (_e, id: string) => servers.remove(id))
+
+// ---------------------------------------------------------------------------
 // IPC — admin (source CRUD + tokens)
 // ---------------------------------------------------------------------------
 
@@ -179,6 +182,10 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  servers.startAll()
+  createWindow()
+})
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
+app.on('will-quit', () => servers.stopAll())

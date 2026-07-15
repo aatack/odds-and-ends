@@ -21,10 +21,27 @@ export interface Connection {
   token: string
   /** Required when `kind === 'source'`. */
   sourceId?: string
+  /** Set when this connection points at a local server the app manages. */
+  localServerId?: string
 }
 
 /** A new connection before the main process assigns it an id. */
 export type NewConnection = Omit<Connection, 'id'>
+
+/**
+ * A server the app runs locally as a managed child process. Created from the UI;
+ * each gets its own port, admin token, and config DB. The `connectionId` is the
+ * auto-created admin connection pointing at it.
+ */
+export interface LocalServer {
+  id: string
+  label: string
+  port: number
+  /** `http://127.0.0.1:<port>` */
+  baseUrl: string
+  running: boolean
+  connectionId?: string
+}
 
 // ---------------------------------------------------------------------------
 // Admin shapes — client-side mirror of `server/src/config.ts`, kept here so the

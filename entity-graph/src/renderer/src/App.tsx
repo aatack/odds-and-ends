@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import type { Connection, NewConnection } from '../../core/client'
+import type { Connection, LocalServer, NewConnection } from '../../core/client'
 import { ConnectionManager } from './components/ConnectionManager'
 import { AdminPanel } from './components/AdminPanel'
 import { SourceView } from './views/SourceView'
@@ -8,6 +8,7 @@ const api = window.entityGraph
 
 export default function App(): React.JSX.Element | null {
   const [connections, setConnections] = useState<Connection[]>([])
+  const [localServers, setLocalServers] = useState<LocalServer[]>([])
   const [active, setActive] = useState<Connection | null>(null)
   const [user, setUser] = useState('anonymous')
   const [ready, setReady] = useState(false)
@@ -16,9 +17,14 @@ export default function App(): React.JSX.Element | null {
   const [userInput, setUserInput] = useState('')
 
   const refresh = useCallback(async () => {
-    const [conns, act] = await Promise.all([api.listConnections(), api.getActiveConnection()])
+    const [conns, act, locals] = await Promise.all([
+      api.listConnections(),
+      api.getActiveConnection(),
+      api.listLocalServers(),
+    ])
     setConnections(conns)
     setActive(act)
+    setLocalServers(locals)
   }, [])
 
   useEffect(() => {
@@ -61,6 +67,19 @@ export default function App(): React.JSX.Element | null {
     },
     [refresh],
   )
+
+  const createLocalServer = useCallback(
+    async (label: string) => {
+      const { connectionId } = await api.createLocalServer(label)
+      await api.setActiveConnection(connectionId)
+      await refresh()
+    },
+    [refresh],
+  )
+
+  const startLocalServer = useCallback(async (id: string) => { await api.startLocalServer(id); await refresh() }, [refresh])
+  const stopLocalServer = useCallback(async (id: string) => { await api.stopLocalServer(id); await refresh() }, [refresh])
+  const removeLocalServer = useCallback(async (id: string) => { await api.removeLocalServer(id); await refresh() }, [refresh])
 
   // Called by the admin panel after issuing a token: create + activate a source
   // connection so the user jumps straight into that source's tree.
@@ -131,10 +150,15 @@ export default function App(): React.JSX.Element | null {
           <div className="p-6 max-w-3xl mx-auto w-full">
             <ConnectionManager
               connections={connections}
+              localServers={localServers}
               onOpen={open}
               onAdd={addConnection}
               onUpdate={updateConnection}
               onRemove={removeConnection}
+              onCreateLocal={createLocalServer}
+              onStartLocal={startLocalServer}
+              onStopLocal={stopLocalServer}
+              onRemoveLocal={removeLocalServer}
             />
           </div>
         )}

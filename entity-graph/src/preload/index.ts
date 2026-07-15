@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Connection, NewConnection, SourceRow, TokenRow, ToolMeta } from '../core/client'
+import type { Connection, LocalServer, NewConnection, SourceRow, TokenRow, ToolMeta } from '../core/client'
 
 /**
  * The renderer's entire capability surface. The app has no local backend: these
@@ -18,6 +18,13 @@ export interface EntityGraphAPI {
   addConnection: (cfg: NewConnection) => Promise<string>
   updateConnection: (id: string, patch: Partial<NewConnection>) => Promise<void>
   removeConnection: (id: string) => Promise<void>
+
+  // Local servers (managed child processes)
+  listLocalServers: () => Promise<LocalServer[]>
+  createLocalServer: (label: string) => Promise<{ id: string; connectionId: string }>
+  startLocalServer: (id: string) => Promise<void>
+  stopLocalServer: (id: string) => Promise<void>
+  removeLocalServer: (id: string) => Promise<void>
 
   // Source (kind='source' connections)
   sourceTools: (connId: string) => Promise<ToolMeta[]>
@@ -51,6 +58,12 @@ const api: EntityGraphAPI = {
   addConnection: (cfg) => ipcRenderer.invoke('conn:add', cfg),
   updateConnection: (id, patch) => ipcRenderer.invoke('conn:update', id, patch),
   removeConnection: (id) => ipcRenderer.invoke('conn:remove', id),
+
+  listLocalServers: () => ipcRenderer.invoke('server:listLocal'),
+  createLocalServer: (label) => ipcRenderer.invoke('server:createLocal', label),
+  startLocalServer: (id) => ipcRenderer.invoke('server:startLocal', id),
+  stopLocalServer: (id) => ipcRenderer.invoke('server:stopLocal', id),
+  removeLocalServer: (id) => ipcRenderer.invoke('server:removeLocal', id),
 
   sourceTools: (connId) => ipcRenderer.invoke('source:tools', connId),
   sourceCall: (connId, tool, args) => ipcRenderer.invoke('source:call', connId, tool, args),
