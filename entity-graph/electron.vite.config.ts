@@ -10,5 +10,8 @@ export default defineConfig({
   },
   renderer: {
     plugins: [react()],
+    server: process.env.PORT
+      ? { port: Number(process.env.PORT), strictPort: true }
+      : undefined,
   },
 })
