@@ -2,117 +2,160 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import Store from 'electron-store'
 import { v4 as uuidv4 } from 'uuid'
-import { SqliteInterface } from '../core/interface/sqlite'
-import { HttpInterface } from '../core/interface/http'
-import { ComboInterface } from '../core/interface/combo'
-import { EntityWrapper } from '../core/wrapper'
-import type { AppEvent } from '../core/events'
-import type { EntityInterface } from '../core/interface/index'
+import type { Connection, NewConnection } from '../core/client'
 
 // ---------------------------------------------------------------------------
 // Persistence
 // ---------------------------------------------------------------------------
 
-export interface SourceConfig {
-  id: string
-  label: string
-  type: 'sqlite' | 'http'
-  path?: string
-  url?: string
-}
-
 interface AppConfig {
-  sources: SourceConfig[]
+  connections: Connection[]
+  activeId: string | null
   user: string
 }
 
 const store = new Store<AppConfig>({
-  defaults: { sources: [], user: 'anonymous' },
+  defaults: { connections: [], activeId: null, user: 'anonymous' },
 })
 
 // ---------------------------------------------------------------------------
-// Runtime source registry
+// HTTP proxy — the app has no local backend; every data operation is forwarded
+// to the remote server. Running the fetch here (main process) rather than in
+// the renderer avoids CORS, since the server sets no CORS headers.
 // ---------------------------------------------------------------------------
 
-const openDbs = new Map<string, SqliteInterface>()
+class HttpError extends Error {}
 
-function buildInterface(cfg: SourceConfig): EntityInterface {
-  if (cfg.type === 'sqlite') {
-    if (!cfg.path) throw new Error('SQLite source missing path')
-    if (!openDbs.has(cfg.id)) openDbs.set(cfg.id, new SqliteInterface(cfg.path))
-    return openDbs.get(cfg.id)!
+function requireConnection(connId: string): Connection {
+  const conn = store.get('connections').find((c) => c.id === connId)
+  if (!conn) throw new HttpError(`no connection with id "${connId}"`)
+  return conn
+}
+
+/** Perform an authenticated request against a connection's server, parsing JSON. */
+async function request(
+  conn: Connection,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<unknown> {
+  const res = await fetch(`${conn.baseUrl}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${conn.token}`,
+      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+  const text = await res.text()
+  const data = text ? JSON.parse(text) : undefined
+  if (!res.ok) {
+    const msg = data && typeof data === 'object' && 'error' in data ? (data as { error: string }).error : text
+    throw new HttpError(`HTTP ${res.status}: ${msg || res.statusText}`)
   }
-  if (cfg.type === 'http') {
-    if (!cfg.url) throw new Error('HTTP source missing url')
-    return new HttpInterface(cfg.url)
-  }
-  throw new Error(`Unknown source type`)
+  return data
 }
 
-function buildIface(sourceIds?: string[]): EntityInterface {
-  const configs = store.get('sources')
-  const active  = sourceIds ? configs.filter((c) => sourceIds.includes(c.id)) : configs
-  if (active.length === 0) throw new Error('No sources configured')
-  if (active.length === 1) return buildInterface(active[0])
-  return new ComboInterface(active.map(buildInterface))
+/** Call a tool on the connection's source and unwrap `{ status, result }`. */
+async function sourceCall(connId: string, tool: string, args: unknown): Promise<unknown> {
+  const conn = requireConnection(connId)
+  if (conn.kind !== 'source' || !conn.sourceId) throw new HttpError('not a source connection')
+  const out = (await request(conn, 'POST', `/${conn.sourceId}/call`, { tool, args })) as
+    | { status: 'success'; result: unknown }
+    | { status: 'error'; message: string }
+  if (out.status === 'error') throw new HttpError(out.message)
+  return out.result
 }
 
-function buildWrapper(sourceIds?: string[]): EntityWrapper {
-  return new EntityWrapper(buildIface(sourceIds), () => store.get('user'))
+async function sourceTools(connId: string): Promise<unknown> {
+  const conn = requireConnection(connId)
+  if (conn.kind !== 'source' || !conn.sourceId) throw new HttpError('not a source connection')
+  return request(conn, 'GET', `/${conn.sourceId}/tools`)
+}
+
+/** Admin request against an `admin` connection. */
+async function adminRequest(
+  connId: string,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<unknown> {
+  const conn = requireConnection(connId)
+  if (conn.kind !== 'admin') throw new HttpError('not an admin connection')
+  return request(conn, method, path, body)
 }
 
 // ---------------------------------------------------------------------------
-// IPC handlers
+// IPC — connections & user config
 // ---------------------------------------------------------------------------
 
-ipcMain.handle('config:getUser',    () => store.get('user'))
-ipcMain.handle('config:setUser',    (_e, name: string) => store.set('user', name))
-ipcMain.handle('config:getSources', () => store.get('sources'))
+ipcMain.handle('config:getUser', () => store.get('user'))
+ipcMain.handle('config:setUser', (_e, name: string) => store.set('user', name))
 
-ipcMain.handle('config:addSource', (_e, cfg: Omit<SourceConfig, 'id'>) => {
+ipcMain.handle('conn:list', () => store.get('connections'))
+ipcMain.handle('conn:getActive', () => {
+  const id = store.get('activeId')
+  return id ? (store.get('connections').find((c) => c.id === id) ?? null) : null
+})
+ipcMain.handle('conn:setActive', (_e, id: string | null) => store.set('activeId', id))
+
+ipcMain.handle('conn:add', (_e, cfg: NewConnection) => {
   const id = uuidv4()
-  const sources = store.get('sources')
-  sources.push({ ...cfg, id })
-  store.set('sources', sources)
+  store.set('connections', [...store.get('connections'), { ...cfg, id }])
   return id
 })
 
-ipcMain.handle('config:removeSource', (_e, id: string) => {
-  const db = openDbs.get(id)
-  if (db) { db.close(); openDbs.delete(id) }
-  store.set('sources', store.get('sources').filter((s) => s.id !== id))
+ipcMain.handle('conn:update', (_e, id: string, patch: Partial<NewConnection>) => {
+  store.set(
+    'connections',
+    store.get('connections').map((c) => (c.id === id ? { ...c, ...patch, id } : c)),
+  )
 })
 
-ipcMain.handle('data:readEvents', async (_e, entityIds: string[], sourceIds?: string[]) => {
-  const map = await buildIface(sourceIds).readEvents(entityIds)
-  return Object.fromEntries([...map.entries()])
+ipcMain.handle('conn:remove', (_e, id: string) => {
+  store.set(
+    'connections',
+    store.get('connections').filter((c) => c.id !== id),
+  )
+  if (store.get('activeId') === id) store.set('activeId', null)
 })
 
-ipcMain.handle('data:writeEvents', async (_e, events: AppEvent[], sourceIds?: string[]) => {
-  await buildIface(sourceIds).writeEvents(events)
-})
+// ---------------------------------------------------------------------------
+// IPC — source (tools / call)
+// ---------------------------------------------------------------------------
 
-ipcMain.handle('data:readEntities', async (_e, ids: string[], sourceIds?: string[]) => {
-  const map = await buildWrapper(sourceIds).readEntities(ids)
-  return Object.fromEntries([...map.entries()])
-})
-
-ipcMain.handle(
-  'data:resolveQuery',
-  (_e, rootId: string, options: { maxDepth?: number; collapsed?: string[]; limit?: number }, sourceIds?: string[]) =>
-    buildWrapper(sourceIds).resolveQuery(rootId, options),
+ipcMain.handle('source:tools', (_e, connId: string) => sourceTools(connId))
+ipcMain.handle('source:call', (_e, connId: string, tool: string, args: unknown) =>
+  sourceCall(connId, tool, args),
 )
 
-ipcMain.handle(
-  'data:createEntity',
-  (_e, values: Record<string, unknown>, parentId?: string, sourceIds?: string[]) =>
-    buildWrapper(sourceIds).createEntity(values, parentId),
-)
+// ---------------------------------------------------------------------------
+// IPC — admin (source CRUD + tokens)
+// ---------------------------------------------------------------------------
 
-ipcMain.handle(
-  'data:moveEntity',
-  (_e, entityId: string, fromParent: string, toParent: string, sourceIds?: string[]) =>
-    buildWrapper(sourceIds).moveEntity(entityId, fromParent, toParent),
+ipcMain.handle('admin:listSources', (_e, connId: string) =>
+  adminRequest(connId, 'GET', '/admin/sources'),
+)
+ipcMain.handle('admin:getSource', (_e, connId: string, id: string) =>
+  adminRequest(connId, 'GET', `/admin/sources/${id}`),
+)
+ipcMain.handle('admin:createSource', (_e, connId: string, body: unknown) =>
+  adminRequest(connId, 'POST', '/admin/sources', body),
+)
+ipcMain.handle('admin:updateSource', (_e, connId: string, id: string, body: unknown) =>
+  adminRequest(connId, 'PUT', `/admin/sources/${id}`, body),
+)
+ipcMain.handle('admin:deleteSource', (_e, connId: string, id: string) =>
+  adminRequest(connId, 'DELETE', `/admin/sources/${id}`),
+)
+ipcMain.handle('admin:listTokens', (_e, connId: string, id: string) =>
+  adminRequest(connId, 'GET', `/admin/sources/${id}/tokens`),
+)
+ipcMain.handle('admin:issueToken', (_e, connId: string, id: string, label?: string) =>
+  adminRequest(connId, 'POST', `/admin/sources/${id}/tokens`, { label: label ?? '' }),
+)
+ipcMain.handle('admin:revokeToken', (_e, connId: string, token: string) =>
+  adminRequest(connId, 'DELETE', `/admin/tokens/${token}`),
 )
 
 // ---------------------------------------------------------------------------

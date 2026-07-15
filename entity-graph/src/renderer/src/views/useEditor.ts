@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { QueryPage } from '../../../core/wrapper'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { QueryPage, QueryResult, StackFrame } from '../../../core/wrapper'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -13,7 +13,7 @@ import type { QueryPage } from '../../../core/wrapper'
 export interface EditorActions {
   resolveQuery: (
     rootId: string,
-    opts: { maxDepth?: number; collapsed?: string[]; limit?: number },
+    opts: { maxDepth?: number; collapsed?: string[]; limit?: number; continuationStack?: StackFrame[] },
   ) => Promise<QueryPage>
   /** Set the `text` value of an entity. */
   writeText: (entityId: string, text: string) => Promise<void>
@@ -106,10 +106,15 @@ export function useEditor({ rootId, maxDepth, actions }: UseEditorArgs): UseEdit
   const [pending, setPending] = useState<PendingState>(null)
 
   // Query state -------------------------------------------------------------
-  const [page, setPage] = useState<QueryPage | null>(null)
+  // `results` accumulates across pages; `continuation` is the resume token for
+  // the next page (null when the whole tree has been fetched).
+  const [results, setResults] = useState<QueryResult[]>([])
+  const [continuation, setContinuation] = useState<StackFrame[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
+  // Guards against overlapping fetches (onNearEnd can fire repeatedly).
+  const fetching = useRef(false)
 
   const reload = useCallback(() => setReloadToken((t) => t + 1), [])
 
@@ -125,25 +130,31 @@ export function useEditor({ rootId, maxDepth, actions }: UseEditorArgs): UseEdit
     setPending(null)
   }, [rootId])
 
-  // Fetch the (buffered) page.
+  // Fetch the first page from scratch whenever root/depth/collapsed change (or a
+  // mutation bumps `reloadToken`). Later pages are appended by `loadMore`.
   useEffect(() => {
     if (!rootId) {
-      setPage(null)
+      setResults([])
+      setContinuation(null)
       return
     }
     let cancelled = false
+    fetching.current = true
     setLoading(true)
     setError(null)
     actions
       .resolveQuery(rootId, { maxDepth, collapsed: [...collapsed], limit })
       .then((p) => {
-        if (!cancelled) setPage(p)
+        if (cancelled) return
+        setResults(p.results)
+        setContinuation(p.continuationStack)
       })
       .catch((e) => {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
+        fetching.current = false
       })
     return () => {
       cancelled = true
@@ -154,10 +165,9 @@ export function useEditor({ rootId, maxDepth, actions }: UseEditorArgs): UseEdit
 
   // Derived rows ------------------------------------------------------------
   const rows = useMemo<EditorRow[]>(() => {
-    if (!page) return []
     const out: EditorRow[] = []
     const stack: string[] = []
-    for (const { entity, depth } of page.results) {
+    for (const { entity, depth } of results) {
       stack.length = depth
       stack.push(entity.id)
       const path = stack.slice()
@@ -186,7 +196,7 @@ export function useEditor({ rootId, maxDepth, actions }: UseEditorArgs): UseEdit
       }
     }
     return out
-  }, [page, collapsed, selectedPath, edit])
+  }, [results, collapsed, selectedPath, edit])
 
   // Selection helpers -------------------------------------------------------
   const entityRows = useMemo(
@@ -406,10 +416,24 @@ export function useEditor({ rootId, maxDepth, actions }: UseEditorArgs): UseEdit
     })
   }, [])
 
+  // Fetch and append the next page when the view nears the end. Uses the
+  // `continuationStack` resume token so already-fetched rows aren't re-queried.
   const loadMore = useCallback(() => {
-    if (loading) return
-    if (page?.continuationPath) setLimit((l) => l + PAGE_SIZE)
-  }, [loading, page])
+    if (fetching.current || !continuation || !rootId) return
+    fetching.current = true
+    setLoading(true)
+    actions
+      .resolveQuery(rootId, { maxDepth, collapsed: [...collapsed], limit, continuationStack: continuation })
+      .then((p) => {
+        setResults((prev) => [...prev, ...p.results])
+        setContinuation(p.continuationStack)
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => {
+        setLoading(false)
+        fetching.current = false
+      })
+  }, [continuation, rootId, maxDepth, collapsed, limit, actions])
 
   const statusMessage = useMemo(() => {
     if (!pending) return null

@@ -1,94 +1,105 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react'
-import { SourceManager } from './components/SourceManager'
-import { EventEditor } from './components/EventEditor'
-import { QueryExplorer } from './components/QueryExplorer'
-import type { AppEvent } from '../../core/events'
-import type { EditorActions } from './views/useEditor'
-
-interface SourceConfig {
-  id: string
-  label: string
-  type: 'sqlite' | 'http'
-  path?: string
-  url?: string
-}
-
-type Tab = 'sources' | 'query' | 'events'
+import React, { useCallback, useEffect, useState } from 'react'
+import type { Connection, NewConnection } from '../../core/client'
+import { ConnectionManager } from './components/ConnectionManager'
+import { AdminPanel } from './components/AdminPanel'
+import { SourceView } from './views/SourceView'
 
 const api = window.entityGraph
 
-export default function App() {
-  const [tab, setTab]           = useState<Tab>('sources')
-  const [sources, setSources]   = useState<SourceConfig[]>([])
-  const [user, setUserState]    = useState('anonymous')
+export default function App(): React.JSX.Element | null {
+  const [connections, setConnections] = useState<Connection[]>([])
+  const [active, setActive] = useState<Connection | null>(null)
+  const [user, setUser] = useState('anonymous')
+  const [ready, setReady] = useState(false)
+
   const [editingUser, setEditingUser] = useState(false)
-  const [userInput, setUserInput]     = useState('')
+  const [userInput, setUserInput] = useState('')
+
+  const refresh = useCallback(async () => {
+    const [conns, act] = await Promise.all([api.listConnections(), api.getActiveConnection()])
+    setConnections(conns)
+    setActive(act)
+  }, [])
 
   useEffect(() => {
-    api.getSources().then(setSources)
-    api.getUser().then(setUserState)
-  }, [])
+    Promise.all([refresh(), api.getUser().then(setUser)]).finally(() => setReady(true))
+  }, [refresh])
 
-  const addSource = useCallback(async (cfg: Omit<SourceConfig, 'id'>) => {
-    await api.addSource(cfg)
-    setSources(await api.getSources())
-  }, [])
-
-  const removeSource = useCallback(async (id: string) => {
-    await api.removeSource(id)
-    setSources(await api.getSources())
-  }, [])
-
-  const writeEvents = useCallback(async (events: AppEvent[]) => {
-    await api.writeEvents(events)
-  }, [])
-
-  const resolveQuery = useCallback(
-    (rootId: string, opts: { maxDepth?: number; limit?: number }) =>
-      api.resolveQuery(rootId, opts),
-    [],
+  const open = useCallback(
+    async (id: string) => {
+      await api.setActiveConnection(id)
+      await refresh()
+    },
+    [refresh],
   )
 
-  const readEntities = useCallback(
-    (ids: string[]) => api.readEntities(ids),
-    [],
+  const disconnect = useCallback(async () => {
+    await api.setActiveConnection(null)
+    await refresh()
+  }, [refresh])
+
+  const addConnection = useCallback(
+    async (cfg: NewConnection) => {
+      await api.addConnection(cfg)
+      await refresh()
+    },
+    [refresh],
   )
 
-  // Actions the editor view needs. `text` writes and (un)links are raw events so
-  // they carry the current author; create/move go through the wrapper helpers.
-  const editorActions = useMemo<EditorActions>(() => ({
-    resolveQuery: (rootId, opts) => api.resolveQuery(rootId, opts),
-    writeText: (entityId, text) =>
-      api.writeEvents([{ type: 'value', timestamp: Date.now(), author: user, entityId, key: 'text', value: text }]),
-    createChild: (parentId, text) => api.createEntity({ text }, parentId),
-    moveEntity: (entityId, from, to) => api.moveEntity(entityId, from, to),
-    linkEntities: (sourceId, destId) =>
-      api.writeEvents([{ type: 'link', timestamp: Date.now(), author: user, sourceId, destinationId: destId, action: 0 }]),
-    unlink: (parentId, childId) =>
-      api.writeEvents([{ type: 'link', timestamp: Date.now(), author: user, sourceId: parentId, destinationId: childId, action: 1 }]),
-  }), [user])
+  const updateConnection = useCallback(
+    async (id: string, patch: Partial<NewConnection>) => {
+      await api.updateConnection(id, patch)
+      await refresh()
+    },
+    [refresh],
+  )
+
+  const removeConnection = useCallback(
+    async (id: string) => {
+      await api.removeConnection(id)
+      await refresh()
+    },
+    [refresh],
+  )
+
+  // Called by the admin panel after issuing a token: create + activate a source
+  // connection so the user jumps straight into that source's tree.
+  const connectToSource = useCallback(
+    async (cfg: NewConnection) => {
+      const id = await api.addConnection(cfg)
+      await api.setActiveConnection(id)
+      await refresh()
+    },
+    [refresh],
+  )
 
   const saveUser = async () => {
-    await api.setUser(userInput.trim() || 'anonymous')
-    setUserState(userInput.trim() || 'anonymous')
+    const name = userInput.trim() || 'anonymous'
+    await api.setUser(name)
+    setUser(name)
     setEditingUser(false)
   }
 
-  const TABS: { id: Tab; label: string }[] = [
-    { id: 'sources', label: 'Sources' },
-    { id: 'query',   label: 'Query' },
-    { id: 'events',  label: 'Events' },
-  ]
+  if (!ready) return null
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Header */}
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shadow-xs">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <span className="font-semibold text-gray-900 text-text-md">Entity Graph</span>
-          <span className="badge badge-gray">{sources.length} source{sources.length !== 1 ? 's' : ''}</span>
+          {active && (
+            <>
+              <span className={`badge ${active.kind === 'admin' ? 'badge-blue' : 'badge-green'}`}>
+                {active.kind}
+              </span>
+              <span className="text-text-sm text-gray-600 truncate">{active.label}</span>
+              <button className="btn-secondary text-text-xs py-1" onClick={disconnect}>
+                Switch connection
+              </button>
+            </>
+          )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {editingUser ? (
             <div className="flex items-center gap-2">
               <input
@@ -115,49 +126,25 @@ export default function App() {
         </div>
       </header>
 
-      {/* Tab bar */}
-      <nav className="bg-white border-b border-gray-200 px-6 flex gap-0">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`
-              px-4 py-3 text-text-sm font-medium border-b-2 -mb-px transition-colors
-              ${tab === t.id
-                ? 'border-primary-600 text-primary-700'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
-            `}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
-
-      {/* Content */}
-      <main className="flex-1 p-6 max-w-3xl mx-auto w-full">
-        {tab === 'sources' && (
-          <SourceManager sources={sources} onAdd={addSource} onRemove={removeSource} />
+      <main className="flex-1 min-h-0">
+        {!active && (
+          <div className="p-6 max-w-3xl mx-auto w-full">
+            <ConnectionManager
+              connections={connections}
+              onOpen={open}
+              onAdd={addConnection}
+              onUpdate={updateConnection}
+              onRemove={removeConnection}
+            />
+          </div>
         )}
-        {tab === 'query' && (
-          sources.length === 0
-            ? <EmptyState message="Add a source first." onGoTo={() => setTab('sources')} />
-            : <QueryExplorer onResolve={resolveQuery} onReadEntities={readEntities} editorActions={editorActions} />
+        {active?.kind === 'admin' && (
+          <div className="p-6 max-w-3xl mx-auto w-full">
+            <AdminPanel conn={active} onConnectToSource={connectToSource} />
+          </div>
         )}
-        {tab === 'events' && (
-          sources.length === 0
-            ? <EmptyState message="Add a source first." onGoTo={() => setTab('sources')} />
-            : <EventEditor onWrite={writeEvents} />
-        )}
+        {active?.kind === 'source' && <SourceView conn={active} user={user} />}
       </main>
-    </div>
-  )
-}
-
-function EmptyState({ message, onGoTo }: { message: string; onGoTo: () => void }) {
-  return (
-    <div className="card p-8 text-center space-y-3">
-      <p className="text-text-sm text-gray-500">{message}</p>
-      <button className="btn-primary mx-auto" onClick={onGoTo}>Go to Sources</button>
     </div>
   )
 }
