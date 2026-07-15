@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'url'
+import { resolve } from 'path'
 import {
   CombinedSource,
   FilterSource,
@@ -7,6 +9,13 @@ import {
   type Source,
 } from '../../src/core/source/index'
 import type { ConfigDb, SourceRow } from './config'
+
+/**
+ * Base directory for sqlite source databases (`server/databases`). A source's
+ * configured `path` is resolved against this, so relative paths live here while
+ * an absolute path still overrides it. Anchored to the package, not the cwd.
+ */
+const DATABASES_DIR = fileURLToPath(new URL('../databases', import.meta.url))
 
 export class SourceNotFoundError extends Error {
   constructor(public id: string) {
@@ -49,7 +58,12 @@ export class Registry {
     const cfg = row.config
     switch (cfg.type) {
       case 'sqlite':
-        return new SqliteSource(row.id, row.label, cfg.path, cfg.defaultAuthor)
+        return new SqliteSource(
+          row.id,
+          row.label,
+          resolve(DATABASES_DIR, cfg.path),
+          cfg.defaultAuthor,
+        )
       case 'combined': {
         const children = await Promise.all(cfg.children.map((c) => this.get(c)))
         return new CombinedSource(row.id, row.label, children)
