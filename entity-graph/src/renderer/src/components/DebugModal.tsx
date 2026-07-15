@@ -5,13 +5,14 @@ import type { ToolMeta } from '../../../core/client'
 const api = window.entityGraph
 
 interface Props {
-  connId: string
+  /** Id of the open source (the handle `sourceCall`/`sourceTools` resolve by). */
+  sourceId: string
   user: string
   onClose: () => void
 }
 
 /** Raw, low-level access to a source's tools — query + event writes + a tool list. */
-export function DebugModal({ connId, user, onClose }: Props): React.JSX.Element {
+export function DebugModal({ sourceId: connId, user, onClose }: Props): React.JSX.Element {
   return (
     <div
       className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-6 overflow-y-auto"

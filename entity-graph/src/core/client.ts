@@ -1,46 +1,75 @@
 import type { Safety } from './source/types'
 
 // ---------------------------------------------------------------------------
-// Connections
+// Servers & sources
 // ---------------------------------------------------------------------------
 
 /**
- * A saved way to reach the server. Either an `admin` connection (base URL +
- * admin token, for source/token management) or a `source` connection (base URL
- * + a specific source id + that source's token, for reading/editing its graph).
- * Persisted by the main process in `electron-store`; the renderer only ever
- * refers to a connection by `id`.
+ * A server the app knows about. Either *external* (a base URL the user pasted
+ * in) or *local* (a child process the app runs — marked by `localPort`). A
+ * server has admin access iff it carries an `adminToken`, which lets the UI
+ * create/edit/delete that server's sources; without one the user can only
+ * connect to existing sources by their id + token.
+ *
+ * Persisted by the main process in `electron-store`. The secret `adminToken`
+ * never crosses to the renderer — see {@link ServerView}.
  */
-export interface Connection {
+export interface Server {
   id: string
   label: string
-  /** e.g. `http://127.0.0.1:4000` — no trailing slash. */
+  /** e.g. `http://127.0.0.1:4000` — no trailing slash. Derived for local servers. */
   baseUrl: string
-  kind: 'admin' | 'source'
-  /** Admin token (kind='admin') or the source's bearer token (kind='source'). */
-  token: string
-  /** Required when `kind === 'source'`. */
-  sourceId?: string
-  /** Set when this connection points at a local server the app manages. */
-  localServerId?: string
+  /** Present ⇔ admin access is configured (always set for local servers). */
+  adminToken?: string
+  /** Present ⇔ this is a managed local child process. */
+  localPort?: number
 }
 
-/** A new connection before the main process assigns it an id. */
-export type NewConnection = Omit<Connection, 'id'>
+/** Fields needed to create a server (id/baseUrl assigned by the main process). */
+export interface NewServer {
+  label: string
+  /** Required for external servers; ignored for local. */
+  baseUrl?: string
+  adminToken?: string
+}
 
 /**
- * A server the app runs locally as a managed child process. Created from the UI;
- * each gets its own port, admin token, and config DB. The `connectionId` is the
- * auto-created admin connection pointing at it.
+ * A saved way to reach one source on a *non-admin* server: the source's id plus
+ * its bearer token. (Admin servers enumerate their sources live instead.)
  */
-export interface LocalServer {
+export interface SourceConnection {
+  id: string
+  serverId: string
+  sourceId: string
+  label: string
+  token: string
+}
+
+/** A new source connection before the main process assigns it an id. */
+export type NewSourceConnection = Omit<SourceConnection, 'id'>
+
+/** Renderer-facing view of a server: computed flags, secret token stripped. */
+export interface ServerView {
   id: string
   label: string
-  port: number
-  /** `http://127.0.0.1:<port>` */
   baseUrl: string
+  kind: 'local' | 'external'
+  /** `adminToken` is present. */
+  admin: boolean
+  /** Local servers only: whether the child process is currently running. */
   running: boolean
-  connectionId?: string
+}
+
+/**
+ * The source currently open in the viewer. Ephemeral: the main process holds
+ * its bearer token in memory and resolves data calls by `id`; nothing extra is
+ * persisted per open.
+ */
+export interface ActiveSource {
+  id: string
+  label: string
+  serverId: string
+  sourceId: string
 }
 
 // ---------------------------------------------------------------------------

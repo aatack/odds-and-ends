@@ -1,21 +1,14 @@
 import Store from 'electron-store'
-import type { Connection } from '../core/client'
-
-/** Persisted definition of a local server the app manages (includes its secret). */
-export interface LocalServerDef {
-  id: string
-  label: string
-  port: number
-  adminToken: string
-}
+import type { Server, SourceConnection } from '../core/client'
 
 export interface AppConfig {
-  connections: Connection[]
-  activeId: string | null
+  /** Every server the app knows about (external + local). Includes secrets. */
+  servers: Server[]
+  /** Saved source credentials for non-admin servers. */
+  sourceConnections: SourceConnection[]
   user: string
-  localServers: LocalServerDef[]
 }
 
 export const store = new Store<AppConfig>({
-  defaults: { connections: [], activeId: null, user: 'anonymous', localServers: [] },
+  defaults: { servers: [], sourceConnections: [], user: 'anonymous' },
 })

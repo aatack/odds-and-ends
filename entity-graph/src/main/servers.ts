@@ -4,8 +4,8 @@ import { randomBytes } from 'crypto'
 import { join } from 'path'
 import { app } from 'electron'
 import { v4 as uuidv4 } from 'uuid'
-import type { Connection, LocalServer } from '../core/client'
-import { store, type LocalServerDef } from './store'
+import type { NewServer, Server, ServerView } from '../core/client'
+import { store } from './store'
 
 const HOST = '127.0.0.1'
 
@@ -38,9 +38,9 @@ async function waitUntilUp(port: number, timeoutMs = 15000): Promise<void> {
 }
 
 /**
- * Manages local server child processes. Each `create()` spins up the *unchanged*
- * server (`server/src/main.ts`) on its own port with its own admin token and
- * config DB, and registers a linked admin connection so the UI can manage it.
+ * Manages servers and, for local ones, their child processes. Each local server
+ * runs the *unchanged* server (`server/src/main.ts`) on its own port with its
+ * own admin token and config DB.
  */
 export class ServerManager {
   private children = new Map<string, ChildProcess>()
@@ -49,7 +49,20 @@ export class ServerManager {
     return join(app.getPath('userData'), 'servers', id, 'config.db')
   }
 
-  private spawnChild(def: LocalServerDef): void {
+  private servers(): Server[] {
+    return store.get('servers')
+  }
+
+  private save(servers: Server[]): void {
+    store.set('servers', servers)
+  }
+
+  get(id: string): Server | undefined {
+    return this.servers().find((s) => s.id === id)
+  }
+
+  private spawnChild(server: Server): void {
+    if (server.localPort === undefined || !server.adminToken) return
     const root = app.getAppPath()
     const tsxBin = join(root, 'node_modules', '.bin', 'tsx')
     const entry = join(root, 'server', 'src', 'main.ts')
@@ -57,33 +70,29 @@ export class ServerManager {
       cwd: join(root, 'server'),
       env: {
         ...process.env,
-        PORT: String(def.port),
+        PORT: String(server.localPort),
         HOST,
-        ADMIN_TOKEN: def.adminToken,
-        CONFIG_DB: this.configDbPath(def.id),
+        ADMIN_TOKEN: server.adminToken,
+        CONFIG_DB: this.configDbPath(server.id),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     child.stderr?.on('data', (d: Buffer) =>
       // eslint-disable-next-line no-console
-      console.error(`[server ${def.label}] ${d.toString().trimEnd()}`),
+      console.error(`[server ${server.label}] ${d.toString().trimEnd()}`),
     )
     child.on('exit', (code) => {
-      this.children.delete(def.id)
+      this.children.delete(server.id)
       // eslint-disable-next-line no-console
-      if (code) console.error(`[server ${def.label}] exited with code ${code}`)
+      if (code) console.error(`[server ${server.label}] exited with code ${code}`)
     })
-    this.children.set(def.id, child)
-  }
-
-  private defs(): LocalServerDef[] {
-    return store.get('localServers')
+    this.children.set(server.id, child)
   }
 
   /** Spawn every persisted local server (called on app ready). Best-effort. */
   startAll(): void {
-    for (const def of this.defs()) {
-      if (!this.children.has(def.id)) this.spawnChild(def)
+    for (const s of this.servers()) {
+      if (s.localPort !== undefined && !this.children.has(s.id)) this.spawnChild(s)
     }
   }
 
@@ -93,46 +102,70 @@ export class ServerManager {
     this.children.clear()
   }
 
-  list(): LocalServer[] {
-    const connections = store.get('connections')
-    return this.defs().map((d) => ({
-      id: d.id,
-      label: d.label,
-      port: d.port,
-      baseUrl: `http://${HOST}:${d.port}`,
-      running: this.children.has(d.id),
-      connectionId: connections.find((c) => c.localServerId === d.id)?.id,
+  list(): ServerView[] {
+    return this.servers().map((s) => ({
+      id: s.id,
+      label: s.label,
+      baseUrl: s.baseUrl,
+      kind: s.localPort !== undefined ? 'local' : 'external',
+      admin: !!s.adminToken,
+      running: this.children.has(s.id),
     }))
   }
 
-  /** Create, start, and register a new local server. Returns its admin connection id. */
-  async create(label: string): Promise<{ id: string; connectionId: string }> {
+  /** Register an external server (base URL + optional admin token). */
+  addExternal(cfg: NewServer): string {
+    const id = uuidv4()
+    const server: Server = {
+      id,
+      label: cfg.label,
+      baseUrl: (cfg.baseUrl ?? '').replace(/\/+$/, ''),
+      ...(cfg.adminToken ? { adminToken: cfg.adminToken } : {}),
+    }
+    this.save([...this.servers(), server])
+    return id
+  }
+
+  /** Create, start, and register a new local server. */
+  async createLocal(label: string): Promise<{ id: string }> {
     const id = uuidv4()
     const port = await findFreePort()
-    const def: LocalServerDef = { id, label, port, adminToken: randomBytes(24).toString('hex') }
-    store.set('localServers', [...this.defs(), def])
-    this.spawnChild(def)
-    await waitUntilUp(port)
-
-    const connectionId = uuidv4()
-    const conn: Connection = {
-      id: connectionId,
+    const server: Server = {
+      id,
       label,
       baseUrl: `http://${HOST}:${port}`,
-      kind: 'admin',
-      token: def.adminToken,
-      localServerId: id,
+      adminToken: randomBytes(24).toString('hex'),
+      localPort: port,
     }
-    store.set('connections', [...store.get('connections'), conn])
-    return { id, connectionId }
+    this.save([...this.servers(), server])
+    this.spawnChild(server)
+    await waitUntilUp(port)
+    return { id }
+  }
+
+  /** Patch a server's editable fields (label, external base URL, admin token). */
+  update(id: string, patch: Partial<NewServer>): void {
+    this.save(
+      this.servers().map((s) => {
+        if (s.id !== id) return s
+        const next: Server = { ...s, id }
+        if (patch.label !== undefined) next.label = patch.label
+        // Only external servers may change their base URL.
+        if (patch.baseUrl !== undefined && s.localPort === undefined)
+          next.baseUrl = patch.baseUrl.replace(/\/+$/, '')
+        if (patch.adminToken !== undefined)
+          patch.adminToken ? (next.adminToken = patch.adminToken) : delete next.adminToken
+        return next
+      }),
+    )
   }
 
   async start(id: string): Promise<void> {
     if (this.children.has(id)) return
-    const def = this.defs().find((d) => d.id === id)
-    if (!def) throw new Error(`no local server "${id}"`)
-    this.spawnChild(def)
-    await waitUntilUp(def.port)
+    const server = this.get(id)
+    if (!server || server.localPort === undefined) throw new Error(`no local server "${id}"`)
+    this.spawnChild(server)
+    await waitUntilUp(server.localPort)
   }
 
   stop(id: string): void {
@@ -140,15 +173,13 @@ export class ServerManager {
     this.children.delete(id)
   }
 
-  /** Stop the server and forget it (its config DB is left on disk). */
+  /** Stop the server (if local) and forget it, along with its source connections. */
   remove(id: string): void {
     this.stop(id)
+    this.save(this.servers().filter((s) => s.id !== id))
     store.set(
-      'localServers',
-      this.defs().filter((d) => d.id !== id),
+      'sourceConnections',
+      store.get('sourceConnections').filter((c) => c.serverId !== id),
     )
-    const remaining = store.get('connections').filter((c) => c.localServerId !== id)
-    store.set('connections', remaining)
-    if (!remaining.some((c) => c.id === store.get('activeId'))) store.set('activeId', null)
   }
 }

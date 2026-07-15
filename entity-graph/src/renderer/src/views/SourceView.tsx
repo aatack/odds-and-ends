@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import type { Connection } from '../../../core/client'
+import type { ActiveSource } from '../../../core/client'
 import type { QueryPage } from '../../../core/wrapper'
 import { EditorView } from './Editor'
 import type { EditorActions } from './useEditor'
@@ -11,23 +11,23 @@ const api = window.entityGraph
 const ROOT_ID = '@index'
 
 interface Props {
-  conn: Connection
+  active: ActiveSource
   user: string
 }
 
 /**
- * A source connection's main view: the entity tree rooted at `@index`, plus a
+ * The open source's main view: the entity tree rooted at `@index`, plus a
  * top-right button that opens the raw debug editor in a modal. All data flows
- * through `sourceCall` on the active connection — the app holds no local state
+ * through `sourceCall` on the active source — the app holds no local state
  * about the graph.
  */
-export function SourceView({ conn, user }: Props): React.JSX.Element {
+export function SourceView({ active, user }: Props): React.JSX.Element {
   const [debug, setDebug] = useState(false)
 
   // The tree's transport seam. Bound to the source's tools; the hook stays
   // ignorant of HTTP/IPC.
   const actions = useMemo<EditorActions>(() => {
-    const call = (tool: string, args: unknown) => api.sourceCall(conn.id, tool, args)
+    const call = (tool: string, args: unknown) => api.sourceCall(active.id, tool, args)
     return {
       resolveQuery: (rootId, opts) => call('query', { rootId, ...opts }) as Promise<QueryPage>,
       writeText: (entityId, text) =>
@@ -41,7 +41,7 @@ export function SourceView({ conn, user }: Props): React.JSX.Element {
       unlink: (parentId, childId) =>
         call('writeLink', { sourceId: parentId, destinationId: childId, action: 1, author: user }).then(() => undefined),
     }
-  }, [conn.id, user])
+  }, [active.id, user])
 
   return (
     <div className="flex flex-col h-full">
@@ -54,7 +54,7 @@ export function SourceView({ conn, user }: Props): React.JSX.Element {
         <EditorView rootId={ROOT_ID} actions={actions} />
       </div>
 
-      {debug && <DebugModal connId={conn.id} user={user} onClose={() => setDebug(false)} />}
+      {debug && <DebugModal sourceId={active.id} user={user} onClose={() => setDebug(false)} />}
     </div>
   )
 }

@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { v4 as uuidv4 } from 'uuid'
-import type { Connection, NewConnection } from '../core/client'
+import type { ActiveSource, NewServer, NewSourceConnection, Server } from '../core/client'
 import { store } from './store'
 import { ServerManager } from './servers'
 
@@ -19,23 +19,18 @@ const servers = new ServerManager()
 
 class HttpError extends Error {}
 
-function requireConnection(connId: string): Connection {
-  const conn = store.get('connections').find((c) => c.id === connId)
-  if (!conn) throw new HttpError(`no connection with id "${connId}"`)
-  return conn
-}
-
-/** Perform an authenticated request against a connection's server, parsing JSON. */
+/** Perform an authenticated request against a base URL, parsing JSON. */
 async function request(
-  conn: Connection,
+  baseUrl: string,
+  token: string,
   method: string,
   path: string,
   body?: unknown,
 ): Promise<unknown> {
-  const res = await fetch(`${conn.baseUrl}${path}`, {
+  const res = await fetch(`${baseUrl}${path}`, {
     method,
     headers: {
-      Authorization: `Bearer ${conn.token}`,
+      Authorization: `Bearer ${token}`,
       ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -49,116 +44,148 @@ async function request(
   return data
 }
 
-/** Call a tool on the connection's source and unwrap `{ status, result }`. */
-async function sourceCall(connId: string, tool: string, args: unknown): Promise<unknown> {
-  const conn = requireConnection(connId)
-  if (conn.kind !== 'source' || !conn.sourceId) throw new HttpError('not a source connection')
-  const out = (await request(conn, 'POST', `/${conn.sourceId}/call`, { tool, args })) as
+function requireServer(serverId: string): Server {
+  const server = servers.get(serverId)
+  if (!server) throw new HttpError(`no server with id "${serverId}"`)
+  return server
+}
+
+/** Admin request against a server that has admin access. */
+function adminRequest(serverId: string, method: string, path: string, body?: unknown): Promise<unknown> {
+  const server = requireServer(serverId)
+  if (!server.adminToken) throw new HttpError('server has no admin access')
+  return request(server.baseUrl, server.adminToken, method, path, body)
+}
+
+// ---------------------------------------------------------------------------
+// Active source — ephemeral, in-memory only. Opening a source resolves a bearer
+// token (issued fresh for admin servers, stored for source connections) and
+// keeps it here, keyed by an id the renderer passes back on every data call.
+// ---------------------------------------------------------------------------
+
+const activeSources = new Map<string, { baseUrl: string; token: string; sourceId: string }>()
+
+function requireActive(id: string): { baseUrl: string; token: string; sourceId: string } {
+  const active = activeSources.get(id)
+  if (!active) throw new HttpError(`no open source "${id}"`)
+  return active
+}
+
+/** Call a tool on the open source and unwrap `{ status, result }`. */
+async function sourceCall(id: string, tool: string, args: unknown): Promise<unknown> {
+  const { baseUrl, token, sourceId } = requireActive(id)
+  const out = (await request(baseUrl, token, 'POST', `/${sourceId}/call`, { tool, args })) as
     | { status: 'success'; result: unknown }
     | { status: 'error'; message: string }
   if (out.status === 'error') throw new HttpError(out.message)
   return out.result
 }
 
-async function sourceTools(connId: string): Promise<unknown> {
-  const conn = requireConnection(connId)
-  if (conn.kind !== 'source' || !conn.sourceId) throw new HttpError('not a source connection')
-  return request(conn, 'GET', `/${conn.sourceId}/tools`)
-}
-
-/** Admin request against an `admin` connection. */
-async function adminRequest(
-  connId: string,
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<unknown> {
-  const conn = requireConnection(connId)
-  if (conn.kind !== 'admin') throw new HttpError('not an admin connection')
-  return request(conn, method, path, body)
+async function sourceTools(id: string): Promise<unknown> {
+  const { baseUrl, token, sourceId } = requireActive(id)
+  return request(baseUrl, token, 'GET', `/${sourceId}/tools`)
 }
 
 // ---------------------------------------------------------------------------
-// IPC — connections & user config
+// IPC — user config
 // ---------------------------------------------------------------------------
 
 ipcMain.handle('config:getUser', () => store.get('user'))
 ipcMain.handle('config:setUser', (_e, name: string) => store.set('user', name))
 
-ipcMain.handle('conn:list', () => store.get('connections'))
-ipcMain.handle('conn:getActive', () => {
-  const id = store.get('activeId')
-  return id ? (store.get('connections').find((c) => c.id === id) ?? null) : null
-})
-ipcMain.handle('conn:setActive', (_e, id: string | null) => store.set('activeId', id))
+// ---------------------------------------------------------------------------
+// IPC — servers
+// ---------------------------------------------------------------------------
 
-ipcMain.handle('conn:add', (_e, cfg: NewConnection) => {
+ipcMain.handle('server:list', () => servers.list())
+ipcMain.handle('server:add', (_e, cfg: NewServer) => servers.addExternal(cfg))
+ipcMain.handle('server:update', (_e, id: string, patch: Partial<NewServer>) => servers.update(id, patch))
+ipcMain.handle('server:remove', (_e, id: string) => servers.remove(id))
+ipcMain.handle('server:createLocal', (_e, label: string) => servers.createLocal(label))
+ipcMain.handle('server:start', (_e, id: string) => servers.start(id))
+ipcMain.handle('server:stop', (_e, id: string) => servers.stop(id))
+
+// ---------------------------------------------------------------------------
+// IPC — source connections (saved credentials for non-admin servers)
+// ---------------------------------------------------------------------------
+
+ipcMain.handle('sourceConn:list', () => store.get('sourceConnections'))
+ipcMain.handle('sourceConn:add', (_e, cfg: NewSourceConnection) => {
   const id = uuidv4()
-  store.set('connections', [...store.get('connections'), { ...cfg, id }])
+  store.set('sourceConnections', [...store.get('sourceConnections'), { ...cfg, id }])
   return id
 })
-
-ipcMain.handle('conn:update', (_e, id: string, patch: Partial<NewConnection>) => {
+ipcMain.handle('sourceConn:update', (_e, id: string, patch: Partial<NewSourceConnection>) => {
   store.set(
-    'connections',
-    store.get('connections').map((c) => (c.id === id ? { ...c, ...patch, id } : c)),
+    'sourceConnections',
+    store.get('sourceConnections').map((c) => (c.id === id ? { ...c, ...patch, id } : c)),
+  )
+})
+ipcMain.handle('sourceConn:remove', (_e, id: string) => {
+  store.set(
+    'sourceConnections',
+    store.get('sourceConnections').filter((c) => c.id !== id),
   )
 })
 
-ipcMain.handle('conn:remove', (_e, id: string) => {
-  store.set(
-    'connections',
-    store.get('connections').filter((c) => c.id !== id),
-  )
-  if (store.get('activeId') === id) store.set('activeId', null)
+// ---------------------------------------------------------------------------
+// IPC — open / close a source, and its data operations
+// ---------------------------------------------------------------------------
+
+ipcMain.handle('source:open', async (_e, serverId: string, sourceId: string, label: string): Promise<ActiveSource> => {
+  const server = requireServer(serverId)
+  let token: string
+  if (server.adminToken) {
+    const issued = (await adminRequest(serverId, 'POST', `/admin/sources/${sourceId}/tokens`, {
+      label: 'app',
+    })) as { token: string }
+    token = issued.token
+  } else {
+    const conn = store
+      .get('sourceConnections')
+      .find((c) => c.serverId === serverId && c.sourceId === sourceId)
+    if (!conn) throw new HttpError(`no saved credentials for source "${sourceId}"`)
+    token = conn.token
+  }
+  const id = uuidv4()
+  activeSources.set(id, { baseUrl: server.baseUrl, token, sourceId })
+  return { id, label, serverId, sourceId }
 })
 
-// ---------------------------------------------------------------------------
-// IPC — source (tools / call)
-// ---------------------------------------------------------------------------
+ipcMain.handle('source:close', (_e, id: string) => {
+  activeSources.delete(id)
+})
 
-ipcMain.handle('source:tools', (_e, connId: string) => sourceTools(connId))
-ipcMain.handle('source:call', (_e, connId: string, tool: string, args: unknown) =>
-  sourceCall(connId, tool, args),
-)
+ipcMain.handle('source:tools', (_e, id: string) => sourceTools(id))
+ipcMain.handle('source:call', (_e, id: string, tool: string, args: unknown) => sourceCall(id, tool, args))
 
 // ---------------------------------------------------------------------------
-// IPC — local server processes
+// IPC — admin (source CRUD + tokens), keyed by server id
 // ---------------------------------------------------------------------------
 
-ipcMain.handle('server:listLocal', () => servers.list())
-ipcMain.handle('server:createLocal', (_e, label: string) => servers.create(label))
-ipcMain.handle('server:startLocal', (_e, id: string) => servers.start(id))
-ipcMain.handle('server:stopLocal', (_e, id: string) => servers.stop(id))
-ipcMain.handle('server:removeLocal', (_e, id: string) => servers.remove(id))
-
-// ---------------------------------------------------------------------------
-// IPC — admin (source CRUD + tokens)
-// ---------------------------------------------------------------------------
-
-ipcMain.handle('admin:listSources', (_e, connId: string) =>
-  adminRequest(connId, 'GET', '/admin/sources'),
+ipcMain.handle('admin:listSources', (_e, serverId: string) =>
+  adminRequest(serverId, 'GET', '/admin/sources'),
 )
-ipcMain.handle('admin:getSource', (_e, connId: string, id: string) =>
-  adminRequest(connId, 'GET', `/admin/sources/${id}`),
+ipcMain.handle('admin:getSource', (_e, serverId: string, id: string) =>
+  adminRequest(serverId, 'GET', `/admin/sources/${id}`),
 )
-ipcMain.handle('admin:createSource', (_e, connId: string, body: unknown) =>
-  adminRequest(connId, 'POST', '/admin/sources', body),
+ipcMain.handle('admin:createSource', (_e, serverId: string, body: unknown) =>
+  adminRequest(serverId, 'POST', '/admin/sources', body),
 )
-ipcMain.handle('admin:updateSource', (_e, connId: string, id: string, body: unknown) =>
-  adminRequest(connId, 'PUT', `/admin/sources/${id}`, body),
+ipcMain.handle('admin:updateSource', (_e, serverId: string, id: string, body: unknown) =>
+  adminRequest(serverId, 'PUT', `/admin/sources/${id}`, body),
 )
-ipcMain.handle('admin:deleteSource', (_e, connId: string, id: string) =>
-  adminRequest(connId, 'DELETE', `/admin/sources/${id}`),
+ipcMain.handle('admin:deleteSource', (_e, serverId: string, id: string) =>
+  adminRequest(serverId, 'DELETE', `/admin/sources/${id}`),
 )
-ipcMain.handle('admin:listTokens', (_e, connId: string, id: string) =>
-  adminRequest(connId, 'GET', `/admin/sources/${id}/tokens`),
+ipcMain.handle('admin:listTokens', (_e, serverId: string, id: string) =>
+  adminRequest(serverId, 'GET', `/admin/sources/${id}/tokens`),
 )
-ipcMain.handle('admin:issueToken', (_e, connId: string, id: string, label?: string) =>
-  adminRequest(connId, 'POST', `/admin/sources/${id}/tokens`, { label: label ?? '' }),
+ipcMain.handle('admin:issueToken', (_e, serverId: string, id: string, label?: string) =>
+  adminRequest(serverId, 'POST', `/admin/sources/${id}/tokens`, { label: label ?? '' }),
 )
-ipcMain.handle('admin:revokeToken', (_e, connId: string, token: string) =>
-  adminRequest(connId, 'DELETE', `/admin/tokens/${token}`),
+ipcMain.handle('admin:revokeToken', (_e, serverId: string, token: string) =>
+  adminRequest(serverId, 'DELETE', `/admin/tokens/${token}`),
 )
 
 // ---------------------------------------------------------------------------
