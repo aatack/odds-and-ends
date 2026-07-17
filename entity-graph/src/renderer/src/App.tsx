@@ -1,7 +1,8 @@
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Moon01, Sun } from '@untitledui/icons'
 import { Servers } from './components/Servers'
 import { SourceView } from './views/SourceView'
+import { CommandPalette, type Command } from './components/CommandPalette'
 import { Badge } from './components/ui/Badge'
 import { Button } from './components/ui/Button'
 import { Dropdown, DropdownItem, DropdownSeparator } from './components/ui/Dropdown'
@@ -12,11 +13,38 @@ import { useApp, type AppActions, type Page } from './views/useApp'
 export default function App(): React.JSX.Element | null {
   const { ready, user, page, current, active, openError, actions } = useApp()
   const { theme, toggle } = useTheme()
+  const [paletteOpen, setPaletteOpen] = useState(false)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault()
+        setPaletteOpen((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  const commands = useMemo<Command[]>(
+    () => [
+      { id: 'go-editor', label: 'Go to editor', hint: 'Navigate', run: () => actions.setPage('editor') },
+      { id: 'go-sources', label: 'Go to sources', hint: 'Navigate', run: () => actions.setPage('sources') },
+      {
+        id: 'toggle-theme',
+        label: theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode',
+        hint: 'Theme',
+        run: toggle,
+      },
+    ],
+    [actions, theme, toggle],
+  )
 
   if (!ready) return null
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
+      <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
       <header className="relative z-30 flex items-center gap-3 border-b border-gray-100 bg-white/80 px-6 py-3 backdrop-blur">
         <div className="flex min-w-0 items-center gap-3">
           <button
@@ -36,6 +64,10 @@ export default function App(): React.JSX.Element | null {
 
         <div className="flex-1" />
 
+        <Button variant="secondary" size="sm" onClick={() => setPaletteOpen(true)}>
+          Actions
+          <kbd className="ml-1 rounded bg-gray-200 px-1 text-[10px] text-gray-500">Ctrl K</kbd>
+        </Button>
         <Button
           variant="tertiary"
           size="sm"
