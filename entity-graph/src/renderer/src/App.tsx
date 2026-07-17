@@ -4,6 +4,7 @@ import { Servers } from './components/Servers'
 import { SourceView } from './views/SourceView'
 import { Badge } from './components/ui/Badge'
 import { Button } from './components/ui/Button'
+import { Dropdown, DropdownItem, DropdownSeparator } from './components/ui/Dropdown'
 import { Input } from './components/ui/Input'
 import { useTheme } from './helpers/useTheme'
 import { useApp, type AppActions, type Page } from './views/useApp'
@@ -114,19 +115,8 @@ function ProfileMenu({
   page: Page
   actions: AppActions
 }): React.JSX.Element {
-  const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(user)
-
-  const close = (): void => {
-    setOpen(false)
-    setEditing(false)
-  }
-
-  const go = (p: Page): void => {
-    actions.setPage(p)
-    close()
-  }
 
   const saveName = async (): Promise<void> => {
     await actions.setUser(name)
@@ -134,27 +124,44 @@ function ProfileMenu({
   }
 
   return (
-    <div className="relative shrink-0">
-      <button
-        className="flex items-center gap-1.5 text-[13px] text-gray-600 transition-colors hover:text-gray-900 focus:outline-none"
-        onClick={() => setOpen((v) => !v)}
+    <div className="shrink-0">
+      <Dropdown
+        align="right"
+        trigger={({ toggle }) => (
+          <button
+            className="flex items-center gap-1.5 text-[13px] text-gray-600 transition-colors hover:text-gray-900 focus:outline-none"
+            onClick={toggle}
+          >
+            <span className="flex size-6 items-center justify-center rounded-full bg-brand-50 text-[11px] font-medium text-brand-700">
+              {user[0]?.toUpperCase()}
+            </span>
+            <span>{user}</span>
+            <ChevronDown size={14} className="text-gray-400" />
+          </button>
+        )}
       >
-        <span className="flex size-6 items-center justify-center rounded-full bg-brand-50 text-[11px] font-medium text-brand-700">
-          {user[0]?.toUpperCase()}
-        </span>
-        <span>{user}</span>
-        <ChevronDown size={14} className="text-gray-400" />
-      </button>
+        {(close) => (
+          <>
+            <DropdownItem
+              active={page === 'editor'}
+              onClick={() => {
+                actions.setPage('editor')
+                close()
+              }}
+            >
+              Editor
+            </DropdownItem>
+            <DropdownItem
+              active={page === 'sources'}
+              onClick={() => {
+                actions.setPage('sources')
+                close()
+              }}
+            >
+              Sources
+            </DropdownItem>
 
-      {open && (
-        <>
-          {/* Click-away backdrop */}
-          <div className="fixed inset-0 z-40" onClick={close} />
-          <div className="absolute right-0 z-50 mt-2 w-56 rounded-lg bg-white py-1.5 shadow-lg animate-fade-in">
-            <MenuItem label="Editor" active={page === 'editor'} onClick={() => go('editor')} />
-            <MenuItem label="Sources" active={page === 'sources'} onClick={() => go('sources')} />
-
-            <div className="my-1.5 h-px bg-gray-100" />
+            <DropdownSeparator />
 
             <div className="px-3 py-1.5">
               {editing ? (
@@ -163,10 +170,22 @@ function ProfileMenu({
                     className="h-7"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && saveName()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        void saveName()
+                        close()
+                      }
+                    }}
                     autoFocus
                   />
-                  <Button variant="primary" size="sm" onClick={saveName}>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      void saveName()
+                      close()
+                    }}
+                  >
                     Save
                   </Button>
                 </div>
@@ -183,30 +202,9 @@ function ProfileMenu({
                 </button>
               )}
             </div>
-          </div>
-        </>
-      )}
+          </>
+        )}
+      </Dropdown>
     </div>
-  )
-}
-
-function MenuItem({
-  label,
-  active,
-  onClick,
-}: {
-  label: string
-  active: boolean
-  onClick: () => void
-}): React.JSX.Element {
-  return (
-    <button
-      className={`w-full px-3 py-1.5 text-left text-[13px] transition-colors hover:bg-gray-100/70 focus:outline-none ${
-        active ? 'font-medium text-brand-700' : 'text-gray-700'
-      }`}
-      onClick={onClick}
-    >
-      {label}
-    </button>
   )
 }
