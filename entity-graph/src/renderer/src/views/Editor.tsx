@@ -13,8 +13,10 @@ const OVERSCAN = 8 // extra rows rendered above/below the viewport
 const ESTIMATE = 24 // assumed height of a not-yet-measured row, in px
 
 // User-written entity text — serif, matching the orchestrator's prose voice. It
-// wraps to show the whole value rather than truncating.
-const TEXT = 'font-serif text-[14px] leading-5 text-gray-900'
+// wraps to show the whole value rather than truncating. `block` keeps the
+// editing textarea the same height as the static line (an inline-block textarea
+// leaves a descender gap below it) so pressing `e` doesn't shift the layout.
+const TEXT = 'block font-serif text-[14px] leading-5 text-gray-900'
 
 const keyOf = (row: EditorRow, index: number): string =>
   row.kind === 'entity' ? row.path.join('/') : `input-${index}`
