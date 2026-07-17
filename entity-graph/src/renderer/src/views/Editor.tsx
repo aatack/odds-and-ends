@@ -9,7 +9,6 @@ import type { EditorActions, EditorRow, EntityRow } from './useEditor'
 const ROW_HEIGHT = 32 // px — fixed so the list can be windowed cheaply
 const INDENT = 20 // px per depth level
 const OVERSCAN = 8 // extra rows rendered above/below the viewport
-const VIEWPORT_H = 480 // px
 
 const inputClass =
   'w-full bg-white border border-primary-400 rounded-sm px-1.5 py-0 h-6 leading-6 ' +
@@ -55,6 +54,19 @@ export function Editor(props: EditorProps): React.JSX.Element {
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
+  // The scroll container fills its parent, so its height is measured rather
+  // than fixed; it drives how many rows the window renders.
+  const [viewportH, setViewportH] = useState(0)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const update = (): void => setViewportH(el.clientHeight)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   // Focus the container on mount and whenever an edit finishes, so the
   // navigation hotkeys keep working without an extra click.
@@ -78,7 +90,7 @@ export function Editor(props: EditorProps): React.JSX.Element {
 
   const total = rows.length
   const first = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN)
-  const visible = Math.ceil(VIEWPORT_H / rowHeight) + OVERSCAN * 2
+  const visible = Math.ceil((viewportH || 600) / rowHeight) + OVERSCAN * 2
   const last = Math.min(total, first + visible)
   const slice = rows.slice(first, last)
 
@@ -89,7 +101,7 @@ export function Editor(props: EditorProps): React.JSX.Element {
   }
 
   return (
-    <div className="card overflow-hidden font-serif">
+    <div className="h-full flex flex-col overflow-hidden bg-white font-serif">
       {statusMessage && (
         <div className="px-4 py-2 bg-primary-50 border-b border-primary-100 text-text-sm text-primary-700">
           {statusMessage}
@@ -106,8 +118,7 @@ export function Editor(props: EditorProps): React.JSX.Element {
         tabIndex={0}
         onKeyDown={onContainerKeyDown}
         onScroll={handleScroll}
-        className="relative overflow-y-auto focus:outline-none"
-        style={{ height: VIEWPORT_H }}
+        className="relative flex-1 min-h-0 overflow-y-auto focus:outline-none"
       >
         {total === 0 ? (
           <div className="px-4 py-8 text-center text-text-sm text-gray-400">
@@ -132,26 +143,7 @@ export function Editor(props: EditorProps): React.JSX.Element {
           </div>
         )}
       </div>
-
-      <div className="px-4 py-2 border-t border-gray-200 text-text-xs text-gray-400 flex flex-wrap gap-x-3 gap-y-1">
-        <Hint k="w/s" label="up/down" />
-        <Hint k="a" label="parent" />
-        <Hint k="←/→" label="collapse/expand" />
-        <Hint k="e" label="edit" />
-        <Hint k="enter" label="new child" />
-        <Hint k="del" label="unlink" />
-        <Hint k="x" label="move" />
-        <Hint k="r / shift+r" label="link" />
-      </div>
     </div>
-  )
-}
-
-function Hint({ k, label }: { k: string; label: string }): React.JSX.Element {
-  return (
-    <span>
-      <kbd className="font-sans font-medium text-gray-500">{k}</kbd> {label}
-    </span>
   )
 }
 

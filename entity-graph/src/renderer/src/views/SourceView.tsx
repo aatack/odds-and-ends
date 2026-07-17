@@ -44,15 +44,18 @@ export function SourceView({ active, user }: Props): React.JSX.Element {
   }, [active.id, user])
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="px-6 py-2 border-b border-gray-200 flex items-center justify-between bg-white">
-        <p className="text-text-xs text-gray-400 font-mono">outline rooted at {ROOT_ID}</p>
-        <button className="btn-secondary text-text-xs py-1" onClick={() => setDebug(true)}>Debug</button>
-      </div>
-
-      <div className="flex-1 min-h-0 p-6 max-w-3xl mx-auto w-full">
+    <div className="relative flex flex-col h-full">
+      <div className="flex-1 min-h-0">
         <EditorView rootId={ROOT_ID} actions={actions} />
       </div>
+
+      {/* Debug lives in an unobtrusive corner button rather than a header bar. */}
+      <button
+        className="absolute bottom-4 right-4 btn-secondary text-text-xs py-1 opacity-60 hover:opacity-100"
+        onClick={() => setDebug(true)}
+      >
+        Debug
+      </button>
 
       {debug && <DebugModal sourceId={active.id} user={user} onClose={() => setDebug(false)} />}
     </div>

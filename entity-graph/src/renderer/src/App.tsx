@@ -9,7 +9,7 @@ export default function App(): React.JSX.Element | null {
   if (!ready) return null
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="h-screen flex flex-col overflow-hidden">
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shadow-xs">
         <div className="flex items-center gap-3 min-w-0">
           <button

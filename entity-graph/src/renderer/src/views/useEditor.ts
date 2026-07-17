@@ -341,6 +341,8 @@ export function useEditor({ rootId, maxDepth, actions }: UseEditorArgs): UseEdit
   const onContainerKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (edit) return // the in-place input owns the keyboard while editing
+      // Leave modifier combos (e.g. Ctrl/⌘+R reload, devtools) to the app shell.
+      if (e.ctrlKey || e.metaKey || e.altKey) return
       switch (e.key) {
         case 'w':
           e.preventDefault()
