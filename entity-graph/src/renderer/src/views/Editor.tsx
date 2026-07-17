@@ -304,7 +304,7 @@ const Row = React.memo(function Row({
     <div ref={ref} className="flex" onClick={() => onSelectRow(row.path)} onContextMenu={onContextMenu}>
       <div
         className={`flex items-start my-px py-0.5 mx-2 pr-2 rounded-md flex-1 min-w-0 cursor-default transition-colors ${
-          row.selected ? 'bg-gray-100' : 'hover:bg-gray-100/70'
+          row.selected ? 'bg-blue-50' : 'hover:bg-gray-100/70'
         }`}
         style={{ paddingLeft: row.depth * INDENT + 4 }}
       >
