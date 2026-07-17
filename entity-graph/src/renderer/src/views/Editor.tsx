@@ -10,7 +10,7 @@ import type { EditorActions, EditorRow, EntityRow } from './useEditor'
 
 const INDENT = 20 // px per depth level
 const OVERSCAN = 8 // extra rows rendered above/below the viewport
-const ESTIMATE = 26 // assumed height of a not-yet-measured row, in px
+const ESTIMATE = 24 // assumed height of a not-yet-measured row, in px
 
 // User-written entity text — serif, matching the orchestrator's prose voice. It
 // wraps to show the whole value rather than truncating.
@@ -237,7 +237,7 @@ const Row = React.memo(function Row({
     return (
       <div ref={ref} className="flex">
         <div
-          className="flex items-start my-px py-0.5 mx-2 pr-2 flex-1 min-w-0"
+          className="flex items-start py-0.5 mx-2 pr-2 flex-1 min-w-0"
           style={{ paddingLeft: row.depth * INDENT + 4 }}
         >
           <span className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 select-none">
