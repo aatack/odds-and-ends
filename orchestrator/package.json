@@ -1,0 +1,43 @@
+{
+  "name": "orchestrator",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Local orchestrator for the things I work on — PRs, agents, tickets, and the links between them. Electron + React + SQLite.",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "dev:no-sandbox": "electron-vite dev --noSandbox",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "type-check": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "rebuild": "electron-rebuild -f -w better-sqlite3",
+    "postinstall": "electron-rebuild -f -w better-sqlite3"
+  },
+  "dependencies": {
+    "@fontsource-variable/geist": "^5.2.9",
+    "@fontsource-variable/source-serif-4": "^5.2.9",
+    "better-sqlite3": "^11.8.1"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.1",
+    "@tailwindcss/vite": "^4.3.1",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.1.16",
+    "@types/react-dom": "^19.1.9",
+    "@untitledui/icons": "^0.0.22",
+    "@vitejs/plugin-react": "^5.0.4",
+    "electron": "^34.2.0",
+    "electron-vite": "^5.0.0",
+    "jotai": "^2.12.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tailwindcss": "^4.3.1",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.2",
+    "vitest": "^4.0.18",
+    "zod": "^3.24.2"
+  }
+}
