@@ -4,6 +4,7 @@ import type { QueryPage } from '../../../core/wrapper'
 import { EditorView } from './Editor'
 import type { EditorActions } from './useEditor'
 import { DebugModal } from '../components/DebugModal'
+import { EntityDebugModal } from '../components/EntityDebugModal'
 import { Button } from '../components/ui/Button'
 
 const api = window.entityGraph
@@ -24,6 +25,7 @@ interface Props {
  */
 export function SourceView({ active, user }: Props): React.JSX.Element {
   const [debug, setDebug] = useState(false)
+  const [debugEntity, setDebugEntity] = useState<string | null>(null)
 
   // The tree's transport seam. Bound to the source's tools; the hook stays
   // ignorant of HTTP/IPC.
@@ -47,7 +49,7 @@ export function SourceView({ active, user }: Props): React.JSX.Element {
   return (
     <div className="relative flex flex-col h-full">
       <div className="flex-1 min-h-0">
-        <EditorView rootId={ROOT_ID} actions={actions} />
+        <EditorView rootId={ROOT_ID} actions={actions} onDebugEntity={setDebugEntity} />
       </div>
 
       {/* Debug lives in an unobtrusive corner button rather than a header bar. */}
@@ -61,6 +63,14 @@ export function SourceView({ active, user }: Props): React.JSX.Element {
       </Button>
 
       {debug && <DebugModal sourceId={active.id} user={user} onClose={() => setDebug(false)} />}
+      {debugEntity && (
+        <EntityDebugModal
+          sourceId={active.id}
+          entityId={debugEntity}
+          user={user}
+          onClose={() => setDebugEntity(null)}
+        />
+      )}
     </div>
   )
 }

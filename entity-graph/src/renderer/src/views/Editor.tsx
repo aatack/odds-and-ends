@@ -54,6 +54,7 @@ export interface EditorProps {
   onContainerKeyDown: (e: React.KeyboardEvent) => void
   onCommitEdit: (value: string) => void
   onCancelEdit: () => void
+  onDebugEntity: (entityId: string) => void
   onNearEnd: () => void
 }
 
@@ -75,6 +76,7 @@ export function Editor(props: EditorProps): React.JSX.Element {
     onContainerKeyDown,
     onCommitEdit,
     onCancelEdit,
+    onDebugEntity,
     onNearEnd,
   } = props
 
@@ -187,6 +189,13 @@ export function Editor(props: EditorProps): React.JSX.Element {
             label: 'Export',
             onClick: () => {
               exportSubtree(menu.index)
+              setMenu(null)
+            },
+          },
+          {
+            label: 'Debug entity',
+            onClick: () => {
+              onDebugEntity(menuRow.id)
               setMenu(null)
             },
           },
@@ -380,10 +389,11 @@ export interface EditorViewProps {
   rootId: string
   maxDepth?: number
   actions: EditorActions
+  onDebugEntity: (entityId: string) => void
 }
 
 /** Glue between {@link useEditor} (logic) and {@link Editor} (rendering). */
-export function EditorView({ rootId, maxDepth, actions }: EditorViewProps): React.JSX.Element {
+export function EditorView({ rootId, maxDepth, actions, onDebugEntity }: EditorViewProps): React.JSX.Element {
   const ed = useEditor({ rootId, maxDepth, actions })
   return (
     <Editor
@@ -397,6 +407,7 @@ export function EditorView({ rootId, maxDepth, actions }: EditorViewProps): Reac
       onContainerKeyDown={ed.onContainerKeyDown}
       onCommitEdit={ed.commitEdit}
       onCancelEdit={ed.cancelEdit}
+      onDebugEntity={onDebugEntity}
       onNearEnd={ed.loadMore}
     />
   )
