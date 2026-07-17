@@ -49,6 +49,7 @@
   --color-error-700: #a03b32;
 
   --color-blue-50: #eef3fb;
+  --color-blue-100: #e3ebf8;
   --color-blue-200: #c3d5ee;
   --color-blue-700: #3a5f9e;
 
@@ -107,6 +108,7 @@ html.dark {
   --color-error-700: #e39a92;
 
   --color-blue-50: #131f2e;
+  --color-blue-100: #1a283a;
   --color-blue-700: #8fb2e3;
 }
 
