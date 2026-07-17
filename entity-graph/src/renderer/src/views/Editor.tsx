@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight } from '@untitledui/icons'
 import { TextEditor } from '../components/ui/TextEditor'
+import { ContextMenu, type ContextMenuItem } from '../components/ui/ContextMenu'
 import { useEditor } from './useEditor'
 import type { EditorActions, EditorRow, EntityRow } from './useEditor'
 
@@ -21,6 +22,22 @@ const TEXT = 'block font-serif text-[14px] leading-5'
 
 const keyOf = (row: EditorRow, index: number): string =>
   row.kind === 'entity' ? row.path.join('/') : `input-${index}`
+
+// Format the entity at `startIndex` and its visible descendants as nested
+// markdown bullets. Children of collapsed rows aren't in `rows`, so they're
+// naturally excluded. Depth sets the indent relative to the starting row.
+function subtreeToMarkdown(rows: EditorRow[], startIndex: number): string {
+  const start = rows[startIndex]
+  if (start.kind !== 'entity') return ''
+  const lines: string[] = []
+  for (let i = startIndex; i < rows.length; i++) {
+    const row = rows[i]
+    if (i > startIndex && row.kind === 'entity' && row.depth <= start.depth) break
+    if (row.kind !== 'entity') continue
+    lines.push(`${'  '.repeat(row.depth - start.depth)}- ${row.text ?? ''}`)
+  }
+  return lines.join('\n')
+}
 
 // ---------------------------------------------------------------------------
 // Dumb rendering component
@@ -62,6 +79,10 @@ export function Editor(props: EditorProps): React.JSX.Element {
   } = props
 
   const containerRef = useRef<HTMLDivElement>(null)
+  // Right-click menu target (a row index + screen position) and a transient
+  // confirmation line (e.g. after an export copies to the clipboard).
+  const [menu, setMenu] = useState<{ index: number; x: number; y: number } | null>(null)
+  const [flash, setFlash] = useState<string | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   // The scroll container fills its parent, so its height is measured rather
   // than fixed; it drives how many rows the window renders.
@@ -143,12 +164,42 @@ export function Editor(props: EditorProps): React.JSX.Element {
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - ESTIMATE * OVERSCAN) onNearEnd()
   }
 
+  const openMenuFor = (index: number, e: React.MouseEvent): void => {
+    e.preventDefault()
+    const row = rows[index]
+    if (row.kind === 'entity') onSelectRow(row.path)
+    setMenu({ index, x: e.clientX, y: e.clientY })
+  }
+
+  const exportSubtree = (index: number): void => {
+    const md = subtreeToMarkdown(rows, index)
+    void navigator.clipboard.writeText(md)
+    const count = md ? md.split('\n').length : 0
+    setFlash(`Copied ${count} item${count === 1 ? '' : 's'} to the clipboard`)
+    setTimeout(() => setFlash(null), 1800)
+  }
+
+  const menuRow = menu ? rows[menu.index] : null
+  const menuItems: ContextMenuItem[] =
+    menu && menuRow?.kind === 'entity'
+      ? [
+          {
+            label: 'Export',
+            onClick: () => {
+              exportSubtree(menu.index)
+              setMenu(null)
+            },
+          },
+        ]
+      : []
+
   return (
     <div className="h-full flex flex-col overflow-hidden bg-white">
       {statusMessage && (
         <div className="px-4 py-2 bg-brand-50 text-[13px] text-brand-700">{statusMessage}</div>
       )}
       {error && <div className="px-4 py-2 bg-error-50 text-[13px] text-error-700">{error}</div>}
+      {flash && <div className="px-4 py-2 bg-success-50 text-[13px] text-success-700">{flash}</div>}
 
       <div
         ref={containerRef}
@@ -177,6 +228,9 @@ export function Editor(props: EditorProps): React.JSX.Element {
                   onToggleCollapse={onToggleCollapse}
                   onCommitEdit={onCommitEdit}
                   onCancelEdit={onCancelEdit}
+                  onContextMenu={
+                    row.kind === 'entity' ? (e) => openMenuFor(index, e) : undefined
+                  }
                 />
               )
             })}
@@ -184,6 +238,10 @@ export function Editor(props: EditorProps): React.JSX.Element {
           </>
         )}
       </div>
+
+      {menu && menuItems.length > 0 && (
+        <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />
+      )}
     </div>
   )
 }
@@ -200,6 +258,7 @@ interface RowProps {
   onToggleCollapse: (row: EntityRow) => void
   onCommitEdit: (value: string) => void
   onCancelEdit: () => void
+  onContextMenu?: (e: React.MouseEvent) => void
 }
 
 // Escape abandons the edit; everything else (Enter to commit, autosize, blur to
@@ -221,6 +280,7 @@ const Row = React.memo(function Row({
   onToggleCollapse,
   onCommitEdit,
   onCancelEdit,
+  onContextMenu,
 }: RowProps): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -262,7 +322,7 @@ const Row = React.memo(function Row({
   }
 
   return (
-    <div ref={ref} className="flex" onClick={() => onSelectRow(row.path)}>
+    <div ref={ref} className="flex" onClick={() => onSelectRow(row.path)} onContextMenu={onContextMenu}>
       <div
         className={`flex items-start my-px py-0.5 mx-2 pr-2 rounded-md flex-1 min-w-0 cursor-default transition-colors ${
           row.selected ? 'bg-gray-100' : 'hover:bg-gray-100/70'
