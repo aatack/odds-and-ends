@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { cn } from '../../helpers/cn'
 
 // The single free-text editing primitive for prose surfaces. Autosizes: fills
@@ -11,6 +11,7 @@ export function TextEditor({
   placeholder,
   className,
   autoFocus,
+  onKeyDown,
 }: {
   value: string
   setValue: (value: string) => void
@@ -18,6 +19,8 @@ export function TextEditor({
   placeholder?: string
   className?: string
   autoFocus?: boolean
+  // Runs before the built-in Enter handling; call preventDefault to override it.
+  onKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void
 }): React.JSX.Element {
   const [draft, setDraft] = useState(value)
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -60,6 +63,8 @@ export function TextEditor({
         if (!eager) commit(draft)
       }}
       onKeyDown={(e) => {
+        onKeyDown?.(e)
+        if (e.defaultPrevented) return
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault()
           if (!eager) commit(draft)

@@ -16,7 +16,7 @@ export default function App(): React.JSX.Element | null {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <header className="flex items-center gap-3 border-b border-gray-100 bg-white/80 px-6 py-3 backdrop-blur">
+      <header className="relative z-30 flex items-center gap-3 border-b border-gray-100 bg-white/80 px-6 py-3 backdrop-blur">
         <div className="flex min-w-0 items-center gap-3">
           <button
             className="text-[15px] font-semibold tracking-tightish text-gray-900 focus:outline-none"

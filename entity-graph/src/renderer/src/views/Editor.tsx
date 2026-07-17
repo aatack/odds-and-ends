@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight } from '@untitledui/icons'
+import { TextEditor } from '../components/ui/TextEditor'
 import { useEditor } from './useEditor'
 import type { EditorActions, EditorRow, EntityRow } from './useEditor'
 
@@ -7,13 +8,16 @@ import type { EditorActions, EditorRow, EntityRow } from './useEditor'
 // Layout constants
 // ---------------------------------------------------------------------------
 
-const ROW_HEIGHT = 32 // px — fixed so the list can be windowed cheaply
 const INDENT = 20 // px per depth level
 const OVERSCAN = 8 // extra rows rendered above/below the viewport
+const ESTIMATE = 26 // assumed height of a not-yet-measured row, in px
 
-const inputClass =
-  'w-full bg-white border border-brand-300 rounded-md px-1.5 py-0 h-6 leading-6 ' +
-  'text-[13px] font-serif text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40'
+// User-written entity text — serif, matching the orchestrator's prose voice. It
+// wraps to show the whole value rather than truncating.
+const TEXT = 'font-serif text-[14px] leading-5 text-gray-900'
+
+const keyOf = (row: EditorRow, index: number): string =>
+  row.kind === 'entity' ? row.path.join('/') : `input-${index}`
 
 // ---------------------------------------------------------------------------
 // Dumb rendering component
@@ -21,7 +25,6 @@ const inputClass =
 
 export interface EditorProps {
   rows: EditorRow[]
-  rowHeight: number
   editing: boolean
   loading: boolean
   error: string | null
@@ -29,19 +32,20 @@ export interface EditorProps {
   onSelectRow: (path: string[]) => void
   onToggleCollapse: (row: EntityRow) => void
   onContainerKeyDown: (e: React.KeyboardEvent) => void
-  onEditKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void
+  onCommitEdit: (value: string) => void
+  onCancelEdit: () => void
   onNearEnd: () => void
 }
 
 /**
- * Pure presentation: renders the flat row list as an indented, virtualised set
- * of bullets and forwards interaction to the callbacks it is given. Holds no
- * domain logic — only local view state (scroll position, focus).
+ * Pure presentation: renders the flat row list as an indented, windowed set of
+ * wrapping bullets and forwards interaction to the callbacks it is given. Rows
+ * are variable-height — each measures itself so multi-line entities show in
+ * full — and only the slice around the viewport is mounted.
  */
 export function Editor(props: EditorProps): React.JSX.Element {
   const {
     rows,
-    rowHeight,
     editing,
     loading,
     error,
@@ -49,7 +53,8 @@ export function Editor(props: EditorProps): React.JSX.Element {
     onSelectRow,
     onToggleCollapse,
     onContainerKeyDown,
-    onEditKeyDown,
+    onCommitEdit,
+    onCancelEdit,
     onNearEnd,
   } = props
 
@@ -58,6 +63,18 @@ export function Editor(props: EditorProps): React.JSX.Element {
   // The scroll container fills its parent, so its height is measured rather
   // than fixed; it drives how many rows the window renders.
   const [viewportH, setViewportH] = useState(0)
+  // Measured heights keyed by row identity, so offsets survive reloads without
+  // re-measuring and unknown rows fall back to ESTIMATE.
+  const [heights, setHeights] = useState<Map<string, number>>(new Map())
+
+  const setHeight = useCallback((key: string, h: number) => {
+    setHeights((prev) => {
+      if (prev.get(key) === h) return prev
+      const next = new Map(prev)
+      next.set(key, h)
+      return next
+    })
+  }, [])
 
   useEffect(() => {
     const el = containerRef.current
@@ -75,7 +92,23 @@ export function Editor(props: EditorProps): React.JSX.Element {
     if (!editing) containerRef.current?.focus()
   }, [editing])
 
-  // Keep the selected row within the viewport as selection moves.
+  // Cumulative offsets (offsets[i] = top of row i; offsets[n] = total height).
+  const offsets = useMemo(() => {
+    const out = new Array<number>(rows.length + 1)
+    let acc = 0
+    for (let i = 0; i < rows.length; i++) {
+      out[i] = acc
+      acc += heights.get(keyOf(rows[i], i)) ?? ESTIMATE
+    }
+    out[rows.length] = acc
+    return out
+  }, [rows, heights])
+  const total = offsets[rows.length]
+
+  // Keep the selected row within the viewport as selection moves. Reads the
+  // latest offsets via a ref so height changes don't fight the user's scroll.
+  const offsetsRef = useRef(offsets)
+  offsetsRef.current = offsets
   const selectedIndex = useMemo(
     () => rows.findIndex((r) => r.kind === 'entity' && r.selected),
     [rows],
@@ -83,22 +116,28 @@ export function Editor(props: EditorProps): React.JSX.Element {
   useEffect(() => {
     const el = containerRef.current
     if (!el || selectedIndex < 0) return
-    const top = selectedIndex * rowHeight
-    const bottom = top + rowHeight
+    const o = offsetsRef.current
+    const top = o[selectedIndex]
+    const bottom = o[selectedIndex + 1]
     if (top < el.scrollTop) el.scrollTop = top
     else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight
-  }, [selectedIndex, rowHeight])
+  }, [selectedIndex])
 
-  const total = rows.length
-  const first = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN)
-  const visible = Math.ceil((viewportH || 600) / rowHeight) + OVERSCAN * 2
-  const last = Math.min(total, first + visible)
-  const slice = rows.slice(first, last)
+  // The windowed slice: walk offsets to the first row reaching the viewport top
+  // and the first past its bottom, padded by OVERSCAN.
+  const bottomEdge = scrollTop + (viewportH || 600)
+  let firstIndex = 0
+  while (firstIndex < rows.length && offsets[firstIndex + 1] <= scrollTop) firstIndex++
+  firstIndex = Math.max(0, firstIndex - OVERSCAN)
+  let lastIndex = firstIndex
+  while (lastIndex < rows.length && offsets[lastIndex] < bottomEdge) lastIndex++
+  lastIndex = Math.min(rows.length, lastIndex + OVERSCAN)
+  const slice = rows.slice(firstIndex, lastIndex)
 
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>): void => {
     const el = e.currentTarget
     setScrollTop(el.scrollTop)
-    if (el.scrollTop + el.clientHeight >= el.scrollHeight - rowHeight * OVERSCAN) onNearEnd()
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - ESTIMATE * OVERSCAN) onNearEnd()
   }
 
   return (
@@ -106,38 +145,40 @@ export function Editor(props: EditorProps): React.JSX.Element {
       {statusMessage && (
         <div className="px-4 py-2 bg-brand-50 text-[13px] text-brand-700">{statusMessage}</div>
       )}
-      {error && (
-        <div className="px-4 py-2 bg-error-50 text-[13px] text-error-700">{error}</div>
-      )}
+      {error && <div className="px-4 py-2 bg-error-50 text-[13px] text-error-700">{error}</div>}
 
       <div
         ref={containerRef}
         tabIndex={0}
         onKeyDown={onContainerKeyDown}
         onScroll={handleScroll}
-        className="relative flex-1 min-h-0 overflow-y-auto focus:outline-none"
+        className="relative flex-1 min-h-0 overflow-y-auto focus:outline-none py-1"
       >
-        {total === 0 ? (
+        {rows.length === 0 ? (
           <div className="px-4 py-8 text-center text-[13px] text-gray-400">
             {loading ? 'Loading…' : 'No entities.'}
           </div>
         ) : (
-          <div style={{ height: total * rowHeight, position: 'relative' }}>
+          <>
+            <div style={{ height: offsets[firstIndex] }} />
             {slice.map((row, i) => {
-              const index = first + i
+              const index = firstIndex + i
+              const key = keyOf(row, index)
               return (
                 <Row
-                  key={row.kind === 'entity' ? `${row.path.join('/')}` : `input-${index}`}
+                  key={key}
                   row={row}
-                  top={index * rowHeight}
-                  rowHeight={rowHeight}
+                  measureKey={key}
+                  onMeasure={setHeight}
                   onSelectRow={onSelectRow}
                   onToggleCollapse={onToggleCollapse}
-                  onEditKeyDown={onEditKeyDown}
+                  onCommitEdit={onCommitEdit}
+                  onCancelEdit={onCancelEdit}
                 />
               )
             })}
-          </div>
+            <div style={{ height: total - offsets[lastIndex] }} />
+          </>
         )}
       </div>
     </div>
@@ -150,56 +191,81 @@ export function Editor(props: EditorProps): React.JSX.Element {
 
 interface RowProps {
   row: EditorRow
-  top: number
-  rowHeight: number
+  measureKey: string
+  onMeasure: (key: string, height: number) => void
   onSelectRow: (path: string[]) => void
   onToggleCollapse: (row: EntityRow) => void
-  onEditKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void
+  onCommitEdit: (value: string) => void
+  onCancelEdit: () => void
 }
+
+// Escape abandons the edit; everything else (Enter to commit, autosize, blur to
+// commit) is the TextEditor's own behaviour.
+const escapeCancels =
+  (onCancelEdit: () => void) =>
+  (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      onCancelEdit()
+    }
+  }
 
 const Row = React.memo(function Row({
   row,
-  top,
-  rowHeight,
+  measureKey,
+  onMeasure,
   onSelectRow,
   onToggleCollapse,
-  onEditKeyDown,
+  onCommitEdit,
+  onCancelEdit,
 }: RowProps): React.JSX.Element {
-  const base: React.CSSProperties = {
-    position: 'absolute',
-    top,
-    left: 0,
-    right: 0,
-    height: rowHeight,
-  }
+  const ref = useRef<HTMLDivElement>(null)
+
+  // Report our height so the parent can lay out the window; a ResizeObserver
+  // keeps it current as text wraps or the in-place editor grows.
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const report = (): void => onMeasure(measureKey, el.offsetHeight)
+    report()
+    const ro = new ResizeObserver(report)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [measureKey, onMeasure])
 
   if (row.kind === 'input') {
     return (
-      <div style={base} className="flex items-center">
-        <div className="flex-1 pr-3" style={{ paddingLeft: row.depth * INDENT + 24 }}>
-          <input
-            autoFocus
-            defaultValue=""
-            placeholder="New entity…"
-            className={inputClass}
-            onKeyDown={onEditKeyDown}
-            onClick={(e) => e.stopPropagation()}
-          />
+      <div ref={ref} className="flex">
+        <div
+          className="flex items-start my-px py-0.5 mx-2 pr-2 flex-1 min-w-0"
+          style={{ paddingLeft: row.depth * INDENT + 4 }}
+        >
+          <span className="w-5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <TextEditor
+              autoFocus
+              value=""
+              setValue={onCommitEdit}
+              placeholder="New entity…"
+              onKeyDown={escapeCancels(onCancelEdit)}
+              className={TEXT}
+            />
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div style={base} className="flex items-center" onClick={() => onSelectRow(row.path)}>
+    <div ref={ref} className="flex" onClick={() => onSelectRow(row.path)}>
       <div
-        className={`flex items-center h-7 mx-2 pr-2 rounded-md flex-1 min-w-0 cursor-default transition-colors ${
+        className={`flex items-start my-px py-0.5 mx-2 pr-2 rounded-md flex-1 min-w-0 cursor-default transition-colors ${
           row.selected ? 'bg-gray-100' : 'hover:bg-gray-100/70'
         }`}
         style={{ paddingLeft: row.depth * INDENT + 4 }}
       >
         <span
-          className="flex w-5 shrink-0 items-center justify-center text-gray-400 select-none"
+          className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 select-none"
           onClick={(e) => {
             e.stopPropagation()
             if (row.hasChildren) onToggleCollapse(row)
@@ -215,19 +281,21 @@ const Row = React.memo(function Row({
             <span className="size-1 rounded-full bg-gray-300" />
           )}
         </span>
-        {row.editing ? (
-          <input
-            autoFocus
-            defaultValue={row.text ?? ''}
-            className={inputClass}
-            onKeyDown={onEditKeyDown}
-            onClick={(e) => e.stopPropagation()}
-          />
-        ) : row.text ? (
-          <span className="truncate text-[13px] font-serif text-gray-900">{row.text}</span>
-        ) : (
-          <span className="text-[13px] font-serif italic text-gray-400">Empty</span>
-        )}
+        <div className="flex-1 min-w-0">
+          {row.editing ? (
+            <TextEditor
+              autoFocus
+              value={row.text ?? ''}
+              setValue={onCommitEdit}
+              onKeyDown={escapeCancels(onCancelEdit)}
+              className={TEXT}
+            />
+          ) : row.text ? (
+            <span className={`block whitespace-pre-wrap break-words ${TEXT}`}>{row.text}</span>
+          ) : (
+            <span className={`block ${TEXT} italic text-gray-400`}>Empty</span>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -249,7 +317,6 @@ export function EditorView({ rootId, maxDepth, actions }: EditorViewProps): Reac
   return (
     <Editor
       rows={ed.rows}
-      rowHeight={ROW_HEIGHT}
       editing={ed.editing}
       loading={ed.loading}
       error={ed.error}
@@ -257,7 +324,8 @@ export function EditorView({ rootId, maxDepth, actions }: EditorViewProps): Reac
       onSelectRow={ed.selectRow}
       onToggleCollapse={ed.toggleCollapse}
       onContainerKeyDown={ed.onContainerKeyDown}
-      onEditKeyDown={ed.onEditKeyDown}
+      onCommitEdit={ed.commitEdit}
+      onCancelEdit={ed.cancelEdit}
       onNearEnd={ed.loadMore}
     />
   )

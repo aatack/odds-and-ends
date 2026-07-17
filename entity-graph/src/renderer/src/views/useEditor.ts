@@ -68,8 +68,10 @@ export interface UseEditorResult {
   statusMessage: string | null
   /** Global key handler for the scroll container. */
   onContainerKeyDown: (e: React.KeyboardEvent) => void
-  /** Key handler for the in-place text input (edit & create). */
-  onEditKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void
+  /** Commit the in-place editor's value (writes an edit or creates a child). */
+  commitEdit: (value: string) => void
+  /** Abandon the in-place editor without writing. */
+  cancelEdit: () => void
   selectRow: (path: string[]) => void
   toggleCollapse: (row: EntityRow) => void
   /** Called by the view when the scroll position nears the end. */
@@ -255,18 +257,8 @@ export function useEditor({ rootId, maxDepth, actions }: UseEditorArgs): UseEdit
     setEdit({ mode: 'create', path: selectedPath })
   }, [selectedId, selectedPath])
 
-  const onEditKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      // Keep keystrokes from reaching the container's navigation handler.
-      e.stopPropagation()
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        setEdit(null)
-        return
-      }
-      if (e.key !== 'Enter') return
-      e.preventDefault()
-      const value = e.currentTarget.value
+  const commitEdit = useCallback(
+    (value: string) => {
       const cur = edit
       setEdit(null)
       if (!cur) return
@@ -274,6 +266,9 @@ export function useEditor({ rootId, maxDepth, actions }: UseEditorArgs): UseEdit
         const id = cur.path[cur.path.length - 1]
         actions.writeText(id, value).then(reload).catch(setErrorMsg)
       } else {
+        // Committing an empty create (e.g. blurring the input) is a no-op rather
+        // than spawning a blank entity.
+        if (!value.trim()) return
         const parentId = cur.path[cur.path.length - 1]
         actions
           .createChild(parentId, value)
@@ -286,6 +281,8 @@ export function useEditor({ rootId, maxDepth, actions }: UseEditorArgs): UseEdit
     },
     [edit, actions, reload],
   )
+
+  const cancelEdit = useCallback(() => setEdit(null), [])
 
   // Moving / linking --------------------------------------------------------
   const unlinkSelected = useCallback(() => {
@@ -451,7 +448,8 @@ export function useEditor({ rootId, maxDepth, actions }: UseEditorArgs): UseEdit
     editing: edit !== null,
     statusMessage,
     onContainerKeyDown,
-    onEditKeyDown,
+    commitEdit,
+    cancelEdit,
     selectRow,
     toggleCollapse,
     loadMore,
