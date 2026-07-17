@@ -16,7 +16,8 @@ const ESTIMATE = 24 // assumed height of a not-yet-measured row, in px
 // wraps to show the whole value rather than truncating. `block` keeps the
 // editing textarea the same height as the static line (an inline-block textarea
 // leaves a descender gap below it) so pressing `e` doesn't shift the layout.
-const TEXT = 'block font-serif text-[14px] leading-5 text-gray-900'
+// Colour is applied per-use so collapsed rows can read as muted.
+const TEXT = 'block font-serif text-[14px] leading-5'
 
 const keyOf = (row: EditorRow, index: number): string =>
   row.kind === 'entity' ? row.path.join('/') : `input-${index}`
@@ -252,7 +253,7 @@ const Row = React.memo(function Row({
               setValue={onCommitEdit}
               placeholder="New entity…"
               onKeyDown={escapeCancels(onCancelEdit)}
-              className={TEXT}
+              className={`${TEXT} text-gray-900`}
             />
           </div>
         </div>
@@ -292,12 +293,18 @@ const Row = React.memo(function Row({
               value={row.text ?? ''}
               setValue={onCommitEdit}
               onKeyDown={escapeCancels(onCancelEdit)}
-              className={TEXT}
+              className={`${TEXT} text-gray-900`}
             />
           ) : row.text ? (
-            <span className={`block whitespace-pre-wrap break-words ${TEXT}`}>{row.text}</span>
+            <span
+              className={`whitespace-pre-wrap break-words ${TEXT} ${
+                row.hasChildren && row.collapsed ? 'text-gray-400' : 'text-gray-900'
+              }`}
+            >
+              {row.text}
+            </span>
           ) : (
-            <span className={`block ${TEXT} italic text-gray-400`}>Empty</span>
+            <span className={`${TEXT} italic text-gray-400`}>Empty</span>
           )}
         </div>
       </div>
