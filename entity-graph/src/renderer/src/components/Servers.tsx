@@ -142,6 +142,7 @@ function ServerRow({
           <SourceRow
             key={s.key}
             source={s}
+            fullUrl={`${server.baseUrl}/${s.sourceId}`}
             onOpen={() => onOpenSource(s)}
             onEdit={() => onEditSource(s)}
             onRemove={() => onRemoveSource(s)}
@@ -161,24 +162,36 @@ function ServerRow({
 
 function SourceRow({
   source,
+  fullUrl,
   onOpen,
   onEdit,
   onRemove,
 }: {
   source: SourceItem
+  fullUrl: string
   onOpen: () => void
   onEdit: () => void
   onRemove: () => void
 }): React.JSX.Element {
+  const [copied, setCopied] = useState(false)
+
+  const copyLink = async (): Promise<void> => {
+    await navigator.clipboard.writeText(fullUrl)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1200)
+  }
+
   return (
     <div className="flex items-center justify-between gap-2 py-1.5 pl-2">
-      <button className="min-w-0 text-left flex-1 flex items-baseline gap-2" onClick={onOpen}>
+      <button className="min-w-0 text-left flex-1" onClick={onOpen}>
         <span className="text-text-sm text-gray-900 truncate">{source.label}</span>
-        <span className="font-mono text-text-xs text-gray-400 truncate">{source.sourceId}</span>
       </button>
       <div className="flex items-center gap-2 shrink-0">
         {source.type && <span className="badge badge-gray">{source.type}</span>}
         <button className="btn-primary text-text-xs px-2 py-1" onClick={onOpen}>Open</button>
+        <IconButton title={copied ? 'Copied!' : 'Copy source link'} onClick={copyLink}>
+          {copied ? <CheckIcon /> : <LinkIcon />}
+        </IconButton>
         <IconButton title="Edit source" onClick={onEdit}><EditIcon /></IconButton>
         <IconButton title="Remove source" onClick={onRemove}><TrashIcon /></IconButton>
       </div>
@@ -312,7 +325,7 @@ function SourceEditor({
   actions: ServerActions
   onClose: () => void
 }): React.JSX.Element {
-  const title = existing ? `Edit ${existing.sourceId}` : server.admin ? 'Create source' : 'Connect to source'
+  const title = existing ? `Edit ${existing.label}` : server.admin ? 'Create source' : 'Connect to source'
   return (
     <Modal title={title} onClose={onClose}>
       {server.admin ? (
@@ -335,7 +348,6 @@ function AdminSourceFields({
   actions: ServerActions
   onClose: () => void
 }): React.JSX.Element {
-  const [id, setId] = useState(existing?.sourceId ?? '')
   const [label, setLabel] = useState(existing?.label ?? '')
   const [type, setType] = useState<SourceType>(existing?.type ?? 'sqlite')
   const [cfg, setCfg] = useState<Record<string, string>>(() => flattenConfig(existing?.config))
@@ -349,11 +361,9 @@ function AdminSourceFields({
     setError(null)
     try {
       const config = buildConfig(type, cfg)
-      const sourceId = existing?.sourceId ?? id.trim()
-      if (!sourceId) throw new Error('id is required')
+      // The id is assigned server-side for new sources; the label is all the user sets.
       await actions.saveAdminSource(server.id, existing?.sourceId ?? null, {
-        id: sourceId,
-        label: label.trim() || sourceId,
+        label: label.trim() || existing?.sourceId || 'Untitled source',
         config,
       })
       onClose()
@@ -366,15 +376,9 @@ function AdminSourceFields({
 
   return (
     <>
-      {!existing && (
-        <div>
-          <label className="label">ID</label>
-          <input className="input font-mono" value={id} onChange={(e) => setId(e.target.value)} placeholder="my-source" autoFocus />
-        </div>
-      )}
       <div>
         <label className="label">Label</label>
-        <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="My source" />
+        <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="My source" autoFocus />
       </div>
       <div>
         <label className="label">Type</label>
@@ -616,4 +620,19 @@ function TrashIcon(): React.JSX.Element {
 }
 function PlusIcon(): React.JSX.Element {
   return <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M10 4v12M4 10h12" /></svg>
+}
+function LinkIcon(): React.JSX.Element {
+  return (
+    <svg className={ICON} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 12a3 3 0 004.2 0l2.3-2.3a3 3 0 00-4.2-4.2L11 6" />
+      <path d="M12 8a3 3 0 00-4.2 0L5.5 10.3a3 3 0 004.2 4.2L11 14" />
+    </svg>
+  )
+}
+function CheckIcon(): React.JSX.Element {
+  return (
+    <svg className={ICON} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 10l4 4 8-9" />
+    </svg>
+  )
 }

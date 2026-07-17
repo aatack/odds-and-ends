@@ -45,7 +45,7 @@ export interface EntityGraphAPI {
   adminGetSource: (serverId: string, id: string) => Promise<SourceRow>
   adminCreateSource: (
     serverId: string,
-    body: { id: string; label?: string; config: SourceRow['config'] },
+    body: { id?: string; label?: string; config: SourceRow['config'] },
   ) => Promise<SourceRow>
   adminUpdateSource: (
     serverId: string,

@@ -50,7 +50,7 @@ export interface ServerActions {
   saveAdminSource: (
     serverId: string,
     existingId: string | null,
-    body: { id: string; label: string; config: SourceConfig },
+    body: { label: string; config: SourceConfig },
   ) => Promise<void>
   deleteAdminSource: (serverId: string, id: string) => Promise<void>
   // Non-admin source connections
@@ -160,7 +160,8 @@ export function useServers(): {
         if (existingId) {
           await graph.adminUpdateSource(serverId, existingId, { label: body.label, config: body.config })
         } else {
-          await graph.adminCreateSource(serverId, { id: body.id, label: body.label, config: body.config })
+          // No id — the main process assigns one.
+          await graph.adminCreateSource(serverId, { label: body.label, config: body.config })
         }
         await refresh()
       },

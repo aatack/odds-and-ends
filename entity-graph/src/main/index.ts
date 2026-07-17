@@ -1,9 +1,24 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
+import { randomBytes } from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
-import type { ActiveSource, NewServer, NewSourceConnection, Server } from '../core/client'
+import type { ActiveSource, NewServer, NewSourceConnection, Server, TokenRow } from '../core/client'
 import { store } from './store'
 import { ServerManager } from './servers'
+
+// nanoid's default url-safe alphabet (64 chars ⇒ `byte & 63` selects uniformly).
+const NANOID_ALPHABET = 'useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict'
+
+/** A short, URL-safe id in the style of `nanoid`. */
+function nanoid(size = 21): string {
+  const bytes = randomBytes(size)
+  let id = ''
+  for (let i = 0; i < size; i++) id += NANOID_ALPHABET[bytes[i] & 63]
+  return id
+}
+
+/** Label carried by the token the app issues for itself when opening a source. */
+const APP_TOKEN_LABEL = 'app'
 
 // ---------------------------------------------------------------------------
 // Local server processes
@@ -118,7 +133,12 @@ ipcMain.handle('sourceConn:add', (_e, cfg: NewSourceConnection) => {
 ipcMain.handle('sourceConn:update', (_e, id: string, patch: Partial<NewSourceConnection>) => {
   store.set(
     'sourceConnections',
-    store.get('sourceConnections').map((c) => (c.id === id ? { ...c, ...patch, id } : c)),
+    store.get('sourceConnections').map((c) => {
+      if (c.id !== id) return c
+      // A blank/absent token means "keep the stored one" — don't clear it.
+      const token = patch.token?.trim() ? patch.token : c.token
+      return { ...c, ...patch, id, token }
+    }),
   )
 })
 ipcMain.handle('sourceConn:remove', (_e, id: string) => {
@@ -136,10 +156,22 @@ ipcMain.handle('source:open', async (_e, serverId: string, sourceId: string, lab
   const server = requireServer(serverId)
   let token: string
   if (server.adminToken) {
-    const issued = (await adminRequest(serverId, 'POST', `/admin/sources/${sourceId}/tokens`, {
-      label: 'app',
-    })) as { token: string }
-    token = issued.token
+    // Reuse the app's own live token for this source if one exists, so repeated
+    // opens don't pile up throwaway tokens; only mint a fresh one when there's none.
+    const existing = (await adminRequest(
+      serverId,
+      'GET',
+      `/admin/sources/${sourceId}/tokens`,
+    )) as TokenRow[]
+    const reusable = existing.find((t) => !t.revoked && t.label === APP_TOKEN_LABEL)
+    if (reusable) {
+      token = reusable.token
+    } else {
+      const issued = (await adminRequest(serverId, 'POST', `/admin/sources/${sourceId}/tokens`, {
+        label: APP_TOKEN_LABEL,
+      })) as { token: string }
+      token = issued.token
+    }
   } else {
     const conn = store
       .get('sourceConnections')
@@ -169,8 +201,9 @@ ipcMain.handle('admin:listSources', (_e, serverId: string) =>
 ipcMain.handle('admin:getSource', (_e, serverId: string, id: string) =>
   adminRequest(serverId, 'GET', `/admin/sources/${id}`),
 )
-ipcMain.handle('admin:createSource', (_e, serverId: string, body: unknown) =>
-  adminRequest(serverId, 'POST', '/admin/sources', body),
+ipcMain.handle('admin:createSource', (_e, serverId: string, body: { id?: string; label?: string; config: unknown }) =>
+  // Source ids are opaque; auto-assign a nanoid so the user never has to pick one.
+  adminRequest(serverId, 'POST', '/admin/sources', { ...body, id: body.id?.trim() || nanoid() }),
 )
 ipcMain.handle('admin:updateSource', (_e, serverId: string, id: string, body: unknown) =>
   adminRequest(serverId, 'PUT', `/admin/sources/${id}`, body),
