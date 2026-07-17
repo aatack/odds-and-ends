@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { ChevronDown, ChevronRight } from '@untitledui/icons'
 import { TextEditor } from '../components/ui/TextEditor'
 import { ContextMenu, type ContextMenuItem } from '../components/ui/ContextMenu'
+import { EDITOR_ACTIONS, hotkeyHint } from '../actions/editorActions'
+import type { Command } from '../components/CommandPalette'
 import { useEditor } from './useEditor'
 import type { EditorActions, EditorRow, EntityRow } from './useEditor'
 
@@ -23,22 +25,6 @@ const TEXT = 'block font-serif text-[14px] leading-5'
 const keyOf = (row: EditorRow, index: number): string =>
   row.kind === 'entity' ? row.path.join('/') : `input-${index}`
 
-// Format the entity at `startIndex` and its visible descendants as nested
-// markdown bullets. Children of collapsed rows aren't in `rows`, so they're
-// naturally excluded. Depth sets the indent relative to the starting row.
-function subtreeToMarkdown(rows: EditorRow[], startIndex: number): string {
-  const start = rows[startIndex]
-  if (start.kind !== 'entity') return ''
-  const lines: string[] = []
-  for (let i = startIndex; i < rows.length; i++) {
-    const row = rows[i]
-    if (i > startIndex && row.kind === 'entity' && row.depth <= start.depth) break
-    if (row.kind !== 'entity') continue
-    lines.push(`${'  '.repeat(row.depth - start.depth)}- ${row.text ?? ''}`)
-  }
-  return lines.join('\n')
-}
-
 // ---------------------------------------------------------------------------
 // Dumb rendering component
 // ---------------------------------------------------------------------------
@@ -49,12 +35,14 @@ export interface EditorProps {
   loading: boolean
   error: string | null
   statusMessage: string | null
+  notice: string | null
   onSelectRow: (path: string[]) => void
   onToggleCollapse: (row: EntityRow) => void
   onContainerKeyDown: (e: React.KeyboardEvent) => void
   onCommitEdit: (value: string) => void
   onCancelEdit: () => void
-  onDebugEntity: (entityId: string) => void
+  onExport: () => void
+  onDebug: () => void
   onNearEnd: () => void
 }
 
@@ -71,20 +59,20 @@ export function Editor(props: EditorProps): React.JSX.Element {
     loading,
     error,
     statusMessage,
+    notice,
     onSelectRow,
     onToggleCollapse,
     onContainerKeyDown,
     onCommitEdit,
     onCancelEdit,
-    onDebugEntity,
+    onExport,
+    onDebug,
     onNearEnd,
   } = props
 
   const containerRef = useRef<HTMLDivElement>(null)
-  // Right-click menu target (a row index + screen position) and a transient
-  // confirmation line (e.g. after an export copies to the clipboard).
+  // Right-click menu target: a row index + screen position.
   const [menu, setMenu] = useState<{ index: number; x: number; y: number } | null>(null)
-  const [flash, setFlash] = useState<string | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   // The scroll container fills its parent, so its height is measured rather
   // than fixed; it drives how many rows the window renders.
@@ -173,32 +161,14 @@ export function Editor(props: EditorProps): React.JSX.Element {
     setMenu({ index, x: e.clientX, y: e.clientY })
   }
 
-  const exportSubtree = (index: number): void => {
-    const md = subtreeToMarkdown(rows, index)
-    void navigator.clipboard.writeText(md)
-    const count = md ? md.split('\n').length : 0
-    setFlash(`Copied ${count} item${count === 1 ? '' : 's'} to the clipboard`)
-    setTimeout(() => setFlash(null), 1800)
-  }
-
+  // The menu acts on the row it opened over, which openMenuFor has selected, so
+  // the export/debug actions (which operate on the selection) hit the right one.
   const menuRow = menu ? rows[menu.index] : null
   const menuItems: ContextMenuItem[] =
     menu && menuRow?.kind === 'entity'
       ? [
-          {
-            label: 'Export',
-            onClick: () => {
-              exportSubtree(menu.index)
-              setMenu(null)
-            },
-          },
-          {
-            label: 'Debug entity',
-            onClick: () => {
-              onDebugEntity(menuRow.id)
-              setMenu(null)
-            },
-          },
+          { label: 'Export', onClick: () => { onExport(); setMenu(null) } },
+          { label: 'Debug entity', onClick: () => { onDebug(); setMenu(null) } },
         ]
       : []
 
@@ -208,7 +178,7 @@ export function Editor(props: EditorProps): React.JSX.Element {
         <div className="px-4 py-2 bg-brand-50 text-[13px] text-brand-700">{statusMessage}</div>
       )}
       {error && <div className="px-4 py-2 bg-error-50 text-[13px] text-error-700">{error}</div>}
-      {flash && <div className="px-4 py-2 bg-success-50 text-[13px] text-success-700">{flash}</div>}
+      {notice && <div className="px-4 py-2 bg-success-50 text-[13px] text-success-700">{notice}</div>}
 
       <div
         ref={containerRef}
@@ -390,11 +360,39 @@ export interface EditorViewProps {
   maxDepth?: number
   actions: EditorActions
   onDebugEntity: (entityId: string) => void
+  /** Publish the editor's palette commands to the app shell (null on unmount). */
+  onRegisterCommands: (commands: Command[] | null) => void
 }
 
 /** Glue between {@link useEditor} (logic) and {@link Editor} (rendering). */
-export function EditorView({ rootId, maxDepth, actions, onDebugEntity }: EditorViewProps): React.JSX.Element {
-  const ed = useEditor({ rootId, maxDepth, actions })
+export function EditorView({
+  rootId,
+  maxDepth,
+  actions,
+  onDebugEntity,
+  onRegisterCommands,
+}: EditorViewProps): React.JSX.Element {
+  const ed = useEditor({ rootId, maxDepth, actions, onDebugEntity })
+  const { runAction } = ed
+
+  // Editor actions surface in the command palette, built from the same registry
+  // the hotkeys use and bound to the stable runAction — so the two never drift.
+  const commands = useMemo<Command[]>(
+    () =>
+      EDITOR_ACTIONS.filter((a) => a.palette !== false).map((a) => ({
+        id: `editor.${a.id}`,
+        label: a.label,
+        hint: hotkeyHint(a),
+        run: () => runAction(a.id),
+      })),
+    [runAction],
+  )
+
+  useEffect(() => {
+    onRegisterCommands(commands)
+    return () => onRegisterCommands(null)
+  }, [commands, onRegisterCommands])
+
   return (
     <Editor
       rows={ed.rows}
@@ -402,12 +400,14 @@ export function EditorView({ rootId, maxDepth, actions, onDebugEntity }: EditorV
       loading={ed.loading}
       error={ed.error}
       statusMessage={ed.statusMessage}
+      notice={ed.notice}
       onSelectRow={ed.selectRow}
       onToggleCollapse={ed.toggleCollapse}
       onContainerKeyDown={ed.onContainerKeyDown}
       onCommitEdit={ed.commitEdit}
       onCancelEdit={ed.cancelEdit}
-      onDebugEntity={onDebugEntity}
+      onExport={() => runAction('export')}
+      onDebug={() => runAction('debug')}
       onNearEnd={ed.loadMore}
     />
   )

@@ -5,6 +5,7 @@ import { EditorView } from './Editor'
 import type { EditorActions } from './useEditor'
 import { DebugModal } from '../components/DebugModal'
 import { EntityDebugModal } from '../components/EntityDebugModal'
+import type { Command } from '../components/CommandPalette'
 import { Button } from '../components/ui/Button'
 
 const api = window.entityGraph
@@ -15,6 +16,8 @@ const ROOT_ID = '@index'
 interface Props {
   active: ActiveSource
   user: string
+  /** Publish the editor's palette commands to the app shell. */
+  onRegisterCommands: (commands: Command[] | null) => void
 }
 
 /**
@@ -23,7 +26,7 @@ interface Props {
  * through `sourceCall` on the active source — the app holds no local state
  * about the graph.
  */
-export function SourceView({ active, user }: Props): React.JSX.Element {
+export function SourceView({ active, user, onRegisterCommands }: Props): React.JSX.Element {
   const [debug, setDebug] = useState(false)
   const [debugEntity, setDebugEntity] = useState<string | null>(null)
 
@@ -49,7 +52,12 @@ export function SourceView({ active, user }: Props): React.JSX.Element {
   return (
     <div className="relative flex flex-col h-full">
       <div className="flex-1 min-h-0">
-        <EditorView rootId={ROOT_ID} actions={actions} onDebugEntity={setDebugEntity} />
+        <EditorView
+          rootId={ROOT_ID}
+          actions={actions}
+          onDebugEntity={setDebugEntity}
+          onRegisterCommands={onRegisterCommands}
+        />
       </div>
 
       {/* Debug lives in an unobtrusive corner button rather than a header bar. */}

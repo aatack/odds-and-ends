@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Moon01, Sun } from '@untitledui/icons'
 import { Servers } from './components/Servers'
 import { SourceView } from './views/SourceView'
@@ -14,6 +14,13 @@ export default function App(): React.JSX.Element | null {
   const { ready, user, page, current, active, openError, actions } = useApp()
   const { theme, toggle } = useTheme()
   const [paletteOpen, setPaletteOpen] = useState(false)
+  // Editor actions register themselves here while a source is open, so the one
+  // command palette lists them alongside the app-level commands.
+  const [editorCommands, setEditorCommands] = useState<Command[]>([])
+  const registerEditorCommands = useCallback(
+    (commands: Command[] | null) => setEditorCommands(commands ?? []),
+    [],
+  )
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -26,7 +33,7 @@ export default function App(): React.JSX.Element | null {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const commands = useMemo<Command[]>(
+  const appCommands = useMemo<Command[]>(
     () => [
       { id: 'go-editor', label: 'Go to editor', hint: 'Navigate', run: () => actions.setPage('editor') },
       { id: 'go-sources', label: 'Go to sources', hint: 'Navigate', run: () => actions.setPage('sources') },
@@ -39,6 +46,8 @@ export default function App(): React.JSX.Element | null {
     ],
     [actions, theme, toggle],
   )
+  // Editor actions first — they're the most relevant while the tree is focused.
+  const commands = useMemo(() => [...editorCommands, ...appCommands], [editorCommands, appCommands])
 
   if (!ready) return null
 
@@ -87,7 +96,7 @@ export default function App(): React.JSX.Element | null {
             <Servers current={current} onSelectSource={actions.selectSource} />
           </div>
         ) : active ? (
-          <SourceView active={active} user={user} />
+          <SourceView active={active} user={user} onRegisterCommands={registerEditorCommands} />
         ) : (
           <EditorPlaceholder
             openError={openError}

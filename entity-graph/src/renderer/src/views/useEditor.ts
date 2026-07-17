@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { QueryPage, QueryResult, StackFrame } from '../../../core/wrapper'
+import { EDITOR_ACTIONS, matchAction, type EditorController } from '../actions/editorActions'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -31,6 +32,8 @@ export interface UseEditorArgs {
   rootId: string
   maxDepth?: number
   actions: EditorActions
+  /** Open the raw debug inspector for an entity (from the `debug` action). */
+  onDebugEntity: (entityId: string) => void
 }
 
 /** A rendered bullet backed by a real entity. */
@@ -66,8 +69,12 @@ export interface UseEditorResult {
   editing: boolean
   /** Human-readable hint for an in-progress move/link, else null. */
   statusMessage: string | null
-  /** Global key handler for the scroll container. */
+  /** Transient confirmation line (e.g. after an export), else null. */
+  notice: string | null
+  /** Global key handler for the scroll container; dispatches editor actions. */
   onContainerKeyDown: (e: React.KeyboardEvent) => void
+  /** Run a registered editor action by id (shared with the command palette). */
+  runAction: (id: string) => void
   /** Commit the in-place editor's value (writes an edit or creates a child). */
   commitEdit: (value: string) => void
   /** Abandon the in-place editor without writing. */
@@ -76,6 +83,22 @@ export interface UseEditorResult {
   toggleCollapse: (row: EntityRow) => void
   /** Called by the view when the scroll position nears the end. */
   loadMore: () => void
+}
+
+// Format the entity at `startIndex` and its visible descendants as nested
+// markdown bullets. Children of collapsed rows aren't in `rows`, so they're
+// naturally excluded. Depth sets the indent relative to the starting row.
+function subtreeToMarkdown(rows: EditorRow[], startIndex: number): string {
+  const start = rows[startIndex]
+  if (!start || start.kind !== 'entity') return ''
+  const lines: string[] = []
+  for (let i = startIndex; i < rows.length; i++) {
+    const row = rows[i]
+    if (i > startIndex && row.kind === 'entity' && row.depth <= start.depth) break
+    if (row.kind !== 'entity') continue
+    lines.push(`${'  '.repeat(row.depth - start.depth)}- ${row.text ?? ''}`)
+  }
+  return lines.join('\n')
 }
 
 // ---------------------------------------------------------------------------
@@ -99,13 +122,14 @@ const pathEq = (a: string[], b: string[]): boolean =>
  * state (root, depth, collapsed set, selection path, transient edit/move modes)
  * and derives the flat row list from a resolved query page.
  */
-export function useEditor({ rootId, maxDepth, actions }: UseEditorArgs): UseEditorResult {
+export function useEditor({ rootId, maxDepth, actions, onDebugEntity }: UseEditorArgs): UseEditorResult {
   // Latent state ------------------------------------------------------------
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [selectedPath, setSelectedPath] = useState<string[]>([])
   const [limit, setLimit] = useState(PAGE_SIZE)
   const [edit, setEdit] = useState<EditState>(null)
   const [pending, setPending] = useState<PendingState>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   // Query state -------------------------------------------------------------
   // `results` accumulates across pages; `continuation` is the resume token for
@@ -330,78 +354,62 @@ export function useEditor({ rootId, maxDepth, actions }: UseEditorArgs): UseEdit
     [pending, selectedPath, actions, reload],
   )
 
+  const cancelPending = useCallback(() => setPending(null), [])
+
+  const exportSelected = useCallback(() => {
+    const index = rows.findIndex((r) => r.kind === 'entity' && pathEq(r.path, selectedPath))
+    if (index < 0) return
+    const md = subtreeToMarkdown(rows, index)
+    void navigator.clipboard.writeText(md)
+    const count = md ? md.split('\n').length : 0
+    setNotice(`Copied ${count} item${count === 1 ? '' : 's'} to the clipboard`)
+    window.setTimeout(() => setNotice(null), 1800)
+  }, [rows, selectedPath])
+
+  const debugSelected = useCallback(() => {
+    if (selectedId) onDebugEntity(selectedId)
+  }, [selectedId, onDebugEntity])
+
   function setErrorMsg(e: unknown) {
     setError(e instanceof Error ? e.message : String(e))
   }
 
-  // Global key handling -----------------------------------------------------
-  const onContainerKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (edit) return // the in-place input owns the keyboard while editing
-      // Leave modifier combos (e.g. Ctrl/⌘+R reload, devtools) to the app shell.
-      if (e.ctrlKey || e.metaKey || e.altKey) return
-      switch (e.key) {
-        case 'w':
-          e.preventDefault()
-          moveSelection(-1)
-          break
-        case 's':
-          e.preventDefault()
-          moveSelection(1)
-          break
-        case 'a':
-          e.preventDefault()
-          selectParent()
-          break
-        case 'ArrowLeft':
-          e.preventDefault()
-          collapseSelected()
-          break
-        case 'ArrowRight':
-          e.preventDefault()
-          expandSelected()
-          break
-        case 'e':
-          e.preventDefault()
-          startEdit()
-          break
-        case 'Enter':
-          e.preventDefault()
-          startCreate()
-          break
-        case 'Backspace':
-        case 'Delete':
-          e.preventDefault()
-          unlinkSelected()
-          break
-        case 'x':
-          e.preventDefault()
-          toggleMove()
-          break
-        case 'Escape':
-          e.preventDefault()
-          setPending(null)
-          break
-        default:
-          if (e.key === 'r' || e.key === 'R') {
-            e.preventDefault()
-            toggleLink(e.shiftKey)
-          }
-      }
-    },
-    [
-      edit,
-      moveSelection,
-      selectParent,
-      collapseSelected,
-      expandSelected,
-      startEdit,
-      startCreate,
-      unlinkSelected,
-      toggleMove,
-      toggleLink,
-    ],
-  )
+  // Actions & key handling --------------------------------------------------
+  // The controller is the seam between the action registry and this hook's
+  // state. It's rebuilt each render and held in a ref so the key handler and
+  // `runAction` stay stable while always seeing the latest closures.
+  const controller: EditorController = {
+    moveSelection,
+    selectParent,
+    collapseSelected,
+    expandSelected,
+    startEdit,
+    startCreate,
+    unlinkSelected,
+    toggleMove,
+    toggleLink,
+    cancelPending,
+    exportSelected,
+    debugSelected,
+  }
+  const controllerRef = useRef(controller)
+  controllerRef.current = controller
+  const editingRef = useRef(edit)
+  editingRef.current = edit
+
+  const runAction = useCallback((id: string) => {
+    EDITOR_ACTIONS.find((a) => a.id === id)?.run(controllerRef.current)
+  }, [])
+
+  const onContainerKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (editingRef.current) return // the in-place input owns the keyboard while editing
+    // Leave modifier combos (e.g. Ctrl/⌘+K palette, devtools) to the app shell.
+    if (e.ctrlKey || e.metaKey || e.altKey) return
+    const action = matchAction(e)
+    if (!action) return
+    e.preventDefault()
+    action.run(controllerRef.current)
+  }, [])
 
   const selectRow = useCallback((path: string[]) => setSelectedPath(path), [])
 
@@ -447,7 +455,9 @@ export function useEditor({ rootId, maxDepth, actions }: UseEditorArgs): UseEdit
     error,
     editing: edit !== null,
     statusMessage,
+    notice,
     onContainerKeyDown,
+    runAction,
     commitEdit,
     cancelEdit,
     selectRow,
