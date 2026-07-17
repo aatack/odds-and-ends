@@ -149,42 +149,12 @@ body {
   scrollbar-color: var(--color-gray-300) transparent;
 }
 
-/* Motion: subtle and fast. Enter animations are reserved for overlays/popovers;
- * everything else transitions on hover/state in ~150ms. */
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes pop-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.animate-fade-in {
-  animation: fade-in 120ms ease-out;
-}
-
-.animate-pop-in {
-  animation: pop-in 140ms ease-out;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
+/* No motion anywhere — see AGENTS.md. State changes are instantaneous. This
+ * global override also neutralises any transition/animation utility that slips
+ * into a component, so the rule holds even if one is added by mistake. */
+*,
+*::before,
+*::after {
+  transition: none !important;
+  animation: none !important;
 }

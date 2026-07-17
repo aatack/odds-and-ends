@@ -66,11 +66,11 @@ export function CommandPalette({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-gray-950/10 pt-32 backdrop-blur-xs animate-fade-in"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-gray-950/10 pt-32 backdrop-blur-xs"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-lg animate-pop-in"
+        className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="border-b border-gray-100">
@@ -98,7 +98,7 @@ export function CommandPalette({
                   onClick={() => runAt(i)}
                   onMouseMove={() => setActiveIndex(i)}
                   className={cn(
-                    'flex w-full items-center justify-between px-4 py-2.5 text-left text-[13px] transition-colors focus:outline-none',
+                    'flex w-full items-center justify-between px-4 py-2.5 text-left text-[13px] focus:outline-none',
                     i === active && 'bg-gray-100/70',
                   )}
                 >

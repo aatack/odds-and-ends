@@ -19,7 +19,7 @@ export function IconButton({
       onClick={onClick}
       disabled={!onClick}
       className={cn(
-        'inline-flex size-7 items-center justify-center rounded-md text-gray-500 transition-colors',
+        'inline-flex size-7 items-center justify-center rounded-md text-gray-500',
         'hover:bg-gray-100 hover:text-gray-700 focus:outline-none',
         'focus-visible:ring-2 focus-visible:ring-brand-500/40 disabled:opacity-40',
         className,

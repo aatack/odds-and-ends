@@ -31,7 +31,7 @@ export interface ServerRowModel {
   sources: SourceItem[]
   /** Set when this server's sources failed to load (e.g. admin server offline). */
   sourcesError: string | null
-  /** A start/stop transition is in flight (drives the play/pause spinner). */
+  /** A start/stop request is in flight (swaps the play/pause icon for busy). */
   busy: boolean
 }
 

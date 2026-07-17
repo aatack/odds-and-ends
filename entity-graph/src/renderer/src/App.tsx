@@ -170,7 +170,7 @@ function ProfileMenu({
         align="right"
         trigger={({ toggle }) => (
           <button
-            className="flex items-center gap-1.5 text-[13px] text-gray-600 transition-colors hover:text-gray-900 focus:outline-none"
+            className="flex items-center gap-1.5 text-[13px] text-gray-600 hover:text-gray-900 focus:outline-none"
             onClick={toggle}
           >
             <span className="flex size-6 items-center justify-center rounded-full bg-brand-50 text-[11px] font-medium text-brand-700">
@@ -232,7 +232,7 @@ function ProfileMenu({
                 </div>
               ) : (
                 <button
-                  className="w-full text-left text-xs text-gray-500 transition-colors hover:text-gray-900 focus:outline-none"
+                  className="w-full text-left text-xs text-gray-500 hover:text-gray-900 focus:outline-none"
                   onClick={() => {
                     setName(user)
                     setEditing(true)

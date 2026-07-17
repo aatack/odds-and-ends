@@ -150,7 +150,7 @@ function ServerRow({
               onClick={busy ? undefined : server.running ? onStop : onStart}
             >
               {busy ? (
-                <Loading02 size={16} className="animate-spin" />
+                <Loading02 size={16} />
               ) : server.running ? (
                 <PauseCircle size={16} />
               ) : (
@@ -184,7 +184,7 @@ function ServerRow({
           />
         ))}
         <button
-          className="inline-flex items-center gap-1 pt-1 text-xs text-brand-600 transition-colors hover:text-brand-700 focus:outline-none"
+          className="inline-flex items-center gap-1 pt-1 text-xs text-brand-600 hover:text-brand-700 focus:outline-none"
           onClick={onAddSource}
         >
           <Plus size={14} /> {server.admin ? 'Create source' : 'Connect to source'}
@@ -224,7 +224,7 @@ function SourceRow({
   }
 
   return (
-    <div className="flex items-center justify-between gap-2 rounded-md py-1.5 pl-2 transition-colors hover:bg-gray-100/70">
+    <div className="flex items-center justify-between gap-2 rounded-md py-1.5 pl-2 hover:bg-gray-100/70">
       <button
         className="flex min-w-0 flex-1 items-center gap-2 text-left focus:outline-none"
         onClick={onSelect}
@@ -257,7 +257,7 @@ function SourceRow({
 function Tickbox({ checked }: { checked: boolean }): React.JSX.Element {
   return (
     <span
-      className={`flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors ${
+      className={`flex size-4 shrink-0 items-center justify-center rounded-full border ${
         checked ? 'border-brand-600 bg-brand-600 text-white' : 'border-gray-300 text-transparent'
       }`}
     >
@@ -326,7 +326,7 @@ function ServerEditor({
             <button
               key={String(v)}
               onClick={() => setLocal(v)}
-              className={`rounded-md px-3 py-1 text-[13px] font-medium transition-colors focus:outline-none ${
+              className={`rounded-md px-3 py-1 text-[13px] font-medium focus:outline-none ${
                 local === v ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -591,7 +591,7 @@ function TokenSection({
       <div className="flex items-center justify-between">
         <p className={SECTION}>Access tokens</p>
         <button
-          className="text-xs text-brand-600 transition-colors hover:text-brand-700 focus:outline-none"
+          className="text-xs text-brand-600 hover:text-brand-700 focus:outline-none"
           onClick={issue}
         >
           issue token
@@ -612,7 +612,7 @@ function TokenSection({
               </span>
               {!t.revoked && (
                 <button
-                  className="shrink-0 text-error-600 transition-colors hover:text-error-700 focus:outline-none"
+                  className="shrink-0 text-error-600 hover:text-error-700 focus:outline-none"
                   onClick={() => revoke(t.token)}
                 >
                   revoke

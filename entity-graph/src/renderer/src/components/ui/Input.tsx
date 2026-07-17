@@ -3,7 +3,7 @@ import { cn } from '../../helpers/cn'
 
 const BASE =
   'w-full rounded-md bg-white px-2.5 text-[13px] text-gray-900 placeholder:text-gray-400 ' +
-  'border border-gray-200 shadow-xs transition-colors focus:outline-none ' +
+  'border border-gray-200 shadow-xs focus:outline-none ' +
   'focus-visible:border-brand-500 focus-visible:ring-2 focus-visible:ring-brand-500/40 ' +
   'disabled:opacity-50'
 

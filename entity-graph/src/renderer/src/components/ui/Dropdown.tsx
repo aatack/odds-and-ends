@@ -39,7 +39,7 @@ export function Dropdown({
       {open && (
         <div
           className={cn(
-            'absolute z-50 mt-2 min-w-48 rounded-lg bg-white py-1.5 shadow-lg animate-fade-in',
+            'absolute z-50 mt-2 min-w-48 rounded-lg bg-white py-1.5 shadow-lg',
             align === 'right' ? 'right-0' : 'left-0',
             menuClassName,
           )}
@@ -63,7 +63,7 @@ export function DropdownItem({
   return (
     <button
       className={cn(
-        'w-full px-3 py-1.5 text-left text-[13px] transition-colors hover:bg-gray-100/70 focus:outline-none',
+        'w-full px-3 py-1.5 text-left text-[13px] hover:bg-gray-100/70 focus:outline-none',
         active ? 'font-medium text-brand-700' : 'text-gray-700',
       )}
       onClick={onClick}

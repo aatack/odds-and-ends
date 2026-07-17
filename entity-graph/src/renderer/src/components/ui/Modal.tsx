@@ -17,11 +17,11 @@ export function Modal({
 }): React.JSX.Element {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-gray-950/30 p-6 animate-fade-in"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-gray-950/30 p-6"
       onClick={onClose}
     >
       <div
-        className={`my-6 w-full ${wide ? 'max-w-2xl' : 'max-w-md'} rounded-xl bg-white shadow-lg animate-pop-in`}
+        className={`my-6 w-full ${wide ? 'max-w-2xl' : 'max-w-md'} rounded-xl bg-white shadow-lg`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-3.5">

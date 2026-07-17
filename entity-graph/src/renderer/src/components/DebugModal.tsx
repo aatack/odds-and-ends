@@ -144,7 +144,7 @@ function RawEvent({ connId, user }: { connId: string; user: string }): React.JSX
           <button
             key={k}
             onClick={() => setKind(k)}
-            className={`rounded-md px-3 py-1 text-[13px] font-medium transition-colors focus:outline-none ${
+            className={`rounded-md px-3 py-1 text-[13px] font-medium focus:outline-none ${
               kind === k ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-700'
             }`}
           >

@@ -44,7 +44,7 @@ export function ContextMenu({
   return (
     <div
       ref={ref}
-      className="fixed z-50 min-w-44 rounded-lg bg-white py-1.5 shadow-lg animate-fade-in"
+      className="fixed z-50 min-w-44 rounded-lg bg-white py-1.5 shadow-lg"
       style={{ top: y, left: x }}
     >
       {items.map((item) => (
@@ -52,7 +52,7 @@ export function ContextMenu({
           key={item.label}
           onClick={item.onClick}
           className={cn(
-            'w-full px-3 py-1.5 text-left text-[13px] transition-colors hover:bg-gray-100/70 focus:outline-none',
+            'w-full px-3 py-1.5 text-left text-[13px] hover:bg-gray-100/70 focus:outline-none',
             item.danger ? 'text-error-600' : 'text-gray-700',
           )}
         >
