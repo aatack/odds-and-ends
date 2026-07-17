@@ -17,7 +17,8 @@
   --color-gray-600: #475467;
   --color-gray-700: #344054;
   --color-gray-800: #1d2939;
-  --color-gray-900: #101828;
+  /* Primary text ink — the app-wide text colour. */
+  --color-gray-900: #292929;
   --color-gray-950: #0c111d;
 
   /* Muted indigo accent, in the spirit of Linear — used sparingly, never loud. */
@@ -58,12 +59,9 @@
     0 16px 40px -12px rgba(16, 24, 40, 0.18),
     0 4px 10px -4px rgba(16, 24, 40, 0.08);
 
-  /* UI chrome: Geist — a clean, professional grotesque (Linear/Vercel feel). */
-  --font-sans:
-    "Geist Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  /* User-written prose: a warm transitional serif, close to Anthropic's. */
-  --font-serif:
-    "Source Serif 4 Variable", Iowan Old Style, Georgia, Cambria, serif;
+  /* Lora throughout — one serif voice for both chrome and content. */
+  --font-sans: "Lora Variable", Georgia, Cambria, "Times New Roman", serif;
+  --font-serif: "Lora Variable", Georgia, Cambria, "Times New Roman", serif;
 }
 
 /*
@@ -123,9 +121,9 @@ body {
   background: var(--color-gray-50);
   color: var(--color-gray-900);
   font-family: var(--font-sans);
-  /* Tighten the UI voice a touch — grotesques read cleaner slightly negative. */
-  letter-spacing: -0.011em;
-  font-feature-settings: "cv01", "ss01";
+  /* Lora at a slightly-heavier-than-regular weight, 14px, throughout. */
+  font-weight: 450;
+  font-size: 14px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
