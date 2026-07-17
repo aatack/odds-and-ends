@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { QueryPage, QueryResult, StackFrame } from '../../../core/wrapper'
-import { EDITOR_ACTIONS, matchAction, type EditorController } from '../actions/editorActions'
+import { EDITOR_ACTIONS, type EditorController } from '../actions/editorActions'
+import { matchAction } from '../actions/keys'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -405,7 +406,7 @@ export function useEditor({ rootId, maxDepth, actions, onDebugEntity }: UseEdito
     if (editingRef.current) return // the in-place input owns the keyboard while editing
     // Leave modifier combos (e.g. Ctrl/⌘+K palette, devtools) to the app shell.
     if (e.ctrlKey || e.metaKey || e.altKey) return
-    const action = matchAction(e)
+    const action = matchAction(EDITOR_ACTIONS, e)
     if (!action) return
     e.preventDefault()
     action.run(controllerRef.current)

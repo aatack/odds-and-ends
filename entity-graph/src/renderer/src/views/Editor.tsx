@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { ChevronDown, ChevronRight } from '@untitledui/icons'
 import { TextEditor } from '../components/ui/TextEditor'
 import { ContextMenu, type ContextMenuItem } from '../components/ui/ContextMenu'
-import { EDITOR_ACTIONS, hotkeyHint } from '../actions/editorActions'
+import { EDITOR_ACTIONS } from '../actions/editorActions'
+import { hotkeyHint } from '../actions/keys'
 import type { Command } from '../components/CommandPalette'
 import { useEditor } from './useEditor'
 import type { EditorActions, EditorRow, EntityRow } from './useEditor'
@@ -382,7 +383,7 @@ export function EditorView({
       EDITOR_ACTIONS.filter((a) => a.palette !== false).map((a) => ({
         id: `editor.${a.id}`,
         label: a.label,
-        hint: hotkeyHint(a),
+        hint: hotkeyHint(a.keys),
         run: () => runAction(a.id),
       })),
     [runAction],

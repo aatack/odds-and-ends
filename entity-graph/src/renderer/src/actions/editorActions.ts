@@ -7,6 +7,8 @@
 // the useEditor hook provides — so the definitions here hold no state of their
 // own.
 
+import type { KeyBinding } from './keys'
+
 /** The imperative operations the editor exposes for actions to call. */
 export interface EditorController {
   moveSelection: (delta: number) => void
@@ -21,11 +23,6 @@ export interface EditorController {
   cancelPending: () => void
   exportSelected: () => void
   debugSelected: () => void
-}
-
-export interface KeyBinding {
-  key: string
-  shift?: boolean
 }
 
 export interface EditorAction {
@@ -70,28 +67,3 @@ export const EDITOR_ACTIONS: EditorAction[] = [
   { id: 'export', label: 'Export subtree as markdown', run: (c) => c.exportSelected() },
   { id: 'debug', label: 'Debug entity', run: (c) => c.debugSelected() },
 ]
-
-/** The action a key event triggers, if any. */
-export function matchAction(e: { key: string; shiftKey: boolean }): EditorAction | undefined {
-  const key = e.key.toLowerCase()
-  return EDITOR_ACTIONS.find((a) =>
-    a.keys?.some((k) => k.key.toLowerCase() === key && (k.shift ?? false) === e.shiftKey),
-  )
-}
-
-const KEY_SYMBOLS: Record<string, string> = {
-  Enter: 'Enter',
-  Backspace: '⌫',
-  Delete: '⌦',
-  ArrowLeft: '←',
-  ArrowRight: '→',
-  Escape: 'Esc',
-}
-
-/** A short human label for an action's first hotkey, for the palette. */
-export function hotkeyHint(action: EditorAction): string | undefined {
-  const binding = action.keys?.[0]
-  if (!binding) return undefined
-  const key = KEY_SYMBOLS[binding.key] ?? binding.key.toUpperCase()
-  return binding.shift ? `⇧${key}` : key
-}

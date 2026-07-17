@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useMemo, useState } from 'react'
 import { ChevronDown, Moon01, Sun } from '@untitledui/icons'
 import { Servers } from './components/Servers'
 import { SourceView } from './views/SourceView'
@@ -8,6 +8,9 @@ import { Button } from './components/ui/Button'
 import { Dropdown, DropdownItem, DropdownSeparator } from './components/ui/Dropdown'
 import { Input } from './components/ui/Input'
 import { useTheme } from './helpers/useTheme'
+import { useHotkeys } from './helpers/useHotkeys'
+import { APP_ACTIONS, type AppController } from './actions/appActions'
+import { hotkeyHint } from './actions/keys'
 import { useApp, type AppActions, type Page } from './views/useApp'
 
 export default function App(): React.JSX.Element | null {
@@ -22,32 +25,32 @@ export default function App(): React.JSX.Element | null {
     [],
   )
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
-        e.preventDefault()
-        setPaletteOpen((v) => !v)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  // The one imperative handle every app-level action dispatches through — the
+  // top-level hotkeys, the palette, and the header buttons all go via this.
+  const controller = useMemo<AppController>(
+    () => ({
+      togglePalette: () => setPaletteOpen((v) => !v),
+      setPage: actions.setPage,
+      toggleTheme: toggle,
+    }),
+    [actions, toggle],
+  )
+  // Every registered app action with a hotkey is bound here, at the top level.
+  useHotkeys(APP_ACTIONS, controller)
 
   const appCommands = useMemo<Command[]>(
-    () => [
-      { id: 'go-editor', label: 'Go to editor', hint: 'Navigate', run: () => actions.setPage('editor') },
-      { id: 'go-sources', label: 'Go to sources', hint: 'Navigate', run: () => actions.setPage('sources') },
-      {
-        id: 'toggle-theme',
-        label: theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode',
-        hint: 'Theme',
-        run: toggle,
-      },
-    ],
-    [actions, theme, toggle],
+    () =>
+      APP_ACTIONS.filter((a) => a.palette !== false).map((a) => ({
+        id: `app.${a.id}`,
+        label: a.label,
+        hint: hotkeyHint(a.keys) ?? a.hint,
+        run: () => a.run(controller),
+      })),
+    [controller],
   )
   // Editor actions first — they're the most relevant while the tree is focused.
   const commands = useMemo(() => [...editorCommands, ...appCommands], [editorCommands, appCommands])
+  const paletteHint = hotkeyHint(APP_ACTIONS.find((a) => a.id === 'toggle-palette')?.keys)
 
   if (!ready) return null
 
@@ -73,9 +76,11 @@ export default function App(): React.JSX.Element | null {
 
         <div className="flex-1" />
 
-        <Button variant="secondary" size="sm" onClick={() => setPaletteOpen(true)}>
+        <Button variant="secondary" size="sm" onClick={controller.togglePalette}>
           Actions
-          <kbd className="ml-1 rounded bg-gray-200 px-1 text-[10px] text-gray-500">Ctrl K</kbd>
+          {paletteHint && (
+            <kbd className="ml-1 rounded bg-gray-200 px-1 text-[10px] text-gray-500">{paletteHint}</kbd>
+          )}
         </Button>
         <Button
           variant="tertiary"
