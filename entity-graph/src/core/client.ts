@@ -72,6 +72,17 @@ export interface ActiveSource {
   sourceId: string
 }
 
+/**
+ * The user's chosen "current" source — the one the editor opens by default.
+ * Persisted as a durable reference (which server + source), independent of any
+ * ephemeral {@link ActiveSource} handle, so it survives restarts.
+ */
+export interface CurrentSource {
+  serverId: string
+  sourceId: string
+  label: string
+}
+
 // ---------------------------------------------------------------------------
 // Admin shapes — client-side mirror of `server/src/config.ts`, kept here so the
 // renderer stays decoupled from the server workspace.

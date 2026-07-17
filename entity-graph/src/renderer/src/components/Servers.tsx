@@ -1,27 +1,27 @@
 import React, { useEffect, useState } from 'react'
-import type { ActiveSource, ServerView, SourceType, TokenRow } from '../../../core/client'
+import type { CurrentSource, ServerView, SourceType, TokenRow } from '../../../core/client'
 import { useServers, type ServerActions, type ServerRowModel, type SourceItem } from '../views/useServers'
 import { ConfigFields, SOURCE_TYPES, buildConfig, flattenConfig } from './sourceConfig'
 
 interface Props {
-  onOpenSource: (active: ActiveSource) => void
+  /** The source currently shown in the editor, so its row reads as selected. */
+  current: CurrentSource | null
+  /** Choose which source the editor opens; ticking a source's box calls this. */
+  onSelectSource: (source: CurrentSource) => void | Promise<void>
 }
 
 /**
  * The server/source configuration page: every server, with its sources nested
  * underneath. All logic comes from {@link useServers}; the components here only
- * render and open the editor modals.
+ * render and open the editor modals. Ticking a source picks it as the editor's
+ * current source via {@link Props.onSelectSource}.
  */
-export function Servers({ onOpenSource }: Props): React.JSX.Element | null {
+export function Servers({ current, onSelectSource }: Props): React.JSX.Element | null {
   const { rows, error, ready, actions } = useServers()
   const [serverEditor, setServerEditor] = useState<{ existing: ServerView | null } | null>(null)
   const [sourceEditor, setSourceEditor] = useState<{ server: ServerView; existing: SourceItem | null } | null>(null)
 
   if (!ready) return null
-
-  const openSource = async (serverId: string, sourceId: string, label: string): Promise<void> => {
-    onOpenSource(await actions.openSource(serverId, sourceId, label))
-  }
 
   return (
     <div className="space-y-4">
@@ -42,6 +42,8 @@ export function Servers({ onOpenSource }: Props): React.JSX.Element | null {
             <ServerRow
               key={row.server.id}
               row={row}
+              current={current}
+              onSelectSource={onSelectSource}
               onEdit={() => setServerEditor({ existing: row.server })}
               onRemove={() => actions.removeServer(row.server.id)}
               onStart={() => actions.startServer(row.server.id)}
@@ -53,7 +55,6 @@ export function Servers({ onOpenSource }: Props): React.JSX.Element | null {
                   ? actions.deleteAdminSource(row.server.id, s.sourceId)
                   : actions.deleteSourceConnection(s.connectionId!)
               }
-              onOpenSource={(s) => openSource(row.server.id, s.sourceId, s.label)}
             />
           ))}
         </div>
@@ -84,6 +85,8 @@ export function Servers({ onOpenSource }: Props): React.JSX.Element | null {
 
 function ServerRow({
   row,
+  current,
+  onSelectSource,
   onEdit,
   onRemove,
   onStart,
@@ -91,9 +94,10 @@ function ServerRow({
   onAddSource,
   onEditSource,
   onRemoveSource,
-  onOpenSource,
 }: {
   row: ServerRowModel
+  current: CurrentSource | null
+  onSelectSource: (source: CurrentSource) => void | Promise<void>
   onEdit: () => void
   onRemove: () => void
   onStart: () => void
@@ -101,7 +105,6 @@ function ServerRow({
   onAddSource: () => void
   onEditSource: (s: SourceItem) => void
   onRemoveSource: (s: SourceItem) => void
-  onOpenSource: (s: SourceItem) => void
 }): React.JSX.Element {
   const { server, sources, sourcesError, busy } = row
 
@@ -143,7 +146,8 @@ function ServerRow({
             key={s.key}
             source={s}
             fullUrl={`${server.baseUrl}/${s.sourceId}`}
-            onOpen={() => onOpenSource(s)}
+            selected={current?.serverId === server.id && current?.sourceId === s.sourceId}
+            onSelect={() => onSelectSource({ serverId: server.id, sourceId: s.sourceId, label: s.label })}
             onEdit={() => onEditSource(s)}
             onRemove={() => onRemoveSource(s)}
           />
@@ -163,13 +167,17 @@ function ServerRow({
 function SourceRow({
   source,
   fullUrl,
-  onOpen,
+  selected,
+  onSelect,
   onEdit,
   onRemove,
 }: {
   source: SourceItem
   fullUrl: string
-  onOpen: () => void
+  /** True when this is the editor's current source. */
+  selected: boolean
+  /** Pick this source as the editor's current source. */
+  onSelect: () => void
   onEdit: () => void
   onRemove: () => void
 }): React.JSX.Element {
@@ -183,12 +191,18 @@ function SourceRow({
 
   return (
     <div className="flex items-center justify-between gap-2 py-1.5 pl-2">
-      <button className="min-w-0 text-left flex-1" onClick={onOpen}>
-        <span className="text-text-sm text-gray-900 truncate">{source.label}</span>
+      <button
+        className="min-w-0 text-left flex-1 flex items-center gap-2"
+        onClick={onSelect}
+        title={selected ? 'Current source' : 'Set as current source'}
+      >
+        <Tickbox checked={selected} />
+        <span className={`text-text-sm truncate ${selected ? 'text-primary-700 font-medium' : 'text-gray-900'}`}>
+          {source.label}
+        </span>
       </button>
       <div className="flex items-center gap-2 shrink-0">
         {source.type && <span className="badge badge-gray">{source.type}</span>}
-        <button className="btn-primary text-text-xs px-2 py-1" onClick={onOpen}>Open</button>
         <IconButton title={copied ? 'Copied!' : 'Copy source link'} onClick={copyLink}>
           {copied ? <CheckIcon /> : <LinkIcon />}
         </IconButton>
@@ -196,6 +210,21 @@ function SourceRow({
         <IconButton title="Remove source" onClick={onRemove}><TrashIcon /></IconButton>
       </div>
     </div>
+  )
+}
+
+/** A small radio-style indicator marking the editor's current source. */
+function Tickbox({ checked }: { checked: boolean }): React.JSX.Element {
+  return (
+    <span
+      className={`shrink-0 w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
+        checked ? 'bg-primary-600 border-primary-600 text-white' : 'border-gray-300 text-transparent'
+      }`}
+    >
+      <svg className="w-2.5 h-2.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 10l4 4 8-9" />
+      </svg>
+    </span>
   )
 }
 

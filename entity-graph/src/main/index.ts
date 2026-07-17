@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { randomBytes } from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
-import type { ActiveSource, NewServer, NewSourceConnection, Server, TokenRow } from '../core/client'
+import type { ActiveSource, CurrentSource, NewServer, NewSourceConnection, Server, TokenRow } from '../core/client'
 import { store } from './store'
 import { ServerManager } from './servers'
 
@@ -107,6 +107,10 @@ async function sourceTools(id: string): Promise<unknown> {
 
 ipcMain.handle('config:getUser', () => store.get('user'))
 ipcMain.handle('config:setUser', (_e, name: string) => store.set('user', name))
+ipcMain.handle('config:getCurrentSource', () => store.get('currentSource'))
+ipcMain.handle('config:setCurrentSource', (_e, source: CurrentSource | null) =>
+  store.set('currentSource', source),
+)
 
 // ---------------------------------------------------------------------------
 // IPC — servers

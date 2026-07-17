@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type {
-  ActiveSource,
   NewServer,
   ServerView,
   SourceConfig,
@@ -44,8 +43,6 @@ export interface ServerActions {
   removeServer: (id: string) => Promise<void>
   startServer: (id: string) => Promise<void>
   stopServer: (id: string) => Promise<void>
-  /** Open a source in the viewer; resolves to the ephemeral active source. */
-  openSource: (serverId: string, sourceId: string, label: string) => Promise<ActiveSource>
   // Admin-server sources
   saveAdminSource: (
     serverId: string,
@@ -155,7 +152,6 @@ export function useServers(): {
       },
       startServer: (id) => withBusy(id, () => graph.startServer(id)),
       stopServer: (id) => withBusy(id, () => graph.stopServer(id)),
-      openSource: (serverId, sourceId, label) => graph.openSource(serverId, sourceId, label),
       saveAdminSource: async (serverId, existingId, body) => {
         if (existingId) {
           await graph.adminUpdateSource(serverId, existingId, { label: body.label, config: body.config })

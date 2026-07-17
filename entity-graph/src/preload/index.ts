@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   ActiveSource,
+  CurrentSource,
   NewServer,
   NewSourceConnection,
   ServerView,
@@ -18,6 +19,10 @@ export interface EntityGraphAPI {
   // User
   getUser: () => Promise<string>
   setUser: (name: string) => Promise<void>
+
+  // The source the editor opens by default
+  getCurrentSource: () => Promise<CurrentSource | null>
+  setCurrentSource: (source: CurrentSource | null) => Promise<void>
 
   // Servers
   listServers: () => Promise<ServerView[]>
@@ -61,6 +66,8 @@ export interface EntityGraphAPI {
 const api: EntityGraphAPI = {
   getUser: () => ipcRenderer.invoke('config:getUser'),
   setUser: (name) => ipcRenderer.invoke('config:setUser', name),
+  getCurrentSource: () => ipcRenderer.invoke('config:getCurrentSource'),
+  setCurrentSource: (source) => ipcRenderer.invoke('config:setCurrentSource', source),
 
   listServers: () => ipcRenderer.invoke('server:list'),
   addServer: (cfg) => ipcRenderer.invoke('server:add', cfg),
