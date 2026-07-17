@@ -1,37 +1,56 @@
 import React, { useState } from 'react'
+import { ChevronDown, Moon01, Sun } from '@untitledui/icons'
 import { Servers } from './components/Servers'
 import { SourceView } from './views/SourceView'
+import { Badge } from './components/ui/Badge'
+import { Button } from './components/ui/Button'
+import { Input } from './components/ui/Input'
+import { useTheme } from './helpers/useTheme'
 import { useApp, type AppActions, type Page } from './views/useApp'
 
 export default function App(): React.JSX.Element | null {
   const { ready, user, page, current, active, openError, actions } = useApp()
+  const { theme, toggle } = useTheme()
 
   if (!ready) return null
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
-      <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shadow-xs">
-        <div className="flex items-center gap-3 min-w-0">
+    <div className="flex h-screen flex-col overflow-hidden">
+      <header className="flex items-center gap-3 border-b border-gray-100 bg-white/80 px-6 py-3 backdrop-blur">
+        <div className="flex min-w-0 items-center gap-3">
           <button
-            className="font-semibold text-gray-900 text-text-md hover:text-primary-700"
+            className="text-[15px] font-semibold tracking-tightish text-gray-900 focus:outline-none"
             onClick={() => actions.setPage('editor')}
           >
             Entity Graph
           </button>
           {page === 'editor' && current && (
             <>
-              <span className="badge badge-green">source</span>
-              <span className="text-text-sm text-gray-600 truncate">{current.label}</span>
+              <Badge color="gray">source</Badge>
+              <span className="truncate text-[13px] text-gray-500">{current.label}</span>
             </>
           )}
-          {page === 'sources' && <span className="text-text-sm text-gray-400">Sources</span>}
+          {page === 'sources' && <span className="text-[13px] text-gray-400">Sources</span>}
         </div>
+
+        <div className="flex-1" />
+
+        <Button
+          variant="tertiary"
+          size="sm"
+          className="px-1.5"
+          onClick={toggle}
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {theme === 'dark' ? <Sun size={16} /> : <Moon01 size={16} />}
+        </Button>
         <ProfileMenu user={user} page={page} actions={actions} />
       </header>
 
-      <main className="flex-1 min-h-0">
+      <main className="min-h-0 flex-1">
         {page === 'sources' ? (
-          <div className="p-6 max-w-3xl mx-auto w-full">
+          <div className="mx-auto w-full max-w-3xl p-6">
             <Servers current={current} onSelectSource={actions.selectSource} />
           </div>
         ) : active ? (
@@ -62,20 +81,22 @@ function EditorPlaceholder({
   onOpenSources: () => void
 }): React.JSX.Element {
   return (
-    <div className="p-6 max-w-md mx-auto w-full text-center space-y-3 mt-16">
+    <div className="mx-auto mt-24 w-full max-w-md space-y-4 px-6 text-center">
       {openError ? (
         <>
-          <p className="text-text-sm text-error-600">Couldn’t open the current source.</p>
-          <p className="text-text-xs text-gray-400 font-mono break-all">{openError}</p>
+          <p className="text-[13px] text-error-600">Couldn’t open the current source.</p>
+          <p className="break-all font-mono text-xs text-gray-400">{openError}</p>
         </>
       ) : (
-        <p className="text-text-sm text-gray-500">
+        <p className="text-[13px] text-gray-400">
           {hasCurrent ? 'Opening source…' : 'No source selected yet.'}
         </p>
       )}
-      <button className="btn-primary text-text-sm" onClick={onOpenSources}>
-        Go to sources
-      </button>
+      <div className="flex justify-center">
+        <Button variant="secondary" size="sm" onClick={onOpenSources}>
+          Go to sources
+        </Button>
+      </div>
     </div>
   )
 }
@@ -115,50 +136,50 @@ function ProfileMenu({
   return (
     <div className="relative shrink-0">
       <button
-        className="flex items-center gap-1.5 text-text-sm text-gray-600 hover:text-gray-900"
+        className="flex items-center gap-1.5 text-[13px] text-gray-600 transition-colors hover:text-gray-900 focus:outline-none"
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="w-6 h-6 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-text-xs font-medium">
+        <span className="flex size-6 items-center justify-center rounded-full bg-brand-50 text-[11px] font-medium text-brand-700">
           {user[0]?.toUpperCase()}
         </span>
         <span>{user}</span>
-        <ChevronIcon />
+        <ChevronDown size={14} className="text-gray-400" />
       </button>
 
       {open && (
         <>
           {/* Click-away backdrop */}
           <div className="fixed inset-0 z-40" onClick={close} />
-          <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 z-50 py-1.5">
+          <div className="absolute right-0 z-50 mt-2 w-56 rounded-lg bg-white py-1.5 shadow-lg animate-fade-in">
             <MenuItem label="Editor" active={page === 'editor'} onClick={() => go('editor')} />
             <MenuItem label="Sources" active={page === 'sources'} onClick={() => go('sources')} />
 
-            <div className="border-t border-gray-100 my-1.5" />
+            <div className="my-1.5 h-px bg-gray-100" />
 
             <div className="px-3 py-1.5">
               {editing ? (
                 <div className="flex items-center gap-1.5">
-                  <input
-                    className="input w-full py-1 text-text-xs"
+                  <Input
+                    className="h-7"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && saveName()}
                     autoFocus
                   />
-                  <button className="btn-primary text-text-xs py-1 px-2" onClick={saveName}>
+                  <Button variant="primary" size="sm" onClick={saveName}>
                     Save
-                  </button>
+                  </Button>
                 </div>
               ) : (
                 <button
-                  className="w-full text-left text-text-xs text-gray-500 hover:text-gray-900"
+                  className="w-full text-left text-xs text-gray-500 transition-colors hover:text-gray-900 focus:outline-none"
                   onClick={() => {
                     setName(user)
                     setEditing(true)
                   }}
                 >
                   Signed in as <span className="font-medium text-gray-700">{user}</span>
-                  <span className="text-primary-600"> · rename</span>
+                  <span className="text-brand-600"> · rename</span>
                 </button>
               )}
             </div>
@@ -180,20 +201,12 @@ function MenuItem({
 }): React.JSX.Element {
   return (
     <button
-      className={`w-full text-left px-3 py-1.5 text-text-sm hover:bg-gray-50 ${
-        active ? 'text-primary-700 font-medium' : 'text-gray-700'
+      className={`w-full px-3 py-1.5 text-left text-[13px] transition-colors hover:bg-gray-100/70 focus:outline-none ${
+        active ? 'font-medium text-brand-700' : 'text-gray-700'
       }`}
       onClick={onClick}
     >
       {label}
     </button>
-  )
-}
-
-function ChevronIcon(): React.JSX.Element {
-  return (
-    <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M6 8l4 4 4-4" />
-    </svg>
   )
 }

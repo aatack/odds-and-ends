@@ -1,5 +1,8 @@
 import React from 'react'
 import type { SourceConfig, SourceType } from '../../../core/client'
+import { Field } from './ui/Field'
+import { Input } from './ui/Input'
+import { Select } from './ui/Select'
 
 export const SOURCE_TYPES: SourceType[] = ['sqlite', 'combined', 'frozen', 'filter', 'remote']
 export const SAFETIES = ['pure', 'safe-mutating', 'dangerous'] as const
@@ -15,15 +18,14 @@ export function ConfigFields({
   set: (k: string, v: string) => void
 }): React.JSX.Element {
   const field = (key: string, label: string, placeholder = '', mono = true): React.JSX.Element => (
-    <div>
-      <label className="label">{label}</label>
-      <input
-        className={`input ${mono ? 'font-mono' : ''}`}
+    <Field label={label}>
+      <Input
+        mono={mono}
         value={cfg[key] ?? ''}
         onChange={(e) => set(key, e.target.value)}
         placeholder={placeholder}
       />
-    </div>
+    </Field>
   )
 
   switch (type) {
@@ -39,13 +41,12 @@ export function ConfigFields({
           {field('child', 'Child source id', 'source-id')}
           {field('allow', 'Allow tool ids (comma-separated, optional)', 'readEvents, query')}
           {field('deny', 'Deny tool ids (comma-separated, optional)', 'writeValue')}
-          <div>
-            <label className="label">Max safety (optional)</label>
-            <select className="input" value={cfg.maxSafety ?? ''} onChange={(e) => set('maxSafety', e.target.value)}>
+          <Field label="Max safety (optional)">
+            <Select value={cfg.maxSafety ?? ''} onChange={(e) => set('maxSafety', e.target.value)}>
               <option value="">(none)</option>
               {SAFETIES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
+            </Select>
+          </Field>
         </>
       )
     case 'remote':

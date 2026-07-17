@@ -4,6 +4,7 @@ import type { QueryPage } from '../../../core/wrapper'
 import { EditorView } from './Editor'
 import type { EditorActions } from './useEditor'
 import { DebugModal } from '../components/DebugModal'
+import { Button } from '../components/ui/Button'
 
 const api = window.entityGraph
 
@@ -50,12 +51,14 @@ export function SourceView({ active, user }: Props): React.JSX.Element {
       </div>
 
       {/* Debug lives in an unobtrusive corner button rather than a header bar. */}
-      <button
-        className="absolute bottom-4 right-4 btn-secondary text-text-xs py-1 opacity-60 hover:opacity-100"
+      <Button
+        variant="tertiary"
+        size="sm"
+        className="absolute bottom-4 right-4 opacity-60 hover:opacity-100"
         onClick={() => setDebug(true)}
       >
         Debug
-      </button>
+      </Button>
 
       {debug && <DebugModal sourceId={active.id} user={user} onClose={() => setDebug(false)} />}
     </div>

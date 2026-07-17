@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown, ChevronRight } from '@untitledui/icons'
 import { useEditor } from './useEditor'
 import type { EditorActions, EditorRow, EntityRow } from './useEditor'
 
@@ -11,8 +12,8 @@ const INDENT = 20 // px per depth level
 const OVERSCAN = 8 // extra rows rendered above/below the viewport
 
 const inputClass =
-  'w-full bg-white border border-primary-400 rounded-sm px-1.5 py-0 h-6 leading-6 ' +
-  'text-text-sm font-serif text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-300'
+  'w-full bg-white border border-brand-300 rounded-md px-1.5 py-0 h-6 leading-6 ' +
+  'text-[13px] font-serif text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40'
 
 // ---------------------------------------------------------------------------
 // Dumb rendering component
@@ -101,16 +102,12 @@ export function Editor(props: EditorProps): React.JSX.Element {
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-white font-serif">
+    <div className="h-full flex flex-col overflow-hidden bg-white">
       {statusMessage && (
-        <div className="px-4 py-2 bg-primary-50 border-b border-primary-100 text-text-sm text-primary-700">
-          {statusMessage}
-        </div>
+        <div className="px-4 py-2 bg-brand-50 text-[13px] text-brand-700">{statusMessage}</div>
       )}
       {error && (
-        <div className="px-4 py-2 bg-error-50 border-b border-gray-200 text-text-sm text-error-700">
-          {error}
-        </div>
+        <div className="px-4 py-2 bg-error-50 text-[13px] text-error-700">{error}</div>
       )}
 
       <div
@@ -121,7 +118,7 @@ export function Editor(props: EditorProps): React.JSX.Element {
         className="relative flex-1 min-h-0 overflow-y-auto focus:outline-none"
       >
         {total === 0 ? (
-          <div className="px-4 py-8 text-center text-text-sm text-gray-400">
+          <div className="px-4 py-8 text-center text-[13px] text-gray-400">
             {loading ? 'Loading…' : 'No entities.'}
           </div>
         ) : (
@@ -196,19 +193,27 @@ const Row = React.memo(function Row({
   return (
     <div style={base} className="flex items-center" onClick={() => onSelectRow(row.path)}>
       <div
-        className={`flex items-center h-7 mx-2 pr-2 rounded-md flex-1 min-w-0 cursor-default ${
-          row.selected ? 'bg-primary-50' : ''
+        className={`flex items-center h-7 mx-2 pr-2 rounded-md flex-1 min-w-0 cursor-default transition-colors ${
+          row.selected ? 'bg-gray-100' : 'hover:bg-gray-100/70'
         }`}
         style={{ paddingLeft: row.depth * INDENT + 4 }}
       >
         <span
-          className="w-5 shrink-0 text-center text-gray-400 select-none"
+          className="flex w-5 shrink-0 items-center justify-center text-gray-400 select-none"
           onClick={(e) => {
             e.stopPropagation()
             if (row.hasChildren) onToggleCollapse(row)
           }}
         >
-          {row.hasChildren ? (row.collapsed ? '▸' : '▾') : '•'}
+          {row.hasChildren ? (
+            row.collapsed ? (
+              <ChevronRight size={14} />
+            ) : (
+              <ChevronDown size={14} />
+            )
+          ) : (
+            <span className="size-1 rounded-full bg-gray-300" />
+          )}
         </span>
         {row.editing ? (
           <input
@@ -219,9 +224,9 @@ const Row = React.memo(function Row({
             onClick={(e) => e.stopPropagation()}
           />
         ) : row.text ? (
-          <span className="truncate text-text-sm text-gray-900">{row.text}</span>
+          <span className="truncate text-[13px] font-serif text-gray-900">{row.text}</span>
         ) : (
-          <span className="italic text-text-sm text-gray-400">Empty</span>
+          <span className="text-[13px] font-serif italic text-gray-400">Empty</span>
         )}
       </div>
     </div>

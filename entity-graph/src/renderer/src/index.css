@@ -1,48 +1,190 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-@layer base {
-  * { box-sizing: border-box; }
-  html, body, #root { height: 100%; }
-  body {
-    @apply bg-gray-25 text-gray-900 font-sans;
-    font-size: 14px;
-    line-height: 20px;
+/*
+ * Untitled UI design tokens (Tailwind v4 `@theme`) — the same gray / brand /
+ * status ramps as the orchestrator, so the two tools share one visual language.
+ * Standard utilities (`bg-brand-600`, `text-gray-700`, `shadow-xs`, …) resolve
+ * to these.
+ */
+@theme {
+  --color-gray-25: #fcfcfd;
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f2f4f7;
+  --color-gray-200: #eaecf0;
+  --color-gray-300: #d0d5dd;
+  --color-gray-400: #98a2b3;
+  --color-gray-500: #667085;
+  --color-gray-600: #475467;
+  --color-gray-700: #344054;
+  --color-gray-800: #1d2939;
+  --color-gray-900: #101828;
+  --color-gray-950: #0c111d;
+
+  /* Muted indigo accent, in the spirit of Linear — used sparingly, never loud. */
+  --color-brand-25: #f7f8fd;
+  --color-brand-50: #eef0fb;
+  --color-brand-100: #e0e3f7;
+  --color-brand-200: #c7cbef;
+  --color-brand-300: #a2a8e3;
+  --color-brand-500: #7079d6;
+  --color-brand-600: #5b63d3;
+  --color-brand-700: #4c53b8;
+
+  /* Status hues, desaturated so several can sit together without shouting. */
+  --color-success-50: #edf7f1;
+  --color-success-200: #c2e4d0;
+  --color-success-500: #3a875f;
+  --color-success-600: #3a875f;
+  --color-success-700: #2f6d4d;
+
+  --color-warning-50: #fbf5ec;
+  --color-warning-200: #ecd9b6;
+  --color-warning-700: #97671f;
+
+  --color-error-50: #fbf0ef;
+  --color-error-200: #ecc9c6;
+  --color-error-500: #c0473c;
+  --color-error-600: #c0473c;
+  --color-error-700: #a03b32;
+
+  --color-blue-50: #eef3fb;
+  --color-blue-200: #c3d5ee;
+  --color-blue-700: #3a5f9e;
+
+  /* Barely-there elevation. Linear/Apple lean on hairlines, not drop shadows. */
+  --shadow-xs: 0 1px 1px rgba(16, 24, 40, 0.03);
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-lg:
+    0 16px 40px -12px rgba(16, 24, 40, 0.18),
+    0 4px 10px -4px rgba(16, 24, 40, 0.08);
+
+  /* UI chrome: Geist — a clean, professional grotesque (Linear/Vercel feel). */
+  --font-sans:
+    "Geist Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* User-written prose: a warm transitional serif, close to Anthropic's. */
+  --font-serif:
+    "Source Serif 4 Variable", Iowan Old Style, Georgia, Cambria, serif;
+}
+
+/*
+ * Dark mode. Rather than sprinkle `dark:` variants through every component, we
+ * redefine the same design tokens under `.dark` (set on <html> by the app), so
+ * existing utilities — `bg-white`, `text-gray-700`, `bg-gray-100`, … — adapt
+ * automatically. The gray ramp is inverted (light↔dark), `white` becomes an
+ * elevated dark surface sitting just above the body, and the status accents are
+ * retuned so their tinted chips read on a dark background.
+ */
+html.dark {
+  color-scheme: dark;
+
+  --color-white: #151b26;
+
+  --color-gray-25: #0b0f17;
+  --color-gray-50: #0e131c;
+  --color-gray-100: #1a202c;
+  --color-gray-200: #262d3a;
+  --color-gray-300: #3a4250;
+  --color-gray-400: #5b6472;
+  --color-gray-500: #8b93a3;
+  --color-gray-600: #aab2c0;
+  --color-gray-700: #c9cfd9;
+  --color-gray-800: #e2e6ec;
+  --color-gray-900: #f3f5f8;
+  --color-gray-950: #ffffff;
+
+  --color-brand-50: #1b1f34;
+  --color-brand-700: #b0b6ef;
+
+  --color-success-50: #16271d;
+  --color-success-500: #7fd6a3;
+  --color-success-600: #7fd6a3;
+  --color-success-700: #7fd6a3;
+
+  --color-warning-50: #2a2113;
+  --color-warning-700: #e3b877;
+
+  --color-error-50: #2a1615;
+  --color-error-500: #e39a92;
+  --color-error-600: #e39a92;
+  --color-error-700: #e39a92;
+
+  --color-blue-50: #131f2e;
+  --color-blue-700: #8fb2e3;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-gray-50);
+  color: var(--color-gray-900);
+  font-family: var(--font-sans);
+  /* Tighten the UI voice a touch — grotesques read cleaner slightly negative. */
+  letter-spacing: -0.011em;
+  font-feature-settings: "cv01", "ss01";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Serif surfaces (user text). Optical sizing keeps it graceful large and small. */
+.font-serif {
+  font-family: var(--font-serif);
+  font-optical-sizing: auto;
+  letter-spacing: 0;
+}
+
+/* Headings tighten as they grow, the way display type wants to. */
+.tracking-tightish {
+  letter-spacing: -0.02em;
+}
+
+/* Quiet, Apple-style scrollbars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-gray-300) transparent;
+}
+
+/* Motion: subtle and fast. Enter animations are reserved for overlays/popovers;
+ * everything else transitions on hover/state in ~150ms. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
 
-@layer components {
-  .btn {
-    @apply inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-md text-text-sm font-medium shadow-xs transition-colors;
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
   }
-  .btn-primary {
-    @apply btn bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed;
+  to {
+    opacity: 1;
+    transform: none;
   }
-  .btn-secondary {
-    @apply btn bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.animate-fade-in {
+  animation: fade-in 120ms ease-out;
+}
+
+.animate-pop-in {
+  animation: pop-in 140ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
-  .btn-danger {
-    @apply btn bg-error-500 text-white hover:bg-error-700 disabled:opacity-50;
-  }
-  .input {
-    @apply w-full px-3.5 py-2.5 rounded-md border border-gray-300 shadow-xs text-text-sm text-gray-900
-           placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-500;
-  }
-  .label {
-    @apply block text-text-sm font-medium text-gray-700 mb-1.5;
-  }
-  .card {
-    @apply bg-white rounded-xl border border-gray-200 shadow-sm;
-  }
-  .section-title {
-    @apply text-text-sm font-semibold text-gray-700 uppercase tracking-wide;
-  }
-  .badge {
-    @apply inline-flex items-center px-2 py-0.5 rounded-full text-text-xs font-medium;
-  }
-  .badge-blue   { @apply badge bg-primary-50  text-primary-700; }
-  .badge-gray   { @apply badge bg-gray-100    text-gray-700;    }
-  .badge-green  { @apply badge bg-success-50  text-success-700; }
 }

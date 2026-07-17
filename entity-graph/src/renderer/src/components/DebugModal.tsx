@@ -1,8 +1,15 @@
 import React, { useEffect, useState } from 'react'
 import type { QueryPage } from '../../../core/wrapper'
 import type { ToolMeta } from '../../../core/client'
+import { Badge } from './ui/Badge'
+import { Button } from './ui/Button'
+import { Input } from './ui/Input'
+import { Modal } from './ui/Modal'
+import { Select } from './ui/Select'
 
 const api = window.entityGraph
+
+const SECTION = 'text-[11px] font-medium uppercase tracking-[0.09em] text-gray-500'
 
 interface Props {
   /** Id of the open source (the handle `sourceCall`/`sourceTools` resolve by). */
@@ -14,25 +21,13 @@ interface Props {
 /** Raw, low-level access to a source's tools — query + event writes + a tool list. */
 export function DebugModal({ sourceId: connId, user, onClose }: Props): React.JSX.Element {
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-6 overflow-y-auto"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-lg shadow-xl w-full max-w-2xl my-6"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
-          <p className="font-semibold text-gray-900">Debug</p>
-          <button className="text-gray-400 hover:text-gray-700 text-text-lg leading-none" onClick={onClose}>✕</button>
-        </div>
-        <div className="p-5 space-y-6">
-          <RawQuery connId={connId} />
-          <RawEvent connId={connId} user={user} />
-          <ToolList connId={connId} />
-        </div>
+    <Modal title="Debug" onClose={onClose} wide>
+      <div className="space-y-6">
+        <RawQuery connId={connId} />
+        <RawEvent connId={connId} user={user} />
+        <ToolList connId={connId} />
       </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -46,7 +41,7 @@ function RawQuery({ connId }: { connId: string }): React.JSX.Element {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const run = async () => {
+  const run = async (): Promise<void> => {
     if (!rootId.trim()) return
     setLoading(true)
     setError(null)
@@ -66,20 +61,22 @@ function RawQuery({ connId }: { connId: string }): React.JSX.Element {
 
   return (
     <section className="space-y-2">
-      <p className="section-title">Query</p>
+      <p className={SECTION}>Query</p>
       <div className="flex gap-2">
-        <input className="input font-mono flex-1" value={rootId} onChange={(e) => setRootId(e.target.value)} placeholder="root id" />
-        <input className="input w-24" type="number" min="1" value={maxDepth} onChange={(e) => setMaxDepth(e.target.value)} placeholder="depth" />
-        <input className="input w-24" type="number" min="1" value={limit} onChange={(e) => setLimit(e.target.value)} placeholder="limit" />
-        <button className="btn-primary" onClick={run} disabled={loading || !rootId.trim()}>{loading ? '…' : 'Run'}</button>
+        <Input mono className="flex-1" value={rootId} onChange={(e) => setRootId(e.target.value)} placeholder="root id" />
+        <Input className="w-24" type="number" min="1" value={maxDepth} onChange={(e) => setMaxDepth(e.target.value)} placeholder="depth" />
+        <Input className="w-24" type="number" min="1" value={limit} onChange={(e) => setLimit(e.target.value)} placeholder="limit" />
+        <Button variant="primary" onClick={run} disabled={loading || !rootId.trim()}>
+          {loading ? '…' : 'Run'}
+        </Button>
       </div>
-      {error && <p className="text-text-sm text-error-500">{error}</p>}
+      {error && <p className="text-[13px] text-error-600">{error}</p>}
       {page && (
         <div className="space-y-1">
-          <p className="text-text-xs text-gray-500">
+          <p className="text-xs text-gray-500">
             {page.results.length} rows{page.continuationStack ? ' (more available — raise limit)' : ''}
           </p>
-          <pre className="rounded-md bg-gray-50 border border-gray-200 p-3 text-text-xs font-mono overflow-x-auto max-h-64 overflow-y-auto">
+          <pre className="max-h-64 overflow-auto rounded-md bg-gray-50 p-3 font-mono text-xs">
             {JSON.stringify(page.results.map((r) => ({ id: r.entity.id, depth: r.depth, parentId: r.parentId, values: r.entity.values })), null, 2)}
           </pre>
         </div>
@@ -112,14 +109,18 @@ function RawEvent({ connId, user }: { connId: string; user: string }): React.JSX
   const [dest, setDest] = useState('')
   const [action, setAction] = useState<0 | 1 | 2 | 3>(0)
 
-  const write = async () => {
+  const write = async (): Promise<void> => {
     setError(null)
     setOk(false)
     setBusy(true)
     try {
       if (kind === 'value') {
         let parsed: unknown
-        try { parsed = JSON.parse(value) } catch { throw new Error('Value must be valid JSON') }
+        try {
+          parsed = JSON.parse(value)
+        } catch {
+          throw new Error('Value must be valid JSON')
+        }
         await api.sourceCall(connId, 'writeValue', { entityId: entityId.trim(), key: key.trim(), value: parsed, author: user })
       } else {
         await api.sourceCall(connId, 'writeLink', { sourceId: src.trim(), destinationId: dest.trim(), action, author: user })
@@ -137,32 +138,44 @@ function RawEvent({ connId, user }: { connId: string; user: string }): React.JSX
 
   return (
     <section className="space-y-2">
-      <p className="section-title">Write event</p>
-      <div className="flex gap-2">
+      <p className={SECTION}>Write event</p>
+      <div className="inline-flex rounded-lg bg-gray-100 p-0.5">
         {(['value', 'link'] as Kind[]).map((k) => (
-          <button key={k} onClick={() => setKind(k)} className={`btn text-text-sm ${kind === k ? 'btn-primary' : 'btn-secondary'}`}>
+          <button
+            key={k}
+            onClick={() => setKind(k)}
+            className={`rounded-md px-3 py-1 text-[13px] font-medium transition-colors focus:outline-none ${
+              kind === k ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
             {k === 'value' ? 'Value' : 'Link'}
           </button>
         ))}
       </div>
       {kind === 'value' ? (
         <div className="space-y-2">
-          <input className="input font-mono" value={entityId} onChange={(e) => setEntityId(e.target.value)} placeholder="entity id" />
-          <input className="input" value={key} onChange={(e) => setKey(e.target.value)} placeholder="key (e.g. text)" />
-          <input className="input font-mono" value={value} onChange={(e) => setValue(e.target.value)} placeholder='value as JSON, e.g. "hi"' />
+          <Input mono value={entityId} onChange={(e) => setEntityId(e.target.value)} placeholder="entity id" />
+          <Input value={key} onChange={(e) => setKey(e.target.value)} placeholder="key (e.g. text)" />
+          <Input mono value={value} onChange={(e) => setValue(e.target.value)} placeholder='value as JSON, e.g. "hi"' />
         </div>
       ) : (
         <div className="space-y-2">
-          <input className="input font-mono" value={src} onChange={(e) => setSrc(e.target.value)} placeholder="source id" />
-          <input className="input font-mono" value={dest} onChange={(e) => setDest(e.target.value)} placeholder="destination id" />
-          <select className="input" value={action} onChange={(e) => setAction(Number(e.target.value) as 0 | 1 | 2 | 3)}>
-            {LINK_ACTIONS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
-          </select>
+          <Input mono value={src} onChange={(e) => setSrc(e.target.value)} placeholder="source id" />
+          <Input mono value={dest} onChange={(e) => setDest(e.target.value)} placeholder="destination id" />
+          <Select value={action} onChange={(e) => setAction(Number(e.target.value) as 0 | 1 | 2 | 3)}>
+            {LINK_ACTIONS.map((a) => (
+              <option key={a.value} value={a.value}>
+                {a.label}
+              </option>
+            ))}
+          </Select>
         </div>
       )}
-      {error && <p className="text-text-sm text-error-500">{error}</p>}
-      {ok && <p className="text-text-sm text-success-500">Written.</p>}
-      <button className="btn-primary" onClick={write} disabled={busy || !canSubmit}>{busy ? 'Writing…' : 'Write'}</button>
+      {error && <p className="text-[13px] text-error-600">{error}</p>}
+      {ok && <p className="text-[13px] text-success-700">Written.</p>}
+      <Button variant="primary" onClick={write} disabled={busy || !canSubmit}>
+        {busy ? 'Writing…' : 'Write'}
+      </Button>
     </section>
   )
 }
@@ -179,15 +192,15 @@ function ToolList({ connId }: { connId: string }): React.JSX.Element {
 
   return (
     <section className="space-y-2">
-      <p className="section-title">Tools</p>
-      {error && <p className="text-text-sm text-error-500">{error}</p>}
+      <p className={SECTION}>Tools</p>
+      {error && <p className="text-[13px] text-error-600">{error}</p>}
       {tools && (
-        <div className="rounded-md bg-gray-50 border border-gray-200 divide-y divide-gray-100 text-text-xs">
+        <div className="overflow-hidden rounded-md bg-gray-50 text-xs">
           {tools.map((t) => (
-            <div key={t.id} className="px-3 py-1.5 flex gap-2">
-              <span className="font-mono text-gray-900 shrink-0">{t.id}</span>
-              <span className="badge badge-gray shrink-0">{t.safety}</span>
-              <span className="text-gray-500 truncate">{t.description}</span>
+            <div key={t.id} className="flex gap-2 px-3 py-1.5">
+              <span className="shrink-0 font-mono text-gray-900">{t.id}</span>
+              <Badge color="gray">{t.safety}</Badge>
+              <span className="truncate text-gray-500">{t.description}</span>
             </div>
           ))}
         </div>
