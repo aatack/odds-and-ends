@@ -240,7 +240,9 @@ const Row = React.memo(function Row({
           className="flex items-start my-px py-0.5 mx-2 pr-2 flex-1 min-w-0"
           style={{ paddingLeft: row.depth * INDENT + 4 }}
         >
-          <span className="w-5 shrink-0" />
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 select-none">
+            <span className="size-1 rounded-full bg-gray-300" />
+          </span>
           <div className="flex-1 min-w-0">
             <TextEditor
               autoFocus
