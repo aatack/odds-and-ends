@@ -32,11 +32,17 @@ accent, hairlines and tone over heavy chrome. Design tokens live in
 
 ## Typography
 
-**Lora throughout** — one self-hosted serif (`@fontsource-variable/lora`, no
-network) for both chrome and content. Set at the token/body level, not per
-component: `--font-sans`/`--font-serif` both point at Lora, the body is
-**weight 450** at **14px**, and primary text is **`#292929`** (the `gray-900`
-token). Don't reintroduce a second font or hard-code these per element.
+Two self-hosted fonts (bundled, no network), split by authorship:
+
+- **UI chrome → Geist** (`--font-sans`, the default body font): everything the
+  app draws — buttons, headers, labels, menus, config, badges.
+- **User-entered text → Lora** (`--font-serif`), applied via the `font-serif`
+  utility, at **weight 450**. Base size is **14px** and primary-text ink is
+  **`#292929`** (the `gray-900` token).
+
+Use `font-serif` for anything the user typed (entity content); leave chrome on
+the default sans. Set this at the token/utility level — don't hard-code font
+families per element.
 
 ## State & actions
 

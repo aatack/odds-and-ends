@@ -60,8 +60,9 @@
     0 16px 40px -12px rgba(16, 24, 40, 0.18),
     0 4px 10px -4px rgba(16, 24, 40, 0.08);
 
-  /* Lora throughout — one serif voice for both chrome and content. */
-  --font-sans: "Lora Variable", Georgia, Cambria, "Times New Roman", serif;
+  /* UI chrome: Geist, a clean grotesque. User-entered text: Lora, applied via
+   * the `font-serif` utility. */
+  --font-sans: "Geist Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-serif: "Lora Variable", Georgia, Cambria, "Times New Roman", serif;
 }
 
@@ -123,17 +124,20 @@ body {
   background: var(--color-gray-50);
   color: var(--color-gray-900);
   font-family: var(--font-sans);
-  /* Lora at a slightly-heavier-than-regular weight, 14px, throughout. */
-  font-weight: 450;
   font-size: 14px;
+  /* Tighten the UI voice a touch — grotesques read cleaner slightly negative. */
+  letter-spacing: -0.011em;
+  font-feature-settings: "cv01", "ss01";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
-/* Serif surfaces (user text). Optical sizing keeps it graceful large and small. */
+/* User-entered text: Lora at weight 450. `letter-spacing: 0` overrides the
+ * body's grotesque tightening; optical sizing keeps it graceful at any size. */
 .font-serif {
   font-family: var(--font-serif);
+  font-weight: 450;
   font-optical-sizing: auto;
   letter-spacing: 0;
 }
