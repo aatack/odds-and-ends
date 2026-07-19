@@ -20,6 +20,8 @@ export interface AppController {
 export interface AppAction {
   id: string
   label: string
+  /** Extra terms the palette's fuzzy search matches, e.g. synonyms for the label. */
+  aliases?: string[]
   /** Keys that trigger it. Omitted for actions only reachable via palette/button. */
   keys?: KeyBinding[]
   /** Faint category label shown in the palette when the action has no hotkey. */
@@ -37,7 +39,25 @@ export const APP_ACTIONS: AppAction[] = [
     palette: false,
     run: (c) => c.togglePalette(),
   },
-  { id: 'go-editor', label: 'Go to editor', hint: 'Navigate', run: (c) => c.setPage('editor') },
-  { id: 'go-sources', label: 'Go to sources', hint: 'Navigate', run: (c) => c.setPage('sources') },
-  { id: 'toggle-theme', label: 'Toggle theme', hint: 'Theme', run: (c) => c.toggleTheme() },
+  {
+    id: 'go-editor',
+    label: 'Go to editor',
+    aliases: ['tree', 'graph', 'entities'],
+    hint: 'Navigate',
+    run: (c) => c.setPage('editor'),
+  },
+  {
+    id: 'go-sources',
+    label: 'Go to sources',
+    aliases: ['documents', 'files', 'references'],
+    hint: 'Navigate',
+    run: (c) => c.setPage('sources'),
+  },
+  {
+    id: 'toggle-theme',
+    label: 'Toggle theme',
+    aliases: ['dark mode', 'light mode', 'appearance'],
+    hint: 'Theme',
+    run: (c) => c.toggleTheme(),
+  },
 ]

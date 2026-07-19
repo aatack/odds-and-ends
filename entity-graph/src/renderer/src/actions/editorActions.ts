@@ -28,6 +28,8 @@ export interface EditorController {
 export interface EditorAction {
   id: string
   label: string
+  /** Extra terms the palette's fuzzy search matches, e.g. synonyms for the label. */
+  aliases?: string[]
   /** Keys that trigger it. Omitted for actions only reachable via menu/palette. */
   keys?: KeyBinding[]
   /** Whether it appears in the command palette (default true). */
@@ -36,24 +38,26 @@ export interface EditorAction {
 }
 
 export const EDITOR_ACTIONS: EditorAction[] = [
-  { id: 'move-up', label: 'Move selection up', keys: [{ key: 'w' }], run: (c) => c.moveSelection(-1) },
-  { id: 'move-down', label: 'Move selection down', keys: [{ key: 's' }], run: (c) => c.moveSelection(1) },
-  { id: 'select-parent', label: 'Select parent', keys: [{ key: 'a' }], run: (c) => c.selectParent() },
-  { id: 'collapse', label: 'Collapse', keys: [{ key: 'ArrowLeft' }], run: (c) => c.collapseSelected() },
-  { id: 'expand', label: 'Expand', keys: [{ key: 'ArrowRight' }], run: (c) => c.expandSelected() },
-  { id: 'edit', label: 'Edit text', keys: [{ key: 'e' }], run: (c) => c.startEdit() },
-  { id: 'create-child', label: 'Create child', keys: [{ key: 'Enter' }], run: (c) => c.startCreate() },
+  { id: 'move-up', label: 'Move selection up', aliases: ['previous', 'prev'], keys: [{ key: 'w' }], run: (c) => c.moveSelection(-1) },
+  { id: 'move-down', label: 'Move selection down', aliases: ['next'], keys: [{ key: 's' }], run: (c) => c.moveSelection(1) },
+  { id: 'select-parent', label: 'Select parent', aliases: ['up', 'ancestor'], keys: [{ key: 'a' }], run: (c) => c.selectParent() },
+  { id: 'collapse', label: 'Collapse', aliases: ['close', 'fold', 'hide'], keys: [{ key: 'ArrowLeft' }], run: (c) => c.collapseSelected() },
+  { id: 'expand', label: 'Expand', aliases: ['open', 'unfold', 'show'], keys: [{ key: 'ArrowRight' }], run: (c) => c.expandSelected() },
+  { id: 'edit', label: 'Edit text', aliases: ['rename', 'change', 'modify'], keys: [{ key: 'e' }], run: (c) => c.startEdit() },
+  { id: 'create-child', label: 'Create child', aliases: ['add', 'new', 'insert'], keys: [{ key: 'Enter' }], run: (c) => c.startCreate() },
   {
     id: 'unlink',
     label: 'Remove from parent',
+    aliases: ['delete', 'detach', 'disconnect'],
     keys: [{ key: 'Backspace' }, { key: 'Delete' }],
     run: (c) => c.unlinkSelected(),
   },
-  { id: 'move', label: 'Move to…', keys: [{ key: 'x' }], run: (c) => c.toggleMove() },
-  { id: 'link', label: 'Link to…', keys: [{ key: 'r', shift: false }], run: (c) => c.toggleLink(false) },
+  { id: 'move', label: 'Move to…', aliases: ['reparent', 'relocate'], keys: [{ key: 'x' }], run: (c) => c.toggleMove() },
+  { id: 'link', label: 'Link to…', aliases: ['connect', 'relate', 'reference'], keys: [{ key: 'r', shift: false }], run: (c) => c.toggleLink(false) },
   {
     id: 'link-reverse',
     label: 'Link to… (reversed)',
+    aliases: ['connect', 'relate', 'reference', 'backlink'],
     keys: [{ key: 'r', shift: true }],
     run: (c) => c.toggleLink(true),
   },
@@ -64,6 +68,6 @@ export const EDITOR_ACTIONS: EditorAction[] = [
     palette: false,
     run: (c) => c.cancelPending(),
   },
-  { id: 'export', label: 'Export subtree as markdown', run: (c) => c.exportSelected() },
-  { id: 'debug', label: 'Debug entity', run: (c) => c.debugSelected() },
+  { id: 'export', label: 'Export subtree as markdown', aliases: ['download', 'save', 'copy', 'md'], run: (c) => c.exportSelected() },
+  { id: 'debug', label: 'Debug entity', aliases: ['inspect', 'info'], run: (c) => c.debugSelected() },
 ]

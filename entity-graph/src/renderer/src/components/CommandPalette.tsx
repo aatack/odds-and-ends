@@ -5,6 +5,8 @@ import { cn } from '../helpers/cn'
 export interface Command {
   id: string
   label: string
+  /** Extra terms the fuzzy search matches against, e.g. synonyms for the label. */
+  aliases?: string[]
   /** Faint text on the right (e.g. a section or shortcut). */
   hint?: string
   run: () => void
@@ -34,11 +36,13 @@ export function CommandPalette({
   }, [open])
 
   // With no query, keep the commands in their given order; otherwise fuzzy-match
-  // against the label and sort by relevance.
+  // against the label and any aliases, sorting by relevance.
   const matches = useMemo(() => {
     const q = query.trim()
     if (!q) return commands
-    return fuzzysort.go(q, commands, { key: 'label' }).map((r) => r.obj)
+    return fuzzysort
+      .go(q, commands, { keys: ['label', (c) => c.aliases?.join(' ') ?? ''] })
+      .map((r) => r.obj)
   }, [query, commands])
   const active = matches.length ? Math.min(activeIndex, matches.length - 1) : 0
 

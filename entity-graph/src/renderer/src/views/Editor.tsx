@@ -32,14 +32,12 @@ const keyOf = (row: EditorRow, index: number): string =>
 
 export interface EditorProps {
   rows: EditorRow[]
-  editing: boolean
   loading: boolean
   error: string | null
   statusMessage: string | null
   notice: string | null
   onSelectRow: (path: string[]) => void
   onToggleCollapse: (row: EntityRow) => void
-  onContainerKeyDown: (e: React.KeyboardEvent) => void
   onCommitEdit: (value: string) => void
   onCancelEdit: () => void
   onExport: () => void
@@ -56,14 +54,12 @@ export interface EditorProps {
 export function Editor(props: EditorProps): React.JSX.Element {
   const {
     rows,
-    editing,
     loading,
     error,
     statusMessage,
     notice,
     onSelectRow,
     onToggleCollapse,
-    onContainerKeyDown,
     onCommitEdit,
     onCancelEdit,
     onExport,
@@ -100,12 +96,6 @@ export function Editor(props: EditorProps): React.JSX.Element {
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
-
-  // Focus the container on mount and whenever an edit finishes, so the
-  // navigation hotkeys keep working without an extra click.
-  useEffect(() => {
-    if (!editing) containerRef.current?.focus()
-  }, [editing])
 
   // Cumulative offsets (offsets[i] = top of row i; offsets[n] = total height).
   const offsets = useMemo(() => {
@@ -183,10 +173,8 @@ export function Editor(props: EditorProps): React.JSX.Element {
 
       <div
         ref={containerRef}
-        tabIndex={0}
-        onKeyDown={onContainerKeyDown}
         onScroll={handleScroll}
-        className="relative flex-1 min-h-0 overflow-y-auto focus:outline-none py-1"
+        className="relative flex-1 min-h-0 overflow-y-auto py-1"
       >
         {rows.length === 0 ? (
           <div className="px-4 py-8 text-center text-[13px] text-gray-400">
@@ -383,6 +371,7 @@ export function EditorView({
       EDITOR_ACTIONS.filter((a) => a.palette !== false).map((a) => ({
         id: `editor.${a.id}`,
         label: a.label,
+        aliases: a.aliases,
         hint: hotkeyHint(a.keys),
         run: () => runAction(a.id),
       })),
@@ -397,14 +386,12 @@ export function EditorView({
   return (
     <Editor
       rows={ed.rows}
-      editing={ed.editing}
       loading={ed.loading}
       error={ed.error}
       statusMessage={ed.statusMessage}
       notice={ed.notice}
       onSelectRow={ed.selectRow}
       onToggleCollapse={ed.toggleCollapse}
-      onContainerKeyDown={ed.onContainerKeyDown}
       onCommitEdit={ed.commitEdit}
       onCancelEdit={ed.cancelEdit}
       onExport={() => runAction('export')}

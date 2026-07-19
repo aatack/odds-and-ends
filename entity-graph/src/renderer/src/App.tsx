@@ -43,6 +43,7 @@ export default function App(): React.JSX.Element | null {
       APP_ACTIONS.filter((a) => a.palette !== false).map((a) => ({
         id: `app.${a.id}`,
         label: a.label,
+        aliases: a.aliases,
         hint: hotkeyHint(a.keys) ?? a.hint,
         run: () => a.run(controller),
       })),
