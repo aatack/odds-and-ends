@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import fuzzysort from 'fuzzysort'
 import { cn } from '../helpers/cn'
 
 export interface Command {
@@ -32,7 +33,13 @@ export function CommandPalette({
     }
   }, [open])
 
-  const matches = commands.filter((c) => c.label.toLowerCase().includes(query.toLowerCase()))
+  // With no query, keep the commands in their given order; otherwise fuzzy-match
+  // against the label and sort by relevance.
+  const matches = useMemo(() => {
+    const q = query.trim()
+    if (!q) return commands
+    return fuzzysort.go(q, commands, { key: 'label' }).map((r) => r.obj)
+  }, [query, commands])
   const active = matches.length ? Math.min(activeIndex, matches.length - 1) : 0
 
   useEffect(() => {
