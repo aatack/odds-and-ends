@@ -3,12 +3,13 @@ import { Plus, X } from '@untitledui/icons'
 import { cn } from '../helpers/cn'
 import type { EditorActions } from '../views/useEditor'
 import { FrameView } from './Frame'
-import { last, viewTitle, type Frame, type View } from './types'
+import { last, tabTitle, type Frame, type View } from './types'
 import type { ResolvedGroup, ViewHandle } from './useLayout'
 
 export interface TabGroupViewProps {
   rg: ResolvedGroup
   frames: Record<string, Frame>
+  names: Record<string, string>
   focused: boolean
   actions: EditorActions
   onDebugEntity: (entityId: string) => void
@@ -19,6 +20,7 @@ export interface TabGroupViewProps {
   registerHandle: (frameId: string, handle: ViewHandle | null) => void
   pushEntityFrame: (tabId: string, entityId: string) => void
   updateView: (frameId: string, view: View) => void
+  reportName: (id: string, text: string | undefined) => void
 }
 
 /**
@@ -28,6 +30,7 @@ export interface TabGroupViewProps {
 export function TabGroupView({
   rg,
   frames,
+  names,
   focused,
   actions,
   onDebugEntity,
@@ -38,6 +41,7 @@ export function TabGroupView({
   registerHandle,
   pushEntityFrame,
   updateView,
+  reportName,
 }: TabGroupViewProps): React.JSX.Element {
   return (
     <section
@@ -60,7 +64,9 @@ export function TabGroupView({
               )}
               onClick={() => onSelectTab(tab.id)}
             >
-              <span className="max-w-[140px] truncate">{top ? viewTitle(top.view) : 'Empty'}</span>
+              <span className="max-w-[80px] truncate">
+                {top ? tabTitle(top.view, names) : 'Empty'}
+              </span>
               {tab.frameIds.length > 1 && (
                 <span
                   className="text-[10px] text-gray-400"
@@ -101,6 +107,7 @@ export function TabGroupView({
             registerHandle={registerHandle}
             pushEntityFrame={pushEntityFrame}
             updateView={updateView}
+            reportName={reportName}
           />
         ) : (
           <div className="p-8 text-center text-[13px] text-gray-400">No tab open.</div>

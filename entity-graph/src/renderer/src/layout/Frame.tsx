@@ -12,6 +12,7 @@ export interface FrameViewProps {
   registerHandle: (frameId: string, handle: ViewHandle | null) => void
   pushEntityFrame: (tabId: string, entityId: string) => void
   updateView: (frameId: string, view: View) => void
+  reportName: (id: string, text: string | undefined) => void
 }
 
 /** Renders a frame's view, dispatching on its kind. */
@@ -22,6 +23,7 @@ export function FrameView({
   registerHandle,
   pushEntityFrame,
   updateView,
+  reportName,
 }: FrameViewProps): React.JSX.Element {
   const onHandle = useCallback(
     (h: ViewHandle | null) => registerHandle(frame.id, h),
@@ -41,6 +43,7 @@ export function FrameView({
       onDebugEntity={onDebugEntity}
       onActivateEntity={(id) => pushEntityFrame(frame.tabId, id)}
       onHandle={onHandle}
+      onRootName={reportName}
     />
   )
 }

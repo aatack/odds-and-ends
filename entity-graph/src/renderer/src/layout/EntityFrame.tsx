@@ -14,6 +14,8 @@ export interface EntityFrameProps {
   collapsed?: string[]
   /** Publish this view's imperative handle to the layout (keyed by the caller). */
   onHandle?: (handle: ViewHandle | null) => void
+  /** Report the root entity's display text (for tab / panel labels). */
+  onRootName?: (id: string, text: string | undefined) => void
 }
 
 /**
@@ -29,6 +31,7 @@ export function EntityFrame({
   onActivateEntity,
   collapsed,
   onHandle,
+  onRootName,
 }: EntityFrameProps): React.JSX.Element {
   const ed = useEditor({
     rootId: view.rootId,
@@ -38,16 +41,25 @@ export function EntityFrame({
     initialCollapsed: collapsed,
   })
 
+  // The selected row's text, and the root entity's text (the first row).
+  const selectedRow = ed.rows.find((r) => r.kind === 'entity' && r.selected)
+  const selectedText = selectedRow?.kind === 'entity' ? selectedRow.text : undefined
+  const rootRow = ed.rows[0]
+  const rootText = rootRow?.kind === 'entity' ? rootRow.text : undefined
+
   // Expose selection + action dispatch through refs so the handle stays stable
   // while always reading the latest values.
   const selectedRef = useRef(ed.selectedPath)
   selectedRef.current = ed.selectedPath
+  const selectedTextRef = useRef(selectedText)
+  selectedTextRef.current = selectedText
   const runRef = useRef(ed.runAction)
   runRef.current = ed.runAction
 
   const handle = useMemo<ViewHandle>(
     () => ({
       getSelectedEntityId: () => last(selectedRef.current) ?? null,
+      getSelectedText: () => selectedTextRef.current ?? null,
       runAction: (id) => runRef.current(id),
     }),
     [],
@@ -58,6 +70,10 @@ export function EntityFrame({
     onHandle(handle)
     return () => onHandle(null)
   }, [onHandle, handle])
+
+  useEffect(() => {
+    onRootName?.(view.rootId, rootText)
+  }, [onRootName, view.rootId, rootText])
 
   return (
     <Editor

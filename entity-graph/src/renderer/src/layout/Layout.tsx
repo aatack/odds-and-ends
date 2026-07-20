@@ -79,6 +79,7 @@ export function Layout({ actions, onDebugEntity, onRegisterCommands }: LayoutPro
           key={rg.group.id}
           rg={rg}
           frames={state.frames}
+          names={layout.names}
           focused={rg.group.id === state.focusedGroupId}
           actions={actions}
           onDebugEntity={onDebugEntity}
@@ -89,6 +90,7 @@ export function Layout({ actions, onDebugEntity, onRegisterCommands }: LayoutPro
           registerHandle={layout.registerHandle}
           pushEntityFrame={layout.pushEntityFrame}
           updateView={layout.updateView}
+          reportName={layout.reportName}
         />
       ))}
     </div>

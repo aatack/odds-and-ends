@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { v4 as uuid } from 'uuid'
 import { persistentAtom, useAtom } from './atom'
 import type { LayoutController } from './layoutActions'
@@ -35,6 +35,8 @@ const layoutAtom = persistentAtom<LayoutState>(
 
 export interface ViewHandle {
   getSelectedEntityId: () => string | null
+  /** The selected entity's text, if any — used to name a freshly-opened tab. */
+  getSelectedText?: () => string | null
   /** Present only for entity views; runs one of the EDITOR_ACTIONS by id. */
   runAction?: (id: string) => void
 }
@@ -229,6 +231,10 @@ export interface ResolvedGroup {
 export interface UseLayoutResult {
   state: LayoutState
   groups: ResolvedGroup[]
+  /** Entity-id → display name, populated as views mount. */
+  names: Record<string, string>
+  /** A view reports the display text it has learned for an entity id. */
+  reportName: (id: string, text: string | undefined) => void
   /** The one frame keyboard input is routed to (focused group → active tab → top). */
   focusedFrameId: string | null
   controller: LayoutController
@@ -261,6 +267,17 @@ export function useLayout(): UseLayoutResult {
   const registerHandle = useCallback((frameId: string, handle: ViewHandle | null) => {
     if (handle) handles.current.set(frameId, handle)
     else handles.current.delete(frameId)
+  }, [])
+
+  // Entity-id → display name, learned from mounted views. Ephemeral (not
+  // persisted): a tab shows its root's id until its frame reports the text.
+  const [names, setNames] = useState<Record<string, string>>({})
+  const reportName = useCallback((id: string, text: string | undefined) => {
+    setNames((prev) => {
+      const v = text ?? ''
+      if ((prev[id] ?? '') === v) return prev
+      return { ...prev, [id]: v }
+    })
   }, [])
 
   // Derived focus chain -------------------------------------------------------
@@ -345,6 +362,9 @@ export function useLayout(): UseLayoutResult {
         // that just makes a duplicate you'd have to pop straight back off.
         const cur = ctx.current.state.frames[frameId]
         if (cur?.view.kind === 'entity' && cur.view.rootId === id) return
+        // Seed the new tab's name from the selected row so it's labelled at once.
+        const text = handles.current.get(frameId)?.getSelectedText?.() ?? undefined
+        if (text) reportName(id, text)
         setState((s) => pushFrame(s, tabId, entityView(id)))
       },
       cycleTab: (dir) => {
@@ -382,12 +402,14 @@ export function useLayout(): UseLayoutResult {
         if (groupId && tabId) setState((s) => closeTab(s, groupId, tabId))
       },
     }),
-    [setState],
+    [setState, reportName],
   )
 
   return {
     state,
     groups,
+    names,
+    reportName,
     focusedFrameId,
     controller,
     runFocusedEditorAction,

@@ -109,3 +109,12 @@ export function viewTitle(view: View): string {
   if (view.kind === 'canvas') return 'Canvas'
   return view.rootId === ROOT_ID ? 'Index' : view.rootId
 }
+
+/**
+ * A tab's label: an entity view shows its root entity's text (from the resolved
+ * `names` map), falling back to "Index"/the id until that text is known.
+ */
+export function tabTitle(view: View, names: Record<string, string>): string {
+  if (view.kind === 'canvas') return 'Canvas'
+  return names[view.rootId] || (view.rootId === ROOT_ID ? 'Index' : view.rootId)
+}
