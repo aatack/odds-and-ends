@@ -44,6 +44,8 @@ export interface EditorProps {
    * viewport. Used by canvas nodes with no set height, per the design notes.
    */
   autoHeight?: boolean
+  /** Extra items appended to a row's right-click menu (e.g. canvas "Close panel"). */
+  extraMenuItems?: ContextMenuItem[]
 }
 
 /**
@@ -65,6 +67,7 @@ export function Editor(props: EditorProps): React.JSX.Element {
     onNearEnd,
     onActivateRow,
     autoHeight = false,
+    extraMenuItems,
   } = props
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -164,6 +167,10 @@ export function Editor(props: EditorProps): React.JSX.Element {
       ? [
           { label: 'Export', onClick: () => { onExport(); setMenu(null) } },
           { label: 'Debug entity', onClick: () => { onDebug(); setMenu(null) } },
+          ...(extraMenuItems ?? []).map((it) => ({
+            ...it,
+            onClick: () => { it.onClick(); setMenu(null) },
+          })),
         ]
       : []
 

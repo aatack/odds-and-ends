@@ -1,26 +1,38 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { X } from '@untitledui/icons'
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { cn } from '../helpers/cn'
 import type { EditorActions } from '../views/useEditor'
 import { EntityFrame } from './EntityFrame'
 import type { ViewHandle } from './useLayout'
 import { useCanvas } from './useCanvas'
-import {
-  CANVAS_DEFAULT_WIDTH,
-  ROOT_ID,
-  entityView,
-  type CanvasNode,
-  type CanvasView,
-  type Frame,
-} from './types'
+import { CANVAS_DEFAULT_WIDTH, entityView, type CanvasNode, type CanvasView, type Frame } from './types'
 
-// The virtualized editor needs a bounded viewport to scroll within, so a canvas
-// panel gets a default height rather than growing unbounded. (True auto-grow —
-// which the design notes ask for when no height is set — would need a
-// non-virtualized render path; flagged in the follow-up notes.)
+// A node's default height when it hasn't been measured yet / when made fixed.
 const DEFAULT_HEIGHT = 260
 const MIN_WIDTH = 200
 const MIN_HEIGHT = 120
+// Extra room around the edge SVG so arrowheads near the bbox aren't clipped.
+const EDGE_PAD = 60
+
+interface Rect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+// The point where the segment from a rect's centre toward (tx,ty) crosses the
+// rect border — i.e. the side of the node facing the other node.
+function borderPoint(r: Rect, tx: number, ty: number): [number, number] {
+  const cx = r.x + r.w / 2
+  const cy = r.y + r.h / 2
+  const dx = tx - cx
+  const dy = ty - cy
+  if (dx === 0 && dy === 0) return [cx, cy]
+  const sx = dx !== 0 ? r.w / 2 / Math.abs(dx) : Infinity
+  const sy = dy !== 0 ? r.h / 2 / Math.abs(dy) : Infinity
+  const s = Math.min(sx, sy)
+  return [cx + dx * s, cy + dy * s]
+}
 
 interface Drag {
   id: string
@@ -38,40 +50,49 @@ export interface CanvasProps {
   updateView: (frameId: string, view: CanvasView) => void
   /** Publish a handle up to the layout, proxying to the active panel. */
   onHandle?: (handle: ViewHandle | null) => void
+  /** Open an entity in a new frame on this canvas's tab (double-click / d). */
+  pushEntityFrame: (tabId: string, entityId: string) => void
 }
 
 /**
  * A spatial board: each entity in `view.nodes` renders as a draggable,
  * resizable {@link EntityFrame} positioned at its stored coordinates, with the
- * other board entities folded (collapsed) inside it. Edges are drawn between
- * nodes whose subtrees reference one another. Double-clicking a folded
- * reference promotes it to its own node.
+ * other board entities folded (collapsed) inside it. Directional edges connect
+ * the facing sides of nodes whose subtrees reference one another. The board pans
+ * (drag background / wheel) and zooms (Ctrl/⌘+wheel about the cursor).
  */
-export function Canvas({ frame, actions, onDebugEntity, updateView, onHandle }: CanvasProps): React.JSX.Element {
+export function Canvas({
+  frame,
+  actions,
+  onDebugEntity,
+  updateView,
+  onHandle,
+  pushEntityFrame,
+}: CanvasProps): React.JSX.Element {
   const view = frame.view as CanvasView
   const edges = useCanvas(view.nodes, actions.resolveQuery)
+  const ids = Object.keys(view.nodes)
+  // Unique marker id per board (multiple canvases can be mounted at once).
+  const arrowId = `arrow-${useId().replace(/:/g, '')}`
 
-  // The panel keyboard input (w/s, edit, link…) is routed to — set by clicking
-  // a panel; defaults to the first node.
+  // The panel keyboard input (w/s, edit, link…) is routed to — set by clicking a
+  // panel; defaults to the first node.
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null)
-  const nodeIdList = Object.keys(view.nodes)
-  const activeId = activeNodeId && view.nodes[activeNodeId] ? activeNodeId : (nodeIdList[0] ?? null)
+  const activeId = activeNodeId && view.nodes[activeNodeId] ? activeNodeId : (ids[0] ?? null)
   const activeRef = useRef(activeId)
   activeRef.current = activeId
 
   // Each panel publishes its handle here; the board exposes one proxy handle to
   // the layout that forwards to whichever panel is active.
   const panelHandles = useRef<Map<string, ViewHandle>>(new Map())
-  const registerPanel = (id: string, h: ViewHandle | null): void => {
-    if (h) panelHandles.current.set(id, h)
-    else panelHandles.current.delete(id)
-  }
-  // Stable per-id onHandle callbacks so panels don't re-register every render.
   const panelCbs = useRef<Map<string, (h: ViewHandle | null) => void>>(new Map())
   const panelOnHandle = (id: string): ((h: ViewHandle | null) => void) => {
     let cb = panelCbs.current.get(id)
     if (!cb) {
-      cb = (h) => registerPanel(id, h)
+      cb = (h) => {
+        if (h) panelHandles.current.set(id, h)
+        else panelHandles.current.delete(id)
+      }
       panelCbs.current.set(id, cb)
     }
     return cb
@@ -81,6 +102,7 @@ export function Canvas({ frame, actions, onDebugEntity, updateView, onHandle }: 
     () => ({
       getSelectedEntityId: () => panelHandles.current.get(activeRef.current ?? '')?.getSelectedEntityId() ?? null,
       getSelectedText: () => panelHandles.current.get(activeRef.current ?? '')?.getSelectedText?.() ?? null,
+      getActiveNodeId: () => activeRef.current,
       runAction: (id) => panelHandles.current.get(activeRef.current ?? '')?.runAction?.(id),
     }),
     [],
@@ -91,33 +113,65 @@ export function Canvas({ frame, actions, onDebugEntity, updateView, onHandle }: 
     return () => onHandle(null)
   }, [onHandle, proxy])
 
+  // Measured panel heights (unaffected by zoom, since offsetHeight is layout
+  // size) so edges can anchor to the real node rectangles.
+  const [heights, setHeights] = useState<Record<string, number>>({})
+  const observers = useRef<Map<string, ResizeObserver>>(new Map())
+  const elCbs = useRef<Map<string, (el: HTMLDivElement | null) => void>>(new Map())
+  const panelElCb = (id: string): ((el: HTMLDivElement | null) => void) => {
+    let cb = elCbs.current.get(id)
+    if (!cb) {
+      cb = (el) => {
+        observers.current.get(id)?.disconnect()
+        observers.current.delete(id)
+        if (el) {
+          const report = (): void =>
+            setHeights((h) => (h[id] === el.offsetHeight ? h : { ...h, [id]: el.offsetHeight }))
+          const ro = new ResizeObserver(report)
+          ro.observe(el)
+          observers.current.set(id, ro)
+          report()
+        }
+      }
+      elCbs.current.set(id, cb)
+    }
+    return cb
+  }
+  useEffect(
+    () => () => {
+      observers.current.forEach((o) => o.disconnect())
+      observers.current.clear()
+    },
+    [],
+  )
+
+  // Node drag/resize — mirrored locally so pointer-moves don't hit localStorage
+  // on every pixel; committed on release.
   const [drag, setDrag] = useState<Drag | null>(null)
-  // The node being dragged, mirrored locally so pointer-moves don't hit
-  // localStorage on every pixel; committed to the atom on release.
   const [draft, setDraft] = useState<{ id: string; node: CanvasNode } | null>(null)
   const draftRef = useRef<{ id: string; node: CanvasNode } | null>(null)
-
-  // Pan/zoom of the whole board. Ephemeral (not persisted) for now.
-  const boardRef = useRef<HTMLDivElement>(null)
-  const [pan, setPan] = useState({ x: 0, y: 0 })
-  const [zoom, setZoom] = useState(1)
-  const zoomRef = useRef(zoom)
-  zoomRef.current = zoom
-  const [panDrag, setPanDrag] = useState<{ startX: number; startY: number; orig: { x: number; y: number } } | null>(null)
-
   const nodeOf = (id: string): CanvasNode => (draft?.id === id ? draft.node : view.nodes[id])
+
+  // Camera: pan + zoom in one atomic state so zoom-about-cursor stays correct
+  // even across rapid wheel events (pan depends on the previous zoom).
+  const boardRef = useRef<HTMLDivElement>(null)
+  const [cam, setCam] = useState({ x: 0, y: 0, zoom: 1 })
+  const camRef = useRef(cam)
+  camRef.current = cam
+  const [panDrag, setPanDrag] = useState<{ startX: number; startY: number; orig: { x: number; y: number } } | null>(null)
 
   useEffect(() => {
     if (!drag) return
     const onMove = (e: PointerEvent): void => {
-      // Screen deltas → board deltas: undo the zoom scale.
-      const z = zoomRef.current
+      // Screen deltas → board deltas: undo the zoom scale. Coordinates may be
+      // negative — nodes can live left of / above the origin.
+      const z = camRef.current.zoom
       const dx = (e.clientX - drag.startX) / z
       const dy = (e.clientY - drag.startY) / z
       const node: CanvasNode = { ...drag.orig }
       if (drag.kind === 'move') {
-        node.x = Math.max(0, drag.orig.x + dx)
-        node.y = Math.max(0, drag.orig.y + dy)
+        node.x = drag.orig.x + dx
+        node.y = drag.orig.y + dy
       }
       if (drag.kind === 'width' || drag.kind === 'both') {
         node.width = Math.max(MIN_WIDTH, (drag.orig.width ?? CANVAS_DEFAULT_WIDTH) + dx)
@@ -153,7 +207,7 @@ export function Canvas({ frame, actions, onDebugEntity, updateView, onHandle }: 
   useEffect(() => {
     if (!panDrag) return
     const onMove = (e: PointerEvent): void =>
-      setPan({ x: panDrag.orig.x + (e.clientX - panDrag.startX), y: panDrag.orig.y + (e.clientY - panDrag.startY) })
+      setCam((c) => ({ ...c, x: panDrag.orig.x + (e.clientX - panDrag.startX), y: panDrag.orig.y + (e.clientY - panDrag.startY) }))
     const onUp = (): void => setPanDrag(null)
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
@@ -164,13 +218,12 @@ export function Canvas({ frame, actions, onDebugEntity, updateView, onHandle }: 
   }, [panDrag])
 
   const onBoardPointerDown = (e: React.PointerEvent): void => {
-    // Only the background pans; pointerdowns inside a panel are its own.
     if ((e.target as HTMLElement).closest('[data-panel]')) return
-    setPanDrag({ startX: e.clientX, startY: e.clientY, orig: pan })
+    setPanDrag({ startX: e.clientX, startY: e.clientY, orig: { x: camRef.current.x, y: camRef.current.y } })
   }
 
   // Ctrl/⌘+wheel zooms about the cursor; a plain wheel over the background pans.
-  // Attached natively so it can be non-passive (preventDefault is allowed).
+  // Native + non-passive so preventDefault is allowed.
   useEffect(() => {
     const el = boardRef.current
     if (!el) return
@@ -180,15 +233,15 @@ export function Canvas({ frame, actions, onDebugEntity, updateView, onHandle }: 
         const rect = el.getBoundingClientRect()
         const cx = e.clientX - rect.left
         const cy = e.clientY - rect.top
-        const z = zoomRef.current
-        const nz = Math.min(3, Math.max(0.2, z * (e.deltaY < 0 ? 1.1 : 1 / 1.1)))
-        setPan((p) => ({ x: cx - (cx - p.x) * (nz / z), y: cy - (cy - p.y) * (nz / z) }))
-        setZoom(nz)
+        setCam((c) => {
+          const nz = Math.min(3, Math.max(0.2, c.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)))
+          // Keep the board point under the cursor fixed.
+          return { zoom: nz, x: cx - (cx - c.x) * (nz / c.zoom), y: cy - (cy - c.y) * (nz / c.zoom) }
+        })
       } else {
-        // Let a fixed-height panel body scroll itself; otherwise pan the board.
         if ((e.target as HTMLElement).closest('[data-panel-scroll]')) return
         e.preventDefault()
-        setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }))
+        setCam((c) => ({ ...c, x: c.x - e.deltaX, y: c.y - e.deltaY }))
       }
     }
     el.addEventListener('wheel', onWheel, { passive: false })
@@ -200,34 +253,22 @@ export function Canvas({ frame, actions, onDebugEntity, updateView, onHandle }: 
     delete nodes[id]
     updateView(frame.id, { ...view, nodes })
   }
-
-  const addNode = (entityId: string): void => {
-    if (view.nodes[entityId]) return
-    const offset = Object.keys(view.nodes).length * 28
-    updateView(frame.id, {
-      ...view,
-      nodes: { ...view.nodes, [entityId]: { x: 60 + offset, y: 60 + offset } },
-    })
-  }
-
   const patchNode = (id: string, patch: Partial<CanvasNode>): void =>
     updateView(frame.id, { ...view, nodes: { ...view.nodes, [id]: { ...view.nodes[id], ...patch } } })
 
-  // Toggle a node between a fixed, scrolling height and growing to fit.
-  const toggleHeight = (id: string): void =>
-    patchNode(id, { height: view.nodes[id].height ? undefined : DEFAULT_HEIGHT })
-
-  const ids = Object.keys(view.nodes)
-  const contentW =
-    Math.max(0, ...ids.map((id) => nodeOf(id).x + (nodeOf(id).width ?? CANVAS_DEFAULT_WIDTH))) + 200
-  const contentH =
-    Math.max(0, ...ids.map((id) => nodeOf(id).y + (nodeOf(id).height ?? DEFAULT_HEIGHT))) + 200
-
-  // Edge anchor: the centre of a node's header strip.
-  const anchor = (id: string): [number, number] => {
+  const rectOf = (id: string): Rect => {
     const n = nodeOf(id)
-    return [n.x + (n.width ?? CANVAS_DEFAULT_WIDTH) / 2, n.y + 14]
+    return { x: n.x, y: n.y, w: n.width ?? CANVAS_DEFAULT_WIDTH, h: heights[id] ?? n.height ?? DEFAULT_HEIGHT }
   }
+
+  // Bounding box of all nodes (padded), so the edge SVG can cover negative space.
+  const rects = ids.map(rectOf)
+  const minX = rects.length ? Math.min(...rects.map((r) => r.x)) : 0
+  const minY = rects.length ? Math.min(...rects.map((r) => r.y)) : 0
+  const maxX = rects.length ? Math.max(...rects.map((r) => r.x + r.w)) : 0
+  const maxY = rects.length ? Math.max(...rects.map((r) => r.y + r.h)) : 0
+  const ox = minX - EDGE_PAD
+  const oy = minY - EDGE_PAD
 
   return (
     <div
@@ -237,30 +278,49 @@ export function Canvas({ frame, actions, onDebugEntity, updateView, onHandle }: 
     >
       <div
         className="relative origin-top-left"
-        style={{
-          width: contentW,
-          height: contentH,
-          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-        }}
+        style={{ transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.zoom})` }}
       >
-        <svg className="pointer-events-none absolute inset-0" width={contentW} height={contentH}>
-          {edges.map(([from, to]) => {
-            if (!view.nodes[from] || !view.nodes[to]) return null
-            const [x1, y1] = anchor(from)
-            const [x2, y2] = anchor(to)
-            return (
-              <line
-                key={`${from}-${to}`}
-                x1={x1}
-                y1={y1}
-                x2={x2}
-                y2={y2}
-                stroke="#cbd5e1"
-                strokeWidth={1.5}
-              />
-            )
-          })}
-        </svg>
+        {ids.length > 0 && (
+          <svg
+            className="pointer-events-none absolute"
+            style={{ left: ox, top: oy }}
+            width={maxX - minX + 2 * EDGE_PAD}
+            height={maxY - minY + 2 * EDGE_PAD}
+          >
+            <defs>
+              <marker
+                id={arrowId}
+                markerWidth="9"
+                markerHeight="9"
+                refX="7"
+                refY="4"
+                orient="auto"
+                markerUnits="userSpaceOnUse"
+              >
+                <path d="M0,0 L8,4 L0,8 z" fill="#94a3b8" />
+              </marker>
+            </defs>
+            {edges.map(([from, to]) => {
+              if (!view.nodes[from] || !view.nodes[to]) return null
+              const a = rectOf(from)
+              const b = rectOf(to)
+              const [x1, y1] = borderPoint(a, b.x + b.w / 2, b.y + b.h / 2)
+              const [x2, y2] = borderPoint(b, a.x + a.w / 2, a.y + a.h / 2)
+              return (
+                <line
+                  key={`${from}-${to}`}
+                  x1={x1 - ox}
+                  y1={y1 - oy}
+                  x2={x2 - ox}
+                  y2={y2 - oy}
+                  stroke="#94a3b8"
+                  strokeWidth={1.5}
+                  markerEnd={`url(#${arrowId})`}
+                />
+              )
+            })}
+          </svg>
+        )}
 
         {ids.map((id) => {
           const n = nodeOf(id)
@@ -269,38 +329,23 @@ export function Canvas({ frame, actions, onDebugEntity, updateView, onHandle }: 
             <div
               key={id}
               data-panel=""
+              ref={panelElCb(id)}
               onPointerDownCapture={() => setActiveNodeId(id)}
               className={cn(
-                'absolute flex flex-col rounded-lg border bg-white shadow-sm',
+                'absolute flex flex-col overflow-hidden rounded-lg border bg-white shadow-sm',
                 id === activeId ? 'border-brand-300 ring-1 ring-brand-200' : 'border-gray-200',
               )}
               style={{ left: n.x, top: n.y, width: n.width ?? CANVAS_DEFAULT_WIDTH }}
             >
+              {/* Small top-left grip — the only move affordance now that panels
+                  have no header. */}
               <div
-                className="flex cursor-move select-none items-center gap-1 rounded-t-lg border-b border-gray-100 bg-gray-50 px-2 py-1"
+                className="absolute left-1 top-1 z-10 h-3 w-6 cursor-move rounded bg-gray-200/80 hover:bg-gray-300"
                 onPointerDown={(e) => startDrag(id, 'move', e)}
-              >
-                <span className="truncate text-[11px] font-medium text-gray-500">
-                  {id === ROOT_ID ? 'Index' : id}
-                </span>
-                <div className="flex-1" />
-                <button
-                  className="rounded px-1 text-[10px] text-gray-400 hover:bg-gray-200 hover:text-gray-700 focus:outline-none"
-                  onClick={() => toggleHeight(id)}
-                  title={n.height ? 'Grow to fit content' : 'Use a fixed, scrolling height'}
-                >
-                  {n.height ? 'auto' : 'fix'}
-                </button>
-                <button
-                  className="text-gray-300 hover:text-gray-600 focus:outline-none"
-                  onClick={() => removeNode(id)}
-                  title="Remove from canvas"
-                >
-                  <X size={12} />
-                </button>
-              </div>
+                title="Drag to move"
+              />
 
-              {/* A node with no set height grows to fit; one with a height scrolls. */}
+              {/* No set height → grow to fit; a height → fixed and scrolling. */}
               <div
                 className={n.height ? 'overflow-auto' : ''}
                 style={n.height ? { height: n.height } : undefined}
@@ -313,9 +358,10 @@ export function Canvas({ frame, actions, onDebugEntity, updateView, onHandle }: 
                   actions={actions}
                   onDebugEntity={onDebugEntity}
                   collapsed={others}
-                  onActivateEntity={addNode}
+                  onActivateEntity={(entityId) => pushEntityFrame(frame.tabId, entityId)}
                   autoHeight={!n.height}
                   onHandle={panelOnHandle(id)}
+                  extraMenuItems={[{ label: 'Close panel', onClick: () => removeNode(id) }]}
                 />
               </div>
 

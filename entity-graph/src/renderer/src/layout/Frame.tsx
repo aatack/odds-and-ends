@@ -38,6 +38,7 @@ export function FrameView({
         onDebugEntity={onDebugEntity}
         updateView={updateView}
         onHandle={onHandle}
+        pushEntityFrame={pushEntityFrame}
       />
     )
   }
