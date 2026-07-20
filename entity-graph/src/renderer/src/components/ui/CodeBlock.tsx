@@ -53,12 +53,12 @@ export function CodeBlock({ code, run }: CodeBlockProps): React.JSX.Element {
   const output = run ? outputLines(run) : null
 
   return (
-    <div className="my-px w-full min-w-0 overflow-hidden rounded-md bg-gray-50">
+    <div className="my-px w-full min-w-0 overflow-hidden rounded-md bg-gray-100 shadow-xs">
       <div className="overflow-x-auto">
         <Highlight code={code} language="tsx" theme={dark ? themes.vsDark : themes.vsLight}>
           {({ tokens, getLineProps, getTokenProps }) => (
             <pre
-              className="w-max min-w-full px-3 py-2 font-mono text-[12.5px] leading-5"
+              className="w-max min-w-full px-2.5 py-1.5 font-mono text-[11.5px] leading-[1.45]"
               style={{ background: 'transparent', margin: 0 }}
             >
               {tokens.map((line, i) => (
@@ -75,11 +75,11 @@ export function CodeBlock({ code, run }: CodeBlockProps): React.JSX.Element {
 
       {output && (
         <>
-          <div className="border-t border-gray-100" />
+          <div className="border-t border-gray-200" />
           <div className="overflow-x-auto">
             <pre
               className={cn(
-                'w-max min-w-full whitespace-pre px-3 py-2 font-mono text-[12.5px] leading-5',
+                'w-max min-w-full whitespace-pre px-2.5 py-1.5 font-mono text-[11.5px] leading-[1.45]',
                 output.error ? 'text-red-600' : 'text-gray-500',
               )}
             >
