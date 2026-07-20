@@ -36,10 +36,12 @@ export interface UseEditorArgs {
   /** Open the raw debug inspector for an entity (from the `debug` action). */
   onDebugEntity: (entityId: string) => void
   /**
-   * Entity ids to start collapsed. The canvas uses this to fold the occurrences
-   * of entities that appear as their own node elsewhere on the board.
+   * Entity ids to keep folded, merged on top of the user's own collapse state.
+   * The canvas uses this to fold occurrences of entities that are their own node
+   * elsewhere on the board. Reactive — changing it re-queries in place (no
+   * remount), so adding/removing a board node doesn't flash every panel.
    */
-  initialCollapsed?: string[]
+  forceCollapsed?: string[]
 }
 
 /** A rendered bullet backed by a real entity. */
@@ -126,13 +128,21 @@ export function useEditor({
   maxDepth,
   actions,
   onDebugEntity,
-  initialCollapsed,
+  forceCollapsed,
 }: UseEditorArgs): UseEditorResult {
   // Latent state ------------------------------------------------------------
-  // Kept in a ref so the reset effect can re-seed collapse without depending on
-  // a fresh array identity every render.
-  const initialCollapsedRef = useRef(initialCollapsed)
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(initialCollapsed))
+  // The user's own collapse toggles; `forceCollapsed` is layered on top.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+
+  // `forceCollapsed` is applied on top of the user's set. Keyed by content so a
+  // fresh array identity each render doesn't churn the memos.
+  const forceKey = useMemo(() => (forceCollapsed ?? []).slice().sort().join(','), [forceCollapsed])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const forceSet = useMemo(() => new Set(forceCollapsed ?? []), [forceKey])
+  const effectiveCollapsed = useMemo(
+    () => new Set<string>([...collapsed, ...forceSet]),
+    [collapsed, forceSet],
+  )
   const [selectedPath, setSelectedPath] = useState<string[]>([])
   const [limit, setLimit] = useState(PAGE_SIZE)
   const [edit, setEdit] = useState<EditState>(null)
@@ -151,13 +161,13 @@ export function useEditor({
 
   const reload = useCallback(() => setReloadToken((t) => t + 1), [])
 
-  // Stable-ish key so the fetch effect re-runs when the collapsed set changes.
-  const collapsedKey = useMemo(() => [...collapsed].sort().join(','), [collapsed])
+  // Stable-ish key so the fetch effect re-runs when the effective set changes.
+  const collapsedKey = useMemo(() => [...effectiveCollapsed].sort().join(','), [effectiveCollapsed])
 
   // Reset everything when the starting entity changes.
   useEffect(() => {
     setSelectedPath(rootId ? [rootId] : [])
-    setCollapsed(new Set(initialCollapsedRef.current))
+    setCollapsed(new Set())
     setLimit(PAGE_SIZE)
     setEdit(null)
     setPending(null)
@@ -176,7 +186,7 @@ export function useEditor({
     setLoading(true)
     setError(null)
     actions
-      .resolveQuery(rootId, { maxDepth, collapsed: [...collapsed], limit })
+      .resolveQuery(rootId, { maxDepth, collapsed: [...effectiveCollapsed], limit })
       .then((p) => {
         if (cancelled) return
         setResults(p.results)
@@ -212,7 +222,7 @@ export function useEditor({
         path,
         text: text == null || text === '' ? undefined : String(text),
         hasChildren: entity.outboundLinks.length > 0,
-        collapsed: collapsed.has(entity.id),
+        collapsed: effectiveCollapsed.has(entity.id),
         selected: pathEq(path, selectedPath),
         editing: edit?.mode === 'edit' && pathEq(path, edit.path),
       })
@@ -229,7 +239,7 @@ export function useEditor({
       }
     }
     return out
-  }, [results, collapsed, selectedPath, edit])
+  }, [results, effectiveCollapsed, selectedPath, edit])
 
   // Selection helpers -------------------------------------------------------
   const entityRows = useMemo(
@@ -429,7 +439,7 @@ export function useEditor({
     fetching.current = true
     setLoading(true)
     actions
-      .resolveQuery(rootId, { maxDepth, collapsed: [...collapsed], limit, continuationStack: continuation })
+      .resolveQuery(rootId, { maxDepth, collapsed: [...effectiveCollapsed], limit, continuationStack: continuation })
       .then((p) => {
         setResults((prev) => [...prev, ...p.results])
         setContinuation(p.continuationStack)
@@ -439,7 +449,7 @@ export function useEditor({
         setLoading(false)
         fetching.current = false
       })
-  }, [continuation, rootId, maxDepth, collapsed, limit, actions])
+  }, [continuation, rootId, maxDepth, effectiveCollapsed, limit, actions])
 
   const statusMessage = useMemo(() => {
     if (!pending) return null

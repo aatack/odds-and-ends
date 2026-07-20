@@ -45,7 +45,7 @@ export function EntityFrame({
     maxDepth: view.maxDepth ?? undefined,
     actions,
     onDebugEntity,
-    initialCollapsed: collapsed,
+    forceCollapsed: collapsed,
   })
 
   // The selected row's text, and the root entity's text (the first row).
