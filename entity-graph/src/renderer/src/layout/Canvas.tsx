@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { X } from '@untitledui/icons'
+import { cn } from '../helpers/cn'
 import type { EditorActions } from '../views/useEditor'
 import { EntityFrame } from './EntityFrame'
 import { useCanvas } from './useCanvas'
@@ -53,13 +54,23 @@ export function Canvas({ frame, actions, onDebugEntity, updateView }: CanvasProp
   const [draft, setDraft] = useState<{ id: string; node: CanvasNode } | null>(null)
   const draftRef = useRef<{ id: string; node: CanvasNode } | null>(null)
 
+  // Pan/zoom of the whole board. Ephemeral (not persisted) for now.
+  const boardRef = useRef<HTMLDivElement>(null)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState(1)
+  const zoomRef = useRef(zoom)
+  zoomRef.current = zoom
+  const [panDrag, setPanDrag] = useState<{ startX: number; startY: number; orig: { x: number; y: number } } | null>(null)
+
   const nodeOf = (id: string): CanvasNode => (draft?.id === id ? draft.node : view.nodes[id])
 
   useEffect(() => {
     if (!drag) return
     const onMove = (e: PointerEvent): void => {
-      const dx = e.clientX - drag.startX
-      const dy = e.clientY - drag.startY
+      // Screen deltas → board deltas: undo the zoom scale.
+      const z = zoomRef.current
+      const dx = (e.clientX - drag.startX) / z
+      const dy = (e.clientY - drag.startY) / z
       const node: CanvasNode = { ...drag.orig }
       if (drag.kind === 'move') {
         node.x = Math.max(0, drag.orig.x + dx)
@@ -94,6 +105,52 @@ export function Canvas({ frame, actions, onDebugEntity, updateView }: CanvasProp
     e.stopPropagation()
     setDrag({ id, kind, startX: e.clientX, startY: e.clientY, orig: view.nodes[id] })
   }
+
+  // Pan by dragging empty board background.
+  useEffect(() => {
+    if (!panDrag) return
+    const onMove = (e: PointerEvent): void =>
+      setPan({ x: panDrag.orig.x + (e.clientX - panDrag.startX), y: panDrag.orig.y + (e.clientY - panDrag.startY) })
+    const onUp = (): void => setPanDrag(null)
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+  }, [panDrag])
+
+  const onBoardPointerDown = (e: React.PointerEvent): void => {
+    // Only the background pans; pointerdowns inside a panel are its own.
+    if ((e.target as HTMLElement).closest('[data-panel]')) return
+    setPanDrag({ startX: e.clientX, startY: e.clientY, orig: pan })
+  }
+
+  // Ctrl/⌘+wheel zooms about the cursor; a plain wheel over the background pans.
+  // Attached natively so it can be non-passive (preventDefault is allowed).
+  useEffect(() => {
+    const el = boardRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent): void => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault()
+        const rect = el.getBoundingClientRect()
+        const cx = e.clientX - rect.left
+        const cy = e.clientY - rect.top
+        const z = zoomRef.current
+        const nz = Math.min(3, Math.max(0.2, z * (e.deltaY < 0 ? 1.1 : 1 / 1.1)))
+        setPan((p) => ({ x: cx - (cx - p.x) * (nz / z), y: cy - (cy - p.y) * (nz / z) }))
+        setZoom(nz)
+      } else {
+        // Let a fixed-height panel body scroll itself; otherwise pan the board.
+        if ((e.target as HTMLElement).closest('[data-panel-scroll]')) return
+        e.preventDefault()
+        setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }))
+      }
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
 
   const removeNode = (id: string): void => {
     const nodes = { ...view.nodes }
@@ -130,8 +187,19 @@ export function Canvas({ frame, actions, onDebugEntity, updateView }: CanvasProp
   }
 
   return (
-    <div className="h-full w-full overflow-auto bg-gray-50">
-      <div className="relative" style={{ width: contentW, height: contentH }}>
+    <div
+      ref={boardRef}
+      className={cn('h-full w-full overflow-hidden bg-gray-50', panDrag ? 'cursor-grabbing' : 'cursor-grab')}
+      onPointerDown={onBoardPointerDown}
+    >
+      <div
+        className="relative origin-top-left"
+        style={{
+          width: contentW,
+          height: contentH,
+          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+        }}
+      >
         <svg className="pointer-events-none absolute inset-0" width={contentW} height={contentH}>
           {edges.map(([from, to]) => {
             if (!view.nodes[from] || !view.nodes[to]) return null
@@ -157,6 +225,7 @@ export function Canvas({ frame, actions, onDebugEntity, updateView }: CanvasProp
           return (
             <div
               key={id}
+              data-panel=""
               className="absolute flex flex-col rounded-lg border border-gray-200 bg-white shadow-sm"
               style={{ left: n.x, top: n.y, width: n.width ?? CANVAS_DEFAULT_WIDTH }}
             >
@@ -185,7 +254,11 @@ export function Canvas({ frame, actions, onDebugEntity, updateView }: CanvasProp
               </div>
 
               {/* A node with no set height grows to fit; one with a height scrolls. */}
-              <div className={n.height ? 'overflow-auto' : ''} style={n.height ? { height: n.height } : undefined}>
+              <div
+                className={n.height ? 'overflow-auto' : ''}
+                style={n.height ? { height: n.height } : undefined}
+                data-panel-scroll={n.height ? '' : undefined}
+              >
                 {/* Re-key on the folded set so collapse re-seeds when nodes change. */}
                 <EntityFrame
                   key={others.join(',')}
