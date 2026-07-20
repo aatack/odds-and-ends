@@ -12,6 +12,7 @@ export interface FrameViewProps {
   registerHandle: (frameId: string, handle: ViewHandle | null) => void
   pushEntityFrame: (tabId: string, entityId: string) => void
   updateView: (frameId: string, view: View) => void
+  updateCanvasCam: (frameId: string, cam: { x: number; y: number; zoom: number }) => void
   reportName: (id: string, text: string | undefined) => void
 }
 
@@ -23,6 +24,7 @@ export function FrameView({
   registerHandle,
   pushEntityFrame,
   updateView,
+  updateCanvasCam,
   reportName,
 }: FrameViewProps): React.JSX.Element {
   const onHandle = useCallback(
@@ -37,6 +39,7 @@ export function FrameView({
         actions={actions}
         onDebugEntity={onDebugEntity}
         updateView={updateView}
+        updateCanvasCam={updateCanvasCam}
         onHandle={onHandle}
         pushEntityFrame={pushEntityFrame}
       />

@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid'
 import { persistentAtom, useAtom } from './atom'
 import type { LayoutController } from './layoutActions'
 import {
+  CANVAS_DEFAULT_WIDTH,
   ROOT_ID,
   canvasView,
   defaultLayout,
@@ -123,12 +124,21 @@ function popIntoNewTab(s: LayoutState, groupId: string, tabId: string): LayoutSt
   }
 }
 
-// Add an entity as a node on a canvas frame (the "Add selected to canvas" action).
-function addCanvasNode(s: LayoutState, frameId: string, entityId: string): LayoutState {
+// Add an entity as a node on a canvas frame (the "Add selected to canvas" action),
+// placed immediately to the right of the parent node it came from.
+function addCanvasNode(
+  s: LayoutState,
+  frameId: string,
+  entityId: string,
+  parentId?: string | null,
+): LayoutState {
   const frame = s.frames[frameId]
   if (!frame || frame.view.kind !== 'canvas' || frame.view.nodes[entityId]) return s
-  const offset = Object.keys(frame.view.nodes).length * 28
-  const nodes = { ...frame.view.nodes, [entityId]: { x: 60 + offset, y: 60 + offset } }
+  const parent = parentId ? frame.view.nodes[parentId] : undefined
+  const pos = parent
+    ? { x: parent.x + (parent.width ?? CANVAS_DEFAULT_WIDTH) + 40, y: parent.y }
+    : { x: 60 + Object.keys(frame.view.nodes).length * 28, y: 60 }
+  const nodes = { ...frame.view.nodes, [entityId]: pos }
   return { ...s, frames: { ...s.frames, [frameId]: { ...frame, view: { ...frame.view, nodes } } } }
 }
 
@@ -271,6 +281,8 @@ export interface UseLayoutResult {
   pushEntityFrame: (tabId: string, entityId: string) => void
   /** Replace a frame's view (canvas drag/resize persistence). */
   updateView: (frameId: string, view: View) => void
+  /** Persist a canvas frame's pan/zoom without touching its nodes. */
+  updateCanvasCam: (frameId: string, cam: { x: number; y: number; zoom: number }) => void
 }
 
 /**
@@ -357,6 +369,19 @@ export function useLayout(): UseLayoutResult {
       ),
     [setState],
   )
+  // Merge only pan/zoom into a canvas frame — never clobbers its nodes, and is a
+  // no-op when unchanged so persistence doesn't churn the atom.
+  const updateCanvasCam = useCallback(
+    (frameId: string, cam: { x: number; y: number; zoom: number }) =>
+      setState((s) => {
+        const f = s.frames[frameId]
+        if (!f || f.view.kind !== 'canvas') return s
+        if (f.view.pan?.x === cam.x && f.view.pan?.y === cam.y && f.view.zoom === cam.zoom) return s
+        const view = { ...f.view, pan: { x: cam.x, y: cam.y }, zoom: cam.zoom }
+        return { ...s, frames: { ...s.frames, [frameId]: { ...f, view } } }
+      }),
+    [setState],
+  )
 
   const runFocusedEditorAction = useCallback((id: string) => {
     const fid = ctx.current.frameId
@@ -397,8 +422,10 @@ export function useLayout(): UseLayoutResult {
         if (!frameId) return
         const frame = ctx.current.state.frames[frameId]
         if (frame?.view.kind !== 'canvas') return
-        const id = handles.current.get(frameId)?.getSelectedEntityId() ?? null
-        if (id) setState((s) => addCanvasNode(s, frameId, id))
+        const handle = handles.current.get(frameId)
+        const id = handle?.getSelectedEntityId() ?? null
+        const parentId = handle?.getActiveNodeId?.() ?? null
+        if (id) setState((s) => addCanvasNode(s, frameId, id, parentId))
       },
       closePanel: () => {
         const { frameId } = ctx.current
@@ -457,5 +484,6 @@ export function useLayout(): UseLayoutResult {
     newTab: newTabAt,
     pushEntityFrame,
     updateView,
+    updateCanvasCam,
   }
 }

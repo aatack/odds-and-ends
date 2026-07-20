@@ -90,6 +90,7 @@ export function Layout({ actions, onDebugEntity, onRegisterCommands }: LayoutPro
           registerHandle={layout.registerHandle}
           pushEntityFrame={layout.pushEntityFrame}
           updateView={layout.updateView}
+          updateCanvasCam={layout.updateCanvasCam}
           reportName={layout.reportName}
         />
       ))}

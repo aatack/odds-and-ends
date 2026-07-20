@@ -40,7 +40,12 @@ interface Drag {
   startX: number
   startY: number
   orig: CanvasNode
+  /** Move only after passing a small distance, so a click still selects a row. */
+  threshold?: boolean
 }
+
+// How far the pointer must travel before a body press becomes a node drag.
+const DRAG_THRESHOLD = 4
 
 export interface CanvasProps {
   frame: Frame
@@ -48,6 +53,8 @@ export interface CanvasProps {
   onDebugEntity: (entityId: string) => void
   /** Persist a change to this frame's view (node moved / resized / added). */
   updateView: (frameId: string, view: CanvasView) => void
+  /** Persist the board pan/zoom without touching nodes. */
+  updateCanvasCam: (frameId: string, cam: { x: number; y: number; zoom: number }) => void
   /** Publish a handle up to the layout, proxying to the active panel. */
   onHandle?: (handle: ViewHandle | null) => void
   /** Open an entity in a new frame on this canvas's tab (double-click / d). */
@@ -66,6 +73,7 @@ export function Canvas({
   actions,
   onDebugEntity,
   updateView,
+  updateCanvasCam,
   onHandle,
   pushEntityFrame,
 }: CanvasProps): React.JSX.Element {
@@ -150,24 +158,54 @@ export function Canvas({
   const [drag, setDrag] = useState<Drag | null>(null)
   const [draft, setDraft] = useState<{ id: string; node: CanvasNode } | null>(null)
   const draftRef = useRef<{ id: string; node: CanvasNode } | null>(null)
+  // Whether the current press has moved past the threshold, and whether the
+  // click that follows a real drag should be swallowed (so it doesn't select a
+  // row / toggle a chevron under the pointer).
+  const movedRef = useRef(false)
+  const suppressClickRef = useRef(false)
   const nodeOf = (id: string): CanvasNode => (draft?.id === id ? draft.node : view.nodes[id])
 
   // Camera: pan + zoom in one atomic state so zoom-about-cursor stays correct
-  // even across rapid wheel events (pan depends on the previous zoom).
+  // even across rapid wheel events (pan depends on the previous zoom). Seeded
+  // from the persisted view so it survives the canvas being re-/de-rendered.
   const boardRef = useRef<HTMLDivElement>(null)
-  const [cam, setCam] = useState({ x: 0, y: 0, zoom: 1 })
+  const [cam, setCam] = useState(() => ({
+    x: view.pan?.x ?? 0,
+    y: view.pan?.y ?? 0,
+    zoom: view.zoom ?? 1,
+  }))
   const camRef = useRef(cam)
   camRef.current = cam
   const [panDrag, setPanDrag] = useState<{ startX: number; startY: number; orig: { x: number; y: number } } | null>(null)
 
+  // Persist the camera: debounced while interacting, and once more on unmount so
+  // switching away mid-gesture doesn't lose the position.
+  useEffect(() => {
+    const t = window.setTimeout(() => updateCanvasCam(frame.id, cam), 300)
+    return () => window.clearTimeout(t)
+  }, [cam, frame.id, updateCanvasCam])
+  useEffect(
+    () => () => updateCanvasCam(frame.id, camRef.current),
+    [frame.id, updateCanvasCam],
+  )
+
   useEffect(() => {
     if (!drag) return
     const onMove = (e: PointerEvent): void => {
+      const rawX = e.clientX - drag.startX
+      const rawY = e.clientY - drag.startY
+      // A body press only becomes a drag once it clears the threshold — until
+      // then it might still be a click.
+      if (drag.threshold && !movedRef.current && Math.hypot(rawX, rawY) < DRAG_THRESHOLD) return
+      if (!movedRef.current) {
+        movedRef.current = true
+        window.getSelection()?.removeAllRanges()
+      }
       // Screen deltas → board deltas: undo the zoom scale. Coordinates may be
       // negative — nodes can live left of / above the origin.
       const z = camRef.current.zoom
-      const dx = (e.clientX - drag.startX) / z
-      const dy = (e.clientY - drag.startY) / z
+      const dx = rawX / z
+      const dy = rawY / z
       const node: CanvasNode = { ...drag.orig }
       if (drag.kind === 'move') {
         node.x = drag.orig.x + dx
@@ -185,6 +223,8 @@ export function Canvas({
     const onUp = (): void => {
       const d = draftRef.current
       if (d) updateView(frame.id, { ...view, nodes: { ...view.nodes, [d.id]: d.node } })
+      // A real body drag should not also fire a click on the row underneath.
+      if (movedRef.current && drag.threshold) suppressClickRef.current = true
       draftRef.current = null
       setDraft(null)
       setDrag(null)
@@ -197,10 +237,21 @@ export function Canvas({
     }
   }, [drag, frame.id, updateView, view])
 
-  const startDrag = (id: string, kind: Drag['kind'], e: React.PointerEvent): void => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDrag({ id, kind, startX: e.clientX, startY: e.clientY, orig: view.nodes[id] })
+  const startDrag = (
+    id: string,
+    kind: Drag['kind'],
+    e: React.PointerEvent,
+    threshold = false,
+  ): void => {
+    // Resize handles react immediately (and suppress text selection); a body
+    // press waits for the threshold so plain clicks still reach the rows.
+    if (!threshold) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    setActiveNodeId(id)
+    movedRef.current = false
+    setDrag({ id, kind, startX: e.clientX, startY: e.clientY, orig: view.nodes[id], threshold })
   }
 
   // Pan by dragging empty board background.
@@ -238,6 +289,11 @@ export function Canvas({
           // Keep the board point under the cursor fixed.
           return { zoom: nz, x: cx - (cx - c.x) * (nz / c.zoom), y: cy - (cy - c.y) * (nz / c.zoom) }
         })
+      } else if (e.shiftKey) {
+        // Shift+wheel pans horizontally (browsers may already map deltaY→deltaX).
+        e.preventDefault()
+        const d = e.deltaX || e.deltaY
+        setCam((c) => ({ ...c, x: c.x - d }))
       } else {
         if ((e.target as HTMLElement).closest('[data-panel-scroll]')) return
         e.preventDefault()
@@ -275,6 +331,12 @@ export function Canvas({
       ref={boardRef}
       className={cn('h-full w-full overflow-hidden bg-gray-50', panDrag ? 'cursor-grabbing' : 'cursor-grab')}
       onPointerDown={onBoardPointerDown}
+      // Dotted grid that pans and zooms with the board.
+      style={{
+        backgroundImage: 'radial-gradient(circle, rgba(100,116,139,0.28) 1px, transparent 1px)',
+        backgroundSize: `${24 * cam.zoom}px ${24 * cam.zoom}px`,
+        backgroundPosition: `${cam.x}px ${cam.y}px`,
+      }}
     >
       <div
         className="relative origin-top-left"
@@ -330,30 +392,36 @@ export function Canvas({
               key={id}
               data-panel=""
               ref={panelElCb(id)}
-              onPointerDownCapture={() => setActiveNodeId(id)}
+              // Dragging anywhere on the panel moves it (past a small threshold),
+              // except when the press lands in an edit field. select-none stops
+              // text highlighting; textareas keep their own selection.
+              onPointerDown={(e) => {
+                if ((e.target as HTMLElement).closest('textarea, input')) return
+                startDrag(id, 'move', e, true)
+              }}
+              onClickCapture={(e) => {
+                if (suppressClickRef.current) {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  suppressClickRef.current = false
+                }
+              }}
               className={cn(
-                'absolute flex flex-col overflow-hidden rounded-lg border bg-white shadow-sm',
+                'absolute flex flex-col overflow-hidden rounded-lg border bg-white shadow-sm select-none [&_textarea]:select-text',
                 id === activeId ? 'border-brand-300 ring-1 ring-brand-200' : 'border-gray-200',
               )}
               style={{ left: n.x, top: n.y, width: n.width ?? CANVAS_DEFAULT_WIDTH }}
             >
-              {/* Small top-left grip — the only move affordance now that panels
-                  have no header. */}
-              <div
-                className="absolute left-1 top-1 z-10 h-3 w-6 cursor-move rounded bg-gray-200/80 hover:bg-gray-300"
-                onPointerDown={(e) => startDrag(id, 'move', e)}
-                title="Drag to move"
-              />
-
               {/* No set height → grow to fit; a height → fixed and scrolling. */}
               <div
                 className={n.height ? 'overflow-auto' : ''}
                 style={n.height ? { height: n.height } : undefined}
                 data-panel-scroll={n.height ? '' : undefined}
               >
-                {/* Re-key on the folded set so collapse re-seeds when nodes change. */}
+                {/* Stable key by node id — collapse updates reactively via
+                    forceCollapsed, so adding/removing a node doesn't remount. */}
                 <EntityFrame
-                  key={others.join(',')}
+                  key={id}
                   view={entityView(id)}
                   actions={actions}
                   onDebugEntity={onDebugEntity}

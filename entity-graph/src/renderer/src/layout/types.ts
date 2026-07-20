@@ -40,6 +40,10 @@ export interface CanvasView {
   kind: 'canvas'
   /** entity id → where its sub-view sits on the board. */
   nodes: Record<string, CanvasNode>
+  /** Persisted board pan offset (px). */
+  pan?: { x: number; y: number }
+  /** Persisted board zoom (1 = 100%). */
+  zoom?: number
 }
 
 export type View = EntityView | CanvasView
