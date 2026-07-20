@@ -37,6 +37,8 @@ export interface ViewHandle {
   getSelectedEntityId: () => string | null
   /** The selected entity's text, if any — used to name a freshly-opened tab. */
   getSelectedText?: () => string | null
+  /** Canvas only: the entity id of the active panel (for "Close panel"). */
+  getActiveNodeId?: () => string | null
   /** Present only for entity views; runs one of the EDITOR_ACTIONS by id. */
   runAction?: (id: string) => void
 }
@@ -121,12 +123,21 @@ function popIntoNewTab(s: LayoutState, groupId: string, tabId: string): LayoutSt
   }
 }
 
-// Add an entity as a node on a canvas frame (the `d` / double-click pop-out).
+// Add an entity as a node on a canvas frame (the "Add selected to canvas" action).
 function addCanvasNode(s: LayoutState, frameId: string, entityId: string): LayoutState {
   const frame = s.frames[frameId]
   if (!frame || frame.view.kind !== 'canvas' || frame.view.nodes[entityId]) return s
   const offset = Object.keys(frame.view.nodes).length * 28
   const nodes = { ...frame.view.nodes, [entityId]: { x: 60 + offset, y: 60 + offset } }
+  return { ...s, frames: { ...s.frames, [frameId]: { ...frame, view: { ...frame.view, nodes } } } }
+}
+
+// Remove a node from a canvas frame (the "Close panel" action).
+function removeCanvasNode(s: LayoutState, frameId: string, entityId: string): LayoutState {
+  const frame = s.frames[frameId]
+  if (!frame || frame.view.kind !== 'canvas' || !frame.view.nodes[entityId]) return s
+  const nodes = { ...frame.view.nodes }
+  delete nodes[entityId]
   return { ...s, frames: { ...s.frames, [frameId]: { ...frame, view: { ...frame.view, nodes } } } }
 }
 
@@ -368,14 +379,9 @@ export function useLayout(): UseLayoutResult {
         const handle = handles.current.get(frameId)
         const id = handle?.getSelectedEntityId() ?? null
         if (!id) return
-        const cur = ctx.current.state.frames[frameId]
-        // On a canvas, "focus" pops the selection out into its own node.
-        if (cur?.view.kind === 'canvas') {
-          setState((s) => addCanvasNode(s, frameId, id))
-          return
-        }
         // Don't stack a frame whose root is already the current view's root —
         // that just makes a duplicate you'd have to pop straight back off.
+        const cur = ctx.current.state.frames[frameId]
         if (cur?.view.kind === 'entity' && cur.view.rootId === id) return
         // Seed the new tab's name from the selected row so it's labelled at once.
         const text = handle?.getSelectedText?.() ?? undefined
@@ -385,6 +391,22 @@ export function useLayout(): UseLayoutResult {
       cycleTab: (dir) => {
         const { groupId } = ctx.current
         if (groupId) setState((s) => cycleTab(s, groupId, dir))
+      },
+      addSelectedToCanvas: () => {
+        const { frameId } = ctx.current
+        if (!frameId) return
+        const frame = ctx.current.state.frames[frameId]
+        if (frame?.view.kind !== 'canvas') return
+        const id = handles.current.get(frameId)?.getSelectedEntityId() ?? null
+        if (id) setState((s) => addCanvasNode(s, frameId, id))
+      },
+      closePanel: () => {
+        const { frameId } = ctx.current
+        if (!frameId) return
+        const frame = ctx.current.state.frames[frameId]
+        if (frame?.view.kind !== 'canvas') return
+        const id = handles.current.get(frameId)?.getActiveNodeId?.() ?? null
+        if (id) setState((s) => removeCanvasNode(s, frameId, id))
       },
       popFrame: () => {
         const { tabId } = ctx.current

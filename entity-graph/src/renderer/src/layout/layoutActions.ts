@@ -26,6 +26,10 @@ export interface LayoutController {
   popIntoNewTab: () => void
   /** Add a canvas frame seeded from the focused view. */
   openCanvas: () => void
+  /** Canvas: add the active panel's selected entity as its own node. */
+  addSelectedToCanvas: () => void
+  /** Canvas: close (remove) the active panel. */
+  closePanel: () => void
   newTab: () => void
   closeTab: () => void
 }
@@ -123,6 +127,20 @@ export const LAYOUT_ACTIONS: LayoutAction[] = [
     aliases: ['graph', 'board', 'spatial', 'map'],
     hint: 'Layout',
     run: (c) => c.openCanvas(),
+  },
+  {
+    id: 'add-to-canvas',
+    label: 'Add selected to canvas',
+    aliases: ['pop out', 'new node', 'node'],
+    hint: 'Canvas',
+    run: (c) => c.addSelectedToCanvas(),
+  },
+  {
+    id: 'close-panel',
+    label: 'Close panel',
+    aliases: ['remove node', 'remove panel'],
+    hint: 'Canvas',
+    run: (c) => c.closePanel(),
   },
   { id: 'new-tab', label: 'New tab', aliases: ['add tab'], hint: 'Layout', run: (c) => c.newTab() },
   {
