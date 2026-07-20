@@ -326,19 +326,29 @@ export function Canvas({
   const ox = minX - EDGE_PAD
   const oy = minY - EDGE_PAD
 
+  // Adaptive grid level. Both the cell size and the line thickness scale with
+  // zoom so the grid reads as part of the content — but once the on-screen cell
+  // would shrink below MIN_CELL (zooming out), doubling the spacing renders only
+  // every 2nd line, then every 4th, … instead of collapsing into a solid tint.
+  // Thickness tracks the same factor, so it never vanishes sub-pixel.
+  const BASE_CELL = 24
+  const MIN_CELL = 18
+  let gridMult = 1
+  while (BASE_CELL * cam.zoom * gridMult < MIN_CELL) gridMult *= 2
+  const gridCell = BASE_CELL * cam.zoom * gridMult
+  const gridLine = cam.zoom * gridMult
+
   return (
     <div
       ref={boardRef}
       className={cn('h-full w-full overflow-hidden bg-gray-50', panDrag ? 'cursor-grabbing' : 'cursor-grab')}
       onPointerDown={onBoardPointerDown}
-      // Faint line grid that pans and zooms with the board. Both the cell size
-      // and the line thickness scale with zoom, so the lines read as part of the
-      // content rather than a fixed 1px overlay at every zoom level.
+      // Faint line grid that pans and zooms with the board (see gridMult above).
       style={{
         backgroundImage:
-          `linear-gradient(to right, rgba(100,116,139,0.11) ${cam.zoom}px, transparent ${cam.zoom}px),` +
-          `linear-gradient(to bottom, rgba(100,116,139,0.11) ${cam.zoom}px, transparent ${cam.zoom}px)`,
-        backgroundSize: `${24 * cam.zoom}px ${24 * cam.zoom}px`,
+          `linear-gradient(to right, rgba(100,116,139,0.11) ${gridLine}px, transparent ${gridLine}px),` +
+          `linear-gradient(to bottom, rgba(100,116,139,0.11) ${gridLine}px, transparent ${gridLine}px)`,
+        backgroundSize: `${gridCell}px ${gridCell}px`,
         backgroundPosition: `${cam.x}px ${cam.y}px`,
       }}
     >
