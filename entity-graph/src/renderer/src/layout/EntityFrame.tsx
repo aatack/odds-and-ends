@@ -79,9 +79,6 @@ export function EntityFrame({
     <Editor
       rows={ed.rows}
       loading={ed.loading}
-      error={ed.error}
-      statusMessage={ed.statusMessage}
-      notice={ed.notice}
       onSelectRow={ed.selectRow}
       onToggleCollapse={ed.toggleCollapse}
       onCommitEdit={ed.commitEdit}

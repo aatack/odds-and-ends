@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { QueryPage, QueryResult, StackFrame } from '../../../core/wrapper'
 import { EDITOR_ACTIONS, type EditorController } from '../actions/editorActions'
+import { dismissToast, showToast } from '../components/ui/Toast'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -69,11 +70,6 @@ export type EditorRow = EntityRow | InputRow
 export interface UseEditorResult {
   rows: EditorRow[]
   loading: boolean
-  error: string | null
-  /** Human-readable hint for an in-progress move/link, else null. */
-  statusMessage: string | null
-  /** Transient confirmation line (e.g. after an export), else null. */
-  notice: string | null
   /** Path of entity ids to the current selection (last element is the selected id). */
   selectedPath: string[]
   /** Run a registered editor action by id (shared with the command palette). */
@@ -141,7 +137,6 @@ export function useEditor({
   const [limit, setLimit] = useState(PAGE_SIZE)
   const [edit, setEdit] = useState<EditState>(null)
   const [pending, setPending] = useState<PendingState>(null)
-  const [notice, setNotice] = useState<string | null>(null)
 
   // Query state -------------------------------------------------------------
   // `results` accumulates across pages; `continuation` is the resume token for
@@ -374,8 +369,7 @@ export function useEditor({
     const md = subtreeToMarkdown(rows, index)
     void navigator.clipboard.writeText(md)
     const count = md ? md.split('\n').length : 0
-    setNotice(`Copied ${count} item${count === 1 ? '' : 's'} to the clipboard`)
-    window.setTimeout(() => setNotice(null), 1800)
+    showToast({ message: `Copied ${count} item${count === 1 ? '' : 's'} to the clipboard`, variant: 'success' })
   }, [rows, selectedPath])
 
   const debugSelected = useCallback(() => {
@@ -454,12 +448,23 @@ export function useEditor({
       : `Linking${pending.reverse ? ' (reversed)' : ''} — select the target and press r again (Esc to cancel)`
   }, [pending])
 
+  // Surface transient messages as toasts rather than in-tree banners. Errors
+  // pop briefly; the pending move/link prompt is a sticky toast (keyed per hook
+  // instance) that lives for as long as the operation is in progress.
+  useEffect(() => {
+    if (error) showToast({ message: error, variant: 'error' })
+  }, [error])
+
+  const statusToastId = useId()
+  useEffect(() => {
+    if (statusMessage) showToast({ id: statusToastId, message: statusMessage, sticky: true })
+    else dismissToast(statusToastId)
+    return () => dismissToast(statusToastId)
+  }, [statusMessage, statusToastId])
+
   return {
     rows,
     loading,
-    error,
-    statusMessage,
-    notice,
     selectedPath,
     runAction,
     commitEdit,

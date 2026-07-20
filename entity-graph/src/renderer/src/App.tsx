@@ -7,6 +7,7 @@ import { Badge } from './components/ui/Badge'
 import { Button } from './components/ui/Button'
 import { Dropdown, DropdownItem, DropdownSeparator } from './components/ui/Dropdown'
 import { Input } from './components/ui/Input'
+import { Toaster } from './components/ui/Toast'
 import { useTheme } from './helpers/useTheme'
 import { useHotkeys } from './helpers/useHotkeys'
 import { APP_ACTIONS, type AppController } from './actions/appActions'
@@ -57,6 +58,7 @@ export default function App(): React.JSX.Element | null {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
+      <Toaster />
       <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
       <header className="relative z-30 flex items-center gap-3 border-b border-gray-100 bg-white/80 px-6 py-3 backdrop-blur">
         <div className="flex min-w-0 items-center gap-3">

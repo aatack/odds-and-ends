@@ -29,9 +29,6 @@ const keyOf = (row: EditorRow, index: number): string =>
 export interface EditorProps {
   rows: EditorRow[]
   loading: boolean
-  error: string | null
-  statusMessage: string | null
-  notice: string | null
   onSelectRow: (path: string[]) => void
   onToggleCollapse: (row: EntityRow) => void
   onCommitEdit: (value: string) => void
@@ -53,9 +50,6 @@ export function Editor(props: EditorProps): React.JSX.Element {
   const {
     rows,
     loading,
-    error,
-    statusMessage,
-    notice,
     onSelectRow,
     onToggleCollapse,
     onCommitEdit,
@@ -164,12 +158,6 @@ export function Editor(props: EditorProps): React.JSX.Element {
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-white">
-      {statusMessage && (
-        <div className="px-4 py-2 bg-brand-50 text-[13px] text-brand-700">{statusMessage}</div>
-      )}
-      {error && <div className="px-4 py-2 bg-error-50 text-[13px] text-error-700">{error}</div>}
-      {notice && <div className="px-4 py-2 bg-success-50 text-[13px] text-success-700">{notice}</div>}
-
       <div
         ref={containerRef}
         onScroll={handleScroll}
