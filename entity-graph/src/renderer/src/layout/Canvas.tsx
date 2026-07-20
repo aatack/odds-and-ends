@@ -57,8 +57,6 @@ export interface CanvasProps {
   updateCanvasCam: (frameId: string, cam: { x: number; y: number; zoom: number }) => void
   /** Publish a handle up to the layout, proxying to the active panel. */
   onHandle?: (handle: ViewHandle | null) => void
-  /** Open an entity in a new frame on this canvas's tab (double-click / d). */
-  pushEntityFrame: (tabId: string, entityId: string) => void
 }
 
 /**
@@ -75,7 +73,6 @@ export function Canvas({
   updateView,
   updateCanvasCam,
   onHandle,
-  pushEntityFrame,
 }: CanvasProps): React.JSX.Element {
   const view = frame.view as CanvasView
   const edges = useCanvas(view.nodes, actions.resolveQuery)
@@ -440,7 +437,6 @@ export function Canvas({
                   actions={actions}
                   onDebugEntity={onDebugEntity}
                   collapsed={others}
-                  onActivateEntity={(entityId) => pushEntityFrame(frame.tabId, entityId)}
                   autoHeight={!n.height}
                   onHandle={panelOnHandle(id)}
                   extraMenuItems={[{ label: 'Close panel', onClick: () => removeNode(id) }]}

@@ -18,7 +18,6 @@ export interface TabGroupViewProps {
   onCloseTab: (tabId: string) => void
   onNewTab: () => void
   registerHandle: (frameId: string, handle: ViewHandle | null) => void
-  pushEntityFrame: (tabId: string, entityId: string) => void
   updateView: (frameId: string, view: View) => void
   updateCanvasCam: (frameId: string, cam: { x: number; y: number; zoom: number }) => void
   reportName: (id: string, text: string | undefined) => void
@@ -40,7 +39,6 @@ export function TabGroupView({
   onCloseTab,
   onNewTab,
   registerHandle,
-  pushEntityFrame,
   updateView,
   updateCanvasCam,
   reportName,
@@ -107,7 +105,6 @@ export function TabGroupView({
             actions={actions}
             onDebugEntity={onDebugEntity}
             registerHandle={registerHandle}
-            pushEntityFrame={pushEntityFrame}
             updateView={updateView}
             updateCanvasCam={updateCanvasCam}
             reportName={reportName}

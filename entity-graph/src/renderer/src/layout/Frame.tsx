@@ -10,7 +10,6 @@ export interface FrameViewProps {
   actions: EditorActions
   onDebugEntity: (entityId: string) => void
   registerHandle: (frameId: string, handle: ViewHandle | null) => void
-  pushEntityFrame: (tabId: string, entityId: string) => void
   updateView: (frameId: string, view: View) => void
   updateCanvasCam: (frameId: string, cam: { x: number; y: number; zoom: number }) => void
   reportName: (id: string, text: string | undefined) => void
@@ -22,7 +21,6 @@ export function FrameView({
   actions,
   onDebugEntity,
   registerHandle,
-  pushEntityFrame,
   updateView,
   updateCanvasCam,
   reportName,
@@ -41,7 +39,6 @@ export function FrameView({
         updateView={updateView}
         updateCanvasCam={updateCanvasCam}
         onHandle={onHandle}
-        pushEntityFrame={pushEntityFrame}
       />
     )
   }
@@ -51,7 +48,6 @@ export function FrameView({
       view={frame.view}
       actions={actions}
       onDebugEntity={onDebugEntity}
-      onActivateEntity={(id) => pushEntityFrame(frame.tabId, id)}
       onHandle={onHandle}
       onRootName={reportName}
     />

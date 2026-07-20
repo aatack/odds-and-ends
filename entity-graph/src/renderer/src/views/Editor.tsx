@@ -47,8 +47,6 @@ export interface EditorProps {
   onRunCode: (id: string, code: string) => void
   /** Interrupt a running code entity (from its stop button). */
   onStopCode: (id: string) => void
-  /** Double-clicking a row "activates" it — the layout opens it in a new frame. */
-  onActivateRow?: (path: string[]) => void
   /**
    * Grow to fit all rows instead of windowing within a fixed-height, scrolling
    * viewport. Used by canvas nodes with no set height, per the design notes.
@@ -78,7 +76,6 @@ export function Editor(props: EditorProps): React.JSX.Element {
     codeRuns,
     onRunCode,
     onStopCode,
-    onActivateRow,
     autoHeight = false,
     extraMenuItems,
   } = props
@@ -223,7 +220,6 @@ export function Editor(props: EditorProps): React.JSX.Element {
                   onCancelEdit={onCancelEdit}
                   onRunCode={onRunCode}
                   onStopCode={onStopCode}
-                  onActivateRow={onActivateRow}
                   onContextMenu={
                     row.kind === 'entity' ? (e) => openMenuFor(index, e) : undefined
                   }
@@ -257,7 +253,6 @@ interface RowProps {
   onCancelEdit: () => void
   onRunCode: (id: string, code: string) => void
   onStopCode: (id: string) => void
-  onActivateRow?: (path: string[]) => void
   onContextMenu?: (e: React.MouseEvent) => void
 }
 
@@ -283,7 +278,6 @@ const Row = React.memo(function Row({
   onCancelEdit,
   onRunCode,
   onStopCode,
-  onActivateRow,
   onContextMenu,
 }: RowProps): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
@@ -333,7 +327,6 @@ const Row = React.memo(function Row({
       ref={ref}
       className="flex"
       onClick={() => onSelectRow(row.path)}
-      onDoubleClick={onActivateRow ? () => onActivateRow(row.path) : undefined}
       onContextMenu={onContextMenu}
     >
       <div

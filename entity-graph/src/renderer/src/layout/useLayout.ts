@@ -277,8 +277,6 @@ export interface UseLayoutResult {
   focusGroup: (groupId: string) => void
   closeTab: (groupId: string, tabId: string) => void
   newTab: (groupId: string) => void
-  /** Push an entity frame onto a specific tab (used by double-click-to-open). */
-  pushEntityFrame: (tabId: string, entityId: string) => void
   /** Replace a frame's view (canvas drag/resize persistence). */
   updateView: (frameId: string, view: View) => void
   /** Persist a canvas frame's pan/zoom without touching its nodes. */
@@ -358,10 +356,6 @@ export function useLayout(): UseLayoutResult {
     [setState],
   )
   const newTabAt = useCallback((groupId: string) => setState((s) => newTab(s, groupId)), [setState])
-  const pushEntityFrame = useCallback(
-    (tabId: string, entityId: string) => setState((s) => pushFrame(s, tabId, entityView(entityId))),
-    [setState],
-  )
   const updateView = useCallback(
     (frameId: string, view: View) =>
       setState((s) =>
@@ -482,7 +476,6 @@ export function useLayout(): UseLayoutResult {
     focusGroup,
     closeTab: closeTabAt,
     newTab: newTabAt,
-    pushEntityFrame,
     updateView,
     updateCanvasCam,
   }

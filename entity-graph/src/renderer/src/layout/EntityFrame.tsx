@@ -9,8 +9,6 @@ export interface EntityFrameProps {
   view: EntityView
   actions: EditorActions
   onDebugEntity: (entityId: string) => void
-  /** Double-clicking a row activates it (open in a new frame / add to a canvas). */
-  onActivateEntity?: (entityId: string) => void
   /** Extra entity ids to render collapsed — the canvas folds cross-references. */
   collapsed?: string[]
   /** Publish this view's imperative handle to the layout (keyed by the caller). */
@@ -33,7 +31,6 @@ export function EntityFrame({
   view,
   actions,
   onDebugEntity,
-  onActivateEntity,
   collapsed,
   onHandle,
   onRootName,
@@ -96,7 +93,6 @@ export function EntityFrame({
       codeRuns={ed.codeRuns}
       onRunCode={ed.runCode}
       onStopCode={ed.stopCode}
-      onActivateRow={onActivateEntity ? (path) => onActivateEntity(last(path) as string) : undefined}
       autoHeight={autoHeight}
       extraMenuItems={extraMenuItems}
     />

@@ -88,7 +88,6 @@ export function Layout({ actions, onDebugEntity, onRegisterCommands }: LayoutPro
           onCloseTab={(t) => layout.closeTab(rg.group.id, t)}
           onNewTab={() => layout.newTab(rg.group.id)}
           registerHandle={layout.registerHandle}
-          pushEntityFrame={layout.pushEntityFrame}
           updateView={layout.updateView}
           updateCanvasCam={layout.updateCanvasCam}
           reportName={layout.reportName}
