@@ -2,11 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { ChevronDown, ChevronRight } from '@untitledui/icons'
 import { TextEditor } from '../components/ui/TextEditor'
 import { ContextMenu, type ContextMenuItem } from '../components/ui/ContextMenu'
-import { EDITOR_ACTIONS } from '../actions/editorActions'
-import { hotkeyHint } from '../actions/keys'
-import type { Command } from '../components/CommandPalette'
-import { useEditor } from './useEditor'
-import type { EditorActions, EditorRow, EntityRow } from './useEditor'
+import type { EditorRow, EntityRow } from './useEditor'
 
 // ---------------------------------------------------------------------------
 // Layout constants
@@ -43,6 +39,8 @@ export interface EditorProps {
   onExport: () => void
   onDebug: () => void
   onNearEnd: () => void
+  /** Double-clicking a row "activates" it — the layout opens it in a new frame. */
+  onActivateRow?: (path: string[]) => void
 }
 
 /**
@@ -65,6 +63,7 @@ export function Editor(props: EditorProps): React.JSX.Element {
     onExport,
     onDebug,
     onNearEnd,
+    onActivateRow,
   } = props
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -196,6 +195,7 @@ export function Editor(props: EditorProps): React.JSX.Element {
                   onToggleCollapse={onToggleCollapse}
                   onCommitEdit={onCommitEdit}
                   onCancelEdit={onCancelEdit}
+                  onActivateRow={onActivateRow}
                   onContextMenu={
                     row.kind === 'entity' ? (e) => openMenuFor(index, e) : undefined
                   }
@@ -226,6 +226,7 @@ interface RowProps {
   onToggleCollapse: (row: EntityRow) => void
   onCommitEdit: (value: string) => void
   onCancelEdit: () => void
+  onActivateRow?: (path: string[]) => void
   onContextMenu?: (e: React.MouseEvent) => void
 }
 
@@ -248,6 +249,7 @@ const Row = React.memo(function Row({
   onToggleCollapse,
   onCommitEdit,
   onCancelEdit,
+  onActivateRow,
   onContextMenu,
 }: RowProps): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
@@ -290,7 +292,13 @@ const Row = React.memo(function Row({
   }
 
   return (
-    <div ref={ref} className="flex" onClick={() => onSelectRow(row.path)} onContextMenu={onContextMenu}>
+    <div
+      ref={ref}
+      className="flex"
+      onClick={() => onSelectRow(row.path)}
+      onDoubleClick={onActivateRow ? () => onActivateRow(row.path) : undefined}
+      onContextMenu={onContextMenu}
+    >
       <div
         className={`flex items-start my-px py-0.5 mx-2 pr-2 rounded-md flex-1 min-w-0 cursor-default ${
           row.selected ? 'bg-blue-100' : 'hover:bg-gray-100/70'
@@ -339,64 +347,3 @@ const Row = React.memo(function Row({
     </div>
   )
 })
-
-// ---------------------------------------------------------------------------
-// Container — wires the logic hook to the dumb component
-// ---------------------------------------------------------------------------
-
-export interface EditorViewProps {
-  rootId: string
-  maxDepth?: number
-  actions: EditorActions
-  onDebugEntity: (entityId: string) => void
-  /** Publish the editor's palette commands to the app shell (null on unmount). */
-  onRegisterCommands: (commands: Command[] | null) => void
-}
-
-/** Glue between {@link useEditor} (logic) and {@link Editor} (rendering). */
-export function EditorView({
-  rootId,
-  maxDepth,
-  actions,
-  onDebugEntity,
-  onRegisterCommands,
-}: EditorViewProps): React.JSX.Element {
-  const ed = useEditor({ rootId, maxDepth, actions, onDebugEntity })
-  const { runAction } = ed
-
-  // Editor actions surface in the command palette, built from the same registry
-  // the hotkeys use and bound to the stable runAction — so the two never drift.
-  const commands = useMemo<Command[]>(
-    () =>
-      EDITOR_ACTIONS.filter((a) => a.palette !== false).map((a) => ({
-        id: `editor.${a.id}`,
-        label: a.label,
-        aliases: a.aliases,
-        hint: hotkeyHint(a.keys),
-        run: () => runAction(a.id),
-      })),
-    [runAction],
-  )
-
-  useEffect(() => {
-    onRegisterCommands(commands)
-    return () => onRegisterCommands(null)
-  }, [commands, onRegisterCommands])
-
-  return (
-    <Editor
-      rows={ed.rows}
-      loading={ed.loading}
-      error={ed.error}
-      statusMessage={ed.statusMessage}
-      notice={ed.notice}
-      onSelectRow={ed.selectRow}
-      onToggleCollapse={ed.toggleCollapse}
-      onCommitEdit={ed.commitEdit}
-      onCancelEdit={ed.cancelEdit}
-      onExport={() => runAction('export')}
-      onDebug={() => runAction('debug')}
-      onNearEnd={ed.loadMore}
-    />
-  )
-}

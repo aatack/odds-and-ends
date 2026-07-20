@@ -8,6 +8,8 @@ export interface KeyBinding {
   shift?: boolean
   /** Requires Ctrl (Windows/Linux) or ⌘ (Mac). */
   mod?: boolean
+  /** Requires Alt (⌥). */
+  alt?: boolean
 }
 
 /** The subset of a keyboard event a binding cares about. */
@@ -16,13 +18,15 @@ export interface KeyEvent {
   shiftKey: boolean
   ctrlKey: boolean
   metaKey: boolean
+  altKey: boolean
 }
 
 function bindingMatches(b: KeyBinding, e: KeyEvent): boolean {
   return (
     b.key.toLowerCase() === e.key.toLowerCase() &&
     (b.shift ?? false) === e.shiftKey &&
-    (b.mod ?? false) === (e.ctrlKey || e.metaKey)
+    (b.mod ?? false) === (e.ctrlKey || e.metaKey) &&
+    (b.alt ?? false) === e.altKey
   )
 }
 
@@ -49,6 +53,7 @@ export function hotkeyHint(keys?: KeyBinding[]): string | undefined {
   if (!b) return undefined
   let hint = KEY_SYMBOLS[b.key] ?? b.key.toUpperCase()
   if (b.shift) hint = `⇧${hint}`
+  if (b.alt) hint = `Alt ${hint}`
   if (b.mod) hint = `Ctrl ${hint}`
   return hint
 }

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { QueryPage, QueryResult, StackFrame } from '../../../core/wrapper'
 import { EDITOR_ACTIONS, type EditorController } from '../actions/editorActions'
-import { matchAction } from '../actions/keys'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -35,6 +34,11 @@ export interface UseEditorArgs {
   actions: EditorActions
   /** Open the raw debug inspector for an entity (from the `debug` action). */
   onDebugEntity: (entityId: string) => void
+  /**
+   * Entity ids to start collapsed. The canvas uses this to fold the occurrences
+   * of entities that appear as their own node elsewhere on the board.
+   */
+  initialCollapsed?: string[]
 }
 
 /** A rendered bullet backed by a real entity. */
@@ -66,14 +70,12 @@ export interface UseEditorResult {
   rows: EditorRow[]
   loading: boolean
   error: string | null
-  /** True while any in-place text input is open. */
-  editing: boolean
   /** Human-readable hint for an in-progress move/link, else null. */
   statusMessage: string | null
   /** Transient confirmation line (e.g. after an export), else null. */
   notice: string | null
-  /** Global key handler for the scroll container; dispatches editor actions. */
-  onContainerKeyDown: (e: React.KeyboardEvent) => void
+  /** Path of entity ids to the current selection (last element is the selected id). */
+  selectedPath: string[]
   /** Run a registered editor action by id (shared with the command palette). */
   runAction: (id: string) => void
   /** Commit the in-place editor's value (writes an edit or creates a child). */
@@ -123,9 +125,18 @@ const pathEq = (a: string[], b: string[]): boolean =>
  * state (root, depth, collapsed set, selection path, transient edit/move modes)
  * and derives the flat row list from a resolved query page.
  */
-export function useEditor({ rootId, maxDepth, actions, onDebugEntity }: UseEditorArgs): UseEditorResult {
+export function useEditor({
+  rootId,
+  maxDepth,
+  actions,
+  onDebugEntity,
+  initialCollapsed,
+}: UseEditorArgs): UseEditorResult {
   // Latent state ------------------------------------------------------------
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  // Kept in a ref so the reset effect can re-seed collapse without depending on
+  // a fresh array identity every render.
+  const initialCollapsedRef = useRef(initialCollapsed)
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(initialCollapsed))
   const [selectedPath, setSelectedPath] = useState<string[]>([])
   const [limit, setLimit] = useState(PAGE_SIZE)
   const [edit, setEdit] = useState<EditState>(null)
@@ -151,7 +162,7 @@ export function useEditor({ rootId, maxDepth, actions, onDebugEntity }: UseEdito
   // Reset everything when the starting entity changes.
   useEffect(() => {
     setSelectedPath(rootId ? [rootId] : [])
-    setCollapsed(new Set())
+    setCollapsed(new Set(initialCollapsedRef.current))
     setLimit(PAGE_SIZE)
     setEdit(null)
     setPending(null)
@@ -395,22 +406,15 @@ export function useEditor({ rootId, maxDepth, actions, onDebugEntity }: UseEdito
   }
   const controllerRef = useRef(controller)
   controllerRef.current = controller
-  const editingRef = useRef(edit)
-  editingRef.current = edit
 
   const runAction = useCallback((id: string) => {
     EDITOR_ACTIONS.find((a) => a.id === id)?.run(controllerRef.current)
   }, [])
 
-  const onContainerKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (editingRef.current) return // the in-place input owns the keyboard while editing
-    // Leave modifier combos (e.g. Ctrl/⌘+K palette, devtools) to the app shell.
-    if (e.ctrlKey || e.metaKey || e.altKey) return
-    const action = matchAction(EDITOR_ACTIONS, e)
-    if (!action) return
-    e.preventDefault()
-    action.run(controllerRef.current)
-  }, [])
+  // Hotkeys are no longer bound here. With many editors mounted at once (one per
+  // frame, plus every canvas panel), a per-editor listener would fire in all of
+  // them at once. The layout instead binds the editor keys once at the top and
+  // routes them to the focused frame's `runAction`.
 
   const selectRow = useCallback((path: string[]) => setSelectedPath(path), [])
 
@@ -454,10 +458,9 @@ export function useEditor({ rootId, maxDepth, actions, onDebugEntity }: UseEdito
     rows,
     loading,
     error,
-    editing: edit !== null,
     statusMessage,
     notice,
-    onContainerKeyDown,
+    selectedPath,
     runAction,
     commitEdit,
     cancelEdit,
