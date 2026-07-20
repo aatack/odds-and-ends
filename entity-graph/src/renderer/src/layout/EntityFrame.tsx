@@ -16,6 +16,8 @@ export interface EntityFrameProps {
   onHandle?: (handle: ViewHandle | null) => void
   /** Report the root entity's display text (for tab / panel labels). */
   onRootName?: (id: string, text: string | undefined) => void
+  /** Grow to fit rather than scroll within a fixed height (canvas auto nodes). */
+  autoHeight?: boolean
 }
 
 /**
@@ -32,6 +34,7 @@ export function EntityFrame({
   collapsed,
   onHandle,
   onRootName,
+  autoHeight,
 }: EntityFrameProps): React.JSX.Element {
   const ed = useEditor({
     rootId: view.rootId,
@@ -87,6 +90,7 @@ export function EntityFrame({
       onDebug={() => ed.runAction('debug')}
       onNearEnd={ed.loadMore}
       onActivateRow={onActivateEntity ? (path) => onActivateEntity(last(path) as string) : undefined}
+      autoHeight={autoHeight}
     />
   )
 }

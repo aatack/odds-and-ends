@@ -22,7 +22,7 @@ const MIN_HEIGHT = 120
 
 interface Drag {
   id: string
-  kind: 'move' | 'width' | 'height'
+  kind: 'move' | 'width' | 'height' | 'both'
   startX: number
   startY: number
   orig: CanvasNode
@@ -64,9 +64,11 @@ export function Canvas({ frame, actions, onDebugEntity, updateView }: CanvasProp
       if (drag.kind === 'move') {
         node.x = Math.max(0, drag.orig.x + dx)
         node.y = Math.max(0, drag.orig.y + dy)
-      } else if (drag.kind === 'width') {
+      }
+      if (drag.kind === 'width' || drag.kind === 'both') {
         node.width = Math.max(MIN_WIDTH, (drag.orig.width ?? CANVAS_DEFAULT_WIDTH) + dx)
-      } else {
+      }
+      if (drag.kind === 'height' || drag.kind === 'both') {
         node.height = Math.max(MIN_HEIGHT, (drag.orig.height ?? DEFAULT_HEIGHT) + dy)
       }
       draftRef.current = { id: drag.id, node }
@@ -107,6 +109,13 @@ export function Canvas({ frame, actions, onDebugEntity, updateView }: CanvasProp
       nodes: { ...view.nodes, [entityId]: { x: 60 + offset, y: 60 + offset } },
     })
   }
+
+  const patchNode = (id: string, patch: Partial<CanvasNode>): void =>
+    updateView(frame.id, { ...view, nodes: { ...view.nodes, [id]: { ...view.nodes[id], ...patch } } })
+
+  // Toggle a node between a fixed, scrolling height and growing to fit.
+  const toggleHeight = (id: string): void =>
+    patchNode(id, { height: view.nodes[id].height ? undefined : DEFAULT_HEIGHT })
 
   const ids = Object.keys(view.nodes)
   const contentW =
@@ -160,6 +169,13 @@ export function Canvas({ frame, actions, onDebugEntity, updateView }: CanvasProp
                 </span>
                 <div className="flex-1" />
                 <button
+                  className="rounded px-1 text-[10px] text-gray-400 hover:bg-gray-200 hover:text-gray-700 focus:outline-none"
+                  onClick={() => toggleHeight(id)}
+                  title={n.height ? 'Grow to fit content' : 'Use a fixed, scrolling height'}
+                >
+                  {n.height ? 'auto' : 'fix'}
+                </button>
+                <button
                   className="text-gray-300 hover:text-gray-600 focus:outline-none"
                   onClick={() => removeNode(id)}
                   title="Remove from canvas"
@@ -168,7 +184,8 @@ export function Canvas({ frame, actions, onDebugEntity, updateView }: CanvasProp
                 </button>
               </div>
 
-              <div className="overflow-auto" style={{ height: n.height ?? DEFAULT_HEIGHT }}>
+              {/* A node with no set height grows to fit; one with a height scrolls. */}
+              <div className={n.height ? 'overflow-auto' : ''} style={n.height ? { height: n.height } : undefined}>
                 {/* Re-key on the folded set so collapse re-seeds when nodes change. */}
                 <EntityFrame
                   key={others.join(',')}
@@ -177,10 +194,11 @@ export function Canvas({ frame, actions, onDebugEntity, updateView }: CanvasProp
                   onDebugEntity={onDebugEntity}
                   collapsed={others}
                   onActivateEntity={addNode}
+                  autoHeight={!n.height}
                 />
               </div>
 
-              {/* Resize handles: right edge = width, bottom edge = height. */}
+              {/* Resize handles: right edge = width, bottom edge = height, corner = both. */}
               <div
                 className="absolute right-0 top-0 h-full w-1.5 cursor-ew-resize"
                 onPointerDown={(e) => startDrag(id, 'width', e)}
@@ -188,6 +206,12 @@ export function Canvas({ frame, actions, onDebugEntity, updateView }: CanvasProp
               <div
                 className="absolute bottom-0 left-0 h-1.5 w-full cursor-ns-resize"
                 onPointerDown={(e) => startDrag(id, 'height', e)}
+              />
+              <div
+                className="absolute bottom-0 right-0 h-3 w-3 cursor-nwse-resize"
+                onPointerDown={(e) => startDrag(id, 'both', e)}
+                onDoubleClick={() => patchNode(id, { height: undefined })}
+                title="Drag to resize; double-click for auto height"
               />
             </div>
           )

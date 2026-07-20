@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { ChevronDown, ChevronRight } from '@untitledui/icons'
 import { TextEditor } from '../components/ui/TextEditor'
 import { ContextMenu, type ContextMenuItem } from '../components/ui/ContextMenu'
+import { cn } from '../helpers/cn'
 import type { EditorRow, EntityRow } from './useEditor'
 
 // ---------------------------------------------------------------------------
@@ -38,6 +39,11 @@ export interface EditorProps {
   onNearEnd: () => void
   /** Double-clicking a row "activates" it — the layout opens it in a new frame. */
   onActivateRow?: (path: string[]) => void
+  /**
+   * Grow to fit all rows instead of windowing within a fixed-height, scrolling
+   * viewport. Used by canvas nodes with no set height, per the design notes.
+   */
+  autoHeight?: boolean
 }
 
 /**
@@ -58,6 +64,7 @@ export function Editor(props: EditorProps): React.JSX.Element {
     onDebug,
     onNearEnd,
     onActivateRow,
+    autoHeight = false,
   } = props
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -122,14 +129,18 @@ export function Editor(props: EditorProps): React.JSX.Element {
   }, [selectedIndex])
 
   // The windowed slice: walk offsets to the first row reaching the viewport top
-  // and the first past its bottom, padded by OVERSCAN.
-  const bottomEdge = scrollTop + (viewportH || 600)
+  // and the first past its bottom, padded by OVERSCAN. In autoHeight mode there
+  // is no viewport to window against, so every row is mounted.
   let firstIndex = 0
-  while (firstIndex < rows.length && offsets[firstIndex + 1] <= scrollTop) firstIndex++
-  firstIndex = Math.max(0, firstIndex - OVERSCAN)
-  let lastIndex = firstIndex
-  while (lastIndex < rows.length && offsets[lastIndex] < bottomEdge) lastIndex++
-  lastIndex = Math.min(rows.length, lastIndex + OVERSCAN)
+  let lastIndex = rows.length
+  if (!autoHeight) {
+    const bottomEdge = scrollTop + (viewportH || 600)
+    while (firstIndex < rows.length && offsets[firstIndex + 1] <= scrollTop) firstIndex++
+    firstIndex = Math.max(0, firstIndex - OVERSCAN)
+    lastIndex = firstIndex
+    while (lastIndex < rows.length && offsets[lastIndex] < bottomEdge) lastIndex++
+    lastIndex = Math.min(rows.length, lastIndex + OVERSCAN)
+  }
   const slice = rows.slice(firstIndex, lastIndex)
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>): void => {
@@ -157,14 +168,14 @@ export function Editor(props: EditorProps): React.JSX.Element {
       : []
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-white">
+    <div className={cn('flex flex-col bg-white', autoHeight ? '' : 'h-full overflow-hidden')}>
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="relative flex-1 min-h-0 overflow-y-auto py-1"
+        className={cn('relative py-1', !autoHeight && 'flex-1 min-h-0 overflow-y-auto')}
         // Room to scroll past the last row when the tree overflows, so appending
         // at the bottom isn't jammed against the edge of the screen.
-        style={{ paddingBottom: total > viewportH ? '40vh' : undefined }}
+        style={{ paddingBottom: !autoHeight && total > viewportH ? '40vh' : undefined }}
       >
         {rows.length === 0 ? (
           <div className="px-4 py-8 text-center text-[13px] text-gray-400">
