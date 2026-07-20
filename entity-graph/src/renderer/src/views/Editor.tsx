@@ -174,6 +174,9 @@ export function Editor(props: EditorProps): React.JSX.Element {
         ref={containerRef}
         onScroll={handleScroll}
         className="relative flex-1 min-h-0 overflow-y-auto py-1"
+        // Room to scroll past the last row when the tree overflows, so appending
+        // at the bottom isn't jammed against the edge of the screen.
+        style={{ paddingBottom: total > viewportH ? '40vh' : undefined }}
       >
         {rows.length === 0 ? (
           <div className="px-4 py-8 text-center text-[13px] text-gray-400">
