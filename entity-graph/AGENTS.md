@@ -6,6 +6,16 @@ server. The renderer holds no backend of its own: it opens a source over IPC
 `writeValue`, `writeLink`, …). The main outliner edits the tree rooted at
 `@index`.
 
+## Never run the app
+
+**Do not start, launch, or run the app yourself under any circumstances unless
+the user explicitly asks you to** — no `npm run dev`, `dev:no-sandbox`,
+`electron-vite dev`, `preview`, or any other command that spawns the Electron
+process. A local instance seizes the source server's port and conflicts with the
+Electron window the user already has open. To check your work, use `npm run
+typecheck` and `npm run build` only. If you believe the app needs to be run to
+verify something, ask the user to run it.
+
 ## Design language
 
 Clean, Linear-/Apple-esque: generous whitespace, restrained colour, one muted
