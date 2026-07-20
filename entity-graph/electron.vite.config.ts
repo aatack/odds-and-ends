@@ -11,6 +11,9 @@ export default defineConfig({
   },
   renderer: {
     plugins: [react(), tailwindcss()],
+    // The code-runner worker is a module worker and pulls in a (code-split)
+    // QuickJS bundle, so its output must be ES rather than the default IIFE.
+    worker: { format: 'es' },
     server: process.env.PORT
       ? { port: Number(process.env.PORT), strictPort: true }
       : undefined,

@@ -6,6 +6,8 @@ import ReactDOM from 'react-dom/client'
 import '@fontsource-variable/geist/index.css'
 import '@fontsource-variable/lora/index.css'
 import '@fontsource-variable/lora/wght-italic.css'
+// Fira Code for `type: code` entities (the `font-mono` utility).
+import '@fontsource-variable/fira-code/index.css'
 import './index.css'
 import App from './App'
 

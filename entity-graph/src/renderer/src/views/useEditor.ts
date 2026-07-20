@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { QueryPage, QueryResult, StackFrame } from '../../../core/wrapper'
 import { EDITOR_ACTIONS, type EditorController } from '../actions/editorActions'
 import { dismissToast, showToast } from '../components/ui/Toast'
+import { useCodeRunner, type CodeRunState } from './useCodeRunner'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -21,6 +22,8 @@ export interface EditorActions {
   writeText: (entityId: string, text: string) => Promise<void>
   /** Create a new entity with the given text as a child of `parentId`. Returns its id. */
   createChild: (parentId: string, text: string) => Promise<string>
+  /** Create a `type: code` child with the given source as its text. Returns its id. */
+  createCodeChild: (parentId: string, text: string) => Promise<string>
   /** Unlink `child` from `oldParent` and link it under `newParent`. */
   moveEntity: (entityId: string, fromParent: string, toParent: string) => Promise<void>
   /** Add a directional link `source → dest` without removing anything. */
@@ -54,6 +57,8 @@ export interface EntityRow {
   path: string[]
   /** The entity's `text` value, or undefined when absent/empty. */
   text?: string
+  /** The entity's `type` value, if any (e.g. `'code'` for a runnable block). */
+  type?: string
   hasChildren: boolean
   collapsed: boolean
   selected: boolean
@@ -84,6 +89,12 @@ export interface UseEditorResult {
   toggleCollapse: (row: EntityRow) => void
   /** Called by the view when the scroll position nears the end. */
   loadMore: () => void
+  /** Local (non-persisted) run state for code entities, keyed by entity id. */
+  codeRuns: Map<string, CodeRunState>
+  /** Run a code entity's source. */
+  runCode: (id: string, code: string) => void
+  /** Interrupt a running code entity. */
+  stopCode: (id: string) => void
 }
 
 // Format the entity at `startIndex` and its visible descendants as nested
@@ -108,7 +119,7 @@ function subtreeToMarkdown(rows: EditorRow[], startIndex: number): string {
 
 const PAGE_SIZE = 200
 
-type EditState = { mode: 'edit' | 'create'; path: string[] } | null
+type EditState = { mode: 'edit' | 'create'; path: string[]; code?: boolean } | null
 type PendingState = { kind: 'move' | 'link'; path: string[]; reverse: boolean } | null
 
 const pathEq = (a: string[], b: string[]): boolean =>
@@ -147,6 +158,9 @@ export function useEditor({
   const [limit, setLimit] = useState(PAGE_SIZE)
   const [edit, setEdit] = useState<EditState>(null)
   const [pending, setPending] = useState<PendingState>(null)
+
+  // Local, non-persisted execution of `type: code` entities.
+  const codeRunner = useCodeRunner()
 
   // Query state -------------------------------------------------------------
   // `results` accumulates across pages; `continuation` is the resume token for
@@ -215,12 +229,14 @@ export function useEditor({
       stack.push(entity.id)
       const path = stack.slice()
       const text = entity.values.text
+      const type = entity.values.type
       out.push({
         kind: 'entity',
         id: entity.id,
         depth,
         path,
         text: text == null || text === '' ? undefined : String(text),
+        type: type == null || type === '' ? undefined : String(type),
         hasChildren: entity.outboundLinks.length > 0,
         collapsed: effectiveCollapsed.has(entity.id),
         selected: pathEq(path, selectedPath),
@@ -298,6 +314,18 @@ export function useEditor({
     setEdit({ mode: 'create', path: selectedPath })
   }, [selectedId, selectedPath])
 
+  // Like startCreate, but the committed child is marked `type: code`.
+  const startCreateCode = useCallback(() => {
+    if (!selectedId) return
+    setCollapsed((prev) => {
+      if (!prev.has(selectedId)) return prev
+      const n = new Set(prev)
+      n.delete(selectedId)
+      return n
+    })
+    setEdit({ mode: 'create', path: selectedPath, code: true })
+  }, [selectedId, selectedPath])
+
   const commitEdit = useCallback(
     (value: string) => {
       const cur = edit
@@ -311,8 +339,8 @@ export function useEditor({
         // than spawning a blank entity.
         if (!value.trim()) return
         const parentId = cur.path[cur.path.length - 1]
-        actions
-          .createChild(parentId, value)
+        const create = cur.code ? actions.createCodeChild : actions.createChild
+        create(parentId, value)
           .then((newId) => {
             setSelectedPath([...cur.path, newId])
             reload()
@@ -386,6 +414,17 @@ export function useEditor({
     if (selectedId) onDebugEntity(selectedId)
   }, [selectedId, onDebugEntity])
 
+  // Code execution ----------------------------------------------------------
+  const { run: runCode, stop: stopCode } = codeRunner
+  const runSelectedCode = useCallback(() => {
+    const row = entityRows.find((r) => r.selected)
+    if (row?.type === 'code' && row.text) runCode(row.id, row.text)
+  }, [entityRows, runCode])
+
+  const stopSelectedCode = useCallback(() => {
+    if (selectedId) stopCode(selectedId)
+  }, [selectedId, stopCode])
+
   function setErrorMsg(e: unknown) {
     setError(e instanceof Error ? e.message : String(e))
   }
@@ -401,6 +440,9 @@ export function useEditor({
     expandSelected,
     startEdit,
     startCreate,
+    startCreateCode,
+    runSelectedCode,
+    stopSelectedCode,
     unlinkSelected,
     toggleMove,
     toggleLink,
@@ -482,5 +524,8 @@ export function useEditor({
     selectRow,
     toggleCollapse,
     loadMore,
+    codeRuns: codeRunner.runs,
+    runCode,
+    stopCode,
   }
 }

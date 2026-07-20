@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight } from '@untitledui/icons'
+import { ChevronDown, ChevronRight, Play, Stop } from '@untitledui/icons'
 import { TextEditor } from '../components/ui/TextEditor'
 import { ContextMenu, type ContextMenuItem } from '../components/ui/ContextMenu'
+import { CodeBlock } from '../components/ui/CodeBlock'
 import { cn } from '../helpers/cn'
 import type { EditorRow, EntityRow } from './useEditor'
+import type { CodeRunState } from './useCodeRunner'
 
 // ---------------------------------------------------------------------------
 // Layout constants
@@ -19,6 +21,8 @@ const ESTIMATE = 24 // assumed height of a not-yet-measured row, in px
 // leaves a descender gap below it) so pressing `e` doesn't shift the layout.
 // Colour is applied per-use so collapsed rows can read as muted.
 const TEXT = 'block font-serif text-[14px] leading-5'
+// Monospace counterpart for editing `type: code` entities in place.
+const MONO = 'block font-mono text-[12.5px] leading-5'
 
 const keyOf = (row: EditorRow, index: number): string =>
   row.kind === 'entity' ? row.path.join('/') : `input-${index}`
@@ -37,6 +41,12 @@ export interface EditorProps {
   onExport: () => void
   onDebug: () => void
   onNearEnd: () => void
+  /** Local run state for code entities, keyed by entity id. */
+  codeRuns: Map<string, CodeRunState>
+  /** Run a code entity's source (from its play button). */
+  onRunCode: (id: string, code: string) => void
+  /** Interrupt a running code entity (from its stop button). */
+  onStopCode: (id: string) => void
   /** Double-clicking a row "activates" it — the layout opens it in a new frame. */
   onActivateRow?: (path: string[]) => void
   /**
@@ -65,6 +75,9 @@ export function Editor(props: EditorProps): React.JSX.Element {
     onExport,
     onDebug,
     onNearEnd,
+    codeRuns,
+    onRunCode,
+    onStopCode,
     onActivateRow,
     autoHeight = false,
     extraMenuItems,
@@ -194,16 +207,22 @@ export function Editor(props: EditorProps): React.JSX.Element {
             {slice.map((row, i) => {
               const index = firstIndex + i
               const key = keyOf(row, index)
+              // Pass this row's run state directly (not the whole map) so the
+              // memoised Row only re-renders when *its own* run changes.
+              const run = row.kind === 'entity' ? codeRuns.get(row.id) : undefined
               return (
                 <Row
                   key={key}
                   row={row}
                   measureKey={key}
+                  run={run}
                   onMeasure={setHeight}
                   onSelectRow={onSelectRow}
                   onToggleCollapse={onToggleCollapse}
                   onCommitEdit={onCommitEdit}
                   onCancelEdit={onCancelEdit}
+                  onRunCode={onRunCode}
+                  onStopCode={onStopCode}
                   onActivateRow={onActivateRow}
                   onContextMenu={
                     row.kind === 'entity' ? (e) => openMenuFor(index, e) : undefined
@@ -230,11 +249,14 @@ export function Editor(props: EditorProps): React.JSX.Element {
 interface RowProps {
   row: EditorRow
   measureKey: string
+  run?: CodeRunState
   onMeasure: (key: string, height: number) => void
   onSelectRow: (path: string[]) => void
   onToggleCollapse: (row: EntityRow) => void
   onCommitEdit: (value: string) => void
   onCancelEdit: () => void
+  onRunCode: (id: string, code: string) => void
+  onStopCode: (id: string) => void
   onActivateRow?: (path: string[]) => void
   onContextMenu?: (e: React.MouseEvent) => void
 }
@@ -253,11 +275,14 @@ const escapeCancels =
 const Row = React.memo(function Row({
   row,
   measureKey,
+  run,
   onMeasure,
   onSelectRow,
   onToggleCollapse,
   onCommitEdit,
   onCancelEdit,
+  onRunCode,
+  onStopCode,
   onActivateRow,
   onContextMenu,
 }: RowProps): React.JSX.Element {
@@ -300,6 +325,9 @@ const Row = React.memo(function Row({
     )
   }
 
+  const isCode = row.type === 'code'
+  const running = run?.status === 'running'
+
   return (
     <div
       ref={ref}
@@ -314,23 +342,38 @@ const Row = React.memo(function Row({
         }`}
         style={{ paddingLeft: row.depth * INDENT + 4 }}
       >
-        <span
-          className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 select-none"
-          onClick={(e) => {
-            e.stopPropagation()
-            if (row.hasChildren) onToggleCollapse(row)
-          }}
-        >
-          {row.hasChildren ? (
-            row.collapsed ? (
-              <ChevronRight size={14} />
+        {isCode ? (
+          // Code rows swap the chevron/bullet for a run/stop control.
+          <span
+            className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 select-none hover:text-gray-700"
+            title={running ? 'Stop' : 'Run'}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (running) onStopCode(row.id)
+              else onRunCode(row.id, row.text ?? '')
+            }}
+          >
+            {running ? <Stop size={13} /> : <Play size={13} />}
+          </span>
+        ) : (
+          <span
+            className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 select-none"
+            onClick={(e) => {
+              e.stopPropagation()
+              if (row.hasChildren) onToggleCollapse(row)
+            }}
+          >
+            {row.hasChildren ? (
+              row.collapsed ? (
+                <ChevronRight size={14} />
+              ) : (
+                <ChevronDown size={14} />
+              )
             ) : (
-              <ChevronDown size={14} />
-            )
-          ) : (
-            <span className="size-1 rounded-full bg-gray-300" />
-          )}
-        </span>
+              <span className="size-1 rounded-full bg-gray-300" />
+            )}
+          </span>
+        )}
         <div className="flex-1 min-w-0">
           {row.editing ? (
             <TextEditor
@@ -338,8 +381,10 @@ const Row = React.memo(function Row({
               value={row.text ?? ''}
               setValue={onCommitEdit}
               onKeyDown={escapeCancels(onCancelEdit)}
-              className={`${TEXT} text-gray-900`}
+              className={`${isCode ? MONO : TEXT} text-gray-900`}
             />
+          ) : isCode ? (
+            <CodeBlock code={row.text ?? ''} run={run} />
           ) : row.text ? (
             <span
               className={`whitespace-pre-wrap break-words ${TEXT} ${

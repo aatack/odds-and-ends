@@ -17,6 +17,12 @@ export interface EditorController {
   expandSelected: () => void
   startEdit: () => void
   startCreate: () => void
+  /** Create a child entity marked `type: code`. */
+  startCreateCode: () => void
+  /** Run the selected code entity's source (no-op if it isn't code). */
+  runSelectedCode: () => void
+  /** Interrupt the selected code entity's run. */
+  stopSelectedCode: () => void
   unlinkSelected: () => void
   toggleMove: () => void
   toggleLink: (reverse: boolean) => void
@@ -45,6 +51,9 @@ export const EDITOR_ACTIONS: EditorAction[] = [
   { id: 'expand', label: 'Expand', aliases: ['open', 'unfold', 'show'], keys: [{ key: 'ArrowRight' }], run: (c) => c.expandSelected() },
   { id: 'edit', label: 'Edit text', aliases: ['rename', 'change', 'modify'], keys: [{ key: 'e' }], run: (c) => c.startEdit() },
   { id: 'create-child', label: 'Create child', aliases: ['add', 'new', 'insert'], keys: [{ key: 'Enter' }], run: (c) => c.startCreate() },
+  { id: 'create-code', label: 'Create code block', aliases: ['script', 'run', 'quickjs', 'ts', 'typescript'], keys: [{ key: 'c' }], run: (c) => c.startCreateCode() },
+  { id: 'run-code', label: 'Run code', aliases: ['execute', 'eval', 'play'], keys: [{ key: 'Enter', mod: true }], run: (c) => c.runSelectedCode() },
+  { id: 'stop-code', label: 'Stop code', aliases: ['interrupt', 'halt', 'cancel'], palette: false, run: (c) => c.stopSelectedCode() },
   {
     id: 'unlink',
     label: 'Remove from parent',

@@ -37,6 +37,8 @@ export function SourceView({ active, user, onRegisterCommands }: Props): React.J
         call('writeValue', { entityId, key: 'text', value: text, author: user }).then(() => undefined),
       createChild: (parentId, text) =>
         call('createEntity', { values: { text }, parentId }) as Promise<string>,
+      createCodeChild: (parentId, text) =>
+        call('createEntity', { values: { text, type: 'code' }, parentId }) as Promise<string>,
       moveEntity: (entityId, from, to) =>
         call('moveEntity', { entityId, fromParentId: from, toParentId: to }).then(() => undefined),
       linkEntities: (sourceId, destId) =>

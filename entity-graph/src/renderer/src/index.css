@@ -64,6 +64,8 @@
    * the `font-serif` utility. */
   --font-sans: "Geist Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-serif: "Lora Variable", Georgia, Cambria, "Times New Roman", serif;
+  /* Code entities (`type: code`), via the `font-mono` utility. */
+  --font-mono: "Fira Code Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
 /*

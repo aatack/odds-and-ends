@@ -93,6 +93,9 @@ export function EntityFrame({
       onExport={() => ed.runAction('export')}
       onDebug={() => ed.runAction('debug')}
       onNearEnd={ed.loadMore}
+      codeRuns={ed.codeRuns}
+      onRunCode={ed.runCode}
+      onStopCode={ed.stopCode}
       onActivateRow={onActivateEntity ? (path) => onActivateEntity(last(path) as string) : undefined}
       autoHeight={autoHeight}
       extraMenuItems={extraMenuItems}
