@@ -36,7 +36,10 @@ export function useHotkeys<C>(
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (ignoreEditable && isEditableTarget(e.target)) return
+      // While typing, skip only bare/shift shortcuts (they'd collide with input);
+      // Ctrl/⌘/Alt combos still fire, so e.g. ctrl+tab works mid-edit.
+      if (ignoreEditable && isEditableTarget(e.target) && !(e.ctrlKey || e.metaKey || e.altKey))
+        return
       const action = matchAction(actions, e)
       if (!action) return
       e.preventDefault()

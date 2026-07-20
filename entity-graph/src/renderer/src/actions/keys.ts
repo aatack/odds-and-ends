@@ -45,6 +45,7 @@ const KEY_SYMBOLS: Record<string, string> = {
   ArrowLeft: '←',
   ArrowRight: '→',
   Escape: 'Esc',
+  Tab: '⇥',
 }
 
 /** A short human label for the first of some key bindings, for palettes/menus. */

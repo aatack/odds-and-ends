@@ -12,6 +12,8 @@ export interface LayoutController {
   toggleSolo: () => void
   /** Move focus to the previous (-1) or next (+1) tab group. */
   focusAdjacentGroup: (dir: -1 | 1) => void
+  /** Cycle the focused group's active tab: previous (-1) / next (+1), wrapping. */
+  cycleTab: (dir: -1 | 1) => void
   /** Move the focused tab into the group to its left (-1) / right (+1). */
   moveTab: (dir: -1 | 1) => void
   /** Push a new entity frame for the focused view's selected entity. */
@@ -72,6 +74,20 @@ export const LAYOUT_ACTIONS: LayoutAction[] = [
     label: 'Move tab right',
     keys: [{ key: 'ArrowRight', alt: true, mod: true }],
     run: (c) => c.moveTab(1),
+  },
+  {
+    id: 'next-tab',
+    label: 'Next tab',
+    aliases: ['cycle tab'],
+    keys: [{ key: 'Tab', mod: true }],
+    run: (c) => c.cycleTab(1),
+  },
+  {
+    id: 'prev-tab',
+    label: 'Previous tab',
+    aliases: ['cycle tab back'],
+    keys: [{ key: 'Tab', mod: true, shift: true }],
+    run: (c) => c.cycleTab(-1),
   },
   {
     id: 'focus-entity',

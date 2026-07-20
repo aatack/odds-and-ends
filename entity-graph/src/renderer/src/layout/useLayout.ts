@@ -205,6 +205,16 @@ function focusAdjacentGroup(s: LayoutState, dir: -1 | 1): LayoutState {
   return { ...s, focusedGroupId: s.groups[next]?.id ?? s.focusedGroupId }
 }
 
+// Cycle the focused group's active tab (wrapping) — ctrl+tab / ctrl+shift+tab.
+function cycleTab(s: LayoutState, groupId: string, dir: -1 | 1): LayoutState {
+  const group = s.groups.find((g) => g.id === groupId)
+  if (!group || group.tabIds.length === 0) return s
+  const n = group.tabIds.length
+  const cur = group.activeTabId ? group.tabIds.indexOf(group.activeTabId) : 0
+  const nextId = group.tabIds[(((cur + dir) % n) + n) % n]
+  return { ...s, groups: s.groups.map((g) => (g.id === groupId ? { ...g, activeTabId: nextId } : g)) }
+}
+
 // ---------------------------------------------------------------------------
 // Derived, render-ready shapes
 // ---------------------------------------------------------------------------
@@ -328,8 +338,18 @@ export function useLayout(): UseLayoutResult {
       },
       focusSelectedEntity: () => {
         const { tabId, frameId } = ctx.current
-        const id = frameId ? handles.current.get(frameId)?.getSelectedEntityId() ?? null : null
-        if (id && tabId) setState((s) => pushFrame(s, tabId, entityView(id)))
+        if (!tabId || !frameId) return
+        const id = handles.current.get(frameId)?.getSelectedEntityId() ?? null
+        if (!id) return
+        // Don't stack a frame whose root is already the current view's root —
+        // that just makes a duplicate you'd have to pop straight back off.
+        const cur = ctx.current.state.frames[frameId]
+        if (cur?.view.kind === 'entity' && cur.view.rootId === id) return
+        setState((s) => pushFrame(s, tabId, entityView(id)))
+      },
+      cycleTab: (dir) => {
+        const { groupId } = ctx.current
+        if (groupId) setState((s) => cycleTab(s, groupId, dir))
       },
       popFrame: () => {
         const { tabId } = ctx.current
