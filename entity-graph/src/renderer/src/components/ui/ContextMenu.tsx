@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '../../helpers/cn'
 
 export interface ContextMenuItem {
@@ -41,7 +42,10 @@ export function ContextMenu({
     }
   }, [onClose])
 
-  return (
+  // Portalled to <body> so `position: fixed` is relative to the viewport even
+  // when an ancestor has a CSS transform (e.g. the panned/zoomed canvas), which
+  // would otherwise become the containing block and offset the menu.
+  return createPortal(
     <div
       ref={ref}
       className="fixed z-50 min-w-44 rounded-lg bg-white py-1.5 shadow-lg"
@@ -59,6 +63,7 @@ export function ContextMenu({
           {item.label}
         </button>
       ))}
-    </div>
+    </div>,
+    document.body,
   )
 }
