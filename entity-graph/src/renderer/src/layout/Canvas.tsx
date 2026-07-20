@@ -331,9 +331,13 @@ export function Canvas({
       ref={boardRef}
       className={cn('h-full w-full overflow-hidden bg-gray-50', panDrag ? 'cursor-grabbing' : 'cursor-grab')}
       onPointerDown={onBoardPointerDown}
-      // Dotted grid that pans and zooms with the board.
+      // Faint line grid that pans and zooms with the board. Both the cell size
+      // and the line thickness scale with zoom, so the lines read as part of the
+      // content rather than a fixed 1px overlay at every zoom level.
       style={{
-        backgroundImage: 'radial-gradient(circle, rgba(100,116,139,0.28) 1px, transparent 1px)',
+        backgroundImage:
+          `linear-gradient(to right, rgba(100,116,139,0.11) ${cam.zoom}px, transparent ${cam.zoom}px),` +
+          `linear-gradient(to bottom, rgba(100,116,139,0.11) ${cam.zoom}px, transparent ${cam.zoom}px)`,
         backgroundSize: `${24 * cam.zoom}px ${24 * cam.zoom}px`,
         backgroundPosition: `${cam.x}px ${cam.y}px`,
       }}
