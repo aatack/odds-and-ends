@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { X } from '@untitledui/icons'
 import { cn } from '../helpers/cn'
 import type { EditorActions } from '../views/useEditor'
 import { EntityFrame } from './EntityFrame'
+import type { ViewHandle } from './useLayout'
 import { useCanvas } from './useCanvas'
 import {
   CANVAS_DEFAULT_WIDTH,
@@ -35,6 +36,8 @@ export interface CanvasProps {
   onDebugEntity: (entityId: string) => void
   /** Persist a change to this frame's view (node moved / resized / added). */
   updateView: (frameId: string, view: CanvasView) => void
+  /** Publish a handle up to the layout, proxying to the active panel. */
+  onHandle?: (handle: ViewHandle | null) => void
 }
 
 /**
@@ -44,9 +47,49 @@ export interface CanvasProps {
  * nodes whose subtrees reference one another. Double-clicking a folded
  * reference promotes it to its own node.
  */
-export function Canvas({ frame, actions, onDebugEntity, updateView }: CanvasProps): React.JSX.Element {
+export function Canvas({ frame, actions, onDebugEntity, updateView, onHandle }: CanvasProps): React.JSX.Element {
   const view = frame.view as CanvasView
   const edges = useCanvas(view.nodes, actions.resolveQuery)
+
+  // The panel keyboard input (w/s, edit, link…) is routed to — set by clicking
+  // a panel; defaults to the first node.
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(null)
+  const nodeIdList = Object.keys(view.nodes)
+  const activeId = activeNodeId && view.nodes[activeNodeId] ? activeNodeId : (nodeIdList[0] ?? null)
+  const activeRef = useRef(activeId)
+  activeRef.current = activeId
+
+  // Each panel publishes its handle here; the board exposes one proxy handle to
+  // the layout that forwards to whichever panel is active.
+  const panelHandles = useRef<Map<string, ViewHandle>>(new Map())
+  const registerPanel = (id: string, h: ViewHandle | null): void => {
+    if (h) panelHandles.current.set(id, h)
+    else panelHandles.current.delete(id)
+  }
+  // Stable per-id onHandle callbacks so panels don't re-register every render.
+  const panelCbs = useRef<Map<string, (h: ViewHandle | null) => void>>(new Map())
+  const panelOnHandle = (id: string): ((h: ViewHandle | null) => void) => {
+    let cb = panelCbs.current.get(id)
+    if (!cb) {
+      cb = (h) => registerPanel(id, h)
+      panelCbs.current.set(id, cb)
+    }
+    return cb
+  }
+
+  const proxy = useMemo<ViewHandle>(
+    () => ({
+      getSelectedEntityId: () => panelHandles.current.get(activeRef.current ?? '')?.getSelectedEntityId() ?? null,
+      getSelectedText: () => panelHandles.current.get(activeRef.current ?? '')?.getSelectedText?.() ?? null,
+      runAction: (id) => panelHandles.current.get(activeRef.current ?? '')?.runAction?.(id),
+    }),
+    [],
+  )
+  useEffect(() => {
+    if (!onHandle) return
+    onHandle(proxy)
+    return () => onHandle(null)
+  }, [onHandle, proxy])
 
   const [drag, setDrag] = useState<Drag | null>(null)
   // The node being dragged, mirrored locally so pointer-moves don't hit
@@ -226,7 +269,11 @@ export function Canvas({ frame, actions, onDebugEntity, updateView }: CanvasProp
             <div
               key={id}
               data-panel=""
-              className="absolute flex flex-col rounded-lg border border-gray-200 bg-white shadow-sm"
+              onPointerDownCapture={() => setActiveNodeId(id)}
+              className={cn(
+                'absolute flex flex-col rounded-lg border bg-white shadow-sm',
+                id === activeId ? 'border-brand-300 ring-1 ring-brand-200' : 'border-gray-200',
+              )}
               style={{ left: n.x, top: n.y, width: n.width ?? CANVAS_DEFAULT_WIDTH }}
             >
               <div
@@ -268,6 +315,7 @@ export function Canvas({ frame, actions, onDebugEntity, updateView }: CanvasProp
                   collapsed={others}
                   onActivateEntity={addNode}
                   autoHeight={!n.height}
+                  onHandle={panelOnHandle(id)}
                 />
               </div>
 

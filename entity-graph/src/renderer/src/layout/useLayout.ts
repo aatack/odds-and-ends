@@ -121,6 +121,15 @@ function popIntoNewTab(s: LayoutState, groupId: string, tabId: string): LayoutSt
   }
 }
 
+// Add an entity as a node on a canvas frame (the `d` / double-click pop-out).
+function addCanvasNode(s: LayoutState, frameId: string, entityId: string): LayoutState {
+  const frame = s.frames[frameId]
+  if (!frame || frame.view.kind !== 'canvas' || frame.view.nodes[entityId]) return s
+  const offset = Object.keys(frame.view.nodes).length * 28
+  const nodes = { ...frame.view.nodes, [entityId]: { x: 60 + offset, y: 60 + offset } }
+  return { ...s, frames: { ...s.frames, [frameId]: { ...frame, view: { ...frame.view, nodes } } } }
+}
+
 function newTab(s: LayoutState, groupId: string): LayoutState {
   const group = s.groups.find((g) => g.id === groupId)
   if (!group) return s
@@ -356,14 +365,20 @@ export function useLayout(): UseLayoutResult {
       focusSelectedEntity: () => {
         const { tabId, frameId } = ctx.current
         if (!tabId || !frameId) return
-        const id = handles.current.get(frameId)?.getSelectedEntityId() ?? null
+        const handle = handles.current.get(frameId)
+        const id = handle?.getSelectedEntityId() ?? null
         if (!id) return
+        const cur = ctx.current.state.frames[frameId]
+        // On a canvas, "focus" pops the selection out into its own node.
+        if (cur?.view.kind === 'canvas') {
+          setState((s) => addCanvasNode(s, frameId, id))
+          return
+        }
         // Don't stack a frame whose root is already the current view's root —
         // that just makes a duplicate you'd have to pop straight back off.
-        const cur = ctx.current.state.frames[frameId]
         if (cur?.view.kind === 'entity' && cur.view.rootId === id) return
         // Seed the new tab's name from the selected row so it's labelled at once.
-        const text = handles.current.get(frameId)?.getSelectedText?.() ?? undefined
+        const text = handle?.getSelectedText?.() ?? undefined
         if (text) reportName(id, text)
         setState((s) => pushFrame(s, tabId, entityView(id)))
       },

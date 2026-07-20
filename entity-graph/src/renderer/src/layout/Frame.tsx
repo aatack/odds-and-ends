@@ -32,7 +32,13 @@ export function FrameView({
 
   if (frame.view.kind === 'canvas') {
     return (
-      <Canvas frame={frame} actions={actions} onDebugEntity={onDebugEntity} updateView={updateView} />
+      <Canvas
+        frame={frame}
+        actions={actions}
+        onDebugEntity={onDebugEntity}
+        updateView={updateView}
+        onHandle={onHandle}
+      />
     )
   }
 
