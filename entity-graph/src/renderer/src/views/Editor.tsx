@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, Play, Stop } from '@untitledui/icons'
+import { Check, ChevronDown, ChevronRight, Play, Square, Stop } from '@untitledui/icons'
 import { TextEditor } from '../components/ui/TextEditor'
 import { ContextMenu, type ContextMenuItem } from '../components/ui/ContextMenu'
 import { CodeBlock } from '../components/ui/CodeBlock'
@@ -322,6 +322,13 @@ const Row = React.memo(function Row({
   const isCode = row.type === 'code'
   const running = run?.status === 'running'
 
+  // Section headings grow with prominence: ~1.5x at the top level, easing toward
+  // ~1.1x as they nest deeper. Applied as inline font-size (per-depth, so it
+  // can't be a static utility class) over the 14px base.
+  const sectionStyle = row.section
+    ? { fontSize: `${14 * Math.max(1.1, 1.5 - row.depth * 0.1)}px`, lineHeight: 1.3 }
+    : undefined
+
   return (
     <div
       ref={ref}
@@ -356,7 +363,11 @@ const Row = React.memo(function Row({
               if (row.hasChildren) onToggleCollapse(row)
             }}
           >
-            {row.hasChildren ? (
+            {row.open === true ? (
+              <Square size={13} />
+            ) : row.open === false ? (
+              <Check size={13} />
+            ) : row.hasChildren ? (
               row.collapsed ? (
                 <ChevronRight size={14} />
               ) : (
@@ -381,8 +392,9 @@ const Row = React.memo(function Row({
           ) : row.text ? (
             <span
               className={`whitespace-pre-wrap break-words ${TEXT} ${
-                row.hasChildren && row.collapsed ? 'text-gray-400' : 'text-gray-900'
-              }`}
+                row.section ? 'font-semibold' : ''
+              } ${row.hasChildren && row.collapsed ? 'text-gray-400' : 'text-gray-900'}`}
+              style={sectionStyle}
             >
               {row.text}
             </span>

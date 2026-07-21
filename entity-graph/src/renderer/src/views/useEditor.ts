@@ -20,10 +20,13 @@ export interface EditorActions {
   ) => Promise<QueryPage>
   /** Set the `text` value of an entity. */
   writeText: (entityId: string, text: string) => Promise<void>
-  /** Create a new entity with the given text as a child of `parentId`. Returns its id. */
-  createChild: (parentId: string, text: string) => Promise<string>
-  /** Create a `type: code` child with the given source as its text. Returns its id. */
-  createCodeChild: (parentId: string, text: string) => Promise<string>
+  /** Set an arbitrary value on an entity. */
+  writeValue: (entityId: string, key: string, value: unknown) => Promise<void>
+  /**
+   * Create a new entity as a child of `parentId` with the given text, plus any
+   * extra `values` written alongside it. Returns its id.
+   */
+  createChild: (parentId: string, text: string, values?: Record<string, unknown>) => Promise<string>
   /** Unlink `child` from `oldParent` and link it under `newParent`. */
   moveEntity: (entityId: string, fromParent: string, toParent: string) => Promise<void>
   /** Add a directional link `source → dest` without removing anything. */
@@ -59,6 +62,10 @@ export interface EntityRow {
   text?: string
   /** The entity's `type` value, if any (e.g. `'code'` for a runnable block). */
   type?: string
+  /** When true, the entity's text renders as a section heading. */
+  section?: boolean
+  /** Checkbox state: `true` = open box, `false` = ticked; undefined = plain bullet. */
+  open?: boolean
   hasChildren: boolean
   collapsed: boolean
   selected: boolean
@@ -119,7 +126,10 @@ function subtreeToMarkdown(rows: EditorRow[], startIndex: number): string {
 
 const PAGE_SIZE = 200
 
-type EditState = { mode: 'edit' | 'create'; path: string[]; code?: boolean } | null
+type EditState =
+  | { mode: 'edit'; path: string[] }
+  | { mode: 'create'; path: string[]; values?: Record<string, unknown> }
+  | null
 type PendingState = { kind: 'move' | 'link'; path: string[]; reverse: boolean } | null
 
 const pathEq = (a: string[], b: string[]): boolean =>
@@ -230,6 +240,7 @@ export function useEditor({
       const path = stack.slice()
       const text = entity.values.text
       const type = entity.values.type
+      const open = entity.values.open
       out.push({
         kind: 'entity',
         id: entity.id,
@@ -237,6 +248,8 @@ export function useEditor({
         path,
         text: text == null || text === '' ? undefined : String(text),
         type: type == null || type === '' ? undefined : String(type),
+        section: entity.values.section === true,
+        open: open === true ? true : open === false ? false : undefined,
         hasChildren: entity.outboundLinks.length > 0,
         collapsed: effectiveCollapsed.has(entity.id),
         selected: pathEq(path, selectedPath),
@@ -302,29 +315,22 @@ export function useEditor({
     if (selectedPath.length) setEdit({ mode: 'edit', path: selectedPath })
   }, [selectedPath])
 
-  const startCreate = useCallback(() => {
-    if (!selectedId) return
-    // Make sure the parent is expanded so the new child is visible.
-    setCollapsed((prev) => {
-      if (!prev.has(selectedId)) return prev
-      const n = new Set(prev)
-      n.delete(selectedId)
-      return n
-    })
-    setEdit({ mode: 'create', path: selectedPath })
-  }, [selectedId, selectedPath])
-
-  // Like startCreate, but the committed child is marked `type: code`.
-  const startCreateCode = useCallback(() => {
-    if (!selectedId) return
-    setCollapsed((prev) => {
-      if (!prev.has(selectedId)) return prev
-      const n = new Set(prev)
-      n.delete(selectedId)
-      return n
-    })
-    setEdit({ mode: 'create', path: selectedPath, code: true })
-  }, [selectedId, selectedPath])
+  // Begin creating a child; `values` (e.g. `{ section: true }`, `{ open: true }`,
+  // `{ type: 'code' }`) are written alongside the text when the input commits.
+  const startCreate = useCallback(
+    (values?: Record<string, unknown>) => {
+      if (!selectedId) return
+      // Make sure the parent is expanded so the new child is visible.
+      setCollapsed((prev) => {
+        if (!prev.has(selectedId)) return prev
+        const n = new Set(prev)
+        n.delete(selectedId)
+        return n
+      })
+      setEdit({ mode: 'create', path: selectedPath, values })
+    },
+    [selectedId, selectedPath],
+  )
 
   const commitEdit = useCallback(
     (value: string) => {
@@ -339,8 +345,8 @@ export function useEditor({
         // than spawning a blank entity.
         if (!value.trim()) return
         const parentId = cur.path[cur.path.length - 1]
-        const create = cur.code ? actions.createCodeChild : actions.createChild
-        create(parentId, value)
+        actions
+          .createChild(parentId, value, cur.values)
           .then((newId) => {
             setSelectedPath([...cur.path, newId])
             reload()
@@ -414,6 +420,21 @@ export function useEditor({
     if (selectedId) onDebugEntity(selectedId)
   }, [selectedId, onDebugEntity])
 
+  // Section / checkbox toggles --------------------------------------------
+  const toggleSection = useCallback(() => {
+    const row = entityRows.find((r) => r.selected)
+    if (!row) return
+    actions.writeValue(row.id, 'section', row.section ? null : true).then(reload).catch(setErrorMsg)
+  }, [entityRows, actions, reload])
+
+  const toggleOpen = useCallback(() => {
+    const row = entityRows.find((r) => r.selected)
+    if (!row) return
+    // null → true → false → null
+    const next = row.open === undefined ? true : row.open === true ? false : null
+    actions.writeValue(row.id, 'open', next).then(reload).catch(setErrorMsg)
+  }, [entityRows, actions, reload])
+
   // Code execution ----------------------------------------------------------
   const { run: runCode, stop: stopCode } = codeRunner
   const runSelectedCode = useCallback(() => {
@@ -440,7 +461,8 @@ export function useEditor({
     expandSelected,
     startEdit,
     startCreate,
-    startCreateCode,
+    toggleSection,
+    toggleOpen,
     runSelectedCode,
     stopSelectedCode,
     unlinkSelected,

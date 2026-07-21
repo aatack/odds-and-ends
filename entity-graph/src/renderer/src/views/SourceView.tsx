@@ -35,10 +35,10 @@ export function SourceView({ active, user, onRegisterCommands }: Props): React.J
       resolveQuery: (rootId, opts) => call('query', { rootId, ...opts }) as Promise<QueryPage>,
       writeText: (entityId, text) =>
         call('writeValue', { entityId, key: 'text', value: text, author: user }).then(() => undefined),
-      createChild: (parentId, text) =>
-        call('createEntity', { values: { text }, parentId }) as Promise<string>,
-      createCodeChild: (parentId, text) =>
-        call('createEntity', { values: { text, type: 'code' }, parentId }) as Promise<string>,
+      writeValue: (entityId, key, value) =>
+        call('writeValue', { entityId, key, value, author: user }).then(() => undefined),
+      createChild: (parentId, text, values) =>
+        call('createEntity', { values: { text, ...values }, parentId }) as Promise<string>,
       moveEntity: (entityId, from, to) =>
         call('moveEntity', { entityId, fromParentId: from, toParentId: to }).then(() => undefined),
       linkEntities: (sourceId, destId) =>

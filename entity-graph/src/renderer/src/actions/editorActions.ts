@@ -16,9 +16,12 @@ export interface EditorController {
   collapseSelected: () => void
   expandSelected: () => void
   startEdit: () => void
-  startCreate: () => void
-  /** Create a child entity marked `type: code`. */
-  startCreateCode: () => void
+  /** Begin creating a child; `values` are written alongside its text on commit. */
+  startCreate: (values?: Record<string, unknown>) => void
+  /** Toggle the selected entity's `section` flag between `true` and `null`. */
+  toggleSection: () => void
+  /** Cycle the selected entity's `open` through null → true → false → null. */
+  toggleOpen: () => void
   /** Run the selected code entity's source (no-op if it isn't code). */
   runSelectedCode: () => void
   /** Interrupt the selected code entity's run. */
@@ -51,7 +54,11 @@ export const EDITOR_ACTIONS: EditorAction[] = [
   { id: 'expand', label: 'Expand', aliases: ['open', 'unfold', 'show'], keys: [{ key: 'ArrowRight' }], run: (c) => c.expandSelected() },
   { id: 'edit', label: 'Edit text', aliases: ['rename', 'change', 'modify'], keys: [{ key: 'e' }], run: (c) => c.startEdit() },
   { id: 'create-child', label: 'Create child', aliases: ['add', 'new', 'insert'], keys: [{ key: 'Enter' }], run: (c) => c.startCreate() },
-  { id: 'create-code', label: 'Create code block', aliases: ['script', 'run', 'quickjs', 'ts', 'typescript'], keys: [{ key: 'c' }], run: (c) => c.startCreateCode() },
+  { id: 'create-section', label: 'Create section', aliases: ['heading', 'header', 'title'], keys: [{ key: '/' }], run: (c) => c.startCreate({ section: true }) },
+  { id: 'create-open', label: 'Create checkbox', aliases: ['todo', 'task', 'checkbox', 'open'], keys: [{ key: '?', shift: true }], run: (c) => c.startCreate({ open: true }) },
+  { id: 'create-code', label: 'Create code block', aliases: ['script', 'run', 'quickjs', 'ts', 'typescript'], keys: [{ key: 'c' }], run: (c) => c.startCreate({ type: 'code' }) },
+  { id: 'toggle-section', label: 'Toggle section', aliases: ['heading', 'header'], keys: [{ key: '/', mod: true }], run: (c) => c.toggleSection() },
+  { id: 'toggle-open', label: 'Toggle checkbox', aliases: ['todo', 'task', 'done', 'check'], keys: [{ key: '>', shift: true }], run: (c) => c.toggleOpen() },
   { id: 'run-code', label: 'Run code', aliases: ['execute', 'eval', 'play'], keys: [{ key: 'Enter', mod: true }], run: (c) => c.runSelectedCode() },
   { id: 'stop-code', label: 'Stop code', aliases: ['interrupt', 'halt', 'cancel'], palette: false, run: (c) => c.stopSelectedCode() },
   {
