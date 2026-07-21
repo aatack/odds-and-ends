@@ -32,8 +32,6 @@ export interface CanvasNode {
   y: number
   /** Rendered width in px; falls back to CANVAS_DEFAULT_WIDTH when omitted. */
   width?: number
-  /** When set, the sub-view is confined to this height and scrolls within it. */
-  height?: number
 }
 
 export interface CanvasView {

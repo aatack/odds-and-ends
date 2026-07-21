@@ -6,10 +6,10 @@ import type { ViewHandle } from './useLayout'
 import { useCanvas } from './useCanvas'
 import { CANVAS_DEFAULT_WIDTH, entityView, type CanvasNode, type CanvasView, type Frame } from './types'
 
-// A node's default height when it hasn't been measured yet / when made fixed.
+// A node's assumed height for edge geometry until it has been measured. Nodes
+// always grow to fit their content — height is never fixed.
 const DEFAULT_HEIGHT = 260
 const MIN_WIDTH = 200
-const MIN_HEIGHT = 120
 // Extra room around the edge SVG so arrowheads near the bbox aren't clipped.
 const EDGE_PAD = 60
 
@@ -36,7 +36,7 @@ function borderPoint(r: Rect, tx: number, ty: number): [number, number] {
 
 interface Drag {
   id: string
-  kind: 'move' | 'width' | 'height' | 'both'
+  kind: 'move' | 'width'
   startX: number
   startY: number
   orig: CanvasNode
@@ -208,11 +208,8 @@ export function Canvas({
         node.x = drag.orig.x + dx
         node.y = drag.orig.y + dy
       }
-      if (drag.kind === 'width' || drag.kind === 'both') {
+      if (drag.kind === 'width') {
         node.width = Math.max(MIN_WIDTH, (drag.orig.width ?? CANVAS_DEFAULT_WIDTH) + dx)
-      }
-      if (drag.kind === 'height' || drag.kind === 'both') {
-        node.height = Math.max(MIN_HEIGHT, (drag.orig.height ?? DEFAULT_HEIGHT) + dy)
       }
       draftRef.current = { id: drag.id, node }
       setDraft(draftRef.current)
@@ -292,7 +289,6 @@ export function Canvas({
         const d = e.deltaX || e.deltaY
         setCam((c) => ({ ...c, x: c.x - d }))
       } else {
-        if ((e.target as HTMLElement).closest('[data-panel-scroll]')) return
         e.preventDefault()
         setCam((c) => ({ ...c, x: c.x - e.deltaX, y: c.y - e.deltaY }))
       }
@@ -306,12 +302,9 @@ export function Canvas({
     delete nodes[id]
     updateView(frame.id, { ...view, nodes })
   }
-  const patchNode = (id: string, patch: Partial<CanvasNode>): void =>
-    updateView(frame.id, { ...view, nodes: { ...view.nodes, [id]: { ...view.nodes[id], ...patch } } })
-
   const rectOf = (id: string): Rect => {
     const n = nodeOf(id)
-    return { x: n.x, y: n.y, w: n.width ?? CANVAS_DEFAULT_WIDTH, h: heights[id] ?? n.height ?? DEFAULT_HEIGHT }
+    return { x: n.x, y: n.y, w: n.width ?? CANVAS_DEFAULT_WIDTH, h: heights[id] ?? DEFAULT_HEIGHT }
   }
 
   // Bounding box of all nodes (padded), so the edge SVG can cover negative space.
@@ -423,40 +416,24 @@ export function Canvas({
               )}
               style={{ left: n.x, top: n.y, width: n.width ?? CANVAS_DEFAULT_WIDTH }}
             >
-              {/* No set height → grow to fit; a height → fixed and scrolling. */}
-              <div
-                className={n.height ? 'overflow-auto' : ''}
-                style={n.height ? { height: n.height } : undefined}
-                data-panel-scroll={n.height ? '' : undefined}
-              >
-                {/* Stable key by node id — collapse updates reactively via
-                    forceCollapsed, so adding/removing a node doesn't remount. */}
-                <EntityFrame
-                  key={id}
-                  view={entityView(id)}
-                  actions={actions}
-                  onDebugEntity={onDebugEntity}
-                  collapsed={others}
-                  autoHeight={!n.height}
-                  onHandle={panelOnHandle(id)}
-                  extraMenuItems={[{ label: 'Close panel', onClick: () => removeNode(id) }]}
-                />
-              </div>
+              {/* Panels always grow to fit their content — height is never fixed.
+                  Stable key by node id — collapse updates reactively via
+                  forceCollapsed, so adding/removing a node doesn't remount. */}
+              <EntityFrame
+                key={id}
+                view={entityView(id)}
+                actions={actions}
+                onDebugEntity={onDebugEntity}
+                collapsed={others}
+                autoHeight
+                onHandle={panelOnHandle(id)}
+                extraMenuItems={[{ label: 'Close panel', onClick: () => removeNode(id) }]}
+              />
 
-              {/* Resize handles: right edge = width, bottom edge = height, corner = both. */}
+              {/* Only width is resizable (right edge); height grows to fit. */}
               <div
                 className="absolute right-0 top-0 h-full w-1.5 cursor-ew-resize"
                 onPointerDown={(e) => startDrag(id, 'width', e)}
-              />
-              <div
-                className="absolute bottom-0 left-0 h-1.5 w-full cursor-ns-resize"
-                onPointerDown={(e) => startDrag(id, 'height', e)}
-              />
-              <div
-                className="absolute bottom-0 right-0 h-3 w-3 cursor-nwse-resize"
-                onPointerDown={(e) => startDrag(id, 'both', e)}
-                onDoubleClick={() => patchNode(id, { height: undefined })}
-                title="Drag to resize; double-click for auto height"
               />
             </div>
           )
