@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, ChevronRight, Play, Square, Stop } from '@untitledui/icons'
 import { TextEditor } from '../components/ui/TextEditor'
-import { ContextMenu, type ContextMenuItem } from '../components/ui/ContextMenu'
 import { CodeBlock } from '../components/ui/CodeBlock'
 import { cn } from '../helpers/cn'
 import type { EditorRow, EntityRow } from './useEditor'
@@ -38,8 +37,6 @@ export interface EditorProps {
   onToggleCollapse: (row: EntityRow) => void
   onCommitEdit: (value: string) => void
   onCancelEdit: () => void
-  onExport: () => void
-  onDebug: () => void
   onNearEnd: () => void
   /** Local run state for code entities, keyed by entity id. */
   codeRuns: Map<string, CodeRunState>
@@ -52,8 +49,6 @@ export interface EditorProps {
    * viewport. Used by canvas nodes with no set height, per the design notes.
    */
   autoHeight?: boolean
-  /** Extra items appended to a row's right-click menu (e.g. canvas "Close panel"). */
-  extraMenuItems?: ContextMenuItem[]
 }
 
 /**
@@ -70,19 +65,14 @@ export function Editor(props: EditorProps): React.JSX.Element {
     onToggleCollapse,
     onCommitEdit,
     onCancelEdit,
-    onExport,
-    onDebug,
     onNearEnd,
     codeRuns,
     onRunCode,
     onStopCode,
     autoHeight = false,
-    extraMenuItems,
   } = props
 
   const containerRef = useRef<HTMLDivElement>(null)
-  // Right-click menu target: a row index + screen position.
-  const [menu, setMenu] = useState<{ index: number; x: number; y: number } | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   // The scroll container fills its parent, so its height is measured rather
   // than fixed; it drives how many rows the window renders.
@@ -162,28 +152,6 @@ export function Editor(props: EditorProps): React.JSX.Element {
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - ESTIMATE * OVERSCAN) onNearEnd()
   }
 
-  const openMenuFor = (index: number, e: React.MouseEvent): void => {
-    e.preventDefault()
-    const row = rows[index]
-    if (row.kind === 'entity') onSelectRow(row.path)
-    setMenu({ index, x: e.clientX, y: e.clientY })
-  }
-
-  // The menu acts on the row it opened over, which openMenuFor has selected, so
-  // the export/debug actions (which operate on the selection) hit the right one.
-  const menuRow = menu ? rows[menu.index] : null
-  const menuItems: ContextMenuItem[] =
-    menu && menuRow?.kind === 'entity'
-      ? [
-          { label: 'Export', onClick: () => { onExport(); setMenu(null) } },
-          { label: 'Debug entity', onClick: () => { onDebug(); setMenu(null) } },
-          ...(extraMenuItems ?? []).map((it) => ({
-            ...it,
-            onClick: () => { it.onClick(); setMenu(null) },
-          })),
-        ]
-      : []
-
   return (
     <div className={cn('flex flex-col bg-white', autoHeight ? '' : 'h-full overflow-hidden')}>
       <div
@@ -220,9 +188,6 @@ export function Editor(props: EditorProps): React.JSX.Element {
                   onCancelEdit={onCancelEdit}
                   onRunCode={onRunCode}
                   onStopCode={onStopCode}
-                  onContextMenu={
-                    row.kind === 'entity' ? (e) => openMenuFor(index, e) : undefined
-                  }
                 />
               )
             })}
@@ -230,10 +195,6 @@ export function Editor(props: EditorProps): React.JSX.Element {
           </>
         )}
       </div>
-
-      {menu && menuItems.length > 0 && (
-        <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />
-      )}
     </div>
   )
 }
@@ -253,7 +214,6 @@ interface RowProps {
   onCancelEdit: () => void
   onRunCode: (id: string, code: string) => void
   onStopCode: (id: string) => void
-  onContextMenu?: (e: React.MouseEvent) => void
 }
 
 // Escape abandons the edit; everything else (Enter to commit, autosize, blur to
@@ -278,7 +238,6 @@ const Row = React.memo(function Row({
   onCancelEdit,
   onRunCode,
   onStopCode,
-  onContextMenu,
 }: RowProps): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -333,8 +292,12 @@ const Row = React.memo(function Row({
     <div
       ref={ref}
       className="flex"
+      // `data-entity-id` lets the global right-click handler seed the command
+      // palette's `entityId` context; selecting on right-click also lets the
+      // selection-based commands act on the row under the cursor.
+      data-entity-id={row.id}
       onClick={() => onSelectRow(row.path)}
-      onContextMenu={onContextMenu}
+      onContextMenu={() => onSelectRow(row.path)}
     >
       <div
         className={`flex items-start my-px py-0.5 mx-2 pr-2 rounded-md flex-1 min-w-0 cursor-default ${

@@ -407,6 +407,21 @@ export function useLayout(): UseLayoutResult {
         if (text) reportName(id, text)
         setState((s) => pushFrame(s, tabId, entityView(id)))
       },
+      focusEntity: (entityId) => {
+        const { tabId, frameId } = ctx.current
+        if (!tabId || !entityId) return
+        // Don't stack a frame whose root already matches the current view's.
+        const cur = frameId ? ctx.current.state.frames[frameId] : null
+        if (cur?.view.kind === 'entity' && cur.view.rootId === entityId) return
+        setState((s) => pushFrame(s, tabId, entityView(entityId)))
+      },
+      closePanelById: (entityId) => {
+        const { frameId } = ctx.current
+        if (!frameId || !entityId) return
+        const frame = ctx.current.state.frames[frameId]
+        if (frame?.view.kind !== 'canvas') return
+        setState((s) => removeCanvasNode(s, frameId, entityId))
+      },
       cycleTab: (dir) => {
         const { groupId } = ctx.current
         if (groupId) setState((s) => cycleTab(s, groupId, dir))

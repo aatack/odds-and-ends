@@ -1,15 +1,20 @@
-import React, { useCallback, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Moon01, Sun } from '@untitledui/icons'
 import { Servers } from './components/Servers'
 import { SourceView } from './views/SourceView'
-import { CommandPalette, type Command } from './components/CommandPalette'
+import {
+  CommandPalette,
+  openCommandPalette,
+  toggleCommandPalette,
+  type Command,
+} from './components/CommandPalette'
 import { Badge } from './components/ui/Badge'
 import { Button } from './components/ui/Button'
 import { Dropdown, DropdownItem, DropdownSeparator } from './components/ui/Dropdown'
 import { Input } from './components/ui/Input'
 import { Toaster } from './components/ui/Toast'
 import { useTheme } from './helpers/useTheme'
-import { useHotkeys } from './helpers/useHotkeys'
+import { useHotkeys, isEditableTarget } from './helpers/useHotkeys'
 import { APP_ACTIONS, type AppController } from './actions/appActions'
 import { hotkeyHint } from './actions/keys'
 import { useApp, type AppActions, type Page } from './views/useApp'
@@ -17,7 +22,6 @@ import { useApp, type AppActions, type Page } from './views/useApp'
 export default function App(): React.JSX.Element | null {
   const { ready, user, page, current, active, openError, actions } = useApp()
   const { theme, toggle } = useTheme()
-  const [paletteOpen, setPaletteOpen] = useState(false)
   // Editor actions register themselves here while a source is open, so the one
   // command palette lists them alongside the app-level commands.
   const [editorCommands, setEditorCommands] = useState<Command[]>([])
@@ -26,11 +30,30 @@ export default function App(): React.JSX.Element | null {
     [],
   )
 
+  // Right-click is a general "open the command palette here" gesture: it opens
+  // in-situ at the cursor, seeded with whatever context the target carries. An
+  // entity carries its id via `data-entity-id`, so any command with an
+  // `entityId` field is auto-populated. Editable targets keep their native menu
+  // (so copy/paste still works while typing).
+  useEffect(() => {
+    const onContextMenu = (e: MouseEvent): void => {
+      if (isEditableTarget(e.target)) return
+      e.preventDefault()
+      const el = e.target instanceof HTMLElement ? e.target.closest('[data-entity-id]') : null
+      const context: Record<string, string> = {}
+      const entityId = el?.getAttribute('data-entity-id')
+      if (entityId) context.entityId = entityId
+      openCommandPalette({ context, anchor: { x: e.clientX, y: e.clientY } })
+    }
+    window.addEventListener('contextmenu', onContextMenu)
+    return () => window.removeEventListener('contextmenu', onContextMenu)
+  }, [])
+
   // The one imperative handle every app-level action dispatches through — the
   // top-level hotkeys, the palette, and the header buttons all go via this.
   const controller = useMemo<AppController>(
     () => ({
-      togglePalette: () => setPaletteOpen((v) => !v),
+      togglePalette: toggleCommandPalette,
       setPage: actions.setPage,
       toggleTheme: toggle,
     }),
@@ -59,7 +82,7 @@ export default function App(): React.JSX.Element | null {
   return (
     <div className="flex h-screen flex-col overflow-hidden">
       <Toaster />
-      <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
+      <CommandPalette commands={commands} />
       <header className="relative z-30 flex items-center gap-3 border-b border-gray-100 bg-white/80 px-6 py-3 backdrop-blur">
         <div className="flex min-w-0 items-center gap-3">
           <button

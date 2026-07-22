@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react'
 import { Editor } from '../views/Editor'
 import { useEditor, type EditorActions } from '../views/useEditor'
-import type { ContextMenuItem } from '../components/ui/ContextMenu'
 import { last, type EntityView } from './types'
 import type { ViewHandle } from './useLayout'
 
@@ -17,8 +16,6 @@ export interface EntityFrameProps {
   onRootName?: (id: string, text: string | undefined) => void
   /** Grow to fit rather than scroll within a fixed height (canvas auto nodes). */
   autoHeight?: boolean
-  /** Extra right-click menu items (e.g. the canvas "Close panel"). */
-  extraMenuItems?: ContextMenuItem[]
 }
 
 /**
@@ -35,7 +32,6 @@ export function EntityFrame({
   onHandle,
   onRootName,
   autoHeight,
-  extraMenuItems,
 }: EntityFrameProps): React.JSX.Element {
   const ed = useEditor({
     rootId: view.rootId,
@@ -87,14 +83,11 @@ export function EntityFrame({
       onToggleCollapse={ed.toggleCollapse}
       onCommitEdit={ed.commitEdit}
       onCancelEdit={ed.cancelEdit}
-      onExport={() => ed.runAction('export')}
-      onDebug={() => ed.runAction('debug')}
       onNearEnd={ed.loadMore}
       codeRuns={ed.codeRuns}
       onRunCode={ed.runCode}
       onStopCode={ed.stopCode}
       autoHeight={autoHeight}
-      extraMenuItems={extraMenuItems}
     />
   )
 }

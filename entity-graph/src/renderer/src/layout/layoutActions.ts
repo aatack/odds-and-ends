@@ -18,6 +18,10 @@ export interface LayoutController {
   moveTab: (dir: -1 | 1) => void
   /** Push a new entity frame for the focused view's selected entity. */
   focusSelectedEntity: () => void
+  /** Push a new entity frame for a specific entity id (from the palette). */
+  focusEntity: (entityId: string) => void
+  /** Canvas: remove the panel for a specific entity id (from the palette). */
+  closePanelById: (entityId: string) => void
   /** Pop the top frame off the focused tab (onto its undo history). */
   popFrame: () => void
   /** Restore the most recently popped frame. */

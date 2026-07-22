@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { QueryPage, QueryResult, StackFrame } from '../../../core/wrapper'
 import { EDITOR_ACTIONS, type EditorController } from '../actions/editorActions'
 import { dismissToast, showToast } from '../components/ui/Toast'
+import { useReloadSignal } from '../helpers/reloadBus'
 import { useCodeRunner, type CodeRunState } from './useCodeRunner'
 
 // ---------------------------------------------------------------------------
@@ -180,6 +181,10 @@ export function useEditor({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
+  // A global reload signal: mutations made outside this editor (e.g. a create or
+  // rename run from the command palette against an arbitrary id) bump it so every
+  // mounted tree re-queries.
+  const globalReload = useReloadSignal()
   // Guards against overlapping fetches (onNearEnd can fire repeatedly).
   const fetching = useRef(false)
 
@@ -228,7 +233,7 @@ export function useEditor({
     }
     // collapsedKey stands in for `collapsed`; actions/maxDepth are stable per view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rootId, maxDepth, collapsedKey, limit, reloadToken])
+  }, [rootId, maxDepth, collapsedKey, limit, reloadToken, globalReload])
 
   // Derived rows ------------------------------------------------------------
   const rows = useMemo<EditorRow[]>(() => {

@@ -297,11 +297,6 @@ export function Canvas({
     return () => el.removeEventListener('wheel', onWheel)
   }, [])
 
-  const removeNode = (id: string): void => {
-    const nodes = { ...view.nodes }
-    delete nodes[id]
-    updateView(frame.id, { ...view, nodes })
-  }
   const rectOf = (id: string): Rect => {
     const n = nodeOf(id)
     return { x: n.x, y: n.y, w: n.width ?? CANVAS_DEFAULT_WIDTH, h: heights[id] ?? DEFAULT_HEIGHT }
@@ -427,7 +422,6 @@ export function Canvas({
                 collapsed={others}
                 autoHeight
                 onHandle={panelOnHandle(id)}
-                extraMenuItems={[{ label: 'Close panel', onClick: () => removeNode(id) }]}
               />
 
               {/* Only width is resizable (right edge); height grows to fit. */}

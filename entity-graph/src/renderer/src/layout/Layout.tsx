@@ -2,9 +2,11 @@ import React, { useEffect, useMemo } from 'react'
 import { EDITOR_ACTIONS } from '../actions/editorActions'
 import { hotkeyHint, matchAction } from '../actions/keys'
 import type { Command } from '../components/CommandPalette'
+import { showToast } from '../components/ui/Toast'
+import { emitReload } from '../helpers/reloadBus'
 import { isEditableTarget, useHotkeys } from '../helpers/useHotkeys'
 import type { EditorActions } from '../views/useEditor'
-import { LAYOUT_ACTIONS } from './layoutActions'
+import { LAYOUT_ACTIONS, type LayoutController } from './layoutActions'
 import { TabGroupView } from './TabGroupView'
 import { useLayout } from './useLayout'
 
@@ -44,8 +46,10 @@ export function Layout({ actions, onDebugEntity, onRegisterCommands }: LayoutPro
   }, [runFocusedEditorAction])
 
   // Both registries feed the one command palette — editor actions first, since
-  // they act on the frame the user is looking at.
+  // they act on the frame the user is looking at. Context commands come first of
+  // all: they take an `entityId`, so a right-click over an entity pre-fills them.
   const commands = useMemo<Command[]>(() => {
+    const contextCmds = buildContextCommands(controller, actions)
     const editorCmds = EDITOR_ACTIONS.filter((a) => a.palette !== false).map((a) => ({
       id: `editor.${a.id}`,
       label: a.label,
@@ -60,8 +64,8 @@ export function Layout({ actions, onDebugEntity, onRegisterCommands }: LayoutPro
       hint: hotkeyHint(a.keys) ?? a.hint,
       run: () => a.run(controller),
     }))
-    return [...editorCmds, ...layoutCmds]
-  }, [controller, runFocusedEditorAction])
+    return [...contextCmds, ...editorCmds, ...layoutCmds]
+  }, [controller, actions, runFocusedEditorAction])
 
   useEffect(() => {
     onRegisterCommands(commands)
@@ -95,4 +99,54 @@ export function Layout({ actions, onDebugEntity, onRegisterCommands }: LayoutPro
       ))}
     </div>
   )
+}
+
+// Commands that act on a specific entity by id, rather than on the current
+// selection. Their `entityId` field is auto-populated when the palette is opened
+// over an entity (right-click), and the multi-argument ones (rename, create)
+// then step through their remaining fields. Mutations bump the reload bus so
+// every mounted editor re-queries — the change didn't come through any one
+// editor's own useEditor, so nothing else would refresh it.
+function buildContextCommands(controller: LayoutController, actions: EditorActions): Command[] {
+  const afterWrite = (p: Promise<unknown>): void => {
+    p.then(emitReload).catch((e) =>
+      showToast({ message: e instanceof Error ? e.message : String(e), variant: 'error' }),
+    )
+  }
+  return [
+    {
+      id: 'ctx.open-entity',
+      label: 'Open entity',
+      aliases: ['focus', 'drill in', 'push frame'],
+      fields: [{ name: 'entityId', label: 'Entity id' }],
+      run: (v) => controller.focusEntity(v.entityId),
+    },
+    {
+      id: 'ctx.rename-entity',
+      label: 'Rename entity',
+      aliases: ['edit text', 'set text', 'change'],
+      fields: [
+        { name: 'entityId', label: 'Entity id' },
+        { name: 'text', label: 'New text' },
+      ],
+      run: (v) => afterWrite(actions.writeText(v.entityId, v.text)),
+    },
+    {
+      id: 'ctx.create-child',
+      label: 'Create child of entity',
+      aliases: ['add', 'new', 'insert'],
+      fields: [
+        { name: 'entityId', label: 'Parent id' },
+        { name: 'text', label: 'Child text' },
+      ],
+      run: (v) => afterWrite(actions.createChild(v.entityId, v.text)),
+    },
+    {
+      id: 'ctx.close-panel',
+      label: 'Close panel',
+      aliases: ['remove node', 'remove panel'],
+      fields: [{ name: 'entityId', label: 'Entity id' }],
+      run: (v) => controller.closePanelById(v.entityId),
+    },
+  ]
 }
