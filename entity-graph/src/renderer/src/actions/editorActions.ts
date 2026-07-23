@@ -31,7 +31,6 @@ export interface EditorController {
   toggleLink: (reverse: boolean) => void
   cancelPending: () => void
   exportSelected: () => void
-  debugSelected: () => void
 }
 
 export interface EditorAction {
@@ -85,5 +84,4 @@ export const EDITOR_ACTIONS: EditorAction[] = [
     run: (c) => c.cancelPending(),
   },
   { id: 'export', label: 'Export subtree as markdown', aliases: ['download', 'save', 'copy', 'md'], run: (c) => c.exportSelected() },
-  { id: 'debug', label: 'Debug entity', aliases: ['inspect', 'info'], run: (c) => c.debugSelected() },
 ]

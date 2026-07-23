@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import fuzzysort from 'fuzzysort'
 import { cn } from '../helpers/cn'
+import { logAction, logCancelled } from '../helpers/actionLog'
 
 // ---------------------------------------------------------------------------
 // Command model
@@ -8,15 +9,18 @@ import { cn } from '../helpers/cn'
 
 /**
  * One argument the palette prompts for before running a command. Its collected
- * (string) value is passed to the command's `run` keyed by {@link name}. A field
- * is prefilled from the palette's context when a context key shares its name —
- * so a command with an `entityId` field is auto-populated when the palette is
- * opened over an entity.
+ * (string) value is passed to the command's `run` keyed by {@link name}, and
+ * prefilled from the palette's context: a field is seeded from the context value
+ * named by {@link fromContext} (defaulting to its own name). So an `entityId`
+ * field auto-fills when the palette is opened over an entity, and a `sourceId`
+ * field can opt into that same value with `fromContext: 'entityId'`.
  */
 export interface PaletteField {
-  /** Argument name; also the context key that can prefill it (e.g. "entityId"). */
+  /** Argument name; the key its value is passed to `run` under. */
   name: string
   label: string
+  /** Context key that prefills this field. Defaults to {@link name}. */
+  fromContext?: string
   /** How the value is entered. Defaults to "text". */
   kind?: 'text' | 'number' | 'select'
   /** Choices shown for a "select" field. */
@@ -35,7 +39,8 @@ export interface Command {
   hint?: string
   /**
    * Arguments prompted for, one at a time, before the command runs. Omitted for
-   * commands that act on the current selection with no arguments.
+   * commands that act on the current selection with no arguments. Field-bearing
+   * commands are the ones recorded in the activity log.
    */
   fields?: PaletteField[]
   /** Collected argument values, keyed by field name (empty for fieldless commands). */
@@ -51,19 +56,36 @@ export interface Command {
 /** Values that can prefill matching fields (e.g. `{ entityId }` under an entity). */
 export type PaletteContext = Record<string, string>
 
+/** Reopen a specific command's wizard prefilled — used to resume a cancelled one. */
+export interface PaletteResume {
+  /** The log entry's id, carried back so re-cancelling updates it in place. */
+  key: string
+  commandId: string
+  values: Record<string, string>
+}
+
 interface PaletteOpen {
   context: PaletteContext
   /** Screen position to anchor the palette at; null centres it (the ⌘P launcher). */
   anchor: { x: number; y: number } | null
+  resume: PaletteResume | null
 }
 
 let openState: PaletteOpen | null = null
 const listeners = new Set<() => void>()
 const emit = (): void => listeners.forEach((l) => l())
 
-/** Open the palette, optionally anchored at a point and seeded with context. */
-export function openCommandPalette(opts?: { context?: PaletteContext; anchor?: { x: number; y: number } }): void {
-  openState = { context: opts?.context ?? {}, anchor: opts?.anchor ?? null }
+/** Open the palette, optionally anchored, seeded with context, or resuming one. */
+export function openCommandPalette(opts?: {
+  context?: PaletteContext
+  anchor?: { x: number; y: number }
+  resume?: PaletteResume
+}): void {
+  openState = {
+    context: opts?.context ?? {},
+    anchor: opts?.anchor ?? null,
+    resume: opts?.resume ?? null,
+  }
   emit()
 }
 
@@ -95,11 +117,13 @@ function usePaletteOpen(): PaletteOpen | null {
 // Helpers
 // ---------------------------------------------------------------------------
 
-// Seed a command's wizard: each field starts from the matching context value
-// (e.g. an `entityId` field from `context.entityId`), or blank.
+// Seed a command's wizard: each field starts from its matching context value
+// (by `fromContext`, defaulting to the field name), or blank.
 function initialValues(command: Command, context: PaletteContext): Record<string, string> {
   const values: Record<string, string> = {}
-  for (const field of command.fields ?? []) values[field.name] = context[field.name] ?? ''
+  for (const field of command.fields ?? []) {
+    values[field.name] = context[field.fromContext ?? field.name] ?? ''
+  }
   return values
 }
 
@@ -114,6 +138,12 @@ function buildValues(command: Command, values: Record<string, string>): Record<s
   return out
 }
 
+// The first field still blank, or -1 when every field is filled. Blank fields are
+// the only ones the wizard stops on — prefilled ones are skipped.
+function firstEmptyField(command: Command, values: Record<string, string>): number {
+  return (command.fields ?? []).findIndex((f) => (values[f.name] ?? '').trim() === '')
+}
+
 const PANEL_WIDTH = 384 // w-96
 
 // ---------------------------------------------------------------------------
@@ -124,9 +154,10 @@ const PANEL_WIDTH = 384 // w-96
  * A ⌘/Ctrl+P launcher and right-click menu in one. Browsing filters the given
  * commands; picking one either runs it (no arguments) or steps through its
  * arguments one at a time in the very same input — the input becomes each field
- * in turn, so nothing pops up underneath. Copied from the orchestrator's
- * argument wizard, with the "focus default" generalised to a context object so a
- * right-click can prefill (e.g.) an `entityId` field.
+ * in turn, so nothing pops up underneath. Ported from the orchestrator's argument
+ * wizard: the "focus default" is generalised to a context object (so a right-click
+ * prefills an `entityId` field), pre-filled fields are auto-skipped, and abandoned
+ * wizards are logged to the activity trail and can be resumed.
  */
 export function CommandPalette({ commands }: { commands: Command[] }): React.JSX.Element | null {
   const open = usePaletteOpen()
@@ -136,12 +167,19 @@ export function CommandPalette({ commands }: { commands: Command[] }): React.JSX
   // The command being configured, or null while browsing the list.
   const [selected, setSelected] = useState<Command | null>(null)
   const [values, setValues] = useState<Record<string, string>>({})
+  // The id minted when this wizard opened, and the pristine values it started
+  // from — used to log a cancellation under a stable id, and only when the
+  // arguments were actually touched.
+  const [wizardKey, setWizardKey] = useState<string | null>(null)
+  const [defaults, setDefaults] = useState<Record<string, string>>({})
   const [step, setStep] = useState(0)
   const [error, setError] = useState<string | null>(null)
   // Which list row the arrow keys have highlighted.
   const [activeIndex, setActiveIndex] = useState(0)
   const activeRef = useRef<HTMLButtonElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  // The resume request already applied, so it isn't re-applied every render.
+  const consumedResume = useRef<string | null>(null)
 
   // With no query, keep the commands in their given order; otherwise fuzzy-match
   // against the label and any aliases, sorting by relevance.
@@ -158,7 +196,37 @@ export function CommandPalette({ commands }: { commands: Command[] }): React.JSX
   const fields = selected?.fields ?? []
   const stepIndex = Math.min(step, Math.max(0, fields.length - 1))
   const field = selected ? fields[stepIndex] : null
-  const isLast = stepIndex >= fields.length - 1
+  // The next field after this one that still needs a value; -1 when this is the
+  // last thing to fill (Enter then runs).
+  const nextEmpty = fields.findIndex((f, i) => i > stepIndex && (values[f.name] ?? '').trim() === '')
+
+  const run = (command: Command, collected: Record<string, string>): void => {
+    closeCommandPalette()
+    command.run(collected)
+  }
+
+  // Run a field-bearing command, recording it in the activity log first.
+  const commit = (command: Command, collected: Record<string, string>, key: string): void => {
+    logAction({
+      key,
+      commandId: command.id,
+      title: command.label,
+      status: 'success',
+      error: null,
+      values: collected,
+    })
+    run(command, collected)
+  }
+
+  // Escape / outside click. If a wizard's arguments were touched, log it as
+  // cancelled (or update the resumed entry) so it can be resumed from the log.
+  const cancel = (): void => {
+    if (selected && wizardKey) {
+      const touched = fields.some((f) => (values[f.name] ?? '') !== (defaults[f.name] ?? ''))
+      if (touched) logCancelled(wizardKey, { id: selected.id, title: selected.label }, values)
+    }
+    closeCommandPalette()
+  }
 
   // Reset everything whenever the palette closes.
   useEffect(() => {
@@ -166,11 +234,32 @@ export function CommandPalette({ commands }: { commands: Command[] }): React.JSX
       setQuery('')
       setSelected(null)
       setValues({})
+      setWizardKey(null)
+      setDefaults({})
       setStep(0)
       setError(null)
       setActiveIndex(0)
+      consumedResume.current = null
     }
   }, [open])
+
+  // Resuming a cancelled action: jump straight into its wizard, prefilled, and
+  // reuse its log id so re-cancelling updates that entry instead of adding one.
+  useEffect(() => {
+    if (!open?.resume || consumedResume.current === open.resume.key) return
+    const command = commands.find((c) => c.id === open.resume!.commandId)
+    consumedResume.current = open.resume.key
+    if (!command) return
+    const pristine = initialValues(command, open.context)
+    const vals = { ...pristine, ...open.resume.values }
+    setSelected(command)
+    setValues(vals)
+    setDefaults(pristine)
+    setWizardKey(open.resume.key)
+    const empty = firstEmptyField(command, vals)
+    setStep(empty >= 0 ? empty : Math.max(0, (command.fields?.length ?? 1) - 1))
+    setError(null)
+  }, [open, commands])
 
   // Keep focus in the one input as we swap between browsing and each step, and
   // keep the highlighted list row scrolled into view.
@@ -183,46 +272,49 @@ export function CommandPalette({ commands }: { commands: Command[] }): React.JSX
 
   if (!open) return null
 
-  const run = (command: Command, collected: Record<string, string>): void => {
-    closeCommandPalette()
-    command.run(collected)
-  }
-
-  // Enter the wizard (or run immediately when the command takes no arguments).
+  // Enter the wizard, skipping fields already satisfied by context — and running
+  // straight away when nothing is left to fill (or the command takes no args).
   const pick = (command: Command): void => {
-    if (command.fields?.length) {
-      setSelected(command)
-      setValues(initialValues(command, context))
-      setStep(0)
-      setError(null)
-    } else {
+    if (!command.fields?.length) {
       run(command, {})
+      return
     }
+    const init = initialValues(command, context)
+    const empty = firstEmptyField(command, init)
+    if (empty < 0) {
+      commit(command, buildValues(command, init), crypto.randomUUID())
+      return
+    }
+    setSelected(command)
+    setValues(init)
+    setDefaults(init)
+    setWizardKey(crypto.randomUUID())
+    setStep(empty)
+    setError(null)
   }
 
   const submit = (): void => {
     if (!selected) return
     // Require every non-optional field to be filled before running.
-    const missing = (selected.fields ?? []).find(
-      (f) => !f.optional && (values[f.name] ?? '').trim() === '',
-    )
+    const missing = fields.find((f) => !f.optional && (values[f.name] ?? '').trim() === '')
     if (missing) {
       setError(`${missing.label} is required`)
       return
     }
-    run(selected, buildValues(selected, values))
+    commit(selected, buildValues(selected, values), wizardKey ?? crypto.randomUUID())
   }
 
   const forward = (): void => {
-    if (isLast) submit()
-    else {
-      setStep(stepIndex + 1)
+    if (nextEmpty >= 0) {
+      setStep(nextEmpty)
       setError(null)
+    } else {
+      submit()
     }
   }
   const backward = (): void => {
     if (stepIndex === 0) {
-      // Step back off the first field returns to browsing the command list.
+      // Step back off the first field returns to browsing (not a cancellation).
       setSelected(null)
       setError(null)
     } else {
@@ -234,12 +326,12 @@ export function CommandPalette({ commands }: { commands: Command[] }): React.JSX
   const onKeyDown = (e: React.KeyboardEvent): void => {
     if (e.key === 'Escape') {
       e.preventDefault()
-      closeCommandPalette()
+      cancel()
       return
     }
     if (selected) {
-      // Argument entry. Enter advances (running on the last step); Tab advances
-      // too, except on the last step where only Enter may run it.
+      // Argument entry. Enter advances (running once nothing is left); Tab
+      // advances too, except when there's nothing left, where only Enter runs it.
       if (e.key === 'Enter') {
         e.preventDefault()
         forward()
@@ -248,7 +340,7 @@ export function CommandPalette({ commands }: { commands: Command[] }): React.JSX
         backward()
       } else if (e.key === 'Tab') {
         e.preventDefault()
-        if (!isLast) forward()
+        if (nextEmpty >= 0) forward()
       }
       return
     }
@@ -311,13 +403,13 @@ export function CommandPalette({ commands }: { commands: Command[] }): React.JSX
   return (
     <div
       className={cn('fixed inset-0 z-50', !anchor && 'bg-gray-950/10 backdrop-blur-xs')}
-      onClick={closeCommandPalette}
+      onClick={cancel}
       onContextMenu={(e) => {
         // A right-click on the backdrop closes; stop it reaching the window
         // handler, which would otherwise immediately re-open the palette.
         e.preventDefault()
         e.stopPropagation()
-        closeCommandPalette()
+        cancel()
       }}
     >
       <div
@@ -339,7 +431,11 @@ export function CommandPalette({ commands }: { commands: Command[] }): React.JSX
           {selected && (
             <span className="whitespace-nowrap px-4 text-xs font-medium text-gray-400">
               {selected.label}
-              {fields.length > 1 && <span className="ml-1 text-gray-300">{stepIndex + 1}/{fields.length}</span>}
+              {fields.length > 1 && (
+                <span className="ml-1 text-gray-300">
+                  {stepIndex + 1}/{fields.length}
+                </span>
+              )}
             </span>
           )}
         </div>

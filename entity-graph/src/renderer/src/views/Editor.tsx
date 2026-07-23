@@ -292,10 +292,11 @@ const Row = React.memo(function Row({
     <div
       ref={ref}
       className="flex"
-      // `data-entity-id` lets the global right-click handler seed the command
-      // palette's `entityId` context; selecting on right-click also lets the
+      // The data attributes let the global right-click handler seed the palette's
+      // `entityId`/`parentId` context; selecting on right-click also lets the
       // selection-based commands act on the row under the cursor.
       data-entity-id={row.id}
+      data-parent-id={row.path.length > 1 ? row.path[row.path.length - 2] : undefined}
       onClick={() => onSelectRow(row.path)}
       onContextMenu={() => onSelectRow(row.path)}
     >

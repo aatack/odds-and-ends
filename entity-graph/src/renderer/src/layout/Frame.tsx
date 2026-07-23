@@ -8,7 +8,6 @@ import type { ViewHandle } from './useLayout'
 export interface FrameViewProps {
   frame: Frame
   actions: EditorActions
-  onDebugEntity: (entityId: string) => void
   registerHandle: (frameId: string, handle: ViewHandle | null) => void
   updateView: (frameId: string, view: View) => void
   updateCanvasCam: (frameId: string, cam: { x: number; y: number; zoom: number }) => void
@@ -19,7 +18,6 @@ export interface FrameViewProps {
 export function FrameView({
   frame,
   actions,
-  onDebugEntity,
   registerHandle,
   updateView,
   updateCanvasCam,
@@ -35,7 +33,6 @@ export function FrameView({
       <Canvas
         frame={frame}
         actions={actions}
-        onDebugEntity={onDebugEntity}
         updateView={updateView}
         updateCanvasCam={updateCanvasCam}
         onHandle={onHandle}
@@ -43,13 +40,5 @@ export function FrameView({
     )
   }
 
-  return (
-    <EntityFrame
-      view={frame.view}
-      actions={actions}
-      onDebugEntity={onDebugEntity}
-      onHandle={onHandle}
-      onRootName={reportName}
-    />
-  )
+  return <EntityFrame view={frame.view} actions={actions} onHandle={onHandle} onRootName={reportName} />
 }

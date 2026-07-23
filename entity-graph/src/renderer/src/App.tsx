@@ -12,9 +12,11 @@ import { Badge } from './components/ui/Badge'
 import { Button } from './components/ui/Button'
 import { Dropdown, DropdownItem, DropdownSeparator } from './components/ui/Dropdown'
 import { Input } from './components/ui/Input'
+import { ActionLog } from './components/ActionLog'
 import { Toaster } from './components/ui/Toast'
 import { useTheme } from './helpers/useTheme'
-import { useHotkeys, isEditableTarget } from './helpers/useHotkeys'
+import { useHotkeys } from './helpers/useHotkeys'
+import { useActionLog } from './helpers/actionLog'
 import { APP_ACTIONS, type AppController } from './actions/appActions'
 import { hotkeyHint } from './actions/keys'
 import { useApp, type AppActions, type Page } from './views/useApp'
@@ -29,20 +31,24 @@ export default function App(): React.JSX.Element | null {
     (commands: Command[] | null) => setEditorCommands(commands ?? []),
     [],
   )
+  const [activityOpen, setActivityOpen] = useState(false)
+  const log = useActionLog()
+  const cancelledCount = log.filter((e) => e.status === 'cancelled').length
 
-  // Right-click is a general "open the command palette here" gesture: it opens
-  // in-situ at the cursor, seeded with whatever context the target carries. An
-  // entity carries its id via `data-entity-id`, so any command with an
-  // `entityId` field is auto-populated. Editable targets keep their native menu
-  // (so copy/paste still works while typing).
+  // Right-click is a general "open the command palette here" gesture — everywhere,
+  // including over text — opening in-situ at the cursor, seeded with whatever
+  // context the target carries. An entity row exposes its id (and its parent's)
+  // via data attributes, so any command with an `entityId`/`parentId` field is
+  // auto-populated.
   useEffect(() => {
     const onContextMenu = (e: MouseEvent): void => {
-      if (isEditableTarget(e.target)) return
       e.preventDefault()
       const el = e.target instanceof HTMLElement ? e.target.closest('[data-entity-id]') : null
       const context: Record<string, string> = {}
       const entityId = el?.getAttribute('data-entity-id')
+      const parentId = el?.getAttribute('data-parent-id')
       if (entityId) context.entityId = entityId
+      if (parentId) context.parentId = parentId
       openCommandPalette({ context, anchor: { x: e.clientX, y: e.clientY } })
     }
     window.addEventListener('contextmenu', onContextMenu)
@@ -83,6 +89,7 @@ export default function App(): React.JSX.Element | null {
     <div className="flex h-screen flex-col overflow-hidden">
       <Toaster />
       <CommandPalette commands={commands} />
+      <ActionLog open={activityOpen} onClose={() => setActivityOpen(false)} />
       <header className="relative z-30 flex items-center gap-3 border-b border-gray-100 bg-white/80 px-6 py-3 backdrop-blur">
         <div className="flex min-w-0 items-center gap-3">
           <button
@@ -106,6 +113,12 @@ export default function App(): React.JSX.Element | null {
           Actions
           {paletteHint && (
             <kbd className="ml-1 rounded bg-gray-200 px-1 text-[10px] text-gray-500">{paletteHint}</kbd>
+          )}
+        </Button>
+        <Button variant="tertiary" size="sm" onClick={() => setActivityOpen((v) => !v)}>
+          Activity
+          {cancelledCount > 0 && (
+            <span className="ml-1 rounded bg-gray-200 px-1 text-[10px] text-gray-500">{cancelledCount}</span>
           )}
         </Button>
         <Button

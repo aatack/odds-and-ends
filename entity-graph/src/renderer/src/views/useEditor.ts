@@ -40,8 +40,6 @@ export interface UseEditorArgs {
   rootId: string
   maxDepth?: number
   actions: EditorActions
-  /** Open the raw debug inspector for an entity (from the `debug` action). */
-  onDebugEntity: (entityId: string) => void
   /**
    * Entity ids to keep folded, merged on top of the user's own collapse state.
    * The canvas uses this to fold occurrences of entities that are their own node
@@ -149,7 +147,6 @@ export function useEditor({
   rootId,
   maxDepth,
   actions,
-  onDebugEntity,
   forceCollapsed,
 }: UseEditorArgs): UseEditorResult {
   // Latent state ------------------------------------------------------------
@@ -421,10 +418,6 @@ export function useEditor({
     showToast({ message: `Copied ${count} item${count === 1 ? '' : 's'} to the clipboard`, variant: 'success' })
   }, [rows, selectedPath])
 
-  const debugSelected = useCallback(() => {
-    if (selectedId) onDebugEntity(selectedId)
-  }, [selectedId, onDebugEntity])
-
   // Section / checkbox toggles --------------------------------------------
   const toggleSection = useCallback(() => {
     const row = entityRows.find((r) => r.selected)
@@ -475,7 +468,6 @@ export function useEditor({
     toggleLink,
     cancelPending,
     exportSelected,
-    debugSelected,
   }
   const controllerRef = useRef(controller)
   controllerRef.current = controller

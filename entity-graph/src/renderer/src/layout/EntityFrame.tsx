@@ -7,7 +7,6 @@ import type { ViewHandle } from './useLayout'
 export interface EntityFrameProps {
   view: EntityView
   actions: EditorActions
-  onDebugEntity: (entityId: string) => void
   /** Extra entity ids to render collapsed — the canvas folds cross-references. */
   collapsed?: string[]
   /** Publish this view's imperative handle to the layout (keyed by the caller). */
@@ -27,7 +26,6 @@ export interface EntityFrameProps {
 export function EntityFrame({
   view,
   actions,
-  onDebugEntity,
   collapsed,
   onHandle,
   onRootName,
@@ -37,7 +35,6 @@ export function EntityFrame({
     rootId: view.rootId,
     maxDepth: view.maxDepth ?? undefined,
     actions,
-    onDebugEntity,
     forceCollapsed: collapsed,
   })
 

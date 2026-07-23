@@ -50,7 +50,6 @@ const DRAG_THRESHOLD = 4
 export interface CanvasProps {
   frame: Frame
   actions: EditorActions
-  onDebugEntity: (entityId: string) => void
   /** Persist a change to this frame's view (node moved / resized / added). */
   updateView: (frameId: string, view: CanvasView) => void
   /** Persist the board pan/zoom without touching nodes. */
@@ -69,7 +68,6 @@ export interface CanvasProps {
 export function Canvas({
   frame,
   actions,
-  onDebugEntity,
   updateView,
   updateCanvasCam,
   onHandle,
@@ -418,7 +416,6 @@ export function Canvas({
                 key={id}
                 view={entityView(id)}
                 actions={actions}
-                onDebugEntity={onDebugEntity}
                 collapsed={others}
                 autoHeight
                 onHandle={panelOnHandle(id)}

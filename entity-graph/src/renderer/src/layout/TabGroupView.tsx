@@ -12,7 +12,6 @@ export interface TabGroupViewProps {
   names: Record<string, string>
   focused: boolean
   actions: EditorActions
-  onDebugEntity: (entityId: string) => void
   onSelectTab: (tabId: string) => void
   onFocus: () => void
   onCloseTab: (tabId: string) => void
@@ -33,7 +32,6 @@ export function TabGroupView({
   names,
   focused,
   actions,
-  onDebugEntity,
   onSelectTab,
   onFocus,
   onCloseTab,
@@ -103,7 +101,6 @@ export function TabGroupView({
           <FrameView
             frame={rg.topFrame}
             actions={actions}
-            onDebugEntity={onDebugEntity}
             registerHandle={registerHandle}
             updateView={updateView}
             updateCanvasCam={updateCanvasCam}
