@@ -426,7 +426,9 @@ export function CommandPalette({ commands }: { commands: Command[] }): React.JSX
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder={placeholder}
-            className="min-w-0 flex-1 bg-transparent px-4 py-3.5 text-[13px] outline-none placeholder:text-gray-400"
+            // What the user types is entity content, so it takes the editor's
+            // serif; the placeholder is UI chrome, so it stays on the sans.
+            className="min-w-0 flex-1 bg-transparent px-4 py-3.5 font-serif text-[14px] text-gray-900 outline-none placeholder:font-sans placeholder:text-[13px] placeholder:text-gray-400"
           />
           {selected && (
             <span className="whitespace-nowrap px-4 text-xs font-medium text-gray-400">
