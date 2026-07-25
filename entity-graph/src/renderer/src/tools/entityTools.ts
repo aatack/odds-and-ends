@@ -33,6 +33,30 @@ const pickArg = (name: string, label: string): ArgSpec => ({
 
 const id = (v: unknown): string => String(v ?? '')
 
+/**
+ * An id for a write that *adds* something. Blank is refused loudly rather than
+ * written: a link or value against an empty id conjures a phantom entity that
+ * then shows up as a text-less row most tools quietly decline to touch. Removals
+ * use the permissive `id` instead, so damage already in the store can be undone.
+ */
+function requireId(v: unknown, label: string): string {
+  const value = id(v).trim()
+  if (!value) throw new Error(`${label} is required`)
+  return value
+}
+
+/**
+ * Both link directions share this. Linking an entity to itself is refused: it
+ * makes the entity its own child, which the query's cycle guard then hides, so
+ * the only visible effect is a row that won't expand.
+ */
+async function linkEntities(sourceId: unknown, destinationId: unknown): Promise<void> {
+  const from = requireId(sourceId, 'Source id')
+  const to = requireId(destinationId, 'Destination id')
+  if (from === to) throw new Error('An entity cannot be linked to itself')
+  await link(from, to)
+}
+
 /** The selection's parent, or null at the root of the frame. */
 function selectedParent(): string | null {
   const layout = getLayout()
@@ -68,7 +92,19 @@ export const ENTITY_TOOLS: ToolSpec[] = [
     scope: 'frame',
     reach: 'ui',
     args: [entityArg()],
-    run: ({ entityId }) => updateUi({ debugEntityId: id(entityId) }),
+    run: ({ entityId }) => updateUi({ debugEntityId: requireId(entityId, 'Entity id') }),
+  },
+  {
+    // The context-filled version above can never prompt — that's the point of
+    // auto-skip — so inspecting an id you've read off a link needs its own tool.
+    id: 'entity.inspect',
+    label: 'Inspect entity by id…',
+    aliases: ['debug', 'values', 'links', 'lookup', 'find id'],
+    hint: 'Entity',
+    scope: 'frame',
+    reach: 'ui',
+    args: [{ name: 'entityId', label: 'Entity id', kind: 'entity', placeholder: 'Paste an id' }],
+    run: ({ entityId }) => updateUi({ debugEntityId: requireId(entityId, 'Entity id') }),
   },
   {
     id: 'entity.rename',
@@ -78,7 +114,8 @@ export const ENTITY_TOOLS: ToolSpec[] = [
     reach: 'source',
     mutates: true,
     args: [entityArg(), { name: 'text', label: 'New text' }],
-    run: ({ entityId, text }) => writeValue(id(entityId), 'text', String(text ?? '')).then(() => undefined),
+    run: ({ entityId, text }) =>
+      writeValue(requireId(entityId, 'Entity id'), 'text', String(text ?? '')).then(() => undefined),
   },
   {
     id: 'entity.create',
@@ -89,7 +126,7 @@ export const ENTITY_TOOLS: ToolSpec[] = [
     mutates: true,
     args: [entityArg('parentId', 'Parent id'), { name: 'text', label: 'Child text' }],
     run: async ({ parentId, text }) => {
-      await createEntity({ text: String(text ?? '') }, id(parentId))
+      await createEntity({ text: String(text ?? '') }, requireId(parentId, 'Parent id'))
     },
   },
   {
@@ -130,8 +167,13 @@ export const ENTITY_TOOLS: ToolSpec[] = [
       pickArg('toParentId', 'To parent id'),
     ],
     run: async ({ entityId, fromParentId, toParentId }) => {
-      if (id(fromParentId) === id(toParentId)) return
-      await moveEntity(id(entityId), id(fromParentId), id(toParentId))
+      const subject = requireId(entityId, 'Entity id')
+      const from = requireId(fromParentId, 'From parent id')
+      const to = requireId(toParentId, 'To parent id')
+      if (from === to) return { mutated: false }
+      if (to === subject) throw new Error('An entity cannot be its own parent')
+      await moveEntity(subject, from, to)
+      return {}
     },
   },
   {
@@ -143,9 +185,7 @@ export const ENTITY_TOOLS: ToolSpec[] = [
     mutates: true,
     keys: [{ key: 'r' }],
     args: [entityArg('sourceId', 'Source id'), pickArg('destinationId', 'Destination id')],
-    run: async ({ sourceId, destinationId }) => {
-      await link(id(sourceId), id(destinationId))
-    },
+    run: ({ sourceId, destinationId }) => linkEntities(sourceId, destinationId),
   },
   {
     id: 'entity.link.reverse',
@@ -156,9 +196,7 @@ export const ENTITY_TOOLS: ToolSpec[] = [
     mutates: true,
     keys: [{ key: 'r', shift: true }],
     args: [entityArg('destinationId', 'Destination id'), pickArg('sourceId', 'Source id')],
-    run: async ({ sourceId, destinationId }) => {
-      await link(id(sourceId), id(destinationId))
-    },
+    run: ({ sourceId, destinationId }) => linkEntities(sourceId, destinationId),
   },
   {
     id: 'entity.section.set',
@@ -172,7 +210,7 @@ export const ENTITY_TOOLS: ToolSpec[] = [
       { name: 'section', label: 'Section', kind: 'select', options: ['on', 'off'] },
     ],
     run: async ({ entityId, section }) => {
-      await writeValue(id(entityId), 'section', section === 'on' ? true : null)
+      await writeValue(requireId(entityId, 'Entity id'), 'section', section === 'on' ? true : null)
     },
   },
   {
@@ -188,7 +226,11 @@ export const ENTITY_TOOLS: ToolSpec[] = [
     ],
     // on = open box, off = ticked, none = back to a plain bullet.
     run: async ({ entityId, open }) => {
-      await writeValue(id(entityId), 'open', open === 'on' ? true : open === 'off' ? false : null)
+      await writeValue(
+        requireId(entityId, 'Entity id'),
+        'open',
+        open === 'on' ? true : open === 'off' ? false : null,
+      )
     },
   },
   {
@@ -211,7 +253,7 @@ export const ENTITY_TOOLS: ToolSpec[] = [
       },
     ],
     run: async ({ entityId, key, value }) => {
-      await writeValue(id(entityId), String(key), value ?? null)
+      await writeValue(requireId(entityId, 'Entity id'), String(key), value ?? null)
     },
   },
 ]

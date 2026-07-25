@@ -29,6 +29,8 @@ interface Props {
 export function EntityDebugModal({ sourceId, entityId, user, onClose }: Props): React.JSX.Element {
   const [values, setValues] = useState<Record<string, unknown>>({})
   const [links, setLinks] = useState<string[]>([])
+  const [inbound, setInbound] = useState<string[]>([])
+  const [missing, setMissing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async (): Promise<void> => {
@@ -42,6 +44,15 @@ export function EntityDebugModal({ sourceId, entityId, user, onClose }: Props): 
       const self = page.results.find((r) => r.entity.id === entityId)
       setValues(self?.entity.values ?? {})
       setLinks(self?.entity.outboundLinks ?? [])
+      setInbound(self?.entity.inboundLinks ?? [])
+      // No values and nothing pointing either way: an id that was written to by
+      // accident, or one that has since been fully unlinked.
+      setMissing(
+        !!self &&
+          Object.keys(self.entity.values).length === 0 &&
+          self.entity.outboundLinks.length === 0 &&
+          self.entity.inboundLinks.length === 0,
+      )
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -71,6 +82,11 @@ export function EntityDebugModal({ sourceId, entityId, user, onClose }: Props): 
       <p className="-mt-1 break-all font-mono text-xs text-gray-500">{entityId}</p>
 
       {error && <p className="text-[13px] text-error-600">{error}</p>}
+      {missing && (
+        <p className="text-xs text-gray-400">
+          Nothing is recorded against this id — no values, and no links either way.
+        </p>
+      )}
 
       <section className="space-y-2">
         <p className={SECTION}>Values</p>
@@ -106,6 +122,38 @@ export function EntityDebugModal({ sourceId, entityId, user, onClose }: Props): 
           </div>
         )}
         <AddLink onAdd={(dest) => write(() => api.sourceCall(sourceId, 'writeLink', { sourceId: entityId, destinationId: dest, action: 0, author: user }))} />
+      </section>
+
+      {/* Inbound is the direction you need to trace a stray link back to whoever
+          made it, so it's listed even though it isn't editable from here. */}
+      <section className="space-y-2">
+        <p className={SECTION}>Linked from</p>
+        {inbound.length === 0 ? (
+          <p className="text-xs text-gray-400">Nothing links to this entity.</p>
+        ) : (
+          <div className="overflow-hidden rounded-md bg-gray-50 font-mono text-xs">
+            {inbound.map((src) => (
+              <div key={src} className="flex items-center justify-between gap-2 px-3 py-1">
+                <span className="truncate text-gray-900">{src}</span>
+                <IconButton
+                  title="Remove this inbound link"
+                  onClick={() =>
+                    write(() =>
+                      api.sourceCall(sourceId, 'writeLink', {
+                        sourceId: src,
+                        destinationId: entityId,
+                        action: 1,
+                        author: user,
+                      }),
+                    )
+                  }
+                >
+                  <Trash03 size={14} />
+                </IconButton>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
     </Modal>
   )

@@ -84,6 +84,14 @@ async function execute(call: {
   const pending = pendingAtom.get()
   if (pending?.callId === call.callId) pendingAtom.set(null)
   if (!tool) return
+  // Backstop: nothing may run with a required argument outstanding. Both entry
+  // points check first, but a call that slipped through here once linked an
+  // entity to a blank id, which is unpleasant to clean up.
+  const missing = missingRequired(tool, call.args)
+  if (missing) {
+    settle(call, tool, { kind: 'error', message: `${missing.label} is required` })
+    return
+  }
   try {
     const outcome = (await tool.run(resolveArgs(tool, call.args), {
       callId: call.callId,
@@ -339,10 +347,24 @@ export function editRecordedCall(callId: string): void {
   })
 }
 
-/** Run a recorded call again immediately, with the arguments it was given. */
+/** Whether a recorded call has everything it needs to be run as it stands. */
+export function isRunnable(call: RecordedCall): boolean {
+  const tool = findTool(call.toolId)
+  return !!tool && missingRequired(tool, call.args) == null
+}
+
+/**
+ * Run a recorded call again immediately, with the arguments it was given. A call
+ * that was abandoned before its last argument has nothing to run, so this opens
+ * it for editing instead — landing on whatever is missing.
+ */
 export function rerunRecordedCall(callId: string): void {
   const call = recorded(callId)
   if (!call) return
+  if (!isRunnable(call)) {
+    editRecordedCall(callId)
+    return
+  }
   const replay = call.outcome.kind === 'cancelled'
   if (replay) callsAtom.set((list) => list.filter((r) => r.callId !== callId))
   void execute({

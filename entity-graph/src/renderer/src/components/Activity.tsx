@@ -4,7 +4,7 @@ import { relativeTime } from '../helpers/time'
 import { useCalls } from '../state/hooks'
 import { updateUi } from '../state/ui'
 import type { CallOutcome, RecordedCall } from '../state/types'
-import { clearCalls, editRecordedCall, rerunRecordedCall } from '../tools/call'
+import { clearCalls, editRecordedCall, isRunnable, rerunRecordedCall } from '../tools/call'
 import { findTool } from '../tools/registry'
 import { formatArg } from '../tools/args'
 import { argsOf } from '../tools/types'
@@ -110,9 +110,13 @@ function CallRow({ call, onClose }: { call: RecordedCall; onClose: () => void })
         </Badge>
         {tool && (
           <div className="flex gap-1">
-            <Button size="sm" variant="tertiary" onClick={() => rerunRecordedCall(call.callId)}>
-              Run
-            </Button>
+            {/* Only offered when the call has everything it needs: a wizard
+                abandoned before its last argument has nothing to run. */}
+            {isRunnable(call) && (
+              <Button size="sm" variant="tertiary" onClick={() => rerunRecordedCall(call.callId)}>
+                Run
+              </Button>
+            )}
             <Button
               size="sm"
               variant="secondary"
