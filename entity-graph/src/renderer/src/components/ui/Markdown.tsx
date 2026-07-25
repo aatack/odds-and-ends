@@ -1,6 +1,12 @@
 import React, { useMemo } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
+import rehypeKatex from 'rehype-katex'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import type { PluggableList } from 'unified'
+// KaTeX's own stylesheet, and with it the font files it references — bundled by
+// vite like the app's other fonts, since nothing here may reach the network.
+import 'katex/dist/katex.min.css'
 import { CodeBlock } from './CodeBlock'
 import { cn } from '../../helpers/cn'
 
@@ -46,7 +52,12 @@ const COMPONENTS: Components = {
   ),
 }
 
-const PLUGINS = [remarkGfm]
+// `$x$` inline and `$$x$$` on its own line, turned into markup by KaTeX rather
+// than being left to a browser that has no idea what to do with them.
+const REMARK = [remarkGfm, remarkMath]
+// Malformed maths renders as its own red source rather than throwing: a row is
+// typed a character at a time, and half an expression is not an error.
+const REHYPE: PluggableList = [[rehypeKatex, { throwOnError: false }]]
 
 export function Markdown({
   text,
@@ -61,7 +72,7 @@ export function Markdown({
   // selection moves past them.
   const tree = useMemo(
     () => (
-      <ReactMarkdown remarkPlugins={PLUGINS} components={COMPONENTS}>
+      <ReactMarkdown remarkPlugins={REMARK} rehypePlugins={REHYPE} components={COMPONENTS}>
         {text}
       </ReactMarkdown>
     ),

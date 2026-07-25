@@ -331,6 +331,12 @@ html.dark {
   font-weight: 600;
 }
 
+/* Display maths brings its own block margin; the sibling rule above has already
+ * spaced it, and both together read as a gap. */
+.markdown .katex-display {
+  margin: 0;
+}
+
 /* GFM task lists: the app's own checkbox rows are the real thing, so these are
  * quiet and inert. */
 .markdown li:has(> input[type='checkbox']) {
