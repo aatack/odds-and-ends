@@ -93,7 +93,14 @@ export function TextEditor({
         }
       }}
       className={cn(
-        'w-full resize-none bg-transparent outline-none placeholder:text-gray-400',
+        // `overflow-hidden` is not cosmetic: a textarea scrolls by default, and
+        // the measuring pass above deliberately squashes it to one row, which is
+        // enough to put a scrollbar there. That takes 12px off the width, so the
+        // text is measured wrapping earlier than it will actually wrap, and the
+        // box ends up a line taller than its contents — an empty line appearing
+        // under a line that hadn't finished. The box always grows to fit, so
+        // there is nothing to scroll and nothing lost by refusing to.
+        'w-full resize-none overflow-hidden bg-transparent outline-none placeholder:text-gray-400',
         className,
       )}
     />
