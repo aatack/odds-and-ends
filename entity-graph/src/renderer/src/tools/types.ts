@@ -74,6 +74,13 @@ export interface ToolSpec {
   args?: ArgSpec[]
   /** Keys that invoke it. Absent for palette-only tools. */
   keys?: KeyBinding[]
+  /**
+   * Ids of other tools whose keys also fill this one's outstanding `pick`
+   * argument while it waits. `r` starts a link one way and `shift+r` the other,
+   * but by the time the far end is being chosen the direction is settled, so
+   * either key should finish it.
+   */
+  pickAlso?: string[]
   /** Set when running it changes the entity store, so open frames must refetch. */
   mutates?: boolean
   /**

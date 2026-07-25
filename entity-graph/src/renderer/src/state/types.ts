@@ -240,3 +240,14 @@ export function last<T>(xs: readonly T[]): T | undefined {
 
 export const samePath = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((x, i) => x === b[i])
+
+/**
+ * A tab's collapse set as one of its frames sees it: a frame's own root always
+ * expands, whatever the tab says. Collapse is what you did to that entity where
+ * it sits in its parent, and opening a frame on it is how you look inside without
+ * disturbing that — a frame showing one folded row and nothing else would be a
+ * dead end. Used by both the query and the rows, so the chevron agrees with what
+ * is on screen.
+ */
+export const collapsedBelow = (collapsed: readonly string[], rootId: string): string[] =>
+  collapsed.filter((id) => id !== rootId)

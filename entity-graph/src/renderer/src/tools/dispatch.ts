@@ -48,9 +48,13 @@ export function handleKey(e: KeyboardEvent): boolean {
       return true
     }
     // Pressing the waiting tool's own key again supplies the argument it is
-    // waiting on from the live selection.
+    // waiting on from the live selection — as does the key of anything it names
+    // as an equivalent, so a link started with `r` can be finished with either.
     const tool = pending.toolId ? findTool(pending.toolId) : null
-    if (tool && bindsKey(tool.keys, e)) {
+    const completes =
+      !!tool &&
+      [tool, ...(tool.pickAlso ?? []).map(findTool)].some((t) => t && bindsKey(t.keys, e))
+    if (completes) {
       pickForPending()
       return true
     }

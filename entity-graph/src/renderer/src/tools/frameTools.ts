@@ -74,7 +74,12 @@ const hasEdit = (): boolean => {
 }
 
 // Format the entity at `start` and its visible descendants as nested markdown
-// bullets. Children of folded rows aren't in `rows`, so they're naturally out.
+// bullets. Children of folded rows aren't in `rows` to begin with, and a folded
+// row is left out along with them: exporting the title of a branch whose contents
+// are hidden reads as a complete list when it isn't. Folding is how you say
+// "not this"; the export takes it at its word. The row being exported is the
+// exception — it was named explicitly, so it comes out folded or not.
+//
 // Checkbox rows carry their state as a markdown task box; plain bullets get
 // nothing, so a tree with no checkboxes exports exactly as before.
 function subtreeMarkdown(rows: Row[], start: number): string {
@@ -85,6 +90,7 @@ function subtreeMarkdown(rows: Row[], start: number): string {
     const row = rows[i]
     if (i > start && row.depth <= from.depth) break
     if (row.kind !== 'entity') continue
+    if (i > start && row.collapsed && row.hasChildren) continue
     const box = row.open === true ? '[ ] ' : row.open === false ? '[x] ' : ''
     lines.push(`${'  '.repeat(row.depth - from.depth)}- ${box}${row.text ?? ''}`)
   }
@@ -456,14 +462,15 @@ export const FRAME_TOOLS: ToolSpec[] = [
   },
   {
     // A property of the frame, not a different kind of view: the same tree, read
-    // the other way round. Palette-only — it isn't frequent enough to be worth a
-    // letter, and the pill it raises is how it gets turned off again.
+    // the other way round. `f` toggles, so the key that turns it on turns it off;
+    // the pill it raises does the same with the mouse.
     id: 'frame.reverse',
     label: 'Reverse the query direction',
-    aliases: ['inbound', 'backlinks', 'references', 'parents', 'upside down'],
+    aliases: ['inbound', 'backlinks', 'references', 'parents', 'upside down', 'flip'],
     hint: 'Frame',
     scope: 'frame',
     reach: 'ui',
+    keys: [{ key: 'f' }],
     run: () => {
       const layout = getLayout()
       const { frameId } = focusOf(layout)

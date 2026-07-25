@@ -1,7 +1,7 @@
 import type { LinkDirection, QueryPage, QueryResult, StackFrame } from '../../../core/wrapper'
 import { atom } from './atom'
 import { getLayout, layoutAtom } from './store'
-import { directionOf } from './types'
+import { collapsedBelow, directionOf, type FrameState, type LayoutState } from './types'
 
 // The query cache: the rows behind each mounted frame. Runtime only — never
 // persisted, per the rule that nothing cached lives in latent state.
@@ -67,12 +67,19 @@ const message = (e: unknown): string => (e instanceof Error ? e.message : String
 const patch = (frameId: string, fn: (p: FramePage) => FramePage): void =>
   queryAtom.set((cache) => ({ ...cache, [frameId]: fn(cache[frameId] ?? NO_PAGE) }))
 
+/**
+ * The collapse set to query a frame with: the tab's, less the frame's own root,
+ * which always expands (see {@link collapsedBelow}).
+ */
+const collapsedFor = (s: LayoutState, frame: FrameState): string[] =>
+  collapsedBelow(s.tabs[frame.tabId]?.collapsed ?? [], frame.rootId)
+
 /** Everything a frame's first page depends on. */
 function requestKey(frameId: string): string | null {
   const s = getLayout()
   const frame = s.frames[frameId]
   if (!frame) return null
-  const collapsed = [...(s.tabs[frame.tabId]?.collapsed ?? [])].sort()
+  const collapsed = [...collapsedFor(s, frame)].sort()
   return JSON.stringify([
     frame.rootId,
     collapsed,
@@ -93,7 +100,7 @@ async function load(frameId: string, key: string): Promise<void> {
       // Only the root's cap reaches the server for now; the rest of the map is
       // stored against the day the query tool takes a per-entity limit.
       maxDepth: frame.maxDepth[frame.rootId] ?? undefined,
-      collapsed: s.tabs[frame.tabId]?.collapsed ?? [],
+      collapsed: collapsedFor(s, frame),
       limit: PAGE_SIZE,
       direction: directionOf(frame),
     })
@@ -174,7 +181,7 @@ export function loadMore(frameId: string): void {
   patch(frameId, (p) => ({ ...p, loading: true }))
   void f(frame.rootId, {
     maxDepth: frame.maxDepth[frame.rootId] ?? undefined,
-    collapsed: s.tabs[frame.tabId]?.collapsed ?? [],
+    collapsed: collapsedFor(s, frame),
     limit: PAGE_SIZE,
     continuationStack: page.continuation,
     direction: directionOf(frame),
