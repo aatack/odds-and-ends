@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { Check, ChevronDown, ChevronRight, Play, Square, Stop } from '@untitledui/icons'
 import { TextEditor } from '../components/ui/TextEditor'
 import { CodeBlock } from '../components/ui/CodeBlock'
+import { Markdown } from '../components/ui/Markdown'
 import { cn } from '../helpers/cn'
 import type { CodeRunState } from '../helpers/codeRunner'
 import type { EntityRow, Row } from '../state/derive'
@@ -424,17 +425,18 @@ const RowView = React.memo(function RowView({
           ) : isCode ? (
             <CodeBlock code={row.text ?? ''} run={run} />
           ) : row.text ? (
-            <span
+            // Rendered, not printed: a line with no markup in it comes out
+            // exactly as the plain text did, and the blocks are there for the
+            // rows that use them.
+            <Markdown
+              text={row.text}
               className={cn(
-                'whitespace-pre-wrap break-words',
                 TEXT,
                 row.section && 'font-semibold',
                 row.hasChildren && row.collapsed ? 'text-gray-400' : 'text-gray-900',
               )}
               style={heading}
-            >
-              {row.text}
-            </span>
+            />
           ) : (
             <span className={`${TEXT} italic text-gray-400`}>Empty</span>
           )}

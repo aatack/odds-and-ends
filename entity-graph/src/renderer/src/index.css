@@ -206,6 +206,143 @@ html.dark {
   background-clip: content-box;
 }
 
+/*
+ * Rendered entity text (see components/ui/Markdown.tsx). Every row is rendered
+ * through this, so the rules are written the other way up from a typical prose
+ * stylesheet: the default is *no* typography at all — a paragraph is margin-less
+ * and inherits everything — so a line with no markup in it comes out identical to
+ * the plain span it used to be. Spacing only appears between blocks, and only
+ * when there is more than one.
+ *
+ * Written here rather than as utilities on the components, because the selectors
+ * that matter are descendant and sibling ones over elements the markdown renderer
+ * creates itself.
+ */
+.markdown > * + * {
+  margin-top: 0.5em;
+}
+
+.markdown p {
+  margin: 0;
+  /* Single newlines are real: an entity's text is typed in a box where Enter
+   * commits and Shift+Enter breaks the line, and markdown would otherwise fold
+   * those breaks away. */
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Restrained: a section entity is how a real heading is made, so a markdown
+ * heading inside one row is a minor key. */
+.markdown h1 {
+  font-size: 1.3em;
+}
+
+.markdown h2 {
+  font-size: 1.15em;
+}
+
+.markdown ul,
+.markdown ol {
+  margin: 0;
+  padding-left: 1.4em;
+}
+
+.markdown ul {
+  list-style: disc;
+}
+
+.markdown ol {
+  list-style: decimal;
+}
+
+.markdown li::marker {
+  color: var(--color-gray-400);
+}
+
+.markdown li + li {
+  margin-top: 0.15em;
+}
+
+/* A quote is the one place a rule earns its keep — an indent alone reads as a
+ * nested list. Kept to a hairline in the divider tone. */
+.markdown blockquote {
+  margin: 0;
+  border-left: 2px solid var(--color-gray-200);
+  padding-left: 0.75em;
+  color: var(--color-gray-500);
+}
+
+.markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--color-gray-100);
+  border-radius: 0.25rem;
+  padding: 0.1em 0.3em;
+}
+
+/* The fence renders as a CodeBlock, which brings its own ground and its own
+ * mono; the bare `code` treatment above would double it up. */
+.markdown pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+
+.markdown a {
+  color: var(--color-brand-600);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown img {
+  max-width: 100%;
+  border-radius: 0.375rem;
+}
+
+.markdown hr {
+  border: 0;
+  border-top: 1px solid var(--color-gray-100);
+}
+
+.markdown table {
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid var(--color-gray-100);
+  padding: 0.15em 0.5em;
+  text-align: left;
+}
+
+.markdown th {
+  font-weight: 600;
+}
+
+/* GFM task lists: the app's own checkbox rows are the real thing, so these are
+ * quiet and inert. */
+.markdown li:has(> input[type='checkbox']) {
+  list-style: none;
+  margin-left: -1.2em;
+}
+
+.markdown input[type='checkbox'] {
+  margin-right: 0.4em;
+  accent-color: var(--color-gray-400);
+}
+
 /* No motion anywhere — see AGENTS.md. State changes are instantaneous. This
  * global override also neutralises any transition/animation utility that slips
  * into a component, so the rule holds even if one is added by mistake. */

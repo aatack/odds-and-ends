@@ -41,21 +41,26 @@ export interface CodeBlockProps {
   code: string
   /** Local run state for this entity, if it has been run this session. */
   run?: CodeRunState
+  /** Prism language. Defaults to TypeScript — what a `type: code` entity is. */
+  language?: string
 }
 
 /**
  * A `type: code` entity's body: TypeScript source on a faint grey ground in Fira
  * Code, with its (non-persisted) run output pinned below a hairline. Wide lines
  * scroll horizontally inside the block rather than wrapping or widening the row.
+ *
+ * Also the surface a fenced block inside markdown renders on, minus the run
+ * output — a fence and a code entity should look like the same thing.
  */
-export function CodeBlock({ code, run }: CodeBlockProps): React.JSX.Element {
+export function CodeBlock({ code, run, language = 'tsx' }: CodeBlockProps): React.JSX.Element {
   const dark = useIsDark()
   const output = run ? outputLines(run) : null
 
   return (
     <div className="my-px w-full min-w-0 overflow-hidden rounded-md bg-gray-100 shadow-xs">
       <div className="overflow-x-auto">
-        <Highlight code={code} language="tsx" theme={dark ? themes.vsDark : themes.vsLight}>
+        <Highlight code={code} language={language} theme={dark ? themes.vsDark : themes.vsLight}>
           {({ tokens, getLineProps, getTokenProps }) => (
             <pre
               className="w-max min-w-full px-2.5 py-1.5 font-mono text-[11.5px] leading-[1.45]"
