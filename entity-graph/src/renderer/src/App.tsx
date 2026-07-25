@@ -61,6 +61,22 @@ export default function App(): React.JSX.Element | null {
     return () => window.removeEventListener('contextmenu', onContextMenu)
   }, [])
 
+  // Middle click opens the row under the cursor in a new tab, the way it opens a
+  // link in a browser. Same seam as the right-click above: the row publishes its
+  // id, the tool takes it from the context.
+  useEffect(() => {
+    const onAuxClick = (e: MouseEvent): void => {
+      if (e.button !== 1) return
+      const el = e.target instanceof HTMLElement ? e.target.closest('[data-entity-id]') : null
+      const entityId = el?.getAttribute('data-entity-id')
+      if (!entityId) return
+      e.preventDefault()
+      runTool('entity.openInTab', { extra: { entityId } })
+    }
+    window.addEventListener('auxclick', onAuxClick)
+    return () => window.removeEventListener('auxclick', onAuxClick)
+  }, [])
+
   // Pasting a file — a screenshot, an image copied from a page — makes an entity
   // of it under the selection. The bytes have to be taken from the event, since
   // they are only on the clipboard while it is being handled; from there it is an

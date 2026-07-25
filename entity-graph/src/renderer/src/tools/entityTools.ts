@@ -1,10 +1,12 @@
 import * as A from '../state/actions'
-import { frameRows } from '../state/derive'
+import { entityRows, frameRows, type EntityRow } from '../state/derive'
 import { queryAtom } from '../state/query'
 import { focusOf, getLayout } from '../state/store'
 import { directionOf, last, type LinkDirection } from '../state/types'
 import { updateUi } from '../state/ui'
-import { createEntity, link, moveEntity, unlink, writeValue } from '../source/entity'
+import { base64ToBlob } from '../helpers/base64'
+import { copyImage, copyText } from '../helpers/clipboard'
+import { createEntity, link, moveEntity, readResource, unlink, writeValue } from '../source/entity'
 import type { ArgSpec, CallInfo, ToolSpec } from './types'
 
 // Tools that name the entity they act on, rather than implying it. Their
@@ -57,6 +59,14 @@ async function linkEntities(sourceId: unknown, destinationId: unknown): Promise<
   await link(from, to)
 }
 
+/** A row of the focused frame by id — how a tool asks what it is acting on. */
+function selectedRow(entityId: string): EntityRow | undefined {
+  const layout = getLayout()
+  const { frameId } = focusOf(layout)
+  const { rows } = frameRows(layout, queryAtom.get(), frameId)
+  return entityRows(rows).find((r) => r.id === entityId)
+}
+
 /** The selection's parent, or null at the root of the frame. */
 function selectedParent(): string | null {
   const layout = getLayout()
@@ -94,6 +104,53 @@ export const ENTITY_TOOLS: ToolSpec[] = [
       // makes a duplicate to pop straight back off.
       if (frameId && layout.frames[frameId]?.rootId === target) return
       A.pushFrame(tabId, target)
+    },
+  },
+  {
+    id: 'entity.openInTab',
+    label: 'Open entity in a new tab',
+    aliases: ['new tab', 'tab', 'middle click'],
+    hint: 'Layout',
+    scope: 'frame',
+    reach: 'ui',
+    args: [entityArg()],
+    run: ({ entityId }) => {
+      const { groupId } = focusOf(getLayout())
+      const target = id(entityId)
+      if (groupId && target) A.addTab(groupId, target)
+    },
+  },
+  {
+    id: 'entity.copy',
+    label: 'Copy entity',
+    aliases: ['clipboard', 'copy text', 'copy image', 'copy code', 'copy file'],
+    scope: 'frame',
+    reach: 'ui',
+    // Bare ⌘C inside a text field belongs to the field; the router only lets the
+    // combo through when nothing is being edited.
+    keys: [{ key: 'c', mod: true }],
+    args: [entityArg()],
+    run: async ({ entityId }) => {
+      const target = requireId(entityId, 'Entity id')
+      const row = selectedRow(target)
+      if (row?.type === 'file') {
+        // Read rather than take the cached copy: the bytes are the point, and a
+        // row that has never been on screen has none.
+        const resource = await readResource(target)
+        if (!resource) throw new Error('This file has no bytes stored')
+        if (resource.mimeType.startsWith('image/')) {
+          await copyImage(base64ToBlob(resource.data, resource.mimeType))
+          return { message: 'Copied the image' }
+        }
+        // The clipboard has no way to hold an arbitrary file, so the name is the
+        // most useful thing left.
+        await copyText(resource.name ?? target)
+        return { message: 'Copied the file name — only images copy as files' }
+      }
+      const text = row?.text ?? ''
+      if (!text) throw new Error('Nothing to copy')
+      await copyText(text)
+      return { message: 'Copied' }
     },
   },
   {
