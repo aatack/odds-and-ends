@@ -1,5 +1,7 @@
 import { app, BrowserWindow, ipcMain, Menu, type MenuItemConstructorOptions } from 'electron'
-import { join } from 'path'
+import { basename, extname, join } from 'path'
+import { existsSync } from 'fs'
+import { writeFile } from 'fs/promises'
 import { randomBytes } from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
 import type { ActiveSource, CurrentSource, NewServer, NewSourceConnection, Server, TokenRow } from '../core/client'
@@ -104,6 +106,27 @@ async function sourceTools(id: string): Promise<unknown> {
 // ---------------------------------------------------------------------------
 // IPC — user config
 // ---------------------------------------------------------------------------
+
+/**
+ * A file name that isn't taken in `dir`. Saving a resource is a "give me this"
+ * gesture with no dialog behind it, so it must not be able to overwrite: a name
+ * already in use gets the current time appended rather than replacing anything.
+ */
+function freeName(dir: string, name: string): string {
+  const base = basename(name).trim()
+  // `basename` strips directories, but not the two names that are directories.
+  const safe = base === '' || base === '.' || base === '..' ? 'download' : base
+  if (!existsSync(join(dir, safe))) return safe
+  const ext = extname(safe)
+  return `${basename(safe, ext)}-${Date.now()}${ext}`
+}
+
+ipcMain.handle('file:save', async (_e, name: string, data: string): Promise<string> => {
+  const dir = app.getPath('downloads')
+  const path = join(dir, freeName(dir, name))
+  await writeFile(path, Buffer.from(data, 'base64'))
+  return path
+})
 
 ipcMain.handle('config:getUser', () => store.get('user'))
 ipcMain.handle('config:setUser', (_e, name: string) => store.set('user', name))

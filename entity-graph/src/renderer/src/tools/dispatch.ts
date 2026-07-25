@@ -62,10 +62,13 @@ export function handleKey(e: KeyboardEvent): boolean {
     // choose a target.
   }
 
-  // The activity log is an overlay with its own dismissal, so while it is up
-  // Escape closes it and goes no further — otherwise the same press would also
-  // reach whatever is behind it and clear a frame's find.
-  if (e.key === 'Escape' && uiAtom.get().activityOpen) return false
+  // The overlays with their own dismissal keep Escape while they are up: it
+  // closes them and goes no further, where otherwise the same press would also
+  // reach whatever is behind and clear a frame's find.
+  if (e.key === 'Escape') {
+    const ui = uiAtom.get()
+    if (ui.activityOpen || ui.resourceId) return false
+  }
 
   // A focused text field owns bare keys and the editing combos; Escape and other
   // modifier combos still route, so ctrl+Tab works mid-edit.

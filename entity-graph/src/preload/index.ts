@@ -20,6 +20,13 @@ export interface EntityGraphAPI {
   getUser: () => Promise<string>
   setUser: (name: string) => Promise<void>
 
+  /**
+   * Write base64 bytes into the downloads folder under a name that isn't taken,
+   * returning the path. No dialog: the renderer can't overwrite anything, and
+   * can't choose where it goes.
+   */
+  saveFile: (name: string, data: string) => Promise<string>
+
   // The source the editor opens by default
   getCurrentSource: () => Promise<CurrentSource | null>
   setCurrentSource: (source: CurrentSource | null) => Promise<void>
@@ -66,6 +73,8 @@ export interface EntityGraphAPI {
 const api: EntityGraphAPI = {
   getUser: () => ipcRenderer.invoke('config:getUser'),
   setUser: (name) => ipcRenderer.invoke('config:setUser', name),
+
+  saveFile: (name, data) => ipcRenderer.invoke('file:save', name, data),
   getCurrentSource: () => ipcRenderer.invoke('config:getCurrentSource'),
   setCurrentSource: (source) => ipcRenderer.invoke('config:setCurrentSource', source),
 

@@ -13,6 +13,8 @@ export interface UiState {
   activityOpen: boolean
   /** Entity whose raw events are being inspected, if any. */
   debugEntityId: string | null
+  /** File entity being shown full size over the tree, if any. */
+  resourceId: string | null
   /** The source-level debug modal. */
   debugSource: boolean
 }
@@ -21,6 +23,7 @@ export const uiAtom = atom<UiState>({
   page: 'editor',
   activityOpen: false,
   debugEntityId: null,
+  resourceId: null,
   debugSource: false,
 })
 

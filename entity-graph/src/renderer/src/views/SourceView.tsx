@@ -3,6 +3,7 @@ import type { ActiveSource } from '../../../core/client'
 import { Layout } from '../layout/Layout'
 import { DebugModal } from '../components/DebugModal'
 import { EntityDebugModal } from '../components/EntityDebugModal'
+import { ResourceModal } from '../components/Resource'
 import { Button } from '../components/ui/Button'
 import { useUi } from '../state/hooks'
 import { setQueryFetcher } from '../state/query'
@@ -61,6 +62,7 @@ export function SourceView({
       {ui.debugSource && (
         <DebugModal sourceId={active.id} user={user} onClose={() => updateUi({ debugSource: false })} />
       )}
+      {ui.resourceId && <ResourceModal id={ui.resourceId} />}
       {ui.debugEntityId && (
         <EntityDebugModal
           sourceId={active.id}
