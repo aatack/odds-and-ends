@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from 'react'
 import type { Atom } from './atom'
 import { frameRows, tabLabel, type FrameRows } from './derive'
-import { queryAtom, retainFrame } from './query'
+import { namesAtom, queryAtom, retainFrame } from './query'
 import { callsAtom, focusOf, layoutAtom, pendingAtom, type Focus } from './store'
 import { themeAtom, uiAtom, type Theme, type UiState } from './ui'
 import type { LayoutState, PendingCall, RecordedCall } from './types'
@@ -39,12 +39,14 @@ export function useFocus(): Focus {
 export function useFrameRows(frameId: string): FrameRows {
   const layout = useLayoutState()
   const cache = useAtomValue(queryAtom)
-  useEffect(() => retainFrame(frameId), [frameId])
+  // Retained before paint, so the frame reads as loading straight away rather
+  // than flashing "No entities." for one frame while the fetch is scheduled.
+  useLayoutEffect(() => retainFrame(frameId), [frameId])
   return useMemo(() => frameRows(layout, cache, frameId), [layout, cache, frameId])
 }
 
 export function useTabLabel(tabId: string): string {
   const layout = useLayoutState()
-  const cache = useAtomValue(queryAtom)
-  return useMemo(() => tabLabel(layout, cache, tabId), [layout, cache, tabId])
+  const names = useAtomValue(namesAtom)
+  return useMemo(() => tabLabel(layout, names, tabId), [layout, names, tabId])
 }

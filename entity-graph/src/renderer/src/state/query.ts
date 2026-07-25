@@ -26,6 +26,23 @@ export const NO_PAGE: FramePage = { results: [], continuation: null, loading: fa
 
 export const queryAtom = atom<QueryCache>({})
 
+/**
+ * Entity id → display text, harvested from every page that loads and never
+ * pruned. Runtime only, like the cache, but it outlives the pages it came from:
+ * dropping a frame's rows shouldn't turn its tab's label back into a uuid. After
+ * a reload, tabs you haven't opened yet do show their ids for a moment.
+ */
+export const namesAtom = atom<Record<string, string>>({})
+
+function harvestNames(results: QueryResult[]): void {
+  const learned: Record<string, string> = {}
+  for (const { entity } of results) {
+    const text = entity.values.text
+    if (text != null && text !== '') learned[entity.id] = String(text)
+  }
+  if (Object.keys(learned).length) namesAtom.set((names) => ({ ...names, ...learned }))
+}
+
 export type QueryFetcher = (
   rootId: string,
   opts: { maxDepth?: number; collapsed?: string[]; limit?: number; continuationStack?: StackFrame[] },
@@ -67,6 +84,7 @@ async function load(frameId: string, key: string): Promise<void> {
       limit: PAGE_SIZE,
     })
     if (issued.get(frameId) !== key) return
+    harvestNames(page.results)
     patch(frameId, () => ({
       results: page.results,
       continuation: page.continuationStack,
@@ -149,6 +167,7 @@ export function loadMore(frameId: string): void {
     .then((next) => {
       // A first-page refetch while this was in flight wins; drop the append.
       if (issued.get(frameId) !== key) return
+      harvestNames(next.results)
       patch(frameId, (p) => ({
         ...p,
         results: [...p.results, ...next.results],
@@ -177,10 +196,4 @@ export function cachedValues(
     }
   }
   return undefined
-}
-
-/** An entity's `text` value, for tab labels and the like. */
-export function cachedText(cache: QueryCache, entityId: string): string | undefined {
-  const text = cachedValues(cache, entityId)?.text
-  return text == null || text === '' ? undefined : String(text)
 }

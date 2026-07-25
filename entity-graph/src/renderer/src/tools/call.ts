@@ -104,6 +104,17 @@ const liveContext = (extra?: Record<string, unknown>): CallContext =>
   buildCallContext(getLayout(), queryAtom.get(), extra)
 
 /**
+ * Taking over the pending slot records whatever was in it, so starting a second
+ * argument-collecting call doesn't silently lose the first. Note that a call
+ * which runs straight through never touches the slot — pressing `w` to move the
+ * selection while a link waits for its target leaves the link alone.
+ */
+function displacePending(nextCallId: string): void {
+  const prior = pendingAtom.get()
+  if (prior && prior.callId !== nextCallId && prior.toolId) cancelCall()
+}
+
+/**
  * Begin a call to a known tool. Arguments are seeded from the context; if
  * nothing is left empty the tool runs at once, with no confirmation.
  */
@@ -126,6 +137,7 @@ function begin(
   // nowhere to type in it. Anything else opens the palette, even from a hotkey.
   const outstanding = argsOf(tool).find((a) => a.name === empty)
   const shown = display.kind === 'hidden' && !outstanding?.pick ? CENTRED : display
+  displacePending(callId)
   pendingAtom.set({
     callId,
     toolId,
@@ -152,8 +164,10 @@ export function runTool(
 
 /** Open the tool list: a call with no tool chosen yet. */
 export function openToolList(opts: { anchor?: { x: number; y: number }; extra?: Record<string, unknown> } = {}): void {
+  const callId = uuid()
+  displacePending(callId)
   pendingAtom.set({
-    callId: uuid(),
+    callId,
     toolId: null,
     args: {},
     activeArg: null,
@@ -309,10 +323,12 @@ export function editRecordedCall(callId: string): void {
   const tool = findTool(call.toolId)
   if (!tool) return
   const replay = call.outcome.kind === 'cancelled'
+  const nextId = replay ? call.callId : uuid()
+  displacePending(nextId)
   if (replay) callsAtom.set((list) => list.filter((r) => r.callId !== callId))
   const args = { ...seedArgs(tool, call.context), ...call.args }
   pendingAtom.set({
-    callId: replay ? call.callId : uuid(),
+    callId: nextId,
     toolId: call.toolId,
     args,
     activeArg: firstEmpty(tool, args) ?? argsOf(tool)[0]?.name ?? null,

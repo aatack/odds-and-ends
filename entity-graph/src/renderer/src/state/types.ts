@@ -47,6 +47,12 @@ export const isFilled = (v: ArgValue | undefined): boolean =>
 export interface CallContext {
   /** Folded entity values plus the positional keys (entityId, parentId, …). */
   values: Record<string, unknown>
+  /**
+   * The entity path the values were folded along: each frame root in the tab's
+   * stack, outermost first, then the selection path inside the top frame. Kept
+   * for the record — the fold is what tools actually read.
+   */
+  path: string[]
   groupId: string | null
   tabId: string | null
   frameId: string | null
