@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import type { Atom } from './atom'
-import { frameRows, tabLabel, type FrameRows } from './derive'
+import { frameCrumbs, frameRows, tabLabel, type Crumb, type FrameRows } from './derive'
 import { focusRequestAtom, focusTaken } from './focusRequest'
 import { namesAtom, queryAtom, retainFrame } from './query'
 import { callsAtom, focusOf, layoutAtom, pendingAtom, type Focus } from './store'
@@ -69,4 +69,11 @@ export function useTabLabel(tabId: string): string {
   const layout = useLayoutState()
   const names = useAtomValue(namesAtom)
   return useMemo(() => tabLabel(layout, names, tabId), [layout, names, tabId])
+}
+
+/** A tab's frame stack as a trail of names, outermost first. */
+export function useCrumbs(tabId: string | null): Crumb[] {
+  const layout = useLayoutState()
+  const names = useAtomValue(namesAtom)
+  return useMemo(() => frameCrumbs(layout, names, tabId), [layout, names, tabId])
 }

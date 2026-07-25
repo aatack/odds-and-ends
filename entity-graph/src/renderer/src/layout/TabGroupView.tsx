@@ -1,8 +1,8 @@
 import React from 'react'
-import { Plus, X } from '@untitledui/icons'
+import { ChevronRight, Plus, X } from '@untitledui/icons'
 import { cn } from '../helpers/cn'
 import * as A from '../state/actions'
-import { useLayoutState, useTabLabel } from '../state/hooks'
+import { useCrumbs, useLayoutState, useTabLabel } from '../state/hooks'
 import { last, type GroupState } from '../state/types'
 import { EntityFrame } from './EntityFrame'
 
@@ -51,6 +51,8 @@ export function TabGroupView({
         </button>
       </div>
 
+      {activeTab && <Breadcrumb tabId={activeTab.id} />}
+
       <div className="min-h-0 flex-1">
         {topFrameId ? (
           <EntityFrame frameId={topFrameId} />
@@ -59,6 +61,38 @@ export function TabGroupView({
         )}
       </div>
     </section>
+  )
+}
+
+/**
+ * The trail of frames the tab has drilled into, and the way back out: clicking a
+ * crumb pops everything above it, which the frame history can then undo. Absent
+ * with a single frame on the stack, where it would only repeat the tab's own
+ * label an inch above it and there would be nothing to click.
+ */
+function Breadcrumb({ tabId }: { tabId: string }): React.JSX.Element | null {
+  const crumbs = useCrumbs(tabId)
+  if (crumbs.length < 2) return null
+  const last = crumbs.length - 1
+  return (
+    <nav className="flex items-center gap-1 overflow-x-auto px-3 py-1.5 text-[11px] text-gray-400">
+      {crumbs.map((crumb, i) => (
+        <React.Fragment key={crumb.frameId}>
+          {i > 0 && <ChevronRight size={11} className="shrink-0 text-gray-300" />}
+          {i === last ? (
+            <span className="max-w-[220px] shrink-0 truncate text-gray-600">{crumb.label}</span>
+          ) : (
+            <button
+              className="max-w-[140px] shrink-0 truncate hover:text-gray-700 focus:outline-none"
+              onClick={() => A.popToFrame(tabId, crumb.frameId)}
+              title={`Back to ${crumb.label}`}
+            >
+              {crumb.label}
+            </button>
+          )}
+        </React.Fragment>
+      ))}
+    </nav>
   )
 }
 

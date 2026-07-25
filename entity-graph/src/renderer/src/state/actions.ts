@@ -77,6 +77,9 @@ export const addTab = (groupId: string, rootId?: string): void =>
 export const pushFrame = (tabId: string, rootId: string): void =>
   updateLayout((s) => R.pushFrame(s, tabId, rootId))
 
+export const popToFrame = (tabId: string, frameId: string): void =>
+  updateLayout((s) => R.popToFrame(s, tabId, frameId))
+
 /** The frame a tool is acting on, resolved from the current focus. */
 export const frameOf = (s: LayoutState, frameId: string | null): FrameState | null =>
   frameId ? (s.frames[frameId] ?? null) : null

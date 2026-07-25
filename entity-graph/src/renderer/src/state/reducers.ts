@@ -126,6 +126,24 @@ export function popFrame(s: LayoutState, tabId: string): LayoutState {
   return withTab(s, { ...tab, frameIds: tab.frameIds.slice(0, -1), history: [...tab.history, top] })
 }
 
+/**
+ * Pop back to a frame further down the stack — what clicking a breadcrumb does.
+ * The frames above it go onto the history newest-first, so undoing the pop walks
+ * back out through them in the order they were opened.
+ */
+export function popToFrame(s: LayoutState, tabId: string, frameId: string): LayoutState {
+  const tab = s.tabs[tabId]
+  if (!tab) return s
+  const at = tab.frameIds.indexOf(frameId)
+  if (at < 0 || at === tab.frameIds.length - 1) return s
+  const popped = tab.frameIds.slice(at + 1).reverse()
+  return withTab(s, {
+    ...tab,
+    frameIds: tab.frameIds.slice(0, at + 1),
+    history: [...tab.history, ...popped],
+  })
+}
+
 export function undoPop(s: LayoutState, tabId: string): LayoutState {
   const tab = s.tabs[tabId]
   if (!tab || tab.history.length === 0) return s
