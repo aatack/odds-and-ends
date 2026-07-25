@@ -195,8 +195,9 @@ while selection is per frame and keyed by *path* — so the same entity appearin
 twice in one frame can be selected in one place but folds in both. That
 asymmetry is intended.
 
-A frame holds its root entity id, the latent selection path, nullable find text,
-a per-entity max-depth map, and any in-progress edit.
+A frame holds its root entity id, which way its query reads, the latent selection
+path, its filters (nullable find text, a sections-only flag), a per-entity
+max-depth map, and any in-progress edit.
 
 - The **selection path** is latent and never overwritten by the resolved one.
   Resolution strips trailing ids until the path exists in the rendered rows,
@@ -212,14 +213,33 @@ a per-entity max-depth map, and any in-progress edit.
   then on, so there is no draft anywhere to keep in step. Run against a field
   already open it changes nothing and merely asks for the caret (below), so the
   key means the same thing whatever state the frame is in. Enter blurs the
-  field, handing bare keys back to navigation; the text stays. (The text is not
-  yet applied to the rows.)
+  field, handing bare keys back to navigation; the text stays. Matching rows keep
+  their ancestors, so the tree still reads.
+- **Sections only** is the other filter: keep the section rows and the frame's
+  root, and drop everything else — the tree as a table of contents. Unlike find
+  it does *not* keep non-matching ancestors, since the point is to see the
+  sections and nothing else; rows keep their real depth, so a section nested
+  inside an ordinary entity still reads as nested. Applied after find, so the two
+  compose. Both are filters over the rows, not different queries, and both show
+  in the frame's top-right corner — the find field, and a pill for anything with
+  nothing to configure.
+- **Direction** is the first thing about a frame's *query* rather than its rows:
+  `out` follows outbound links, `in` follows inbound ones, so the same traversal
+  answers "what links to this?". It is part of the request key, so flipping it
+  refetches. A reversed frame draws the same tree upside down, which the tools
+  that edit the link between a row and the row above it have to know: creating,
+  unlinking and moving all ask the frame the call came from which way round the
+  link runs. A pushed frame does not inherit it — whether a query type should
+  carry into a new frame is still an open question.
 - **Per-entity max depth** is stored but not yet honoured: the `query` tool
   takes a single `maxDepth`, so the root entity's entry is passed through and
   the rest is provisioned for a later server change.
-- Which query a frame uses is still to be designed; frames are all entity views
-  for now.
-- Scroll position is not tracked.
+- What else a frame's query could be — beyond its root, its depth and its
+  direction — is still to be designed.
+- Scroll position is not tracked. The view keeps the selected row, and the row
+  being typed into, scrolled 30% in from the edge; the row being typed into is
+  also mounted whatever the virtual window says, or its box would never take the
+  caret.
 
 Canvases are gone. The `View` union collapsed back to a single entity view.
 
@@ -271,5 +291,11 @@ state. It resolves in this order:
 
 Escape therefore has a pecking order without anything spelling one out: a
 pending call, then the activity log, then an in-place edit, then a frame's find
-field — each step is just a tool that isn't `enabled` unless there is something
-for it to do, declared in the order it should be tried.
+field, then its sections filter — each step is just a tool that isn't `enabled`
+unless there is something for it to do, declared in the order it should be tried.
+
+Some of the keys the app wants belong to Electron's default menu, which consumes
+an accelerator before the page sees the keystroke: ⌘/Ctrl+W (close a tab, not the
+window) and ⌘/Ctrl+Z (the app's own undo). `src/main/index.ts` therefore builds
+the menu by hand without those items — so a new app-level binding has to be
+checked against it, not just against the tool registry.
