@@ -13,6 +13,10 @@ import type { EntityRow, Row } from '../state/derive'
 const INDENT = 20 // px per depth level
 const OVERSCAN = 8 // extra rows rendered above/below the viewport
 const ESTIMATE = 24 // assumed height of a not-yet-measured row, in px
+// How far in from the edge a row scrolled into view lands, as a fraction of the
+// viewport — so the row that was just selected has context above or below it
+// rather than sitting on the boundary.
+const MARGIN = 0.3
 
 // User-written entity text — serif, matching the orchestrator's prose voice. It
 // wraps to show the whole value rather than truncating. `block` keeps the
@@ -134,19 +138,42 @@ export function Editor(props: EditorProps): React.JSX.Element {
   // latest offsets via a ref so height changes don't fight the user's scroll.
   const offsetsRef = useRef(offsets)
   offsetsRef.current = offsets
+  const reveal = useCallback((index: number): void => {
+    const el = containerRef.current
+    if (!el || index < 0) return
+    const o = offsetsRef.current
+    const top = o[index]
+    const bottom = o[index + 1]
+    const height = el.clientHeight
+    if (!height) return
+    // A row scrolled to isn't pushed flush against the edge: it lands MARGIN in,
+    // so there is context on the side it came from. Capped at what's left over
+    // once the row itself is accounted for, so a tall row can't overshoot.
+    const margin = Math.max(0, Math.min(height * MARGIN, (height - (bottom - top)) / 2))
+    if (top < el.scrollTop + margin) el.scrollTop = Math.max(0, top - margin)
+    else if (bottom > el.scrollTop + height - margin) el.scrollTop = bottom - height + margin
+  }, [])
+
   const selectedIndex = useMemo(
     () => rows.findIndex((r) => r.kind === 'entity' && r.selected),
     [rows],
   )
+  useEffect(() => reveal(selectedIndex), [selectedIndex, reveal])
+
+  // The row being typed into, if any. It is kept mounted wherever it is (below),
+  // and brought into view — creating a child of a very tall entity puts the box
+  // right at the end of that entity's subtree, which can be pages away.
+  const editIndex = useMemo(
+    () => rows.findIndex((r) => r.kind === 'input' || (r.kind === 'entity' && r.editing)),
+    [rows],
+  )
+  // Also on its offset, not just its index: the rows between here and there are
+  // mostly unmeasured guesses, so the first scroll lands approximately and the
+  // real offset arrives once they mount.
+  const editTop = editIndex < 0 ? -1 : offsets[editIndex]
   useEffect(() => {
-    const el = containerRef.current
-    if (!el || selectedIndex < 0) return
-    const o = offsetsRef.current
-    const top = o[selectedIndex]
-    const bottom = o[selectedIndex + 1]
-    if (top < el.scrollTop) el.scrollTop = top
-    else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight
-  }, [selectedIndex])
+    if (editIndex >= 0) reveal(editIndex)
+  }, [editIndex, editTop, reveal])
 
   // The windowed slice: walk offsets to the first row reaching the viewport top
   // and the first past its bottom, padded by OVERSCAN.
@@ -159,10 +186,40 @@ export function Editor(props: EditorProps): React.JSX.Element {
   lastIndex = Math.min(rows.length, lastIndex + OVERSCAN)
   const slice = rows.slice(firstIndex, lastIndex)
 
+  // The edited row is pinned: mounted whether or not the window reaches it, at
+  // its own offset. Unmounting it would take the caret with it — autofocus never
+  // fires for a box that was never rendered, and scrolling away mid-edit would
+  // drop focus and the selection inside the box. Overscan can't fix that; the
+  // row can be arbitrarily far from the viewport.
+  const pinned = editIndex >= 0 && (editIndex < firstIndex || editIndex >= lastIndex)
+
   const handleScroll = (e: React.UIEvent<HTMLDivElement>): void => {
     const el = e.currentTarget
     setScrollTop(el.scrollTop)
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - ESTIMATE * OVERSCAN) onNearEnd()
+  }
+
+  const renderRow = (row: Row, index: number): React.JSX.Element => {
+    const key = keyOf(row, index)
+    // Pass this row's run state directly (not the whole map) so the memoised
+    // RowView only re-renders when *its own* run changes.
+    const run = row.kind === 'entity' ? codeRuns[row.id] : undefined
+    return (
+      <RowView
+        key={key}
+        row={row}
+        measureKey={key}
+        run={run}
+        onMeasure={setHeight}
+        onSelectRow={onSelectRow}
+        onToggleCollapse={onToggleCollapse}
+        onDraft={onDraft}
+        onCommit={onCommit}
+        onCancel={onCancel}
+        onRunCode={onRunCode}
+        onStopCode={onStopCode}
+      />
+    )
   }
 
   return (
@@ -180,33 +237,18 @@ export function Editor(props: EditorProps): React.JSX.Element {
             {loading ? 'Loading…' : 'No entities.'}
           </div>
         ) : (
-          <>
+          // Positioning context for the pinned row, whose offset is measured from
+          // the top of the rows rather than the padded scroll container.
+          <div className="relative">
             <div style={{ height: offsets[firstIndex] }} />
-            {slice.map((row, i) => {
-              const index = firstIndex + i
-              const key = keyOf(row, index)
-              // Pass this row's run state directly (not the whole map) so the
-              // memoised Row only re-renders when *its own* run changes.
-              const run = row.kind === 'entity' ? codeRuns[row.id] : undefined
-              return (
-                <RowView
-                  key={key}
-                  row={row}
-                  measureKey={key}
-                  run={run}
-                  onMeasure={setHeight}
-                  onSelectRow={onSelectRow}
-                  onToggleCollapse={onToggleCollapse}
-                  onDraft={onDraft}
-                  onCommit={onCommit}
-                  onCancel={onCancel}
-                  onRunCode={onRunCode}
-                  onStopCode={onStopCode}
-                />
-              )
-            })}
+            {slice.map((row, i) => renderRow(row, firstIndex + i))}
             <div style={{ height: total - offsets[lastIndex] }} />
-          </>
+            {pinned && (
+              <div className="absolute inset-x-0" style={{ top: offsets[editIndex] }}>
+                {renderRow(rows[editIndex], editIndex)}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>
