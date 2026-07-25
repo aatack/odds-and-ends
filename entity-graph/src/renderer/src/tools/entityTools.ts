@@ -60,7 +60,7 @@ async function linkEntities(sourceId: unknown, destinationId: unknown): Promise<
 }
 
 /** A row of the focused frame by id — how a tool asks what it is acting on. */
-function selectedRow(entityId: string): EntityRow | undefined {
+function rowById(entityId: string): EntityRow | undefined {
   const layout = getLayout()
   const { frameId } = focusOf(layout)
   const { rows } = frameRows(layout, queryAtom.get(), frameId)
@@ -132,7 +132,7 @@ export const ENTITY_TOOLS: ToolSpec[] = [
     args: [entityArg()],
     run: async ({ entityId }) => {
       const target = requireId(entityId, 'Entity id')
-      const row = selectedRow(target)
+      const row = rowById(target)
       if (row?.type === 'file') {
         // Read rather than take the cached copy: the bytes are the point, and a
         // row that has never been on screen has none.
