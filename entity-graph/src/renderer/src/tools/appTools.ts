@@ -23,6 +23,7 @@ export const GROUP_TOOLS: ToolSpec[] = [
     hint: 'Layout',
     scope: 'group',
     reach: 'ui',
+    keys: [{ key: 't', mod: true }],
     run: () => {
       const groupId = group()
       if (groupId) updateLayout((s) => R.addTab(s, groupId))
@@ -35,6 +36,9 @@ export const GROUP_TOOLS: ToolSpec[] = [
     hint: 'Layout',
     scope: 'group',
     reach: 'ui',
+    // Ctrl/⌘+W means "close this tab", not "close the window" — see the menu in
+    // src/main/index.ts, which gives up the accelerator so this can have it.
+    keys: [{ key: 'w', mod: true }],
     run: () => {
       const { groupId, tabId } = focusOf(getLayout())
       if (groupId && tabId) updateLayout((s) => R.closeTab(s, groupId, tabId))

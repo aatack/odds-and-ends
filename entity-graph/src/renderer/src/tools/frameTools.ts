@@ -75,6 +75,8 @@ const hasEdit = (): boolean => {
 
 // Format the entity at `start` and its visible descendants as nested markdown
 // bullets. Children of folded rows aren't in `rows`, so they're naturally out.
+// Checkbox rows carry their state as a markdown task box; plain bullets get
+// nothing, so a tree with no checkboxes exports exactly as before.
 function subtreeMarkdown(rows: Row[], start: number): string {
   const from = rows[start]
   if (!from || from.kind !== 'entity') return ''
@@ -83,7 +85,8 @@ function subtreeMarkdown(rows: Row[], start: number): string {
     const row = rows[i]
     if (i > start && row.depth <= from.depth) break
     if (row.kind !== 'entity') continue
-    lines.push(`${'  '.repeat(row.depth - from.depth)}- ${row.text ?? ''}`)
+    const box = row.open === true ? '[ ] ' : row.open === false ? '[x] ' : ''
+    lines.push(`${'  '.repeat(row.depth - from.depth)}- ${box}${row.text ?? ''}`)
   }
   return lines.join('\n')
 }
@@ -353,6 +356,7 @@ export const FRAME_TOOLS: ToolSpec[] = [
     hint: 'Layout',
     scope: 'frame',
     reach: 'ui',
+    keys: [{ key: 'd', mod: true }],
     run: () => {
       const { groupId, tabId } = focusOf(getLayout())
       if (groupId && tabId) updateLayout((s) => R.popIntoNewTab(s, groupId, tabId))

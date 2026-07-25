@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'path'
 import { randomBytes } from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
@@ -229,6 +229,45 @@ ipcMain.handle('admin:revokeToken', (_e, serverId: string, token: string) =>
 // Window
 // ---------------------------------------------------------------------------
 
+/**
+ * The application menu. Built by hand rather than left to Electron's default for
+ * one reason: a menu accelerator is consumed by the menu and never reaches the
+ * page, and two of the default's accelerators are keys the app itself binds —
+ * Window → Close takes ⌘/Ctrl+W, which closes a *tab* here, and Edit → Undo
+ * takes ⌘/Ctrl+Z, which is the app's own undo tool. So neither item is here.
+ *
+ * Nothing is lost by dropping the Edit menu on Windows and Linux: Chromium
+ * handles cut/copy/paste in a focused field itself. macOS does not — the roles
+ * have to exist in a menu for the system shortcuts to work at all — so there it
+ * keeps a clipboard-only Edit menu.
+ */
+function installMenu(): void {
+  const isMac = process.platform === 'darwin'
+  const template: MenuItemConstructorOptions[] = [
+    ...(isMac ? [{ role: 'appMenu' } as MenuItemConstructorOptions] : []),
+    { role: 'fileMenu' },
+    ...(isMac
+      ? [
+          {
+            label: 'Edit',
+            submenu: [
+              { role: 'cut' },
+              { role: 'copy' },
+              { role: 'paste' },
+              { role: 'selectAll' },
+            ],
+          } as MenuItemConstructorOptions,
+        ]
+      : []),
+    { role: 'viewMenu' },
+    {
+      label: 'Window',
+      submenu: [{ role: 'minimize' }, ...(isMac ? [{ role: 'zoom' as const }] : [])],
+    },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
 function createWindow(): void {
   const win = new BrowserWindow({
     width: 1280,
@@ -247,6 +286,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  installMenu()
   servers.startAll()
   createWindow()
 })
