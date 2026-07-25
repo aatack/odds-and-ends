@@ -10,7 +10,6 @@ import { formatArg } from '../tools/args'
 import { argsOf } from '../tools/types'
 import { Badge, type BadgeColor } from './ui/Badge'
 import { Button } from './ui/Button'
-import { CodeBlock } from './ui/CodeBlock'
 import { Popup } from './ui/Popup'
 
 const STATUS: Record<CallOutcome['kind'], { label: string; color: BadgeColor }> = {
@@ -156,11 +155,15 @@ function CallRow({ call, onClose }: { call: RecordedCall; onClose: () => void })
         </div>
       </div>
 
-      {/* Capped, and scrolling inside itself: a hundred pull requests must not
+      {/* The same ground a code entity sits on, but plain: a result runs to a
+          thousand lines, and syntax-highlighting one of those on every open
+          costs more than the colour is worth. Scrolls inside itself, so it can't
           push the rest of the log off the bottom of the panel. */}
       {result && showResult && (
-        <div className="mt-1.5 max-h-64 overflow-y-auto">
-          <CodeBlock code={result} language="json" />
+        <div className="mt-1.5 max-h-64 overflow-auto rounded-md bg-gray-100 shadow-xs">
+          <pre className="w-max min-w-full whitespace-pre px-2.5 py-1.5 font-mono text-[11.5px] leading-[1.45] text-gray-700">
+            {result}
+          </pre>
         </div>
       )}
     </li>

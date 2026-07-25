@@ -88,17 +88,19 @@ const clip = (text: string, limit = 160): string =>
   text.length > limit ? `${text.slice(0, limit - 1)}…` : text
 
 /**
- * What to say once it's done. A tool that *did* something quotes what the
- * service said back; one that fetched something counts what came back. Neither
- * is worth threading through the tool definitions — the shapes are regular
- * enough to read.
+ * The most telling thing a result says about itself, in the order it's worth
+ * saying: what the service said back, then what the thing *is*, then where it
+ * is, and failing all three how many of them came back. The toast is a
+ * confirmation — the whole result is in the activity log.
  */
+const TELLING = ['output', 'text', 'title', 'permalink', 'url']
+
 function summarise(data: unknown): string | null {
   if (typeof data === 'string') return data.trim() ? clip(data.trim()) : null
   if (Array.isArray(data)) return `${data.length} result${data.length === 1 ? '' : 's'}`
   if (data && typeof data === 'object') {
     const record = data as Record<string, unknown>
-    for (const key of ['output', 'permalink', 'url']) {
+    for (const key of TELLING) {
       const value = record[key]
       if (typeof value === 'string' && value.trim()) return clip(value.trim())
     }
