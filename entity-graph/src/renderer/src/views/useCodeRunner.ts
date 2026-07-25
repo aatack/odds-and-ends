@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { RunRequest, RunResponse } from './codeRunner.worker'
+import type { RunRequest, RunResponse } from '../helpers/codeRunner.worker'
 
 // ---------------------------------------------------------------------------
 // Local (non-persisted) run state for `type: code` entities.
@@ -42,7 +42,7 @@ export function useCodeRunner(): CodeRunner {
 
   const ensureWorker = useCallback((): Worker => {
     if (workerRef.current) return workerRef.current
-    const worker = new Worker(new URL('./codeRunner.worker.ts', import.meta.url), {
+    const worker = new Worker(new URL('../helpers/codeRunner.worker.ts', import.meta.url), {
       type: 'module',
     })
     worker.onmessage = (e: MessageEvent<RunResponse>): void => {

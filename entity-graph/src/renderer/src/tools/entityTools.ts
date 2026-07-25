@@ -1,0 +1,217 @@
+import * as A from '../state/actions'
+import { frameRows } from '../state/derive'
+import { queryAtom } from '../state/query'
+import { focusOf, getLayout } from '../state/store'
+import { last } from '../state/types'
+import { updateUi } from '../state/ui'
+import { createEntity, link, moveEntity, unlink, writeValue } from '../source/entity'
+import type { ArgSpec, ToolSpec } from './types'
+
+// Tools that name the entity they act on, rather than implying it. Their
+// arguments are filled from the call's context, so the same declaration serves
+// three gestures: a hotkey (everything filled, runs at once), a right-click (the
+// entity under the cursor), and the palette (type the ids yourself).
+//
+// The arguments that are *pointed at* rather than typed — the new parent of a
+// move, the far end of a link — carry `pick`, which is what makes "press x,
+// move to the target, press x again" work without a special case.
+
+/** The entity under the selection: filled from the context, never typed by default. */
+const entityArg = (name = 'entityId', label = 'Entity id', from = 'entityId'): ArgSpec => ({
+  name,
+  label,
+  kind: 'entity',
+  fromContext: from,
+})
+
+const pickArg = (name: string, label: string): ArgSpec => ({
+  name,
+  label,
+  kind: 'entity',
+  pick: 'entity',
+})
+
+const id = (v: unknown): string => String(v ?? '')
+
+/** The selection's parent, or null at the root of the frame. */
+function selectedParent(): string | null {
+  const layout = getLayout()
+  const { frameId } = focusOf(layout)
+  const { selectedPath } = frameRows(layout, queryAtom.get(), frameId)
+  return selectedPath.length > 1 ? selectedPath[selectedPath.length - 2] : null
+}
+
+export const ENTITY_TOOLS: ToolSpec[] = [
+  {
+    id: 'entity.open',
+    label: 'Open entity',
+    aliases: ['focus', 'drill in', 'push frame'],
+    scope: 'frame',
+    reach: 'ui',
+    keys: [{ key: 'd' }],
+    args: [entityArg()],
+    run: ({ entityId }) => {
+      const layout = getLayout()
+      const { tabId, frameId } = focusOf(layout)
+      const target = id(entityId)
+      if (!tabId || !target) return
+      // Don't stack a frame whose root is already what's showing — that just
+      // makes a duplicate to pop straight back off.
+      if (frameId && layout.frames[frameId]?.rootId === target) return
+      A.pushFrame(tabId, target)
+    },
+  },
+  {
+    id: 'entity.debug',
+    label: 'Debug entity',
+    aliases: ['inspect', 'info', 'raw', 'events'],
+    scope: 'frame',
+    reach: 'ui',
+    args: [entityArg()],
+    run: ({ entityId }) => updateUi({ debugEntityId: id(entityId) }),
+  },
+  {
+    id: 'entity.rename',
+    label: 'Rename entity',
+    aliases: ['set text', 'retitle'],
+    scope: 'frame',
+    reach: 'source',
+    mutates: true,
+    args: [entityArg(), { name: 'text', label: 'New text' }],
+    run: ({ entityId, text }) => writeValue(id(entityId), 'text', String(text ?? '')).then(() => undefined),
+  },
+  {
+    id: 'entity.create',
+    label: 'Create child of entity',
+    aliases: ['add', 'new', 'insert'],
+    scope: 'frame',
+    reach: 'source',
+    mutates: true,
+    args: [entityArg('parentId', 'Parent id'), { name: 'text', label: 'Child text' }],
+    run: async ({ parentId, text }) => {
+      await createEntity({ text: String(text ?? '') }, id(parentId))
+    },
+  },
+  {
+    id: 'entity.unlink',
+    label: 'Remove from parent',
+    aliases: ['delete', 'detach', 'disconnect'],
+    scope: 'frame',
+    reach: 'source',
+    mutates: true,
+    keys: [{ key: 'Backspace' }, { key: 'Delete' }],
+    // Nothing to unlink at the root of a frame, so the key stays inert there
+    // rather than opening a wizard for the missing parent.
+    enabled: () => selectedParent() != null,
+    args: [entityArg('childId', 'Entity id'), entityArg('parentId', 'Parent id', 'parentId')],
+    run: async ({ childId, parentId }, call) => {
+      await unlink(id(parentId), id(childId))
+      // Selection was on the row just removed; step up to its parent.
+      const layout = getLayout()
+      const frameId = call.context.frameId
+      const frame = frameId ? layout.frames[frameId] : null
+      if (frame && last(frame.selectedPath) === id(childId)) {
+        A.selectPath(frame.id, frame.selectedPath.slice(0, -1))
+      }
+    },
+  },
+  {
+    id: 'entity.move',
+    label: 'Move entity to…',
+    aliases: ['reparent', 'relocate'],
+    scope: 'frame',
+    reach: 'source',
+    mutates: true,
+    keys: [{ key: 'x' }],
+    enabled: () => selectedParent() != null,
+    args: [
+      entityArg(),
+      entityArg('fromParentId', 'From parent id', 'parentId'),
+      pickArg('toParentId', 'To parent id'),
+    ],
+    run: async ({ entityId, fromParentId, toParentId }) => {
+      if (id(fromParentId) === id(toParentId)) return
+      await moveEntity(id(entityId), id(fromParentId), id(toParentId))
+    },
+  },
+  {
+    id: 'entity.link',
+    label: 'Link entity to…',
+    aliases: ['connect', 'relate', 'reference'],
+    scope: 'frame',
+    reach: 'source',
+    mutates: true,
+    keys: [{ key: 'r' }],
+    args: [entityArg('sourceId', 'Source id'), pickArg('destinationId', 'Destination id')],
+    run: async ({ sourceId, destinationId }) => {
+      await link(id(sourceId), id(destinationId))
+    },
+  },
+  {
+    id: 'entity.link.reverse',
+    label: 'Link entity from…',
+    aliases: ['connect', 'relate', 'reference', 'backlink', 'reversed'],
+    scope: 'frame',
+    reach: 'source',
+    mutates: true,
+    keys: [{ key: 'r', shift: true }],
+    args: [entityArg('destinationId', 'Destination id'), pickArg('sourceId', 'Source id')],
+    run: async ({ sourceId, destinationId }) => {
+      await link(id(sourceId), id(destinationId))
+    },
+  },
+  {
+    id: 'entity.section.set',
+    label: 'Set entity section',
+    aliases: ['heading', 'header', 'title'],
+    scope: 'frame',
+    reach: 'source',
+    mutates: true,
+    args: [
+      entityArg(),
+      { name: 'section', label: 'Section', kind: 'select', options: ['on', 'off'] },
+    ],
+    run: async ({ entityId, section }) => {
+      await writeValue(id(entityId), 'section', section === 'on' ? true : null)
+    },
+  },
+  {
+    id: 'entity.checkbox.set',
+    label: 'Set entity checkbox',
+    aliases: ['todo', 'task', 'done', 'open', 'check'],
+    scope: 'frame',
+    reach: 'source',
+    mutates: true,
+    args: [
+      entityArg(),
+      { name: 'open', label: 'Checkbox', kind: 'select', options: ['on', 'off', 'none'] },
+    ],
+    // on = open box, off = ticked, none = back to a plain bullet.
+    run: async ({ entityId, open }) => {
+      await writeValue(id(entityId), 'open', open === 'on' ? true : open === 'off' ? false : null)
+    },
+  },
+  {
+    id: 'entity.value.set',
+    label: 'Set entity value',
+    aliases: ['write', 'attribute', 'property', 'key'],
+    hint: 'Entity',
+    scope: 'frame',
+    reach: 'source',
+    mutates: true,
+    args: [
+      entityArg(),
+      { name: 'key', label: 'Value key', placeholder: 'e.g. type' },
+      {
+        name: 'value',
+        label: 'Value (JSON)',
+        kind: 'json',
+        optional: true,
+        placeholder: 'Blank to clear',
+      },
+    ],
+    run: async ({ entityId, key, value }) => {
+      await writeValue(id(entityId), String(key), value ?? null)
+    },
+  },
+]
