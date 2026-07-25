@@ -243,11 +243,15 @@ max-depth map, and any in-progress edit.
 
 Canvases are gone. The `View` union collapsed back to a single entity view.
 
-Nothing cached lives in latent state: query results, entity display names,
-code-run output and loaded resources are runtime-only and rebuild on load, at the
-cost of a beat of jank on tab labels. Names are the one thing kept past the rows
-they came from — still runtime, but never pruned, since dropping an inactive tab's
-rows shouldn't turn its label back into a uuid.
+Nothing cached lives in latent state: query results, entity summaries, code-run
+output and loaded resources are runtime-only and rebuild on load, at the cost of a
+beat of jank on tab labels. Summaries are the one thing kept past the rows they
+came from — still runtime, but never pruned, since dropping an inactive tab's rows
+shouldn't turn its label back into a uuid. A summary is the little an entity says
+about itself away from its row (text, type, mime type): enough to name it in a tab
+or a crumb, and enough for an entity pill to know what shape to take. A file's
+real name is not in there — it lives with the bytes, so a pill uses it only if
+something else has already loaded them.
 
 **Resources** (`state/resources.ts`) are the bytes behind a `type: 'file'` row,
 cached the same way and never persisted — a couple of pasted screenshots would

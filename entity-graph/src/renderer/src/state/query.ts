@@ -28,20 +28,55 @@ export const NO_PAGE: FramePage = { results: [], continuation: null, loading: fa
 export const queryAtom = atom<QueryCache>({})
 
 /**
- * Entity id → display text, harvested from every page that loads and never
- * pruned. Runtime only, like the cache, but it outlives the pages it came from:
- * dropping a frame's rows shouldn't turn its tab's label back into a uuid. After
- * a reload, tabs you haven't opened yet do show their ids for a moment.
+ * The little that is known about an entity away from its own row: enough to name
+ * it in a tab or a breadcrumb, and enough for a pill to know what shape it should
+ * be. The same three values a row carries, which is not a coincidence — a row is
+ * this plus where it sits.
  */
-export const namesAtom = atom<Record<string, string>>({})
+export interface EntitySummary {
+  text?: string
+  /** The entity's `type` value, if any (e.g. `'code'` for a runnable block). */
+  type?: string
+  /** For `type: 'file'`, what the stored bytes are. */
+  mimeType?: string
+}
 
-function harvestNames(results: QueryResult[]): void {
-  const learned: Record<string, string> = {}
+/**
+ * Entity id → summary, harvested from every page that loads and never pruned.
+ * Runtime only, like the cache, but it outlives the pages it came from: dropping
+ * a frame's rows shouldn't turn its tab's label back into a uuid. After a reload,
+ * tabs you haven't opened yet do show their ids for a moment.
+ */
+export const summariesAtom = atom<Record<string, EntitySummary>>({})
+
+/** A value as display text — absent when null or blank, so `??` reaches past it. */
+export const str = (v: unknown): string | undefined =>
+  v == null || v === '' ? undefined : String(v)
+
+/** What a set of entity values says about the entity in passing. */
+export const summaryOf = (values: Record<string, unknown>): EntitySummary => ({
+  text: str(values.text),
+  type: str(values.type),
+  mimeType: str(values.mimeType),
+})
+
+const sameSummary = (a: EntitySummary | undefined, b: EntitySummary): boolean =>
+  a != null && a.text === b.text && a.type === b.type && a.mimeType === b.mimeType
+
+/**
+ * Learn what a page says about every entity in it. An entity's summary is
+ * replaced rather than merged into, so clearing a row's text takes the name that
+ * came from it with it; ones that haven't changed are left untouched, so a
+ * refetch doesn't re-render every pill in the window.
+ */
+function harvestSummaries(results: QueryResult[]): void {
+  const known = summariesAtom.get()
+  const learned: Record<string, EntitySummary> = {}
   for (const { entity } of results) {
-    const text = entity.values.text
-    if (text != null && text !== '') learned[entity.id] = String(text)
+    const summary = summaryOf(entity.values)
+    if (!sameSummary(known[entity.id], summary)) learned[entity.id] = summary
   }
-  if (Object.keys(learned).length) namesAtom.set((names) => ({ ...names, ...learned }))
+  if (Object.keys(learned).length) summariesAtom.set((s) => ({ ...s, ...learned }))
 }
 
 export type QueryFetcher = (
@@ -105,7 +140,7 @@ async function load(frameId: string, key: string): Promise<void> {
       direction: directionOf(frame),
     })
     if (issued.get(frameId) !== key) return
-    harvestNames(page.results)
+    harvestSummaries(page.results)
     patch(frameId, () => ({
       results: page.results,
       continuation: page.continuationStack,
@@ -189,7 +224,7 @@ export function loadMore(frameId: string): void {
     .then((next) => {
       // A first-page refetch while this was in flight wins; drop the append.
       if (issued.get(frameId) !== key) return
-      harvestNames(next.results)
+      harvestSummaries(next.results)
       patch(frameId, (p) => ({
         ...p,
         results: [...p.results, ...next.results],

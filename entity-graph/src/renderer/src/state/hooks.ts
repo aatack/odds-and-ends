@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import type { Atom } from './atom'
-import { frameCrumbs, frameRows, tabLabel, type Crumb, type FrameRows } from './derive'
+import { entityLabel, frameCrumbs, frameRows, type Crumb, type FrameRows } from './derive'
 import { focusRequestAtom, focusTaken } from './focusRequest'
-import { namesAtom, queryAtom, retainFrame } from './query'
+import { queryAtom, retainFrame, summariesAtom, type EntitySummary } from './query'
 import { loadResource, resourcesAtom, type ResourceState } from './resources'
 import { callsAtom, focusOf, layoutAtom, pendingAtom, type Focus } from './store'
 import { themeAtom, uiAtom, type Theme, type UiState } from './ui'
@@ -66,11 +66,12 @@ export function useFrameRows(frameId: string): FrameRows {
   return useMemo(() => frameRows(layout, cache, frameId), [layout, cache, frameId])
 }
 
-export function useTabLabel(tabId: string): string {
-  const layout = useLayoutState()
-  const names = useAtomValue(namesAtom)
-  return useMemo(() => tabLabel(layout, names, tabId), [layout, names, tabId])
-}
+/** What an entity says about itself in passing — what a pill is drawn from. */
+export const useEntitySummary = (id: string): EntitySummary | undefined =>
+  useAtomValue(summariesAtom)[id]
+
+/** An entity's display name, from whatever has been harvested so far. */
+export const useEntityLabel = (id: string): string => entityLabel(useAtomValue(summariesAtom), id)
 
 /**
  * The bytes behind a `type: 'file'` row, fetched on first render. Asking is
@@ -84,9 +85,20 @@ export function useResource(id: string): ResourceState {
   return cache[id] ?? { status: 'loading' }
 }
 
-/** A tab's frame stack as a trail of names, outermost first. */
+/**
+ * A file's name, if its bytes happen to be loaded already — and pointedly without
+ * asking for them. Somewhere to put a file's real name (it lives with the
+ * resource, not the entity) for the callers that only want to *name* the thing: a
+ * tab title has no business pulling a screenshot over the wire.
+ */
+export function useLoadedFileName(id: string): string | null {
+  const resource = useAtomValue(resourcesAtom)[id]
+  return resource?.status === 'ready' ? resource.name : null
+}
+
+/** A tab's frame stack as a trail of entities, outermost first. */
 export function useCrumbs(tabId: string | null): Crumb[] {
   const layout = useLayoutState()
-  const names = useAtomValue(namesAtom)
-  return useMemo(() => frameCrumbs(layout, names, tabId), [layout, names, tabId])
+  const summaries = useAtomValue(summariesAtom)
+  return useMemo(() => frameCrumbs(layout, summaries, tabId), [layout, summaries, tabId])
 }

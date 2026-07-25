@@ -1,8 +1,11 @@
 import React from 'react'
 import { ChevronRight, Plus, X } from '@untitledui/icons'
+import { EntityPill, PillContent, PillWrapper } from '../components/EntityPill'
+import { Button } from '../components/ui/Button'
 import { cn } from '../helpers/cn'
 import * as A from '../state/actions'
-import { useCrumbs, useLayoutState, useTabLabel } from '../state/hooks'
+import { tabRootId } from '../state/derive'
+import { useCrumbs, useLayoutState } from '../state/hooks'
 import { last, type GroupState } from '../state/types'
 import { EntityFrame } from './EntityFrame'
 
@@ -35,7 +38,7 @@ export function TabGroupView({
           .map((tabId) => (
             <TabButton
               key={tabId}
-              tabId={tabId}
+              rootId={tabRootId(layout, tabId)}
               active={group.activeTabId === tabId}
               frameCount={layout.tabs[tabId].frameIds.length}
               onSelect={() => A.selectTab(group.id, tabId)}
@@ -80,15 +83,18 @@ function Breadcrumb({ tabId }: { tabId: string }): React.JSX.Element | null {
         <React.Fragment key={crumb.frameId}>
           {i > 0 && <ChevronRight size={11} className="shrink-0 text-gray-300" />}
           {i === last ? (
-            <span className="max-w-[220px] shrink-0 truncate text-gray-600">{crumb.label}</span>
+            // Where you are, so no background: there is nothing to click, only
+            // the entity's own gestures.
+            <PillWrapper id={crumb.rootId} className="shrink-0 text-gray-600">
+              <PillContent id={crumb.rootId} />
+            </PillWrapper>
           ) : (
-            <button
-              className="max-w-[140px] shrink-0 truncate hover:text-gray-700 focus:outline-none"
+            <EntityPill
+              id={crumb.rootId}
+              className="shrink-0"
               onClick={() => A.popToFrame(tabId, crumb.frameId)}
               title={`Back to ${crumb.label}`}
-            >
-              {crumb.label}
-            </button>
+            />
           )}
         </React.Fragment>
       ))}
@@ -96,29 +102,34 @@ function Breadcrumb({ tabId }: { tabId: string }): React.JSX.Element | null {
   )
 }
 
+/**
+ * A tab is the entity it is showing: a pill on a background of its own — the
+ * header's own two buttons, the filled one for the tab you are in and the quiet
+ * one for the rest — carrying the depth of its frame stack and a way to close it.
+ * The pill brings the entity gestures with it, so a tab can be right-clicked for
+ * the tool list or middle-clicked to open the same entity again elsewhere.
+ */
 function TabButton({
-  tabId,
+  rootId,
   active,
   frameCount,
   onSelect,
   onClose,
 }: {
-  tabId: string
+  rootId: string | undefined
   active: boolean
   frameCount: number
   onSelect: () => void
   onClose: () => void
 }): React.JSX.Element {
-  const label = useTabLabel(tabId)
-  return (
-    <button
-      className={cn(
-        'group flex shrink-0 items-center gap-1 rounded px-2 py-1 text-[12px]',
-        active ? 'bg-gray-100 text-gray-900' : 'text-gray-500 hover:bg-gray-50',
-      )}
+  const tab = (
+    <Button
+      variant={active ? 'secondary' : 'tertiary'}
+      size="sm"
+      className="group shrink-0"
       onClick={onSelect}
     >
-      <span className="max-w-[80px] truncate">{label}</span>
+      {rootId ? <PillContent id={rootId} /> : <span className="text-gray-400">Empty</span>}
       {frameCount > 1 && (
         <span className="text-[10px] text-gray-400" title={`${frameCount} frames on the stack`}>
           {frameCount}
@@ -135,6 +146,13 @@ function TabButton({
       >
         <X size={11} />
       </span>
-    </button>
+    </Button>
+  )
+  return rootId ? (
+    <PillWrapper id={rootId} className="shrink-0">
+      {tab}
+    </PillWrapper>
+  ) : (
+    tab
   )
 }

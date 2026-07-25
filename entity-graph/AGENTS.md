@@ -91,6 +91,16 @@ Primitives live in `src/renderer/src/components/ui/` — `Button`, `Badge`,
 `src/renderer/src/helpers/`; check there before adding one. If a
 component/helper appears twice, factor it out.
 
+**Entity pills** (`components/EntityPill.tsx`) are how an entity appears anywhere
+it is referenced in passing rather than shown in full — a tab title, a crumb, a
+mention inside another entity's text. Three parts, usable separately:
+`PillContent` (the entity at pill size, by type), `PillWrapper` (the entity
+gestures, around any child — it publishes `data-entity-id`, which is all the
+global right-click and middle-click handlers need), and `PillBackground` (a
+surface for a pill that has to be told apart from the text around it).
+`EntityPill` is all three. Reach for these rather than writing out an entity's
+label: a bare label can't be right-clicked, and it won't follow the entity.
+
 ## Layout
 
 ```
