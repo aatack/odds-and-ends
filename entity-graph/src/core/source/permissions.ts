@@ -1,6 +1,14 @@
 import type { AppEvent } from '../events'
 
 /**
+ * How far back popping is allowed to reach. Undo takes events off the store for
+ * real, so beyond this the history is settled: an event older than five minutes
+ * is never deleted, whatever is asked for. It bounds the damage a runaway client
+ * — or a user holding Ctrl+Z — can do to a store that has no other copy.
+ */
+export const POP_AGE_LIMIT_MS = 5 * 60 * 1000
+
+/**
  * The minimal storage surface the DB-backed tools need. `SqliteInterface`
  * satisfies this; Combined/Frozen provide their own implementations.
  */
@@ -12,7 +20,8 @@ export interface EventBacking {
   writeEvents(events: AppEvent[]): Promise<void>
   /**
    * Optional: take the most recent events back off the store, returning them.
-   * Append-only backings simply don't implement it.
+   * Append-only backings simply don't implement it. Implementations must honour
+   * {@link POP_AGE_LIMIT_MS}.
    */
   popLatestEvents?(windowMs: number): Promise<AppEvent[]>
 }
@@ -61,8 +70,9 @@ export interface Permissions {
   writeEvents(events: AppEvent[]): Promise<void>
   /**
    * Remove the most recent event, and any within `windowMs` of it, returning
-   * them. Optional — the store may be append-only, in which case the `popEvents`
-   * tool is simply absent and the client has no undo.
+   * them. Nothing older than {@link POP_AGE_LIMIT_MS} comes off. Optional — the
+   * store may be append-only, in which case the `popEvents` tool is simply
+   * absent and the client has no undo.
    */
   popLatestEvents?(windowMs: number): Promise<AppEvent[]>
   httpRequest(req: HttpRequest): Promise<HttpResponse>

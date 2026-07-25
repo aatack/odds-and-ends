@@ -264,7 +264,8 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
       'Remove the most recent event, and any within `windowMs` of it, and return ' +
       'them. Backs undo: one user action often writes several events at the same ' +
       'instant, so they come off together. Hand the result to `writeEvents` to ' +
-      'put them back.',
+      'put them back. Events older than five minutes are never removed, so on a ' +
+      'store that has been idle that long this returns nothing.',
     safety: 'safe-mutating',
     args: z.object({
       windowMs: z

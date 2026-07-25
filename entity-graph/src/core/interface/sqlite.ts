@@ -2,6 +2,7 @@ import { mkdirSync } from 'fs'
 import { resolve, dirname } from 'path'
 import Database from 'better-sqlite3'
 import type { AppEvent, ValueEvent, LinkEvent } from '../events'
+import { POP_AGE_LIMIT_MS } from '../source/permissions'
 import type { DumpableInterface } from './index'
 
 interface ValueRow {
@@ -116,8 +117,15 @@ export class SqliteInterface implements DumpableInterface {
    * values and the link to its parent together — and they should come off as a
    * unit. Select and delete share one transaction, so a concurrent write can't
    * slip between them.
+   *
+   * Nothing older than {@link POP_AGE_LIMIT_MS} is touched, whatever window is
+   * asked for: past that the history is settled and this call is a no-op. The
+   * limit is a floor on the cutoff rather than a refusal, so a window straddling
+   * it takes the recent half and leaves the rest.
    */
   async popLatestEvents(windowMs: number): Promise<AppEvent[]> {
+    // Read before the transaction so the clock is sampled once, not per query.
+    const oldestPoppable = Date.now() - POP_AGE_LIMIT_MS
     return this.db.transaction(() => {
       const latest = this.db
         .prepare<[], { ts: number | null }>(
@@ -130,7 +138,7 @@ export class SqliteInterface implements DumpableInterface {
         .get()
       if (latest?.ts == null) return []
 
-      const cutoff = latest.ts - windowMs
+      const cutoff = Math.max(latest.ts - windowMs, oldestPoppable)
       const valueRows = this.db
         .prepare<[number], ValueRow>(
           `SELECT timestamp, author, entity_id, key, value

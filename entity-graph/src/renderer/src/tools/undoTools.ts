@@ -1,3 +1,4 @@
+import { POP_AGE_LIMIT_MS } from '../../../core/source/permissions'
 import { popUndo, pushUndo, redoable, undoAtom } from '../state/undo'
 import { popEvents, writeEvents } from '../source/entity'
 import { currentSourceId } from '../source/transport'
@@ -10,6 +11,12 @@ import type { ToolSpec } from './types'
 // stack becomes the only copy. Redo writes them back with their original
 // timestamps, so the store ends up exactly as it was rather than with the edit
 // re-applied at the current time.
+//
+// Because it deletes, undo only reaches back so far: the store refuses to give
+// up anything older than POP_AGE_LIMIT_MS, so an edit left alone for that long
+// is permanent. Nothing here needs to check the age — asking simply comes back
+// empty — but the message says so, since "nothing to undo" would otherwise read
+// as a lie with the edit still on screen.
 
 export const UNDO_TOOLS: ToolSpec[] = [
   {
@@ -26,7 +33,10 @@ export const UNDO_TOOLS: ToolSpec[] = [
       const sourceId = currentSourceId()
       if (!sourceId) throw new Error('No source is open')
       const events = await popEvents()
-      if (events.length === 0) return { message: 'Nothing left to undo', mutated: false }
+      if (events.length === 0) {
+        const minutes = Math.round(POP_AGE_LIMIT_MS / 60_000)
+        return { message: `Nothing to undo — edits settle after ${minutes} minutes`, mutated: false }
+      }
       pushUndo({ sourceId, at: Date.now(), events })
       return {
         data: events,

@@ -158,6 +158,11 @@ drive the app faster than a person can.
 
 Consequences worth knowing:
 
+- **Undo has a horizon.** The store never gives up an event older than five
+  minutes (`POP_AGE_LIMIT_MS`), so past that an edit is settled and `popEvents`
+  comes back empty. Since undo deletes rather than compensates, the limit caps
+  how much of a store's history a client — or a held-down `⌘Z` — can take off.
+  Redo is unaffected: a step already on the stack can be written back whenever.
 - **The stack is the only copy of those events.** Nothing can reconstruct them,
   which is why it's latent state and persisted despite looking like history — and
   why there is no "clear undo history" tool: it would destroy data, not tidy a

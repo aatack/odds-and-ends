@@ -48,7 +48,9 @@ export const unlink = (parentId: string, childId: string): Promise<unknown> =>
 
 /**
  * Take the most recent event, and any within `windowMs` of it, back off the
- * store. Returns what was removed, oldest first.
+ * store. Returns what was removed, oldest first — empty once the last write is
+ * older than the store's age limit (`POP_AGE_LIMIT_MS`), which nothing here can
+ * override.
  */
 export const popEvents = (windowMs = 100): Promise<AppEvent[]> =>
   callSource('popEvents', { windowMs }) as Promise<AppEvent[]>
