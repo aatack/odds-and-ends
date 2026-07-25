@@ -52,6 +52,14 @@ export interface EntityGraphAPI {
   sourceTools: (id: string) => Promise<ToolMeta[]>
   sourceCall: (id: string, tool: string, args: unknown) => Promise<unknown>
 
+  /**
+   * The server's integrations — GitHub, Slack, Claude. Keyed by *server*, not by
+   * open source: they belong to the server, and it is its admin token that
+   * reaches them.
+   */
+  integrationTools: (serverId: string) => Promise<ToolMeta[]>
+  runIntegrationTool: (serverId: string, tool: string, args: unknown) => Promise<unknown>
+
   // Admin (servers with admin access), keyed by server id
   adminListSources: (serverId: string) => Promise<SourceRow[]>
   adminGetSource: (serverId: string, id: string) => Promise<SourceRow>
@@ -95,6 +103,10 @@ const api: EntityGraphAPI = {
   closeSource: (id) => ipcRenderer.invoke('source:close', id),
   sourceTools: (id) => ipcRenderer.invoke('source:tools', id),
   sourceCall: (id, tool, args) => ipcRenderer.invoke('source:call', id, tool, args),
+
+  integrationTools: (serverId) => ipcRenderer.invoke('integrations:tools', serverId),
+  runIntegrationTool: (serverId, tool, args) =>
+    ipcRenderer.invoke('integrations:run', serverId, tool, args),
 
   adminListSources: (serverId) => ipcRenderer.invoke('admin:listSources', serverId),
   adminGetSource: (serverId, id) => ipcRenderer.invoke('admin:getSource', serverId, id),

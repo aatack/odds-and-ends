@@ -3,7 +3,7 @@ import fuzzysort from 'fuzzysort'
 import { Minimize01 } from '@untitledui/icons'
 import { cn } from '../helpers/cn'
 import { Popup } from './ui/Popup'
-import { usePendingCall } from '../state/hooks'
+import { useAtomValue, usePendingCall } from '../state/hooks'
 import {
   advanceArg,
   cancelCall,
@@ -16,6 +16,7 @@ import {
 } from '../tools/call'
 import { formatArg, parseArg } from '../tools/args'
 import { keyHint } from '../tools/keys'
+import { integrationsAtom } from '../tools/integrationTools'
 import { findTool, listedTools } from '../tools/registry'
 import { argsOf, kindOf, type ToolSpec } from '../tools/types'
 
@@ -61,6 +62,10 @@ export function CommandPalette(): React.JSX.Element | null {
   }, [seedKey])
 
   const query = visible?.query ?? ''
+  // The registry isn't fixed: the server's integrations join it once a source is
+  // open, so the list is recomputed when they land as well as when the query
+  // changes.
+  const integrations = useAtomValue(integrationsAtom)
   const matches = useMemo(() => {
     const tools = listedTools()
     const q = query.trim()
@@ -68,7 +73,7 @@ export function CommandPalette(): React.JSX.Element | null {
     return fuzzysort
       .go(q, tools, { keys: ['label', (t) => t.aliases?.join(' ') ?? ''] })
       .map((r) => r.obj)
-  }, [query])
+  }, [query, integrations])
   const active = matches.length ? Math.min(activeIndex, matches.length - 1) : 0
 
   useEffect(() => {

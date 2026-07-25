@@ -2,7 +2,7 @@ import { pendingAtom } from '../state/store'
 import { uiAtom } from '../state/ui'
 import { cancelCall, pickForPending, runTool, togglePalette } from './call'
 import { bindsKey, matchesKey, type KeyBinding } from './keys'
-import { TOOLS, findTool } from './registry'
+import { allTools, findTool } from './registry'
 import type { ToolScope } from './types'
 
 // The only keydown listener in the app. Keys act on global state, and resolve
@@ -77,8 +77,9 @@ export function handleKey(e: KeyboardEvent): boolean {
     if (e.key !== 'Escape' && !(e.ctrlKey || e.metaKey || e.altKey)) return false
   }
 
+  const tools = allTools()
   for (const scope of SCOPES) {
-    const tool = TOOLS.find(
+    const tool = tools.find(
       (t) => t.scope === scope && bindsKey(t.keys, e) && (t.enabled?.() ?? true),
     )
     if (tool) {

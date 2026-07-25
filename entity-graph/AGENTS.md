@@ -73,6 +73,12 @@ is the long form; the rules that matter day to day:
   arguments, its scope, and how far it reaches. Hotkeys and the command palette
   both dispatch through that declaration, so they cannot drift. New commands go
   here, never inline in a keydown handler.
+- **The registry isn't all built at build time.** The server's *integrations*
+  (GitHub, Slack, Claude — `server/src/integrations/`, documented in
+  `server/docs/integrations.md`) are fetched when a source opens and folded into
+  the same registry, with their argument prompts derived from the JSON Schema the
+  server publishes. So read the list through `allTools()`, never a constant, and
+  add a new integration on the server rather than here.
 - **One key listener, at the top.** `tools/dispatch.ts` owns it and resolves
   through the focus chain (focused frame → its tab group → the app), not through
   whatever has DOM focus.
@@ -104,6 +110,7 @@ label: a bare label can't be right-clicked, and it won't follow the entity.
 ## Layout
 
 ```
+server/         the HTTP server: sources, and the integrations (GitHub, Slack, Claude)
 src/main       Electron main — window, servers, config store
 src/preload     contextBridge exposing the typed EntityGraphAPI
 src/core        source client + query wrapper (shared types)

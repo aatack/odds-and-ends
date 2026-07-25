@@ -219,6 +219,25 @@ ipcMain.handle('source:tools', (_e, id: string) => sourceTools(id))
 ipcMain.handle('source:call', (_e, id: string, tool: string, args: unknown) => sourceCall(id, tool, args))
 
 // ---------------------------------------------------------------------------
+// IPC — integrations
+//
+// The server's reach into GitHub, Slack and Claude. Server-scoped rather than
+// source-scoped, and behind the admin token: `runTool` is the server's only door
+// onto them, and this is the app's only door onto it.
+// ---------------------------------------------------------------------------
+
+ipcMain.handle('integrations:tools', (_e, serverId: string) =>
+  adminRequest(serverId, 'GET', '/tools'),
+)
+ipcMain.handle('integrations:run', async (_e, serverId: string, tool: string, args: unknown) => {
+  const out = (await adminRequest(serverId, 'POST', '/runTool', { tool, args })) as
+    | { status: 'success'; result: unknown }
+    | { status: 'error'; message: string }
+  if (out.status === 'error') throw new HttpError(out.message)
+  return out.result
+})
+
+// ---------------------------------------------------------------------------
 // IPC — admin (source CRUD + tokens), keyed by server id
 // ---------------------------------------------------------------------------
 

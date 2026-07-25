@@ -11,6 +11,7 @@ import { setResourceFetcher } from '../state/resources'
 import { updateUi } from '../state/ui'
 import { query, readResource } from '../source/entity'
 import { setSourceTransport } from '../source/transport'
+import { setIntegrationServer } from '../tools/integrationTools'
 
 const api = window.entityGraph
 
@@ -36,12 +37,16 @@ export function SourceView({
     })
     setQueryFetcher(query)
     setResourceFetcher(readResource)
+    // The integrations belong to the *server*, not to the source — but this is
+    // where the app is pointed at one, so it is where they are picked up.
+    setIntegrationServer(active.serverId)
     return () => {
       setQueryFetcher(null)
       setResourceFetcher(null)
       setSourceTransport(null)
+      setIntegrationServer(null)
     }
-  }, [active.id, user])
+  }, [active.id, active.serverId, user])
 
   return (
     <div className="relative flex h-full flex-col">
