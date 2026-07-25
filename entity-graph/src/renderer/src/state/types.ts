@@ -123,6 +123,12 @@ export interface FrameState {
   /** Free-text filter over the rows; null when not filtering. */
   find: string | null
   /**
+   * Show only section rows (plus the frame's root, which anchors the view) —
+   * the tree read as an outline. A filter over the rows like `find`, applied
+   * after it, not a different query.
+   */
+  sectionsOnly: boolean
+  /**
    * entity id → depth cap below it (null = uncapped, missing = uncapped). Only
    * the root's entry reaches the server so far; the rest is provisioned for a
    * later change to the `query` tool.
@@ -171,6 +177,7 @@ export function newFrame(tabId: string, rootId: string): FrameState {
     rootId,
     selectedPath: [rootId],
     find: null,
+    sectionsOnly: false,
     maxDepth: {},
     edit: null,
   }

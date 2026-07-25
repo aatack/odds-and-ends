@@ -23,14 +23,22 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      {frame.find != null && (
-        <FindBox
-          frameId={frameId}
-          text={frame.find}
-          onChange={(text) => A.setFind(frameId, text)}
-          onClear={() => A.setFind(frameId, null)}
-        />
-      )}
+      {/* The frame's filters, floating over its top-right corner the way the
+          toasts float over its bottom-right: the rows keep their full height and
+          nothing is pushed down the moment a filter opens. */}
+      <div className="absolute right-3 top-3 z-20 flex flex-col items-end gap-2">
+        {frame.find != null && (
+          <FindBox
+            frameId={frameId}
+            text={frame.find}
+            onChange={(text) => A.setFind(frameId, text)}
+            onClear={() => A.setFind(frameId, null)}
+          />
+        )}
+        {frame.sectionsOnly && (
+          <FilterPill label="Sections only" onClear={() => A.setSectionsOnly(frameId, false)} />
+        )}
+      </div>
       <div className="min-h-0 flex-1">
         <Editor
           rows={rows}
@@ -56,14 +64,36 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
 }
 
 /**
- * The find field, floating over the frame's top-right corner the way the toasts
- * float over its bottom-right — the rows keep their full height, and the field
- * doesn't push them down the moment it opens.
- *
- * It holds no state: `frame.find` is the box, so it is on screen exactly while
- * the frame is filtering, empty string and all. Escape isn't handled here — it
- * routes like every other key, so it only reaches `frame.find.clear` when there
- * is nothing more pressing for it to do.
+ * A filter with nothing to configure: it says what it is doing and offers to
+ * stop. Like the find field's own clear button, dismissing it is direct
+ * manipulation — a state action, not a call through the tool machine.
+ */
+function FilterPill({
+  label,
+  onClear,
+}: {
+  label: string
+  onClear: () => void
+}): React.JSX.Element {
+  return (
+    <div className="flex items-center gap-1.5 rounded-full bg-white py-1 pl-3 pr-2 text-[12px] text-gray-500 shadow-lg">
+      <span>{label}</span>
+      <button
+        className="text-gray-400 hover:text-gray-700 focus:outline-none"
+        onClick={onClear}
+        aria-label={`Clear filter: ${label}`}
+      >
+        <X size={11} />
+      </button>
+    </div>
+  )
+}
+
+/**
+ * The find field. It holds no state: `frame.find` is the box, so it is on screen
+ * exactly while the frame is filtering, empty string and all. Escape isn't
+ * handled here — it routes like every other key, so it only reaches
+ * `frame.find.clear` when there is nothing more pressing for it to do.
  */
 function FindBox({
   frameId,
@@ -85,7 +115,7 @@ function FindBox({
   useFocusRequest(findField(frameId), () => inputRef.current?.select())
 
   return (
-    <div className="absolute right-3 top-3 z-20 flex w-64 items-center gap-2 rounded-lg bg-white px-3 py-2 shadow-lg">
+    <div className="flex w-64 items-center gap-2 rounded-lg bg-white px-3 py-2 shadow-lg">
       <SearchSm size={13} className="shrink-0 text-gray-400" />
       <input
         ref={inputRef}

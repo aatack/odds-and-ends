@@ -23,6 +23,9 @@ export const setCollapsed = (tabId: string, entityId: string, collapsed: boolean
 export const setFind = (frameId: string, find: string | null): void =>
   updateLayout((s) => R.setFind(s, frameId, find))
 
+export const setSectionsOnly = (frameId: string, on: boolean): void =>
+  updateLayout((s) => R.setSectionsOnly(s, frameId, on))
+
 export const setMaxDepth = (frameId: string, entityId: string, depth: number | null): void =>
   updateLayout((s) => R.setMaxDepth(s, frameId, entityId, depth))
 

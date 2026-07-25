@@ -409,6 +409,41 @@ export const FRAME_TOOLS: ToolSpec[] = [
     },
   },
   {
+    id: 'frame.sections',
+    label: 'Show sections only',
+    aliases: ['outline', 'headings', 'contents', 'toc', 'filter'],
+    scope: 'frame',
+    reach: 'ui',
+    keys: [{ key: 'q' }],
+    // A toggle rather than a one-way switch, so the key that turns the outline on
+    // turns it off again; the pill's own button runs `frame.sections.clear`.
+    run: () => {
+      const layout = getLayout()
+      const { frameId } = focusOf(layout)
+      if (frameId) A.setSectionsOnly(frameId, !layout.frames[frameId]?.sectionsOnly)
+    },
+  },
+  {
+    id: 'frame.sections.clear',
+    label: 'Show everything',
+    aliases: ['unfilter', 'show all', 'all rows'],
+    scope: 'frame',
+    reach: 'ui',
+    // After the find field in this list, so Escape gives up the text box first
+    // and only then the outline.
+    keys: [{ key: 'Escape' }],
+    listed: false,
+    enabled: () => {
+      const layout = getLayout()
+      const { frameId } = focusOf(layout)
+      return !!(frameId && layout.frames[frameId]?.sectionsOnly)
+    },
+    run: () => {
+      const { frameId } = focusOf(getLayout())
+      if (frameId) A.setSectionsOnly(frameId, false)
+    },
+  },
+  {
     id: 'frame.maxDepth',
     label: 'Limit depth below entity',
     aliases: ['depth', 'collapse below', 'levels'],

@@ -73,6 +73,9 @@ export const setEdit = (s: LayoutState, frameId: string, edit: EditState | null)
 export const setFind = (s: LayoutState, frameId: string, find: string | null): LayoutState =>
   updateFrame(s, frameId, (f) => ({ ...f, find }))
 
+export const setSectionsOnly = (s: LayoutState, frameId: string, on: boolean): LayoutState =>
+  updateFrame(s, frameId, (f) => ({ ...f, sectionsOnly: on }))
+
 export const setMaxDepth = (
   s: LayoutState,
   frameId: string,
