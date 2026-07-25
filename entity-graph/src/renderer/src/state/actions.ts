@@ -1,5 +1,5 @@
 import * as R from './reducers'
-import { getLayout, updateLayout } from './store'
+import { updateLayout } from './store'
 import type { EditState, FrameState, LayoutState } from './types'
 
 // Named mutators over the latent state. Two callers:
@@ -40,26 +40,22 @@ export const setDraft = (frameId: string, draft: string): void =>
 export const startEdit = (frameId: string, path: string[], text: string): void =>
   setEdit(frameId, { mode: 'edit', path, draft: text })
 
-/** Begin creating a child; `values` are written alongside the text on commit. */
+/**
+ * Begin creating a child; `values` are written alongside the text on commit.
+ *
+ * A folded parent stays folded: the input row is spliced in after whatever of
+ * the parent's subtree is on screen, which for a folded one is nothing at all,
+ * so it lands directly beneath the parent and is visible either way. Unfolding
+ * would drag the rest of the subtree into view purely as a side effect of
+ * adding to it.
+ */
 export function startCreate(
   frameId: string,
   path: string[],
   values: Record<string, unknown> = {},
 ): void {
-  const s = getLayout()
-  const frame = s.frames[frameId]
-  const parentId = path[path.length - 1]
-  if (!frame || !parentId) return
-  // Make sure the parent is unfolded, or the new child would be created out of
-  // sight.
-  updateLayout((next) =>
-    R.setEdit(R.setCollapsed(next, frame.tabId, parentId, false), frameId, {
-      mode: 'create',
-      path,
-      draft: '',
-      values,
-    }),
-  )
+  if (!path.length) return
+  setEdit(frameId, { mode: 'create', path, draft: '', values })
 }
 
 // --- Structure --------------------------------------------------------------

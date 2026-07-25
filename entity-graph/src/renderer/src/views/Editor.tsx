@@ -26,6 +26,26 @@ const MONO = 'block font-mono text-[12.5px] leading-5'
 const keyOf = (row: Row, index: number): string =>
   row.kind === 'entity' ? row.path.join('/') : `input-${index}`
 
+// Section headings grow with prominence: ~1.5x at the top level, easing toward
+// ~1.1x as they nest deeper. Per-depth, so it can't be a static utility class.
+// Applied to the editing box as well as the static line, so a section reads as
+// one while it is being typed.
+const sectionStyle = (depth: number): React.CSSProperties => ({
+  fontSize: `${14 * Math.max(1.1, 1.5 - depth * 0.1)}px`,
+  lineHeight: 1.3,
+})
+
+/**
+ * The glyph in front of a row: a checkbox when the row has one, otherwise a
+ * plain bullet. Shared with the create input, which shows the same mark as the
+ * row it is about to become.
+ */
+function Mark({ open }: { open?: boolean }): React.JSX.Element {
+  if (open === true) return <Square size={13} />
+  if (open === false) return <Check size={13} />
+  return <span className="size-1 rounded-full bg-gray-300" />
+}
+
 // ---------------------------------------------------------------------------
 // Dumb rendering component
 // ---------------------------------------------------------------------------
@@ -258,7 +278,7 @@ const RowView = React.memo(function RowView({
           style={{ paddingLeft: row.depth * INDENT + 4 }}
         >
           <span className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 select-none">
-            <span className="size-1 rounded-full bg-gray-300" />
+            <Mark open={row.open} />
           </span>
           <div className="flex-1 min-w-0">
             <TextEditor
@@ -267,9 +287,14 @@ const RowView = React.memo(function RowView({
               value={row.draft}
               setValue={onDraft}
               onBlur={onCommit}
-              placeholder="New entity…"
+              placeholder={row.section ? 'New section…' : 'New entity…'}
               onKeyDown={onKeyDown}
-              className={`${TEXT} text-gray-900`}
+              className={cn(
+                row.type === 'code' ? MONO : TEXT,
+                'text-gray-900',
+                row.section && 'font-semibold',
+              )}
+              style={row.section ? sectionStyle(row.depth) : undefined}
             />
           </div>
         </div>
@@ -279,13 +304,7 @@ const RowView = React.memo(function RowView({
 
   const isCode = row.type === 'code'
   const running = run?.status === 'running'
-
-  // Section headings grow with prominence: ~1.5x at the top level, easing toward
-  // ~1.1x as they nest deeper. Applied as inline font-size (per-depth, so it
-  // can't be a static utility class) over the 14px base.
-  const sectionStyle = row.section
-    ? { fontSize: `${14 * Math.max(1.1, 1.5 - row.depth * 0.1)}px`, lineHeight: 1.3 }
-    : undefined
+  const heading = row.section ? sectionStyle(row.depth) : undefined
 
   return (
     <div
@@ -327,18 +346,14 @@ const RowView = React.memo(function RowView({
               if (row.hasChildren) onToggleCollapse(row)
             }}
           >
-            {row.open === true ? (
-              <Square size={13} />
-            ) : row.open === false ? (
-              <Check size={13} />
-            ) : row.hasChildren ? (
-              row.collapsed ? (
-                <ChevronRight size={14} />
-              ) : (
-                <ChevronDown size={14} />
-              )
+            {/* A checkbox keeps its box even with children; only a plain row
+                trades its bullet for a chevron. */}
+            {row.open !== undefined || !row.hasChildren ? (
+              <Mark open={row.open} />
+            ) : row.collapsed ? (
+              <ChevronRight size={14} />
             ) : (
-              <span className="size-1 rounded-full bg-gray-300" />
+              <ChevronDown size={14} />
             )}
           </span>
         )}
@@ -351,7 +366,8 @@ const RowView = React.memo(function RowView({
               setValue={onDraft}
               onBlur={onCommit}
               onKeyDown={onKeyDown}
-              className={`${isCode ? MONO : TEXT} text-gray-900`}
+              className={cn(isCode ? MONO : TEXT, 'text-gray-900', row.section && 'font-semibold')}
+              style={heading}
             />
           ) : isCode ? (
             <CodeBlock code={row.text ?? ''} run={run} />
@@ -363,7 +379,7 @@ const RowView = React.memo(function RowView({
                 row.section && 'font-semibold',
                 row.hasChildren && row.collapsed ? 'text-gray-400' : 'text-gray-900',
               )}
-              style={sectionStyle}
+              style={heading}
             >
               {row.text}
             </span>

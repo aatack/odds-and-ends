@@ -10,6 +10,7 @@ export function TextEditor({
   eager = false,
   placeholder,
   className,
+  style,
   autoFocus,
   onKeyDown,
   onBlur,
@@ -19,6 +20,8 @@ export function TextEditor({
   eager?: boolean
   placeholder?: string
   className?: string
+  /** For type that can't be a utility class — a section heading's size, say. */
+  style?: React.CSSProperties
   autoFocus?: boolean
   // Runs before the built-in Enter handling; call preventDefault to override it.
   onKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void
@@ -49,12 +52,14 @@ export function TextEditor({
     el.setSelectionRange(end, end)
   }, [autoFocus])
 
+  // Re-measured on the type as well as the text: a section's heading size lands
+  // as an inline style, and the box has to grow to match it.
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
     el.style.height = 'auto'
     el.style.height = `${el.scrollHeight}px`
-  }, [draft])
+  }, [draft, style?.fontSize, style?.lineHeight])
 
   const commit = (next: string): void => {
     if (next !== committed.current) {
@@ -69,7 +74,7 @@ export function TextEditor({
       rows={1}
       value={draft}
       placeholder={placeholder}
-      autoFocus={autoFocus}
+      style={style}
       onChange={(e) => {
         setDraft(e.target.value)
         if (eager) setValue(e.target.value)
