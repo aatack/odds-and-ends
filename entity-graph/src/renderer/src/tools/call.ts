@@ -57,18 +57,41 @@ export function onCallSettled(listener: Listener): () => void {
 const worthKeeping = (tool: ToolSpec, outcome: CallOutcome): boolean =>
   outcome.kind === 'cancelled' ? argsOf(tool).length > 0 : tool.reach === 'external'
 
+/**
+ * How much of a result is kept, and how many results. The log is persisted, and
+ * an integration will happily hand back a hundred pull requests: without a
+ * ceiling it eventually fills localStorage, at which point the whole log
+ * silently stops surviving a reload. Generous enough to read; bounded.
+ */
+const RESULT_CHARS = 20_000
+const LOG_LENGTH = 200
+
+/** The outcome as the log will keep it: a large result kept as its opening. */
+function bounded(outcome: CallOutcome): CallOutcome {
+  if (outcome.kind !== 'success' || outcome.data === undefined) return outcome
+  let text: string | undefined
+  try {
+    text = JSON.stringify(outcome.data)
+  } catch {
+    // Circular, or something else that won't serialise: there is nothing to keep.
+    return { ...outcome, data: undefined }
+  }
+  if (text === undefined || text.length <= RESULT_CHARS) return outcome
+  return { ...outcome, data: { truncated: text.length, opening: text.slice(0, RESULT_CHARS) } }
+}
+
 function settle(
   call: { callId: string; toolId: string; args: ArgValues; context: CallContext; fromCallId?: string },
   tool: ToolSpec,
   outcome: CallOutcome,
 ): void {
-  const record: RecordedCall = { ...call, settledAt: Date.now(), outcome }
+  const record: RecordedCall = { ...call, settledAt: Date.now(), outcome: bounded(outcome) }
   listeners.forEach((l) => l(record))
   // Keyed by callId, so resuming and re-settling updates one entry in place
   // rather than leaving a stale row behind.
   callsAtom.set((list) => {
     const without = list.filter((r) => r.callId !== record.callId)
-    return worthKeeping(tool, outcome) ? [record, ...without] : without
+    return worthKeeping(tool, outcome) ? [record, ...without].slice(0, LOG_LENGTH) : without
   })
 }
 

@@ -150,7 +150,18 @@ store are far too frequent, and their results far too large, to persist — a
 single `query` result would exhaust the localStorage quota, which
 `persistentAtom` swallows silently. Every call still *produces* a result: that
 is how errors and confirmations reach the toast layer. Only retention is
-filtered. No pruning or garbage collection yet.
+filtered.
+
+Kept calls are bounded twice over, because the same quota argument applies to
+the ones that *are* kept: the log holds its most recent 200 entries, and a
+result longer than 20 000 characters is stored as its opening rather than in
+full. An integration listing a hundred pull requests would otherwise fill the
+quota on its own, and silently take the whole persisted log down with it.
+
+The log is also the only place a call's result is *shown* — a row with one
+reveals it as JSON. That is what makes an external tool worth invoking from the
+palette at all: a toast can confirm that something happened, but the answer to
+"what are my open pull requests" has to land somewhere you can read it.
 
 ## Undo
 

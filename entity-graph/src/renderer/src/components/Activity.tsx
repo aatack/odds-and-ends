@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { X } from '@untitledui/icons'
 import { relativeTime } from '../helpers/time'
 import { useCalls } from '../state/hooks'
@@ -10,6 +10,7 @@ import { formatArg } from '../tools/args'
 import { argsOf } from '../tools/types'
 import { Badge, type BadgeColor } from './ui/Badge'
 import { Button } from './ui/Button'
+import { CodeBlock } from './ui/CodeBlock'
 import { Popup } from './ui/Popup'
 
 const STATUS: Record<CallOutcome['kind'], { label: string; color: BadgeColor }> = {
@@ -79,9 +80,21 @@ export function Activity({ open }: { open: boolean }): React.JSX.Element | null 
   )
 }
 
+/** What a call handed back, as JSON. Null when it handed back nothing. */
+function resultText(call: RecordedCall): string | null {
+  if (call.outcome.kind !== 'success' || call.outcome.data === undefined) return null
+  try {
+    return JSON.stringify(call.outcome.data, null, 2) ?? null
+  } catch {
+    return String(call.outcome.data)
+  }
+}
+
 function CallRow({ call, onClose }: { call: RecordedCall; onClose: () => void }): React.JSX.Element {
   const tool = findTool(call.toolId)
   const status = STATUS[call.outcome.kind]
+  const result = resultText(call)
+  const [showResult, setShowResult] = useState(false)
   // A one-line précis of what it was called with, so the row is identifiable
   // without opening it.
   const summary = tool
@@ -92,44 +105,64 @@ function CallRow({ call, onClose }: { call: RecordedCall; onClose: () => void })
     : ''
 
   return (
-    <li className="flex items-start gap-2 px-4 py-2 hover:bg-gray-100/70">
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] text-gray-800">{tool?.label ?? call.toolId}</div>
-        {summary && <div className="truncate font-serif text-xs text-gray-500">{summary}</div>}
-        <div className="mt-0.5 text-xs text-gray-400">
-          {relativeTime(call.settledAt)}
-          {call.outcome.kind === 'error' && (
-            <span className="text-error-600"> · {call.outcome.message}</span>
-          )}
-          {call.fromCallId && <span> · replayed</span>}
+    <li className="px-4 py-2 hover:bg-gray-100/70">
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] text-gray-800">{tool?.label ?? call.toolId}</div>
+          {summary && <div className="truncate font-serif text-xs text-gray-500">{summary}</div>}
+          <div className="mt-0.5 text-xs text-gray-400">
+            {relativeTime(call.settledAt)}
+            {call.outcome.kind === 'error' && (
+              <span className="text-error-600"> · {call.outcome.message}</span>
+            )}
+            {call.fromCallId && <span> · replayed</span>}
+          </div>
         </div>
-      </div>
-      <div className="flex shrink-0 flex-col items-end gap-1">
-        <Badge dot color={status.color}>
-          {status.label}
-        </Badge>
-        {tool && (
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <Badge dot color={status.color}>
+            {status.label}
+          </Badge>
           <div className="flex gap-1">
-            {/* Only offered when the call has everything it needs: a wizard
-                abandoned before its last argument has nothing to run. */}
-            {isRunnable(call) && (
-              <Button size="sm" variant="tertiary" onClick={() => rerunRecordedCall(call.callId)}>
-                Run
+            {/* The only place a call's result is visible. Tools that reach
+                outside are the ones asked a question, and the log is where the
+                answer stays. */}
+            {result && (
+              <Button size="sm" variant="tertiary" onClick={() => setShowResult((s) => !s)}>
+                {showResult ? 'Hide' : 'Result'}
               </Button>
             )}
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                onClose()
-                editRecordedCall(call.callId)
-              }}
-            >
-              Edit
-            </Button>
+            {tool && (
+              <>
+                {/* Only offered when the call has everything it needs: a wizard
+                    abandoned before its last argument has nothing to run. */}
+                {isRunnable(call) && (
+                  <Button size="sm" variant="tertiary" onClick={() => rerunRecordedCall(call.callId)}>
+                    Run
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    onClose()
+                    editRecordedCall(call.callId)
+                  }}
+                >
+                  Edit
+                </Button>
+              </>
+            )}
           </div>
-        )}
+        </div>
       </div>
+
+      {/* Capped, and scrolling inside itself: a hundred pull requests must not
+          push the rest of the log off the bottom of the panel. */}
+      {result && showResult && (
+        <div className="mt-1.5 max-h-64 overflow-y-auto">
+          <CodeBlock code={result} language="json" />
+        </div>
+      )}
     </li>
   )
 }

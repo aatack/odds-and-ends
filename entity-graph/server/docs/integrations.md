@@ -190,6 +190,13 @@ so it can never fire on its own, and runs it immediately. It returns the routine
 id and a link to <https://claude.ai/code/routines/…>. Routines cannot be deleted
 from the API, so these accumulate — prune them in the web UI.
 
+**Following up does not go through a routine**, though starting does. Re-running
+a routine starts a *fresh* session on a fresh checkout, which is not a follow-up
+in any sense that matters — it drops everything the session had learnt. So
+`claude.followUpSession` posts the turn to `/v1/code/sessions/{id}/events`
+instead, which is the only call that continues a conversation. Change it if the
+routines API grows a real follow-up.
+
 Sessions get `Bash, Read, Write, Edit, Glob, Grep`; change `ALLOWED_TOOLS` in
 `src/integrations/claude.ts` if that isn't right.
 
