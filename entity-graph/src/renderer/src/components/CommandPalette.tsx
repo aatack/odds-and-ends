@@ -18,7 +18,7 @@ import { keyHint } from '../tools/keys'
 import { findTool, listedTools } from '../tools/registry'
 import { argsOf, kindOf, type ToolSpec } from '../tools/types'
 
-const PANEL_WIDTH = 384 // w-96
+const PANEL_WIDTH = 512 // w-[32rem]
 
 /**
  * The palette is a view onto the pending call, not a thing with state of its own:
@@ -162,7 +162,9 @@ export function CommandPalette(): React.JSX.Element | null {
         top: Math.min(anchor.y, window.innerHeight - 360),
         left: Math.min(anchor.x, window.innerWidth - PANEL_WIDTH - 8),
       }
-    : { top: '8rem', left: '50%', transform: 'translateX(-50%)' }
+    : // Centred, and low enough that the panel sits in the upper third rather
+      // than crowding the header.
+      { top: '12rem', left: '50%', transform: 'translateX(-50%)' }
 
   return (
     <div
@@ -177,7 +179,7 @@ export function CommandPalette(): React.JSX.Element | null {
       }}
     >
       <div
-        className="absolute w-96 max-w-[calc(100vw-1rem)] overflow-hidden rounded-xl bg-white shadow-lg"
+        className="absolute w-[32rem] max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg bg-white shadow-lg"
         style={panelStyle}
         onClick={(e) => e.stopPropagation()}
         onContextMenu={(e) => e.stopPropagation()}
