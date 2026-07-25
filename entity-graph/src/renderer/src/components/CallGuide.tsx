@@ -26,7 +26,9 @@ export function CallGuide(): React.JSX.Element | null {
       : `Waiting for ${arg.label.toLowerCase()}`
 
   return (
-    <div className="pointer-events-auto rounded-md border border-brand-100 bg-brand-50 px-3 py-2 shadow-sm">
+    // Unbordered, on the toast's shadow: the two stack in the same corner and
+    // should read as one family.
+    <div className="pointer-events-auto rounded-lg bg-brand-50 px-3 py-2 shadow-lg">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <div className="text-[13px] font-medium text-brand-700">{tool.label}</div>
