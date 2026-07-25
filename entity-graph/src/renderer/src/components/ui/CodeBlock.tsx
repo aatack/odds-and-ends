@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Highlight, themes } from 'prism-react-renderer'
-import type { CodeRunState } from '../../views/useCodeRunner'
+import type { CodeRunState } from '../../helpers/codeRunner'
 import { cn } from '../../helpers/cn'
 
 // Track the `.dark` class on <html> so the syntax theme flips with the app's

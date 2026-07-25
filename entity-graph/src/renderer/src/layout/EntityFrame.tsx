@@ -1,90 +1,62 @@
-import React, { useEffect, useMemo, useRef } from 'react'
+import React from 'react'
+import { X } from '@untitledui/icons'
 import { Editor } from '../views/Editor'
-import { useEditor, type EditorActions } from '../views/useEditor'
-import { last, type EntityView } from './types'
-import type { ViewHandle } from './useLayout'
-
-export interface EntityFrameProps {
-  view: EntityView
-  actions: EditorActions
-  /** Extra entity ids to render collapsed — the canvas folds cross-references. */
-  collapsed?: string[]
-  /** Publish this view's imperative handle to the layout (keyed by the caller). */
-  onHandle?: (handle: ViewHandle | null) => void
-  /** Report the root entity's display text (for tab / panel labels). */
-  onRootName?: (id: string, text: string | undefined) => void
-  /** Grow to fit rather than scroll within a fixed height (canvas auto nodes). */
-  autoHeight?: boolean
-}
+import { codeRunsAtom, runCode, stopCode } from '../helpers/codeRunner'
+import * as A from '../state/actions'
+import { useAtomValue, useFrameRows, useLayoutState } from '../state/hooks'
+import { loadMore } from '../state/query'
+import { runTool } from '../tools/call'
 
 /**
- * A single entity view: the tree rooted at `view.rootId`, rendered through the
- * shared {@link useEditor} logic and dumb {@link Editor} component. When it's
- * the focused frame the layout reads its selection and routes editor hotkeys to
- * it via the handle it publishes here.
+ * One entity view: the tree rooted at the frame's root entity. It owns no state
+ * — rows are derived from the frame plus the query cache, and every gesture goes
+ * to a state action or a tool.
  */
-export function EntityFrame({
-  view,
-  actions,
-  collapsed,
-  onHandle,
-  onRootName,
-  autoHeight,
-}: EntityFrameProps): React.JSX.Element {
-  const ed = useEditor({
-    rootId: view.rootId,
-    maxDepth: view.maxDepth ?? undefined,
-    actions,
-    forceCollapsed: collapsed,
-  })
+export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element {
+  const layout = useLayoutState()
+  const { rows, loading } = useFrameRows(frameId)
+  const codeRuns = useAtomValue(codeRunsAtom)
+  const frame = layout.frames[frameId]
 
-  // The selected row's text, and the root entity's text (the first row).
-  const selectedRow = ed.rows.find((r) => r.kind === 'entity' && r.selected)
-  const selectedText = selectedRow?.kind === 'entity' ? selectedRow.text : undefined
-  const rootRow = ed.rows[0]
-  const rootText = rootRow?.kind === 'entity' ? rootRow.text : undefined
-
-  // Expose selection + action dispatch through refs so the handle stays stable
-  // while always reading the latest values.
-  const selectedRef = useRef(ed.selectedPath)
-  selectedRef.current = ed.selectedPath
-  const selectedTextRef = useRef(selectedText)
-  selectedTextRef.current = selectedText
-  const runRef = useRef(ed.runAction)
-  runRef.current = ed.runAction
-
-  const handle = useMemo<ViewHandle>(
-    () => ({
-      getSelectedEntityId: () => last(selectedRef.current) ?? null,
-      getSelectedText: () => selectedTextRef.current ?? null,
-      runAction: (id) => runRef.current(id),
-    }),
-    [],
-  )
-
-  useEffect(() => {
-    if (!onHandle) return
-    onHandle(handle)
-    return () => onHandle(null)
-  }, [onHandle, handle])
-
-  useEffect(() => {
-    onRootName?.(view.rootId, rootText)
-  }, [onRootName, view.rootId, rootText])
+  if (!frame) return <div className="p-8 text-center text-[13px] text-gray-400">No frame.</div>
 
   return (
-    <Editor
-      rows={ed.rows}
-      loading={ed.loading}
-      onSelectRow={ed.selectRow}
-      onToggleCollapse={ed.toggleCollapse}
-      onCommitEdit={ed.commitEdit}
-      onCancelEdit={ed.cancelEdit}
-      onNearEnd={ed.loadMore}
-      codeRuns={ed.codeRuns}
-      onRunCode={ed.runCode}
-      onStopCode={ed.stopCode}
-      autoHeight={autoHeight}
-    />
+    <div className="flex h-full min-h-0 flex-col">
+      {frame.find != null && (
+        <div className="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 py-1.5">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Find</span>
+          <span className="min-w-0 flex-1 truncate font-serif text-[13px] text-gray-700">
+            {frame.find || '—'}
+          </span>
+          <button
+            className="text-gray-400 hover:text-gray-700 focus:outline-none"
+            onClick={() => A.setFind(frameId, null)}
+            aria-label="Clear find"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
+      <div className="min-h-0 flex-1">
+        <Editor
+          rows={rows}
+          loading={loading}
+          onSelectRow={(path) => A.selectPath(frameId, path)}
+          onToggleCollapse={(row) => {
+            A.selectPath(frameId, row.path)
+            A.toggleCollapse(frame.tabId, row.id)
+          }}
+          onDraft={(text) => A.setDraft(frameId, text)}
+          // Explicitly against *this* frame: a blur can arrive after focus has
+          // already moved to another group.
+          onCommit={() => runTool('edit.commit', { extra: { frameId } })}
+          onCancel={() => A.setEdit(frameId, null)}
+          onNearEnd={() => loadMore(frameId)}
+          codeRuns={codeRuns}
+          onRunCode={runCode}
+          onStopCode={stopCode}
+        />
+      </div>
+    </div>
   )
 }

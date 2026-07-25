@@ -55,12 +55,15 @@ const VARIANT: Record<ToastVariant, string> = {
   error: 'bg-error-50 text-error-700 border-error-100',
 }
 
-/** The one toast layer; mount near the app root. */
+/**
+ * The transient messages, as a plain column — the app positions it, so the
+ * pending-call guide can share the same corner stack.
+ */
 export function Toaster(): React.JSX.Element | null {
   const items = useToasts()
   if (items.length === 0) return null
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-72 flex-col gap-2">
+    <div className="flex flex-col gap-2">
       {items.map((t) => (
         <button
           key={t.id}

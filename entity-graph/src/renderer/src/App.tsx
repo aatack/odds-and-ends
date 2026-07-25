@@ -1,152 +1,136 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { ChevronDown, Moon01, Sun } from '@untitledui/icons'
 import { Servers } from './components/Servers'
 import { SourceView } from './views/SourceView'
-import {
-  CommandPalette,
-  openCommandPalette,
-  toggleCommandPalette,
-  type Command,
-} from './components/CommandPalette'
+import { Activity, cancelledCount } from './components/Activity'
+import { CallGuide } from './components/CallGuide'
+import { CommandPalette } from './components/CommandPalette'
 import { Badge } from './components/ui/Badge'
 import { Button } from './components/ui/Button'
 import { Dropdown, DropdownItem, DropdownSeparator } from './components/ui/Dropdown'
 import { Input } from './components/ui/Input'
-import { ActionLog } from './components/ActionLog'
-import { Toaster } from './components/ui/Toast'
-import { useTheme } from './helpers/useTheme'
-import { useHotkeys } from './helpers/useHotkeys'
-import { useActionLog } from './helpers/actionLog'
-import { APP_ACTIONS, type AppController } from './actions/appActions'
-import { hotkeyHint } from './actions/keys'
-import { useApp, type AppActions, type Page } from './views/useApp'
+import { Toaster, showToast } from './components/ui/Toast'
+import { useCalls, useTheme, useUi } from './state/hooks'
+import { toggleTheme, updateUi } from './state/ui'
+import { onCallSettled, openToolList, togglePalette } from './tools/call'
+import { PALETTE_KEY, installKeyRouter } from './tools/dispatch'
+import { keyHint } from './tools/keys'
+import { useApp, type AppActions } from './views/useApp'
 
 export default function App(): React.JSX.Element | null {
-  const { ready, user, page, current, active, openError, actions } = useApp()
-  const { theme, toggle } = useTheme()
-  // Editor actions register themselves here while a source is open, so the one
-  // command palette lists them alongside the app-level commands.
-  const [editorCommands, setEditorCommands] = useState<Command[]>([])
-  const registerEditorCommands = useCallback(
-    (commands: Command[] | null) => setEditorCommands(commands ?? []),
+  const { ready, user, current, active, openError, actions } = useApp()
+  const ui = useUi()
+  const theme = useTheme()
+  const calls = useCalls()
+  const pendingResumable = cancelledCount(calls)
+
+  // One keydown listener for the whole app. Keys act on global state and resolve
+  // through the focus chain, not through whatever has DOM focus.
+  useEffect(installKeyRouter, [])
+
+  // Every call that finishes announces itself; errors and confirmations become
+  // toasts. Nothing else in the app raises one.
+  useEffect(
+    () =>
+      onCallSettled((call) => {
+        if (call.outcome.kind === 'error') {
+          showToast({ message: call.outcome.message, variant: 'error' })
+        } else if (call.outcome.kind === 'success' && call.outcome.message) {
+          showToast({ message: call.outcome.message, variant: 'success' })
+        }
+      }),
     [],
   )
-  const [activityOpen, setActivityOpen] = useState(false)
-  const log = useActionLog()
-  const cancelledCount = log.filter((e) => e.status === 'cancelled').length
 
-  // Right-click is a general "open the command palette here" gesture — everywhere,
-  // including over text — opening in-situ at the cursor, seeded with whatever
-  // context the target carries. An entity row exposes its id (and its parent's)
-  // via data attributes, so any command with an `entityId`/`parentId` field is
-  // auto-populated.
+  // Right-click is a general "run something here" gesture: it opens the tool list
+  // at the cursor, seeded with the entity under it. Rows publish their ids as data
+  // attributes, so any argument bound to `entityId`/`parentId` fills itself in.
   useEffect(() => {
     const onContextMenu = (e: MouseEvent): void => {
       e.preventDefault()
       const el = e.target instanceof HTMLElement ? e.target.closest('[data-entity-id]') : null
-      const context: Record<string, string> = {}
+      const extra: Record<string, unknown> = {}
       const entityId = el?.getAttribute('data-entity-id')
       const parentId = el?.getAttribute('data-parent-id')
-      if (entityId) context.entityId = entityId
-      if (parentId) context.parentId = parentId
-      openCommandPalette({ context, anchor: { x: e.clientX, y: e.clientY } })
+      if (entityId) extra.entityId = entityId
+      if (parentId) extra.parentId = parentId
+      openToolList({ anchor: { x: e.clientX, y: e.clientY }, extra })
     }
     window.addEventListener('contextmenu', onContextMenu)
     return () => window.removeEventListener('contextmenu', onContextMenu)
   }, [])
 
-  // The one imperative handle every app-level action dispatches through — the
-  // top-level hotkeys, the palette, and the header buttons all go via this.
-  const controller = useMemo<AppController>(
-    () => ({
-      togglePalette: toggleCommandPalette,
-      setPage: actions.setPage,
-      toggleTheme: toggle,
-    }),
-    [actions, toggle],
-  )
-  // Every registered app action with a hotkey is bound here, at the top level.
-  useHotkeys(APP_ACTIONS, controller)
-
-  const appCommands = useMemo<Command[]>(
-    () =>
-      APP_ACTIONS.filter((a) => a.palette !== false).map((a) => ({
-        id: `app.${a.id}`,
-        label: a.label,
-        aliases: a.aliases,
-        hint: hotkeyHint(a.keys) ?? a.hint,
-        run: () => a.run(controller),
-      })),
-    [controller],
-  )
-  // Editor actions first — they're the most relevant while the tree is focused.
-  const commands = useMemo(() => [...editorCommands, ...appCommands], [editorCommands, appCommands])
-  const paletteHint = hotkeyHint(APP_ACTIONS.find((a) => a.id === 'toggle-palette')?.keys)
-
   if (!ready) return null
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <Toaster />
-      <CommandPalette commands={commands} />
-      <ActionLog open={activityOpen} onClose={() => setActivityOpen(false)} />
+      <CommandPalette />
+      <Activity open={ui.activityOpen} />
+      {/* One corner stack: transient messages above the pending-call guide. */}
+      <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-72 flex-col gap-2">
+        <Toaster />
+        <CallGuide />
+      </div>
+
       <header className="relative z-30 flex items-center gap-3 border-b border-gray-100 bg-white/80 px-6 py-3 backdrop-blur">
         <div className="flex min-w-0 items-center gap-3">
           <button
             className="text-[15px] font-semibold tracking-tightish text-gray-900 focus:outline-none"
-            onClick={() => actions.setPage('editor')}
+            onClick={() => updateUi({ page: 'editor' })}
           >
             Entity Graph
           </button>
-          {page === 'editor' && current && (
+          {ui.page === 'editor' && current && (
             <>
               <Badge color="gray">source</Badge>
               <span className="truncate text-[13px] text-gray-500">{current.label}</span>
             </>
           )}
-          {page === 'sources' && <span className="text-[13px] text-gray-400">Sources</span>}
+          {ui.page === 'sources' && <span className="text-[13px] text-gray-400">Sources</span>}
         </div>
 
         <div className="flex-1" />
 
-        <Button variant="secondary" size="sm" onClick={controller.togglePalette}>
+        <Button variant="secondary" size="sm" onClick={togglePalette}>
           Actions
-          {paletteHint && (
-            <kbd className="ml-1 rounded bg-gray-200 px-1 text-[10px] text-gray-500">{paletteHint}</kbd>
-          )}
+          <kbd className="ml-1 rounded bg-gray-200 px-1 text-[10px] text-gray-500">
+            {keyHint([PALETTE_KEY])}
+          </kbd>
         </Button>
-        <Button variant="tertiary" size="sm" onClick={() => setActivityOpen((v) => !v)}>
+        <Button
+          variant="tertiary"
+          size="sm"
+          onClick={() => updateUi({ activityOpen: !ui.activityOpen })}
+        >
           Activity
-          {cancelledCount > 0 && (
-            <span className="ml-1 rounded bg-gray-200 px-1 text-[10px] text-gray-500">{cancelledCount}</span>
+          {pendingResumable > 0 && (
+            <span className="ml-1 rounded bg-gray-200 px-1 text-[10px] text-gray-500">
+              {pendingResumable}
+            </span>
           )}
         </Button>
         <Button
           variant="tertiary"
           size="sm"
           className="px-1.5"
-          onClick={toggle}
+          onClick={toggleTheme}
           aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         >
           {theme === 'dark' ? <Sun size={16} /> : <Moon01 size={16} />}
         </Button>
-        <ProfileMenu user={user} page={page} actions={actions} />
+        <ProfileMenu user={user} page={ui.page} actions={actions} />
       </header>
 
       <main className="min-h-0 flex-1">
-        {page === 'sources' ? (
+        {ui.page === 'sources' ? (
           <div className="mx-auto w-full max-w-3xl p-6">
             <Servers current={current} onSelectSource={actions.selectSource} />
           </div>
         ) : active ? (
-          <SourceView active={active} user={user} onRegisterCommands={registerEditorCommands} />
+          <SourceView active={active} user={user} />
         ) : (
-          <EditorPlaceholder
-            openError={openError}
-            hasCurrent={!!current}
-            onOpenSources={() => actions.setPage('sources')}
-          />
+          <EditorPlaceholder openError={openError} hasCurrent={!!current} />
         )}
       </main>
     </div>
@@ -160,11 +144,9 @@ export default function App(): React.JSX.Element | null {
 function EditorPlaceholder({
   openError,
   hasCurrent,
-  onOpenSources,
 }: {
   openError: string | null
   hasCurrent: boolean
-  onOpenSources: () => void
 }): React.JSX.Element {
   return (
     <div className="mx-auto mt-24 w-full max-w-md space-y-4 px-6 text-center">
@@ -179,7 +161,7 @@ function EditorPlaceholder({
         </p>
       )}
       <div className="flex justify-center">
-        <Button variant="secondary" size="sm" onClick={onOpenSources}>
+        <Button variant="secondary" size="sm" onClick={() => updateUi({ page: 'sources' })}>
           Go to sources
         </Button>
       </div>
@@ -197,7 +179,7 @@ function ProfileMenu({
   actions,
 }: {
   user: string
-  page: Page
+  page: 'editor' | 'sources'
   actions: AppActions
 }): React.JSX.Element {
   const [editing, setEditing] = useState(false)
@@ -230,7 +212,7 @@ function ProfileMenu({
             <DropdownItem
               active={page === 'editor'}
               onClick={() => {
-                actions.setPage('editor')
+                updateUi({ page: 'editor' })
                 close()
               }}
             >
@@ -239,7 +221,7 @@ function ProfileMenu({
             <DropdownItem
               active={page === 'sources'}
               onClick={() => {
-                actions.setPage('sources')
+                updateUi({ page: 'sources' })
                 close()
               }}
             >

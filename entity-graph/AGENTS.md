@@ -54,20 +54,34 @@ Use `font-serif` for anything the user typed (entity content); leave chrome on
 the default sans. Set this at the token/utility level — don't hard-code font
 families per element.
 
-## State & actions
+## State, tools and views
 
-- **Render/logic separation.** A dumb component renders and forwards events; a
-  sibling hook (`useApp`, `useEditor`, `useServers`) owns the logic. Components
-  never own domain state.
-- **Latent vs derived state.** Hooks hold only the minimal latent state
-  (selection path, collapsed set, edit/pending mode) and derive everything else
-  (the flat row list) from it plus the query results.
-- **Action registry.** Every editor command the user triggers is defined once in
-  `src/renderer/src/actions/editorActions.ts`, separately from the state it
-  mutates. Both the keyboard handler and the command palette dispatch through it
-  (via `useEditor`'s stable `runAction` and an `EditorController`), so a hotkey
-  and its palette entry can't drift. New user-triggered commands go here, not
-  inline in a keydown handler.
+Three layers, each depending only on the ones above it. `docs/frontend-state.md`
+is the long form; the rules that matter day to day:
+
+- **`state/` holds all of it, and holds nothing else.** One atom store, pure
+  reducers, pure derivations. No React, no DOM — the app should in principle run
+  headlessly. Latent state only: selection *paths*, collapsed sets, edit drafts.
+  Anything derivable (the row list, the resolved selection, tab labels) is a
+  function in `state/derive.ts`, and anything cached (query results, code output)
+  lives in a runtime atom that is never persisted.
+- **Never write derived state back.** The resolved selection path is computed
+  from the latent one against the visible rows; storing it would lose the
+  original when a collapsed ancestor is re-expanded.
+- **`tools/` is the only way the user does anything.** Every command — moving the
+  selection, opening a tab, writing a value — is one `ToolSpec` declaring its
+  arguments, its scope, and how far it reaches. Hotkeys and the command palette
+  both dispatch through that declaration, so they cannot drift. New commands go
+  here, never inline in a keydown handler.
+- **One key listener, at the top.** `tools/dispatch.ts` owns it and resolves
+  through the focus chain (focused frame → its tab group → the app), not through
+  whatever has DOM focus.
+- **Views render and forward.** A dumb component takes rows and callbacks; state
+  comes from `state/hooks.ts`. Direct manipulation (clicking a row, typing in the
+  in-place editor) calls a named action in `state/actions.ts`; anything invocable
+  or worth recording is a tool.
+- **Errors surface as call results.** A tool throws; the call machine settles it
+  and the toast layer shows it. Components don't raise toasts themselves.
 
 ## Reusable components
 
@@ -84,8 +98,11 @@ src/main       Electron main — window, servers, config store
 src/preload     contextBridge exposing the typed EntityGraphAPI
 src/core        source client + query wrapper (shared types)
 src/renderer/src  React app
-  actions/        the editor action registry
-  helpers/        domain-agnostic utilities (cn, useTheme)
-  components/      ui/ primitives + feature components
-  views/          top-level screens + their logic hooks
+  state/          latent state, pure derivations, the query engine
+  source/         the transport seam onto the open source
+  tools/          the tool registry, pending-call machine, key router
+  helpers/        domain-agnostic utilities (cn, code runner)
+  components/     ui/ primitives + feature components
+  layout/         tab groups, tabs, frames
+  views/          top-level screens
 ```

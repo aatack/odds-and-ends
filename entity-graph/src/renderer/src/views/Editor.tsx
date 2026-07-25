@@ -3,8 +3,8 @@ import { Check, ChevronDown, ChevronRight, Play, Square, Stop } from '@untitledu
 import { TextEditor } from '../components/ui/TextEditor'
 import { CodeBlock } from '../components/ui/CodeBlock'
 import { cn } from '../helpers/cn'
-import type { EditorRow, EntityRow } from './useEditor'
-import type { CodeRunState } from './useCodeRunner'
+import type { CodeRunState } from '../helpers/codeRunner'
+import type { EntityRow, Row } from '../state/derive'
 
 // ---------------------------------------------------------------------------
 // Layout constants
@@ -23,7 +23,7 @@ const TEXT = 'block font-serif text-[14px] leading-5'
 // Monospace counterpart for editing `type: code` entities in place.
 const MONO = 'block font-mono text-[12.5px] leading-5'
 
-const keyOf = (row: EditorRow, index: number): string =>
+const keyOf = (row: Row, index: number): string =>
   row.kind === 'entity' ? row.path.join('/') : `input-${index}`
 
 // ---------------------------------------------------------------------------
@@ -31,24 +31,21 @@ const keyOf = (row: EditorRow, index: number): string =>
 // ---------------------------------------------------------------------------
 
 export interface EditorProps {
-  rows: EditorRow[]
+  rows: Row[]
   loading: boolean
   onSelectRow: (path: string[]) => void
   onToggleCollapse: (row: EntityRow) => void
-  onCommitEdit: (value: string) => void
-  onCancelEdit: () => void
+  /** Every keystroke of an in-place edit; the draft is part of the frame's state. */
+  onDraft: (text: string) => void
+  /** Write the draft (Enter or blur). */
+  onCommit: () => void
+  /** Abandon the edit (Escape). */
+  onCancel: () => void
   onNearEnd: () => void
-  /** Local run state for code entities, keyed by entity id. */
-  codeRuns: Map<string, CodeRunState>
-  /** Run a code entity's source (from its play button). */
+  /** Run state for code entities, keyed by entity id. */
+  codeRuns: Record<string, CodeRunState>
   onRunCode: (id: string, code: string) => void
-  /** Interrupt a running code entity (from its stop button). */
-  onStopCode: (id: string) => void
-  /**
-   * Grow to fit all rows instead of windowing within a fixed-height, scrolling
-   * viewport. Used by canvas nodes with no set height, per the design notes.
-   */
-  autoHeight?: boolean
+  onStopCode: () => void
 }
 
 /**
@@ -63,13 +60,13 @@ export function Editor(props: EditorProps): React.JSX.Element {
     loading,
     onSelectRow,
     onToggleCollapse,
-    onCommitEdit,
-    onCancelEdit,
+    onDraft,
+    onCommit,
+    onCancel,
     onNearEnd,
     codeRuns,
     onRunCode,
     onStopCode,
-    autoHeight = false,
   } = props
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -132,18 +129,14 @@ export function Editor(props: EditorProps): React.JSX.Element {
   }, [selectedIndex])
 
   // The windowed slice: walk offsets to the first row reaching the viewport top
-  // and the first past its bottom, padded by OVERSCAN. In autoHeight mode there
-  // is no viewport to window against, so every row is mounted.
+  // and the first past its bottom, padded by OVERSCAN.
+  const bottomEdge = scrollTop + (viewportH || 600)
   let firstIndex = 0
-  let lastIndex = rows.length
-  if (!autoHeight) {
-    const bottomEdge = scrollTop + (viewportH || 600)
-    while (firstIndex < rows.length && offsets[firstIndex + 1] <= scrollTop) firstIndex++
-    firstIndex = Math.max(0, firstIndex - OVERSCAN)
-    lastIndex = firstIndex
-    while (lastIndex < rows.length && offsets[lastIndex] < bottomEdge) lastIndex++
-    lastIndex = Math.min(rows.length, lastIndex + OVERSCAN)
-  }
+  while (firstIndex < rows.length && offsets[firstIndex + 1] <= scrollTop) firstIndex++
+  firstIndex = Math.max(0, firstIndex - OVERSCAN)
+  let lastIndex = firstIndex
+  while (lastIndex < rows.length && offsets[lastIndex] < bottomEdge) lastIndex++
+  lastIndex = Math.min(rows.length, lastIndex + OVERSCAN)
   const slice = rows.slice(firstIndex, lastIndex)
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>): void => {
@@ -153,14 +146,14 @@ export function Editor(props: EditorProps): React.JSX.Element {
   }
 
   return (
-    <div className={cn('flex flex-col bg-white', autoHeight ? '' : 'h-full overflow-hidden')}>
+    <div className="flex h-full flex-col overflow-hidden bg-white">
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className={cn('relative py-1', !autoHeight && 'flex-1 min-h-0 overflow-y-auto')}
+        className="relative min-h-0 flex-1 overflow-y-auto py-1"
         // Room to scroll past the last row when the tree overflows, so appending
         // at the bottom isn't jammed against the edge of the screen.
-        style={{ paddingBottom: !autoHeight && total > viewportH ? '40vh' : undefined }}
+        style={{ paddingBottom: total > viewportH ? '40vh' : undefined }}
       >
         {rows.length === 0 ? (
           <div className="px-4 py-8 text-center text-[13px] text-gray-400">
@@ -174,9 +167,9 @@ export function Editor(props: EditorProps): React.JSX.Element {
               const key = keyOf(row, index)
               // Pass this row's run state directly (not the whole map) so the
               // memoised Row only re-renders when *its own* run changes.
-              const run = row.kind === 'entity' ? codeRuns.get(row.id) : undefined
+              const run = row.kind === 'entity' ? codeRuns[row.id] : undefined
               return (
-                <Row
+                <RowView
                   key={key}
                   row={row}
                   measureKey={key}
@@ -184,8 +177,9 @@ export function Editor(props: EditorProps): React.JSX.Element {
                   onMeasure={setHeight}
                   onSelectRow={onSelectRow}
                   onToggleCollapse={onToggleCollapse}
-                  onCommitEdit={onCommitEdit}
-                  onCancelEdit={onCancelEdit}
+                  onDraft={onDraft}
+                  onCommit={onCommit}
+                  onCancel={onCancel}
                   onRunCode={onRunCode}
                   onStopCode={onStopCode}
                 />
@@ -204,38 +198,29 @@ export function Editor(props: EditorProps): React.JSX.Element {
 // ---------------------------------------------------------------------------
 
 interface RowProps {
-  row: EditorRow
+  row: Row
   measureKey: string
   run?: CodeRunState
   onMeasure: (key: string, height: number) => void
   onSelectRow: (path: string[]) => void
   onToggleCollapse: (row: EntityRow) => void
-  onCommitEdit: (value: string) => void
-  onCancelEdit: () => void
+  onDraft: (text: string) => void
+  onCommit: () => void
+  onCancel: () => void
   onRunCode: (id: string, code: string) => void
-  onStopCode: (id: string) => void
+  onStopCode: () => void
 }
 
-// Escape abandons the edit; everything else (Enter to commit, autosize, blur to
-// commit) is the TextEditor's own behaviour.
-const escapeCancels =
-  (onCancelEdit: () => void) =>
-  (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      onCancelEdit()
-    }
-  }
-
-const Row = React.memo(function Row({
+const RowView = React.memo(function RowView({
   row,
   measureKey,
   run,
   onMeasure,
   onSelectRow,
   onToggleCollapse,
-  onCommitEdit,
-  onCancelEdit,
+  onDraft,
+  onCommit,
+  onCancel,
   onRunCode,
   onStopCode,
 }: RowProps): React.JSX.Element {
@@ -253,6 +238,18 @@ const Row = React.memo(function Row({
     return () => ro.disconnect()
   }, [measureKey, onMeasure])
 
+  // Enter commits, Escape abandons. Both are handled here rather than left to
+  // the key router, since the textarea owns bare keys while it has focus.
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      onCancel()
+    } else if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      onCommit()
+    }
+  }
+
   if (row.kind === 'input') {
     return (
       <div ref={ref} className="flex">
@@ -266,10 +263,12 @@ const Row = React.memo(function Row({
           <div className="flex-1 min-w-0">
             <TextEditor
               autoFocus
-              value=""
-              setValue={onCommitEdit}
+              eager
+              value={row.draft}
+              setValue={onDraft}
+              onBlur={onCommit}
               placeholder="New entity…"
-              onKeyDown={escapeCancels(onCancelEdit)}
+              onKeyDown={onKeyDown}
               className={`${TEXT} text-gray-900`}
             />
           </div>
@@ -292,18 +291,19 @@ const Row = React.memo(function Row({
     <div
       ref={ref}
       className="flex"
-      // The data attributes let the global right-click handler seed the palette's
-      // `entityId`/`parentId` context; selecting on right-click also lets the
-      // selection-based commands act on the row under the cursor.
+      // The data attributes let the global right-click handler seed a call's
+      // context; selecting on right-click also lets the selection-based tools
+      // act on the row under the cursor.
       data-entity-id={row.id}
       data-parent-id={row.path.length > 1 ? row.path[row.path.length - 2] : undefined}
       onClick={() => onSelectRow(row.path)}
       onContextMenu={() => onSelectRow(row.path)}
     >
       <div
-        className={`flex items-start my-px py-0.5 mx-2 pr-2 rounded-md flex-1 min-w-0 cursor-default ${
-          row.selected ? 'bg-blue-100' : 'hover:bg-gray-100/70'
-        }`}
+        className={cn(
+          'flex items-start my-px py-0.5 mx-2 pr-2 rounded-md flex-1 min-w-0 cursor-default',
+          row.selected ? 'bg-blue-100' : 'hover:bg-gray-100/70',
+        )}
         style={{ paddingLeft: row.depth * INDENT + 4 }}
       >
         {isCode ? (
@@ -313,7 +313,7 @@ const Row = React.memo(function Row({
             title={running ? 'Stop' : 'Run'}
             onClick={(e) => {
               e.stopPropagation()
-              if (running) onStopCode(row.id)
+              if (running) onStopCode()
               else onRunCode(row.id, row.text ?? '')
             }}
           >
@@ -346,18 +346,23 @@ const Row = React.memo(function Row({
           {row.editing ? (
             <TextEditor
               autoFocus
-              value={row.text ?? ''}
-              setValue={onCommitEdit}
-              onKeyDown={escapeCancels(onCancelEdit)}
+              eager
+              value={row.draft ?? ''}
+              setValue={onDraft}
+              onBlur={onCommit}
+              onKeyDown={onKeyDown}
               className={`${isCode ? MONO : TEXT} text-gray-900`}
             />
           ) : isCode ? (
             <CodeBlock code={row.text ?? ''} run={run} />
           ) : row.text ? (
             <span
-              className={`whitespace-pre-wrap break-words ${TEXT} ${
-                row.section ? 'font-semibold' : ''
-              } ${row.hasChildren && row.collapsed ? 'text-gray-400' : 'text-gray-900'}`}
+              className={cn(
+                'whitespace-pre-wrap break-words',
+                TEXT,
+                row.section && 'font-semibold',
+                row.hasChildren && row.collapsed ? 'text-gray-400' : 'text-gray-900',
+              )}
               style={sectionStyle}
             >
               {row.text}

@@ -53,10 +53,12 @@ export type ToolReach = 'ui' | 'source' | 'external'
  */
 export type ToolScope = 'frame' | 'group' | 'app'
 
-/** What a tool hands back. Both fields are optional; `message` becomes a toast. */
+/** What a tool hands back. All fields optional; `message` becomes a toast. */
 export interface ToolOutcome {
   data?: unknown
   message?: string
+  /** Overrides {@link ToolSpec.mutates} for this run — e.g. "nothing to write". */
+  mutated?: boolean
 }
 
 export interface ToolSpec {

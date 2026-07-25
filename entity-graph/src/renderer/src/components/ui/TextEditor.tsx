@@ -12,6 +12,7 @@ export function TextEditor({
   className,
   autoFocus,
   onKeyDown,
+  onBlur,
 }: {
   value: string
   setValue: (value: string) => void
@@ -21,6 +22,9 @@ export function TextEditor({
   autoFocus?: boolean
   // Runs before the built-in Enter handling; call preventDefault to override it.
   onKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void
+  // Called after the value has been flushed on blur. With `eager` the value is
+  // already current, so this is where an eager caller commits.
+  onBlur?: () => void
 }): React.JSX.Element {
   const [draft, setDraft] = useState(value)
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -61,6 +65,7 @@ export function TextEditor({
       }}
       onBlur={() => {
         if (!eager) commit(draft)
+        onBlur?.()
       }}
       onKeyDown={(e) => {
         onKeyDown?.(e)

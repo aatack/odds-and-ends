@@ -89,8 +89,9 @@ async function execute(call: {
       callId: call.callId,
       context: call.context,
     })) ?? {}
-    // Anything that wrote to the entity store invalidates every open frame.
-    if (tool.mutates) refreshQueries()
+    // Anything that wrote to the entity store invalidates every open frame. A
+    // tool that decided there was nothing to write says so and skips the refetch.
+    if (outcome.mutated ?? tool.mutates) refreshQueries()
     settle(call, tool, { kind: 'success', data: outcome.data, message: outcome.message })
   } catch (e) {
     settle(call, tool, { kind: 'error', message: message(e) })
@@ -121,12 +122,16 @@ function begin(
     void execute({ callId, toolId, args, context, fromCallId: seed?.fromCallId })
     return
   }
+  // The corner guide can only serve an argument that is *pointed at*: there's
+  // nowhere to type in it. Anything else opens the palette, even from a hotkey.
+  const outstanding = argsOf(tool).find((a) => a.name === empty)
+  const shown = display.kind === 'hidden' && !outstanding?.pick ? CENTRED : display
   pendingAtom.set({
     callId,
     toolId,
     args,
     activeArg: empty,
-    display,
+    display: shown,
     context,
     query: '',
     fromCallId: seed?.fromCallId,

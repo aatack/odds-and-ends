@@ -1,16 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ActiveSource, CurrentSource } from '../../../core/client'
+import { updateUi } from '../state/ui'
 
 const api = window.entityGraph
-
-/** The two top-level pages: the editor (default) and the source configuration. */
-export type Page = 'editor' | 'sources'
 
 export interface AppActions {
   /** Rename the current user (blank ⇒ "anonymous"). */
   setUser: (name: string) => Promise<void>
-  /** Switch the visible page. */
-  setPage: (page: Page) => void
   /**
    * Pick which source the editor shows. Persists the choice, (re)opens it, and
    * jumps to the editor so the selection is immediately visible.
@@ -22,10 +18,9 @@ export interface AppState {
   /** False until the persisted user + current source have loaded. */
   ready: boolean
   user: string
-  page: Page
   /** The persisted current-source reference, or null if none picked yet. */
   current: CurrentSource | null
-  /** The ephemeral handle for the open current source (null while unopened / failed). */
+  /** The ephemeral handle for the open source (null while unopened / failed). */
   active: ActiveSource | null
   /** Set when the current source could not be opened (server down, deleted, …). */
   openError: string | null
@@ -33,16 +28,14 @@ export interface AppState {
 }
 
 /**
- * App-level logic: the current user, the active page, and the durable
- * "current source" the editor opens by default. Holds the latent state
- * (user / page / current ref) and derives the ephemeral {@link ActiveSource}
- * handle by opening that ref. Transport lives behind `window.entityGraph`, so
- * this hook never touches IPC details directly beyond those thin calls.
+ * What the shell needs from the main process: the current user and the durable
+ * "current source" reference, resolved into an open handle. Note what *isn't*
+ * here — which page is showing, and every other piece of UI state, live in the
+ * state layer where a tool can reach them.
  */
 export function useApp(): AppState {
   const [ready, setReady] = useState(false)
   const [user, setUserState] = useState('anonymous')
-  const [page, setPage] = useState<Page>('editor')
   const [current, setCurrent] = useState<CurrentSource | null>(null)
   const [active, setActive] = useState<ActiveSource | null>(null)
   const [openError, setOpenError] = useState<string | null>(null)
@@ -87,16 +80,15 @@ export function useApp(): AppState {
         await api.setUser(next)
         setUserState(next)
       },
-      setPage,
       selectSource: async (ref) => {
         await api.setCurrentSource(ref)
         setCurrent(ref)
         await open(ref)
-        setPage('editor')
+        updateUi({ page: 'editor' })
       },
     }),
     [open],
   )
 
-  return { ready, user, page, current, active, openError, actions }
+  return { ready, user, current, active, openError, actions }
 }

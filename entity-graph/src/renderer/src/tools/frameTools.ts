@@ -160,21 +160,28 @@ export const FRAME_TOOLS: ToolSpec[] = [
     enabled: hasEdit,
     // Takes no arguments: the draft is part of the frame's persisted edit state,
     // so committing means "write what's in there".
-    run: async () => {
-      const t = target()
-      const edit = t?.frame.edit
-      if (!t || !edit) return
-      const targetId = last(edit.path)
-      A.setEdit(t.frame.id, null)
-      if (!targetId) return
+    // Blur commits too, so this runs with nothing to do fairly often; those
+    // cases report `mutated: false` to spare every frame a refetch.
+    // Names the frame rather than resolving it from focus: a blur can land after
+    // the click that moved focus elsewhere, and the write must still go to the
+    // frame that was being edited. The key path fills this from the context.
+    args: [{ name: 'frameId', label: 'Frame id', fromContext: 'frameId' }],
+    run: async ({ frameId }) => {
+      const frame = getLayout().frames[String(frameId)]
+      const edit = frame?.edit
+      if (!frame || !edit) return { mutated: false }
+      const subject = last(edit.path)
+      A.setEdit(frame.id, null)
+      if (!subject) return { mutated: false }
       if (edit.mode === 'edit') {
-        await writeValue(targetId, 'text', edit.draft)
-        return
+        await writeValue(subject, 'text', edit.draft)
+        return {}
       }
       // Committing an empty create is a no-op rather than a blank entity.
-      if (!edit.draft.trim()) return
-      const created = await createEntity({ text: edit.draft, ...edit.values }, targetId)
-      A.selectPath(t.frame.id, [...edit.path, created])
+      if (!edit.draft.trim()) return { mutated: false }
+      const created = await createEntity({ text: edit.draft, ...edit.values }, subject)
+      A.selectPath(frame.id, [...edit.path, created])
+      return {}
     },
   },
   {
