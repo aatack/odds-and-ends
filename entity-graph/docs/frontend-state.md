@@ -209,8 +209,11 @@ a per-entity max-depth map, and any in-progress edit.
 - **Find text** is the find field: null while the frame isn't filtering, a
   string — empty included — while it is. `frame.find` takes no argument and
   only flips null to `''`; the field that appears edits the state directly from
-  then on, so there is no draft anywhere to keep in step. (The text is not yet
-  applied to the rows.)
+  then on, so there is no draft anywhere to keep in step. Run against a field
+  already open it changes nothing and merely asks for the caret (below), so the
+  key means the same thing whatever state the frame is in. Enter blurs the
+  field, handing bare keys back to navigation; the text stays. (The text is not
+  yet applied to the rows.)
 - **Per-entity max depth** is stored but not yet honoured: the `query` tool
   takes a single `maxDepth`, so the root entity's entry is passed through and
   the rest is provisioned for a later server change.
@@ -225,6 +228,13 @@ code-run output are runtime-only and rebuild on load, at the cost of a beat of
 jank on tab labels. Names are the one thing kept past the rows they came from —
 still runtime, but never pruned, since dropping an inactive tab's rows shouldn't
 turn its label back into a uuid.
+
+**Focus requests** (`state/focusRequest.ts`) are the one thing that travels
+upward. A tool has no DOM and no components, so when it needs the keyboard to
+land somewhere it names a field — `find:<frameId>` — and the component owning
+that field answers through `useFocusRequest`. It is a signal, not state: runtime
+only, carrying a nonce so asking twice for the same field lands twice, and
+cleared once taken so the next field of that name to mount doesn't inherit it.
 
 A tool declares whether it `mutates`, which is what makes every open frame
 refetch; a run can override that when it turns out there was nothing to write

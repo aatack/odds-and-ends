@@ -1,5 +1,6 @@
 import * as A from '../state/actions'
 import { entityRows, frameRows, type EntityRow, type Row } from '../state/derive'
+import { findField, requestFocus } from '../state/focusRequest'
 import { queryAtom } from '../state/query'
 import * as R from '../state/reducers'
 import { focusOf, getLayout, updateLayout } from '../state/store'
@@ -372,9 +373,12 @@ export const FRAME_TOOLS: ToolSpec[] = [
     run: () => {
       const layout = getLayout()
       const { frameId } = focusOf(layout)
-      // Empty string, not null: that is what puts the field on screen. Pressing
-      // the key again while it is open leaves what was typed alone.
-      if (frameId && layout.frames[frameId]?.find == null) A.setFind(frameId, '')
+      if (!frameId) return
+      // Empty string, not null: that is what puts the field on screen. Run
+      // against a field already open it leaves the text alone and only asks for
+      // the keyboard, so the key means "find" whatever state the frame is in.
+      if (layout.frames[frameId]?.find == null) A.setFind(frameId, '')
+      requestFocus(findField(frameId))
     },
   },
   {

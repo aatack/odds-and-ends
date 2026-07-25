@@ -1,6 +1,7 @@
-import { useEffect, useLayoutEffect, useMemo, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import type { Atom } from './atom'
 import { frameRows, tabLabel, type FrameRows } from './derive'
+import { focusRequestAtom, focusTaken } from './focusRequest'
 import { namesAtom, queryAtom, retainFrame } from './query'
 import { callsAtom, focusOf, layoutAtom, pendingAtom, type Focus } from './store'
 import { themeAtom, uiAtom, type Theme, type UiState } from './ui'
@@ -25,6 +26,25 @@ export function useTheme(): Theme {
     document.documentElement.classList.toggle('dark', theme === 'dark')
   }, [theme])
   return theme
+}
+
+/**
+ * Take the keyboard whenever something asks for `target` — see
+ * `state/focusRequest`. Also fires on mount if the standing request names this
+ * field, which is how a field that a tool has just brought into existence gets
+ * the caret without knowing it was the tool that did it.
+ *
+ * `take` is read through a ref, so an inline arrow doesn't re-fire it.
+ */
+export function useFocusRequest(target: string, take: () => void): void {
+  const request = useAtomValue(focusRequestAtom)
+  const latest = useRef(take)
+  latest.current = take
+  useEffect(() => {
+    if (request.target !== target) return
+    latest.current()
+    focusTaken()
+  }, [request, target])
 }
 
 export function useFocus(): Focus {
