@@ -160,9 +160,9 @@ export function Editor(props: EditorProps): React.JSX.Element {
   )
   useEffect(() => reveal(selectedIndex), [selectedIndex, reveal])
 
-  // The row being typed into, if any. It is kept mounted wherever it is (below),
-  // and brought into view — creating a child of a very tall entity puts the box
-  // right at the end of that entity's subtree, which can be pages away.
+  // The row being typed into, if any. It is kept mounted wherever it is (see the
+  // pin below) and brought into view — creating a child of a very tall entity
+  // puts the box right at the end of that entity's subtree, pages away.
   const editIndex = useMemo(
     () => rows.findIndex((r) => r.kind === 'input' || (r.kind === 'entity' && r.editing)),
     [rows],
@@ -186,12 +186,16 @@ export function Editor(props: EditorProps): React.JSX.Element {
   lastIndex = Math.min(rows.length, lastIndex + OVERSCAN)
   const slice = rows.slice(firstIndex, lastIndex)
 
-  // The edited row is pinned: mounted whether or not the window reaches it, at
-  // its own offset. Unmounting it would take the caret with it — autofocus never
-  // fires for a box that was never rendered, and scrolling away mid-edit would
-  // drop focus and the selection inside the box. Overscan can't fix that; the
-  // row can be arbitrarily far from the viewport.
-  const pinned = editIndex >= 0 && (editIndex < firstIndex || editIndex >= lastIndex)
+  // The edited row is pinned: rendered exactly once, positioned at its own
+  // offset, for as long as the edit lasts — whether or not the window reaches
+  // it. Unmounting it would take the caret with it (autofocus never fires for a
+  // box that was never rendered, and scrolling away mid-edit would drop focus
+  // and the selection inside the box), and overscan can't help, since the row can
+  // be arbitrarily far from the viewport. Moving it between the flow and the pin
+  // as it crosses the window edge would remount it just the same, so it stays
+  // pinned throughout and the flow leaves a spacer of its height in its place.
+  const editKey = editIndex < 0 ? null : keyOf(rows[editIndex], editIndex)
+  const editHeight = editKey == null ? 0 : (heights.get(editKey) ?? ESTIMATE)
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>): void => {
     const el = e.currentTarget
@@ -241,9 +245,15 @@ export function Editor(props: EditorProps): React.JSX.Element {
           // the top of the rows rather than the padded scroll container.
           <div className="relative">
             <div style={{ height: offsets[firstIndex] }} />
-            {slice.map((row, i) => renderRow(row, firstIndex + i))}
+            {slice.map((row, i) =>
+              firstIndex + i === editIndex ? (
+                <div key="edit-slot" style={{ height: editHeight }} />
+              ) : (
+                renderRow(row, firstIndex + i)
+              ),
+            )}
             <div style={{ height: total - offsets[lastIndex] }} />
-            {pinned && (
+            {editIndex >= 0 && (
               <div className="absolute inset-x-0" style={{ top: offsets[editIndex] }}>
                 {renderRow(rows[editIndex], editIndex)}
               </div>
