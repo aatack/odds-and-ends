@@ -9,6 +9,26 @@ const linkAction = z
   .union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)])
   .describe('0=add, 1=remove, 2=move toward index 0, 3=move toward end')
 
+/** A raw event, as `writeEvents` accepts it and `popEvents` hands it back. */
+const appEvent = z.union([
+  z.object({
+    type: z.literal('value'),
+    timestamp: z.number(),
+    author: z.string(),
+    entityId: z.string(),
+    key: z.string(),
+    value: z.any(),
+  }),
+  z.object({
+    type: z.literal('link'),
+    timestamp: z.number(),
+    author: z.string(),
+    sourceId: z.string(),
+    destinationId: z.string(),
+    action: linkAction,
+  }),
+])
+
 export interface DefaultToolOptions {
   /** Author recorded on writes when the caller does not supply one. */
   defaultAuthor?: string
@@ -222,6 +242,39 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
     },
   }
 
+  const writeEvents: ToolDef = {
+    id: 'writeEvents',
+    name: 'Write events',
+    description:
+      'Append raw events verbatim, keeping the timestamps and authors they carry. ' +
+      'Backs redo — pass back what `popEvents` returned. Prefer `writeValue` / ' +
+      '`writeLink` for ordinary edits, which stamp the current time for you.',
+    safety: 'safe-mutating',
+    args: z.object({ events: z.array(appEvent) }),
+    handler: async ({ events }: { events: AppEvent[] }) => {
+      await perms.writeEvents(events)
+      return { written: events.length }
+    },
+  }
+
+  const popEvents: ToolDef = {
+    id: 'popEvents',
+    name: 'Pop latest events',
+    description:
+      'Remove the most recent event, and any within `windowMs` of it, and return ' +
+      'them. Backs undo: one user action often writes several events at the same ' +
+      'instant, so they come off together. Hand the result to `writeEvents` to ' +
+      'put them back.',
+    safety: 'safe-mutating',
+    args: z.object({
+      windowMs: z
+        .number()
+        .optional()
+        .describe('How close to the latest event counts as the same action; defaults to 100.'),
+    }),
+    handler: ({ windowMs }: { windowMs?: number }) => perms.popLatestEvents!(windowMs ?? 100),
+  }
+
   const httpRequest: ToolDef = {
     id: 'httpRequest',
     name: 'HTTP request',
@@ -258,6 +311,10 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
     readEvents,
     writeValue,
     writeLink,
+    writeEvents,
+    // Absent when the store can't take events off again, so a client can tell
+    // whether undo is available by whether the tool exists.
+    ...(perms.popLatestEvents ? [popEvents] : []),
     query,
     readEntities,
     createEntity,

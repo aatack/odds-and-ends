@@ -2,6 +2,7 @@ import { v4 as uuid } from 'uuid'
 import { buildCallContext } from '../state/derive'
 import { queryAtom, refreshQueries } from '../state/query'
 import { callsAtom, getLayout, pendingAtom } from '../state/store'
+import { clearUndo } from '../state/undo'
 import type {
   ArgValue,
   ArgValues,
@@ -99,7 +100,13 @@ async function execute(call: {
     })) ?? {}
     // Anything that wrote to the entity store invalidates every open frame. A
     // tool that decided there was nothing to write says so and skips the refetch.
-    if (outcome.mutated ?? tool.mutates) refreshQueries()
+    if (outcome.mutated ?? tool.mutates) {
+      refreshQueries()
+      // A write that didn't come from the undo stack strands it: those events are
+      // no longer the store's most recent, so replaying them would land them
+      // after the newer edit.
+      if (!tool.preservesUndo) clearUndo()
+    }
     settle(call, tool, { kind: 'success', data: outcome.data, message: outcome.message })
   } catch (e) {
     settle(call, tool, { kind: 'error', message: message(e) })

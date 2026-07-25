@@ -21,6 +21,16 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable
 }
 
+/**
+ * Modifier combos a focused text field owns. Bare keys already belong to it, but
+ * these look like app shortcuts and aren't: ⌘Z inside an in-place edit should
+ * undo the typing, not take events off the database.
+ */
+const TEXT_EDITING_KEYS = new Set(['z', 'y', 'x', 'c', 'v', 'a'])
+
+const isTextEditingKey = (e: KeyboardEvent): boolean =>
+  (e.ctrlKey || e.metaKey) && !e.altKey && TEXT_EDITING_KEYS.has(e.key.toLowerCase())
+
 /** Route one keystroke. Returns true when it was consumed. */
 export function handleKey(e: KeyboardEvent): boolean {
   if (matchesKey(PALETTE_KEY, e)) {
@@ -47,9 +57,11 @@ export function handleKey(e: KeyboardEvent): boolean {
     // choose a target.
   }
 
-  // A focused text field owns bare keys; Escape and modifier combos still route.
-  if (isEditableTarget(e.target) && e.key !== 'Escape' && !(e.ctrlKey || e.metaKey || e.altKey)) {
-    return false
+  // A focused text field owns bare keys and the editing combos; Escape and other
+  // modifier combos still route, so ctrl+Tab works mid-edit.
+  if (isEditableTarget(e.target)) {
+    if (isTextEditingKey(e)) return false
+    if (e.key !== 'Escape' && !(e.ctrlKey || e.metaKey || e.altKey)) return false
   }
 
   for (const scope of SCOPES) {

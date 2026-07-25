@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Trash03 } from '@untitledui/icons'
 import type { QueryPage } from '../../../core/wrapper'
+import { refreshQueries } from '../state/query'
+import { clearUndo } from '../state/undo'
 import { Button } from './ui/Button'
 import { Field } from './ui/Field'
 import { IconButton } from './ui/IconButton'
@@ -62,10 +64,16 @@ export function EntityDebugModal({ sourceId, entityId, user, onClose }: Props): 
     void load()
   }, [load])
 
+  // The debug panel writes raw events rather than going through a tool — that's
+  // the point of it — so it has to do by hand what the call machine would: tell
+  // open frames to refetch, and strand the undo stack, whose events are no longer
+  // the store's most recent.
   const write = async (fn: () => Promise<unknown>): Promise<void> => {
     setError(null)
     try {
       await fn()
+      clearUndo()
+      refreshQueries()
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))

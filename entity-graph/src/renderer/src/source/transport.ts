@@ -8,6 +8,11 @@ export interface SourceTransport {
   call: (toolId: string, args: unknown) => Promise<unknown>
   /** The author recorded against writes. */
   user: string
+  /**
+   * Which source is open. Anything holding on to events — the undo stack — needs
+   * this, so it can refuse to replay one store's events into another.
+   */
+  sourceId: string
 }
 
 let transport: SourceTransport | null = null
@@ -19,6 +24,8 @@ export const setSourceTransport = (next: SourceTransport | null): void => {
 export const hasSource = (): boolean => transport != null
 
 export const currentUser = (): string => transport?.user ?? 'anonymous'
+
+export const currentSourceId = (): string | null => transport?.sourceId ?? null
 
 export function callSource(toolId: string, args: unknown): Promise<unknown> {
   if (!transport) return Promise.reject(new Error('No source is open'))

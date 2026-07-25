@@ -142,6 +142,40 @@ single `query` result would exhaust the localStorage quota, which
 is how errors and confirmations reach the toast layer. Only retention is
 filtered. No pruning or garbage collection yet.
 
+## Undo
+
+Undo is destructive at the store rather than compensating: `popEvents` takes the
+most recent event, and anything within 100ms of it, off the database and returns
+it, and the returned events go on a stack. Redo writes them back verbatim, so the
+store ends up as it was — the original timestamps and authors, not the edit
+re-applied at the current time.
+
+The 100ms window is what makes a step a *user action* rather than an event: 
+creating an entity writes its values and the link to its parent at the same
+instant, and they must come off together. The flip side is that two actions in
+quick succession collapse into one step, which is correct but surprising if you
+drive the app faster than a person can.
+
+Consequences worth knowing:
+
+- **The stack is the only copy of those events.** Nothing can reconstruct them,
+  which is why it's latent state and persisted despite looking like history — and
+  why there is no "clear undo history" tool: it would destroy data, not tidy a
+  list.
+- **Any write that didn't come from the stack clears it.** Those events are no
+  longer the store's most recent, so replaying them would land them *after* the
+  newer edit. The tools that work on the stack opt out with `preservesUndo`; the
+  raw debug panel, which writes events directly rather than through a tool, clears
+  it by hand.
+- **A step records the source it came off**, and redo refuses a step belonging to
+  another source. Everything else about pointing the app at a different source is
+  harmless; injecting one store's events into another would invent entities there.
+- `popEvents` is absent from a source that can't remove events (a read-only
+  wrapper), so the client can tell undo is unavailable by the tool's absence.
+
+`⌘Z`/`⌘Y` are handed to a focused text field rather than routed, along with the
+other editing combos — inside an in-place edit, undo should mean the typing.
+
 ## Layout state
 
 Tab groups, tabs and frames are id-keyed collections in one persisted blob.

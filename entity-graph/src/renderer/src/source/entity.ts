@@ -1,3 +1,4 @@
+import type { AppEvent } from '../../../core/events'
 import type { QueryPage, StackFrame } from '../../../core/wrapper'
 import { callSource, currentUser } from './transport'
 
@@ -42,3 +43,16 @@ export const link = (sourceId: string, destinationId: string): Promise<unknown> 
 
 export const unlink = (parentId: string, childId: string): Promise<unknown> =>
   writeLink(parentId, childId, LINK_REMOVE)
+
+// --- Raw events (undo / redo) ----------------------------------------------
+
+/**
+ * Take the most recent event, and any within `windowMs` of it, back off the
+ * store. Returns what was removed, oldest first.
+ */
+export const popEvents = (windowMs = 100): Promise<AppEvent[]> =>
+  callSource('popEvents', { windowMs }) as Promise<AppEvent[]>
+
+/** Put events back verbatim, timestamps and authors intact. */
+export const writeEvents = (events: AppEvent[]): Promise<unknown> =>
+  callSource('writeEvents', { events })

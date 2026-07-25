@@ -107,6 +107,72 @@ export class SqliteInterface implements DumpableInterface {
     return result
   }
 
+  /**
+   * Remove the most recent event, and any within `windowMs` of it, returning
+   * what was removed (oldest first, ready to be written back).
+   *
+   * The window is what makes this useful as an undo step: one user action often
+   * writes several events at the same instant — creating an entity writes its
+   * values and the link to its parent together — and they should come off as a
+   * unit. Select and delete share one transaction, so a concurrent write can't
+   * slip between them.
+   */
+  async popLatestEvents(windowMs: number): Promise<AppEvent[]> {
+    return this.db.transaction(() => {
+      const latest = this.db
+        .prepare<[], { ts: number | null }>(
+          `SELECT MAX(ts) AS ts FROM (
+             SELECT MAX(timestamp) AS ts FROM value_events
+             UNION ALL
+             SELECT MAX(timestamp) AS ts FROM link_events
+           )`
+        )
+        .get()
+      if (latest?.ts == null) return []
+
+      const cutoff = latest.ts - windowMs
+      const valueRows = this.db
+        .prepare<[number], ValueRow>(
+          `SELECT timestamp, author, entity_id, key, value
+           FROM value_events WHERE timestamp >= ?`
+        )
+        .all(cutoff)
+      const linkRows = this.db
+        .prepare<[number], LinkRow>(
+          `SELECT timestamp, author, source_id, destination_id, action
+           FROM link_events WHERE timestamp >= ?`
+        )
+        .all(cutoff)
+
+      this.db.prepare(`DELETE FROM value_events WHERE timestamp >= ?`).run(cutoff)
+      this.db.prepare(`DELETE FROM link_events WHERE timestamp >= ?`).run(cutoff)
+
+      const events: AppEvent[] = [
+        ...valueRows.map(
+          (row): ValueEvent => ({
+            type: 'value',
+            timestamp: row.timestamp,
+            author: row.author,
+            entityId: row.entity_id,
+            key: row.key,
+            value: JSON.parse(row.value),
+          })
+        ),
+        ...linkRows.map(
+          (row): LinkEvent => ({
+            type: 'link',
+            timestamp: row.timestamp,
+            author: row.author,
+            sourceId: row.source_id,
+            destinationId: row.destination_id,
+            action: row.action as 0 | 1 | 2 | 3,
+          })
+        ),
+      ]
+      return events.sort((a, b) => a.timestamp - b.timestamp)
+    })()
+  }
+
   async readAllEvents(): Promise<AppEvent[]> {
     const events: AppEvent[] = []
 

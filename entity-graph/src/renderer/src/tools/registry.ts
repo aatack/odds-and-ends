@@ -1,6 +1,7 @@
 import { APP_TOOLS, GROUP_TOOLS } from './appTools'
 import { ENTITY_TOOLS } from './entityTools'
 import { FRAME_TOOLS } from './frameTools'
+import { UNDO_TOOLS } from './undoTools'
 import type { ToolScope, ToolSpec } from './types'
 
 // The one registry. Order matters twice: it's the order the palette lists tools
@@ -8,7 +9,13 @@ import type { ToolScope, ToolSpec } from './types'
 // looking at), and the order the key router resolves collisions in within a
 // scope.
 
-export const TOOLS: ToolSpec[] = [...ENTITY_TOOLS, ...FRAME_TOOLS, ...GROUP_TOOLS, ...APP_TOOLS]
+export const TOOLS: ToolSpec[] = [
+  ...ENTITY_TOOLS,
+  ...FRAME_TOOLS,
+  ...GROUP_TOOLS,
+  ...UNDO_TOOLS,
+  ...APP_TOOLS,
+]
 
 const byId = new Map(TOOLS.map((t) => [t.id, t]))
 

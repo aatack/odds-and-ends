@@ -27,7 +27,11 @@ export function SourceView({
   const ui = useUi()
 
   useEffect(() => {
-    setSourceTransport({ call: (tool, args) => api.sourceCall(active.id, tool, args), user })
+    setSourceTransport({
+      call: (tool, args) => api.sourceCall(active.id, tool, args),
+      user,
+      sourceId: active.id,
+    })
     setQueryFetcher(query)
     return () => {
       setQueryFetcher(null)

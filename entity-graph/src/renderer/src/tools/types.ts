@@ -76,6 +76,11 @@ export interface ToolSpec {
   keys?: KeyBinding[]
   /** Set when running it changes the entity store, so open frames must refetch. */
   mutates?: boolean
+  /**
+   * Set for the tools that work *on* the undo stack. Any other write clears it,
+   * since events written back after newer edits would come back out of order.
+   */
+  preservesUndo?: boolean
   /** False hides it from the tool list; it stays reachable by key or by id. */
   listed?: boolean
   /**

@@ -48,6 +48,7 @@ export class SqliteSource extends ToolSource {
       readEvents: async (ids) => flatten(await this.iface.readEvents(ids)),
       readAllEvents: () => this.iface.readAllEvents(),
       writeEvents: (events) => this.iface.writeEvents(events),
+      popLatestEvents: (windowMs) => this.iface.popLatestEvents(windowMs),
     }
     this.perms = dbPermissions(backing)
     this.cached = defaultTools(this.perms, { defaultAuthor })

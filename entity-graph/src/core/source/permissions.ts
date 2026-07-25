@@ -10,6 +10,11 @@ export interface EventBacking {
   /** Read every event in the store, deduplicated. */
   readAllEvents(): Promise<AppEvent[]>
   writeEvents(events: AppEvent[]): Promise<void>
+  /**
+   * Optional: take the most recent events back off the store, returning them.
+   * Append-only backings simply don't implement it.
+   */
+  popLatestEvents?(windowMs: number): Promise<AppEvent[]>
 }
 
 /** A single outbound HTTP request (see {@link Permissions.httpRequest}). */
@@ -54,6 +59,12 @@ export interface Permissions {
   /** Read events; omit `entityIds` (or pass undefined) to read every event. */
   readEvents(entityIds?: string[]): Promise<AppEvent[]>
   writeEvents(events: AppEvent[]): Promise<void>
+  /**
+   * Remove the most recent event, and any within `windowMs` of it, returning
+   * them. Optional — the store may be append-only, in which case the `popEvents`
+   * tool is simply absent and the client has no undo.
+   */
+  popLatestEvents?(windowMs: number): Promise<AppEvent[]>
   httpRequest(req: HttpRequest): Promise<HttpResponse>
   runCommand(req: CommandRequest): Promise<CommandResult>
 }
@@ -83,10 +94,13 @@ export function stubbedIO(): Pick<Permissions, 'httpRequest' | 'runCommand'> {
  * HTTP and CLI stubbed out. `readEvents(undefined)` dumps every event.
  */
 export function dbPermissions(backing: EventBacking): Permissions {
+  const pop = backing.popLatestEvents?.bind(backing)
   return {
     readEvents: (entityIds) =>
       entityIds === undefined ? backing.readAllEvents() : backing.readEvents(entityIds),
     writeEvents: (events) => backing.writeEvents(events),
+    // Granted only when the backing can actually take events off again.
+    ...(pop ? { popLatestEvents: pop } : {}),
     ...stubbedIO(),
   }
 }
