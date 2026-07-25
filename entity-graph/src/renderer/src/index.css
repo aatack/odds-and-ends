@@ -149,10 +149,61 @@ body {
   letter-spacing: -0.02em;
 }
 
-/* Quiet, Apple-style scrollbars. */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-gray-300) transparent;
+/*
+ * Quiet, Apple-style scrollbars: a thin translucent capsule floating over the
+ * content, with no track, no arrows and no hairline of its own. Tone again
+ * rather than chrome — a scrollbar should say where you are without drawing a
+ * line down the side of every panel.
+ *
+ * The -webkit- pseudo-elements rather than `scrollbar-width`/`scrollbar-color`:
+ * the standard properties can round nothing and inset nothing, and setting
+ * either one makes Chromium ignore these rules entirely. This is Electron, so
+ * there is one engine to satisfy and it understands these.
+ *
+ * Translucent, so the thumb takes on whatever it sits over and needs no
+ * light/dark variant beyond the ink it is mixed from.
+ */
+html {
+  --scrollbar-thumb: rgb(0 0 0 / 0.2);
+  --scrollbar-thumb-hover: rgb(0 0 0 / 0.35);
+}
+
+html.dark {
+  --scrollbar-thumb: rgb(255 255 255 / 0.22);
+  --scrollbar-thumb-hover: rgb(255 255 255 / 0.38);
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+/* No track and no corner: the thumb floats over the content. */
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* No arrows at the ends. */
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  /* A transparent border clipped out of the background is what insets the
+   * capsule: a scrollbar has no padding to give it a gutter. 12px less two 3px
+   * borders leaves a 6px thumb. */
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 9999px;
+  /* Still grabbable in a very long list. */
+  min-height: 2rem;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: content-box;
 }
 
 /* No motion anywhere — see AGENTS.md. State changes are instantaneous. This
