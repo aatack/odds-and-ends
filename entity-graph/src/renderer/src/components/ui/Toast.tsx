@@ -49,10 +49,12 @@ function useToasts(): Toast[] {
   )
 }
 
+// Tone only: the tinted fill and the drop shadow carry the toast, as they do on
+// the palette. A hairline round a coloured chip reads as an outline at this size.
 const VARIANT: Record<ToastVariant, string> = {
-  info: 'bg-brand-50 text-brand-700 border-brand-100',
-  success: 'bg-success-50 text-success-700 border-success-100',
-  error: 'bg-error-50 text-error-700 border-error-100',
+  info: 'bg-brand-50 text-brand-700',
+  success: 'bg-success-50 text-success-700',
+  error: 'bg-error-50 text-error-700',
 }
 
 /**
@@ -69,7 +71,7 @@ export function Toaster(): React.JSX.Element | null {
           key={t.id}
           onClick={() => dismissToast(t.id)}
           className={cn(
-            'pointer-events-auto rounded-md border px-3 py-2 text-left text-[13px] shadow-sm',
+            'pointer-events-auto rounded-lg px-3 py-2 text-left text-[13px] shadow-lg',
             VARIANT[t.variant],
           )}
         >
