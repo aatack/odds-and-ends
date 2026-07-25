@@ -40,7 +40,6 @@ export function TabGroupView({
               key={tabId}
               rootId={tabRootId(layout, tabId)}
               active={group.activeTabId === tabId}
-              frameCount={layout.tabs[tabId].frameIds.length}
               onSelect={() => A.selectTab(group.id, tabId)}
               onClose={() => A.closeTab(group.id, tabId)}
             />
@@ -68,34 +67,27 @@ export function TabGroupView({
 }
 
 /**
- * The trail of frames the tab has drilled into, and the way back out: clicking a
- * crumb pops everything above it, which the frame history can then undo. Absent
- * with a single frame on the stack, where it would only repeat the tab's own
- * label an inch above it and there would be nothing to click.
+ * The way back out: the frames the tab drilled through to get here, each of which
+ * pops everything above it when clicked — which the frame history can then undo.
+ * Only the ones you came through. Where you are now is the tree below it and the
+ * tab above it, so a crumb for it would say the same thing a third time and be the
+ * one crumb with nothing to click; the trailing chevron is what says you are
+ * inside. Absent with a single frame on the stack, where there is no way back.
  */
 function Breadcrumb({ tabId }: { tabId: string }): React.JSX.Element | null {
-  const crumbs = useCrumbs(tabId)
-  if (crumbs.length < 2) return null
-  const last = crumbs.length - 1
+  const crumbs = useCrumbs(tabId).slice(0, -1)
+  if (!crumbs.length) return null
   return (
     <nav className="flex items-center gap-1 overflow-x-auto px-3 py-1.5 text-[11px] text-gray-400">
-      {crumbs.map((crumb, i) => (
+      {crumbs.map((crumb) => (
         <React.Fragment key={crumb.frameId}>
-          {i > 0 && <ChevronRight size={11} className="shrink-0 text-gray-300" />}
-          {i === last ? (
-            // Where you are, so no background: there is nothing to click, only
-            // the entity's own gestures.
-            <PillWrapper id={crumb.rootId} className="shrink-0 text-gray-600">
-              <PillContent id={crumb.rootId} />
-            </PillWrapper>
-          ) : (
-            <EntityPill
-              id={crumb.rootId}
-              className="shrink-0"
-              onClick={() => A.popToFrame(tabId, crumb.frameId)}
-              title={`Back to ${crumb.label}`}
-            />
-          )}
+          <EntityPill
+            id={crumb.rootId}
+            className="shrink-0"
+            onClick={() => A.popToFrame(tabId, crumb.frameId)}
+            title={`Back to ${crumb.label}`}
+          />
+          <ChevronRight size={11} className="shrink-0 text-gray-300" />
         </React.Fragment>
       ))}
     </nav>
@@ -105,20 +97,18 @@ function Breadcrumb({ tabId }: { tabId: string }): React.JSX.Element | null {
 /**
  * A tab is the entity it is showing: a pill on a background of its own — the
  * header's own two buttons, the filled one for the tab you are in and the quiet
- * one for the rest — carrying the depth of its frame stack and a way to close it.
- * The pill brings the entity gestures with it, so a tab can be right-clicked for
- * the tool list or middle-clicked to open the same entity again elsewhere.
+ * one for the rest — with a way to close it. The pill brings the entity gestures
+ * with it, so a tab can be right-clicked for the tool list or middle-clicked to
+ * open the same entity again elsewhere.
  */
 function TabButton({
   rootId,
   active,
-  frameCount,
   onSelect,
   onClose,
 }: {
   rootId: string | undefined
   active: boolean
-  frameCount: number
   onSelect: () => void
   onClose: () => void
 }): React.JSX.Element {
@@ -130,11 +120,6 @@ function TabButton({
       onClick={onSelect}
     >
       {rootId ? <PillContent id={rootId} /> : <span className="text-gray-400">Empty</span>}
-      {frameCount > 1 && (
-        <span className="text-[10px] text-gray-400" title={`${frameCount} frames on the stack`}>
-          {frameCount}
-        </span>
-      )}
       <span
         role="button"
         tabIndex={-1}
