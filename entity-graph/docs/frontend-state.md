@@ -17,7 +17,14 @@ views/    React — reads derived state, renders, forwards gestures to tools
 
 Nothing in `state/` or `tools/` imports React or touches the DOM, so the app can
 in principle be driven headlessly: point `source/transport` at a source, retain a
-frame, and run tools by id.
+frame, and run tools by id. (That isn't aspirational — the layers have been
+exercised in node with nothing but a `localStorage` stub.)
+
+One seam is worth naming: direct manipulation — clicking a row, dragging a tab,
+typing in the in-place editor — calls a named mutator in `state/actions.ts` rather
+than a tool, because routing a mouse gesture through the call machine would put
+noise in the log for no gain. Anything invocable by key or palette, or worth
+recording, is a tool, and tools are written in terms of the same mutators.
 
 ## Vocabulary
 
@@ -91,6 +98,16 @@ hotkey has started something that needs another input (link, move). Its maximise
 button switches the call to `palette` display with no anchor, so minimising and
 re-maximising returns to the centre rather than the original cursor position.
 
+It follows that the toast can only serve an argument that is *pointed at*: there
+is nowhere in it to type. So a hotkey whose outstanding argument is typed rather
+than picked opens the palette instead, even though it was started from the
+keyboard.
+
+Taking over the pending slot records whatever was in it, so right-clicking
+part-way through a link doesn't lose the link. A call that runs straight through
+never touches the slot at all, which is what lets the selection be moved while a
+link waits for its far end.
+
 ## Argument navigation
 
 - **Tab** advances to the next argument not filled from the context. It still
@@ -145,7 +162,9 @@ a per-entity max-depth map, and any in-progress edit.
 - The **selection path** is latent and never overwritten by the resolved one.
   Resolution strips trailing ids until the path exists in the rendered rows,
   defaulting to `[rootId]`; because it is only ever derived, re-expanding a
-  collapsed ancestor restores the original selection.
+  collapsed ancestor restores the original selection. While pages are still
+  outstanding an unfound path is left alone rather than stripped, so a deep
+  selection isn't snapped to the root every time a large tree reloads.
 - The **edit state** (in-place edit or create, plus the draft text) is
   persisted, so a half-typed entity survives a reload.
 - **Per-entity max depth** is stored but not yet honoured: the `query` tool
@@ -159,7 +178,18 @@ Canvases are gone. The `View` union collapsed back to a single entity view.
 
 Nothing cached lives in latent state: query results, entity display names and
 code-run output are runtime-only and rebuild on load, at the cost of a beat of
-jank on tab labels.
+jank on tab labels. Names are the one thing kept past the rows they came from —
+still runtime, but never pruned, since dropping an inactive tab's rows shouldn't
+turn its label back into a uuid.
+
+A tool declares whether it `mutates`, which is what makes every open frame
+refetch; a run can override that when it turns out there was nothing to write
+(committing an editor that was already empty, say), so a blur doesn't cost a
+round of queries.
+
+One tool takes an argument it could have inferred: `edit.commit` names its frame,
+because a blur can arrive after the click that moved focus somewhere else, and the
+write must still go to the frame that was being edited.
 
 The layout is not scoped per source. Pointing the app at a different source
 leaves frames rooted at ids that source has never heard of, and they render
