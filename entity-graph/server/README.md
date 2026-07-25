@@ -12,6 +12,9 @@ LLM can call its tools immediately — with fine control over what they can do.
   sources). Reused by both this server and the Electron app.
 - `src/` — the HTTP server: config DB, source registry, endpoints, debug page,
   MCP.
+- `src/integrations/` — the server's own reach into GitHub, Slack and Claude.
+  Not a source: one registry, one endpoint. See
+  [`docs/integrations.md`](./docs/integrations.md).
 
 ## Sources
 
@@ -30,6 +33,11 @@ Source-scoped (bearer token for that source):
 - `POST /:sourceId/call` — `{ tool, args }` → `{ status: 'success', result }` / `{ status: 'error', message }`
 - `POST /:sourceId/mcp` — stateless MCP (Streamable HTTP)
 - `GET  /:sourceId/debug` — interactive per-source console (HTML; prompts for a token)
+
+Integrations, admin-scoped (bearer `ADMIN_TOKEN`) — see
+[`docs/integrations.md`](./docs/integrations.md):
+- `GET  /tools` — the integration tools, with JSON Schema for their arguments
+- `POST /runTool` — `{ tool, args }`; the only way to invoke one
 
 Admin (bearer `ADMIN_TOKEN`):
 - `GET  /admin` — source management console (HTML; prompts for the admin token): list / create / edit / delete sources and issue / revoke tokens
@@ -57,7 +65,9 @@ To run the Electron app again afterwards, switch `better-sqlite3` back with
 caveat; long-term the app and server can be split into fully isolated installs.)
 
 Env vars: `PORT` (4000), `HOST` (127.0.0.1), `CONFIG_DB` (./data/config.db),
-`ADMIN_TOKEN` (unset ⇒ admin endpoints open, dev only).
+`ADMIN_TOKEN` (unset ⇒ admin endpoints open, dev only). All of these, plus the
+integrations' secrets, can also live in `server/.env` (gitignored — copy
+`.env.example`); anything already in the environment wins.
 
 ## Tests
 

@@ -6,6 +6,7 @@ import { Registry, SourceNotFoundError } from './registry'
 import { registerAdmin } from './admin'
 import { registerDebug } from './debug'
 import { registerMcp } from './mcp'
+import { INTEGRATION_TOOLS, runIntegrationTool } from './integrations/index'
 
 export interface AppOptions {
   db: ConfigDb
@@ -81,6 +82,29 @@ export function buildApp(opts: AppOptions): FastifyInstance {
         const src = await registry.get(req.params.sourceId)
         const result = await src.call(tool, args ?? {})
         return { status: 'success' as const, result }
+      } catch (e) {
+        return { status: 'error' as const, message: formatError(e) }
+      }
+    }
+  )
+
+  // ---- Integrations ----
+  //
+  // Not source-scoped: these are the server's own reach into GitHub, Slack and
+  // Claude, so they answer to the admin token rather than to any one source's.
+  // `/runTool` is the only door — nothing else invokes an integration — which is
+  // what makes the tool list the whole of the surface.
+
+  app.get('/tools', { preHandler: requireAdmin }, async () => INTEGRATION_TOOLS.map(toolMeta))
+
+  app.post<{ Body: { tool?: string; args?: unknown } }>(
+    '/runTool',
+    { preHandler: requireAdmin },
+    async (req) => {
+      const { tool, args } = req.body ?? {}
+      if (!tool) return { status: 'error' as const, message: 'request body must include "tool"' }
+      try {
+        return { status: 'success' as const, result: await runIntegrationTool(tool, args ?? {}) }
       } catch (e) {
         return { status: 'error' as const, message: formatError(e) }
       }

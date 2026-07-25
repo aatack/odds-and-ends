@@ -1,6 +1,11 @@
 import { buildApp } from './app'
 import { ConfigDb } from './config'
+import { loadEnvFile } from './env'
 import { Registry } from './registry'
+
+// Before anything reads the environment: the integrations' secrets live in
+// `server/.env`, and the settings below may as well be settable there too.
+loadEnvFile()
 
 const PORT = Number(process.env.PORT ?? 4000)
 const HOST = process.env.HOST ?? '127.0.0.1'

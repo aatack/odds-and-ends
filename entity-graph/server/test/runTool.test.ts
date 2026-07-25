@@ -1,0 +1,146 @@
+import { mkdtempSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import type { FastifyInstance } from 'fastify'
+import { buildApp } from '../src/app'
+import { ConfigDb } from '../src/config'
+import { Registry } from '../src/registry'
+import { INTEGRATION_TOOLS } from '../src/integrations/index'
+import { pullRequestArgs } from '../src/integrations/github'
+import { parseRef } from '../src/integrations/slack'
+
+// The endpoint and the argument parsing. Nothing here reaches GitHub, Slack or
+// Claude — the handlers themselves are only exercised by hand.
+
+const ADMIN = 'admin-secret'
+let dir: string
+let db: ConfigDb
+let app: FastifyInstance
+
+const headers = { authorization: `Bearer ${ADMIN}`, 'content-type': 'application/json' }
+
+beforeAll(async () => {
+  dir = mkdtempSync(join(tmpdir(), 'eg-integrations-'))
+  db = new ConfigDb(join(dir, 'config.db'))
+  app = buildApp({ db, registry: new Registry(db), adminToken: ADMIN })
+  await app.ready()
+})
+
+afterAll(async () => {
+  await app.close()
+  db.close()
+  rmSync(dir, { recursive: true, force: true })
+})
+
+describe('the tool list', () => {
+  it('needs the admin token', async () => {
+    expect((await app.inject({ method: 'GET', url: '/tools' })).statusCode).toBe(401)
+  })
+
+  it('lists every registered tool with a JSON Schema for its arguments', async () => {
+    const listed = (await app.inject({ method: 'GET', url: '/tools', headers })).json()
+    expect(listed.map((t: { id: string }) => t.id).sort()).toEqual(
+      INTEGRATION_TOOLS.map((t) => t.id).sort(),
+    )
+    for (const tool of listed) {
+      expect(tool.args.type).toBe('object')
+      expect(tool.safety).toBe('dangerous')
+    }
+  })
+
+  it('covers GitHub, Claude and Slack', () => {
+    const prefixes = new Set(INTEGRATION_TOOLS.map((t) => t.id.split('.')[0]))
+    expect([...prefixes].sort()).toEqual(['claude', 'github', 'slack'])
+  })
+})
+
+describe('runTool', () => {
+  const run = (payload: unknown) =>
+    app.inject({ method: 'POST', url: '/runTool', headers, payload }).then((r) => r.json())
+
+  it('needs the admin token', async () => {
+    const r = await app.inject({ method: 'POST', url: '/runTool', payload: { tool: 'x' } })
+    expect(r.statusCode).toBe(401)
+  })
+
+  it('refuses a tool it does not have', async () => {
+    expect(await run({ tool: 'github.nope', args: {} })).toMatchObject({
+      status: 'error',
+      message: expect.stringContaining('github.nope'),
+    })
+  })
+
+  it('refuses a call with no tool named', async () => {
+    expect(await run({ args: {} })).toMatchObject({ status: 'error' })
+  })
+
+  it('validates arguments before running anything', async () => {
+    const out = await run({ tool: 'github.getPullRequest', args: {} })
+    expect(out).toMatchObject({ status: 'error', message: expect.stringContaining('pullRequest') })
+  })
+
+  it('rejects null for a required argument, the way sources do', async () => {
+    const out = await run({ tool: 'slack.sendMessage', args: { channel: null, text: 'hi' } })
+    expect(out).toMatchObject({ status: 'error', message: expect.stringContaining('channel') })
+  })
+})
+
+describe('naming a pull request', () => {
+  it('passes a URL through', () => {
+    expect(pullRequestArgs('https://github.com/o/r/pull/12')).toEqual([
+      'https://github.com/o/r/pull/12',
+    ])
+  })
+
+  it('splits the owner/repo#number shorthand', () => {
+    expect(pullRequestArgs('o/r#12')).toEqual(['12', '--repo', 'o/r'])
+    expect(pullRequestArgs('o/r/12')).toEqual(['12', '--repo', 'o/r'])
+  })
+
+  it('refuses a bare number, which has no repo to resolve against', () => {
+    expect(() => pullRequestArgs('12')).toThrow(/URL/)
+  })
+})
+
+describe('naming a place in Slack', () => {
+  it('reads a message permalink', () => {
+    expect(parseRef('https://acme.slack.com/archives/C0123ABCD/p1712345678000100')).toEqual({
+      channel: 'C0123ABCD',
+      ts: '1712345678.000100',
+    })
+  })
+
+  it('keeps the thread a permalink names', () => {
+    expect(
+      parseRef(
+        'https://acme.slack.com/archives/C0123ABCD/p1712345678000100?thread_ts=1712345600.000100&cid=C0123ABCD',
+      ),
+    ).toEqual({
+      channel: 'C0123ABCD',
+      ts: '1712345678.000100',
+      threadTs: '1712345600.000100',
+    })
+  })
+
+  it('reads a channel link as the conversation, with no message', () => {
+    expect(parseRef('https://acme.slack.com/archives/C0123ABCD')).toEqual({ channel: 'C0123ABCD' })
+  })
+
+  it('reads the channel:timestamp pair', () => {
+    expect(parseRef('C0123ABCD:1712345678.000100')).toEqual({
+      channel: 'C0123ABCD',
+      ts: '1712345678.000100',
+    })
+  })
+
+  it('treats every kind of conversation alike', () => {
+    for (const id of ['C0123ABCD', 'D0123ABCD', 'G0123ABCD', 'U0123ABCD', '#general']) {
+      expect(parseRef(id)).toEqual({ channel: id })
+    }
+  })
+
+  it('complains about a link that is not Slack’s', () => {
+    expect(() => parseRef('https://example.com/hello')).toThrow(/Slack link/)
+  })
+})
