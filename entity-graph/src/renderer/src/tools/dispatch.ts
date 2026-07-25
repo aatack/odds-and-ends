@@ -1,4 +1,5 @@
 import { pendingAtom } from '../state/store'
+import { uiAtom } from '../state/ui'
 import { cancelCall, pickForPending, runTool, togglePalette } from './call'
 import { bindsKey, matchesKey, type KeyBinding } from './keys'
 import { TOOLS, findTool } from './registry'
@@ -56,6 +57,11 @@ export function handleKey(e: KeyboardEvent): boolean {
     // Everything else falls through, so the selection can still be moved to
     // choose a target.
   }
+
+  // The activity log is an overlay with its own dismissal, so while it is up
+  // Escape closes it and goes no further — otherwise the same press would also
+  // reach whatever is behind it and clear a frame's find.
+  if (e.key === 'Escape' && uiAtom.get().activityOpen) return false
 
   // A focused text field owns bare keys and the editing combos; Escape and other
   // modifier combos still route, so ctrl+Tab works mid-edit.

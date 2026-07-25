@@ -360,16 +360,21 @@ export const FRAME_TOOLS: ToolSpec[] = [
 
   // --- Find and depth -----------------------------------------------------
   {
+    // Takes no text: it opens the frame's own field, which edits `find` directly
+    // from then on. Asking for the text up front would mean typing the filter
+    // somewhere other than where it ends up, with no way to refine it after.
     id: 'frame.find',
     label: 'Find in frame',
     aliases: ['search', 'filter'],
     scope: 'frame',
     reach: 'ui',
     keys: [{ key: 'f', mod: true }],
-    args: [{ name: 'text', label: 'Find', placeholder: 'Filter rows by text…' }],
-    run: ({ text }) => {
-      const { frameId } = focusOf(getLayout())
-      if (frameId) A.setFind(frameId, String(text ?? '') || null)
+    run: () => {
+      const layout = getLayout()
+      const { frameId } = focusOf(layout)
+      // Empty string, not null: that is what puts the field on screen. Pressing
+      // the key again while it is open leaves what was typed alone.
+      if (frameId && layout.frames[frameId]?.find == null) A.setFind(frameId, '')
     },
   },
   {
@@ -378,6 +383,10 @@ export const FRAME_TOOLS: ToolSpec[] = [
     aliases: ['unfilter', 'show all'],
     scope: 'frame',
     reach: 'ui',
+    // Escape's last resort in a frame: an in-place edit is declared earlier in
+    // this list and so cancels first, and a pending call never gets this far —
+    // the router settles that before it consults any tool.
+    keys: [{ key: 'Escape' }],
     listed: false,
     enabled: () => {
       const layout = getLayout()

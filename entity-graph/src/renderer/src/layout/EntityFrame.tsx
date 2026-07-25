@@ -1,5 +1,5 @@
 import React from 'react'
-import { X } from '@untitledui/icons'
+import { SearchSm, X } from '@untitledui/icons'
 import { Editor } from '../views/Editor'
 import { codeRunsAtom, runCode, stopCode } from '../helpers/codeRunner'
 import * as A from '../state/actions'
@@ -21,21 +21,13 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
   if (!frame) return <div className="p-8 text-center text-[13px] text-gray-400">No frame.</div>
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="relative flex h-full min-h-0 flex-col">
       {frame.find != null && (
-        <div className="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 py-1.5">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Find</span>
-          <span className="min-w-0 flex-1 truncate font-serif text-[13px] text-gray-700">
-            {frame.find || '—'}
-          </span>
-          <button
-            className="text-gray-400 hover:text-gray-700 focus:outline-none"
-            onClick={() => A.setFind(frameId, null)}
-            aria-label="Clear find"
-          >
-            <X size={13} />
-          </button>
-        </div>
+        <FindBox
+          text={frame.find}
+          onChange={(text) => A.setFind(frameId, text)}
+          onClear={() => A.setFind(frameId, null)}
+        />
       )}
       <div className="min-h-0 flex-1">
         <Editor
@@ -57,6 +49,47 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
           onStopCode={stopCode}
         />
       </div>
+    </div>
+  )
+}
+
+/**
+ * The find field, floating over the frame's top-right corner the way the toasts
+ * float over its bottom-right — the rows keep their full height, and the field
+ * doesn't push them down the moment it opens.
+ *
+ * It holds no state: `frame.find` is the box, so it is on screen exactly while
+ * the frame is filtering, empty string and all. Escape isn't handled here — it
+ * routes like every other key, so it only reaches `frame.find.clear` when there
+ * is nothing more pressing for it to do.
+ */
+function FindBox({
+  text,
+  onChange,
+  onClear,
+}: {
+  text: string
+  onChange: (text: string) => void
+  onClear: () => void
+}): React.JSX.Element {
+  return (
+    <div className="absolute right-3 top-3 z-20 flex w-64 items-center gap-2 rounded-lg bg-white px-3 py-2 shadow-lg">
+      <SearchSm size={13} className="shrink-0 text-gray-400" />
+      <input
+        autoFocus
+        value={text}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Filter rows…"
+        // Serif, like the rows it is matched against.
+        className="min-w-0 flex-1 bg-transparent font-serif text-[13px] text-gray-900 outline-none placeholder:font-sans placeholder:text-gray-400"
+      />
+      <button
+        className="shrink-0 text-gray-400 hover:text-gray-700 focus:outline-none"
+        onClick={onClear}
+        aria-label="Clear find"
+      >
+        <X size={13} />
+      </button>
     </div>
   )
 }

@@ -206,6 +206,11 @@ a per-entity max-depth map, and any in-progress edit.
   selection isn't snapped to the root every time a large tree reloads.
 - The **edit state** (in-place edit or create, plus the draft text) is
   persisted, so a half-typed entity survives a reload.
+- **Find text** is the find field: null while the frame isn't filtering, a
+  string — empty included — while it is. `frame.find` takes no argument and
+  only flips null to `''`; the field that appears edits the state directly from
+  then on, so there is no draft anywhere to keep in step. (The text is not yet
+  applied to the rows.)
 - **Per-entity max depth** is stored but not yet honoured: the `query` tool
   takes a single `maxDepth`, so the root entity's entry is passed through and
   the rest is provisioned for a later server change.
@@ -245,9 +250,16 @@ state. It resolves in this order:
    tool's own hotkey (fill the waiting argument from the live context).
    Everything else falls through, so the selection can still be moved to choose
    a target.
-3. When the event targets a text field, only Escape and modifier combos
+3. The activity log, while open, keeps Escape: it dismisses itself, and the
+   press goes no further.
+4. When the event targets a text field, only Escape and modifier combos
    continue; bare keys belong to the field.
-4. Otherwise the scope chain: the focused **frame**, then its **tab group**, then
+5. Otherwise the scope chain: the focused **frame**, then its **tab group**, then
    the **app**. The first enabled tool whose binding matches wins, which is how
    Escape means "cancel this edit" in a frame and "cancel this call" at the app
    level without either knowing about the other.
+
+Escape therefore has a pecking order without anything spelling one out: a
+pending call, then the activity log, then an in-place edit, then a frame's find
+field — each step is just a tool that isn't `enabled` unless there is something
+for it to do, declared in the order it should be tried.
