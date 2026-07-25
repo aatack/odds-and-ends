@@ -177,12 +177,14 @@ export const FRAME_TOOLS: ToolSpec[] = [
       const subject = last(edit.path)
       A.setEdit(frame.id, null)
       if (!subject) return { mutated: false }
+      // An empty box means "never mind", whichever mode it is in: creating
+      // writes no entity, and editing leaves the text as it was rather than
+      // blanking it. Clearing text deliberately is what `entity.rename` is for.
+      if (!edit.draft.trim()) return { mutated: false }
       if (edit.mode === 'edit') {
         await writeValue(subject, 'text', edit.draft)
         return {}
       }
-      // Committing an empty create is a no-op rather than a blank entity.
-      if (!edit.draft.trim()) return { mutated: false }
       const created = await createEntity({ text: edit.draft, ...edit.values }, subject)
       A.selectPath(frame.id, [...edit.path, created])
       return {}

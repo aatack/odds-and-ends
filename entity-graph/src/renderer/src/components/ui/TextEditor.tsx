@@ -38,6 +38,17 @@ export function TextEditor({
     committed.current = value
   }, [value])
 
+  // Autofocus alone leaves the caret at the start of the value, so an edit
+  // started on existing text would type in front of it. Focus is taken here
+  // rather than through the attribute so the selection can be placed with it.
+  useEffect(() => {
+    const el = ref.current
+    if (!autoFocus || !el) return
+    el.focus()
+    const end = el.value.length
+    el.setSelectionRange(end, end)
+  }, [autoFocus])
+
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
