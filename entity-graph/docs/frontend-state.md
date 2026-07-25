@@ -243,11 +243,19 @@ max-depth map, and any in-progress edit.
 
 Canvases are gone. The `View` union collapsed back to a single entity view.
 
-Nothing cached lives in latent state: query results, entity display names and
-code-run output are runtime-only and rebuild on load, at the cost of a beat of
-jank on tab labels. Names are the one thing kept past the rows they came from —
-still runtime, but never pruned, since dropping an inactive tab's rows shouldn't
-turn its label back into a uuid.
+Nothing cached lives in latent state: query results, entity display names,
+code-run output and loaded resources are runtime-only and rebuild on load, at the
+cost of a beat of jank on tab labels. Names are the one thing kept past the rows
+they came from — still runtime, but never pruned, since dropping an inactive tab's
+rows shouldn't turn its label back into a uuid.
+
+**Resources** (`state/resources.ts`) are the bytes behind a `type: 'file'` row,
+cached the same way and never persisted — a couple of pasted screenshots would
+exhaust the localStorage quota between them. A resource is stored under the id of
+the entity that describes it, so there is no reference to keep in step, and the
+source exposes the pair of tools only when its store can hold bytes at all —
+absence is how the client knows, exactly as with undo. Nothing versions them:
+popping events off the store leaves an undone paste's blob behind, unreferenced.
 
 **Focus requests** (`state/focusRequest.ts`) are the one thing that travels
 upward. A tool has no DOM and no components, so when it needs the keyboard to

@@ -2,7 +2,7 @@ import { mkdirSync } from 'fs'
 import { resolve, dirname } from 'path'
 import Database from 'better-sqlite3'
 import type { AppEvent, ValueEvent, LinkEvent } from '../events'
-import { POP_AGE_LIMIT_MS } from '../source/permissions'
+import { POP_AGE_LIMIT_MS, type ResourceBacking, type ResourceRecord } from '../source/permissions'
 import type { DumpableInterface } from './index'
 
 interface ValueRow {
@@ -21,7 +21,16 @@ interface LinkRow {
   action: number
 }
 
-export class SqliteInterface implements DumpableInterface {
+interface ResourceRow {
+  id: string
+  timestamp: number
+  author: string
+  mime_type: string
+  name: string | null
+  bytes: Buffer
+}
+
+export class SqliteInterface implements DumpableInterface, ResourceBacking {
   private db: Database.Database
 
   constructor(path: string) {
@@ -50,10 +59,59 @@ export class SqliteInterface implements DumpableInterface {
         destination_id TEXT    NOT NULL,
         action         INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS resources (
+        id        TEXT    PRIMARY KEY,
+        timestamp INTEGER NOT NULL,
+        author    TEXT    NOT NULL,
+        mime_type TEXT    NOT NULL,
+        name      TEXT,
+        bytes     BLOB    NOT NULL
+      );
       CREATE INDEX IF NOT EXISTS idx_value_entity ON value_events(entity_id);
       CREATE INDEX IF NOT EXISTS idx_link_source  ON link_events(source_id);
       CREATE INDEX IF NOT EXISTS idx_link_dest    ON link_events(destination_id);
     `)
+  }
+
+  /**
+   * Store bytes under an entity id, replacing whatever was there.
+   *
+   * Resources are not events: nothing versions them, and popping events off the
+   * store leaves them where they are. An undone paste therefore leaves its blob
+   * behind, unreferenced — harmless, and cheaper than making bytes replayable.
+   */
+  async writeResource(resource: ResourceRecord): Promise<void> {
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO resources (id, timestamp, author, mime_type, name, bytes)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        resource.id,
+        resource.timestamp,
+        resource.author,
+        resource.mimeType,
+        resource.name,
+        // Decoded at rest: base64 is the transport's business, not the store's.
+        Buffer.from(resource.data, 'base64')
+      )
+  }
+
+  async readResource(id: string): Promise<ResourceRecord | null> {
+    const row = this.db
+      .prepare<[string], ResourceRow>(
+        `SELECT id, timestamp, author, mime_type, name, bytes FROM resources WHERE id = ?`
+      )
+      .get(id)
+    if (!row) return null
+    return {
+      id: row.id,
+      timestamp: row.timestamp,
+      author: row.author,
+      mimeType: row.mime_type,
+      name: row.name,
+      data: Buffer.from(row.bytes).toString('base64'),
+    }
   }
 
   async readEvents(entityIds: string[]): Promise<Map<string, AppEvent[]>> {

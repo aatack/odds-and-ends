@@ -89,6 +89,39 @@ describe('RemoteSource passthrough', () => {
     local.close()
   })
 
+  it('round-trips a resource, bytes intact, through a remote source', async () => {
+    const remote = new RemoteSource('r', 'R', `http://127.0.0.1:${port}/src`, token)
+    await remote.refresh()
+    // Deliberately not valid UTF-8: the bytes go over JSON as base64 and must
+    // come back byte-for-byte, not through a string round trip.
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe])
+    await remote.call('writeResource', {
+      id: 'e1',
+      mimeType: 'image/png',
+      data: bytes.toString('base64'),
+      name: 'shot.png',
+      author: 'me',
+      timestamp: 400,
+    })
+
+    const resource = (await remote.call('readResource', { id: 'e1' })) as {
+      id: string
+      mimeType: string
+      name: string | null
+      author: string
+      timestamp: number
+      data: string
+    }
+    expect(resource.mimeType).toBe('image/png')
+    expect(resource.name).toBe('shot.png')
+    expect(resource.author).toBe('me')
+    expect(resource.timestamp).toBe(400)
+    expect(Buffer.from(resource.data, 'base64').equals(bytes)).toBe(true)
+
+    // Nothing stored under an id reads as null rather than an error.
+    expect(await remote.call('readResource', { id: 'nothing-here' })).toBeNull()
+  })
+
   it('rejects a remote call with a bad token', async () => {
     const remote = new RemoteSource('r', 'R', `http://127.0.0.1:${port}/src`, 'wrong')
     await expect(remote.refresh()).rejects.toThrow()

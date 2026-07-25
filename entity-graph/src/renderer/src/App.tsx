@@ -10,9 +10,10 @@ import { Button } from './components/ui/Button'
 import { Dropdown, DropdownItem, DropdownSeparator } from './components/ui/Dropdown'
 import { Input } from './components/ui/Input'
 import { Toaster, showToast } from './components/ui/Toast'
+import { blobToBase64 } from './helpers/base64'
 import { useCalls, useTheme, useUi } from './state/hooks'
 import { toggleTheme, updateUi } from './state/ui'
-import { onCallSettled, openToolList, togglePalette } from './tools/call'
+import { onCallSettled, openToolList, runTool, togglePalette } from './tools/call'
 import { PALETTE_KEY, installKeyRouter } from './tools/dispatch'
 import { keyHint } from './tools/keys'
 import { useApp, type AppActions } from './views/useApp'
@@ -58,6 +59,30 @@ export default function App(): React.JSX.Element | null {
     }
     window.addEventListener('contextmenu', onContextMenu)
     return () => window.removeEventListener('contextmenu', onContextMenu)
+  }, [])
+
+  // Pasting a file — a screenshot, an image copied from a page — makes an entity
+  // of it under the selection. The bytes have to be taken from the event, since
+  // they are only on the clipboard while it is being handled; from there it is an
+  // ordinary tool call, seeded with them the way a right-click seeds an entity id.
+  // A paste carrying text is left alone: that belongs to whatever has the caret.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent): void => {
+      const file = e.clipboardData?.files?.[0]
+      if (!file || e.clipboardData?.getData('text/plain')) return
+      e.preventDefault()
+      void blobToBase64(file).then((data) =>
+        runTool('resource.paste', {
+          extra: {
+            resourceMimeType: file.type || 'application/octet-stream',
+            resourceData: data,
+            resourceName: file.name || null,
+          },
+        }),
+      )
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
   }, [])
 
   if (!ready) return null

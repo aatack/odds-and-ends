@@ -283,6 +283,54 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
     handler: ({ windowMs }: { windowMs?: number }) => perms.popLatestEvents!(windowMs ?? 100),
   }
 
+  const writeResource: ToolDef = {
+    id: 'writeResource',
+    name: 'Write resource',
+    description:
+      'Store bytes under an entity id, replacing anything already there. The id ' +
+      'is the entity that describes the resource — conventionally one with ' +
+      '`type: "file"` — so the bytes and their description share a key. Data is ' +
+      'base64. Resources are not events: undo does not reach them.',
+    safety: 'safe-mutating',
+    args: z.object({
+      id: z.string().describe('The entity id the bytes belong to.'),
+      mimeType: z.string(),
+      data: z.string().describe('Base64-encoded bytes.'),
+      name: z.string().nullable().optional().describe('Original file name, if there was one.'),
+      author: z.string().optional(),
+      timestamp: z.number().optional().describe('Unix ms; defaults to now.'),
+    }),
+    handler: async (a: {
+      id: string
+      mimeType: string
+      data: string
+      name?: string | null
+      author?: string
+      timestamp?: number
+    }) => {
+      await perms.writeResource!({
+        id: a.id,
+        mimeType: a.mimeType,
+        data: a.data,
+        name: a.name ?? null,
+        author: a.author ?? author,
+        timestamp: a.timestamp ?? Date.now(),
+      })
+      return { ok: true }
+    },
+  }
+
+  const readResource: ToolDef = {
+    id: 'readResource',
+    name: 'Read resource',
+    description:
+      'Return the bytes stored under an entity id as base64, with the mime type, ' +
+      'name, author and timestamp. Null when there is nothing there.',
+    safety: 'pure',
+    args: z.object({ id: z.string() }),
+    handler: ({ id }: { id: string }) => perms.readResource!(id),
+  }
+
   const httpRequest: ToolDef = {
     id: 'httpRequest',
     name: 'HTTP request',
@@ -323,6 +371,9 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
     // Absent when the store can't take events off again, so a client can tell
     // whether undo is available by whether the tool exists.
     ...(perms.popLatestEvents ? [popEvents] : []),
+    // Likewise absent when the store can't hold bytes, so a client can tell
+    // whether it can paste an image by whether the tools exist.
+    ...(perms.writeResource && perms.readResource ? [writeResource, readResource] : []),
     query,
     readEntities,
     createEntity,

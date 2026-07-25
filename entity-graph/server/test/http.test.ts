@@ -174,8 +174,14 @@ describe('filter / readonly wrapper', () => {
     await createSource('a-ro', { type: 'filter', child: 'a', maxSafety: 'pure' })
     roToken = await issueToken('a-ro')
     const tools = (await app.inject({ method: 'GET', url: '/a-ro/tools', headers: srcHeaders(roToken) })).json()
-    // Only the `pure` tools survive maxSafety: 'pure'.
-    expect(tools.map((t: any) => t.id).sort()).toEqual(['query', 'readEntities', 'readEvents'])
+    // Only the `pure` tools survive maxSafety: 'pure' — reading a resource
+    // among them; writing one is mutating and goes with the rest.
+    expect(tools.map((t: any) => t.id).sort()).toEqual([
+      'query',
+      'readEntities',
+      'readEvents',
+      'readResource',
+    ])
 
     const res = await call('a-ro', roToken, 'writeValue', { entityId: 'x', key: 'k', value: 1 })
     expect(res.status).toBe('error')

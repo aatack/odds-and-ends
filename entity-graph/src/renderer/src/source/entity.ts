@@ -1,4 +1,5 @@
 import type { AppEvent } from '../../../core/events'
+import type { ResourceRecord } from '../../../core/source/permissions'
 import type { LinkDirection, QueryPage, StackFrame } from '../../../core/wrapper'
 import { callSource, currentUser } from './transport'
 
@@ -49,6 +50,24 @@ export const link = (sourceId: string, destinationId: string): Promise<unknown> 
 
 export const unlink = (parentId: string, childId: string): Promise<unknown> =>
   writeLink(parentId, childId, LINK_REMOVE)
+
+// --- Resources (pasted images and other blobs) ------------------------------
+
+/**
+ * Store bytes under an entity id. The entity describing them — conventionally
+ * `type: 'file'` — is the key, so there is no reference to keep in step.
+ */
+export const writeResource = (
+  id: string,
+  mimeType: string,
+  data: string,
+  name: string | null = null,
+): Promise<unknown> =>
+  callSource('writeResource', { id, mimeType, data, name, author: currentUser() })
+
+/** Null when the source has nothing stored under that id. */
+export const readResource = (id: string): Promise<ResourceRecord | null> =>
+  callSource('readResource', { id }) as Promise<ResourceRecord | null>
 
 // --- Raw events (undo / redo) ----------------------------------------------
 

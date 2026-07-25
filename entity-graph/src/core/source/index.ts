@@ -7,6 +7,8 @@ export { argsJsonSchema, toolMeta } from './schema'
 export type {
   Permissions,
   EventBacking,
+  ResourceBacking,
+  ResourceRecord,
   HttpRequest,
   HttpResponse,
   CommandRequest,

@@ -1,7 +1,12 @@
 import type { AppEvent } from '../events'
 import { SqliteInterface } from '../interface/sqlite'
 import { defaultTools } from './defaultTools'
-import { dbPermissions, type EventBacking, type Permissions } from './permissions'
+import {
+  dbPermissions,
+  type EventBacking,
+  type Permissions,
+  type ResourceBacking,
+} from './permissions'
 import { loadUserTools } from './userTools'
 import { ToolSource, type ToolDef } from './types'
 
@@ -44,11 +49,13 @@ export class SqliteSource extends ToolSource {
     super()
     this.iface = new SqliteInterface(path)
     this.defaultAuthor = defaultAuthor
-    const backing: EventBacking = {
+    const backing: EventBacking & ResourceBacking = {
       readEvents: async (ids) => flatten(await this.iface.readEvents(ids)),
       readAllEvents: () => this.iface.readAllEvents(),
       writeEvents: (events) => this.iface.writeEvents(events),
       popLatestEvents: (windowMs) => this.iface.popLatestEvents(windowMs),
+      writeResource: (resource) => this.iface.writeResource(resource),
+      readResource: (id) => this.iface.readResource(id),
     }
     this.perms = dbPermissions(backing)
     this.cached = defaultTools(this.perms, { defaultAuthor })

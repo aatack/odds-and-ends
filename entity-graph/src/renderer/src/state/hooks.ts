@@ -3,6 +3,7 @@ import type { Atom } from './atom'
 import { frameCrumbs, frameRows, tabLabel, type Crumb, type FrameRows } from './derive'
 import { focusRequestAtom, focusTaken } from './focusRequest'
 import { namesAtom, queryAtom, retainFrame } from './query'
+import { loadResource, resourcesAtom, type ResourceState } from './resources'
 import { callsAtom, focusOf, layoutAtom, pendingAtom, type Focus } from './store'
 import { themeAtom, uiAtom, type Theme, type UiState } from './ui'
 import type { LayoutState, PendingCall, RecordedCall } from './types'
@@ -69,6 +70,18 @@ export function useTabLabel(tabId: string): string {
   const layout = useLayoutState()
   const names = useAtomValue(namesAtom)
   return useMemo(() => tabLabel(layout, names, tabId), [layout, names, tabId])
+}
+
+/**
+ * The bytes behind a `type: 'file'` row, fetched on first render. Asking is
+ * idempotent, so several rows showing the same file share one fetch.
+ */
+export function useResource(id: string): ResourceState {
+  const cache = useAtomValue(resourcesAtom)
+  useEffect(() => {
+    loadResource(id)
+  }, [id])
+  return cache[id] ?? { status: 'loading' }
 }
 
 /** A tab's frame stack as a trail of names, outermost first. */

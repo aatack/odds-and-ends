@@ -3,6 +3,7 @@ import { Check, ChevronDown, ChevronRight, Play, Square, Stop } from '@untitledu
 import { TextEditor } from '../components/ui/TextEditor'
 import { CodeBlock } from '../components/ui/CodeBlock'
 import { Markdown } from '../components/ui/Markdown'
+import { ResourceView } from '../components/Resource'
 import { cn } from '../helpers/cn'
 import type { CodeRunState } from '../helpers/codeRunner'
 import type { EntityRow, Row } from '../state/derive'
@@ -424,6 +425,17 @@ const RowView = React.memo(function RowView({
             />
           ) : isCode ? (
             <CodeBlock code={row.text ?? ''} run={run} />
+          ) : row.type === 'file' ? (
+            // The bytes, and whatever the user typed as a caption under them.
+            <>
+              <ResourceView id={row.id} mimeType={row.mimeType} alt={row.text} />
+              {row.text && (
+                <Markdown
+                  text={row.text}
+                  className={cn(TEXT, 'text-gray-500')}
+                />
+              )}
+            </>
           ) : row.text ? (
             // Rendered, not printed: a line with no markup in it comes out
             // exactly as the plain text did, and the blocks are there for the

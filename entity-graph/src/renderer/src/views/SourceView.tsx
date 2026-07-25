@@ -6,8 +6,9 @@ import { EntityDebugModal } from '../components/EntityDebugModal'
 import { Button } from '../components/ui/Button'
 import { useUi } from '../state/hooks'
 import { setQueryFetcher } from '../state/query'
+import { setResourceFetcher } from '../state/resources'
 import { updateUi } from '../state/ui'
-import { query } from '../source/entity'
+import { query, readResource } from '../source/entity'
 import { setSourceTransport } from '../source/transport'
 
 const api = window.entityGraph
@@ -33,8 +34,10 @@ export function SourceView({
       sourceId: active.id,
     })
     setQueryFetcher(query)
+    setResourceFetcher(readResource)
     return () => {
       setQueryFetcher(null)
+      setResourceFetcher(null)
       setSourceTransport(null)
     }
   }, [active.id, user])

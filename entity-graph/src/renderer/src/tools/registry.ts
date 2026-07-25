@@ -1,6 +1,7 @@
 import { APP_TOOLS, GROUP_TOOLS } from './appTools'
 import { ENTITY_TOOLS } from './entityTools'
 import { FRAME_TOOLS } from './frameTools'
+import { RESOURCE_TOOLS } from './resourceTools'
 import { UNDO_TOOLS } from './undoTools'
 import type { ToolScope, ToolSpec } from './types'
 
@@ -12,6 +13,7 @@ import type { ToolScope, ToolSpec } from './types'
 export const TOOLS: ToolSpec[] = [
   ...ENTITY_TOOLS,
   ...FRAME_TOOLS,
+  ...RESOURCE_TOOLS,
   ...GROUP_TOOLS,
   ...UNDO_TOOLS,
   ...APP_TOOLS,

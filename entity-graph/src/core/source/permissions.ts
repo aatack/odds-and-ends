@@ -26,6 +26,37 @@ export interface EventBacking {
   popLatestEvents?(windowMs: number): Promise<AppEvent[]>
 }
 
+/**
+ * A stored blob — an image pasted into the tree, a file dropped on it.
+ *
+ * `id` is an entity id, not an id of its own: a resource is the body of the
+ * entity that describes it, so the entity carrying `type: 'file'` and the bytes
+ * are looked up under the same key and there is no reference to keep in step.
+ *
+ * The bytes travel as base64 because JSON is all the transport carries; a store
+ * is free to keep them decoded, and the SQLite one does.
+ */
+export interface ResourceRecord {
+  id: string
+  timestamp: number
+  author: string
+  mimeType: string
+  /** The original file name, where there was one — the clipboard rarely gives one. */
+  name: string | null
+  /** Base64. */
+  data: string
+}
+
+/**
+ * The blob half of a store's surface. Optional, like popping: a backing that
+ * can't hold bytes simply doesn't implement it, the tools are then absent, and a
+ * client can tell resources aren't available by their absence.
+ */
+export interface ResourceBacking {
+  writeResource(resource: ResourceRecord): Promise<void>
+  readResource(id: string): Promise<ResourceRecord | null>
+}
+
 /** A single outbound HTTP request (see {@link Permissions.httpRequest}). */
 export interface HttpRequest {
   method?: string
@@ -75,6 +106,13 @@ export interface Permissions {
    * absent and the client has no undo.
    */
   popLatestEvents?(windowMs: number): Promise<AppEvent[]>
+  /**
+   * Store bytes under an entity id, and read them back. Optional as a pair — a
+   * store that can't hold blobs grants neither, and the resource tools are then
+   * absent from the source.
+   */
+  writeResource?(resource: ResourceRecord): Promise<void>
+  readResource?(id: string): Promise<ResourceRecord | null>
   httpRequest(req: HttpRequest): Promise<HttpResponse>
   runCommand(req: CommandRequest): Promise<CommandResult>
 }
@@ -101,16 +139,20 @@ export function stubbedIO(): Pick<Permissions, 'httpRequest' | 'runCommand'> {
 
 /**
  * Build a `Permissions` from an event-store backing: real DB read/write, with
- * HTTP and CLI stubbed out. `readEvents(undefined)` dumps every event.
+ * HTTP and CLI stubbed out. `readEvents(undefined)` dumps every event. Blob
+ * storage is granted only when the backing offers both halves of it.
  */
-export function dbPermissions(backing: EventBacking): Permissions {
+export function dbPermissions(backing: EventBacking & Partial<ResourceBacking>): Permissions {
   const pop = backing.popLatestEvents?.bind(backing)
+  const writeResource = backing.writeResource?.bind(backing)
+  const readResource = backing.readResource?.bind(backing)
   return {
     readEvents: (entityIds) =>
       entityIds === undefined ? backing.readAllEvents() : backing.readEvents(entityIds),
     writeEvents: (events) => backing.writeEvents(events),
     // Granted only when the backing can actually take events off again.
     ...(pop ? { popLatestEvents: pop } : {}),
+    ...(writeResource && readResource ? { writeResource, readResource } : {}),
     ...stubbedIO(),
   }
 }
