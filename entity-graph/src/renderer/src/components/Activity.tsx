@@ -10,6 +10,7 @@ import { formatArg } from '../tools/args'
 import { argsOf } from '../tools/types'
 import { Badge, type BadgeColor } from './ui/Badge'
 import { Button } from './ui/Button'
+import { Popup } from './ui/Popup'
 
 const STATUS: Record<CallOutcome['kind'], { label: string; color: BadgeColor }> = {
   success: { label: 'Done', color: 'success' },
@@ -21,6 +22,10 @@ const STATUS: Record<CallOutcome['kind'], { label: string; color: BadgeColor }> 
  * The call trail: every call that was abandoned with arguments half-entered, plus
  * every one that reached outside the app. Each can be run again as it stands, or
  * reopened with its arguments to be edited first.
+ *
+ * It opens as a popup rather than a sidebar: it is something you consult and
+ * dismiss, like the palette, not a panel to work alongside — and a sidebar would
+ * reflow the frames underneath it every time.
  */
 export function Activity({ open }: { open: boolean }): React.JSX.Element | null {
   const calls = useCalls()
@@ -38,44 +43,39 @@ export function Activity({ open }: { open: boolean }): React.JSX.Element | null 
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-40" onClick={close}>
-      <aside
-        className="absolute right-0 top-0 flex h-full w-80 flex-col bg-white shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3">
-          <h2 className="text-[13px] font-semibold text-gray-900">Activity</h2>
-          <div className="flex-1" />
-          {calls.length > 0 && (
-            <button
-              className="text-xs text-gray-400 hover:text-gray-700 focus:outline-none"
-              onClick={clearCalls}
-            >
-              Clear
-            </button>
-          )}
+    <Popup onClose={close}>
+      <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3">
+        <h2 className="text-[13px] font-semibold text-gray-900">Activity</h2>
+        <div className="flex-1" />
+        {calls.length > 0 && (
           <button
-            className="text-gray-400 hover:text-gray-700 focus:outline-none"
-            onClick={close}
-            aria-label="Close activity"
+            className="text-xs text-gray-400 hover:text-gray-700 focus:outline-none"
+            onClick={clearCalls}
           >
-            <X size={15} />
+            Clear
           </button>
-        </div>
+        )}
+        <button
+          className="text-gray-400 hover:text-gray-700 focus:outline-none"
+          onClick={close}
+          aria-label="Close activity"
+        >
+          <X size={15} />
+        </button>
+      </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {calls.length === 0 ? (
-            <p className="px-4 py-6 text-[13px] text-gray-400">No calls yet.</p>
-          ) : (
-            <ul className="py-1">
-              {calls.map((call) => (
-                <CallRow key={call.callId} call={call} onClose={close} />
-              ))}
-            </ul>
-          )}
-        </div>
-      </aside>
-    </div>
+      {calls.length === 0 ? (
+        <p className="px-4 py-6 text-[13px] text-gray-400">No calls yet.</p>
+      ) : (
+        // The same ceiling as the palette's tool list, so the two panels never
+        // differ by more than their contents.
+        <ul className="max-h-80 overflow-y-auto py-1">
+          {calls.map((call) => (
+            <CallRow key={call.callId} call={call} onClose={close} />
+          ))}
+        </ul>
+      )}
+    </Popup>
   )
 }
 

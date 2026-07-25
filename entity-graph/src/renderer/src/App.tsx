@@ -64,8 +64,10 @@ export default function App(): React.JSX.Element | null {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <CommandPalette />
+      {/* Both are popups on the same layer, so the palette is drawn second: a
+          command started while the activity log is open belongs on top of it. */}
       <Activity open={ui.activityOpen} />
+      <CommandPalette />
       {/* One corner stack: transient messages above the pending-call guide. */}
       <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-72 flex-col gap-2">
         <Toaster />

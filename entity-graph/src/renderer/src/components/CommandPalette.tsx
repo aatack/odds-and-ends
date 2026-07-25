@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import fuzzysort from 'fuzzysort'
 import { Minimize01 } from '@untitledui/icons'
 import { cn } from '../helpers/cn'
+import { Popup } from './ui/Popup'
 import { usePendingCall } from '../state/hooks'
 import {
   advanceArg,
@@ -17,8 +18,6 @@ import { formatArg, parseArg } from '../tools/args'
 import { keyHint } from '../tools/keys'
 import { findTool, listedTools } from '../tools/registry'
 import { argsOf, kindOf, type ToolSpec } from '../tools/types'
-
-const PANEL_WIDTH = 512 // w-[32rem]
 
 /**
  * The palette is a view onto the pending call, not a thing with state of its own:
@@ -157,93 +156,68 @@ export function CommandPalette(): React.JSX.Element | null {
   const stepIndex = activeArg ? args.findIndex((a) => a.name === activeArg.name) : -1
 
   const anchor = visible.display.kind === 'palette' ? visible.display.anchor : null
-  const panelStyle: React.CSSProperties = anchor
-    ? {
-        top: Math.min(anchor.y, window.innerHeight - 360),
-        left: Math.min(anchor.x, window.innerWidth - PANEL_WIDTH - 8),
-      }
-    : // Centred, and low enough that the panel sits in the upper third rather
-      // than crowding the header.
-      { top: '12rem', left: '50%', transform: 'translateX(-50%)' }
 
   return (
-    <div
-      className={cn('fixed inset-0 z-50', !anchor && 'bg-gray-950/10 backdrop-blur-xs')}
-      onClick={cancelCall}
-      onContextMenu={(e) => {
-        // A right-click on the backdrop closes; stop it reaching the window
-        // handler, which would otherwise immediately reopen the palette.
-        e.preventDefault()
-        e.stopPropagation()
-        cancelCall()
-      }}
-    >
-      <div
-        className="absolute w-[32rem] max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg bg-white shadow-lg"
-        style={panelStyle}
-        onClick={(e) => e.stopPropagation()}
-        onContextMenu={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center border-b border-gray-100">
-          <input
-            ref={inputRef}
-            autoFocus
-            value={text}
-            onChange={(e) => onChange(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder={placeholder}
-            // What the user types is entity content, so it takes the editor's
-            // serif; the placeholder is UI chrome, so it stays on the sans.
-            className="min-w-0 flex-1 bg-transparent px-4 py-3.5 font-serif text-[14px] text-gray-900 outline-none placeholder:font-sans placeholder:text-[13px] placeholder:text-gray-400"
-          />
-          {tool && (
-            <span className="flex items-center gap-1.5 whitespace-nowrap px-3 text-xs font-medium text-gray-400">
-              {tool.label}
-              {args.length > 1 && (
-                <span className="text-gray-300">
-                  {stepIndex + 1}/{args.length}
-                </span>
-              )}
-              <button
-                className="text-gray-300 hover:text-gray-600 focus:outline-none"
-                onClick={minimisePending}
-                title="Minimise to the corner"
-                aria-label="Minimise"
-              >
-                <Minimize01 size={13} />
-              </button>
-            </span>
-          )}
-        </div>
-
-        {tool ? (
-          error && <div className="px-4 py-2.5 text-xs text-error-600">{error}</div>
-        ) : (
-          <ul className="max-h-80 overflow-y-auto py-1">
-            {matches.length === 0 ? (
-              <li className="px-4 py-3 text-[13px] text-gray-400">No matching commands.</li>
-            ) : (
-              matches.map((candidate, i) => (
-                <li key={candidate.id}>
-                  <button
-                    ref={i === active ? activeRowRef : undefined}
-                    onClick={() => chooseTool(candidate.id)}
-                    onMouseMove={() => setActiveIndex(i)}
-                    className={cn(
-                      'flex w-full items-center justify-between px-4 py-2.5 text-left text-[13px] focus:outline-none',
-                      i === active && 'bg-gray-100/70',
-                    )}
-                  >
-                    <span className="font-medium text-gray-800">{candidate.label}</span>
-                    <Trailing tool={candidate} />
-                  </button>
-                </li>
-              ))
+    <Popup anchor={anchor} onClose={cancelCall}>
+      <div className="flex items-center border-b border-gray-100">
+        <input
+          ref={inputRef}
+          autoFocus
+          value={text}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={placeholder}
+          // What the user types is entity content, so it takes the editor's
+          // serif; the placeholder is UI chrome, so it stays on the sans.
+          className="min-w-0 flex-1 bg-transparent px-4 py-3.5 font-serif text-[14px] text-gray-900 outline-none placeholder:font-sans placeholder:text-[13px] placeholder:text-gray-400"
+        />
+        {tool && (
+          <span className="flex items-center gap-1.5 whitespace-nowrap px-3 text-xs font-medium text-gray-400">
+            {tool.label}
+            {args.length > 1 && (
+              <span className="text-gray-300">
+                {stepIndex + 1}/{args.length}
+              </span>
             )}
-          </ul>
+            <button
+              className="text-gray-300 hover:text-gray-600 focus:outline-none"
+              onClick={minimisePending}
+              title="Minimise to the corner"
+              aria-label="Minimise"
+            >
+              <Minimize01 size={13} />
+            </button>
+          </span>
         )}
       </div>
-    </div>
+
+      {tool ? (
+        error && <div className="px-4 py-2.5 text-xs text-error-600">{error}</div>
+      ) : (
+        <ul className="max-h-80 overflow-y-auto py-1">
+          {matches.length === 0 ? (
+            <li className="px-4 py-3 text-[13px] text-gray-400">No matching commands.</li>
+          ) : (
+            matches.map((candidate, i) => (
+              <li key={candidate.id}>
+                <button
+                  ref={i === active ? activeRowRef : undefined}
+                  onClick={() => chooseTool(candidate.id)}
+                  onMouseMove={() => setActiveIndex(i)}
+                  className={cn(
+                    'flex w-full items-center justify-between px-4 py-2.5 text-left text-[13px] focus:outline-none',
+                    i === active && 'bg-gray-100/70',
+                  )}
+                >
+                  <span className="font-medium text-gray-800">{candidate.label}</span>
+                  <Trailing tool={candidate} />
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </Popup>
   )
 }
 
