@@ -4,9 +4,9 @@ import { findField, requestFocus } from '../state/focusRequest'
 import { queryAtom } from '../state/query'
 import * as R from '../state/reducers'
 import { focusOf, getLayout, updateLayout } from '../state/store'
-import { last, type FrameState, type LayoutState, type TabState } from '../state/types'
+import { directionOf, last, type FrameState, type LayoutState, type TabState } from '../state/types'
 import { runCode, stopCode } from '../helpers/codeRunner'
-import { createEntity, writeValue } from '../source/entity'
+import { createEntity, link, writeValue } from '../source/entity'
 import type { ToolSpec } from './types'
 
 // Tools scoped to the focused frame: moving the selection, folding, the in-place
@@ -185,7 +185,18 @@ export const FRAME_TOOLS: ToolSpec[] = [
         await writeValue(subject, 'text', edit.draft)
         return {}
       }
-      const created = await createEntity({ text: edit.draft, ...edit.values }, subject)
+      const values = { text: edit.draft, ...edit.values }
+      // A row below another means "links to it" in a reversed frame, so the new
+      // entity is linked the other way round — otherwise it would be created out
+      // of sight of the frame that asked for it. Two calls rather than one batch,
+      // but within the same instant, so undo still takes them together.
+      let created: string
+      if (directionOf(frame) === 'in') {
+        created = await createEntity(values)
+        await link(created, subject)
+      } else {
+        created = await createEntity(values, subject)
+      }
       A.selectPath(frame.id, [...edit.path, created])
       return {}
     },
@@ -441,6 +452,25 @@ export const FRAME_TOOLS: ToolSpec[] = [
     run: () => {
       const { frameId } = focusOf(getLayout())
       if (frameId) A.setSectionsOnly(frameId, false)
+    },
+  },
+  {
+    // A property of the frame, not a different kind of view: the same tree, read
+    // the other way round. Palette-only — it isn't frequent enough to be worth a
+    // letter, and the pill it raises is how it gets turned off again.
+    id: 'frame.reverse',
+    label: 'Reverse the query direction',
+    aliases: ['inbound', 'backlinks', 'references', 'parents', 'upside down'],
+    hint: 'Frame',
+    scope: 'frame',
+    reach: 'ui',
+    run: () => {
+      const layout = getLayout()
+      const { frameId } = focusOf(layout)
+      if (!frameId) return
+      const reversed = directionOf(layout.frames[frameId]) === 'in'
+      A.setDirection(frameId, reversed ? 'out' : 'in')
+      return { message: reversed ? 'Following outbound links' : 'Following inbound links' }
     },
   },
   {

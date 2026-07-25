@@ -2,10 +2,10 @@ import * as A from '../state/actions'
 import { frameRows } from '../state/derive'
 import { queryAtom } from '../state/query'
 import { focusOf, getLayout } from '../state/store'
-import { last } from '../state/types'
+import { directionOf, last, type LinkDirection } from '../state/types'
 import { updateUi } from '../state/ui'
 import { createEntity, link, moveEntity, unlink, writeValue } from '../source/entity'
-import type { ArgSpec, ToolSpec } from './types'
+import type { ArgSpec, CallInfo, ToolSpec } from './types'
 
 // Tools that name the entity they act on, rather than implying it. Their
 // arguments are filled from the call's context, so the same declaration serves
@@ -63,6 +63,17 @@ function selectedParent(): string | null {
   const { frameId } = focusOf(layout)
   const { selectedPath } = frameRows(layout, queryAtom.get(), frameId)
   return selectedPath.length > 1 ? selectedPath[selectedPath.length - 2] : null
+}
+
+/**
+ * Which way round the link between a row and the row above it runs, in the frame
+ * the call was started in. A reversed frame draws the same tree upside down: the
+ * row hangs off its parent by a link that runs *from* the row *to* the parent, so
+ * every tool that edits that link has to know which frame it was invoked from.
+ */
+const callDirection = (call: CallInfo): LinkDirection => {
+  const frameId = call.context.frameId
+  return directionOf(frameId ? getLayout().frames[frameId] : null)
 }
 
 export const ENTITY_TOOLS: ToolSpec[] = [
@@ -142,7 +153,10 @@ export const ENTITY_TOOLS: ToolSpec[] = [
     enabled: () => selectedParent() != null,
     args: [entityArg('childId', 'Entity id'), entityArg('parentId', 'Parent id', 'parentId')],
     run: async ({ childId, parentId }, call) => {
-      await unlink(id(parentId), id(childId))
+      // The arguments name what's on screen — the row and the row it hangs off.
+      // Which of the two is the link's source depends on the frame's direction.
+      const reversed = callDirection(call) === 'in'
+      await unlink(id(reversed ? childId : parentId), id(reversed ? parentId : childId))
       // Selection was on the row just removed; step up to its parent.
       const layout = getLayout()
       const frameId = call.context.frameId
@@ -166,12 +180,19 @@ export const ENTITY_TOOLS: ToolSpec[] = [
       entityArg('fromParentId', 'From parent id', 'parentId'),
       pickArg('toParentId', 'To parent id'),
     ],
-    run: async ({ entityId, fromParentId, toParentId }) => {
+    run: async ({ entityId, fromParentId, toParentId }, call) => {
       const subject = requireId(entityId, 'Entity id')
       const from = requireId(fromParentId, 'From parent id')
       const to = requireId(toParentId, 'To parent id')
       if (from === to) return { mutated: false }
       if (to === subject) throw new Error('An entity cannot be its own parent')
+      if (callDirection(call) === 'in') {
+        // Upside down, the link runs from the row to its parent, so moving it
+        // re-points that link's far end rather than swapping its source.
+        await unlink(subject, from)
+        await link(subject, to)
+        return {}
+      }
       await moveEntity(subject, from, to)
       return {}
     },

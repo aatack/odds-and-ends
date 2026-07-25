@@ -1,6 +1,6 @@
 import * as R from './reducers'
 import { updateLayout } from './store'
-import type { EditState, FrameState, LayoutState } from './types'
+import type { EditState, FrameState, LayoutState, LinkDirection } from './types'
 
 // Named mutators over the latent state. Two callers:
 //
@@ -25,6 +25,9 @@ export const setFind = (frameId: string, find: string | null): void =>
 
 export const setSectionsOnly = (frameId: string, on: boolean): void =>
   updateLayout((s) => R.setSectionsOnly(s, frameId, on))
+
+export const setDirection = (frameId: string, direction: LinkDirection): void =>
+  updateLayout((s) => R.setDirection(s, frameId, direction))
 
 export const setMaxDepth = (frameId: string, entityId: string, depth: number | null): void =>
   updateLayout((s) => R.setMaxDepth(s, frameId, entityId, depth))

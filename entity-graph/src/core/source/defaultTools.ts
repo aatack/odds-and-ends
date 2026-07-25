@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { AppEvent, LinkAction } from '../events'
 import type { EntityInterface } from '../interface/index'
-import { EntityWrapper } from '../wrapper'
+import { EntityWrapper, type LinkDirection } from '../wrapper'
 import type { Permissions } from './permissions'
 import type { ToolDef } from './types'
 
@@ -175,9 +175,10 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
     id: 'query',
     name: 'Query from entity',
     description:
-      'Depth-first traversal from `rootId` following outbound links, rolling ' +
-      'events up into entities. Returns `{ results, continuationStack }`; pass ' +
-      '`continuationStack` back to resume when the limit is hit.',
+      'Depth-first traversal from `rootId`, following outbound links or — with ' +
+      '`direction: "in"` — inbound ones, rolling events up into entities. ' +
+      'Returns `{ results, continuationStack }`; pass `continuationStack` back ' +
+      'to resume when the limit is hit.',
     safety: 'pure',
     args: z.object({
       rootId: z.string(),
@@ -185,6 +186,10 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
       collapsed: z.array(z.string()).optional().describe('Ids whose children are not expanded.'),
       limit: z.number().optional().describe('Max results per page; defaults to 1000.'),
       continuationStack: z.array(z.any()).optional().describe('Resume token from a prior page.'),
+      direction: z
+        .enum(['out', 'in'])
+        .optional()
+        .describe('Which links to follow; "in" answers "what links to this?". Defaults to "out".'),
     }),
     handler: (a: {
       rootId: string
@@ -192,12 +197,14 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
       collapsed?: string[]
       limit?: number
       continuationStack?: unknown[]
+      direction?: LinkDirection
     }) =>
       wrapper.resolveQuery(a.rootId, {
         maxDepth: a.maxDepth,
         collapsed: a.collapsed,
         limit: a.limit,
         continuationStack: a.continuationStack as never,
+        direction: a.direction,
       }),
   }
 

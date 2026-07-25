@@ -6,6 +6,7 @@ import * as A from '../state/actions'
 import { findField } from '../state/focusRequest'
 import { useAtomValue, useFocusRequest, useFrameRows, useLayoutState } from '../state/hooks'
 import { loadMore } from '../state/query'
+import { directionOf } from '../state/types'
 import { runTool } from '../tools/call'
 
 /**
@@ -23,9 +24,9 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      {/* The frame's filters, floating over its top-right corner the way the
-          toasts float over its bottom-right: the rows keep their full height and
-          nothing is pushed down the moment a filter opens. */}
+      {/* Whatever the frame is doing to its rows, floating over its top-right
+          corner the way the toasts float over its bottom-right: the rows keep
+          their full height and nothing is pushed down when a filter opens. */}
       <div className="absolute right-3 top-3 z-20 flex flex-col items-end gap-2">
         {frame.find != null && (
           <FindBox
@@ -36,7 +37,10 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
           />
         )}
         {frame.sectionsOnly && (
-          <FilterPill label="Sections only" onClear={() => A.setSectionsOnly(frameId, false)} />
+          <FramePill label="Sections only" onClear={() => A.setSectionsOnly(frameId, false)} />
+        )}
+        {directionOf(frame) === 'in' && (
+          <FramePill label="Inbound links" onClear={() => A.setDirection(frameId, 'out')} />
         )}
       </div>
       <div className="min-h-0 flex-1">
@@ -64,11 +68,12 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
 }
 
 /**
- * A filter with nothing to configure: it says what it is doing and offers to
+ * Something the frame is doing that has nothing to configure — a filter with no
+ * text, the query running backwards: it says what is going on and offers to
  * stop. Like the find field's own clear button, dismissing it is direct
  * manipulation — a state action, not a call through the tool machine.
  */
-function FilterPill({
+function FramePill({
   label,
   onClear,
 }: {
@@ -81,7 +86,7 @@ function FilterPill({
       <button
         className="text-gray-400 hover:text-gray-700 focus:outline-none"
         onClick={onClear}
-        aria-label={`Clear filter: ${label}`}
+        aria-label={`Stop: ${label}`}
       >
         <X size={11} />
       </button>

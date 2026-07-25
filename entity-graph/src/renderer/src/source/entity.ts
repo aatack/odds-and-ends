@@ -1,5 +1,5 @@
 import type { AppEvent } from '../../../core/events'
-import type { QueryPage, StackFrame } from '../../../core/wrapper'
+import type { LinkDirection, QueryPage, StackFrame } from '../../../core/wrapper'
 import { callSource, currentUser } from './transport'
 
 // Typed wrappers over the source's tools. Thin by design: the argument shapes
@@ -8,7 +8,13 @@ import { callSource, currentUser } from './transport'
 
 export const query = (
   rootId: string,
-  opts: { maxDepth?: number; collapsed?: string[]; limit?: number; continuationStack?: StackFrame[] } = {},
+  opts: {
+    maxDepth?: number
+    collapsed?: string[]
+    limit?: number
+    continuationStack?: StackFrame[]
+    direction?: LinkDirection
+  } = {},
 ): Promise<QueryPage> => callSource('query', { rootId, ...opts }) as Promise<QueryPage>
 
 export const writeValue = (entityId: string, key: string, value: unknown): Promise<unknown> =>

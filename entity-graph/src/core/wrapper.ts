@@ -32,6 +32,14 @@ export interface QueryPage {
   continuationStack: StackFrame[] | null
 }
 
+/**
+ * Which way a traversal follows links. `out` walks outbound links — the ordinary
+ * reading of the graph as a tree of children. `in` walks inbound ones, so the
+ * same query answers "what links to this?" and the tree grows towards the
+ * entities that reference the root rather than away from it.
+ */
+export type LinkDirection = 'out' | 'in'
+
 // ---------------------------------------------------------------------------
 // Internal rollup
 // ---------------------------------------------------------------------------
@@ -111,7 +119,8 @@ export class EntityWrapper {
   }
 
   /**
-   * Depth-first traversal from rootId.
+   * Depth-first traversal from rootId, following outbound links by default or
+   * inbound ones with `direction: 'in'`.
    * Avoids cycles by tracking the current path (not globally visited, so the
    * same entity can appear in different branches — it just can't be its own
    * ancestor in a given path).
@@ -126,9 +135,10 @@ export class EntityWrapper {
       collapsed?: string[]
       limit?: number
       continuationStack?: StackFrame[]
+      direction?: LinkDirection
     } = {},
   ): Promise<QueryPage> {
-    const { maxDepth, collapsed = [], limit = 1000, continuationStack } = options
+    const { maxDepth, collapsed = [], limit = 1000, continuationStack, direction = 'out' } = options
     const collapsedSet = new Set(collapsed)
     const results: QueryResult[] = []
 
@@ -153,8 +163,12 @@ export class EntityWrapper {
 
       const shouldExpand = !collapsedSet.has(id) && (maxDepth === undefined || depth < maxDepth)
       if (shouldExpand) {
-        // Push in reverse so the first outbound link is processed first (DFS left-to-right)
-        for (const childId of [...entity.outboundLinks].reverse()) {
+        // Inbound links have no order of their own — only outbound ones are
+        // ordered — so a reversed traversal lists them however the rollup found
+        // them.
+        const links = direction === 'in' ? entity.inboundLinks : entity.outboundLinks
+        // Push in reverse so the first link is processed first (DFS left-to-right)
+        for (const childId of [...links].reverse()) {
           if (!path.includes(childId)) {
             stack.push({ id: childId, depth: depth + 1, parentId: id, path: [...path, childId] })
           }

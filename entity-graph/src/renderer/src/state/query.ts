@@ -1,6 +1,7 @@
-import type { QueryPage, QueryResult, StackFrame } from '../../../core/wrapper'
+import type { LinkDirection, QueryPage, QueryResult, StackFrame } from '../../../core/wrapper'
 import { atom } from './atom'
 import { getLayout, layoutAtom } from './store'
+import { directionOf } from './types'
 
 // The query cache: the rows behind each mounted frame. Runtime only — never
 // persisted, per the rule that nothing cached lives in latent state.
@@ -45,7 +46,13 @@ function harvestNames(results: QueryResult[]): void {
 
 export type QueryFetcher = (
   rootId: string,
-  opts: { maxDepth?: number; collapsed?: string[]; limit?: number; continuationStack?: StackFrame[] },
+  opts: {
+    maxDepth?: number
+    collapsed?: string[]
+    limit?: number
+    continuationStack?: StackFrame[]
+    direction?: LinkDirection
+  },
 ) => Promise<QueryPage>
 
 let fetcher: QueryFetcher | null = null
@@ -66,7 +73,13 @@ function requestKey(frameId: string): string | null {
   const frame = s.frames[frameId]
   if (!frame) return null
   const collapsed = [...(s.tabs[frame.tabId]?.collapsed ?? [])].sort()
-  return JSON.stringify([frame.rootId, collapsed, frame.maxDepth[frame.rootId] ?? null, revision])
+  return JSON.stringify([
+    frame.rootId,
+    collapsed,
+    frame.maxDepth[frame.rootId] ?? null,
+    directionOf(frame),
+    revision,
+  ])
 }
 
 async function load(frameId: string, key: string): Promise<void> {
@@ -82,6 +95,7 @@ async function load(frameId: string, key: string): Promise<void> {
       maxDepth: frame.maxDepth[frame.rootId] ?? undefined,
       collapsed: s.tabs[frame.tabId]?.collapsed ?? [],
       limit: PAGE_SIZE,
+      direction: directionOf(frame),
     })
     if (issued.get(frameId) !== key) return
     harvestNames(page.results)
@@ -163,6 +177,7 @@ export function loadMore(frameId: string): void {
     collapsed: s.tabs[frame.tabId]?.collapsed ?? [],
     limit: PAGE_SIZE,
     continuationStack: page.continuation,
+    direction: directionOf(frame),
   })
     .then((next) => {
       // A first-page refetch while this was in flight wins; drop the append.

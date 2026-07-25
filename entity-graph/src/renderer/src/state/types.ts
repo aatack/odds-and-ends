@@ -1,4 +1,7 @@
 import { v4 as uuid } from 'uuid'
+import type { LinkDirection } from '../../../core/wrapper'
+
+export type { LinkDirection }
 
 // Every piece of latent, serialisable state the renderer keeps. "Latent" is the
 // operative word: nothing derivable lives here (no row lists, no resolved
@@ -115,6 +118,12 @@ export interface FrameState {
   /** Passed to the query as a single-item array and expanded into rows. */
   rootId: string
   /**
+   * Which way the query follows links: `out` for the ordinary tree of children,
+   * `in` to grow towards whatever references the root instead. Read through
+   * {@link directionOf}, since layouts persisted before this existed have none.
+   */
+  direction: LinkDirection
+  /**
    * Path of entity ids to the selection. A path, not an id, because the graph
    * isn't a tree: the same entity can appear several times in one frame. Latent
    * — the *resolved* path is derived and never written back over this.
@@ -170,11 +179,21 @@ export interface LayoutState {
 
 // --- Constructors ----------------------------------------------------------
 
+/**
+ * A frame's traversal direction. Tolerates a frame from a layout persisted
+ * before the field existed, where "the ordinary way round" is the only answer.
+ */
+export const directionOf = (frame: FrameState | null | undefined): LinkDirection =>
+  frame?.direction ?? 'out'
+
 export function newFrame(tabId: string, rootId: string): FrameState {
   return {
     id: uuid(),
     tabId,
     rootId,
+    // Not inherited from the frame this was pushed from: whether a query type
+    // should carry into a new frame is still an open question.
+    direction: 'out',
     selectedPath: [rootId],
     find: null,
     sectionsOnly: false,

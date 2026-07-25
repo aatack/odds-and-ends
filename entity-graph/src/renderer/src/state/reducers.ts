@@ -7,6 +7,7 @@ import {
   type FrameState,
   type GroupState,
   type LayoutState,
+  type LinkDirection,
   type TabState,
 } from './types'
 import { v4 as uuid } from 'uuid'
@@ -75,6 +76,12 @@ export const setFind = (s: LayoutState, frameId: string, find: string | null): L
 
 export const setSectionsOnly = (s: LayoutState, frameId: string, on: boolean): LayoutState =>
   updateFrame(s, frameId, (f) => ({ ...f, sectionsOnly: on }))
+
+export const setDirection = (
+  s: LayoutState,
+  frameId: string,
+  direction: LinkDirection,
+): LayoutState => updateFrame(s, frameId, (f) => ({ ...f, direction }))
 
 export const setMaxDepth = (
   s: LayoutState,
