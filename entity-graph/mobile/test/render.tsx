@@ -64,6 +64,7 @@ seed('coffee', 'Coffee', 'shopping', { open: true })
 seed('oats', 'Oats', 'shopping', { open: false })
 seed('ideas', 'Ideas', '@index')
 seed('snippet', 'const x = 2', 'ideas', { type: 'code' })
+seed('note', 'Some **bold** and [a link](https://example.com)', 'ideas')
 
 const harness = await serve(source, 'tok')
 
@@ -112,6 +113,14 @@ check('the outline draws the tree, checkboxes and code and all', () => {
   assert.match(out, /Coffee/)
   assert.match(out, /Oats/)
   assert.match(out, /const x = 2/)
+})
+
+check('entity text is rendered, and its links leave the app alone', () => {
+  const out = html()
+  assert.match(out, /<strong>bold<\/strong>/)
+  assert.match(out, /href="https:\/\/example\.com"/)
+  // A link that navigated this tab would replace the app itself, once installed.
+  assert.match(out, /target="_blank"/)
 })
 
 check('the bar under the thumb offers the four writes and the menu', () => {
@@ -178,6 +187,12 @@ check('the action sheet lists what applies to the selection', () => {
   assert.match(out, /Search actions/)
   assert.match(out, /Tick \/ untick/)
   assert.match(out, /Copy as markdown/)
+})
+
+check('and leads with adding, which is what the app is mostly for', () => {
+  const out = html()
+  assert.ok(out.indexOf('Create') < out.indexOf('Navigate'), 'Create should come first')
+  assert.ok(out.indexOf('Add a child') < out.indexOf('Edit text'), 'adding before editing')
 })
 
 openSheet({ kind: 'settings' })

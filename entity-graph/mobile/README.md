@@ -85,8 +85,12 @@ downwards. What changed is everything above one view, and the gestures.
 - **Long-press is right-click.** It opens the action sheet, which is the command
   palette: the same registry, filtered to what applies.
 - **The bar under the thumb** is where hotkeys went. Open, add below, add child, edit,
-  more — and while typing, cancel / done / "and another", which is the flow that makes
-  a list bearable to type. It sits above the keyboard rather than behind it.
+  more — and while typing, cancel / done / "+ another", which is the flow that makes a
+  list bearable to type. It sits above the keyboard rather than behind it.
+- **Adding is the primary act, and the app says so.** "Child" is the tinted button, in
+  the middle of the bar where either thumb reaches without shifting grip; "+ another"
+  rather than "done" is the primary while typing; and the action sheet leads with
+  Create, then Edit, then Structure.
 - **Folding is client-side.** The desktop makes the folded set part of the query, so
   folding refetches. Here a level fetches its subtree in pages and folding filters the
   rows, so a tap costs nothing — the right way round when the network is the slow part.
@@ -96,7 +100,13 @@ downwards. What changed is everything above one view, and the gestures.
 - **No integrations, no code entities, no admin.** A code entity is shown as code but
   not run; the server's GitHub/Slack/Claude tools aren't fetched; sources are not
   configured from here. The app reads and writes one source and does nothing else.
-- **Markdown isn't rendered** — entity text shows as typed, line breaks and all.
+- **Markdown renders, less maths and highlighting.** Bold, links, lists, quotes and
+  tables come out as they do on the desktop, through the same stylesheet written the
+  other way up (a line with no markup in it is indistinguishable from plain text).
+  KaTeX and Prism are left out — a stylesheet and a set of font files each, for
+  something you are unlikely to be reading on a phone. They cost about 48 KB gzipped
+  between them, which is most of the difference between a 62 KB bundle and a 110 KB
+  one; over a LAN, nothing.
 
 ## Tests
 

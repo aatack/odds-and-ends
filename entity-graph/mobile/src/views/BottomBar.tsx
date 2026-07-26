@@ -49,7 +49,10 @@ function SelectionBar(): React.JSX.Element {
           disabled={!can('create.sibling')}
           onClick={() => dispatch('create.sibling')}
         />
+        {/* The busiest button in the app, and in the middle of the bar, which is the
+            one place either thumb can reach without shifting grip. */}
         <BarButton
+          primary
           icon={<CornerDownRight size={19} />}
           caption="Child"
           disabled={!can('create.child')}
@@ -86,11 +89,17 @@ function EditBar(): React.JSX.Element {
           Cancel
         </Button>
         <span className="flex-1" />
-        <Button tone="plain" onPointerDown={keepFocus} onClick={() => dispatch('edit.commitAndNext')}>
-          + Another
-        </Button>
-        <Button tone="primary" onPointerDown={keepFocus} onClick={() => dispatch('edit.commit')}>
+        <Button tone="plain" onPointerDown={keepFocus} onClick={() => dispatch('edit.commit')}>
           Done
+        </Button>
+        {/* Primary, and last: adding is what this app is mostly for, so finishing a
+            line usually means starting the next one rather than stopping. */}
+        <Button
+          tone="primary"
+          onPointerDown={keepFocus}
+          onClick={() => dispatch('edit.commitAndNext')}
+        >
+          + Another
         </Button>
       </div>
     </nav>

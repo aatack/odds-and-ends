@@ -1,5 +1,6 @@
 import React from 'react'
 import { Check, ChevronDown, ChevronRight, Square } from '@untitledui/icons'
+import { Markdown } from '../components/ui/Markdown'
 import { TextEditor } from '../components/ui/TextEditor'
 import { cn } from '../helpers/cn'
 import type { EntityRow, Row } from '../state/derive'
@@ -229,19 +230,20 @@ const RowView = React.memo(function RowView({
         ) : row.type === 'file' ? (
           <>
             <FileView id={row.id} mimeType={row.mimeType} alt={row.text} />
-            {row.text && <span className={cn(TEXT, 'text-gray-500')}>{row.text}</span>}
+            {row.text && <Markdown text={row.text} className={cn(TEXT, 'text-gray-500')} />}
           </>
         ) : row.text ? (
-          <span
+          // Rendered, not printed: a line with no markup comes out exactly as the
+          // plain text did, and the blocks are there for the rows that use them.
+          <Markdown
+            text={row.text}
             className={cn(
               TEXT,
               row.section && 'font-semibold',
               row.collapsed && row.hasChildren ? 'text-gray-400' : 'text-gray-900',
             )}
             style={heading}
-          >
-            {row.text}
-          </span>
+          />
         ) : (
           <span className={cn(TEXT, 'text-gray-400 italic')}>Empty</span>
         )}

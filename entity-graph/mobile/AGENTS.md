@@ -87,7 +87,17 @@ the reason `npm test` can drive the app in node.
   shows it. Components never raise toasts.
 - **Rows are virtualised by the browser**, not by us: `.row-virtual` is
   `content-visibility: auto`. Don't add a windowing library — and note that this is
-  what lets the row being edited stay mounted wherever it is.
+  what lets the row being edited stay mounted wherever it is. Row props are passed one
+  by one rather than spread, so a memoised row doesn't re-render on every state change.
+- **Adding a line is the thing this app is for.** Weight the interface accordingly:
+  "Child" is the bar's one tinted button, "+ another" rather than "done" is the
+  primary while typing, and the action sheet's groups are ordered by `GROUP_ORDER` in
+  `tools/registry.ts` rather than by which file a tool happens to live in.
+- **Entity text renders as markdown** (`components/ui/Markdown.tsx`, with the
+  typography under `.markdown` in `index.css`). The rules are written the other way up
+  from a prose stylesheet — no typography by default — so a line with no markup in it
+  comes out identical to a plain span. Maths and syntax highlighting are deliberately
+  not loaded; don't add them back without a reason bigger than parity.
 
 ## Layout
 

@@ -151,11 +151,153 @@ select {
   font-family: inherit;
 }
 
-/* Entity text keeps its line breaks: it is typed in a box where Enter commits
- * and the text may still contain newlines from elsewhere. */
+/* Entity text keeps its line breaks: it is typed in a box that takes them, and
+ * markdown would otherwise fold a single newline away. */
 .entity-text {
   white-space: pre-wrap;
   overflow-wrap: break-word;
+}
+
+/*
+ * Rendered entity text (see components/ui/Markdown.tsx). Every row goes through it,
+ * so these rules are written the other way up from a typical prose stylesheet: the
+ * default is *no* typography at all — a paragraph is margin-less and inherits
+ * everything — so a line with no markup comes out identical to the plain span it used
+ * to be. Spacing appears only between blocks, and only when there is more than one.
+ *
+ * Copied from the desktop app's stylesheet, less the parts that belong to plugins
+ * this client doesn't load (maths, syntax highlighting).
+ */
+.markdown > * + * {
+  margin-top: 0.5em;
+}
+
+.markdown p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Restrained: a section entity is how a real heading is made here, so a markdown
+ * heading inside one row is a minor key. */
+.markdown h1 {
+  font-size: 1.3em;
+}
+
+.markdown h2 {
+  font-size: 1.15em;
+}
+
+.markdown ul,
+.markdown ol {
+  margin: 0;
+  padding-left: 1.4em;
+}
+
+.markdown ul {
+  list-style: disc;
+}
+
+.markdown ol {
+  list-style: decimal;
+}
+
+.markdown li::marker {
+  color: var(--color-gray-400);
+}
+
+.markdown li + li {
+  margin-top: 0.15em;
+}
+
+/* A quote is the one place a rule earns its keep — an indent alone reads as a nested
+ * list, which in an outliner is exactly the wrong thing to suggest. */
+.markdown blockquote {
+  margin: 0;
+  border-left: 2px solid var(--color-gray-200);
+  padding-left: 0.75em;
+  color: var(--color-gray-500);
+}
+
+.markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--color-gray-100);
+  border-radius: 0.25rem;
+  padding: 0.1em 0.3em;
+}
+
+.markdown pre {
+  margin: 0;
+  overflow-x: auto;
+  border-radius: 0.375rem;
+  background: var(--color-gray-100);
+  padding: 0.5em 0.6em;
+}
+
+.markdown pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.85em;
+}
+
+.markdown a {
+  color: var(--color-brand-600);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown img {
+  max-width: 100%;
+  border-radius: 0.375rem;
+}
+
+.markdown hr {
+  border: 0;
+  border-top: 1px solid var(--color-gray-100);
+}
+
+/* A table is the one block that can be wider than the screen; it scrolls rather than
+ * stretching the row and taking the whole outline with it. */
+.markdown table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid var(--color-gray-100);
+  padding: 0.15em 0.5em;
+  text-align: left;
+}
+
+.markdown th {
+  font-weight: 600;
+}
+
+/* GFM task lists: the app's own checkbox rows are the real thing, so these are quiet
+ * and inert. */
+.markdown li:has(> input[type='checkbox']) {
+  list-style: none;
+  margin-left: -1.2em;
+}
+
+.markdown input[type='checkbox'] {
+  margin-right: 0.4em;
+  accent-color: var(--color-gray-400);
 }
 
 /*

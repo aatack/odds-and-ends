@@ -44,22 +44,31 @@ export function Button({
 /**
  * A bar button: an icon over a caption, in a fixed-width column. The bottom bar is
  * built from these, so they share one shape and the row of them reads as a unit.
+ *
+ * One of them can be `primary`, and exactly one is: the bar has a busiest button and
+ * saying which costs a tint. It stays the same shape and the same size — the emphasis
+ * is which one your eye lands on, not which one your thumb can hit.
  */
 export function BarButton({
   icon,
   caption,
+  primary,
   className,
   ...rest
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
   icon: React.ReactNode
   caption: string
+  primary?: boolean
 }): React.JSX.Element {
   return (
     <button
       type="button"
       className={cn(
         'flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 select-none',
-        'text-gray-700 active:bg-gray-100 disabled:opacity-30',
+        'disabled:opacity-30',
+        primary
+          ? 'bg-brand-50 font-medium text-brand-700 active:bg-brand-100'
+          : 'text-gray-700 active:bg-gray-100',
         className,
       )}
       {...rest}

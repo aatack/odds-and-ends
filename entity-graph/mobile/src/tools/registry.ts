@@ -38,7 +38,23 @@ export function listedTools(ctx: ToolContext, search = ''): ToolSpec[] {
   })
 }
 
-/** The tools, grouped under their hints, in the order the registry declares them. */
+/**
+ * The order the action sheet's groups appear in, most-used first.
+ *
+ * Stated here rather than left to fall out of the order the files happen to be
+ * concatenated in, because it encodes something worth being explicit about: the main
+ * thing anyone does with this app is add a line to something. Adding therefore comes
+ * before editing, editing before rearranging, and getting somewhere else after all of
+ * them — the sheet is usually opened by long-pressing a row you intend to add to.
+ */
+const GROUP_ORDER = ['Create', 'Edit', 'Structure', 'Navigate', 'View', 'Export', 'App']
+
+const groupRank = (hint: string): number => {
+  const at = GROUP_ORDER.indexOf(hint)
+  return at === -1 ? GROUP_ORDER.length : at
+}
+
+/** The tools, grouped under their hints, in {@link GROUP_ORDER}. */
 export function groupedTools(tools: ToolSpec[]): { hint: string; tools: ToolSpec[] }[] {
   const groups: { hint: string; tools: ToolSpec[] }[] = []
   for (const tool of tools) {
@@ -47,5 +63,7 @@ export function groupedTools(tools: ToolSpec[]): { hint: string; tools: ToolSpec
     if (group) group.tools.push(tool)
     else groups.push({ hint, tools: [tool] })
   }
-  return groups
+  // Within a group the registry's own order stands: it runs from the everyday to the
+  // fiddly, which is the order to read them in.
+  return groups.sort((a, b) => groupRank(a.hint) - groupRank(b.hint))
 }
