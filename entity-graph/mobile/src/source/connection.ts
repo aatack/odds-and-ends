@@ -52,6 +52,22 @@ export const normaliseBaseUrl = (raw: string): string => raw.trim().replace(/\/+
 class SourceError extends Error {}
 
 /**
+ * What a rejected `fetch` means, since the browser will not say.
+ *
+ * Every failure to get a request out at all — no server, wrong port, a server bound to
+ * loopback that this device cannot reach, a preflight the server didn't answer —
+ * arrives as the same bare `TypeError: Failed to fetch`, with the real reason
+ * deliberately withheld from the page. So the message names the three things it
+ * actually is, in the order they are worth checking.
+ */
+const unreachable = (baseUrl: string): SourceError =>
+  new SourceError(
+    `Can't reach ${baseUrl}. Check the server is running; that it was started with ` +
+      `HOST=0.0.0.0 (bound to 127.0.0.1 it only answers its own machine); and that it ` +
+      `has been restarted since cross-origin calls were allowed.`,
+  )
+
+/**
  * Invoke one of the source's tools.
  *
  * Two layers of failure are flattened into one thrown error, because the caller
@@ -70,10 +86,8 @@ export async function callSource(toolId: string, args: unknown): Promise<unknown
       headers: { 'content-type': 'application/json', authorization: `Bearer ${c.token}` },
       body: JSON.stringify({ tool: toolId, args }),
     })
-  } catch (e) {
-    // `fetch` rejects with a bare "Failed to fetch" for everything from DNS to
-    // CORS, which tells the user nothing; name the address instead.
-    throw new SourceError(`Can't reach ${c.baseUrl} — ${e instanceof Error ? e.message : e}`)
+  } catch {
+    throw unreachable(c.baseUrl)
   }
 
   if (response.status === 401) throw new SourceError('The source token was rejected')
@@ -93,9 +107,16 @@ export async function callSource(toolId: string, args: unknown): Promise<unknown
  * the source can do — whether undo is available, whether it can hold bytes.
  */
 export async function fetchTools(c: Connection): Promise<ToolMeta[]> {
-  const response = await fetch(`${c.baseUrl}/${encodeURIComponent(c.sourceId)}/tools`, {
-    headers: { authorization: `Bearer ${c.token}` },
-  })
+  let response: Response
+  try {
+    response = await fetch(`${c.baseUrl}/${encodeURIComponent(c.sourceId)}/tools`, {
+      headers: { authorization: `Bearer ${c.token}` },
+    })
+  } catch {
+    // The first request the app ever makes, and so the one most likely to fail for a
+    // reason that has nothing to do with the details just typed in.
+    throw unreachable(c.baseUrl)
+  }
   if (response.status === 401) throw new Error('The source token was rejected')
   if (response.status === 404) throw new Error(`No source "${c.sourceId}" on that server`)
   if (!response.ok) throw new Error(`Server returned ${response.status}`)

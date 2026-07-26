@@ -7,7 +7,21 @@ import { v4 as uuidv4 } from 'uuid'
 import type { NewServer, Server, ServerView } from '../core/client'
 import { store } from './store'
 
+/** Where a local server is *reached* from this machine. Always loopback. */
 const HOST = '127.0.0.1'
+
+/**
+ * Where it *listens*. Loopback by default, so a server the app started is not on the
+ * network at all — which is the right default for something that spawns with an admin
+ * token and, in dev, open admin endpoints.
+ *
+ * `ENTITY_GRAPH_LAN=1` binds every interface instead, which is what the phone client
+ * (`mobile/`) needs: it reaches the same server by the laptop's LAN address. Opt-in
+ * through the environment rather than a setting, because the choice belongs to how the
+ * app was launched — on a café's wifi you want the default back, and quitting is a
+ * clearer way to get it than remembering which toggle is on.
+ */
+const BIND = process.env.ENTITY_GRAPH_LAN ? '0.0.0.0' : HOST
 
 /** Grab an OS-assigned free port on the loopback interface. */
 function findFreePort(): Promise<number> {
@@ -71,7 +85,7 @@ export class ServerManager {
       env: {
         ...process.env,
         PORT: String(server.localPort),
-        HOST,
+        HOST: BIND,
         ADMIN_TOKEN: server.adminToken,
         CONFIG_DB: this.configDbPath(server.id),
       },

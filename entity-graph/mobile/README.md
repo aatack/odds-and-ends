@@ -13,24 +13,41 @@ target, no camera, no notifications), none of which the basics need.
 
 The phone needs to reach the source server, so both need to be on the same network.
 
-```sh
-# 1. the source server, if it isn't already running (from entity-graph/)
-ADMIN_TOKEN=secret PORT=4000 HOST=0.0.0.0 npm run --prefix server start
+**Which server?** Almost certainly the one the desktop app started, not a new one. A
+local server spawned by the app keeps its config DB under
+`~/.config/entity-graph/servers/<server-id>/config.db` and listens on a port it picked
+itself — so a server you start by hand from `server/` opens `server/data/config.db`
+instead, which is a different, probably empty, set of sources. Starting the wrong one
+looks like the app working perfectly against no data.
 
-# 2. this app
+```sh
+# 1. the desktop app, with its local servers on the network rather than on loopback
+ENTITY_GRAPH_LAN=1 npm run dev
+
+# 2. this app, in another shell
 npm install          # first time only
 npm run dev          # prints a Network: URL — that is the one to open on the phone
 ```
 
-`HOST=0.0.0.0` matters: the server defaults to `127.0.0.1`, which the phone cannot
-reach. So does the port being open — on most Linux setups it already is, but a
-firewall will silently swallow the connection.
+`ENTITY_GRAPH_LAN=1` is what makes a server the app spawned reachable from anything but
+the laptop; without it they bind `127.0.0.1` and the phone gets nothing. The server's
+port is in the app's server panel, as the base URL.
+
+Or, if the source you want is served by a server you run yourself:
+
+```sh
+ADMIN_TOKEN=secret PORT=4000 HOST=0.0.0.0 CONFIG_DB=./data/config.db \
+  npm run --prefix server start
+```
+
+Either way the port has to be open — on most Linux setups it already is, but a firewall
+will swallow the connection silently.
 
 Then, on the phone, open the `Network:` URL vite printed and fill in:
 
 | | |
 |---|---|
-| **Server** | the laptop's address and the server's port, e.g. `http://192.168.1.20:4000` |
+| **Server** | the laptop's LAN address and the server's port, e.g. `http://192.168.1.20:36901` — the port from the app's server panel, with `127.0.0.1` swapped for the laptop's address |
 | **Source** | the source's id |
 | **Token** | a token issued for that source (`POST /admin/sources/:id/tokens`, or the admin console at `/admin`) |
 | **Author** | recorded against everything written from the phone; `mobile` by default |
