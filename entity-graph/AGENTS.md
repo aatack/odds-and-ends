@@ -6,6 +6,11 @@ server. The renderer holds no backend of its own: it opens a source over IPC
 `writeValue`, `writeLink`, …). The main outliner edits the tree rooted at
 `@index`.
 
+This guide is the *desktop* client's. There is a second one in [`mobile/`](./mobile) —
+a phone-shaped PWA over one source, with its own dependencies, its own guide and no
+imports from `src/`. Work on one does not touch the other; the server is the only thing
+they share.
+
 ## Never run the app
 
 **Do not start, launch, or run the app yourself under any circumstances unless
@@ -121,6 +126,7 @@ label: a bare label can't be right-clicked, and it won't follow the entity.
 
 ```
 server/         the HTTP server: sources, and the integrations (GitHub, Slack, Claude)
+mobile/         a separate phone client (PWA) for one source — its own install, own guide
 src/main       Electron main — window, servers, config store
 src/preload     contextBridge exposing the typed EntityGraphAPI
 src/core        source client + query wrapper (shared types)
