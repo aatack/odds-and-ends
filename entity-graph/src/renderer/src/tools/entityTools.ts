@@ -143,9 +143,12 @@ export const ENTITY_TOOLS: ToolSpec[] = [
     aliases: ['clipboard', 'copy text', 'copy image', 'copy code', 'copy file'],
     scope: 'frame',
     reach: 'ui',
-    // Bare ⌘C inside a text field belongs to the field; the router only lets the
-    // combo through when nothing is being edited.
-    keys: [{ key: 'c', mod: true }],
+    // No hotkey, deliberately. ⌘C was bound here, and a focused text field kept it
+    // (see TEXT_EDITING_KEYS in tools/dispatch), but that is only one of the ways a
+    // person copies: selecting part of a row with the mouse and pressing ⌘C is not
+    // editing anything, so the binding won on that path and copied the whole entity
+    // instead of the words that were highlighted. Copying a selection is the more
+    // common thing and the one the OS already does, so the app doesn't take the key.
     args: [entityArg()],
     run: async ({ entityId }) => {
       const target = requireId(entityId, 'Entity id')
