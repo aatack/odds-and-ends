@@ -51,6 +51,15 @@ export interface CallContext {
   /** Folded entity values plus the positional keys (entityId, parentId, …). */
   values: Record<string, unknown>
   /**
+   * Whether those values fill arguments by themselves. False for the palette
+   * opened cold, where the tool about to be picked may well be meant for some
+   * *other* entity than the selected one: an argument filled silently is then
+   * skipped past, with no way to say otherwise. Such a context is offered rather
+   * than applied — the palette shows it as a value that can be taken with a
+   * click. Absent means true, which is what a hotkey and a right-click both want.
+   */
+  autofill?: boolean
+  /**
    * The entity path the values were folded along: each frame root in the tab's
    * stack, outermost first, then the selection path inside the top frame. Kept
    * for the record — the fold is what tools actually read.

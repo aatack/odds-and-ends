@@ -27,6 +27,13 @@ export interface EntityGraphAPI {
    */
   saveFile: (name: string, data: string) => Promise<string>
 
+  /**
+   * Put base64 bytes on the system clipboard as a file, returning the temporary
+   * path they were written to. The web clipboard only carries text and bitmaps,
+   * so anything else has to be a real file for the clipboard to name.
+   */
+  copyFile: (name: string, data: string) => Promise<string>
+
   // The source the editor opens by default
   getCurrentSource: () => Promise<CurrentSource | null>
   setCurrentSource: (source: CurrentSource | null) => Promise<void>
@@ -83,6 +90,7 @@ const api: EntityGraphAPI = {
   setUser: (name) => ipcRenderer.invoke('config:setUser', name),
 
   saveFile: (name, data) => ipcRenderer.invoke('file:save', name, data),
+  copyFile: (name, data) => ipcRenderer.invoke('file:copy', name, data),
   getCurrentSource: () => ipcRenderer.invoke('config:getCurrentSource'),
   setCurrentSource: (source) => ipcRenderer.invoke('config:setCurrentSource', source),
 

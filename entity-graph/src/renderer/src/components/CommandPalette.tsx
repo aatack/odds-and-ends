@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import fuzzysort from 'fuzzysort'
-import { Minimize01 } from '@untitledui/icons'
+import { Minimize01, Target04 } from '@untitledui/icons'
 import { cn } from '../helpers/cn'
 import { Popup } from './ui/Popup'
 import { useAtomValue, usePendingCall } from '../state/hooks'
+import { argValue } from '../state/types'
 import {
   advanceArg,
   cancelCall,
@@ -13,8 +14,9 @@ import {
   setArg,
   setPendingQuery,
   submitCall,
+  takeFromContext,
 } from '../tools/call'
-import { formatArg, parseArg } from '../tools/args'
+import { contextValue, formatArg, parseArg } from '../tools/args'
 import { keyHint } from '../tools/keys'
 import { integrationsAtom } from '../tools/integrationTools'
 import { findTool, listedTools } from '../tools/registry'
@@ -82,6 +84,13 @@ export function CommandPalette(): React.JSX.Element | null {
 
   if (!visible) return null
 
+  // What the context would put in the field. On a context that fills arguments
+  // itself it is already in there; opened cold it is only offered, and taking it
+  // is the user's to do — the icon beside the field, or ⌘/Ctrl+Enter.
+  const offered = activeArg ? contextValue(activeArg, visible.context) : undefined
+  const offeredText = offered === undefined ? null : formatArg(argValue(offered))
+  const canTake = offeredText != null && offeredText !== text
+
   /** Write the buffer into the call. Returns false when it doesn't parse. */
   const flush = (): boolean => {
     if (!activeArg) return true
@@ -109,6 +118,20 @@ export function CommandPalette(): React.JSX.Element | null {
     if (parsed.ok) setArg(activeArg.name, parsed.value)
   }
 
+  /**
+   * Fill the field from where the user is, rather than from what they type. The
+   * cold palette leaves context-supplied arguments blank on purpose, so this is
+   * how the selected entity gets into one without being pasted.
+   */
+  const takeOffered = (): void => {
+    const applied = takeFromContext()
+    if (!applied) return
+    // The call may have stayed on this argument, in which case nothing reseeds
+    // the buffer and it would still hold what was there before.
+    setText(formatArg(applied))
+    setError(null)
+  }
+
   const onKeyDown = (e: React.KeyboardEvent): void => {
     if (e.key === 'Escape') {
       e.preventDefault()
@@ -118,7 +141,11 @@ export function CommandPalette(): React.JSX.Element | null {
     if (tool) {
       // Argument entry. Enter is the only thing that can run the tool; Tab moves
       // on, and off the first argument Shift+Tab returns to the tool list.
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        // The keyboard's half of the take-from-context button beside the field.
+        e.preventDefault()
+        if (canTake) takeOffered()
+      } else if (e.key === 'Enter') {
         e.preventDefault()
         if (flush()) setError(submitCall())
       } else if (e.key === 'Tab') {
@@ -138,9 +165,11 @@ export function CommandPalette(): React.JSX.Element | null {
     const target = matches[active]
     if ((e.key === 'Enter' || e.key === 'Tab') && target) {
       e.preventDefault()
-      // Tab steps into a tool's arguments but never runs an argument-less one:
-      // that still wants Enter as its confirmation.
-      if (e.key === 'Enter' || argsOf(target).length > 0) chooseTool(target.id)
+      // Tab steps into a tool's arguments and stops there, whether or not any are
+      // outstanding: running is Enter's, always. A tool with no arguments has
+      // nothing to step into, so Tab leaves the list where it is.
+      if (e.key === 'Enter') chooseTool(target.id)
+      else if (argsOf(target).length > 0) chooseTool(target.id, { run: false })
       return
     }
     if (e.key === 'ArrowDown' && matches.length) {
@@ -176,6 +205,18 @@ export function CommandPalette(): React.JSX.Element | null {
           // serif; the placeholder is UI chrome, so it stays on the sans.
           className="min-w-0 flex-1 bg-transparent px-4 py-3.5 font-serif text-[14px] text-gray-900 outline-none placeholder:font-sans placeholder:text-[13px] placeholder:text-gray-400"
         />
+        {canTake && (
+          <button
+            // Keeps the caret where it is: the field is being filled in, not left.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={takeOffered}
+            className="shrink-0 pl-2 text-gray-300 hover:text-gray-600 focus:outline-none"
+            title={`Take the ${activeArg?.label.toLowerCase()} from here (⌘/Ctrl+Enter)`}
+            aria-label="Take this argument from the current selection"
+          >
+            <Target04 size={14} />
+          </button>
+        )}
         {tool && (
           <span className="flex items-center gap-1.5 whitespace-nowrap px-3 text-xs font-medium text-gray-400">
             {tool.label}

@@ -1,7 +1,8 @@
-import { app, BrowserWindow, ipcMain, Menu, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, clipboard, ipcMain, Menu, type MenuItemConstructorOptions } from 'electron'
 import { basename, extname, join } from 'path'
 import { existsSync } from 'fs'
-import { writeFile } from 'fs/promises'
+import { mkdir, writeFile } from 'fs/promises'
+import { pathToFileURL } from 'url'
 import { randomBytes } from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
 import type { ActiveSource, CurrentSource, NewServer, NewSourceConnection, Server, TokenRow } from '../core/client'
@@ -125,6 +126,38 @@ ipcMain.handle('file:save', async (_e, name: string, data: string): Promise<stri
   const dir = app.getPath('downloads')
   const path = join(dir, freeName(dir, name))
   await writeFile(path, Buffer.from(data, 'base64'))
+  return path
+})
+
+/**
+ * The clipboard format that means "here is a file", per platform, and what goes
+ * in it. Only one custom format can be written at a time, so it has to be the
+ * one that carries the file itself rather than its name: Chromium and the Linux
+ * desktops read `text/uri-list`, macOS `public.file-url`, and Windows the legacy
+ * `FileNameW`.
+ */
+function fileOnClipboard(path: string): { format: string; buffer: Buffer } {
+  const url = pathToFileURL(path).href
+  if (process.platform === 'win32') {
+    return { format: 'FileNameW', buffer: Buffer.from(`${path}\0`, 'utf16le') }
+  }
+  if (process.platform === 'darwin') return { format: 'public.file-url', buffer: Buffer.from(url) }
+  return { format: 'text/uri-list', buffer: Buffer.from(`${url}\r\n`) }
+}
+
+/**
+ * Put a file on the clipboard. The clipboard can only point at bytes that are
+ * already somewhere, so they are written under the temp directory first — each
+ * copy in a directory of its own, so the file keeps the name it had and two
+ * copies of the same name can't tread on each other.
+ */
+ipcMain.handle('file:copy', async (_e, name: string, data: string): Promise<string> => {
+  const dir = join(app.getPath('temp'), 'entity-graph-clipboard', uuidv4())
+  await mkdir(dir, { recursive: true })
+  const path = join(dir, freeName(dir, name))
+  await writeFile(path, Buffer.from(data, 'base64'))
+  const { format, buffer } = fileOnClipboard(path)
+  clipboard.writeBuffer(format, buffer)
   return path
 })
 

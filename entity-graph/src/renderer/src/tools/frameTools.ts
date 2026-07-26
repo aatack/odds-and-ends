@@ -73,26 +73,51 @@ const hasEdit = (): boolean => {
   return !!(frameId && layout.frames[frameId]?.edit)
 }
 
-// Format the entity at `start` and its visible descendants as nested markdown
-// bullets. Children of folded rows aren't in `rows` to begin with, and a folded
-// row is left out along with them: exporting the title of a branch whose contents
-// are hidden reads as a complete list when it isn't. Folding is how you say
-// "not this"; the export takes it at its word. The row being exported is the
-// exception — it was named explicitly, so it comes out folded or not.
+/** Markdown has six heading levels; a deeper section takes the last of them. */
+const HEADING_LIMIT = 6
+
+// Format the entity at `start` and its visible descendants as markdown. Children
+// of folded rows aren't in `rows` to begin with, and a folded row is left out
+// along with them: exporting the title of a branch whose contents are hidden
+// reads as a complete list when it isn't. Folding is how you say "not this"; the
+// export takes it at its word. The row being exported is the exception — it was
+// named explicitly, so it comes out folded or not.
 //
-// Checkbox rows carry their state as a markdown task box; plain bullets get
-// nothing, so a tree with no checkboxes exports exactly as before.
+// Three things the tree says that markdown has words for: a section becomes a
+// heading, one `#` per level it sits at below the row being exported; a checkbox
+// becomes a task box; everything else a bullet. The exported row itself is the
+// title of what you asked for rather than an item in it, so it gets no marker at
+// all — you are pasting it somewhere that will give it one.
+//
+// Indentation is measured from the nearest heading rather than from the top,
+// since a heading ends whatever list preceded it: continuing to count from the
+// root would push a deep bullet past four spaces, which markdown reads as code.
 function subtreeMarkdown(rows: Row[], start: number): string {
   const from = rows[start]
   if (!from || from.kind !== 'entity') return ''
   const lines: string[] = []
+  /** Depths of the headings we are inside, outermost first. */
+  const headings: number[] = []
   for (let i = start; i < rows.length; i++) {
     const row = rows[i]
     if (i > start && row.depth <= from.depth) break
     if (row.kind !== 'entity') continue
     if (i > start && row.collapsed && row.hasChildren) continue
+    const depth = row.depth - from.depth
+    const text = row.text ?? ''
+    while (headings.length && row.depth <= headings[headings.length - 1]) headings.pop()
+    if (row.section) {
+      lines.push(`${'#'.repeat(Math.min(depth + 1, HEADING_LIMIT))} ${text}`)
+      headings.push(row.depth)
+      continue
+    }
+    if (i === start) {
+      lines.push(text)
+      continue
+    }
+    const base = headings.length ? headings[headings.length - 1] : from.depth
     const box = row.open === true ? '[ ] ' : row.open === false ? '[x] ' : ''
-    lines.push(`${'  '.repeat(row.depth - from.depth)}- ${box}${row.text ?? ''}`)
+    lines.push(`${'  '.repeat(row.depth - base - 1)}- ${box}${text}`)
   }
   return lines.join('\n')
 }

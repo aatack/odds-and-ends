@@ -13,6 +13,7 @@ import type {
   RecordedCall,
 } from '../state/types'
 import {
+  contextValue,
   firstEmpty,
   missingRequired,
   nextEmptyAfter,
@@ -138,8 +139,9 @@ async function execute(call: {
 
 // --- Starting ---------------------------------------------------------------
 
-const liveContext = (extra?: Record<string, unknown>): CallContext =>
-  buildCallContext(getLayout(), queryAtom.get(), extra)
+const liveContext = (
+  opts: { extra?: Record<string, unknown>; autofill?: boolean } = {},
+): CallContext => buildCallContext(getLayout(), queryAtom.get(), opts)
 
 /**
  * Taking over the pending slot records whatever was in it, so starting a second
@@ -154,33 +156,38 @@ function displacePending(nextCallId: string): void {
 
 /**
  * Begin a call to a known tool. Arguments are seeded from the context; if
- * nothing is left empty the tool runs at once, with no confirmation.
+ * nothing is left empty the tool runs at once, with no confirmation — unless
+ * `autorun` is off, which is how Tab steps into a tool without invoking it.
  */
 function begin(
   toolId: string,
   context: CallContext,
   display: CallDisplay,
-  seed?: { callId?: string; args?: ArgValues; fromCallId?: string },
+  seed?: { callId?: string; args?: ArgValues; fromCallId?: string; autorun?: boolean },
 ): void {
   const tool = findTool(toolId)
   if (!tool) return
   const callId = seed?.callId ?? uuid()
   const args = { ...seedArgs(tool, context), ...(seed?.args ?? {}) }
   const empty = firstEmpty(tool, args)
-  if (empty == null) {
+  if (empty == null && (seed?.autorun ?? true)) {
     void execute({ callId, toolId, args, context, fromCallId: seed?.fromCallId })
     return
   }
+  // Nothing outstanding and nothing to show: a tool with no arguments at all has
+  // no state to sit in, so it waits for the caller to ask for it again.
+  const active = empty ?? argsOf(tool)[0]?.name ?? null
+  if (active == null) return
   // The corner guide can only serve an argument that is *pointed at*: there's
   // nowhere to type in it. Anything else opens the palette, even from a hotkey.
-  const outstanding = argsOf(tool).find((a) => a.name === empty)
+  const outstanding = argsOf(tool).find((a) => a.name === active)
   const shown = display.kind === 'hidden' && !outstanding?.pick ? CENTRED : display
   displacePending(callId)
   pendingAtom.set({
     callId,
     toolId,
     args,
-    activeArg: empty,
+    activeArg: active,
     display: shown,
     context,
     query: '',
@@ -197,10 +204,16 @@ export function runTool(
   toolId: string,
   opts: { display?: CallDisplay; extra?: Record<string, unknown> } = {},
 ): void {
-  begin(toolId, liveContext(opts.extra), opts.display ?? HIDDEN)
+  begin(toolId, liveContext({ extra: opts.extra }), opts.display ?? HIDDEN)
 }
 
-/** Open the tool list: a call with no tool chosen yet. */
+/**
+ * Open the tool list: a call with no tool chosen yet. Anchored, it was aimed at
+ * something and its context fills the tool's arguments; unanchored — ⌘P, or the
+ * Actions button — it was not, so the context is only offered. Otherwise every
+ * tool the launcher offers would already be pointed at whatever happens to be
+ * selected, which is precisely when you want to name something else.
+ */
 export function openToolList(opts: { anchor?: { x: number; y: number }; extra?: Record<string, unknown> } = {}): void {
   const callId = uuid()
   displacePending(callId)
@@ -210,7 +223,7 @@ export function openToolList(opts: { anchor?: { x: number; y: number }; extra?: 
     args: {},
     activeArg: null,
     display: { kind: 'palette', anchor: opts.anchor ?? null },
-    context: liveContext(opts.extra),
+    context: liveContext({ extra: opts.extra, autofill: opts.anchor != null }),
     query: '',
   })
 }
@@ -244,8 +257,12 @@ export const maximisePending = (): void => setDisplay(CENTRED)
 /** Send the palette back to the corner, leaving the call in progress. */
 export const minimisePending = (): void => setDisplay(HIDDEN)
 
-/** Pick a tool from the list, keeping the call's id and context. */
-export function chooseTool(toolId: string): void {
+/**
+ * Pick a tool from the list, keeping the call's id and context. `run: false` is
+ * Tab — it steps into the tool's arguments and stops there, however little is
+ * left to fill in.
+ */
+export function chooseTool(toolId: string, opts: { run?: boolean } = {}): void {
   const pending = pendingAtom.get()
   if (!pending) {
     runTool(toolId, { display: CENTRED })
@@ -254,6 +271,7 @@ export function chooseTool(toolId: string): void {
   begin(toolId, pending.context, pending.display, {
     callId: pending.callId,
     fromCallId: pending.fromCallId,
+    autorun: opts.run ?? true,
   })
 }
 
@@ -311,6 +329,26 @@ export function submitCall(): string | null {
     fromCallId: p.fromCallId,
   })
   return null
+}
+
+/**
+ * Take the argument being entered from the call's context — what the palette
+ * opened cold offers in place of filling it in silently — and move on to
+ * whatever is still empty. Never runs, even on the last argument: this is a
+ * shortcut for typing, and typing doesn't run anything either. Returns the value
+ * it wrote, so the field showing it can be brought up to date.
+ */
+export function takeFromContext(): ArgValue | null {
+  const p = pendingAtom.get()
+  const tool = p?.toolId ? findTool(p.toolId) : null
+  if (!p || !tool || !p.activeArg) return null
+  const arg = argsOf(tool).find((a) => a.name === p.activeArg)
+  const value = arg ? contextValue(arg, p.context) : undefined
+  if (value === undefined) return null
+  const applied: ArgValue = { kind: 'value', value }
+  const args = { ...p.args, [p.activeArg]: applied }
+  pendingAtom.set({ ...p, args, activeArg: nextEmptyAfter(tool, args, p.activeArg) ?? p.activeArg })
+  return applied
 }
 
 /**

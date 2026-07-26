@@ -1,6 +1,7 @@
-// The other side of the transport seam: the local filesystem, rather than the
-// open source. One capability so far — putting a resource's bytes in the
-// downloads folder — kept here so the tool layer never touches `window`.
+// The other side of the transport seam: the local filesystem and the system
+// clipboard, rather than the open source. Both put a resource's bytes somewhere
+// outside the app, and both are kept here so the tool layer never touches
+// `window`.
 
 const api = window.entityGraph
 
@@ -13,3 +14,30 @@ const api = window.entityGraph
  */
 export const saveFile = (name: string, data: string): Promise<string> =>
   api.saveFile(name, data)
+
+/**
+ * Put bytes on the system clipboard as a file, so they paste as one. The bytes
+ * land in a temporary file on the way — the clipboard can only point at
+ * something that exists — and that path is what comes back.
+ */
+export const copyFile = (name: string, data: string): Promise<string> =>
+  api.copyFile(name, data)
+
+/**
+ * A plausible extension for bytes that arrived without a name — from the
+ * clipboard, say. Only for something short and word-like after the slash, so an
+ * exotic mime type ends up with no extension rather than a silly one.
+ */
+function extensionFor(mimeType: string): string {
+  const subtype = mimeType.split('/')[1]?.split('+')[0]?.replace(/[^a-z0-9]/gi, '') ?? ''
+  return subtype && subtype.length <= 5 ? `.${subtype}` : ''
+}
+
+/**
+ * What to call a resource once it leaves the app: the name it came with, and
+ * failing that the entity's own id under an extension guessed from its type.
+ */
+export const fileNameFor = (
+  resource: { name: string | null; mimeType: string },
+  id: string,
+): string => resource.name ?? `${id}${extensionFor(resource.mimeType)}`

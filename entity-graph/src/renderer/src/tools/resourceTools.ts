@@ -1,5 +1,5 @@
 import { createEntity, readResource, writeResource } from '../source/entity'
-import { saveFile } from '../source/files'
+import { fileNameFor, saveFile } from '../source/files'
 import type { ToolSpec } from './types'
 
 // Tools over stored bytes. Only one so far: taking what is on the clipboard and
@@ -13,16 +13,6 @@ import type { ToolSpec } from './types'
 // instead, and is unlisted, since there is no typing a picture into a palette.
 
 const text = (v: unknown): string => (typeof v === 'string' ? v : '')
-
-/**
- * A plausible extension for bytes that arrived without a name — from the
- * clipboard, say. Only for something short and word-like after the slash, so an
- * exotic mime type ends up with no extension rather than a silly one.
- */
-function extensionFor(mimeType: string): string {
-  const subtype = mimeType.split('/')[1]?.split('+')[0]?.replace(/[^a-z0-9]/gi, '') ?? ''
-  return subtype && subtype.length <= 5 ? `.${subtype}` : ''
-}
 
 export const RESOURCE_TOOLS: ToolSpec[] = [
   {
@@ -74,8 +64,7 @@ export const RESOURCE_TOOLS: ToolSpec[] = [
       if (!target) throw new Error('Entity id is required')
       const resource = await readResource(target)
       if (!resource) throw new Error('This entity has no bytes stored')
-      const name = resource.name ?? `${target}${extensionFor(resource.mimeType)}`
-      const path = await saveFile(name, resource.data)
+      const path = await saveFile(fileNameFor(resource, target), resource.data)
       return { message: `Saved to ${path}` }
     },
   },

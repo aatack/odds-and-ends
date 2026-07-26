@@ -61,15 +61,22 @@ export function formatArg(value: ArgValue | undefined): string {
   return typeof v === 'object' ? JSON.stringify(v) : String(v)
 }
 
+/**
+ * What the context has to say about an argument, whether or not it applies
+ * itself — the value the palette offers on a context that doesn't autofill.
+ */
+export const contextValue = (arg: ArgSpec, context: CallContext): unknown =>
+  arg.fromContext != null ? context.values[arg.fromContext] : undefined
+
 /** True when the context supplied this argument, so Tab should skip past it. */
 export const filledFromContext = (arg: ArgSpec, context: CallContext): boolean =>
-  arg.fromContext != null && context.values[arg.fromContext] !== undefined
+  context.autofill !== false && contextValue(arg, context) !== undefined
 
 /** Every argument's starting value: from the context, then from the tool's default. */
 export function seedArgs(tool: ToolSpec, context: CallContext): ArgValues {
   const out: ArgValues = {}
   for (const arg of argsOf(tool)) {
-    const fromContext = arg.fromContext ? context.values[arg.fromContext] : undefined
+    const fromContext = filledFromContext(arg, context) ? contextValue(arg, context) : undefined
     out[arg.name] =
       fromContext !== undefined
         ? argValue(fromContext)

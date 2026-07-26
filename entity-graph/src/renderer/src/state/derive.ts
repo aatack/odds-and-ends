@@ -226,11 +226,14 @@ export const entityRows = (rows: Row[]): EntityRow[] =>
  * 2. The positional keys arguments actually reference (`entityId`, `parentId`,
  *    …), which override any same-named entity value, and then `extra` — what a
  *    right-click supplies, which need not be the current selection.
+ *
+ * `autofill` says whether the result applies itself to a tool's arguments or is
+ * merely offered to them; see {@link CallContext}.
  */
 export function buildCallContext(
   s: LayoutState,
   cache: QueryCache,
-  extra?: Record<string, unknown>,
+  opts: { extra?: Record<string, unknown>; autofill?: boolean } = {},
 ): CallContext {
   const { groupId, tabId, frameId } = focusOf(s)
   const tab = tabId ? s.tabs[tabId] : null
@@ -260,7 +263,8 @@ export function buildCallContext(
   }
 
   return {
-    values: { ...values, ...positional, ...(extra ?? {}) },
+    values: { ...values, ...positional, ...(opts.extra ?? {}) },
+    ...(opts.autofill === false ? { autofill: false } : {}),
     path,
     groupId,
     tabId,

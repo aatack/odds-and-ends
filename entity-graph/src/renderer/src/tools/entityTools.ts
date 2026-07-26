@@ -2,11 +2,12 @@ import * as A from '../state/actions'
 import { entityRows, frameRows, type EntityRow } from '../state/derive'
 import { queryAtom } from '../state/query'
 import { focusOf, getLayout } from '../state/store'
-import { directionOf, last, type LinkDirection } from '../state/types'
+import { directionOf, last, samePath, type LinkDirection } from '../state/types'
 import { updateUi } from '../state/ui'
 import { base64ToBlob } from '../helpers/base64'
 import { copyImage, copyText } from '../helpers/clipboard'
 import { createEntity, link, moveEntity, readResource, unlink, writeValue } from '../source/entity'
+import { copyFile, fileNameFor } from '../source/files'
 import type { ArgSpec, CallInfo, ToolSpec } from './types'
 
 // Tools that name the entity they act on, rather than implying it. Their
@@ -65,6 +66,22 @@ function rowById(entityId: string): EntityRow | undefined {
   const { frameId } = focusOf(layout)
   const { rows } = frameRows(layout, queryAtom.get(), frameId)
   return entityRows(rows).find((r) => r.id === entityId)
+}
+
+/**
+ * Where the selection goes when the row it sits on leaves the frame: the row
+ * immediately above it, which is where the eye already is. Null when the row
+ * going away isn't the selected one — then nothing should move — and null at the
+ * top of the frame, where falling back on the parent is all there is.
+ */
+function rowAboveSelection(frameId: string | null, entityId: string): string[] | null {
+  const layout = getLayout()
+  if (!frameId || !layout.frames[frameId]) return null
+  const { rows, selectedPath } = frameRows(layout, queryAtom.get(), frameId)
+  if (last(selectedPath) !== entityId) return null
+  const entities = entityRows(rows)
+  const at = entities.findIndex((r) => samePath(r.path, selectedPath))
+  return at > 0 ? entities[at - 1].path : null
 }
 
 /** The selection's parent, or null at the root of the frame. */
@@ -138,14 +155,15 @@ export const ENTITY_TOOLS: ToolSpec[] = [
         // row that has never been on screen has none.
         const resource = await readResource(target)
         if (!resource) throw new Error('This file has no bytes stored')
+        // An image goes on as a bitmap, which is what pastes into a document as
+        // the picture itself; anything else goes on as a file, by way of a
+        // temporary copy. Either way what you paste is the thing, not its name.
         if (resource.mimeType.startsWith('image/')) {
           await copyImage(base64ToBlob(resource.data, resource.mimeType))
           return { message: 'Copied the image' }
         }
-        // The clipboard has no way to hold an arbitrary file, so the name is the
-        // most useful thing left.
-        await copyText(resource.name ?? target)
-        return { message: 'Copied the file name — only images copy as files' }
+        await copyFile(fileNameFor(resource, target), resource.data)
+        return { message: 'Copied the file' }
       }
       const text = row?.text ?? ''
       if (!text) throw new Error('Nothing to copy')
@@ -213,14 +231,13 @@ export const ENTITY_TOOLS: ToolSpec[] = [
       // The arguments name what's on screen — the row and the row it hangs off.
       // Which of the two is the link's source depends on the frame's direction.
       const reversed = callDirection(call) === 'in'
-      await unlink(id(reversed ? childId : parentId), id(reversed ? parentId : childId))
-      // Selection was on the row just removed; step up to its parent.
-      const layout = getLayout()
+      // Resolved before the write, while the row is still there: deleting walks
+      // you back up the list, so the selection lands on the row above rather
+      // than jumping out to the parent.
       const frameId = call.context.frameId
-      const frame = frameId ? layout.frames[frameId] : null
-      if (frame && last(frame.selectedPath) === id(childId)) {
-        A.selectPath(frame.id, frame.selectedPath.slice(0, -1))
-      }
+      const above = rowAboveSelection(frameId, id(childId))
+      await unlink(id(reversed ? childId : parentId), id(reversed ? parentId : childId))
+      if (frameId && above) A.selectPath(frameId, above)
     },
   },
   {
