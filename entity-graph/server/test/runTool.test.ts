@@ -8,7 +8,7 @@ import { ConfigDb } from '../src/config'
 import { Registry } from '../src/registry'
 import { INTEGRATION_TOOLS } from '../src/integrations/index'
 import { pullRequestArgs } from '../src/integrations/github'
-import { parseRef } from '../src/integrations/slack'
+import { parseRef, recentQuery } from '../src/integrations/slack'
 
 // The endpoint and the argument parsing. Nothing here reaches GitHub, Slack or
 // Claude — the handlers themselves are only exercised by hand.
@@ -142,5 +142,21 @@ describe('naming a place in Slack', () => {
 
   it('complains about a link that is not Slack’s', () => {
     expect(() => parseRef('https://example.com/hello')).toThrow(/Slack link/)
+  })
+})
+
+describe('the recent-messages query', () => {
+  it('is modifiers only — there is no text to search for', () => {
+    expect(recentQuery('2026-07-24', null)).toBe('after:2026-07-24')
+  })
+
+  it('excludes you by handle', () => {
+    expect(recentQuery('2026-07-24', 'alex')).toBe('after:2026-07-24 -from:@alex')
+  })
+
+  it('always carries a positive term, so it is never a bare negation', () => {
+    for (const handle of [null, 'alex']) {
+      expect(recentQuery('2026-07-24', handle).startsWith('after:')).toBe(true)
+    }
   })
 })

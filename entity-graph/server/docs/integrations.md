@@ -113,6 +113,9 @@ invited to, and it posts as the bot.
 
 | id | what it does |
 |----|--------------|
+| `slack.recentMessages` | the last N messages from anywhere you can see, newest first |
+| `slack.listChannels` | every conversation you're in — DMs, groups, channels — paged |
+| `slack.getChannelMessages` | one conversation's messages, paged by `offset` |
 | `slack.readMessage` | the text of one message, optionally with its thread |
 | `slack.sendMessage` | post to any conversation, or reply in a thread |
 
@@ -141,6 +144,44 @@ C0123ABCD
 #general
 U0123ABCD
 ```
+
+### The recent-messages feed
+
+`slack.recentMessages` is as close to a notifications feed as the Web API gets.
+Slack has no "what's new for me" endpoint — unread is per-conversation state — so
+this is one `search.messages` call standing in for one:
+
+```
+query:    "after:<N days ago> -from:@you"
+sort:     "timestamp"      ← not "score", which is the default
+sort_dir: "desc"
+count:    <limit>
+```
+
+The query carries **no search text at all**. Slack requires a non-empty `query`,
+but it doesn't have to contain a term — a query of modifiers alone filters the
+lot, and `sort: timestamp` is then what turns "everything" into "the most recent
+of everything". Left on the default `score` sort there is nothing to be relevant
+to, and the top N would be arbitrary.
+
+Two things the query is doing deliberately. `-from:@you` makes it a feed of what
+*arrived* rather than an activity log. And `after:` earns its place twice over:
+it keeps the search shallow, and it is a **positive** term, without which the
+query would be nothing but a negation — which search engines commonly reject.
+
+Caveats: `after:` is day-granular, hence a day count rather than a timestamp
+(default 2, so today is covered whether or not the bound counts the day it
+names). Compare `ts` against your own cursor to get finer resolution. Search runs
+off an index, so expect it to trail real-time by seconds.
+
+### Paging
+
+`listChannels` and `getChannelMessages` take `offset` + `limit`, like the GitHub
+listings, though Slack itself pages by cursor: the walk happens server-side, and
+`hasMore` comes from asking for one past the end of the window. `listChannels`
+resolves a DM's counterpart to a display name — a list of `D0123ABCD` is no use
+to pick from — but only for the window it returns, so a big workspace costs a
+handful of lookups rather than one per conversation.
 
 ---
 

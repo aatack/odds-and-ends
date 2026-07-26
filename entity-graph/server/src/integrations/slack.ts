@@ -32,6 +32,59 @@ async function slack<T extends SlackResponse>(
   return res
 }
 
+/** Slack's own ceiling on a page; asking for more is capped silently. */
+const PAGE = 200
+
+interface Paged extends SlackResponse {
+  response_metadata?: { next_cursor?: string }
+  channels?: unknown[]
+  messages?: unknown[]
+}
+
+/**
+ * Walk a cursor-paged method until `wanted` items are in hand, or Slack runs
+ * out. Slack pages by cursor and these tools page by offset, so the walking
+ * belongs here rather than being pushed onto whoever is asking.
+ */
+async function collect<T>(
+  method: string,
+  params: Record<string, string | number | boolean | undefined>,
+  key: 'channels' | 'messages',
+  wanted: number,
+): Promise<T[]> {
+  const out: T[] = []
+  let cursor: string | undefined
+  do {
+    const res = await slack<Paged>(method, {
+      ...params,
+      limit: Math.min(PAGE, wanted - out.length),
+      cursor,
+    })
+    const batch = (res[key] as T[] | undefined) ?? []
+    // A cursor that keeps coming back with nothing behind it would spin forever.
+    if (batch.length === 0) break
+    out.push(...batch)
+    cursor = res.response_metadata?.next_cursor || undefined
+  } while (cursor && out.length < wanted)
+  return out
+}
+
+/**
+ * One window of a paged list, in the same shape the GitHub tools use: ask for one
+ * past the end, and the extra is what says there's more.
+ */
+async function windowOf<T>(
+  method: string,
+  params: Record<string, string | number | boolean | undefined>,
+  key: 'channels' | 'messages',
+  offset: number,
+  limit: number,
+): Promise<{ items: T[]; hasMore: boolean }> {
+  const end = offset + limit
+  const all = await collect<T>(method, params, key, end + 1)
+  return { items: all.slice(offset, end), hasMore: all.length > end }
+}
+
 /**
  * Where something is in Slack. The channel is the only part always present:
  * a message adds its own timestamp, and a message in a thread adds the thread's.
@@ -88,11 +141,48 @@ interface SlackMessage {
   subtype?: string
 }
 
-const slim = (m: SlackMessage): Record<string, unknown> => ({
+/** One message as these tools hand it back, wherever it was read from. */
+const summary = (m: SlackMessage): Record<string, unknown> => ({
   ts: m.ts,
   user: m.user ?? m.bot_id ?? null,
+  userName: m.username ?? null,
   text: m.text ?? '',
+  threadTs: m.thread_ts ?? null,
+  replyCount: m.reply_count ?? 0,
 })
+
+/**
+ * Who the token belongs to. Asked once and remembered: it is the same answer
+ * every time, and "not mine" is a filter on every feed.
+ */
+let identity: Promise<{ id: string; handle: string }> | null = null
+
+function whoAmI(): Promise<{ id: string; handle: string }> {
+  identity ??= slack<SlackResponse & { user?: string; user_id?: string }>('auth.test', {})
+    .then((r) => ({ id: r.user_id ?? '', handle: r.user ?? '' }))
+    .catch((e) => {
+      identity = null
+      throw e
+    })
+  return identity
+}
+
+/** Display names by user id, remembered — a workspace's people rarely change. */
+const displayNames = new Map<string, string>()
+
+async function displayName(id: string): Promise<string> {
+  const known = displayNames.get(id)
+  if (known) return known
+  const res = await slack<
+    SlackResponse & {
+      user?: { name?: string; profile?: { display_name?: string; real_name?: string } }
+    }
+  >('users.info', { user: id }).catch(() => null)
+  const profile = res?.user?.profile
+  const name = profile?.display_name || profile?.real_name || res?.user?.name || id
+  displayNames.set(id, name)
+  return name
+}
 
 /**
  * The messages around `ts`. `conversations.replies` is the uniform door: given a
@@ -131,6 +221,65 @@ const conversation = z
   .min(1)
   .describe('Conversation id (C…/D…/G…), #channel, user id, or a Slack link')
 
+// --- The recent-messages feed ----------------------------------------------
+
+/** A date `n` days back, as `search` wants it. */
+const daysAgo = (n: number): string =>
+  new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10)
+
+/**
+ * The query behind the feed. Search takes no bare "everything" — the query is
+ * required — but it doesn't have to contain any *text*: a query of modifiers
+ * alone is a filter over the lot, and `sort: timestamp` is then what turns "all
+ * of it" into "the most recent of it".
+ *
+ * The date bound is doing two jobs. It keeps the search shallow, and it is a
+ * *positive* term, which a query of nothing but `-from:` would lack.
+ */
+export const recentQuery = (since: string, excludeHandle: string | null): string =>
+  excludeHandle ? `after:${since} -from:@${excludeHandle}` : `after:${since}`
+
+interface SearchMatch {
+  channel?: { id?: string; name?: string }
+  user?: string
+  username?: string
+  ts?: string
+  text?: string
+  permalink?: string
+}
+
+// --- Conversations ----------------------------------------------------------
+
+interface Conversation {
+  id: string
+  name?: string
+  user?: string
+  is_im?: boolean
+  is_mpim?: boolean
+  is_private?: boolean
+  is_archived?: boolean
+  topic?: { value?: string }
+  purpose?: { value?: string }
+}
+
+type ConversationKind = 'dm' | 'group' | 'private' | 'channel'
+
+const kindOf = (c: Conversation): ConversationKind =>
+  c.is_im ? 'dm' : c.is_mpim ? 'group' : c.is_private ? 'private' : 'channel'
+
+/**
+ * What to call a conversation. Channels and group DMs name themselves; a DM
+ * doesn't, and comes back as nothing but the other person's user id — which is
+ * useless in a list you are meant to pick from, so it costs one lookup.
+ */
+async function nameOf(c: Conversation): Promise<string> {
+  if (c.is_im) return c.user ? `@${await displayName(c.user)}` : c.id
+  if (c.is_mpim) return c.name ?? c.id
+  return c.name ? `#${c.name}` : c.id
+}
+
+const ALL_KINDS = 'public_channel,private_channel,mpim,im'
+
 export const SLACK_TOOLS: ToolDef[] = [
   {
     id: 'slack.readMessage',
@@ -168,7 +317,7 @@ export const SLACK_TOOLS: ToolDef[] = [
         text: target.text ?? '',
         replyCount: target.reply_count ?? 0,
         permalink: await permalinkOf(ref.channel, target.ts),
-        ...(includeThread ? { thread: messages.map(slim) } : {}),
+        ...(includeThread ? { thread: messages.map(summary) } : {}),
       }
     },
   },
@@ -202,6 +351,121 @@ export const SLACK_TOOLS: ToolDef[] = [
         ts: posted.ts ?? null,
         threadTs: thread ?? null,
         permalink: posted.ts ? await permalinkOf(at, posted.ts) : null,
+      }
+    },
+  },
+
+  {
+    id: 'slack.recentMessages',
+    name: 'Recent Slack messages',
+    description:
+      'The last few messages from anywhere you can see — DMs, groups, channels — newest first. As close to a notifications feed as the Web API offers: one search, sorted by time rather than relevance.',
+    safety: 'dangerous',
+    args: z.object({
+      limit: z.number().int().min(1).max(100).default(10).describe('How many to return'),
+      // A day count rather than a date, so the whole tool has a default and asks
+      // nothing: "the last ten messages" should be one keystroke, not a form.
+      days: z.number().int().min(1).max(90).default(2).describe('How far back to look'),
+      includeMine: z.boolean().default(false).describe('Keep your own messages in'),
+    }),
+    handler: async ({ limit, days, includeMine }) => {
+      // Two days rather than one by default: `after:` is day-granular, and
+      // whether it counts the day it names is not worth depending on.
+      const from = daysAgo(days)
+      const handle = includeMine ? null : (await whoAmI()).handle
+      const found = await slack<SlackResponse & { messages?: { matches?: SearchMatch[] } }>(
+        'search.messages',
+        {
+          query: recentQuery(from, handle || null),
+          sort: 'timestamp',
+          sort_dir: 'desc',
+          count: limit,
+        },
+      )
+      const matches = found.messages?.matches ?? []
+      return {
+        since: from,
+        count: matches.length,
+        messages: matches.map((m) => ({
+          channel: m.channel?.id ?? null,
+          channelName: m.channel?.name ? `#${m.channel.name}` : null,
+          ts: m.ts ?? null,
+          user: m.user ?? null,
+          userName: m.username ?? null,
+          text: m.text ?? '',
+          permalink: m.permalink ?? null,
+        })),
+      }
+    },
+  },
+
+  {
+    id: 'slack.listChannels',
+    name: 'List Slack conversations',
+    description:
+      'Everywhere you are — DMs, group DMs, private and public channels, one list. This is where a conversation id for the other tools comes from.',
+    safety: 'dangerous',
+    args: z.object({
+      types: z
+        .string()
+        .default(ALL_KINDS)
+        .describe(`Comma-separated, from ${ALL_KINDS}`),
+      offset: z.number().int().min(0).default(0).describe('How many to skip'),
+      limit: z.number().int().min(1).max(200).default(50).describe('How many to return'),
+      includeArchived: z.boolean().default(false).describe('Keep archived channels in'),
+    }),
+    handler: async ({ types, offset, limit, includeArchived }) => {
+      const { items, hasMore } = await windowOf<Conversation>(
+        'users.conversations',
+        { types, exclude_archived: !includeArchived },
+        'channels',
+        offset,
+        limit,
+      )
+      // Only the window being returned is named, so a big workspace costs a
+      // handful of lookups rather than one per conversation you own.
+      const named = await Promise.all(
+        items.map(async (c) => ({
+          id: c.id,
+          kind: kindOf(c),
+          name: await nameOf(c),
+          topic: c.topic?.value || null,
+          archived: !!c.is_archived,
+        })),
+      )
+      return { offset, limit, hasMore, count: named.length, conversations: named }
+    },
+  },
+
+  {
+    id: 'slack.getChannelMessages',
+    name: 'Get Slack conversation messages',
+    description:
+      'Messages in one conversation, newest first, paged with `offset`. Top-level messages only: a reply count marks the ones with a thread under them, which “Read a Slack message” will open.',
+    safety: 'dangerous',
+    args: z.object({
+      channel: conversation.describe(
+        'Conversation id from “List Slack conversations”, or a Slack link',
+      ),
+      offset: z.number().int().min(0).default(0).describe('How many to skip'),
+      limit: z.number().int().min(1).max(200).default(20).describe('How many to return'),
+    }),
+    handler: async ({ channel, offset, limit }) => {
+      const ref = parseRef(channel)
+      const { items, hasMore } = await windowOf<SlackMessage>(
+        'conversations.history',
+        { channel: ref.channel },
+        'messages',
+        offset,
+        limit,
+      )
+      return {
+        channel: ref.channel,
+        offset,
+        limit,
+        hasMore,
+        count: items.length,
+        messages: items.map(summary),
       }
     },
   },
