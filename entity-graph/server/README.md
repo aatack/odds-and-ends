@@ -73,12 +73,20 @@ To run the Electron app again afterwards, switch `better-sqlite3` back with
 `npx electron-rebuild -f -w better-sqlite3`. (This is the "two separate installs"
 caveat; long-term the app and server can be split into fully isolated installs.)
 
-To reach the server from another device on the network — a phone running
-[`../mobile`](../mobile) — start it with `HOST=0.0.0.0`; the default `127.0.0.1` only
-answers the machine it runs on.
+To reach the server from another device — a phone running [`../mobile`](../mobile) — the
+better answer is to leave it on loopback and put `tailscale serve` in front, which adds
+TLS and keeps it off the LAN entirely; see [`../mobile/README.md`](../mobile/README.md).
+Failing that, `HOST=0.0.0.0` binds every interface; the default `127.0.0.1` only answers
+the machine it runs on.
+
+Binding beyond loopback **requires `ADMIN_TOKEN`**: the server refuses to start with a
+non-loopback `HOST` and no token, since the admin endpoints are open when it is unset and
+that combination is an unauthenticated remote control for the store, offered to every
+device that can reach it. The two settings are each defensible and catastrophic together,
+so this fails loudly at startup rather than warning into a log.
 
 Env vars: `PORT` (4000), `HOST` (127.0.0.1), `CONFIG_DB` (./data/config.db),
-`ADMIN_TOKEN` (unset ⇒ admin endpoints open, dev only). All of these, plus the
+`ADMIN_TOKEN` (unset ⇒ admin endpoints open, loopback only). All of these, plus the
 integrations' secrets, can also live in `server/.env` (gitignored — copy
 `.env.example`); anything already in the environment wins.
 

@@ -9,16 +9,191 @@ it on a phone the same day: no SDK, no signing, no store, no build step between 
 edit and the phone reloading. The cost is the things a browser can't do (no share
 target, no camera, no notifications), none of which the basics need.
 
-## Getting it on the phone
+## Which server?
 
-The phone needs to reach the source server, so both need to be on the same network.
-
-**Which server?** Almost certainly the one the desktop app started, not a new one. A
-local server spawned by the app keeps its config DB under
+Whichever route below, the same question comes first, and getting it wrong is the
+failure that looks like success. Almost certainly you want the server **the desktop app
+started**, not a new one. A local server spawned by the app keeps its config DB under
 `~/.config/entity-graph/servers/<server-id>/config.db` and listens on a port it picked
-itself — so a server you start by hand from `server/` opens `server/data/config.db`
-instead, which is a different, probably empty, set of sources. Starting the wrong one
-looks like the app working perfectly against no data.
+itself and then remembered — so a server you start by hand from `server/` opens
+`server/data/config.db` instead, which is a different, probably empty, set of sources.
+Starting the wrong one looks like the app working perfectly against no data.
+
+Find the real one, and its port, by asking the machine rather than trusting a note:
+
+```sh
+ss -tlnp | grep node          # the ports; the app's server is the one under tsx
+tr '\0' '\n' < /proc/<pid>/environ | grep -E 'PORT|CONFIG_DB|ADMIN_TOKEN'
+```
+
+A `CONFIG_DB` under `~/.config/entity-graph/servers/` is the app's. One under
+`server/data/` is a hand-started one.
+
+## Getting it on the phone: Tailscale
+
+The route worth taking. One HTTPS origin serves both this app and the source server, so
+the phone reaches the laptop **from any network**, the token stops crossing the wire in
+cleartext, and — because a real certificate means a secure context — the app becomes
+genuinely *installable* rather than a home-screen bookmark. Same-origin also means CORS
+stops mattering and the source server can stay on loopback: nothing is on the LAN at
+all.
+
+**Once, on the laptop:**
+
+```sh
+curl -fsSL https://tailscale.com/install.sh | sudo sh
+sudo tailscale up
+```
+
+Then in the [admin console](https://login.tailscale.com/admin/dns) enable **MagicDNS**
+(the `*.ts.net` name) and **HTTPS Certificates**. Without the latter there is no
+certificate, so no secure context, so no install. `tailscale status --json` should then
+list the name under `CertDomains`.
+
+**Once, on the phone:** install Tailscale from the store, sign in with the same account,
+turn it on. `tailscale ping <phone>` from the laptop confirms the two can see each
+other.
+
+**Then build and serve.** Note this serves `dist/` — a static build read off disk by
+`tailscaled` — not the vite dev server, so nothing of yours has to keep running:
+
+```sh
+npm run build        # in mobile/ — the served files are whatever dist/ last held
+
+sudo tailscale serve --bg /abs/path/to/entity-graph/mobile/dist
+sudo tailscale serve --bg --set-path=/api/<sourceId> http://127.0.0.1:<port>/<sourceId>
+```
+
+`--set-path` **strips the prefix before proxying**, which is the whole trick: a request
+for `/api/flow/tools` arrives at the server as `/flow/tools`. That is what lets the app's
+base URL be `https://<host>.<tailnet>.ts.net/api` while the server sees the paths it
+expects.
+
+Mount the proxy at `/api/<sourceId>` rather than plain `/api`. Plain `/api` would put the
+*whole* server on the tailnet, including `/admin` — create and delete sources, issue
+tokens — which is exactly the surface `server/src/app.ts` deliberately withholds from
+cross-origin callers. It is still behind `ADMIN_TOKEN`, but the phone only ever needs the
+one source, so give it only that. The cost is that the source id is baked into the serve
+config: a second source needs a second `--set-path`.
+
+`tailscale serve status` shows the result:
+
+```
+https://<host>.<tailnet>.ts.net (tailnet only)
+|-- /          path  /abs/path/to/entity-graph/mobile/dist
+|-- /api/flow  proxy http://127.0.0.1:36901/flow
+```
+
+`--bg` stores the config in `tailscaled`, so it survives reboots — set up once, not per
+session, and nothing needs starting after one.
+
+To *change* it, note there is no per-path removal: `off` is not a target `tailscale
+serve` accepts (1.98 prints its help and does nothing, which reads like success). Clear
+everything and re-add the handlers you want:
+
+```sh
+sudo tailscale serve reset
+sudo tailscale serve --bg /abs/path/to/entity-graph/mobile/dist
+sudo tailscale serve --bg --set-path=/api/<sourceId> http://127.0.0.1:<port>/<sourceId>
+```
+
+`sudo tailscale set --operator=$USER`, once, drops the need for `sudo` on all of these.
+
+Then open `https://<host>.<tailnet>.ts.net` on the phone and fill in:
+
+| | |
+|---|---|
+| **Server** | `https://<host>.<tailnet>.ts.net/api` — no source id, no port; the app appends the source id itself |
+| **Source** | the source's id, e.g. `flow` |
+| **Token** | a token issued for that source — see below |
+| **Author** | recorded against everything written from the phone; `mobile` by default |
+
+Issue the token **from the laptop, on loopback**, since the scoped mount deliberately
+leaves the admin surface off the tailnet:
+
+```sh
+curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H 'content-type: application/json' -d '{"label":"phone"}' \
+  http://127.0.0.1:<port>/admin/sources/<sourceId>/tokens
+```
+
+or use the console at `http://127.0.0.1:<port>/admin` in a browser on the laptop. The
+app's admin token for a spawned server is in its environment
+(`tr '\0' '\n' < /proc/<pid>/environ | grep ADMIN_TOKEN`).
+
+The details are kept in the phone's `localStorage` and nowhere else — which is
+per-origin, so a connection saved against an old `http://<lan-ip>:5180` does **not**
+carry over to the `.ts.net` name. Expect to set it up once more after switching.
+
+### Installing it properly
+
+Over HTTPS the service worker registers (`src/main.tsx` only does so in a secure
+context) and Chrome will offer a real install rather than a shortcut.
+
+**Reload once before looking for it.** On the first visit to an origin the worker
+registers *after* `load`, so Chrome has not yet re-evaluated the install criteria and
+the menu offers nothing. This is the usual reason "it should be installable" and "there
+is no install option" are both true at the same time.
+
+Then, in Chrome on Android: **⋮ → Add to Home screen**. The sheet that appears is the
+tell — if its primary button says **Install**, you get a real PWA: its own window, no
+address bar, its own entry in the app switcher. If it only offers *Add to Home screen*
+/ *Create shortcut*, a criterion failed and you'd get a bookmark that opens in a tab.
+Some builds put **Install app** straight in the ⋮ menu instead; either is the real
+thing.
+
+To check the service worker registered, visit `chrome://serviceworker-internals` on the
+phone and look for the origin — it should read `ACTIVATED`. After installing, the
+absence of an address bar is the simplest confirmation it launched as an app.
+
+To debug the criteria rather than guess at them, ask Chrome on the laptop over CDP:
+`Page.getAppManifest` reports manifest parse errors and `Page.getInstallabilityErrors`
+lists what is blocking an install. Both empty means the phone should offer it.
+
+One quirk worth knowing: `tailscale serve` serves `.webmanifest` as `text/plain`,
+because Go's MIME table has no entry for the extension. Chrome parses it anyway
+(`getAppManifest` reports no errors), so it is left alone rather than renamed.
+
+An installed app shares Chrome's storage for the same origin, so a connection set up in
+the browser carries into the installed app — no need to open the `#connect` link twice.
+
+### Serving loopback-only
+
+With `tailscale serve` proxying, the source server does **not** need `ENTITY_GRAPH_LAN=1`
+any more, and shouldn't have it: `tailscaled` reaches `127.0.0.1` itself. Launch the
+desktop app with the variable unset and the server binds loopback only, which
+`ss -tlnp | grep <port>` will confirm as `127.0.0.1:<port>` rather than `0.0.0.0:<port>`.
+
+## Without typing the token
+
+Typing a 48-character token with a thumb is miserable, so a connection can be handed
+over in the URL fragment instead — for either route. From the repo root:
+
+```sh
+node -e '
+const c = {
+  baseUrl: "https://<host>.<tailnet>.ts.net/api",
+  sourceId: "flow",
+  token: "…",
+  author: "phone",
+}
+const hash = Buffer.from(JSON.stringify(c)).toString("base64").replace(/=+$/, "")
+console.log(`https://<host>.<tailnet>.ts.net/#connect=${hash}`)
+'
+```
+
+Open that on the phone — send it to yourself, or turn it into a QR code — and the app
+connects on load. The fragment is stripped from the address bar immediately, and being
+a fragment it never reaches a server or a log on the way in.
+
+Because `localStorage` is per-origin, this is also how you move a connection to a new
+origin: the link has to be opened at the origin it names.
+
+## Fallback: plain LAN, no Tailscale
+
+Same wifi only, no HTTPS, and therefore no install and no service worker — the app runs
+the same, it just can't leave the network or leave the browser. Worth knowing for when
+there's no Tailscale.
 
 ```sh
 # 1. the desktop app, with its local servers on the network rather than on loopback
@@ -40,54 +215,20 @@ ADMIN_TOKEN=secret PORT=4000 HOST=0.0.0.0 CONFIG_DB=./data/config.db \
   npm run --prefix server start
 ```
 
+`ADMIN_TOKEN` is not optional here: the server refuses to start bound to anything but
+loopback without one, since the admin endpoints are open when it is unset.
+
 Either way the port has to be open — on most Linux setups it already is, but a firewall
-will swallow the connection silently.
+will swallow the connection silently. The **Server** field is then the laptop's LAN
+address and the server's port, e.g. `http://192.168.1.20:36901` — `127.0.0.1` from the
+app's server panel swapped for the laptop's address.
 
-Then, on the phone, open the `Network:` URL vite printed and fill in:
+### Away from the laptop's network, without Tailscale
 
-| | |
-|---|---|
-| **Server** | the laptop's LAN address and the server's port, e.g. `http://192.168.1.20:36901` — the port from the app's server panel, with `127.0.0.1` swapped for the laptop's address |
-| **Source** | the source's id |
-| **Token** | a token issued for that source (`POST /admin/sources/:id/tokens`, or the admin console at `/admin`) |
-| **Author** | recorded against everything written from the phone; `mobile` by default |
-
-The details are kept in the phone's `localStorage` and nowhere else.
-
-### Without typing the token
-
-Typing a 48-character token with a thumb is miserable, so a connection can be handed
-over in the URL fragment instead. From the repo root:
-
-```sh
-node -e '
-const c = { baseUrl: "http://192.168.1.20:4000", sourceId: "flow", token: "…", author: "phone" }
-const hash = Buffer.from(JSON.stringify(c)).toString("base64").replace(/=+$/, "")
-console.log(`http://192.168.1.20:5180/#connect=${hash}`)
-'
-```
-
-Open that on the phone — send it to yourself, or turn it into a QR code — and the app
-connects on load. The fragment is stripped from the address bar immediately, and being
-a fragment it never reaches a server or a log on the way in.
-
-### Add to home screen
-
-Chrome's menu → *Add to Home screen* gives it an icon and a launcher entry. A full
-install (its own window, no browser chrome) additionally needs a secure context, which
-plain HTTP over a LAN is not; serve it over HTTPS — `tailscale serve` is the least
-work — and the manifest and service worker already here will make it installable.
-
-### Away from the laptop's network
-
-Anything that gives the server a reachable URL works, since the app holds its own
-token and the server allows cross-origin calls to the source API:
-
-- **Tailscale** on both devices — then the "laptop's address" is its tailnet address,
-  and `tailscale serve` gives HTTPS as a bonus.
-- **A tunnel** (`cloudflared tunnel --url http://localhost:4000`) — but the source's
-  token is then the only thing between the internet and the store, so issue one for
-  the occasion and revoke it after.
+A tunnel (`cloudflared tunnel --url http://localhost:36901`) also gives the server a
+reachable URL, and the app holds its own token, so it works. But the tunnel is public:
+the source's token becomes the only thing between the internet and the store. Issue one
+for the occasion and revoke it after.
 
 ## How it differs from the desktop app
 

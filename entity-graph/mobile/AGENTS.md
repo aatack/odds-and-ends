@@ -17,6 +17,11 @@ The one thing shared is the server, and the one change made to it for this app's
 is CORS on the source-scoped endpoints (`server/src/app.ts`) — deliberately *not* on
 the admin surface, which is open when `ADMIN_TOKEN` is unset.
 
+On the Tailscale route that CORS is no longer load-bearing: one origin serves both the
+app and `/api/<sourceId>`, so the calls are same-origin. It still matters for the
+plain-LAN fallback, where the app is on vite's port and the server on its own, and it
+is what keeps a tunnel workable. Don't remove it on the strength of the tunnel setup.
+
 ## Don't start the desktop app
 
 The same rule as `../AGENTS.md`: **never** run `npm run dev` in `entity-graph/` — it
@@ -53,9 +58,13 @@ And rules that are this app's own, because a finger isn't a cursor:
 - **The keyboard is half the screen.** The bottom bar is `fixed` and stays above the
   keyboard because of `interactive-widget=resizes-content` in `index.html`. Don't
   touch that meta tag without knowing what it does.
-- **No secure-context APIs.** Served over plain HTTP on a LAN, `crypto.randomUUID`
-  and `navigator.clipboard` are absent — see `helpers/uuid.ts` and
-  `helpers/clipboard.ts` for what to use instead.
+- **No secure-context APIs**, still. The usual route now *is* a secure context — served
+  over HTTPS by `tailscale serve`, which is what makes the app installable — but the
+  plain-LAN fallback in [`README.md`](./README.md) is not, and the app has to run the
+  same on both. So `crypto.randomUUID` and `navigator.clipboard` stay off limits: see
+  `helpers/uuid.ts` and `helpers/clipboard.ts` for what to use instead. The one place
+  that may branch on `window.isSecureContext` is the service-worker registration in
+  `main.tsx`, because installability is exactly the thing that differs.
 
 ## State, tools and views
 
