@@ -8,7 +8,7 @@ import { ConfigDb } from '../src/config'
 import { Registry } from '../src/registry'
 import { INTEGRATION_TOOLS } from '../src/integrations/index'
 import { pullRequestArgs } from '../src/integrations/github'
-import { parseRef, recentQuery } from '../src/integrations/slack'
+import { idSet, keepInFeed, parseRef, recentQuery } from '../src/integrations/slack'
 
 // The endpoint and the argument parsing. Nothing here reaches GitHub, Slack or
 // Claude — the handlers themselves are only exercised by hand.
@@ -158,5 +158,50 @@ describe('the recent-messages query', () => {
     for (const handle of [null, 'alex']) {
       expect(recentQuery('2026-07-24', handle).startsWith('after:')).toBe(true)
     }
+  })
+})
+
+describe('what the feed leaves out', () => {
+  const filters = { joined: new Set(['C_IN', 'C_MUTED', 'D_DM']), muted: new Set(['C_MUTED']) }
+  const both = { unjoined: false, muted: false }
+  const keep = (id: string | null | undefined, opts = both) => keepInFeed(id, filters, opts)
+
+  it('keeps a conversation you are in', () => {
+    expect(keep('C_IN')).toBe(true)
+    expect(keep('D_DM')).toBe(true)
+  })
+
+  it('drops a public channel you never joined', () => {
+    expect(keep('C_STRANGER')).toBe(false)
+  })
+
+  it('drops a muted conversation even though you are in it', () => {
+    expect(keep('C_MUTED')).toBe(false)
+  })
+
+  it('lets either filter be turned off on its own', () => {
+    expect(keep('C_STRANGER', { unjoined: true, muted: false })).toBe(true)
+    expect(keep('C_MUTED', { unjoined: false, muted: true })).toBe(true)
+    // Muted still wins when only the membership filter is relaxed.
+    expect(keep('C_MUTED', { unjoined: true, muted: false })).toBe(false)
+  })
+
+  it('keeps a match Slack gave no channel for', () => {
+    expect(keep(undefined)).toBe(true)
+    expect(keep(null)).toBe(true)
+  })
+
+  it('keeps everything when there is nothing to filter against', () => {
+    expect(keepInFeed('C_STRANGER', null, both)).toBe(true)
+  })
+})
+
+describe('reading a list of ids', () => {
+  it('tolerates spacing and trailing separators', () => {
+    expect([...idSet('C1, C2 ,C3,')]).toEqual(['C1', 'C2', 'C3'])
+  })
+
+  it('is empty for nothing at all', () => {
+    for (const raw of [undefined, '', '  ', ',,']) expect(idSet(raw).size).toBe(0)
   })
 })

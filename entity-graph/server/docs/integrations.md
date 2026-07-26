@@ -182,6 +182,43 @@ Caveats: `after:` is day-granular, hence a day count rather than a timestamp
 names). Compare `ts` against your own cursor to get finer resolution. Search runs
 off an index, so expect it to trail real-time by seconds.
 
+#### What it leaves out
+
+Search is broader than your sidebar: it sees **every public channel in the
+workspace**, joined or not, and knows nothing about muting. Left alone, that is a
+much noisier feed than the thing it stands in for. So two filters run by default,
+each with an escape hatch:
+
+| left out | why | keep it with |
+|---|---|---|
+| public channels you aren't a member of | there is no `is:member` search modifier, so this is an intersection with `users.conversations` | `includeUnjoined: true` |
+| muted conversations | see below | `includeMuted: true` |
+
+Both are applied **after** the search, since neither can be said in the query. So
+the tool over-fetches — four times `limit`, capped at Slack's 100 — and takes the
+window from what survives. The result reports `scanned` alongside `count`, which
+is the ratio: if they're close together on a busy day, raise `limit`.
+
+The two sets are cached for five minutes, because this is a tool you poll and
+re-deriving them per call would be the most expensive part of it.
+
+**Mute is the unsupported half.** No documented Web API method reports it — mute
+is a user preference, and `users.prefs.get` (`prefs.muted_channels`), which the
+Slack clients themselves use, is not part of the public API. So the call is
+best-effort: if it's refused, nothing counts as muted and the rest of the feed is
+unaffected. `SLACK_MUTED` in `server/.env` is the way to say it by hand, and
+works whether or not the endpoint does:
+
+```
+SLACK_MUTED=C0123ABCD,C0456EFGH
+```
+
+Anything it names is merged with whatever `users.prefs.get` managed to return.
+
+Membership is *not* best-effort by contrast: a failure there means a missing
+`*:read` scope, and quietly handing back an unfiltered feed would read as the
+filter not working.
+
 ### Paging
 
 `listChannels` and `getChannelMessages` take `offset` + `limit`, like the GitHub

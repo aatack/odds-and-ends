@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { ToolDef } from '../../../src/core/source/index'
-import { requireEnv } from '../env'
+import { optionalEnv, requireEnv } from '../env'
 import { postForm } from './http'
 
 // Slack, through the Web API. There is deliberately one notion of "where a
@@ -280,6 +280,84 @@ async function nameOf(c: Conversation): Promise<string> {
 
 const ALL_KINDS = 'public_channel,private_channel,mpim,im'
 
+// --- What the feed leaves out ----------------------------------------------
+
+/**
+ * Search sees every public channel in the workspace, joined or not, and knows
+ * nothing about muting — so a feed built on it is noisier than the sidebar it is
+ * standing in for. Both are fixed here rather than in the query: there is no
+ * `is:member` modifier, and no search modifier for mute at all.
+ *
+ * Remembered briefly. The feed is the sort of thing you poll, and re-deriving
+ * both sets every few seconds would be by far the most expensive part of an
+ * otherwise single-call tool.
+ */
+const FILTER_TTL_MS = 5 * 60 * 1000
+
+export interface FeedFilters {
+  /** Conversations you are in. DMs and private channels are always among them. */
+  joined: Set<string>
+  muted: Set<string>
+}
+
+let cachedFilters: { at: number; value: FeedFilters } | null = null
+
+/** A comma-separated list of ids, however it was written. */
+export const idSet = (raw: string | undefined): Set<string> =>
+  new Set((raw ?? '').split(',').map((s) => s.trim()).filter(Boolean))
+
+/**
+ * Whether a match survives. A match Slack didn't say the whereabouts of is kept
+ * — discarding something for want of a channel id would be the wrong way round,
+ * since the filters exist to remove *known* noise.
+ */
+export function keepInFeed(
+  channelId: string | null | undefined,
+  filters: FeedFilters | null,
+  keep: { unjoined: boolean; muted: boolean },
+): boolean {
+  if (!filters || !channelId) return true
+  if (!keep.unjoined && !filters.joined.has(channelId)) return false
+  if (!keep.muted && filters.muted.has(channelId)) return false
+  return true
+}
+
+/**
+ * Muted conversations. There is no documented way to ask: mute is a user
+ * preference, and `users.prefs.get` — what the Slack clients themselves call —
+ * is not part of the public API. So this is best-effort by construction. When
+ * the call is refused nothing counts as muted, and `SLACK_MUTED` is the way to
+ * say so by hand, which works whether or not the endpoint does.
+ */
+async function mutedConversations(): Promise<Set<string>> {
+  const byHand = idSet(optionalEnv('SLACK_MUTED'))
+  const prefs = await slack<SlackResponse & { prefs?: { muted_channels?: string } }>(
+    'users.prefs.get',
+    {},
+  ).catch(() => null)
+  for (const id of idSet(prefs?.prefs?.muted_channels)) byHand.add(id)
+  return byHand
+}
+
+async function feedFilters(): Promise<FeedFilters> {
+  const now = Date.now()
+  if (cachedFilters && now - cachedFilters.at < FILTER_TTL_MS) return cachedFilters.value
+  const [joined, muted] = await Promise.all([
+    // Not caught: failing here means a missing `*:read` scope, and quietly
+    // returning an unfiltered feed would look like the filter simply not working.
+    collect<Conversation>(
+      'users.conversations',
+      { types: ALL_KINDS, exclude_archived: true },
+      'channels',
+      1000,
+    ).then((all) => new Set(all.map((c) => c.id))),
+    mutedConversations(),
+  ])
+  const value = { joined, muted }
+  cachedFilters = { at: now, value }
+  return value
+}
+
 export const SLACK_TOOLS: ToolDef[] = [
   {
     id: 'slack.readMessage',
@@ -359,7 +437,7 @@ export const SLACK_TOOLS: ToolDef[] = [
     id: 'slack.recentMessages',
     name: 'Recent Slack messages',
     description:
-      'The last few messages from anywhere you can see — DMs, groups, channels — newest first. As close to a notifications feed as the Web API offers: one search, sorted by time rather than relevance.',
+      'The last few messages from anywhere you can see — DMs, groups, channels — newest first. As close to a notifications feed as the Web API offers: one search, sorted by time rather than relevance, with channels you aren’t in and conversations you’ve muted left out.',
     safety: 'dangerous',
     args: z.object({
       limit: z.number().int().min(1).max(100).default(10).describe('How many to return'),
@@ -367,26 +445,42 @@ export const SLACK_TOOLS: ToolDef[] = [
       // nothing: "the last ten messages" should be one keystroke, not a form.
       days: z.number().int().min(1).max(90).default(2).describe('How far back to look'),
       includeMine: z.boolean().default(false).describe('Keep your own messages in'),
+      includeUnjoined: z
+        .boolean()
+        .default(false)
+        .describe('Keep public channels you are not a member of'),
+      includeMuted: z.boolean().default(false).describe('Keep muted conversations'),
     }),
-    handler: async ({ limit, days, includeMine }) => {
+    handler: async ({ limit, days, includeMine, includeUnjoined, includeMuted }) => {
       // Two days rather than one by default: `after:` is day-granular, and
       // whether it counts the day it names is not worth depending on.
       const from = daysAgo(days)
       const handle = includeMine ? null : (await whoAmI()).handle
+      const filters = includeUnjoined && includeMuted ? null : await feedFilters()
+
+      // Both filters run after the search, so some of what comes back is thrown
+      // away — ask for more than is wanted, or a busy hour in channels you don't
+      // follow could swallow the lot. `scanned` against `count` is the ratio.
+      const wanted = Math.min(100, filters ? limit * 4 : limit)
       const found = await slack<SlackResponse & { messages?: { matches?: SearchMatch[] } }>(
         'search.messages',
         {
           query: recentQuery(from, handle || null),
           sort: 'timestamp',
           sort_dir: 'desc',
-          count: limit,
+          count: wanted,
         },
       )
       const matches = found.messages?.matches ?? []
+      const kept = matches.filter((m) =>
+        keepInFeed(m.channel?.id, filters, { unjoined: includeUnjoined, muted: includeMuted }),
+      )
+
       return {
         since: from,
-        count: matches.length,
-        messages: matches.map((m) => ({
+        scanned: matches.length,
+        count: Math.min(kept.length, limit),
+        messages: kept.slice(0, limit).map((m) => ({
           channel: m.channel?.id ?? null,
           channelName: m.channel?.name ? `#${m.channel.name}` : null,
           ts: m.ts ?? null,
