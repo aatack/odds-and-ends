@@ -360,6 +360,13 @@ function createWindow(): void {
   }
 }
 
+// Chromium only hands out SharedArrayBuffer to a cross-origin-isolated page, and
+// the renderer is served over plain localhost in development. The code runner's
+// tool calls are synchronous, which is to say the worker blocks on a shared word
+// until the main thread writes the answer beside it — so without this switch there
+// is no `tool` in a script at all. Must be set before the app is ready.
+app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer')
+
 app.whenReady().then(() => {
   installMenu()
   servers.startAll()

@@ -70,7 +70,8 @@ export interface EditorProps {
   onNearEnd: () => void
   /** Run state for code entities, keyed by entity id. */
   codeRuns: Record<string, CodeRunState>
-  onRunCode: (id: string, code: string) => void
+  /** Run a code entity: its id and source, plus the path of the row it sits at. */
+  onRunCode: (id: string, code: string, path: string[]) => void
   onStopCode: () => void
 }
 
@@ -281,7 +282,8 @@ interface RowProps {
   onDraft: (text: string) => void
   onCommit: () => void
   onCancel: () => void
-  onRunCode: (id: string, code: string) => void
+  /** Run a code entity: its id and source, plus the path of the row it sits at. */
+  onRunCode: (id: string, code: string, path: string[]) => void
   onStopCode: () => void
 }
 
@@ -387,7 +389,7 @@ const RowView = React.memo(function RowView({
             onClick={(e) => {
               e.stopPropagation()
               if (running) onStopCode()
-              else onRunCode(row.id, row.text ?? '')
+              else onRunCode(row.id, row.text ?? '', row.path)
             }}
           >
             {running ? <Stop size={13} /> : <Play size={13} />}

@@ -19,7 +19,9 @@ They are not exposed over MCP.
 means "use the default", and `null` for a required argument is an error.
 
 The Electron app fetches `/tools` from whichever server hosts the open source and
-folds them into the command palette, so every tool here is runnable from ⌘P.
+folds them into the command palette, so every tool here is runnable from ⌘P — and
+from a `type: code` entity, which calls one by the camel case of its name:
+`tool.sendSlackMessage(channel, text)`.
 
 ---
 

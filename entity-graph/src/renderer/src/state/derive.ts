@@ -229,16 +229,22 @@ export const entityRows = (rows: Row[]): EntityRow[] =>
  *
  * `autofill` says whether the result applies itself to a tool's arguments or is
  * merely offered to them; see {@link CallContext}.
+ *
+ * `within` names a path inside the top frame other than the selection — the row
+ * a gesture landed on rather than the row the keyboard is on. The frame is still
+ * the focused one: every such gesture starts with a mousedown, which selects the
+ * group it is in before the click is handled.
  */
 export function buildCallContext(
   s: LayoutState,
   cache: QueryCache,
-  opts: { extra?: Record<string, unknown>; autofill?: boolean } = {},
+  opts: { extra?: Record<string, unknown>; autofill?: boolean; within?: string[] } = {},
 ): CallContext {
   const { groupId, tabId, frameId } = focusOf(s)
   const tab = tabId ? s.tabs[tabId] : null
   const frame = frameId ? s.frames[frameId] : null
-  const { selectedPath } = frameRows(s, cache, frameId)
+  const { selectedPath: resolved } = frameRows(s, cache, frameId)
+  const selectedPath = opts.within ?? resolved
 
   const stackRoots = (tab?.frameIds ?? []).map((id) => s.frames[id]?.rootId).filter(Boolean) as string[]
   const path = [...stackRoots, ...selectedPath]

@@ -326,9 +326,12 @@ export const FRAME_TOOLS: ToolSpec[] = [
     scope: 'frame',
     reach: 'ui',
     keys: [{ key: 'Enter', mod: true }],
-    run: () => {
+    // The script is handed the context this call was made in, which is folded
+    // along the path to the selection — the code entity itself.
+    run: (_args, call) => {
       const t = target()
-      if (t?.selected?.type === 'code' && t.selected.text) runCode(t.selected.id, t.selected.text)
+      if (t?.selected?.type === 'code' && t.selected.text)
+        runCode(t.selected.id, t.selected.text, call.context)
     },
   },
   {

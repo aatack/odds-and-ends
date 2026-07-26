@@ -87,6 +87,40 @@ export function seedArgs(tool: ToolSpec, context: CallContext): ArgValues {
   return out
 }
 
+const isPlainObject = (v: unknown): v is Record<string, unknown> => {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false
+  const proto = Object.getPrototypeOf(v)
+  return proto === Object.prototype || proto === null
+}
+
+/**
+ * Arguments as code passes them: positionally, in the order the tool declares
+ * them — `tool.sendSlackMessage(channel, text)` — or as one object naming them,
+ * which is how a tool with several optional arguments stays readable.
+ *
+ * The object form is taken only when every one of its keys is an argument name,
+ * so a tool whose first argument is itself an object still reads positionally.
+ * A value not passed at all is left empty, which is a different thing from
+ * passing `null`: null is the contract's "use the default", while empty is what
+ * makes a missing required argument an error rather than a silent blank.
+ */
+export function argsFromCall(tool: ToolSpec, passed: readonly unknown[]): ArgValues {
+  const specs = argsOf(tool)
+  const first = passed.length === 1 ? passed[0] : undefined
+  const named =
+    specs.length > 0 && isPlainObject(first) && Object.keys(first).length > 0
+      ? Object.keys(first).every((key) => specs.some((a) => a.name === key))
+        ? first
+        : null
+      : null
+  const out: ArgValues = {}
+  for (const [i, spec] of specs.entries()) {
+    const value = named ? named[spec.name] : passed[i]
+    out[spec.name] = value === undefined ? EMPTY_ARG : argValue(value)
+  }
+  return out
+}
+
 const nameAt = (tool: ToolSpec, index: number): string | null => argsOf(tool)[index]?.name ?? null
 
 const indexOf = (tool: ToolSpec, name: string | null): number =>

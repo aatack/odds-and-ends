@@ -7,7 +7,7 @@ import { findField } from '../state/focusRequest'
 import { useAtomValue, useFocusRequest, useFrameRows, useLayoutState } from '../state/hooks'
 import { loadMore } from '../state/query'
 import { directionOf } from '../state/types'
-import { runTool } from '../tools/call'
+import { contextWithin, runTool } from '../tools/call'
 
 /**
  * One entity view: the tree rooted at the frame's root entity. It owns no state
@@ -59,7 +59,9 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
           onCancel={() => A.setEdit(frameId, null)}
           onNearEnd={() => loadMore(frameId)}
           codeRuns={codeRuns}
-          onRunCode={runCode}
+          // The run button is aimed at the row it sits on, which needn't be the
+          // selected one, so the script's context is folded along that row's path.
+          onRunCode={(id, code, path) => runCode(id, code, contextWithin(path))}
           onStopCode={stopCode}
         />
       </div>

@@ -13,6 +13,7 @@ import type {
   RecordedCall,
 } from '../state/types'
 import {
+  argsFromCall,
   contextValue,
   firstEmpty,
   missingRequired,
@@ -22,7 +23,7 @@ import {
   resolveArgs,
   seedArgs,
 } from './args'
-import { findTool } from './registry'
+import { findTool, findToolByName, nearestToolNames } from './registry'
 import { argsOf, type ToolSpec } from './types'
 
 // The pending-call state machine: starting a call, filling its arguments,
@@ -98,24 +99,27 @@ function settle(
 
 // --- Running ----------------------------------------------------------------
 
+/** Run a call to completion, recording it. The outcome is settled either way. */
 async function execute(call: {
   callId: string
   toolId: string
   args: ArgValues
   context: CallContext
   fromCallId?: string
-}): Promise<void> {
+}): Promise<CallOutcome> {
   const tool = findTool(call.toolId)
   const pending = pendingAtom.get()
   if (pending?.callId === call.callId) pendingAtom.set(null)
-  if (!tool) return
+  // Nothing to settle against: a record needs the tool that made it.
+  if (!tool) return { kind: 'error', message: `No tool "${call.toolId}"` }
   // Backstop: nothing may run with a required argument outstanding. Both entry
   // points check first, but a call that slipped through here once linked an
   // entity to a blank id, which is unpleasant to clean up.
   const missing = missingRequired(tool, call.args)
   if (missing) {
-    settle(call, tool, { kind: 'error', message: `${missing.label} is required` })
-    return
+    const failed: CallOutcome = { kind: 'error', message: `${missing.label} is required` }
+    settle(call, tool, failed)
+    return failed
   }
   try {
     const outcome = (await tool.run(resolveArgs(tool, call.args), {
@@ -131,16 +135,20 @@ async function execute(call: {
       // after the newer edit.
       if (!tool.preservesUndo) clearUndo()
     }
-    settle(call, tool, { kind: 'success', data: outcome.data, message: outcome.message })
+    const succeeded: CallOutcome = { kind: 'success', data: outcome.data, message: outcome.message }
+    settle(call, tool, succeeded)
+    return succeeded
   } catch (e) {
-    settle(call, tool, { kind: 'error', message: message(e) })
+    const failed: CallOutcome = { kind: 'error', message: message(e) }
+    settle(call, tool, failed)
+    return failed
   }
 }
 
 // --- Starting ---------------------------------------------------------------
 
 const liveContext = (
-  opts: { extra?: Record<string, unknown>; autofill?: boolean } = {},
+  opts: { extra?: Record<string, unknown>; autofill?: boolean; within?: string[] } = {},
 ): CallContext => buildCallContext(getLayout(), queryAtom.get(), opts)
 
 /**
@@ -240,6 +248,49 @@ export function togglePalette(): void {
   }
   if (pending.display.kind === 'hidden') setDisplay(CENTRED)
   else cancelCall()
+}
+
+// --- Calls from code --------------------------------------------------------
+
+/**
+ * The context a call would be born in if it were aimed at `within` — the path of
+ * a row other than the selected one. What a code entity is run with, so that a
+ * script's `context` describes the entity it lives on rather than wherever the
+ * keyboard happens to be.
+ */
+export const contextWithin = (within: string[]): CallContext =>
+  liveContext({ within })
+
+/**
+ * Run a tool the way a script names it: `tool.sendSlackMessage(channel, text)`.
+ * Everything else about it is an ordinary call — it is recorded, it refreshes the
+ * frames if it wrote anything, and its result is what the tool handed back. An
+ * error is thrown rather than returned, so a script can let it fall out to the
+ * run's output or catch it.
+ *
+ * No argument is ever prompted for: a script has no one to ask, so a missing
+ * required argument is an error like any other.
+ */
+export async function callToolByName(
+  name: string,
+  passed: readonly unknown[],
+  context: CallContext,
+): Promise<unknown> {
+  const tool = findToolByName(name)
+  if (!tool) {
+    const nearest = nearestToolNames(name)
+    throw new Error(
+      `No tool called "${name}"${nearest.length ? `. Did you mean ${nearest.join(', ')}?` : ''}`,
+    )
+  }
+  const outcome = await execute({
+    callId: uuid(),
+    toolId: tool.id,
+    args: argsFromCall(tool, passed),
+    context,
+  })
+  if (outcome.kind === 'error') throw new Error(outcome.message)
+  return outcome.kind === 'success' ? outcome.data : undefined
 }
 
 // --- Editing the pending call ----------------------------------------------

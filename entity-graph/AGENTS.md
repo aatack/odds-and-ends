@@ -79,6 +79,16 @@ is the long form; the rules that matter day to day:
   the same registry, with their argument prompts derived from the JSON Schema the
   server publishes. So read the list through `allTools()`, never a constant, and
   add a new integration on the server rather than here.
+- **A code entity is another caller.** `type: code` runs in a QuickJS worker
+  (`helpers/codeRunner*`) whose only globals are `console`, `context` — the folded
+  call context of the entity it is on, so `context.channel` is whatever an
+  ancestor said the channel was — and `tool`, which reaches the whole registry by
+  the camel case of a tool's label (`tool.sendSlackMessage(channel, text)`) or by
+  its id (`tool['slack.sendMessage'](…)`). Arguments go positionally in the order
+  the tool declares them, or as one object naming them. The calls are
+  **synchronous**: the worker blocks on a `SharedArrayBuffer` while the main
+  thread runs the call through the same machine a hotkey does, so a script's calls
+  are recorded, refresh the frames, and fail the same way.
 - **One key listener, at the top.** `tools/dispatch.ts` owns it and resolves
   through the focus chain (focused frame → its tab group → the app), not through
   whatever has DOM focus.
