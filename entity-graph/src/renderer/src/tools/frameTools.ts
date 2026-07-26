@@ -83,21 +83,19 @@ const HEADING_LIMIT = 6
 // export takes it at its word. The row being exported is the exception — it was
 // named explicitly, so it comes out folded or not.
 //
-// Three things the tree says that markdown has words for: a section becomes a
-// heading, one `#` per level it sits at below the row being exported; a checkbox
-// becomes a task box; everything else a bullet. The exported row itself is the
-// title of what you asked for rather than an item in it, so it gets no marker at
-// all — you are pasting it somewhere that will give it one.
+// The tree stays a tree: every row is a bullet at its own depth, and a section
+// carries `#` per level it sits at below the row being exported on top of that
+// bullet, so the outline you exported is still the outline you paste. Deep rows
+// therefore indent past the four spaces markdown reads as code — the shape is
+// worth more here than the strict reading. A checkbox becomes a task box.
 //
-// Indentation is measured from the nearest heading rather than from the top,
-// since a heading ends whatever list preceded it: continuing to count from the
-// root would push a deep bullet past four spaces, which markdown reads as code.
+// The exported row itself is the title of what you asked for rather than an item
+// in it, so it takes neither bullet nor box — but it keeps its `#` if it is a
+// section, that being what the section *is*.
 function subtreeMarkdown(rows: Row[], start: number): string {
   const from = rows[start]
   if (!from || from.kind !== 'entity') return ''
   const lines: string[] = []
-  /** Depths of the headings we are inside, outermost first. */
-  const headings: number[] = []
   for (let i = start; i < rows.length; i++) {
     const row = rows[i]
     if (i > start && row.depth <= from.depth) break
@@ -105,19 +103,13 @@ function subtreeMarkdown(rows: Row[], start: number): string {
     if (i > start && row.collapsed && row.hasChildren) continue
     const depth = row.depth - from.depth
     const text = row.text ?? ''
-    while (headings.length && row.depth <= headings[headings.length - 1]) headings.pop()
-    if (row.section) {
-      lines.push(`${'#'.repeat(Math.min(depth + 1, HEADING_LIMIT))} ${text}`)
-      headings.push(row.depth)
-      continue
-    }
+    const heading = row.section ? `${'#'.repeat(Math.min(depth + 1, HEADING_LIMIT))} ` : ''
     if (i === start) {
-      lines.push(text)
+      lines.push(`${heading}${text}`)
       continue
     }
-    const base = headings.length ? headings[headings.length - 1] : from.depth
     const box = row.open === true ? '[ ] ' : row.open === false ? '[x] ' : ''
-    lines.push(`${'  '.repeat(row.depth - base - 1)}- ${box}${text}`)
+    lines.push(`${'  '.repeat(depth - 1)}- ${box}${heading}${text}`)
   }
   return lines.join('\n')
 }
