@@ -17,6 +17,28 @@ interface SlackResponse {
   ok: boolean
   error?: string
   warning?: string
+  /** On `missing_scope`: exactly what the call wanted, and what the token has. */
+  needed?: string
+  provided?: string
+}
+
+/**
+ * What went wrong, in the terms the fix is described in. Slack names the scope
+ * it wanted right there in the response, and a bare "missing_scope" throws that
+ * away — along with the two things that are nearly always the actual cause:
+ * scopes added under *Bot* rather than *User*, and scopes added but not yet
+ * installed, since a scope only takes effect when the app is reinstalled.
+ */
+export function slackError(method: string, res: SlackResponse): string {
+  const why = res.error ?? 'unknown error'
+  if (why !== 'missing_scope' || !res.needed) return `Slack ${method} failed: ${why}`
+  return [
+    `Slack ${method} needs the "${res.needed}" scope.`,
+    'Add it under OAuth & Permissions → **User** Token Scopes (not Bot),',
+    'then reinstall the app to the workspace — a new scope does nothing until you do,',
+    'and reinstalling issues a new token, so copy it into server/.env.',
+    `\nThe token currently has: ${res.provided || '(nothing)'}`,
+  ].join(' ')
 }
 
 /** One Web API call. Every method takes a form body, so one shape covers them all. */
@@ -28,7 +50,7 @@ async function slack<T extends SlackResponse>(
   const res = await postForm<T>(`${API}/${method}`, params, {
     Authorization: `Bearer ${token}`,
   })
-  if (!res.ok) throw new Error(`Slack ${method} failed: ${res.error ?? 'unknown error'}`)
+  if (!res.ok) throw new Error(slackError(method, res))
   return res
 }
 

@@ -8,7 +8,7 @@ import { ConfigDb } from '../src/config'
 import { Registry } from '../src/registry'
 import { INTEGRATION_TOOLS } from '../src/integrations/index'
 import { pullRequestArgs } from '../src/integrations/github'
-import { idSet, keepInFeed, parseRef, recentQuery } from '../src/integrations/slack'
+import { idSet, keepInFeed, parseRef, recentQuery, slackError } from '../src/integrations/slack'
 
 // The endpoint and the argument parsing. Nothing here reaches GitHub, Slack or
 // Claude — the handlers themselves are only exercised by hand.
@@ -193,6 +193,29 @@ describe('what the feed leaves out', () => {
 
   it('keeps everything when there is nothing to filter against', () => {
     expect(keepInFeed('C_STRANGER', null, both)).toBe(true)
+  })
+})
+
+describe('what a failed Slack call says', () => {
+  it('names the scope Slack asked for, and what the token has', () => {
+    const said = slackError('users.conversations', {
+      ok: false,
+      error: 'missing_scope',
+      needed: 'im:read',
+      provided: 'search:read,chat:write',
+    })
+    expect(said).toContain('im:read')
+    expect(said).toContain('search:read,chat:write')
+    // The two things that are actually wrong when this happens.
+    expect(said).toMatch(/User.*Token Scopes/)
+    expect(said).toContain('reinstall')
+  })
+
+  it('falls back to the bare error when Slack names no scope', () => {
+    expect(slackError('conversations.history', { ok: false, error: 'channel_not_found' })).toBe(
+      'Slack conversations.history failed: channel_not_found',
+    )
+    expect(slackError('chat.postMessage', { ok: false })).toContain('unknown error')
   })
 })
 
