@@ -101,13 +101,21 @@ including DMs and private channels, and posts as you. To get one:
    - `channels:history`, `groups:history`, `im:history`, `mpim:history` — reading
      messages in public channels, private channels, DMs and group DMs
      respectively
+   - `channels:read`, `groups:read`, `im:read`, `mpim:read` — listing
+     conversations, and resolving `#name` and permalinks
+   - `search:read` — the recent-messages feed, which is one search
    - `chat:write` — sending
-   - `channels:read`, `groups:read`, `im:read`, `mpim:read` — resolving `#name`
-     and permalinks
+   - `users:read` — *optional*: naming the other side of a DM. Without it the
+     lookup is skipped and a DM lists as its raw id (`D0123ABCD`) instead of
+     `@someone`; nothing else changes
 3. **Install to Workspace**, then copy the *User OAuth Token* (`xoxp-…`).
 
-A bot token (`xoxb-`) works too, but only for conversations the bot has been
-invited to, and it posts as the bot.
+`auth.test`, which is how the feed learns your handle to exclude it, needs no
+scope of its own.
+
+A bot token (`xoxb-`) works for most of this, but only for conversations the bot
+has been invited to, and it posts as the bot. **`slack.recentMessages` will not
+work on one at all**: Slack's search is user-token only, under any scope.
 
 ### Tools
 
