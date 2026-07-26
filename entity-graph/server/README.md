@@ -31,6 +31,15 @@ LLM can call its tools immediately — with fine control over what they can do.
 Source-scoped (bearer token for that source):
 - `GET  /:sourceId/tools` — list tools with JSON Schema + safety
 - `POST /:sourceId/call` — `{ tool, args }` → `{ status: 'success', result }` / `{ status: 'error', message }`
+
+These answer cross-origin requests (`Access-Control-Allow-Origin: *`, preflight
+included), so a browser client served from somewhere else — the phone app in
+[`../mobile`](../mobile) — can call them. The wildcard is safe here because
+authentication is a bearer token the client sends explicitly rather than a cookie:
+credentials are not allowed, so a hostile page gains nothing it didn't already have.
+The admin and integration endpoints below are deliberately **excluded** — with
+`ADMIN_TOKEN` unset they are open, and no page the browser happens to be showing
+should be handed source creation on a machine it can merely reach.
 - `POST /:sourceId/mcp` — stateless MCP (Streamable HTTP)
 - `GET  /:sourceId/debug` — interactive per-source console (HTML; prompts for a token)
 
@@ -63,6 +72,10 @@ ADMIN_TOKEN=secret PORT=4000 CONFIG_DB=./data/config.db npm run --prefix server 
 To run the Electron app again afterwards, switch `better-sqlite3` back with
 `npx electron-rebuild -f -w better-sqlite3`. (This is the "two separate installs"
 caveat; long-term the app and server can be split into fully isolated installs.)
+
+To reach the server from another device on the network — a phone running
+[`../mobile`](../mobile) — start it with `HOST=0.0.0.0`; the default `127.0.0.1` only
+answers the machine it runs on.
 
 Env vars: `PORT` (4000), `HOST` (127.0.0.1), `CONFIG_DB` (./data/config.db),
 `ADMIN_TOKEN` (unset ⇒ admin endpoints open, dev only). All of these, plus the

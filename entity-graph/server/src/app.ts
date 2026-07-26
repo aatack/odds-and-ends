@@ -42,6 +42,49 @@ export function buildApp(opts: AppOptions): FastifyInstance {
     console.warn('[entity-graph] ADMIN_TOKEN not set — admin endpoints are OPEN (dev mode).')
   }
 
+  // ---- CORS, for the source-scoped API only ----
+  //
+  // A browser client served from anywhere but this server — the mobile app, which
+  // is a page on the laptop's dev server or wherever it ends up hosted — makes
+  // every call cross-origin, and a JSON POST with an `Authorization` header is
+  // preflighted, so without this it cannot call a source at all.
+  //
+  // A wildcard origin is safe *here* because authentication is a bearer token the
+  // client sends explicitly, never a cookie: a hostile page gains nothing it
+  // didn't already have, since without the token the request is refused just the
+  // same. Credentials are deliberately not allowed, which is what keeps that true.
+  //
+  // The admin surface is excluded, and that exclusion is the point rather than
+  // tidiness: with ADMIN_TOKEN unset those endpoints are open (dev mode), and
+  // opening them to any page the browser happens to be showing would hand it
+  // source creation and deletion on a machine it can merely reach.
+  const adminPaths = /^\/(admin|runTool|tools)(\/|$)/
+
+  const corsAllowed = (url: string): boolean => !adminPaths.test(url.split('?')[0])
+
+  app.addHook('onRequest', async (req, reply) => {
+    if (corsAllowed(req.url)) {
+      reply.header('access-control-allow-origin', '*')
+      reply.header('vary', 'origin')
+    }
+  })
+
+  // Preflight. A route of its own rather than a hook, since a bare OPTIONS request
+  // matches no other route and would otherwise be answered by the 404 handler.
+  app.options('/*', async (req, reply) => {
+    if (!corsAllowed(req.url)) return reply.code(404).send({ error: 'not found' })
+    return reply
+      .header('access-control-allow-methods', 'GET, POST, PUT, DELETE, OPTIONS')
+      .header(
+        'access-control-allow-headers',
+        (req.headers['access-control-request-headers'] as string | undefined) ??
+          'authorization, content-type',
+      )
+      .header('access-control-max-age', '86400')
+      .code(204)
+      .send()
+  })
+
   /** preHandler: gate admin endpoints. */
   async function requireAdmin(req: FastifyRequest, reply: FastifyReply): Promise<unknown> {
     if (adminOpen) return
