@@ -69,14 +69,19 @@ level into one per query. The response says which entities it *covers*, which is
 not the same as which it reached: a layer clipped by the overscan limit is not
 reported, since the client would otherwise believe it had those events.
 
-There is no server-side query behind any of this. `query` still exists for
-agents and for the phone client, but the desktop app never calls it.
+There is no server-side query behind any of this — not for either client. The
+`query` tool exists for *agents*, over MCP, which want an outline rather than a
+cache: it takes a path and a limit and hands back the path to resume from, so a
+model pages through a tree by passing the last answer back. It is the same
+traversal, run against the store instead of against a cache.
 
 ### The traversal
 
 `core/query.ts` is the query: a stepper from one path to the next in a
 depth-first reading, whose only reach outside is that synchronous
-`getEntities`. Two things fall out of running it on the client:
+`getEntities`. It is shared by everything that reads a tree — this app, the
+phone client, and the `query` tool on the server. Two things fall out of running
+it on a client:
 
 - **An entity nothing is known about looks childless**, so the tree fills in as
   events arrive rather than appearing all at once after a refetch.
@@ -184,9 +189,11 @@ The context is assembled once when the call starts and never changes:
 - **Extras**, highest precedence: what a right-click supplies (the entity under
   the cursor), which need not be the current selection.
 
-Because entity values come from the query cache, an outer frame that isn't
+Because entity values come from the entity cache, an outer frame that isn't
 mounted contributes only whatever is already cached — the context is
-best-effort by design, and positional keys never depend on it.
+best-effort by design, and positional keys never depend on it. Folding one does
+ask for the entities along the path, so the *next* call gets a fuller answer
+than the first.
 
 ## Display
 
@@ -239,7 +246,7 @@ Retention: a **cancelled** call is kept whenever the tool takes arguments (a
 cancelled argument-less call carries no information). A **settled** call is kept
 only when the tool's reach is `external`. Reads and writes against the entity
 store are far too frequent, and their results far too large, to persist — a
-single `query` result would exhaust the localStorage quota, which
+single scan of a page's worth of entities would exhaust the localStorage quota, which
 `persistentAtom` swallows silently. Every call still *produces* a result: that
 is how errors and confirmations reach the toast layer. Only retention is
 filtered.

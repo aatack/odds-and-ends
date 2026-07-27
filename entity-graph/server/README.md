@@ -43,6 +43,17 @@ should be handed source creation on a machine it can merely reach.
 - `POST /:sourceId/mcp` — stateless MCP (Streamable HTTP)
 - `GET  /:sourceId/debug` — interactive per-source console (HTML; prompts for a token)
 
+Two of a source's tools are how anything reads the tree, and they answer different
+questions:
+
+- **`scanEvents`** — raw events for a list of ids, plus a couple of layers of
+  whatever they link out to. For a client that keeps its own cache and does its own
+  traversal, which is what both apps in this repo do.
+- **`query`** — the tree as an outline: a depth-first walk from a path, with a limit
+  and the path to resume from when it is hit, plus `find` and `sections` to narrow
+  what comes back. For an agent over MCP, which wants the answer rather than the
+  events. The same traversal (`src/core/query.ts`) either way.
+
 Integrations, admin-scoped (bearer `ADMIN_TOKEN`) — see
 [`docs/integrations.md`](./docs/integrations.md):
 - `GET  /tools` — the integration tools, with JSON Schema for their arguments

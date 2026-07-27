@@ -77,14 +77,19 @@ is the long form; the rules that matter day to day:
   from the latent one against the visible rows; storing it would lose the
   original when a collapsed ancestor is re-expanded.
 - **Nothing on screen waits on the network.** The client keeps every event it
-  has read in one entity cache (`state/entities.ts`); `useGetEntities()` reads
-  it synchronously and always answers, and asking is what sets off the fetch.
-  The rows are then a *derivation*: `core/query.ts` steps a depth-first
-  traversal over whatever is cached, so folding, depth caps and edits redraw
-  without a round trip and the tree fills in as events arrive. The only read of
-  the store is `scanEvents`, which fetches a couple of layers ahead. See
-  `docs/frontend-state.md` for the rest — type defaults, `events` scripts, and
-  how writes and undo reach the cache.
+  has read in one entity cache (`core/cache.ts`); `useGetEntities()` reads it
+  synchronously and always answers, and asking is what sets off the fetch. The
+  rows are then a *derivation*: `core/query.ts` steps a depth-first traversal
+  over whatever is cached and `core/tree.ts` turns that into rows, so folding,
+  depth caps and edits redraw without a round trip and the tree fills in as
+  events arrive. The only read of the store is `scanEvents`, which fetches a
+  couple of layers ahead. See `docs/frontend-state.md` for the rest — type
+  defaults, `events` scripts, and how writes and undo reach the cache.
+- **`src/core` is shared with the server *and* the phone.** Anything put there
+  is imported by three builds, so it must stay free of Electron, node and zod.
+  The entity and its rollup, the traversal, the tree, the cache and the atom
+  under it all live there precisely because both clients have to agree on them;
+  see [`mobile/AGENTS.md`](./mobile/AGENTS.md) for where that line is drawn.
 - **`tools/` is the only way the user does anything.** Every command — moving the
   selection, opening a tab, writing a value — is one `ToolSpec` declaring its
   arguments, its scope, and how far it reaches. Hotkeys and the command palette
@@ -165,7 +170,7 @@ server/         the HTTP server: sources, and the integrations (GitHub, Slack, C
 mobile/         a separate phone client (PWA) for one source — its own install, own guide
 src/main       Electron main — window, servers, config store, tailscale serve
 src/preload     contextBridge exposing the typed EntityGraphAPI
-src/core        source client, event rollup, the query traversal (shared types)
+src/core        the shared model: entity + rollup, traversal, tree, cache, sources
 test/           the state layer driven headlessly (`npm test`)
 src/renderer/src  React app
   state/          latent state, pure derivations, the entity cache
