@@ -5,20 +5,27 @@ import { DebugModal } from '../components/DebugModal'
 import { EntityDebugModal } from '../components/EntityDebugModal'
 import { ResourceModal } from '../components/Resource'
 import { Button } from '../components/ui/Button'
+import { evaluateCode } from '../helpers/codeRunner'
+import {
+  applyEvents,
+  removeEvents,
+  setCodeEvaluator,
+  setEntityFetcher,
+} from '../state/entities'
 import { useUi } from '../state/hooks'
-import { setQueryFetcher } from '../state/query'
 import { setResourceFetcher } from '../state/resources'
 import { updateUi } from '../state/ui'
-import { query, readResource } from '../source/entity'
+import { readResource, scanEvents, setWriteObserver } from '../source/entity'
 import { setSourceTransport } from '../source/transport'
 import { setIntegrationServer } from '../tools/integrationTools'
 
 const api = window.entityGraph
 
 /**
- * The open source's shell. Its whole job is to point the transport at the source
- * and let the query engine drive: everything below reads state, so no data flows
- * through this component.
+ * The open source's shell. Its whole job is to plug the seams together — the
+ * transport, the caches, and the sandbox the entity cache runs `events` scripts
+ * in — and then get out of the way: everything below reads state, so no data
+ * flows through this component.
  */
 export function SourceView({
   active,
@@ -35,13 +42,17 @@ export function SourceView({
       user,
       sourceId: active.id,
     })
-    setQueryFetcher(query)
+    setEntityFetcher(scanEvents)
+    setWriteObserver({ applied: applyEvents, removed: removeEvents })
+    setCodeEvaluator(evaluateCode)
     setResourceFetcher(readResource)
     // The integrations belong to the *server*, not to the source — but this is
     // where the app is pointed at one, so it is where they are picked up.
     setIntegrationServer(active.serverId)
     return () => {
-      setQueryFetcher(null)
+      setEntityFetcher(null)
+      setWriteObserver(null)
+      setCodeEvaluator(null)
       setResourceFetcher(null)
       setSourceTransport(null)
       setIntegrationServer(null)

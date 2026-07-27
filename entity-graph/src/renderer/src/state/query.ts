@@ -1,256 +1,81 @@
-import type { LinkDirection, QueryPage, QueryResult, StackFrame } from '../../../core/wrapper'
 import { atom } from './atom'
-import { getLayout, layoutAtom } from './store'
-import { collapsedBelow, directionOf, type FrameState, type LayoutState } from './types'
+import { buildCallContext, frameRows, type FrameRows } from './derive'
+import { entities, type EntitySource } from './entities'
+import { focusOf, getLayout, layoutAtom } from './store'
+import type { CallContext, LayoutState } from './types'
 
-// The query cache: the rows behind each mounted frame. Runtime only — never
-// persisted, per the rule that nothing cached lives in latent state.
+// A frame's query, which is no longer a fetch: the traversal in core/query runs
+// over the entity cache, so a frame's rows are a *derivation* like any other and
+// the only thing left to keep here is how much of the tree has been unrolled.
 //
-// This is an engine rather than a hook: a view "retains" a frame it wants loaded
-// and reads the result, and the engine refetches whenever anything the query
-// depends on changes (root, collapse set, depth cap, or a mutation bumping the
-// revision). Headless callers retain frames the same way.
+// That is what pagination has become. Nothing is fetched a page at a time any
+// more — the cache asks for whatever the rows mention — so a page is simply a
+// ceiling on how far the traversal walks before it stops, raised when the view
+// scrolls near the bottom.
 
-const PAGE_SIZE = 200
-
-export interface FramePage {
-  results: QueryResult[]
-  /** Resume token for the next page; null when the whole tree has been fetched. */
-  continuation: StackFrame[] | null
-  loading: boolean
-  error: string | null
-}
-
-export type QueryCache = Record<string, FramePage>
-
-export const NO_PAGE: FramePage = { results: [], continuation: null, loading: false, error: null }
-
-export const queryAtom = atom<QueryCache>({})
+/** Rows unrolled per page. The first is the frame's whole budget until it scrolls. */
+export const PAGE_SIZE = 200
 
 /**
- * The little that is known about an entity away from its own row: enough to name
- * it in a tab or a breadcrumb, and enough for a pill to know what shape it should
- * be. The same three values a row carries, which is not a coincidence — a row is
- * this plus where it sits.
+ * frame id → how many rows its traversal may produce. Runtime only, and only
+ * ever raised: an entry left behind by a closed frame costs one number.
  */
-export interface EntitySummary {
-  text?: string
-  /** The entity's `type` value, if any (e.g. `'code'` for a runnable block). */
-  type?: string
-  /** For `type: 'file'`, what the stored bytes are. */
-  mimeType?: string
-}
+export const rowLimitsAtom = atom<Record<string, number>>({})
+
+export const rowLimit = (frameId: string | null): number =>
+  (frameId ? rowLimitsAtom.get()[frameId] : undefined) ?? PAGE_SIZE
 
 /**
- * Entity id → summary, harvested from every page that loads and never pruned.
- * Runtime only, like the cache, but it outlives the pages it came from: dropping
- * a frame's rows shouldn't turn its tab's label back into a uuid. After a reload,
- * tabs you haven't opened yet do show their ids for a moment.
+ * Unroll another page of a frame's tree, if the traversal stopped at the limit
+ * rather than because there was nothing more. A frame still waiting on entities
+ * looks finished — an entity nobody has read yet has no children — so it doesn't
+ * grow here; it grows when they arrive, and this is asked again on the next
+ * scroll.
  */
-export const summariesAtom = atom<Record<string, EntitySummary>>({})
-
-/** A value as display text — absent when null or blank, so `??` reaches past it. */
-export const str = (v: unknown): string | undefined =>
-  v == null || v === '' ? undefined : String(v)
-
-/** What a set of entity values says about the entity in passing. */
-export const summaryOf = (values: Record<string, unknown>): EntitySummary => ({
-  text: str(values.text),
-  type: str(values.type),
-  mimeType: str(values.mimeType),
-})
-
-const sameSummary = (a: EntitySummary | undefined, b: EntitySummary): boolean =>
-  a != null && a.text === b.text && a.type === b.type && a.mimeType === b.mimeType
-
-/**
- * Learn what a page says about every entity in it. An entity's summary is
- * replaced rather than merged into, so clearing a row's text takes the name that
- * came from it with it; ones that haven't changed are left untouched, so a
- * refetch doesn't re-render every pill in the window.
- */
-function harvestSummaries(results: QueryResult[]): void {
-  const known = summariesAtom.get()
-  const learned: Record<string, EntitySummary> = {}
-  for (const { entity } of results) {
-    const summary = summaryOf(entity.values)
-    if (!sameSummary(known[entity.id], summary)) learned[entity.id] = summary
-  }
-  if (Object.keys(learned).length) summariesAtom.set((s) => ({ ...s, ...learned }))
-}
-
-export type QueryFetcher = (
-  rootId: string,
-  opts: {
-    maxDepth?: number
-    collapsed?: string[]
-    limit?: number
-    continuationStack?: StackFrame[]
-    direction?: LinkDirection
-  },
-) => Promise<QueryPage>
-
-let fetcher: QueryFetcher | null = null
-/** Bumped by mutations; part of every request key, so everything refetches. */
-let revision = 0
-const retained = new Map<string, number>()
-/** frameId → the request key currently in flight or settled, for staleness checks. */
-const issued = new Map<string, string>()
-
-const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
-
-const patch = (frameId: string, fn: (p: FramePage) => FramePage): void =>
-  queryAtom.set((cache) => ({ ...cache, [frameId]: fn(cache[frameId] ?? NO_PAGE) }))
-
-/**
- * The collapse set to query a frame with: the tab's, less the frame's own root,
- * which always expands (see {@link collapsedBelow}).
- */
-const collapsedFor = (s: LayoutState, frame: FrameState): string[] =>
-  collapsedBelow(s.tabs[frame.tabId]?.collapsed ?? [], frame.rootId)
-
-/** Everything a frame's first page depends on. */
-function requestKey(frameId: string): string | null {
-  const s = getLayout()
-  const frame = s.frames[frameId]
-  if (!frame) return null
-  const collapsed = [...collapsedFor(s, frame)].sort()
-  return JSON.stringify([
-    frame.rootId,
-    collapsed,
-    frame.maxDepth[frame.rootId] ?? null,
-    directionOf(frame),
-    revision,
-  ])
-}
-
-async function load(frameId: string, key: string): Promise<void> {
-  const s = getLayout()
-  const frame = s.frames[frameId]
-  const f = fetcher
-  if (!frame || !f) return
-  patch(frameId, (p) => ({ ...p, loading: true, error: null }))
-  try {
-    const page = await f(frame.rootId, {
-      // Only the root's cap reaches the server for now; the rest of the map is
-      // stored against the day the query tool takes a per-entity limit.
-      maxDepth: frame.maxDepth[frame.rootId] ?? undefined,
-      collapsed: collapsedFor(s, frame),
-      limit: PAGE_SIZE,
-      direction: directionOf(frame),
-    })
-    if (issued.get(frameId) !== key) return
-    harvestSummaries(page.results)
-    patch(frameId, () => ({
-      results: page.results,
-      continuation: page.continuationStack,
-      loading: false,
-      error: null,
-    }))
-  } catch (e) {
-    if (issued.get(frameId) !== key) return
-    patch(frameId, (p) => ({ ...p, loading: false, error: message(e) }))
-  }
-}
-
-/** Reconcile the cache with what's retained; fetch anything stale. */
-function sync(): void {
-  const cache = queryAtom.get()
-  const stale = Object.keys(cache).filter((frameId) => !retained.has(frameId))
-  if (stale.length) {
-    const pruned = { ...cache }
-    for (const frameId of stale) {
-      delete pruned[frameId]
-      issued.delete(frameId)
-    }
-    queryAtom.set(pruned)
-  }
-  if (!fetcher) return
-  for (const frameId of retained.keys()) {
-    const key = requestKey(frameId)
-    if (key == null || issued.get(frameId) === key) continue
-    issued.set(frameId, key)
-    void load(frameId, key)
-  }
-}
-
-// Anything that changes a frame's query (its root, its tab's collapse set, its
-// depth caps) lands in the layout atom, so one subscription covers them all.
-layoutAtom.subscribe(sync)
-
-/** Point the engine at a source. Clears staleness so every frame refetches. */
-export function setQueryFetcher(next: QueryFetcher | null): void {
-  fetcher = next
-  issued.clear()
-  if (!next) queryAtom.set({})
-  sync()
-}
-
-/** Ask for a frame's rows to be kept loaded. Returns the release function. */
-export function retainFrame(frameId: string): () => void {
-  retained.set(frameId, (retained.get(frameId) ?? 0) + 1)
-  sync()
-  return () => {
-    const n = (retained.get(frameId) ?? 1) - 1
-    if (n > 0) retained.set(frameId, n)
-    else retained.delete(frameId)
-    sync()
-  }
-}
-
-/** Refetch everything — called after any mutation to the entity store. */
-export function refreshQueries(): void {
-  revision++
-  issued.clear()
-  sync()
-}
-
-/** Append the next page of a frame's tree, if there is one. */
 export function loadMore(frameId: string): void {
-  const page = queryAtom.get()[frameId]
-  const s = getLayout()
-  const frame = s.frames[frameId]
-  const f = fetcher
-  if (!page || page.loading || !page.continuation || !frame || !f) return
-  const key = issued.get(frameId)
-  patch(frameId, (p) => ({ ...p, loading: true }))
-  void f(frame.rootId, {
-    maxDepth: frame.maxDepth[frame.rootId] ?? undefined,
-    collapsed: collapsedFor(s, frame),
-    limit: PAGE_SIZE,
-    continuationStack: page.continuation,
-    direction: directionOf(frame),
-  })
-    .then((next) => {
-      // A first-page refetch while this was in flight wins; drop the append.
-      if (issued.get(frameId) !== key) return
-      harvestSummaries(next.results)
-      patch(frameId, (p) => ({
-        ...p,
-        results: [...p.results, ...next.results],
-        continuation: next.continuationStack,
-        loading: false,
-      }))
-    })
-    .catch((e) => {
-      if (issued.get(frameId) !== key) return
-      patch(frameId, (p) => ({ ...p, loading: false, error: message(e) }))
-    })
+  if (rowsOf(frameId).complete) return
+  rowLimitsAtom.set((limits) => ({
+    ...limits,
+    [frameId]: (limits[frameId] ?? PAGE_SIZE) + PAGE_SIZE,
+  }))
 }
 
+/** A frame's rows, against a read of the cache and the limits already in hand. */
+export const rowsFrom = (
+  s: LayoutState,
+  source: EntitySource,
+  limits: Record<string, number>,
+  frameId: string | null,
+): FrameRows =>
+  frameRows(s, source, frameId, (frameId ? limits[frameId] : undefined) ?? PAGE_SIZE)
+
+/** A frame's rows as they stand — the live counterpart to `useFrameRows`. */
+export const rowsOf = (frameId: string | null, s: LayoutState = getLayout()): FrameRows =>
+  rowsFrom(s, entities(), rowLimitsAtom.get(), frameId)
+
 /**
- * An entity's values, from whichever cached frame happens to hold it. Used to
- * fold a call's context; deliberately best-effort, since an unmounted frame's
- * root may not be cached at all.
+ * The context a call would be born in right now. Lives here rather than in
+ * `derive` because it needs the focused frame's rows, and how far those are
+ * unrolled is this module's business.
  */
-export function cachedValues(
-  cache: QueryCache,
-  entityId: string,
-): Record<string, unknown> | undefined {
-  for (const page of Object.values(cache)) {
-    for (const { entity } of page.results) {
-      if (entity.id === entityId) return entity.values
-    }
-  }
-  return undefined
+export function liveContext(
+  opts: { extra?: Record<string, unknown>; autofill?: boolean; within?: string[] } = {},
+): CallContext {
+  const s = getLayout()
+  const source = entities()
+  const { frameId } = focusOf(s)
+  return buildCallContext(s, source, rowsFrom(s, source, rowLimitsAtom.get(), frameId), opts)
 }
+
+// A frame whose root or filters changed is not a different query to be refetched
+// any more — it is the same derivation over the same cache. The one thing worth
+// noticing is a frame going away, since its unroll budget should not be inherited
+// by whatever id React hands out next.
+layoutAtom.subscribe(() => {
+  const limits = rowLimitsAtom.get()
+  const ids = Object.keys(limits)
+  if (!ids.length) return
+  const frames = getLayout().frames
+  if (ids.every((id) => frames[id])) return
+  rowLimitsAtom.set(Object.fromEntries(ids.filter((id) => frames[id]).map((id) => [id, limits[id]])))
+})

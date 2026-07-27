@@ -1,6 +1,6 @@
 import * as A from '../state/actions'
-import { entityRows, frameRows, type EntityRow } from '../state/derive'
-import { queryAtom } from '../state/query'
+import { entityRows, type EntityRow } from '../state/derive'
+import { rowsOf } from '../state/query'
 import { focusOf, getLayout } from '../state/store'
 import { directionOf, last, samePath, type LinkDirection } from '../state/types'
 import { updateUi } from '../state/ui'
@@ -64,7 +64,7 @@ async function linkEntities(sourceId: unknown, destinationId: unknown): Promise<
 function rowById(entityId: string): EntityRow | undefined {
   const layout = getLayout()
   const { frameId } = focusOf(layout)
-  const { rows } = frameRows(layout, queryAtom.get(), frameId)
+  const { rows } = rowsOf(frameId, layout)
   return entityRows(rows).find((r) => r.id === entityId)
 }
 
@@ -77,7 +77,7 @@ function rowById(entityId: string): EntityRow | undefined {
 function rowAboveSelection(frameId: string | null, entityId: string): string[] | null {
   const layout = getLayout()
   if (!frameId || !layout.frames[frameId]) return null
-  const { rows, selectedPath } = frameRows(layout, queryAtom.get(), frameId)
+  const { rows, selectedPath } = rowsOf(frameId, layout)
   if (last(selectedPath) !== entityId) return null
   const entities = entityRows(rows)
   const at = entities.findIndex((r) => samePath(r.path, selectedPath))
@@ -88,7 +88,7 @@ function rowAboveSelection(frameId: string | null, entityId: string): string[] |
 function selectedParent(): string | null {
   const layout = getLayout()
   const { frameId } = focusOf(layout)
-  const { selectedPath } = frameRows(layout, queryAtom.get(), frameId)
+  const { selectedPath } = rowsOf(frameId, layout)
   return selectedPath.length > 1 ? selectedPath[selectedPath.length - 2] : null
 }
 

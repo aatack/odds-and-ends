@@ -1,7 +1,7 @@
 import * as A from '../state/actions'
-import { entityRows, frameRows, type EntityRow, type Row } from '../state/derive'
+import { entityRows, type EntityRow, type Row } from '../state/derive'
 import { findField, requestFocus } from '../state/focusRequest'
-import { queryAtom } from '../state/query'
+import { rowsOf } from '../state/query'
 import * as R from '../state/reducers'
 import { focusOf, getLayout, updateLayout } from '../state/store'
 import { directionOf, last, type FrameState, type LayoutState, type TabState } from '../state/types'
@@ -32,7 +32,7 @@ function target(): Target | null {
   const frame = frameId ? layout.frames[frameId] : null
   const tab = frame ? layout.tabs[frame.tabId] : null
   if (!frame || !tab) return null
-  const { rows, selectedPath } = frameRows(layout, queryAtom.get(), frame.id)
+  const { rows, selectedPath } = rowsOf(frame.id, layout)
   const entities = entityRows(rows)
   return {
     layout,

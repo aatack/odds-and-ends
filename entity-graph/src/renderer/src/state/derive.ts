@@ -1,13 +1,6 @@
-import type { LinkDirection, QueryResult } from '../../../core/wrapper'
-import {
-  NO_PAGE,
-  cachedValues,
-  str,
-  summaryOf,
-  type EntitySummary,
-  type FramePage,
-  type QueryCache,
-} from './query'
+import { resolveQuery } from '../../../core/query'
+import type { Entity, LinkDirection } from '../../../core/wrapper'
+import type { EntitySource } from './entities'
 import { focusOf } from './store'
 import {
   ROOT_ID,
@@ -20,17 +13,48 @@ import {
   type LayoutState,
 } from './types'
 
-// Everything derived from latent state plus the query cache: the flat row list a
-// frame renders, the selection actually in effect, and the context a call is
+// Everything derived from latent state plus the entity cache: the flat row list
+// a frame renders, the selection actually in effect, and the context a call is
 // born with. All pure functions — the views and the tools call the same ones, so
 // what the user sees and what a tool acts on can't disagree.
+//
+// A frame's rows are the query, run here rather than fetched: the traversal
+// steps over whatever the cache holds, so a row appears the moment its entity
+// does and an edit redraws the tree without a round trip.
+
+// --- Summaries --------------------------------------------------------------
+
+/**
+ * The little that is known about an entity away from its own row: enough to name
+ * it in a tab or a breadcrumb, and enough for a pill to know what shape it should
+ * be. The same three values a row carries, which is not a coincidence — a row is
+ * this plus where it sits.
+ */
+export interface EntitySummary {
+  text?: string
+  /** The entity's `type` value, if any (e.g. `'code'` for a runnable block). */
+  type?: string
+  /** For `type: 'file'`, what the stored bytes are. */
+  mimeType?: string
+}
+
+/** A value as display text — absent when null or blank, so `??` reaches past it. */
+export const str = (v: unknown): string | undefined =>
+  v == null || v === '' ? undefined : String(v)
+
+/** What a set of entity values says about the entity in passing. */
+export const summaryOf = (values: Record<string, unknown>): EntitySummary => ({
+  text: str(values.text),
+  type: str(values.type),
+  mimeType: str(values.mimeType),
+})
 
 // --- Rows -------------------------------------------------------------------
 
 /**
  * A rendered bullet backed by a real entity: what the entity says about itself
- * (its {@link EntitySummary} — text, type, and for a file its mime type, which is
- * on the entity as well as the resource so the row knows what it is about to show
+ * (its summary — text, type, and for a file its mime type, which is on the
+ * entity as well as the resource so the row knows what it is about to show
  * before the bytes load) plus where it sits in the frame.
  */
 export interface EntityRow extends EntitySummary {
@@ -73,46 +97,43 @@ export interface FrameRows {
   rows: Row[]
   /** The selection in effect — resolved against the visible rows. Never stored. */
   selectedPath: string[]
+  /** True while any row's entity is still being read. */
   loading: boolean
   error: string | null
-  /** True when the whole tree has been fetched (no further pages). */
+  /** True when the traversal ran out rather than hitting the row limit. */
   complete: boolean
 }
 
 const key = (path: readonly string[]): string => path.join('\0')
 
-/**
- * Walk the query results into a flat list, tracking each row's full path.
- * `direction` is the one the query ran in, so "has children" means "has more
- * rows under it here" rather than always meaning outbound links.
- */
-function walk(
-  results: QueryResult[],
+/** One row per resolved path, in reading order. */
+function toRows(
+  paths: string[][],
+  entities: Record<string, Entity>,
   collapsed: Set<string>,
   direction: LinkDirection,
 ): EntityRow[] {
-  const out: EntityRow[] = []
-  const stack: string[] = []
-  for (const { entity, depth } of results) {
-    stack.length = depth
-    stack.push(entity.id)
+  return paths.map((path) => {
+    const id = last(path) as string
+    const entity = entities[id]
     const open = entity.values.open
-    out.push({
+    return {
       kind: 'entity',
-      id: entity.id,
-      depth,
-      path: stack.slice(),
+      id,
+      depth: path.length - 1,
+      path,
       ...summaryOf(entity.values),
       section: entity.values.section === true,
       open: open === true ? true : open === false ? false : undefined,
-      hasChildren:
-        (direction === 'in' ? entity.inboundLinks : entity.outboundLinks).length > 0,
-      collapsed: collapsed.has(entity.id),
+      // Which links count is the direction the frame reads in, so a chevron
+      // means "there is more under this here" rather than always meaning
+      // outbound links.
+      hasChildren: (direction === 'in' ? entity.inboundLinks : entity.outboundLinks).length > 0,
+      collapsed: collapsed.has(id),
       selected: false,
       editing: false,
-    })
-  }
-  return out
+    }
+  })
 }
 
 /** Keep rows whose text matches, plus their ancestors so the tree still reads. */
@@ -157,18 +178,43 @@ export function resolveSelectedPath(
   return path.length > 0 ? path : [rootId]
 }
 
-/** Build a frame's rows from its latent state and whatever the cache holds. */
+/**
+ * Build a frame's rows: run the traversal over whatever the cache holds, up to
+ * `limit` rows, then filter what comes out.
+ *
+ * The limit is on the traversal rather than on what survives the filters, which
+ * is what makes find a filter over the rows rather than a different query — the
+ * same thing it was when the rows arrived a page at a time.
+ */
 export function buildRows(
   frame: FrameState,
   collapsed: readonly string[],
-  page: FramePage,
+  source: EntitySource,
+  limit: number,
 ): FrameRows {
-  const complete = !page.loading && page.continuation == null
-  let rows = walk(page.results, new Set(collapsedBelow(collapsed, frame.rootId)), directionOf(frame))
+  const direction = directionOf(frame)
+  const folded = new Set(collapsedBelow(collapsed, frame.rootId))
+  const { paths, complete } = resolveQuery(
+    [frame.rootId],
+    source.get,
+    { direction, collapsed: [...folded], maxDepth: frame.maxDepth },
+    limit,
+  )
+
+  const ids = paths.map((path) => last(path) as string)
+  const entities = source.get(ids)
+  let rows = toRows(paths, entities, folded, direction)
+
+  const loading = ids.some((id) => source.pending(id))
+  const error = ids.map((id) => source.error(id)).find((e) => e != null) ?? null
+
   if (frame.find != null) rows = applyFind(rows, frame.find)
   if (frame.sectionsOnly) rows = onlySections(rows)
 
-  const selectedPath = resolveSelectedPath(frame.selectedPath, rows, frame.rootId, complete)
+  // A path that isn't among the rows may simply not have arrived yet, so the
+  // selection is only snapped once the frame has everything it is going to get.
+  const settled = complete && !loading
+  const selectedPath = resolveSelectedPath(frame.selectedPath, rows, frame.rootId, settled)
   const edit = frame.edit
   const marked: Row[] = rows.map((row) => {
     const editing = edit?.mode === 'edit' && samePath(row.path, edit.path)
@@ -200,14 +246,19 @@ export function buildRows(
     }
   }
 
-  return { rows: marked, selectedPath, loading: page.loading, error: page.error, complete }
+  return { rows: marked, selectedPath, loading, error, complete }
 }
 
-/** A frame's rows, given the whole latent state and cache. */
-export function frameRows(s: LayoutState, cache: QueryCache, frameId: string | null): FrameRows {
+/** A frame's rows, given the whole latent state and a read of the cache. */
+export function frameRows(
+  s: LayoutState,
+  source: EntitySource,
+  frameId: string | null,
+  limit: number,
+): FrameRows {
   const frame = frameId ? s.frames[frameId] : null
   if (!frame) return { rows: [], selectedPath: [], loading: false, error: null, complete: true }
-  return buildRows(frame, s.tabs[frame.tabId]?.collapsed ?? [], cache[frame.id] ?? NO_PAGE)
+  return buildRows(frame, s.tabs[frame.tabId]?.collapsed ?? [], source, limit)
 }
 
 /** Only the entity rows, in order — what selection movement steps through. */
@@ -234,25 +285,29 @@ export const entityRows = (rows: Row[]): EntityRow[] =>
  * a gesture landed on rather than the row the keyboard is on. The frame is still
  * the focused one: every such gesture starts with a mousedown, which selects the
  * group it is in before the click is handled.
+ *
+ * `rows` is the focused frame's, which is where the resolved selection comes
+ * from; it is passed in rather than rebuilt because the caller has just built it.
  */
 export function buildCallContext(
   s: LayoutState,
-  cache: QueryCache,
+  source: EntitySource,
+  rows: FrameRows,
   opts: { extra?: Record<string, unknown>; autofill?: boolean; within?: string[] } = {},
 ): CallContext {
   const { groupId, tabId, frameId } = focusOf(s)
   const tab = tabId ? s.tabs[tabId] : null
   const frame = frameId ? s.frames[frameId] : null
-  const { selectedPath: resolved } = frameRows(s, cache, frameId)
-  const selectedPath = opts.within ?? resolved
+  const selectedPath = opts.within ?? rows.selectedPath
 
   const stackRoots = (tab?.frameIds ?? []).map((id) => s.frames[id]?.rootId).filter(Boolean) as string[]
   const path = [...stackRoots, ...selectedPath]
   const values: Record<string, unknown> = {}
+  // Reading these is also what asks for them, so an outer frame that isn't
+  // mounted contributes nothing the first time and its own values the next.
+  const folded = source.get(path)
   for (const id of path) {
-    const entity = cachedValues(cache, id)
-    if (!entity) continue
-    for (const [k, v] of Object.entries(entity)) {
+    for (const [k, v] of Object.entries(folded[id]?.values ?? {})) {
       if (v !== null) values[k] = v
     }
   }
@@ -289,16 +344,19 @@ function fileLabel(mimeType?: string): string {
 }
 
 /**
- * An entity's display name, from the summaries harvested by the query engine: its
- * text, or what it is when it has none — a file's kind, "Index" at the root — and
- * failing all of that the raw id, until something has loaded it. A file's real
- * name lives with its bytes rather than on the entity, so a caller holding the
- * resource can do better than this.
+ * An entity's display name: its text, or what it is when it has none — a file's
+ * kind, "Index" at the root — and failing all of that the raw id, until it has
+ * loaded. A file's real name lives with its bytes rather than on the entity, so
+ * a caller holding the resource can do better than this.
+ *
+ * Reading the cache is also what asks for it, so naming an entity is enough to
+ * make it load: a tab whose entity has never been on screen shows its id for one
+ * frame and its text thereafter.
  */
-export function entityLabel(summaries: Record<string, EntitySummary>, id: string): string {
-  const summary = summaries[id]
-  if (summary?.text) return summary.text
-  if (summary?.type === 'file') return fileLabel(summary.mimeType)
+export function entityLabel(source: EntitySource, id: string): string {
+  const summary = summaryOf(source.get([id])[id].values)
+  if (summary.text) return summary.text
+  if (summary.type === 'file') return fileLabel(summary.mimeType)
   return id === ROOT_ID ? 'Index' : id
 }
 
@@ -322,15 +380,11 @@ export interface Crumb {
  * which is the same thing when you drilled in, and the honest answer when you
  * didn't.
  */
-export function frameCrumbs(
-  s: LayoutState,
-  summaries: Record<string, EntitySummary>,
-  tabId: string | null,
-): Crumb[] {
+export function frameCrumbs(s: LayoutState, source: EntitySource, tabId: string | null): Crumb[] {
   const tab = tabId ? s.tabs[tabId] : null
   if (!tab) return []
   return tab.frameIds
     .map((frameId) => ({ frameId, rootId: s.frames[frameId]?.rootId }))
     .filter((f): f is { frameId: string; rootId: string } => !!f.rootId)
-    .map(({ frameId, rootId }) => ({ frameId, rootId, label: entityLabel(summaries, rootId) }))
+    .map(({ frameId, rootId }) => ({ frameId, rootId, label: entityLabel(source, rootId) }))
 }

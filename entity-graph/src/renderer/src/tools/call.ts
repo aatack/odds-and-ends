@@ -1,7 +1,7 @@
 import { v4 as uuid } from 'uuid'
-import { buildCallContext } from '../state/derive'
-import { queryAtom, refreshQueries } from '../state/query'
-import { callsAtom, getLayout, pendingAtom } from '../state/store'
+import { refreshEntities } from '../state/entities'
+import { liveContext } from '../state/query'
+import { callsAtom, pendingAtom } from '../state/store'
 import { clearUndo } from '../state/undo'
 import type {
   ArgValue,
@@ -126,10 +126,12 @@ async function execute(call: {
       callId: call.callId,
       context: call.context,
     })) ?? {}
-    // Anything that wrote to the entity store invalidates every open frame. A
-    // tool that decided there was nothing to write says so and skips the refetch.
+    // Anything that wrote to the entity store makes everything cached worth
+    // reading again — the write itself is already showing, since the events went
+    // into the cache on their way out. A tool that decided there was nothing to
+    // write says so and skips even that.
     if (outcome.mutated ?? tool.mutates) {
-      refreshQueries()
+      refreshEntities()
       // A write that didn't come from the undo stack strands it: those events are
       // no longer the store's most recent, so replaying them would land them
       // after the newer edit.
@@ -146,10 +148,6 @@ async function execute(call: {
 }
 
 // --- Starting ---------------------------------------------------------------
-
-const liveContext = (
-  opts: { extra?: Record<string, unknown>; autofill?: boolean; within?: string[] } = {},
-): CallContext => buildCallContext(getLayout(), queryAtom.get(), opts)
 
 /**
  * Taking over the pending slot records whatever was in it, so starting a second

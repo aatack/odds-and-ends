@@ -1,8 +1,17 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
+import type { GetEntities } from '../../../core/query'
 import type { Atom } from './atom'
-import { entityLabel, frameCrumbs, frameRows, type Crumb, type FrameRows } from './derive'
+import {
+  entityLabel,
+  frameCrumbs,
+  summaryOf,
+  type Crumb,
+  type EntitySummary,
+  type FrameRows,
+} from './derive'
+import { entitiesAtom, entitiesFrom, type EntitySource } from './entities'
 import { focusRequestAtom, focusTaken } from './focusRequest'
-import { queryAtom, retainFrame, summariesAtom, type EntitySummary } from './query'
+import { rowLimitsAtom, rowsFrom } from './query'
 import { loadResource, resourcesAtom, type ResourceState } from './resources'
 import { callsAtom, focusOf, layoutAtom, pendingAtom, type Focus } from './store'
 import { themeAtom, uiAtom, type Theme, type UiState } from './ui'
@@ -54,24 +63,43 @@ export function useFocus(): Focus {
 }
 
 /**
- * A frame's rows. Retaining it tells the query engine to keep it loaded, so a
- * frame that scrolls out of the layout stops being fetched.
+ * The public face of the entity cache: hand it ids, get entities back — now,
+ * synchronously, whether or not they have loaded. Anything missing is asked for
+ * in the background, and the component re-renders when it lands.
+ *
+ * The function changes identity whenever the cache does, so a `useMemo` keyed on
+ * it recomputes exactly when what it read might have changed.
  */
+export function useGetEntities(): GetEntities {
+  const cache = useAtomValue(entitiesAtom)
+  return useCallback((ids: string[]) => entitiesFrom(cache).get(ids), [cache])
+}
+
+/** The cache as the derivations read it: entities, plus how they are getting on. */
+function useEntitySource(): EntitySource {
+  const cache = useAtomValue(entitiesAtom)
+  return useMemo(() => entitiesFrom(cache), [cache])
+}
+
+/** A frame's rows, stepped over the cache and recomputed as entities arrive. */
 export function useFrameRows(frameId: string): FrameRows {
   const layout = useLayoutState()
-  const cache = useAtomValue(queryAtom)
-  // Retained before paint, so the frame reads as loading straight away rather
-  // than flashing "No entities." for one frame while the fetch is scheduled.
-  useLayoutEffect(() => retainFrame(frameId), [frameId])
-  return useMemo(() => frameRows(layout, cache, frameId), [layout, cache, frameId])
+  const source = useEntitySource()
+  const limits = useAtomValue(rowLimitsAtom)
+  return useMemo(
+    () => rowsFrom(layout, source, limits, frameId),
+    [layout, source, limits, frameId],
+  )
 }
 
 /** What an entity says about itself in passing — what a pill is drawn from. */
-export const useEntitySummary = (id: string): EntitySummary | undefined =>
-  useAtomValue(summariesAtom)[id]
+export function useEntitySummary(id: string): EntitySummary {
+  const get = useGetEntities()
+  return useMemo(() => summaryOf(get([id])[id].values), [get, id])
+}
 
-/** An entity's display name, from whatever has been harvested so far. */
-export const useEntityLabel = (id: string): string => entityLabel(useAtomValue(summariesAtom), id)
+/** An entity's display name. Asking for it is what loads it. */
+export const useEntityLabel = (id: string): string => entityLabel(useEntitySource(), id)
 
 /**
  * The bytes behind a `type: 'file'` row, fetched on first render. Asking is
@@ -99,6 +127,6 @@ export function useLoadedFileName(id: string): string | null {
 /** A tab's frame stack as a trail of entities, outermost first. */
 export function useCrumbs(tabId: string | null): Crumb[] {
   const layout = useLayoutState()
-  const summaries = useAtomValue(summariesAtom)
-  return useMemo(() => frameCrumbs(layout, summaries, tabId), [layout, summaries, tabId])
+  const source = useEntitySource()
+  return useMemo(() => frameCrumbs(layout, source, tabId), [layout, source, tabId])
 }

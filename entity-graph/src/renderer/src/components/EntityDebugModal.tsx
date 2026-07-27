@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Trash03 } from '@untitledui/icons'
 import type { QueryPage } from '../../../core/wrapper'
-import { refreshQueries } from '../state/query'
+import { refreshEntities } from '../state/entities'
 import { clearUndo } from '../state/undo'
 import { Button } from './ui/Button'
 import { Field } from './ui/Field'
@@ -73,7 +73,7 @@ export function EntityDebugModal({ sourceId, entityId, user, onClose }: Props): 
     try {
       await fn()
       clearUndo()
-      refreshQueries()
+      refreshEntities()
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))

@@ -1,6 +1,12 @@
 import { atom } from '../state/atom'
 import type { CallContext } from '../state/types'
-import type { RunRequest, ToolReply, ToolRequest, WorkerMessage } from './codeRunner.worker'
+import type {
+  RunRequest,
+  RunResponse,
+  ToolReply,
+  ToolRequest,
+  WorkerMessage,
+} from './codeRunner.worker'
 
 // Local execution of `type: code` entities in one sandboxed QuickJS worker.
 // A browser service rather than state: the results are runtime-only and never
@@ -35,6 +41,9 @@ let worker: Worker | null = null
  */
 const contexts = new Map<string, CallContext>()
 
+/** Run id → whoever is waiting for that run to finish. */
+const waiting = new Map<string, (r: RunResponse) => void>()
+
 function ensureWorker(): Worker {
   if (worker) return worker
   const next = new Worker(new URL('./codeRunner.worker.ts', import.meta.url), { type: 'module' })
@@ -45,18 +54,60 @@ function ensureWorker(): Worker {
       return
     }
     contexts.delete(r.id)
-    if (r.ok) setRun(r.id, { status: 'done', logs: r.logs, result: r.result, hasResult: !!r.hasResult })
-    else setRun(r.id, { status: 'error', logs: r.logs, error: r.error ?? 'Error' })
+    const settle = waiting.get(r.id)
+    waiting.delete(r.id)
+    settle?.(r)
   }
   worker = next
   return next
 }
 
+/** Hand a script to the sandbox and wait for whatever it comes back with. */
+function execute(id: string, code: string, context: CallContext): Promise<RunResponse> {
+  contexts.set(id, context)
+  return new Promise((resolve) => {
+    waiting.set(id, resolve)
+    const request: RunRequest = { id, code, context: context.values }
+    ensureWorker().postMessage(request)
+  })
+}
+
+/** Run a code entity, recording what it did so its row can show it. */
 export function runCode(id: string, code: string, context: CallContext): void {
   setRun(id, { status: 'running' })
-  contexts.set(id, context)
-  const request: RunRequest = { id, code, context: context.values }
-  ensureWorker().postMessage(request)
+  void execute(id, code, context).then((r) => {
+    if (r.ok) setRun(id, { status: 'done', logs: r.logs, result: r.result, hasResult: !!r.hasResult })
+    else setRun(id, { status: 'error', logs: r.logs, error: r.error ?? 'Error' })
+  })
+}
+
+/**
+ * Run a script for its value alone, with nothing shown for it. This is how an
+ * entity's `events` field is evaluated: it is a property of the entity being
+ * computed, not something the user asked to run, so it has no place in the run
+ * state a row draws its play button from.
+ *
+ * The id is namespaced away from the entity's own, so evaluating a `type: code`
+ * entity's `events` can't be mistaken for running the code in it.
+ */
+export async function evaluateCode(
+  entityId: string,
+  code: string,
+  values: Record<string, unknown>,
+): Promise<unknown> {
+  // A script called upon by the entity rather than by the user has no frame and
+  // no selection behind it; the context is the entity, as promised.
+  const context: CallContext = {
+    values: { ...values, entityId },
+    path: [entityId],
+    groupId: null,
+    tabId: null,
+    frameId: null,
+    startedAt: Date.now(),
+  }
+  const result = await execute(`events:${entityId}`, code, context)
+  if (!result.ok) throw new Error(result.error ?? 'Error')
+  return result.result
 }
 
 /** Interrupt whatever is running by killing the worker; the next run respawns it. */
@@ -64,6 +115,12 @@ export function stopCode(): void {
   worker?.terminate()
   worker = null
   contexts.clear()
+  // Anything the worker was holding will never answer now, so settle it here
+  // rather than leave a caller waiting on a thread that no longer exists.
+  for (const [id, settle] of waiting) {
+    settle({ kind: 'result', id, ok: false, logs: [], error: 'Interrupted' })
+  }
+  waiting.clear()
   codeRunsAtom.set((runs) => {
     const next = { ...runs }
     for (const [id, state] of Object.entries(next)) {
