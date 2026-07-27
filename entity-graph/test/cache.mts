@@ -54,9 +54,28 @@ async function settle(rounds = 12): Promise<void> {
 let source: MemorySource
 let unmount = (): void => {}
 
+/**
+ * Set to hold the next scan open after it has read the store but before it
+ * answers — which is how a read gets overtaken by a write.
+ */
+let holdNextScan = false
+let releaseScan = (): void => {}
+
 function open(): void {
   source = new MemorySource()
-  setSourceTransport({ call: source.call, user: 'test', sourceId: 'memory' })
+  holdNextScan = false
+  setSourceTransport({
+    call: async (tool, args) => {
+      const result = await source.call(tool, args)
+      if (tool === 'scanEvents' && holdNextScan) {
+        holdNextScan = false
+        await new Promise<void>((resolve) => (releaseScan = resolve))
+      }
+      return result
+    },
+    user: 'test',
+    sourceId: 'memory',
+  })
   setEntityFetcher(scanEvents)
   setWriteObserver({ applied: applyEvents, removed: removeEvents })
   setCodeEvaluator(null)
@@ -296,6 +315,25 @@ test('takes undone events back out of the cache', async () => {
   assert.equal(popped.length, 1)
   // No refetch: the rows are right the instant the events come off.
   assert.equal(getEntity('a').values.text, 'before')
+})
+
+test('does not let a read already in flight undo a write', async () => {
+  open()
+  source.tree({ root: ['a'] })
+  source.values({ a: { text: 'before' } })
+  rowsOf(frameId())
+  await settle()
+
+  // A read that saw the store before the write and answers after it. What it
+  // says about `a` is the truth as it was, so it must not be believed.
+  holdNextScan = true
+  refreshEntities()
+  await settle()
+
+  await writeValue('a', 'text', 'after')
+  releaseScan()
+  await settle()
+  assert.equal(getEntity('a').values.text, 'after')
 })
 
 test('keeps showing what it has while a refresh is in flight', async () => {

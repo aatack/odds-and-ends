@@ -190,9 +190,10 @@ function flush(): void {
   void f(ids)
     .then((scan) => {
       if (issued === generation) receive(ids, scan)
+      else abandon(ids)
     })
     .catch((e) => {
-      if (issued !== generation) return
+      if (issued !== generation) return abandon(ids)
       const failed = message(e)
       update((next) => {
         for (const id of ids) {
@@ -200,6 +201,25 @@ function flush(): void {
         }
       })
     })
+}
+
+/**
+ * Give up on a read that the store has moved on from. The entities go back to
+ * unloaded rather than staying in flight forever, so whoever still wants them
+ * asks again — which, since the thing that invalidated them changed the cache,
+ * is about to happen anyway.
+ */
+function abandon(ids: readonly string[]): void {
+  entitiesAtom.set((cache) => {
+    const next = { ...cache }
+    let any = false
+    for (const id of ids) {
+      if (next[id]?.loaded !== 'loading') continue
+      next[id] = { ...next[id], loaded: 'unloaded' }
+      any = true
+    }
+    return any ? next : cache
+  })
 }
 
 /**
@@ -270,6 +290,10 @@ export function refreshEntities(): void {
  */
 export function applyEvents(events: readonly AppEvent[]): void {
   if (!events.length) return
+  // A read already in flight was issued against the store as it was, so its
+  // answer would put back what has just been written — or, for a removal, what
+  // has just been taken away.
+  generation++
   update((next) => {
     for (const [id, added] of byEntity(events)) {
       // Only against entities we hold. One we don't will read these along with
@@ -287,6 +311,7 @@ export function applyEvents(events: readonly AppEvent[]): void {
  */
 export function removeEvents(events: readonly AppEvent[]): void {
   if (!events.length) return
+  generation++
   const dropped = new Set(events.map(eventKey))
   update((next) => {
     for (const [id] of byEntity(events)) {
