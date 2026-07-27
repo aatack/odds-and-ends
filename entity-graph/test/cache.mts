@@ -192,6 +192,26 @@ test('reaches every entity of a type when the type arrives late', async () => {
   assert.equal(getEntity('a').values.flavour, 'vanilla')
 })
 
+test('re-reads a type after a write, though nothing has a row for it', async () => {
+  open()
+  source.tree({ root: ['a'] })
+  source.values({ a: { type: 'task' }, task: { colour: 'blue' } })
+  rowsOf(frameId())
+  await settle()
+  assert.equal(getEntity('a').values.colour, 'blue')
+
+  source.given({
+    type: 'value',
+    entityId: 'task',
+    key: 'colour',
+    value: 'green',
+    timestamp: Date.now(),
+  })
+  refreshEntities()
+  await settle()
+  assert.equal(getEntity('a').values.colour, 'green')
+})
+
 // --- Derived events ---------------------------------------------------------
 
 test('runs an entity’s events script once, and lets it speak for others', async () => {

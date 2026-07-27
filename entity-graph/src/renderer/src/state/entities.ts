@@ -372,15 +372,17 @@ function reconcile(before: EntityCache, draft: EntityCache): EntityCache {
     next[id] = { ...entry, base: rollupEntity(id, [...entry.events, ...entry.derived]) }
   }
 
-  /** Ids named as a type that nothing has read yet, so defaults can arrive. */
-  const missingTypes = new Set<string>()
+  /** Types nothing has read, or has read but since invalidated. */
+  const staleTypes = new Set<string>()
   /** Entities whose events are in and whose derived events have yet to be. */
   const candidates: string[] = []
 
   for (const [id, entry] of Object.entries(next)) {
     const typeId = typeIdOf(entry.base.values)
     const defaults = typeId ? next[typeId]?.base.values : undefined
-    if (typeId && !next[typeId]) missingTypes.add(typeId)
+    // Naming a type is what asks for it — nothing else reads one, so without
+    // this a type would never load at all, and never reload after a write.
+    if (typeId && stateOf(next, typeId) === 'unloaded') staleTypes.add(typeId)
 
     const prior = before[id]
     const priorTypeId = prior ? typeIdOf(prior.base.values) : null
@@ -395,7 +397,7 @@ function reconcile(before: EntityCache, draft: EntityCache): EntityCache {
   }
 
   // Both of these write back here, so neither may run inside the update.
-  if (missingTypes.size) queueMicrotask(() => requestEntities([...missingTypes]))
+  if (staleTypes.size) queueMicrotask(() => requestEntities([...staleTypes]))
   if (candidates.length) queueMicrotask(() => startDerivations(candidates))
 
   return same(before, next) ? before : next
