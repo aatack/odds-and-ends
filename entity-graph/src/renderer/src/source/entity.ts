@@ -48,9 +48,9 @@ async function write(events: AppEvent[], send: () => Promise<unknown>): Promise<
 }
 
 export function writeValue(entityId: string, key: string, value: unknown): Promise<unknown> {
-  // Everything but the type, which is the tool's rather than the event's. The
-  // timestamp and author are named explicitly so the event written here and the
-  // one the store keeps are the same event.
+  // The event, less the discriminator the tool's name already carries. Both the
+  // timestamp and the author are named rather than left to the server, so the
+  // event shown now and the event the store keeps are the same event.
   const written = {
     entityId,
     key,
@@ -63,7 +63,9 @@ export function writeValue(entityId: string, key: string, value: unknown): Promi
 }
 
 // The tool stamps its own author on the events it writes, so unlike writeValue
-// this one takes none.
+// this one takes none — and the id is the server's, so there is nothing to show
+// ahead of the answer either. These two land in the cache with the refresh that
+// follows any write, rather than on their way out.
 export const createEntity = (
   values: Record<string, unknown>,
   parentId?: string,

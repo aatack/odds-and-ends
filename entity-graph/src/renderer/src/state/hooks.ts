@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import type { GetEntities } from '../../../core/query'
 import type { Atom } from './atom'
 import {
@@ -62,6 +62,12 @@ export function useFocus(): Focus {
   return useMemo(() => focusOf(layout), [layout])
 }
 
+/** The cache as the derivations read it: entities, plus how they are getting on. */
+function useEntitySource(): EntitySource {
+  const cache = useAtomValue(entitiesAtom)
+  return useMemo(() => entitiesFrom(cache), [cache])
+}
+
 /**
  * The public face of the entity cache: hand it ids, get entities back — now,
  * synchronously, whether or not they have loaded. Anything missing is asked for
@@ -70,16 +76,7 @@ export function useFocus(): Focus {
  * The function changes identity whenever the cache does, so a `useMemo` keyed on
  * it recomputes exactly when what it read might have changed.
  */
-export function useGetEntities(): GetEntities {
-  const cache = useAtomValue(entitiesAtom)
-  return useCallback((ids: string[]) => entitiesFrom(cache).get(ids), [cache])
-}
-
-/** The cache as the derivations read it: entities, plus how they are getting on. */
-function useEntitySource(): EntitySource {
-  const cache = useAtomValue(entitiesAtom)
-  return useMemo(() => entitiesFrom(cache), [cache])
-}
+export const useGetEntities = (): GetEntities => useEntitySource().get
 
 /** A frame's rows, stepped over the cache and recomputed as entities arrive. */
 export function useFrameRows(frameId: string): FrameRows {
