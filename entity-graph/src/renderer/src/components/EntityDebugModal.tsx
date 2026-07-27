@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Trash03 } from '@untitledui/icons'
-import type { QueryPage } from '../../../core/wrapper'
+import type { Entity } from '../../../core/wrapper'
 import { refreshEntities } from '../state/entities'
 import { clearUndo } from '../state/undo'
 import { Button } from './ui/Button'
@@ -38,22 +38,23 @@ export function EntityDebugModal({ sourceId, entityId, user, onClose }: Props): 
   const load = useCallback(async (): Promise<void> => {
     setError(null)
     try {
-      const page = (await api.sourceCall(sourceId, 'query', {
-        rootId: entityId,
-        maxDepth: 1,
-        limit: 500,
-      })) as QueryPage
-      const self = page.results.find((r) => r.entity.id === entityId)
-      setValues(self?.entity.values ?? {})
-      setLinks(self?.entity.outboundLinks ?? [])
-      setInbound(self?.entity.inboundLinks ?? [])
+      // Straight from the source rather than from the cache, and rolled up by
+      // the store: the point of this panel is what is actually written down,
+      // without a type's defaults or an `events` script laid over the top.
+      const read = (await api.sourceCall(sourceId, 'readEntities', {
+        entityIds: [entityId],
+      })) as Record<string, Entity>
+      const self = read[entityId]
+      setValues(self?.values ?? {})
+      setLinks(self?.outboundLinks ?? [])
+      setInbound(self?.inboundLinks ?? [])
       // No values and nothing pointing either way: an id that was written to by
       // accident, or one that has since been fully unlinked.
       setMissing(
         !!self &&
-          Object.keys(self.entity.values).length === 0 &&
-          self.entity.outboundLinks.length === 0 &&
-          self.entity.inboundLinks.length === 0,
+          Object.keys(self.values).length === 0 &&
+          self.outboundLinks.length === 0 &&
+          self.inboundLinks.length === 0,
       )
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
