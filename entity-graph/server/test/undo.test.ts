@@ -6,10 +6,18 @@ import type { AppEvent } from '../../src/core/events'
 import { SqliteInterface } from '../../src/core/interface/sqlite'
 import { SqliteSource } from '../../src/core/source/index'
 import { readonly } from '../../src/core/source/filter'
+import { POP_AGE_LIMIT_MS } from '../../src/core/source/permissions'
 
 // popEvents / writeEvents: the pair the client's undo and redo are built on.
+//
+// Every fixture here is written relative to the clock, because popping is: the
+// store never gives up an event older than POP_AGE_LIMIT_MS, so a fixture at a
+// round "1000ms past the epoch" is settled history and comes off as nothing at
+// all — which is a test that passes or fails for reasons of its own.
 
 let dir: string
+const now = Date.now()
+const ago = (ms: number): number => now - ms
 
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'eg-undo-'))
@@ -38,32 +46,54 @@ describe('SqliteInterface.popLatestEvents', () => {
   it('takes the latest event and anything within the window, leaving the rest', async () => {
     const iface = new SqliteInterface(join(dir, 'window.db'))
     await iface.writeEvents([
-      value(1_000, 'a', 'text', 'first'),
-      value(5_000, 'a', 'text', 'second'),
+      value(ago(8_000), 'a', 'text', 'first'),
+      value(ago(4_000), 'a', 'text', 'second'),
       // One action, two events at (nearly) the same instant.
-      value(9_000, 'b', 'text', 'third'),
-      linkEvent(9_050, 'a', 'b'),
+      value(ago(50), 'b', 'text', 'third'),
+      linkEvent(ago(0), 'a', 'b'),
     ])
 
     const popped = await iface.popLatestEvents(100)
-    expect(popped.map((e) => e.timestamp)).toEqual([9_000, 9_050])
+    expect(popped.map((e) => e.timestamp)).toEqual([ago(50), ago(0)])
     expect(popped.map((e) => e.type)).toEqual(['value', 'link'])
 
     const left = await iface.readAllEvents()
-    expect(left.map((e) => e.timestamp).sort((x, y) => x - y)).toEqual([1_000, 5_000])
+    expect(left.map((e) => e.timestamp).sort((x, y) => x - y)).toEqual([ago(8_000), ago(4_000)])
     iface.close()
   })
 
   it('groups only within the window, not across it', async () => {
     const iface = new SqliteInterface(join(dir, 'tight.db'))
     await iface.writeEvents([
-      value(1_000, 'a', 'text', 'old'),
-      value(1_200, 'a', 'text', 'new'),
+      value(ago(200), 'a', 'text', 'old'),
+      value(ago(0), 'a', 'text', 'new'),
     ])
     // 200ms apart: separate actions under a 100ms window.
     expect((await iface.popLatestEvents(100)).map((e) => e.value)).toEqual(['new'])
     expect((await iface.popLatestEvents(100)).map((e) => e.value)).toEqual(['old'])
     expect(await iface.readAllEvents()).toEqual([])
+    iface.close()
+  })
+
+  // The behaviour that made every fixture above look fine while testing nothing:
+  // undo deletes rather than compensates, so past the horizon an edit is final.
+  it('leaves settled history alone, however wide the window', async () => {
+    const iface = new SqliteInterface(join(dir, 'horizon.db'))
+    await iface.writeEvents([
+      value(ago(POP_AGE_LIMIT_MS + 60_000), 'a', 'text', 'settled'),
+      value(ago(0), 'a', 'text', 'fresh'),
+    ])
+
+    // A window wide enough to cover both still stops at the horizon: the limit is
+    // a floor on the cutoff, not a refusal, so the recent half comes off and the
+    // rest stays put.
+    const popped = await iface.popLatestEvents(POP_AGE_LIMIT_MS * 2)
+    expect(popped.map((e) => e.value)).toEqual(['fresh'])
+
+    // With nothing recent left there is nothing to undo, which is what the client
+    // reports as "edits settle after five minutes" rather than "nothing to undo".
+    expect(await iface.popLatestEvents(100)).toEqual([])
+    expect((await iface.readAllEvents()).map((e) => e.value)).toEqual(['settled'])
     iface.close()
   })
 
@@ -75,17 +105,18 @@ describe('SqliteInterface.popLatestEvents', () => {
 
   it('round-trips: what comes off can be written straight back', async () => {
     const iface = new SqliteInterface(join(dir, 'roundtrip.db'))
-    const events = [value(2_000, 'a', 'text', { nested: [1, null, 'x'] }), linkEvent(2_010, 'a', 'b')]
-    await iface.writeEvents([value(1_000, 'a', 'text', 'kept'), ...events])
+    const events = [value(ago(10), 'a', 'text', { nested: [1, null, 'x'] }), linkEvent(ago(0), 'a', 'b')]
+    await iface.writeEvents([value(ago(5_000), 'a', 'text', 'kept'), ...events])
 
     const popped = await iface.popLatestEvents(100)
+    expect(popped).toHaveLength(2)
     await iface.writeEvents(popped)
 
     const all = await iface.readAllEvents()
     expect(all).toHaveLength(3)
     // Timestamps and values survive verbatim — redo restores the store as it was,
     // rather than re-applying the edit at the current time.
-    expect(all.find((e) => e.type === 'value' && e.timestamp === 2_000)).toMatchObject({
+    expect(all.find((e) => e.type === 'value' && e.timestamp === ago(10))).toMatchObject({
       value: { nested: [1, null, 'x'] },
     })
     iface.close()
