@@ -1,4 +1,4 @@
-import type { Entity, LinkDirection } from './wrapper'
+import { emptyEntity, summaryOf, type Entity, type LinkDirection } from './entity'
 
 // The query, as a stepper over paths. One function knows how to get from a path
 // to the next one in a depth-first reading of the graph; a query is that
@@ -96,6 +96,8 @@ export interface ResolvedQuery {
   paths: string[][]
   /** False when the limit cut the traversal short — there is more below. */
   complete: boolean
+  /** Where to start again to get the rest; null when there is no rest. */
+  next: string[] | null
 }
 
 /**
@@ -115,5 +117,134 @@ export function resolveQuery(
     paths.push(path)
     path = stepPath(path, get, t)
   }
-  return { paths, complete: path == null }
+  return { paths, complete: path == null, next: path }
+}
+
+// --- Filters ----------------------------------------------------------------
+
+/**
+ * What to keep of what the traversal reached. These are filters over the rows
+ * rather than part of the walk: the traversal decides where to go, and this
+ * decides what is worth showing, so a limit means the same thing either way.
+ */
+export interface QueryFilters {
+  /** Keep rows whose text contains this, plus their ancestors. */
+  find?: string | null
+  /** Keep only section rows, plus the row the query started from. */
+  sections?: boolean
+}
+
+const key = (path: readonly string[]): string => path.join('\0')
+
+/**
+ * Apply the filters to a set of resolved paths.
+ *
+ * Find keeps a matching row's ancestors, so the tree still reads. Sections
+ * pointedly does not — the point of it is to see the sections and nothing else —
+ * and rows keep their real depth either way, so a section nested inside an
+ * ordinary entity still reads as nested. Find is applied first, so the two
+ * compose.
+ */
+export function filterPaths(
+  start: readonly string[],
+  paths: string[][],
+  get: GetEntities,
+  filters: QueryFilters,
+): string[][] {
+  const find = filters.find?.trim().toLowerCase()
+  const entities = get(paths.map((path) => last(path)))
+  const values = (path: readonly string[]): Record<string, unknown> =>
+    entities[last(path)]?.values ?? {}
+
+  let kept = paths
+  if (find) {
+    const keep = new Set<string>()
+    for (const path of kept) {
+      const text = summaryOf(values(path)).text ?? ''
+      if (!text.toLowerCase().includes(find)) continue
+      for (let i = 1; i <= path.length; i++) keep.add(key(path.slice(0, i)))
+    }
+    kept = kept.filter((path) => keep.has(key(path)))
+  }
+  if (filters.sections) {
+    kept = kept.filter((path) => path.length === start.length || values(path).section === true)
+  }
+  return kept
+}
+
+// --- Running one against a store --------------------------------------------
+
+/** Read entities in a batch. The async counterpart of {@link GetEntities}. */
+export type LoadEntities = (entityIds: string[]) => Promise<Record<string, Entity>>
+
+export interface QueryRow {
+  /** Ids from the query's starting entity to this one — its identity, since ids repeat. */
+  path: string[]
+  entity: Entity
+}
+
+export interface QueryPage {
+  rows: QueryRow[]
+  /**
+   * Where to resume when the limit cut the walk short: pass it back as `path` to
+   * carry on from exactly there. Null once the traversal has run out.
+   */
+  continuation: string[] | null
+  /** How many entities the traversal visited, before the filters were applied. */
+  scanned: number
+}
+
+/**
+ * Resolve a query against a store, one page at a time.
+ *
+ * The traversal itself is synchronous and knows nothing about loading, so this
+ * runs it against a cache that starts empty and fills up: every pass records
+ * what it wanted and couldn't have, reads that batch, and walks again. A pass
+ * therefore reaches one level deeper than the last, and the whole thing settles
+ * in as many round trips as the page is deep — not one per entity.
+ *
+ * The limit is on the walk rather than on what survives the filters, so a
+ * narrow filter over a wide tree comes back with few rows and a continuation
+ * rather than with a long silence.
+ */
+export async function runQuery(
+  start: readonly string[],
+  load: LoadEntities,
+  t: Traversal,
+  limit: number,
+  filters: QueryFilters = {},
+): Promise<QueryPage> {
+  const known = new Map<string, Entity>()
+  let missing = new Set<string>()
+
+  const get: GetEntities = (ids) => {
+    const out: Record<string, Entity> = {}
+    for (const id of ids) {
+      const entity = known.get(id)
+      if (entity) out[id] = entity
+      else {
+        missing.add(id)
+        out[id] = emptyEntity(id)
+      }
+    }
+    return out
+  }
+
+  let resolved = resolveQuery(start, get, t, limit)
+  while (missing.size) {
+    const batch = [...missing]
+    missing = new Set()
+    for (const [id, entity] of Object.entries(await load(batch))) known.set(id, entity)
+    // An id that came back with nothing is still an answer; recording it stops
+    // the next pass asking for it again, which is what makes this terminate.
+    for (const id of batch) if (!known.has(id)) known.set(id, emptyEntity(id))
+    resolved = resolveQuery(start, get, t, limit)
+  }
+
+  const kept = filterPaths(start, resolved.paths, get, filters)
+  return {
+    rows: kept.map((path) => ({ path, entity: get([last(path)])[last(path)] })),
+    continuation: resolved.next,
+    scanned: resolved.paths.length,
+  }
 }

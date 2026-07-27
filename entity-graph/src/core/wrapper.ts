@@ -1,116 +1,16 @@
 import { v4 as uuidv4 } from 'uuid'
 import type { AppEvent } from './events'
+import { rollupEntity, type Entity } from './entity'
 import type { EntityInterface } from './interface/index'
 
-export interface Entity {
-  id: string
-  createdAt: number
-  editedAt: number
-  createdBy: string
-  editedBy: string
-  values: Record<string, unknown>
-  inboundLinks: string[]
-  outboundLinks: string[] // ordered
-}
-
-export interface QueryResult {
-  entity: Entity
-  depth: number
-  parentId: string | null
-}
-
-export interface StackFrame {
-  id: string
-  depth: number
-  parentId: string | null
-  path: string[]
-}
-
-export interface QueryPage {
-  results: QueryResult[]
-  /** Non-null when the limit was reached; pass back as `continuationStack` to resume. */
-  continuationStack: StackFrame[] | null
-}
-
-/**
- * Which way a traversal follows links. `out` walks outbound links — the ordinary
- * reading of the graph as a tree of children. `in` walks inbound ones, so the
- * same query answers "what links to this?" and the tree grows towards the
- * entities that reference the root rather than away from it.
- */
-export type LinkDirection = 'out' | 'in'
-
-// ---------------------------------------------------------------------------
-// Rollup
-// ---------------------------------------------------------------------------
-
-/**
- * Fold an entity's events into its current state. Exported because the rollup is
- * not the store's alone: a client holding raw events — the frontend cache — has
- * to arrive at exactly the same entity the server would, or the two disagree
- * about what is on screen.
- *
- * The events need not be sorted; they are sorted here, since order is what a
- * rollup *is*.
- */
-export function rollupEntity(id: string, events: AppEvent[]): Entity {
-  const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp)
-
-  let createdAt = Infinity
-  let editedAt = -Infinity
-  let createdBy = ''
-  let editedBy = ''
-  const values: Record<string, unknown> = {}
-  const outbound: string[] = []
-  // sourceId → currently active?
-  const inboundState = new Map<string, boolean>()
-
-  for (const e of sorted) {
-    if (e.timestamp < createdAt) { createdAt = e.timestamp; createdBy = e.author }
-    if (e.timestamp > editedAt)  { editedAt  = e.timestamp; editedBy  = e.author }
-
-    if (e.type === 'value') {
-      values[e.key] = e.value
-    } else {
-      if (e.sourceId === id) {
-        const dest = e.destinationId
-        const idx  = outbound.indexOf(dest)
-        if (e.action === 0) {
-          if (idx === -1) outbound.push(dest)
-        } else if (e.action === 1) {
-          if (idx !== -1) outbound.splice(idx, 1)
-        } else if (e.action === 2) {
-          // move forward (toward index 0) by one position
-          if (idx > 0) { outbound.splice(idx, 1); outbound.splice(idx - 1, 0, dest) }
-        } else if (e.action === 3) {
-          // move backward (toward end) by one position
-          if (idx !== -1 && idx < outbound.length - 1) {
-            outbound.splice(idx, 1); outbound.splice(idx + 1, 0, dest)
-          }
-        }
-      }
-      if (e.destinationId === id) {
-        if (e.action === 0) inboundState.set(e.sourceId, true)
-        else if (e.action === 1) inboundState.set(e.sourceId, false)
-      }
-    }
-  }
-
-  return {
-    id,
-    createdAt: isFinite(createdAt) ? createdAt : Date.now(),
-    editedAt:  isFinite(editedAt)  ? editedAt  : Date.now(),
-    createdBy,
-    editedBy,
-    values,
-    outboundLinks: outbound,
-    inboundLinks:  [...inboundState.entries()].filter(([, v]) => v).map(([k]) => k),
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Wrapper
-// ---------------------------------------------------------------------------
+// The store-facing half of the entity model: reading entities out of a backing,
+// and the two structural writes that need more than one event. The model itself
+// — what an entity is, and how events fold into one — is in ./entity, which has
+// no dependencies so that every client can share it.
+//
+// Note what is *not* here any more: the traversal. It lives in ./query, as a
+// stepper over a synchronous `getEntities`, so the same walk runs on a server
+// with a database behind it and on a client with a cache behind it.
 
 export class EntityWrapper {
   constructor(
@@ -125,67 +25,6 @@ export class EntityWrapper {
       out.set(id, rollupEntity(id, events))
     }
     return out
-  }
-
-  /**
-   * Depth-first traversal from rootId, following outbound links by default or
-   * inbound ones with `direction: 'in'`.
-   * Avoids cycles by tracking the current path (not globally visited, so the
-   * same entity can appear in different branches — it just can't be its own
-   * ancestor in a given path).
-   *
-   * If limit is reached the continuationPath contains the ancestry path to
-   * the frontier node so the caller can restart from there.
-   */
-  async resolveQuery(
-    rootId: string,
-    options: {
-      maxDepth?: number
-      collapsed?: string[]
-      limit?: number
-      continuationStack?: StackFrame[]
-      direction?: LinkDirection
-    } = {},
-  ): Promise<QueryPage> {
-    const { maxDepth, collapsed = [], limit = 1000, continuationStack, direction = 'out' } = options
-    const collapsedSet = new Set(collapsed)
-    const results: QueryResult[] = []
-
-    // Resume from a serialised stack snapshot, or start fresh from the root.
-    const stack: StackFrame[] = continuationStack
-      ? continuationStack.map((f) => ({ ...f, path: [...f.path] }))
-      : [{ id: rootId, depth: 0, parentId: null, path: [rootId] }]
-
-    while (stack.length > 0) {
-      if (results.length >= limit) {
-        // Snapshot the remaining stack so the caller can resume exactly here.
-        return { results, continuationStack: stack.map((f) => ({ ...f, path: [...f.path] })) }
-      }
-
-      const { id, depth, parentId, path } = stack.pop()!
-
-      const entityMap = await this.readEntities([id])
-      const entity = entityMap.get(id)
-      if (!entity) continue
-
-      results.push({ entity, depth, parentId })
-
-      const shouldExpand = !collapsedSet.has(id) && (maxDepth === undefined || depth < maxDepth)
-      if (shouldExpand) {
-        // Inbound links have no order of their own — only outbound ones are
-        // ordered — so a reversed traversal lists them however the rollup found
-        // them.
-        const links = direction === 'in' ? entity.inboundLinks : entity.outboundLinks
-        // Push in reverse so the first link is processed first (DFS left-to-right)
-        for (const childId of [...links].reverse()) {
-          if (!path.includes(childId)) {
-            stack.push({ id: childId, depth: depth + 1, parentId: id, path: [...path, childId] })
-          }
-        }
-      }
-    }
-
-    return { results, continuationStack: null }
   }
 
   /** Creates a new entity with the given values and optional parent link. Returns the new entity ID. */

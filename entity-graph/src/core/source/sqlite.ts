@@ -1,4 +1,3 @@
-import type { AppEvent } from '../events'
 import { SqliteInterface } from '../interface/sqlite'
 import { defaultTools } from './defaultTools'
 import {
@@ -9,25 +8,6 @@ import {
 } from './permissions'
 import { loadUserTools } from './userTools'
 import { ToolSource, type ToolDef } from './types'
-
-/**
- * Flatten a `Map<id, events>` into a deduplicated event array. Link events are
- * stored under both their source and destination buckets as the same object
- * reference, so a reference Set removes those duplicates.
- */
-function flatten(map: Map<string, AppEvent[]>): AppEvent[] {
-  const seen = new Set<AppEvent>()
-  const out: AppEvent[] = []
-  for (const events of map.values()) {
-    for (const e of events) {
-      if (!seen.has(e)) {
-        seen.add(e)
-        out.push(e)
-      }
-    }
-  }
-  return out
-}
 
 /**
  * The base source: an event-sourced SQLite store. It grants the DB read/write
@@ -50,7 +30,11 @@ export class SqliteSource extends ToolSource {
     this.iface = new SqliteInterface(path)
     this.defaultAuthor = defaultAuthor
     const backing: EventBacking & ResourceBacking = {
-      readEvents: async (ids) => flatten(await this.iface.readEvents(ids)),
+      // Flat from the store rather than flattened from per-entity buckets: a
+      // link belongs to both its ends, so collecting bucket by bucket pulls it
+      // forward to wherever the first of those ends sits and silently reorders
+      // the links of the other.
+      readEvents: (ids) => this.iface.readEventsFlat(ids),
       readAllEvents: () => this.iface.readAllEvents(),
       writeEvents: (events) => this.iface.writeEvents(events),
       popLatestEvents: (windowMs) => this.iface.popLatestEvents(windowMs),

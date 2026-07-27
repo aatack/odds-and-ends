@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import type { QueryPage } from '../../../core/wrapper'
+import type { QueryPage } from '../../../core/query'
 import type { ToolMeta } from '../../../core/client'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
@@ -47,7 +47,7 @@ function RawQuery({ connId }: { connId: string }): React.JSX.Element {
     setError(null)
     try {
       const p = (await api.sourceCall(connId, 'query', {
-        rootId: rootId.trim(),
+        path: rootId.trim(),
         maxDepth: maxDepth ? parseInt(maxDepth, 10) : undefined,
         limit: limit ? parseInt(limit, 10) : 100,
       })) as QueryPage
@@ -74,10 +74,10 @@ function RawQuery({ connId }: { connId: string }): React.JSX.Element {
       {page && (
         <div className="space-y-1">
           <p className="text-xs text-gray-500">
-            {page.results.length} rows{page.continuationStack ? ' (more available — raise limit)' : ''}
+            {page.rows.length} rows{page.continuation ? ' (more available — raise limit)' : ''}
           </p>
           <pre className="max-h-64 overflow-auto rounded-md bg-gray-50 p-3 font-mono text-xs">
-            {JSON.stringify(page.results.map((r) => ({ id: r.entity.id, depth: r.depth, parentId: r.parentId, values: r.entity.values })), null, 2)}
+            {JSON.stringify(page.rows.map((r) => ({ path: r.path, values: r.entity.values })), null, 2)}
           </pre>
         </div>
       )}

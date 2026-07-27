@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Trash03 } from '@untitledui/icons'
-import type { Entity } from '../../../core/wrapper'
+import type { Entity } from '../../../core/entity'
 import { refreshEntities } from '../state/entities'
 import { clearUndo } from '../state/undo'
 import { Button } from './ui/Button'

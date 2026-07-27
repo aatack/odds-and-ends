@@ -1,6 +1,6 @@
 import type { AppEvent } from '../../../core/events'
 import type { GetEntities } from '../../../core/query'
-import { rollupEntity, type Entity } from '../../../core/wrapper'
+import { rollupEntity, type Entity } from '../../../core/entity'
 import { atom } from './atom'
 
 // The entity cache: every event the app has read, kept per entity, and the

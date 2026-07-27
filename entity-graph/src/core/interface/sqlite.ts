@@ -114,53 +114,82 @@ export class SqliteInterface implements DumpableInterface, ResourceBacking {
     }
   }
 
-  async readEvents(entityIds: string[]): Promise<Map<string, AppEvent[]>> {
-    const result = new Map<string, AppEvent[]>()
-    if (entityIds.length === 0) return result
-    for (const id of entityIds) result.set(id, [])
-
+  /**
+   * Every event touching any of `entityIds`, in the order they were written.
+   *
+   * Order matters and is the point of this being flat. Within one timestamp the
+   * events are ordered by insertion (`id`), because a rollup's own sort is
+   * stable and ties are common: one action writes an entity's values and its
+   * parent link at the same instant, and a batch that adds a child and then
+   * moves it into place is several link events sharing one. Read them back in
+   * another order and the entity rolls up with a different child order.
+   *
+   * Value and link events are not interleaved by id — separate tables, separate
+   * sequences — which costs nothing: the two kinds don't interact in a rollup,
+   * and each keeps its own order within the timestamp it shares.
+   */
+  private eventsTouching(entityIds: string[]): AppEvent[] {
+    if (entityIds.length === 0) return []
     const ph = entityIds.map(() => '?').join(',')
 
     const valueRows = this.db
       .prepare<string[], ValueRow>(
         `SELECT timestamp, author, entity_id, key, value
-         FROM value_events WHERE entity_id IN (${ph})`
+         FROM value_events WHERE entity_id IN (${ph})
+         ORDER BY timestamp, id`
       )
       .all(...entityIds)
-
-    for (const row of valueRows) {
-      const event: ValueEvent = {
-        type: 'value',
-        timestamp: row.timestamp,
-        author: row.author,
-        entityId: row.entity_id,
-        key: row.key,
-        value: JSON.parse(row.value),
-      }
-      result.get(row.entity_id)!.push(event)
-    }
 
     const linkRows = this.db
       .prepare<string[], LinkRow>(
         `SELECT timestamp, author, source_id, destination_id, action
          FROM link_events
-         WHERE source_id IN (${ph}) OR destination_id IN (${ph})`
+         WHERE source_id IN (${ph}) OR destination_id IN (${ph})
+         ORDER BY timestamp, id`
       )
       .all(...entityIds, ...entityIds)
 
-    for (const row of linkRows) {
-      const event: LinkEvent = {
-        type: 'link',
-        timestamp: row.timestamp,
-        author: row.author,
-        sourceId: row.source_id,
-        destinationId: row.destination_id,
-        action: row.action as 0 | 1 | 2 | 3,
+    return [
+      ...valueRows.map(
+        (row): AppEvent => ({
+          type: 'value',
+          timestamp: row.timestamp,
+          author: row.author,
+          entityId: row.entity_id,
+          key: row.key,
+          value: JSON.parse(row.value),
+        })
+      ),
+      ...linkRows.map(
+        (row): AppEvent => ({
+          type: 'link',
+          timestamp: row.timestamp,
+          author: row.author,
+          sourceId: row.source_id,
+          destinationId: row.destination_id,
+          action: row.action as 0 | 1 | 2 | 3,
+        })
+      ),
+    ]
+  }
+
+  /** {@link eventsTouching}, deduplicated and flat — the shape `EventBacking` takes. */
+  async readEventsFlat(entityIds: string[]): Promise<AppEvent[]> {
+    return this.eventsTouching(entityIds)
+  }
+
+  async readEvents(entityIds: string[]): Promise<Map<string, AppEvent[]>> {
+    const result = new Map<string, AppEvent[]>()
+    if (entityIds.length === 0) return result
+    for (const id of entityIds) result.set(id, [])
+
+    for (const event of this.eventsTouching(entityIds)) {
+      if (event.type === 'value') {
+        result.get(event.entityId)?.push(event)
+        continue
       }
-      if (result.has(row.source_id)) result.get(row.source_id)!.push(event)
-      if (result.has(row.destination_id) && row.destination_id !== row.source_id) {
-        result.get(row.destination_id)!.push(event)
-      }
+      result.get(event.sourceId)?.push(event)
+      if (event.destinationId !== event.sourceId) result.get(event.destinationId)?.push(event)
     }
 
     return result
@@ -244,7 +273,7 @@ export class SqliteInterface implements DumpableInterface, ResourceBacking {
 
     const valueRows = this.db
       .prepare<[], ValueRow>(
-        `SELECT timestamp, author, entity_id, key, value FROM value_events`
+        `SELECT timestamp, author, entity_id, key, value FROM value_events ORDER BY timestamp, id`
       )
       .all()
     for (const row of valueRows) {
@@ -260,7 +289,7 @@ export class SqliteInterface implements DumpableInterface, ResourceBacking {
 
     const linkRows = this.db
       .prepare<[], LinkRow>(
-        `SELECT timestamp, author, source_id, destination_id, action FROM link_events`
+        `SELECT timestamp, author, source_id, destination_id, action FROM link_events ORDER BY timestamp, id`
       )
       .all()
     for (const row of linkRows) {

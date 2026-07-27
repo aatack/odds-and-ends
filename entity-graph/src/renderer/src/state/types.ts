@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid'
-import type { LinkDirection } from '../../../core/wrapper'
+import type { LinkDirection } from '../../../core/entity'
 
 export type { LinkDirection }
 

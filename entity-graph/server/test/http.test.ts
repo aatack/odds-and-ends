@@ -173,10 +173,60 @@ describe('sqlite source: crud, auth, round-trip', () => {
     expect(read.status).toBe('success')
     expect(read.result[childId].values.text).toBe('root-child')
 
-    // query from the root reaches the child via the outbound link.
-    const q = await call('a', token, 'query', { rootId: 'root' })
+    // query from the root reaches the child via the outbound link, and says
+    // where each row sits by the path that got there.
+    const q = await call('a', token, 'query', { path: 'root' })
     expect(q.status).toBe('success')
-    expect(q.result.results.map((r: any) => r.entity.id)).toContain(childId)
+    expect(q.result.rows.map((r: any) => r.entity.id)).toContain(childId)
+    expect(q.result.rows[0].path).toEqual(['root'])
+    expect(q.result.rows.find((r: any) => r.entity.id === childId).path).toEqual(['root', childId])
+    expect(q.result.continuation).toBeNull()
+  })
+
+  // What an agent reads the tree through: a walk it can resume, and filters that
+  // narrow what comes back without narrowing what was looked at.
+  it('pages a query by path, and filters the rows it returns', async () => {
+    const linked = (from: string, to: string) =>
+      call('a', token, 'writeLink', { sourceId: from, destinationId: to, action: 0 })
+    await call('a', token, 'writeValue', { entityId: 'q-p', key: 'text', value: 'Parent' })
+    await call('a', token, 'writeValue', { entityId: 'q-a', key: 'text', value: 'apple' })
+    await call('a', token, 'writeValue', { entityId: 'q-b', key: 'text', value: 'pear' })
+    await call('a', token, 'writeValue', { entityId: 'q-b', key: 'section', value: true })
+    await call('a', token, 'writeValue', { entityId: 'q-c', key: 'text', value: 'apple pie' })
+    await linked('q-p', 'q-a')
+    await linked('q-p', 'q-b')
+    await linked('q-b', 'q-c')
+
+    const whole = await call('a', token, 'query', { path: 'q-p' })
+    expect(whole.result.rows.map((r: any) => r.entity.id)).toEqual(['q-p', 'q-a', 'q-b', 'q-c'])
+
+    // A limit stops the walk and says where to pick it up; passing that path
+    // straight back gets the rest.
+    const first = await call('a', token, 'query', { path: 'q-p', limit: 2 })
+    expect(first.result.rows.map((r: any) => r.entity.id)).toEqual(['q-p', 'q-a'])
+    expect(first.result.continuation).toEqual(['q-p', 'q-b'])
+    const rest = await call('a', token, 'query', { path: first.result.continuation })
+    expect(rest.result.rows.map((r: any) => r.entity.id)).toEqual(['q-b', 'q-c'])
+    expect(rest.result.continuation).toBeNull()
+
+    // Depth is counted from the entity the walk starts at.
+    const shallow = await call('a', token, 'query', { path: 'q-p', maxDepth: 1 })
+    expect(shallow.result.rows.map((r: any) => r.entity.id)).toEqual(['q-p', 'q-a', 'q-b'])
+
+    // Find keeps a match's ancestors so the tree still reads; sections doesn't,
+    // since the point of it is to see the sections and nothing else. Either way
+    // the whole tree was walked, which is what `scanned` reports.
+    const found = await call('a', token, 'query', { path: 'q-p', find: 'apple' })
+    expect(found.result.rows.map((r: any) => r.entity.id)).toEqual(['q-p', 'q-a', 'q-b', 'q-c'])
+    expect(found.result.scanned).toBe(4)
+    const pies = await call('a', token, 'query', { path: 'q-p', find: 'pie' })
+    expect(pies.result.rows.map((r: any) => r.entity.id)).toEqual(['q-p', 'q-b', 'q-c'])
+    const sections = await call('a', token, 'query', { path: 'q-p', sections: true })
+    expect(sections.result.rows.map((r: any) => r.entity.id)).toEqual(['q-p', 'q-b'])
+
+    // Reversed, the same walk answers "what links to this?".
+    const back = await call('a', token, 'query', { path: 'q-c', direction: 'in' })
+    expect(back.result.rows.map((r: any) => r.entity.id)).toEqual(['q-c', 'q-b', 'q-p'])
   })
 
   it('reports not-implemented for stubbed IO permissions', async () => {
@@ -233,6 +283,27 @@ describe('sqlite source: crud, auth, round-trip', () => {
       overscan: 1,
     })
     expect(clipped.result.entityIds).toHaveLength(2)
+  })
+
+  // Child order is the outline's order, and it comes out of the order the link
+  // events were written. Two links written at one instant tie on timestamp, so
+  // what breaks the tie has to be the store, not which entities were asked for.
+  it('keeps child order whoever is read alongside the parent', async () => {
+    const at = Date.now()
+    for (const child of ['ord-a', 'ord-b']) {
+      await call('a', token, 'writeLink', {
+        sourceId: 'ord-p',
+        destinationId: child,
+        action: 0,
+        timestamp: at,
+      })
+    }
+    const alone = await call('a', token, 'readEntities', { entityIds: ['ord-p'] })
+    expect(alone.result['ord-p'].outboundLinks).toEqual(['ord-a', 'ord-b'])
+    // `ord-b` shares the second link, so reading it first is what used to drag
+    // that link to the front of the parent's list.
+    const together = await call('a', token, 'readEntities', { entityIds: ['ord-b', 'ord-p'] })
+    expect(together.result['ord-p'].outboundLinks).toEqual(['ord-a', 'ord-b'])
   })
 
   it('errors (not crashes) on a required missing arg', async () => {

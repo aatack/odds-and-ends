@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { NO_TRAVERSAL, resolveQuery, stepPath, type GetEntities } from '../../src/core/query'
-import type { Entity } from '../../src/core/wrapper'
+import type { Entity } from '../../src/core/entity'
 
 // The traversal is a pure function over a `getEntities`, which is the whole
 // point of it: the same stepper runs off the frontend's cache and off a store.

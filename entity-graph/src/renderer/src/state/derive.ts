@@ -1,5 +1,5 @@
 import { resolveQuery } from '../../../core/query'
-import type { Entity, LinkDirection } from '../../../core/wrapper'
+import type { Entity, LinkDirection } from '../../../core/entity'
 import type { EntitySource } from './entities'
 import { focusOf } from './store'
 import {
