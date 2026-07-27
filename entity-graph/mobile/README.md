@@ -43,6 +43,7 @@ all.
 ```sh
 curl -fsSL https://tailscale.com/install.sh | sudo sh
 sudo tailscale up
+sudo tailscale set --operator=$USER    # see below — the desktop app needs this
 ```
 
 Then in the [admin console](https://login.tailscale.com/admin/dns) enable **MagicDNS**
@@ -50,18 +51,53 @@ Then in the [admin console](https://login.tailscale.com/admin/dns) enable **Magi
 certificate, so no secure context, so no install. `tailscale status --json` should then
 list the name under `CertDomains`.
 
+The `--operator` line is what lets anything other than root change the serve config.
+*Reading* it needs no privilege, which is the confusing part: `tailscale serve status`
+answers happily while every command that would change something fails with `Access
+denied: serve config denied`. The desktop app runs as you, so without it every switch
+below is a permission error.
+
 **Once, on the phone:** install Tailscale from the store, sign in with the same account,
 turn it on. `tailscale ping <phone>` from the laptop confirms the two can see each
 other.
 
-**Then build and serve.** Note this serves `dist/` — a static build read off disk by
+### From the desktop app
+
+The **Sources** page has the two mounts as switches, which is the shortest route and the
+one that keeps the connect link below within reach.
+
+- **Phone access**, at the top of the page, serves this app's build at `/`. It shows the
+  `.ts.net` name, the directory being served, and warns when nothing has been built into
+  it yet — the served files are whatever `mobile/dist` last held, so run `npm run build`
+  in `mobile/` at least once. Nothing needs restarting after a rebuild.
+- **Phone access** again, inside a source's editor, serves that source at
+  `/api/<sourceId>`, and — once it is on — will build a **connect link** for it: a QR
+  code and a URL that carry the whole connection, token included. That is the last
+  manual step gone; see [Without typing the token](#without-typing-the-token).
+
+The switches read Tailscale's own config rather than remembering anything, so a mount
+made by hand shows as on, and one made from the app can be taken away with the CLI.
+Two consequences worth knowing:
+
+- A mount pointing somewhere else is a **conflict**, not an off switch. The app won't
+  quietly take over a path something else holds.
+- Turning a mount **off** is the destructive direction, because of the missing removal
+  below: it clears the serve config and rebuilds it without that one mount. If the
+  config holds something the app can't put back — Funnel, a service, a foreground
+  `tailscale serve`, a second host, a raw TCP forwarder — it refuses and says which,
+  rather than resetting away something it can't restore. Adding is always just one
+  command and never resets anything.
+
+### By hand
+
+The same two mounts. Note this serves `dist/` — a static build read off disk by
 `tailscaled` — not the vite dev server, so nothing of yours has to keep running:
 
 ```sh
 npm run build        # in mobile/ — the served files are whatever dist/ last held
 
-sudo tailscale serve --bg /abs/path/to/entity-graph/mobile/dist
-sudo tailscale serve --bg --set-path=/api/<sourceId> http://127.0.0.1:<port>/<sourceId>
+tailscale serve --bg /abs/path/to/entity-graph/mobile/dist
+tailscale serve --bg --set-path=/api/<sourceId> http://127.0.0.1:<port>/<sourceId>
 ```
 
 `--set-path` **strips the prefix before proxying**, which is the whole trick: a request
@@ -92,12 +128,14 @@ serve` accepts (1.98 prints its help and does nothing, which reads like success)
 everything and re-add the handlers you want:
 
 ```sh
-sudo tailscale serve reset
-sudo tailscale serve --bg /abs/path/to/entity-graph/mobile/dist
-sudo tailscale serve --bg --set-path=/api/<sourceId> http://127.0.0.1:<port>/<sourceId>
+tailscale serve reset
+tailscale serve --bg /abs/path/to/entity-graph/mobile/dist
+tailscale serve --bg --set-path=/api/<sourceId> http://127.0.0.1:<port>/<sourceId>
 ```
 
-`sudo tailscale set --operator=$USER`, once, drops the need for `sudo` on all of these.
+(Without `sudo tailscale set --operator=$USER`, every line above needs `sudo`.)
+
+### Filling it in on the phone
 
 Then open `https://<host>.<tailnet>.ts.net` on the phone and fill in:
 
@@ -108,8 +146,12 @@ Then open `https://<host>.<tailnet>.ts.net` on the phone and fill in:
 | **Token** | a token issued for that source — see below |
 | **Author** | recorded against everything written from the phone; `mobile` by default |
 
+A connect link from the desktop app fills all four, so this table is what you need when
+setting one up by hand.
+
 Issue the token **from the laptop, on loopback**, since the scoped mount deliberately
-leaves the admin surface off the tailnet:
+leaves the admin surface off the tailnet — the app's source editor issues one for you,
+under the label `phone`, so it can be revoked without logging the desktop out:
 
 ```sh
 curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
@@ -167,7 +209,15 @@ desktop app with the variable unset and the server binds loopback only, which
 ## Without typing the token
 
 Typing a 48-character token with a thumb is miserable, so a connection can be handed
-over in the URL fragment instead — for either route. From the repo root:
+over in the URL fragment instead — for either route.
+
+The desktop app builds one: **Sources → a source → Phone access → Make connect link**,
+once that source is served. It shows the link as a QR code to point the phone's camera
+at and as text to send yourself, and issues (or reuses) a token labelled `phone` to put
+in it. The **Author** beside the button is what every write from that phone is recorded
+under, `phone` by default.
+
+By hand, from the repo root:
 
 ```sh
 node -e '

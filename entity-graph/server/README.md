@@ -76,8 +76,9 @@ caveat; long-term the app and server can be split into fully isolated installs.)
 To reach the server from another device — a phone running [`../mobile`](../mobile) — the
 better answer is to leave it on loopback and put `tailscale serve` in front, which adds
 TLS and keeps it off the LAN entirely; see [`../mobile/README.md`](../mobile/README.md).
-Failing that, `HOST=0.0.0.0` binds every interface; the default `127.0.0.1` only answers
-the machine it runs on.
+The desktop app has that as a switch per source, on its Sources page, so this is only a
+shell job for a server it didn't start. Failing that, `HOST=0.0.0.0` binds every
+interface; the default `127.0.0.1` only answers the machine it runs on.
 
 Binding beyond loopback **requires `ADMIN_TOKEN`**: the server refuses to start with a
 non-loopback `HOST` and no token, since the admin endpoints are open when it is unset and

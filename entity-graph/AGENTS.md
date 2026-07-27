@@ -104,6 +104,30 @@ is the long form; the rules that matter day to day:
 - **Errors surface as call results.** A tool throws; the call machine settles it
   and the toast layer shows it. Components don't raise toasts themselves.
 
+## Phone access
+
+The Sources page also drives `tailscale serve`, which is how the phone client in
+[`mobile/`](./mobile) reaches this machine: the app's build at `/`, and one source
+at `/api/<sourceId>`, on the tailnet's HTTPS name.
+
+`src/main/tailscale.ts` is the whole of it, and is plain Node — the app root is
+passed in rather than read from `electron`, so it runs outside the app. It holds
+**no state**: Tailscale's own config is read back on every refresh, so a mount
+made from a shell and one made from a switch are indistinguishable, and a switch
+can't drift from the truth. Two rules follow from `tailscale` having no per-path
+removal:
+
+- **Adding is one idempotent command; removing is `reset` plus a rebuild of
+  everything else.** So removal is the only destructive operation, the only one
+  that can be refused, and the only one that needs to check first.
+- **A mount pointing elsewhere is a conflict, not an off state.** Don't take over
+  a path something else holds.
+
+Changing the serve config needs `sudo tailscale set --operator=$USER` once;
+reading it doesn't, which is why a permission failure only ever shows up on a
+write. `failed()` spots that case and gives the fix rather than passing
+tailscaled's wording through.
+
 ## Reusable components
 
 Primitives live in `src/renderer/src/components/ui/` — `Button`, `Badge`,
@@ -127,7 +151,7 @@ label: a bare label can't be right-clicked, and it won't follow the entity.
 ```
 server/         the HTTP server: sources, and the integrations (GitHub, Slack, Claude)
 mobile/         a separate phone client (PWA) for one source — its own install, own guide
-src/main       Electron main — window, servers, config store
+src/main       Electron main — window, servers, config store, tailscale serve
 src/preload     contextBridge exposing the typed EntityGraphAPI
 src/core        source client + query wrapper (shared types)
 src/renderer/src  React app

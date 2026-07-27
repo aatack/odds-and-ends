@@ -22,6 +22,12 @@ app and `/api/<sourceId>`, so the calls are same-origin. It still matters for th
 plain-LAN fallback, where the app is on vite's port and the server on its own, and it
 is what keeps a tunnel workable. Don't remove it on the strength of the tunnel setup.
 
+Those two mounts are switches on the desktop app's Sources page (`src/main/tailscale.ts`
+over there), which also builds the `#connect=` link this app reads in `main.tsx`. Nothing
+here depends on that — a mount set up in a shell is the same mount — but if the link
+format changes, `encodeConnection` / `connectionFromHash` in `src/source/connection.ts`
+and the desktop's `tailscale:phoneLink` handler are the two ends of it.
+
 ## Don't start the desktop app
 
 The same rule as `../AGENTS.md`: **never** run `npm run dev` in `entity-graph/` — it

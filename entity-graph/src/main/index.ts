@@ -6,8 +6,10 @@ import { pathToFileURL } from 'url'
 import { randomBytes } from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
 import type { ActiveSource, CurrentSource, NewServer, NewSourceConnection, Server, TokenRow } from '../core/client'
+import { APP_MOUNT, phoneAppUrl, phoneBaseUrl, sourceMount, sourceTarget } from '../core/client'
 import { store } from './store'
 import { ServerManager } from './servers'
+import { phoneAppDist, setServed, tailscaleView } from './tailscale'
 
 // nanoid's default url-safe alphabet (64 chars ⇒ `byte & 63` selects uniformly).
 const NANOID_ALPHABET = 'useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict'
@@ -22,6 +24,9 @@ function nanoid(size = 21): string {
 
 /** Label carried by the token the app issues for itself when opening a source. */
 const APP_TOKEN_LABEL = 'app'
+
+/** …and the one it issues for a phone, kept apart so it can be revoked alone. */
+const PHONE_TOKEN_LABEL = 'phone'
 
 // ---------------------------------------------------------------------------
 // Local server processes
@@ -212,33 +217,40 @@ ipcMain.handle('sourceConn:remove', (_e, id: string) => {
 // IPC — open / close a source, and its data operations
 // ---------------------------------------------------------------------------
 
-ipcMain.handle('source:open', async (_e, serverId: string, sourceId: string, label: string): Promise<ActiveSource> => {
+/**
+ * A bearer token for one source, by whichever route this server offers.
+ *
+ * An admin server issues its own, reusing a live token that carries the same
+ * `label` so repeated asks don't pile up throwaways — which is also what makes
+ * the label worth passing in: the app's own token and the one handed to a phone
+ * are separate, so revoking the phone doesn't log the app out. Everything else
+ * has a token the user saved when connecting.
+ */
+async function tokenFor(serverId: string, sourceId: string, label: string): Promise<string> {
   const server = requireServer(serverId)
-  let token: string
   if (server.adminToken) {
-    // Reuse the app's own live token for this source if one exists, so repeated
-    // opens don't pile up throwaway tokens; only mint a fresh one when there's none.
     const existing = (await adminRequest(
       serverId,
       'GET',
       `/admin/sources/${sourceId}/tokens`,
     )) as TokenRow[]
-    const reusable = existing.find((t) => !t.revoked && t.label === APP_TOKEN_LABEL)
-    if (reusable) {
-      token = reusable.token
-    } else {
-      const issued = (await adminRequest(serverId, 'POST', `/admin/sources/${sourceId}/tokens`, {
-        label: APP_TOKEN_LABEL,
-      })) as { token: string }
-      token = issued.token
-    }
-  } else {
-    const conn = store
-      .get('sourceConnections')
-      .find((c) => c.serverId === serverId && c.sourceId === sourceId)
-    if (!conn) throw new HttpError(`no saved credentials for source "${sourceId}"`)
-    token = conn.token
+    const reusable = existing.find((t) => !t.revoked && t.label === label)
+    if (reusable) return reusable.token
+    const issued = (await adminRequest(serverId, 'POST', `/admin/sources/${sourceId}/tokens`, {
+      label,
+    })) as { token: string }
+    return issued.token
   }
+  const conn = store
+    .get('sourceConnections')
+    .find((c) => c.serverId === serverId && c.sourceId === sourceId)
+  if (!conn) throw new HttpError(`no saved credentials for source "${sourceId}"`)
+  return conn.token
+}
+
+ipcMain.handle('source:open', async (_e, serverId: string, sourceId: string, label: string): Promise<ActiveSource> => {
+  const server = requireServer(serverId)
+  const token = await tokenFor(serverId, sourceId, APP_TOKEN_LABEL)
   const id = uuidv4()
   activeSources.set(id, { baseUrl: server.baseUrl, token, sourceId })
   return { id, label, serverId, sourceId }
@@ -298,6 +310,47 @@ ipcMain.handle('admin:issueToken', (_e, serverId: string, id: string, label?: st
 )
 ipcMain.handle('admin:revokeToken', (_e, serverId: string, token: string) =>
   adminRequest(serverId, 'DELETE', `/admin/tokens/${token}`),
+)
+
+// ---------------------------------------------------------------------------
+// IPC — Tailscale, which is how the phone reaches any of this
+//
+// Machine-scoped rather than server-scoped: one tailnet name, one serve config,
+// and the app and every source it publishes share it. See `./tailscale.ts`.
+// ---------------------------------------------------------------------------
+
+ipcMain.handle('tailscale:status', () => tailscaleView(app.getAppPath()))
+
+ipcMain.handle('tailscale:serveApp', (_e, on: boolean) => {
+  const root = app.getAppPath()
+  return setServed(root, { mount: APP_MOUNT, kind: 'path', target: phoneAppDist(root).path }, on)
+})
+
+ipcMain.handle('tailscale:serveSource', (_e, serverId: string, sourceId: string, on: boolean) => {
+  const server = requireServer(serverId)
+  return setServed(
+    app.getAppPath(),
+    { mount: sourceMount(sourceId), kind: 'proxy', target: sourceTarget(server.baseUrl, sourceId) },
+    on,
+  )
+})
+
+/**
+ * A link that connects a phone to one source in a single tap: the whole
+ * connection, base64'd into the URL fragment. Thumb-typing a 48-character
+ * bearer token is miserable enough to be worth a code path, and a fragment is
+ * the one part of a URL that never reaches a server or a log on the way in.
+ */
+ipcMain.handle(
+  'tailscale:phoneLink',
+  async (_e, serverId: string, sourceId: string, author: string): Promise<string> => {
+    const view = await tailscaleView(app.getAppPath())
+    if (!view.domain) throw new HttpError(view.problem ?? 'Tailscale isn’t ready.')
+    const token = await tokenFor(serverId, sourceId, PHONE_TOKEN_LABEL)
+    const connection = { baseUrl: phoneBaseUrl(view.domain), sourceId, token, author }
+    const hash = Buffer.from(JSON.stringify(connection)).toString('base64').replace(/=+$/, '')
+    return `${phoneAppUrl(view.domain)}#connect=${hash}`
+  },
 )
 
 // ---------------------------------------------------------------------------
