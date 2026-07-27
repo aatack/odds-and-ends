@@ -41,10 +41,19 @@ export interface QueryPage {
 export type LinkDirection = 'out' | 'in'
 
 // ---------------------------------------------------------------------------
-// Internal rollup
+// Rollup
 // ---------------------------------------------------------------------------
 
-function rollupEntity(id: string, events: AppEvent[]): Entity {
+/**
+ * Fold an entity's events into its current state. Exported because the rollup is
+ * not the store's alone: a client holding raw events — the frontend cache — has
+ * to arrive at exactly the same entity the server would, or the two disagree
+ * about what is on screen.
+ *
+ * The events need not be sorted; they are sorted here, since order is what a
+ * rollup *is*.
+ */
+export function rollupEntity(id: string, events: AppEvent[]): Entity {
   const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp)
 
   let createdAt = Infinity

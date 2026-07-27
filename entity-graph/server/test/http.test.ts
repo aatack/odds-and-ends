@@ -197,6 +197,44 @@ describe('sqlite source: crud, auth, round-trip', () => {
     expect(res.result.every((e: any) => e.author === 'alice')).toBe(true)
   })
 
+  // What a client keeping its own cache reads through: the entities asked for
+  // plus, by default, two layers of their children, so walking down the tree
+  // costs one round trip rather than one per level.
+  it('scans events with an overscan over the entities linked from them', async () => {
+    const linked = (from: string, to: string) =>
+      call('a', token, 'writeLink', { sourceId: from, destinationId: to, action: 0 })
+    await call('a', token, 'writeValue', { entityId: 'sc-p', key: 'text', value: 'parent' })
+    await call('a', token, 'writeValue', { entityId: 'sc-c1', key: 'text', value: 'one' })
+    await call('a', token, 'writeValue', { entityId: 'sc-g', key: 'text', value: 'grandchild' })
+    await linked('sc-p', 'sc-c1')
+    await linked('sc-p', 'sc-c2')
+    await linked('sc-c1', 'sc-g')
+
+    const shallow = await call('a', token, 'scanEvents', { entityIds: ['sc-p'], depth: 1 })
+    expect(shallow.status).toBe('success')
+    expect(shallow.result.entityIds.sort()).toEqual(['sc-c1', 'sc-c2', 'sc-p'])
+    // The p → c1 link is read from both ends; it comes back once all the same,
+    // since a duplicated link *move* would be applied twice by a rollup.
+    const links = shallow.result.events.filter((e: any) => e.type === 'link')
+    expect(links).toHaveLength(3)
+    expect(new Set(links.map((e: any) => `${e.sourceId}>${e.destinationId}`)).size).toBe(3)
+
+    // One layer further reaches the grandchild; `depth: 0` reaches nothing.
+    const deep = await call('a', token, 'scanEvents', { entityIds: ['sc-p'] })
+    expect(deep.result.entityIds).toContain('sc-g')
+    const alone = await call('a', token, 'scanEvents', { entityIds: ['sc-p'], depth: 0 })
+    expect(alone.result.entityIds).toEqual(['sc-p'])
+
+    // The overscan is clipped per layer, and a clipped entity is not reported as
+    // covered — the client would otherwise think it had that entity's events.
+    const clipped = await call('a', token, 'scanEvents', {
+      entityIds: ['sc-p'],
+      depth: 1,
+      overscan: 1,
+    })
+    expect(clipped.result.entityIds).toHaveLength(2)
+  })
+
   it('errors (not crashes) on a required missing arg', async () => {
     const res = await call('a', token, 'writeValue', { key: 'k', value: 1 }) // no entityId
     expect(res.status).toBe('error')
@@ -222,6 +260,7 @@ describe('filter / readonly wrapper', () => {
       'readEntities',
       'readEvents',
       'readResource',
+      'scanEvents',
     ])
 
     const res = await call('a-ro', roToken, 'writeValue', { entityId: 'x', key: 'k', value: 1 })

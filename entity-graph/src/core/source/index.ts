@@ -16,8 +16,8 @@ export type {
 } from './permissions'
 export { NotImplementedError, stubbedIO, dbPermissions } from './permissions'
 
-export type { DefaultToolOptions } from './defaultTools'
-export { defaultTools, readEventsTool, entityWrapper } from './defaultTools'
+export type { DefaultToolOptions, EventScan } from './defaultTools'
+export { defaultTools, readEventsTool, scanEventsTool, entityWrapper } from './defaultTools'
 
 export type { UserToolOptions } from './userTools'
 export { loadUserTools, TOOLS_ENTITY_ID } from './userTools'

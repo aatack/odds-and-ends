@@ -1,20 +1,22 @@
 import type { AppEvent } from '../events'
-import { readEventsTool } from './defaultTools'
+import { readEventsTool, scanEventsTool } from './defaultTools'
 import { ToolSource, type Source, type ToolDef } from './types'
 
 /**
  * Merge several sources into one.
  *
  * - `tools()` is the union of the children's tools, deduplicated by id
- *   (first child wins on a collision), EXCEPT `readEvents`, which is replaced
- *   by a combined version.
+ *   (first child wins on a collision), EXCEPT the raw-event reads —
+ *   `readEvents` and `scanEvents` — which are replaced by combined versions.
  * - `readEvents` returns `children.flatMap(readEvents)` — the raw union, in
- *   child order. Consumers sort/roll up as they see fit.
+ *   child order. Consumers sort/roll up as they see fit. `scanEvents` is built
+ *   over that same union, so its overscan follows links across children.
  * - `writeValue` / `writeLink` are inherited from the first child, so writes
  *   land only in `children[0]` (or are absent if it is read-only).
  */
 export class CombinedSource extends ToolSource {
   private combinedRead: ToolDef
+  private combinedScan: ToolDef
 
   constructor(
     public id: string,
@@ -22,8 +24,9 @@ export class CombinedSource extends ToolSource {
     private children: Source[]
   ) {
     super()
-    // A single `readEvents` tool that unions across children (raw, child order).
+    // Raw-event reads that union across children (raw, child order).
     this.combinedRead = readEventsTool((ids) => this.gather({ entityIds: ids }))
+    this.combinedScan = scanEventsTool((ids) => this.gather({ entityIds: ids }))
   }
 
   private async gather(args: { entityIds?: string[] }): Promise<AppEvent[]> {
@@ -53,6 +56,7 @@ export class CombinedSource extends ToolSource {
       }
     }
     byId.set('readEvents', this.combinedRead)
+    byId.set('scanEvents', this.combinedScan)
     return [...byId.values()]
   }
 }
