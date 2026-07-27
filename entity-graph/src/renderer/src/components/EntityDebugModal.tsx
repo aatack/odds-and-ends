@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Trash03 } from '@untitledui/icons'
 import type { Entity } from '../../../core/entity'
-import { refreshEntities } from '../../../core/cache'
+import { entitiesAtom, refreshDerived, refreshEntities, type LoadState } from '../../../core/cache'
+import { cn } from '../helpers/cn'
+import { useAtomValue } from '../state/hooks'
 import { clearUndo } from '../state/undo'
 import { Button } from './ui/Button'
 import { Field } from './ui/Field'
@@ -114,6 +116,8 @@ export function EntityDebugModal({ sourceId, entityId, user, onClose }: Props): 
         <WriteValue onWrite={(key, value) => write(() => api.sourceCall(sourceId, 'writeValue', { entityId, key, value, author: user }))} />
       </section>
 
+      <Cached entityId={entityId} />
+
       <section className="space-y-2">
         <p className={SECTION}>Links</p>
         {links.length === 0 ? (
@@ -165,6 +169,86 @@ export function EntityDebugModal({ sourceId, entityId, user, onClose }: Props): 
         )}
       </section>
     </Modal>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+/** What a load state means, said once so the modal doesn't have to explain it. */
+const STATE_NOTE: Record<LoadState, string> = {
+  unloaded: 'not read yet',
+  loading: 'reading',
+  loaded: 'read',
+  error: 'failed',
+}
+
+/**
+ * What the *cache* holds for this entity, as against what the store does. The
+ * two sections above read straight from the source; this one is the only place
+ * the client's own picture is visible, which matters mostly for one thing: an
+ * `events` script runs in the background, once a session, and until now failed
+ * in complete silence.
+ */
+function Cached({ entityId }: { entityId: string }): React.JSX.Element {
+  const cache = useAtomValue(entitiesAtom)
+  const entry = cache[entityId]
+  const script = entry?.entity.values.events
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className={SECTION}>In the cache</p>
+        <Button variant="tertiary" size="sm" onClick={refreshDerived}>
+          Recompute derived
+        </Button>
+      </div>
+      {!entry ? (
+        <p className="text-xs text-gray-400">
+          Nothing here — the client has never had reason to read this entity.
+        </p>
+      ) : (
+        <div className="overflow-hidden rounded-md bg-gray-50 font-mono text-xs">
+          <Fact label="events" value={`${entry.events.length} (${STATE_NOTE[entry.loaded]})`} />
+          <Fact
+            label="derived"
+            value={
+              script == null
+                ? 'no events script'
+                : `${entry.derived.length} (${STATE_NOTE[entry.derivedState]})`
+            }
+          />
+          {entry.error && <Fact label="read error" value={entry.error} bad />}
+          {entry.derivedError && <Fact label="script error" value={entry.derivedError} bad />}
+        </div>
+      )}
+      {entry?.derived.length ? (
+        <pre className="max-h-48 overflow-auto rounded-md bg-gray-50 p-3 font-mono text-xs">
+          {JSON.stringify(entry.derived, null, 2)}
+        </pre>
+      ) : null}
+      {script != null && entry?.derivedState === 'loaded' && !entry.derived.length && (
+        <p className="text-xs text-gray-400">
+          The script ran and returned no events. Anything it logged is in the devtools console.
+        </p>
+      )}
+    </section>
+  )
+}
+
+function Fact({
+  label,
+  value,
+  bad,
+}: {
+  label: string
+  value: string
+  bad?: boolean
+}): React.JSX.Element {
+  return (
+    <div className="flex gap-2 px-3 py-1.5">
+      <span className="w-24 shrink-0 text-gray-900">{label}</span>
+      <span className={cn('break-all', bad ? 'text-error-600' : 'text-gray-500')}>{value}</span>
+    </div>
   )
 }
 

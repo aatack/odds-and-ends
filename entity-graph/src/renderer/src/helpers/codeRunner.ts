@@ -89,6 +89,10 @@ export function runCode(id: string, code: string, context: CallContext): void {
  *
  * The id is namespaced away from the entity's own, so evaluating a `type: code`
  * entity's `events` can't be mistaken for running the code in it.
+ *
+ * Nothing being *shown* is not the same as nothing being knowable: whatever the
+ * script logged goes to the devtools console either way, since a script that
+ * runs on its own behalf in the background has nowhere else to say anything.
  */
 export async function evaluateCode(
   entityId: string,
@@ -105,8 +109,14 @@ export async function evaluateCode(
     frameId: null,
     startedAt: Date.now(),
   }
+  const where = `events on ${entityId}`
   const result = await execute(`events:${entityId}`, code, context)
-  if (!result.ok) throw new Error(result.error ?? 'Error')
+  for (const line of result.logs) console.log(`[${where}]`, line)
+  if (!result.ok) {
+    const error = result.error ?? 'Error'
+    console.error(`[${where}] ${error}`)
+    throw new Error(error)
+  }
   return result.result
 }
 

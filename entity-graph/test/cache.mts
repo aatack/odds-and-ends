@@ -30,6 +30,7 @@ Object.defineProperty(globalThis, 'localStorage', {
 const {
   entitiesAtom,
   getEntity,
+  refreshDerived,
   refreshEntities,
   setCodeEvaluator,
   setEntityFetcher,
@@ -262,6 +263,54 @@ test('runs an entity’s events script once, and lets it speak for others', asyn
   await settle()
   assert.equal(ran, 1)
   assert.equal(getEntity('branch').values.text, 'main')
+})
+
+test('records why a script failed, apart from why a read might have', async () => {
+  open()
+  source.tree({ root: ['x'] })
+  source.values({ x: { text: 'X', events: 'boom()' } })
+  setCodeEvaluator(async () => {
+    throw new Error('boom is not a function')
+  })
+
+  rowsOf(frameId())
+  await settle()
+  const entry = entitiesAtom.get().x
+  assert.equal(entry.derivedState, 'error')
+  assert.equal(entry.derivedError, 'boom is not a function')
+  // A script that threw is not a row that can't be trusted: the entity's own
+  // events arrived, and the frame must not report itself as broken.
+  assert.equal(entry.error, undefined)
+  assert.equal(entry.loaded, 'loaded')
+  assert.equal(rowsOf(frameId()).error, null)
+})
+
+test('runs the scripts again on request, without duplicating what they made', async () => {
+  open()
+  source.tree({ root: ['r'] })
+  source.values({ r: { text: 'R', events: 'children()' } })
+
+  let runs = 0
+  setCodeEvaluator(async () => {
+    runs++
+    return [
+      { type: 'link', sourceId: 'r', destinationId: 'c1' },
+      { entityId: 'c1', key: 'text', value: `run ${runs}` },
+    ]
+  })
+
+  rowsOf(frameId())
+  await settle()
+  assert.deepEqual(shape(), ['root', 'root/r', 'root/r/c1'])
+  assert.equal(getEntity('c1').values.text, 'run 1')
+
+  refreshDerived()
+  await settle()
+  assert.equal(runs, 2)
+  // One child, not two: the old derived events are cleared before the rerun,
+  // which is the whole reason this is all-or-nothing rather than per entity.
+  assert.deepEqual(shape(), ['root', 'root/r', 'root/r/c1'])
+  assert.equal(getEntity('c1').values.text, 'run 2')
 })
 
 test('waits for the type before running a script the type could supply', async () => {

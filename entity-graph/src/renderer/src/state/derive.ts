@@ -1,6 +1,6 @@
 import { str, summaryOf, type EntitySummary } from '../../../core/entity'
 import type { EntitySource } from '../../../core/query'
-import { buildTree, EMPTY_TREE, type TreeRow } from '../../../core/tree'
+import { buildTree, type TreeRow } from '../../../core/tree'
 import { focusOf } from './store'
 import {
   ROOT_ID,

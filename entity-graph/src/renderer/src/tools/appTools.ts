@@ -1,3 +1,4 @@
+import { refreshDerived } from '../../../core/cache'
 import * as R from '../state/reducers'
 import { focusOf, getLayout, updateLayout } from '../state/store'
 import { toggleTheme, updateUi, uiAtom } from '../state/ui'
@@ -128,6 +129,20 @@ export const APP_TOOLS: ToolSpec[] = [
     scope: 'app',
     reach: 'ui',
     run: () => updateUi({ activityOpen: !uiAtom.get().activityOpen }),
+  },
+  {
+    // Not `mutates`: nothing is written. It only throws away what the scripts
+    // produced last time, which is why it doesn't strand the undo stack either.
+    id: 'derived.refresh',
+    label: 'Recompute derived events',
+    aliases: ['events', 'rerun', 'scripts', 'reload derived'],
+    hint: 'Shell',
+    scope: 'app',
+    reach: 'ui',
+    run: () => {
+      refreshDerived()
+      return { message: 'Running every events script again' }
+    },
   },
   {
     id: 'theme.toggle',

@@ -33,6 +33,13 @@ export interface CachedEntity {
   derived: AppEvent[]
   /** Whether this entity's own `events` script has been run. */
   derivedState: LoadState
+  /**
+   * Why that script failed, if it did. Kept apart from {@link error} because the
+   * two mean opposite things: a read that failed is a row that can't be trusted,
+   * while a script that threw is a row that is simply missing the extra its
+   * author hoped for. Conflating them made a bad script look like a bad store.
+   */
+  derivedError?: string
   /** The events above, rolled up. Derived, but cached — see {@link reconcile}. */
   base: Entity
   /**
@@ -518,12 +525,35 @@ function derive(id: string, code: string): Promise<void> {
       })
     } catch (e) {
       update((next) => {
-        next[id] = { ...next[id], derivedState: 'error', error: message(e) }
+        next[id] = { ...next[id], derivedState: 'error', derivedError: message(e) }
       })
     }
   })
   queue = run
   return run
+}
+
+/**
+ * Run every `events` script again. The one affordance for iterating on one:
+ * scripts are otherwise computed once a session, so without this the only way to
+ * see a change is to reload the app.
+ *
+ * All of them, not one — a script may write events onto entities other than its
+ * own, and nothing records which script put what where, so there is no honest
+ * way to undo just one. Clearing the lot and recomputing is both simpler and
+ * what you want while you are working on one.
+ */
+export function refreshDerived(): void {
+  entitiesAtom.set((cache) => {
+    const draft: EntityCache = {}
+    for (const [id, entry] of Object.entries(cache)) {
+      draft[id] =
+        entry.derived.length === 0 && entry.derivedState === 'unloaded'
+          ? entry
+          : { ...entry, derived: [], derivedState: 'unloaded', derivedError: undefined }
+    }
+    return reconcile(cache, draft)
+  })
 }
 
 /**
