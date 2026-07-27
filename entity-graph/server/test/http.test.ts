@@ -68,6 +68,47 @@ describe('admin auth', () => {
   })
 })
 
+// A browser client — the mobile app — is served from another origin, so a JSON POST
+// with an Authorization header is preflighted. The wildcard is safe because the token
+// is sent explicitly rather than as a cookie; the admin surface is excluded because
+// with ADMIN_TOKEN unset it is open, and no page should be handed that.
+describe('cors, on the source API only', () => {
+  it('answers a preflight for a source call', async () => {
+    const r = await app.inject({
+      method: 'OPTIONS',
+      url: '/a/call',
+      headers: { origin: 'http://phone.local', 'access-control-request-method': 'POST' },
+    })
+    expect(r.statusCode).toBe(204)
+    expect(r.headers['access-control-allow-origin']).toBe('*')
+  })
+
+  it('echoes the requested headers, so authorization survives the preflight', async () => {
+    const r = await app.inject({
+      method: 'OPTIONS',
+      url: '/a/call',
+      headers: { 'access-control-request-headers': 'authorization, content-type' },
+    })
+    expect(r.headers['access-control-allow-headers']).toBe('authorization, content-type')
+  })
+
+  it('allows the origin on a source response', async () => {
+    const r = await app.inject({ method: 'GET', url: '/a/tools' })
+    // 401 without a token, but the header is there either way — a cross-origin
+    // client has to be able to *see* the rejection.
+    expect(r.headers['access-control-allow-origin']).toBe('*')
+  })
+
+  it('does not allow any origin on the admin surface', async () => {
+    const admin = await app.inject({ method: 'GET', url: '/admin/sources', headers: adminHeaders })
+    expect(admin.headers['access-control-allow-origin']).toBeUndefined()
+    const preflight = await app.inject({ method: 'OPTIONS', url: '/admin/sources' })
+    expect(preflight.statusCode).toBe(404)
+    const integrations = await app.inject({ method: 'OPTIONS', url: '/runTool' })
+    expect(integrations.statusCode).toBe(404)
+  })
+})
+
 describe('sqlite source: crud, auth, round-trip', () => {
   let token: string
 

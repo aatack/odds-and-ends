@@ -7,6 +7,7 @@ import type {
   ServerView,
   SourceConnection,
   SourceRow,
+  TailscaleView,
   ToolMeta,
   TokenRow,
 } from '../core/client'
@@ -83,6 +84,19 @@ export interface EntityGraphAPI {
   adminListTokens: (serverId: string, id: string) => Promise<TokenRow[]>
   adminIssueToken: (serverId: string, id: string, label?: string) => Promise<{ token: string; sourceId: string }>
   adminRevokeToken: (serverId: string, token: string) => Promise<{ ok: true }>
+
+  /**
+   * Phone access, over Tailscale. Machine-scoped, not server-scoped: there is
+   * one tailnet name and one serve config, and the phone app and every source
+   * published to it share them.
+   */
+  tailscaleStatus: () => Promise<TailscaleView>
+  /** Publish or unpublish the phone app's build at the root of the tailnet name. */
+  tailscaleServeApp: (on: boolean) => Promise<void>
+  /** Publish or unpublish one source at `/api/<sourceId>`. */
+  tailscaleServeSource: (serverId: string, sourceId: string, on: boolean) => Promise<void>
+  /** A one-tap link that hands a phone the whole connection, token included. */
+  tailscalePhoneLink: (serverId: string, sourceId: string, author: string) => Promise<string>
 }
 
 const api: EntityGraphAPI = {
@@ -124,6 +138,13 @@ const api: EntityGraphAPI = {
   adminListTokens: (serverId, id) => ipcRenderer.invoke('admin:listTokens', serverId, id),
   adminIssueToken: (serverId, id, label) => ipcRenderer.invoke('admin:issueToken', serverId, id, label),
   adminRevokeToken: (serverId, token) => ipcRenderer.invoke('admin:revokeToken', serverId, token),
+
+  tailscaleStatus: () => ipcRenderer.invoke('tailscale:status'),
+  tailscaleServeApp: (on) => ipcRenderer.invoke('tailscale:serveApp', on),
+  tailscaleServeSource: (serverId, sourceId, on) =>
+    ipcRenderer.invoke('tailscale:serveSource', serverId, sourceId, on),
+  tailscalePhoneLink: (serverId, sourceId, author) =>
+    ipcRenderer.invoke('tailscale:phoneLink', serverId, sourceId, author),
 }
 
 contextBridge.exposeInMainWorld('entityGraph', api)

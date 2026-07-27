@@ -112,5 +112,73 @@ export interface TokenRow {
   revoked: boolean
 }
 
+// ---------------------------------------------------------------------------
+// Tailscale — putting the phone app and one source on the tailnet
+// ---------------------------------------------------------------------------
+
+/**
+ * One thing `tailscale serve` is publishing on this machine's HTTPS name: a
+ * directory read off disk (`path`), a reverse proxy (`proxy`), or a literal
+ * string (`text`).
+ */
+export interface TailscaleHandler {
+  /** The URL path it answers on, e.g. `/` or `/api/flow`. */
+  mount: string
+  kind: 'path' | 'proxy' | 'text'
+  /** The directory, upstream URL, or literal, depending on `kind`. */
+  target: string
+}
+
+/** What the app knows about Tailscale on this machine, refreshed on demand. */
+export interface TailscaleView {
+  /** The `tailscale` command exists and its daemon is up. */
+  running: boolean
+  /** Why phone access isn't available — an actionable sentence, or null. */
+  problem: string | null
+  /** The HTTPS name serve answers on, e.g. `laptop.tail1234.ts.net`. */
+  domain: string | null
+  /** Everything currently served, as tailscale reports it. */
+  handlers: TailscaleHandler[]
+  /**
+   * False when the serve config holds something the app can't put back after
+   * the `reset` that removing a mount requires — Funnel, a service, a
+   * foreground serve. Adding is still safe; removing is refused.
+   */
+  editable: boolean
+  /** What made it uneditable. */
+  locked: string | null
+  /** The phone app's build directory, and whether anything has been built into it. */
+  app: { path: string; built: boolean }
+}
+
+/**
+ * Where each thing sits on the tailnet name. These are shared rather than
+ * written out at each end because they are the contract between what the main
+ * process serves and what the renderer reads back as "on".
+ */
+
+/** The phone app itself, at the root of the name. */
+export const APP_MOUNT = '/'
+
+/**
+ * One source, mounted under its own id rather than at a plain `/api`. Plain
+ * `/api` would put the whole server on the tailnet, admin endpoints included;
+ * the phone only ever needs the one source.
+ */
+export const sourceMount = (sourceId: string): string => `/api/${sourceId}`
+
+/** What that mount proxies to — the source's own URL on the machine. */
+export const sourceTarget = (baseUrl: string, sourceId: string): string => `${baseUrl}/${sourceId}`
+
+/**
+ * The base URL the phone app is given. `--set-path` strips its prefix before
+ * proxying, so the app can carry an `/api` segment the server never sees, and
+ * the app appends the source id itself.
+ */
+export const phoneBaseUrl = (domain: string): string => `https://${domain}/api`
+
+/** Where the phone app is opened to install it. */
+export const phoneAppUrl = (domain: string): string => `https://${domain}/`
+
 // Re-export the tool metadata shape the `/tools` endpoint returns.
 export type { ToolMeta } from './source/schema'

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- An outline read as a graph: one root, two children, one grandchild. -->
+  <rect width="512" height="512" rx="112" fill="#5b63d3" />
+  <g stroke="#ffffff" stroke-width="18" stroke-linecap="round" opacity="0.55" fill="none">
+    <path d="M168 152 V 300 H 236" />
+    <path d="M168 152 V 216 H 236" />
+    <path d="M236 300 V 372 H 300" />
+  </g>
+  <g fill="#ffffff">
+    <circle cx="168" cy="152" r="30" />
+    <circle cx="264" cy="216" r="22" />
+    <circle cx="264" cy="300" r="22" />
+    <circle cx="328" cy="372" r="16" />
+  </g>
+</svg>

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      Three things this viewport line buys, all of them load-bearing on a phone:
+
+      - `interactive-widget=resizes-content` shrinks the *layout* viewport when the
+        soft keyboard opens, so the bottom bar (`position: fixed; bottom: 0`) sits
+        directly above the keyboard instead of behind it. Without it the edit
+        controls are unreachable exactly when they are needed.
+      - `viewport-fit=cover` draws under the system bars; the insets come back
+        through `env(safe-area-inset-*)`, which the shell pads by.
+      - no `maximum-scale`: pinch-zoom stays available, since the alternative is
+        an accessibility regression for the sake of tidiness.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <meta name="theme-color" content="#f9fafb" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0e131c" media="(prefers-color-scheme: dark)" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <title>Entity Graph</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

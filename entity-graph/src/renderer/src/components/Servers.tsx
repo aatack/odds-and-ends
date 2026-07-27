@@ -11,9 +11,12 @@ import {
 } from '@untitledui/icons'
 import type { CurrentSource, ServerView, SourceType, TokenRow } from '../../../core/client'
 import { useServers, type ServerActions, type ServerRowModel, type SourceItem } from '../views/useServers'
+import { useTailscale, type TailscaleModel } from '../views/useTailscale'
+import { PhoneAccessPanel, SourcePhoneAccess } from './PhoneAccess'
 import { ConfigFields, SOURCE_TYPES, buildConfig, flattenConfig } from './sourceConfig'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
+import { CopyButton } from './ui/CopyButton'
 import { Field } from './ui/Field'
 import { IconButton } from './ui/IconButton'
 import { Input } from './ui/Input'
@@ -37,47 +40,55 @@ const SECTION = 'text-[11px] font-medium uppercase tracking-[0.09em] text-gray-5
  */
 export function Servers({ current, onSelectSource }: Props): React.JSX.Element | null {
   const { rows, error, ready, actions } = useServers()
+  // One instance for the page: there is a single serve config for the machine,
+  // and the source editor is handed this rather than reading it again.
+  const tailscale = useTailscale()
   const [serverEditor, setServerEditor] = useState<{ existing: ServerView | null } | null>(null)
   const [sourceEditor, setSourceEditor] = useState<{ server: ServerView; existing: SourceItem | null } | null>(null)
 
   if (!ready) return null
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className={SECTION}>Servers</p>
-        <Button variant="primary" size="sm" onClick={() => setServerEditor({ existing: null })}>
-          <Plus size={16} /> Add server
-        </Button>
-      </div>
+    <div className="space-y-6">
+      <PhoneAccessPanel model={tailscale} />
 
-      {error && <p className="text-[13px] text-error-600">{error}</p>}
-
-      {rows.length === 0 ? (
-        <p className="text-[13px] text-gray-400">No servers yet.</p>
-      ) : (
-        <div className="space-y-3">
-          {rows.map((row) => (
-            <ServerRow
-              key={row.server.id}
-              row={row}
-              current={current}
-              onSelectSource={onSelectSource}
-              onEdit={() => setServerEditor({ existing: row.server })}
-              onRemove={() => actions.removeServer(row.server.id)}
-              onStart={() => actions.startServer(row.server.id)}
-              onStop={() => actions.stopServer(row.server.id)}
-              onAddSource={() => setSourceEditor({ server: row.server, existing: null })}
-              onEditSource={(s) => setSourceEditor({ server: row.server, existing: s })}
-              onRemoveSource={(s) =>
-                row.server.admin
-                  ? actions.deleteAdminSource(row.server.id, s.sourceId)
-                  : actions.deleteSourceConnection(s.connectionId!)
-              }
-            />
-          ))}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <p className={SECTION}>Servers</p>
+          <Button variant="primary" size="sm" onClick={() => setServerEditor({ existing: null })}>
+            <Plus size={16} /> Add server
+          </Button>
         </div>
-      )}
+
+        {error && <p className="text-[13px] text-error-600">{error}</p>}
+
+        {rows.length === 0 ? (
+          <p className="text-[13px] text-gray-400">No servers yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {rows.map((row) => (
+              <ServerRow
+                key={row.server.id}
+                row={row}
+                current={current}
+                tailscale={tailscale}
+                onSelectSource={onSelectSource}
+                onEdit={() => setServerEditor({ existing: row.server })}
+                onRemove={() => actions.removeServer(row.server.id)}
+                onStart={() => actions.startServer(row.server.id)}
+                onStop={() => actions.stopServer(row.server.id)}
+                onAddSource={() => setSourceEditor({ server: row.server, existing: null })}
+                onEditSource={(s) => setSourceEditor({ server: row.server, existing: s })}
+                onRemoveSource={(s) =>
+                  row.server.admin
+                    ? actions.deleteAdminSource(row.server.id, s.sourceId)
+                    : actions.deleteSourceConnection(s.connectionId!)
+                }
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       {serverEditor && (
         <ServerEditor
@@ -91,6 +102,7 @@ export function Servers({ current, onSelectSource }: Props): React.JSX.Element |
           server={sourceEditor.server}
           existing={sourceEditor.existing}
           actions={actions}
+          tailscale={tailscale}
           onClose={() => setSourceEditor(null)}
         />
       )}
@@ -105,6 +117,7 @@ export function Servers({ current, onSelectSource }: Props): React.JSX.Element |
 function ServerRow({
   row,
   current,
+  tailscale,
   onSelectSource,
   onEdit,
   onRemove,
@@ -116,6 +129,7 @@ function ServerRow({
 }: {
   row: ServerRowModel
   current: CurrentSource | null
+  tailscale: TailscaleModel
   onSelectSource: (source: CurrentSource) => void | Promise<void>
   onEdit: () => void
   onRemove: () => void
@@ -177,6 +191,7 @@ function ServerRow({
             key={s.key}
             source={s}
             fullUrl={`${server.baseUrl}/${s.sourceId}`}
+            onPhone={tailscale.source(s.sourceId, server.baseUrl).on}
             selected={current?.serverId === server.id && current?.sourceId === s.sourceId}
             onSelect={() => onSelectSource({ serverId: server.id, sourceId: s.sourceId, label: s.label })}
             onEdit={() => onEditSource(s)}
@@ -201,6 +216,7 @@ function ServerRow({
 function SourceRow({
   source,
   fullUrl,
+  onPhone,
   selected,
   onSelect,
   onEdit,
@@ -208,6 +224,8 @@ function SourceRow({
 }: {
   source: SourceItem
   fullUrl: string
+  /** True when this source is published on the tailnet for a phone to reach. */
+  onPhone: boolean
   /** True when this is the editor's current source. */
   selected: boolean
   /** Pick this source as the editor's current source. */
@@ -215,14 +233,6 @@ function SourceRow({
   onEdit: () => void
   onRemove: () => void
 }): React.JSX.Element {
-  const [copied, setCopied] = useState(false)
-
-  const copyLink = async (): Promise<void> => {
-    await navigator.clipboard.writeText(fullUrl)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1200)
-  }
-
   return (
     <div className="flex items-center justify-between gap-2 rounded-md py-1.5 pl-2 hover:bg-gray-100/70">
       <button
@@ -238,10 +248,13 @@ function SourceRow({
         </span>
       </button>
       <div className="flex shrink-0 items-center gap-1">
+        {onPhone && (
+          <Badge color="success" dot>
+            phone
+          </Badge>
+        )}
         {source.type && <Badge color="gray">{source.type}</Badge>}
-        <IconButton title={copied ? 'Copied!' : 'Copy source link'} onClick={copyLink}>
-          {copied ? <Check size={16} /> : <Link03 size={16} />}
-        </IconButton>
+        <CopyButton value={fullUrl} title="Copy source link" icon={<Link03 size={16} />} />
         <IconButton title="Edit source" onClick={onEdit}>
           <Edit01 size={16} />
         </IconButton>
@@ -386,22 +399,61 @@ function SourceEditor({
   server,
   existing,
   actions,
+  tailscale,
   onClose,
 }: {
   server: ServerView
   existing: SourceItem | null
   actions: ServerActions
+  tailscale: TailscaleModel
   onClose: () => void
 }): React.JSX.Element {
   const title = existing ? `Edit ${existing.label}` : server.admin ? 'Create source' : 'Connect to source'
   return (
     <Modal title={title} onClose={onClose}>
       {server.admin ? (
-        <AdminSourceFields server={server} existing={existing} actions={actions} onClose={onClose} />
+        <AdminSourceFields
+          server={server}
+          existing={existing}
+          actions={actions}
+          tailscale={tailscale}
+          onClose={onClose}
+        />
       ) : (
-        <ConnectSourceFields server={server} existing={existing} actions={actions} onClose={onClose} />
+        <ConnectSourceFields
+          server={server}
+          existing={existing}
+          actions={actions}
+          tailscale={tailscale}
+          onClose={onClose}
+        />
       )}
     </Modal>
+  )
+}
+
+/**
+ * The phone-access section, for a source that exists. There is nothing to
+ * publish before it does, and the mount is named after an id the server assigns
+ * on save.
+ */
+function PhoneSection({
+  server,
+  existing,
+  tailscale,
+}: {
+  server: ServerView
+  existing: SourceItem | null
+  tailscale: TailscaleModel
+}): React.JSX.Element | null {
+  if (!existing) return null
+  return (
+    <SourcePhoneAccess
+      model={tailscale}
+      serverId={server.id}
+      sourceId={existing.sourceId}
+      baseUrl={server.baseUrl}
+    />
   )
 }
 
@@ -409,11 +461,13 @@ function AdminSourceFields({
   server,
   existing,
   actions,
+  tailscale,
   onClose,
 }: {
   server: ServerView
   existing: SourceItem | null
   actions: ServerActions
+  tailscale: TailscaleModel
   onClose: () => void
 }): React.JSX.Element {
   const [label, setLabel] = useState(existing?.label ?? '')
@@ -470,6 +524,8 @@ function AdminSourceFields({
         </Button>
       </div>
 
+      <PhoneSection server={server} existing={existing} tailscale={tailscale} />
+
       {existing && <TokenSection serverId={server.id} sourceId={existing.sourceId} actions={actions} />}
     </>
   )
@@ -479,11 +535,13 @@ function ConnectSourceFields({
   server,
   existing,
   actions,
+  tailscale,
   onClose,
 }: {
   server: ServerView
   existing: SourceItem | null
   actions: ServerActions
+  tailscale: TailscaleModel
   onClose: () => void
 }): React.JSX.Element {
   const [sourceId, setSourceId] = useState(existing?.sourceId ?? '')
@@ -536,6 +594,8 @@ function ConnectSourceFields({
           Cancel
         </Button>
       </div>
+
+      <PhoneSection server={server} existing={existing} tailscale={tailscale} />
     </>
   )
 }

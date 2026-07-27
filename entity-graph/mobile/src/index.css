@@ -1,0 +1,348 @@
+@import 'tailwindcss';
+
+/*
+ * The desktop app's design tokens, unchanged where they can be: the two clients
+ * should read as one product. What differs is scale, not language — a phone needs
+ * bigger type and bigger targets, and it has system bars to keep clear of.
+ *
+ * Tokens are Tailwind v4 `@theme`, so standard utilities (`bg-brand-600`,
+ * `text-gray-700`, `shadow-xs`, …) resolve to them.
+ */
+@theme {
+  --color-gray-25: #fcfcfd;
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f2f4f7;
+  --color-gray-200: #eaecf0;
+  --color-gray-300: #d0d5dd;
+  --color-gray-400: #98a2b3;
+  --color-gray-500: #667085;
+  --color-gray-600: #475467;
+  --color-gray-700: #344054;
+  --color-gray-800: #1d2939;
+  /* Primary text ink. */
+  --color-gray-900: #292929;
+  --color-gray-950: #0c111d;
+
+  /* Muted indigo accent, used sparingly. */
+  --color-brand-25: #f7f8fd;
+  --color-brand-50: #eef0fb;
+  --color-brand-100: #e0e3f7;
+  --color-brand-200: #c7cbef;
+  --color-brand-300: #a2a8e3;
+  --color-brand-500: #7079d6;
+  --color-brand-600: #5b63d3;
+  --color-brand-700: #4c53b8;
+
+  --color-success-50: #edf7f1;
+  --color-success-500: #3a875f;
+  --color-success-700: #2f6d4d;
+
+  --color-warning-50: #fbf5ec;
+  --color-warning-700: #97671f;
+
+  --color-error-50: #fbf0ef;
+  --color-error-200: #ecc9c6;
+  --color-error-500: #c0473c;
+  --color-error-600: #c0473c;
+  --color-error-700: #a03b32;
+
+  --color-blue-50: #eef3fb;
+  --color-blue-100: #e3ebf8;
+  --color-blue-200: #c3d5ee;
+  --color-blue-700: #3a5f9e;
+
+  --shadow-xs: 0 1px 1px rgba(16, 24, 40, 0.03);
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-lg:
+    0 16px 40px -12px rgba(16, 24, 40, 0.18),
+    0 4px 10px -4px rgba(16, 24, 40, 0.08);
+
+  --font-sans: 'Geist Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Lora Variable', Georgia, Cambria, 'Times New Roman', serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* Dark mode by redefining the same tokens, so every existing utility adapts.
+ * `.dark` is set on <html> by the theme hook. */
+html.dark {
+  color-scheme: dark;
+
+  --color-white: #151b26;
+
+  --color-gray-25: #0b0f17;
+  --color-gray-50: #0e131c;
+  --color-gray-100: #1a202c;
+  --color-gray-200: #262d3a;
+  --color-gray-300: #3a4250;
+  --color-gray-400: #5b6472;
+  --color-gray-500: #8b93a3;
+  --color-gray-600: #aab2c0;
+  --color-gray-700: #c9cfd9;
+  --color-gray-800: #e2e6ec;
+  --color-gray-900: #f3f5f8;
+  --color-gray-950: #ffffff;
+
+  --color-brand-50: #1b1f34;
+  --color-brand-700: #b0b6ef;
+
+  --color-error-50: #2a1615;
+  --color-error-200: #4a2422;
+  --color-error-500: #e39a92;
+  --color-error-600: #e39a92;
+  --color-error-700: #e39a92;
+
+  --color-blue-50: #131f2e;
+  --color-blue-100: #1a283a;
+  --color-blue-200: #2c3f57;
+  --color-blue-700: #8fb2e3;
+}
+
+/* The safe-area insets, hoisted into custom properties so components can pad by
+ * them without repeating the `env()` fallback dance. */
+:root {
+  --inset-top: env(safe-area-inset-top, 0px);
+  --inset-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-gray-50);
+  color: var(--color-gray-900);
+  font-family: var(--font-sans);
+  /* 15px rather than the desktop's 14: a phone is held further from nothing and
+   * read in worse light. Text inputs get 16px of their own (below), which is the
+   * threshold under which mobile browsers zoom the page on focus. */
+  font-size: 15px;
+  letter-spacing: -0.011em;
+  font-feature-settings: 'cv01', 'ss01';
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* The app scrolls its own panes; the page itself never does, so rubber-banding
+   * the whole document only ever looks like a bug. */
+  overscroll-behavior: none;
+}
+
+/* No grey flash on tap — the app draws its own pressed states, and the system
+ * one lands on whatever box happens to be under the finger. */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* User-entered text: Lora at weight 450, as on the desktop. */
+.font-serif {
+  font-family: var(--font-serif);
+  font-weight: 450;
+  font-optical-sizing: auto;
+  letter-spacing: 0;
+}
+
+/* Any text field, at the size that stops the browser zooming when it takes
+ * focus. Written once here rather than remembered per component. */
+input,
+textarea,
+select {
+  font-size: 16px;
+  font-family: inherit;
+}
+
+/* Entity text keeps its line breaks: it is typed in a box that takes them, and
+ * markdown would otherwise fold a single newline away. */
+.entity-text {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/*
+ * Rendered entity text (see components/ui/Markdown.tsx). Every row goes through it,
+ * so these rules are written the other way up from a typical prose stylesheet: the
+ * default is *no* typography at all — a paragraph is margin-less and inherits
+ * everything — so a line with no markup comes out identical to the plain span it used
+ * to be. Spacing appears only between blocks, and only when there is more than one.
+ *
+ * Copied from the desktop app's stylesheet, less the parts that belong to plugins
+ * this client doesn't load (maths, syntax highlighting).
+ */
+.markdown > * + * {
+  margin-top: 0.5em;
+}
+
+.markdown p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Restrained: a section entity is how a real heading is made here, so a markdown
+ * heading inside one row is a minor key. */
+.markdown h1 {
+  font-size: 1.3em;
+}
+
+.markdown h2 {
+  font-size: 1.15em;
+}
+
+.markdown ul,
+.markdown ol {
+  margin: 0;
+  padding-left: 1.4em;
+}
+
+.markdown ul {
+  list-style: disc;
+}
+
+.markdown ol {
+  list-style: decimal;
+}
+
+.markdown li::marker {
+  color: var(--color-gray-400);
+}
+
+.markdown li + li {
+  margin-top: 0.15em;
+}
+
+/* A quote is the one place a rule earns its keep — an indent alone reads as a nested
+ * list, which in an outliner is exactly the wrong thing to suggest. */
+.markdown blockquote {
+  margin: 0;
+  border-left: 2px solid var(--color-gray-200);
+  padding-left: 0.75em;
+  color: var(--color-gray-500);
+}
+
+.markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--color-gray-100);
+  border-radius: 0.25rem;
+  padding: 0.1em 0.3em;
+}
+
+.markdown pre {
+  margin: 0;
+  overflow-x: auto;
+  border-radius: 0.375rem;
+  background: var(--color-gray-100);
+  padding: 0.5em 0.6em;
+}
+
+.markdown pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.85em;
+}
+
+.markdown a {
+  color: var(--color-brand-600);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown img {
+  max-width: 100%;
+  border-radius: 0.375rem;
+}
+
+.markdown hr {
+  border: 0;
+  border-top: 1px solid var(--color-gray-100);
+}
+
+/* A table is the one block that can be wider than the screen; it scrolls rather than
+ * stretching the row and taking the whole outline with it. */
+.markdown table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid var(--color-gray-100);
+  padding: 0.15em 0.5em;
+  text-align: left;
+}
+
+.markdown th {
+  font-weight: 600;
+}
+
+/* GFM task lists: the app's own checkbox rows are the real thing, so these are quiet
+ * and inert. */
+.markdown li:has(> input[type='checkbox']) {
+  list-style: none;
+  margin-left: -1.2em;
+}
+
+.markdown input[type='checkbox'] {
+  margin-right: 0.4em;
+  accent-color: var(--color-gray-400);
+}
+
+/*
+ * Cheap virtualisation, done by the browser rather than by us: a row outside the
+ * viewport isn't laid out or painted, and `contain-intrinsic-size` gives it a
+ * placeholder height so the scrollbar doesn't jump as rows are skipped. The
+ * desktop app measures and windows rows by hand; a phone screen holds few enough
+ * rows that this is indistinguishable and about 200 lines cheaper.
+ */
+.row-virtual {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 44px;
+}
+
+/* No motion anywhere — as on the desktop. State changes are instantaneous, and
+ * this override neutralises any transition utility that slips into a component.
+ * The one exception is a sheet sliding up: see `.sheet-in`. */
+*,
+*::before,
+*::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+/*
+ * The single deliberate exception to the no-motion rule. A bottom sheet that
+ * simply appears reads as a mis-tap — on a touch screen there is no cursor to
+ * explain where it came from, and the movement *is* the explanation of what came
+ * from where. Kept to one short slide, and only for sheets.
+ */
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.sheet-in {
+  animation: sheet-in 140ms ease-out !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-in {
+    animation: none !important;
+  }
+}
