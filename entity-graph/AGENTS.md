@@ -2,7 +2,7 @@
 
 An Electron + React + TypeScript desktop client for an entity-graph source
 server. The renderer holds no backend of its own: it opens a source over IPC
-(`window.entityGraph`) and drives it through the source's tools (`query`,
+(`window.entityGraph`) and drives it through the source's tools (`scanEvents`,
 `writeValue`, `writeLink`, …). The main outliner edits the tree rooted at
 `@index`.
 
@@ -18,8 +18,10 @@ the user explicitly asks you to** — no `npm run dev`, `dev:no-sandbox`,
 `electron-vite dev`, `preview`, or any other command that spawns the Electron
 process. A local instance seizes the source server's port and conflicts with the
 Electron window the user already has open. To check your work, use `npm run
-typecheck` and `npm run build` only. If you believe the app needs to be run to
-verify something, ask the user to run it.
+typecheck`, `npm run build` and `npm test` — the last drives the state and
+source layers headlessly against an in-memory source, so most of what you would
+want to click through can be asserted instead. If you believe the app really
+needs to be run, ask the user to run it.
 
 ## Design language
 
@@ -66,13 +68,23 @@ is the long form; the rules that matter day to day:
 
 - **`state/` holds all of it, and holds nothing else.** One atom store, pure
   reducers, pure derivations. No React, no DOM — the app should in principle run
-  headlessly. Latent state only: selection *paths*, collapsed sets, edit drafts.
-  Anything derivable (the row list, the resolved selection, tab labels) is a
-  function in `state/derive.ts`, and anything cached (query results, code output)
-  lives in a runtime atom that is never persisted.
+  headlessly, and `npm test` does exactly that. Latent state only: selection
+  *paths*, collapsed sets, edit drafts. Anything derivable (the row list, the
+  resolved selection, tab labels) is a function in `state/derive.ts`, and
+  anything cached (entities, code output) lives in a runtime atom that is never
+  persisted.
 - **Never write derived state back.** The resolved selection path is computed
   from the latent one against the visible rows; storing it would lose the
   original when a collapsed ancestor is re-expanded.
+- **Nothing on screen waits on the network.** The client keeps every event it
+  has read in one entity cache (`state/entities.ts`); `useGetEntities()` reads
+  it synchronously and always answers, and asking is what sets off the fetch.
+  The rows are then a *derivation*: `core/query.ts` steps a depth-first
+  traversal over whatever is cached, so folding, depth caps and edits redraw
+  without a round trip and the tree fills in as events arrive. The only read of
+  the store is `scanEvents`, which fetches a couple of layers ahead. See
+  `docs/frontend-state.md` for the rest — type defaults, `events` scripts, and
+  how writes and undo reach the cache.
 - **`tools/` is the only way the user does anything.** Every command — moving the
   selection, opening a tab, writing a value — is one `ToolSpec` declaring its
   arguments, its scope, and how far it reaches. Hotkeys and the command palette
@@ -153,9 +165,10 @@ server/         the HTTP server: sources, and the integrations (GitHub, Slack, C
 mobile/         a separate phone client (PWA) for one source — its own install, own guide
 src/main       Electron main — window, servers, config store, tailscale serve
 src/preload     contextBridge exposing the typed EntityGraphAPI
-src/core        source client + query wrapper (shared types)
+src/core        source client, event rollup, the query traversal (shared types)
+test/           the state layer driven headlessly (`npm test`)
 src/renderer/src  React app
-  state/          latent state, pure derivations, the query engine
+  state/          latent state, pure derivations, the entity cache
   source/         the transport seam onto the open source
   tools/          the tool registry, pending-call machine, key router
   helpers/        domain-agnostic utilities (cn, code runner)

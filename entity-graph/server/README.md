@@ -20,9 +20,9 @@ LLM can call its tools immediately — with fine control over what they can do.
 
 | type       | config                                             | behaviour |
 |------------|----------------------------------------------------|-----------|
-| `sqlite`   | `{ path, defaultAuthor? }`                         | base event store; tools `readEvents`, `writeValue`, `writeLink` |
-| `combined` | `{ children: string[] }`                           | union of children's tools (deduped by id); reads flat-map all children, writes go to `children[0]` |
-| `frozen`   | `{ child, beforeTs }`                              | passthrough, but `readEvents` drops events at/after `beforeTs` |
+| `sqlite`   | `{ path, defaultAuthor? }`                         | base event store; tools `readEvents`, `scanEvents`, `writeValue`, `writeLink` |
+| `combined` | `{ children: string[] }`                           | union of children's tools (deduped by id); the raw-event reads flat-map all children, writes go to `children[0]` |
+| `frozen`   | `{ child, beforeTs }`                              | passthrough, but the raw-event reads drop events at/after `beforeTs` |
 | `filter`   | `{ child, allow?, deny?, maxSafety? }`             | narrows the tool registry by id and/or safety (`readonly` = `maxSafety: 'pure'`) |
 | `remote`   | `{ url, token? }`                                  | proxies all tool calls to another source's URL |
 

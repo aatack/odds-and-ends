@@ -9,7 +9,7 @@ depending only on the ones above it:
 
 ```
 source/   the transport seam (call a source tool, as a given user)
-state/    latent, serialisable state + pure derivations + the query cache
+state/    latent, serialisable state + pure derivations + the entity cache
 tools/    every user-triggerable command, and the pending-call state machine
 keys/     key routing (top level only)
 views/    React — reads derived state, renders, forwards gestures to tools
@@ -25,6 +25,98 @@ typing in the in-place editor — calls a named mutator in `state/actions.ts` ra
 than a tool, because routing a mouse gesture through the call machine would put
 noise in the log for no gain. Anything invocable by key or palette, or worth
 recording, is a tool, and tools are written in terms of the same mutators.
+
+## The entity cache
+
+The client keeps every event it has read, per entity, and derives everything
+else from that (`state/entities.ts`). It is runtime only, never persisted, and
+never evicted — a session's worth of entities is small, and dropping one would
+only mean fetching it again.
+
+The whole design follows from one rule: **showing something never waits on the
+network.** So the public face of it is deliberately unremarkable —
+`useGetEntities()` hands back `(ids) => Record<string, Entity>`, synchronous,
+always answered, with an empty entity for anything not yet known. Asking is what
+sets off the fetch, and the component re-renders when it lands. A view that
+wants an entity says so by reading it; there is no separate "load" to remember.
+
+Consequences worth knowing:
+
+- **There is one copy of each entity**, so an edit in one tab shows up in every
+  other place that entity appears, with no invalidation to arrange.
+- **Reads during render write nothing.** The request is a set membership plus a
+  microtask; the atom is only touched from that microtask, which also batches
+  everything asked for in the same tick into a single call.
+- **A write goes into the cache on its way out** (`setWriteObserver`, wired to
+  `applyEvents`/`removeEvents`). The client knows exactly what the store will
+  hold — timestamp and author included — so it applies that and lets the round
+  trip happen behind the change the user already sees. A failed write takes its
+  events back out. `createEntity` is the exception: the id is the server's, so
+  its result arrives with the refresh like anything else.
+- **A mutating tool invalidates everything rather than working out what it
+  touched.** Entries keep their events and are marked unloaded, so rows carry on
+  showing what they have while the fresh events are on their way — and the
+  re-render the invalidation itself causes is what asks for them.
+- **Nothing is refetched that nothing is reading.** Invalidation is a mark, not
+  a queue.
+
+### Reading the store
+
+One tool does it: `scanEvents(entityIds)` returns raw events for those ids and,
+by default, for two layers of whatever they link out to. Almost every query
+walks the graph downwards, so reading a little ahead turns a round trip per
+level into one per query. The response says which entities it *covers*, which is
+not the same as which it reached: a layer clipped by the overscan limit is not
+reported, since the client would otherwise believe it had those events.
+
+There is no server-side query behind any of this. `query` still exists for
+agents and for the phone client, but the desktop app never calls it.
+
+### The traversal
+
+`core/query.ts` is the query: a stepper from one path to the next in a
+depth-first reading, whose only reach outside is that synchronous
+`getEntities`. Two things fall out of running it on the client:
+
+- **An entity nothing is known about looks childless**, so the tree fills in as
+  events arrive rather than appearing all at once after a refetch.
+- **Folding, depth caps and direction cost nothing**, because they are no longer
+  part of a request. Per-entity max depth is honoured in full — the nearest
+  ancestor that sets a cap wins, and setting `null` deep in the tree lifts one
+  set above it.
+
+A "page" is therefore just a ceiling on how far the traversal walks before it
+stops, raised by `loadMore` when the view scrolls near the bottom
+(`state/query.ts`).
+
+### Type defaults
+
+An entity's `type` value names another entity, and that entity's values stand
+behind its own: a key the type defines and the entity doesn't is taken from the
+type. "Doesn't" means *absent* rather than null — writing null to a key is how
+an entity opts out of a default rather than a way of inheriting one. The type is
+fetched by the act of an entity naming it.
+
+Defaults are drawn from the type's own roll-up rather than from its defaulted
+values, which keeps the dependency exactly one level deep: a type that is its
+own type is then a curiosity rather than a hang.
+
+### Derived events
+
+An entity may carry an `events` value: a script, run once per session in the
+same QuickJS sandbox a `type: code` entity runs in, whose return value is a list
+of events that are added to the cache but never written to the store. This is
+how an entity can show something it doesn't hold — the text of a Slack message,
+the branches on a repo.
+
+- They are timestamped 0 by default, so they sort behind every real edit and can
+  never overwrite one.
+- A script may return events **for entities other than its own**, which is how
+  one entity populates its children.
+- It runs only once its entity's events are in *and its type has loaded*, since
+  the script itself may come from the type.
+- A refresh does not re-run it. Once a session is the point: a script that
+  reaches out to GitHub on every keystroke would not do.
 
 ## Vocabulary
 
@@ -198,6 +290,11 @@ Consequences worth knowing:
   harmless; injecting one store's events into another would invent entities there.
 - `popEvents` is absent from a source that can't remove events (a read-only
   wrapper), so the client can tell undo is unavailable by the tool's absence.
+- **What came off the store comes out of the cache**, matched by content rather
+  than by identity — the events arrive over the wire, so they are equal to the
+  cached ones without being them. That is the whole of undo's effect on the
+  view: the entities they belonged to roll up again without them, immediately,
+  and the refetch that follows only confirms it.
 
 `⌘Z`/`⌘Y` are handed to a focused text field rather than routed, along with the
 other editing combos — inside an in-place edit, undo should mean the typing.
@@ -246,17 +343,21 @@ max-depth map, and any in-progress edit.
   nothing to configure.
 - **Direction** is the first thing about a frame's *query* rather than its rows:
   `out` follows outbound links, `in` follows inbound ones, so the same traversal
-  answers "what links to this?". It is part of the request key, so flipping it
-  refetches. A reversed frame draws the same tree upside down, which the tools
+  answers "what links to this?". Flipping it redraws from the cache rather than
+  refetching, though a reversed frame does grow a level at a time: the overscan
+  reads ahead along outbound links only, since a widely-referenced entity would
+  otherwise drag its whole neighbourhood in. A reversed frame draws the same tree upside down, which the tools
   that edit the link between a row and the row above it have to know: creating,
   unlinking and moving all ask the frame the call came from which way round the
   link runs. A pushed frame does not inherit it — whether a query type should
   carry into a new frame is still an open question.
-- **Per-entity max depth** is stored but not yet honoured: the `query` tool
-  takes a single `maxDepth`, so the root entity's entry is passed through and
-  the rest is provisioned for a later server change.
+- **Per-entity max depth** is honoured in full, now that the traversal runs on
+  the client: the nearest ancestor with an entry decides, its cap counted from
+  itself, and an explicit `null` deep in the tree lifts a cap set above it.
 - What else a frame's query could be — beyond its root, its depth and its
-  direction — is still to be designed.
+  direction — is still to be designed. Pre- and post-filters, in particular,
+  are not in the traversal yet: find and sections-only remain filters over the
+  rows it produces.
 - Scroll position is not tracked. The view keeps the selected row, and the row
   being typed into, scrolled 30% in from the edge; the row being typed into is
   also mounted whatever the virtual window says, or its box would never take the
@@ -264,15 +365,13 @@ max-depth map, and any in-progress edit.
 
 Canvases are gone. The `View` union collapsed back to a single entity view.
 
-Nothing cached lives in latent state: query results, entity summaries, code-run
-output and loaded resources are runtime-only and rebuild on load, at the cost of a
-beat of jank on tab labels. Summaries are the one thing kept past the rows they
-came from — still runtime, but never pruned, since dropping an inactive tab's rows
-shouldn't turn its label back into a uuid. A summary is the little an entity says
-about itself away from its row (text, type, mime type): enough to name it in a tab
-or a crumb, and enough for an entity pill to know what shape to take. A file's
-real name is not in there — it lives with the bytes, so a pill uses it only if
-something else has already loaded them.
+Nothing cached lives in latent state: entities, code-run output and loaded
+resources are runtime-only and rebuild on load, at the cost of a beat of jank on
+tab labels. Naming an entity away from its row — in a tab, a crumb, a pill —
+reads the same cache as everything else, so asking for the label is what loads
+it; there is no separate summary to keep in step. A file's real name is the one
+thing not in there: it lives with the bytes, so a pill uses it only if something
+else has already loaded them.
 
 **Resources** (`state/resources.ts`) are the bytes behind a `type: 'file'` row,
 cached the same way and never persisted — a couple of pasted screenshots would
