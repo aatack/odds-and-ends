@@ -33,7 +33,7 @@ const {
   refreshEntities,
   setCodeEvaluator,
   setEntityFetcher,
-} = await import('../src/renderer/src/state/entities')
+} = await import('../src/core/cache')
 const { rowsOf } = await import('../src/renderer/src/state/query')
 const { layoutAtom } = await import('../src/renderer/src/state/store')
 const { defaultLayout } = await import('../src/renderer/src/state/types')
@@ -42,7 +42,7 @@ const { popEvents, scanEvents, setWriteObserver, writeValue } = await import(
   '../src/renderer/src/source/entity'
 )
 const { setSourceTransport } = await import('../src/renderer/src/source/transport')
-const { applyEvents, removeEvents } = await import('../src/renderer/src/state/entities')
+const { applyEvents, removeEvents } = await import('../src/core/cache')
 
 // --- Harness ----------------------------------------------------------------
 

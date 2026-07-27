@@ -11,7 +11,7 @@ import {
   removeEvents,
   setCodeEvaluator,
   setEntityFetcher,
-} from '../state/entities'
+} from '../../../core/cache'
 import { useUi } from '../state/hooks'
 import { setResourceFetcher } from '../state/resources'
 import { updateUi } from '../state/ui'

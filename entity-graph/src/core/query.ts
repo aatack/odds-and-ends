@@ -13,6 +13,19 @@ import { emptyEntity, summaryOf, type Entity, type LinkDirection } from './entit
 /** Entities by id. Ids with nothing behind them come back as empty entities. */
 export type GetEntities = (entityIds: string[]) => Record<string, Entity>
 
+/**
+ * A read of a cache at one moment, plus what each entity is doing. Everything
+ * that turns state into rows takes one of these rather than a cache itself, so
+ * the derivations never have to know how the cache is shaped.
+ */
+export interface EntitySource {
+  get: GetEntities
+  /** True while an entity's events are still on their way. */
+  pending: (id: string) => boolean
+  /** Why an entity couldn't be read, if it couldn't. */
+  error: (id: string) => string | null
+}
+
 export interface Traversal {
   /** Which links to follow: `out` for children, `in` for whatever points here. */
   direction: LinkDirection

@@ -1,6 +1,7 @@
 import { atom } from './atom'
 import { buildCallContext, frameRows, type FrameRows } from './derive'
-import { entities, type EntitySource } from './entities'
+import { entities } from '../../../core/cache'
+import type { EntitySource } from '../../../core/query'
 import { focusOf, getLayout, layoutAtom } from './store'
 import type { CallContext, LayoutState } from './types'
 

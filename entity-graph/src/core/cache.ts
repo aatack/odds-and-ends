@@ -1,7 +1,7 @@
-import type { AppEvent } from '../../../core/events'
-import type { GetEntities } from '../../../core/query'
-import { rollupEntity, type Entity } from '../../../core/entity'
 import { atom } from './atom'
+import { emptyEntity, rollupEntity, type Entity } from './entity'
+import type { AppEvent } from './events'
+import type { EntitySource } from './query'
 
 // The entity cache: every event the app has read, kept per entity, and the
 // entity each set of events rolls up to. Runtime only and never persisted.
@@ -47,20 +47,6 @@ export type EntityCache = Record<string, CachedEntity>
 
 export const entitiesAtom = atom<EntityCache>({})
 
-/** An entity nothing is known about: present, empty, and safe to render. */
-export function emptyEntity(id: string): Entity {
-  return {
-    id,
-    createdAt: 0,
-    editedAt: 0,
-    createdBy: '',
-    editedBy: '',
-    values: {},
-    inboundLinks: [],
-    outboundLinks: [],
-  }
-}
-
 // Memoised, so that asking twice for an entity that isn't there hands back the
 // same object and the rows built from it compare equal.
 const empties = new Map<string, Entity>()
@@ -82,19 +68,6 @@ const blank = (id: string): CachedEntity => ({
 })
 
 // --- Reading ----------------------------------------------------------------
-
-/**
- * A read of the cache at one moment, plus what each entity's events are doing.
- * Everything that turns state into rows takes one of these rather than the cache
- * itself, so the derivations never have to know how the cache is shaped.
- */
-export interface EntitySource {
-  get: GetEntities
-  /** True while an entity's events are still on their way. */
-  pending: (id: string) => boolean
-  /** Why an entity couldn't be read, if it couldn't. */
-  error: (id: string) => string | null
-}
 
 /**
  * Read against a cache snapshot, asking for anything missing. The request is a

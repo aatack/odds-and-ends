@@ -9,7 +9,8 @@ import {
   type EntitySummary,
   type FrameRows,
 } from './derive'
-import { entitiesAtom, entitiesFrom, type EntitySource } from './entities'
+import { entitiesAtom, entitiesFrom } from '../../../core/cache'
+import type { EntitySource } from '../../../core/query'
 import { focusRequestAtom, focusTaken } from './focusRequest'
 import { rowLimitsAtom, rowsFrom } from './query'
 import { loadResource, resourcesAtom, type ResourceState } from './resources'

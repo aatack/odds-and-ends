@@ -1,6 +1,6 @@
-import { resolveQuery } from '../../../core/query'
-import type { Entity, LinkDirection } from '../../../core/entity'
-import type { EntitySource } from './entities'
+import { str, summaryOf, type EntitySummary } from '../../../core/entity'
+import type { EntitySource } from '../../../core/query'
+import { buildTree, EMPTY_TREE, type TreeRow } from '../../../core/tree'
 import { focusOf } from './store'
 import {
   ROOT_ID,
@@ -18,58 +18,26 @@ import {
 // born with. All pure functions — the views and the tools call the same ones, so
 // what the user sees and what a tool acts on can't disagree.
 //
-// A frame's rows are the query, run here rather than fetched: the traversal
-// steps over whatever the cache holds, so a row appears the moment its entity
-// does and an edit redraws the tree without a round trip.
+// A frame's rows are the query, run here rather than fetched: `core/tree` steps
+// the traversal over whatever the cache holds, so a row appears the moment its
+// entity does and an edit redraws the tree without a round trip. What this adds
+// to those rows is everything the *frame* knows and the query doesn't — which
+// row is selected, which is being typed into, and where the box for a new child
+// goes.
 
-// --- Summaries --------------------------------------------------------------
-
-/**
- * The little that is known about an entity away from its own row: enough to name
- * it in a tab or a breadcrumb, and enough for a pill to know what shape it should
- * be. The same three values a row carries, which is not a coincidence — a row is
- * this plus where it sits.
- */
-export interface EntitySummary {
-  text?: string
-  /** The entity's `type` value, if any (e.g. `'code'` for a runnable block). */
-  type?: string
-  /** For `type: 'file'`, what the stored bytes are. */
-  mimeType?: string
-}
-
-/** A value as display text — absent when null or blank, so `??` reaches past it. */
-export const str = (v: unknown): string | undefined =>
-  v == null || v === '' ? undefined : String(v)
-
-/** What a set of entity values says about the entity in passing. */
-export const summaryOf = (values: Record<string, unknown>): EntitySummary => ({
-  text: str(values.text),
-  type: str(values.type),
-  mimeType: str(values.mimeType),
-})
+export type { EntitySummary }
+export { str, summaryOf }
 
 // --- Rows -------------------------------------------------------------------
 
 /**
- * A rendered bullet backed by a real entity: what the entity says about itself
- * (its summary — text, type, and for a file its mime type, which is on the
- * entity as well as the resource so the row knows what it is about to show
- * before the bytes load) plus where it sits in the frame.
+ * A rendered bullet backed by a real entity: what the query says about it (its
+ * {@link TreeRow} — text, type, where it sits, and for a file its mime type,
+ * which is on the entity as well as the resource so the row knows what it is
+ * about to show before the bytes load) plus what the frame says about it.
  */
-export interface EntityRow extends EntitySummary {
+export interface EntityRow extends TreeRow {
   kind: 'entity'
-  id: string
-  /** Depth within the query (0 = root). */
-  depth: number
-  /** Ids from the root to this row — its identity, since ids repeat. */
-  path: string[]
-  /** When true the text renders as a section heading. */
-  section?: boolean
-  /** Checkbox state: `true` = open box, `false` = ticked, undefined = plain bullet. */
-  open?: boolean
-  hasChildren: boolean
-  collapsed: boolean
   selected: boolean
   /** True while this row's text is being edited in place. */
   editing: boolean
@@ -106,59 +74,6 @@ export interface FrameRows {
 
 const key = (path: readonly string[]): string => path.join('\0')
 
-/** One row per resolved path, in reading order. */
-function toRows(
-  paths: string[][],
-  entities: Record<string, Entity>,
-  collapsed: Set<string>,
-  direction: LinkDirection,
-): EntityRow[] {
-  return paths.map((path) => {
-    const id = last(path) as string
-    const entity = entities[id]
-    const open = entity.values.open
-    return {
-      kind: 'entity',
-      id,
-      depth: path.length - 1,
-      path,
-      ...summaryOf(entity.values),
-      section: entity.values.section === true,
-      open: open === true ? true : open === false ? false : undefined,
-      // Which links count is the direction the frame reads in, so a chevron
-      // means "there is more under this here" rather than always meaning
-      // outbound links.
-      hasChildren: (direction === 'in' ? entity.inboundLinks : entity.outboundLinks).length > 0,
-      collapsed: collapsed.has(id),
-      selected: false,
-      editing: false,
-    }
-  })
-}
-
-/** Keep rows whose text matches, plus their ancestors so the tree still reads. */
-function applyFind(rows: EntityRow[], find: string): EntityRow[] {
-  const q = find.trim().toLowerCase()
-  if (!q) return rows
-  const keep = new Set<string>()
-  for (const row of rows) {
-    if (!(row.text ?? '').toLowerCase().includes(q)) continue
-    for (let i = 1; i <= row.path.length; i++) keep.add(key(row.path.slice(0, i)))
-  }
-  return rows.filter((r) => keep.has(key(r.path)))
-}
-
-/**
- * Keep the section rows, plus the frame's root — the tree read as a table of
- * contents. Unlike find, non-matching ancestors are dropped rather than kept:
- * the point is to see the sections and nothing else. Rows keep their real depth,
- * so a section nested inside an ordinary entity still reads as nested. The root
- * stays whatever it is, so the frame keeps its anchor and the selection has
- * somewhere to fall back to.
- */
-const onlySections = (rows: EntityRow[]): EntityRow[] =>
-  rows.filter((r) => r.depth === 0 || r.section)
-
 /**
  * The selection actually in effect. Strips trailing ids until the path exists,
  * falling back to the frame's root. While pages are still outstanding an unfound
@@ -166,7 +81,7 @@ const onlySections = (rows: EntityRow[]): EntityRow[] =>
  */
 export function resolveSelectedPath(
   latent: string[],
-  rows: EntityRow[],
+  rows: readonly TreeRow[],
   rootId: string,
   complete: boolean,
 ): string[] {
@@ -179,12 +94,9 @@ export function resolveSelectedPath(
 }
 
 /**
- * Build a frame's rows: run the traversal over whatever the cache holds, up to
- * `limit` rows, then filter what comes out.
- *
- * The limit is on the traversal rather than on what survives the filters, which
- * is what makes find a filter over the rows rather than a different query — the
- * same thing it was when the rows arrived a page at a time.
+ * Build a frame's rows: the shared tree, marked up with what this frame knows —
+ * which row is selected, which is being typed into, and where the box for a new
+ * child goes.
  */
 export function buildRows(
   frame: FrameState,
@@ -192,33 +104,27 @@ export function buildRows(
   source: EntitySource,
   limit: number,
 ): FrameRows {
-  const direction = directionOf(frame)
-  const folded = new Set(collapsedBelow(collapsed, frame.rootId))
-  const { paths, complete } = resolveQuery(
+  const { rows, complete, loading, error } = buildTree(
     [frame.rootId],
-    source.get,
-    { direction, collapsed: [...folded], maxDepth: frame.maxDepth },
+    source,
+    {
+      direction: directionOf(frame),
+      collapsed: collapsedBelow(collapsed, frame.rootId),
+      maxDepth: frame.maxDepth,
+    },
     limit,
+    { find: frame.find, sections: frame.sectionsOnly },
   )
-
-  const ids = paths.map((path) => last(path) as string)
-  const entities = source.get(ids)
-  let rows = toRows(paths, entities, folded, direction)
-
-  const loading = ids.some((id) => source.pending(id))
-  const error = ids.map((id) => source.error(id)).find((e) => e != null) ?? null
-
-  if (frame.find != null) rows = applyFind(rows, frame.find)
-  if (frame.sectionsOnly) rows = onlySections(rows)
 
   // A path that isn't among the rows may simply not have arrived yet, so the
   // selection is only snapped once the frame has everything it is going to get.
   const settled = complete && !loading
   const selectedPath = resolveSelectedPath(frame.selectedPath, rows, frame.rootId, settled)
   const edit = frame.edit
-  const marked: Row[] = rows.map((row) => {
+  const marked: Row[] = rows.map((row): Row => {
     const editing = edit?.mode === 'edit' && samePath(row.path, edit.path)
     return {
+      kind: 'entity',
       ...row,
       selected: samePath(row.path, selectedPath),
       editing,
