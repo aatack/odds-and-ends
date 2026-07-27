@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import * as A from '../state/actions'
 import type { EntityRow } from '../state/derive'
-import { viewRows } from '../state/derive'
+import { viewRows } from '../state/query'
 import { useRows, useSheet } from '../state/hooks'
 import { getView } from '../state/store'
 import { samePath } from '../state/types'

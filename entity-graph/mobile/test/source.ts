@@ -1,5 +1,6 @@
 import { createServer, type Server } from 'node:http'
-import type { AppEvent, Entity, QueryResult } from '../src/core/types'
+import { rollupEntity } from '../../src/core/entity'
+import type { AppEvent, Entity } from '../src/core/types'
 
 // An in-memory stand-in for a source, over the same HTTP contract the real server
 // exposes: `POST /:sourceId/call` with `{ tool, args }`, answering
@@ -9,49 +10,13 @@ import type { AppEvent, Entity, QueryResult } from '../src/core/types'
 //
 // A stand-in rather than the real server because the real one needs better-sqlite3,
 // which on this machine is built for Electron's ABI at any given moment; a test that
-// rebuilt it would break the desktop app it shares the install with.
+// rebuilt it would break the desktop app it shares the install with. The *rollup* is
+// the real one, though: the whole point of the client keeping raw events is that it
+// folds them exactly as the server would, so a stand-in that folded them its own way
+// would be testing the wrong thing.
 
-const rollup = (id: string, events: AppEvent[]): Entity => {
-  const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp)
-  const values: Record<string, unknown> = {}
-  const outbound: string[] = []
-  const inbound = new Map<string, boolean>()
-  let createdAt = Infinity
-  let editedAt = -Infinity
-
-  for (const e of sorted) {
-    createdAt = Math.min(createdAt, e.timestamp)
-    editedAt = Math.max(editedAt, e.timestamp)
-    if (e.type === 'value') {
-      values[e.key] = e.value
-      continue
-    }
-    if (e.sourceId === id) {
-      const at = outbound.indexOf(e.destinationId)
-      if (e.action === 0 && at === -1) outbound.push(e.destinationId)
-      else if (e.action === 1 && at !== -1) outbound.splice(at, 1)
-      else if (e.action === 2 && at > 0) {
-        outbound.splice(at, 1)
-        outbound.splice(at - 1, 0, e.destinationId)
-      } else if (e.action === 3 && at !== -1 && at < outbound.length - 1) {
-        outbound.splice(at, 1)
-        outbound.splice(at + 1, 0, e.destinationId)
-      }
-    }
-    if (e.destinationId === id) inbound.set(e.sourceId, e.action === 0)
-  }
-
-  return {
-    id,
-    createdAt: Number.isFinite(createdAt) ? createdAt : 0,
-    editedAt: Number.isFinite(editedAt) ? editedAt : 0,
-    createdBy: '',
-    editedBy: '',
-    values,
-    outboundLinks: outbound,
-    inboundLinks: [...inbound].filter(([, live]) => live).map(([from]) => from),
-  }
-}
+/** How many layers of children `scanEvents` reads ahead, as the real one does. */
+const SCAN_DEPTH = 2
 
 export class MemorySource {
   events: AppEvent[] = []
@@ -65,29 +30,39 @@ export class MemorySource {
   }
 
   entity(id: string): Entity {
-    return rollup(id, this.touching(id))
+    return rollupEntity(id, this.touching(id))
   }
 
-  /** Depth-first, cycle-guarded by the path — the same traversal the server does. */
-  query(rootId: string, direction: 'out' | 'in' = 'out'): QueryResult[] {
-    const out: QueryResult[] = []
-    const walk = (id: string, depth: number, parentId: string | null, path: string[]): void => {
-      const entity = this.entity(id)
-      out.push({ entity, depth, parentId })
-      const links = direction === 'in' ? entity.inboundLinks : entity.outboundLinks
-      for (const child of links) {
-        if (!path.includes(child)) walk(child, depth + 1, id, [...path, child])
+  /**
+   * Events for a set of entities plus two layers of their children, as the real
+   * `scanEvents` reads them — which is the client's only read of the store.
+   */
+  scan(entityIds: string[]): { entityIds: string[]; events: AppEvent[] } {
+    const covered = new Set<string>()
+    let frontier = [...new Set(entityIds)]
+    for (const id of frontier) covered.add(id)
+    for (let layer = 0; frontier.length && layer < SCAN_DEPTH; layer++) {
+      const next = new Set<string>()
+      for (const id of frontier) {
+        for (const child of this.entity(id).outboundLinks) if (!covered.has(child)) next.add(child)
       }
+      frontier = [...next]
+      for (const id of frontier) covered.add(id)
     }
-    walk(rootId, 0, null, [rootId])
-    return out
+    const ids = new Set(covered)
+    return {
+      entityIds: [...covered],
+      events: this.events.filter((e) =>
+        e.type === 'value' ? ids.has(e.entityId) : ids.has(e.sourceId) || ids.has(e.destinationId),
+      ),
+    }
   }
 
   call(tool: string, args: any): unknown {
     this.calls++
     switch (tool) {
-      case 'query':
-        return { results: this.query(args.rootId, args.direction ?? 'out'), continuationStack: null }
+      case 'scanEvents':
+        return this.scan(args.entityIds)
       case 'readEntities':
         return Object.fromEntries((args.entityIds as string[]).map((id) => [id, this.entity(id)]))
       case 'writeValue':
@@ -147,7 +122,7 @@ export async function serve(source: MemorySource, token: string): Promise<Harnes
     if (req.method === 'GET' && req.url?.endsWith('/tools')) {
       return send(
         200,
-        ['query', 'readEntities', 'writeValue', 'writeLink', 'writeEvents', 'popEvents'].map(
+        ['scanEvents', 'readEntities', 'writeValue', 'writeLink', 'writeEvents', 'popEvents'].map(
           (id) => ({ id, name: id, description: '', safety: 'pure', args: {} }),
         ),
       )

@@ -37,7 +37,7 @@ console.error = (...args: unknown[]): void => {
 }
 
 const { connectionAtom, capabilitiesAtom } = await import('../src/source/connection')
-const { startQueryEngine, pagesAtom } = await import('../src/state/query')
+const { startQueryEngine, viewRows } = await import('../src/state/query')
 const { viewAtom } = await import('../src/state/store')
 const { defaultView } = await import('../src/state/types')
 const A = await import('../src/state/actions')
@@ -80,10 +80,11 @@ const html = (): string => renderToString(<App />)
 const settle = async (): Promise<void> => {
   for (let i = 0; i < 200; i++) {
     await new Promise((r) => setTimeout(r, 10))
-    const pages = Object.values(pagesAtom.get())
-    if (pages.length && pages.every((p) => !p.loading)) return
+    // Reading is what asks for anything missing, so this both waits and drives.
+    const { loading, complete } = viewRows()
+    if (!loading && complete) return
   }
-  throw new Error('The query engine never settled')
+  throw new Error('The cache never settled')
 }
 
 console.log('\nserver render of the mobile client\n')
@@ -103,7 +104,7 @@ check('with no source, the setup screen is what you get', () => {
 // --- Connected --------------------------------------------------------------
 
 connectionAtom.set({ baseUrl: harness.baseUrl, sourceId: 'demo', token: 'tok', author: 'phone' })
-capabilitiesAtom.set(['query', 'writeValue', 'writeLink', 'writeEvents', 'popEvents'])
+capabilitiesAtom.set(['scanEvents', 'writeValue', 'writeLink', 'writeEvents', 'popEvents'])
 startQueryEngine()
 await settle()
 
@@ -135,9 +136,9 @@ check('undo is offered, because this source can pop events', () => {
 })
 
 check('and is not offered by a source that cannot', () => {
-  capabilitiesAtom.set(['query', 'writeValue'])
+  capabilitiesAtom.set(['scanEvents', 'writeValue'])
   assert.doesNotMatch(html(), /aria-label="Undo"/)
-  capabilitiesAtom.set(['query', 'writeValue', 'writeLink', 'writeEvents', 'popEvents'])
+  capabilitiesAtom.set(['scanEvents', 'writeValue', 'writeLink', 'writeEvents', 'popEvents'])
 })
 
 // --- Drilling in ------------------------------------------------------------

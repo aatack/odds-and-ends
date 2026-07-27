@@ -1,34 +1,12 @@
-// The same store primitive the desktop app uses: one atom = one value, optionally
-// mirrored into localStorage. No React, no context, no dependencies, so the state
-// layer stays framework-free — the React bindings live in ./hooks.
+import { atom, type Atom } from '../../../src/core/atom'
 
-export interface Atom<T> {
-  get: () => T
-  set: (next: T | ((prev: T) => T)) => void
-  subscribe: (listener: () => void) => () => void
-}
+// The store primitive: one atom = one value, optionally mirrored into
+// localStorage. The in-memory half is shared with the desktop app — it is the
+// same twenty lines, and the cache they both use is built on it. This adds the
+// persistent variant, which needs a browser and so isn't part of the model.
 
-const resolve = <T,>(next: T | ((prev: T) => T), prev: T): T =>
-  typeof next === 'function' ? (next as (p: T) => T)(prev) : next
-
-/** An in-memory atom. For caches and anything that shouldn't outlive a session. */
-export function atom<T>(initial: T): Atom<T> {
-  const listeners = new Set<() => void>()
-  let value = initial
-  return {
-    get: () => value,
-    set: (next) => {
-      const resolved = resolve(next, value)
-      if (resolved === value) return
-      value = resolved
-      listeners.forEach((l) => l())
-    },
-    subscribe: (l) => {
-      listeners.add(l)
-      return () => listeners.delete(l)
-    },
-  }
-}
+export { atom }
+export type { Atom }
 
 /** An atom mirrored into localStorage, so its value survives a reload. */
 export function persistentAtom<T>(

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { entitiesAtom, entitiesFrom } from '../../../src/core/cache'
+import type { EntitySource, GetEntities } from '../../../src/core/query'
 import { capabilitiesAtom, connectionAtom, type Connection } from '../source/connection'
 import type { Atom } from './atom'
-import { crumbs, entityLabel, viewRows, type Crumb, type ViewRows } from './derive'
-import { pagesAtom, summariesAtom, type EntitySummary } from './query'
+import { crumbs, entityLabel, summaryOf, type Crumb, type EntitySummary, type ViewRows } from './derive'
+import { rowLimitsAtom, rowsFrom } from './query'
 import { loadResource, resourcesAtom, type ResourceState } from './resources'
 import { themeAtom, viewAtom } from './store'
 import { sheetAtom, type Sheet } from './ui'
@@ -50,24 +52,40 @@ export function useTheme(): Theme {
   return theme
 }
 
+/** The cache as the derivations read it: entities, plus how they are getting on. */
+function useEntitySource(): EntitySource {
+  const cache = useAtomValue(entitiesAtom)
+  return useMemo(() => entitiesFrom(cache), [cache])
+}
+
+/**
+ * The public face of the entity cache: hand it ids, get entities back — now,
+ * synchronously, whether or not they have loaded. Anything missing is asked for
+ * in the background, and the component re-renders when it lands.
+ */
+export const useGetEntities = (): GetEntities => useEntitySource().get
+
 /** The rows on screen. Recomputed when the state or the cache moves. */
 export function useRows(): ViewRows {
   const view = useView()
-  const pages = useAtomValue(pagesAtom)
-  return useMemo(() => viewRows(view), [view, pages])
+  const source = useEntitySource()
+  const limits = useAtomValue(rowLimitsAtom)
+  return useMemo(() => rowsFrom(view, source, limits), [view, source, limits])
 }
 
-/** An entity's display name, from whatever has been harvested so far. */
-export const useEntityLabel = (id: string): string => entityLabel(useAtomValue(summariesAtom), id)
+/** An entity's display name. Asking for it is what loads it. */
+export const useEntityLabel = (id: string): string => entityLabel(useEntitySource(), id)
 
-export const useEntitySummary = (id: string): EntitySummary | undefined =>
-  useAtomValue(summariesAtom)[id]
+export function useEntitySummary(id: string): EntitySummary {
+  const get = useGetEntities()
+  return useMemo(() => summaryOf(get([id])[id].values), [get, id])
+}
 
 /** The navigation stack as a trail of names, outermost first. */
 export function useCrumbs(): Crumb[] {
   const view = useView()
-  const summaries = useAtomValue(summariesAtom)
-  return useMemo(() => crumbs(view, summaries), [view, summaries])
+  const source = useEntitySource()
+  return useMemo(() => crumbs(view, source), [view, source])
 }
 
 /** The bytes behind a file row, fetched on first render. */

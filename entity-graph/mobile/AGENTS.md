@@ -5,17 +5,27 @@ Vite + React + TypeScript, its own `package.json` and its own `node_modules`. Se
 [`README.md`](./README.md) for running it and for the list of deliberate departures
 from the desktop client.
 
-## It is a separate app
+## It is a separate app, sharing one model
 
-Nothing here imports from `../src` — not even a type. The handful of wire shapes it
-needs are copied into `src/core/types.ts` and labelled as copies. This is on purpose:
-this app must build and deploy without the Electron project in its graph, and a
-type-only import would still tie the two tsconfigs together. If the server's contract
-changes, both clients change, which is the honest situation either way.
+This app has its own `package.json`, its own `node_modules`, its own build. What it
+shares with the desktop client is **`../src/core`, and only that**: the entity, the
+rollup, the traversal, the entity cache, the atom the cache is built on. Nothing from
+`../src/main`, `../src/preload` or `../src/renderer` is imported, and nothing shared
+pulls in Electron, node or zod — the line is drawn at what a browser can run.
 
-The one thing shared is the server, and the one change made to it for this app's sake
-is CORS on the source-scoped endpoints (`server/src/app.ts`) — deliberately *not* on
-the admin surface, which is open when `ADMIN_TOKEN` is unset.
+That line moved. These shapes used to be *copies*, on the reasoning that the only
+thing crossing the wire was a query result. It stopped holding when both clients
+started keeping their own event cache and running the traversal themselves: at that
+point the fold from events to an entity has to agree exactly, or the two apps
+disagree about what the store says. A shared type is one thing; a shared fold is
+another, and once that is shared the type may as well come with it.
+
+Practically: `vite.config.ts` opens `fs.allow` one level up, and `src/core/types.ts`
+is a re-export shim so the app's own imports still read `from '../core/types'`.
+
+The server is shared too, and the one change made to it for this app's sake is CORS
+on the source-scoped endpoints (`server/src/app.ts`) — deliberately *not* on the
+admin surface, which is open when `ADMIN_TOKEN` is unset.
 
 On the Tailscale route that CORS is no longer load-bearing: one origin serves both the
 app and `/api/<sourceId>`, so the calls are same-origin. It still matters for the
@@ -81,7 +91,16 @@ the reason `npm test` can drive the app in node.
   derivations. No React, no DOM. Latent state only: the navigation stack, the folded
   set, the selection *path*, the edit draft. Anything derivable (the row list, the
   resolved selection, a crumb's label) is a function in `state/derive.ts`; anything
-  cached (query pages, summaries, resources) is a runtime atom that is never persisted.
+  cached (entities, resources) is a runtime atom that is never persisted.
+- **Nothing on screen waits on the network.** Every event the app has read is kept
+  per entity in `core/cache`, read synchronously through `useGetEntities()`, and
+  asking for something is what fetches it. The rows are then a derivation: `core/tree`
+  steps the traversal over the cache, so folding, going in and out of a level, and
+  every edit redraw with no round trip — which on a phone is most of the point. The
+  only read of the store is `scanEvents`, which fetches a couple of layers ahead, and
+  a write goes into the cache on its way out so the line is on screen before it lands.
+  `docs/frontend-state.md` in the desktop project is the long form; it applies here
+  unchanged, because it is the same code.
 - **Never write derived state back.** The resolved selection is computed from the
   latent path against the visible rows; storing it would lose the original when a
   folded ancestor is reopened.
@@ -118,9 +137,9 @@ the reason `npm test` can drive the app in node.
 
 ```
 src/
-  core/types.ts   the wire shapes (a copy — see above)
+  core/types.ts   a re-export of the shared model in ../src/core (see above)
   source/         the connection, and typed wrappers over the source's tools
-  state/          latent state, pure derivations, the query engine, runtime caches
+  state/          latent state, pure derivations, how far a level is unrolled
   tools/          the registry, the dispatcher, the tool sets
   components/ui/  Button, Field, Sheet, TextEditor
   views/          the shell, the outline, the sheets, the gestures

@@ -1,45 +1,86 @@
-import type {
-  AppEvent,
-  Entity,
-  LinkDirection,
-  QueryPage,
-  ResourceRecord,
-  StackFrame,
-} from '../core/types'
+import type { EventScan } from '../../../src/core/source/defaultTools'
+import type { AppEvent, LinkAction, ResourceRecord } from '../core/types'
 import { uuid } from '../helpers/uuid'
 import { callSource, currentUser } from './connection'
 
 // Typed wrappers over the source's tools. Thin, except where a structural edit
 // needs several events to land together — see `writeEvents` below.
 
-export const query = (
-  rootId: string,
-  opts: {
-    maxDepth?: number
-    collapsed?: string[]
-    limit?: number
-    continuationStack?: StackFrame[]
-    direction?: LinkDirection
-  } = {},
-): Promise<QueryPage> => callSource('query', { rootId, ...opts }) as Promise<QueryPage>
+/**
+ * The app's one read of the store: events for a list of ids, plus a couple of
+ * layers of whatever they link to, since the client is almost always about to
+ * walk down. Everything on screen is rolled up from what this brings back —
+ * there is no server-side query behind any of it, which is what makes folding
+ * and navigating instant on a connection that isn't.
+ */
+export const scanEvents = (entityIds: string[]): Promise<EventScan> =>
+  callSource('scanEvents', { entityIds }) as Promise<EventScan>
 
-export const readEntities = (entityIds: string[]): Promise<Record<string, Entity>> =>
-  callSource('readEntities', { entityIds }) as Promise<Record<string, Entity>>
+/**
+ * A write is announced here before it is sent, so the cache can show it at once
+ * and the round trip can happen behind it — which on a phone is the difference
+ * between typing and waiting. The events are the ones the store will hold,
+ * timestamps and authors included, so what is shown now and what comes back
+ * later are the same events rather than a guess to be reconciled.
+ */
+export interface WriteObserver {
+  applied: (events: AppEvent[]) => void
+  removed: (events: AppEvent[]) => void
+}
 
-export const writeValue = (entityId: string, key: string, value: unknown): Promise<unknown> =>
-  callSource('writeValue', { entityId, key, value, author: currentUser() })
+let observer: WriteObserver | null = null
+
+export const setWriteObserver = (next: WriteObserver | null): void => {
+  observer = next
+}
+
+/** Send events the store will keep verbatim, showing them immediately. */
+async function write(events: AppEvent[], send: () => Promise<unknown>): Promise<unknown> {
+  observer?.applied(events)
+  try {
+    return await send()
+  } catch (e) {
+    // The store never took them, so neither should the cache.
+    observer?.removed(events)
+    throw e
+  }
+}
+
+export function writeValue(entityId: string, key: string, value: unknown): Promise<unknown> {
+  // The event, less the discriminator the tool's name already carries. Both the
+  // timestamp and the author are named rather than left to the server, so the
+  // event shown now and the event the store keeps are the same event.
+  const written = {
+    entityId,
+    key,
+    value: value ?? null,
+    author: currentUser(),
+    timestamp: Date.now(),
+  }
+  return write([{ type: 'value', ...written }], () => callSource('writeValue', written))
+}
 
 /** Link actions, as the `writeLink` tool numbers them. */
 export const LINK_ADD = 0
 export const LINK_REMOVE = 1
 export const LINK_FORWARD = 2
 
-export const writeLink = (
+export function writeLink(
   sourceId: string,
   destinationId: string,
   action: number,
-): Promise<unknown> =>
-  callSource('writeLink', { sourceId, destinationId, action, author: currentUser() })
+): Promise<unknown> {
+  const written = {
+    sourceId,
+    destinationId,
+    action,
+    author: currentUser(),
+    timestamp: Date.now(),
+  }
+  return write([{ type: 'link', ...written, action: action as LinkAction }], () =>
+    callSource('writeLink', written),
+  )
+}
 
 export const link = (sourceId: string, destinationId: string): Promise<unknown> =>
   writeLink(sourceId, destinationId, LINK_ADD)
@@ -49,15 +90,21 @@ export const unlink = (parentId: string, childId: string): Promise<unknown> =>
 
 /** Append raw events verbatim, keeping the timestamps and authors they carry. */
 export const writeEvents = (events: AppEvent[]): Promise<unknown> =>
-  callSource('writeEvents', { events })
+  write(events, () => callSource('writeEvents', { events }))
 
 /**
  * Take the most recent event, and any within `windowMs` of it, back off the store
  * and return them. Absent on a source that can't remove events, which is how the
  * client knows undo is unavailable.
+ *
+ * What came off is taken out of the cache too, which is all undo needs to do to
+ * the view: the entities those events belonged to roll up again without them.
  */
-export const popEvents = (windowMs = 100): Promise<AppEvent[]> =>
-  callSource('popEvents', { windowMs }) as Promise<AppEvent[]>
+export async function popEvents(windowMs = 100): Promise<AppEvent[]> {
+  const events = (await callSource('popEvents', { windowMs })) as AppEvent[]
+  observer?.removed(events)
+  return events
+}
 
 export const readResource = (id: string): Promise<ResourceRecord | null> =>
   callSource('readResource', { id }) as Promise<ResourceRecord | null>

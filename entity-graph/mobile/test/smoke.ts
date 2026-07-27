@@ -27,11 +27,10 @@ Object.defineProperty(globalThis, 'localStorage', {
 
 // Imported after the stub: the persistent atoms read localStorage as they are built.
 const { connectionAtom, capabilitiesAtom } = await import('../src/source/connection')
-const { startQueryEngine, refreshQueries, pagesAtom } = await import('../src/state/query')
+const { startQueryEngine, refreshQueries, viewRows } = await import('../src/state/query')
 const { viewAtom } = await import('../src/state/store')
 const { defaultView } = await import('../src/state/types')
 const A = await import('../src/state/actions')
-const { viewRows } = await import('../src/state/derive')
 const { runTool } = await import('../src/tools/dispatch')
 const { toastsAtom } = await import('../src/state/toast')
 
@@ -69,7 +68,7 @@ seed('c', 'Cherries', '@index')
 const harness = await serve(source, 'tok')
 
 connectionAtom.set({ baseUrl: harness.baseUrl, sourceId: 'demo', token: 'tok', author: 'phone' })
-capabilitiesAtom.set(['query', 'writeValue', 'writeLink', 'writeEvents', 'popEvents'])
+capabilitiesAtom.set(['scanEvents', 'writeValue', 'writeLink', 'writeEvents', 'popEvents'])
 viewAtom.set(defaultView())
 startQueryEngine()
 
@@ -79,10 +78,11 @@ startQueryEngine()
 async function settle(): Promise<void> {
   for (let i = 0; i < 200; i++) {
     await new Promise((r) => setTimeout(r, 10))
-    const pages = Object.values(pagesAtom.get())
-    if (pages.length && pages.every((p) => !p.loading)) return
+    // Reading is what asks for anything missing, so this both waits and drives.
+    const { loading, complete } = viewRows()
+    if (!loading && complete) return
   }
-  throw new Error('The query engine never settled')
+  throw new Error('The cache never settled')
 }
 
 /** The rows on screen, as `depth:text`. */
@@ -147,6 +147,25 @@ check('a new line lands directly below the one it was added under', () => {
   assert.deepEqual(childTexts('@index'), ['Apples', 'Bananas', 'Blackcurrants', 'Cherries'])
 })
 
+// The events go into the cache on their way out, so the line is on screen before
+// the write has been answered — which is the whole point of the cache on a phone.
+A.selectPath(['@index', 'c'])
+await runTool('create.sibling')
+A.setDraft('Dates')
+const committing = runTool('edit.commit')
+check('a new line is on screen before the write comes back', () => {
+  assert.deepEqual(shape(), [
+    'Index',
+    '  Apples',
+    '  Bananas',
+    '  Blackcurrants',
+    '  Cherries',
+    '  Dates',
+  ])
+})
+await committing
+await settle()
+
 // Chained entry: commit and keep going, twice, and the order has to hold.
 A.selectPath(['@index', 'a'])
 await runTool('create.sibling')
@@ -161,6 +180,7 @@ check('chained entry keeps each line after the last', () => {
     'Bananas',
     'Blackcurrants',
     'Cherries',
+    'Dates',
   ])
 })
 
@@ -263,8 +283,7 @@ check('find keeps matching rows and their ancestors', () => {
 })
 A.setFind(null)
 
-// Folding is client-side, so it takes effect without another query — the one place
-// this client deliberately parts company with the desktop's query model.
+// Folding is a derivation over the cache, so it takes effect with no round trip.
 const callsBefore = source.calls
 A.toggleCollapse('b')
 check('folding hides a subtree with no round trip', () => {

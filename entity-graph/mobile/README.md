@@ -299,9 +299,12 @@ downwards. What changed is everything above one view, and the gestures.
   the middle of the bar where either thumb reaches without shifting grip; "+ another"
   rather than "done" is the primary while typing; and the action sheet leads with
   Create, then Edit, then Structure.
-- **Folding is client-side.** The desktop makes the folded set part of the query, so
-  folding refetches. Here a level fetches its subtree in pages and folding filters the
-  rows, so a tap costs nothing — the right way round when the network is the slow part.
+- **Reading and querying are the desktop's, exactly.** Both clients keep the same
+  event cache and run the same traversal over it (`../src/core`), so folding, drilling
+  in and every edit redraw with no round trip, and a new line is on screen before the
+  write is answered. This used to be the one place the two apps deliberately parted
+  company; now it is the place they are most alike, which matters more here than
+  there — on mobile data the network is the slow part of everything.
 - **Ordering is done in one write.** Adding a line below a row, indenting, outdenting
   and reordering all go out as a single `writeEvents` batch, so one undo takes the
   whole action back rather than half of it.

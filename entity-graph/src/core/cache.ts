@@ -269,10 +269,12 @@ export function applyEvents(events: readonly AppEvent[]): void {
   generation++
   update((next) => {
     for (const [id, added] of byEntity(events)) {
-      // Only against entities we hold. One we don't will read these along with
-      // the rest of its history the first time something asks for it.
-      const entry = next[id]
-      if (entry) next[id] = { ...entry, events: [...entry.events, ...added] }
+      // Including entities nothing has read yet, which is how a client that makes
+      // up its own ids — the phone, adding a line — shows the new entity before
+      // the write lands. The entry stays unloaded, so the first thing to ask for
+      // it reads the rest of its history along with these.
+      const entry = next[id] ?? blank(id)
+      next[id] = { ...entry, events: [...entry.events, ...added] }
     }
   })
 }

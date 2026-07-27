@@ -1,5 +1,5 @@
-import { entityRows, viewRows } from '../state/derive'
-import { childOrder } from '../state/query'
+import { entityRows } from '../state/derive'
+import { childOrder, viewRows } from '../state/query'
 import { getView } from '../state/store'
 import { last, topLevel } from '../state/types'
 import type { ToolContext } from './types'
@@ -16,7 +16,7 @@ export function currentContext(extra: Record<string, unknown> = {}): ToolContext
   const { rows, selectedPath } = viewRows(view)
   const entities = entityRows(rows)
 
-  const entityId = last(selectedPath) ?? null
+  const entityId: string | null = last(selectedPath) ?? null
   const parentId = selectedPath.length > 1 ? selectedPath[selectedPath.length - 2] : null
   const row = entities.find((r) => r.selected) ?? null
 

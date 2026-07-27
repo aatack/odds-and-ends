@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useAtomValue, useView } from '../state/hooks'
-import { pagesAtom } from '../state/query'
+import { entitiesAtom } from '../../../src/core/cache'
 import { currentContext } from '../tools/context'
 import type { ToolContext } from '../tools/types'
 
@@ -15,6 +15,6 @@ import type { ToolContext } from '../tools/types'
  */
 export function useToolContext(): ToolContext {
   const view = useView()
-  const pages = useAtomValue(pagesAtom)
-  return useMemo(() => currentContext(), [view, pages])
+  const cache = useAtomValue(entitiesAtom)
+  return useMemo(() => currentContext(), [view, cache])
 }
