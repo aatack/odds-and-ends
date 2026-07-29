@@ -145,16 +145,20 @@ describe('MCP endpoint', () => {
 
   const said = (res: unknown): string => (res as { content: { text: string }[] }).content[0].text
 
-  it('offers the five tools, and says how to use them', async () => {
+  it('offers the six tools, and says how to use them', async () => {
     const client = await connect()
     const { tools } = await client.listTools()
     expect(tools.map((t) => t.name)).toEqual([
       'query',
       'get_details',
+      'create',
       'set_value',
       'add_link',
       'remove_link',
     ])
+    // Creating is the one call that isn't safe to repeat.
+    const hints = Object.fromEntries(tools.map((t) => [t.name, t.annotations?.idempotentHint]))
+    expect(hints).toMatchObject({ create: false, set_value: true, query: true })
     // The store's own tools are deliberately absent: raw events, resources and
     // undo are an API for a client, not for a model.
     expect(tools.map((t) => t.name)).not.toContain('readEvents')
@@ -236,6 +240,29 @@ describe('MCP endpoint', () => {
       said(await client.callTool({ name: 'get_details', arguments: { entityIds: ['m-sec'] } }))
     )
     expect(after['m-sec'].outboundLinks).toEqual([])
+    await client.close()
+  })
+
+  it('creates a note under a parent, minting the id itself', async () => {
+    const client = await connect()
+    const made = said(
+      await client.callTool({
+        name: 'create',
+        arguments: { parentId: 'm-root', text: 'Fresh', open: true },
+      })
+    )
+    const id = /Created (\S+) under/.exec(made)?.[1]
+    // A uuid, not something the caller had to think of.
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+
+    const details = JSON.parse(
+      said(await client.callTool({ name: 'get_details', arguments: { entityIds: [id!] } }))
+    )
+    // The flags that were given, and only those: `section` was not, so it is absent
+    // rather than false.
+    expect(details[id!].values).toEqual({ text: 'Fresh', open: true })
+    // And it is in the outline already, not stranded waiting for a link.
+    expect(details[id!].inboundLinks).toEqual(['m-root'])
     await client.close()
   })
 

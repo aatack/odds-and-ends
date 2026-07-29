@@ -13,9 +13,9 @@ import type { Registry } from './registry'
 // What an agent sees of a source. Deliberately *not* the source's own tool list:
 // that is a store's API — raw events, resources, undo, whatever a user has
 // defined — and handing all of it over asks a model to design its own reads. This
-// is five tools over the same store, each one a whole job: read an outline, read
-// an entity, set a value, link, unlink. Tools it cannot get right are worse than
-// tools it does not have.
+// is six tools over the same store, each one a whole job: read an outline, read
+// an entity, add a note, set a value, link, unlink. Tools it cannot get right are
+// worse than tools it does not have.
 
 /** Entities one page of `query` walks over, unless the caller says otherwise. */
 const QUERY_LIMIT = 200
@@ -80,10 +80,12 @@ but leave their values alone unless you were asked to change them.
 
 ## Writing
 
-- \`set_value\` writes one value on one entity — text, section, open, or anything else.
-  Setting a value on an id nothing has been written to yet is what brings a note into
-  being: use a fresh uuid as the id, then \`add_link\` from its parent to it, or it exists
-  without being anywhere in the outline.
+- \`create\` adds a note under a parent and returns its id. The id is minted for you, so
+  never invent one. Give it the \`text\`, plus \`section: true\` if it titles a group of
+  notes, or \`open: true\` if it is a task; to build a branch, create the parent first and
+  create its children under the id you got back.
+- \`set_value\` writes one value on one entity — text, section, open, or anything else. It
+  is for editing a note that is already there.
 - \`add_link\` puts a child under a parent, at the end of the parent's children.
   \`remove_link\` takes it out again; a note under several parents keeps the others.
 - Writes are events appended to a log, so nothing is overwritten in place — but this is
@@ -110,6 +112,8 @@ interface McpTool {
   readOnly: boolean
   /** True when it replaces or removes something rather than only adding. */
   destructive?: boolean
+  /** False when calling it twice does not leave the store as calling it once did. */
+  idempotent?: boolean
   run: (source: Source, args: Record<string, unknown>) => Promise<string>
 }
 
@@ -214,15 +218,63 @@ const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'create',
+    description:
+      'Add a note under a parent, and hand back the id it was given. The id is a uuid ' +
+      'minted here, so there is never one to invent: create the note, then use the id ' +
+      'that comes back to hang children off it or to set anything else on it.\n\n' +
+      'One call writes the text, the flags and the link, so the note is in the outline ' +
+      'the moment it exists — at the end of its parent\'s children.',
+    needs: 'createEntity',
+    readOnly: false,
+    // The one tool here that is not idempotent: called twice it makes two notes.
+    // A client that retries on a timeout should know that before it does.
+    idempotent: false,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        parentId: {
+          type: 'string',
+          description:
+            'The note it goes under. Required: a note nothing links to exists, but is ' +
+            'nowhere in the outline and nobody will find it.',
+        },
+        text: { type: 'string', description: 'The note itself, as markdown.' },
+        section: {
+          type: 'boolean',
+          description:
+            '`true` to make it a heading — a named part of its parent rather than a ' +
+            'bullet in it. Omit for an ordinary note.',
+        },
+        open: {
+          type: 'boolean',
+          description:
+            'Makes it a task: `true` unticked, `false` already ticked. Omit for an ' +
+            'ordinary bullet.',
+        },
+      },
+      required: ['parentId', 'text'],
+    },
+    run: async (source, args) => {
+      const values: Record<string, unknown> = { text: args.text }
+      // Only a real flag is written. `section: false` and no `section` at all read
+      // the same in the outline, so storing the false would be noise on the entity;
+      // `open: false` genuinely means something else (a ticked task), so it stays.
+      if (args.section === true) values.section = true
+      if (typeof args.open === 'boolean') values.open = args.open
+      const id = await source.call('createEntity', { values, parentId: args.parentId })
+      return `Created ${String(id)} under ${String(args.parentId)}.`
+    },
+  },
+  {
     name: 'set_value',
     description:
       'Set one value on one entity, replacing whatever was there. `key` is usually ' +
       '`text` (the note itself, as markdown), `section` (`true` to make it a heading) or ' +
       '`open` (`true` unticked, `false` ticked); any other key is stored as given. ' +
       '`value` is any JSON.\n\n' +
-      'Writing to an id that does not exist yet creates it — that is how a new note is ' +
-      'made: invent a uuid, set its `text`, then `add_link` it under its parent, or it ' +
-      'will not appear anywhere in the outline.',
+      'This is for editing a note that already exists. To add one, use `create`, which ' +
+      'mints the id and links it in the same call.',
     needs: 'writeValue',
     readOnly: false,
     // It replaces whatever was under the key, so it is not a purely additive write.
@@ -319,9 +371,9 @@ function makeMcpServer(source: Source): Server {
       annotations: {
         readOnlyHint: t.readOnly,
         destructiveHint: t.destructive ?? false,
-        // Every write here says what the state should be rather than nudging it,
-        // so making the same call twice leaves the store as it was after the first.
-        idempotentHint: true,
+        // Every write but `create` says what the state should be rather than nudging
+        // it, so making the same call twice leaves the store as the first call did.
+        idempotentHint: t.idempotent ?? true,
       },
     })),
   }))

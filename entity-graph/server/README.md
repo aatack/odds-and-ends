@@ -59,18 +59,18 @@ questions:
 `POST /:sourceId/mcp` does **not** expose the source's tool list. A store's API —
 raw events, resources, undo, whatever tools a user has defined — is the wrong
 surface for a model: it asks it to design its own reads, and the ones it invents
-are worse than the five it is given (`src/mcp.ts`):
+are worse than the six it is given (`src/mcp.ts`):
 
 | tool | goes through | what it does |
 |------|--------------|--------------|
 | `query` | `query` | a slice of the outline as markdown, one line per note, each line starting with that note's entity id, padded so the indentation still reads. Ends with the path to resume from when the limit cut the walk short. Takes `path`, `limit`, `maxDepth`, `sections`, `find` |
 | `get_details` | `readEntities` | whole entities as JSON for a list of ids — every value, the children in order, and the `inboundLinks` that say where else a note is referenced |
-| `set_value` | `writeValue` | one value on one entity |
-| `add_link` / `remove_link` | `writeLink` | put a note under a parent, or take it out — `parentId` / `childId` rather than source / destination, "source" already meaning something else here |
+| `create` | `createEntity` | a note under a parent (`parentId`, `text`, optional `section` / `open`), returning the uuid it was given. The id is minted server-side, so a model never invents one — and the note is linked in the same call, never stranded |
+| `set_value` | `writeValue` | one value on one entity: editing what is already there |
+| `add_link` / `remove_link` | `writeLink` | put an existing note under a parent, or take it out — `parentId` / `childId` rather than source / destination, "source" already meaning something else here |
 
-Deliberately absent: creating an entity as its own step (setting a value on a
-fresh uuid is what creates one), reordering children, and everything to do with
-events, resources and undo.
+Deliberately absent: reordering children, and everything to do with events,
+resources and undo.
 
 No collapse map either, and no `direction`: a model gets a slice described by
 where it starts and how deep it goes, not an arbitrary shape, and finds what
@@ -80,6 +80,8 @@ on.
 
 A tool whose underlying source tool is missing is not listed at all, so a
 read-only or narrowed source (`filter`) advertises exactly what it will accept.
+`create` is also the one tool marked non-idempotent — called twice it makes two
+notes, which a client retrying a timed-out call should know.
 The client is also handed *instructions* at initialize — what the store is, how
 to page, what `text` / `section` / `open` mean, and to write in the voice of the
 notes already there.
