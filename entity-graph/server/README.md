@@ -54,6 +54,12 @@ questions:
   what comes back. What the MCP's own `query` is built on, since an agent wants the
   answer rather than the events. The same traversal (`src/core/query.ts`) either way.
 
+The traversal is shared but the waiting is not. A client steps it over its cache and
+draws whatever is there, because a row that fills in a moment later is a redraw; the
+server has no second chance, so `query` runs the walk, the filters and the rows
+against a cache it fills as it goes, and returns only once nothing it is about to
+hand back is still missing.
+
 ### MCP
 
 `POST /:sourceId/mcp` does **not** expose the source's tool list. A store's API —
