@@ -21,9 +21,18 @@ interface Target {
   frame: FrameState
   tab: TabState
   rows: Row[]
+  /**
+   * The rows with the input box for a new child taken out. Computed on first
+   * access and not before: this is built for every frame tool and for the
+   * `enabled` of several, on every keystroke, and only two tools want the list
+   * flattened — filtering it eagerly meant an array the length of the frame per
+   * press, for nothing.
+   */
   entities: EntityRow[]
   /** The resolved selection, not the latent one. */
   selectedPath: string[]
+  /** Its index in {@link rows}; -1 when the selection isn't among them. */
+  selectedIndex: number
   selected: EntityRow | null
 }
 
@@ -33,16 +42,22 @@ function target(): Target | null {
   const frame = frameId ? layout.frames[frameId] : null
   const tab = frame ? layout.tabs[frame.tabId] : null
   if (!frame || !tab) return null
-  const { rows, selectedPath } = rowsOf(frame.id, layout)
-  const entities = entityRows(rows)
+  const { rows, selectedPath, selectedIndex } = rowsOf(frame.id, layout)
+  // Handed over by the derivation, which found it by looking its key up rather
+  // than by searching the rows for the one that says it is selected.
+  const at = rows[selectedIndex]
+  let flattened: EntityRow[] | null = null
   return {
     layout,
     frame,
     tab,
     rows,
-    entities,
+    get entities(): EntityRow[] {
+      return (flattened ??= entityRows(rows))
+    },
     selectedPath,
-    selected: entities.find((r) => r.selected) ?? null,
+    selectedIndex,
+    selected: at?.kind === 'entity' ? at : null,
   }
 }
 
@@ -51,14 +66,18 @@ const selectedId = (t: Target): string | undefined => last(t.selectedPath)
 /** Step the selection through the visible entity rows. */
 function moveSelection(delta: number): void {
   const t = target()
-  if (!t || t.entities.length === 0) return
-  const at = t.entities.findIndex((r) => r.selected)
-  if (at < 0) {
-    A.selectPath(t.frame.id, t.entities[0].path)
+  if (!t || t.rows.length === 0) return
+  if (t.selectedIndex < 0) {
+    const first = t.rows.find((r) => r.kind === 'entity')
+    if (first?.kind === 'entity') A.selectPath(t.frame.id, first.path)
     return
   }
-  const next = at + delta
-  if (next >= 0 && next < t.entities.length) A.selectPath(t.frame.id, t.entities[next].path)
+  // By index, over the rows as they stand. The only row that isn't an entity is
+  // the box for a child being created, so stepping past it is one step at most.
+  let next = t.selectedIndex + delta
+  while (t.rows[next] && t.rows[next].kind !== 'entity') next += delta
+  const row = t.rows[next]
+  if (row?.kind === 'entity') A.selectPath(t.frame.id, row.path)
 }
 
 function fold(collapsed: boolean): void {

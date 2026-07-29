@@ -63,8 +63,18 @@ export type Row = EntityRow | InputRow
 
 export interface FrameRows {
   rows: Row[]
+  /**
+   * Each row's key, in row order. Index-aligned with {@link rows}, and stable
+   * while the tree is: a view can measure and memoise against these without
+   * being disturbed by the cursor moving.
+   */
+  keys: string[]
   /** The selection in effect — resolved against the visible rows. Never stored. */
   selectedPath: string[]
+  /** Where that selection sits in {@link rows}, or -1 when it isn't among them. */
+  selectedIndex: number
+  /** The row being typed into — an edited row, or the box for a new child. */
+  editIndex: number
   /** True while any row's entity is still being read. */
   loading: boolean
   error: string | null
@@ -72,24 +82,40 @@ export interface FrameRows {
   complete: boolean
 }
 
-const key = (path: readonly string[]): string => path.join('\0')
+/**
+ * A row's identity as one string. The path rather than the id, since the same
+ * entity can appear in several places; joined on a NUL, which no id can contain,
+ * so two different paths can never come out the same.
+ *
+ * This is what makes finding a row a lookup rather than a search. Everything that
+ * wants to know *where* a path is — the selection, the edit, a view's measured
+ * heights — goes through these.
+ */
+export const rowKey = (path: readonly string[]): string => path.join('\0')
+
+/** The key of the box shown while creating a child of `parentKey`. */
+const inputKey = (parentKey: string): string => `\0input\0${parentKey}`
 
 /**
- * The selection actually in effect. Strips trailing ids until the path exists,
- * falling back to the frame's root. While pages are still outstanding an unfound
- * path is left alone rather than snapped, since the row it names may yet arrive.
+ * The selection actually in effect. Strips trailing ids until the path is one of
+ * the rows, falling back to the frame's root. While pages are still outstanding
+ * an unfound path is left alone rather than snapped, since the row it names may
+ * yet arrive.
+ *
+ * Takes the tree's key → index map rather than the rows: this runs on every
+ * keystroke, and building a set of every row's path to answer it — which is what
+ * it used to do — is the sort of per-row work that made a long frame lag.
  */
 export function resolveSelectedPath(
   latent: string[],
-  rows: readonly TreeRow[],
+  at: ReadonlyMap<string, number>,
   rootId: string,
   complete: boolean,
 ): string[] {
-  const paths = new Set(rows.map((r) => key(r.path)))
-  if (paths.has(key(latent))) return latent
+  if (at.has(rowKey(latent))) return latent
   if (!complete) return latent
   let path = latent
-  while (path.length > 0 && !paths.has(key(path))) path = path.slice(0, -1)
+  while (path.length > 0 && !at.has(rowKey(path))) path = path.slice(0, -1)
   return path.length > 0 ? path : [rootId]
 }
 
@@ -106,6 +132,10 @@ export function resolveSelectedPath(
 export interface FrameTree {
   /** Selected and editing are false on all of them; that is `markRows`'s to say. */
   rows: EntityRow[]
+  /** Row keys in row order, computed once with the rows. */
+  keys: string[]
+  /** key → index in {@link rows}. Computed once, so a lookup costs nothing later. */
+  at: Map<string, number>
   loading: boolean
   error: string | null
   complete: boolean
@@ -113,45 +143,25 @@ export interface FrameTree {
 
 export const EMPTY_FRAME_TREE: FrameTree = {
   rows: [],
+  keys: [],
+  at: new Map(),
   loading: false,
   error: null,
   complete: true,
 }
 
-// --- Watching the traversals ------------------------------------------------
-
 // Every traversal a frame runs comes through `frameTree`, so one hook there sees
 // all of them: the render path, and every live read a tool or a call context
-// makes. The app logs them while we work out what still rebuilds the tree during
-// navigation; the tests count them, which is how "moving the cursor does not
-// re-resolve the query" is asserted rather than hoped for.
-//
-// Passed in rather than sniffed for, as the cache's evaluator is, so this layer
-// keeps its hands off both the console and the DOM.
-
+// makes. It exists for the tests, which count them — that is how "moving the
+// cursor does not re-resolve the query" is asserted rather than hoped for. Nothing
+// in the app sets it: a console call here runs on every traversal, and
+// `console.trace` in particular is dear enough to be the lag it was looking for.
 let observer: ((frame: FrameState, limit: number) => void) | null = null
 
 export const setQueryObserver = (
   fn: ((frame: FrameState, limit: number) => void) | null,
 ): void => {
   observer = fn
-}
-
-let logged = 0
-
-/**
- * One traversal, as a console line. `console.trace` rather than `log`: the count
- * says how often, and the stack printed under it is the question — what asked for
- * this one.
- */
-export function logQuery(frame: FrameState, limit: number): void {
-  logged++
-  console.trace(
-    `[query] #${logged} frame=${frame.id} root=${frame.rootId} limit=${limit}` +
-      ` direction=${directionOf(frame)}` +
-      (frame.find == null ? '' : ` find=${JSON.stringify(frame.find)}`) +
-      (frame.sectionsOnly ? ' sectionsOnly' : ''),
-  )
 }
 
 /** Everything about a frame's rows that its selection cannot change. */
@@ -173,21 +183,29 @@ export function frameTree(
     limit,
     { find: frame.find, sections: frame.sectionsOnly },
   )
-  return {
-    rows: rows.map((row): EntityRow => ({ kind: 'entity', ...row, selected: false, editing: false })),
-    loading,
-    error,
-    complete,
+
+  // Keys and their index, once, here — where the rows are built and not again
+  // until they are. Everything downstream looks a row up rather than hunting it.
+  const keys = new Array<string>(rows.length)
+  const at = new Map<string, number>()
+  const marked = new Array<EntityRow>(rows.length)
+  for (let i = 0; i < rows.length; i++) {
+    const key = rowKey(rows[i].path)
+    keys[i] = key
+    at.set(key, i)
+    marked[i] = { kind: 'entity', ...rows[i], selected: false, editing: false }
   }
+  return { rows: marked, keys, at, loading, error, complete }
 }
 
 /**
  * A frame's tree with what the frame knows laid over it: which row is selected,
  * which is being typed into, and where the box for a new child goes.
  *
- * Rows the cursor doesn't touch are passed through *by identity* rather than
- * copied, so a keystroke that moves the selection re-renders the two rows that
- * changed instead of every row on screen.
+ * This runs on every keystroke, so it does no per-row work at all. Both the
+ * selection and the edit are found by looking their key up in the tree's index,
+ * and the rows are the tree's own array with *at most two entries replaced* — so
+ * a memoised row component re-renders only where something actually changed.
  */
 export function markRows(tree: FrameTree, frame: FrameState): FrameRows {
   const { rows, complete, loading, error } = tree
@@ -195,22 +213,28 @@ export function markRows(tree: FrameTree, frame: FrameState): FrameRows {
   // A path that isn't among the rows may simply not have arrived yet, so the
   // selection is only snapped once the frame has everything it is going to get.
   const settled = complete && !loading
-  const selectedPath = resolveSelectedPath(frame.selectedPath, rows, frame.rootId, settled)
+  const selectedPath = resolveSelectedPath(frame.selectedPath, tree.at, frame.rootId, settled)
   const edit = frame.edit
-  const marked: Row[] = rows.map((row): Row => {
-    const editing = edit?.mode === 'edit' && samePath(row.path, edit.path)
-    const selected = samePath(row.path, selectedPath)
-    if (!editing && !selected) return row
-    return { ...row, selected, editing, draft: editing ? edit?.draft : undefined }
-  })
+
+  let selectedIndex = tree.at.get(rowKey(selectedPath)) ?? -1
+  let editIndex = edit?.mode === 'edit' ? (tree.at.get(rowKey(edit.path)) ?? -1) : -1
+
+  const marked: Row[] = rows.slice()
+  let keys = tree.keys
+  if (selectedIndex >= 0) marked[selectedIndex] = { ...rows[selectedIndex], selected: true }
+  if (editIndex >= 0) {
+    marked[editIndex] = { ...marked[editIndex], editing: true, draft: edit?.draft } as EntityRow
+  }
 
   // Splice the "new child" input in after the parent's whole subtree — which for
-  // a folded parent is nothing, so it lands directly beneath it.
+  // a folded parent is nothing, so it lands directly beneath it. The keys are
+  // copied too, since a view reads them index for index with the rows.
   if (edit?.mode === 'create') {
-    const at = marked.findIndex((r) => r.kind === 'entity' && samePath(r.path, edit.path))
-    if (at >= 0) {
-      const parentDepth = marked[at].depth
-      let insert = at + 1
+    const parentKey = rowKey(edit.path)
+    const parent = tree.at.get(parentKey) ?? -1
+    if (parent >= 0) {
+      const parentDepth = marked[parent].depth
+      let insert = parent + 1
       while (insert < marked.length && marked[insert].depth > parentDepth) insert++
       const open = edit.values.open
       marked.splice(insert, 0, {
@@ -221,15 +245,23 @@ export function markRows(tree: FrameTree, frame: FrameState): FrameRows {
         section: edit.values.section === true,
         open: open === true ? true : open === false ? false : undefined,
       })
+      keys = tree.keys.slice()
+      keys.splice(insert, 0, inputKey(parentKey))
+      // Everything at or after the insert has shifted down one.
+      if (selectedIndex >= insert) selectedIndex++
+      editIndex = insert
     }
   }
 
-  return { rows: marked, selectedPath, loading, error, complete }
+  return { rows: marked, keys, selectedPath, selectedIndex, editIndex, loading, error, complete }
 }
 
 export const EMPTY_FRAME_ROWS: FrameRows = {
   rows: [],
+  keys: [],
   selectedPath: [],
+  selectedIndex: -1,
+  editIndex: -1,
   loading: false,
   error: null,
   complete: true,

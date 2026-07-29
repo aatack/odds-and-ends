@@ -16,7 +16,7 @@ import { contextWithin, runTool } from '../tools/call'
  */
 export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element {
   const layout = useLayoutState()
-  const { rows, loading } = useFrameRows(frameId)
+  const { rows, keys, selectedIndex, editIndex, loading } = useFrameRows(frameId)
   const codeRuns = useAtomValue(codeRunsAtom)
   const frame = layout.frames[frameId]
 
@@ -46,6 +46,9 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
       <div className="min-h-0 flex-1">
         <Editor
           rows={rows}
+          keys={keys}
+          selectedIndex={selectedIndex}
+          editIndex={editIndex}
           loading={loading}
           onSelectRow={(path) => A.selectPath(frameId, path)}
           onToggleCollapse={(row) => {

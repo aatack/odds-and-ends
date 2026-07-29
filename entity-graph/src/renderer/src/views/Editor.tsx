@@ -29,8 +29,9 @@ const TEXT = 'block font-serif text-[14px] leading-5'
 // Monospace counterpart for editing `type: code` entities in place.
 const MONO = 'block font-mono text-[12.5px] leading-5'
 
-const keyOf = (row: Row, index: number): string =>
-  row.kind === 'entity' ? row.path.join('/') : `input-${index}`
+// Row keys are not computed here. They come with the rows, index for index, and
+// stay the same while the tree does — which is what lets the measured heights and
+// the offsets built from them survive a cursor move untouched.
 
 // Section headings grow with prominence: ~1.5x at the top level, easing toward
 // ~1.1x as they nest deeper. Per-depth, so it can't be a static utility class.
@@ -58,6 +59,11 @@ function Mark({ open }: { open?: boolean }): React.JSX.Element {
 
 export interface EditorProps {
   rows: Row[]
+  /** Row keys, index-aligned with `rows`; unchanged while the tree is unchanged. */
+  keys: string[]
+  /** Which row is selected, and which is being typed into. -1 for neither. */
+  selectedIndex: number
+  editIndex: number
   loading: boolean
   onSelectRow: (path: string[]) => void
   onToggleCollapse: (row: EntityRow) => void
@@ -88,6 +94,9 @@ export interface EditorProps {
 export function Editor(props: EditorProps): React.JSX.Element {
   const {
     rows,
+    keys,
+    selectedIndex,
+    editIndex,
     loading,
     onSelectRow,
     onToggleCollapse,
@@ -128,17 +137,20 @@ export function Editor(props: EditorProps): React.JSX.Element {
   }, [])
 
   // Cumulative offsets (offsets[i] = top of row i; offsets[n] = total height).
+  // Keyed on `keys` rather than on `rows`: the rows array is new whenever the
+  // cursor moves, while the keys are the same until the tree itself changes, so
+  // this walk happens when the shape of the list changes and not on every press.
   const offsets = useMemo(() => {
-    const out = new Array<number>(rows.length + 1)
+    const out = new Array<number>(keys.length + 1)
     let acc = 0
-    for (let i = 0; i < rows.length; i++) {
+    for (let i = 0; i < keys.length; i++) {
       out[i] = acc
-      acc += heights.get(keyOf(rows[i], i)) ?? ESTIMATE
+      acc += heights.get(keys[i]) ?? ESTIMATE
     }
-    out[rows.length] = acc
+    out[keys.length] = acc
     return out
-  }, [rows, heights])
-  const total = offsets[rows.length]
+  }, [keys, heights])
+  const total = offsets[keys.length]
 
   // Keep the selected row within the viewport as selection moves. Reads the
   // latest offsets via a ref so height changes don't fight the user's scroll.
@@ -160,19 +172,15 @@ export function Editor(props: EditorProps): React.JSX.Element {
     else if (bottom > el.scrollTop + height - margin) el.scrollTop = bottom - height + margin
   }, [])
 
-  const selectedIndex = useMemo(
-    () => rows.findIndex((r) => r.kind === 'entity' && r.selected),
-    [rows],
-  )
+  // Both indices arrive with the rows rather than being searched for here: the
+  // derivation looked them up in its own index, and scanning the whole list twice
+  // per keystroke to find what it already knew was most of the cost of a press.
   useEffect(() => reveal(selectedIndex), [selectedIndex, reveal])
 
-  // The row being typed into, if any. It is kept mounted wherever it is (see the
-  // pin below) and brought into view — creating a child of a very tall entity
-  // puts the box right at the end of that entity's subtree, pages away.
-  const editIndex = useMemo(
-    () => rows.findIndex((r) => r.kind === 'input' || (r.kind === 'entity' && r.editing)),
-    [rows],
-  )
+  // The row being typed into is kept mounted wherever it is (see the pin below)
+  // and brought into view — creating a child of a very tall entity puts the box
+  // right at the end of that entity's subtree, pages away.
+  //
   // Also on its offset, not just its index: the rows between here and there are
   // mostly unmeasured guesses, so the first scroll lands approximately and the
   // real offset arrives once they mount.
@@ -200,7 +208,7 @@ export function Editor(props: EditorProps): React.JSX.Element {
   // be arbitrarily far from the viewport. Moving it between the flow and the pin
   // as it crosses the window edge would remount it just the same, so it stays
   // pinned throughout and the flow leaves a spacer of its height in its place.
-  const editKey = editIndex < 0 ? null : keyOf(rows[editIndex], editIndex)
+  const editKey = editIndex < 0 ? null : keys[editIndex]
   const editHeight = editKey == null ? 0 : (heights.get(editKey) ?? ESTIMATE)
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>): void => {
@@ -212,15 +220,25 @@ export function Editor(props: EditorProps): React.JSX.Element {
   // Rows that don't reach the bottom of the viewport ask for more, since there is
   // no scroll to ask on their behalf. This is what a filter needs: the limit is on
   // the *walk*, so a page of two hundred entities can leave three rows standing —
-  // a third of a screen with nothing below it and nothing to scroll. Asking again
-  // is safe and terminates: `loadMore` does nothing once the walk is complete, and
-  // a frame still waiting on entities grows when they arrive rather than here.
+  // a third of a screen with nothing below it and nothing to scroll.
+  //
+  // Asked at most once per measurement, and `onNearEnd` is deliberately not a
+  // dependency: it is a fresh closure on every render, so keying on it fired this
+  // on every render, and each firing unrolled another page. A short list and a
+  // tree with more to give became a loop that raised the ceiling until it had
+  // walked the whole store — leaving the frame permanently resolving thousands of
+  // rows, which is far slower than the empty space it was trying to fill.
+  const askedAt = useRef('')
   useEffect(() => {
-    if (viewportH && total < viewportH) onNearEnd()
-  }, [total, viewportH, onNearEnd])
+    if (!viewportH || total >= viewportH) return
+    const at = `${keys.length}:${viewportH}`
+    if (askedAt.current === at) return
+    askedAt.current = at
+    onNearEnd()
+  })
 
   const renderRow = (row: Row, index: number): React.JSX.Element => {
-    const key = keyOf(row, index)
+    const key = keys[index]
     // Pass this row's run state directly (not the whole map) so the memoised
     // RowView only re-renders when *its own* run changes.
     const run = row.kind === 'entity' ? codeRuns[row.id] : undefined

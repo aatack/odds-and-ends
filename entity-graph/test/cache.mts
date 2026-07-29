@@ -184,12 +184,49 @@ test('does not re-resolve the query when the selection moves', async () => {
   }
   assert.equal(resolved, 0, 'the cursor moved twenty times and the tree stood still')
 
+  // And the rows the cursor left behind are the same objects, which is what lets a
+  // memoised row component sit out a keypress. Two change: the one being left and
+  // the one arrived at.
+  const before = rowsOf(frameId())
+  A.selectPath(frameId(), ['root', 'k99'])
+  const after = rowsOf(frameId())
+  assert.equal(after.selectedIndex, 100, 'found by looking the key up, not by scanning')
+  assert.equal(after.rows[100].kind === 'entity' && after.rows[100].selected, true)
+  const changed = after.rows.filter((row, i) => row !== before.rows[i])
+  assert.equal(changed.length, 2, 'only the two rows whose selection changed are new')
+  assert.equal(after.keys, before.keys, 'the keys are the same array, so offsets stand')
+
   // What does shape the tree still re-resolves it, or nothing would ever change.
   A.setFind(frameId(), 'k1')
   rowsOf(frameId())
   assert.equal(resolved, 1)
   A.setFind(frameId(), null)
   setQueryObserver(null)
+})
+
+test('keeps the indices straight when the box for a new child appears', async () => {
+  open()
+  source.tree({ root: ['a', 'b'], a: ['a1'] })
+  source.values({ root: { text: 'Root' }, a: { text: 'A' }, a1: { text: 'A1' }, b: { text: 'B' } })
+  rowsOf(frameId())
+  await settle()
+  assert.deepEqual(shape(), ['root', 'root/a', 'root/a/a1', 'root/b'])
+
+  A.selectPath(frameId(), ['root', 'b'])
+  assert.equal(rowsOf(frameId()).selectedIndex, 3)
+
+  // The box lands after `a`'s whole subtree, which is above `b` — so `b` moves
+  // down one and the selection has to move with it.
+  A.startCreate(frameId(), ['root', 'a'])
+  const rows = rowsOf(frameId())
+  assert.equal(rows.editIndex, 3)
+  assert.equal(rows.rows[3].kind, 'input')
+  assert.equal(rows.selectedIndex, 4)
+  assert.equal(rows.rows[4].kind === 'entity' && rows.rows[4].text, 'B')
+  assert.equal(rows.rows[4].kind === 'entity' && rows.rows[4].selected, true)
+  // The keys stay index-aligned with the rows, since a view reads them together.
+  assert.equal(rows.keys.length, rows.rows.length)
+  A.setEdit(frameId(), null)
 })
 
 test('filters rows without changing what is loaded', async () => {
