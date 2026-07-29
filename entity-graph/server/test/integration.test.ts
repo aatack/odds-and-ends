@@ -212,7 +212,9 @@ describe('MCP endpoint', () => {
       nested: { a: [1, null] },
     })
 
-    // And `null` clears rather than storing the word.
+    // And `null` arrives as null rather than as the word. It blanks the key
+    // rather than removing it, which is deliberate — a null is how an entity
+    // refuses a value its type would otherwise lend it — so the key stays.
     await client.callTool({
       name: 'set_value',
       arguments: { entityId: 'm-typed', key: 'count', value: null },
@@ -221,6 +223,45 @@ describe('MCP endpoint', () => {
       said(await client.callTool({ name: 'get_details', arguments: { entityIds: ['m-typed'] } }))
     )
     expect(cleared['m-typed'].values.count).toBeNull()
+    await client.close()
+  })
+
+  it('records what it wrote as the source’s author, marked as having come over MCP', async () => {
+    // The person is the same person, so the name is theirs with the surface
+    // appended: history can tell an agent's edit from a keystroke without
+    // losing whose notebook it is.
+    const client = await connect()
+    await client.callTool({
+      name: 'set_value',
+      arguments: { entityId: 'm-who', key: 'text', value: 'Written by an agent' },
+    })
+    const created = said(
+      await client.callTool({ name: 'create', arguments: { parentId: 'm-who', text: 'A child' } })
+    )
+    const childId = created.match(/Created (\S+) under/)![1]
+    await client.callTool({ name: 'remove_link', arguments: { parentId: 'm-who', childId } })
+
+    const details = JSON.parse(
+      said(
+        await client.callTool({ name: 'get_details', arguments: { entityIds: ['m-who', childId] } })
+      )
+    )
+    // Every write: the value, the create, and the link that came off again.
+    expect(details['m-who'].createdBy).toBe('srv:mcp')
+    expect(details['m-who'].editedBy).toBe('srv:mcp')
+    expect(details[childId].createdBy).toBe('srv:mcp')
+
+    // A write over the plain HTTP surface is still just the source's author, so
+    // the suffix says something rather than being on everything.
+    await fetch(`http://127.0.0.1:${port}/src/call`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ tool: 'writeValue', args: { entityId: 'm-http', key: 'text', value: 'x' } }),
+    })
+    const plain = JSON.parse(
+      said(await client.callTool({ name: 'get_details', arguments: { entityIds: ['m-http'] } }))
+    )
+    expect(plain['m-http'].editedBy).toBe('srv')
     await client.close()
   })
 

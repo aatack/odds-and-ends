@@ -208,6 +208,21 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
   const author = opts.defaultAuthor ?? 'anonymous'
   const wrapper = entityWrapper(perms, author)
 
+  /**
+   * Who a write is recorded as. `author` names one outright — what undo does,
+   * putting an event back exactly as it was. `via` instead marks the surface the
+   * write arrived over, which is a suffix rather than a name because the person
+   * is the same person: `alex` at the keyboard and `alex:mcp` through an agent
+   * reading the same store, so history says which without losing whose.
+   */
+  const authorFor = (a: { author?: string; via?: string }): string =>
+    a.author ?? (a.via ? `${author}:${a.via}` : author)
+
+  const via = z
+    .string()
+    .optional()
+    .describe('Surface the write came over; recorded as `author:via`, e.g. `mcp`.')
+
   const readEvents = readEventsTool(perms.readEvents)
   const scanEvents = scanEventsTool(perms.readEvents)
 
@@ -221,6 +236,7 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
       key: z.string(),
       value: z.any(),
       author: z.string().optional(),
+      via,
       timestamp: z.number().optional().describe('Unix ms; defaults to now.'),
     }),
     handler: async (a: {
@@ -228,6 +244,7 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
       key: string
       value: unknown
       author?: string
+      via?: string
       timestamp?: number
     }) => {
       await perms.writeEvents([
@@ -236,7 +253,7 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
           entityId: a.entityId,
           key: a.key,
           value: a.value ?? null,
-          author: a.author ?? author,
+          author: authorFor(a),
           timestamp: a.timestamp ?? Date.now(),
         },
       ])
@@ -256,6 +273,7 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
       destinationId: z.string(),
       action: linkAction.default(0),
       author: z.string().optional(),
+      via,
       timestamp: z.number().optional().describe('Unix ms; defaults to now.'),
     }),
     handler: async (a: {
@@ -263,6 +281,7 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
       destinationId: string
       action: LinkAction
       author?: string
+      via?: string
       timestamp?: number
     }) => {
       await perms.writeEvents([
@@ -271,7 +290,7 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
           sourceId: a.sourceId,
           destinationId: a.destinationId,
           action: a.action,
-          author: a.author ?? author,
+          author: authorFor(a),
           timestamp: a.timestamp ?? Date.now(),
         },
       ])
@@ -382,9 +401,10 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
     args: z.object({
       values: z.record(z.any()).describe('Key → value map for the new entity.'),
       parentId: z.string().optional().describe('Link the new entity under this parent.'),
+      via,
     }),
-    handler: ({ values, parentId }: { values: Record<string, unknown>; parentId?: string }) =>
-      wrapper.createEntity(values, parentId),
+    handler: (a: { values: Record<string, unknown>; parentId?: string; via?: string }) =>
+      wrapper.createEntity(a.values, a.parentId, authorFor(a)),
   }
 
   const moveEntity: ToolDef = {

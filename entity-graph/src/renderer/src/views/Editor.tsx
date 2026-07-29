@@ -65,8 +65,12 @@ export interface EditorProps {
   onDraft: (text: string) => void
   /** Write the draft (Enter or blur). */
   onCommit: () => void
-  /** Abandon the edit (Escape). */
-  onCancel: () => void
+  /**
+   * There is more of the tree to unroll: the view has scrolled near the end of
+   * what it has, or what it has does not reach the bottom of the viewport — the
+   * latter being how a filter that keeps three rows out of a page of two hundred
+   * still fills the screen.
+   */
   onNearEnd: () => void
   /** Run state for code entities, keyed by entity id. */
   codeRuns: Record<string, CodeRunState>
@@ -89,7 +93,6 @@ export function Editor(props: EditorProps): React.JSX.Element {
     onToggleCollapse,
     onDraft,
     onCommit,
-    onCancel,
     onNearEnd,
     codeRuns,
     onRunCode,
@@ -206,6 +209,16 @@ export function Editor(props: EditorProps): React.JSX.Element {
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - ESTIMATE * OVERSCAN) onNearEnd()
   }
 
+  // Rows that don't reach the bottom of the viewport ask for more, since there is
+  // no scroll to ask on their behalf. This is what a filter needs: the limit is on
+  // the *walk*, so a page of two hundred entities can leave three rows standing —
+  // a third of a screen with nothing below it and nothing to scroll. Asking again
+  // is safe and terminates: `loadMore` does nothing once the walk is complete, and
+  // a frame still waiting on entities grows when they arrive rather than here.
+  useEffect(() => {
+    if (viewportH && total < viewportH) onNearEnd()
+  }, [total, viewportH, onNearEnd])
+
   const renderRow = (row: Row, index: number): React.JSX.Element => {
     const key = keyOf(row, index)
     // Pass this row's run state directly (not the whole map) so the memoised
@@ -222,7 +235,6 @@ export function Editor(props: EditorProps): React.JSX.Element {
         onToggleCollapse={onToggleCollapse}
         onDraft={onDraft}
         onCommit={onCommit}
-        onCancel={onCancel}
         onRunCode={onRunCode}
         onStopCode={onStopCode}
       />
@@ -281,7 +293,6 @@ interface RowProps {
   onToggleCollapse: (row: EntityRow) => void
   onDraft: (text: string) => void
   onCommit: () => void
-  onCancel: () => void
   /** Run a code entity: its id and source, plus the path of the row it sits at. */
   onRunCode: (id: string, code: string, path: string[]) => void
   onStopCode: () => void
@@ -296,7 +307,6 @@ const RowView = React.memo(function RowView({
   onToggleCollapse,
   onDraft,
   onCommit,
-  onCancel,
   onRunCode,
   onStopCode,
 }: RowProps): React.JSX.Element {
@@ -314,13 +324,16 @@ const RowView = React.memo(function RowView({
     return () => ro.disconnect()
   }, [measureKey, onMeasure])
 
-  // Enter commits, Escape abandons. Both are handled here rather than left to
-  // the key router, since the textarea owns bare keys while it has focus.
+  // Enter commits, and is handled here rather than left to the key router since
+  // the textarea owns bare keys while it has focus.
+  //
+  // Escape is *not*, though it used to be. The router lets Escape through even in
+  // a text field, so cancelling here as well meant it was handled twice: this
+  // dropped the edit, and then `edit.cancel` found nothing left to cancel and the
+  // press fell through to the next Escape tool in the frame — which cleared the
+  // find text. One listener, at the top, as everywhere else.
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      onCancel()
-    } else if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       onCommit()
     }

@@ -153,10 +153,11 @@ const key = (path: readonly string[]): string => path.join('\0')
  * Apply the filters to a set of resolved paths.
  *
  * Find keeps a matching row's ancestors, so the tree still reads. Sections
- * pointedly does not — the point of it is to see the sections and nothing else —
- * and rows keep their real depth either way, so a section nested inside an
- * ordinary entity still reads as nested. Find is applied first, so the two
- * compose.
+ * pointedly does not — the point of it is to see the sections and nothing else.
+ * Either way this returns the paths as they really are; how far in each of them
+ * *reads* once its neighbours have gone is the tree's business, and closing the
+ * gaps a filter leaves is what `keptDepths` in ./tree does. Find is applied
+ * first, so the two compose.
  *
  * Sections keeps the row the query started from whether or not it is one, since
  * it is the thing that was asked about. That is the *path* it started from, not

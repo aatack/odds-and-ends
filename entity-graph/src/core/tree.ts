@@ -77,6 +77,38 @@ function rowOf(
   }
 }
 
+const isStrictPrefix = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length < b.length && a.every((id, i) => b[i] === id)
+
+/**
+ * How deep each of a filtered set of paths *reads*, which is not how deep it
+ * sits: a row whose parent the filters removed moves up to take its place, so
+ * one row is never more than one level further in than the row above it. Without
+ * this a sections-only outline of a deeply buried heading indents it past
+ * anything it could be read as sitting under.
+ *
+ * Depth is therefore "how many of my ancestors are still here", counted by
+ * walking the kept rows in reading order over a stack of the ones above. The
+ * stack is seeded with the first row's own ancestors so that a page resuming
+ * mid-tree still starts at the depth it really sits at — only gaps *between kept
+ * rows* are closed, never the gap above the first of them.
+ */
+function keptDepths(
+  kept: readonly (readonly string[])[],
+  depthOf: (path: readonly string[]) => number,
+): number[] {
+  if (!kept.length) return []
+  const above: (readonly string[])[] = []
+  for (let i = 1; i < kept[0].length; i++) above.push(kept[0].slice(0, i))
+  const base = depthOf(kept[0]) - above.length
+  return kept.map((path) => {
+    while (above.length && !isStrictPrefix(above[above.length - 1], path)) above.pop()
+    const depth = base + above.length
+    above.push(path)
+    return depth
+  })
+}
+
 /**
  * A page of a query as rows — the counterpart of {@link buildTree} for a caller
  * that was handed the answer rather than walking a cache itself, which is what
@@ -91,8 +123,13 @@ function rowOf(
 export const rowsOfPage = (
   rows: readonly QueryRow[],
   direction: LinkDirection = 'out',
-): TreeRow[] =>
-  rows.map(({ path, entity }) => rowOf(path, entity, path.length - 1, direction, false))
+): TreeRow[] => {
+  const depths = keptDepths(
+    rows.map((r) => r.path),
+    (path) => path.length - 1,
+  )
+  return rows.map(({ path, entity }, i) => rowOf(path, entity, depths[i], direction, false))
+}
 
 /**
  * Run a query and describe what it reached.
@@ -116,16 +153,11 @@ export function buildTree(
   const ids = paths.map((path) => path[path.length - 1])
   const entities = source.get(ids)
   const folded = new Set(traversal.collapsed)
+  const depths = keptDepths(kept, (path) => path.length - start.length)
 
-  const rows = kept.map((path): TreeRow => {
+  const rows = kept.map((path, i): TreeRow => {
     const id = path[path.length - 1]
-    return rowOf(
-      path,
-      entities[id],
-      path.length - start.length,
-      traversal.direction,
-      folded.has(id),
-    )
+    return rowOf(path, entities[id], depths[i], traversal.direction, folded.has(id))
   })
 
   return {

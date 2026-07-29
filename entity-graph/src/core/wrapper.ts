@@ -27,14 +27,18 @@ export class EntityWrapper {
     return out
   }
 
-  /** Creates a new entity with the given values and optional parent link. Returns the new entity ID. */
+  /**
+   * Creates a new entity with the given values and optional parent link. Returns
+   * the new entity ID. `author` overrides the wrapper's own, which is how a write
+   * that came in over a particular surface says so.
+   */
   async createEntity(
     values: Record<string, unknown>,
     parentId?: string,
+    author = this.getAuthor(),
   ): Promise<string> {
     const id     = uuidv4()
     const now    = Date.now()
-    const author = this.getAuthor()
     const events: AppEvent[] = []
 
     for (const [key, value] of Object.entries(values)) {

@@ -98,6 +98,9 @@ const texts = (): (string | undefined)[] =>
 const shape = (): string[] =>
   rowsOf(frameId()).rows.flatMap((r) => (r.kind === 'entity' ? [r.path.join('/')] : []))
 
+/** How far in each row reads, which is not always how deep it sits. */
+const depths = (): number[] => rowsOf(frameId()).rows.map((r) => r.depth)
+
 const tests: [string, () => Promise<void>][] = []
 const test = (name: string, run: () => Promise<void>): void => void tests.push([name, run])
 
@@ -173,6 +176,33 @@ test('filters rows without changing what is loaded', async () => {
   A.setSectionsOnly(frameId(), true)
   assert.deepEqual(texts(), ['Root', 'Section'])
   A.setSectionsOnly(frameId(), false)
+})
+
+test('closes the gap a filter leaves, so no row jumps more than one level in', async () => {
+  open()
+  source.tree({ root: ['mid'], mid: ['deep'], deep: ['leaf'] })
+  source.values({
+    root: { text: 'Root' },
+    mid: { text: 'Middle' },
+    deep: { text: 'Buried heading', section: true },
+    leaf: { text: 'Leaf' },
+  })
+  rowsOf(frameId())
+  await settle()
+  assert.deepEqual(depths(), [0, 1, 2, 3], 'unfiltered, depth is where a row really sits')
+
+  // `deep` sits two levels below the root, and sections-only takes the row in
+  // between. Indenting it by two would put it under a row that isn't there.
+  A.setSectionsOnly(frameId(), true)
+  assert.deepEqual(texts(), ['Root', 'Buried heading'])
+  assert.deepEqual(depths(), [0, 1])
+  A.setSectionsOnly(frameId(), false)
+
+  // Find keeps every ancestor of a match, so there is no gap to close and the
+  // depths are the real ones.
+  A.setFind(frameId(), 'leaf')
+  assert.deepEqual(depths(), [0, 1, 2, 3])
+  A.setFind(frameId(), null)
 })
 
 // --- Type defaults ----------------------------------------------------------
@@ -263,6 +293,39 @@ test('runs an entity’s events script once, and lets it speak for others', asyn
   await settle()
   assert.equal(ran, 1)
   assert.equal(getEntity('branch').values.text, 'main')
+})
+
+test('leaves the script of an entity nothing has read alone until something reads it', async () => {
+  open()
+  // `deep` is two levels down and folded away, so no row asks for it — but the
+  // overscan reads that far ahead, so its events arrive regardless.
+  source.tree({ root: ['a'], a: ['deep'] })
+  source.values({ root: { text: 'Root' }, a: { text: 'A' }, deep: { text: 'Deep', events: 'reach()' } })
+  const tabId = (): string => layoutAtom.get().frames[frameId()].tabId
+
+  let ran = 0
+  setCodeEvaluator(async () => {
+    ran++
+    return [{ key: 'note', value: 'reached out' }]
+  })
+
+  // Folded before the first read, so `deep` is never in view at any point.
+  A.toggleCollapse(tabId(), 'a')
+  rowsOf(frameId())
+  await settle()
+  assert.deepEqual(shape(), ['root', 'root/a'])
+  assert.equal(entitiesAtom.get().deep?.loaded, 'loaded', 'the overscan brought it in')
+  assert.equal(ran, 0, 'but nothing has looked at it, so its script has not run')
+
+  // Unfolding is what asks for it, and asking is what lets the script run. The
+  // read has to happen before the settle: nothing re-reads on a layout change,
+  // which in the app is the render that follows one.
+  A.toggleCollapse(tabId(), 'a')
+  rowsOf(frameId())
+  await settle()
+  assert.deepEqual(shape(), ['root', 'root/a', 'root/a/deep'])
+  assert.equal(ran, 1)
+  assert.equal(getEntity('deep').values.note, 'reached out')
 })
 
 test('records why a script failed, apart from why a read might have', async () => {

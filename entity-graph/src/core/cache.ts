@@ -125,6 +125,16 @@ let fetcher: EntityFetcher | null = null
 let generation = 0
 /** Ids asked for since the last flush. */
 const wanted = new Set<string>()
+/**
+ * Every id anything has ever asked for, as opposed to every id that has arrived.
+ * The two differ because a read fetches a couple of layers past what it was asked
+ * for, and the overscan is a head start on scrolling rather than a request: an
+ * entity that came back that way is cached but unasked-for, and running its
+ * `events` script would mean a page reaching out to Slack or GitHub on behalf of
+ * rows nobody has looked at. Kept apart from {@link wanted}, which empties on
+ * every flush and only ever holds what is still outstanding.
+ */
+const asked = new Set<string>()
 let flushing = false
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
@@ -135,15 +145,26 @@ const stateOf = (cache: EntityCache, id: string): LoadState => cache[id]?.loaded
  * Ask for entities. Idempotent and cheap enough to call on every render: one
  * already loaded, in flight, or known to have failed is not asked for again, and
  * everything asked for within a tick goes out as a single request.
+ *
+ * Asking is also what lets an entity's `events` script run, so an id already
+ * cached is still recorded here even though there is nothing to fetch — that is
+ * how an overscanned entity's script starts when a row finally shows it.
  */
 export function requestEntities(ids: readonly string[]): void {
   const cache = entitiesAtom.get()
   let added = false
+  let newlyAsked = false
   for (const id of ids) {
+    if (!asked.has(id)) {
+      asked.add(id)
+      newlyAsked = true
+    }
     if (stateOf(cache, id) !== 'unloaded' || wanted.has(id)) continue
     wanted.add(id)
     added = true
   }
+  // Deferred for the same reason the fetch is: this reads during render.
+  if (newlyAsked) queueMicrotask(() => startDerivations([...ids]))
   if (!added || flushing) return
   flushing = true
   // Deferred, and not only to batch: reading happens during render, and writing
@@ -235,6 +256,9 @@ export function setEntityFetcher(next: EntityFetcher | null): void {
   fetcher = next
   generation++
   wanted.clear()
+  // Nothing has been asked of *this* source yet. Unlike `refreshEntities`, which
+  // keeps what the rows still want, everything here belonged to the last one.
+  asked.clear()
   entitiesAtom.set({})
 }
 
@@ -400,7 +424,11 @@ function reconcile(before: EntityCache, draft: EntityCache): EntityCache {
       next[id] = { ...entry, entity: withDefaults(entry.base, defaults) }
     }
 
-    if (next[id].loaded === 'loaded' && next[id].derivedState === 'unloaded') candidates.push(id)
+    // Only what was asked for: see `asked`. An overscanned entity is left alone
+    // until something reads it, and picked up by `requestEntities` when it does.
+    if (asked.has(id) && next[id].loaded === 'loaded' && next[id].derivedState === 'unloaded') {
+      candidates.push(id)
+    }
   }
 
   // Both of these write back here, so neither may run inside the update.

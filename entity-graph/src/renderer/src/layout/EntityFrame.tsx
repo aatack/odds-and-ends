@@ -56,7 +56,6 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
           // Explicitly against *this* frame: a blur can arrive after focus has
           // already moved to another group.
           onCommit={() => runTool('edit.commit', { extra: { frameId } })}
-          onCancel={() => A.setEdit(frameId, null)}
           onNearEnd={() => loadMore(frameId)}
           codeRuns={codeRuns}
           // The run button is aimed at the row it sits on, which needn't be the

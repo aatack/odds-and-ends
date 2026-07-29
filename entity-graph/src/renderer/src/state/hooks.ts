@@ -2,8 +2,12 @@ import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import type { GetEntities } from '../../../core/query'
 import type { Atom } from './atom'
 import {
+  EMPTY_FRAME_ROWS,
+  EMPTY_FRAME_TREE,
   entityLabel,
   frameCrumbs,
+  frameTree,
+  markRows,
   summaryOf,
   type Crumb,
   type EntitySummary,
@@ -12,7 +16,7 @@ import {
 import { entitiesAtom, entitiesFrom } from '../../../core/cache'
 import type { EntitySource } from '../../../core/query'
 import { focusRequestAtom, focusTaken } from './focusRequest'
-import { rowLimitsAtom, rowsFrom } from './query'
+import { PAGE_SIZE, rowLimitsAtom } from './query'
 import { loadResource, resourcesAtom, type ResourceState } from './resources'
 import { callsAtom, focusOf, layoutAtom, pendingAtom, type Focus } from './store'
 import { themeAtom, uiAtom, type Theme, type UiState } from './ui'
@@ -79,14 +83,47 @@ function useEntitySource(): EntitySource {
  */
 export const useGetEntities = (): GetEntities => useEntitySource().get
 
-/** A frame's rows, stepped over the cache and recomputed as entities arrive. */
+/** One array, so a tab with nothing folded doesn't invalidate the memo below. */
+const EMPTY_COLLAPSED: readonly string[] = []
+
+/**
+ * A frame's rows, stepped over the cache and recomputed as entities arrive.
+ *
+ * Two memos, not one. The selection is part of the frame, so keying the whole
+ * derivation on the layout re-walked the graph on every cursor move — and handed
+ * back a fresh object for every row, so all of them re-rendered to change which
+ * one was highlighted. The traversal is keyed on the things that actually shape
+ * it, and the cursor is laid over the result.
+ */
 export function useFrameRows(frameId: string): FrameRows {
   const layout = useLayoutState()
   const source = useEntitySource()
   const limits = useAtomValue(rowLimitsAtom)
+  const frame = layout.frames[frameId]
+  const collapsed = frame ? (layout.tabs[frame.tabId]?.collapsed ?? EMPTY_COLLAPSED) : EMPTY_COLLAPSED
+  const limit = limits[frameId] ?? PAGE_SIZE
+
+  // The dependencies are the frame's *fields*, one by one, rather than the frame:
+  // it is one object, so the cursor moving changes its identity, which is the
+  // whole thing being avoided here. Adding a field to the traversal or the
+  // filters means adding it to this list.
+  const tree = useMemo(
+    () => (frame ? frameTree(frame, collapsed, source, limit) : EMPTY_FRAME_TREE),
+    [
+      frame?.rootId,
+      frame?.direction,
+      frame?.find,
+      frame?.sectionsOnly,
+      frame?.maxDepth,
+      collapsed,
+      source,
+      limit,
+    ],
+  )
+
   return useMemo(
-    () => rowsFrom(layout, source, limits, frameId),
-    [layout, source, limits, frameId],
+    () => (frame ? markRows(tree, frame) : EMPTY_FRAME_ROWS),
+    [tree, frame?.rootId, frame?.selectedPath, frame?.edit],
   )
 }
 

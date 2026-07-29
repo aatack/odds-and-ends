@@ -85,7 +85,10 @@ but leave their values alone unless you were asked to change them.
   notes, or \`open: true\` if it is a task; to build a branch, create the parent first and
   create its children under the id you got back.
 - \`set_value\` writes one value on one entity — text, section, open, or anything else. It
-  is for editing a note that is already there.
+  is for editing a note that is already there. Values are typed: \`section\` and \`open\`
+  want a real boolean, and \`null\` blanks a key rather than taking it off the note.
+- Your writes are recorded under \`<their name>:mcp\`, so the notebook's history says
+  which lines were yours. Nothing to pass — it is on every write you make.
 - \`add_link\` puts a child under a parent, at the end of the parent's children.
   \`remove_link\` takes it out again; a note under several parents keeps the others.
 - Writes are events appended to a log, so nothing is overwritten in place — but this is
@@ -116,6 +119,15 @@ interface McpTool {
   idempotent?: boolean
   run: (source: Source, args: Record<string, unknown>) => Promise<string>
 }
+
+/**
+ * Spread onto every write below, so an event an agent wrote is recorded as
+ * `<author>:mcp` rather than as the person whose store it is. The suffix keeps
+ * whose store it is while saying what did the writing — history read back can
+ * tell an agent's edit from a keystroke, which matters most for the edits nobody
+ * remembers making.
+ */
+const VIA = { via: 'mcp' } as const
 
 /** What a page says about itself: how much of it there is, and how to get the rest. */
 function tally(page: QueryPage): string {
@@ -262,7 +274,7 @@ const MCP_TOOLS: McpTool[] = [
       // `open: false` genuinely means something else (a ticked task), so it stays.
       if (args.section === true) values.section = true
       if (typeof args.open === 'boolean') values.open = args.open
-      const id = await source.call('createEntity', { values, parentId: args.parentId })
+      const id = await source.call('createEntity', { values, parentId: args.parentId, ...VIA })
       return `Created ${String(id)} under ${String(args.parentId)}.`
     },
   },
@@ -274,7 +286,10 @@ const MCP_TOOLS: McpTool[] = [
       '`open` (`true` unticked, `false` ticked); any other key is stored as given. ' +
       '`value` is any JSON.\n\n' +
       'This is for editing a note that already exists. To add one, use `create`, which ' +
-      'mints the id and links it in the same call.',
+      'mints the id and links it in the same call.\n\n' +
+      'There is no way to take a key off a note: `null` blanks it, which reads as ' +
+      'absent everywhere it matters — no heading, no checkbox — but stays on the entity ' +
+      'as a value, and is how a note refuses a default its type would otherwise give it.',
     needs: 'writeValue',
     readOnly: false,
     // It replaces whatever was under the key, so it is not a purely additive write.
@@ -302,7 +317,8 @@ const MCP_TOOLS: McpTool[] = [
           ],
           description:
             'The new value: any JSON, and it is stored as the type it arrives as — ' +
-            '`section` and `open` want a real boolean, not `"true"`. `null` clears it.',
+            '`section` and `open` want a real boolean, not `"true"`. `null` blanks the ' +
+            'key rather than removing it.',
         },
       },
       required: ['entityId', 'key', 'value'],
@@ -312,6 +328,7 @@ const MCP_TOOLS: McpTool[] = [
         entityId: args.entityId,
         key: args.key,
         value: args.value ?? null,
+        ...VIA,
       })
       return `Set \`${String(args.key)}\` on ${String(args.entityId)}.`
     },
@@ -338,6 +355,7 @@ const MCP_TOOLS: McpTool[] = [
         sourceId: args.parentId,
         destinationId: args.childId,
         action: 0,
+        ...VIA,
       })
       return `Linked ${String(args.childId)} under ${String(args.parentId)}.`
     },
@@ -364,6 +382,7 @@ const MCP_TOOLS: McpTool[] = [
         sourceId: args.parentId,
         destinationId: args.childId,
         action: 1,
+        ...VIA,
       })
       return `Unlinked ${String(args.childId)} from ${String(args.parentId)}.`
     },

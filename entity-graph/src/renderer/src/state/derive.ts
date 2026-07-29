@@ -94,16 +94,37 @@ export function resolveSelectedPath(
 }
 
 /**
- * Build a frame's rows: the shared tree, marked up with what this frame knows —
- * which row is selected, which is being typed into, and where the box for a new
- * child goes.
+ * A frame's rows before the frame's own cursor is on them: the traversal, the
+ * filters, and one row object per line.
+ *
+ * Split from {@link markRows} because the selection lives on the frame, so moving
+ * the cursor changes the state every row is derived from. Rebuilding all of it
+ * then meant re-walking the graph and re-reading every entity to draw the same
+ * rows with a different one highlighted — which is what made holding a movement
+ * key down slow once a parent had a couple of hundred children.
  */
-export function buildRows(
+export interface FrameTree {
+  /** Selected and editing are false on all of them; that is `markRows`'s to say. */
+  rows: EntityRow[]
+  loading: boolean
+  error: string | null
+  complete: boolean
+}
+
+export const EMPTY_FRAME_TREE: FrameTree = {
+  rows: [],
+  loading: false,
+  error: null,
+  complete: true,
+}
+
+/** Everything about a frame's rows that its selection cannot change. */
+export function frameTree(
   frame: FrameState,
   collapsed: readonly string[],
   source: EntitySource,
   limit: number,
-): FrameRows {
+): FrameTree {
   const { rows, complete, loading, error } = buildTree(
     [frame.rootId],
     source,
@@ -115,6 +136,24 @@ export function buildRows(
     limit,
     { find: frame.find, sections: frame.sectionsOnly },
   )
+  return {
+    rows: rows.map((row): EntityRow => ({ kind: 'entity', ...row, selected: false, editing: false })),
+    loading,
+    error,
+    complete,
+  }
+}
+
+/**
+ * A frame's tree with what the frame knows laid over it: which row is selected,
+ * which is being typed into, and where the box for a new child goes.
+ *
+ * Rows the cursor doesn't touch are passed through *by identity* rather than
+ * copied, so a keystroke that moves the selection re-renders the two rows that
+ * changed instead of every row on screen.
+ */
+export function markRows(tree: FrameTree, frame: FrameState): FrameRows {
+  const { rows, complete, loading, error } = tree
 
   // A path that isn't among the rows may simply not have arrived yet, so the
   // selection is only snapped once the frame has everything it is going to get.
@@ -123,13 +162,9 @@ export function buildRows(
   const edit = frame.edit
   const marked: Row[] = rows.map((row): Row => {
     const editing = edit?.mode === 'edit' && samePath(row.path, edit.path)
-    return {
-      kind: 'entity',
-      ...row,
-      selected: samePath(row.path, selectedPath),
-      editing,
-      draft: editing ? edit?.draft : undefined,
-    }
+    const selected = samePath(row.path, selectedPath)
+    if (!editing && !selected) return row
+    return { ...row, selected, editing, draft: editing ? edit?.draft : undefined }
   })
 
   // Splice the "new child" input in after the parent's whole subtree — which for
@@ -155,6 +190,26 @@ export function buildRows(
   return { rows: marked, selectedPath, loading, error, complete }
 }
 
+/**
+ * Build a frame's rows in one go. What a caller outside React wants — a tool, the
+ * call context — since it has nothing to memoise the halves against and is
+ * reading once rather than on every keystroke.
+ */
+export const buildRows = (
+  frame: FrameState,
+  collapsed: readonly string[],
+  source: EntitySource,
+  limit: number,
+): FrameRows => markRows(frameTree(frame, collapsed, source, limit), frame)
+
+export const EMPTY_FRAME_ROWS: FrameRows = {
+  rows: [],
+  selectedPath: [],
+  loading: false,
+  error: null,
+  complete: true,
+}
+
 /** A frame's rows, given the whole latent state and a read of the cache. */
 export function frameRows(
   s: LayoutState,
@@ -163,7 +218,7 @@ export function frameRows(
   limit: number,
 ): FrameRows {
   const frame = frameId ? s.frames[frameId] : null
-  if (!frame) return { rows: [], selectedPath: [], loading: false, error: null, complete: true }
+  if (!frame) return EMPTY_FRAME_ROWS
   return buildRows(frame, s.tabs[frame.tabId]?.collapsed ?? [], source, limit)
 }
 
