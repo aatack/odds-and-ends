@@ -209,9 +209,21 @@ describe('sqlite source: crud, auth, round-trip', () => {
     expect(rest.result.rows.map((r: any) => r.entity.id)).toEqual(['q-b', 'q-c'])
     expect(rest.result.continuation).toBeNull()
 
-    // Depth is counted from the entity the walk starts at.
+    // Depth is counted from the first entity in the path.
     const shallow = await call('a', token, 'query', { path: 'q-p', maxDepth: 1 })
     expect(shallow.result.rows.map((r: any) => r.entity.id)).toEqual(['q-p', 'q-a', 'q-b'])
+
+    // From *there*, and not from wherever a page happens to resume, so a capped
+    // walk read in pages keeps the shape it started with: q-c sits two below q-p
+    // and stays out of both pages, though it is a child of the resume point.
+    const capped = await call('a', token, 'query', { path: 'q-p', maxDepth: 1, limit: 2 })
+    expect(capped.result.continuation).toEqual(['q-p', 'q-b'])
+    const cappedRest = await call('a', token, 'query', {
+      path: capped.result.continuation,
+      maxDepth: 1,
+    })
+    expect(cappedRest.result.rows.map((r: any) => r.entity.id)).toEqual(['q-b'])
+    expect(cappedRest.result.continuation).toBeNull()
 
     // Find keeps a match's ancestors so the tree still reads; sections doesn't,
     // since the point of it is to see the sections and nothing else. Either way

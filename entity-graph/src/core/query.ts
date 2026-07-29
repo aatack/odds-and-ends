@@ -157,6 +157,11 @@ const key = (path: readonly string[]): string => path.join('\0')
  * and rows keep their real depth either way, so a section nested inside an
  * ordinary entity still reads as nested. Find is applied first, so the two
  * compose.
+ *
+ * Sections keeps the row the query started from whether or not it is one, since
+ * it is the thing that was asked about. That is the *path* it started from, not
+ * every row at that depth: a walk resumed in the middle of the tree would
+ * otherwise let every sibling of the resume point through.
  */
 export function filterPaths(
   start: readonly string[],
@@ -180,7 +185,7 @@ export function filterPaths(
     kept = kept.filter((path) => keep.has(key(path)))
   }
   if (filters.sections) {
-    kept = kept.filter((path) => path.length === start.length || values(path).section === true)
+    kept = kept.filter((path) => key(path) === key(start) || values(path).section === true)
   }
   return kept
 }

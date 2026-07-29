@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { NO_TRAVERSAL, resolveQuery, stepPath, type GetEntities } from '../../src/core/query'
+import {
+  filterPaths,
+  NO_TRAVERSAL,
+  resolveQuery,
+  stepPath,
+  type GetEntities,
+  type QueryFilters,
+} from '../../src/core/query'
 import type { Entity } from '../../src/core/entity'
 
 // The traversal is a pure function over a `getEntities`, which is the whole
@@ -101,5 +108,49 @@ describe('stepPath', () => {
     // Which is what makes it safe to run off a half-loaded cache: the row is
     // there, and grows children when its events arrive.
     expect(paths(resolveQuery(['nobody'], TREE, NO_TRAVERSAL, 100))).toEqual(['nobody'])
+  })
+})
+
+/** The same graph, with values on it — which is what the filters read. */
+const withValues =
+  (get: GetEntities, values: Record<string, Record<string, unknown>>): GetEntities =>
+  (ids) => {
+    const base = get(ids)
+    return Object.fromEntries(ids.map((id) => [id, { ...base[id], values: values[id] ?? {} }]))
+  }
+
+// a ─ b (section) ─ d
+//   │              ├ e (section)
+//   │              └ f
+//   └ c
+const OUTLINE = withValues(graph({ a: ['b', 'c'], b: ['d', 'e', 'f'] }), {
+  a: { text: 'Alpha' },
+  b: { text: 'Bravo', section: true },
+  c: { text: 'Charlie' },
+  d: { text: 'Delta' },
+  e: { text: 'Echo', section: true },
+  f: { text: 'Foxtrot' },
+})
+
+const filtered = (start: string[], filters: QueryFilters): string[] =>
+  filterPaths(start, resolveQuery(start, OUTLINE, NO_TRAVERSAL, 100).paths, OUTLINE, filters).map(
+    (p) => p.join('/'),
+  )
+
+describe('filterPaths', () => {
+  it('keeps a match and the rows above it, so the outline still reads', () => {
+    expect(filtered(['a'], { find: 'echo' })).toEqual(['a', 'a/b', 'a/b/e'])
+  })
+
+  it('keeps the sections, and the row that was asked about', () => {
+    expect(filtered(['a'], { sections: true })).toEqual(['a', 'a/b', 'a/b/e'])
+  })
+
+  it('keeps only the resume path itself when a walk carries on mid-outline', () => {
+    // The row a page starts at is kept because it is what was asked for — not
+    // every row that happens to sit at the same depth, which is most of what a
+    // page after the first contains.
+    expect(filtered(['a', 'b', 'd'], {})).toEqual(['a/b/d', 'a/b/e', 'a/b/f', 'a/c'])
+    expect(filtered(['a', 'b', 'd'], { sections: true })).toEqual(['a/b/d', 'a/b/e'])
   })
 })
