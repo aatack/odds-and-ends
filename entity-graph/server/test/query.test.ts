@@ -3,8 +3,10 @@ import {
   filterPaths,
   NO_TRAVERSAL,
   resolveQuery,
+  runQuery,
   stepPath,
   type GetEntities,
+  type LoadEntities,
   type QueryFilters,
 } from '../../src/core/query'
 import type { Entity } from '../../src/core/entity'
@@ -152,5 +154,74 @@ describe('filterPaths', () => {
     // page after the first contains.
     expect(filtered(['a', 'b', 'd'], {})).toEqual(['a/b/d', 'a/b/e', 'a/b/f', 'a/c'])
     expect(filtered(['a', 'b', 'd'], { sections: true })).toEqual(['a/b/d', 'a/b/e'])
+  })
+})
+
+/** The same graph read asynchronously, keeping the batches it was asked for. */
+function loader(get: GetEntities): { load: LoadEntities; batches: string[][] } {
+  const batches: string[][] = []
+  return {
+    batches,
+    load: async (ids) => {
+      batches.push(ids)
+      return get(ids)
+    },
+  }
+}
+
+const rows = (page: { rows: { path: string[] }[] }): string[] =>
+  page.rows.map((r) => r.path.join('/'))
+
+describe('runQuery', () => {
+  it('reads a level at a time, and stops when the walk has everything', async () => {
+    const { load, batches } = loader(OUTLINE)
+    const page = await runQuery(['a'], load, NO_TRAVERSAL, 100)
+    expect(rows(page)).toEqual(['a', 'a/b', 'a/b/d', 'a/b/e', 'a/b/f', 'a/c'])
+    expect(batches).toEqual([['a'], ['b', 'c'], ['d', 'e', 'f']])
+  })
+
+  it('loads the rows the walk stops at, rather than returning them blank', async () => {
+    // The walk never reads an entity it will not descend through, so the rows
+    // at a depth cap — or under a fold — are reached but never asked for. They
+    // are still rows, and a page is not finished until they have loaded.
+    for (const t of [{ ...NO_TRAVERSAL, maxDepth: { a: 1 } }, { ...NO_TRAVERSAL, collapsed: ['b'] }]) {
+      const { load } = loader(OUTLINE)
+      const page = await runQuery(['a'], load, t, 100)
+      expect(rows(page)).toEqual(['a', 'a/b', 'a/c'])
+      expect(page.rows.map((r) => r.entity.values.text)).toEqual(['Alpha', 'Bravo', 'Charlie'])
+    }
+  })
+
+  it('filters on text the walk itself never had to read', async () => {
+    // Same thing seen from the filters: they read every row the walk visited,
+    // which is more than the walk needed, so a find at the depth cap only works
+    // if what it reads has loaded.
+    const { load } = loader(OUTLINE)
+    const t = { ...NO_TRAVERSAL, maxDepth: { a: 1 } }
+    expect(rows(await runQuery(['a'], load, t, 100, { find: 'charlie' }))).toEqual(['a', 'a/c'])
+    expect(rows(await runQuery(['a'], load, t, 100, { sections: true }))).toEqual(['a', 'a/b'])
+  })
+
+  it('settles on an id the store knows nothing about', async () => {
+    const batches: string[][] = []
+    const load: LoadEntities = async (ids) => {
+      batches.push(ids)
+      return {}
+    }
+    const page = await runQuery(['nobody'], load, NO_TRAVERSAL, 100)
+    expect(page.rows).toHaveLength(1)
+    expect(page.rows[0].entity.values).toEqual({})
+    // Asked for once: an id that came back with nothing is an answer, not a miss.
+    expect(batches).toEqual([['nobody']])
+  })
+
+  it('reports what the limit cut short, and resumes from there', async () => {
+    const { load } = loader(OUTLINE)
+    const cut = await runQuery(['a'], load, NO_TRAVERSAL, 3)
+    expect(rows(cut)).toEqual(['a', 'a/b', 'a/b/d'])
+    expect(cut.scanned).toBe(3)
+    const rest = await runQuery(cut.continuation!, load, NO_TRAVERSAL, 100)
+    expect(rows(rest)).toEqual(['a/b/e', 'a/b/f', 'a/c'])
+    expect(rest.continuation).toBeNull()
   })
 })

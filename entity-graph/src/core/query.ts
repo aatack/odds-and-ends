@@ -217,9 +217,19 @@ export interface QueryPage {
  *
  * The traversal itself is synchronous and knows nothing about loading, so this
  * runs it against a cache that starts empty and fills up: every pass records
- * what it wanted and couldn't have, reads that batch, and walks again. A pass
+ * what it wanted and couldn't have, reads that batch, and runs again. A pass
  * therefore reaches one level deeper than the last, and the whole thing settles
  * in as many round trips as the page is deep — not one per entity.
+ *
+ * A pass is the *whole* page — the walk, the filters, and the rows — rather
+ * than only the walk, because the three want different entities. The walk stops
+ * reading at a row it will not descend through (one that is folded, or at the
+ * depth cap), so a page built off the walk alone comes back with its deepest
+ * rows blank: read but never asked for. Building the page each time and looping
+ * until nothing is outstanding is what makes "the answer" and "what was loaded"
+ * the same set. This is the difference from the frontend, which renders what it
+ * has and fills in as events arrive; here there is nothing to redraw, so the
+ * page is not returned until it is whole.
  *
  * The limit is on the walk rather than on what survives the filters, so a
  * narrow filter over a wide tree comes back with few rows and a continuation
@@ -248,7 +258,18 @@ export async function runQuery(
     return out
   }
 
-  let resolved = resolveQuery(start, get, t, limit)
+  /** The page as it stands, recording everything it wanted and didn't have. */
+  const pass = (): QueryPage => {
+    const resolved = resolveQuery(start, get, t, limit)
+    const kept = filterPaths(start, resolved.paths, get, filters)
+    return {
+      rows: kept.map((path) => ({ path, entity: get([last(path)])[last(path)] })),
+      continuation: resolved.next,
+      scanned: resolved.paths.length,
+    }
+  }
+
+  let page = pass()
   while (missing.size) {
     const batch = [...missing]
     missing = new Set()
@@ -256,13 +277,7 @@ export async function runQuery(
     // An id that came back with nothing is still an answer; recording it stops
     // the next pass asking for it again, which is what makes this terminate.
     for (const id of batch) if (!known.has(id)) known.set(id, emptyEntity(id))
-    resolved = resolveQuery(start, get, t, limit)
+    page = pass()
   }
-
-  const kept = filterPaths(start, resolved.paths, get, filters)
-  return {
-    rows: kept.map((path) => ({ path, entity: get([last(path)])[last(path)] })),
-    continuation: resolved.next,
-    scanned: resolved.paths.length,
-  }
+  return page
 }
