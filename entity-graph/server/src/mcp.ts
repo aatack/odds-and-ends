@@ -38,7 +38,8 @@ strict tree.
 
 - \`query\` walks down from an id and hands back one line per note, with the note's id in
   the left-hand column. Those ids are what every other tool takes, so read a line and you
-  can already act on it.
+  can already act on it. A line reads \`<id>  <outline>\`: the indentation is where the note
+  sits, \`#\` marks a section, and \`[ ]\` / \`[x]\` an unticked / ticked task.
 - Start from \`${ROOT_ID}\` if you do not know where to look — it is the root of the whole
   outline.
 - A walk stops after \`limit\` notes (${QUERY_LIMIT} by default). When it does, the answer
@@ -72,6 +73,10 @@ made of:
 - **\`open\`** makes a note a checkbox: \`true\` is unticked, \`false\` is ticked. Absent means
   an ordinary bullet, so don't add it to notes that aren't tasks. Tick something by
   setting \`open\` to \`false\`; never delete the value to mark it done.
+
+A note may also carry a \`type\`, which is the app's business rather than yours: \`code\` is a
+script it can run, \`file\` an attachment whose bytes live outside these tools. Read them,
+but leave their values alone unless you were asked to change them.
 
 ## Writing
 

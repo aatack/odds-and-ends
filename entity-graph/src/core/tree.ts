@@ -91,7 +91,8 @@ function rowOf(
 export const rowsOfPage = (
   rows: readonly QueryRow[],
   direction: LinkDirection = 'out',
-): TreeRow[] => rows.map(({ path, entity }) => rowOf(path, entity, path.length - 1, direction, false))
+): TreeRow[] =>
+  rows.map(({ path, entity }) => rowOf(path, entity, path.length - 1, direction, false))
 
 /**
  * Run a query and describe what it reached.
