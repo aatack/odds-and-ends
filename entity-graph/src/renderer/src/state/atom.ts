@@ -7,6 +7,46 @@ import { atom, type Atom } from '../../../core/atom'
 export { atom }
 export type { Atom }
 
+/**
+ * Values whose mirror is out of date, and the write that will catch them up.
+ *
+ * Deferred because of what the persisted atoms are: the layout holds the
+ * selection, so *every* cursor move writes one — and `setItem` serialises the
+ * whole value and hits the disk synchronously, inside the keystroke that caused
+ * it. Holding a movement key down paid that on every press. Coalescing means a
+ * burst of movement writes once, at the end.
+ *
+ * Only the last value per key is kept, since that is all a mirror is. The window
+ * going away flushes what is outstanding, so the worst a reload can lose is the
+ * fraction of a second of where the cursor had got to.
+ */
+const outstanding = new Map<string, unknown>()
+let scheduled: ReturnType<typeof setTimeout> | null = null
+
+/** Long enough to swallow a run of keystrokes, short enough not to be noticed. */
+const WRITE_DELAY_MS = 400
+
+function flush(): void {
+  if (scheduled) {
+    clearTimeout(scheduled)
+    scheduled = null
+  }
+  for (const [key, value] of outstanding) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value))
+    } catch {
+      // Best-effort: ignore quota / serialisation failures.
+    }
+  }
+  outstanding.clear()
+}
+
+// `pagehide` rather than `unload`, which a reload does not reliably fire. Guarded
+// because the state layer is also driven headlessly, where there is no window.
+if (typeof addEventListener === 'function') {
+  addEventListener('pagehide', flush)
+}
+
 /** An atom mirrored into localStorage, so its value survives a reload. */
 export function persistentAtom<T>(
   key: string,
@@ -32,12 +72,13 @@ export function persistentAtom<T>(
       const before = inner.get()
       inner.set(next)
       const after = inner.get()
+      // Identical means the atom didn't even notify, so there is nothing to mirror.
       if (after === before) return
-      try {
-        localStorage.setItem(key, JSON.stringify(after))
-      } catch {
-        // Best-effort: ignore quota / serialisation failures.
-      }
+      outstanding.set(key, after)
+      if (!scheduled) scheduled = setTimeout(flush, WRITE_DELAY_MS)
     },
   }
 }
+
+/** Write everything outstanding now. For a test, or before something drastic. */
+export const flushPersisted = flush

@@ -17,10 +17,15 @@ import { MemorySource } from './source.mjs'
 // --- The browser bits the state layer expects -------------------------------
 
 const store = new Map<string, string>()
+/** Counted, because how often the mirror is written is itself worth asserting. */
+let writes = 0
 Object.defineProperty(globalThis, 'localStorage', {
   value: {
     getItem: (k: string) => store.get(k) ?? null,
-    setItem: (k: string, v: string) => void store.set(k, v),
+    setItem: (k: string, v: string) => {
+      writes++
+      store.set(k, v)
+    },
     removeItem: (k: string) => void store.delete(k),
     clear: () => store.clear(),
   },
@@ -37,6 +42,7 @@ const {
 } = await import('../src/core/cache')
 const { rowsOf } = await import('../src/renderer/src/state/query')
 const { setQueryObserver } = await import('../src/renderer/src/state/derive')
+const { flushPersisted } = await import('../src/renderer/src/state/atom')
 const { layoutAtom } = await import('../src/renderer/src/state/store')
 const { defaultLayout } = await import('../src/renderer/src/state/types')
 const A = await import('../src/renderer/src/state/actions')
@@ -202,6 +208,28 @@ test('does not re-resolve the query when the selection moves', async () => {
   assert.equal(resolved, 1)
   A.setFind(frameId(), null)
   setQueryObserver(null)
+})
+
+test('writes the layout mirror once for a burst of cursor moves, not once each', async () => {
+  open()
+  source.tree({ root: ['a', 'b', 'c'] })
+  source.values({ a: { text: 'A' }, b: { text: 'B' }, c: { text: 'C' } })
+  rowsOf(frameId())
+  await settle()
+
+  // The layout carries the selection, so every move writes one. Serialising it
+  // into localStorage inside the keystroke is what made holding a key down cost
+  // a synchronous disk write per press.
+  flushPersisted()
+  const before = writes
+  for (const id of ['a', 'b', 'c']) A.selectPath(frameId(), ['root', id])
+  assert.equal(writes, before, 'nothing is written while the keys are coming in')
+  flushPersisted()
+  assert.equal(writes, before + 1, 'one write for the burst, holding the last value')
+  assert.deepEqual(
+    JSON.parse(store.get('entity-graph.layout.v2')!).frames[frameId()].selectedPath,
+    ['root', 'c'],
+  )
 })
 
 test('keeps the indices straight when the box for a new child appears', async () => {

@@ -91,9 +91,22 @@ function settle(
   listeners.forEach((l) => l(record))
   // Keyed by callId, so resuming and re-settling updates one entry in place
   // rather than leaving a stale row behind.
+  //
+  // The list is handed back *unchanged* when this call leaves no trace, which is
+  // the common case by a mile: every keystroke settles a call, and almost none of
+  // them are worth keeping. Filtering unconditionally returned a new array with
+  // the same contents every time — and an atom compares by identity, so that
+  // notified every subscriber and wrote the whole log to localStorage on every
+  // press. `App` reads this log for one badge, so the cost of that was the entire
+  // app re-rendering, and a `JSON.stringify` of up to two hundred records with
+  // their contexts and results, inside the keystroke that moved the cursor.
   callsAtom.set((list) => {
-    const without = list.filter((r) => r.callId !== record.callId)
-    return worthKeeping(tool, outcome) ? [record, ...without].slice(0, LOG_LENGTH) : without
+    const held = list.some((r) => r.callId === record.callId)
+    if (!worthKeeping(tool, outcome)) {
+      return held ? list.filter((r) => r.callId !== record.callId) : list
+    }
+    const without = held ? list.filter((r) => r.callId !== record.callId) : list
+    return [record, ...without].slice(0, LOG_LENGTH)
   })
 }
 
