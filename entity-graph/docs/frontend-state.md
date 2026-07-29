@@ -73,7 +73,10 @@ There is no server-side query behind any of this — not for either client. The
 `query` tool exists for *agents*, over MCP, which want an outline rather than a
 cache: it takes a path and a limit and hands back the path to resume from, so a
 model pages through a tree by passing the last answer back. It is the same
-traversal, run against the store instead of against a cache.
+traversal, run against the store instead of against a cache — and the answer
+comes out as `core/markdown.ts`, the same export the two clients copy to the
+clipboard, with the entity ids down the left so the model can act on a row.
+`server/README.md` has the five tools that MCP is narrowed to.
 
 ### The traversal
 

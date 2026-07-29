@@ -128,24 +128,126 @@ describe('RemoteSource passthrough', () => {
   })
 })
 
+// The MCP endpoint is not the source's tool list: it is five tools over the same
+// store, so a model reads an outline and writes a note rather than designing its
+// own reads out of raw events. These run over a real MCP client, so what is
+// asserted is what an agent would actually see.
 describe('MCP endpoint', () => {
-  it('lists tools and calls one over Streamable HTTP', async () => {
+  async function connect(): Promise<Client> {
     const transport = new StreamableHTTPClientTransport(
       new URL(`http://127.0.0.1:${port}/src/mcp`),
       { requestInit: { headers: { authorization: `Bearer ${token}` } } }
     )
     const client = new Client({ name: 'test', version: '0.0.0' })
     await client.connect(transport)
+    return client
+  }
 
+  const said = (res: unknown): string => (res as { content: { text: string }[] }).content[0].text
+
+  it('offers the five tools, and says how to use them', async () => {
+    const client = await connect()
     const { tools } = await client.listTools()
-    expect(tools.map((t) => t.name)).toEqual(
-      expect.arrayContaining(['readEvents', 'writeLink', 'writeValue', 'query', 'createEntity'])
+    expect(tools.map((t) => t.name)).toEqual([
+      'query',
+      'get_details',
+      'set_value',
+      'add_link',
+      'remove_link',
+    ])
+    // The store's own tools are deliberately absent: raw events, resources and
+    // undo are an API for a client, not for a model.
+    expect(tools.map((t) => t.name)).not.toContain('readEvents')
+    expect(client.getInstructions()).toContain('@index')
+    await client.close()
+  })
+
+  it('writes an outline, and reads it back with the ids down the left', async () => {
+    const client = await connect()
+    // A root, a section under it, and a task under that — written the only way
+    // the MCP offers: a value on a fresh id, then a link to put it somewhere.
+    const notes: [string, Record<string, unknown>][] = [
+      ['m-root', { text: 'Notes' }],
+      ['m-sec', { text: 'Plans', section: true }],
+      ['m-task', { text: 'Ship it', open: true }],
+    ]
+    for (const [id, values] of notes) {
+      for (const [key, value] of Object.entries(values)) {
+        await client.callTool({ name: 'set_value', arguments: { entityId: id, key, value } })
+      }
+    }
+    for (const [parentId, childId] of [
+      ['m-root', 'm-sec'],
+      ['m-sec', 'm-task'],
+    ]) {
+      await client.callTool({ name: 'add_link', arguments: { parentId, childId } })
+    }
+
+    const page = said(await client.callTool({ name: 'query', arguments: { path: 'm-root' } }))
+    expect(page.split('\n\n')[0].split('\n')).toEqual([
+      'm-root  Notes',
+      'm-sec   - ## Plans',
+      'm-task    - [ ] Ship it',
+    ])
+    expect(page).toContain('3 rows shown, 3 entities visited')
+
+    // Sections only: the task goes, the row asked about stays.
+    const outline = said(
+      await client.callTool({ name: 'query', arguments: { path: 'm-root', sections: true } })
     )
+    expect(outline.split('\n\n')[0].split('\n')).toEqual(['m-root  Notes', 'm-sec   - ## Plans'])
 
-    const res: any = await client.callTool({ name: 'readEvents', arguments: { entityIds: ['e1'] } })
-    const events = JSON.parse(res.content[0].text)
-    expect(events.map((e: any) => e.value)).toEqual(['old', 'new'])
+    await client.close()
+  })
 
+  it('hands back the path to resume from when the limit cuts a walk short', async () => {
+    const client = await connect()
+    const first = said(
+      await client.callTool({ name: 'query', arguments: { path: 'm-root', limit: 2 } })
+    )
+    expect(first).toContain('path: ["m-root","m-sec","m-task"]')
+    // Continuing from that path reads the rest and nothing twice.
+    const rest = said(
+      await client.callTool({
+        name: 'query',
+        arguments: { path: ['m-root', 'm-sec', 'm-task'] },
+      })
+    )
+    // Depth is still counted from the root of the walk, not from where it resumed.
+    expect(rest.split('\n\n')[0]).toBe('m-task    - [ ] Ship it')
+    expect(rest).toContain('that is everything under this path')
+    await client.close()
+  })
+
+  it('rolls up an entity, including what links to it', async () => {
+    const client = await connect()
+    const details = JSON.parse(
+      said(await client.callTool({ name: 'get_details', arguments: { entityIds: ['m-sec'] } }))
+    )
+    expect(details['m-sec'].values).toMatchObject({ text: 'Plans', section: true })
+    expect(details['m-sec'].outboundLinks).toEqual(['m-task'])
+    expect(details['m-sec'].inboundLinks).toEqual(['m-root'])
+
+    await client.callTool({
+      name: 'remove_link',
+      arguments: { parentId: 'm-sec', childId: 'm-task' },
+    })
+    const after = JSON.parse(
+      said(await client.callTool({ name: 'get_details', arguments: { entityIds: ['m-sec'] } }))
+    )
+    expect(after['m-sec'].outboundLinks).toEqual([])
+    await client.close()
+  })
+
+  it('reports a bad call as an error rather than a crash', async () => {
+    const client = await connect()
+    const missing: any = await client.callTool({ name: 'set_colour', arguments: {} })
+    expect(missing.isError).toBe(true)
+    expect(said(missing)).toContain('No tool named "set_colour"')
+
+    const invalid: any = await client.callTool({ name: 'query', arguments: {} })
+    expect(invalid.isError).toBe(true)
+    expect(said(invalid)).toContain('path')
     await client.close()
   })
 })

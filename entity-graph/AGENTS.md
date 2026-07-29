@@ -87,9 +87,11 @@ is the long form; the rules that matter day to day:
   defaults, `events` scripts, and how writes and undo reach the cache.
 - **`src/core` is shared with the server *and* the phone.** Anything put there
   is imported by three builds, so it must stay free of Electron, node and zod.
-  The entity and its rollup, the traversal, the tree, the cache and the atom
-  under it all live there precisely because both clients have to agree on them;
-  see [`mobile/AGENTS.md`](./mobile/AGENTS.md) for where that line is drawn.
+  The entity and its rollup, the traversal, the tree, the markdown an outline is
+  exported as, the cache and the atom under it all live there precisely because
+  both clients have to agree on them — and in the markdown's case because the
+  server hands the same outline to an agent over MCP; see
+  [`mobile/AGENTS.md`](./mobile/AGENTS.md) for where that line is drawn.
 - **`tools/` is the only way the user does anything.** Every command — moving the
   selection, opening a tab, writing a value — is one `ToolSpec` declaring its
   arguments, its scope, and how far it reaches. Hotkeys and the command palette
@@ -170,7 +172,7 @@ server/         the HTTP server: sources, and the integrations (GitHub, Slack, C
 mobile/         a separate phone client (PWA) for one source — its own install, own guide
 src/main       Electron main — window, servers, config store, tailscale serve
 src/preload     contextBridge exposing the typed EntityGraphAPI
-src/core        the shared model: entity + rollup, traversal, tree, cache, sources
+src/core        the shared model: entity + rollup, traversal, tree, markdown, cache, sources
 test/           the state layer driven headlessly (`npm test`)
 src/renderer/src  React app
   state/          latent state, pure derivations, the entity cache

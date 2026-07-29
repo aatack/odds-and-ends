@@ -9,7 +9,8 @@ from the desktop client.
 
 This app has its own `package.json`, its own `node_modules`, its own build. What it
 shares with the desktop client is **`../src/core`, and only that**: the entity, the
-rollup, the traversal, the entity cache, the atom the cache is built on. Nothing from
+rollup, the traversal, the entity cache, the atom the cache is built on, and the
+markdown an outline is exported as. Nothing from
 `../src/main`, `../src/preload` or `../src/renderer` is imported, and nothing shared
 pulls in Electron, node or zod — the line is drawn at what a browser can run.
 

@@ -51,8 +51,38 @@ questions:
   traversal, which is what both apps in this repo do.
 - **`query`** — the tree as an outline: a depth-first walk from a path, with a limit
   and the path to resume from when it is hit, plus `find` and `sections` to narrow
-  what comes back. For an agent over MCP, which wants the answer rather than the
-  events. The same traversal (`src/core/query.ts`) either way.
+  what comes back. What the MCP's own `query` is built on, since an agent wants the
+  answer rather than the events. The same traversal (`src/core/query.ts`) either way.
+
+### MCP
+
+`POST /:sourceId/mcp` does **not** expose the source's tool list. A store's API —
+raw events, resources, undo, whatever tools a user has defined — is the wrong
+surface for a model: it asks it to design its own reads, and the ones it invents
+are worse than the five it is given (`src/mcp.ts`):
+
+| tool | goes through | what it does |
+|------|--------------|--------------|
+| `query` | `query` | a slice of the outline as markdown, one line per note, each line starting with that note's entity id, padded so the indentation still reads. Ends with the path to resume from when the limit cut the walk short. Takes `path`, `limit`, `maxDepth`, `sections`, `find` |
+| `get_details` | `readEntities` | whole entities as JSON for a list of ids — every value, the children in order, and the `inboundLinks` that say where else a note is referenced |
+| `set_value` | `writeValue` | one value on one entity |
+| `add_link` / `remove_link` | `writeLink` | put a note under a parent, or take it out — `parentId` / `childId` rather than source / destination, "source" already meaning something else here |
+
+Deliberately absent: creating an entity as its own step (setting a value on a
+fresh uuid is what creates one), reordering children, and everything to do with
+events, resources and undo.
+
+No collapse map either, and no `direction`: a model gets a slice described by
+where it starts and how deep it goes, not an arbitrary shape, and finds what
+points at a note through `get_details`. The markdown is the same
+`src/core/markdown.ts` both clients export through, with the id column switched
+on.
+
+A tool whose underlying source tool is missing is not listed at all, so a
+read-only or narrowed source (`filter`) advertises exactly what it will accept.
+The client is also handed *instructions* at initialize — what the store is, how
+to page, what `text` / `section` / `open` mean, and to write in the voice of the
+notes already there.
 
 Integrations, admin-scoped (bearer `ADMIN_TOKEN`) — see
 [`docs/integrations.md`](./docs/integrations.md):
@@ -105,9 +135,10 @@ integrations' secrets, can also live in `server/.env` (gitignored — copy
 ## Tests
 
 ```sh
-npm run --prefix server test        # vitest: http.test.ts + integration.test.ts
+npm run --prefix server test        # vitest, over server/test
 ```
 
 Covers round-trip, readonly/filter, frozen, combined routing, Remote passthrough
-(incl. Frozen/Combined composing over a Remote), and the MCP endpoint via a real
-MCP client.
+(incl. Frozen/Combined composing over a Remote), undo, the traversal and its
+filters, the markdown an outline comes out as, and the MCP tools via a real MCP
+client.

@@ -26,7 +26,12 @@ export function bearerToken(req: FastifyRequest): string | null {
   return m ? m[1] : null
 }
 
-function formatError(e: unknown): string {
+/**
+ * An error as a caller should read it. A zod failure is the case worth handling:
+ * its `message` is a JSON dump of every issue, which is no use to anyone at the
+ * other end of an HTTP call or an MCP tool.
+ */
+export function formatError(e: unknown): string {
   if (e instanceof ZodError) {
     return e.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ')
   }
