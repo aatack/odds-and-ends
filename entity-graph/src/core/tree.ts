@@ -1,9 +1,10 @@
-import { summaryOf, type EntitySummary } from './entity'
+import { summaryOf, type Entity, type EntitySummary, type LinkDirection } from './entity'
 import {
   filterPaths,
   resolveQuery,
   type EntitySource,
   type QueryFilters,
+  type QueryRow,
   type Traversal,
 } from './query'
 
@@ -47,6 +48,52 @@ export interface Tree {
 export const EMPTY_TREE: Tree = { rows: [], complete: true, loading: false, error: null }
 
 /**
+ * One row: what the entity at the end of a path says about itself, plus what the
+ * caller knows about where it sits. Depth is passed in rather than read off the
+ * path because how far in a row reads depends on what the query started from,
+ * and the two callers below start from different places.
+ */
+function rowOf(
+  path: readonly string[],
+  entity: Entity,
+  depth: number,
+  direction: LinkDirection,
+  collapsed: boolean,
+): TreeRow {
+  const open = entity.values.open
+  return {
+    id: path[path.length - 1],
+    depth,
+    path: [...path],
+    parentId: path.length > 1 ? path[path.length - 2] : null,
+    ...summaryOf(entity.values),
+    section: entity.values.section === true,
+    open: open === true ? true : open === false ? false : undefined,
+    // Which links count is the direction the query reads in, so a chevron
+    // means "there is more under this here" rather than always meaning
+    // outbound links.
+    hasChildren: (direction === 'in' ? entity.inboundLinks : entity.outboundLinks).length > 0,
+    collapsed,
+  }
+}
+
+/**
+ * A page of a query as rows — the counterpart of {@link buildTree} for a caller
+ * that was handed the answer rather than walking a cache itself, which is what
+ * the `query` tool's rows are.
+ *
+ * Depth counts from the *root of the walk* rather than from the page's first row,
+ * because a page after the first resumes in the middle of the tree: its rows can
+ * be shallower than the one it resumed at, and the only thing every page shares
+ * is the root all of its paths begin with. Nothing is folded — a caller reading
+ * pages has no folded set, and the page is what it is.
+ */
+export const rowsOfPage = (
+  rows: readonly QueryRow[],
+  direction: LinkDirection = 'out',
+): TreeRow[] => rows.map(({ path, entity }) => rowOf(path, entity, path.length - 1, direction, false))
+
+/**
  * Run a query and describe what it reached.
  *
  * The limit is on the *traversal*, not on what survives the filters, which is
@@ -71,23 +118,13 @@ export function buildTree(
 
   const rows = kept.map((path): TreeRow => {
     const id = path[path.length - 1]
-    const entity = entities[id]
-    const open = entity.values.open
-    return {
-      id,
-      depth: path.length - start.length,
+    return rowOf(
       path,
-      parentId: path.length > 1 ? path[path.length - 2] : null,
-      ...summaryOf(entity.values),
-      section: entity.values.section === true,
-      open: open === true ? true : open === false ? false : undefined,
-      // Which links count is the direction the query reads in, so a chevron
-      // means "there is more under this here" rather than always meaning
-      // outbound links.
-      hasChildren:
-        (traversal.direction === 'in' ? entity.inboundLinks : entity.outboundLinks).length > 0,
-      collapsed: folded.has(id),
-    }
+      entities[id],
+      path.length - start.length,
+      traversal.direction,
+      folded.has(id),
+    )
   })
 
   return {

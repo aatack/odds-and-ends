@@ -1,3 +1,4 @@
+import { subtreeMarkdown } from '../../../core/markdown'
 import * as A from '../state/actions'
 import { entityRows, type EntityRow, type Row } from '../state/derive'
 import { findField, requestFocus } from '../state/focusRequest'
@@ -71,47 +72,6 @@ const hasEdit = (): boolean => {
   const layout = getLayout()
   const { frameId } = focusOf(layout)
   return !!(frameId && layout.frames[frameId]?.edit)
-}
-
-/** Markdown has six heading levels; a deeper section takes the last of them. */
-const HEADING_LIMIT = 6
-
-// Format the entity at `start` and its visible descendants as markdown. Children
-// of folded rows aren't in `rows` to begin with, and a folded row is left out
-// along with them: exporting the title of a branch whose contents are hidden
-// reads as a complete list when it isn't. Folding is how you say "not this"; the
-// export takes it at its word. The row being exported is the exception — it was
-// named explicitly, so it comes out folded or not.
-//
-// The tree stays a tree: every row is a bullet at its own depth, and a section
-// carries `#` per level it sits at below the row being exported on top of that
-// bullet, so the outline you exported is still the outline you paste. Deep rows
-// therefore indent past the four spaces markdown reads as code — the shape is
-// worth more here than the strict reading. A checkbox becomes a task box.
-//
-// The exported row itself is the title of what you asked for rather than an item
-// in it, so it takes neither bullet nor box — but it keeps its `#` if it is a
-// section, that being what the section *is*.
-function subtreeMarkdown(rows: Row[], start: number): string {
-  const from = rows[start]
-  if (!from || from.kind !== 'entity') return ''
-  const lines: string[] = []
-  for (let i = start; i < rows.length; i++) {
-    const row = rows[i]
-    if (i > start && row.depth <= from.depth) break
-    if (row.kind !== 'entity') continue
-    if (i > start && row.collapsed && row.hasChildren) continue
-    const depth = row.depth - from.depth
-    const text = row.text ?? ''
-    const heading = row.section ? `${'#'.repeat(Math.min(depth + 1, HEADING_LIMIT))} ` : ''
-    if (i === start) {
-      lines.push(`${heading}${text}`)
-      continue
-    }
-    const box = row.open === true ? '[ ] ' : row.open === false ? '[x] ' : ''
-    lines.push(`${'  '.repeat(depth - 1)}- ${box}${heading}${text}`)
-  }
-  return lines.join('\n')
 }
 
 export const FRAME_TOOLS: ToolSpec[] = [
@@ -354,9 +314,9 @@ export const FRAME_TOOLS: ToolSpec[] = [
     run: async () => {
       const t = target()
       if (!t) return
-      const at = t.rows.findIndex((r) => r.kind === 'entity' && r.selected)
+      const at = t.entities.findIndex((r) => r.selected)
       if (at < 0) return
-      const markdown = subtreeMarkdown(t.rows, at)
+      const markdown = subtreeMarkdown(t.entities, at)
       await navigator.clipboard.writeText(markdown)
       const count = markdown ? markdown.split('\n').length : 0
       return { message: `Copied ${count} item${count === 1 ? '' : 's'} to the clipboard` }

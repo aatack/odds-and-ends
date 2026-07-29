@@ -1,3 +1,4 @@
+import { subtreeMarkdown } from '../../../src/core/markdown'
 import { copyText } from '../helpers/clipboard'
 import * as A from '../state/actions'
 import { childOrder } from '../state/query'
@@ -6,7 +7,6 @@ import { last } from '../state/types'
 import { createEntity, link, nudge, reparent, unlink, writeValue } from '../source/entity'
 import { asId, previousSibling, requireId, rowAbove, siblingsUnder } from './context'
 import { commitEdit } from './edit'
-import { subtreeMarkdown } from './markdown'
 import { needsForward, needsParent, needsRow, type ArgSpec, type ToolSpec } from './types'
 
 // Everything that writes, plus the in-place editor that most writing goes through.
