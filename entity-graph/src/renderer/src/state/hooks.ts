@@ -3,10 +3,8 @@ import type { GetEntities } from '../../../core/query'
 import type { Atom } from './atom'
 import {
   EMPTY_FRAME_ROWS,
-  EMPTY_FRAME_TREE,
   entityLabel,
   frameCrumbs,
-  frameTree,
   markRows,
   summaryOf,
   type Crumb,
@@ -16,7 +14,7 @@ import {
 import { entitiesAtom, entitiesFrom } from '../../../core/cache'
 import type { EntitySource } from '../../../core/query'
 import { focusRequestAtom, focusTaken } from './focusRequest'
-import { PAGE_SIZE, rowLimitsAtom } from './query'
+import { rowLimitsAtom, treeOf } from './query'
 import { loadResource, resourcesAtom, type ResourceState } from './resources'
 import { callsAtom, focusOf, layoutAtom, pendingAtom, type Focus } from './store'
 import { themeAtom, uiAtom, type Theme, type UiState } from './ui'
@@ -83,43 +81,22 @@ function useEntitySource(): EntitySource {
  */
 export const useGetEntities = (): GetEntities => useEntitySource().get
 
-/** One array, so a tab with nothing folded doesn't invalidate the memo below. */
-const EMPTY_COLLAPSED: readonly string[] = []
-
 /**
  * A frame's rows, stepped over the cache and recomputed as entities arrive.
  *
- * Two memos, not one. The selection is part of the frame, so keying the whole
- * derivation on the layout re-walked the graph on every cursor move — and handed
- * back a fresh object for every row, so all of them re-rendered to change which
- * one was highlighted. The traversal is keyed on the things that actually shape
- * it, and the cursor is laid over the result.
+ * Two halves, and the expensive one is not memoised here: `treeOf` keeps the last
+ * traversal per frame, so a render and the tool that reads the rows to move the
+ * selection share one resolution instead of each doing their own. What is left to
+ * a `useMemo` is laying the cursor over the result, which is where React wants a
+ * stable object — untouched rows keep their identity, so a move re-renders the
+ * two rows that changed rather than all of them.
  */
 export function useFrameRows(frameId: string): FrameRows {
   const layout = useLayoutState()
-  const source = useEntitySource()
+  const cache = useAtomValue(entitiesAtom)
   const limits = useAtomValue(rowLimitsAtom)
   const frame = layout.frames[frameId]
-  const collapsed = frame ? (layout.tabs[frame.tabId]?.collapsed ?? EMPTY_COLLAPSED) : EMPTY_COLLAPSED
-  const limit = limits[frameId] ?? PAGE_SIZE
-
-  // The dependencies are the frame's *fields*, one by one, rather than the frame:
-  // it is one object, so the cursor moving changes its identity, which is the
-  // whole thing being avoided here. Adding a field to the traversal or the
-  // filters means adding it to this list.
-  const tree = useMemo(
-    () => (frame ? frameTree(frame, collapsed, source, limit) : EMPTY_FRAME_TREE),
-    [
-      frame?.rootId,
-      frame?.direction,
-      frame?.find,
-      frame?.sectionsOnly,
-      frame?.maxDepth,
-      collapsed,
-      source,
-      limit,
-    ],
-  )
+  const tree = treeOf(layout, cache, limits, frameId)
 
   return useMemo(
     () => (frame ? markRows(tree, frame) : EMPTY_FRAME_ROWS),

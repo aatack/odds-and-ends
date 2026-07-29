@@ -36,6 +36,7 @@ const {
   setEntityFetcher,
 } = await import('../src/core/cache')
 const { rowsOf } = await import('../src/renderer/src/state/query')
+const { setQueryObserver } = await import('../src/renderer/src/state/derive')
 const { layoutAtom } = await import('../src/renderer/src/state/store')
 const { defaultLayout } = await import('../src/renderer/src/state/types')
 const A = await import('../src/renderer/src/state/actions')
@@ -156,6 +157,39 @@ test('folds and caps depth without asking the source anything', async () => {
   A.setMaxDepth(frameId(), 'root', null)
 
   assert.equal(source.calls, before, 'folding is a derivation, not a query')
+})
+
+test('does not re-resolve the query when the selection moves', async () => {
+  open()
+  // A great many siblings under one parent: the shape that made holding a
+  // movement key down crawl, because every press re-walked the lot. Under the
+  // page ceiling, so the walk finishes and the selection resolves against real
+  // rows rather than being left alone as a page still outstanding.
+  const kids = Array.from({ length: 150 }, (_, i) => `k${i}`)
+  source.tree({ root: kids })
+  source.values(Object.fromEntries(kids.map((id) => [id, { text: id }])))
+  rowsOf(frameId())
+  await settle()
+  assert.equal(rowsOf(frameId()).rows.length, 151)
+  assert.equal(rowsOf(frameId()).complete, true)
+
+  let resolved = 0
+  setQueryObserver(() => void resolved++)
+
+  // Every read of the rows here goes through the memo — the render's and the
+  // one a movement tool makes to find out which row comes next.
+  for (const id of kids.slice(0, 20)) {
+    A.selectPath(frameId(), ['root', id])
+    assert.deepEqual(rowsOf(frameId()).selectedPath, ['root', id])
+  }
+  assert.equal(resolved, 0, 'the cursor moved twenty times and the tree stood still')
+
+  // What does shape the tree still re-resolves it, or nothing would ever change.
+  A.setFind(frameId(), 'k1')
+  rowsOf(frameId())
+  assert.equal(resolved, 1)
+  A.setFind(frameId(), null)
+  setQueryObserver(null)
 })
 
 test('filters rows without changing what is loaded', async () => {

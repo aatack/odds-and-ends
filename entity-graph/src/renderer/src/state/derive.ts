@@ -118,31 +118,36 @@ export const EMPTY_FRAME_TREE: FrameTree = {
   complete: true,
 }
 
-// --- Tracing (temporary) ----------------------------------------------------
+// --- Watching the traversals ------------------------------------------------
 
-// Every traversal a frame runs comes through `frameTree`, so one log there
-// catches all of them: the render path, and every live read a tool or a call
-// context makes. On to answer whether the tree is still being rebuilt more often
-// than it needs to be; take it out once that is settled.
+// Every traversal a frame runs comes through `frameTree`, so one hook there sees
+// all of them: the render path, and every live read a tool or a call context
+// makes. The app logs them while we work out what still rebuilds the tree during
+// navigation; the tests count them, which is how "moving the cursor does not
+// re-resolve the query" is asserted rather than hoped for.
 //
-// Switched on rather than sniffed for, as the cache's evaluator is, so the
-// headless harness stays quiet and this layer keeps its hands off the DOM.
+// Passed in rather than sniffed for, as the cache's evaluator is, so this layer
+// keeps its hands off both the console and the DOM.
 
-let trace = false
-let resolutions = 0
+let observer: ((frame: FrameState, limit: number) => void) | null = null
 
-/** Log every frame traversal, with the stack that asked for one. */
-export const setQueryTracing = (on: boolean): void => {
-  trace = on
-  resolutions = 0
+export const setQueryObserver = (
+  fn: ((frame: FrameState, limit: number) => void) | null,
+): void => {
+  observer = fn
 }
 
-function traceQuery(frame: FrameState, limit: number): void {
-  resolutions++
-  // `console.trace` rather than `log`: the count says how often, and the stack it
-  // prints under it is the question — what asked for this one.
+let logged = 0
+
+/**
+ * One traversal, as a console line. `console.trace` rather than `log`: the count
+ * says how often, and the stack printed under it is the question — what asked for
+ * this one.
+ */
+export function logQuery(frame: FrameState, limit: number): void {
+  logged++
   console.trace(
-    `[query] #${resolutions} frame=${frame.id} root=${frame.rootId} limit=${limit}` +
+    `[query] #${logged} frame=${frame.id} root=${frame.rootId} limit=${limit}` +
       ` direction=${directionOf(frame)}` +
       (frame.find == null ? '' : ` find=${JSON.stringify(frame.find)}`) +
       (frame.sectionsOnly ? ' sectionsOnly' : ''),
@@ -156,7 +161,7 @@ export function frameTree(
   source: EntitySource,
   limit: number,
 ): FrameTree {
-  if (trace) traceQuery(frame, limit)
+  observer?.(frame, limit)
   const { rows, complete, loading, error } = buildTree(
     [frame.rootId],
     source,
@@ -222,18 +227,6 @@ export function markRows(tree: FrameTree, frame: FrameState): FrameRows {
   return { rows: marked, selectedPath, loading, error, complete }
 }
 
-/**
- * Build a frame's rows in one go. What a caller outside React wants — a tool, the
- * call context — since it has nothing to memoise the halves against and is
- * reading once rather than on every keystroke.
- */
-export const buildRows = (
-  frame: FrameState,
-  collapsed: readonly string[],
-  source: EntitySource,
-  limit: number,
-): FrameRows => markRows(frameTree(frame, collapsed, source, limit), frame)
-
 export const EMPTY_FRAME_ROWS: FrameRows = {
   rows: [],
   selectedPath: [],
@@ -242,17 +235,10 @@ export const EMPTY_FRAME_ROWS: FrameRows = {
   complete: true,
 }
 
-/** A frame's rows, given the whole latent state and a read of the cache. */
-export function frameRows(
-  s: LayoutState,
-  source: EntitySource,
-  frameId: string | null,
-  limit: number,
-): FrameRows {
-  const frame = frameId ? s.frames[frameId] : null
-  if (!frame) return EMPTY_FRAME_ROWS
-  return buildRows(frame, s.tabs[frame.tabId]?.collapsed ?? [], source, limit)
-}
+// Note what is not here: a function that resolves a frame and marks it in one go.
+// It read well and was the wrong shape — every caller of it resolved the tree
+// afresh, which is exactly what a cursor move must not do. `state/query` puts the
+// two halves together over a memo of the first, and is the only way in.
 
 /** Only the entity rows, in order — what selection movement steps through. */
 export const entityRows = (rows: Row[]): EntityRow[] =>

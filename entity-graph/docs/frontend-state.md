@@ -94,8 +94,30 @@ it on a client:
   set above it.
 
 A "page" is therefore just a ceiling on how far the traversal walks before it
-stops, raised by `loadMore` when the view scrolls near the bottom
-(`state/query.ts`).
+stops, raised by `loadMore` when the view scrolls near the bottom — or when what
+the view has does not reach the bottom, since the ceiling is on the *walk* and a
+narrow filter can leave three rows standing out of two hundred entities, with no
+scroll to ask for more (`state/query.ts`).
+
+### One resolution per frame, not one per read
+
+`treeOf` keeps the last traversal each frame resolved, against the values that
+shape it: root, direction, find, sections-only, the depth map, the folded set,
+the row limit, and the cache. Anything else that changes does not re-resolve it.
+
+Chief among the anything else is **the selection**, and that is the point. The
+selection is part of the frame, so a memo keyed on the frame — which is what a
+`useMemo` in the view naturally reaches for — re-walks the graph every time the
+cursor moves. Rows are built once and the cursor is laid over them by `markRows`,
+which passes untouched rows through by identity so a move re-renders the two rows
+that changed rather than all of them.
+
+The memo lives in the state layer rather than in a hook because React is not the
+only caller: a movement tool reads the rows to find out which row comes after the
+selection, and it reads them outside any render. Both go through `treeOf`, so a
+keypress and the re-render it causes share one resolution. There is deliberately
+no function that resolves a frame and marks it in one go — that shape is what
+made every caller pay for a full walk.
 
 ### Type defaults
 
@@ -123,6 +145,11 @@ the branches on a repo.
   one entity populates its children.
 - It runs only once its entity's events are in *and its type has loaded*, since
   the script itself may come from the type.
+- It runs only for an entity something has **asked for**. The overscan reads two
+  layers past what was asked for, and that is a head start on scrolling rather
+  than a request — without this a page reaches out to Slack and GitHub on behalf
+  of rows nobody has looked at. Asking is what starts it, so an overscanned
+  entity's script waits until a row shows it.
 - A refresh does not re-run it. Once a session is the point: a script that
   reaches out to GitHub on every keystroke would not do.
 
