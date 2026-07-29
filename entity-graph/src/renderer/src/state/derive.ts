@@ -118,6 +118,37 @@ export const EMPTY_FRAME_TREE: FrameTree = {
   complete: true,
 }
 
+// --- Tracing (temporary) ----------------------------------------------------
+
+// Every traversal a frame runs comes through `frameTree`, so one log there
+// catches all of them: the render path, and every live read a tool or a call
+// context makes. On to answer whether the tree is still being rebuilt more often
+// than it needs to be; take it out once that is settled.
+//
+// Switched on rather than sniffed for, as the cache's evaluator is, so the
+// headless harness stays quiet and this layer keeps its hands off the DOM.
+
+let trace = false
+let resolutions = 0
+
+/** Log every frame traversal, with the stack that asked for one. */
+export const setQueryTracing = (on: boolean): void => {
+  trace = on
+  resolutions = 0
+}
+
+function traceQuery(frame: FrameState, limit: number): void {
+  resolutions++
+  // `console.trace` rather than `log`: the count says how often, and the stack it
+  // prints under it is the question — what asked for this one.
+  console.trace(
+    `[query] #${resolutions} frame=${frame.id} root=${frame.rootId} limit=${limit}` +
+      ` direction=${directionOf(frame)}` +
+      (frame.find == null ? '' : ` find=${JSON.stringify(frame.find)}`) +
+      (frame.sectionsOnly ? ' sectionsOnly' : ''),
+  )
+}
+
 /** Everything about a frame's rows that its selection cannot change. */
 export function frameTree(
   frame: FrameState,
@@ -125,6 +156,7 @@ export function frameTree(
   source: EntitySource,
   limit: number,
 ): FrameTree {
+  if (trace) traceQuery(frame, limit)
   const { rows, complete, loading, error } = buildTree(
     [frame.rootId],
     source,
