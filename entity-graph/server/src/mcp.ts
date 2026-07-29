@@ -108,6 +108,8 @@ interface McpTool {
   /** Id of the source tool it delegates to. */
   needs: string
   readOnly: boolean
+  /** True when it replaces or removes something rather than only adding. */
+  destructive?: boolean
   run: (source: Source, args: Record<string, unknown>) => Promise<string>
 }
 
@@ -223,6 +225,8 @@ const MCP_TOOLS: McpTool[] = [
       'will not appear anywhere in the outline.',
     needs: 'writeValue',
     readOnly: false,
+    // It replaces whatever was under the key, so it is not a purely additive write.
+    destructive: true,
     inputSchema: {
       type: 'object',
       properties: {
@@ -275,6 +279,7 @@ const MCP_TOOLS: McpTool[] = [
       'mean to unlink it from the only parent it has.',
     needs: 'writeLink',
     readOnly: false,
+    destructive: true,
     inputSchema: {
       type: 'object',
       properties: {
@@ -311,7 +316,13 @@ function makeMcpServer(source: Source): Server {
       name: t.name,
       description: t.description,
       inputSchema: t.inputSchema as { type: 'object' },
-      annotations: { readOnlyHint: t.readOnly, destructiveHint: false, idempotentHint: true },
+      annotations: {
+        readOnlyHint: t.readOnly,
+        destructiveHint: t.destructive ?? false,
+        // Every write here says what the state should be rather than nudging it,
+        // so making the same call twice leaves the store as it was after the first.
+        idempotentHint: true,
+      },
     })),
   }))
 
