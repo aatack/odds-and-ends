@@ -204,6 +204,18 @@ describe('MCP endpoint', () => {
     await client.close()
   })
 
+  it('reads a bounded slice with the notes in it, not just their ids', async () => {
+    // `maxDepth` stops the walk at a row rather than below it, and the walk does
+    // not read what it will not descend through — so the row it stops at is the
+    // one most easily handed back blank.
+    const client = await connect()
+    const page = said(
+      await client.callTool({ name: 'query', arguments: { path: 'm-root', maxDepth: 1 } })
+    )
+    expect(page.split('\n\n')[0].split('\n')).toEqual(['m-root  Notes', 'm-sec   - ## Plans'])
+    await client.close()
+  })
+
   it('hands back the path to resume from when the limit cuts a walk short', async () => {
     const client = await connect()
     const first = said(
