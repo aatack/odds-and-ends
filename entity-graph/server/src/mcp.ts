@@ -284,7 +284,26 @@ const MCP_TOOLS: McpTool[] = [
       properties: {
         entityId: { type: 'string', description: 'The entity to write to.' },
         key: { type: 'string', description: 'Which value to set, e.g. `text`.' },
-        value: { description: 'The new value: any JSON. `null` clears it.' },
+        value: {
+          // Every JSON type, spelled out. Leaving the type off says "anything"
+          // here and reads as "a string" at the other end: a client that types
+          // its arguments from the schema has nothing else to go on, so the
+          // `true` an agent meant to write arrives as `"true"` — and since the
+          // rollup asks whether a value *is* `true`, the heading is not a
+          // heading and the task is not a task. Only `text` survived that,
+          // which is why it took a while to notice.
+          anyOf: [
+            { type: 'string' },
+            { type: 'number' },
+            { type: 'boolean' },
+            { type: 'null' },
+            { type: 'object' },
+            { type: 'array' },
+          ],
+          description:
+            'The new value: any JSON, and it is stored as the type it arrives as — ' +
+            '`section` and `open` want a real boolean, not `"true"`. `null` clears it.',
+        },
       },
       required: ['entityId', 'key', 'value'],
     },

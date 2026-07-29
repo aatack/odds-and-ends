@@ -166,6 +166,64 @@ describe('MCP endpoint', () => {
     await client.close()
   })
 
+  it('says what type every argument takes, including the free-form one', async () => {
+    // A property with no type is not "anything" to a client that builds its
+    // call from the schema — it is a string, and a boolean written through it
+    // arrives as `"true"`. `set_value` is the one that invites it, since its
+    // value genuinely is any JSON; naming the types is what makes that true at
+    // both ends.
+    const client = await connect()
+    const { tools } = await client.listTools()
+    const untyped: string[] = []
+    for (const tool of tools) {
+      const props = (tool.inputSchema.properties ?? {}) as Record<string, object>
+      for (const [name, schema] of Object.entries(props)) {
+        if (!('type' in schema) && !('anyOf' in schema)) untyped.push(`${tool.name}.${name}`)
+      }
+    }
+    expect(untyped).toEqual([])
+
+    const value = (tools.find((t) => t.name === 'set_value')!.inputSchema.properties as any).value
+    expect((value.anyOf as { type: string }[]).map((s) => s.type)).toEqual(
+      expect.arrayContaining(['string', 'number', 'boolean', 'null', 'object', 'array'])
+    )
+    await client.close()
+  })
+
+  it('stores a value as the type it arrived as', async () => {
+    // The rollup asks whether `open` *is* `false`, so a ticked task and the
+    // string "false" are not the same thing.
+    const client = await connect()
+    for (const [key, value] of [
+      ['open', false],
+      ['section', true],
+      ['count', 3],
+      ['nested', { a: [1, null] }],
+    ] as const) {
+      await client.callTool({ name: 'set_value', arguments: { entityId: 'm-typed', key, value } })
+    }
+    const details = JSON.parse(
+      said(await client.callTool({ name: 'get_details', arguments: { entityIds: ['m-typed'] } }))
+    )
+    expect(details['m-typed'].values).toEqual({
+      open: false,
+      section: true,
+      count: 3,
+      nested: { a: [1, null] },
+    })
+
+    // And `null` clears rather than storing the word.
+    await client.callTool({
+      name: 'set_value',
+      arguments: { entityId: 'm-typed', key: 'count', value: null },
+    })
+    const cleared = JSON.parse(
+      said(await client.callTool({ name: 'get_details', arguments: { entityIds: ['m-typed'] } }))
+    )
+    expect(cleared['m-typed'].values.count).toBeNull()
+    await client.close()
+  })
+
   it('writes an outline, and reads it back with the ids down the left', async () => {
     const client = await connect()
     // A root, a section under it, and a task under that — written the only way
