@@ -11,6 +11,13 @@ feature. The server can *list* the same definitions (`core/source/userTools.ts`,
 so they appear over MCP) but has nothing to run one with, since most of what a
 tool would want to do only exists in the app.
 
+## Getting one going
+
+Run **New tool of your own** and give it a name. That creates the note under
+`@tools`, hangs a `type: code` child off it for the body, and opens the inspector
+on it so you can fill in the rest. Write the body in the code child — you can press
+play on it to try it out — then run **Reload your tools** and it is in the palette.
+
 ## The fields
 
 Values on the note itself. Two are required; everything else has a default.

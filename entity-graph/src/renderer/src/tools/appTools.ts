@@ -1,8 +1,9 @@
 import { refreshDerived } from '../../../core/cache'
+import { createEntity } from '../source/entity'
 import * as R from '../state/reducers'
 import { focusOf, getLayout, updateLayout } from '../state/store'
 import { toggleTheme, updateUi, uiAtom } from '../state/ui'
-import { loadUserTools, userToolsAtom } from './userTools'
+import { TOOLS_ENTITY_ID, loadUserTools, userToolsAtom } from './userTools'
 import type { ToolSpec } from './types'
 
 // Note what isn't here: opening the palette and cancelling a pending call are
@@ -180,6 +181,34 @@ export const APP_TOOLS: ToolSpec[] = [
     scope: 'app',
     reach: 'ui',
     run: () => updateUi({ debugSource: true }),
+  },
+  {
+    // The skeleton, because assembling one by hand means creating a note, then
+    // linking `@tools` to it by typing the id, then remembering which values it
+    // has to carry. The body is a `type: code` child rather than a `script` value
+    // so that it can be edited on more than one line and run on its own before
+    // anything is bound to it.
+    id: 'source.newTool',
+    label: 'New tool of your own',
+    aliases: ['define tool', 'user tool', 'write a tool', 'custom command'],
+    hint: 'Shell',
+    scope: 'app',
+    reach: 'source',
+    mutates: true,
+    args: [{ name: 'name', label: 'Tool name', placeholder: 'e.g. greet' }],
+    run: async ({ name }) => {
+      const toolName = String(name ?? '').trim()
+      if (!toolName) throw new Error('Tool name is required')
+      const id = await createEntity({ text: toolName, name: toolName }, TOOLS_ENTITY_ID)
+      await createEntity(
+        { type: 'code', text: '// What the tool does. Its arguments are on `context`.\n' },
+        id,
+      )
+      // Straight into the inspector, which is where the rest of it is written:
+      // `arguments`, `key`, and whatever else the definition wants to say.
+      updateUi({ inspectEntityId: id })
+      return { message: `Fill ${toolName} in, then reload your tools` }
+    },
   },
   {
     // The tools the user wrote are read once, when the source opens, so editing
