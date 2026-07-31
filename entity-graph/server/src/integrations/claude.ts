@@ -1,10 +1,7 @@
 import { createHash } from 'crypto'
-import { statSync } from 'fs'
-import { homedir } from 'os'
-import { join, resolve } from 'path'
 import { z } from 'zod'
 import type { ToolDef } from '../../../src/core/source/index'
-import { run, type CommandResult } from './exec'
+import { directory, run, type CommandResult } from './exec'
 
 // Claude Code on this machine, through `claude --print`. One tool: a directory,
 // a prompt, and a name for the conversation. It runs a headless session there,
@@ -32,25 +29,6 @@ const TIMEOUT_MS = 30 * 60_000
 const NO_SESSION = /no conversation found/i
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
-/**
- * `~/repos/x` → `/home/you/repos/x`. A relative path resolves against the
- * server's own working directory, which is rarely what anyone means, so the
- * error names the absolute path it looked for.
- */
-function directory(path: string): string {
-  const trimmed = path.trim()
-  const expanded =
-    trimmed === '~' || trimmed.startsWith('~/') ? join(homedir(), trimmed.slice(1)) : trimmed
-  const absolute = resolve(expanded)
-  // A working directory that doesn't exist surfaces from `spawn` as a bare
-  // ENOENT, which reads as "claude isn't installed" — the one thing this must
-  // not say when the truth is a typo in a path.
-  if (!statSync(absolute, { throwIfNoEntry: false })?.isDirectory()) {
-    throw new Error(`${absolute} isn't a directory on this machine`)
-  }
-  return absolute
-}
 
 /**
  * The CLI will take nothing but a UUID as a session id, and a caller has

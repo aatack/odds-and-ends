@@ -1,9 +1,9 @@
 # Integrations
 
-The server can reach three things outside itself: **GitHub**, **Slack**, and
-**Claude Code**, the last of them on this machine rather than over a network.
-They live in `src/integrations/`, they are listed in one registry, and there is
-exactly one way to invoke one:
+The server can reach four things outside itself: **GitHub**, **Slack**, **Claude
+Code**, and the **git repositories on this machine** — the last two locally rather
+than over a network. They live in `src/integrations/`, they are listed in one
+registry, and there is exactly one way to invoke one:
 
 ```
 GET  /tools     → the list, each with a JSON Schema for its arguments
@@ -307,6 +307,91 @@ past which the process is killed as wedged. Two consequences worth knowing:
 
 A session that fails part-way still prints its JSON and can still exit cleanly;
 `is_error` in that JSON is treated as a failed call, with the CLI's own words.
+
+---
+
+## Git
+
+The repositories on this machine, through the `git` CLI, which must be on the
+server's `PATH`. Nothing to configure, and no secrets: git runs as whoever the
+server does, with whatever remotes and credentials that user already has.
+
+**Every tool takes the directory to run in**, because that is what names the
+repository — there is no "current" one here, and two worktrees of the same
+repository are two different places to be standing. `~` is expanded, as
+everywhere else.
+
+### Tools
+
+| id | what it does |
+|----|--------------|
+| `git.createWorktree` | a fresh worktree under `~/.pensive-worktrees`, path returned |
+| `git.removeWorktree` | delete one, and its branch if that is safe |
+| `git.pull` | fast-forward a checkout to its upstream |
+| `git.push` | push to `origin` with tracking, optionally onto a new branch |
+| `git.checkout` | switch to an existing branch |
+
+### Worktrees
+
+`git.createWorktree` is the only tool here that decides *where*: it makes the
+worktree under **`~/.pensive-worktrees`** with a six-character name from
+`a-zA-Z0-9`, and returns the full path along with the id and branch.
+
+```
+POST /runTool  { "tool": "git.createWorktree", "args": { "path": "~/repos/pensive" }}
+→ { "path": "/home/you/.pensive-worktrees/aB3xY9", "id": "aB3xY9", "branch": "aB3xY9" }
+```
+
+Git names a new worktree's branch after its directory, so the id is the branch
+too — a fresh worktree is a fresh branch off whatever the given checkout has at
+`HEAD`, sharing nothing with it but the repository. That is the point: something
+about to change a repository gets a checkout of its own, works there, pushes a
+branch, and hands the path back.
+
+The id is drawn from `randomBytes`, rejecting the bytes above the last whole
+multiple of 62 rather than folding them back in with `%` — which would make the
+first handful of letters likelier than the rest. Names already taken on disk are
+redrawn. Git creates the parent directory itself, so nothing has to exist first.
+
+**Removal is the destructive one**, so it is the one that can be refused:
+
+- A worktree with changes or untracked files in it is kept, unless `force`.
+- The **main checkout of a repository is always refused** — git knows the
+  difference, and says so.
+- The branch outlives the worktree, so a directory of one-shot worktrees would
+  leave one behind every time. It is deleted with `git branch -d`, which refuses
+  a branch that isn't fully merged: work that hasn't gone anywhere is never what
+  gets tidied away, and `branchDeleted` in the result says which happened. A
+  refusal there is not a failure of the removal, which has already happened.
+
+Removal runs from the repository's **main** worktree, found through
+`git rev-parse --git-common-dir`, rather than from inside the directory being
+deleted.
+
+### Pulling, pushing, switching
+
+- **`git.pull` is `--ff-only`.** There is nobody here to resolve a merge, and a
+  merge commit is not something a tool should invent; a branch that has diverged
+  says so and leaves the checkout alone.
+- **`git.push` sets upstream**, always: `git push --set-upstream origin HEAD`.
+  `HEAD` rather than the branch's name so it reads the same whatever the branch is
+  called, and tracking so that a later pull on it means something. Naming a
+  `branch` makes one with `checkout -b` and switches to it first, so what is
+  pushed and what is checked out don't part company.
+- **`git.checkout` only ever switches to an existing branch.** Making one belongs
+  to `git.push`, where there is somewhere to put it.
+
+**A branch can only be checked out in one worktree at a time.** So asking a
+worktree for `master` is refused while the main checkout has it — git names the
+worktree holding it. Switch the checkout that owns the branch instead. There is no
+way to have it in both and nothing here pretends there is.
+
+Two variables are set on every call, and they matter more than they look:
+`GIT_TERMINAL_PROMPT=0` and `GIT_EDITOR=true`. Without them, a push to a remote
+wanting a password — or anything that would open an editor — waits for an answer
+that is never coming, and is killed on the timeout, which reports the wait rather
+than the reason for it. Use SSH or a credential helper. Pull and push get five
+minutes; the local operations get the usual one.
 
 ---
 

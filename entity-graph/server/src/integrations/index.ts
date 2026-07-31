@@ -1,5 +1,6 @@
 import { ToolNotFoundError, invokeTool, type ToolDef } from '../../../src/core/source/index'
 import { CLAUDE_TOOLS } from './claude'
+import { GIT_TOOLS } from './git'
 import { GITHUB_TOOLS } from './github'
 import { SLACK_TOOLS } from './slack'
 
@@ -8,9 +9,15 @@ import { SLACK_TOOLS } from './slack'
 // They are deliberately *not* a source. A source is a set of tools over an event
 // store, composed and handed out per-token; these are the server's own hands,
 // held in one registry behind one endpoint (`POST /runTool`), so that the only
-// way to reach GitHub, Slack or Claude is by naming a tool that exists.
+// way to reach GitHub, Slack, Claude or a repository on this machine is by naming
+// a tool that exists.
 
-export const INTEGRATION_TOOLS: ToolDef[] = [...GITHUB_TOOLS, ...CLAUDE_TOOLS, ...SLACK_TOOLS]
+export const INTEGRATION_TOOLS: ToolDef[] = [
+  ...GITHUB_TOOLS,
+  ...GIT_TOOLS,
+  ...CLAUDE_TOOLS,
+  ...SLACK_TOOLS,
+]
 
 const byId = new Map(INTEGRATION_TOOLS.map((t) => [t.id, t]))
 

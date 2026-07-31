@@ -12,7 +12,7 @@ LLM can call its tools immediately — with fine control over what they can do.
   sources). Reused by both this server and the Electron app.
 - `src/` — the HTTP server: config DB, source registry, endpoints, debug page,
   MCP.
-- `src/integrations/` — the server's own reach into GitHub, Slack and Claude.
+- `src/integrations/` — the server's own reach into GitHub, Slack, Claude and git.
   Not a source: one registry, one endpoint. See
   [`docs/integrations.md`](./docs/integrations.md).
 

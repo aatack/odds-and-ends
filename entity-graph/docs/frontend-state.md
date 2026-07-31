@@ -168,7 +168,7 @@ A **call** is one invocation of a tool: a generated `callId`, the tool's id, the
 argument values so far, and an immutable snapshot of the context it started in.
 
 Most tools are fixed at build time, but the registry is not a constant: the
-server's **integrations** — GitHub, Slack, Claude, declared in
+server's **integrations** — GitHub, Slack, Claude, git, declared in
 `server/src/integrations/` — are fetched when a source is opened and folded in
 alongside the built-ins (`tools/integrationTools.ts`). They arrive as JSON
 Schema, and the argument prompts are derived from it rather than restated, so a

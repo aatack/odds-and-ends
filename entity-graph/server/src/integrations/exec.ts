@@ -1,4 +1,7 @@
 import { execFile, type ExecFileException } from 'child_process'
+import { statSync } from 'fs'
+import { homedir } from 'os'
+import { join, resolve } from 'path'
 
 // Running other people's programs. Everything here takes an argument *vector*
 // and never a command line, so no shell is involved and nothing a tool is handed
@@ -27,6 +30,31 @@ export interface RunOptions {
    * shows up in `ps`, and a prompt has neither business.
    */
   stdin?: string
+  /**
+   * Laid over the server's own environment, for the variables that tell a program
+   * there is nobody at the keyboard. A program that stops to ask a question here
+   * waits until the timeout kills it, and reports that instead of the reason.
+   */
+  env?: Record<string, string>
+}
+
+/**
+ * A directory to run something in. `~/repos/x` → `/home/you/repos/x`; a relative
+ * path resolves against the server's own working directory, which is rarely what
+ * anyone means, so the error names the absolute path it looked for.
+ */
+export function directory(path: string): string {
+  const trimmed = path.trim()
+  const expanded =
+    trimmed === '~' || trimmed.startsWith('~/') ? join(homedir(), trimmed.slice(1)) : trimmed
+  const absolute = resolve(expanded)
+  // A working directory that doesn't exist surfaces from `spawn` as a bare ENOENT,
+  // which reads as "the program isn't installed" — the one thing this must not say
+  // when the truth is a typo in a path.
+  if (!statSync(absolute, { throwIfNoEntry: false })?.isDirectory()) {
+    throw new Error(`${absolute} isn't a directory on this machine`)
+  }
+  return absolute
 }
 
 /** A duration as the error will read it: seconds while they're few, else minutes. */
@@ -44,7 +72,13 @@ export function run(
     const child = execFile(
       command,
       args,
-      { maxBuffer: MAX_OUTPUT, timeout, encoding: 'utf8', cwd: options.cwd },
+      {
+        maxBuffer: MAX_OUTPUT,
+        timeout,
+        encoding: 'utf8',
+        cwd: options.cwd,
+        ...(options.env ? { env: { ...process.env, ...options.env } } : {}),
+      },
       (error: ExecFileException | null, stdout, stderr) => {
         if (error?.code === 'ENOENT') {
           reject(new Error(`\`${command}\` is not installed, or not on this server's PATH`))
