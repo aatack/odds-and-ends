@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { rollupEntity, type LinkDirection } from '../entity'
+import { bucketEvents, rollupEntity, type LinkDirection } from '../entity'
 import type { AppEvent, LinkAction } from '../events'
 import type { EntityInterface } from '../interface/index'
 import { runQuery } from '../query'
@@ -60,24 +60,6 @@ export function readEventsTool(
   }
 }
 
-/**
- * Re-bucket a flat, deduplicated event list back into the `Map<id, events>`
- * shape `EntityInterface` (and therefore `EntityWrapper`) expects. A value
- * event lands under its `entityId`; a link event under both endpoints.
- */
-function bucketEvents(ids: string[], events: AppEvent[]): Map<string, AppEvent[]> {
-  const map = new Map<string, AppEvent[]>()
-  for (const id of ids) map.set(id, [])
-  for (const e of events) {
-    if (e.type === 'value') {
-      map.get(e.entityId)?.push(e)
-    } else {
-      map.get(e.sourceId)?.push(e)
-      if (e.destinationId !== e.sourceId) map.get(e.destinationId)?.push(e)
-    }
-  }
-  return map
-}
 
 /**
  * Events carry no id, so two reads that both turn up the same event hand back

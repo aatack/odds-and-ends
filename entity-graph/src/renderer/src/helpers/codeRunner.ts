@@ -120,6 +120,37 @@ export async function evaluateCode(
   return result.result
 }
 
+/** Distinguishes one run of the same script from another. See {@link runToolScript}. */
+let scriptRuns = 0
+
+/**
+ * Run a user-defined tool's body and hand back what it evaluated to. A sibling of
+ * {@link evaluateCode}: the same sandbox and the same synchronous `tool` bridge,
+ * and likewise nowhere to *show* the run — a tool's output belongs to the call
+ * that made it, which is what puts it in the activity log.
+ *
+ * The context is the *call's*, passed straight through rather than rebuilt around
+ * the tool's own entity. A tool is invoked from somewhere, and what it goes on to
+ * do should be recorded against the frame the user was looking at; a definition
+ * sitting under `@tools` is not where any of it is happening.
+ *
+ * Logs are returned rather than printed, since unlike an `events` key this has a
+ * caller to hand them to.
+ */
+export async function runToolScript(
+  toolId: string,
+  code: string,
+  context: CallContext,
+): Promise<{ result: unknown; logs: string[] }> {
+  // Namespaced away from a code entity's own id, so a tool whose body lives on an
+  // entity the user can also press play on doesn't overwrite that row's output —
+  // and counted, because the run id is what an answer finds its way back by, so
+  // two invocations of one tool must not share it.
+  const response = await execute(`tool:${toolId}#${++scriptRuns}`, code, context)
+  if (!response.ok) throw new Error(response.error ?? 'Error')
+  return { result: response.result, logs: response.logs }
+}
+
 /** Interrupt whatever is running by killing the worker; the next run respawns it. */
 export function stopCode(): void {
   worker?.terminate()

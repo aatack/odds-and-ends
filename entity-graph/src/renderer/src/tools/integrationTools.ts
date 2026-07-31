@@ -1,6 +1,7 @@
 import type { ToolMeta } from '../../../core/client'
 import { atom } from '../state/atom'
-import type { ArgKind, ArgSpec, ToolSpec } from './types'
+import { argsFromSchema, summarise } from './declared'
+import type { ToolSpec } from './types'
 
 // The server's integrations — GitHub, Slack, Claude — as tools of the app.
 //
@@ -34,48 +35,7 @@ export function setIntegrationServer(next: string | null): void {
     .catch(() => undefined)
 }
 
-// --- JSON Schema → argument prompts ----------------------------------------
-
-interface PropertySchema {
-  type?: string
-  enum?: unknown[]
-  default?: unknown
-  description?: string
-}
-
-interface ObjectSchema {
-  properties?: Record<string, PropertySchema>
-  required?: string[]
-}
-
-const KINDS: Record<string, ArgKind> = {
-  string: 'string',
-  number: 'number',
-  integer: 'number',
-  boolean: 'boolean',
-}
-
-/** `pullRequest` → "Pull request". */
-function labelOf(name: string): string {
-  const words = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
-  return words.charAt(0).toUpperCase() + words.slice(1)
-}
-
-function argSpec(name: string, schema: PropertySchema, required: boolean): ArgSpec {
-  return {
-    name,
-    label: labelOf(name),
-    // Anything that isn't a scalar is entered as JSON — there is nothing better
-    // to offer a one-line field, and it keeps the mapping total.
-    kind: schema.enum ? 'select' : (KINDS[schema.type ?? ''] ?? 'json'),
-    ...(schema.enum ? { options: schema.enum.map(String) } : {}),
-    // A schema default is the tool's own: leaving the field alone sends `null`,
-    // which is how the source contract spells "use the default".
-    ...(schema.default !== undefined ? { hasDefault: true } : {}),
-    ...(required ? {} : { optional: true }),
-    ...(schema.description ? { placeholder: schema.description } : {}),
-  }
-}
+// --- A server tool as one of the app's -------------------------------------
 
 const GROUPS: Record<string, string> = { github: 'GitHub', claude: 'Claude', slack: 'Slack' }
 
@@ -84,42 +44,8 @@ const groupOf = (id: string): string => {
   return GROUPS[prefix] ?? prefix.charAt(0).toUpperCase() + prefix.slice(1)
 }
 
-const clip = (text: string, limit = 160): string =>
-  text.length > limit ? `${text.slice(0, limit - 1)}…` : text
-
-/**
- * The most telling thing a result says about itself, in the order it's worth
- * saying: what the service said back, then what the thing *is*, then where it
- * is, and failing all three how many of them came back. The toast is a
- * confirmation — the whole result is in the activity log.
- *
- * `result` trails the rest because it is the vaguest of these names, and the one
- * a payload is least likely to have meant as its headline — but it is what a
- * Claude session's reply comes back under, and that is worth a toast.
- */
-const TELLING = ['output', 'text', 'title', 'permalink', 'url', 'result']
-
-function summarise(data: unknown): string | null {
-  if (typeof data === 'string') return data.trim() ? clip(data.trim()) : null
-  if (Array.isArray(data)) return `${data.length} result${data.length === 1 ? '' : 's'}`
-  if (data && typeof data === 'object') {
-    const record = data as Record<string, unknown>
-    for (const key of TELLING) {
-      const value = record[key]
-      if (typeof value === 'string' && value.trim()) return clip(value.trim())
-    }
-    const rows = Object.values(record).find(Array.isArray)
-    if (rows) return `${rows.length} result${rows.length === 1 ? '' : 's'}`
-  }
-  return null
-}
-
 function toolSpec(meta: ToolMeta): ToolSpec {
-  const schema = meta.args as ObjectSchema
-  const required = new Set(schema.required ?? [])
-  const args = Object.entries(schema.properties ?? {}).map(([name, property]) =>
-    argSpec(name, property, required.has(name)),
-  )
+  const args = argsFromSchema(meta.args)
   return {
     id: meta.id,
     label: meta.name,

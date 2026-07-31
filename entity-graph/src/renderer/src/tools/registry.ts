@@ -5,6 +5,7 @@ import { FRAME_TOOLS } from './frameTools'
 import { integrationsAtom } from './integrationTools'
 import { RESOURCE_TOOLS } from './resourceTools'
 import { UNDO_TOOLS } from './undoTools'
+import { userToolsAtom } from './userTools'
 import type { ToolScope, ToolSpec } from './types'
 
 // The one registry. Order matters twice: it's the order the palette lists tools
@@ -12,9 +13,14 @@ import type { ToolScope, ToolSpec } from './types'
 // looking at), and the order the key router resolves collisions in within a
 // scope.
 //
-// Most of it is fixed at build time. The integrations are not — they are
-// declared on the server and arrive when a source is opened — so the list is a
-// function rather than a constant, and the palette re-reads it when they land.
+// Most of it is fixed at build time. Two parts are not: the integrations, which
+// are declared on the server and arrive when a source is opened, and the user's
+// own tools, which are notes in the store. So the list is a function rather than
+// a constant, and the palette re-reads it when either lands.
+//
+// Both trail the built-ins, which settles every collision between a declared tool
+// and one of the app's own in the app's favour — a store cannot rebind `d` out
+// from under the user by naming a tool badly.
 
 const BUILT_IN: ToolSpec[] = [
   ...ENTITY_TOOLS,
@@ -25,13 +31,19 @@ const BUILT_IN: ToolSpec[] = [
   ...APP_TOOLS,
 ]
 
-/** Everything invocable right now. Integrations trail the built-ins. */
-export const allTools = (): ToolSpec[] => [...BUILT_IN, ...integrationsAtom.get()]
+/** Everything invocable right now. Declared tools trail the built-ins. */
+export const allTools = (): ToolSpec[] => [
+  ...BUILT_IN,
+  ...integrationsAtom.get(),
+  ...userToolsAtom.get(),
+]
 
 const byId = new Map(BUILT_IN.map((t) => [t.id, t]))
 
 export const findTool = (id: string): ToolSpec | undefined =>
-  byId.get(id) ?? integrationsAtom.get().find((t) => t.id === id)
+  byId.get(id) ??
+  integrationsAtom.get().find((t) => t.id === id) ??
+  userToolsAtom.get().find((t) => t.id === id)
 
 /** Tools offered in the palette's list. */
 export const listedTools = (): ToolSpec[] => allTools().filter((t) => t.listed !== false)

@@ -18,6 +18,7 @@ import { updateUi } from '../state/ui'
 import { readResource, scanEvents, setWriteObserver } from '../source/entity'
 import { setSourceTransport } from '../source/transport'
 import { setIntegrationServer } from '../tools/integrationTools'
+import { clearUserTools, loadUserTools } from '../tools/userTools'
 
 const api = window.entityGraph
 
@@ -49,6 +50,9 @@ export function SourceView({
     // The integrations belong to the *server*, not to the source — but this is
     // where the app is pointed at one, so it is where they are picked up.
     setIntegrationServer(active.serverId)
+    // The user's own tools belong to the source, and are read through the
+    // transport set just above, so this has to come after it.
+    void loadUserTools()
     return () => {
       setEntityFetcher(null)
       setWriteObserver(null)
@@ -56,6 +60,7 @@ export function SourceView({
       setResourceFetcher(null)
       setSourceTransport(null)
       setIntegrationServer(null)
+      clearUserTools()
     }
   }, [active.id, active.serverId, user])
 

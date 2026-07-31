@@ -2,6 +2,7 @@ import { refreshDerived } from '../../../core/cache'
 import * as R from '../state/reducers'
 import { focusOf, getLayout, updateLayout } from '../state/store'
 import { toggleTheme, updateUi, uiAtom } from '../state/ui'
+import { loadUserTools, userToolsAtom } from './userTools'
 import type { ToolSpec } from './types'
 
 // Note what isn't here: opening the palette and cancelling a pending call are
@@ -179,5 +180,23 @@ export const APP_TOOLS: ToolSpec[] = [
     scope: 'app',
     reach: 'ui',
     run: () => updateUi({ debugSource: true }),
+  },
+  {
+    // The tools the user wrote are read once, when the source opens, so editing
+    // one has no effect until they are read again. Reloading is a tool rather
+    // than something a write triggers: a definition is edited a value at a time,
+    // and rebuilding the registry on every keystroke would mean binding half a
+    // key and running half a body.
+    id: 'source.reloadTools',
+    label: 'Reload your tools',
+    aliases: ['user tools', 'refresh tools', 'rebuild registry'],
+    hint: 'Shell',
+    scope: 'app',
+    reach: 'source',
+    run: async () => {
+      await loadUserTools()
+      const count = userToolsAtom.get().length
+      return { message: `${count} tool${count === 1 ? '' : 's'} defined in this store` }
+    },
   },
 ]

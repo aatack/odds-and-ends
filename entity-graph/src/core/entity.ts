@@ -83,6 +83,29 @@ export function rollupEntity(id: string, events: AppEvent[]): Entity {
   }
 }
 
+/**
+ * Split a flat event list into the per-entity buckets a rollup takes. A value
+ * event lands under its `entityId`; a link event under both endpoints, since it
+ * is part of what each of them is.
+ *
+ * Only the ids asked for get a bucket, so this doubles as the filter a rollup
+ * needs: one scan covers many entities, and folding all of its events into one of
+ * them would give that entity every value in the batch.
+ */
+export function bucketEvents(ids: readonly string[], events: AppEvent[]): Map<string, AppEvent[]> {
+  const map = new Map<string, AppEvent[]>()
+  for (const id of ids) map.set(id, [])
+  for (const e of events) {
+    if (e.type === 'value') {
+      map.get(e.entityId)?.push(e)
+    } else {
+      map.get(e.sourceId)?.push(e)
+      if (e.destinationId !== e.sourceId) map.get(e.destinationId)?.push(e)
+    }
+  }
+  return map
+}
+
 /** An entity nothing is known about: present, empty, and safe to render. */
 export const emptyEntity = (id: string): Entity => ({
   id,
