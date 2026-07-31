@@ -175,10 +175,11 @@ export const ENTITY_TOOLS: ToolSpec[] = [
     },
   },
   {
-    // One tool, not two. The argument fills itself from the selection, so from the
-    // palette this runs straight through on whatever is selected — and Tab steps
-    // into it instead, where the selected id is offered as a row rather than
-    // applied, which is how an id read off a link gets inspected.
+    // One tool, not two. The argument fills itself from the selection, so aimed at
+    // something — a right-click, or Enter on it in the palette — this runs straight
+    // through on that. Opened cold (⌘P) the context only *offers*, so the field is
+    // empty with the selected id on a row beside it: which is where an id read off
+    // a link gets pasted, and why the separate "inspect by id" tool is gone.
     id: 'entity.inspect',
     label: 'Inspect entity',
     aliases: ['debug', 'info', 'raw', 'events', 'values', 'links', 'lookup', 'find id'],
