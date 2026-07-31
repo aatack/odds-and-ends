@@ -1,158 +1,164 @@
-import { randomUUID } from 'crypto'
+import { createHash } from 'crypto'
+import { statSync } from 'fs'
+import { homedir } from 'os'
+import { join, resolve } from 'path'
 import { z } from 'zod'
 import type { ToolDef } from '../../../src/core/source/index'
-import { optionalEnv, requireEnv } from '../env'
-import { fetchJson } from './http'
+import { run, type CommandResult } from './exec'
 
-// Claude Code in the cloud, through the routines ("remote trigger") API. A
-// routine is the only handle that API gives on *starting* a session, so that is
-// what starting one is here: a one-off routine, created disabled so it can never
-// fire twice, and run immediately.
+// Claude Code on this machine, through `claude --print`. One tool: a directory,
+// a prompt, and a name for the conversation. It runs a headless session there,
+// waits for it, and hands back the JSON the CLI printed.
 //
-// This is a stopgap and is shaped like one — see `server/docs/integrations.md`.
+// This replaces a stopgap that drove *cloud* sessions through the undocumented
+// routines API. The repositories worth working on are on this machine, `claude`
+// is already installed and already signed in, and one blocking call is a far
+// smaller thing than a routine that can't be deleted.
 
-const BETA = 'ccr-triggers-2026-01-30'
-
-const DEFAULT_MODEL = 'claude-sonnet-5'
-
-/** What a cloud session is allowed to do unless the routine says otherwise. */
-const ALLOWED_TOOLS = ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep']
-
-const baseUrl = (): string =>
-  (optionalEnv('CLAUDE_CODE_API_BASE_URL') ?? 'https://api.anthropic.com').replace(/\/+$/, '')
-
-const headers = (): Record<string, string> => ({
-  Authorization: `Bearer ${requireEnv('CLAUDE_CODE_OAUTH_TOKEN')}`,
-  'anthropic-beta': BETA,
-})
-
-const call = <T>(
-  path: string,
-  init: { method?: 'GET' | 'POST'; body?: unknown; query?: Record<string, string | number> } = {},
-): Promise<T> => fetchJson<T>(`${baseUrl()}${path}`, { ...init, headers: headers() })
+const CLI = 'claude'
 
 /**
- * A repository as the API wants it. `owner/repo` is the shorthand worth
- * accepting; anything else is passed through as the URL it already is.
+ * Every run: print and exit, JSON out, and no permission prompts — there is
+ * nobody here to answer one, and a session that can only read is not worth
+ * starting. This is the whole reason the tool is `dangerous`: it is arbitrary
+ * code execution on this machine, on purpose.
  */
-function repositoryUrl(repo: string): string {
-  const trimmed = repo.trim().replace(/\.git$/, '')
-  if (/^https?:\/\//i.test(trimmed)) return trimmed
-  if (/^[\w.-]+\/[\w.-]+$/.test(trimmed)) return `https://github.com/${trimmed}`
-  throw new Error(`"${repo}" doesn't name a repository — use owner/repo or its URL`)
+const PRINT = ['--print', '--output-format', 'json', '--permission-mode', 'bypassPermissions']
+
+/** A session can run for a long time. Past this it is wedged, not working. */
+const TIMEOUT_MS = 30 * 60_000
+
+/** What the CLI says when the session id names nothing in this directory. */
+const NO_SESSION = /no conversation found/i
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * `~/repos/x` → `/home/you/repos/x`. A relative path resolves against the
+ * server's own working directory, which is rarely what anyone means, so the
+ * error names the absolute path it looked for.
+ */
+function directory(path: string): string {
+  const trimmed = path.trim()
+  const expanded =
+    trimmed === '~' || trimmed.startsWith('~/') ? join(homedir(), trimmed.slice(1)) : trimmed
+  const absolute = resolve(expanded)
+  // A working directory that doesn't exist surfaces from `spawn` as a bare
+  // ENOENT, which reads as "claude isn't installed" — the one thing this must
+  // not say when the truth is a typo in a path.
+  if (!statSync(absolute, { throwIfNoEntry: false })?.isDirectory()) {
+    throw new Error(`${absolute} isn't a directory on this machine`)
+  }
+  return absolute
 }
 
 /**
- * One user turn, in the shape both the routine's initial events and a session
- * follow-up take.
+ * The CLI will take nothing but a UUID as a session id, and a caller has
+ * something more useful to hand: an entity id, or a name for the conversation.
+ * So anything that isn't a UUID is hashed into one. The same name always names
+ * the same session, which is the whole contract — the caller passes a name it
+ * has used before to carry on, and a new one to start fresh.
  */
-const userEvent = (prompt: string, sessionId = ''): Record<string, unknown> => ({
-  data: {
-    uuid: randomUUID(),
-    session_id: sessionId,
-    type: 'user',
-    parent_tool_use_id: null,
-    message: { role: 'user', content: prompt },
-  },
-})
-
-/** A routine needs a name; the first line of the prompt is the honest one. */
-const nameFor = (prompt: string): string => {
-  const line = prompt.trim().split('\n')[0].trim()
-  return line.length > 60 ? `${line.slice(0, 57)}…` : line || 'Session'
+function sessionUuid(name: string): string {
+  const trimmed = name.trim()
+  if (!trimmed) throw new Error('Give a session id — any string; an unused one starts a session')
+  if (UUID.test(trimmed)) return trimmed.toLowerCase()
+  const bytes = createHash('sha256').update(`entity-graph:claude:${trimmed}`).digest()
+  // Version 4 and variant 1 in the two nibbles that say so, so the CLI's own
+  // check passes; everything else is the digest.
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = bytes.subarray(0, 16).toString('hex')
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].join('-')
 }
 
-interface Trigger {
-  id: string
+const asJson = (text: string): Record<string, unknown> | null => {
+  try {
+    const parsed: unknown = JSON.parse(text)
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
 }
+
+/** The readable part of a result, if it has one. */
+const saidBy = (output: Record<string, unknown> | null): string =>
+  typeof output?.result === 'string' ? output.result.trim() : ''
+
+/**
+ * Why a run failed, in the words most worth reading. The CLI's own complaints go
+ * to standard error; a turn that failed part-way still prints its JSON, and the
+ * readable part of that is `result` — the rest is token accounting, and no use in
+ * a toast.
+ */
+function complaint(result: CommandResult): string {
+  const stderr = result.stderr.trim()
+  if (stderr) return stderr
+  return saidBy(asJson(result.stdout)) || `\`${CLI}\` exited with code ${result.exitCode}`
+}
+
+/** One invocation, with whichever of the two session flags is being tried. */
+const attempt = (session: string[], prompt: string, cwd: string): Promise<CommandResult> =>
+  run(CLI, [...PRINT, ...session], { cwd, stdin: prompt, timeoutMs: TIMEOUT_MS })
 
 export const CLAUDE_TOOLS: ToolDef[] = [
   {
-    id: 'claude.startSession',
-    name: 'Start a Claude session',
-    description:
-      'Kick off a cloud Claude Code session on a repository. Creates a one-off routine and runs it straight away; the routine is left disabled so it never fires again on its own.',
+    id: 'claude.runPrompt',
+    name: 'Run a Claude prompt',
+    description: [
+      'Run a headless Claude Code session on this machine and wait for it to finish.',
+      'Returns the CLI’s JSON verbatim — `result` is what Claude said, `session_id`',
+      'the conversation it said it in, alongside cost and token counts.',
+      '',
+      'The session id is a name for the conversation *in that directory*: pass one',
+      'you have used before to carry on where it left off, and an unused one to',
+      'start fresh. It need not be a UUID.',
+      '',
+      'The session runs with permissions bypassed and can do anything you can.',
+    ].join('\n'),
     safety: 'dangerous',
     args: z.object({
-      prompt: z.string().min(1).describe('What the session should do — it starts with no context'),
-      repo: z
+      path: z
         .string()
-        .optional()
-        .describe('owner/repo, or its URL. Defaults to $CLAUDE_DEFAULT_REPO'),
-      model: z.string().optional().describe(`Defaults to $CLAUDE_DEFAULT_MODEL, else ${DEFAULT_MODEL}`),
-      environmentId: z
+        .min(1)
+        .describe('Directory to run in — `~/repos/local-helpers` works'),
+      prompt: z
         .string()
-        .optional()
-        .describe('Cloud environment to run in. Defaults to $CLAUDE_ENVIRONMENT_ID'),
-      name: z.string().optional().describe('Routine name. Defaults to the prompt’s first line'),
+        .min(1)
+        .describe('What to ask. Passed on standard input, so it can be as long as you like'),
+      sessionId: z
+        .string()
+        .min(1)
+        .describe('Names the conversation in that directory; an unused name starts a new one'),
     }),
-    handler: async (args) => {
-      const repo = args.repo ?? optionalEnv('CLAUDE_DEFAULT_REPO')
-      if (!repo) throw new Error('Give a repo, or set CLAUDE_DEFAULT_REPO in server/.env')
-      const environmentId = args.environmentId ?? requireEnv('CLAUDE_ENVIRONMENT_ID')
+    handler: async ({ path, prompt, sessionId }) => {
+      const cwd = directory(path)
+      const session = sessionUuid(sessionId)
 
-      const created = await call<Trigger>('/v1/code/triggers', {
-        method: 'POST',
-        body: {
-          name: args.name ?? nameFor(args.prompt),
-          // The API insists on a future firing time even for a routine that is
-          // only ever going to be run by hand, so it gets one it will never see.
-          run_once_at: new Date(Date.now() + 60 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z'),
-          enabled: false,
-          job_config: {
-            ccr: {
-              environment_id: environmentId,
-              session_context: {
-                model: args.model ?? optionalEnv('CLAUDE_DEFAULT_MODEL') ?? DEFAULT_MODEL,
-                sources: [{ git_repository: { url: repositoryUrl(repo) } }],
-                allowed_tools: ALLOWED_TOOLS,
-              },
-              events: [userEvent(args.prompt)],
-            },
-          },
-        },
-      })
-
-      const run = await call<unknown>(`/v1/code/triggers/${created.id}/run`, {
-        method: 'POST',
-        body: {},
-      })
-      return {
-        triggerId: created.id,
-        url: `https://claude.ai/code/routines/${created.id}`,
-        run,
+      // There is no "resume it, or start it if it isn't there" flag, so the two
+      // are tried in turn. Resuming goes first because being wrong about it is
+      // free: the CLI looks for the transcript before it does anything else, and
+      // says so in a line and an exit code without reaching the API.
+      let result = await attempt(['--resume', session], prompt, cwd)
+      if (result.exitCode !== 0 && NO_SESSION.test(complaint(result))) {
+        result = await attempt(['--session-id', session], prompt, cwd)
       }
-    },
-  },
+      if (result.exitCode !== 0) throw new Error(complaint(result))
 
-  {
-    id: 'claude.followUpSession',
-    name: 'Follow up on a Claude session',
-    description:
-      'Send another turn to a cloud session that is already running, as if you had typed it into the session.',
-    safety: 'dangerous',
-    args: z.object({
-      sessionId: z.string().min(1).describe('Session id — from “List Claude sessions”'),
-      prompt: z.string().min(1).describe('What to say next'),
-    }),
-    handler: async ({ sessionId, prompt }) => {
-      const sent = await call<unknown>(
-        `/v1/code/sessions/${encodeURIComponent(sessionId)}/events`,
-        { method: 'POST', body: { events: [userEvent(prompt, sessionId)] } },
-      )
-      return { sessionId, sent }
+      const output = asJson(result.stdout)
+      if (!output) {
+        throw new Error(`\`${CLI}\` did not return JSON: ${result.stdout.trim().slice(0, 300)}`)
+      }
+      // A session can fail inside a turn and still exit cleanly. That is a failed
+      // call, not a result to hand back as though it worked.
+      if (output.is_error) throw new Error(saidBy(output) || `\`${CLI}\` reported an error`)
+      return output
     },
-  },
-
-  {
-    id: 'claude.listSessions',
-    name: 'List Claude sessions',
-    description:
-      'Cloud sessions, most recent first — this is where a session id for a follow-up comes from.',
-    safety: 'dangerous',
-    args: z.object({
-      limit: z.number().int().min(1).max(100).default(20).describe('How many to fetch'),
-    }),
-    handler: ({ limit }) => call('/v1/code/sessions', { query: { limit } }),
   },
 ]
