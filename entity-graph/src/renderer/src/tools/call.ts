@@ -41,8 +41,9 @@ type Listener = (call: RecordedCall) => void
 const listeners = new Set<Listener>()
 
 /**
- * Every call that finishes is announced here, whether or not it is kept in the
- * log — this is how errors and confirmations reach the toast layer.
+ * Every call *the user made* is announced here when it finishes, whether or not
+ * it is kept in the log — this is how errors and confirmations reach the toast
+ * layer. A script's are not: see `settle`.
  */
 export function onCallSettled(listener: Listener): () => void {
   listeners.add(listener)
@@ -78,8 +79,8 @@ interface Invocation {
  * have I done?", and a script's calls are not that: one `events` key runs itself
  * every time an entity is read, so a single script left in the tree would fill
  * the log on its own and push the day's actual work off the end of it. What a
- * script did is shown where it was run — the code entity's own output — and its
- * failures still reach the toast layer, which is announced separately from this.
+ * script did is shown where it was run — the code entity's own output. It doesn't
+ * toast either; `settle` says why.
  */
 const worthKeeping = (call: Invocation, tool: ToolSpec, outcome: CallOutcome): boolean => {
   if (call.origin === 'code') return false
@@ -141,9 +142,12 @@ function markRunning(call: Invocation, tool: ToolSpec): void {
 
 function settle(call: Invocation, tool: ToolSpec, outcome: CallOutcome): void {
   const record = recordOf(call, bounded(outcome))
-  // Announced whatever its origin, and whether or not it is kept: a script's
-  // failing call still has to reach the toast layer.
-  listeners.forEach((l) => l(record))
+  // Announced only if the user asked for it — a toast is the app answering
+  // something you just did. A script's calls are not that, and an `events` key
+  // that fails would otherwise raise the same toast every time anything reads the
+  // entity it sits on. What a script did, and how it failed, is shown where the
+  // script is: the code entity's own output.
+  if (call.origin === 'user') listeners.forEach((l) => l(record))
   // Keyed by callId, so resuming and re-settling updates one entry in place
   // rather than leaving a stale row behind.
   //

@@ -123,7 +123,9 @@ is the long form; the rules that matter day to day:
   in-place editor) calls a named action in `state/actions.ts`; anything invocable
   or worth recording is a tool.
 - **Errors surface as call results.** A tool throws; the call machine settles it
-  and the toast layer shows it. Components don't raise toasts themselves.
+  and the toast layer shows it. Components don't raise toasts themselves. Both the
+  toast and the call log are a record of what the *user* did, so a script's calls
+  reach neither — its errors belong where the script is.
 
 ## Phone access
 

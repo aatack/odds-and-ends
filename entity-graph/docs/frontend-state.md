@@ -322,9 +322,16 @@ Reads and writes against the entity store are far too frequent, and their result
 far too large, to persist — a single scan of a page's worth of entities would
 exhaust the localStorage quota, which `persistentAtom` swallows silently.
 
-Every call still *produces* a result, whatever its origin and whether or not it is
-kept: that is how errors and confirmations reach the toast layer, and a script's
-failing call has to raise one like any other. Only retention is filtered.
+The toast layer follows the same line. Every call the user made is announced when
+it settles, whether or not it is kept, and that is what raises errors and
+confirmations; a script's calls announce nothing. A toast is the app answering
+something you just did, and an `events` key that fails would otherwise raise the
+same one every time anything reads the entity it sits on. A script's failures are
+shown where the script is — the code entity's own output, and the error the cache
+records against the entity whose `events` threw.
+
+So `origin` decides two things and they agree: a script's call runs, writes,
+refreshes the frames and returns its value, and leaves no other trace.
 
 A call that would be kept is recorded **before** it runs, as `running`, and
 settled in place afterwards. `claude.runPrompt` holds a session open for minutes,

@@ -29,8 +29,9 @@ export default function App(): React.JSX.Element | null {
   // through the focus chain, not through whatever has DOM focus.
   useEffect(installKeyRouter, [])
 
-  // Every call that finishes announces itself; errors and confirmations become
-  // toasts. Nothing else in the app raises one.
+  // Every call the user made announces itself when it finishes; errors and
+  // confirmations become toasts. Nothing else in the app raises one — and a
+  // script's calls announce nothing, so nothing here has to filter them out.
   useEffect(
     () =>
       onCallSettled((call) => {
