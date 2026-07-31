@@ -1,3 +1,4 @@
+import { KIND_KEYWORD } from '../../../core/toolArguments'
 import type { ArgKind, ArgSpec } from './types'
 
 // Tools the app didn't declare. Two things describe a tool from the outside — the
@@ -15,6 +16,8 @@ interface PropertySchema {
   enum?: unknown[]
   default?: unknown
   description?: string
+  /** What the app should make of it, where a schema type can't say. */
+  [KIND_KEYWORD]?: string
 }
 
 interface ObjectSchema {
@@ -29,6 +32,18 @@ const KINDS: Record<string, ArgKind> = {
   boolean: 'boolean',
 }
 
+/**
+ * How a value is entered. The app's own kinds outrun what a schema type can say,
+ * so an entity id arrives as a string carrying {@link KIND_KEYWORD} beside it —
+ * see `core/toolArguments`. Anything that isn't a scalar is entered as JSON: there
+ * is nothing better to offer a one-line field, and it keeps the mapping total.
+ */
+function kindOf(schema: PropertySchema): ArgKind {
+  if (schema[KIND_KEYWORD] === 'entity') return 'entity'
+  if (schema.enum) return 'select'
+  return KINDS[schema.type ?? ''] ?? 'json'
+}
+
 /** `pullRequest` → "Pull request". */
 export function labelOf(name: string): string {
   const words = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
@@ -39,9 +54,7 @@ function argSpec(name: string, schema: PropertySchema, required: boolean): ArgSp
   return {
     name,
     label: labelOf(name),
-    // Anything that isn't a scalar is entered as JSON — there is nothing better
-    // to offer a one-line field, and it keeps the mapping total.
-    kind: schema.enum ? 'select' : (KINDS[schema.type ?? ''] ?? 'json'),
+    kind: kindOf(schema),
     ...(schema.enum ? { options: schema.enum.map(String) } : {}),
     // A schema default is the tool's own: leaving the field alone sends `null`,
     // which is how the source contract spells "use the default".

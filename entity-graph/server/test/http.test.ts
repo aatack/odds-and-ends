@@ -422,6 +422,36 @@ describe('user-defined tools (@tools)', () => {
     expect(greet.args).toEqual(argSchema)
   })
 
+  it('publishes a declared argument list as a schema, not as a list', async () => {
+    // The form a definition is actually written in. What MCP is handed has to be
+    // a schema either way, so the conversion happens before it is published.
+    await call('u', uToken, 'writeValue', { entityId: 'listed', key: 'name', value: 'listed' })
+    await call('u', uToken, 'writeValue', { entityId: 'listed', key: 'description', value: 'Takes a list' })
+    await call('u', uToken, 'writeValue', {
+      entityId: 'listed',
+      key: 'arguments',
+      value: [
+        { name: 'who', type: 'string', required: true },
+        { name: 'loudly', type: 'boolean' },
+      ],
+    })
+    await call('u', uToken, 'writeLink', { sourceId: '@tools', destinationId: 'listed', action: 0 })
+    await app.inject({
+      method: 'PUT',
+      url: '/admin/sources/u',
+      headers: adminHeaders,
+      payload: { label: 'u' },
+    })
+
+    const tools = (await app.inject({ method: 'GET', url: '/u/tools', headers: srcHeaders(uToken) })).json()
+    const listed = tools.find((t: any) => t.id === 'listed')
+    expect(listed.args).toEqual({
+      type: 'object',
+      properties: { who: { type: 'string' }, loudly: { type: 'boolean' } },
+      required: ['who'],
+    })
+  })
+
   it('throws not-implemented when a user-defined tool is called', async () => {
     const res = await call('u', uToken, 'greet', { who: 'world' })
     expect(res.status).toBe('error')

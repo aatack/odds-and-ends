@@ -1,4 +1,5 @@
 import { bucketEvents, rollupEntity, str, type Entity } from '../../../core/entity'
+import { toolArgumentsSchema } from '../../../core/toolArguments'
 import { runToolScript } from '../helpers/codeRunner'
 import { scanEvents } from '../source/entity'
 import { currentSourceId } from '../source/transport'
@@ -175,7 +176,10 @@ function toolSpec(tool: Entity, bodies: Map<string, Entity>): ToolSpec | null {
 
   const description = str(tool.values.description)
   const keys = keyOf(tool.values.key)
-  const args = argsFromSchema(tool.values.arguments)
+  // A list of arguments is what a definition writes; a schema is what the prompts
+  // are built from. One of those is nicer to write and the other is what the
+  // server publishes, so the conversion happens in core, where both can see it.
+  const args = argsFromSchema(toolArgumentsSchema(tool.values.arguments))
 
   return {
     id: name,

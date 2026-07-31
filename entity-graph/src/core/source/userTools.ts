@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { toolArgumentsSchema } from '../toolArguments'
 import { entityWrapper } from './defaultTools'
 import type { Permissions } from './permissions'
 import { SAFETY_RANK, type Safety, type ToolDef } from './types'
@@ -51,7 +52,10 @@ export async function loadUserTools(
       description,
       safety: isSafety(safety) ? safety : 'dangerous',
       args: z.any(),
-      jsonSchema: args as Record<string, unknown>,
+      // What a definition writes is a list of arguments, which is not a schema —
+      // and this one is published verbatim, so it is converted rather than passed
+      // on. A definition that already holds a schema comes through untouched.
+      jsonSchema: toolArgumentsSchema(args),
       handler: async () => {
         throw new Error(`user-defined tool "${name}" is not yet executable`)
       },

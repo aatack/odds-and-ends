@@ -29,31 +29,60 @@ Values on the note itself. Two are required; everything else has a default.
 | `text` | string | no | — | The note's own text. Read as the palette label. |
 | `label` | string | no | `text`, then `name` | Palette label, if the note's text isn't the right one. |
 | `description` | string | no | — | Matched by the palette's search. |
-| `arguments` | JSON Schema object | no | no arguments | Becomes the argument prompts. |
+| `arguments` | list | no | no arguments | What it takes, one entry per argument. See below. |
 | `scope` | `frame` \| `group` \| `app` | no | `app` | Which part of the focus chain a key resolves against. |
 | `reach` | `ui` \| `source` \| `external` | no | `external` | How far it reaches, and so whether its calls are kept in the log. |
 | `key` | string | no | none | A binding: `g`, `shift+g`, `mod+shift+j`. `mod` is Ctrl or ⌘. |
 | `mutates` | boolean | no | `false` | Rarely needed: a body can only write *through* a write tool, and each of those refreshes the frames on its own way out. |
 | `safety` | `pure` \| `safe-mutating` \| `dangerous` | no | `dangerous` | Read by the *server* only, for its capability filters. |
 
-`arguments` is a JSON Schema object, the same shape the server publishes for its
-integrations, which is what lets one mapping serve both:
+## Arguments
+
+A list, one entry per argument, in the order you want to be asked for them:
 
 ```json
-{
-  "type": "object",
-  "properties": {
-    "who": { "type": "string", "description": "Who to greet" },
-    "loudly": { "type": "boolean", "default": false }
-  },
-  "required": ["who"]
-}
+[
+  { "name": "who", "type": "string", "required": true },
+  { "name": "loudly", "type": "boolean" },
+  { "name": "payload", "type": "" }
+]
 ```
 
-A property's `type` decides how the field is parsed (`string`, `number`,
-`integer`, `boolean`; an `enum` becomes a picker; anything else is entered as
-JSON). `required` decides whether the call can run without it. A `default` means
-leaving the field alone sends `null`, which is the contract's "use the default".
+| Key | Meaning |
+| --- | --- |
+| `name` | Required. What `run` receives it under, and what the body reads off `context`. An entry naming nothing is skipped. |
+| `type` | How the field is parsed: `string`, `number`, `integer`, `boolean`, `entity`. Empty or absent means the value is entered as JSON. |
+| `required` | Absent means `false`. A call won't run with a required argument outstanding. |
+| `options` | A list. Makes it a picker, whatever `type` says. |
+| `description` | Shown as the field's placeholder. |
+| `default` | See the gotcha below. |
+
+The **label** is derived from the name — `pullRequest` is prompted for as "Pull
+request". An argument that needs nothing but a name can be the name on its own:
+`["who", "what"]`. Two entries sharing a name keep the first.
+
+`type: "entity"` gives you the entity-id field, which the palette can fill by
+pointing rather than typing. Outside the app it is an ordinary string.
+
+### The `default` gotcha
+
+A `default` does **not** mean the app fills that value in. It means the field shows
+as "default", and leaving it alone sends `null` — the contract's "use the default",
+which the tool is then meant to apply. Nothing applies it for you, so:
+
+```js
+const times = context.times ?? 1
+```
+
+You want that `??` regardless: an optional argument left blank is dropped before
+the body runs, so it arrives as `undefined` rather than `null`.
+
+### Behind the scenes
+
+The list is converted to JSON Schema in `core/toolArguments.ts` — that is the form
+the palette derives its prompts from, and the form the server publishes to MCP. A
+definition that already holds a schema object is passed through untouched, so
+anything written the long way keeps working.
 
 ## Where the body goes
 
@@ -99,3 +128,8 @@ and running half a body.
   that name. Two definitions sharing a name keep the first in outline order.
 - The sandbox is the code runner's, and inherits its v0 caveats: one script at a
   time, and Stop kills the worker, so stopping one run aborts any other in flight.
+- The app and the server disagree about what makes a note tool-shaped. The app
+  wants a `name` and a body; the server wants a `name`, a `description` and an
+  `arguments`, and doesn't look for a body at all — it can't run one. So a tool
+  with nothing but a name and a body works here and never appears over MCP. Give
+  it a `description` and an `arguments` if you want it in both places.

@@ -131,6 +131,97 @@ test('passes over a note under @tools that is not a tool', async () => {
   assert.deepEqual(loaded(), [])
 })
 
+test('takes its arguments as a list, in the order the list gives them', async () => {
+  open()
+  await defineTool('post', {
+    name: 'post',
+    script: 'null',
+    arguments: [
+      { name: 'channel', type: 'string', required: true },
+      { name: 'times', type: 'number' },
+      { name: 'dryRun', type: 'boolean' },
+      // "Empty for JSON" — and an absent type means the same thing.
+      { name: 'payload', type: '' },
+      { name: 'anything' },
+    ],
+  })
+  await loadUserTools()
+
+  assert.deepEqual(byId('post')?.args?.map((a) => [a.name, a.kind, a.optional ?? false]), [
+    ['channel', 'string', false],
+    ['times', 'number', true],
+    ['dryRun', 'boolean', true],
+    ['payload', 'json', true],
+    ['anything', 'json', true],
+  ])
+})
+
+test('reads the rest of what a listed argument can say', async () => {
+  open()
+  await defineTool('post', {
+    name: 'post',
+    script: 'null',
+    arguments: [
+      { name: 'target', type: 'entity', required: true },
+      { name: 'tone', options: ['formal', 'casual'] },
+      { name: 'note', type: 'string', description: 'Shown as the placeholder' },
+      { name: 'times', type: 'integer', default: 1 },
+    ],
+  })
+  await loadUserTools()
+  const args = byId('post')?.args ?? []
+
+  // An entity id is a string to anything outside the app, and a picker within it.
+  assert.equal(args[0].kind, 'entity')
+  assert.equal(args[1].kind, 'select')
+  assert.deepEqual(args[1].options, ['formal', 'casual'])
+  assert.equal(args[2].placeholder, 'Shown as the placeholder')
+  assert.equal(args[3].kind, 'number')
+  assert.equal(args[3].hasDefault, true)
+})
+
+test('names an argument with nothing but a string', async () => {
+  open()
+  await defineTool('post', { name: 'post', script: 'null', arguments: ['who', 'what'] })
+  await loadUserTools()
+
+  assert.deepEqual(byId('post')?.args?.map((a) => [a.name, a.label, a.kind]), [
+    ['who', 'Who', 'json'],
+    ['what', 'What', 'json'],
+  ])
+})
+
+test('passes over a listed argument that names nothing, and repeats of a name', async () => {
+  open()
+  await defineTool('post', {
+    name: 'post',
+    script: 'null',
+    arguments: [
+      { type: 'string' },
+      { name: 'who', type: 'string', required: true },
+      { name: 'who', type: 'number' },
+      '',
+    ],
+  })
+  await loadUserTools()
+
+  assert.deepEqual(byId('post')?.args?.map((a) => [a.name, a.kind]), [['who', 'string']])
+})
+
+test('still takes a JSON Schema written out in full', async () => {
+  open()
+  await defineTool('post', {
+    name: 'post',
+    script: 'null',
+    arguments: { type: 'object', properties: { who: { type: 'string' } }, required: ['who'] },
+  })
+  await loadUserTools()
+
+  assert.deepEqual(byId('post')?.args?.map((a) => [a.name, a.kind, a.optional ?? false]), [
+    ['who', 'string', false],
+  ])
+})
+
 test('takes a tool with no arguments as complete, not as unfinished', async () => {
   open()
   await defineTool('sync', { name: 'sync', script: 'tool.reloadYourTools()' })
