@@ -14,7 +14,6 @@ import type {
 } from '../state/types'
 import {
   argsFromCall,
-  contextValue,
   firstEmpty,
   missingRequired,
   nextEmptyAfter,
@@ -414,19 +413,16 @@ export function submitCall(): string | null {
 }
 
 /**
- * Take the argument being entered from the call's context — what the palette
- * opened cold offers in place of filling it in silently — and move on to
- * whatever is still empty. Never runs, even on the last argument: this is a
- * shortcut for typing, and typing doesn't run anything either. Returns the value
+ * Fill the argument being entered from somewhere other than the keyboard — the
+ * context it was started in, or what this tool was given last time — and move on
+ * to whatever is still empty. Never runs, even on the last argument: these are
+ * shortcuts for typing, and typing doesn't run anything either. Returns the value
  * it wrote, so the field showing it can be brought up to date.
  */
-export function takeFromContext(): ArgValue | null {
+export function fillActiveArg(value: unknown): ArgValue | null {
   const p = pendingAtom.get()
   const tool = p?.toolId ? findTool(p.toolId) : null
-  if (!p || !tool || !p.activeArg) return null
-  const arg = argsOf(tool).find((a) => a.name === p.activeArg)
-  const value = arg ? contextValue(arg, p.context) : undefined
-  if (value === undefined) return null
+  if (!p || !tool || !p.activeArg || value === undefined) return null
   const applied: ArgValue = { kind: 'value', value }
   const args = { ...p.args, [p.activeArg]: applied }
   pendingAtom.set({ ...p, args, activeArg: nextEmptyAfter(tool, args, p.activeArg) ?? p.activeArg })
@@ -468,6 +464,30 @@ export function cancelCall(): void {
 
 const recorded = (callId: string): RecordedCall | undefined =>
   callsAtom.get().find((r) => r.callId === callId)
+
+/**
+ * What this tool was last given for one of its arguments, or null when the log
+ * has nothing to say. The log is newest-first, so the first match is the most
+ * recent; `except` skips the call being built, since a rerun would otherwise
+ * offer back the value already in the field.
+ *
+ * Bounded by what the log keeps, which is calls that reached outside the app and
+ * ones abandoned part-way. Nothing is remembered on top of that: this is the
+ * history you can already see in the activity panel, read from the other end.
+ */
+export function lastArgValue(
+  calls: RecordedCall[],
+  toolId: string,
+  name: string,
+  except?: string,
+): unknown {
+  for (const call of calls) {
+    if (call.toolId !== toolId || call.callId === except) continue
+    const value = call.args[name]
+    if (value?.kind === 'value') return value.value
+  }
+  return undefined
+}
 
 /**
  * Reopen a recorded call's arguments for editing. A cancelled one is popped from

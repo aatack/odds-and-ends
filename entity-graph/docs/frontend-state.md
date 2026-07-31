@@ -256,13 +256,40 @@ link waits for its far end.
   context filled, so they can be inspected. From the first argument it returns
   to the tool list by clearing the call's tool id — that is the only way back.
 - **Enter** commits the current argument, jumps to the next empty one, and runs
-  the tool once nothing is empty.
+  the tool once nothing is empty. A *modified* Enter never runs: it takes an
+  offer, or does nothing at all.
 - A call whose every argument is satisfied on start runs immediately, with no
   confirmation, regardless of the tool's reach. Deliberate for now.
 - When the palette is hidden and the tool's own hotkey is pressed again, the
   argument being waited on is filled from the *live* context — this is what makes
   "press `x`, select the new parent, press `x` again" fall out of the general
   model rather than being a special case.
+
+### Offers
+
+Two things can fill an argument without it being typed, and while one is being
+entered both appear as rows under the field — where the tool list was — showing
+the value itself with the key that takes it on a pill:
+
+| row | is | key |
+|---|---|---|
+| **From here** | what the call's context says about this argument | ⌘/Ctrl+Enter |
+| **Last used** | what this tool was last given for it, from the call log | ⇧Enter |
+
+The value is shown rather than gestured at, because a value you can read is worth
+more than an icon you have to remember — this replaced a target button beside the
+field, which said only that *something* could be taken. An offer matching what is
+already in the field isn't one, and neither is a remembered value the context is
+already offering: there would be nothing to press it for.
+
+**"Last used" is the call log read from the other end**, with no separate
+history: `lastArgValue` walks it newest-first for the most recent call of this
+tool that supplied that argument, skipping the call being built so a rerun does
+not offer back what is already in the field. So it reaches exactly as far as
+retention does — every external call, and anything abandoned part-way — which is
+why it shows up most on the integrations and rarely on an entity tool. It is also
+per-argument rather than per-call: an argument the last call left blank is
+answered by the one before it that didn't.
 
 ## The call log
 
