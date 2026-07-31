@@ -2,7 +2,7 @@ import React, { useEffect } from 'react'
 import type { ActiveSource } from '../../../core/client'
 import { Layout } from '../layout/Layout'
 import { DebugModal } from '../components/DebugModal'
-import { EntityDebugModal } from '../components/EntityDebugModal'
+import { EntityInspector } from '../components/EntityInspector'
 import { ResourceModal } from '../components/Resource'
 import { Button } from '../components/ui/Button'
 import { evaluateCode } from '../helpers/codeRunner'
@@ -79,12 +79,12 @@ export function SourceView({
         <DebugModal sourceId={active.id} user={user} onClose={() => updateUi({ debugSource: false })} />
       )}
       {ui.resourceId && <ResourceModal id={ui.resourceId} />}
-      {ui.debugEntityId && (
-        <EntityDebugModal
+      {ui.inspectEntityId && (
+        <EntityInspector
           sourceId={active.id}
-          entityId={ui.debugEntityId}
+          entityId={ui.inspectEntityId}
           user={user}
-          onClose={() => updateUi({ debugEntityId: null })}
+          onClose={() => updateUi({ inspectEntityId: null })}
         />
       )}
     </div>

@@ -8,6 +8,7 @@ export function TextEditor({
   value,
   setValue,
   eager = false,
+  multiline = false,
   placeholder,
   className,
   style,
@@ -18,6 +19,12 @@ export function TextEditor({
   value: string
   setValue: (value: string) => void
   eager?: boolean
+  /**
+   * Enter puts in a newline rather than committing. For a surface where finishing
+   * is a separate gesture — an inspector's value, with a tick beside it — and
+   * where the text is code or prose that has lines in it.
+   */
+  multiline?: boolean
   placeholder?: string
   className?: string
   /** For type that can't be a utility class — a section heading's size, say. */
@@ -86,6 +93,9 @@ export function TextEditor({
       onKeyDown={(e) => {
         onKeyDown?.(e)
         if (e.defaultPrevented) return
+        // Left to the textarea, which is the only thing that can insert a newline
+        // at the caret — preventing the default here would swallow it.
+        if (multiline) return
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault()
           if (!eager) commit(draft)

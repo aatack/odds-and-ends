@@ -21,7 +21,7 @@ interface Props {
 /** Raw, low-level access to a source's tools — query + event writes + a tool list. */
 export function DebugModal({ sourceId: connId, user, onClose }: Props): React.JSX.Element {
   return (
-    <Modal title="Debug" onClose={onClose} wide>
+    <Modal title="Debug" onClose={onClose} size="wide">
       <div className="space-y-6">
         <RawQuery connId={connId} />
         <RawEvent connId={connId} user={user} />

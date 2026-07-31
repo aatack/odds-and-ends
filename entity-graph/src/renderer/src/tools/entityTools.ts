@@ -175,25 +175,17 @@ export const ENTITY_TOOLS: ToolSpec[] = [
     },
   },
   {
-    id: 'entity.debug',
-    label: 'Debug entity',
-    aliases: ['inspect', 'info', 'raw', 'events'],
+    // One tool, not two. The argument fills itself from the selection, so from the
+    // palette this runs straight through on whatever is selected — and Tab steps
+    // into it instead, where the selected id is offered as a row rather than
+    // applied, which is how an id read off a link gets inspected.
+    id: 'entity.inspect',
+    label: 'Inspect entity',
+    aliases: ['debug', 'info', 'raw', 'events', 'values', 'links', 'lookup', 'find id'],
     scope: 'frame',
     reach: 'ui',
     args: [entityArg()],
-    run: ({ entityId }) => updateUi({ debugEntityId: requireId(entityId, 'Entity id') }),
-  },
-  {
-    // The context-filled version above can never prompt — that's the point of
-    // auto-skip — so inspecting an id you've read off a link needs its own tool.
-    id: 'entity.inspect',
-    label: 'Inspect entity by id…',
-    aliases: ['debug', 'values', 'links', 'lookup', 'find id'],
-    hint: 'Entity',
-    scope: 'frame',
-    reach: 'ui',
-    args: [{ name: 'entityId', label: 'Entity id', kind: 'entity', placeholder: 'Paste an id' }],
-    run: ({ entityId }) => updateUi({ debugEntityId: requireId(entityId, 'Entity id') }),
+    run: ({ entityId }) => updateUi({ inspectEntityId: requireId(entityId, 'Entity id') }),
   },
   {
     id: 'entity.rename',

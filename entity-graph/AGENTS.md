@@ -159,6 +159,11 @@ Primitives live in `src/renderer/src/components/ui/` — `Button`, `Badge`,
 `src/renderer/src/helpers/`; check there before adding one. If a
 component/helper appears twice, factor it out.
 
+`Modal` takes a `size`: `md` and `wide` are dialogs that grow with their contents
+and scroll the backdrop; `large` is a panel — nearly the whole window, `flex`
+column, its body scrolling *inside* the card so whatever the child pins to the top
+stays there. `EntityInspector` is the one of those, and its tabs are why.
+
 **Entity pills** (`components/EntityPill.tsx`) are how an entity appears anywhere
 it is referenced in passing rather than shown in full — a tab title, a crumb, a
 mention inside another entity's text. Three parts, usable separately:
