@@ -112,7 +112,9 @@ is the long form; the rules that matter day to day:
   the tool declares them, or as one object naming them. The calls are
   **synchronous**: the worker blocks on a `SharedArrayBuffer` while the main
   thread runs the call through the same machine a hotkey does, so a script's calls
-  are recorded, refresh the frames, and fail the same way.
+  refresh the frames and fail the same way. They are *not* kept in the call log,
+  which records what the user did — `callToolByName` is the one way into the
+  machine that isn't a gesture, and it says so (`origin: 'code'`).
 - **One key listener, at the top.** `tools/dispatch.ts` owns it and resolves
   through the focus chain (focused frame → its tab group → the app), not through
   whatever has DOM focus.

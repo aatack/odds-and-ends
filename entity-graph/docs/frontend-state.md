@@ -286,8 +286,9 @@ already offering: there would be nothing to press it for.
 history: `lastArgValue` walks it newest-first for the most recent call of this
 tool that supplied that argument, skipping the call being built so a rerun does
 not offer back what is already in the field. So it reaches exactly as far as
-retention does — every external call, and anything abandoned part-way — which is
-why it shows up most on the integrations and rarely on an entity tool. It is also
+retention does — every external call *the user made*, and anything abandoned
+part-way — which is why it shows up most on the integrations, rarely on an entity
+tool, and never with something a script chose. It is also
 per-argument rather than per-call: an argument the last call left blank is
 answered by the one before it that didn't.
 
@@ -300,14 +301,30 @@ resume-then-recancel updating a single entry in place. Each records `startedAt`
 resumed or rerun from another call, so the trail reads as a history rather than a
 set of duplicates.
 
-Retention: a **cancelled** call is kept whenever the tool takes arguments (a
-cancelled argument-less call carries no information). A **settled** call is kept
-only when the tool's reach is `external`. Reads and writes against the entity
-store are far too frequent, and their results far too large, to persist — a
-single scan of a page's worth of entities would exhaust the localStorage quota, which
-`persistentAtom` swallows silently. Every call still *produces* a result: that
-is how errors and confirmations reach the toast layer. Only retention is
-filtered.
+Retention turns on two things, and the first is **who asked**. Every invocation
+carries an `origin`: `user` for a gesture — a hotkey, the palette, a right-click,
+a button — and `code` for a script's, whether a `type: code` entity the user ran
+or an `events` key that ran itself. **Nothing a script did is kept, however far it
+reached.** The log answers "what have I done?", and a script's calls are not that:
+one `events` key runs itself every time an entity is read, so a single script left
+in the tree would fill the log on its own and push the day's actual work off the
+end of it. What a script did is shown where it was run — the code entity's own
+output.
+
+`callToolByName` is the only way into the call machine that isn't a gesture, so it
+is the only place `origin: 'code'` is set. The field is required rather than
+defaulted, so a new way to invoke a tool has to say which it is.
+
+For a user's call, retention is then the tool's: a **cancelled** one is kept
+whenever the tool takes arguments (a cancelled argument-less call carries no
+information), and a **settled** one only when the tool's reach is `external`.
+Reads and writes against the entity store are far too frequent, and their results
+far too large, to persist — a single scan of a page's worth of entities would
+exhaust the localStorage quota, which `persistentAtom` swallows silently.
+
+Every call still *produces* a result, whatever its origin and whether or not it is
+kept: that is how errors and confirmations reach the toast layer, and a script's
+failing call has to raise one like any other. Only retention is filtered.
 
 A call that would be kept is recorded **before** it runs, as `running`, and
 settled in place afterwards. `claude.runPrompt` holds a session open for minutes,

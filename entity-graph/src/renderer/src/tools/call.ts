@@ -50,13 +50,41 @@ export function onCallSettled(listener: Listener): () => void {
 }
 
 /**
+ * Who asked for a call. `user` is a gesture — a hotkey, the palette, a
+ * right-click, a button; `code` is a script's, whether a `type: code` entity the
+ * user ran or an `events` key that ran itself.
+ */
+type CallOrigin = 'user' | 'code'
+
+/** One invocation: what to run, with what, and on whose behalf. */
+interface Invocation {
+  /** Identifies this invocation — not the tool. */
+  callId: string
+  toolId: string
+  args: ArgValues
+  context: CallContext
+  /** The recorded call this one was resumed or rerun from. */
+  fromCallId?: string
+  origin: CallOrigin
+}
+
+/**
  * Retention: a cancelled call is worth keeping when the tool takes arguments
  * (there's something to resume), and a finished one only when the tool reached
  * outside the app. Source reads and writes are far too frequent, and their
  * results far too large, to persist.
+ *
+ * And nothing a script did is kept, however far it reached. The log answers "what
+ * have I done?", and a script's calls are not that: one `events` key runs itself
+ * every time an entity is read, so a single script left in the tree would fill
+ * the log on its own and push the day's actual work off the end of it. What a
+ * script did is shown where it was run — the code entity's own output — and its
+ * failures still reach the toast layer, which is announced separately from this.
  */
-const worthKeeping = (tool: ToolSpec, outcome: CallOutcome): boolean =>
-  outcome.kind === 'cancelled' ? argsOf(tool).length > 0 : tool.reach === 'external'
+const worthKeeping = (call: Invocation, tool: ToolSpec, outcome: CallOutcome): boolean => {
+  if (call.origin === 'code') return false
+  return outcome.kind === 'cancelled' ? argsOf(tool).length > 0 : tool.reach === 'external'
+}
 
 /**
  * How much of a result is kept, and how many results. The log is persisted, and
@@ -81,6 +109,17 @@ function bounded(outcome: CallOutcome): CallOutcome {
   return { ...outcome, data: { truncated: text.length, opening: text.slice(0, RESULT_CHARS) } }
 }
 
+/** An invocation as the log keeps it — which is everything but who asked. */
+const recordOf = (call: Invocation, outcome: CallOutcome): RecordedCall => ({
+  callId: call.callId,
+  toolId: call.toolId,
+  args: call.args,
+  context: call.context,
+  ...(call.fromCallId ? { fromCallId: call.fromCallId } : {}),
+  settledAt: Date.now(),
+  outcome,
+})
+
 /**
  * Put a call in the log *before* it has run, so that one taking minutes — a
  * Claude session — can be watched rather than appearing from nowhere once it is
@@ -91,21 +130,19 @@ function bounded(outcome: CallOutcome): CallOutcome {
  * record written and then removed on every press is precisely the cost the note
  * in `settle` is about.
  */
-function markRunning(call: Omit<RecordedCall, 'settledAt' | 'outcome'>, tool: ToolSpec): void {
+function markRunning(call: Invocation, tool: ToolSpec): void {
   const outcome: CallOutcome = { kind: 'running' }
-  if (!worthKeeping(tool, outcome)) return
-  const record: RecordedCall = { ...call, settledAt: Date.now(), outcome }
+  if (!worthKeeping(call, tool, outcome)) return
+  const record = recordOf(call, outcome)
   callsAtom.set((list) =>
     [record, ...list.filter((r) => r.callId !== record.callId)].slice(0, LOG_LENGTH),
   )
 }
 
-function settle(
-  call: { callId: string; toolId: string; args: ArgValues; context: CallContext; fromCallId?: string },
-  tool: ToolSpec,
-  outcome: CallOutcome,
-): void {
-  const record: RecordedCall = { ...call, settledAt: Date.now(), outcome: bounded(outcome) }
+function settle(call: Invocation, tool: ToolSpec, outcome: CallOutcome): void {
+  const record = recordOf(call, bounded(outcome))
+  // Announced whatever its origin, and whether or not it is kept: a script's
+  // failing call still has to reach the toast layer.
   listeners.forEach((l) => l(record))
   // Keyed by callId, so resuming and re-settling updates one entry in place
   // rather than leaving a stale row behind.
@@ -120,7 +157,7 @@ function settle(
   // their contexts and results, inside the keystroke that moved the cursor.
   callsAtom.set((list) => {
     const held = list.some((r) => r.callId === record.callId)
-    if (!worthKeeping(tool, outcome)) {
+    if (!worthKeeping(call, tool, outcome)) {
       return held ? list.filter((r) => r.callId !== record.callId) : list
     }
     const without = held ? list.filter((r) => r.callId !== record.callId) : list
@@ -131,13 +168,7 @@ function settle(
 // --- Running ----------------------------------------------------------------
 
 /** Run a call to completion, recording it. The outcome is settled either way. */
-async function execute(call: {
-  callId: string
-  toolId: string
-  args: ArgValues
-  context: CallContext
-  fromCallId?: string
-}): Promise<CallOutcome> {
+async function execute(call: Invocation): Promise<CallOutcome> {
   const tool = findTool(call.toolId)
   const pending = pendingAtom.get()
   if (pending?.callId === call.callId) pendingAtom.set(null)
@@ -209,7 +240,7 @@ function begin(
   const args = { ...seedArgs(tool, context), ...(seed?.args ?? {}) }
   const empty = firstEmpty(tool, args)
   if (empty == null && (seed?.autorun ?? true)) {
-    void execute({ callId, toolId, args, context, fromCallId: seed?.fromCallId })
+    void execute({ callId, toolId, args, context, fromCallId: seed?.fromCallId, origin: 'user' })
     return
   }
   // Nothing outstanding and nothing to show: a tool with no arguments at all has
@@ -299,7 +330,9 @@ export const contextWithin = (within: string[]): CallContext =>
  * run's output or catch it.
  *
  * No argument is ever prompted for: a script has no one to ask, so a missing
- * required argument is an error like any other.
+ * required argument is an error like any other. Nor is it kept in the log, which
+ * records what the user did — this is the one path into the machine that isn't a
+ * gesture, so it is the one place `origin: 'code'` is set.
  */
 export async function callToolByName(
   name: string,
@@ -318,6 +351,7 @@ export async function callToolByName(
     toolId: tool.id,
     args: argsFromCall(tool, passed),
     context,
+    origin: 'code',
   })
   if (outcome.kind === 'error') throw new Error(outcome.message)
   return outcome.kind === 'success' ? outcome.data : undefined
@@ -408,6 +442,7 @@ export function submitCall(): string | null {
     args: p.args,
     context: p.context,
     fromCallId: p.fromCallId,
+    origin: 'user',
   })
   return null
 }
@@ -454,7 +489,15 @@ export function cancelCall(): void {
   const tool = findTool(p.toolId)
   if (!tool) return
   settle(
-    { callId: p.callId, toolId: p.toolId, args: p.args, context: p.context, fromCallId: p.fromCallId },
+    {
+      callId: p.callId,
+      toolId: p.toolId,
+      args: p.args,
+      context: p.context,
+      fromCallId: p.fromCallId,
+      // Only a pending call can be abandoned, and only the user has one.
+      origin: 'user',
+    },
     tool,
     { kind: 'cancelled' },
   )
@@ -543,6 +586,9 @@ export function rerunRecordedCall(callId: string): void {
     args: call.args,
     context: call.context,
     fromCallId: replay ? call.fromCallId : call.callId,
+    // Pressed in the activity panel, so it is the user's however the original
+    // came about — and a call that isn't in the log cannot be rerun from it.
+    origin: 'user',
   })
 }
 
