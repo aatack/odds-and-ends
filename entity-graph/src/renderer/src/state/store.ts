@@ -44,7 +44,7 @@ callsAtom.set((list) =>
   list.some((call) => call.outcome.kind === 'running')
     ? list.map((call) =>
         call.outcome.kind === 'running'
-          ? { ...call, outcome: { kind: 'error', message: 'Interrupted — the app closed while it ran' } }
+          ? { ...call, outcome: { kind: 'error', message: 'Interrupted — the app restarted while it ran' } }
           : call,
       )
     : list,
