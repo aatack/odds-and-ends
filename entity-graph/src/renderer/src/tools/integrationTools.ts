@@ -92,8 +92,12 @@ const clip = (text: string, limit = 160): string =>
  * saying: what the service said back, then what the thing *is*, then where it
  * is, and failing all three how many of them came back. The toast is a
  * confirmation — the whole result is in the activity log.
+ *
+ * `result` trails the rest because it is the vaguest of these names, and the one
+ * a payload is least likely to have meant as its headline — but it is what a
+ * Claude session's reply comes back under, and that is worth a toast.
  */
-const TELLING = ['output', 'text', 'title', 'permalink', 'url']
+const TELLING = ['output', 'text', 'title', 'permalink', 'url', 'result']
 
 function summarise(data: unknown): string | null {
   if (typeof data === 'string') return data.trim() ? clip(data.trim()) : null

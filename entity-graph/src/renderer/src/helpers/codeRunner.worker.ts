@@ -64,12 +64,18 @@ export type ToolReply = { ok: true; value?: unknown } | { ok: false; error: stri
 // A hard ceiling so a wedged VM can't hold the worker forever even if the user
 // never presses Stop. The Stop button terminates the worker long before this.
 // Time spent blocked in a tool call doesn't count against it — a script that
-// waits two minutes on Claude has not run away.
+// waits half an hour on a Claude session has not run away.
 const DEADLINE_MS = 10_000
 const MEMORY_LIMIT = 64 * 1024 * 1024
 
-/** How long a single tool call may block before the script is told it failed. */
-const TOOL_TIMEOUT_MS = 5 * 60_000
+/**
+ * How long a single tool call may block before the script is told it failed. Well
+ * past the longest a tool can legitimately take — `claude.runPrompt` holds a
+ * session open for up to half an hour — because this is a backstop against an
+ * answer that is never coming, not a budget for one that is. Stop is what
+ * interrupts a call you have changed your mind about.
+ */
+const TOOL_TIMEOUT_MS = 35 * 60_000
 
 // The shared cells the bridge runs over, allocated once and reused: this worker
 // runs one script at a time, and one call within it at a time, so a call that has
@@ -167,7 +173,8 @@ function callTool(id: string, name: string, argsJson: string): string {
     // after this, and that answer must not be mistaken for the next call's. The
     // next one allocates a fresh pair, which is why reuse is safe otherwise.
     bridge = null
-    return JSON.stringify({ ok: false, error: `${name} did not answer within five minutes` })
+    const minutes = Math.round(TOOL_TIMEOUT_MS / 60_000)
+    return JSON.stringify({ ok: false, error: `${name} did not answer within ${minutes} minutes` })
   }
   const length = Atomics.load(control, 1)
   // `slice` copies out of shared memory into a buffer of our own, which is what

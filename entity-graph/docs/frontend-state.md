@@ -266,11 +266,12 @@ link waits for its far end.
 
 ## The call log
 
-One list, not two: cancelled and settled calls differ only by their `outcome`
-(`cancelled` / `success` / `error`), which keeps resume-then-recancel updating a
-single entry in place. Each records `startedAt` (in the immutable context) and
-`settledAt`, and a `fromCallId` when it was resumed or rerun from another call,
-so the trail reads as a history rather than a set of duplicates.
+One list, not two: cancelled, running and settled calls differ only by their
+`outcome` (`cancelled` / `running` / `success` / `error`), which keeps
+resume-then-recancel updating a single entry in place. Each records `startedAt`
+(in the immutable context) and `settledAt`, and a `fromCallId` when it was
+resumed or rerun from another call, so the trail reads as a history rather than a
+set of duplicates.
 
 Retention: a **cancelled** call is kept whenever the tool takes arguments (a
 cancelled argument-less call carries no information). A **settled** call is kept
@@ -280,6 +281,15 @@ single scan of a page's worth of entities would exhaust the localStorage quota, 
 `persistentAtom` swallows silently. Every call still *produces* a result: that
 is how errors and confirmations reach the toast layer. Only retention is
 filtered.
+
+A call that would be kept is recorded **before** it runs, as `running`, and
+settled in place afterwards. `claude.runPrompt` holds a session open for minutes,
+and a log it only appears in once it is over is no use while you are waiting for
+it; the row offers nothing to press until it answers, and shows when it started
+rather than pretending to be done. Anything still marked running in the persisted
+log was running when the window closed and can never answer now, so it is settled
+as interrupted on the way back in — a row that says "Running" for ever is a lie
+the log tells about itself.
 
 Kept calls are bounded twice over, because the same quota argument applies to
 the ones that *are* kept: the log holds its most recent 200 entries, and a

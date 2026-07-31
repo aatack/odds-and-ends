@@ -1,8 +1,9 @@
 # Integrations
 
 The server can reach three things outside itself: **GitHub**, **Slack**, and
-**Claude Code in the cloud**. They live in `src/integrations/`, they are listed
-in one registry, and there is exactly one way to invoke one:
+**Claude Code**, the last of them on this machine rather than over a network.
+They live in `src/integrations/`, they are listed in one registry, and there is
+exactly one way to invoke one:
 
 ```
 GET  /tools     → the list, each with a JSON Schema for its arguments
@@ -234,59 +235,78 @@ handful of lookups rather than one per conversation.
 
 ## Claude
 
-Cloud Claude Code sessions, through the **routines** (remote-trigger) API at
-`https://api.anthropic.com/v1/code/…`.
-
-> ⚠ **This one is a stopgap, and it is unverified.** The routines API is
-> undocumented and was implemented from how the Claude Code CLI calls it. The
-> request shapes here are a best guess; expect to adjust
-> `src/integrations/claude.ts` the first time you run it. `github.*` and
-> `slack.*` are on documented, stable interfaces and are not in the same boat.
+Headless Claude Code sessions **on this machine**, through the
+[`claude` CLI](https://claude.com/claude-code), which must be on the server's
+`PATH`.
 
 ### Authentication
 
-```
-CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat…
-CLAUDE_ENVIRONMENT_ID=env_…
-CLAUDE_DEFAULT_REPO=aatack/odds-and-ends
-CLAUDE_DEFAULT_MODEL=claude-sonnet-5      # optional
-CLAUDE_CODE_API_BASE_URL=…                # optional; defaults to api.anthropic.com
-```
-
-Get the token with:
-
-```sh
-claude setup-token
-```
-
-which mints a long-lived OAuth token tied to your claude.ai account. The
-environment id is the cloud environment a session runs in — list yours at
-<https://claude.ai/code/routines> (creating a routine there shows them), or ask
-Claude Code to `/schedule` and read the ids it offers.
+None to configure: whatever `claude` is already signed in as on this machine is
+what runs. Nothing goes in `.env`.
 
 ### Tools
 
 | id | what it does |
 |----|--------------|
-| `claude.startSession` | start a cloud session on a repo with a prompt |
-| `claude.followUpSession` | send another turn to a running session |
-| `claude.listSessions` | recent sessions — where a session id comes from |
+| `claude.runPrompt` | run a session in a directory and wait for its JSON |
 
-**Starting a session creates a routine.** The API has no "just run a session"
-call, so `claude.startSession` creates a one-off routine, leaves it **disabled**
-so it can never fire on its own, and runs it immediately. It returns the routine
-id and a link to <https://claude.ai/code/routines/…>. Routines cannot be deleted
-from the API, so these accumulate — prune them in the web UI.
+```
+POST /runTool  { "tool": "claude.runPrompt", "args": {
+  "path": "~/repos/local-helpers",
+  "prompt": "Summarise what changed this week",
+  "sessionId": "weekly-summary"
+}}
+```
 
-**Following up does not go through a routine**, though starting does. Re-running
-a routine starts a *fresh* session on a fresh checkout, which is not a follow-up
-in any sense that matters — it drops everything the session had learnt. So
-`claude.followUpSession` posts the turn to `/v1/code/sessions/{id}/events`
-instead, which is the only call that continues a conversation. Change it if the
-routines API grows a real follow-up.
+It runs `claude --print --output-format json` in `path`, with the prompt on
+standard input — so a prompt can be as long as you like, and never reaches an
+argument vector or `ps`. The result is the CLI's JSON verbatim: `result` is what
+Claude said, `session_id` the conversation it said it in, plus the turn count,
+duration, cost and token usage.
 
-Sessions get `Bash, Read, Write, Edit, Glob, Grep`; change `ALLOWED_TOOLS` in
-`src/integrations/claude.ts` if that isn't right.
+**`~` is expanded**, since these paths are named by hand. A relative path
+resolves against the *server's* working directory, which is rarely what anyone
+means, so an error names the absolute path it went looking for.
+
+#### The session id names a conversation
+
+Pass one you have used before and the session carries on where it left off; pass
+an unused one and a new session starts. That is the whole of the contract, and it
+is deliberately the caller's to keep — the caller is usually a `type: code`
+entity, which has somewhere to put a session id and knows which conversation it
+means.
+
+Two things it does not have, hence two accommodations:
+
+- **It need not be a UUID.** The CLI takes nothing else, so anything that isn't
+  one is hashed into one. The same string always yields the same UUID, so a name
+  — `"weekly-summary"`, an entity id — works as a session id. The `session_id`
+  that comes back is the derived UUID, not the name.
+- **A session id is scoped to its directory.** Sessions are stored per project,
+  so the same id in two paths is two conversations. The CLI has no "resume it, or
+  start it if it isn't there", so both are tried in turn: resume first, because
+  being wrong about it is free — it looks for the transcript before it reaches
+  the API, and says so in a line and an exit code.
+
+#### It runs with permissions bypassed, and it blocks
+
+`--permission-mode bypassPermissions`: there is nobody here to answer a prompt,
+and a session that can only read is not worth starting. **This is arbitrary code
+execution on this machine, on purpose** — that is what `safety: 'dangerous'`
+means here, more literally than for the other integrations.
+
+The call does not return until the session does, up to a **30-minute** ceiling,
+past which the process is killed as wedged. Two consequences worth knowing:
+
+- The app's main process does not use `fetch` for `/runTool`, because it cannot:
+  undici abandons a response whose headers haven't arrived within five minutes
+  and the fetch API has no way to say otherwise. It goes over `node:http`.
+- A call in flight shows as **Running** in the app's activity log, and settles
+  in place when it answers. From a `type: code` entity the call is synchronous
+  like any other, and the script simply waits.
+
+A session that fails part-way still prints its JSON and can still exit cleanly;
+`is_error` in that JSON is treated as a failed call, with the CLI's own words.
 
 ---
 
