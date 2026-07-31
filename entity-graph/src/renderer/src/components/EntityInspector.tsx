@@ -5,6 +5,7 @@ import { entitiesAtom, refreshDerived, refreshEntities, type LoadState } from '.
 import { cn } from '../helpers/cn'
 import { useAtomValue } from '../state/hooks'
 import { clearUndo } from '../state/undo'
+import { EntityPill } from './EntityPill'
 import { Button } from './ui/Button'
 import { Field } from './ui/Field'
 import { IconButton } from './ui/IconButton'
@@ -372,8 +373,16 @@ function Links({
       ) : (
         <div className="overflow-hidden rounded-md bg-gray-50 font-mono text-xs">
           {ids.map((id) => (
-            <div key={id} className="flex items-center justify-between gap-2 px-3 py-1">
+            <div key={id} className="flex items-center gap-2 px-3 py-1">
               <span className="truncate text-gray-900">{id}</span>
+              {/* What the id *is*, beside what it says. A pill rather than a label
+                  because a pill is still the entity: right-click it for the tool
+                  list on that entity, middle-click it for a tab. Asking for the
+                  label is also what fetches it, so a list of ids fills itself in.
+                  No click action of its own — the panel's subject shouldn't change
+                  under a stray click, and there is nowhere to go back to. */}
+              <EntityPill id={id} className="shrink-0" />
+              <div className="flex-1" />
               <IconButton title="Remove link" onClick={() => void onRemove(id)}>
                 <Trash03 size={14} />
               </IconButton>
