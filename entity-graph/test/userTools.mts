@@ -93,7 +93,7 @@ test('turns a note naming itself and a body into a tool', async () => {
     name: 'greet',
     description: 'Say hello',
     arguments: { type: 'object', properties: { who: { type: 'string' } }, required: ['who'] },
-    script: 'tool.toast(`hello ${context.who}`)',
+    script: 'tool.setEntityValue(context.entityId, "text", `hello ${context.who}`)',
   })
   await loadUserTools()
 
