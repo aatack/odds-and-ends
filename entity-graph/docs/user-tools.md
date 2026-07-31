@@ -33,7 +33,7 @@ Values on the note itself. Two are required; everything else has a default.
 | `scope` | `frame` \| `group` \| `app` | no | `app` | Which part of the focus chain a key resolves against. |
 | `reach` | `ui` \| `source` \| `external` | no | `external` | How far it reaches, and so whether its calls are kept in the log. |
 | `key` | string | no | none | A binding: `g`, `shift+g`, `mod+shift+j`. `mod` is Ctrl or ⌘. |
-| `mutates` | boolean | no | `false` | Set it if the body writes without going through a write tool. |
+| `mutates` | boolean | no | `false` | Rarely needed: a body can only write *through* a write tool, and each of those refreshes the frames on its own way out. |
 | `safety` | `pure` \| `safe-mutating` \| `dangerous` | no | `dangerous` | Read by the *server* only, for its capability filters. |
 
 `arguments` is a JSON Schema object, the same shape the server publishes for its
