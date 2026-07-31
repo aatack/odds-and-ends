@@ -13,6 +13,7 @@ import { Button } from './ui/Button'
 import { Popup } from './ui/Popup'
 
 const STATUS: Record<CallOutcome['kind'], { label: string; color: BadgeColor }> = {
+  running: { label: 'Running', color: 'brand' },
   success: { label: 'Done', color: 'success' },
   error: { label: 'Failed', color: 'error' },
   cancelled: { label: 'Cancelled', color: 'gray' },
@@ -92,6 +93,7 @@ function resultText(call: RecordedCall): string | null {
 function CallRow({ call, onClose }: { call: RecordedCall; onClose: () => void }): React.JSX.Element {
   const tool = findTool(call.toolId)
   const status = STATUS[call.outcome.kind]
+  const running = call.outcome.kind === 'running'
   const result = resultText(call)
   const [showResult, setShowResult] = useState(false)
   // A one-line précis of what it was called with, so the row is identifiable
@@ -110,7 +112,9 @@ function CallRow({ call, onClose }: { call: RecordedCall; onClose: () => void })
           <div className="truncate text-[13px] text-gray-800">{tool?.label ?? call.toolId}</div>
           {summary && <div className="truncate font-serif text-xs text-gray-500">{summary}</div>}
           <div className="mt-0.5 text-xs text-gray-400">
-            {relativeTime(call.settledAt)}
+            {/* A running row's timestamp is when it began, which is the only thing
+                worth knowing about a call that hasn't answered yet. */}
+            {running ? `started ${relativeTime(call.settledAt)}` : relativeTime(call.settledAt)}
             {call.outcome.kind === 'error' && (
               <span className="text-error-600"> · {call.outcome.message}</span>
             )}
@@ -121,37 +125,42 @@ function CallRow({ call, onClose }: { call: RecordedCall; onClose: () => void })
           <Badge dot color={status.color}>
             {status.label}
           </Badge>
-          <div className="flex gap-1">
-            {/* The only place a call's result is visible. Tools that reach
-                outside are the ones asked a question, and the log is where the
-                answer stays. */}
-            {result && (
-              <Button size="sm" variant="tertiary" onClick={() => setShowResult((s) => !s)}>
-                {showResult ? 'Hide' : 'Result'}
-              </Button>
-            )}
-            {tool && (
-              <>
-                {/* Only offered when the call has everything it needs: a wizard
-                    abandoned before its last argument has nothing to run. */}
-                {isRunnable(call) && (
-                  <Button size="sm" variant="tertiary" onClick={() => rerunRecordedCall(call.callId)}>
-                    Run
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    onClose()
-                    editRecordedCall(call.callId)
-                  }}
-                >
-                  Edit
+          {/* Nothing to offer on a call that hasn't answered yet: it has no
+              result, and starting a second one — another turn in the same Claude
+              conversation — is the last thing wanted. */}
+          {!running && (
+            <div className="flex gap-1">
+              {/* The only place a call's result is visible. Tools that reach
+                  outside are the ones asked a question, and the log is where the
+                  answer stays. */}
+              {result && (
+                <Button size="sm" variant="tertiary" onClick={() => setShowResult((s) => !s)}>
+                  {showResult ? 'Hide' : 'Result'}
                 </Button>
-              </>
-            )}
-          </div>
+              )}
+              {tool && (
+                <>
+                  {/* Only offered when the call has everything it needs: a wizard
+                      abandoned before its last argument has nothing to run. */}
+                  {isRunnable(call) && (
+                    <Button size="sm" variant="tertiary" onClick={() => rerunRecordedCall(call.callId)}>
+                      Run
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      onClose()
+                      editRecordedCall(call.callId)
+                    }}
+                  >
+                    Edit
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

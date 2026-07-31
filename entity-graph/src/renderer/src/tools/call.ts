@@ -82,6 +82,25 @@ function bounded(outcome: CallOutcome): CallOutcome {
   return { ...outcome, data: { truncated: text.length, opening: text.slice(0, RESULT_CHARS) } }
 }
 
+/**
+ * Put a call in the log *before* it has run, so that one taking minutes — a
+ * Claude session — can be watched rather than appearing from nowhere once it is
+ * over. Recorded under the call's own id, so settling it later updates that row
+ * in place rather than leaving a second one behind.
+ *
+ * Only for calls the log would keep anyway: every keystroke is a call, and a
+ * record written and then removed on every press is precisely the cost the note
+ * in `settle` is about.
+ */
+function markRunning(call: Omit<RecordedCall, 'settledAt' | 'outcome'>, tool: ToolSpec): void {
+  const outcome: CallOutcome = { kind: 'running' }
+  if (!worthKeeping(tool, outcome)) return
+  const record: RecordedCall = { ...call, settledAt: Date.now(), outcome }
+  callsAtom.set((list) =>
+    [record, ...list.filter((r) => r.callId !== record.callId)].slice(0, LOG_LENGTH),
+  )
+}
+
 function settle(
   call: { callId: string; toolId: string; args: ArgValues; context: CallContext; fromCallId?: string },
   tool: ToolSpec,
@@ -134,6 +153,7 @@ async function execute(call: {
     settle(call, tool, failed)
     return failed
   }
+  markRunning(call, tool)
   try {
     const outcome = (await tool.run(resolveArgs(tool, call.args), {
       callId: call.callId,

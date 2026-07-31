@@ -29,9 +29,25 @@ export const layoutAtom = persistentAtom<LayoutState>(
 /** The one call currently being built up, if any. */
 export const pendingAtom = persistentAtom<PendingCall | null>('entity-graph.pending', null)
 
-/** Finished calls — cancelled, succeeded, failed — newest first. */
+/** Recorded calls — running, cancelled, succeeded, failed — newest first. */
 export const callsAtom = persistentAtom<RecordedCall[]>('entity-graph.calls', [], (v) =>
   Array.isArray(v),
+)
+
+// A call still marked running in the persisted log was running when the window
+// closed, and nothing is waiting on it now: whatever the tool went on to do, this
+// window will never hear the answer. Left alone it would say "Running" forever, so
+// it is settled here, on the way in. The list is handed back untouched when there
+// is nothing to fix, which is every load but the rare one — an atom compares by
+// identity, and a needless write here would rewrite the whole log at startup.
+callsAtom.set((list) =>
+  list.some((call) => call.outcome.kind === 'running')
+    ? list.map((call) =>
+        call.outcome.kind === 'running'
+          ? { ...call, outcome: { kind: 'error', message: 'Interrupted — the app closed while it ran' } }
+          : call,
+      )
+    : list,
 )
 
 export const getLayout = (): LayoutState => layoutAtom.get()

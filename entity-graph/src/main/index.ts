@@ -4,6 +4,8 @@ import { existsSync } from 'fs'
 import { mkdir, writeFile } from 'fs/promises'
 import { pathToFileURL } from 'url'
 import { randomBytes } from 'crypto'
+import { request as httpRequest } from 'http'
+import { request as httpsRequest } from 'https'
 import { v4 as uuidv4 } from 'uuid'
 import type { ActiveSource, CurrentSource, NewServer, NewSourceConnection, Server, TokenRow } from '../core/client'
 import { APP_MOUNT, phoneAppUrl, phoneBaseUrl, sourceMount, sourceTarget } from '../core/client'
@@ -42,6 +44,16 @@ const servers = new ServerManager()
 
 class HttpError extends Error {}
 
+/** A response body as JSON, or the error its status calls for. */
+function parseResponse(status: number, statusText: string, text: string): unknown {
+  const data = text ? JSON.parse(text) : undefined
+  if (status < 200 || status >= 300) {
+    const msg = data && typeof data === 'object' && 'error' in data ? (data as { error: string }).error : text
+    throw new HttpError(`HTTP ${status}: ${msg || statusText}`)
+  }
+  return data
+}
+
 /** Perform an authenticated request against a base URL, parsing JSON. */
 async function request(
   baseUrl: string,
@@ -58,13 +70,59 @@ async function request(
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
-  const text = await res.text()
-  const data = text ? JSON.parse(text) : undefined
-  if (!res.ok) {
-    const msg = data && typeof data === 'object' && 'error' in data ? (data as { error: string }).error : text
-    throw new HttpError(`HTTP ${res.status}: ${msg || res.statusText}`)
-  }
-  return data
+  return parseResponse(res.status, res.statusText, await res.text())
+}
+
+/**
+ * The same request, for a call that may take half an hour to answer.
+ *
+ * `fetch` cannot wait that long: undici gives up on a response whose headers
+ * haven't arrived in five minutes (`UND_ERR_HEADERS_TIMEOUT`), and that deadline
+ * is not reachable through the fetch API — there is no option for it. A Claude
+ * session held open on the other end routinely outlasts it, and would surface
+ * here as a bare "fetch failed" with the session still running. `node:http` has
+ * no deadline of its own, so anything unbounded goes over that instead.
+ */
+function patientRequest(
+  baseUrl: string,
+  token: string,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<unknown> {
+  const url = new URL(`${baseUrl}${path}`)
+  const send = url.protocol === 'https:' ? httpsRequest : httpRequest
+  const payload = body !== undefined ? Buffer.from(JSON.stringify(body), 'utf8') : undefined
+  return new Promise((resolve, reject) => {
+    const req = send(
+      url,
+      {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(payload
+            ? { 'Content-Type': 'application/json', 'Content-Length': payload.length }
+            : {}),
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (chunk: Buffer) => chunks.push(chunk))
+        res.on('error', (e: Error) => reject(new HttpError(e.message)))
+        res.on('end', () => {
+          try {
+            const text = Buffer.concat(chunks).toString('utf8')
+            resolve(parseResponse(res.statusCode ?? 0, res.statusMessage ?? '', text))
+          } catch (e) {
+            reject(e instanceof Error ? e : new HttpError(String(e)))
+          }
+        })
+      },
+    )
+    req.on('error', (e: Error) => reject(new HttpError(e.message)))
+    if (payload) req.write(payload)
+    req.end()
+  })
 }
 
 function requireServer(serverId: string): Server {
@@ -73,11 +131,17 @@ function requireServer(serverId: string): Server {
   return server
 }
 
-/** Admin request against a server that has admin access. */
-function adminRequest(serverId: string, method: string, path: string, body?: unknown): Promise<unknown> {
+/** Where an admin call goes, and what it identifies itself with. */
+function adminAccess(serverId: string): { baseUrl: string; token: string } {
   const server = requireServer(serverId)
   if (!server.adminToken) throw new HttpError('server has no admin access')
-  return request(server.baseUrl, server.adminToken, method, path, body)
+  return { baseUrl: server.baseUrl, token: server.adminToken }
+}
+
+/** Admin request against a server that has admin access. */
+function adminRequest(serverId: string, method: string, path: string, body?: unknown): Promise<unknown> {
+  const { baseUrl, token } = adminAccess(serverId)
+  return request(baseUrl, token, method, path, body)
 }
 
 // ---------------------------------------------------------------------------
@@ -274,8 +338,13 @@ ipcMain.handle('source:call', (_e, id: string, tool: string, args: unknown) => s
 ipcMain.handle('integrations:tools', (_e, serverId: string) =>
   adminRequest(serverId, 'GET', '/tools'),
 )
+// Waits as long as the tool takes: `claude.runPrompt` holds the connection open
+// for the whole session, which is minutes and can be tens of them. Nothing on
+// this side gives up first — the call shows as running in the activity log until
+// the server answers.
 ipcMain.handle('integrations:run', async (_e, serverId: string, tool: string, args: unknown) => {
-  const out = (await adminRequest(serverId, 'POST', '/runTool', { tool, args })) as
+  const { baseUrl, token } = adminAccess(serverId)
+  const out = (await patientRequest(baseUrl, token, 'POST', '/runTool', { tool, args })) as
     | { status: 'success'; result: unknown }
     | { status: 'error'; message: string }
   if (out.status === 'error') throw new HttpError(out.message)

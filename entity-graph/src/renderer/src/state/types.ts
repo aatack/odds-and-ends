@@ -98,17 +98,24 @@ export interface PendingCall {
 }
 
 export type CallOutcome =
+  /**
+   * Still going. Only calls that reach outside the app are recorded this early —
+   * a Claude session runs for minutes, and a log it appears in only once it is
+   * over is no use while you are waiting for it.
+   */
+  | { kind: 'running' }
   | { kind: 'cancelled' }
   | { kind: 'success'; data?: unknown; message?: string }
   | { kind: 'error'; message: string }
 
-/** A call that has finished — cancelled, succeeded or failed. */
+/** A call in the log: running, or cancelled, succeeded or failed. */
 export interface RecordedCall {
   callId: string
-  /** Non-null: a call cannot finish without a tool. */
+  /** Non-null: a call cannot be recorded without a tool. */
   toolId: string
   args: ArgValues
   context: CallContext
+  /** When the outcome was written — so, for a running call, when it began. */
   settledAt: number
   outcome: CallOutcome
   fromCallId?: string
