@@ -96,7 +96,8 @@ test('has nothing to load from a store with no @tools entity', async () => {
 test('turns a note naming itself and a body into a tool', async () => {
   open()
   await defineTool('greet', {
-    text: 'Greet someone',
+    // The outline's text is a different job, and is not read.
+    text: 'Slack things',
     name: 'greet',
     description: 'Say hello',
     arguments: [{ name: 'who', type: 'string', required: true }],
@@ -106,8 +107,7 @@ test('turns a note naming itself and a body into a tool', async () => {
 
   const greet = byId('greet')
   assert.ok(greet, 'the tool was not loaded')
-  // The note's own text is what the outline shows, so it is what the palette does.
-  assert.equal(greet.label, 'Greet someone')
+  assert.equal(greet.label, 'greet')
   assert.deepEqual(greet.args?.map((a) => [a.name, a.label, a.kind, a.optional]), [
     ['who', 'Who', 'string', undefined],
   ])
@@ -205,7 +205,7 @@ test('says when nothing is linked under @tools at all', async () => {
   assert.deepEqual(found.skipped, [])
 })
 
-test('says which of two tools sharing a name was passed over', async () => {
+test('says which of two tools sharing an id was passed over', async () => {
   open()
   await defineTool('first', { name: 'shared', execute: '() => null' })
   await defineTool('second', { name: 'shared', execute: '() => null' })
@@ -213,7 +213,7 @@ test('says which of two tools sharing a name was passed over', async () => {
 
   assert.deepEqual(found.tools.map((t) => t.id), ['shared'])
   assert.deepEqual(found.skipped, [
-    { id: 'second', why: 'another tool is already called shared' },
+    { id: 'second', why: 'another tool already answers to shared' },
   ])
 })
 
@@ -359,11 +359,37 @@ test('takes a tool with no arguments as complete, not as unfinished', async () =
   assert.equal(sync.args, undefined)
 })
 
+test('takes its name from `name` and its id from `id`, and ignores `text`', async () => {
+  open()
+  await defineTool('n1', {
+    text: 'a heading this sits under',
+    label: 'not read either',
+    name: 'Greet someone',
+    id: 'greet',
+    execute: '() => null',
+  })
+  await loadUserTools()
+
+  const greet = byId('greet')
+  assert.ok(greet, 'the tool should be found by its `id`')
+  assert.equal(greet.label, 'Greet someone')
+  // Reachable from a script by the id, and by the camel case of the name.
+  assert.equal(findToolByName('greet')?.id, 'greet')
+  assert.equal(findToolByName('greetSomeone')?.id, 'greet')
+})
+
+test('falls back to the name when a definition asks for no id', async () => {
+  open()
+  await defineTool('n1', { name: 'greet', execute: '() => null' })
+  await loadUserTools()
+
+  assert.deepEqual(loaded().map((t) => [t.id, t.label]), [['greet', 'greet']])
+})
+
 test('reads the scope, reach, mutation and key a definition asks for', async () => {
   open()
   await defineTool('jump', {
     name: 'jump',
-    label: 'Jump about',
     scope: 'frame',
     reach: 'ui',
     mutates: true,
@@ -374,8 +400,6 @@ test('reads the scope, reach, mutation and key a definition asks for', async () 
 
   const jump = byId('jump')
   assert.ok(jump)
-  // `label` wins over the note's text, and there is none here anyway.
-  assert.equal(jump.label, 'Jump about')
   assert.equal(jump.scope, 'frame')
   assert.equal(jump.reach, 'ui')
   assert.equal(jump.mutates, true)
@@ -393,23 +417,14 @@ test('ignores a scope or reach that is not one of the app’s', async () => {
   assert.equal(wonky.reach, 'external')
 })
 
-test('keeps the outline order, and the first of two tools sharing a name', async () => {
+test('keeps the outline order, and the first of two tools sharing an id', async () => {
   open()
-  await defineTool('first', { name: 'shared', label: 'The first', execute: '() => null' })
+  await defineTool('first', { name: 'The first', id: 'shared', execute: '() => null' })
   await defineTool('other', { name: 'other', execute: '() => null' })
-  await defineTool('second', { name: 'shared', label: 'The second', execute: '() => null' })
+  await defineTool('second', { name: 'The second', id: 'shared', execute: '() => null' })
   await loadUserTools()
 
   assert.deepEqual(loaded().map((t) => t.label), ['The first', 'other'])
-})
-
-test('is reachable from a script by its name and by its label', async () => {
-  open()
-  await defineTool('greet', { name: 'greet', label: 'Greet someone', execute: '() => null' })
-  await loadUserTools()
-
-  assert.equal(findToolByName('greet')?.id, 'greet')
-  assert.equal(findToolByName('greetSomeone')?.id, 'greet')
 })
 
 test('cannot rebind a key one of the app’s own tools already has', async () => {

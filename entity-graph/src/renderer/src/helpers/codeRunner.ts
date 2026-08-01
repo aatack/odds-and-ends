@@ -8,18 +8,19 @@ import type {
   WorkerMessage,
 } from './codeRunner.worker'
 
-// Local execution of `type: code` entities in one sandboxed QuickJS worker.
-// A browser service rather than state: the results are runtime-only and never
-// written back, and the worker is created lazily on the first run and torn down
-// on Stop (terminating it is how a runaway script is interrupted).
+// Local execution of scripts — `type: code` entities, `events` keys, and the
+// bodies of the tools the user wrote — in sandboxed QuickJS workers. A browser
+// service rather than state: the results are runtime-only and never written back,
+// and workers are made lazily and killed on Stop (terminating one is how a runaway
+// script is interrupted).
 //
 // This side also answers the scripts' tool calls. A script calls a tool
 // synchronously (see the worker for why), which it can only do by blocking its
 // own thread — so the work happens here, on the thread that owns the registry,
 // and the answer is written into the shared buffers the worker is waiting on.
 //
-// v0 caveat: one worker runs scripts sequentially, and Stop kills it — so
-// stopping one run aborts any other in flight. In practice one runs at a time.
+// A blocked worker is why there is a pool rather than one worker; see it below.
+// Stop kills all of them, so stopping one run aborts any other in flight.
 
 export type CodeRunState =
   | { status: 'running' }
@@ -31,10 +32,33 @@ export const codeRunsAtom = atom<Record<string, CodeRunState>>({})
 const setRun = (id: string, state: CodeRunState): void =>
   codeRunsAtom.set((runs) => ({ ...runs, [id]: state }))
 
-let worker: Worker | null = null
+// A pool, and it has to be one. A script blocks its own thread while a tool call
+// is answered — that is what buys `tool.x()` its lack of `await` — so a worker
+// waiting on a call cannot pick up another script in the meantime. And answering
+// a call is exactly when another script may need to run: a tool the user wrote is
+// a body of its own, and `tool.myTool()` from a script would otherwise post it to
+// the very worker that is blocked waiting for it, which is a deadlock and looks
+// like a call that never comes back.
+//
+// So a run takes a worker for itself and gives it back when it settles. Nesting
+// is what grows the pool; sequential runs reuse the one worker and pay for the
+// WASM module once.
+
+/** Free to take. Kept rather than terminated: starting one is not cheap. */
+const idle: Worker[] = []
+
+/** Every worker this module has made and not killed, busy or idle. */
+const live = new Set<Worker>()
 
 /**
- * The context each running script was started in, by entity id. Kept here rather
+ * How deep the nesting may go. A tool that calls itself would otherwise spawn
+ * workers until the tab dies; this turns that into an error naming what happened.
+ * Well past any honest nesting — a script calling a tool that calls a tool.
+ */
+const MAX_WORKERS = 8
+
+/**
+ * The context each running script was started in, by run id. Kept here rather
  * than sent along with every tool call: the script is given a copy of its values,
  * but a call it makes is recorded against the whole context, which is not the
  * sandbox's to hand back.
@@ -44,8 +68,11 @@ const contexts = new Map<string, CallContext>()
 /** Run id → whoever is waiting for that run to finish. */
 const waiting = new Map<string, (r: RunResponse) => void>()
 
-function ensureWorker(): Worker {
-  if (worker) return worker
+/** A worker to run one script on, or null when too many are already nested. */
+function takeWorker(): Worker | null {
+  const spare = idle.pop()
+  if (spare) return spare
+  if (live.size >= MAX_WORKERS) return null
   const next = new Worker(new URL('./codeRunner.worker.ts', import.meta.url), { type: 'module' })
   next.onmessage = (e: MessageEvent<WorkerMessage>): void => {
     const r = e.data
@@ -58,17 +85,36 @@ function ensureWorker(): Worker {
     waiting.delete(r.id)
     settle?.(r)
   }
-  worker = next
+  live.add(next)
   return next
+}
+
+/** Hand a settled worker back, unless Stop has since killed everything. */
+const releaseWorker = (worker: Worker): void => {
+  if (live.has(worker)) idle.push(worker)
 }
 
 /** Hand a script to the sandbox and wait for whatever it comes back with. */
 function execute(id: string, code: string, context: CallContext): Promise<RunResponse> {
-  contexts.set(id, context)
   return new Promise((resolve) => {
-    waiting.set(id, resolve)
+    const worker = takeWorker()
+    if (!worker) {
+      resolve({
+        kind: 'result',
+        id,
+        ok: false,
+        logs: [],
+        error: `More than ${MAX_WORKERS} scripts are waiting on one another — is a tool calling itself?`,
+      })
+      return
+    }
+    contexts.set(id, context)
+    waiting.set(id, (r) => {
+      releaseWorker(worker)
+      resolve(r)
+    })
     const request: RunRequest = { id, code, context: context.values }
-    ensureWorker().postMessage(request)
+    worker.postMessage(request)
   })
 }
 
@@ -151,10 +197,13 @@ export async function runToolScript(
   return { result: response.result, logs: response.logs }
 }
 
-/** Interrupt whatever is running by killing the worker; the next run respawns it. */
+/** Interrupt everything running by killing the workers; the next run respawns one. */
 export function stopCode(): void {
-  worker?.terminate()
-  worker = null
+  for (const worker of live) worker.terminate()
+  // Emptied before anything is settled, so a settling run doesn't hand a worker
+  // that has just been killed back to the pool.
+  live.clear()
+  idle.length = 0
   contexts.clear()
   // Anything the worker was holding will never answer now, so settle it here
   // rather than leave a caller waiting on a thread that no longer exists.

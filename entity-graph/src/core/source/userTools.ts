@@ -41,13 +41,17 @@ export async function loadUserTools(
   for (const id of childIds) {
     const entity = children.get(id)
     if (!entity) continue
-    const { name, description, arguments: args, safety } = entity.values
+    const { id: declaredId, name, description, arguments: args, safety } = entity.values
     if (typeof name !== 'string' || typeof description !== 'string' || args == null) continue
-    if (seen.has(name)) continue
-    seen.add(name)
+    // The id a definition asks to be called by, with the name standing in when it
+    // doesn't ask — the same rule the client reads, so a tool answers to one word
+    // in a script and to the same word over MCP.
+    const toolId = typeof declaredId === 'string' && declaredId ? declaredId : name
+    if (seen.has(toolId)) continue
+    seen.add(toolId)
 
     tools.push({
-      id: name,
+      id: toolId,
       name,
       description,
       safety: isSafety(safety) ? safety : 'dangerous',
@@ -57,7 +61,7 @@ export async function loadUserTools(
       // on. A definition that already holds a schema comes through untouched.
       jsonSchema: toolArgumentsSchema(args),
       handler: async () => {
-        throw new Error(`user-defined tool "${name}" is not yet executable`)
+        throw new Error(`user-defined tool "${toolId}" is not yet executable`)
       },
     })
   }

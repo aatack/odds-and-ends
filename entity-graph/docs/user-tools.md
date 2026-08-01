@@ -22,12 +22,15 @@ is in the palette.
 
 Values on the note itself. Two are required; everything else has a default.
 
+The note's own `text` is **not** read. That is what the outline shows, and it is a
+different job — a definition should be able to sit under a heading of "Slack
+things" without the palette calling the tool that.
+
 | Value | Type | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
-| `name` | string | **yes** | — | The tool's id, and how a script names it: `tool.greet(…)`. |
+| `name` | string | **yes** | — | What the tool is called: the palette label. |
 | `execute` | string | **yes** | — | The body: an expression evaluating to a function. See below. |
-| `text` | string | no | — | The note's own text. Read as the palette label. |
-| `label` | string | no | `text`, then `name` | Palette label, if the note's text isn't the right one. |
+| `id` | string | no | `name` | What a script reaches it by: `tool.greet(…)`. |
 | `description` | string | no | — | Matched by the palette's search. |
 | `arguments` | list | no | no arguments | What it takes, one entry per argument. See below. |
 | `scope` | `frame` \| `group` \| `app` | no | `app` | Which part of the focus chain a key resolves against. |
@@ -131,9 +134,10 @@ user left blank arrives as `undefined`, the same as a parameter that wasn't pass
   the arguments laid in on top. `context.entityId` is the selected entity; a `who`
   argument is also reachable as `context.who` or `context.args.who`, though the
   parameter is the point.
-- `tool` — the whole registry, by the camel case of a tool's label or by its id.
-  Calls are synchronous; no `await`.
-- `console` — logged to the devtools console, prefixed with the tool's name.
+- `tool` — the whole registry, by a tool's `id` or by the camel case of its name.
+  Calls are synchronous; no `await`. That includes the tools you wrote: one may
+  call another, and a `type: code` entity may call any of them.
+- `console` — logged to the devtools console, prefixed with the tool's id.
 
 Don't make it `async`. The sandbox has no promise support, by design — that is what
 buys the synchronous `tool` calls — so a returned promise comes back as nothing.
@@ -173,10 +177,12 @@ where anything the body logged appears under the tool's name.
 - A key that collides with one of the app's own loses. Declared tools trail the
   built-ins in the registry, and the router takes the first tool in a scope that
   binds the key — so a store can't rebind `d` out from under you.
-- The same goes for ids: a definition named after a built-in is unreachable by
-  that name. Two definitions sharing a name keep the first in outline order.
-- The sandbox is the code runner's, and inherits its v0 caveats: one script at a
-  time, and Stop kills the worker, so stopping one run aborts any other in flight.
+- The same goes for ids: a definition taking a built-in's id is unreachable by it.
+  Two definitions sharing an id keep the first in outline order.
+- Nesting is bounded at eight. A script calling a tool that calls a tool is fine;
+  a tool that calls itself without end stops with an error saying so, rather than
+  taking the window with it. Stop kills every worker, so stopping one run aborts
+  any other in flight.
 - The app and the server disagree about what makes a note tool-shaped. The app
   wants a `name` and a body; the server wants a `name`, a `description` and an
   `arguments`, and doesn't look for a body at all — it can't run one. So a tool

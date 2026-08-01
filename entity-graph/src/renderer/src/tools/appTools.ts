@@ -201,6 +201,8 @@ export const APP_TOOLS: ToolSpec[] = [
       if (!toolName) throw new Error('Tool name is required')
       const id = await createEntity(
         {
+          // `text` is what the outline reads; `name` is what the palette does.
+          // The same word to begin with, and free to diverge after.
           text: toolName,
           name: toolName,
           // A function of no arguments, since it has none declared yet. Adding

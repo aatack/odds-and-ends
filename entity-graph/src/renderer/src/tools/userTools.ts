@@ -225,7 +225,7 @@ function keyOf(v: unknown): KeyBinding[] | undefined {
  * Everything else has a default, `arguments` included: a tool that takes none is
  * an ordinary tool, not an incomplete one.
  */
-function toolSpec(tool: Entity, name: string, args: ArgSpec[]): ToolSpec | null {
+function toolSpec(tool: Entity, id: string, name: string, args: ArgSpec[]): ToolSpec | null {
   const body = bodyOf(tool)
   if (!body) return null
 
@@ -236,13 +236,14 @@ function toolSpec(tool: Entity, name: string, args: ArgSpec[]): ToolSpec | null 
   const source = body.applied ? appliedSource(body.code, args) : body.code
 
   return {
-    id: name,
-    // The note's own text is the label when it has one: that is what the user
-    // reads in the outline, so it should be what they read in the palette.
-    label: str(tool.values.label) ?? str(tool.values.text) ?? name,
-    // The id is an alias so a tool found under one name in a script can be found
-    // by the same name in the palette, whatever its label says.
-    aliases: [name, ...(description ? [description] : [])],
+    id,
+    // `name` and nothing else. The note's `text` is what the outline reads, which
+    // is a different job — a definition should be able to sit under a heading of
+    // "Slack things" without the palette calling the tool that.
+    label: name,
+    // The id is an alias so a tool reached by it in a script can be found by the
+    // same word in the palette, whatever the name says.
+    aliases: [id, ...(description ? [description] : [])],
     hint: 'Yours',
     scope: scopeOf(tool.values.scope),
     reach: reachOf(tool.values.reach),
@@ -261,10 +262,10 @@ function toolSpec(tool: Entity, name: string, args: ArgSpec[]): ToolSpec | null 
         ...call.context,
         values: { ...call.context.values, ...values, args: values },
       }
-      const { result, logs } = await runToolScript(name, source, context)
+      const { result, logs } = await runToolScript(id, source, context)
       // Nowhere else for them to go: the tool's result is what the log keeps, and
       // a body debugged by printing has to print somewhere.
-      for (const line of logs) console.log(`[${name}]`, line)
+      for (const line of logs) console.log(`[${id}]`, line)
       return { data: result, message: summarise(result) ?? `Ran ${name}` }
     },
   }
@@ -293,17 +294,21 @@ function toolSpecs(
       skipped.push({ id, why: 'no `name`' })
       continue
     }
-    // First of a name wins, as it does on the server: two tools answering to one
-    // name would make which of them a script reached depend on the child order.
-    if (seen.has(name)) {
-      skipped.push({ id, why: `another tool is already called ${name}` })
+    // What a script reaches it by, and what the palette matches on. Separate from
+    // the name so a tool can read as "Greet someone" and still be called
+    // `tool.greet(…)`; the name stands in when nothing else is said.
+    const toolId = str(entity.values.id) ?? name
+    // First of an id wins, as it does on the server: two tools answering to one
+    // would make which of them a script reached depend on the child order.
+    if (seen.has(toolId)) {
+      skipped.push({ id, why: `another tool already answers to ${toolId}` })
       continue
     }
     // A list of arguments is what a definition writes; a schema is what the
     // prompts are built from. One is nicer to write and the other is what the
     // server publishes, so the conversion lives in core where both can see it.
     const declared = readToolArguments(entity.values.arguments)
-    const spec = toolSpec(entity, name, argsFromSchema(declared.schema))
+    const spec = toolSpec(entity, toolId, name, argsFromSchema(declared.schema))
     if (!spec) {
       skipped.push({ id, why: 'no `execute`' })
       continue
@@ -311,9 +316,9 @@ function toolSpecs(
     // The tool still loads — it just takes nothing, which is exactly the failure
     // that reads as a broken body rather than a broken declaration.
     if (declared.unreadable) {
-      warnings.push({ id: name, why: '`arguments` is not a list, so it takes none' })
+      warnings.push({ id: toolId, why: '`arguments` is not a list, so it takes none' })
     }
-    seen.add(name)
+    seen.add(toolId)
     tools.push(spec)
   }
   return { tools, skipped, warnings }
