@@ -103,6 +103,14 @@ is the long form; the rules that matter day to day:
   the same registry, with their argument prompts derived from the JSON Schema the
   server publishes. So read the list through `allTools()`, never a constant, and
   add a new integration on the server rather than here.
+- **A changeset is one piece of work, held open.** `shift+k` cuts a worktree,
+  writes a `type: changeset` entity under `@changesets`, and starts a Claude
+  session in it; `k` says something else to that session from anywhere in the
+  notes it was started from. `tools/changesetTools.ts` composes the whole of it
+  out of the server's integrations, calling them through `runIntegration` rather
+  than the tool machine — a fetch and a `git add` are not things the user did, and
+  have no business in the log. See [`docs/changesets.md`](./docs/changesets.md),
+  which is also where the `.mcp.json` a worktree needs is explained.
 - **The store defines tools too.** A note under `@tools` becomes a tool of the app
   — palette entry, optional key, callable from other scripts. Its `execute` value
   is an expression evaluating to a function, applied to the declared arguments
