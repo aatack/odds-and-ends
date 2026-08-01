@@ -7,7 +7,7 @@ import { useAtomValue, useGetEntities } from '../state/hooks'
 import { rowKey } from '../state/derive'
 import { runTool } from '../tools/call'
 import { integrationsAtom } from '../tools/integrationTools'
-import { findTool } from '../tools/registry'
+import { findToolByName, nearestToolNames } from '../tools/registry'
 import { userToolsAtom } from '../tools/userTools'
 import type { ToolSpec } from '../tools/types'
 
@@ -51,7 +51,7 @@ export function EntityMarkdown({
     const where: Where = { entityId, path: at.split('\0') }
     return {
       button: ({ arg, text }: MarkdownFieldProps) => (
-        <FieldButton where={where} toolId={arg} label={text} />
+        <FieldButton where={where} name={arg} label={text} />
       ),
       codeEditor: ({ arg, text }: MarkdownFieldProps) => (
         <FieldCodeEditor where={where} field={arg} hint={text} />
@@ -63,31 +63,36 @@ export function EntityMarkdown({
 }
 
 /**
- * The tool a field names. Read through the atoms the declared tools land in, so a
- * button naming an integration stops being dead once the source has opened and
- * said what the server can do.
+ * The tool a field names — by its id, or by the name a script would call it
+ * (`tool.inspectEntity(…)`), since a button in a row of text is naming a tool for
+ * the same reasons a script is. Read through the atoms the declared tools land
+ * in, so a button naming an integration stops being dead once the source has
+ * opened and said what the server can do.
  */
-function useTool(toolId: string): ToolSpec | undefined {
+function useTool(name: string): ToolSpec | undefined {
   const integrations = useAtomValue(integrationsAtom)
   const userTools = useAtomValue(userToolsAtom)
-  return useMemo(() => findTool(toolId), [toolId, integrations, userTools])
+  return useMemo(() => findToolByName(name), [name, integrations, userTools])
 }
 
 /**
- * `[@button:toolId](label)` — the Actions button, shrunk to sit in a line of
- * prose. Pressing it is a gesture like any other: the call is the user's, so it
- * toasts what it did and keeps itself in the activity log on the same terms.
+ * `[@button:tool](label)` — the Actions button, shrunk to sit in a line of prose.
+ * Pressing it is a gesture like any other: the call is the user's, so it toasts
+ * what it did and keeps itself in the activity log on the same terms.
  */
 function FieldButton({
   where,
-  toolId,
+  name,
   label,
 }: {
   where: Where
-  toolId: string
+  name: string
   label: string
 }): React.JSX.Element {
-  const tool = useTool(toolId)
+  const tool = useTool(name)
+  // Named but not found: the same suggestion a script's error would carry, since
+  // there is nowhere else a mistyped name in a row of text can show up.
+  const nearest = tool ? [] : nearestToolNames(name)
   return (
     <Button
       variant="secondary"
@@ -95,13 +100,15 @@ function FieldButton({
       // Small enough not to open up the line it sits in, and in the UI's own sans
       // rather than the serif of the text around it: it is a control, not prose.
       className="mx-0.5 h-5 px-1.5 align-middle font-sans text-[12px]"
-      // A tool that isn't there is said so rather than silently doing nothing —
-      // a mistyped id in a row of text has nowhere else to show up.
       disabled={!tool}
-      title={tool ? tool.label : `No tool “${toolId}”`}
-      onClick={() => runTool(toolId, { within: where.path })}
+      title={
+        tool
+          ? tool.label
+          : `No tool “${name}”${nearest.length ? `. Did you mean ${nearest.join(', ')}?` : ''}`
+      }
+      onClick={() => tool && runTool(tool.id, { within: where.path })}
     >
-      {label || tool?.label || toolId}
+      {label || tool?.label || name}
     </Button>
   )
 }

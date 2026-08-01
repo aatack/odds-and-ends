@@ -184,7 +184,8 @@ label: a bare label can't be right-clicked, and it won't follow the entity.
 
 **Custom fields** (`components/ui/markdownFields.ts`) are how a row's text holds
 something other than text: `[@type:arg](text)` renders as a component instead of
-as markup — `[@button:toolId](label)` is the Actions button inline, and
+as markup — `[@button:tool](label)` is the Actions button inline, naming a tool
+the way a script does (its id, or the camel case of its label), and
 `[@codeEditor:key](hint)` a code box over one of the entity's values. A link is
 still a link; only that label shape, and only for a type the caller can render,
 is taken. `Markdown` takes the renderers and knows nothing else about them;
