@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { Check, ChevronDown, ChevronRight, Play, Square, Stop } from '@untitledui/icons'
 import { TextEditor } from '../components/ui/TextEditor'
 import { CodeBlock } from '../components/ui/CodeBlock'
-import { Markdown } from '../components/ui/Markdown'
+import { EntityMarkdown } from '../components/EntityMarkdown'
 import { ResourceView } from '../components/Resource'
 import { cn } from '../helpers/cn'
 import type { CodeRunState } from '../helpers/codeRunner'
@@ -463,7 +463,9 @@ const RowView = React.memo(function RowView({
             <>
               <ResourceView id={row.id} mimeType={row.mimeType} alt={row.text} />
               {row.text && (
-                <Markdown
+                <EntityMarkdown
+                  entityId={row.id}
+                  path={row.path}
                   text={row.text}
                   className={cn(TEXT, 'text-gray-500')}
                 />
@@ -473,7 +475,9 @@ const RowView = React.memo(function RowView({
             // Rendered, not printed: a line with no markup in it comes out
             // exactly as the plain text did, and the blocks are there for the
             // rows that use them.
-            <Markdown
+            <EntityMarkdown
+              entityId={row.id}
+              path={row.path}
               text={row.text}
               className={cn(
                 TEXT,

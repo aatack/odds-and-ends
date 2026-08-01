@@ -272,12 +272,16 @@ function begin(
  * Run a tool by id, collecting anything it still needs. `display: 'hidden'` is
  * the hotkey path — a toast names what's outstanding rather than taking over the
  * screen.
+ *
+ * `within` aims the call at a row other than the selected one — a button inside
+ * an entity's own text, which acts on that entity however the keyboard is
+ * pointed. See {@link contextWithin}, which is the same thing for a script.
  */
 export function runTool(
   toolId: string,
-  opts: { display?: CallDisplay; extra?: Record<string, unknown> } = {},
+  opts: { display?: CallDisplay; extra?: Record<string, unknown>; within?: string[] } = {},
 ): void {
-  begin(toolId, liveContext({ extra: opts.extra }), opts.display ?? HIDDEN)
+  begin(toolId, liveContext({ extra: opts.extra, within: opts.within }), opts.display ?? HIDDEN)
 }
 
 /**

@@ -182,6 +182,18 @@ surface for a pill that has to be told apart from the text around it).
 `EntityPill` is all three. Reach for these rather than writing out an entity's
 label: a bare label can't be right-clicked, and it won't follow the entity.
 
+**Custom fields** (`components/ui/markdownFields.ts`) are how a row's text holds
+something other than text: `[@type:arg](text)` renders as a component instead of
+as markup — `[@button:toolId](label)` is the Actions button inline, and
+`[@codeEditor:key](hint)` a code box over one of the entity's values. A link is
+still a link; only that label shape, and only for a type the caller can render,
+is taken. `Markdown` takes the renderers and knows nothing else about them;
+`EntityMarkdown` is where they meet the app, and is what the outliner renders a
+row with. A field acts on the entity whose text it appears in and not on the
+selection: its calls are born along that row's path (`runTool`'s `within`, the
+gesture counterpart of `contextWithin`), so a button in a row's prose is a button
+on *that* row wherever the cursor happens to be.
+
 ## Layout
 
 ```

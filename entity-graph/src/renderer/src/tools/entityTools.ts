@@ -349,4 +349,34 @@ export const ENTITY_TOOLS: ToolSpec[] = [
       await writeValue(requireId(entityId, 'Entity id'), String(key), value ?? null)
     },
   },
+  {
+    // What a field inside an entity's text writes with — see
+    // `components/EntityMarkdown`. `entity.value.set` is the same write with a
+    // JSON value and a palette entry; this one takes the text as it stands, and
+    // is unlisted because there is no typing a field's contents into a palette
+    // twice over.
+    //
+    // Every argument carries a default, as the resource tools do and for the same
+    // reason: the call must run straight through rather than stopping to collect
+    // anything, since a pending call is written to localStorage and a code field's
+    // contents have no business being there.
+    id: 'entity.field.set',
+    label: 'Set entity field',
+    scope: 'frame',
+    reach: 'source',
+    mutates: true,
+    listed: false,
+    args: [
+      entityArg(),
+      { name: 'key', label: 'Field key', fromContext: 'fieldKey', hasDefault: true },
+      { name: 'text', label: 'Field text', fromContext: 'fieldText', hasDefault: true },
+    ],
+    run: async ({ entityId, key, text }) => {
+      await writeValue(
+        requireId(entityId, 'Entity id'),
+        requireId(key, 'Field key'),
+        String(text ?? ''),
+      )
+    },
+  },
 ]
