@@ -15,6 +15,7 @@ export function TextEditor({
   autoFocus,
   onKeyDown,
   onBlur,
+  onDraft,
 }: {
   value: string
   setValue: (value: string) => void
@@ -35,6 +36,13 @@ export function TextEditor({
   // Called after the value has been flushed on blur. With `eager` the value is
   // already current, so this is where an eager caller commits.
   onBlur?: () => void
+  /**
+   * Every keystroke, reported rather than committed — for a caller that has to
+   * draw the text as well as hold it, which `eager` can't serve because that
+   * writes on every press. `CodeEditor` is the one: the highlighted layer under
+   * the box has to keep up with what is being typed into it.
+   */
+  onDraft?: (text: string) => void
 }): React.JSX.Element {
   const [draft, setDraft] = useState(value)
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -84,6 +92,7 @@ export function TextEditor({
       style={style}
       onChange={(e) => {
         setDraft(e.target.value)
+        onDraft?.(e.target.value)
         if (eager) setValue(e.target.value)
       }}
       onBlur={() => {
