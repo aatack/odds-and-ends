@@ -139,6 +139,19 @@ a deliberate step rather than something a write triggers: a definition is edited
 value at a time, and rebuilding on every keystroke would mean binding half a key
 and running half a body.
 
+It is also how you find out what the store thinks you wrote. It reports what it
+took and what it passed over:
+
+- `Nothing is linked under @tools` — the note exists but isn't a child of `@tools`.
+  Link it with **Link entity from…**, naming `@tools` as the source.
+- `2 tools: greet, add` — both loaded.
+- `1 tool: greet. Skipped n7 (no \`execute\`)` — the note is linked and was read,
+  but isn't a tool yet. The reason names the value that's missing.
+
+A tool that loaded but does the wrong thing is a different problem: look in the
+activity log, which keeps the result of every run, and in the devtools console,
+where anything the body logged appears under the tool's name.
+
 ## Limits
 
 - A key that collides with one of the app's own loses. Declared tools trail the

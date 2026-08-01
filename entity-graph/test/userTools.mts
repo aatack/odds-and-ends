@@ -183,13 +183,38 @@ test('quotes an argument name rather than writing it as an identifier', async ()
   assert.ok(sourceOf('odd', '(x) => x').endsWith('__tool(context.args["not an identifier"])'))
 })
 
-test('passes over a note under @tools that is not a tool', async () => {
+test('passes over a note under @tools that is not a tool, and says why', async () => {
   open()
   // A heading, and a tool missing the one thing there is no default for.
   await defineTool('heading', { text: 'My tools' })
   await defineTool('bodyless', { name: 'bodyless', description: 'nothing to run' })
-  await loadUserTools()
+  const found = await loadUserTools()
+
   assert.deepEqual(loaded(), [])
+  assert.equal(found.linked, 2)
+  assert.deepEqual(found.skipped, [
+    { id: 'heading', why: 'no `name`' },
+    { id: 'bodyless', why: 'no `execute`' },
+  ])
+})
+
+test('says when nothing is linked under @tools at all', async () => {
+  open()
+  const found = await loadUserTools()
+  assert.equal(found.linked, 0)
+  assert.deepEqual(found.skipped, [])
+})
+
+test('says which of two tools sharing a name was passed over', async () => {
+  open()
+  await defineTool('first', { name: 'shared', execute: '() => null' })
+  await defineTool('second', { name: 'shared', execute: '() => null' })
+  const found = await loadUserTools()
+
+  assert.deepEqual(found.tools.map((t) => t.id), ['shared'])
+  assert.deepEqual(found.skipped, [
+    { id: 'second', why: 'another tool is already called shared' },
+  ])
 })
 
 test('takes its arguments as a list, in the order the list gives them', async () => {

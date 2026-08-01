@@ -33,6 +33,22 @@ export const TOOLS_ENTITY_ID = '@tools'
 
 export const userToolsAtom = atom<ToolSpec[]>([])
 
+/**
+ * What a load found. The skipped list is the point of it: a note under `@tools`
+ * that isn't quite a tool is passed over, and without something to say so the
+ * only symptom is a tool that never appears — which is indistinguishable from
+ * having forgotten to reload.
+ */
+export interface ToolsLoaded {
+  tools: ToolSpec[]
+  /** Children of `@tools` that aren't tools, and what each is missing. */
+  skipped: { id: string; why: string }[]
+  /** How many notes are linked under `@tools` at all. */
+  linked: number
+}
+
+const NOTHING: ToolsLoaded = { tools: [], skipped: [], linked: 0 }
+
 /** Which source's tools these are. Null when none is open. */
 let loadedFrom: string | null = null
 
@@ -56,26 +72,29 @@ async function readEntities(ids: string[]): Promise<Map<string, Entity>> {
  * Failure is not an error. A store with no `@tools` entity simply has no tools of
  * its own, and that is the ordinary case rather than something to report.
  */
-export async function loadUserTools(): Promise<void> {
+export async function loadUserTools(): Promise<ToolsLoaded> {
   const sourceId = currentSourceId()
   if (!sourceId) {
     userToolsAtom.set([])
     loadedFrom = null
-    return
+    return NOTHING
   }
   try {
     const root = (await readEntities([TOOLS_ENTITY_ID])).get(TOOLS_ENTITY_ID)
     const childIds = root?.outboundLinks ?? []
     const defined = await readEntities(childIds)
     // Guard against a slow load landing after the source has moved on.
-    if (currentSourceId() !== sourceId) return
-    userToolsAtom.set(toolSpecs(childIds, defined))
+    if (currentSourceId() !== sourceId) return NOTHING
+    const found = { ...toolSpecs(childIds, defined), linked: childIds.length }
+    userToolsAtom.set(found.tools)
     loadedFrom = sourceId
+    return found
   } catch {
     if (currentSourceId() === sourceId) {
       userToolsAtom.set([])
       loadedFrom = sourceId
     }
+    return NOTHING
   }
 }
 
@@ -204,9 +223,7 @@ function keyOf(v: unknown): KeyBinding[] | undefined {
  * Everything else has a default, `arguments` included: a tool that takes none is
  * an ordinary tool, not an incomplete one.
  */
-function toolSpec(tool: Entity): ToolSpec | null {
-  const name = str(tool.values.name)
-  if (!name) return null
+function toolSpec(tool: Entity, name: string): ToolSpec | null {
   const body = bodyOf(tool)
   if (!body) return null
 
@@ -255,19 +272,41 @@ function toolSpec(tool: Entity): ToolSpec | null {
   }
 }
 
-/** The definitions as tools, in the order `@tools` lists them. */
-function toolSpecs(childIds: string[], defined: Map<string, Entity>): ToolSpec[] {
-  const specs: ToolSpec[] = []
+/**
+ * The definitions as tools, in the order `@tools` lists them, and a note of every
+ * child that didn't become one. Nothing here is an error — a heading under
+ * `@tools` is a perfectly reasonable thing to have — but the reasons are worth
+ * carrying out, because from the outside a skipped definition and an unreloaded
+ * one look exactly alike.
+ */
+function toolSpecs(
+  childIds: string[],
+  defined: Map<string, Entity>,
+): Pick<ToolsLoaded, 'tools' | 'skipped'> {
+  const tools: ToolSpec[] = []
+  const skipped: { id: string; why: string }[] = []
   const seen = new Set<string>()
   for (const id of childIds) {
     const entity = defined.get(id)
     if (!entity) continue
-    const spec = toolSpec(entity)
+    const name = str(entity.values.name)
+    if (!name) {
+      skipped.push({ id, why: 'no `name`' })
+      continue
+    }
     // First of a name wins, as it does on the server: two tools answering to one
     // name would make which of them a script reached depend on the child order.
-    if (!spec || seen.has(spec.id)) continue
-    seen.add(spec.id)
-    specs.push(spec)
+    if (seen.has(name)) {
+      skipped.push({ id, why: `another tool is already called ${name}` })
+      continue
+    }
+    const spec = toolSpec(entity, name)
+    if (!spec) {
+      skipped.push({ id, why: 'no `execute`' })
+      continue
+    }
+    seen.add(name)
+    tools.push(spec)
   }
-  return specs
+  return { tools, skipped }
 }

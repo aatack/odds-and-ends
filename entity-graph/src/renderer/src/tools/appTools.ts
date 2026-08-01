@@ -3,7 +3,7 @@ import { createEntity } from '../source/entity'
 import * as R from '../state/reducers'
 import { focusOf, getLayout, updateLayout } from '../state/store'
 import { toggleTheme, updateUi, uiAtom } from '../state/ui'
-import { TOOLS_ENTITY_ID, loadUserTools, userToolsAtom } from './userTools'
+import { TOOLS_ENTITY_ID, loadUserTools } from './userTools'
 import type { ToolSpec } from './types'
 
 // Note what isn't here: opening the palette and cancelling a pending call are
@@ -228,9 +228,16 @@ export const APP_TOOLS: ToolSpec[] = [
     scope: 'app',
     reach: 'source',
     run: async () => {
-      await loadUserTools()
-      const count = userToolsAtom.get().length
-      return { message: `${count} tool${count === 1 ? '' : 's'} defined in this store` }
+      const { tools, skipped, linked } = await loadUserTools()
+      // Which is the whole use of it. A definition that isn't quite one is passed
+      // over, and a reload that only counted what it took would say the same
+      // "0 tools" whether the note was wrong or merely unlinked.
+      if (linked === 0) return { message: 'Nothing is linked under @tools' }
+      const found = tools.length
+        ? `${tools.length} tool${tools.length === 1 ? '' : 's'}: ${tools.map((t) => t.id).join(', ')}`
+        : 'No tools'
+      const missed = skipped.map((s) => `${s.id} (${s.why})`).join(', ')
+      return { message: missed ? `${found}. Skipped ${missed}` : found }
     },
   },
 ]
