@@ -1,5 +1,5 @@
 import { bucketEvents, rollupEntity, str, type Entity } from '../../../core/entity'
-import { toolArgumentsSchema } from '../../../core/toolArguments'
+import { readToolArguments } from '../../../core/toolArguments'
 import { runToolScript } from '../helpers/codeRunner'
 import { scanEvents } from '../source/entity'
 import { currentSourceId } from '../source/transport'
@@ -43,11 +43,13 @@ export interface ToolsLoaded {
   tools: ToolSpec[]
   /** Children of `@tools` that aren't tools, and what each is missing. */
   skipped: { id: string; why: string }[]
+  /** Tools that loaded, but with something on them that didn't read. */
+  warnings: { id: string; why: string }[]
   /** How many notes are linked under `@tools` at all. */
   linked: number
 }
 
-const NOTHING: ToolsLoaded = { tools: [], skipped: [], linked: 0 }
+const NOTHING: ToolsLoaded = { tools: [], skipped: [], warnings: [], linked: 0 }
 
 /** Which source's tools these are. Null when none is open. */
 let loadedFrom: string | null = null
@@ -223,7 +225,7 @@ function keyOf(v: unknown): KeyBinding[] | undefined {
  * Everything else has a default, `arguments` included: a tool that takes none is
  * an ordinary tool, not an incomplete one.
  */
-function toolSpec(tool: Entity, name: string): ToolSpec | null {
+function toolSpec(tool: Entity, name: string, args: ArgSpec[]): ToolSpec | null {
   const body = bodyOf(tool)
   if (!body) return null
 
@@ -231,10 +233,6 @@ function toolSpec(tool: Entity, name: string): ToolSpec | null {
   const keys = keyOf(tool.values.key)
   // Nothing about the source depends on what the arguments are *set to*, only on
   // what they are, so it is built once here rather than on every invocation.
-  // A list of arguments is what a definition writes; a schema is what the prompts
-  // are built from. One of those is nicer to write and the other is what the
-  // server publishes, so the conversion happens in core, where both can see it.
-  const args = argsFromSchema(toolArgumentsSchema(tool.values.arguments))
   const source = body.applied ? appliedSource(body.code, args) : body.code
 
   return {
@@ -282,9 +280,10 @@ function toolSpec(tool: Entity, name: string): ToolSpec | null {
 function toolSpecs(
   childIds: string[],
   defined: Map<string, Entity>,
-): Pick<ToolsLoaded, 'tools' | 'skipped'> {
+): Pick<ToolsLoaded, 'tools' | 'skipped' | 'warnings'> {
   const tools: ToolSpec[] = []
   const skipped: { id: string; why: string }[] = []
+  const warnings: { id: string; why: string }[] = []
   const seen = new Set<string>()
   for (const id of childIds) {
     const entity = defined.get(id)
@@ -300,13 +299,22 @@ function toolSpecs(
       skipped.push({ id, why: `another tool is already called ${name}` })
       continue
     }
-    const spec = toolSpec(entity, name)
+    // A list of arguments is what a definition writes; a schema is what the
+    // prompts are built from. One is nicer to write and the other is what the
+    // server publishes, so the conversion lives in core where both can see it.
+    const declared = readToolArguments(entity.values.arguments)
+    const spec = toolSpec(entity, name, argsFromSchema(declared.schema))
     if (!spec) {
       skipped.push({ id, why: 'no `execute`' })
       continue
     }
+    // The tool still loads — it just takes nothing, which is exactly the failure
+    // that reads as a broken body rather than a broken declaration.
+    if (declared.unreadable) {
+      warnings.push({ id: name, why: '`arguments` is not a list, so it takes none' })
+    }
     seen.add(name)
     tools.push(spec)
   }
-  return { tools, skipped }
+  return { tools, skipped, warnings }
 }

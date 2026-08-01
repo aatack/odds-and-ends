@@ -228,7 +228,7 @@ export const APP_TOOLS: ToolSpec[] = [
     scope: 'app',
     reach: 'source',
     run: async () => {
-      const { tools, skipped, linked } = await loadUserTools()
+      const { tools, skipped, warnings, linked } = await loadUserTools()
       // Which is the whole use of it. A definition that isn't quite one is passed
       // over, and a reload that only counted what it took would say the same
       // "0 tools" whether the note was wrong or merely unlinked.
@@ -236,8 +236,12 @@ export const APP_TOOLS: ToolSpec[] = [
       const found = tools.length
         ? `${tools.length} tool${tools.length === 1 ? '' : 's'}: ${tools.map((t) => t.id).join(', ')}`
         : 'No tools'
-      const missed = skipped.map((s) => `${s.id} (${s.why})`).join(', ')
-      return { message: missed ? `${found}. Skipped ${missed}` : found }
+      const said = [
+        found,
+        ...(skipped.length ? [`Skipped ${skipped.map((s) => `${s.id} (${s.why})`).join(', ')}`] : []),
+        ...warnings.map((w) => `${w.id}: ${w.why}`),
+      ]
+      return { message: said.join('. ') }
     },
   },
 ]

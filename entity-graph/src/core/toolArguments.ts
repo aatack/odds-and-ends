@@ -84,27 +84,68 @@ function propertyFrom(entry: unknown): { name: string; property: Record<string, 
   return { name, property, required: declared.required === true }
 }
 
-/**
- * A declared argument list as a JSON Schema object. An object is taken to be a
- * schema already and passed through; anything else — absent, a string, a number —
- * is a tool that takes no arguments rather than an error, since the alternative is
- * a tool the palette refuses to show at all over a malformed field.
- */
-export function toolArgumentsSchema(declared: unknown): Record<string, unknown> {
-  if (Array.isArray(declared)) {
-    const properties: Record<string, unknown> = {}
-    const required: string[] = []
-    for (const entry of declared) {
-      const argument = propertyFrom(entry)
-      if (!argument) continue
-      // First of a name wins, as it does for two tools sharing one: which of them
-      // the prompt meant would otherwise depend on the order of the list.
-      if (argument.name in properties) continue
-      properties[argument.name] = argument.property
-      if (argument.required) required.push(argument.name)
-    }
-    return { type: 'object', properties, ...(required.length ? { required } : {}) }
+function schemaFromList(declared: readonly unknown[]): Record<string, unknown> {
+  const properties: Record<string, unknown> = {}
+  const required: string[] = []
+  for (const entry of declared) {
+    const argument = propertyFrom(entry)
+    if (!argument) continue
+    // First of a name wins, as it does for two tools sharing one: which of them
+    // the prompt meant would otherwise depend on the order of the list.
+    if (argument.name in properties) continue
+    properties[argument.name] = argument.property
+    if (argument.required) required.push(argument.name)
   }
-  if (declared && typeof declared === 'object') return declared as Record<string, unknown>
-  return { ...NO_ARGUMENTS }
+  return { type: 'object', properties, ...(required.length ? { required } : {}) }
 }
+
+export interface ReadArguments {
+  schema: Record<string, unknown>
+  /**
+   * Something was written under `arguments` that arguments can't be read out of.
+   * Worth saying rather than swallowing: the symptom of a declaration that didn't
+   * take is a tool that runs at once, asks nothing, and calls its body with no
+   * arguments — which looks like the body being wrong, not the declaration.
+   */
+  unreadable: boolean
+}
+
+/**
+ * What a definition's `arguments` value says, as a JSON Schema object.
+ *
+ * A list is the form to write and an object is taken to be a schema already. A
+ * *string* is the interesting case: a value field holding a list is easily
+ * written as text by accident — through an editor that keeps a string a string,
+ * or a write that quoted it — so the text is parsed rather than shrugged at. It
+ * is unambiguous, since there is nothing else a string under `arguments` could
+ * reasonably be trying to say.
+ *
+ * Anything left is a tool with no arguments rather than an error: refusing to show
+ * a tool at all over a malformed field helps nobody.
+ */
+export function readToolArguments(declared: unknown): ReadArguments {
+  let value = declared
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    // Nothing written, as distinct from something written that won't read.
+    if (!trimmed) return { schema: { ...NO_ARGUMENTS }, unreadable: false }
+    try {
+      // Parsed once and not recursively: a string that parses to another string
+      // is not a declaration wrapped twice, it is a declaration that is wrong.
+      value = JSON.parse(trimmed)
+    } catch {
+      return { schema: { ...NO_ARGUMENTS }, unreadable: true }
+    }
+  }
+  if (Array.isArray(value)) return { schema: schemaFromList(value), unreadable: false }
+  if (value && typeof value === 'object') {
+    return { schema: value as Record<string, unknown>, unreadable: false }
+  }
+  // `null` is a value cleared and `undefined` is one never written; a number or a
+  // boolean is neither, and is worth complaining about.
+  return { schema: { ...NO_ARGUMENTS }, unreadable: value != null }
+}
+
+/** Just the schema — what the server publishes, which has no one to warn. */
+export const toolArgumentsSchema = (declared: unknown): Record<string, unknown> =>
+  readToolArguments(declared).schema

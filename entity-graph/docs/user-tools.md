@@ -84,6 +84,22 @@ the palette derives its prompts from, and the form the server publishes to MCP. 
 definition that already holds a schema object is passed through untouched, so
 anything written the long way keeps working.
 
+`arguments` written as *text* is parsed rather than shrugged at, since a value
+field holding a list is easy to leave as a string by accident. If it doesn't parse,
+the tool still loads — taking no arguments — and **Reload your tools** says so.
+
+### When a tool asks for nothing
+
+If your tool runs the moment you pick it, prompting for none of the arguments you
+declared, then `arguments` didn't read as a list. In the inspector, the type beside
+each key says which it is: **JSON** is a list, **text** is a string. Two ways out —
+rewrite the value through the inspector's *New key* row (which parses what you type
+as JSON), or leave it as text, since that is now parsed too.
+
+The symptom is worth recognising because it doesn't look like a declaration
+problem: the body is called with `undefined` for every parameter, so `first +
+second` comes back as `NaN`, which the log shows as `null`.
+
 ## The body
 
 `execute` is a string holding **an expression that evaluates to a function**. The

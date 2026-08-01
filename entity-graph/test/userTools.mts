@@ -294,6 +294,47 @@ test('passes over a listed argument that names nothing, and repeats of a name', 
   assert.deepEqual(byId('post')?.args?.map((a) => [a.name, a.kind]), [['who', 'string']])
 })
 
+test('reads an argument list that was written as text, and says it had to', async () => {
+  open()
+  // Exactly what a value editor that keeps a string a string leaves behind. The
+  // symptom without this is the worst kind: the tool loads, asks nothing, and
+  // calls its body with undefined for every parameter.
+  await defineTool('post', {
+    name: 'post',
+    execute: '(who) => who',
+    arguments: '[{"type":"string", "name":"who", "required": true}]',
+  })
+  const found = await loadUserTools()
+
+  assert.deepEqual(byId('post')?.args?.map((a) => [a.name, a.kind, a.optional ?? false]), [
+    ['who', 'string', false],
+  ])
+  assert.deepEqual(found.warnings, [])
+})
+
+test('loads a tool whose arguments cannot be read at all, and warns about it', async () => {
+  open()
+  await defineTool('post', { name: 'post', execute: '() => null', arguments: 'who, what' })
+  const found = await loadUserTools()
+
+  assert.ok(byId('post'), 'the tool should still load — it just takes nothing')
+  assert.equal(byId('post')?.args, undefined)
+  assert.deepEqual(found.warnings, [
+    { id: 'post', why: '`arguments` is not a list, so it takes none' },
+  ])
+})
+
+test('says nothing about arguments that were simply never written', async () => {
+  open()
+  await defineTool('bare', { name: 'bare', execute: '() => null' })
+  await defineTool('cleared', { name: 'cleared', execute: '() => null', arguments: null })
+  await defineTool('blank', { name: 'blank', execute: '() => null', arguments: '' })
+  const found = await loadUserTools()
+
+  assert.equal(found.tools.length, 3)
+  assert.deepEqual(found.warnings, [])
+})
+
 test('still takes a JSON Schema written out in full', async () => {
   open()
   await defineTool('post', {
