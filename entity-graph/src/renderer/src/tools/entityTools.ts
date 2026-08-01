@@ -12,6 +12,7 @@ import {
   link,
   moveEntity,
   readEntities,
+  readOutline,
   readResource,
   unlink,
   writeValue,
@@ -210,6 +211,40 @@ export const ENTITY_TOOLS: ToolSpec[] = [
         data: entity,
         message: str(entity.values.text) ?? `${count} value${count === 1 ? '' : 's'}`,
       }
+    },
+  },
+  {
+    // `entity.get` for a whole branch. The export in `frameTools` reads the rows a
+    // frame is drawing, which is the right answer for "copy what I'm looking at"
+    // and the wrong one for anything else: it only reaches a tree that is on
+    // screen, it honours folding, and it has nothing to say about a branch nobody
+    // has expanded. This asks the store for the walk, so it works on any id —
+    // including one whose entities have never been read in this window.
+    //
+    // Which is what a script wants when it is composing a prompt out of notes.
+    id: 'entity.outline',
+    label: 'Read entity outline',
+    aliases: ['markdown', 'subtree', 'notes as text', 'render', 'export by id'],
+    hint: 'Entity',
+    scope: 'frame',
+    reach: 'source',
+    args: [
+      entityArg(),
+      {
+        name: 'limit',
+        label: 'Most entities to read',
+        kind: 'number',
+        optional: true,
+        placeholder: 'Defaults to a few hundred',
+      },
+    ],
+    // One page. A branch that outruns the limit is truncated rather than paged:
+    // the caller is composing a prompt, which is not improved by being unbounded.
+    run: async ({ entityId, limit }) => {
+      const target = requireId(entityId, 'Entity id')
+      const markdown = await readOutline(target, typeof limit === 'number' ? limit : undefined)
+      const lines = markdown ? markdown.split('\n').length : 0
+      return { data: markdown, message: `${lines} line${lines === 1 ? '' : 's'}` }
     },
   },
   {

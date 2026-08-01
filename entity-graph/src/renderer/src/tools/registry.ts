@@ -1,6 +1,5 @@
 import fuzzysort from 'fuzzysort'
 import { APP_TOOLS, GROUP_TOOLS } from './appTools'
-import { CHANGESET_TOOLS } from './changesetTools'
 import { ENTITY_TOOLS } from './entityTools'
 import { FRAME_TOOLS } from './frameTools'
 import { integrationsAtom } from './integrationTools'
@@ -26,7 +25,6 @@ import type { ToolScope, ToolSpec } from './types'
 const BUILT_IN: ToolSpec[] = [
   ...ENTITY_TOOLS,
   ...FRAME_TOOLS,
-  ...CHANGESET_TOOLS,
   ...RESOURCE_TOOLS,
   ...GROUP_TOOLS,
   ...UNDO_TOOLS,
