@@ -233,15 +233,40 @@ export const ENTITY_TOOLS: ToolSpec[] = [
       writeValue(requireId(entityId, 'Entity id'), 'text', String(text ?? '')).then(() => undefined),
   },
   {
+    // The id of what it made is the result, and that is not a nicety: a script
+    // that adds a note and then wants to hang anything off it — a reply under the
+    // question it answers — has no other way to learn where the note went. The
+    // store has always handed the id back; this used to drop it on the floor.
+    //
+    // `values` is the same argument in the other direction. A new entity with
+    // seven values on it is otherwise seven writes, each one conjuring the entity
+    // again, and the row flickers into existence a key at a time.
     id: 'entity.create',
     label: 'Create child of entity',
     aliases: ['add', 'new', 'insert'],
     scope: 'frame',
     reach: 'source',
     mutates: true,
-    args: [entityArg('parentId', 'Parent id'), { name: 'text', label: 'Child text' }],
-    run: async ({ parentId, text }) => {
-      await createEntity({ text: String(text ?? '') }, requireId(parentId, 'Parent id'))
+    args: [
+      entityArg('parentId', 'Parent id'),
+      { name: 'text', label: 'Child text' },
+      {
+        name: 'values',
+        label: 'Other values (JSON)',
+        kind: 'json',
+        optional: true,
+        placeholder: 'e.g. {"type": "changeset"}',
+      },
+    ],
+    run: async ({ parentId, text, values }) => {
+      const extra = values && typeof values === 'object' ? (values as Record<string, unknown>) : {}
+      // `text` last, so naming it twice is settled the way the palette asked for
+      // it rather than the way the JSON happened to.
+      const id = await createEntity(
+        { ...extra, text: String(text ?? '') },
+        requireId(parentId, 'Parent id'),
+      )
+      return { data: id }
     },
   },
   {

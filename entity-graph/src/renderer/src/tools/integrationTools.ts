@@ -35,6 +35,19 @@ export function setIntegrationServer(next: string | null): void {
     .catch(() => undefined)
 }
 
+/**
+ * Run one of the server's integrations directly, without going through the tool
+ * machine. For a tool of the app's own that is *composed* of server calls — the
+ * changeset tools, which fetch, branch, prompt, commit, push and raise a pull
+ * request between them — where each step is not a thing the user did and has no
+ * business in the log, the toasts or the undo stack. A gesture reaches these the
+ * ordinary way, through the registry.
+ */
+export async function runIntegration(id: string, args: Record<string, unknown>): Promise<unknown> {
+  if (!serverId) throw new Error('No server is open, so nothing can reach this machine')
+  return window.entityGraph.runIntegrationTool(serverId, id, args)
+}
+
 // --- A server tool as one of the app's -------------------------------------
 
 const GROUPS: Record<string, string> = { github: 'GitHub', claude: 'Claude', slack: 'Slack' }
