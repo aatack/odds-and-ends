@@ -447,16 +447,26 @@ function same(before: EntityCache, next: EntityCache): boolean {
 
 /**
  * An entity with its type's values behind its own. A key the type defines and
- * the entity doesn't is taken from the type; "doesn't" means absent rather than
- * null, so writing null to a key is how an entity opts out of a default rather
- * than a way of inheriting one.
+ * the entity doesn't is taken from the type — and "doesn't" covers null as well
+ * as absent, because the store is append-only and null is the only way to take a
+ * value off: an event saying "no longer this" cannot be an event saying "and
+ * nothing else either", or a key could never be given back to its default once
+ * overridden.
+ *
+ * So the two ways of having no value of your own mean the same thing, which is
+ * what makes clearing a key in the inspector and never writing it indisinguishable
+ * from the outside — as they should be.
  */
 function withDefaults(base: Entity, defaults: Record<string, unknown> | undefined): Entity {
   if (!defaults) return base
   const values = { ...base.values }
   let changed = false
   for (const [key, value] of Object.entries(defaults)) {
-    if (key in values) continue
+    // A type whose own key is null defines no default, so there is nothing here
+    // to lay behind anything — and writing one in would hand back a new object
+    // on every reconcile for no change anybody could see.
+    if (value == null) continue
+    if (values[key] != null) continue
     values[key] = value
     changed = true
   }

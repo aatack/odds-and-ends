@@ -320,12 +320,35 @@ test('lays a type’s values in behind an entity’s own', async () => {
   // `a` says nothing of its own, so it is the type all the way down.
   assert.equal(getEntity('a').values.text, 'Task')
   assert.equal(getEntity('a').values.colour, 'blue')
-  // `b` overrides one key and clears another: null is a value, not an absence,
-  // so it is how an entity opts out of a default.
+  // `b` overrides one key and clears another. Clearing it is how a value comes
+  // *off* in an append-only store, so it falls back to the type rather than
+  // standing as an absence of its own — the same as never having written it.
   assert.equal(getEntity('b').values.text, 'Write it')
-  assert.equal(getEntity('b').values.colour, null)
+  assert.equal(getEntity('b').values.colour, 'blue')
   // The type was never asked for by name — reading the entity fetched it.
   assert.equal(getEntity('task').values.text, 'Task')
+})
+
+test('leaves a cleared key cleared when the type has nothing to say about it', async () => {
+  open()
+  source.tree({ root: ['a'] })
+  source.values({
+    // A type that mentions `colour` but defines nothing for it, and one key it
+    // says nothing about at all. Neither can stand behind a cleared value.
+    task: { text: 'Task', colour: null },
+    a: { type: 'task', colour: 'red', note: 'hi' },
+  })
+  rowsOf(frameId())
+  await settle()
+  assert.equal(getEntity('a').values.colour, 'red')
+
+  source.values({ a: { type: 'task', colour: null, note: null } })
+  refreshEntities()
+  await settle()
+  assert.equal(getEntity('a').values.colour, null)
+  assert.equal(getEntity('a').values.note, null)
+  // And the key the type *does* define is still laid in behind.
+  assert.equal(getEntity('a').values.text, 'Task')
 })
 
 test('reaches every entity of a type when the type arrives late', async () => {

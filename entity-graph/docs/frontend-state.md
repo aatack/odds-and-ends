@@ -123,9 +123,15 @@ made every caller pay for a full walk.
 
 An entity's `type` value names another entity, and that entity's values stand
 behind its own: a key the type defines and the entity doesn't is taken from the
-type. "Doesn't" means *absent* rather than null — writing null to a key is how
-an entity opts out of a default rather than a way of inheriting one. The type is
-fetched by the act of an entity naming it.
+type. "Doesn't" covers *null* as well as absent, because the store is append-only
+and null is the only way to take a value off — an event saying "no longer this"
+cannot also be an event saying "and nothing else either", or a key overridden once
+could never be handed back to its default. So a key cleared in the inspector and a
+key never written mean the same thing. The type is fetched by the act of an entity
+naming it.
+
+A type whose own key is null defines no default for it, which is what leaves a
+cleared key genuinely cleared when there is nothing to fall back to.
 
 Defaults are drawn from the type's own roll-up rather than from its defaulted
 values, which keeps the dependency exactly one level deep: a type that is its

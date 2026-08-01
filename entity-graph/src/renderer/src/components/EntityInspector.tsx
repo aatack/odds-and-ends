@@ -238,6 +238,12 @@ function Values({
  * Nothing is written until the tick is pressed. Blur doesn't commit and nor does
  * Enter, which puts in a newline: this is the raw store, where a value half-typed
  * is not a value, and the tick is there only when there is something to write.
+ *
+ * The bin writes null, which is what taking a value off *is* in an append-only
+ * store — and, since a null value falls back to the type's, is also how a key
+ * goes back to its default. The row stays, showing that null: this panel is what
+ * is written down, and "cleared" and "never written" are the same thing to
+ * everything downstream but not to the events, which are what it is here to show.
  */
 function ValueEditor({
   name,
@@ -286,6 +292,14 @@ function ValueEditor({
         {changed && (
           <IconButton title={`Write ${name}`} onClick={save} className="text-brand-600">
             <Check size={15} />
+          </IconButton>
+        )}
+        {/* Absent once the key is already null: there is nothing left to clear,
+            and a bin that writes what is already there is a button that does
+            nothing but add an event. */}
+        {value !== null && (
+          <IconButton title={`Clear ${name}`} onClick={() => void onWrite(null)}>
+            <Trash03 size={14} />
           </IconButton>
         )}
       </div>
