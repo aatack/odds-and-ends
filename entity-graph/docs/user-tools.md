@@ -137,6 +137,9 @@ user left blank arrives as `undefined`, the same as a parameter that wasn't pass
 - `tool` — the whole registry, by a tool's `id` or by the camel case of its name.
   Calls are synchronous; no `await`. That includes the tools you wrote: one may
   call another, and a `type: code` entity may call any of them.
+  `tool.getEntity(id)` is the one to reach for when you need an entity a script
+  hasn't been handed — it asks the store and waits, rather than reading the cache,
+  which answers with whatever it happens to have.
 - `console` — logged to the devtools console, prefixed with the tool's id.
 
 Don't make it `async`. The sandbox has no promise support, by design — that is what

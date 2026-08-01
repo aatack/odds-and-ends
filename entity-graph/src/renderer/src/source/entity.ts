@@ -1,3 +1,4 @@
+import type { Entity } from '../../../core/entity'
 import type { AppEvent, LinkAction } from '../../../core/events'
 import type { EventScan } from '../../../core/source/defaultTools'
 import type { ResourceRecord } from '../../../core/source/permissions'
@@ -15,6 +16,21 @@ import { callSource, currentUser } from './transport'
  */
 export const scanEvents = (entityIds: string[]): Promise<EventScan> =>
   callSource('scanEvents', { entityIds }) as Promise<EventScan>
+
+/**
+ * Entities rolled up by the store, exactly the ones asked for. The other read —
+ * and pointedly not the one everything on screen goes through, which answers from
+ * the cache at once and improves as events land.
+ *
+ * This is for the callers that have nowhere to put "not yet": a script, and the
+ * tool loader. They ask, they wait, and what comes back is what the store holds.
+ *
+ * The rollup is the store's own, so it is the events and nothing else: no type
+ * defaults laid in behind, and no `events` script run over the top. Both of those
+ * are the cache's doing, and this does not go through it.
+ */
+export const readEntities = (entityIds: string[]): Promise<Record<string, Entity>> =>
+  callSource('readEntities', { entityIds }) as Promise<Record<string, Entity>>
 
 // --- Writes -----------------------------------------------------------------
 

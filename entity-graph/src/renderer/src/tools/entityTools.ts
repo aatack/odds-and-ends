@@ -6,7 +6,16 @@ import { directionOf, last, samePath, type LinkDirection } from '../state/types'
 import { updateUi } from '../state/ui'
 import { base64ToBlob } from '../helpers/base64'
 import { copyImage, copyText } from '../helpers/clipboard'
-import { createEntity, link, moveEntity, readResource, unlink, writeValue } from '../source/entity'
+import { emptyEntity, str } from '../../../core/entity'
+import {
+  createEntity,
+  link,
+  moveEntity,
+  readEntities,
+  readResource,
+  unlink,
+  writeValue,
+} from '../source/entity'
 import { copyFile, fileNameFor } from '../source/files'
 import type { ArgSpec, CallInfo, ToolSpec } from './types'
 
@@ -180,6 +189,30 @@ export const ENTITY_TOOLS: ToolSpec[] = [
     // through on that. Opened cold (⌘P) the context only *offers*, so the field is
     // empty with the selected id on a row beside it: which is where an id read off
     // a link gets pasted, and why the separate "inspect by id" tool is gone.
+    // The one read a script can rely on. Everything on screen comes from the
+    // cache, which answers with what it has and fills in behind — fine for a row,
+    // useless to a script, which has nowhere to put "not yet" and no second
+    // chance to look. So this asks the store outright and waits for the answer.
+    id: 'entity.get',
+    label: 'Get entity',
+    aliases: ['read', 'fetch', 'roll up', 'look up', 'values of'],
+    hint: 'Entity',
+    scope: 'frame',
+    // A read, so it stays out of the log: the log is what the user did, and a
+    // script walking a subtree would fill it on its own.
+    reach: 'source',
+    args: [entityArg()],
+    run: async ({ entityId }) => {
+      const target = requireId(entityId, 'Entity id')
+      const entity = (await readEntities([target]))[target] ?? emptyEntity(target)
+      const count = Object.keys(entity.values).length
+      return {
+        data: entity,
+        message: str(entity.values.text) ?? `${count} value${count === 1 ? '' : 's'}`,
+      }
+    },
+  },
+  {
     id: 'entity.inspect',
     label: 'Inspect entity',
     aliases: ['debug', 'info', 'raw', 'events', 'values', 'links', 'lookup', 'find id'],

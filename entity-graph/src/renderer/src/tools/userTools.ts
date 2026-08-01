@@ -1,7 +1,7 @@
-import { bucketEvents, rollupEntity, str, type Entity } from '../../../core/entity'
+import { str, type Entity } from '../../../core/entity'
 import { readToolArguments } from '../../../core/toolArguments'
 import { runToolScript } from '../helpers/codeRunner'
-import { scanEvents } from '../source/entity'
+import { readEntities } from '../source/entity'
 import { currentSourceId } from '../source/transport'
 import { atom } from '../state/atom'
 import { argsFromSchema, summarise } from './declared'
@@ -56,20 +56,14 @@ let loadedFrom: string | null = null
 
 // --- Reading the definitions ------------------------------------------------
 
-/** Roll up a set of ids from one scan of the store. */
-async function readEntities(ids: string[]): Promise<Map<string, Entity>> {
-  if (ids.length === 0) return new Map()
-  const { events } = await scanEvents(ids)
-  const buckets = bucketEvents(ids, events)
-  return new Map(ids.map((id) => [id, rollupEntity(id, buckets.get(id) ?? [])]))
-}
+/** Exactly the ids asked for, rolled up by the store. Empty asks nothing. */
+const read = async (ids: string[]): Promise<Record<string, Entity>> =>
+  ids.length ? readEntities(ids) : {}
 
 /**
  * Load the tools defined in the open source, replacing whatever was loaded
- * before. Two reads rather than one: `scanEvents` overscans a couple of layers
- * past what it was asked for, so a single call would very likely bring the tools
- * back too, but "very likely" is not a contract, and a tool that silently didn't
- * load is a bad way to find that out.
+ * before. Two reads rather than one, because the second depends on the first:
+ * what is under `@tools` has to come back before there is anything to ask about.
  *
  * Failure is not an error. A store with no `@tools` entity simply has no tools of
  * its own, and that is the ordinary case rather than something to report.
@@ -82,9 +76,9 @@ export async function loadUserTools(): Promise<ToolsLoaded> {
     return NOTHING
   }
   try {
-    const root = (await readEntities([TOOLS_ENTITY_ID])).get(TOOLS_ENTITY_ID)
+    const root = (await read([TOOLS_ENTITY_ID]))[TOOLS_ENTITY_ID]
     const childIds = root?.outboundLinks ?? []
-    const defined = await readEntities(childIds)
+    const defined = await read(childIds)
     // Guard against a slow load landing after the source has moved on.
     if (currentSourceId() !== sourceId) return NOTHING
     const found = { ...toolSpecs(childIds, defined), linked: childIds.length }
@@ -280,14 +274,14 @@ function toolSpec(tool: Entity, id: string, name: string, args: ArgSpec[]): Tool
  */
 function toolSpecs(
   childIds: string[],
-  defined: Map<string, Entity>,
+  defined: Record<string, Entity>,
 ): Pick<ToolsLoaded, 'tools' | 'skipped' | 'warnings'> {
   const tools: ToolSpec[] = []
   const skipped: { id: string; why: string }[] = []
   const warnings: { id: string; why: string }[] = []
   const seen = new Set<string>()
   for (const id of childIds) {
-    const entity = defined.get(id)
+    const entity = defined[id]
     if (!entity) continue
     const name = str(entity.values.name)
     if (!name) {
