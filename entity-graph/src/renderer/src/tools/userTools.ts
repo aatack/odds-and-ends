@@ -6,7 +6,7 @@ import { currentSourceId } from '../source/transport'
 import { atom } from '../state/atom'
 import { argsFromSchema, summarise } from './declared'
 import type { KeyBinding } from './keys'
-import type { ToolReach, ToolScope, ToolSpec } from './types'
+import type { ArgSpec, ToolReach, ToolScope, ToolSpec } from './types'
 
 // Tools the user wrote in the graph. A note under `@tools` describing itself —
 // what it's called, what arguments it takes, and a body — becomes a tool of the
@@ -66,14 +66,10 @@ export async function loadUserTools(): Promise<void> {
   try {
     const root = (await readEntities([TOOLS_ENTITY_ID])).get(TOOLS_ENTITY_ID)
     const childIds = root?.outboundLinks ?? []
-    // The bodies hang off the tools, so this read has to reach a layer further.
     const defined = await readEntities(childIds)
-    const bodies = await readEntities(
-      childIds.flatMap((id) => defined.get(id)?.outboundLinks ?? []),
-    )
     // Guard against a slow load landing after the source has moved on.
     if (currentSourceId() !== sourceId) return
-    userToolsAtom.set(toolSpecs(childIds, defined, bodies))
+    userToolsAtom.set(toolSpecs(childIds, defined))
     loadedFrom = sourceId
   } catch {
     if (currentSourceId() === sourceId) {
@@ -94,24 +90,64 @@ export const userToolsLoaded = (): boolean => loadedFrom === currentSourceId()
 
 // --- A definition as a tool -------------------------------------------------
 
+/** A tool's body, and how it expects to be called. */
+interface Body {
+  code: string
+  /**
+   * Whether the code is a *function* to be applied to the arguments, rather than
+   * a body that reads them off `context`.
+   */
+  applied: boolean
+}
+
 /**
- * Where a tool's body comes from. A `script` value is the direct way to say it,
- * and the only one a store can be sure of holding — but a script is code, and
- * code wants more than one line and somewhere to be run from, so a child marked
- * `type: code` counts too. That child is an ordinary code entity: it can be
- * edited in place and pressed play on, which is how a tool gets debugged before
- * anything is bound to it.
+ * Where a tool's body comes from. `execute` is the one to write: an expression
+ * evaluating to a function, which is then called with the arguments in the order
+ * the definition declared them — so a tool reads like a function, because it is
+ * one.
+ *
+ * `script` is the other shape, kept because it was here first: statements rather
+ * than an expression, reading their arguments off `context` and handing back
+ * whatever the last of them evaluates to.
+ *
+ * Both live on the tool's own note. An earlier version looked for a `type: code`
+ * child instead, which is gone: a value is edited in the inspector on the same
+ * ground the note itself is, and one place to look beats two.
  */
-function bodyOf(tool: Entity, bodies: Map<string, Entity>): string | null {
-  const own = str(tool.values.script)
-  if (own) return own
-  for (const childId of tool.outboundLinks) {
-    const child = bodies.get(childId)
-    if (str(child?.values.type) !== 'code') continue
-    const code = str(child?.values.text)
-    if (code) return code
-  }
+function bodyOf(tool: Entity): Body | null {
+  const execute = str(tool.values.execute)
+  if (execute) return { code: execute, applied: true }
+  const script = str(tool.values.script)
+  if (script) return { code: script, applied: false }
   return null
+}
+
+/**
+ * The source actually run for an `execute` body: the expression, evaluated, and
+ * then applied to the arguments positionally.
+ *
+ * The arguments are named rather than inlined — `context.args` is already in the
+ * sandbox, put there by the run's context — so nothing of the *values* is spliced
+ * into source text. Only the argument names are, and those are quoted as string
+ * literals rather than written as identifiers, so a name with a space or a quote
+ * in it is a lookup and not a syntax error.
+ *
+ * An argument the user left empty is absent from `context.args` and so arrives as
+ * `undefined`, which is what a function not given a parameter gets anyway.
+ *
+ * The newlines around the expression matter: a trailing line comment on the last
+ * line of it would otherwise swallow the closing bracket.
+ */
+export function appliedSource(execute: string, args: ArgSpec[]): string {
+  const passed = args.map((a) => `context.args[${JSON.stringify(a.name)}]`).join(', ')
+  return [
+    'const __tool = (',
+    execute,
+    ')',
+    "if (typeof __tool !== 'function')",
+    "  throw new Error('`execute` must be an expression that evaluates to a function')",
+    `__tool(${passed})`,
+  ].join('\n')
 }
 
 const SCOPES = new Set<ToolScope>(['frame', 'group', 'app'])
@@ -168,18 +204,21 @@ function keyOf(v: unknown): KeyBinding[] | undefined {
  * Everything else has a default, `arguments` included: a tool that takes none is
  * an ordinary tool, not an incomplete one.
  */
-function toolSpec(tool: Entity, bodies: Map<string, Entity>): ToolSpec | null {
+function toolSpec(tool: Entity): ToolSpec | null {
   const name = str(tool.values.name)
   if (!name) return null
-  const body = bodyOf(tool, bodies)
+  const body = bodyOf(tool)
   if (!body) return null
 
   const description = str(tool.values.description)
   const keys = keyOf(tool.values.key)
+  // Nothing about the source depends on what the arguments are *set to*, only on
+  // what they are, so it is built once here rather than on every invocation.
   // A list of arguments is what a definition writes; a schema is what the prompts
   // are built from. One of those is nicer to write and the other is what the
   // server publishes, so the conversion happens in core, where both can see it.
   const args = argsFromSchema(toolArgumentsSchema(tool.values.arguments))
+  const source = body.applied ? appliedSource(body.code, args) : body.code
 
   return {
     id: name,
@@ -201,13 +240,13 @@ function toolSpec(tool: Entity, bodies: Map<string, Entity>): ToolSpec | null {
       // The arguments are put where a script already looks. `context` is how an
       // `events` key reads the entity it sits on, and a tool's arguments are the
       // same kind of thing — what this run is about — so they are folded in
-      // alongside, and kept together under `args` for a body that would rather
-      // say which is which.
+      // alongside, and kept together under `args`, which is both what a body can
+      // read them by name from and what an `execute` function is applied to.
       const context = {
         ...call.context,
         values: { ...call.context.values, ...values, args: values },
       }
-      const { result, logs } = await runToolScript(name, body, context)
+      const { result, logs } = await runToolScript(name, source, context)
       // Nowhere else for them to go: the tool's result is what the log keeps, and
       // a body debugged by printing has to print somewhere.
       for (const line of logs) console.log(`[${name}]`, line)
@@ -217,17 +256,13 @@ function toolSpec(tool: Entity, bodies: Map<string, Entity>): ToolSpec | null {
 }
 
 /** The definitions as tools, in the order `@tools` lists them. */
-function toolSpecs(
-  childIds: string[],
-  defined: Map<string, Entity>,
-  bodies: Map<string, Entity>,
-): ToolSpec[] {
+function toolSpecs(childIds: string[], defined: Map<string, Entity>): ToolSpec[] {
   const specs: ToolSpec[] = []
   const seen = new Set<string>()
   for (const id of childIds) {
     const entity = defined.get(id)
     if (!entity) continue
-    const spec = toolSpec(entity, bodies)
+    const spec = toolSpec(entity)
     // First of a name wins, as it does on the server: two tools answering to one
     // name would make which of them a script reached depend on the child order.
     if (!spec || seen.has(spec.id)) continue

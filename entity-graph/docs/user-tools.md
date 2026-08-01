@@ -14,9 +14,9 @@ tool would want to do only exists in the app.
 ## Getting one going
 
 Run **New tool of your own** and give it a name. That creates the note under
-`@tools`, hangs a `type: code` child off it for the body, and opens the inspector
-on it so you can fill in the rest. Write the body in the code child — you can press
-play on it to try it out — then run **Reload your tools** and it is in the palette.
+`@tools` with a stub `execute` on it, and opens the inspector so you can fill it
+in. Write the body, declare any `arguments`, then run **Reload your tools** and it
+is in the palette.
 
 ## The fields
 
@@ -25,7 +25,7 @@ Values on the note itself. Two are required; everything else has a default.
 | Value | Type | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
 | `name` | string | **yes** | — | The tool's id, and how a script names it: `tool.greet(…)`. |
-| `script` | string | **yes**, unless a `type: code` child supplies it | — | The body. |
+| `execute` | string | **yes** | — | The body: an expression evaluating to a function. See below. |
 | `text` | string | no | — | The note's own text. Read as the palette label. |
 | `label` | string | no | `text`, then `name` | Palette label, if the note's text isn't the right one. |
 | `description` | string | no | — | Matched by the palette's search. |
@@ -84,32 +84,52 @@ the palette derives its prompts from, and the form the server publishes to MCP. 
 definition that already holds a schema object is passed through untouched, so
 anything written the long way keeps working.
 
-## Where the body goes
+## The body
 
-Either on the note as `script`, or — better, for anything longer than a line — as
-a child marked `type: code`, whose `text` is the body. That child is an ordinary
-code entity: you can edit it in place and press play on it, which is how you debug
-a tool before binding a key to it. The first such child wins.
+`execute` is a string holding **an expression that evaluates to a function**. The
+function is called with the declared arguments, positionally, in the order
+`arguments` lists them:
 
-## What the body sees
+```js
+(who, loudly) => {
+  const greeting = `${loudly ? 'HELLO' : 'Hello'}, ${who}`
+  tool.setEntityValue(context.entityId, 'text', greeting)
+  return greeting
+}
+```
+
+Whatever it returns is the tool's result: it lands in the activity log, a script
+that called the tool gets it back, and a one-line summary of it becomes the toast.
+
+Because `execute` holds a string, the inspector edits it as **raw multi-line text**
+rather than as escaped JSON — so it reads like code while you write it. That is the
+whole reason **New tool of your own** writes a stub in rather than leaving the value
+off: an absent value has no shape, and would come back as a one-line JSON field.
+
+Add a parameter whenever you add an argument, in the same order. An argument the
+user left blank arrives as `undefined`, the same as a parameter that wasn't passed.
+
+### What else is in scope
 
 - `context` — the folded call context of wherever the tool was invoked from, with
-  the arguments laid in on top. So a `who` argument reads as `context.who`, and
-  `context.args.who` too if you'd rather be explicit about which is which.
+  the arguments laid in on top. `context.entityId` is the selected entity; a `who`
+  argument is also reachable as `context.who` or `context.args.who`, though the
+  parameter is the point.
 - `tool` — the whole registry, by the camel case of a tool's label or by its id.
   Calls are synchronous; no `await`.
 - `console` — logged to the devtools console, prefixed with the tool's name.
 
-Whatever the body evaluates to is the tool's result: it lands in the activity log,
-and a script that called the tool gets it back. A one-line summary of it becomes
-the toast.
+Don't make it `async`. The sandbox has no promise support, by design — that is what
+buys the synchronous `tool` calls — so a returned promise comes back as nothing.
 
-```js
-// Greet someone on the selected note, and hand back what was written.
-const greeting = `${context.loudly ? 'HELLO' : 'Hello'}, ${context.who}`
-tool.setEntityValue(context.entityId, 'text', greeting)
-greeting
-```
+### The older shape
+
+A `script` value still works: statements rather than an expression, reading their
+arguments off `context` and handing back whatever the last of them evaluates to.
+`execute` is the one to write. A note carrying both uses `execute`.
+
+An earlier version of this looked for a `type: code` child to use as the body.
+That's gone — one place to look beats two.
 
 ## Reloading
 

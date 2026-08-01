@@ -185,9 +185,9 @@ export const APP_TOOLS: ToolSpec[] = [
   {
     // The skeleton, because assembling one by hand means creating a note, then
     // linking `@tools` to it by typing the id, then remembering which values it
-    // has to carry. The body is a `type: code` child rather than a `script` value
-    // so that it can be edited on more than one line and run on its own before
-    // anything is bound to it.
+    // has to carry. `execute` is written in rather than left out so that the
+    // inspector has a string to show: it edits a string as itself, on more than
+    // one line, and anything else as JSON on one escaped line.
     id: 'source.newTool',
     label: 'New tool of your own',
     aliases: ['define tool', 'user tool', 'write a tool', 'custom command'],
@@ -199,13 +199,18 @@ export const APP_TOOLS: ToolSpec[] = [
     run: async ({ name }) => {
       const toolName = String(name ?? '').trim()
       if (!toolName) throw new Error('Tool name is required')
-      const id = await createEntity({ text: toolName, name: toolName }, TOOLS_ENTITY_ID)
-      await createEntity(
-        { type: 'code', text: '// What the tool does. Its arguments are on `context`.\n' },
-        id,
+      const id = await createEntity(
+        {
+          text: toolName,
+          name: toolName,
+          // A function of no arguments, since it has none declared yet. Adding
+          // one to `arguments` means adding a parameter here, in the same order.
+          execute: '() => {\n  // What the tool does.\n}',
+        },
+        TOOLS_ENTITY_ID,
       )
-      // Straight into the inspector, which is where the rest of it is written:
-      // `arguments`, `key`, and whatever else the definition wants to say.
+      // Straight into the inspector, which is where the body is written, along
+      // with `arguments`, `key`, and whatever else the definition wants to say.
       updateUi({ inspectEntityId: id })
       return { message: `Fill ${toolName} in, then reload your tools` }
     },
