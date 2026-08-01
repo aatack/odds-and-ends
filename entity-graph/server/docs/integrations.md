@@ -71,9 +71,27 @@ Approving, merging and closing all need write access to the repository.
 | `github.mergePullRequest`   | squash / merge / rebase, optionally `auto` (merge when green) |
 | `github.closePullRequest`   | close without merging, optionally with a comment |
 | `github.listRepoPullRequests` | a repo's open PRs with yours filtered out, paged by `offset` |
+| `github.pullRequestForBranch` | the open PR raised from a branch, or `null` |
+| `github.createPullRequest`  | open one from the branch a checkout is on |
 
 A pull request is named by its **URL** or by **`owner/repo#123`**. A bare number
 is refused: there is no working directory here for `gh` to resolve it against.
+
+### The two that are told *where*
+
+`pullRequestForBranch` and `createPullRequest` take a **checkout** instead of a
+repo, and they are the exception that proves the rule above. A worktree knows its
+own remote and its own branch, so `gh` run inside one can work out the
+`owner/repo` that every other tool here has to be handed — and the caller that
+has just pushed a branch is holding a path, not a URL.
+
+Between them they answer "has this been raised, and if not, raise it" without a
+pull request reference existing yet. Nothing found by `pullRequestForBranch` is
+an ordinary answer rather than an error. `createPullRequest` needs the branch
+pushed first, passes the body over **standard input** (`--body-file -`) so a
+description as long as an exported set of notes never reaches an argument
+vector, and reads the number back out of the URL `gh` prints, that being all it
+prints.
 
 `github.listRepoPullRequests` pages by asking GitHub for `offset + limit + 1`
 results and taking the window, since `gh` has no offset of its own. `hasMore`
@@ -264,6 +282,12 @@ argument vector or `ps`. The result is the CLI's JSON verbatim: `result` is what
 Claude said, `session_id` the conversation it said it in, plus the turn count,
 duration, cost and token usage.
 
+`systemPrompt` is the one argument that *does* go in the vector, because
+`--append-system-prompt` takes it no other way. It is read only on the turn that
+starts a conversation — a resumed session already has the system prompt it was
+started with — so send it with the first prompt or not at all. Keep it to rules
+and ids; anything long belongs in the prompt.
+
 **`~` is expanded**, since these paths are named by hand. A relative path
 resolves against the *server's* working directory, which is rarely what anyone
 means, so an error names the absolute path it went looking for.
@@ -295,8 +319,12 @@ and a session that can only read is not worth starting. **This is arbitrary code
 execution on this machine, on purpose** — that is what `safety: 'dangerous'`
 means here, more literally than for the other integrations.
 
-The call does not return until the session does, up to a **30-minute** ceiling,
-past which the process is killed as wedged. Two consequences worth knowing:
+The call does not return until the session does, and **there is no time limit**.
+There was a half-hour ceiling here, on the theory that a session past it was
+wedged; no length actually tells a wedged session apart from one grinding through
+a large change, so all it ever killed was the second kind. What interrupts a run
+is the app's Stop, which is a decision rather than a guess. Two consequences
+worth knowing:
 
 - The app's main process does not use `fetch` for `/runTool`, because it cannot:
   undici abandons a response whose headers haven't arrived within five minutes
@@ -328,6 +356,7 @@ everywhere else.
 | `git.createWorktree` | a fresh worktree under `~/.pensive-worktrees`, path returned |
 | `git.removeWorktree` | delete one, and its branch if that is safe |
 | `git.pull` | fast-forward a checkout to its upstream |
+| `git.commitAll` | stage everything in a checkout and commit it |
 | `git.push` | push to `origin` with tracking, optionally onto a new branch |
 | `git.checkout` | switch to an existing branch |
 
@@ -335,18 +364,30 @@ everywhere else.
 
 `git.createWorktree` is the only tool here that decides *where*: it makes the
 worktree under **`~/.pensive-worktrees`** with a six-character name from
-`a-zA-Z0-9`, and returns the full path along with the id and branch.
+`a-zA-Z0-9`, gives the branch that same name, and returns the full path along
+with the id and branch.
 
 ```
-POST /runTool  { "tool": "git.createWorktree", "args": { "path": "~/repos/pensive" }}
-→ { "path": "/home/you/.pensive-worktrees/aB3xY9", "id": "aB3xY9", "branch": "aB3xY9" }
+POST /runTool  { "tool": "git.createWorktree", "args": {
+  "path": "~/repos/pensive", "from": "origin/master" }}
+→ { "path": "/home/you/.pensive-worktrees/aB3xY9", "id": "aB3xY9",
+    "branch": "aB3xY9", "from": "origin/master" }
 ```
 
-Git names a new worktree's branch after its directory, so the id is the branch
-too — a fresh worktree is a fresh branch off whatever the given checkout has at
-`HEAD`, sharing nothing with it but the repository. That is the point: something
-about to change a repository gets a checkout of its own, works there, pushes a
-branch, and hands the path back.
+A fresh worktree is a fresh branch sharing nothing with the checkout it came from
+but the repository. That is the point: something about to change a repository
+gets a checkout of its own, works there, pushes a branch, and hands the path
+back.
+
+**`from` is what it branches off**, and the checkout's default remote is fetched
+first — a remote-tracking ref is only worth branching from if it is current, and
+that is the one moment it needs to be. Leave it out and the branch starts from
+whatever the given checkout has at `HEAD`, which is what a checkout sitting on a
+feature branch will quietly hand you.
+
+The branch is created with `-b` rather than by letting git name it after the
+directory. With a start-point that is the only way to land on a branch instead of
+a detached `HEAD`; without one the result is what it always was.
 
 The id is drawn from `randomBytes`, rejecting the bytes above the last whole
 multiple of 62 rather than folding them back in with `%` — which would make the
@@ -368,11 +409,17 @@ Removal runs from the repository's **main** worktree, found through
 `git rev-parse --git-common-dir`, rather than from inside the directory being
 deleted.
 
-### Pulling, pushing, switching
+### Pulling, committing, pushing, switching
 
 - **`git.pull` is `--ff-only`.** There is nobody here to resolve a merge, and a
   merge commit is not something a tool should invent; a branch that has diverged
   says so and leaves the checkout alone.
+- **`git.commitAll` finding nothing is the good outcome.** It is the sweep that
+  runs behind an agent which was supposed to commit its own work, so an empty
+  checkout is an ordinary answer rather than an error; `committed` says which
+  happened. It stages with `add --all` — untracked files included — and reads
+  `status --porcelain` afterwards, so the answer doesn't depend on git's version
+  or the server's locale.
 - **`git.push` sets upstream**, always: `git push --set-upstream origin HEAD`.
   `HEAD` rather than the branch's name so it reads the same whatever the branch is
   called, and tracking so that a later pull on it means something. Naming a
