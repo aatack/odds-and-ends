@@ -8,6 +8,12 @@ import type { PluggableList } from 'unified'
 // vite like the app's other fonts, since nothing here may reach the network.
 import 'katex/dist/katex.min.css'
 import { CodeBlock } from './CodeBlock'
+import {
+  FIELD_TAG,
+  markdownFieldsPlugin,
+  type FieldElementProps,
+  type MarkdownFields,
+} from './markdownFields'
 import { cn } from '../../helpers/cn'
 
 // Entity text, rendered. Every row goes through here, so the common case — one
@@ -63,21 +69,46 @@ export function Markdown({
   text,
   className,
   style,
+  fields,
 }: {
   text: string
   className?: string
   style?: React.CSSProperties
+  /**
+   * Components for the custom inline forms — see `./markdownFields`. Left out,
+   * the forms are ordinary markdown and render as the links or text they are, so
+   * this component knows nothing about what the app can put in a row.
+   *
+   * Its identity is a memo key, so hand in something stable: a fresh object per
+   * render reparses the text on every one of them.
+   */
+  fields?: MarkdownFields
 }): React.JSX.Element {
   // The parse is the expensive part of a row, and rows re-render whenever the
   // selection moves past them.
-  const tree = useMemo(
-    () => (
-      <ReactMarkdown remarkPlugins={REMARK} rehypePlugins={REHYPE} components={COMPONENTS}>
+  const tree = useMemo(() => {
+    const types = fields ? Object.keys(fields) : []
+    const remark = types.length ? [...REMARK, markdownFieldsPlugin(types)] : REMARK
+    const components: Components = !fields
+      ? COMPONENTS
+      : ({
+          ...COMPONENTS,
+          [FIELD_TAG]: (props: FieldElementProps) => {
+            const Field = fields[props['data-field-type'] ?? '']
+            // Unreachable while the plugin is only told about types in `fields`,
+            // but a missing renderer must not take the whole row down with it.
+            if (!Field) return null
+            return (
+              <Field arg={props['data-field-arg'] ?? ''} text={props['data-field-text'] ?? ''} />
+            )
+          },
+        } as Components)
+    return (
+      <ReactMarkdown remarkPlugins={remark} rehypePlugins={REHYPE} components={components}>
         {text}
       </ReactMarkdown>
-    ),
-    [text],
-  )
+    )
+  }, [text, fields])
   return (
     <div className={cn('markdown', className)} style={style}>
       {tree}
