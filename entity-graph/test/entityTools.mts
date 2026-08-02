@@ -167,6 +167,29 @@ test('reads an outline of nothing without complaining', async () => {
   assert.equal(await call('readEntityOutline', ['never-written-to']), '')
 })
 
+// --- Naming arguments a tool doesn't have -----------------------------------
+
+test('says which key it did not recognise, rather than reading the object as one argument', async () => {
+  open()
+  // The failure this is here for: a tool gained an argument, the caller used it,
+  // and the app hadn't caught up. Read positionally, the whole object lands in
+  // the first argument and the complaint arrives from wherever that is finally
+  // used — about a call that named it perfectly well.
+  await assert.rejects(
+    call('createChildOfEntity', [{ parentId: 'p', text: 'a note', mood: 'brisk' }]),
+    /no argument `mood`.*parentId, text, values/s,
+  )
+})
+
+test('still reads a lone object positionally when it names nothing', async () => {
+  open()
+  const id = await call('createChildOfEntity', ['p', 'a note'])
+  // Not a named call, so the value is written as it stands: a tool whose
+  // argument happens to be an object has to keep working.
+  await call('setEntityValue', [id, 'shape', { sides: 3, colour: 'red' }])
+  assert.deepEqual((await get(id)).values.shape, { sides: 3, colour: 'red' })
+})
+
 // --- Run --------------------------------------------------------------------
 
 let failed = 0
