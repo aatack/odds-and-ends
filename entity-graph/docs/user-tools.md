@@ -145,6 +145,31 @@ user left blank arrives as `undefined`, the same as a parameter that wasn't pass
 Don't make it `async`. The sandbox has no promise support, by design — that is what
 buys the synchronous `tool` calls — so a returned promise comes back as nothing.
 
+### Naming a call
+
+A call gets a uuid nobody outside the machine ever sees. Pass `$callId` alongside
+the arguments and it gets yours instead:
+
+```js
+const watching = tool['claude.runPrompt']({
+  path: worktree,
+  prompt: ask,
+  sessionId: session,
+  $callId: noteId,
+})
+```
+
+Only the object form can carry one — there is nowhere to put a name in a
+positional call — and `$callId` is taken off before the rest is read as arguments,
+so a tool that has no such argument is none the wiser. An object left with nothing
+else in it was a name and not arguments, so `tool.reloadTools({ $callId: id })` is
+a call with no arguments rather than one with an object for its first.
+
+Naming a call is also what puts it in the **activity log**, which a script's calls
+otherwise stay out of. Nothing names a call except to point at it afterwards, and
+`[@tool:callId](label)` in a note's text is what points: write the note first, and
+it shows the call counting up while it runs and how it ended after.
+
 ### The older shape
 
 A `script` value still works: statements rather than an expression, reading their

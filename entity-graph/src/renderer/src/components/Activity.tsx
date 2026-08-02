@@ -3,21 +3,15 @@ import { X } from '@untitledui/icons'
 import { relativeTime } from '../helpers/time'
 import { useCalls } from '../state/hooks'
 import { updateUi } from '../state/ui'
-import type { CallOutcome, RecordedCall } from '../state/types'
+import type { RecordedCall } from '../state/types'
 import { clearCalls, editRecordedCall, isRunnable, rerunRecordedCall } from '../tools/call'
 import { findTool } from '../tools/registry'
 import { formatArg } from '../tools/args'
 import { argsOf } from '../tools/types'
-import { Badge, type BadgeColor } from './ui/Badge'
+import { CALL_STATUS } from './callStatus'
+import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
 import { Popup } from './ui/Popup'
-
-const STATUS: Record<CallOutcome['kind'], { label: string; color: BadgeColor }> = {
-  running: { label: 'Running', color: 'brand' },
-  success: { label: 'Done', color: 'success' },
-  error: { label: 'Failed', color: 'error' },
-  cancelled: { label: 'Cancelled', color: 'gray' },
-}
 
 /**
  * The call trail: every call that was abandoned with arguments half-entered, plus
@@ -92,7 +86,7 @@ function resultText(call: RecordedCall): string | null {
 
 function CallRow({ call, onClose }: { call: RecordedCall; onClose: () => void }): React.JSX.Element {
   const tool = findTool(call.toolId)
-  const status = STATUS[call.outcome.kind]
+  const status = CALL_STATUS[call.outcome.kind]
   const running = call.outcome.kind === 'running'
   const result = resultText(call)
   const [showResult, setShowResult] = useState(false)

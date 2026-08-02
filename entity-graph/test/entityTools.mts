@@ -190,6 +190,50 @@ test('still reads a lone object positionally when it names nothing', async () =>
   assert.deepEqual((await get(id)).values.shape, { sides: 3, colour: 'red' })
 })
 
+// --- Naming the call itself -------------------------------------------------
+
+test('takes a name off the arguments, and an object holding only a name as none', async () => {
+  const { takeCallId } = await import('../src/renderer/src/tools/args')
+  assert.deepEqual(takeCallId([{ entityId: 'a', $callId: 'turn' }]), {
+    args: [{ entityId: 'a' }],
+    callId: 'turn',
+  })
+  // Nothing left once the name is out: a call with no arguments, rather than one
+  // whose first argument is an empty object.
+  assert.deepEqual(takeCallId([{ $callId: 'turn' }]), { args: [], callId: 'turn' })
+  // Nowhere to put a name in a positional call, so nothing is taken out of one.
+  assert.deepEqual(takeCallId(['a', 'b']), { args: ['a', 'b'] })
+  assert.throws(() => takeCallId([{ $callId: 7 }]), /non-empty string/)
+})
+
+test('keeps a call the script named, under the id it was given', async () => {
+  const { callsAtom } = await import('../src/renderer/src/state/store')
+  open()
+  callsAtom.set([])
+  const id = await call('createChildOfEntity', [
+    { parentId: 'parent', text: 'a question', $callId: 'turn-1' },
+  ])
+  // The write itself is unaffected: the name is not an argument, and the tool
+  // that has no such argument never hears about it.
+  assert.equal((await get(id)).values.text, 'a question')
+  // A script's calls are otherwise dropped. This one is kept, because naming it
+  // is what a note pointing at it needs — `[@tool:turn-1]` has to find something.
+  const kept = callsAtom.get()
+  assert.equal(kept.length, 1)
+  assert.equal(kept[0].callId, 'turn-1')
+  assert.equal(kept[0].outcome.kind, 'success')
+})
+
+test('settles a named call in place rather than leaving the running row behind', async () => {
+  const { callsAtom } = await import('../src/renderer/src/state/store')
+  open()
+  callsAtom.set([])
+  await assert.rejects(call('getEntity', [{ entityId: '  ', $callId: 'turn-2' }]))
+  const kept = callsAtom.get()
+  assert.equal(kept.length, 1)
+  assert.equal(kept[0].outcome.kind, 'error')
+})
+
 // --- Run --------------------------------------------------------------------
 
 let failed = 0

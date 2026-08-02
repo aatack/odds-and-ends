@@ -12,7 +12,8 @@ const COLORS: Record<BadgeColor, string> = {
   blue: 'bg-blue-50 text-blue-700',
 }
 
-const DOTS: Record<BadgeColor, string> = {
+/** The dot's own colours, exported for anything else that marks a status. */
+export const DOT_COLORS: Record<BadgeColor, string> = {
   gray: 'bg-gray-400',
   brand: 'bg-brand-500',
   success: 'bg-success-600',
@@ -42,7 +43,7 @@ export function Badge({
           className,
         )}
       >
-        <span className={cn('size-1.5 shrink-0 rounded-full', DOTS[color])} />
+        <span className={cn('size-1.5 shrink-0 rounded-full', DOT_COLORS[color])} />
         {children}
       </span>
     )
