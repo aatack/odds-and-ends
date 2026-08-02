@@ -1,10 +1,12 @@
-import React, { useMemo } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Markdown } from './ui/Markdown'
 import { CodeEditor } from './ui/CodeEditor'
 import { Button } from './ui/Button'
+import { CALL_STATUS } from './callStatus'
 import { TypePill } from './TypePill'
 import type { MarkdownFieldProps, MarkdownFields } from './ui/markdownFields'
-import { useAtomValue, useGetEntities } from '../state/hooks'
+import { elapsedTime } from '../helpers/time'
+import { useAtomValue, useCalls, useGetEntities } from '../state/hooks'
 import { rowKey } from '../state/derive'
 import { runTool } from '../tools/call'
 import { integrationsAtom } from '../tools/integrationTools'
@@ -58,6 +60,7 @@ export function EntityMarkdown({
         <FieldCodeEditor where={where} field={arg} hint={text} />
       ),
       pill: ({ text }: MarkdownFieldProps) => <FieldPill label={text} />,
+      tool: ({ arg, text }: MarkdownFieldProps) => <FieldToolCall callId={arg} label={text} />,
     }
   }, [entityId, at])
 
@@ -158,4 +161,63 @@ function FieldCodeEditor({
  */
 function FieldPill({ label }: { label: string }): React.JSX.Element {
   return <TypePill label={label} className="mx-0.5 align-middle" />
+}
+
+/** A clock, ticking while something is going on and stopped when it isn't. */
+function useNow(ticking: boolean): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!ticking) return
+    // Straight away as well as on the interval: a call that started while this
+    // row was off screen would otherwise show a stale second for a whole one.
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [ticking])
+  return now
+}
+
+/**
+ * `[@tool:callId](label)` — how a call is getting on, as a pill. The id is the
+ * *call's* and not the tool's: a tool is run many times and what a note wants to
+ * watch is the one turn it is about. A script names the call it is about to make
+ * (`tool['claude.runPrompt']({ …, $callId: id })`), writes the field into a note,
+ * and the note follows it from there.
+ *
+ * While it runs the pill counts: a session takes minutes, and the useful thing to
+ * know is how many of them have gone rather than that it is still going. After
+ * that it says how it ended, and the log is where the result actually is.
+ */
+function FieldToolCall({ callId, label }: { callId: string; label: string }): React.JSX.Element {
+  const calls = useCalls()
+  const call = calls.find((c) => c.callId === callId)
+  const running = call?.outcome.kind === 'running'
+  const now = useNow(running)
+  const status = call ? CALL_STATUS[call.outcome.kind] : null
+  // No record is the ordinary state either side of a call: written before the
+  // script gets to the call, and still here long after the log has rolled past
+  // it. Neither is worth an alarm, so it reads as the absence it is.
+  //
+  // Lower case, unlike the same word in the log: this one sits in a sentence
+  // beside whatever the field was labelled, and `Claude Done` reads as two
+  // labels rather than one thing and its state.
+  const said = !call
+    ? 'no record'
+    : running
+      ? elapsedTime(now - call.settledAt)
+      : CALL_STATUS[call.outcome.kind].label.toLowerCase()
+  return (
+    <TypePill
+      label={[label, said].filter(Boolean).join(' ')}
+      dot={status?.color ?? 'gray'}
+      title={
+        call?.outcome.kind === 'error'
+          ? call.outcome.message
+          : call
+            ? undefined
+            : `Nothing in the activity log is called ${callId}`
+      }
+      className="mx-0.5 align-middle"
+    />
+  )
 }

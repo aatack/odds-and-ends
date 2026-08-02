@@ -31,6 +31,7 @@ one place to find them all.
 | --- | --- |
 | `text` | what the changeset is called. Also the pull request's title |
 | `type` | `changeset` |
+| `open` | `true` as it is created: a changeset is a piece of work, so it is a task |
 | `repo` | the checkout it was cut from |
 | `worktree` | the full path of the worktree on this machine |
 | `branch` | the branch in it — also the worktree's own id |
@@ -80,23 +81,31 @@ selected in particular.
    somewhere", and the note the prompt landed in, so the session has somewhere to
    write back that isn't the root of everything. The system prompt names `rootId`
    once and never again, which is not enough on its own.
-3. **The session runs**, for as long as it takes; there is no ceiling.
-4. **`sessionId` is written** — now, and not in step 1. Its absence is what says
+3. **The note is given a pill that watches the turn.** `[@tool:<noteId>](Claude)`
+   is appended to it and the same id is passed to the session's call as
+   `$callId`, so the question carries a clock while the session runs and says how
+   it ended after. It is two writes rather than one — the id doesn't exist until
+   the note does.
+4. **The session runs**, for as long as it takes; there is no ceiling.
+5. **`sessionId` is written** — now, and not in step 1. Its absence is what says
    "this conversation still needs a system prompt", so writing it ahead of a turn
    that then fails would cost the *next* attempt its rules.
-5. **The answer goes down** as a child of the prompt, prefixed `*Claude:*`.
-6. **Publish**: commit whatever is loose with the prompt as its message, push, and
+6. **The answer is thrown away**, and the prompt says so. Anything worth keeping
+   was written into the notes by the session itself; a reply pasted under the
+   question as well only said it again, at length, in a voice nobody else in the
+   tree uses.
+7. **Publish**: commit whatever is loose with the prompt as its message, push, and
    raise a pull request if the branch hasn't got one. Then the URL goes onto the
    changeset.
 
 Every prompt already ends with an instruction to commit, push and raise a pull
-request, so step 6 is meant to find nothing to do. It is there for the turn where
+request, so step 7 is meant to find nothing to do. It is there for the turn where
 the session did the work and stopped short of saying so.
 
-**Step 6 is allowed to fail without taking the turn with it.** By the time it
-runs, the worktree has the changes and both halves of the conversation are
-written down; a repository with no remote would otherwise end every prompt in an
-error having done all of the actual work.
+**Step 7 is allowed to fail without taking the turn with it.** By the time it
+runs, the worktree has the changes and the question and its outcome are written
+down; a repository with no remote would otherwise end every prompt in an error
+having done all of the actual work.
 
 ## What the repository provides
 
@@ -117,11 +126,14 @@ From the server's integrations
 From the app:
 
 - `entity.create` hands back **the id of what it made**, and takes a `values` map
-  — so a changeset is one write rather than seven, and a reply has something to
-  hang off.
+  — so a changeset is one write rather than seven, and the turn's note has an id
+  to be named by.
 - `entity.outline` reads a branch as markdown **through the store**, for the rules
   and for a pull request's description.
 - `entity.get`, `entity.link`, `entity.value.set` for the rest.
+- **`$callId`**, passed alongside any tool's arguments, names the call — which is
+  what lets `[@tool:<id>](Claude)` in a note watch the turn that note asked for.
+  See [`user-tools.md`](./user-tools.md#naming-a-call).
 
 ## Writing the definitions
 

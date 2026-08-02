@@ -21,6 +21,7 @@ import {
   prevStopBefore,
   resolveArgs,
   seedArgs,
+  takeCallId,
 } from './args'
 import { findTool, findToolByName, nearestToolNames } from './registry'
 import { argsOf, type ToolSpec } from './types'
@@ -67,6 +68,8 @@ interface Invocation {
   /** The recorded call this one was resumed or rerun from. */
   fromCallId?: string
   origin: CallOrigin
+  /** True when the caller chose `callId` — see {@link takeCallId}. */
+  named?: boolean
 }
 
 /**
@@ -81,8 +84,14 @@ interface Invocation {
  * the log on its own and push the day's actual work off the end of it. What a
  * script did is shown where it was run — the code entity's own output. It doesn't
  * toast either; `settle` says why.
+ *
+ * Unless the script named the call. Choosing an id is the one thing a caller can
+ * only be doing in order to point at the call afterwards — a note that watches a
+ * Claude turn is the case — so a named call is kept however it came about. The
+ * flood the rule above is guarding against is calls nobody chose an id for.
  */
 const worthKeeping = (call: Invocation, tool: ToolSpec, outcome: CallOutcome): boolean => {
+  if (call.named) return true
   if (call.origin === 'code') return false
   return outcome.kind === 'cancelled' ? argsOf(tool).length > 0 : tool.reach === 'external'
 }
@@ -341,6 +350,9 @@ export const contextWithin = (within: string[]): CallContext =>
  * required argument is an error like any other. Nor is it kept in the log, which
  * records what the user did — this is the one path into the machine that isn't a
  * gesture, so it is the one place `origin: 'code'` is set.
+ *
+ * Unless it passed `$callId`, which names the call: that one is kept, because
+ * naming it is how a script points at it later. See {@link takeCallId}.
  */
 export async function callToolByName(
   name: string,
@@ -354,12 +366,14 @@ export async function callToolByName(
       `No tool called "${name}"${nearest.length ? `. Did you mean ${nearest.join(', ')}?` : ''}`,
     )
   }
+  const { args, callId } = takeCallId(passed)
   const outcome = await execute({
-    callId: uuid(),
+    callId: callId ?? uuid(),
     toolId: tool.id,
-    args: argsFromCall(tool, passed),
+    args: argsFromCall(tool, args),
     context,
     origin: 'code',
+    named: callId != null,
   })
   if (outcome.kind === 'error') throw new Error(outcome.message)
   return outcome.kind === 'success' ? outcome.data : undefined

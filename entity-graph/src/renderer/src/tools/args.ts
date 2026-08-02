@@ -93,6 +93,32 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> => {
   return proto === Object.prototype || proto === null
 }
 
+/** The key a script names its own call with, alongside the tool's arguments. */
+export const CALL_ID_KEY = '$callId'
+
+/**
+ * A call id the caller chose, taken off the arguments before anything reads them
+ * as arguments. A call is otherwise identified by a uuid nobody outside sees, and
+ * a script that wants to point at a call it is about to make — to watch a
+ * half-hour session from a note, say — has to have said the id first.
+ *
+ * Only the object form can carry one, since only it has anywhere to put a name;
+ * an object left with nothing else in it was a name and not arguments, so it is
+ * dropped rather than being read as a first argument.
+ */
+export function takeCallId(passed: readonly unknown[]): {
+  args: readonly unknown[]
+  callId?: string
+} {
+  const [first] = passed
+  if (passed.length !== 1 || !isPlainObject(first) || !(CALL_ID_KEY in first)) return { args: passed }
+  const { [CALL_ID_KEY]: named, ...rest } = first
+  if (typeof named !== 'string' || !named.trim()) {
+    throw new Error(`${CALL_ID_KEY} names this call, so it must be a non-empty string`)
+  }
+  return { args: Object.keys(rest).length ? [rest] : [], callId: named.trim() }
+}
+
 /**
  * Arguments as code passes them: positionally, in the order the tool declares
  * them — `tool.sendSlackMessage(channel, text)` — or as one object naming them,

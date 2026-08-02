@@ -84,6 +84,11 @@ but leave their values alone unless you were asked to change them.
   never invent one. Give it the \`text\`, plus \`section: true\` if it titles a group of
   notes, or \`open: true\` if it is a task; to build a branch, create the parent first and
   create its children under the id you got back.
+- **Nesting is notes, not markdown.** A bullet list typed into one note's \`text\` is a
+  single note as far as everything here is concerned: its points can't be linked to,
+  ticked, replied to, or read as their own lines. Write the heading or the lead as one
+  note and each point under it as a child, however short they are. A dash at the start
+  of a line is nearly always a note that should have been created.
 - \`set_value\` writes one value on one entity — text, section, open, or anything else. It
   is for editing a note that is already there. Values are typed: \`section\` and \`open\`
   want a real boolean, and \`null\` blanks a key rather than taking it off the note.
