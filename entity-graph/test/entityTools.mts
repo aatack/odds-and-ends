@@ -107,6 +107,89 @@ test('stays out of the call log, being a read', async () => {
   assert.deepEqual(callsAtom.get(), [])
 })
 
+// --- What a tool written in the store needs of these ------------------------
+
+// The changeset tools live under `@tools` rather than in this repo, so what is
+// left to test here is the ground they stand on: an id to hang a reply off, one
+// write instead of seven, and a way to read a branch nothing has looked at.
+
+const call = (name: string, args: unknown[]): Promise<any> =>
+  callToolByName(name, args, context())
+
+test('hands back the id of the entity it created', async () => {
+  open()
+  const id = await call('createChildOfEntity', ['parent', 'a note'])
+  // Without this a script can add a note and then have no idea where it went,
+  // which is the whole difficulty with hanging a reply under a question.
+  assert.equal(typeof id, 'string')
+  assert.ok(id)
+  const made = await get(id)
+  assert.equal(made.values.text, 'a note')
+  const parent = await get('parent')
+  assert.deepEqual(parent.outboundLinks, [id])
+})
+
+test('takes the rest of the values in the same write', async () => {
+  open()
+  const id = await call('createChildOfEntity', [
+    '@changesets',
+    'Fix the login flow',
+    { type: 'changeset', branch: 'aB3xY9' },
+  ])
+  const made = await get(id)
+  assert.equal(made.values.type, 'changeset')
+  assert.equal(made.values.branch, 'aB3xY9')
+  // Named twice, the palette's answer wins: it is the one that was asked for.
+  assert.equal(made.values.text, 'Fix the login flow')
+})
+
+test('reads a branch as markdown, out of the store rather than the screen', async () => {
+  open()
+  source.tree({ rules: ['first', 'second'], second: ['detail'] })
+  source.values({
+    rules: { text: 'Agent instructions', section: true },
+    first: { text: 'Commit in reasonable chunks' },
+    second: { text: 'Work independently' },
+    detail: { text: 'For anything easily reversible' },
+  })
+  // Nothing has been rendered, so a frame's rows could not answer this.
+  assert.deepEqual(entitiesAtom.get(), {})
+
+  const markdown = await call('readEntityOutline', ['rules'])
+  assert.equal(
+    markdown,
+    ['# Agent instructions', '- Commit in reasonable chunks', '- Work independently', '  - For anything easily reversible'].join('\n'),
+  )
+})
+
+test('reads an outline of nothing without complaining', async () => {
+  open()
+  assert.equal(await call('readEntityOutline', ['never-written-to']), '')
+})
+
+// --- Naming arguments a tool doesn't have -----------------------------------
+
+test('says which key it did not recognise, rather than reading the object as one argument', async () => {
+  open()
+  // The failure this is here for: a tool gained an argument, the caller used it,
+  // and the app hadn't caught up. Read positionally, the whole object lands in
+  // the first argument and the complaint arrives from wherever that is finally
+  // used — about a call that named it perfectly well.
+  await assert.rejects(
+    call('createChildOfEntity', [{ parentId: 'p', text: 'a note', mood: 'brisk' }]),
+    /no argument `mood`.*parentId, text, values/s,
+  )
+})
+
+test('still reads a lone object positionally when it names nothing', async () => {
+  open()
+  const id = await call('createChildOfEntity', ['p', 'a note'])
+  // Not a named call, so the value is written as it stands: a tool whose
+  // argument happens to be an object has to keep working.
+  await call('setEntityValue', [id, 'shape', { sides: 3, colour: 'red' }])
+  assert.deepEqual((await get(id)).values.shape, { sides: 3, colour: 'red' })
+})
+
 // --- Run --------------------------------------------------------------------
 
 let failed = 0

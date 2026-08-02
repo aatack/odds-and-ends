@@ -1,7 +1,10 @@
 import type { Entity } from '../../../core/entity'
 import type { AppEvent, LinkAction } from '../../../core/events'
+import { outlineMarkdown } from '../../../core/markdown'
+import type { QueryPage } from '../../../core/query'
 import type { EventScan } from '../../../core/source/defaultTools'
 import type { ResourceRecord } from '../../../core/source/permissions'
+import { rowsOfPage } from '../../../core/tree'
 import { callSource, currentUser } from './transport'
 
 // Typed wrappers over the source's tools. Thin by design: the argument shapes
@@ -31,6 +34,30 @@ export const scanEvents = (entityIds: string[]): Promise<EventScan> =>
  */
 export const readEntities = (entityIds: string[]): Promise<Record<string, Entity>> =>
   callSource('readEntities', { entityIds }) as Promise<Record<string, Entity>>
+
+/** How much of a subtree one {@link readOutline} takes, absent a reason to differ. */
+const OUTLINE_LIMIT = 400
+
+/**
+ * A subtree as markdown, walked by the *store* rather than by the cache.
+ *
+ * The export in `frameTools` reads the rows a frame is drawing, which is the
+ * right answer for "copy what I am looking at" and the wrong one for everything
+ * else: it can only reach a tree that is on screen, it honours folding, and it
+ * has nothing to say about a branch nobody has expanded. This asks the store for
+ * the walk and renders what comes back, so it works on any id at all — including
+ * one whose entities have never been read.
+ *
+ * One page. A subtree that outruns the limit comes back truncated rather than
+ * paged, because both callers are composing a prompt: the rules an agent is
+ * given, and the description of a pull request. Neither is improved by being
+ * unbounded, and a set of notes that long has a shape problem the paging would
+ * only hide.
+ */
+export async function readOutline(entityId: string, limit = OUTLINE_LIMIT): Promise<string> {
+  const page = (await callSource('query', { path: entityId, limit })) as QueryPage
+  return outlineMarkdown(rowsOfPage(page.rows))
+}
 
 // --- Writes -----------------------------------------------------------------
 

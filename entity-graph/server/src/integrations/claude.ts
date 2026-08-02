@@ -22,8 +22,15 @@ const CLI = 'claude'
  */
 const PRINT = ['--print', '--output-format', 'json', '--permission-mode', 'bypassPermissions']
 
-/** A session can run for a long time. Past this it is wedged, not working. */
-const TIMEOUT_MS = 30 * 60_000
+/**
+ * None. A session that is working is working, and there is no length that
+ * distinguishes one wedged from one grinding through a large change — a half-hour
+ * ceiling only ever killed the second kind. What interrupts a run is the app's
+ * Stop, which is a decision rather than a guess.
+ *
+ * `run` passes this straight to `execFile`, where zero means no timer at all.
+ */
+const TIMEOUT_MS = 0
 
 /** What the CLI says when the session id names nothing in this directory. */
 const NO_SESSION = /no conversation found/i
@@ -82,8 +89,13 @@ function complaint(result: CommandResult): string {
 }
 
 /** One invocation, with whichever of the two session flags is being tried. */
-const attempt = (session: string[], prompt: string, cwd: string): Promise<CommandResult> =>
-  run(CLI, [...PRINT, ...session], { cwd, stdin: prompt, timeoutMs: TIMEOUT_MS })
+const attempt = (
+  session: string[],
+  prompt: string,
+  cwd: string,
+  system: string[],
+): Promise<CommandResult> =>
+  run(CLI, [...PRINT, ...session, ...system], { cwd, stdin: prompt, timeoutMs: TIMEOUT_MS })
 
 export const CLAUDE_TOOLS: ToolDef[] = [
   {
@@ -98,7 +110,12 @@ export const CLAUDE_TOOLS: ToolDef[] = [
       'you have used before to carry on where it left off, and an unused one to',
       'start fresh. It need not be a UUID.',
       '',
-      'The session runs with permissions bypassed and can do anything you can.',
+      '`systemPrompt` is appended to the session’s system prompt. It only means',
+      'anything on the turn that starts a conversation — a resumed one already has',
+      'the one it was started with — so send it with the first prompt or not at all.',
+      '',
+      'There is no time limit: a session runs until it is done. The session runs',
+      'with permissions bypassed and can do anything you can.',
     ].join('\n'),
     safety: 'dangerous',
     args: z.object({
@@ -114,18 +131,26 @@ export const CLAUDE_TOOLS: ToolDef[] = [
         .string()
         .min(1)
         .describe('Names the conversation in that directory; an unused name starts a new one'),
+      systemPrompt: z
+        .string()
+        .optional()
+        .describe('Appended to the system prompt. Only read on the turn that starts a session'),
     }),
-    handler: async ({ path, prompt, sessionId }) => {
+    handler: async ({ path, prompt, sessionId, systemPrompt }) => {
       const cwd = directory(path)
       const session = sessionUuid(sessionId)
+      // The one thing here that has to go in the argument vector: the CLI takes it
+      // no other way. Keep it to rules and ids — anything long belongs in the
+      // prompt, which goes over standard input.
+      const system = systemPrompt ? ['--append-system-prompt', systemPrompt] : []
 
       // There is no "resume it, or start it if it isn't there" flag, so the two
       // are tried in turn. Resuming goes first because being wrong about it is
       // free: the CLI looks for the transcript before it does anything else, and
       // says so in a line and an exit code without reaching the API.
-      let result = await attempt(['--resume', session], prompt, cwd)
+      let result = await attempt(['--resume', session], prompt, cwd, system)
       if (result.exitCode !== 0 && NO_SESSION.test(complaint(result))) {
-        result = await attempt(['--session-id', session], prompt, cwd)
+        result = await attempt(['--session-id', session], prompt, cwd, system)
       }
       if (result.exitCode !== 0) throw new Error(complaint(result))
 

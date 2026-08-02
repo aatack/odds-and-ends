@@ -103,16 +103,35 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> => {
  * A value not passed at all is left empty, which is a different thing from
  * passing `null`: null is the contract's "use the default", while empty is what
  * makes a missing required argument an error rather than a silent blank.
+ *
+ * An object matching *some* of the names is neither, and is refused. Falling
+ * back to positional there reads the whole object as the first argument, and the
+ * complaint then comes from wherever that argument is finally used — "path must
+ * be a string, received object", from a server, about a call that named `path`
+ * perfectly well. The one key it didn't recognise is the thing worth saying, and
+ * this is the only place that still knows it.
  */
 export function argsFromCall(tool: ToolSpec, passed: readonly unknown[]): ArgValues {
   const specs = argsOf(tool)
   const first = passed.length === 1 ? passed[0] : undefined
-  const named =
-    specs.length > 0 && isPlainObject(first) && Object.keys(first).length > 0
-      ? Object.keys(first).every((key) => specs.some((a) => a.name === key))
-        ? first
-        : null
-      : null
+  const object = isPlainObject(first) && Object.keys(first).length > 0 ? first : null
+  const declared = (key: string): boolean => specs.some((a) => a.name === key)
+  let named: Record<string, unknown> | null = null
+
+  if (specs.length > 0 && object) {
+    const keys = Object.keys(object)
+    const unknown = keys.filter((key) => !declared(key))
+    if (unknown.length === 0) named = object
+    // Every key unrecognised is an object that was meant as a value, which is
+    // the case the positional reading is here for. A mixture is a typo, or a
+    // tool that has moved on since the caller was written.
+    else if (unknown.length < keys.length) {
+      const what = unknown.map((key) => `\`${key}\``).join(', ')
+      const takes = specs.map((a) => a.name).join(', ') || 'no arguments'
+      throw new Error(`${tool.id} has no argument ${what} — it takes ${takes}`)
+    }
+  }
+
   const out: ArgValues = {}
   for (const [i, spec] of specs.entries()) {
     const value = named ? named[spec.name] : passed[i]

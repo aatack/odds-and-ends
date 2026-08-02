@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { ToolDef } from '../../../src/core/source/index'
-import { json, ok, said } from './exec'
+import { directory, json, ok, said } from './exec'
 
 // GitHub, through the `gh` CLI. It already knows how to authenticate, how to
 // page, and how to turn a URL into a repo and a number, so nothing here talks to
@@ -67,6 +67,24 @@ const pullRequest = z
   .string()
   .min(1)
   .describe('Pull request URL, or owner/repo#123')
+
+/**
+ * The two tools that are told *where* rather than which repository. Everything
+ * else here names a repo outright, because this server has no working directory
+ * worth resolving one against — but a worktree does, and it is precisely the
+ * thing that knows its own remote and its own branch. So a caller holding a
+ * checkout doesn't have to work out the `owner/repo` that `gh` can read off it.
+ */
+const checkout = z
+  .string()
+  .min(1)
+  .describe('The checkout to act from — a worktree path; the repo is read off its remote')
+
+/** The number at the end of a pull request URL, which is the only part `gh` prints. */
+const numberIn = (url: string): number | null => {
+  const match = /\/pull\/(\d+)/.exec(url)
+  return match ? Number(match[1]) : null
+}
 
 export const GITHUB_TOOLS: ToolDef[] = [
   {
@@ -183,6 +201,82 @@ export const GITHUB_TOOLS: ToolDef[] = [
         ...(args.deleteBranch ? ['--delete-branch'] : []),
       ])
       return { closed: true, output: said(result) }
+    },
+  },
+
+  {
+    id: 'github.pullRequestForBranch',
+    name: 'Pull request for a branch',
+    description: [
+      'The open pull request raised from `branch`, or `null` when there isn’t one.',
+      '',
+      'This is the "has this been raised already?" question, answerable without a',
+      'URL in hand — which is what something that just pushed a branch has. Nothing',
+      'found is an ordinary answer, not an error.',
+    ].join('\n'),
+    safety: 'dangerous',
+    args: z.object({
+      path: checkout,
+      branch: z.string().min(1).describe('The head branch the pull request would come from'),
+    }),
+    handler: async ({ path, branch }) => {
+      const cwd = directory(path)
+      const found = await json<PullRequest[]>(
+        GH,
+        ['pr', 'list', '--head', branch, '--state', 'open', '--limit', '1', '--json', LIST_FIELDS],
+        { cwd },
+      )
+      return { branch, pullRequest: found[0] ?? null }
+    },
+  },
+
+  {
+    id: 'github.createPullRequest',
+    name: 'Create pull request',
+    description: [
+      'Open a pull request from the branch checked out at `path`.',
+      '',
+      '`gh` reads the repository off the checkout’s remote and the head branch off',
+      'its `HEAD`, so neither has to be named: a worktree already knows both. The',
+      'branch has to be pushed first — `git.push` does that.',
+      '',
+      'The body goes in over standard input, so a description as long as an exported',
+      'set of notes never reaches an argument vector.',
+    ].join('\n'),
+    safety: 'dangerous',
+    args: z.object({
+      path: checkout,
+      title: z.string().min(1).describe('The pull request’s title'),
+      body: z.string().default('').describe('The description, as markdown'),
+      base: z
+        .string()
+        .optional()
+        .describe('Branch to merge into. Omit for the repository’s default'),
+      draft: z.boolean().default(false).describe('Open it as a draft'),
+    }),
+    handler: async ({ path, title, body, base, draft }) => {
+      const cwd = directory(path)
+      const result = await ok(
+        GH,
+        [
+          'pr',
+          'create',
+          '--title',
+          title,
+          // `-` is stdin. `--body ''` would also work for an empty description, but
+          // one path through is one thing to be wrong about.
+          '--body-file',
+          '-',
+          ...(base ? ['--base', base] : []),
+          ...(draft ? ['--draft'] : []),
+        ],
+        { cwd, stdin: body },
+      )
+      // All `gh` prints is the URL, so the number is read back off it rather than
+      // asked for in a second call.
+      const url = said(result).split('\n').find((line) => line.includes('/pull/'))?.trim() ?? ''
+      if (!url) throw new Error(`\`${GH}\` created something but didn't say where: ${said(result)}`)
+      return { url, number: numberIn(url), created: true }
     },
   },
 

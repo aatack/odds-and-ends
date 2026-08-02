@@ -97,22 +97,45 @@ export const GIT_TOOLS: ToolDef[] = [
     name: 'Create a worktree',
     description: [
       `Make a new worktree of a repository under \`${WORKTREES}\`, named with a`,
-      'six-character id, and hand back the full path to it.',
+      'six-character id, and hand back the full path to it. The branch is given the',
+      'same name as the directory, so the id names both.',
       '',
-      'Git puts the worktree on a new branch named after the directory, so a fresh',
-      'worktree is a fresh branch off whatever the given checkout has at `HEAD`.',
+      '`from` is what to branch off — `origin/master`, usually. The checkout’s',
+      'default remote is fetched first, since a remote-tracking ref is only worth',
+      'branching from if it is current. Without one the branch starts from whatever',
+      'the given checkout has at `HEAD`, which is what a checkout sitting on a',
+      'feature branch will quietly hand you.',
+      '',
       'Nothing is shared with the checkout it came from but the repository itself,',
       'so work in here disturbs nothing.',
     ].join('\n'),
     safety: 'dangerous',
     args: z.object({
       path: pathArg('A checkout of the repository to branch from — `~/repos/x` works'),
+      from: z
+        .string()
+        .optional()
+        .describe('Ref to branch off, e.g. `origin/master`. Fetched first. Omit for `HEAD`'),
     }),
-    handler: async ({ path }) => {
+    handler: async ({ path, from }) => {
       const repo = directory(path)
       const worktree = freePath()
-      await ok(GIT, ['worktree', 'add', worktree], { cwd: repo, env: NONINTERACTIVE })
-      return { path: worktree, id: basename(worktree), branch: await branchAt(worktree) }
+      const branch = basename(worktree)
+      // Only when there is a start-point to be current about. A fetch is the one
+      // thing here that crosses a network, and a worktree off `HEAD` has nothing
+      // to gain by waiting for one.
+      if (from) {
+        await ok(GIT, ['fetch', '--quiet'], { cwd: repo, env: NONINTERACTIVE, timeoutMs: NETWORK_MS })
+      }
+      // `-b` explicitly, rather than letting git name the branch after the
+      // directory as it does when neither is given: with a start-point that is the
+      // only way to land on a branch instead of a detached `HEAD`, and without one
+      // the result is exactly what it always was.
+      await ok(GIT, ['worktree', 'add', '-b', branch, worktree, ...(from ? [from] : [])], {
+        cwd: repo,
+        env: NONINTERACTIVE,
+      })
+      return { path: worktree, id: branch, branch, from: from ?? null }
     },
   },
 
@@ -173,6 +196,36 @@ export const GIT_TOOLS: ToolDef[] = [
         timeoutMs: NETWORK_MS,
       })
       return { branch: await branchAt(cwd), output: said(result) }
+    },
+  },
+
+  {
+    id: 'git.commitAll',
+    name: 'Commit everything',
+    description: [
+      'Stage everything in the checkout at `path` — modifications, deletions and',
+      'untracked files alike — and commit it under `message`.',
+      '',
+      'A checkout with nothing outstanding is **not** an error: this is the sweep',
+      'that runs behind an agent which was supposed to commit its own work, so',
+      'finding nothing to do is the good outcome. `committed` says which happened.',
+    ].join('\n'),
+    safety: 'dangerous',
+    args: z.object({
+      path: pathArg('The checkout to commit in — `~/repos/x` works'),
+      message: z.string().min(1).describe('The commit message'),
+    }),
+    handler: async ({ path, message }) => {
+      const cwd = directory(path)
+      await ok(GIT, ['add', '--all'], { cwd })
+      // Asked after staging and read as porcelain, so this says the same thing
+      // whatever git version and locale the server happens to have.
+      const { stdout } = await ok(GIT, ['status', '--porcelain'], { cwd })
+      const branch = await branchAt(cwd)
+      if (!stdout.trim()) return { committed: false, branch, commit: null }
+      const result = await ok(GIT, ['commit', '--message', message], { cwd, env: NONINTERACTIVE })
+      const { stdout: head } = await ok(GIT, ['rev-parse', 'HEAD'], { cwd })
+      return { committed: true, branch, commit: head.trim(), output: said(result) }
     },
   },
 
