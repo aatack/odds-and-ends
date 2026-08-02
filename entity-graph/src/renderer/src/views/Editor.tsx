@@ -4,6 +4,7 @@ import { TextEditor } from '../components/ui/TextEditor'
 import { CodeBlock } from '../components/ui/CodeBlock'
 import { EntityMarkdown } from '../components/EntityMarkdown'
 import { ResourceView } from '../components/Resource'
+import { TypePill } from '../components/TypePill'
 import { cn } from '../helpers/cn'
 import type { CodeRunState } from '../helpers/codeRunner'
 import type { EntityRow, Row } from '../state/derive'
@@ -367,6 +368,8 @@ const RowView = React.memo(function RowView({
           <span className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 select-none">
             <Mark open={row.open} />
           </span>
+          {/* The row it is about to become already wears its type. */}
+          {row.type && <TypePill type={row.type} className="mr-1" />}
           <div className="flex-1 min-w-0">
             <TextEditor
               autoFocus
@@ -444,6 +447,13 @@ const RowView = React.memo(function RowView({
             )}
           </span>
         )}
+        {/* A typed row says so, whatever the type turns out to mean. It is a
+            sibling of the mark rather than something floated into the text: the
+            row draws its text four different ways — prose, a code block, a
+            file's bytes, a box being typed into — and only the first of those is
+            something a float can flow around. So the type takes a column of its
+            own, aligned with the mark, and the content keeps the rest. */}
+        {row.type && <TypePill type={row.type} className="mr-1" />}
         <div className="flex-1 min-w-0">
           {row.editing ? (
             <TextEditor
