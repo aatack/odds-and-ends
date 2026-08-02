@@ -195,15 +195,20 @@ width, so the type reads as the entity's first word rather than as a column in
 front of it. A code block, a file's bytes and a box being typed into can't flow
 around a float, so on those the pill sits beside the mark instead. `code` and
 `file` already look like themselves; the pill is what stops every other type the
-user invents from reading as a plain bullet.
+user invents from reading as a plain bullet. It takes a `label` rather than a
+type, because a row's type is not its only caller: the `[@pill](text)` field puts
+the same shape mid-sentence, for a word no value on the entity accounts for.
 
 **Custom fields** (`components/ui/markdownFields.ts`) are how a row's text holds
 something other than text: `[@type:arg](text)` renders as a component instead of
 as markup — `[@button:tool](label)` is the Actions button inline, naming a tool
-the way a script does (its id, or the camel case of its label), and
-`[@codeEditor:key](hint)` a code box over one of the entity's values. A link is
-still a link; only that label shape, and only for a type the caller can render,
-is taken. `Markdown` takes the renderers and knows nothing else about them;
+the way a script does (its id, or the camel case of its label),
+`[@codeEditor:key](hint)` a code box over one of the entity's values, and
+`[@pill](text)` the type pill's shape around a word the sentence wants set apart.
+The `:arg` is optional, as the pill shows: a form that points at nothing is
+written without one. A link is still a link; only that label shape, and only for
+a type the caller can render, is taken. `Markdown` takes the renderers and knows
+nothing else about them;
 `EntityMarkdown` is where they meet the app, and is what the outliner renders a
 row with. A field acts on the entity whose text it appears in and not on the
 selection: its calls are born along that row's path (`runTool`'s `within`, the

@@ -2,6 +2,7 @@ import React, { useMemo } from 'react'
 import { Markdown } from './ui/Markdown'
 import { CodeEditor } from './ui/CodeEditor'
 import { Button } from './ui/Button'
+import { TypePill } from './TypePill'
 import type { MarkdownFieldProps, MarkdownFields } from './ui/markdownFields'
 import { useAtomValue, useGetEntities } from '../state/hooks'
 import { rowKey } from '../state/derive'
@@ -56,6 +57,7 @@ export function EntityMarkdown({
       codeEditor: ({ arg, text }: MarkdownFieldProps) => (
         <FieldCodeEditor where={where} field={arg} hint={text} />
       ),
+      pill: ({ text }: MarkdownFieldProps) => <FieldPill label={text} />,
     }
   }, [entityId, at])
 
@@ -145,4 +147,15 @@ function FieldCodeEditor({
       placeholder={hint}
     />
   )
+}
+
+/**
+ * `[@pill](text)` — the pill a typed row wears, for a word in the middle of a
+ * sentence. It is the one field that acts on nothing: a type pill is drawn from a
+ * value on the entity, and this is the same shape said by the text itself, for
+ * everything a row wants set apart that no value accounts for. No `:arg`, since
+ * the word in the parens is the whole of it.
+ */
+function FieldPill({ label }: { label: string }): React.JSX.Element {
+  return <TypePill label={label} className="mx-0.5 align-middle" />
 }

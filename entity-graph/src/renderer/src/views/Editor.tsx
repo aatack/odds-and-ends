@@ -369,7 +369,7 @@ const RowView = React.memo(function RowView({
             <Mark open={row.open} />
           </span>
           {/* The row it is about to become already wears its type. */}
-          {row.type && <TypePill type={row.type} className="mr-1" />}
+          {row.type && <TypePill label={row.type} className="mr-1" />}
           <div className="flex-1 min-w-0">
             <TextEditor
               autoFocus
@@ -456,11 +456,11 @@ const RowView = React.memo(function RowView({
             )}
           </span>
         )}
-        {row.type && !prose && <TypePill type={row.type} className="mr-1" />}
+        {row.type && !prose && <TypePill label={row.type} className="mr-1" />}
         {/* The content column is a flex item and so contains its own floats: the
             pill can't escape into the row below. */}
         <div className="flex-1 min-w-0">
-          {row.type && prose && <TypePill type={row.type} className="float-left mr-1" />}
+          {row.type && prose && <TypePill label={row.type} className="float-left mr-1" />}
           {row.editing ? (
             <TextEditor
               autoFocus
