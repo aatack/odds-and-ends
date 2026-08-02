@@ -73,6 +73,13 @@ selected in particular.
 2. **The prompt goes down as a note** under the row it was asked from, before the
    answer comes back: a session that runs for an hour should leave the question on
    screen the whole time.
+   
+   Both ids go out **with every turn**, appended to the prompt, and they are the
+   two things that change from one turn to the next: the row the key was pressed
+   on, which is the difference between "do this bit" and "do something in here
+   somewhere", and the note the prompt landed in, so the session has somewhere to
+   write back that isn't the root of everything. The system prompt names `rootId`
+   once and never again, which is not enough on its own.
 3. **The session runs**, for as long as it takes; there is no ceiling.
 4. **`sessionId` is written** — now, and not in step 1. Its absence is what says
    "this conversation still needs a system prompt", so writing it ahead of a turn
