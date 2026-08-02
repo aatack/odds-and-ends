@@ -396,6 +396,15 @@ const RowView = React.memo(function RowView({
   const running = run?.status === 'running'
   const heading = row.section ? sectionStyle(row.depth) : undefined
 
+  // Where a typed row's pill goes. A row drawing prose floats it into the text:
+  // the first line starts after it and every line below runs the full width, so
+  // it reads as the first word of the entity rather than as a column in front of
+  // it. Nothing else on a row can flow around a float — a code block and a file's
+  // bytes are surfaces of their own, and a `w-full` textarea beside a float
+  // overflows its container instead of narrowing to fit — so those three keep the
+  // pill beside the mark, where it lines up with the bullet.
+  const prose = !row.editing && !isCode && row.type !== 'file'
+
   return (
     <div
       ref={ref}
@@ -447,14 +456,11 @@ const RowView = React.memo(function RowView({
             )}
           </span>
         )}
-        {/* A typed row says so, whatever the type turns out to mean. It is a
-            sibling of the mark rather than something floated into the text: the
-            row draws its text four different ways — prose, a code block, a
-            file's bytes, a box being typed into — and only the first of those is
-            something a float can flow around. So the type takes a column of its
-            own, aligned with the mark, and the content keeps the rest. */}
-        {row.type && <TypePill type={row.type} className="mr-1" />}
+        {row.type && !prose && <TypePill type={row.type} className="mr-1" />}
+        {/* The content column is a flex item and so contains its own floats: the
+            pill can't escape into the row below. */}
         <div className="flex-1 min-w-0">
+          {row.type && prose && <TypePill type={row.type} className="float-left mr-1" />}
           {row.editing ? (
             <TextEditor
               autoFocus
