@@ -7,6 +7,11 @@ import type { Root, RootContent, Text } from 'mdast'
 // markdown already has for a link, with an `@type:` label that no real link
 // would use.
 //
+// The `:arg` is optional, because not every form has anything to point at: a
+// button names a tool and a code box names a value key, but `[@pill](text)` is
+// the whole of what a pill needs. A form written without one arrives with an
+// empty `arg` rather than being left in the text.
+//
 // Links themselves are untouched: only a label of exactly that shape is taken,
 // and only for a type the caller said it can render. Anything else — including
 // `[@nonesuch:x](y)` — falls through and renders as it always did.
@@ -50,11 +55,11 @@ export interface FieldElementProps {
   'data-field-text'?: string
 }
 
-/** A whole form, found in text: `[@type:arg](text)`. */
-const IN_TEXT = /\[@([A-Za-z][A-Za-z0-9]*):([^\]\s]*)\]\(([^()\n]*)\)/g
+/** A whole form, found in text: `[@type:arg](text)`, or `[@type](text)`. */
+const IN_TEXT = /\[@([A-Za-z][A-Za-z0-9]*)(?::([^\]\s]*))?\]\(([^()\n]*)\)/g
 
 /** The label half of it, which is all a parsed link has left of the form. */
-const AS_LABEL = /^@([A-Za-z][A-Za-z0-9]*):(\S*)$/
+const AS_LABEL = /^@([A-Za-z][A-Za-z0-9]*)(?::(\S*))?$/
 
 interface Field {
   type: string
@@ -94,7 +99,7 @@ function linkField(node: RootContent & Parent, known: Set<string>): Field | null
   if (node.children.length !== 1 || !only || only.type !== 'text') return null
   const match = AS_LABEL.exec(only.value)
   if (!match || !known.has(match[1])) return null
-  return { type: match[1], arg: match[2], text: node.url }
+  return { type: match[1], arg: match[2] ?? '', text: node.url }
 }
 
 /** One text node, split around the forms in it. The node itself if there are none. */
@@ -106,7 +111,7 @@ function splitText(node: Text, known: Set<string>): RootContent[] {
     const [whole, type, arg, text] = match
     if (!known.has(type)) continue
     if (match.index > at) out.push({ type: 'text', value: node.value.slice(at, match.index) })
-    out.push(fieldNode({ type, arg, text }))
+    out.push(fieldNode({ type, arg: arg ?? '', text }))
     at = match.index + whole.length
   }
   if (out.length === 0) return [node]
