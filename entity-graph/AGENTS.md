@@ -184,10 +184,13 @@ label: a bare label can't be right-clicked, and it won't follow the entity.
 
 **Type pills** (`components/TypePill.tsx`) are how a row shows what it *is*. Any
 entity with a `type` value gets one at the head of its row, in the tone of a
-secondary button with nothing to press — a column of its own beside the mark, so
-it lands the same way whether the row is drawing prose, a code block, a file or a
-box being typed into. `code` and `file` already look like themselves; the pill is
-what stops every other type the user invents from reading as a plain bullet.
+secondary button with nothing to press. On a row drawing prose it is *floated into
+the text*: the first line begins after it and every line below runs the full
+width, so the type reads as the entity's first word rather than as a column in
+front of it. A code block, a file's bytes and a box being typed into can't flow
+around a float, so on those the pill sits beside the mark instead. `code` and
+`file` already look like themselves; the pill is what stops every other type the
+user invents from reading as a plain bullet.
 
 **Custom fields** (`components/ui/markdownFields.ts`) are how a row's text holds
 something other than text: `[@type:arg](text)` renders as a component instead of

@@ -11,8 +11,10 @@ import { cn } from '../helpers/cn'
 
 /**
  * The type, as a small pill: the tone of a secondary button with nothing to
- * press. Exactly one line of row text tall, so it sits on the first line wherever
- * it is put and never opens the row up.
+ * press. Exactly one line of row text tall, which is load-bearing where it is
+ * floated into prose — a line box only moves aside for a float it overlaps, so a
+ * pill the height of one line indents the first line and leaves every line under
+ * it at the full width. It also means the pill never opens a row up.
  */
 export function TypePill({
   type,
