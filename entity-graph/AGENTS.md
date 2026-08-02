@@ -110,7 +110,12 @@ is the long form; the rules that matter day to day:
   whole registry. See [`docs/user-tools.md`](./docs/user-tools.md) for the fields.
   `tools/declared.ts` holds what these have in common with the integrations, since
   both arrive described from outside; `tools/userTools.ts` reads them, and
-  "Reload your tools" re-reads them after an edit.
+  "Reload your tools" re-reads them after an edit. **Changesets are the largest
+  thing written this way** — a worktree, a Claude session and a pull request held
+  open as one entity — and [`docs/changesets.md`](./docs/changesets.md) is the
+  worked example: what the definitions are, and which tools here exist for them
+  to be written in terms of. When something a definition needs is missing, the
+  answer is a tool it can reach, not a feature in `tools/`.
 - **A code entity is another caller.** `type: code` runs in a QuickJS worker
   (`helpers/codeRunner*`) whose only globals are `console`, `context` — the folded
   call context of the entity it is on, so `context.channel` is whatever an

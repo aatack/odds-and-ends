@@ -12,6 +12,7 @@ import {
   link,
   moveEntity,
   readEntities,
+  readOutline,
   readResource,
   unlink,
   writeValue,
@@ -213,6 +214,40 @@ export const ENTITY_TOOLS: ToolSpec[] = [
     },
   },
   {
+    // `entity.get` for a whole branch. The export in `frameTools` reads the rows a
+    // frame is drawing, which is the right answer for "copy what I'm looking at"
+    // and the wrong one for anything else: it only reaches a tree that is on
+    // screen, it honours folding, and it has nothing to say about a branch nobody
+    // has expanded. This asks the store for the walk, so it works on any id —
+    // including one whose entities have never been read in this window.
+    //
+    // Which is what a script wants when it is composing a prompt out of notes.
+    id: 'entity.outline',
+    label: 'Read entity outline',
+    aliases: ['markdown', 'subtree', 'notes as text', 'render', 'export by id'],
+    hint: 'Entity',
+    scope: 'frame',
+    reach: 'source',
+    args: [
+      entityArg(),
+      {
+        name: 'limit',
+        label: 'Most entities to read',
+        kind: 'number',
+        optional: true,
+        placeholder: 'Defaults to a few hundred',
+      },
+    ],
+    // One page. A branch that outruns the limit is truncated rather than paged:
+    // the caller is composing a prompt, which is not improved by being unbounded.
+    run: async ({ entityId, limit }) => {
+      const target = requireId(entityId, 'Entity id')
+      const markdown = await readOutline(target, typeof limit === 'number' ? limit : undefined)
+      const lines = markdown ? markdown.split('\n').length : 0
+      return { data: markdown, message: `${lines} line${lines === 1 ? '' : 's'}` }
+    },
+  },
+  {
     id: 'entity.inspect',
     label: 'Inspect entity',
     aliases: ['debug', 'info', 'raw', 'events', 'values', 'links', 'lookup', 'find id'],
@@ -233,15 +268,40 @@ export const ENTITY_TOOLS: ToolSpec[] = [
       writeValue(requireId(entityId, 'Entity id'), 'text', String(text ?? '')).then(() => undefined),
   },
   {
+    // The id of what it made is the result, and that is not a nicety: a script
+    // that adds a note and then wants to hang anything off it — a reply under the
+    // question it answers — has no other way to learn where the note went. The
+    // store has always handed the id back; this used to drop it on the floor.
+    //
+    // `values` is the same argument in the other direction. A new entity with
+    // seven values on it is otherwise seven writes, each one conjuring the entity
+    // again, and the row flickers into existence a key at a time.
     id: 'entity.create',
     label: 'Create child of entity',
     aliases: ['add', 'new', 'insert'],
     scope: 'frame',
     reach: 'source',
     mutates: true,
-    args: [entityArg('parentId', 'Parent id'), { name: 'text', label: 'Child text' }],
-    run: async ({ parentId, text }) => {
-      await createEntity({ text: String(text ?? '') }, requireId(parentId, 'Parent id'))
+    args: [
+      entityArg('parentId', 'Parent id'),
+      { name: 'text', label: 'Child text' },
+      {
+        name: 'values',
+        label: 'Other values (JSON)',
+        kind: 'json',
+        optional: true,
+        placeholder: 'e.g. {"type": "changeset"}',
+      },
+    ],
+    run: async ({ parentId, text, values }) => {
+      const extra = values && typeof values === 'object' ? (values as Record<string, unknown>) : {}
+      // `text` last, so naming it twice is settled the way the palette asked for
+      // it rather than the way the JSON happened to.
+      const id = await createEntity(
+        { ...extra, text: String(text ?? '') },
+        requireId(parentId, 'Parent id'),
+      )
+      return { data: id }
     },
   },
   {
