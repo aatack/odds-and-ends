@@ -11,7 +11,8 @@
     "dev:no-sandbox": "electron-vite dev -- --no-sandbox",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "test": "tsx test/cache.mts && tsx test/entityTools.mts && tsx test/userTools.mts && tsx test/nestedRuns.mts && tsx test/markdownFields.mts",
+    "test": "tsx test/cache.mts && tsx test/entityTools.mts && tsx test/userTools.mts && tsx test/nestedRuns.mts && tsx test/markdownFields.mts && tsx test/migrateV2.mts",
+    "migrate:v2": "tsx scripts/migrateV2/index.mts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "devDependencies": {
