@@ -229,6 +229,7 @@ call.
 ```
 server/         the HTTP server: sources, and the integrations (GitHub, Slack, Claude, git)
 mobile/         a separate phone client (PWA) for one source — its own install, own guide
+scripts/        one-off tools run outside the app with tsx (the pensive v2 migration)
 src/main       Electron main — window, servers, config store, tailscale serve
 src/preload     contextBridge exposing the typed EntityGraphAPI
 src/core        the shared model: entity + rollup, traversal, tree, markdown, cache, sources
