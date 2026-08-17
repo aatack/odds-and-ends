@@ -79,6 +79,13 @@ export interface EditorProps {
    * still fills the screen.
    */
   onNearEnd: () => void
+  /**
+   * True when the traversal ran out rather than stopping at its limit — there is
+   * nothing left to ask for, and so nothing that could fill the space below the
+   * last row. This is what ends the unrolling above; without it a frame with
+   * empty space asks forever.
+   */
+  complete: boolean
   /** Run state for code entities, keyed by entity id. */
   codeRuns: Record<string, CodeRunState>
   /** Run a code entity: its id and source, plus the path of the row it sits at. */
@@ -104,6 +111,7 @@ export function Editor(props: EditorProps): React.JSX.Element {
     onDraft,
     onCommit,
     onNearEnd,
+    complete,
     codeRuns,
     onRunCode,
     onStopCode,
@@ -223,18 +231,15 @@ export function Editor(props: EditorProps): React.JSX.Element {
   // the *walk*, so a page of two hundred entities can leave three rows standing —
   // a third of a screen with nothing below it and nothing to scroll.
   //
-  // Asked at most once per measurement, and `onNearEnd` is deliberately not a
-  // dependency: it is a fresh closure on every render, so keying on it fired this
-  // on every render, and each firing unrolled another page. A short list and a
-  // tree with more to give became a loop that raised the ceiling until it had
-  // walked the whole store — leaving the frame permanently resolving thousands of
-  // rows, which is far slower than the empty space it was trying to fill.
-  const askedAt = useRef('')
+  // What stops it is `complete` — the walk having run out of tree — and not a memo
+  // of what has already been asked for. Remembering the ask against the rows was
+  // the bug: a page the filter keeps nothing from leaves the row count and the
+  // height exactly as they were, so the frame asked once, saw the same numbers
+  // back, and sat there half empty. That is precisely the case with the space in
+  // it. Each ask doubles the ceiling instead of adding a page (see `loadMore`), so
+  // asking until the screen is full is a few walks rather than one per page.
   useEffect(() => {
-    if (!viewportH || total >= viewportH) return
-    const at = `${keys.length}:${viewportH}`
-    if (askedAt.current === at) return
-    askedAt.current = at
+    if (!viewportH || complete || total >= viewportH) return
     onNearEnd()
   })
 

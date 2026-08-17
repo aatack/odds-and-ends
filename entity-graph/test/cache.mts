@@ -40,7 +40,7 @@ const {
   setCodeEvaluator,
   setEntityFetcher,
 } = await import('../src/core/cache')
-const { rowsOf } = await import('../src/renderer/src/state/query')
+const { PAGE_SIZE, loadMore, rowsOf } = await import('../src/renderer/src/state/query')
 const { setQueryObserver } = await import('../src/renderer/src/state/derive')
 const { flushPersisted } = await import('../src/renderer/src/state/atom')
 const { layoutAtom } = await import('../src/renderer/src/state/store')
@@ -302,6 +302,87 @@ test('closes the gap a filter leaves, so no row jumps more than one level in', a
   A.setFind(frameId(), 'leaf')
   assert.deepEqual(depths(), [0, 1, 2, 3])
   A.setFind(frameId(), null)
+})
+
+test('doubles what it unrolls, and starts over when the query changes', async () => {
+  open()
+  const ids = Array.from({ length: PAGE_SIZE + 50 }, (_, i) => `c${i}`)
+  source.tree({ root: ids })
+  source.values(Object.fromEntries([['root', { text: 'Root' }], ...ids.map((id) => [id, { text: id }])]))
+  rowsOf(frameId())
+  await settle()
+
+  // The limit is on the walk, so the first page is a page — and there is more.
+  assert.equal(rowsOf(frameId()).rows.length, PAGE_SIZE)
+  assert.equal(rowsOf(frameId()).complete, false)
+
+  // One ask doubles it rather than adding a page, so a frame that has to unroll
+  // its way to a screenful gets there in a few walks rather than one per page.
+  loadMore(frameId())
+  await settle()
+  assert.equal(rowsOf(frameId()).rows.length, ids.length + 1)
+  assert.equal(rowsOf(frameId()).complete, true)
+
+  // A budget belongs to the query it was raised for. Filtering is a different
+  // one, so it starts at a page again rather than walking everything the last
+  // one had unrolled.
+  A.setFind(frameId(), 'nothing matches this')
+  assert.deepEqual(texts(), [])
+  assert.equal(rowsOf(frameId()).complete, false, 'the walk is back to one page')
+  A.setFind(frameId(), null)
+  assert.equal(rowsOf(frameId()).rows.length, ids.length + 1, 'and the old budget is still there')
+})
+
+test('searches the outline when both filters are on, rather than either of them', async () => {
+  open()
+  source.tree({ root: ['fruit', 'veg'], fruit: ['leaf'] })
+  source.values({
+    root: { text: 'Root' },
+    fruit: { text: 'Fruit', section: true },
+    leaf: { text: 'apple' },
+    veg: { text: 'Apple varieties', section: true },
+  })
+  rowsOf(frameId())
+  await settle()
+
+  A.setFind(frameId(), 'apple')
+  assert.deepEqual(texts(), ['Root', 'Fruit', 'apple', 'Apple varieties'])
+
+  // The two narrow together: "Fruit" says nothing about apples — it merely has
+  // one written under it — so an outline searched for apples doesn't list it.
+  A.setSectionsOnly(frameId(), true)
+  assert.deepEqual(texts(), ['Root', 'Apple varieties'])
+  A.setFind(frameId(), null)
+  A.setSectionsOnly(frameId(), false)
+})
+
+test('reads an outline three levels down, unless the frame says otherwise', async () => {
+  open()
+  source.tree({ root: ['l1'], l1: ['l2'], l2: ['l3'], l3: ['l4'] })
+  source.values({
+    root: { text: 'Root' },
+    l1: { text: 'One', section: true },
+    l2: { text: 'Two', section: true },
+    l3: { text: 'Three', section: true },
+    l4: { text: 'Four', section: true },
+  })
+  rowsOf(frameId())
+  await settle()
+  assert.deepEqual(texts(), ['Root', 'One', 'Two', 'Three', 'Four'])
+
+  // A table of contents is a shape, not a search: the fourth level is below what
+  // the outline is for, and walking to it costs the whole subtree under it.
+  A.setSectionsOnly(frameId(), true)
+  assert.deepEqual(texts(), ['Root', 'One', 'Two', 'Three'])
+
+  // An explicit cap on the root is the user's, including the one that lifts it.
+  A.setMaxDepth(frameId(), 'root', null)
+  await settle()
+  assert.deepEqual(texts(), ['Root', 'One', 'Two', 'Three', 'Four'])
+  A.setMaxDepth(frameId(), 'root', 1)
+  assert.deepEqual(texts(), ['Root', 'One'])
+
+  A.setSectionsOnly(frameId(), false)
 })
 
 // --- Type defaults ----------------------------------------------------------
