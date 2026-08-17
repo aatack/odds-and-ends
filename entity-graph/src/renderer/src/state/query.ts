@@ -10,7 +10,7 @@ import {
 } from './derive'
 import { entities, entitiesAtom, entitiesFrom, type EntityCache } from '../../../core/cache'
 import { focusOf, getLayout, layoutAtom } from './store'
-import type { CallContext, LayoutState } from './types'
+import type { CallContext, FrameState, LayoutState } from './types'
 
 // A frame's query, which is no longer a fetch: the traversal in core/query runs
 // over the entity cache, so a frame's rows are a *derivation* like any other and
@@ -26,27 +26,55 @@ import type { CallContext, LayoutState } from './types'
 export const PAGE_SIZE = 200
 
 /**
- * frame id → how many rows its traversal may produce. Runtime only, and only
- * ever raised: an entry left behind by a closed frame costs one number.
+ * What a frame's budget was raised against — everything that decides which
+ * entities the walk visits. A budget belongs to *that* query and not to the
+ * frame: filling a screen off a narrow filter can raise the ceiling a long way,
+ * and inheriting that when the filter is cleared would leave the frame resolving
+ * every row it had to walk past to find three.
  */
-export const rowLimitsAtom = atom<Record<string, number>>({})
+const shapeOf = (frame: FrameState): string =>
+  JSON.stringify([frame.rootId, frame.direction, frame.find, frame.sectionsOnly, frame.maxDepth])
 
-export const rowLimit = (frameId: string | null): number =>
-  (frameId ? rowLimitsAtom.get()[frameId] : undefined) ?? PAGE_SIZE
+/** How far one frame's traversal may walk, and the query that was raised for. */
+export interface RowBudget {
+  shape: string
+  limit: number
+}
 
 /**
- * Unroll another page of a frame's tree, if the traversal stopped at the limit
- * rather than because there was nothing more. A frame still waiting on entities
- * looks finished — an entity nobody has read yet has no children — so it doesn't
- * grow here; it grows when they arrive, and this is asked again on the next
- * scroll.
+ * frame id → its budget. Runtime only: an entry left behind by a closed frame
+ * costs one number.
+ */
+export const rowLimitsAtom = atom<Record<string, RowBudget>>({})
+
+/** A frame's budget: what was raised for this query, or a fresh page for a new one. */
+const limitOf = (frame: FrameState, limits: Record<string, RowBudget>): number => {
+  const held = limits[frame.id]
+  return held && held.shape === shapeOf(frame) ? held.limit : PAGE_SIZE
+}
+
+/**
+ * Unroll more of a frame's tree, if the traversal stopped at the limit rather
+ * than because there was nothing more. A frame still waiting on entities looks
+ * finished — an entity nobody has read yet has no children — so it doesn't grow
+ * here; it grows when they arrive, and this is asked again on the next scroll.
+ *
+ * The ceiling *doubles* rather than going up by a page. The limit is on the walk
+ * and not on the rows it keeps, so a filtered frame can ask for another page and
+ * get no more rows at all — and it is then asked again, since the screen is still
+ * not full. Growing by a fixed page there means re-walking the tree once per two
+ * hundred entities until the filter finally yields something, which for a narrow
+ * filter over a wide tree is most of the store walked over and over. Doubling
+ * makes that a handful of walks. Scrolling pays the same way round: a frame the
+ * user has already read a thousand rows of asks for a thousand more.
  */
 export function loadMore(frameId: string): void {
-  if (rowsOf(frameId).complete) return
-  rowLimitsAtom.set((limits) => ({
-    ...limits,
-    [frameId]: (limits[frameId] ?? PAGE_SIZE) + PAGE_SIZE,
-  }))
+  const frame = getLayout().frames[frameId]
+  if (!frame || rowsOf(frameId).complete) return
+  rowLimitsAtom.set((limits) => {
+    const at = limitOf(frame, limits)
+    return { ...limits, [frameId]: { shape: shapeOf(frame), limit: at + Math.max(PAGE_SIZE, at) } }
+  })
 }
 
 /** One array, so a tab with nothing folded doesn't look like a change. */
@@ -78,13 +106,13 @@ const unchanged = (a: readonly unknown[], b: readonly unknown[]): boolean =>
 export function treeOf(
   s: LayoutState,
   cache: EntityCache,
-  limits: Record<string, number>,
+  limits: Record<string, RowBudget>,
   frameId: string | null,
 ): FrameTree {
   const frame = frameId ? s.frames[frameId] : null
   if (!frame) return EMPTY_FRAME_TREE
   const collapsed = s.tabs[frame.tabId]?.collapsed ?? EMPTY_COLLAPSED
-  const limit = limits[frame.id] ?? PAGE_SIZE
+  const limit = limitOf(frame, limits)
   const against = [
     frame.rootId,
     frame.direction,
@@ -109,7 +137,7 @@ export function treeOf(
 export const rowsFrom = (
   s: LayoutState,
   cache: EntityCache,
-  limits: Record<string, number>,
+  limits: Record<string, RowBudget>,
   frameId: string | null,
 ): FrameRows => {
   const frame = frameId ? s.frames[frameId] : null
@@ -138,9 +166,11 @@ export function liveContext(
 }
 
 // A frame whose root or filters changed is not a different query to be refetched
-// any more — it is the same derivation over the same cache. The one thing worth
-// noticing is a frame going away, since neither its unroll budget nor its last
-// answer should be inherited by whatever id React hands out next.
+// any more — it is the same derivation over the same cache. Its budget does start
+// over, but that needs nothing here: a budget carries the query it was raised for
+// and is simply not the frame's any more once it asks a different one. The one
+// thing worth noticing is a frame going away, since neither its unroll budget nor
+// its last answer should be inherited by whatever id React hands out next.
 layoutAtom.subscribe(() => {
   const frames = getLayout().frames
   for (const id of trees.keys()) if (!frames[id]) trees.delete(id)
