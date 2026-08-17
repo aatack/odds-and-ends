@@ -156,8 +156,15 @@ const key = (path: readonly string[]): string => path.join('\0')
  * pointedly does not — the point of it is to see the sections and nothing else.
  * Either way this returns the paths as they really are; how far in each of them
  * *reads* once its neighbours have gone is the tree's business, and closing the
- * gaps a filter leaves is what `keptDepths` in ./tree does. Find is applied
- * first, so the two compose.
+ * gaps a filter leaves is what `keptDepths` in ./tree does.
+ *
+ * Sections is applied *first*, so that both together mean "sections matching
+ * this" rather than "sections, and also whatever matches". Find's ancestors are
+ * then the ancestors among what sections kept, so a search of an outline comes
+ * back as the headings that say it, under the headings they sit beneath. The
+ * other way round, find kept every heading above any matching row whatsoever —
+ * which for a word written somewhere under most headings is every heading there
+ * is, and reads as an `or`.
  *
  * Sections keeps the row the query started from whether or not it is one, since
  * it is the thing that was asked about. That is the *path* it started from, not
@@ -176,6 +183,9 @@ export function filterPaths(
     entities[last(path)]?.values ?? {}
 
   let kept = paths
+  if (filters.sections) {
+    kept = kept.filter((path) => key(path) === key(start) || values(path).section === true)
+  }
   if (find) {
     const keep = new Set<string>()
     for (const path of kept) {
@@ -184,9 +194,6 @@ export function filterPaths(
       for (let i = 1; i <= path.length; i++) keep.add(key(path.slice(0, i)))
     }
     kept = kept.filter((path) => keep.has(key(path)))
-  }
-  if (filters.sections) {
-    kept = kept.filter((path) => key(path) === key(start) || values(path).section === true)
   }
   return kept
 }

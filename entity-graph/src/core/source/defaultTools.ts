@@ -325,7 +325,11 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
       find: z
         .string()
         .optional()
-        .describe('Keep only rows whose text contains this, plus their ancestors.'),
+        .describe(
+          'Keep only rows whose text contains this, plus their ancestors. With ' +
+            '`sections`, it searches the table of contents rather than the tree: the ' +
+            'two narrow together, so what comes back is the headings that say this.',
+        ),
       sections: z
         .boolean()
         .optional()

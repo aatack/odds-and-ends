@@ -54,7 +54,8 @@ strict tree.
 - \`find\` keeps only notes whose text contains a string, plus the notes above them so the
   outline still reads. It filters what the walk visited rather than searching the whole
   store, so widen \`limit\` (or start higher up) rather than expecting one call to find
-  every mention.
+  every mention. With \`sections: true\` the two narrow together — it searches the headings
+  rather than the notes under them, which is how to find where something is written about.
 - \`get_details\` returns whole entities for a list of ids: every value on them, their
   children in order (\`outboundLinks\`), and — the usual reason to reach for it —
   \`inboundLinks\`, which is everywhere else in the store that references them.
