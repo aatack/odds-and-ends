@@ -3,6 +3,7 @@ import { SearchSm, X } from '@untitledui/icons'
 import { Editor } from '../views/Editor'
 import { codeRunsAtom, runCode, stopCode } from '../helpers/codeRunner'
 import * as A from '../state/actions'
+import { sectionDepth } from '../state/derive'
 import { findField } from '../state/focusRequest'
 import { useAtomValue, useFocusRequest, useFrameRows, useLayoutState } from '../state/hooks'
 import { loadMore } from '../state/query'
@@ -16,11 +17,13 @@ import { contextWithin, runTool } from '../tools/call'
  */
 export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element {
   const layout = useLayoutState()
-  const { rows, keys, selectedIndex, editIndex, loading } = useFrameRows(frameId)
+  const { rows, keys, selectedIndex, editIndex, loading, complete } = useFrameRows(frameId)
   const codeRuns = useAtomValue(codeRunsAtom)
   const frame = layout.frames[frameId]
 
   if (!frame) return <div className="p-8 text-center text-[13px] text-gray-400">No frame.</div>
+
+  const depth = sectionDepth(frame)
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
@@ -37,7 +40,13 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
           />
         )}
         {frame.sectionsOnly && (
-          <FramePill label="Sections only" onClear={() => A.setSectionsOnly(frameId, false)} />
+          // The depth an outline implies is said out loud: a heading below it is
+          // simply absent, and a filter that hides things without saying so reads
+          // as the tree having nothing there.
+          <FramePill
+            label={depth == null ? 'Sections only' : `Sections only, ${depth} deep`}
+            onClear={() => A.setSectionsOnly(frameId, false)}
+          />
         )}
         {directionOf(frame) === 'in' && (
           <FramePill label="Inbound links" onClear={() => A.setDirection(frameId, 'out')} />
@@ -60,6 +69,7 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
           // already moved to another group.
           onCommit={() => runTool('edit.commit', { extra: { frameId } })}
           onNearEnd={() => loadMore(frameId)}
+          complete={complete}
           codeRuns={codeRuns}
           // The run button is aimed at the row it sits on, which needn't be the
           // selected one, so the script's context is folded along that row's path.
