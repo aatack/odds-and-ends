@@ -83,8 +83,8 @@ is the long form; the rules that matter day to day:
   over whatever is cached and `core/tree.ts` turns that into rows, so folding,
   depth caps and edits redraw without a round trip and the tree fills in as
   events arrive. The only read of the store is `scanEvents`, which fetches a
-  couple of layers ahead. See `docs/frontend-state.md` for the rest — type
-  defaults, `events` scripts, and how writes and undo reach the cache.
+  couple of layers ahead. See `docs/frontend-state.md` for the rest — types,
+  `events` scripts, and how writes and undo reach the cache.
 - **`src/core` is shared with the server *and* the phone.** Anything put there
   is imported by three builds, so it must stay free of Electron, node and zod.
   The entity and its rollup, the traversal, the tree, the markdown an outline is
@@ -92,6 +92,17 @@ is the long form; the rules that matter day to day:
   both clients have to agree on them — and in the markdown's case because the
   server hands the same outline to an agent over MCP; see
   [`mobile/AGENTS.md`](./mobile/AGENTS.md) for where that line is drawn.
+- **A type describes its instances; it does not lend them values.** An entity's
+  `type` names another entity, whose `schema` says which values an entity of that
+  kind holds, whose `actions` are the buttons every row of it wears, and whose
+  `events` script is run once per instance. Nothing of it is inherited — what an
+  entity holds is what was written to it. `core/schema.ts` is the reading of a
+  type; `core/builtins.ts` is the types the store *serves* — `type`, `tool`,
+  `code` and `file`, schemas and all, whether or not anybody wrote them, hung
+  under `@types` so they can be found. **Anything the app gives special meaning
+  to belongs there**: a field read by name in `src/` and described in no schema
+  is a field only the source can tell you about, which is no use to an agent
+  reading the store over MCP. [`docs/types.md`](./docs/types.md) is the long form.
 - **`tools/` is the only way the user does anything.** Every command — moving the
   selection, opening a tab, writing a value — is one `ToolSpec` declaring its
   arguments, its scope, and how far it reaches. Hotkeys and the command palette

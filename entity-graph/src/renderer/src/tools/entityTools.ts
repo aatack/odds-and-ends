@@ -6,7 +6,9 @@ import { directionOf, last, samePath, type LinkDirection } from '../state/types'
 import { updateUi } from '../state/ui'
 import { base64ToBlob } from '../helpers/base64'
 import { copyImage, copyText } from '../helpers/clipboard'
+import { getEntity } from '../../../core/cache'
 import { emptyEntity, str } from '../../../core/entity'
+import { actionsOf } from '../../../core/schema'
 import {
   createEntity,
   link,
@@ -18,6 +20,8 @@ import {
   writeValue,
 } from '../source/entity'
 import { copyFile, fileNameFor } from '../source/files'
+import { runActionScript } from '../helpers/codeRunner'
+import { summarise } from './declared'
 import type { ArgSpec, CallInfo, ToolSpec } from './types'
 
 // Tools that name the entity they act on, rather than implying it. Their
@@ -470,6 +474,54 @@ export const ENTITY_TOOLS: ToolSpec[] = [
         requireId(key, 'Field key'),
         String(text ?? ''),
       )
+    },
+  },
+  {
+    // A button on a row, put there by the row's type — see `core/schema` for what
+    // a type's `actions` are, and `views/Editor` for where they are drawn. The
+    // action is named rather than the code passed, so the button carries a word
+    // and the script stays on the type where it can be edited.
+    id: 'entity.action',
+    label: 'Run entity action',
+    aliases: ['action', 'button', 'do'],
+    hint: 'Entity',
+    scope: 'frame',
+    reach: 'external',
+    args: [
+      entityArg(),
+      {
+        name: 'action',
+        label: 'Action',
+        fromContext: 'action',
+        placeholder: 'as named by the type',
+      },
+    ],
+    run: async ({ entityId, action }, call) => {
+      const id = requireId(entityId, 'Entity id')
+      const name = requireId(action, 'Action')
+      // From the cache rather than the store: the type is already here — a row
+      // drew a button from it — and a button should not wait on a round trip.
+      const typeId = str(getEntity(id).values.type)
+      const code = typeId ? actionsOf(getEntity(typeId).values)[name] : undefined
+      if (!code) {
+        throw new Error(
+          typeId
+            ? `${typeId} defines no action called "${name}"`
+            : `${id} has no type, so it has no actions`,
+        )
+      }
+      // The context is the call's, which the button aimed along its own row, plus
+      // the action's own name — so a script shared by several buttons can tell
+      // which of them was pressed.
+      const context = {
+        ...call.context,
+        values: { ...call.context.values, entityId: id, action: name },
+      }
+      const { result, logs } = await runActionScript(id, name, code, context)
+      // As for a user-defined tool: the result is what the log keeps, and a script
+      // debugged by printing has to print somewhere.
+      for (const line of logs) console.log(`[${typeId}/${name}]`, line)
+      return { data: result, message: summarise(result) ?? `Ran ${name}` }
     },
   },
 ]

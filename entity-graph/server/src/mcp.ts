@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import { BUILTIN_TYPES, TYPE_ID, TYPES_ID } from '../../src/core/builtins'
 import { outlineMarkdown } from '../../src/core/markdown'
 import type { QueryPage } from '../../src/core/query'
 import { rowsOfPage } from '../../src/core/tree'
@@ -75,9 +76,54 @@ made of:
   an ordinary bullet, so don't add it to notes that aren't tasks. Tick something by
   setting \`open\` to \`false\`; never delete the value to mark it done.
 
-A note may also carry a \`type\`, which is the app's business rather than yours: \`code\` is a
-script it can run, \`file\` an attachment whose bytes live outside these tools. Read them,
-but leave their values alone unless you were asked to change them.
+A note may also carry a \`type\`, which is the id of another note describing it — see below.
+
+## Types
+
+A **type** is a note that describes the notes naming it in their \`type\`. Query \`${TYPES_ID}\` for
+the ones there are: the app's own — ${BUILTIN_TYPES.map((t) => `\`${t.id}\``).join(', ')} — are
+served whether or not anybody has written them, and any others are somebody's. Writing one is
+a job you can be given.
+
+\`get_details\` on a type is therefore how to find out what a note of that type holds, which
+is the thing to do before writing one or reading one closely. The app's own types are the
+app's to edit rather than yours: a \`code\` note holds a script it runs and a \`file\` note an
+attachment whose bytes live outside these tools.
+
+A type is a note whose own \`type\` is \`type\`. Three values do the work:
+
+- **\`schema\`** — JSON Schema for the values its instances hold. \`properties\` is the field
+  list, in the order they should be read; give each field a \`type\` and a \`description\`, and
+  name in \`required\` the ones an instance is incomplete without. The app draws a box per
+  field whether or not the note has written one, and marks a value that does not fit — so a
+  schema is a form to fill in and a description to read, never a rule that refuses a value.
+- **\`actions\`** — name → TypeScript, run when a button of that name is pressed on one of the
+  instances.
+- **\`events\`** — a script run once per instance as it is read, which is how a note shows
+  something it does not hold.
+
+The last two are bodies the app runs; leave them alone unless you were asked for one.
+
+The app's own tools are written this way too: a note under \`@tools\` holding the values the
+\`tool\` type describes. Read that type rather than guessing at the fields — and note that the
+app reads every child of \`@tools\` whether or not the note names the type.
+
+**Nothing is inherited.** A type says what its instances *should* hold rather than giving
+them anything, so reading a note tells you what was written to it and no more. \`get_details\`
+on \`${TYPE_ID}\` hands back the schema for the three keys above, which is what to read before
+writing a type of your own.
+
+To write a type:
+
+1. **Choose its id, which is its name** — \`github/pullRequest\`, \`claude/session\`. That is the
+   word every instance carries and the app shows on every row of it, so it wants to read as
+   one. Write to an id nothing has been written to yet and the note begins there; \`create\`
+   is for notes in an outline, and mints a uuid.
+2. \`set_value\` its \`type\` to \`${TYPE_ID}\`, its \`text\` to what the type is called, and its
+   \`schema\` to the JSON Schema — an object, not a string containing one.
+3. \`add_link\` it under \`${TYPES_ID}\`, where the types are collected, or it is nowhere in the
+   outline and nobody will find it.
+4. \`set_value\` \`type\` on the notes that are of it.
 
 ## Writing
 
@@ -292,7 +338,9 @@ const MCP_TOOLS: McpTool[] = [
       '`open` (`true` unticked, `false` ticked); any other key is stored as given. ' +
       '`value` is any JSON.\n\n' +
       'This is for editing a note that already exists. To add one, use `create`, which ' +
-      'mints the id and links it in the same call.\n\n' +
+      'mints the id and links it in the same call — with one exception: writing to an id ' +
+      'nothing has been written to yet is how a note gets a *name* instead of a uuid, ' +
+      'which is what a type is (`github/pullRequest`). Link it somewhere afterwards.\n\n' +
       'There is no way to take a key off a note: `null` blanks it, which reads as ' +
       'absent everywhere it matters — no heading, no checkbox — but stays on the entity ' +
       'as a value, and is how a note refuses a default its type would otherwise give it.',

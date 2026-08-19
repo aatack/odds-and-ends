@@ -26,6 +26,13 @@ The note's own `text` is **not** read. That is what the outline shows, and it is
 different job — a definition should be able to sit under a heading of "Slack
 things" without the palette calling the tool that.
 
+The same table is written down as the **`tool` type's schema** in
+`core/builtins.ts`, which the store serves whether or not anybody has written it:
+that is what the details panel draws a box per field from, and what an agent reads
+over MCP before writing a definition. Change one and change the other. A note under
+`@tools` is read as a tool whether or not it says `type: tool`; saying so is what
+puts the form on it.
+
 | Value | Type | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
 | `name` | string | **yes** | — | What the tool is called: the palette label. |
