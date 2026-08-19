@@ -197,6 +197,28 @@ export async function runToolScript(
   return { result: response.result, logs: response.logs }
 }
 
+/**
+ * Run one of a type's actions — the script behind a button on a row of that type
+ * — and hand back what it evaluated to. The third sibling of {@link evaluateCode}
+ * and {@link runToolScript}, and closest to the latter: pressing a button is a
+ * gesture, so the run belongs to the call it was made under and has nothing of
+ * its own to show. The context is that call's, aimed along the row the button
+ * sits on.
+ *
+ * Namespaced by the entity as well as the action, since one action is a button on
+ * every instance of its type and two rows pressing it are two runs.
+ */
+export async function runActionScript(
+  entityId: string,
+  action: string,
+  code: string,
+  context: CallContext,
+): Promise<{ result: unknown; logs: string[] }> {
+  const response = await execute(`action:${action}@${entityId}#${++scriptRuns}`, code, context)
+  if (!response.ok) throw new Error(response.error ?? 'Error')
+  return { result: response.result, logs: response.logs }
+}
+
 /** Interrupt everything running by killing the workers; the next run respawns one. */
 export function stopCode(): void {
   for (const worker of live) worker.terminate()

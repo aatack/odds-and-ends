@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { builtinEvents } from '../builtins'
 import { bucketEvents, rollupEntity, type LinkDirection } from '../entity'
 import type { AppEvent, LinkAction } from '../events'
 import type { EntityInterface } from '../interface/index'
@@ -166,10 +167,27 @@ export function scanEventsTool(read: (entityIds: string[]) => Promise<AppEvent[]
   }
 }
 
+/**
+ * Reading events, with the ones the store supplies rather than holds in front of
+ * them — see `../builtins`. Every read of the store goes through here, so a
+ * client's cache, a query and an agent over MCP all see the same `type` entity,
+ * and none of them has to know it was never written down.
+ *
+ * They arrive first and timestamped 0, which is only tidiness: a rollup sorts,
+ * so what is actually written wins whatever order it came back in.
+ */
+export const readWithBuiltins =
+  (perms: Permissions) =>
+  async (entityIds?: string[]): Promise<AppEvent[]> => [
+    ...builtinEvents(entityIds),
+    ...(await perms.readEvents(entityIds)),
+  ]
+
 /** An `EntityInterface` backed by the read/write permissions. */
 function entityInterface(perms: Permissions): EntityInterface {
+  const read = readWithBuiltins(perms)
   return {
-    readEvents: async (ids) => bucketEvents(ids, await perms.readEvents(ids)),
+    readEvents: async (ids) => bucketEvents(ids, await read(ids)),
     writeEvents: (events) => perms.writeEvents(events),
   }
 }
@@ -205,8 +223,9 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
     .optional()
     .describe('Surface the write came over; recorded as `author:via`, e.g. `mcp`.')
 
-  const readEvents = readEventsTool(perms.readEvents)
-  const scanEvents = scanEventsTool(perms.readEvents)
+  const read = readWithBuiltins(perms)
+  const readEvents = readEventsTool(read)
+  const scanEvents = scanEventsTool(read)
 
   const writeValue: ToolDef = {
     id: 'writeValue',
