@@ -28,9 +28,11 @@ export const scanEvents = (entityIds: string[]): Promise<EventScan> =>
  * This is for the callers that have nowhere to put "not yet": a script, and the
  * tool loader. They ask, they wait, and what comes back is what the store holds.
  *
- * The rollup is the store's own, so it is the events and nothing else: no type
- * defaults laid in behind, and no `events` script run over the top. Both of those
- * are the cache's doing, and this does not go through it.
+ * The rollup is the store's own, so it is the events and nothing else — no
+ * `events` script run over the top, that being the cache's doing and this not
+ * going through it. What the store *does* lay in is the entities it serves rather
+ * than holds (`core/builtins`), since those are the store's own answer about
+ * itself and not a client's.
  */
 export const readEntities = (entityIds: string[]): Promise<Record<string, Entity>> =>
   callSource('readEntities', { entityIds }) as Promise<Record<string, Entity>>
