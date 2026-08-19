@@ -13,7 +13,7 @@ import assert from 'node:assert/strict'
 const { actionNames, checkValue, fieldsOf, isTextual, schemaOf, typeLabel } = await import(
   '../src/core/schema'
 )
-const { TYPE_ID, builtinEvents } = await import('../src/core/builtins')
+const { BUILTIN_TYPES, TYPE_ID, TYPES_ID, builtinEvents } = await import('../src/core/builtins')
 const { rollupEntity } = await import('../src/core/entity')
 
 const tests: [string, () => void][] = []
@@ -74,6 +74,18 @@ test('never faults an absent value, however required the field', () => {
   assert.equal(checkValue(undefined, worktree), null)
 })
 
+test('takes a choice between shapes as any one of them', () => {
+  // `arguments` on a tool: a list, a schema written the long way, or that list
+  // left as text. The label says all three rather than "any", and a value that is
+  // none of them is told what the field is rather than one branch's complaint.
+  const shapes = { anyOf: [{ type: 'array' }, { type: 'object' }, { type: 'string' }] }
+  assert.equal(typeLabel(shapes), 'array | object | string')
+  assert.equal(checkValue([1], shapes), null)
+  assert.equal(checkValue({ a: 1 }, shapes), null)
+  assert.equal(checkValue('[1]', shapes), null)
+  assert.equal(checkValue(7, shapes), 'expected array | object | string')
+})
+
 test('ignores what it does not understand rather than calling it a failure', () => {
   assert.equal(checkValue('anything', { type: 'string', format: 'uri', oneOf: [] }), null)
   assert.equal(checkValue('anything', { pattern: '(' }), null, 'including a pattern that is not one')
@@ -112,6 +124,52 @@ test('serves the type entity as events, behind anything anybody wrote', () => {
   // Only ids asked for by name, and a dump of the store is what is written down.
   assert.deepEqual(builtinEvents(['something-else']), [])
   assert.deepEqual(builtinEvents(undefined), [])
+})
+
+test('serves a type for everything the app reads by name, hung under @types', () => {
+  // The rule: a field the app gives special meaning to is described somewhere the
+  // store can hand back. These four are what that comes to today.
+  assert.deepEqual(
+    BUILTIN_TYPES.map((t) => t.id),
+    ['type', 'tool', 'code', 'file'],
+  )
+  for (const { id, text, schema } of BUILTIN_TYPES) {
+    const rolled = rollupEntity(id, builtinEvents([id]))
+    assert.equal(rolled.values.text, text, `${id} says what it is called`)
+    assert.equal(rolled.values.type, TYPE_ID, `${id} is a type`)
+    assert.deepEqual(rolled.values.schema, schema)
+    // A description on every field, or an agent reading it is still guessing.
+    for (const field of fieldsOf(schema)) {
+      assert.ok(field.description, `${id}.${field.key} says what it is for`)
+    }
+  }
+
+  // The heading, and the links both ways: a walk down from `@types` finds them,
+  // and a type asked for on its own knows where it hangs.
+  const heading = rollupEntity(TYPES_ID, builtinEvents([TYPES_ID]))
+  assert.equal(heading.values.section, true)
+  assert.deepEqual(heading.outboundLinks, ['type', 'tool', 'code', 'file'])
+  assert.deepEqual(rollupEntity('tool', builtinEvents(['tool'])).inboundLinks, [TYPES_ID])
+})
+
+test('describes a tool the way the app and the server read one', () => {
+  const tool = schemaOf(rollupEntity('tool', builtinEvents(['tool'])).values)
+  const fields = Object.fromEntries(fieldsOf(tool).map((f) => [f.key, f]))
+  // The app's answer to what makes a note tool-shaped: something to call it, and
+  // something to run. The server wants a description and an arguments as well,
+  // which the descriptions say rather than the schema refusing anything.
+  assert.equal(fields.name.required, true)
+  assert.equal(fields.execute.required, true)
+  assert.equal(fields.description.required, false)
+  assert.equal(fields.scope.label, '"frame" | "group" | "app"')
+  assert.equal(checkValue('group', fields.scope.schema), null)
+  assert.equal(checkValue('window', fields.scope.schema), 'must be one of "frame", "group", "app"')
+  // Written as a list of arguments, and each of those is an object with a name —
+  // the `tool/argument` shape, described where the list is rather than as a type
+  // nothing would name.
+  assert.equal(checkValue([{ name: 'who', type: 'string' }], fields.arguments.schema), null)
+  assert.equal(checkValue([{ type: 'string' }], fields.arguments.schema), 'expected array | object | string')
+  assert.equal(checkValue('["who"]', fields.arguments.schema), null, 'a list left as text still fits')
 })
 
 let failed = 0

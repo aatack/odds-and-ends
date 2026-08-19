@@ -97,9 +97,12 @@ is the long form; the rules that matter day to day:
   kind holds, whose `actions` are the buttons every row of it wears, and whose
   `events` script is run once per instance. Nothing of it is inherited — what an
   entity holds is what was written to it. `core/schema.ts` is the reading of a
-  type and `core/builtins.ts` the one type the store supplies (`type` itself,
-  schema and all, whether or not anybody wrote it);
-  [`docs/types.md`](./docs/types.md) is the long form.
+  type; `core/builtins.ts` is the types the store *serves* — `type`, `tool`,
+  `code` and `file`, schemas and all, whether or not anybody wrote them, hung
+  under `@types` so they can be found. **Anything the app gives special meaning
+  to belongs there**: a field read by name in `src/` and described in no schema
+  is a field only the source can tell you about, which is no use to an agent
+  reading the store over MCP. [`docs/types.md`](./docs/types.md) is the long form.
 - **`tools/` is the only way the user does anything.** Every command — moving the
   selection, opening a tab, writing a value — is one `ToolSpec` declaring its
   arguments, its scope, and how far it reaches. Hotkeys and the command palette

@@ -463,6 +463,27 @@ test('knows what a type is without anything having written it down', async () =>
   assert.equal(getEntity('type').values.type, 'type', 'and it is its own type')
 })
 
+test('walks down to the types the store serves, and reads their schemas', async () => {
+  open()
+  source.tree({ root: ['@types'] })
+  rowsOf(frameId())
+  await settle()
+
+  // Nothing has been written to any of this: the heading, the links under it and
+  // the schemas on the four types are all served with the read.
+  assert.deepEqual(shape(), [
+    'root',
+    'root/@types',
+    'root/@types/type',
+    'root/@types/tool',
+    'root/@types/code',
+    'root/@types/file',
+  ])
+  assert.deepEqual(texts(), [undefined, 'Types', 'Type', 'Tool', 'Code', 'File'])
+  const tool = getEntity('tool').values.schema as { properties: Record<string, unknown> }
+  assert.ok(tool.properties.name && tool.properties.execute && tool.properties.arguments)
+})
+
 test('lets the store overrule what it is served', async () => {
   open()
   source.tree({ root: ['type'] })

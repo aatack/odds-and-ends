@@ -6,7 +6,7 @@ can be done with them, and what is computed for them as they load.
 
 A type is an entity like any other, so all of this is written in the store rather
 than in this repository. What is here is the three keys that are read by name, the
-one type the store supplies whether or not anybody wrote it, and where each of
+four types the store supplies whether or not anybody wrote them, and where each of
 them is acted on.
 
 ## What a type holds
@@ -101,12 +101,39 @@ serve every entity of a kind. `docs/frontend-state.md` has the rules it runs
 under; the short version is that it waits for the type, runs only for an entity
 something has actually asked for, and is not re-run by a refresh.
 
-## The `type` type
+## The types the store serves
 
-The entity `type` is the type of types, and the store serves it rather than holding
-it: `core/builtins.ts` hands its values back with every read of that id, timestamped
-0 and authored `builtin`, so anything written to those keys wins and a fresh store
-still knows what a type is.
+Four types are the *app's*, in that the app reads their fields by name, and the
+store serves them rather than holding them: `core/builtins.ts` hands their values
+back with every read of those ids, timestamped 0 and authored `builtin`, so
+anything written to one of those keys wins and a fresh store still knows what they
+are.
+
+| type | what the app does with it |
+| --- | --- |
+| `type` | `schema`, `actions`, `events` — the three keys above |
+| `tool` | a tool of the app, written in the store: `name`, `execute`, `arguments`, … (see [`user-tools.md`](./user-tools.md)) |
+| `code` | `text` is a script, run from the row's play button |
+| `file` | `mimeType`, and a caption in `text`; the bytes are in the resource store under the same id |
+
+They hang under **`@types`**, which is served too — as links, so they can be found
+by reading the outline rather than only by knowing an id. A type someone writes goes
+under the same heading, and a real link-removal event takes any of them out again,
+being later than the served one.
+
+**The rule this follows: anything the app gives special meaning to is described
+here.** A field read by name somewhere in `src/` and nowhere in a schema is a field
+only the source can tell you about — which is no use to an agent reading the store
+over MCP, and not much use to the details panel either. So a new special field
+means a line in `core/builtins.ts`, and one that isn't there yet is a gap rather
+than a decision.
+
+Two things are deliberately not in it. The values *every* entity has — `text`,
+`section`, `open`, `type`, `mimeType` — belong to no type, and are described where
+they are read (`core/entity.ts`, and the MCP instructions). And a type whose fields
+are read by something *written in the store* rather than by the app — `changeset`,
+whose values are read by the tools under `@tools` — is the store's to describe, in
+the store.
 
 The events go in at `readWithBuiltins` in `core/source/defaultTools.ts` — the one
 read every other read is built on — so a client's cache, a `query`, and an agent
@@ -114,8 +141,8 @@ over MCP all see the same thing, and none of them has to know it was never writt
 down. A dump of the whole store (`readEvents` with no ids) leaves them out: that is
 what *is* written down.
 
-Its schema is the three keys above, which is what makes the details panel of a type
-a form for writing one.
+A served link comes back when *either* end was asked for, since one link is a
+parent's child and a child's inbound link — the same event read from two sides.
 
 ## Writing a type
 
@@ -128,5 +155,5 @@ By hand, or over MCP, which tells an agent the same thing (`server/src/mcp.ts`):
    Schema.
 3. Link it under `@types`, where types are collected — a reserved entity in the
    manner of `@tools` and `@changesets`. Nothing in the code reads it; it is where
-   to look.
+   to look, and the served types are already there.
 4. Set `type` on the entities that are of it.

@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { TYPE_ID } from '../../src/core/builtins'
+import { BUILTIN_TYPES, TYPE_ID, TYPES_ID } from '../../src/core/builtins'
 import { outlineMarkdown } from '../../src/core/markdown'
 import type { QueryPage } from '../../src/core/query'
 import { rowsOfPage } from '../../src/core/tree'
@@ -23,9 +23,6 @@ const QUERY_LIMIT = 200
 
 /** The entity the outline hangs off, and where a model with no bearings starts. */
 const ROOT_ID = '@index'
-
-/** Where the types are collected, so a type written here can be found again. */
-const TYPES_ID = '@types'
 
 /**
  * How to use this store, told to the client at initialize. Long on purpose: it is
@@ -83,10 +80,15 @@ A note may also carry a \`type\`, which is the id of another note describing it 
 
 ## Types
 
-A **type** is a note that describes the notes naming it in their \`type\`. Two of them are the
-app's own: \`code\` is a script it can run and \`file\` an attachment whose bytes live outside
-these tools, and neither is yours to edit unless you were asked to. Every other type is one
-somebody wrote, and writing them is a job you can be given.
+A **type** is a note that describes the notes naming it in their \`type\`. Query \`${TYPES_ID}\` for
+the ones there are: the app's own — ${BUILTIN_TYPES.map((t) => `\`${t.id}\``).join(', ')} — are
+served whether or not anybody has written them, and any others are somebody's. Writing one is
+a job you can be given.
+
+\`get_details\` on a type is therefore how to find out what a note of that type holds, which
+is the thing to do before writing one or reading one closely. The app's own types are the
+app's to edit rather than yours: a \`code\` note holds a script it runs and a \`file\` note an
+attachment whose bytes live outside these tools.
 
 A type is a note whose own \`type\` is \`type\`. Three values do the work:
 
@@ -102,10 +104,14 @@ A type is a note whose own \`type\` is \`type\`. Three values do the work:
 
 The last two are bodies the app runs; leave them alone unless you were asked for one.
 
+The app's own tools are written this way too: a note under \`@tools\` holding the values the
+\`tool\` type describes. Read that type rather than guessing at the fields — and note that the
+app reads every child of \`@tools\` whether or not the note names the type.
+
 **Nothing is inherited.** A type says what its instances *should* hold rather than giving
 them anything, so reading a note tells you what was written to it and no more. \`get_details\`
-on \`${TYPE_ID}\` hands back the schema for the three keys above — the store supplies it whether
-or not anybody has written one, and it is the thing to read before writing a type.
+on \`${TYPE_ID}\` hands back the schema for the three keys above, which is what to read before
+writing a type of your own.
 
 To write a type:
 
