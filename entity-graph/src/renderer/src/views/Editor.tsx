@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, ChevronRight, Play, Square, Stop } from '@untitledui/icons'
 import { TextEditor } from '../components/ui/TextEditor'
+import { Button } from '../components/ui/Button'
 import { CodeBlock } from '../components/ui/CodeBlock'
 import { EntityMarkdown } from '../components/EntityMarkdown'
 import { ResourceView } from '../components/Resource'
@@ -91,6 +92,8 @@ export interface EditorProps {
   /** Run a code entity: its id and source, plus the path of the row it sits at. */
   onRunCode: (id: string, code: string, path: string[]) => void
   onStopCode: () => void
+  /** Press one of the buttons a row's type put on it, at the row it was pressed on. */
+  onRunAction: (row: EntityRow, action: string) => void
 }
 
 /**
@@ -115,6 +118,7 @@ export function Editor(props: EditorProps): React.JSX.Element {
     codeRuns,
     onRunCode,
     onStopCode,
+    onRunAction,
   } = props
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -261,6 +265,7 @@ export function Editor(props: EditorProps): React.JSX.Element {
         onCommit={onCommit}
         onRunCode={onRunCode}
         onStopCode={onStopCode}
+        onRunAction={onRunAction}
       />
     )
   }
@@ -320,6 +325,7 @@ interface RowProps {
   /** Run a code entity: its id and source, plus the path of the row it sits at. */
   onRunCode: (id: string, code: string, path: string[]) => void
   onStopCode: () => void
+  onRunAction: (row: EntityRow, action: string) => void
 }
 
 const RowView = React.memo(function RowView({
@@ -333,6 +339,7 @@ const RowView = React.memo(function RowView({
   onCommit,
   onRunCode,
   onStopCode,
+  onRunAction,
 }: RowProps): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -400,6 +407,7 @@ const RowView = React.memo(function RowView({
   const isCode = row.type === 'code'
   const running = run?.status === 'running'
   const heading = row.section ? sectionStyle(row.depth) : undefined
+  const actions = row.actions ?? []
 
   // Where a typed row's pill goes. A row drawing prose floats it into the text:
   // the first line starts after it and every line below runs the full width, so
@@ -466,6 +474,15 @@ const RowView = React.memo(function RowView({
             pill can't escape into the row below. */}
         <div className="flex-1 min-w-0">
           {row.type && prose && <TypePill label={row.type} className="float-left mr-1" />}
+          {/* The buttons the row's type put on it, floated the other way: the
+              text runs up to them and wraps under them, so they sit alongside the
+              first line rather than opening the row up. Before the text in the
+              DOM because a float only moves the lines that come after it. A row
+              that cannot flow around a float — code, a file, a box being typed
+              into — gets them underneath instead (below). */}
+          {prose && actions.length > 0 && (
+            <RowActions row={row} actions={actions} onRun={onRunAction} className="float-right ml-2" />
+          )}
           {row.editing ? (
             <TextEditor
               autoFocus
@@ -510,8 +527,54 @@ const RowView = React.memo(function RowView({
           ) : (
             <span className={`${TEXT} italic text-gray-400`}>Empty</span>
           )}
+          {!prose && actions.length > 0 && (
+            <RowActions row={row} actions={actions} onRun={onRunAction} className="mt-1 flex" />
+          )}
         </div>
       </div>
     </div>
   )
 })
+
+/**
+ * What a row's type says can be done with it, as buttons. The names are the
+ * type's `actions` keys and the labels are those names verbatim — a type calls
+ * its action "Merge" because that is what the button should say.
+ *
+ * Chrome, so the app's sans rather than the row's serif, and the height of one
+ * line of text so a row wearing three of them is no taller than one wearing
+ * none. The click doesn't select the row: pressing a button on a row you are not
+ * on should not move the cursor there, and the call is aimed along that row's own
+ * path regardless.
+ */
+function RowActions({
+  row,
+  actions,
+  onRun,
+  className,
+}: {
+  row: EntityRow
+  actions: string[]
+  onRun: (row: EntityRow, action: string) => void
+  className?: string
+}): React.JSX.Element {
+  return (
+    <span className={cn('inline-flex items-center gap-1', className)}>
+      {actions.map((action) => (
+        <Button
+          key={action}
+          variant="secondary"
+          size="sm"
+          className="h-5 px-1.5 font-sans text-[12px]"
+          title={`${action} — ${row.type}`}
+          onClick={(e) => {
+            e.stopPropagation()
+            onRun(row, action)
+          }}
+        >
+          {action}
+        </Button>
+      ))}
+    </span>
+  )
+}

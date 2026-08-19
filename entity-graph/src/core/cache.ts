@@ -25,13 +25,13 @@ export interface CachedEntity {
   /** Why the last read failed, so a row can say so rather than sitting blank. */
   error?: string
   /**
-   * Events produced by an `events` script rather than read from the source, and
-   * never written back to it — the text of a Slack message, the branches on a
+   * Events produced by a type's `events` script rather than read from the source,
+   * and never written back to it — the text of a Slack message, the branches on a
    * repo. Kept apart from the real ones so a refetch can replace those without
    * disturbing these.
    */
   derived: AppEvent[]
-  /** Whether this entity's own `events` script has been run. */
+  /** Whether this entity's type has had its `events` script run for it. */
   derivedState: LoadState
   /**
    * Why that script failed, if it did. Kept apart from {@link error} because the
@@ -40,12 +40,14 @@ export interface CachedEntity {
    * author hoped for. Conflating them made a bad script look like a bad store.
    */
   derivedError?: string
-  /** The events above, rolled up. Derived, but cached — see {@link reconcile}. */
-  base: Entity
   /**
-   * The entity everything else reads: {@link base} with its type's values laid
-   * in behind. Also derived and cached, and recomputed only when one of those
-   * two changes, so a row keeps its identity across unrelated updates.
+   * The events above, rolled up — the entity everything else reads. Derived, but
+   * cached and recomputed only when the events it came from change, so a row
+   * keeps its identity across unrelated updates.
+   *
+   * An entity's *type* contributes nothing to it. A type describes its instances
+   * — what they should hold, what can be done with them — rather than lending
+   * them values, so what is here is what was written down.
    */
   entity: Entity
 }
@@ -70,7 +72,6 @@ const blank = (id: string): CachedEntity => ({
   loaded: 'unloaded',
   derived: [],
   derivedState: 'unloaded',
-  base: empty(id),
   entity: empty(id),
 })
 
@@ -368,30 +369,28 @@ function update(mutate: (draft: EntityCache) => void): void {
   })
 }
 
-/** The id of the entity a set of values takes its defaults from, if any. */
+/** The id of the entity a set of values names as its type, if any. */
 function typeIdOf(values: Record<string, unknown>): string | null {
   const typeId = values.type
   return typeof typeId === 'string' && typeId ? typeId : null
 }
 
 /**
- * Recompute the derived half of every entry whose inputs changed, and start
- * whatever that leaves worth starting.
+ * Roll up every entry whose events changed, and start whatever that leaves worth
+ * starting.
  *
- * Two passes, because an entity's values depend on its *type's*: everything is
- * rolled up first, and only then are the defaults laid in. That way the order
- * entries happen to sit in can't decide whether one sees its type's new values
- * or its old ones. Defaults are drawn from the type's own roll-up rather than
- * from its defaulted values, which keeps the dependency exactly one deep — a
- * type that is its own type is then a curiosity rather than a hang.
+ * A type contributes nothing to its instances' values, so this is one walk and
+ * not the two it used to be: the second pass existed only to lay a type's values
+ * in behind an entity's own. What is left of the type is still read here, though
+ * — an entity naming one is what asks for it, since nothing else does, and its
+ * `actions` and `schema` are read off it wherever they are shown.
  *
- * The second pass covers the whole cache rather than only what changed, since a
- * type arriving has to reach every entity that names it. That is one walk of a
+ * The loop covers the whole cache rather than only what changed, since a type
+ * arriving has to reach every entity that names it. That is one walk of a
  * session's worth of entities per batch of events, not per event.
  */
 function reconcile(before: EntityCache, draft: EntityCache): EntityCache {
   const next: EntityCache = {}
-  const rerolled = new Set<string>()
 
   for (const [id, entry] of Object.entries(draft)) {
     const prior = before[id]
@@ -399,8 +398,9 @@ function reconcile(before: EntityCache, draft: EntityCache): EntityCache {
       next[id] = entry
       continue
     }
-    rerolled.add(id)
-    next[id] = { ...entry, base: rollupEntity(id, [...entry.events, ...entry.derived]) }
+    // Only the rolled-up entity is recomputed here; everything else about the
+    // entry is whatever the change being reconciled left it as.
+    next[id] = { ...entry, entity: rollupEntity(id, [...entry.events, ...entry.derived]) }
   }
 
   /** Types nothing has read, or has read but since invalidated. */
@@ -409,24 +409,14 @@ function reconcile(before: EntityCache, draft: EntityCache): EntityCache {
   const candidates: string[] = []
 
   for (const [id, entry] of Object.entries(next)) {
-    const typeId = typeIdOf(entry.base.values)
-    const defaults = typeId ? next[typeId]?.base.values : undefined
+    const typeId = typeIdOf(entry.entity.values)
     // Naming a type is what asks for it — nothing else reads one, so without
     // this a type would never load at all, and never reload after a write.
     if (typeId && stateOf(next, typeId) === 'unloaded') staleTypes.add(typeId)
 
-    const prior = before[id]
-    const priorTypeId = prior ? typeIdOf(prior.base.values) : null
-    const priorDefaults = priorTypeId ? before[priorTypeId]?.base.values : undefined
-    // Only the rolled-up entity is recomputed here; everything else about the
-    // entry is whatever the change being reconciled left it as.
-    if (rerolled.has(id) || !prior || defaults !== priorDefaults) {
-      next[id] = { ...entry, entity: withDefaults(entry.base, defaults) }
-    }
-
     // Only what was asked for: see `asked`. An overscanned entity is left alone
     // until something reads it, and picked up by `requestEntities` when it does.
-    if (asked.has(id) && next[id].loaded === 'loaded' && next[id].derivedState === 'unloaded') {
+    if (asked.has(id) && entry.loaded === 'loaded' && entry.derivedState === 'unloaded') {
       candidates.push(id)
     }
   }
@@ -445,40 +435,12 @@ function same(before: EntityCache, next: EntityCache): boolean {
   return keys.every((id) => before[id] === next[id])
 }
 
-/**
- * An entity with its type's values behind its own. A key the type defines and
- * the entity doesn't is taken from the type — and "doesn't" covers null as well
- * as absent, because the store is append-only and null is the only way to take a
- * value off: an event saying "no longer this" cannot be an event saying "and
- * nothing else either", or a key could never be given back to its default once
- * overridden.
- *
- * So the two ways of having no value of your own mean the same thing, which is
- * what makes clearing a key in the inspector and never writing it indisinguishable
- * from the outside — as they should be.
- */
-function withDefaults(base: Entity, defaults: Record<string, unknown> | undefined): Entity {
-  if (!defaults) return base
-  const values = { ...base.values }
-  let changed = false
-  for (const [key, value] of Object.entries(defaults)) {
-    // A type whose own key is null defines no default, so there is nothing here
-    // to lay behind anything — and writing one in would hand back a new object
-    // on every reconcile for no change anybody could see.
-    if (value == null) continue
-    if (values[key] != null) continue
-    values[key] = value
-    changed = true
-  }
-  return changed ? { ...base, values } : base
-}
-
 // --- Derived events ---------------------------------------------------------
 
 /**
- * Run an entity's `events` script and hand back what it returned. Injected
- * rather than imported: running code needs a worker, and this layer has no
- * business knowing that.
+ * Run a type's `events` script for one of its instances and hand back what it
+ * returned. Injected rather than imported: running code needs a worker, and this
+ * layer has no business knowing that.
  */
 export type CodeEvaluator = (
   entityId: string,
@@ -496,14 +458,14 @@ const DERIVED_AUTHOR = 'derived'
 
 /**
  * Decide what, if anything, is left to compute for entities whose events have
- * arrived. An entity with no `events` value has nothing to compute and is
- * settled on the spot, which is what keeps this from reconsidering the whole
- * cache every time anything changes.
+ * arrived. The script is the *type's*: an entity of no type, or of a type that
+ * defines no `events`, has nothing to compute and is settled on the spot, which
+ * is what keeps this from reconsidering the whole cache every time anything
+ * changes.
  *
- * A script may only run once the entity's *type* has loaded, since the script
- * itself can come from the type — so an entity waiting on its type is left for
- * now and picked up when the type lands. The type is asked for as soon as its id
- * is known, so the wait always ends.
+ * The script therefore cannot run until the type has loaded — an entity waiting
+ * on its type is left for now and picked up when the type lands. The type is
+ * asked for as soon as its id is known, so the wait always ends.
  */
 function startDerivations(ids: readonly string[]): void {
   const cache = entitiesAtom.get()
@@ -514,13 +476,17 @@ function startDerivations(ids: readonly string[]): void {
     const entry = cache[id]
     if (!entry || entry.loaded !== 'loaded' || entry.derivedState !== 'unloaded') continue
 
-    const typeId = typeIdOf(entry.base.values)
-    if (typeId && stateOf(cache, typeId) !== 'loaded') {
+    const typeId = typeIdOf(entry.entity.values)
+    if (!typeId) {
+      settled.push(id)
+      continue
+    }
+    if (stateOf(cache, typeId) !== 'loaded') {
       requestEntities([typeId])
       continue
     }
 
-    const code = entry.entity.values.events
+    const code = cache[typeId]?.entity.values.events
     if (typeof code === 'string' && code.trim()) ready.push({ id, code })
     else settled.push(id)
   }

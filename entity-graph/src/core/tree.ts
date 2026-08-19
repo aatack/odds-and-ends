@@ -1,4 +1,5 @@
-import { summaryOf, type Entity, type EntitySummary, type LinkDirection } from './entity'
+import { str, summaryOf, type Entity, type EntitySummary, type LinkDirection } from './entity'
+import { actionNames } from './schema'
 import {
   filterPaths,
   resolveQuery,
@@ -34,6 +35,13 @@ export interface TreeRow extends EntitySummary {
   open?: boolean
   hasChildren: boolean
   collapsed: boolean
+  /**
+   * The actions the row's *type* defines, in the order the type wrote them —
+   * a button each, alongside the row's text. Absent where there is no source to
+   * look the type up in, which is the caller reading a page it was handed
+   * ({@link rowsOfPage}) rather than walking a cache itself.
+   */
+  actions?: string[]
 }
 
 export interface Tree {
@@ -59,9 +67,11 @@ function rowOf(
   depth: number,
   direction: LinkDirection,
   collapsed: boolean,
+  actions?: string[],
 ): TreeRow {
   const open = entity.values.open
   return {
+    ...(actions?.length ? { actions } : {}),
     id: path[path.length - 1],
     depth,
     path: [...path],
@@ -155,9 +165,19 @@ export function buildTree(
   const folded = new Set(traversal.collapsed)
   const depths = keptDepths(kept, (path) => path.length - start.length)
 
+  // What each row's type has to say about it. Reading a type is also what asks
+  // for it, so a row's buttons appear as soon as its type lands — and a type only
+  // rows reference is fetched on their behalf.
+  const typeIds = [
+    ...new Set(kept.map((path) => str(entities[path[path.length - 1]]?.values.type))),
+  ].filter((id): id is string => !!id)
+  const types = typeIds.length ? source.get(typeIds) : {}
+
   const rows = kept.map((path, i): TreeRow => {
     const id = path[path.length - 1]
-    return rowOf(path, entities[id], depths[i], traversal.direction, folded.has(id))
+    const typeId = str(entities[id]?.values.type)
+    const actions = typeId ? actionNames(types[typeId]?.values) : undefined
+    return rowOf(path, entities[id], depths[i], traversal.direction, folded.has(id), actions)
   })
 
   return {

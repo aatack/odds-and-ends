@@ -385,98 +385,116 @@ test('reads an outline three levels down, unless the frame says otherwise', asyn
   A.setSectionsOnly(frameId(), false)
 })
 
-// --- Type defaults ----------------------------------------------------------
+// --- Types ------------------------------------------------------------------
 
-test('lays a type’s values in behind an entity’s own', async () => {
+test('does not lend a type’s values to the entities that name it', async () => {
   open()
   source.tree({ root: ['a', 'b'] })
   source.values({
     task: { text: 'Task', open: true, colour: 'blue' },
     a: { type: 'task' },
-    b: { type: 'task', text: 'Write it', colour: null },
+    b: { type: 'task', text: 'Write it' },
   })
   rowsOf(frameId())
   await settle()
 
-  // `a` says nothing of its own, so it is the type all the way down.
-  assert.equal(getEntity('a').values.text, 'Task')
-  assert.equal(getEntity('a').values.colour, 'blue')
-  // `b` overrides one key and clears another. Clearing it is how a value comes
-  // *off* in an append-only store, so it falls back to the type rather than
-  // standing as an absence of its own — the same as never having written it.
+  // A type describes its instances rather than standing behind them: `a` says
+  // nothing, so `a` *is* nothing but its type — no text, no colour, no checkbox.
+  assert.equal(getEntity('a').values.text, undefined)
+  assert.equal(getEntity('a').values.colour, undefined)
+  assert.equal(getEntity('a').values.open, undefined)
   assert.equal(getEntity('b').values.text, 'Write it')
-  assert.equal(getEntity('b').values.colour, 'blue')
-  // The type was never asked for by name — reading the entity fetched it.
+  // The type was never asked for by name — naming it in `type` fetched it, which
+  // is what its schema and its actions are read off.
   assert.equal(getEntity('task').values.text, 'Task')
 })
 
-test('leaves a cleared key cleared when the type has nothing to say about it', async () => {
+test('reaches a type nothing links to', async () => {
   open()
   source.tree({ root: ['a'] })
-  source.values({
-    // A type that mentions `colour` but defines nothing for it, and one key it
-    // says nothing about at all. Neither can stand behind a cleared value.
-    task: { text: 'Task', colour: null },
-    a: { type: 'task', colour: 'red', note: 'hi' },
-  })
-  rowsOf(frameId())
-  await settle()
-  assert.equal(getEntity('a').values.colour, 'red')
-
-  source.values({ a: { type: 'task', colour: null, note: null } })
-  refreshEntities()
-  await settle()
-  assert.equal(getEntity('a').values.colour, null)
-  assert.equal(getEntity('a').values.note, null)
-  // And the key the type *does* define is still laid in behind.
-  assert.equal(getEntity('a').values.text, 'Task')
-})
-
-test('reaches every entity of a type when the type arrives late', async () => {
-  open()
-  source.tree({ root: ['a'] })
-  source.values({ a: { type: 'far' }, far: { flavour: 'vanilla' } })
+  source.values({ a: { type: 'far' }, far: { text: 'Far' } })
 
   rowsOf(frameId())
   await settle(2)
-  // `far` is not linked from anything, so the overscan can't have reached it:
-  // the default only turns up once the type has been fetched on its own.
+  // `far` is not linked from anything, so the overscan can't have reached it: it
+  // turns up only because something named it as its type.
   await settle()
-  assert.equal(getEntity('a').values.flavour, 'vanilla')
+  assert.equal(getEntity('far').values.text, 'Far')
 })
 
-test('re-reads a type after a write, though nothing has a row for it', async () => {
+test('puts a type’s actions on the rows of that type, and follows a write to them', async () => {
   open()
   source.tree({ root: ['a'] })
-  source.values({ a: { type: 'task' }, task: { colour: 'blue' } })
+  source.values({ a: { text: 'A', type: 'pr' }, pr: { actions: { Merge: 'merge()' } } })
   rowsOf(frameId())
   await settle()
-  assert.equal(getEntity('a').values.colour, 'blue')
+  const actionsOnA = (): string[] | undefined => {
+    const row = rowsOf(frameId()).rows.find((r) => r.kind === 'entity' && r.id === 'a')
+    return row && row.kind === 'entity' ? row.actions : undefined
+  }
+  assert.deepEqual(actionsOnA(), ['Merge'])
 
+  // Written on the type, though nothing has a row for it: the entity that names
+  // it is what re-reads it.
   source.given({
     type: 'value',
-    entityId: 'task',
-    key: 'colour',
-    value: 'green',
+    entityId: 'pr',
+    key: 'actions',
+    value: { Merge: 'merge()', Approve: 'approve()' },
     timestamp: Date.now(),
   })
   refreshEntities()
   await settle()
-  assert.equal(getEntity('a').values.colour, 'green')
+  assert.deepEqual(actionsOnA(), ['Merge', 'Approve'])
 })
+
+test('knows what a type is without anything having written it down', async () => {
+  open()
+  source.tree({ root: ['claude/session'] })
+  source.values({ 'claude/session': { text: 'A session', type: 'type' } })
+  rowsOf(frameId())
+  await settle()
+
+  // Nothing has ever been written to `type`, and it still says what a type holds:
+  // the store serves it (`core/builtins`), so a schema can be written against it
+  // on a store that is one entity old.
+  const schema = getEntity('type').values.schema as { properties: Record<string, unknown> }
+  assert.deepEqual(Object.keys(schema.properties), ['schema', 'actions', 'events'])
+  assert.equal(getEntity('type').values.type, 'type', 'and it is its own type')
+})
+
+test('lets the store overrule what it is served', async () => {
+  open()
+  source.tree({ root: ['type'] })
+  source.values({ type: { text: 'What a type is here' } })
+  rowsOf(frameId())
+  await settle()
+  // A real event beats the served one: it is timestamped 0 precisely so that
+  // anything actually written wins.
+  assert.equal(getEntity('type').values.text, 'What a type is here')
+  assert.ok(getEntity('type').values.schema, 'and the rest of it still stands')
+})
+
 
 // --- Derived events ---------------------------------------------------------
 
-test('runs an entity’s events script once, and lets it speak for others', async () => {
+test('runs a type’s events script once per instance, and lets it speak for others', async () => {
   open()
   source.tree({ root: ['repo'], repo: ['branch'] })
-  source.values({ repo: { text: 'Repo', events: 'branches()' } })
+  source.values({
+    repo: { text: 'Repo', type: 'repository' },
+    repository: { events: 'branches()' },
+  })
 
   let ran = 0
-  setCodeEvaluator(async (entityId, code) => {
+  setCodeEvaluator(async (entityId, code, values) => {
     ran++
+    // The script is the type’s and the context is the instance’s: it is run for
+    // `repo`, with `repo`’s own values, which is what makes one script on one
+    // type serve every entity of it.
     assert.equal(entityId, 'repo')
     assert.equal(code, 'branches()')
+    assert.equal(values.text, 'Repo')
     return [
       { key: 'text', value: 'Repo (live)' },
       { entityId: 'branch', key: 'text', value: 'main' },
@@ -498,12 +516,34 @@ test('runs an entity’s events script once, and lets it speak for others', asyn
   assert.equal(getEntity('branch').values.text, 'main')
 })
 
+test('leaves an entity’s own events value alone — the script is the type’s', async () => {
+  open()
+  source.tree({ root: ['x'] })
+  source.values({ x: { text: 'X', events: 'mine()' } })
+
+  let ran = 0
+  setCodeEvaluator(async () => {
+    ran++
+    return [{ key: 'note', value: 'ran' }]
+  })
+
+  rowsOf(frameId())
+  await settle()
+  assert.equal(ran, 0, 'an entity of no type has no script, whatever it holds')
+  assert.equal(getEntity('x').values.note, undefined)
+})
+
 test('leaves the script of an entity nothing has read alone until something reads it', async () => {
   open()
   // `deep` is two levels down and folded away, so no row asks for it — but the
   // overscan reads that far ahead, so its events arrive regardless.
   source.tree({ root: ['a'], a: ['deep'] })
-  source.values({ root: { text: 'Root' }, a: { text: 'A' }, deep: { text: 'Deep', events: 'reach()' } })
+  source.values({
+    root: { text: 'Root' },
+    a: { text: 'A' },
+    deep: { text: 'Deep', type: 'reacher' },
+    reacher: { events: 'reach()' },
+  })
   const tabId = (): string => layoutAtom.get().frames[frameId()].tabId
 
   let ran = 0
@@ -534,7 +574,7 @@ test('leaves the script of an entity nothing has read alone until something read
 test('records why a script failed, apart from why a read might have', async () => {
   open()
   source.tree({ root: ['x'] })
-  source.values({ x: { text: 'X', events: 'boom()' } })
+  source.values({ x: { text: 'X', type: 'boomy' }, boomy: { events: 'boom()' } })
   setCodeEvaluator(async () => {
     throw new Error('boom is not a function')
   })
@@ -554,7 +594,7 @@ test('records why a script failed, apart from why a read might have', async () =
 test('runs the scripts again on request, without duplicating what they made', async () => {
   open()
   source.tree({ root: ['r'] })
-  source.values({ r: { text: 'R', events: 'children()' } })
+  source.values({ r: { text: 'R', type: 'parent' }, parent: { events: 'children()' } })
 
   let runs = 0
   setCodeEvaluator(async () => {
@@ -579,7 +619,7 @@ test('runs the scripts again on request, without duplicating what they made', as
   assert.equal(getEntity('c1').values.text, 'run 2')
 })
 
-test('waits for the type before running a script the type could supply', async () => {
+test('waits for the type before running the script it holds', async () => {
   open()
   source.tree({ root: ['x'] })
   source.values({ x: { type: 'scripted' }, scripted: { events: 'fromTheType()' } })
@@ -587,15 +627,16 @@ test('waits for the type before running a script the type could supply', async (
   const seen: string[] = []
   setCodeEvaluator(async (entityId, code) => {
     seen.push(`${entityId}:${code}`)
-    return { key: 'note', value: 'inherited' }
+    return { key: 'note', value: 'from the type' }
   })
 
   rowsOf(frameId())
   await settle()
-  // Both the type and the entity have the script — the type by writing it, the
-  // entity by inheriting it — and both are run against themselves.
-  assert.deepEqual(seen.sort(), ['scripted:fromTheType()', 'x:fromTheType()'])
-  assert.equal(getEntity('x').values.note, 'inherited')
+  // `scripted` is not linked from anything, so it is fetched only because `x`
+  // names it — and `x` waits for it rather than settling with no script. The
+  // type is not itself an instance of anything, so it runs nothing of its own.
+  assert.deepEqual(seen, ['x:fromTheType()'])
+  assert.equal(getEntity('x').values.note, 'from the type')
 })
 
 // --- Writing and undoing ----------------------------------------------------

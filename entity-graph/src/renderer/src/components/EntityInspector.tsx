@@ -1,7 +1,15 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Check, Trash03 } from '@untitledui/icons'
 import type { Entity } from '../../../core/entity'
+import { str } from '../../../core/entity'
 import { entitiesAtom, refreshDerived, refreshEntities, type LoadState } from '../../../core/cache'
+import {
+  checkValue,
+  fieldsOf,
+  isTextual,
+  schemaOf,
+  type SchemaField,
+} from '../../../core/schema'
 import { cn } from '../helpers/cn'
 import { useAtomValue } from '../state/hooks'
 import { clearUndo } from '../state/undo'
@@ -58,13 +66,16 @@ export function EntityInspector({ sourceId, entityId, user, onClose }: Props): R
   const [missing, setMissing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('values')
+  /** The entity's type, and the fields its schema says an instance holds. */
+  const [typeId, setTypeId] = useState<string | null>(null)
+  const [fields, setFields] = useState<SchemaField[]>([])
 
   const load = useCallback(async (): Promise<void> => {
     setError(null)
     try {
       // Straight from the source rather than from the cache, and rolled up by
       // the store: the point of this panel is what is actually written down,
-      // without a type's defaults or an `events` script laid over the top.
+      // without an `events` script laid over the top.
       const read = (await api.sourceCall(sourceId, 'readEntities', {
         entityIds: [entityId],
       })) as Record<string, Entity>
@@ -72,6 +83,19 @@ export function EntityInspector({ sourceId, entityId, user, onClose }: Props): R
       setValues(self?.values ?? {})
       setLinks(self?.outboundLinks ?? [])
       setInbound(self?.inboundLinks ?? [])
+      // A second read, because which entity to ask for is the answer to the
+      // first. The type is what says which fields this entity is *expected* to
+      // hold, which is the whole reason a box can be here before a value is.
+      const type = str(self?.values.type) ?? null
+      setTypeId(type)
+      if (type) {
+        const readType = (await api.sourceCall(sourceId, 'readEntities', {
+          entityIds: [type],
+        })) as Record<string, Entity>
+        setFields(fieldsOf(schemaOf(readType[type]?.values)))
+      } else {
+        setFields([])
+      }
       // No values and nothing pointing either way: an id that was written to by
       // accident, or one that has since been fully unlinked.
       setMissing(
@@ -160,7 +184,9 @@ export function EntityInspector({ sourceId, entityId, user, onClose }: Props): R
       {/* The one scrolling region. The id and the tab bar above it stay put, so
           moving between tabs never moves the tabs. */}
       <div className="mt-3 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
-        {tab === 'values' && <Values values={values} onWrite={writeValue} />}
+        {tab === 'values' && (
+          <Values values={values} fields={fields} typeId={typeId} onWrite={writeValue} />
+        )}
         {tab === 'links' && (
           <Links
             ids={links}
@@ -197,20 +223,48 @@ const pretty = (value: unknown): string => {
 
 function Values({
   values,
+  fields,
+  typeId,
   onWrite,
 }: {
   values: Record<string, unknown>
+  /** What the entity's type says it holds — a box each, value or no value. */
+  fields: SchemaField[]
+  typeId: string | null
   onWrite: (key: string, value: unknown) => Promise<void>
 }): React.JSX.Element {
-  // Sorted, because the order the store hands them back in is the order they were
-  // first written, which is nothing to anyone looking for one of them.
-  const keys = Object.keys(values).sort()
+  const declared = new Set(fields.map((f) => f.key))
+  // The schema's fields come first, in the order the schema wrote them — a schema
+  // is a form, and the order its author typed the keys in is the only ordering
+  // anyone meant. What is written and not declared then follows, sorted, because
+  // the order the store hands those back in is the order they were first written,
+  // which is nothing to anyone looking for one of them.
+  const rest = Object.keys(values)
+    .filter((key) => !declared.has(key))
+    .sort()
+
   return (
     <>
-      {keys.length === 0 ? (
+      {fields.length > 0 && (
+        <p className={EMPTY}>
+          The first {fields.length === 1 ? 'field' : `${fields.length} fields`} are what the{' '}
+          <span className="font-mono">{typeId}</span> type says an entity of this type holds. An
+          empty one has never been written.
+        </p>
+      )}
+      {fields.map((field) => (
+        <ValueEditor
+          key={field.key}
+          name={field.key}
+          value={values[field.key]}
+          field={field}
+          onWrite={(next) => onWrite(field.key, next)}
+        />
+      ))}
+      {fields.length === 0 && rest.length === 0 ? (
         <p className={EMPTY}>No values.</p>
       ) : (
-        keys.map((key) => (
+        rest.map((key) => (
           <ValueEditor
             key={key}
             name={key}
@@ -234,28 +288,42 @@ function Values({
  * hold prose and code, and `"const a = 1\nconst b = 2"` on one escaped line is
  * not something anyone can read, let alone edit. What goes back keeps the shape
  * it was read in — a string stays a string, and an object has to stay valid JSON.
+ * A field with no value yet takes that decision from its schema instead, which is
+ * how an empty box knows whether it is a sentence or a number.
  *
  * Nothing is written until the tick is pressed. Blur doesn't commit and nor does
  * Enter, which puts in a newline: this is the raw store, where a value half-typed
  * is not a value, and the tick is there only when there is something to write.
  *
+ * Where a schema has something to say about the value, it says it and gets out of
+ * the way: the shape and the description above the box, and a value that doesn't
+ * fit marked in the warning tone with the reason beside it — while the tick stays
+ * exactly as willing to write it. A store where a schema could refuse a value
+ * would be a store where a schema written after the fact locks its own entities
+ * out.
+ *
  * The bin writes null, which is what taking a value off *is* in an append-only
- * store — and, since a null value falls back to the type's, is also how a key
- * goes back to its default. The row stays, showing that null: this panel is what
- * is written down, and "cleared" and "never written" are the same thing to
- * everything downstream but not to the events, which are what it is here to show.
+ * store. The row stays, showing that null: this panel is what is written down,
+ * and "cleared" and "never written" are the same thing to everything downstream
+ * but not to the events, which are what it is here to show.
  */
 function ValueEditor({
   name,
   value,
+  field,
   onWrite,
 }: {
   name: string
   value: unknown
+  /** What the type's schema says about this key, where it declares one. */
+  field?: SchemaField
   onWrite: (value: unknown) => Promise<void>
 }): React.JSX.Element {
-  const isText = typeof value === 'string'
-  const original = isText ? value : pretty(value)
+  // Written and a string, or not written at all and declared as one. Anything
+  // else is JSON, including the null a cleared key holds — where the schema is
+  // what stops an empty box turning a sentence into a JSON parse error.
+  const isText = typeof value === 'string' || (value == null && isTextual(field?.schema))
+  const original = value === undefined ? '' : isText ? String(value) : pretty(value)
   const [draft, setDraft] = useState(original)
   const [error, setError] = useState<string | null>(null)
 
@@ -268,51 +336,75 @@ function ValueEditor({
 
   const changed = draft !== original
 
+  /** The draft as a value, or the reason it isn't one yet. */
+  const parse = (): { value: unknown } | { problem: string } => {
+    if (isText) return { value: draft }
+    if (!draft.trim()) return { value: null }
+    try {
+      return { value: JSON.parse(draft) }
+    } catch {
+      return { problem: 'not valid JSON' }
+    }
+  }
+
+  // Checked as you type, against what is about to be written rather than what is
+  // there: the point of a soft check is to be read before the tick is pressed.
+  const parsed = parse()
+  const warning = 'value' in parsed ? checkValue(parsed.value, field?.schema) : null
+
   const save = (): void => {
-    let next: unknown = draft
-    if (!isText) {
-      try {
-        next = JSON.parse(draft)
-      } catch {
-        setError('not valid JSON')
-        return
-      }
+    if ('problem' in parsed) {
+      setError(parsed.problem)
+      return
     }
     setError(null)
-    void onWrite(next)
+    void onWrite(parsed.value)
   }
 
   return (
     <section>
       <div className="flex items-center gap-2 pb-1 pl-0.5">
         <span className="font-mono text-xs text-gray-900">{name}</span>
-        <span className="text-[11px] text-gray-400">{isText ? 'text' : 'JSON'}</span>
+        <span className="text-[11px] text-gray-400">
+          {field ? field.label : isText ? 'text' : 'JSON'}
+        </span>
+        {field?.required && <span className="text-[11px] text-gray-400">required</span>}
         <div className="flex-1" />
         {error && <span className="text-xs text-error-600">{error}</span>}
+        {!error && warning && <span className="text-xs text-warning-700">{warning}</span>}
         {changed && (
           <IconButton title={`Write ${name}`} onClick={save} className="text-brand-600">
             <Check size={15} />
           </IconButton>
         )}
-        {/* Absent once the key is already null: there is nothing left to clear,
-            and a bin that writes what is already there is a button that does
-            nothing but add an event. */}
-        {value !== null && (
+        {/* Absent once the key is already null, or was never written: there is
+            nothing left to clear, and a bin that writes what is already there is a
+            button that does nothing but add an event. */}
+        {value != null && (
           <IconButton title={`Clear ${name}`} onClick={() => void onWrite(null)}>
             <Trash03 size={14} />
           </IconButton>
         )}
       </div>
+      {field?.description && (
+        <p className="pb-1 pl-0.5 text-[11px] text-gray-500">{field.description}</p>
+      )}
       {/* The editor grows to its content and this box stops at a screenful, so a
           long value scrolls here rather than running off the bottom of the panel.
           The padding belongs to the editor rather than the box, or it would scroll
           away from the top of a value taller than the box. */}
-      <div className="max-h-[40vh] overflow-auto rounded-md bg-gray-100 shadow-xs">
+      <div
+        className={cn(
+          'max-h-[40vh] overflow-auto rounded-md shadow-xs',
+          warning ? 'bg-warning-50 ring-1 ring-warning-200' : 'bg-gray-100',
+        )}
+      >
         <TextEditor
           multiline
           eager
           value={draft}
           setValue={setDraft}
+          placeholder={field ? field.label : undefined}
           className={cn(CODE, 'px-2.5 py-1.5')}
         />
       </div>
@@ -450,7 +542,10 @@ const STATE_NOTE: Record<LoadState, string> = {
 function Cached({ entityId }: { entityId: string }): React.JSX.Element {
   const cache = useAtomValue(entitiesAtom)
   const entry = cache[entityId]
-  const script = entry?.entity.values.events
+  // The script is the *type's*, run once for this entity with this entity as its
+  // context — so an entity of no type has none, however its own values read.
+  const typeId = str(entry?.entity.values.type)
+  const script = typeId ? cache[typeId]?.entity.values.events : undefined
 
   return (
     <>
@@ -462,7 +557,9 @@ function Cached({ entityId }: { entityId: string }): React.JSX.Element {
               label="derived"
               value={
                 script == null
-                  ? 'no events script'
+                  ? typeId
+                    ? `${typeId} has no events script`
+                    : 'no type, so no events script'
                   : `${entry.derived.length} (${STATE_NOTE[entry.derivedState]})`
               }
             />
