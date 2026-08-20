@@ -2,10 +2,11 @@ import type { FastifyInstance } from 'fastify'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { TYPE_ID } from '../../src/core/builtins'
+import { TOOL_ID, TYPE_ID } from '../../src/core/builtins'
 import { outlineMarkdown } from '../../src/core/markdown'
 import type { QueryPage } from '../../src/core/query'
 import { rowsOfPage } from '../../src/core/tree'
+import { TOOLS_ENTITY_ID as TOOLS_ID } from '../../src/core/source/index'
 import type { Source } from '../../src/core/source/index'
 import { bearerToken, formatError } from './app'
 import type { ConfigDb } from './config'
@@ -37,6 +38,10 @@ const INSTRUCTIONS = `This is a graph database of notes, read as an outline. Eve
 *entity* with an id; a link from one entity to another means "this note sits under that
 one". A note can sit under more than one parent, so the outline is a graph rather than a
 strict tree.
+
+Two more ids are reserved: \`${TYPES_ID}\` collects the types a note can carry, and
+\`${TOOLS_ID}\` the tools this app runs. \`get_details\` on \`${TYPE_ID}\` or \`${TOOL_ID}\` says
+what to write to make one of either, and both have a section below.
 
 ## Reading
 
@@ -118,6 +123,31 @@ To write a type:
 3. \`add_link\` it under \`${TYPES_ID}\`, where the types are collected, or it is nowhere in the
    outline and nobody will find it.
 4. \`set_value\` \`type\` on the notes that are of it.
+
+## Tools
+
+A **tool** is a note under \`${TOOLS_ID}\` that the app can run: it lists in the command
+palette, it can hold a key, and other tools call it by name. The app's own tools are not
+in the store and are not yours to change — these are the ones somebody wrote for
+themselves, and writing one is a job you can be given.
+
+\`get_details\` on \`${TOOL_ID}\` hands back the schema for what a tool note holds, field by
+field. The store supplies it whether or not anybody has written one, and it is the thing
+to read before writing a tool.
+
+To write one:
+
+1. \`create\` it under \`${TOOLS_ID}\`, with what it is called as its \`text\`.
+2. \`set_value\` its \`type\` to \`${TOOL_ID}\`, its \`name\` to what the palette should call it,
+   and its \`execute\` to the body — a string holding an expression that evaluates to a
+   function, called with the arguments the definition declares.
+3. \`set_value\` a \`description\`, and an \`arguments\` list if it takes any. A definition
+   without both is the app's alone: nothing else will list it.
+
+You cannot finish the job from here. Definitions are read when the source opens, so a
+tool written now is in the palette once somebody has run **Reload your tools** in the
+app — report it as written rather than as working. Nor can you call it: the tools on this
+connection are the ones you were given, and nothing written into a store joins them.
 
 ## Writing
 
