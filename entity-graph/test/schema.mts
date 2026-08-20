@@ -13,7 +13,7 @@ import assert from 'node:assert/strict'
 const { actionNames, checkValue, fieldsOf, isTextual, schemaOf, typeLabel } = await import(
   '../src/core/schema'
 )
-const { TYPE_ID, builtinEvents } = await import('../src/core/builtins')
+const { TOOL_ID, TYPE_ID, builtinEvents } = await import('../src/core/builtins')
 const { rollupEntity } = await import('../src/core/entity')
 
 const tests: [string, () => void][] = []
@@ -112,6 +112,28 @@ test('serves the type entity as events, behind anything anybody wrote', () => {
   // Only ids asked for by name, and a dump of the store is what is written down.
   assert.deepEqual(builtinEvents(['something-else']), [])
   assert.deepEqual(builtinEvents(undefined), [])
+})
+
+test('serves the tool type, which is what an agent over MCP reads instead of the code', () => {
+  const rolled = rollupEntity(TOOL_ID, builtinEvents([TOOL_ID]))
+  assert.equal(rolled.values.type, TYPE_ID, 'a tool type is an ordinary type')
+  const schema = schemaOf(rolled.values)
+  // The two the loader insists on. Everything else has a default, so a schema
+  // that required more would be describing a tool nobody has to write.
+  assert.deepEqual(schema?.required, ['name', 'execute'])
+  const fields = fieldsOf(schema)
+  assert.deepEqual(
+    fields.map((f) => f.key),
+    ['name', 'execute', 'description', 'arguments', 'id', 'key', 'scope', 'reach', 'safety', 'mutates'],
+  )
+  // The descriptions are the documentation, so a field without one is a field an
+  // agent has to guess at.
+  assert.deepEqual(fields.filter((f) => !f.description).map((f) => f.key), [])
+  assert.equal(checkValue('mod+shift+j', fields.find((f) => f.key === 'key')?.schema), null)
+  assert.equal(
+    checkValue('whenever', fields.find((f) => f.key === 'reach')?.schema),
+    'must be one of "ui", "source", "external"',
+  )
 })
 
 let failed = 0

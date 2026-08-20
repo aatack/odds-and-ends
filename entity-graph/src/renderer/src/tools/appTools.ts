@@ -1,3 +1,4 @@
+import { TOOL_ID } from '../../../core/builtins'
 import { refreshDerived } from '../../../core/cache'
 import { createEntity } from '../source/entity'
 import * as R from '../state/reducers'
@@ -205,6 +206,10 @@ export const APP_TOOLS: ToolSpec[] = [
           // The same word to begin with, and free to diverge after.
           text: toolName,
           name: toolName,
+          // Not what makes it a tool — the loader below reads a name and a body
+          // and never looks at this — but it is what puts the fields, and what
+          // each one is for, in the inspector rather than only in the docs.
+          type: TOOL_ID,
           // A function of no arguments, since it has none declared yet. Adding
           // one to `arguments` means adding a parameter here, in the same order.
           execute: '() => {\n  // What the tool does.\n}',

@@ -8,8 +8,15 @@ Its body runs in the same QuickJS sandbox a `type: code` entity runs in, with th
 same `tool` façade — so a tool you wrote reaches everything in the registry: the
 frame tools, the writes, the server's integrations. That is why this is a frontend
 feature. The server can *list* the same definitions (`core/source/userTools.ts`,
-so they appear over MCP) but has nothing to run one with, since most of what a
-tool would want to do only exists in the app.
+which splices them into `source.tools()` and so into `GET /:sourceId/tools`) but
+has nothing to run one with, since most of what a tool would want to do only
+exists in the app.
+
+What that list is **not** is the MCP surface. `server/src/mcp.ts` publishes a fixed
+six tools over the same store and nothing else, deliberately: an agent handed a
+store's whole API is an agent designing its own reads. So a tool written here is
+never a tool an agent can call — see [Telling an agent](#telling-an-agent) for what
+it can do instead.
 
 ## Getting one going
 
@@ -83,9 +90,9 @@ the body runs, so it arrives as `undefined` rather than `null`.
 ### Behind the scenes
 
 The list is converted to JSON Schema in `core/toolArguments.ts` — that is the form
-the palette derives its prompts from, and the form the server publishes to MCP. A
-definition that already holds a schema object is passed through untouched, so
-anything written the long way keeps working.
+the palette derives its prompts from, and the form the server publishes on the
+source's tool list. A definition that already holds a schema object is passed
+through untouched, so anything written the long way keeps working.
 
 `arguments` written as *text* is parsed rather than shrugged at, since a value
 field holding a list is easy to leave as a string by accident. If it doesn't parse,
@@ -200,6 +207,40 @@ A tool that loaded but does the wrong thing is a different problem: look in the
 activity log, which keeps the result of every run, and in the devtools console,
 where anything the body logged appears under the tool's name.
 
+## Telling an agent
+
+An agent on the MCP endpoint has six tools, the server's instructions, and no source
+code — so anything about tools it cannot read *from the store* is something it will
+guess at. Two things put this page within its reach, and both are code rather than
+prose, so neither can go stale on its own:
+
+- **The `tool` type**, in `core/builtins.ts`. A second builtin beside `type`: an
+  entity the store serves whether or not anybody wrote it, whose `schema` is the
+  field table above, field by field, with a description on each. `get_details` on
+  `tool` hands the whole thing back. It is also what the inspector draws, so the
+  fields and what they are for are in the same place for a person and for an agent —
+  which is the reason to keep this table and that schema saying the same thing.
+- **A `## Tools` section** in the MCP instructions (`server/src/mcp.ts`), which says
+  where tools live, points at `get_details` on `tool`, and gives the three writes
+  that make one.
+
+**New tool of your own** stamps `type: tool` on the stub it writes, so a definition
+made in the app reads the same way as one written by an agent. It is not what makes
+the note a tool — the loader wants a `name` and a body and never looks at `type` —
+only what gets the form drawn.
+
+What an agent cannot do is finish. It can write a definition and link it; it cannot
+run **Reload your tools**, and the tool is not in the palette until somebody does.
+The instructions say so, because an agent that reports a tool as working when it is
+only written is worse than one that never wrote it.
+
+Client-side truncation is worth knowing about here: Claude Code shows an MCP server's
+instructions up to **2048 characters** and drops the rest, and these run past that. So
+what an agent is told about tools is the pointer near the top, and everything after it
+is a section it will only read in a client that shows the whole thing. That is why the
+detail lives in the `tool` schema, which comes back in full from a tool call, rather
+than in the instructions.
+
 ## Limits
 
 - A key that collides with one of the app's own loses. Declared tools trail the
@@ -214,5 +255,6 @@ where anything the body logged appears under the tool's name.
 - The app and the server disagree about what makes a note tool-shaped. The app
   wants a `name` and a body; the server wants a `name`, a `description` and an
   `arguments`, and doesn't look for a body at all — it can't run one. So a tool
-  with nothing but a name and a body works here and never appears over MCP. Give
-  it a `description` and an `arguments` if you want it in both places.
+  with nothing but a name and a body works here and is absent from the source's
+  tool list. Give it a `description` and an `arguments` if you want it in both
+  places.
