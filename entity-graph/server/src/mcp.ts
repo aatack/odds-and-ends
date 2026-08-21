@@ -1,7 +1,14 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import type { FastifyInstance } from 'fastify'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import {
+  CallToolRequestSchema,
+  ListResourcesRequestSchema,
+  ListToolsRequestSchema,
+  ReadResourceRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js'
 import { TOOL_ID, TYPE_ID } from '../../src/core/builtins'
 import { outlineMarkdown } from '../../src/core/markdown'
 import type { QueryPage } from '../../src/core/query'
@@ -18,6 +25,12 @@ import type { Registry } from './registry'
 // is six tools over the same store, each one a whole job: read an outline, read
 // an entity, add a note, set a value, link, unlink. Tools it cannot get right are
 // worse than tools it does not have.
+//
+// Three channels, and a client cuts two of them at 2KB apiece: the server's
+// instructions, and each tool's description. So the instructions are routing and
+// nothing else, a tool's own mechanics live on that tool, and anything that needs
+// a page — this repository's docs — is a *resource*, which is fetched and so is
+// never cut. Writing past a cut is writing nothing.
 
 /** Entities one page of `query` walks over, unless the caller says otherwise. */
 const QUERY_LIMIT = 200
@@ -29,153 +42,50 @@ const ROOT_ID = '@index'
 const TYPES_ID = '@types'
 
 /**
- * How to use this store, told to the client at initialize. Long on purpose: it is
- * the difference between an agent that reads the outline the way a person does —
- * shape first, then the part that matters — and one that pages through
- * everything, or writes notes in a voice nobody else in the file uses.
+ * How to use this store, told to the client at initialize. A client truncates
+ * this at 2KB and a tool's description at 2KB apiece, so what goes where is a
+ * budget rather than a preference: this is the routing — what the store is, and
+ * which call answers which question — and the mechanics of a tool live on that
+ * tool, where there is another 2KB nobody else is spending.
+ *
+ * Anything longer than either is a *resource*, because a resource is fetched and
+ * so is never cut. Keep this under 2000 characters; `npm test` says when it isn't.
  */
 const INSTRUCTIONS = `This is a graph database of notes, read as an outline. Every note is an
 *entity* with an id; a link from one entity to another means "this note sits under that
 one". A note can sit under more than one parent, so the outline is a graph rather than a
 strict tree.
 
-Two more ids are reserved: \`${TYPES_ID}\` collects the types a note can carry, and
-\`${TOOLS_ID}\` the tools this app runs. \`get_details\` on \`${TYPE_ID}\` or \`${TOOL_ID}\` says
-what to write to make one of either, and both have a section below.
+Start at \`${ROOT_ID}\`, the root of all of it. \`query\` walks down from an id and hands back
+one line per note with its id in the left column; \`sections: true\` reads it as a table of
+contents, which is how to survey something before reading it, and \`find\` keeps only the
+notes mentioning a string. Each tool's description says the rest.
 
-## Reading
+Three values make the outline: \`text\`, the note itself, as markdown; \`section: true\`,
+which makes it a heading; and \`open\`, which makes it a task — \`true\` unticked, \`false\`
+ticked. Any other value is arbitrary JSON under a string key.
 
-- \`query\` walks down from an id and hands back one line per note, with the note's id in
-  the left-hand column. Those ids are what every other tool takes, so read a line and you
-  can already act on it. A line reads \`<id>  <outline>\`: the indentation is where the note
-  sits, \`#\` marks a section, and \`[ ]\` / \`[x]\` an unticked / ticked task.
-- Start from \`${ROOT_ID}\` if you do not know where to look — it is the root of the whole
-  outline.
-- A walk stops after \`limit\` notes (${QUERY_LIMIT} by default). When it does, the answer
-  ends with the path to resume from: call \`query\` again with that as \`path\`, keeping the
-  other arguments the same, and you get the next page of the same walk. Only page on when
-  what you were after wasn't in what you have already read.
-- \`sections: true\` keeps only the headings. That is how to see the shape of something
-  large before committing to reading it, and how to read prose: get the sections, then
-  query the one you want in full.
-- \`maxDepth\` bounds how far below the starting note the walk goes; \`maxDepth: 1\` reads a
-  note and its immediate children.
-- \`find\` keeps only notes whose text contains a string, plus the notes above them so the
-  outline still reads. It filters what the walk visited rather than searching the whole
-  store, so widen \`limit\` (or start higher up) rather than expecting one call to find
-  every mention. With \`sections: true\` the two narrow together — it searches the headings
-  rather than the notes under them, which is how to find where something is written about.
-- \`get_details\` returns whole entities for a list of ids: every value on them, their
-  children in order (\`outboundLinks\`), and — the usual reason to reach for it —
-  \`inboundLinks\`, which is everywhere else in the store that references them.
+**Nesting is notes, not markdown.** A dash at the start of a line is nearly always a note
+that should have been created: write the lead as one note and each point under it as a
+child, however short.
 
-## What a note holds
+## Where what you write goes
 
-Values are arbitrary JSON under string keys, but three of them are what the outline is
-made of:
+- **A tool you are making for the user goes under \`${TOOLS_ID}\`, and nowhere else.** A note
+  there carrying a \`name\` and an \`execute\` body is a tool of this app: it lists in the
+  command palette, can hold a key, and other tools call it by name. \`get_details\` on
+  \`${TOOL_ID}\` is the whole specification — read it first. Written anywhere else it is an
+  ordinary note and does nothing.
+- **A type** — a note describing the notes that name it in their \`type\` — goes under
+  \`${TYPES_ID}\`. \`get_details\` on \`${TYPE_ID}\` says what one holds.
+- **Anything else** is a note in the outline. Ask where it goes if you cannot tell.
 
-- **\`text\`** is the note itself, and the only value most notes have. It is markdown:
-  fenced code blocks, inline code, emphasis, links. Maths goes in LaTeX, \`$inline$\` or
-  \`$$display$$\`.
-- **\`section: true\`** makes a note a heading — a named part of what it sits under rather
-  than a bullet in it. These are what \`sections: true\` returns, so a note that titles a
-  group of others should be one.
-- **\`open\`** makes a note a checkbox: \`true\` is unticked, \`false\` is ticked. Absent means
-  an ordinary bullet, so don't add it to notes that aren't tasks. Tick something by
-  setting \`open\` to \`false\`; never delete the value to mark it done.
+More is written down than fits here: list this server's resources and read the one that
+covers what you are doing.
 
-A note may also carry a \`type\`, which is the id of another note describing it — see below.
-
-## Types
-
-A **type** is a note that describes the notes naming it in their \`type\`. Two of them are the
-app's own: \`code\` is a script it can run and \`file\` an attachment whose bytes live outside
-these tools, and neither is yours to edit unless you were asked to. Every other type is one
-somebody wrote, and writing them is a job you can be given.
-
-A type is a note whose own \`type\` is \`type\`. Three values do the work:
-
-- **\`schema\`** — JSON Schema for the values its instances hold. \`properties\` is the field
-  list, in the order they should be read; give each field a \`type\` and a \`description\`, and
-  name in \`required\` the ones an instance is incomplete without. The app draws a box per
-  field whether or not the note has written one, and marks a value that does not fit — so a
-  schema is a form to fill in and a description to read, never a rule that refuses a value.
-- **\`actions\`** — name → TypeScript, run when a button of that name is pressed on one of the
-  instances.
-- **\`events\`** — a script run once per instance as it is read, which is how a note shows
-  something it does not hold.
-
-The last two are bodies the app runs; leave them alone unless you were asked for one.
-
-**Nothing is inherited.** A type says what its instances *should* hold rather than giving
-them anything, so reading a note tells you what was written to it and no more. \`get_details\`
-on \`${TYPE_ID}\` hands back the schema for the three keys above — the store supplies it whether
-or not anybody has written one, and it is the thing to read before writing a type.
-
-To write a type:
-
-1. **Choose its id, which is its name** — \`github/pullRequest\`, \`claude/session\`. That is the
-   word every instance carries and the app shows on every row of it, so it wants to read as
-   one. Write to an id nothing has been written to yet and the note begins there; \`create\`
-   is for notes in an outline, and mints a uuid.
-2. \`set_value\` its \`type\` to \`${TYPE_ID}\`, its \`text\` to what the type is called, and its
-   \`schema\` to the JSON Schema — an object, not a string containing one.
-3. \`add_link\` it under \`${TYPES_ID}\`, where the types are collected, or it is nowhere in the
-   outline and nobody will find it.
-4. \`set_value\` \`type\` on the notes that are of it.
-
-## Tools
-
-A **tool** is a note under \`${TOOLS_ID}\` that the app can run: it lists in the command
-palette, it can hold a key, and other tools call it by name. The app's own tools are not
-in the store and are not yours to change — these are the ones somebody wrote for
-themselves, and writing one is a job you can be given.
-
-\`get_details\` on \`${TOOL_ID}\` hands back the schema for what a tool note holds, field by
-field. The store supplies it whether or not anybody has written one, and it is the thing
-to read before writing a tool.
-
-To write one:
-
-1. \`create\` it under \`${TOOLS_ID}\`, with what it is called as its \`text\`.
-2. \`set_value\` its \`type\` to \`${TOOL_ID}\`, its \`name\` to what the palette should call it,
-   and its \`execute\` to the body — a string holding an expression that evaluates to a
-   function, called with the arguments the definition declares.
-3. \`set_value\` a \`description\`, and an \`arguments\` list if it takes any. A definition
-   without both is the app's alone: nothing else will list it.
-
-You cannot finish the job from here. Definitions are read when the source opens, so a
-tool written now is in the palette once somebody has run **Reload your tools** in the
-app — report it as written rather than as working. Nor can you call it: the tools on this
-connection are the ones you were given, and nothing written into a store joins them.
-
-## Writing
-
-- \`create\` adds a note under a parent and returns its id. The id is minted for you, so
-  never invent one. Give it the \`text\`, plus \`section: true\` if it titles a group of
-  notes, or \`open: true\` if it is a task; to build a branch, create the parent first and
-  create its children under the id you got back.
-- **Nesting is notes, not markdown.** A bullet list typed into one note's \`text\` is a
-  single note as far as everything here is concerned: its points can't be linked to,
-  ticked, replied to, or read as their own lines. Write the heading or the lead as one
-  note and each point under it as a child, however short they are. A dash at the start
-  of a line is nearly always a note that should have been created.
-- \`set_value\` writes one value on one entity — text, section, open, or anything else. It
-  is for editing a note that is already there. Values are typed: \`section\` and \`open\`
-  want a real boolean, and \`null\` blanks a key rather than taking it off the note.
-- Your writes are recorded under \`<their name>:mcp\`, so the notebook's history says
-  which lines were yours. Nothing to pass — it is on every write you make.
-- \`add_link\` puts a child under a parent, at the end of the parent's children.
-  \`remove_link\` takes it out again; a note under several parents keeps the others.
-- Writes are events appended to a log, so nothing is overwritten in place — but this is
-  someone's own notebook. Change what you were asked to change and leave the rest.
-
-## Style
-
-- Copy the notes around the one you are writing: the same length of line, the same voice,
-  the same amount of detail. Match what is there rather than what you would write.
-- Keep a bullet to one thought, and keep it short. If it wants two sentences it is
-  probably a section with two bullets under it.`
+**Style.** Copy the notes around the one you are writing: the same length of line, the
+same voice, the same amount of detail. This is somebody's own notebook: change what you
+were asked to change and leave the rest.`
 
 /**
  * One tool as the agent sees it, plus the source tool it goes through. A tool
@@ -286,7 +196,13 @@ const MCP_TOOLS: McpTool[] = [
       'created and last edited, their children in order (`outboundLinks`), and their ' +
       '`inboundLinks` — every entity in the store that links to this one, which is how ' +
       'to find where else a note is referenced. An id nothing has been written to comes ' +
-      'back empty rather than missing.',
+      'back empty rather than missing.\n\n' +
+      'Two ids answer even in a store nobody has written either to, because the store ' +
+      `supplies them: \`${TYPE_ID}\`, whose schema says what a type holds, and ` +
+      `\`${TOOL_ID}\`, whose schema says what a tool holds — every value a definition can ` +
+      'carry and what each one does. **Asked to write a tool for the user, read ' +
+      `\`${TOOL_ID}\` first and create the note under \`${TOOLS_ID}\`;** the \`docs://tools\` ` +
+      'resource is the same thing at length.',
     needs: 'readEntities',
     readOnly: true,
     inputSchema: {
@@ -312,7 +228,14 @@ const MCP_TOOLS: McpTool[] = [
       'minted here, so there is never one to invent: create the note, then use the id ' +
       'that comes back to hang children off it or to set anything else on it.\n\n' +
       'One call writes the text, the flags and the link, so the note is in the outline ' +
-      'the moment it exists — at the end of its parent\'s children.',
+      'the moment it exists — at the end of its parent\'s children.\n\n' +
+      '**Nesting is notes, not markdown.** A bullet list typed into one note\'s `text` is ' +
+      'a single note as far as everything here is concerned: its points cannot be linked ' +
+      'to, ticked, or read as their own lines. Write the lead as one note and each point ' +
+      'as a child of it, however short they are.\n\n' +
+      `A tool you are making for the user is a note like any other, created under ` +
+      `\`${TOOLS_ID}\` — see \`get_details\` on \`${TOOL_ID}\` for what to put on it. It has to ` +
+      `be under \`${TOOLS_ID}\` to be a tool at all, so this is the call that decides that.`,
     needs: 'createEntity',
     readOnly: false,
     // The one tool here that is not idempotent: called twice it makes two notes.
@@ -367,7 +290,13 @@ const MCP_TOOLS: McpTool[] = [
       'which is what a type is (`github/pullRequest`). Link it somewhere afterwards.\n\n' +
       'There is no way to take a key off a note: `null` blanks it, which reads as ' +
       'absent everywhere it matters — no heading, no checkbox — but stays on the entity ' +
-      'as a value, and is how a note refuses a default its type would otherwise give it.',
+      'as a value, and is how a note refuses a default its type would otherwise give it.' +
+      '\n\nMost of what is not a note\'s text is written through here: a `type` naming ' +
+      'the note that describes it, a type\'s own `schema`, and every value that makes a ' +
+      `note under \`${TOOLS_ID}\` a tool — its \`name\`, its \`execute\` body, its ` +
+      '`arguments`. Each is one call, and each wants the JSON type the schema asks for: ' +
+      'an `arguments` list written as a string is the usual way a tool ends up taking ' +
+      'none.',
     needs: 'writeValue',
     readOnly: false,
     // It replaces whatever was under the key, so it is not a purely additive write.
@@ -467,6 +396,75 @@ const MCP_TOOLS: McpTool[] = [
   },
 ]
 
+// --- The documents ----------------------------------------------------------
+
+/**
+ * The long-form documentation, served whole. A resource is fetched rather than
+ * sent at initialize, so it is the one channel here with no ceiling — which makes
+ * it where anything needing a page instead of a paragraph belongs.
+ *
+ * These are the repository's own docs rather than a retelling of them, so there
+ * is one copy to keep true. `path` is resolved against this file, the way
+ * `env.ts` and `registry.ts` find theirs; a doc that isn't on disk — a server
+ * running from somewhere they weren't copied to — is left out of the listing
+ * rather than offered and then failing to read.
+ */
+interface Doc {
+  uri: string
+  name: string
+  description: string
+  path: string
+}
+
+const DOCS: Doc[] = [
+  {
+    uri: 'docs://tools',
+    name: 'Writing a tool for this app',
+    description:
+      `Everything about writing a tool of your own into \`${TOOLS_ID}\`: every value a ` +
+      'definition can carry, what the body can call, how arguments are declared and ' +
+      'what the app does with them, and what has to happen before a tool that has ' +
+      `been written is a tool that runs. **Read this before writing under \`${TOOLS_ID}\`.** ` +
+      `\`get_details\` on \`${TOOL_ID}\` is the same shape in short.`,
+    path: '../../docs/user-tools.md',
+  },
+  {
+    uri: 'docs://types',
+    name: 'What a type is and how to write one',
+    description:
+      'What a type says about the entities naming it in their `type`, the three keys ' +
+      'that are read by name, and why nothing is inherited. The long version of ' +
+      `\`get_details\` on \`${TYPE_ID}\`.`,
+    path: '../../docs/types.md',
+  },
+  {
+    uri: 'docs://changesets',
+    name: 'Changesets: work held open across a worktree, branch and PR',
+    description:
+      'How a piece of work is carried in this store — the entity, the worktree, the ' +
+      'branch and the pull request kept as one thing. Worth reading before writing a ' +
+      'tool that touches any of them, since the tools that do are themselves notes ' +
+      `under \`${TOOLS_ID}\` and this is what they assume.`,
+    path: '../../docs/changesets.md',
+  },
+  {
+    uri: 'docs://integrations',
+    name: "The server's integrations: GitHub, Slack, Claude Code, git",
+    description:
+      'What the server can reach outside itself, and the id and arguments of every ' +
+      'one of those tools. You cannot call them from here — they answer to the admin ' +
+      'token — but a tool you write can, by the camel case of its name, so this is ' +
+      'the list of what a body has to work with.',
+    path: '../docs/integrations.md',
+  },
+]
+
+/** Where a doc actually is, or null when this checkout hasn't got it. */
+function docPath(doc: Doc): string | null {
+  const path = fileURLToPath(new URL(doc.path, import.meta.url))
+  return existsSync(path) ? path : null
+}
+
 /** The tools this source can actually serve, in the order they are declared. */
 function toolsFor(source: Source): McpTool[] {
   const available = new Set(source.tools().map((t) => t.id))
@@ -476,8 +474,26 @@ function toolsFor(source: Source): McpTool[] {
 function makeMcpServer(source: Source): Server {
   const server = new Server(
     { name: `entity-graph:${source.id}`, version: '0.1.0' },
-    { capabilities: { tools: {} }, instructions: INSTRUCTIONS }
+    { capabilities: { tools: {}, resources: {} }, instructions: INSTRUCTIONS }
   )
+
+  server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+    resources: DOCS.filter(docPath).map((doc) => ({
+      uri: doc.uri,
+      name: doc.name,
+      description: doc.description,
+      mimeType: 'text/markdown',
+    })),
+  }))
+
+  server.setRequestHandler(ReadResourceRequestSchema, async (req) => {
+    const doc = DOCS.find((d) => d.uri === req.params.uri)
+    const path = doc && docPath(doc)
+    if (!doc || !path) throw new Error(`No document at ${String(req.params.uri)}`)
+    return {
+      contents: [{ uri: doc.uri, mimeType: 'text/markdown', text: readFileSync(path, 'utf8') }],
+    }
+  })
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: toolsFor(source).map((t) => ({

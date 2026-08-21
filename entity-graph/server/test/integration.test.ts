@@ -166,6 +166,54 @@ describe('MCP endpoint', () => {
     await client.close()
   })
 
+  // A client cuts the instructions and every tool description at 2KB apiece and
+  // says nothing about having done it, so the only symptom of writing past the
+  // limit is an agent that never read the end. Two thirds of the instructions
+  // were being dropped before anybody measured.
+  it('keeps the instructions and every description inside the 2KB a client shows', async () => {
+    const client = await connect()
+    const LIMIT = 2048
+    const instructions = client.getInstructions() ?? ''
+    expect(Buffer.byteLength(instructions, 'utf8')).toBeLessThan(LIMIT)
+    const { tools } = await client.listTools()
+    for (const tool of tools) {
+      expect(
+        Buffer.byteLength(tool.description ?? '', 'utf8'),
+        `${tool.name}'s description`
+      ).toBeLessThan(LIMIT)
+    }
+    await client.close()
+  })
+
+  // The one thing an agent cannot work out for itself: a tool of the app is a
+  // note in the store, and only under `@tools` is it one. It has no source code,
+  // so if none of what it is handed says so, it writes the note somewhere
+  // sensible-looking and nothing happens.
+  it('says where a tool the user asked for goes, in what an agent is handed', async () => {
+    const client = await connect()
+    expect(client.getInstructions()).toContain('@tools')
+    const { tools } = await client.listTools()
+    const describing = (name: string): string =>
+      tools.find((t) => t.name === name)?.description ?? ''
+    expect(describing('create')).toContain('@tools')
+    expect(describing('get_details')).toContain('@tools')
+    await client.close()
+  })
+
+  it('serves the long documents as resources, which nothing truncates', async () => {
+    const client = await connect()
+    const { resources } = await client.listResources()
+    expect(resources.map((r) => r.uri)).toContain('docs://tools')
+    const { contents } = await client.readResource({ uri: 'docs://tools' })
+    const text = String(contents[0].text)
+    // The whole file, not a slice of it: the last section has to be in there.
+    expect(text).toContain('# Tools you write in the graph')
+    expect(text).toContain('## Limits')
+    expect(text.length).toBeGreaterThan(2048)
+    await expect(client.readResource({ uri: 'docs://nothing' })).rejects.toThrow()
+    await client.close()
+  })
+
   it('says what type every argument takes, including the free-form one', async () => {
     // A property with no type is not "anything" to a client that builds its
     // call from the schema — it is a string, and a boolean written through it

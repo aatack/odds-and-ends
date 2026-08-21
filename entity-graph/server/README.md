@@ -89,8 +89,29 @@ read-only or narrowed source (`filter`) advertises exactly what it will accept.
 `create` is also the one tool marked non-idempotent — called twice it makes two
 notes, which a client retrying a timed-out call should know.
 The client is also handed *instructions* at initialize — what the store is, how
-to page, what `text` / `section` / `open` mean, and to write in the voice of the
-notes already there.
+to page, what `text` / `section` / `open` mean, where a tool or a type the user
+asked for goes, and to write in the voice of the notes already there.
+
+#### The 2KB budget
+
+A client shows an MCP server's instructions up to **2048 bytes** and each tool's
+description up to 2048 bytes, and truncates the rest without saying so. Which
+makes what goes where a budget rather than a preference:
+
+- **Instructions** are routing and nothing else — what the store is, which call
+  answers which question, and where the writing somebody asked for goes. Under
+  2000 bytes, with the limit asserted by a test over a real MCP client.
+- **A tool's description** carries that tool's own mechanics. Six of them, 2048
+  bytes apiece, and they are nowhere near spent.
+- **Resources** are fetched rather than sent at initialize, so nothing cuts them.
+  `resources/list` offers this repository's own docs — `docs://tools`,
+  `docs://types`, `docs://changesets`, `docs://integrations` — served from disk,
+  and a doc missing from a checkout is left out of the listing rather than
+  offered and then failing to read.
+
+Anything an agent has to be *told* rather than can be *shown* competes for the
+first two. Anything it can go and fetch belongs in the third. Writing past a cut
+is writing nothing.
 
 Integrations, admin-scoped (bearer `ADMIN_TOKEN`) — see
 [`docs/integrations.md`](./docs/integrations.md):

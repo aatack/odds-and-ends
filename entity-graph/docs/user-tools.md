@@ -210,9 +210,10 @@ where anything the body logged appears under the tool's name.
 ## Telling an agent
 
 An agent on the MCP endpoint has six tools, the server's instructions, and no source
-code — so anything about tools it cannot read *from the store* is something it will
-guess at. Two things put this page within its reach, and both are code rather than
-prose, so neither can go stale on its own:
+code — so anything about writing a tool that it cannot read *from the endpoint* is
+something it will guess at, and what it guesses is a note somewhere sensible-looking
+that never becomes a tool. Four places tell it otherwise, and all four are code or
+this file rather than a retelling, so none of them goes stale on its own:
 
 - **The `tool` type**, in `core/builtins.ts`. A second builtin beside `type`: an
   entity the store serves whether or not anybody wrote it, whose `schema` is the
@@ -220,9 +221,15 @@ prose, so neither can go stale on its own:
   `tool` hands the whole thing back. It is also what the inspector draws, so the
   fields and what they are for are in the same place for a person and for an agent —
   which is the reason to keep this table and that schema saying the same thing.
-- **A `## Tools` section** in the MCP instructions (`server/src/mcp.ts`), which says
-  where tools live, points at `get_details` on `tool`, and gives the three writes
-  that make one.
+- **The instructions** (`server/src/mcp.ts`), whose one job on this subject is the
+  destination: a tool the user asked for goes under `@tools` and nowhere else, and
+  `get_details` on `tool` is what to read first.
+- **`create` and `get_details`**, in their own descriptions, because those are the
+  two calls an agent reaches for when it has been asked to build something, and it
+  should not have to have retained the instructions to be told where the note goes.
+- **This page, as a resource.** `docs://tools` on the MCP endpoint serves this file
+  from disk, alongside `docs://types`, `docs://changesets` and `docs://integrations`.
+  Nothing truncates a resource, so an agent that wants the whole story can fetch it.
 
 **New tool of your own** stamps `type: tool` on the stub it writes, so a definition
 made in the app reads the same way as one written by an agent. It is not what makes
@@ -231,15 +238,16 @@ only what gets the form drawn.
 
 What an agent cannot do is finish. It can write a definition and link it; it cannot
 run **Reload your tools**, and the tool is not in the palette until somebody does.
-The instructions say so, because an agent that reports a tool as working when it is
-only written is worse than one that never wrote it.
+Both the schema and the instructions say so, because an agent that reports a tool as
+working when it is only written is worse than one that never wrote it.
 
-Client-side truncation is worth knowing about here: Claude Code shows an MCP server's
-instructions up to **2048 characters** and drops the rest, and these run past that. So
-what an agent is told about tools is the pointer near the top, and everything after it
-is a section it will only read in a client that shows the whole thing. That is why the
-detail lives in the `tool` schema, which comes back in full from a tool call, rather
-than in the instructions.
+The reason for four places rather than one is a budget. A client shows an MCP
+server's instructions up to **2048 bytes** and each tool's description up to 2048
+bytes, and cuts the rest silently — so the routing is repeated where it is cheap and
+everything longer than a paragraph is a resource or a served schema, both of which
+arrive whole. See [the server README](../server/README.md#the-2kb-budget); a test
+asserts the limits over a real MCP client, so writing past one fails rather than
+disappears.
 
 ## Limits
 
