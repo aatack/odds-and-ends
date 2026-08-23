@@ -126,9 +126,11 @@ including DMs and private channels, and posts as you. To get one:
      conversations, and resolving `#name` and permalinks
    - `search:read` — the recent-messages feed, which is one search
    - `chat:write` — sending
-   - `users:read` — *optional*: naming the other side of a DM. Without it the
-     lookup is skipped and a DM lists as its raw id (`D0123ABCD`) instead of
-     `@someone`; nothing else changes
+   - `users:read` — putting a name to a user id: `slack.getUser`, and the naming
+     of the other side of a DM in `slack.listChannels`. The listing degrades
+     without it — the lookup is skipped and a DM shows its raw id (`D0123ABCD`)
+     instead of `@someone` — but `slack.getUser` has nothing to fall back to and
+     will say so
 3. **Install to Workspace**, then copy the *User OAuth Token* (`xoxp-…`).
 
 `auth.test`, which is how the feed learns your handle to exclude it, needs no
@@ -147,6 +149,7 @@ work on one at all**: Slack's search is user-token only, under any scope.
 | `slack.getChannelMessages` | one conversation's messages, paged by `offset` |
 | `slack.readMessage` | the text of one message, optionally with its thread |
 | `slack.sendMessage` | post to any conversation, or reply in a thread |
+| `slack.getUser` | put a name to a user id — the one thing that reads `U0123ABCD` |
 
 **There is one notion of "where":** a conversation id. DMs (`D…`), group DMs
 (`G…`), public and private channels (`C…`) are all conversations and are all read
@@ -173,6 +176,41 @@ C0123ABCD
 #general
 U0123ABCD
 ```
+
+### Putting a name to an id
+
+Every message these tools hand back names its author as a bare id — `user:
+"U0123ABCD"` — because that is all Slack puts on a message. `userName` is
+filled in only for the messages carrying one of their own, which in practice
+means apps posting under a chosen name. So a feed read straight out of
+`slack.recentMessages` is a wall of ids, and `slack.getUser` is what turns one
+into somebody:
+
+```
+POST /runTool  { "tool": "slack.getUser", "args": { "user": "U0123ABCD" } }
+→ { "id": "U0123ABCD", "name": "Alex", "handle": "@alex",
+    "realName": "Alex Atack", "isBot": false, "deleted": false }
+```
+
+`name` is the answer to the question, in Slack's own order of preference: the
+display name somebody chose, then their real name, then the handle. Which of
+those an account has filled in varies, so all three come back and a caller
+wanting a different rule can apply it.
+
+Three forms of the argument, all the same lookup: the plain id, an `@`-prefixed
+one, and `<@U0123ABCD>`, which is how a mention appears inside a message's
+*text* and therefore the form most likely to be copied out of one. A **handle**
+or a name is refused rather than attempted — no Web API method takes either,
+so there is nothing to fall back to.
+
+A **bot id** (`B…`) is answered too, from `bots.info`, in the same shape. The
+message tools fall back to `bot_id` where a message has no `user`, so an id that
+came from one of them can be either, and `users.info` has never heard of the
+second kind.
+
+Lookups are remembered for the lifetime of the server: a workspace's people
+rarely change, and naming the authors of a hundred messages should not be a
+hundred calls.
 
 ### The recent-messages feed
 
