@@ -10,7 +10,7 @@
 
 import assert from 'node:assert/strict'
 
-const { actionNames, checkValue, fieldsOf, isTextual, schemaOf, typeLabel } = await import(
+const { actionsOf, checkValue, fieldsOf, isTextual, schemaOf, typeLabel } = await import(
   '../src/core/schema'
 )
 const { TOOL_ID, TYPE_ID, builtinEvents } = await import('../src/core/builtins')
@@ -83,14 +83,16 @@ test('reads a schema and its actions off a type, and nothing off a half-written 
   assert.deepEqual(schemaOf({ schema: SCHEMA }), SCHEMA)
   assert.equal(schemaOf({ schema: 'an object, please' }), null)
   assert.equal(schemaOf(undefined), null)
-  assert.deepEqual(actionNames({ actions: { Merge: 'merge()', Approve: 'approve()' } }), [
-    'Merge',
-    'Approve',
+  assert.deepEqual(actionsOf({ actions: ['github.mergePullRequest', 'link.open'] }), [
+    'github.mergePullRequest',
+    'link.open',
   ])
-  // A body that isn't a script is not a button: an action that throws the moment
-  // it is pressed is worse than one that isn't there.
-  assert.deepEqual(actionNames({ actions: { Merge: 'merge()', Nope: 3, Blank: '  ' } }), ['Merge'])
-  assert.deepEqual(actionNames({}), [])
+  // Anything that doesn't name a tool is not a button: a dead one on every
+  // instance of a type is worse than one that isn't there.
+  assert.deepEqual(actionsOf({ actions: ['changeset.merge', 3, '  ', null] }), ['changeset.merge'])
+  // The old shape — a dictionary of name → script — says nothing now.
+  assert.deepEqual(actionsOf({ actions: { Merge: 'merge()' } }), [])
+  assert.deepEqual(actionsOf({}), [])
 })
 
 test('serves the type entity as events, behind anything anybody wrote', () => {

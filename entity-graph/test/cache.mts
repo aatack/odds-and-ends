@@ -425,14 +425,14 @@ test('reaches a type nothing links to', async () => {
 test('puts a type’s actions on the rows of that type, and follows a write to them', async () => {
   open()
   source.tree({ root: ['a'] })
-  source.values({ a: { text: 'A', type: 'pr' }, pr: { actions: { Merge: 'merge()' } } })
+  source.values({ a: { text: 'A', type: 'pr' }, pr: { actions: ['github.mergePullRequest'] } })
   rowsOf(frameId())
   await settle()
   const actionsOnA = (): string[] | undefined => {
     const row = rowsOf(frameId()).rows.find((r) => r.kind === 'entity' && r.id === 'a')
     return row && row.kind === 'entity' ? row.actions : undefined
   }
-  assert.deepEqual(actionsOnA(), ['Merge'])
+  assert.deepEqual(actionsOnA(), ['github.mergePullRequest'])
 
   // Written on the type, though nothing has a row for it: the entity that names
   // it is what re-reads it.
@@ -440,12 +440,12 @@ test('puts a type’s actions on the rows of that type, and follows a write to t
     type: 'value',
     entityId: 'pr',
     key: 'actions',
-    value: { Merge: 'merge()', Approve: 'approve()' },
+    value: ['github.mergePullRequest', 'github.approvePullRequest'],
     timestamp: Date.now(),
   })
   refreshEntities()
   await settle()
-  assert.deepEqual(actionsOnA(), ['Merge', 'Approve'])
+  assert.deepEqual(actionsOnA(), ['github.mergePullRequest', 'github.approvePullRequest'])
 })
 
 test('knows what a type is without anything having written it down', async () => {

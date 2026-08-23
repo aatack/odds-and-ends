@@ -1,5 +1,5 @@
 import { str, summaryOf, type Entity, type EntitySummary, type LinkDirection } from './entity'
-import { actionNames } from './schema'
+import { actionsOf } from './schema'
 import {
   filterPaths,
   resolveQuery,
@@ -36,10 +36,11 @@ export interface TreeRow extends EntitySummary {
   hasChildren: boolean
   collapsed: boolean
   /**
-   * The actions the row's *type* defines, in the order the type wrote them —
-   * a button each, alongside the row's text. Absent where there is no source to
-   * look the type up in, which is the caller reading a page it was handed
-   * ({@link rowsOfPage}) rather than walking a cache itself.
+   * The tools the row's *type* puts on it, by id and in the order the type
+   * listed them — a button each, drawn on the end of the row's text. Absent
+   * where there is no source to look the type up in, which is the caller
+   * reading a page it was handed ({@link rowsOfPage}) rather than walking a
+   * cache itself.
    */
   actions?: string[]
 }
@@ -176,7 +177,7 @@ export function buildTree(
   const rows = kept.map((path, i): TreeRow => {
     const id = path[path.length - 1]
     const typeId = str(entities[id]?.values.type)
-    const actions = typeId ? actionNames(types[typeId]?.values) : undefined
+    const actions = typeId ? actionsOf(types[typeId]?.values) : undefined
     return rowOf(path, entities[id], depths[i], traversal.direction, folded.has(id), actions)
   })
 

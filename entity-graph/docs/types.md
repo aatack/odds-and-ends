@@ -14,7 +14,7 @@ them is acted on.
 | value | what it is |
 | --- | --- |
 | `schema` | JSON Schema for the values an instance holds |
-| `actions` | name → TypeScript, run when a button of that name is pressed |
+| `actions` | the ids of the tools every instance wears as a button |
 | `events` | a script run once per instance as it loads, with that instance as its context |
 
 `core/schema.ts` is the whole reading of them — `schemaOf`, `fieldsOf`,
@@ -71,23 +71,31 @@ rather than a wrong one.
 
 ## `actions`
 
-A dictionary of name → the TypeScript run when a button of that name is pressed:
+A list of tool ids, in the order they should be drawn:
 
 ```json
-{ "Merge": "tool['github.mergePullRequest'](context.pullRequest)" }
+["changeset.checkout", "changeset.merge", "changeset.openPullRequest"]
 ```
 
-Every row of that type wears one button per action, drawn after its text
-(`views/Editor`, `RowActions`). Pressing one runs `entity.action`, which finds the
-body on the type and runs it in the same QuickJS sandbox a `type: code` entity uses
-— so it reaches the whole tool registry through `tool.…`, and `context` is folded
-along the row the button sits on rather than wherever the keyboard is. The action's
-own name is in the context too, so one body shared by several buttons can tell
-which was pressed.
+Every row of that type wears one button per action, and the button *is* the tool:
+pressing it runs that tool along the row, so `context.entityId` is the row it was
+pressed on and the folded context is the one that row's path gives. A body reads
+what it needs off the context and declares no arguments — an argument nothing
+filled would stop the press to ask for it.
 
-The tool is an ordinary tool: the call is the user's, it toasts what it did, and
-it is kept in the activity log. It can be run from the palette by naming the entity
-and the action, which is also how an action is tried out before it has a row.
+**They are drawn by being written.** `views/Editor` appends `[@button:<id>]()` to
+the row's text before rendering it, and the inline-button field
+(`components/EntityMarkdown`) does the rest, so there is no second way of laying a
+button out beside a row. Inline after the text while it is one line; in a
+paragraph of its own when it isn't. It follows that a row not drawing its text as
+markdown — one being edited, a code row, a file's bytes — doesn't draw them
+either.
+
+The point of a tool rather than a script on the type is everywhere else it then
+is. The same action is in the command palette, in the right-click menu (which is
+the palette, seeded with the row under the cursor), reachable from another script
+as `tool['changeset.merge']()`, and editable where every other tool is — under
+`@tools`, or in `tools/` if it is the app's. A type names it; it doesn't own it.
 
 ## `events`
 

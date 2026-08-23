@@ -48,13 +48,14 @@ export const TYPE_SCHEMA: Schema = {
         'incomplete without. Fields are offered and checked, never enforced.',
     },
     actions: {
-      type: 'object',
+      type: 'array',
       description:
-        'Buttons every instance of this type wears, as name → the TypeScript run when ' +
-        'the button is pressed. The script runs in the same sandbox a `type: code` ' +
-        'entity does, with the instance as its context: `context.entityId` is the row ' +
-        'it was pressed on, and `tool.…` reaches the whole tool registry.',
-      additionalProperties: { type: 'string' },
+        'Buttons every instance of this type wears, as the ids of the tools they run — ' +
+        '`["changeset.merge", "link.open"]` — in the order they should be drawn. Each is ' +
+        'appended to the row\'s text as an inline button when it renders, and pressing one ' +
+        'runs that tool along the row, so `context.entityId` is the row it was pressed on. ' +
+        'Being ordinary tools, the same actions are in the palette and the right-click menu.',
+      items: { type: 'string' },
     },
     events: {
       type: 'string',
