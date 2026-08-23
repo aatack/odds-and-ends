@@ -110,6 +110,18 @@ The symptom is worth recognising because it doesn't look like a declaration
 problem: the body is called with `undefined` for every parameter, so `first +
 second` comes back as `NaN`, which the log shows as `null`.
 
+### A tool that is a button on a row
+
+A type's `actions` are a list of tool ids, and every instance of that type wears
+one button per id — see [`types.md`](./types.md). Pressing one runs your tool along
+that row, so `context.entityId` is the row it was pressed on and the folded context
+is that row's.
+
+**Declare no arguments on a tool meant to be an action.** A press only runs
+straight through when nothing is outstanding; an argument the context didn't fill
+stops it and opens the palette to ask, which is not what a button should do. Read
+what you need off `context` instead.
+
 ## The body
 
 `execute` is a string holding **an expression that evaluates to a function**. The
