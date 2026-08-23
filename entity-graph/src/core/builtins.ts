@@ -59,9 +59,18 @@ export const TYPE_SCHEMA: Schema = {
     events: {
       type: 'string',
       description:
-        'A script run once per instance as it loads, with that instance as its ' +
-        'context. What it returns is a list of events added to the client\'s cache and ' +
-        'never written to the store — how an entity shows something it does not hold.',
+        'A script run once per instance as it loads, whose return value is a list of ' +
+        'events added to the client\'s cache and never written to the store — how an ' +
+        'entity shows something it does not hold. Statements rather than an ' +
+        'expression: the last one evaluated is what it returned, `tool.…` reaches the ' +
+        'whole registry synchronously, and `context` is the instance\'s own values with ' +
+        '`context.entityId` laid in on top. An event is `{ key, value }` — that value ' +
+        'on the instance itself, which is the common case — or the same carrying an ' +
+        '`entityId` to speak for another entity, or `{ sourceId, destinationId, action ' +
+        '}` for a link, `0` adding and `1` removing. A bare object counts as a list of ' +
+        'one and anything unrecognisable is dropped, so a script that only logs has ' +
+        'still done its job. A derived event is timestamped 0, which is what keeps it ' +
+        'behind every real edit rather than over one.',
     },
   },
 }
