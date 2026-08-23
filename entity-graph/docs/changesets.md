@@ -66,21 +66,37 @@ selected in particular.
 ### The buttons a changeset wears
 
 `changeset` is a type like any other, written in the store under `@types` — see
-[`types.md`](./types.md) — and its `actions` are three buttons on every changeset
-row. They are the gestures that have nothing to do with the conversation: what to
-do with the branch once it exists.
+[`types.md`](./types.md) — and its `actions` name four more tools under `@tools`,
+one button each on every changeset row. They are the gestures that have nothing
+to do with the conversation: what to do with the branch once it exists.
 
-| button | what it does |
-| --- | --- |
-| **Check out** | stand the *original* repo on the commit the worktree is at |
-| **Check out master** | put it back on the branch `base` was cut from |
-| **Merge** | merge the pull request, and tick the changeset off |
+| button | tool | what it does |
+| --- | --- | --- |
+| **Check out** | `changeset.checkout` | stand the *original* repo on the commit the worktree is at |
+| **Check out master** | `changeset.checkoutMaster` | put it back on the branch `base` names, and pull |
+| **Merge** | `changeset.merge` | merge the pull request, and tick the changeset off |
+| **Open PR** | `changeset.openPullRequest` | open the pull request in the browser |
+
+None of them declares an argument. Each asks `changeset.here` which changeset it
+is on — the row itself when that is one, and otherwise the `changesetId` folded
+down from the notes — which is what makes them work from a row halfway down a
+changeset's tree as well as from the changeset, and from the palette and the
+right-click menu as well as from the button.
 
 **Check out is detached**, and has to be: the worktree is still holding the
 branch, and git will only let one checkout have it. So `git.checkout` is asked
 for the branch with `detach`, which takes the commit and leaves the branch where
 it is — the change can be looked at, built and run in the checkout it came from
 without the session losing its own.
+
+**Check out master pulls afterwards.** Going back is half of what it is for; the
+other half is being current again once the pull request has merged, and a
+checkout on its own is not that. The pull is `--ff-only`, so a branch that has
+diverged says so rather than inventing a merge.
+
+The branch it switches to is `base` with the remote stripped — `origin/master` →
+`master` — rather than the word `master` written in, so a changeset cut from
+somewhere else goes back to where it came from.
 
 Merging is the one thing that finishes a changeset, and nothing else watches for
 it, so the button that merges is also the one that writes `open: false`. The
@@ -140,7 +156,7 @@ From the server's integrations
 ([`server/docs/integrations.md`](../server/docs/integrations.md)):
 
 - `git.createWorktree`, taking a `from` — fetches, then branches off it.
-- `git.commitAll`, `git.push`.
+- `git.commitAll`, `git.push`, `git.pull`.
 - `git.checkout`, with `detach` for the branch a worktree is already holding.
 - `github.pullRequestForBranch`, then `github.createPullRequest` if that found
   nothing. Both are told the worktree rather than a repo, since `gh` reads the
@@ -157,6 +173,8 @@ From the app:
 - `entity.outline` reads a branch as markdown **through the store**, for the rules
   and for a pull request's description.
 - `entity.get`, `entity.link`, `entity.value.set` for the rest.
+- `link.open`, which hands a URL to the desktop's own browser rather than opening
+  a window of this app on it.
 - **`$callId`**, passed alongside any tool's arguments, names the call — which is
   what lets `[@tool:<id>](Claude)` in a note watch the turn that note asked for.
   See [`user-tools.md`](./user-tools.md#naming-a-call).

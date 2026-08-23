@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ipcMain, Menu, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, clipboard, ipcMain, Menu, shell, type MenuItemConstructorOptions } from 'electron'
 import { basename, extname, join } from 'path'
 import { existsSync } from 'fs'
 import { mkdir, writeFile } from 'fs/promises'
@@ -228,6 +228,33 @@ ipcMain.handle('file:copy', async (_e, name: string, data: string): Promise<stri
   const { format, buffer } = fileOnClipboard(path)
   clipboard.writeBuffer(format, buffer)
   return path
+})
+
+/**
+ * The schemes a link in a note could reasonably mean. `shell.openExternal` will
+ * open a `file:` URL in whatever the desktop uses for one, and hand a custom
+ * scheme to whatever registered it — and the strings that reach here come out of
+ * the store rather than out of this app, so the list is named rather than
+ * assumed.
+ */
+const OPENABLE = new Set(['http:', 'https:', 'mailto:'])
+
+/**
+ * Hand a URL to the desktop's own browser, which is the point: a page opened in
+ * an Electron window of ours would be a browser signed in as nobody, without the
+ * extensions, the history or the session the real one has.
+ */
+ipcMain.handle('shell:openExternal', async (_e, url: string): Promise<void> => {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    throw new Error(`"${url}" isn't a URL`)
+  }
+  if (!OPENABLE.has(parsed.protocol)) {
+    throw new Error(`Won't open a ${parsed.protocol} link — http, https and mailto only`)
+  }
+  await shell.openExternal(parsed.href)
 })
 
 ipcMain.handle('config:getUser', () => store.get('user'))

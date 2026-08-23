@@ -35,6 +35,13 @@ export interface EntityGraphAPI {
    */
   copyFile: (name: string, data: string) => Promise<string>
 
+  /**
+   * Open a URL in the desktop's own browser — `http`, `https` or `mailto`, and
+   * nothing else. Not another window of this app: a page opened in one would be
+   * a browser signed in as nobody.
+   */
+  openExternal: (url: string) => Promise<void>
+
   // The source the editor opens by default
   getCurrentSource: () => Promise<CurrentSource | null>
   setCurrentSource: (source: CurrentSource | null) => Promise<void>
@@ -105,6 +112,7 @@ const api: EntityGraphAPI = {
 
   saveFile: (name, data) => ipcRenderer.invoke('file:save', name, data),
   copyFile: (name, data) => ipcRenderer.invoke('file:copy', name, data),
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   getCurrentSource: () => ipcRenderer.invoke('config:getCurrentSource'),
   setCurrentSource: (source) => ipcRenderer.invoke('config:setCurrentSource', source),
 

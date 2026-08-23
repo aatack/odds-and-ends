@@ -75,12 +75,6 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
           // selected one, so the script's context is folded along that row's path.
           onRunCode={(id, code, path) => runCode(id, code, contextWithin(path))}
           onStopCode={stopCode}
-          // Likewise aimed at the row the button sits on: an action is the type's
-          // and the entity is the row's, so the call is born along that path
-          // however the keyboard is pointed.
-          onRunAction={(row, action) =>
-            runTool('entity.action', { within: row.path, extra: { action } })
-          }
         />
       </div>
     </div>

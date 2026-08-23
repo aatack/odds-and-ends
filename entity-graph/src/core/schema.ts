@@ -61,23 +61,23 @@ export function fieldsOf(schema: Schema | null): SchemaField[] {
 }
 
 /**
- * The actions a type defines: name → the script run when the button is pressed.
- * Only string bodies count, so a half-written `actions` value can't put a button
- * on every instance that throws the moment it is pressed.
+ * The actions a type defines: the ids of the tools every instance wears as a
+ * button, in the order the type listed them. Only non-empty strings count, so a
+ * half-written `actions` value can't put a dead button on every instance.
+ *
+ * These used to be scripts — a dictionary of name → body, run in the sandbox
+ * when the button was pressed. They are tool ids now, because a button on a row
+ * and an entry in the palette were the same thing said twice: written as a tool,
+ * one action is also in the command palette, in the right-click menu, reachable
+ * from another script, and editable where every other tool is.
  */
-export function actionsOf(values: Record<string, unknown> | undefined): Record<string, string> {
+export function actionsOf(values: Record<string, unknown> | undefined): string[] {
   const actions = values?.actions
-  if (!isObject(actions)) return {}
-  const out: Record<string, string> = {}
-  for (const [name, code] of Object.entries(actions)) {
-    if (typeof code === 'string' && code.trim()) out[name] = code
-  }
-  return out
+  if (!Array.isArray(actions)) return []
+  return actions
+    .filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+    .map((id) => id.trim())
 }
-
-/** Just the names, in the order they were written — what a row draws as buttons. */
-export const actionNames = (values: Record<string, unknown> | undefined): string[] =>
-  Object.keys(actionsOf(values))
 
 /**
  * The shape a schema describes, short enough to sit beside a field's name. A

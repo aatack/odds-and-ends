@@ -94,8 +94,8 @@ is the long form; the rules that matter day to day:
   [`mobile/AGENTS.md`](./mobile/AGENTS.md) for where that line is drawn.
 - **A type describes its instances; it does not lend them values.** An entity's
   `type` names another entity, whose `schema` says which values an entity of that
-  kind holds, whose `actions` are the buttons every row of it wears, and whose
-  `events` script is run once per instance. Nothing of it is inherited — what an
+  kind holds, whose `actions` name the tools every row of it wears as a button,
+  and whose `events` script is run once per instance. Nothing of it is inherited — what an
   entity holds is what was written to it. `core/schema.ts` is the reading of a
   type and `core/builtins.ts` the one type the store supplies (`type` itself,
   schema and all, whether or not anybody wrote it);
@@ -223,6 +223,10 @@ row with. A field acts on the entity whose text it appears in and not on the
 selection: its calls are born along that row's path (`runTool`'s `within`, the
 gesture counterpart of `contextWithin`), so a button in a row's prose is a button
 on *that* row wherever the cursor happens to be.
+
+`[@button:…]` is also how a **type's actions** are drawn: `views/Editor` appends
+one per action to the row's text before rendering it, so there is one way a
+button gets beside a row rather than two. See [`docs/types.md`](./docs/types.md).
 
 **A call can be named.** `$callId` alongside a script's arguments —
 `tool['claude.runPrompt']({ …, $callId: id })` — makes that string the call's id

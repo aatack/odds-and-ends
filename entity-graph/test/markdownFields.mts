@@ -90,6 +90,24 @@ test('leaves ordinary links, and the syntax quoted in code', () => {
   assert.equal(textIn('`[@pill](changeset)`', KNOWN), '[@pill](changeset)')
 })
 
+// The shape a type's actions are drawn in: `views/Editor` writes one of these on
+// the end of the row's text and the field renderer does the rest, so the dotted
+// id and the empty parens are load-bearing rather than incidental.
+test('takes the buttons a type puts on a row', () => {
+  assert.deepEqual(
+    fieldsIn('Improvements [@button:changeset.checkout]() [@button:changeset.merge]()', KNOWN),
+    [
+      { 'data-field-type': 'button', 'data-field-arg': 'changeset.checkout', 'data-field-text': '' },
+      { 'data-field-type': 'button', 'data-field-arg': 'changeset.merge', 'data-field-text': '' },
+    ],
+  )
+  assert.equal(
+    textIn('Improvements [@button:changeset.checkout]()', KNOWN),
+    'Improvements ',
+    'the row still reads as itself',
+  )
+})
+
 let failed = 0
 for (const [name, run] of tests) {
   try {

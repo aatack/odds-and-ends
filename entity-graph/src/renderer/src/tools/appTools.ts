@@ -1,6 +1,7 @@
 import { TOOL_ID } from '../../../core/builtins'
 import { refreshDerived } from '../../../core/cache'
 import { createEntity } from '../source/entity'
+import { openExternal } from '../source/files'
 import * as R from '../state/reducers'
 import { focusOf, getLayout, updateLayout } from '../state/store'
 import { toggleTheme, updateUi, uiAtom } from '../state/ui'
@@ -155,6 +156,30 @@ export const APP_TOOLS: ToolSpec[] = [
     scope: 'app',
     reach: 'ui',
     run: () => toggleTheme(),
+  },
+  {
+    // The one tool that leaves the app. Everything a note holds that points
+    // somewhere else — a pull request, a Slack thread, a dashboard — is a string
+    // until something opens it, and the browser it should open in is the one the
+    // user is already signed into rather than a window of ours.
+    //
+    // `url` comes from the context, so a row holding one has it filled in
+    // already: right-click, Open link. Anything else is typed, or passed by a
+    // script — `tool.openLink(values.pullRequest)`.
+    id: 'link.open',
+    label: 'Open link',
+    aliases: ['url', 'browser', 'open in browser', 'visit', 'website'],
+    hint: 'Shell',
+    scope: 'app',
+    reach: 'external',
+    args: [{ name: 'url', label: 'URL', fromContext: 'url', placeholder: 'https://…' }],
+    run: async ({ url }) => {
+      const href = String(url ?? '').trim()
+      if (!href) throw new Error('Which link?')
+      // The scheme is checked on the other side of the bridge, where it matters.
+      await openExternal(href)
+      return { message: `Opened ${href}` }
+    },
   },
   {
     id: 'page.editor',

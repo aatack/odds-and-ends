@@ -1,7 +1,7 @@
-// The other side of the transport seam: the local filesystem and the system
-// clipboard, rather than the open source. Both put a resource's bytes somewhere
-// outside the app, and both are kept here so the tool layer never touches
-// `window`.
+// The other side of the transport seam: the machine this is running on, rather
+// than the open source — the filesystem, the system clipboard, and the browser.
+// Each of them takes something out of the app and hands it to the desktop, and
+// all of them are kept here so the tool layer never touches `window`.
 
 const api = window.entityGraph
 
@@ -22,6 +22,13 @@ export const saveFile = (name: string, data: string): Promise<string> =>
  */
 export const copyFile = (name: string, data: string): Promise<string> =>
   api.copyFile(name, data)
+
+/**
+ * Open a URL in the desktop's own browser. The main process is where the scheme
+ * is checked — `http`, `https` and `mailto` and nothing else — since that is the
+ * side with anything to lose by opening something else.
+ */
+export const openExternal = (url: string): Promise<void> => api.openExternal(url)
 
 /**
  * A plausible extension for bytes that arrived without a name — from the
