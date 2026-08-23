@@ -358,7 +358,7 @@ everywhere else.
 | `git.pull` | fast-forward a checkout to its upstream |
 | `git.commitAll` | stage everything in a checkout and commit it |
 | `git.push` | push to `origin` with tracking, optionally onto a new branch |
-| `git.checkout` | switch to an existing branch |
+| `git.checkout` | switch to an existing branch, or detach onto its commit |
 
 ### Worktrees
 
@@ -432,6 +432,13 @@ deleted.
 worktree for `master` is refused while the main checkout has it — git names the
 worktree holding it. Switch the checkout that owns the branch instead. There is no
 way to have it in both and nothing here pretends there is.
+
+**`detach` is the way round that**, and the reason it exists: it takes the commit
+the branch is at and leaves the branch where it is, so a repository can be stood
+on the tip of a branch one of its own worktrees is holding. That is how the work
+in a worktree is looked at from the checkout it was cut from — see
+[`changesets.md`](../../docs/changesets.md). The result carries `commit` as well
+as `branch`, since a detached head has no branch to report.
 
 Two variables are set on every call, and they matter more than they look:
 `GIT_TERMINAL_PROMPT=0` and `GIT_EDITOR=true`. Without them, a push to a remote

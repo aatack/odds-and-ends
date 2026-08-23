@@ -279,16 +279,28 @@ export const GIT_TOOLS: ToolDef[] = [
       'which worktree holds it. Switch the checkout that owns the branch, or make',
       'the worktree a different one; there is no way to have it in both, and',
       'nothing here pretends otherwise.',
+      '',
+      '`detach` is the way round that: it takes the *commit* the branch is at and',
+      'leaves the branch where it is, so a checkout can be stood on the tip of a',
+      'branch one of its worktrees is holding. That is how the work in a worktree',
+      'is looked at from the repository it was cut from.',
     ].join('\n'),
     safety: 'dangerous',
     args: z.object({
       path: pathArg('The checkout to switch — `~/repos/x` works'),
       branch: z.string().min(1).describe('Branch to switch to, e.g. `master`'),
+      detach: z
+        .boolean()
+        .default(false)
+        .describe('Take the commit it points at rather than the branch itself'),
     }),
-    handler: async ({ path, branch }) => {
+    handler: async ({ path, branch, detach }) => {
       const cwd = directory(path)
-      const result = await ok(GIT, ['checkout', branch], { cwd })
-      return { branch: await branchAt(cwd), output: said(result) }
+      const result = await ok(GIT, ['checkout', ...(detach ? ['--detach'] : []), branch], { cwd })
+      // The commit as well as the branch, since a detached head has no branch to
+      // report and "switched to nothing" is not what happened.
+      const { stdout: head } = await ok(GIT, ['rev-parse', 'HEAD'], { cwd })
+      return { branch: await branchAt(cwd), commit: head.trim(), output: said(result) }
     },
   },
 ]

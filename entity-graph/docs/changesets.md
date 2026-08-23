@@ -63,6 +63,30 @@ is the one that matters: values fold down the path a call is made from, so a
 `k` finds the changeset from any row in the subtree without anything having to be
 selected in particular.
 
+### The buttons a changeset wears
+
+`changeset` is a type like any other, written in the store under `@types` — see
+[`types.md`](./types.md) — and its `actions` are three buttons on every changeset
+row. They are the gestures that have nothing to do with the conversation: what to
+do with the branch once it exists.
+
+| button | what it does |
+| --- | --- |
+| **Check out** | stand the *original* repo on the commit the worktree is at |
+| **Check out master** | put it back on the branch `base` was cut from |
+| **Merge** | merge the pull request, and tick the changeset off |
+
+**Check out is detached**, and has to be: the worktree is still holding the
+branch, and git will only let one checkout have it. So `git.checkout` is asked
+for the branch with `detach`, which takes the commit and leaves the branch where
+it is — the change can be looked at, built and run in the checkout it came from
+without the session losing its own.
+
+Merging is the one thing that finishes a changeset, and nothing else watches for
+it, so the button that merges is also the one that writes `open: false`. The
+branch is left behind on purpose: the worktree still holds it, and having `gh`
+delete it out from under one is not a tidy-up.
+
 ## A turn
 
 1. **The system prompt, once.** A changeset with no `sessionId` has never been
@@ -117,9 +141,11 @@ From the server's integrations
 
 - `git.createWorktree`, taking a `from` — fetches, then branches off it.
 - `git.commitAll`, `git.push`.
+- `git.checkout`, with `detach` for the branch a worktree is already holding.
 - `github.pullRequestForBranch`, then `github.createPullRequest` if that found
   nothing. Both are told the worktree rather than a repo, since `gh` reads the
   `owner/repo` off its remote.
+- `github.mergePullRequest`, which the **Merge** button is.
 - `claude.runPrompt`, with no time limit and an optional `systemPrompt` read on
   the turn that starts a conversation.
 
