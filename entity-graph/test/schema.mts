@@ -114,6 +114,18 @@ test('serves the type entity as events, behind anything anybody wrote', () => {
   assert.deepEqual(builtinEvents(undefined), [])
 })
 
+test('says what an events script is handed and what it hands back', () => {
+  // The one thing an agent had to read the source for: what the list it returns
+  // is made of, and that its own id is in the context. Neither is guessable, and
+  // this description is the only account of either that reaches the endpoint.
+  const rolled = rollupEntity(TYPE_ID, builtinEvents([TYPE_ID]))
+  const events = fieldsOf(schemaOf(rolled.values)).find((f) => f.key === 'events')
+  const said = events?.description ?? ''
+  for (const phrase of ['{ key, value }', 'context.entityId', 'timestamped 0']) {
+    assert.ok(said.includes(phrase), `the events field should mention ${phrase}`)
+  }
+})
+
 test('serves the tool type, which is what an agent over MCP reads instead of the code', () => {
   const rolled = rollupEntity(TOOL_ID, builtinEvents([TOOL_ID]))
   assert.equal(rolled.values.type, TYPE_ID, 'a tool type is an ordinary type')
