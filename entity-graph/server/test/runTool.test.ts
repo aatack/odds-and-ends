@@ -8,7 +8,14 @@ import { ConfigDb } from '../src/config'
 import { Registry } from '../src/registry'
 import { INTEGRATION_TOOLS } from '../src/integrations/index'
 import { pullRequestArgs } from '../src/integrations/github'
-import { idSet, keepInFeed, parseRef, recentQuery, slackError } from '../src/integrations/slack'
+import {
+  idSet,
+  keepInFeed,
+  parseRef,
+  parseUserId,
+  recentQuery,
+  slackError,
+} from '../src/integrations/slack'
 
 // The endpoint and the argument parsing. Nothing here reaches GitHub, Slack or
 // Claude — the handlers themselves are only exercised by hand.
@@ -142,6 +149,34 @@ describe('naming a place in Slack', () => {
 
   it('complains about a link that is not Slack’s', () => {
     expect(() => parseRef('https://example.com/hello')).toThrow(/Slack link/)
+  })
+})
+
+describe('naming somebody in Slack', () => {
+  it('reads the id the other tools hand back', () => {
+    expect(parseUserId('U0123ABCD')).toBe('U0123ABCD')
+    expect(parseUserId('  U0123ABCD  ')).toBe('U0123ABCD')
+  })
+
+  it('reads a mention out of a message’s text', () => {
+    expect(parseUserId('<@U0123ABCD>')).toBe('U0123ABCD')
+    expect(parseUserId('<@U0123ABCD|alex>')).toBe('U0123ABCD')
+  })
+
+  it('takes an enterprise id and a bot id too', () => {
+    expect(parseUserId('W0123ABCD')).toBe('W0123ABCD')
+    expect(parseUserId('B0123ABCD')).toBe('B0123ABCD')
+  })
+
+  it('refuses a handle, which the Web API cannot look up', () => {
+    expect(() => parseUserId('@alex')).toThrow(/not a Slack user id/)
+    expect(() => parseUserId('Alex Atack')).toThrow(/not a Slack user id/)
+  })
+
+  it('refuses a conversation id, which names a place and not a person', () => {
+    for (const id of ['C0123ABCD', 'D0123ABCD', 'G0123ABCD', '#general']) {
+      expect(() => parseUserId(id)).toThrow(/not a Slack user id/)
+    }
   })
 })
 

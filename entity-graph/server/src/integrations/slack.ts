@@ -152,6 +152,31 @@ export function parseRef(reference: string): SlackRef {
   return { channel: ref }
 }
 
+/** A user id (`U…`, or `W…` on an enterprise grid) or an app's (`B…`). */
+const PERSON_OR_BOT = /^[UWB][A-Z0-9]+$/
+const MENTION = /^<@([UW][A-Z0-9]+)(?:\|[^>]*)?>$/i
+
+/**
+ * Read a reference to somebody. The plain id is what the other tools hand back,
+ * but a message's *text* writes a mention as `<@U0123ABCD>`, so that is the form
+ * most likely to be copied out of one.
+ *
+ * A handle is refused rather than attempted: Slack has no method that takes one,
+ * so there is nothing to fall back to and a guess would come back as
+ * `user_not_found` with no hint as to why.
+ */
+export function parseUserId(reference: string): string {
+  const ref = reference.trim()
+  const mention = MENTION.exec(ref)
+  const id = (mention ? mention[1] : ref.replace(/^@/, '')).toUpperCase()
+  if (PERSON_OR_BOT.test(id)) return id
+  throw new Error(
+    `"${reference}" is not a Slack user id. Expected a U…, W… or B… — the \`user\` ` +
+      'every other Slack tool hands back, or a <@U0123ABCD> mention out of a message. ' +
+      'A handle or a name cannot be looked up: the Web API takes neither.',
+  )
+}
+
 interface SlackMessage {
   ts: string
   thread_ts?: string
@@ -189,21 +214,92 @@ function whoAmI(): Promise<{ id: string; handle: string }> {
   return identity
 }
 
-/** Display names by user id, remembered — a workspace's people rarely change. */
-const displayNames = new Map<string, string>()
+/**
+ * Somebody in the workspace. Slack keeps a person's name in three places — the
+ * handle they were given, their real name, and whatever they typed as a display
+ * name — and which of those are filled in varies per account, so nothing here
+ * picks one on the reader's behalf.
+ */
+interface SlackUser {
+  id?: string
+  name?: string
+  real_name?: string
+  is_bot?: boolean
+  deleted?: boolean
+  profile?: { display_name?: string; real_name?: string }
+}
 
-async function displayName(id: string): Promise<string> {
-  const known = displayNames.get(id)
+/** People by user id, remembered — a workspace's people rarely change. */
+const people = new Map<string, SlackUser>()
+
+/** One `users.info`, memoised. Raises what Slack said; the callers decide. */
+async function fetchUser(id: string): Promise<SlackUser> {
+  const known = people.get(id)
   if (known) return known
-  const res = await slack<
-    SlackResponse & {
-      user?: { name?: string; profile?: { display_name?: string; real_name?: string } }
+  const res = await slack<SlackResponse & { user?: SlackUser }>('users.info', { user: id })
+  const user = res.user ?? { id }
+  people.set(id, user)
+  return user
+}
+
+/**
+ * What to call somebody: the name they chose for themselves, then their real
+ * name, then the handle. The id is the last resort, and is at least unambiguous.
+ */
+const personName = (user: SlackUser, id: string): string =>
+  user.profile?.display_name || user.profile?.real_name || user.real_name || user.name || id
+
+/**
+ * A name for a user id, or the id back if there isn't one to be had. This is the
+ * decorative use — labelling a DM in a list — so a token without `users:read`
+ * still gets its conversations rather than an error.
+ */
+const displayName = (id: string): Promise<string> =>
+  fetchUser(id).then(
+    (user) => personName(user, id),
+    () => id,
+  )
+
+/** Whose id it was, in one shape whether that turned out to be a person or an app. */
+export interface SlackIdentity {
+  id: string
+  name: string
+  handle: string | null
+  realName: string | null
+  isBot: boolean
+  deleted: boolean
+}
+
+/**
+ * Who an id belongs to. Two methods, because the messages these tools hand back
+ * name their author with either — a person's `user`, or an app's `bot_id`, which
+ * `users.info` has never heard of. Which one it is is legible from the id, and
+ * the answer is the same shape either way, so nobody asking has to know.
+ */
+async function identityOf(id: string): Promise<SlackIdentity> {
+  if (id.startsWith('B')) {
+    const res = await slack<
+      SlackResponse & { bot?: { id?: string; name?: string; deleted?: boolean } }
+    >('bots.info', { bot: id })
+    const bot = res.bot ?? {}
+    return {
+      id: bot.id ?? id,
+      name: bot.name || id,
+      handle: null,
+      realName: null,
+      isBot: true,
+      deleted: !!bot.deleted,
     }
-  >('users.info', { user: id }).catch(() => null)
-  const profile = res?.user?.profile
-  const name = profile?.display_name || profile?.real_name || res?.user?.name || id
-  displayNames.set(id, name)
-  return name
+  }
+  const person = await fetchUser(id)
+  return {
+    id: person.id ?? id,
+    name: personName(person, id),
+    handle: person.name ? `@${person.name}` : null,
+    realName: person.profile?.real_name || person.real_name || null,
+    isBot: !!person.is_bot,
+    deleted: !!person.deleted,
+  }
 }
 
 /**
@@ -584,5 +680,17 @@ export const SLACK_TOOLS: ToolDef[] = [
         messages: items.map(summary),
       }
     },
+  },
+
+  {
+    id: 'slack.getUser',
+    name: 'Get a Slack user',
+    description:
+      'Who a user id belongs to. Every other tool here names a message’s author as a bare `U0123ABCD`, and this is the one thing that turns one into a name. Takes the id, or a `<@U0123ABCD>` mention lifted out of a message’s text; a bot id (`B…`) names the app instead.',
+    safety: 'dangerous',
+    args: z.object({
+      user: z.string().min(1).describe('User id (U…/W…), a bot id (B…), or a <@U…> mention'),
+    }),
+    handler: async ({ user }) => identityOf(parseUserId(user)),
   },
 ]
