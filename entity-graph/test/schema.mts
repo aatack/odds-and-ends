@@ -115,13 +115,14 @@ test('serves the type entity as events, behind anything anybody wrote', () => {
 })
 
 test('says what an events script is handed and what it hands back', () => {
-  // The one thing an agent had to read the source for: what the list it returns
-  // is made of, and that its own id is in the context. Neither is guessable, and
-  // this description is the only account of either that reaches the endpoint.
+  // The one thing an agent had to read the source for: that the list it returns
+  // is made of the store's own events, which three of their fields it may leave
+  // out, and that its own id is in the context. This description is the only
+  // account of any of it that reaches the endpoint.
   const rolled = rollupEntity(TYPE_ID, builtinEvents([TYPE_ID]))
   const events = fieldsOf(schemaOf(rolled.values)).find((f) => f.key === 'events')
   const said = events?.description ?? ''
-  for (const phrase of ['{ key, value }', 'context.entityId', 'timestamped 0']) {
+  for (const phrase of ["type: 'value'", 'context.entityId', 'entityId', 'author', 'timestamp']) {
     assert.ok(said.includes(phrase), `the events field should mention ${phrase}`)
   }
 })
