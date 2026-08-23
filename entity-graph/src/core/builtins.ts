@@ -64,12 +64,11 @@ export const TYPE_SCHEMA: Schema = {
         'entity shows something it does not hold. Statements rather than an ' +
         'expression: the last one evaluated is what it returned, `tool.…` reaches the ' +
         'whole registry synchronously, and `context` is the instance\'s own values with ' +
-        '`context.entityId` laid in on top. An event is `{ key, value }` — that value ' +
-        'on the instance itself, which is the common case — or the same carrying an ' +
-        '`entityId` to speak for another entity, or `{ sourceId, destinationId, action ' +
-        '}` for a link, `0` adding and `1` removing. A bare object counts as a list of ' +
-        'one and anything unrecognisable is dropped, so a script that only logs has ' +
-        'still done its job. A derived event is timestamped 0, which is what keeps it ' +
+        '`context.entityId` laid in on top. The events are the store\'s ordinary ones ' +
+        '— `{ type: \'value\', entityId, key, value }` and `{ type: \'link\', sourceId, ' +
+        'destinationId, action }`, `0` adding and `1` removing — and three of their ' +
+        'fields default, so a script leaves them out: `entityId` is the instance it ran ' +
+        'for, `author` is `derived`, and `timestamp` is 0, which keeps a derived value ' +
         'behind every real edit rather than over one.',
     },
   },

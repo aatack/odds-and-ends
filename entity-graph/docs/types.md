@@ -119,21 +119,23 @@ const pr = tool['github.getPullRequest'](context.url)
 
 ### The events it returns
 
+The store's own events, of the two shapes in `core/events.ts` — nothing here has
+a format of its own:
+
+```js
+{ type: 'value', entityId, key, value }
+{ type: 'link', sourceId, destinationId, action } // 0 adds, 1 removes
+```
+
+Three fields have sensible defaults and are usually left out: `entityId` is the
+instance the script ran for, `author` is `derived`, and `timestamp` is 0 — which
+is what keeps a derived value *behind* a real one, so a script may write over a
+key the entity already holds and the entity's own value still wins.
+
 `derivedEvents` in `core/cache.ts` reads them, and reads them loosely: a bare
 object counts as a list of one, and anything it doesn't recognise is dropped
 rather than thrown over — a script that logs and returns nothing has still done
 its job.
-
-| what it returns | what that is |
-| --- | --- |
-| `{ key, value }` | that value on the instance itself — the common case by far |
-| `{ entityId, key, value }` | the same on some other entity: a repo giving its branches their text |
-| `{ sourceId, destinationId, action }` | a link. `0` adds it, `1` removes it |
-
-`timestamp` defaults to 0 and `author` to `derived`, which is what keeps a
-derived value *behind* a real one: a script may write over a key the entity
-already holds and the entity's own value still wins. There is nothing to do to
-arrange that, and no honest reason to pass a timestamp of your own.
 
 ## The `type` type
 
