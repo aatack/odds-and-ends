@@ -42,6 +42,12 @@ export interface Timing {
 export interface Config {
   /** The git repo the agent works in, and never outside of. */
   repo: string;
+  /**
+   * A `CLAUDE_CONFIG_DIR` for the wakes, which is what pins this repo to one
+   * Claude account: the whole config directory, credentials included, lives
+   * there. Null means whichever account `claude` is logged into normally.
+   */
+  claudeConfigDir: string | null;
   /** The note that defines the task: an entity id, or an alias like `@index`. */
   task: string;
   model: string;
@@ -111,6 +117,17 @@ function upsertEnv(path: string, values: Record<string, string>): void {
   } catch {
     /* not ours to chmod; the write above still succeeded */
   }
+}
+
+/**
+ * Resolve a path to absolute, expanding a leading `~` first — which `resolve`
+ * does not do, and which an env file written by hand will almost always use.
+ */
+export function expandPath(path: string): string {
+  const trimmed = path.trim();
+  const expanded =
+    trimmed === "~" || trimmed.startsWith("~/") ? join(homedir(), trimmed.slice(1)) : trimmed;
+  return resolve(expanded);
 }
 
 // ---------------------------------------------------------------------------
@@ -333,6 +350,9 @@ export async function loadConfig(opts: LoadOptions): Promise<Config> {
 
   return {
     repo,
+    claudeConfigDir: values.LOOPER_CLAUDE_CONFIG_DIR
+      ? expandPath(values.LOOPER_CLAUDE_CONFIG_DIR)
+      : null,
     task: values.LOOPER_TASK,
     // `opus` is the alias for the latest Opus, which is what a long-running
     // background task wants; pin LOOPER_MODEL to a full name to be specific.

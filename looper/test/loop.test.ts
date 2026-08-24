@@ -97,6 +97,11 @@ echo '{"type":"assistant","session_id":"11111111-2222-3333-4444-555555555555","m
 echo '{"type":"result","subtype":"success","is_error":false,"session_id":"11111111-2222-3333-4444-555555555555","result":"asked and stopped","total_cost_usd":0.01,"num_turns":2}'
 `;
   const script = `#!/bin/sh
+# The account check comes before any wake, and takes no prompt.
+if [ "$1" = "auth" ]; then
+  echo '{"loggedIn":true,"authMethod":"claude.ai","email":"looper@example.com","subscriptionType":"max"}'
+  exit 0
+fi
 cat > ${JSON.stringify(join(dir, "prompt.txt"))}
 printf '%s\\n' "$@" > ${JSON.stringify(join(dir, "args.txt"))}
 ${body}`;

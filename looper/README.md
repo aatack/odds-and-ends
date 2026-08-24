@@ -50,11 +50,30 @@ then take the chat id from the message.
 To run it from anywhere, either `npm link` in this directory (which gives you a
 `looper` command) or call it by path: `node /path/to/looper/src/index.ts`.
 
+### Which Claude account it uses
+
+By default, whichever account `claude` is logged into. To give a repo its own
+account — a personal subscription for background work, kept apart from the one you
+use for everything else — point it at its own config directory:
+
+```bash
+mkdir -p ~/.config/claude-looper
+CLAUDE_CONFIG_DIR=~/.config/claude-looper claude auth login   # once, interactively
+echo 'LOOPER_CLAUDE_CONFIG_DIR=~/.config/claude-looper' >> .looper/env
+```
+
+`CLAUDE_CONFIG_DIR` moves the whole of Claude Code's configuration — credentials,
+settings and saved sessions — so one directory is one account, and the setting
+lives in `.looper/env`, which makes it a property of the repo. Looper checks the
+account before the loop starts and logs who it is running as; if that account
+isn't logged in it says so, with the command to fix it, rather than failing every
+wake.
+
 ### Trying it out
 
 ```bash
 looper --once      # one wake, then stop
-looper --dry-run   # print the prompt and the command, run nothing
+looper --dry-run   # print the account, the prompt and the command; run nothing
 looper --help      # every setting, with its default
 ```
 

@@ -6,7 +6,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig, globalEnvPath, repoEnvPath, formatDuration } from "./config.ts";
 import type { Config } from "./config.ts";
-import { buildArgs } from "./claude.ts";
+import { buildArgs, whoseAccount } from "./claude.ts";
+import type { Account } from "./claude.ts";
 import { buildPrompt } from "./prompt.ts";
 import { State } from "./state.ts";
 import { Telegram, detectChatId } from "./telegram.ts";
@@ -38,6 +39,11 @@ first time:
     LOOPER_TASK, and any of the settings below
 
 Settings (all optional):
+  LOOPER_CLAUDE_CONFIG_DIR
+                         a CLAUDE_CONFIG_DIR for this repo's wakes, which is how
+                         a repo is pinned to one Claude account.  Log that
+                         account in once with
+                         CLAUDE_CONFIG_DIR=<dir> claude auth login
   LOOPER_MODEL           default opus
   LOOPER_EFFORT          low | medium | high | xhigh | max
   LOOPER_FALLBACK_MODEL  a model to fall back to when the first is overloaded
@@ -88,6 +94,49 @@ function redact(args: string[], config: Config): string {
     .join(" ");
 }
 
+/**
+ * Which account the wakes will run as, or a clear exit. This is asked of `claude`
+ * before anything starts, because a logged-out account fails every wake the same
+ * way, and the fix is one command the message can just hand over.
+ */
+function readAccount(config: Config): Account {
+  let account: Account;
+  try {
+    account = whoseAccount(config);
+  } catch (error) {
+    console.error(`Could not ask claude which account it is using: ${(error as Error).message}`);
+    console.error("Is the `claude` CLI installed and on PATH?");
+    process.exit(1);
+  }
+  if (!account.loggedIn) {
+    const where = config.claudeConfigDir;
+    console.error(`Claude is not logged in${where ? ` in ${where}` : ""}.`);
+    console.error(
+      where
+        ? `Log that account in once with:\n  CLAUDE_CONFIG_DIR=${where} claude auth login`
+        : "Log in with `claude auth login`, or set LOOPER_CLAUDE_CONFIG_DIR to a directory\n" +
+            "that holds the account you want this repo to use."
+    );
+    process.exit(1);
+  }
+  return account;
+}
+
+/** The account as one line, for `--dry-run`, whatever state it is in. */
+function describeAccount(config: Config): string {
+  const where = config.claudeConfigDir ?? "the default config directory";
+  try {
+    const account = whoseAccount(config);
+    return account.loggedIn
+      ? `${account.email ?? "unknown"}` +
+          `${account.subscriptionType ? ` (${account.subscriptionType})` : ""}` +
+          `${account.orgName ? `, ${account.orgName}` : ""} — from ${where}`
+      : `not logged in — from ${where}`;
+  } catch (error) {
+    return `could not be read: ${(error as Error).message}`;
+  }
+}
+
 async function main(): Promise<void> {
   const asked = process.argv.includes("-h") || process.argv.includes("--help");
   const args = parseArgs(process.argv.slice(2));
@@ -123,10 +172,18 @@ async function main(): Promise<void> {
       logPath: "/dev/null",
       resume: null,
     });
-    console.log(`--- claude ---\nclaude ${redact(claudeArgs, config)}\n`);
+    // Which account this repo would use is one of the things --dry-run is for, so
+    // it is reported rather than enforced here: a logged-out account is printed
+    // as such instead of stopping the run.
+    const account = describeAccount(config);
+    const prefix = config.claudeConfigDir ? `CLAUDE_CONFIG_DIR=${config.claudeConfigDir} ` : "";
+    console.log(`--- account ---\n${account}\n`);
+    console.log(`--- claude ---\n${prefix}claude ${redact(claudeArgs, config)}\n`);
     console.log(`--- prompt ---\n${prompt}`);
     return;
   }
+
+  const account = readAccount(config);
 
   // Fail before the loop starts rather than at the first thing the agent wants to
   // say: a bad token here is a typo, and a typo should not cost an hour.
@@ -140,6 +197,11 @@ async function main(): Promise<void> {
   state.log(
     `looper on ${config.repo} — task ${config.task}, model ${config.model}, ` +
       `@${username}, ${state.data.runs} wake(s) so far`
+  );
+  state.log(
+    `account: ${account.email ?? "unknown"}` +
+      `${account.subscriptionType ? ` (${account.subscriptionType})` : ""}` +
+      `${config.claudeConfigDir ? ` from ${config.claudeConfigDir}` : ""}`
   );
   state.log(
     `gaps: ${formatDuration(timing.turn)} between wakes, ${formatDuration(timing.stall)} after a ` +

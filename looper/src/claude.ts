@@ -6,10 +6,57 @@
 // actually did, and the tool calls can be echoed to the terminal so a long wake
 // isn't a silent hour.
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import { randomUUID } from "node:crypto";
 import type { Config } from "./config.ts";
+
+/**
+ * The environment a wake runs in. `CLAUDE_CONFIG_DIR` is the whole of how an
+ * account is chosen: credentials, settings and sessions all live in that
+ * directory, so pointing a repo at its own is what makes it that repo's account.
+ */
+export function claudeEnv(config: Config): NodeJS.ProcessEnv {
+  return config.claudeConfigDir
+    ? { ...process.env, CLAUDE_CONFIG_DIR: config.claudeConfigDir }
+    : process.env;
+}
+
+export interface Account {
+  loggedIn: boolean;
+  email?: string;
+  subscriptionType?: string;
+  orgName?: string;
+}
+
+/**
+ * Who the wakes will run as, asked of `claude` itself. Checked before the loop
+ * starts: an account that isn't logged in fails every wake identically, and it is
+ * far better to say so on the terminal than to discover it an hour later.
+ */
+export function whoseAccount(config: Config): Account {
+  // `claude auth status --json` exits 1 when nobody is logged in, but still prints
+  // the JSON that says so — so the output is what matters here and the exit code
+  // is not. Only output that isn't JSON at all counts as a real failure.
+  let output: string;
+  try {
+    output = execFileSync("claude", ["auth", "status", "--json"], {
+      encoding: "utf8",
+      env: claudeEnv(config),
+      timeout: 30_000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch (error) {
+    const printed = (error as { stdout?: string }).stdout;
+    if (!printed?.trim()) throw error;
+    output = printed;
+  }
+  try {
+    return JSON.parse(output) as Account;
+  } catch {
+    throw new Error(`claude said something unexpected: ${output.trim().slice(0, 200)}`);
+  }
+}
 
 export interface RunResult {
   /** The session, so `claude --resume <id>` can open up what happened. */
@@ -180,7 +227,7 @@ export function runWake(options: RunOptions): {
       child = spawn("claude", args, {
         cwd: options.config.repo,
         stdio: ["pipe", "pipe", "pipe"],
-        env: process.env,
+        env: claudeEnv(options.config),
       });
     } catch (error) {
       finish({
