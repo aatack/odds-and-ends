@@ -16,6 +16,12 @@ export interface Incoming {
   /** When Telegram stamped it, in milliseconds. */
   at: number;
   text: string;
+  /**
+   * Set when a wake was handed this message and died before it could read it. It
+   * goes back in the queue for the next wake, but it has had its one turn at
+   * cutting a wait short.
+   */
+  tried?: boolean;
 }
 
 interface Update {

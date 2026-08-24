@@ -106,9 +106,17 @@ be set per repo (see `looper --help`):
 | It failed | Backs off, doubling with each failure in a row | 30m, capped at a day |
 | A usage cap | Sleeps until the cap resets, or a fixed gap if it isn't told when | 3h |
 
+A cap is a 429, or any refusal that says so in words; the reset it names — an
+epoch, or a clock time in a named zone like `resets 9:50am (America/Los_Angeles)`
+— is what it waits for, and nothing shortens that wait, since nothing you can say
+will lift a cap.
+
 A message from you cuts the waiting short — but not the instant you send it. It
 waits until you have been quiet for 90 seconds, so three messages in a row arrive
-as one thought.
+as one thought. It also only happens once per message: one handed to a wake that
+died before reading it goes back in the queue, but waits its turn with the rest,
+so a wake that fails in two seconds can't be woken straight back into the same
+failure by the same message.
 
 Three failed wakes in a row and it tells you; six overloads in a row, by which
 point the API has been refusing work for over an hour, and it tells you that too.

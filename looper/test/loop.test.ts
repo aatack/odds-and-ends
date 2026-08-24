@@ -15,6 +15,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, chmodSync } from "
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readCap } from "../src/claude.ts";
 
 const looperDir = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -84,8 +85,11 @@ function fakeTelegram(updates: unknown[]): Promise<{ server: Server; sent: strin
  * saying nothing, the way a session that cannot be resumed does, and `overloaded`
  * prints what it prints when it has given up retrying a 529 — note the
  * `subtype: "success"` alongside `is_error`, which is what the real one does.
+ * `limited` prints what a spent session cap looks like: a 429 whose text says
+ * when it lifts and never says "limit" in any of the words a cap is usually found
+ * by.
  */
-type Behaviour = "asks" | "dies" | "overloaded";
+type Behaviour = "asks" | "dies" | "overloaded" | "limited";
 
 function fakeClaude(dir: string, repo: string, behaviour: Behaviour = "asks"): string {
   const bin = join(dir, "bin");
@@ -98,6 +102,10 @@ exit 1
       : behaviour === "overloaded"
         ? `echo '{"type":"system","subtype":"init","session_id":"11111111-2222-3333-4444-555555555555"}'
 echo '{"type":"result","subtype":"success","is_error":true,"session_id":"11111111-2222-3333-4444-555555555555","result":"API Error: 529 Overloaded. This is a server-side issue, usually temporary.","total_cost_usd":0.0018,"num_turns":1,"api_error_status":529,"terminal_reason":"api_error"}'
+`
+        : behaviour === "limited"
+          ? `echo '{"type":"system","subtype":"init","session_id":"11111111-2222-3333-4444-555555555555"}'
+echo '{"type":"result","subtype":"success","is_error":true,"session_id":"11111111-2222-3333-4444-555555555555","result":"You'"'"'ve hit your session limit \u00b7 resets 9:50am (America/Los_Angeles)","num_turns":1,"api_error_status":429,"terminal_reason":"api_error"}'
 `
         : `printf '%s\\n' '{"at":"2026-01-01T00:00:00.000Z","kind":"ask","text":"which way?"}' \\
   >> ${JSON.stringify(join(repo, ".looper", "outbox.jsonl"))}
@@ -329,4 +337,83 @@ test("an overloaded API is waited out, not treated as a failure", async () => {
     "a message the agent never saw goes back in the queue"
   );
   assert.deepEqual(telegram.sent, [], "nothing is worth telling you about one overload");
+});
+
+
+test("a spent session cap is read as one, and waited out rather than retried", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "looper-test-"));
+  const repo = join(dir, "repo");
+  mkdirSync(join(repo, ".looper"), { recursive: true });
+  execFileSync("git", ["init", "-q"], { cwd: repo });
+  // A message waiting, and failures already piled up: a cap is not a fault, so it
+  // must clear the count rather than adding to it, and the message must come back
+  // marked so that it cannot wake the loop straight back into the same cap.
+  writeFileSync(
+    join(repo, ".looper", "state.json"),
+    JSON.stringify({
+      runs: 4,
+      telegramOffset: 0,
+      pending: [{ updateId: 9, at: Date.now(), text: "carry on with the parser" }],
+      awaitingReply: false,
+      failures: 7,
+      overloads: 0,
+      lastRun: {
+        at: new Date().toISOString(),
+        outcome: "done",
+        sessionId: "old",
+        text: "found the parser",
+        durationMs: 1000,
+        costUsd: null,
+      },
+    })
+  );
+
+  const telegram = await fakeTelegram([]);
+  const bin = fakeClaude(dir, repo, "limited");
+  const run = await runLooper(repo, {
+    PATH: `${bin}:${process.env.PATH}`,
+    TELEGRAM_API_BASE: telegram.url,
+    TELEGRAM_BOT_TOKEN: "111:test",
+    TELEGRAM_CHAT_ID: "999",
+    NOTES_MCP_URL: "http://127.0.0.1:1/mcp",
+    NOTES_MCP_TOKEN: "notes-token",
+    LOOPER_TASK: "task-note",
+    XDG_CONFIG_HOME: join(dir, "config"),
+  });
+  telegram.server.close();
+
+  assert.equal(run.status, 0, run.stderr);
+  const state = JSON.parse(readFileSync(join(repo, ".looper", "state.json"), "utf8")) as {
+    failures: number;
+    pending: { text: string; tried?: boolean }[];
+    lastRun: { outcome: string; sessionId: string | null };
+  };
+  assert.equal(state.lastRun.outcome, "limited", "a 429 is a cap, not a failure");
+  assert.equal(state.failures, 0, "a cap clears the failure backoff rather than feeding it");
+  assert.equal(state.lastRun.sessionId, "11111111-2222-3333-4444-555555555555");
+  assert.equal(state.pending.length, 1, "the message the agent never saw is kept");
+  assert.equal(state.pending[0].tried, true, "but it has had its turn at waking the loop");
+});
+
+test("a cap says when it lifts, in the words the API uses", () => {
+  const text = "You've hit your session limit \u00b7 resets 9:50am (America/Los_Angeles)";
+  const cap = readCap(text, 429);
+  assert.ok(cap, "a 429 is a cap even though its text never says so");
+  const resetAt = cap.resetAt;
+  assert.ok(resetAt !== null, "and the reset time is read out of the prose");
+  assert.ok(resetAt > Date.now(), "the reset is always the next one, never a past one");
+  assert.ok(resetAt - Date.now() <= 86_400_000, "and never more than a day away");
+  const there = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "America/Los_Angeles",
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(resetAt));
+  assert.equal(there, "09:50");
+
+  // The agent's own writing is never read this way, but Claude's is: an error that
+  // says nothing about a cap and carries no 429 is not one.
+  assert.equal(readCap("api error 400: your request was malformed", 400), null);
+  // The epoch form the CLI sometimes uses still wins over any prose.
+  assert.deepEqual(readCap("usage limit reached|1740000000"), { resetAt: 1740000000000 });
 });

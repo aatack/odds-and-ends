@@ -103,7 +103,11 @@ export class Loop {
       // handed the prompt at all.
       const stillborn = !result.toolCalls && !result.text.trim();
       if (outcome !== "done" && outcome !== "asked" && messages.length && stillborn) {
-        state.data.pending.unshift(...messages);
+        // Marked as having had their turn. A wake that dies on the API dies in
+        // seconds, so a message that could still cut the next wait short the
+        // moment it was handed back would spin the backoff away entirely: fail,
+        // wake on the same message, fail, every two seconds until the cap lifted.
+        state.data.pending.unshift(...messages.map((message) => ({ ...message, tried: true })));
         state.save();
       }
 
@@ -186,8 +190,15 @@ export class Loop {
     if (outcome === "limited") {
       const reset = result.limit?.resetAt;
       // Nothing you can say will lift a cap, so a message doesn't cut this short.
+      // A reset already in the past — a clock out of step, or a stale one read
+      // from an old message — still buys a real gap, since retrying a cap the
+      // instant it refuses is the one thing that must not happen.
       return reset
-        ? { until: reset + capBuffer, reason: "usage cap, until it resets", wakeOnMessage: false }
+        ? {
+            until: Math.max(reset + capBuffer, now + timing.overload),
+            reason: "usage cap, until it resets",
+            wakeOnMessage: false,
+          }
         : { until: now + timing.limit, reason: "usage cap, no reset given", wakeOnMessage: false };
     }
     if (outcome === "overloaded") {
@@ -244,13 +255,16 @@ export class Loop {
    * Sleep until `until`, or until you have finished talking. A message doesn't
    * wake the agent on its own: the wait continues until the grace period has
    * passed with nothing new, so three messages in a row arrive as one thought
-   * rather than interrupting the loop three times.
+   * rather than interrupting the loop three times. Only something you have said
+   * since the last wake counts — a message already handed to a wake that died
+   * waits with the rest.
    */
   private async wait(until: number, wakeOnMessage: boolean): Promise<void> {
     const { state, config } = this.options;
     while (!this.stopping && Date.now() < until) {
-      if (wakeOnMessage && state.data.pending.length) {
-        const last = Math.max(...state.data.pending.map((message) => message.at));
+      const fresh = state.data.pending.filter((message) => !message.tried);
+      if (wakeOnMessage && fresh.length) {
+        const last = Math.max(...fresh.map((message) => message.at));
         const settled = Date.now() - Math.max(last, 0) >= config.timing.grace;
         if (settled) {
           state.log(`waking early: ${state.data.pending.length} message(s) from you`);

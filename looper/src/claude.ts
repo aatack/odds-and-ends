@@ -100,12 +100,77 @@ const capPatterns = [
 /** `... limit reached|1740000000` — the epoch second the cap lifts, when given. */
 const resetPattern = /limit reached\|(\d{10,13})/;
 
-function readCap(text: string): { resetAt: number | null } | null {
-  if (!capPatterns.some((pattern) => pattern.test(text))) return null;
+/**
+ * `resets 9:50am (America/Los_Angeles)` — the other way a cap says when it lifts,
+ * as a wall clock in a named zone. Worth reading: the alternative is waiting out a
+ * cap by a blind guess, which is hours of doing nothing or a retry that is
+ * refused all over again.
+ */
+const resetClockPattern = /resets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?(?:\s*\(([^)]+)\))?/i;
+
+/** Exported for the test that checks a session limit is read as one. */
+export function readCap(
+  text: string,
+  status: number | null = null
+): { resetAt: number | null } | null {
+  // A 429 is a cap by definition, and the one the API sends most — "You've hit
+  // your session limit" — has none of the words below anywhere in it, so the
+  // status has to count on its own. Without this the wake reads as an ordinary
+  // failure, and the loop backs off blind instead of waiting for the reset.
+  if (status !== 429 && !capPatterns.some((pattern) => pattern.test(text))) return null;
   const match = resetPattern.exec(text);
-  if (!match) return { resetAt: null };
-  const value = Number(match[1]);
-  return { resetAt: value > 1e12 ? value : value * 1000 };
+  if (match) {
+    const value = Number(match[1]);
+    return { resetAt: value > 1e12 ? value : value * 1000 };
+  }
+  return { resetAt: readResetClock(text) };
+}
+
+/**
+ * When the clock time in `text` next comes round, in the zone the text names or
+ * the machine's own when it names none. A cap that resets at 9:50 is 9:50 today
+ * if that is still to come and 9:50 tomorrow if it has been, which is right
+ * either way round: no cap lasts a day.
+ */
+function readResetClock(text: string, now = Date.now()): number | null {
+  const match = resetClockPattern.exec(text);
+  if (!match) return null;
+  let hour = Number(match[1]);
+  const minute = Number(match[2] ?? 0);
+  if (hour > 23 || minute > 59) return null;
+  const meridiem = match[3]?.toLowerCase();
+  if (meridiem === "pm" && hour < 12) hour += 12;
+  if (meridiem === "am" && hour === 12) hour = 0;
+  const there = clockIn(match[4]?.trim() ?? null, now);
+  if (there === null) return null;
+  const day = 86_400;
+  const wait = (((hour * 3600 + minute * 60 - there) % day) + day) % day;
+  return now + wait * 1000;
+}
+
+/**
+ * The time of day where a zone is now, in seconds — or null if it isn't a zone
+ * Node knows, in which case the cap is waited out blind rather than woken at the
+ * wrong hour. A clocks-change between now and the reset would put this an hour
+ * out; the cap refuses once more and is read again, which is the same as any
+ * other early retry.
+ */
+function clockIn(zone: string | null, now: number): number | null {
+  try {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      ...(zone ? { timeZone: zone } : {}),
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).formatToParts(new Date(now));
+    const value = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? NaN);
+    // Midnight comes back as hour 24 from some builds of ICU.
+    const seconds = (value("hour") % 24) * 3600 + value("minute") * 60 + value("second");
+    return Number.isFinite(seconds) ? seconds : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -119,7 +184,8 @@ const overloadPatterns = [/\boverloaded\b/i, /\b5(?:00|02|03|04|29)\b/];
  * Whether a finished wake died on the API. The result event says so in
  * `api_error_status` and `terminal_reason`, which is far better than reading the
  * message: a 5xx is capacity and worth retrying soon, while a 4xx is a request
- * that will be refused identically forever.
+ * that will be refused identically forever — bar a 429, which is a spent cap and
+ * is read as one above, before this ever runs.
  */
 function readApiError(event: Event): { status: number | null; transient: boolean } | null {
   const status = typeof event.api_error_status === "number" ? event.api_error_status : null;
@@ -323,7 +389,12 @@ export function runWake(options: RunOptions): {
             // would be a lie, and it would make a stillborn wake look like one
             // that had something to say.
             resultError = describeFailure(event);
-            cap = cap ?? readCap(String(event.result ?? "") + " " + (event.subtype ?? ""));
+            cap =
+              cap ??
+              readCap(
+                String(event.result ?? "") + " " + (event.subtype ?? ""),
+                typeof event.api_error_status === "number" ? event.api_error_status : null
+              );
             apiError = apiError ?? readApiError(event) ?? readOverload(resultError);
           } else if (typeof event.result === "string") {
             text = event.result;
