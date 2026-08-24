@@ -67,6 +67,13 @@ export interface RunResult {
   ok: boolean;
   /** Set when the run stopped because a usage cap was reached. */
   limit: { resetAt: number | null } | null;
+  /**
+   * Set when the wake died on the API itself rather than on anything the agent or
+   * Looper did. `transient` marks the kind worth another go in a couple of
+   * minutes — an overloaded server — as against a request that will be refused
+   * the same way forever.
+   */
+  apiError: { status: number | null; transient: boolean } | null;
   /** Why it ended badly, when it did. */
   error?: string;
   durationMs: number;
@@ -99,6 +106,33 @@ function readCap(text: string): { resetAt: number | null } | null {
   if (!match) return { resetAt: null };
   const value = Number(match[1]);
   return { resetAt: value > 1e12 ? value : value * 1000 };
+}
+
+/**
+ * A server-side error, in the words the CLI uses when it gives up retrying one.
+ * Only ever applied to Claude's own error output, the same as the cap patterns:
+ * the agent writing "overloaded" in a note must not put the loop to sleep.
+ */
+const overloadPatterns = [/\boverloaded\b/i, /\b5(?:00|02|03|04|29)\b/];
+
+/**
+ * Whether a finished wake died on the API. The result event says so in
+ * `api_error_status` and `terminal_reason`, which is far better than reading the
+ * message: a 5xx is capacity and worth retrying soon, while a 4xx is a request
+ * that will be refused identically forever.
+ */
+function readApiError(event: Event): { status: number | null; transient: boolean } | null {
+  const status = typeof event.api_error_status === "number" ? event.api_error_status : null;
+  const said = event.terminal_reason === "api_error" || event.is_api_error_message === true;
+  if (status === null && !said) return null;
+  return { status, transient: status === null ? false : status >= 500 || status === 408 };
+}
+
+/** The same thing from loose text, for a run that fell over without a result event. */
+function readOverload(text: string): { status: number | null; transient: boolean } | null {
+  if (!overloadPatterns.some((pattern) => pattern.test(text))) return null;
+  const status = /\b(5(?:00|02|03|04|29))\b/.exec(text);
+  return { status: status ? Number(status[1]) : null, transient: true };
 }
 
 /** The MCP servers the agent gets, and nothing else: `--strict-mcp-config` drops the rest. */
@@ -205,18 +239,22 @@ export function runWake(options: RunOptions): {
     let turns: number | null = null;
     let toolCalls = 0;
     let cap: { resetAt: number | null } | null = null;
+    let apiError: { status: number | null; transient: boolean } | null = null;
     let resultError: string | null = null;
     let stderr = "";
     let timedOut = false;
     let done = false;
 
-    const finish = (result: Omit<RunResult, "durationMs" | "toolCalls" | "sessionId">) => {
+    const finish = (
+      result: Omit<RunResult, "durationMs" | "toolCalls" | "sessionId" | "apiError">
+    ) => {
       if (done) return;
       done = true;
       clearTimeout(timer);
       log.end();
       settle({
         ...result,
+        apiError,
         sessionId: effectiveSession,
         durationMs: Date.now() - started,
         toolCalls,
@@ -275,13 +313,20 @@ export function runWake(options: RunOptions): {
           }
         }
         if (event.type === "result") {
-          if (typeof event.result === "string") text = event.result;
           if (typeof event.total_cost_usd === "number") cost = event.total_cost_usd;
           if (typeof event.num_turns === "number") turns = event.num_turns;
           const failed = event.is_error === true || event.subtype !== "success";
           if (failed) {
-            resultError = `${event.subtype ?? "error"}${event.result ? `: ${event.result}` : ""}`;
+            // The `result` of a failed wake is the CLI's error message, not the
+            // agent's sign-off, so it is kept as the error and nowhere else:
+            // handing "API Error: 529" to the next wake as its own last words
+            // would be a lie, and it would make a stillborn wake look like one
+            // that had something to say.
+            resultError = describeFailure(event);
             cap = cap ?? readCap(String(event.result ?? "") + " " + (event.subtype ?? ""));
+            apiError = apiError ?? readApiError(event) ?? readOverload(resultError);
+          } else if (typeof event.result === "string") {
+            text = event.result;
           }
         }
       }
@@ -310,6 +355,7 @@ export function runWake(options: RunOptions): {
     child.on("close", (code) => {
       const trailing = stderr.trim();
       cap = cap ?? readCap(trailing);
+      if (!cap && code !== 0) apiError = apiError ?? readOverload(trailing);
       if (stopped) {
         finish({ text, ok: false, limit: null, error: "Stopped.", costUsd: cost, turns });
         return;
@@ -369,9 +415,30 @@ interface Event {
   session_id?: string;
   result?: unknown;
   is_error?: boolean;
+  is_api_error_message?: boolean;
+  api_error_status?: number;
+  terminal_reason?: string;
   total_cost_usd?: number;
   num_turns?: number;
   message?: { content?: Block[] };
+}
+
+/**
+ * Why a wake ended badly, in one line. The subtype is not enough on its own: an
+ * API error arrives as `subtype: "success"` with `is_error` set, so "success:
+ * API Error: 529" is what the naive reading gives you.
+ */
+function describeFailure(event: Event): string {
+  const detail = typeof event.result === "string" ? event.result : "";
+  const label =
+    typeof event.api_error_status === "number"
+      ? `api error ${event.api_error_status}`
+      : event.terminal_reason && event.terminal_reason !== "success"
+        ? event.terminal_reason
+        : event.subtype && event.subtype !== "success"
+          ? event.subtype
+          : "error";
+  return detail ? `${label}: ${detail}` : label;
 }
 
 /** A tool call as one short line: `Bash(git commit -m ...)`. */

@@ -17,7 +17,7 @@ import { join } from "node:path";
 import type { Incoming } from "./telegram.ts";
 
 /** How a wake ended, which is what decides how long to wait before the next. */
-export type Outcome = "done" | "asked" | "failed" | "limited";
+export type Outcome = "done" | "asked" | "failed" | "limited" | "overloaded";
 
 export interface LastRun {
   /** When the wake finished, as an ISO string. */
@@ -44,6 +44,12 @@ export interface StateData {
   awaitingReply: boolean;
   /** Consecutive failed wakes, which is what the stall backoff is measured in. */
   failures: number;
+  /**
+   * Consecutive wakes lost to an overloaded API. Counted apart from `failures`
+   * because nothing is wrong here: the retry is short, and three of them in a row
+   * is not worth waking you up for.
+   */
+  overloads: number;
   lastRun: LastRun | null;
 }
 
@@ -61,6 +67,7 @@ const empty: StateData = {
   pending: [],
   awaitingReply: false,
   failures: 0,
+  overloads: 0,
   lastRun: null,
 };
 

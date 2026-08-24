@@ -81,16 +81,25 @@ function fakeTelegram(updates: unknown[]): Promise<{ server: Server; sent: strin
  * A `claude` that behaves like the real one for one wake: it saves the prompt and
  * the arguments it was given, says it asked the user something by writing to the
  * outbox, and prints the events Looper reads. `dies` instead makes it fall over
- * saying nothing, the way a session that cannot be resumed does.
+ * saying nothing, the way a session that cannot be resumed does, and `overloaded`
+ * prints what it prints when it has given up retrying a 529 — note the
+ * `subtype: "success"` alongside `is_error`, which is what the real one does.
  */
-function fakeClaude(dir: string, repo: string, dies = false): string {
+type Behaviour = "asks" | "dies" | "overloaded";
+
+function fakeClaude(dir: string, repo: string, behaviour: Behaviour = "asks"): string {
   const bin = join(dir, "bin");
   mkdirSync(bin, { recursive: true });
-  const body = dies
-    ? `echo "No conversation found with session ID: old" >&2
+  const body =
+    behaviour === "dies"
+      ? `echo "No conversation found with session ID: old" >&2
 exit 1
 `
-    : `printf '%s\\n' '{"at":"2026-01-01T00:00:00.000Z","kind":"ask","text":"which way?"}' \\
+      : behaviour === "overloaded"
+        ? `echo '{"type":"system","subtype":"init","session_id":"11111111-2222-3333-4444-555555555555"}'
+echo '{"type":"result","subtype":"success","is_error":true,"session_id":"11111111-2222-3333-4444-555555555555","result":"API Error: 529 Overloaded. This is a server-side issue, usually temporary.","total_cost_usd":0.0018,"num_turns":1,"api_error_status":529,"terminal_reason":"api_error"}'
+`
+        : `printf '%s\\n' '{"at":"2026-01-01T00:00:00.000Z","kind":"ask","text":"which way?"}' \\
   >> ${JSON.stringify(join(repo, ".looper", "outbox.jsonl"))}
 echo '{"type":"system","subtype":"init","session_id":"11111111-2222-3333-4444-555555555555"}'
 echo '{"type":"assistant","session_id":"11111111-2222-3333-4444-555555555555","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"git status"}}]}}'
@@ -235,7 +244,7 @@ test("a session that cannot be resumed is dropped, not retried forever", async (
   );
 
   const telegram = await fakeTelegram([]);
-  const bin = fakeClaude(dir, repo, true);
+  const bin = fakeClaude(dir, repo, "dies");
   const run = await runLooper(repo, {
     PATH: `${bin}:${process.env.PATH}`,
     TELEGRAM_API_BASE: telegram.url,
@@ -257,4 +266,67 @@ test("a session that cannot be resumed is dropped, not retried forever", async (
   assert.equal(state.lastRun.outcome, "failed");
   assert.equal(state.lastRun.sessionId, null, "the dead session id is forgotten");
   assert.equal(state.failures, 1);
+});
+
+
+test("an overloaded API is waited out, not treated as a failure", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "looper-test-"));
+  const repo = join(dir, "repo");
+  mkdirSync(join(repo, ".looper"), { recursive: true });
+  execFileSync("git", ["init", "-q"], { cwd: repo });
+  // A message waiting to be handed over, and a session worth keeping: an overload
+  // must lose neither, since the agent never got as far as reading the prompt.
+  writeFileSync(
+    join(repo, ".looper", "state.json"),
+    JSON.stringify({
+      runs: 2,
+      telegramOffset: 0,
+      pending: [{ updateId: 3, at: Date.now(), text: "use sqlite, not postgres" }],
+      awaitingReply: false,
+      failures: 0,
+      overloads: 0,
+      lastRun: {
+        at: new Date().toISOString(),
+        outcome: "done",
+        sessionId: "old",
+        text: "found the parser",
+        durationMs: 1000,
+        costUsd: null,
+      },
+    })
+  );
+
+  const telegram = await fakeTelegram([]);
+  const bin = fakeClaude(dir, repo, "overloaded");
+  const run = await runLooper(repo, {
+    PATH: `${bin}:${process.env.PATH}`,
+    TELEGRAM_API_BASE: telegram.url,
+    TELEGRAM_BOT_TOKEN: "111:test",
+    TELEGRAM_CHAT_ID: "999",
+    NOTES_MCP_URL: "http://127.0.0.1:1/mcp",
+    NOTES_MCP_TOKEN: "notes-token",
+    LOOPER_TASK: "task-note",
+    XDG_CONFIG_HOME: join(dir, "config"),
+  });
+  telegram.server.close();
+
+  assert.equal(run.status, 0, run.stderr);
+  const state = JSON.parse(readFileSync(join(repo, ".looper", "state.json"), "utf8")) as {
+    failures: number;
+    overloads: number;
+    pending: { text: string }[];
+    lastRun: { outcome: string; text: string; sessionId: string | null; error?: string };
+  };
+  assert.equal(state.lastRun.outcome, "overloaded");
+  assert.equal(state.failures, 0, "an overload is not a failure");
+  assert.equal(state.overloads, 1);
+  assert.equal(state.lastRun.sessionId, "11111111-2222-3333-4444-555555555555");
+  assert.equal(state.lastRun.text, "", "the API error is not the agent's sign-off");
+  assert.match(state.lastRun.error ?? "", /api error 529/);
+  assert.deepEqual(
+    state.pending.map((message) => message.text),
+    ["use sqlite, not postgres"],
+    "a message the agent never saw goes back in the queue"
+  );
+  assert.deepEqual(telegram.sent, [], "nothing is worth telling you about one overload");
 });

@@ -52,6 +52,7 @@ Settings (all optional):
                          fresh starts a new one each wake
   LOOPER_TURN_SLEEP      gap after a clean wake, default 5m
   LOOPER_STALL_SLEEP     gap after a failed wake, doubling, default 30m
+  LOOPER_OVERLOAD_SLEEP  gap after an overloaded API, doubling, default 2m
   LOOPER_LIMIT_SLEEP     gap after a usage cap with no stated reset, default 3h
   LOOPER_QUESTION_WAIT   how long to wait for your answer, default 6h
   LOOPER_GRACE           quiet time before your reply counts as done, default 90s

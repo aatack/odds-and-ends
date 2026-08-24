@@ -75,7 +75,9 @@ yours to lay out.`
           ? "ended after asking the user something"
           : outcome === "limited"
             ? "was cut short by a usage cap"
-            : `ended badly (${error ?? "unknown error"})`;
+            : outcome === "overloaded"
+              ? "never really ran: the API was overloaded"
+              : `ended badly (${error ?? "unknown error"})`;
     parts.push(
       `Your last wake ${ended}, ${ago}, after ${Math.round(durationMs / 60_000)} minutes of work.`
     );

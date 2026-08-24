@@ -102,6 +102,7 @@ be set per repo (see `looper --help`):
 | Normally | Short gap, then the next wake | 5m |
 | Normally, but it used no tools | The long gap — a wake that did nothing is not worth repeating every five minutes | 30m |
 | It asked you something | Waits for your answer, then carries on anyway if it doesn't come | 6h |
+| The API was overloaded | A short gap, doubling — a 529 is capacity, not a fault, so it doesn't count as a failure | 2m, capped at the failure gap |
 | It failed | Backs off, doubling with each failure in a row | 30m, capped at a day |
 | A usage cap | Sleeps until the cap resets, or a fixed gap if it isn't told when | 3h |
 
@@ -109,8 +110,15 @@ A message from you cuts the waiting short — but not the instant you send it. I
 waits until you have been quiet for 90 seconds, so three messages in a row arrive
 as one thought.
 
-Three failed wakes in a row and it tells you. A missing `claude` or a rejected
-login it doesn't retry at all: it says so and stops.
+Three failed wakes in a row and it tells you; six overloads in a row, by which
+point the API has been refusing work for over an hour, and it tells you that too.
+A missing `claude` or a rejected login it doesn't retry at all: it says so and
+stops.
+
+A wake the API never took is treated as a wake that never happened: anything you
+had sent goes back in the queue for the next one rather than being lost with it,
+and the session is kept. `LOOPER_FALLBACK_MODEL` gives Claude a second model to
+try before it gets that far.
 
 ### What it keeps
 

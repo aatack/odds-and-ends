@@ -29,6 +29,8 @@ export interface Timing {
   turn: number;
   /** Gap after a wake that failed — doubling each time, up to a day. */
   stall: number;
+  /** Gap after a wake lost to an overloaded API — doubling, up to the stall gap. */
+  overload: number;
   /** Gap after hitting a usage cap, when the cap doesn't say when it resets. */
   limit: number;
   /** How long to hold off waking after the agent asked the user something. */
@@ -366,6 +368,7 @@ export async function loadConfig(opts: LoadOptions): Promise<Config> {
     timing: {
       turn: duration("LOOPER_TURN_SLEEP", "5m"),
       stall: duration("LOOPER_STALL_SLEEP", "30m"),
+      overload: duration("LOOPER_OVERLOAD_SLEEP", "2m"),
       limit: duration("LOOPER_LIMIT_SLEEP", "3h"),
       question: duration("LOOPER_QUESTION_WAIT", "6h"),
       grace: duration("LOOPER_GRACE", "90s"),

@@ -26,6 +26,14 @@ const maxWait = 24 * 3_600_000;
 /** Failures in a row before you are told the loop is stuck. */
 const complainAfter = 3;
 
+/**
+ * Overloads in a row before you are told. Higher than `complainAfter` because the
+ * gap starts at two minutes and doubles: by the sixth the API has been refusing
+ * work for well over an hour, which is worth a message, and the five before it
+ * are weather.
+ */
+const complainAfterOverloads = 6;
+
 export interface LoopOptions {
   config: Config;
   state: State;
@@ -90,16 +98,19 @@ export class Loop {
 
       // A wake that never got as far as a single tool call never really read the
       // prompt, so anything you had said goes back in the queue for the next one
-      // rather than being lost with it.
+      // rather than being lost with it. This covers a spent cap and an overloaded
+      // API as well as a failure: in all three the agent may never have been
+      // handed the prompt at all.
       const stillborn = !result.toolCalls && !result.text.trim();
-      if (outcome === "failed" && messages.length && stillborn) {
+      if (outcome !== "done" && outcome !== "asked" && messages.length && stillborn) {
         state.data.pending.unshift(...messages);
         state.save();
       }
 
       // A session that cannot be resumed — deleted, or left half-written by a
       // kill — would fail the same way forever, so the id is dropped and the next
-      // wake starts a new session from the notes.
+      // wake starts a new session from the notes. Only a real failure counts: a
+      // wake the API never took is no evidence at all about the session.
       if (resume && outcome === "failed" && stillborn && state.data.lastRun) {
         state.data.lastRun = { ...state.data.lastRun, sessionId: null };
         state.save();
@@ -129,7 +140,12 @@ export class Loop {
     const { state } = this.options;
     state.data.runs += 1;
     state.data.awaitingReply = outcome === "asked";
-    state.data.failures = outcome === "failed" ? state.data.failures + 1 : 0;
+    // An overload leaves the failure count alone rather than clearing it: it is
+    // neither a failure nor a wake that worked, so it should not reset a backoff
+    // that a real fault has earned.
+    if (outcome === "failed") state.data.failures += 1;
+    else if (outcome !== "overloaded") state.data.failures = 0;
+    state.data.overloads = outcome === "overloaded" ? state.data.overloads + 1 : 0;
     state.data.lastRun = {
       at: new Date().toISOString(),
       outcome,
@@ -173,6 +189,27 @@ export class Loop {
       return reset
         ? { until: reset + capBuffer, reason: "usage cap, until it resets", wakeOnMessage: false }
         : { until: now + timing.limit, reason: "usage cap, no reset given", wakeOnMessage: false };
+    }
+    if (outcome === "overloaded") {
+      // Nothing is wrong here, so the wait is short and the ceiling is the gap a
+      // real failure would have got. The doubling is what stops a long outage
+      // being retried every two minutes all night.
+      const { overloads } = this.options.state.data;
+      const ceiling = Math.max(timing.stall, timing.overload);
+      const backoff = Math.min(timing.overload * 2 ** Math.max(0, overloads - 1), ceiling);
+      if (overloads === complainAfterOverloads) {
+        void this.options.telegram
+          .send(
+            `Looper has lost ${overloads} wakes in a row to an overloaded API on ` +
+              `${this.options.config.repo}. Nothing is broken; it is still trying.`
+          )
+          .catch(() => undefined);
+      }
+      return {
+        until: now + backoff,
+        reason: `the API is overloaded (${overloads} in a row)`,
+        wakeOnMessage: true,
+      };
     }
     if (outcome === "failed") {
       const backoff = Math.min(timing.stall * 2 ** Math.max(0, failures - 1), maxWait);
@@ -253,6 +290,10 @@ export class Loop {
 
 function describe(result: RunResult, asked: boolean): Outcome {
   if (result.limit) return "limited";
+  // A transient API error is not the agent failing, and a wake spent watching the
+  // CLI retry ten times is not a wake at all — so it gets its own outcome, a
+  // short retry, and no place in the failure count.
+  if (!result.ok && result.apiError?.transient) return "overloaded";
   if (!result.ok) return "failed";
   return asked ? "asked" : "done";
 }
