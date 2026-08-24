@@ -78,22 +78,28 @@ function fakeTelegram(updates: unknown[]): Promise<{ server: Server; sent: strin
 }
 
 /**
- * A `claude` that behaves like the real one for one wake: it saves the prompt it
- * was given, says it asked the user something by writing to the outbox, and
- * prints the events Looper reads.
+ * A `claude` that behaves like the real one for one wake: it saves the prompt and
+ * the arguments it was given, says it asked the user something by writing to the
+ * outbox, and prints the events Looper reads. `dies` instead makes it fall over
+ * saying nothing, the way a session that cannot be resumed does.
  */
-function fakeClaude(dir: string, repo: string): string {
+function fakeClaude(dir: string, repo: string, dies = false): string {
   const bin = join(dir, "bin");
   mkdirSync(bin, { recursive: true });
-  const script = `#!/bin/sh
-cat > ${JSON.stringify(join(dir, "prompt.txt"))}
-printf '%s\\n' "$@" > ${JSON.stringify(join(dir, "args.txt"))}
-printf '%s\\n' '{"at":"2026-01-01T00:00:00.000Z","kind":"ask","text":"which way?"}' \\
+  const body = dies
+    ? `echo "No conversation found with session ID: old" >&2
+exit 1
+`
+    : `printf '%s\\n' '{"at":"2026-01-01T00:00:00.000Z","kind":"ask","text":"which way?"}' \\
   >> ${JSON.stringify(join(repo, ".looper", "outbox.jsonl"))}
 echo '{"type":"system","subtype":"init","session_id":"11111111-2222-3333-4444-555555555555"}'
 echo '{"type":"assistant","session_id":"11111111-2222-3333-4444-555555555555","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"git status"}}]}}'
 echo '{"type":"result","subtype":"success","is_error":false,"session_id":"11111111-2222-3333-4444-555555555555","result":"asked and stopped","total_cost_usd":0.01,"num_turns":2}'
 `;
+  const script = `#!/bin/sh
+cat > ${JSON.stringify(join(dir, "prompt.txt"))}
+printf '%s\\n' "$@" > ${JSON.stringify(join(dir, "args.txt"))}
+${body}`;
   writeFileSync(join(bin, "claude"), script);
   chmodSync(join(bin, "claude"), 0o755);
   return bin;
@@ -195,4 +201,55 @@ test("a message sent while the loop is up reaches the next prompt", async () => 
   assert.match(prompt, /use sqlite, not postgres/);
   assert.match(prompt, /I asked which database to use/);
   assert.match(prompt, /wake \(number 4\)/);
+  // Resume is the default, so a wake after another continues its session.
+  assert.match(readFileSync(join(dir, "args.txt"), "utf8"), /--resume\nold/);
+});
+
+test("a session that cannot be resumed is dropped, not retried forever", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "looper-test-"));
+  const repo = join(dir, "repo");
+  mkdirSync(join(repo, ".looper"), { recursive: true });
+  execFileSync("git", ["init", "-q"], { cwd: repo });
+  writeFileSync(
+    join(repo, ".looper", "state.json"),
+    JSON.stringify({
+      runs: 1,
+      telegramOffset: 0,
+      pending: [],
+      awaitingReply: false,
+      failures: 0,
+      lastRun: {
+        at: new Date().toISOString(),
+        outcome: "done",
+        sessionId: "old",
+        text: "",
+        durationMs: 1000,
+        costUsd: null,
+      },
+    })
+  );
+
+  const telegram = await fakeTelegram([]);
+  const bin = fakeClaude(dir, repo, true);
+  const run = await runLooper(repo, {
+    PATH: `${bin}:${process.env.PATH}`,
+    TELEGRAM_API_BASE: telegram.url,
+    TELEGRAM_BOT_TOKEN: "111:test",
+    TELEGRAM_CHAT_ID: "999",
+    NOTES_MCP_URL: "http://127.0.0.1:1/mcp",
+    NOTES_MCP_TOKEN: "notes-token",
+    LOOPER_TASK: "task-note",
+    XDG_CONFIG_HOME: join(dir, "config"),
+  });
+  telegram.server.close();
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(readFileSync(join(dir, "args.txt"), "utf8"), /--resume\nold/);
+  const state = JSON.parse(readFileSync(join(repo, ".looper", "state.json"), "utf8")) as {
+    failures: number;
+    lastRun: { outcome: string; sessionId: string | null };
+  };
+  assert.equal(state.lastRun.outcome, "failed");
+  assert.equal(state.lastRun.sessionId, null, "the dead session id is forgotten");
+  assert.equal(state.failures, 1);
 });

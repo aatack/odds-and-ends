@@ -91,9 +91,19 @@ export class Loop {
       // A wake that never got as far as a single tool call never really read the
       // prompt, so anything you had said goes back in the queue for the next one
       // rather than being lost with it.
-      if (outcome === "failed" && messages.length && !result.toolCalls && !result.text.trim()) {
+      const stillborn = !result.toolCalls && !result.text.trim();
+      if (outcome === "failed" && messages.length && stillborn) {
         state.data.pending.unshift(...messages);
         state.save();
+      }
+
+      // A session that cannot be resumed — deleted, or left half-written by a
+      // kill — would fail the same way forever, so the id is dropped and the next
+      // wake starts a new session from the notes.
+      if (resume && outcome === "failed" && stillborn && state.data.lastRun) {
+        state.data.lastRun = { ...state.data.lastRun, sessionId: null };
+        state.save();
+        state.log("that session could not be resumed; the next wake will start a fresh one");
       }
 
       state.log(
@@ -182,6 +192,13 @@ export class Loop {
     }
     if (outcome === "asked") {
       return { until: now + timing.question, reason: "waiting on your answer", wakeOnMessage: true };
+    }
+    // A wake that used no tools did nothing: it read its notes and stopped, or it
+    // came straight back for a reason nothing here can see. Waking it again in
+    // five minutes would be a loop that spends tokens to no end, so it gets the
+    // long gap instead.
+    if (!result.toolCalls) {
+      return { until: now + timing.stall, reason: "that wake did nothing", wakeOnMessage: true };
     }
     return { until: now + timing.turn, reason: "between wakes", wakeOnMessage: true };
   }

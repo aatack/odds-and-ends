@@ -94,9 +94,10 @@ prompt, and takes priority over whatever you had planned:\n\n${indent(rendered)}
     );
   } else if (state.awaitingReply) {
     parts.push(
-      `You asked the user something and they have not answered yet. Do not ask again.
-Either carry on down a route that does not depend on the answer, or if there is
-genuinely nothing else to do, say so briefly in the notes and stop.`
+      `You asked the user something and they have not answered yet — they may simply be
+asleep, and the answer may still arrive. Get on with something that does not
+depend on it. If there is genuinely nothing else worth doing, say so briefly in
+the notes and stop.`
     );
   }
 
@@ -109,16 +110,24 @@ genuinely nothing else to do, say so briefly in the notes and stop.`
 function working(): string {
   return `## How to work
 
-- Pick the most valuable next thing, do it properly, check it works, and commit
-  it. Small commits with clear messages. Finishing one thing beats starting
-  three.
-- You are trusted to decide. Do not ask for permission to proceed, and do not
-  wait to be told which option to take — choose, write down why, and go.
-- Leave the repo working. Never end a wake with the build broken or the tests
-  failing if you can help it; if you must, say so plainly in your notes.
-- Before you stop, write to the notes, under the task: what you did, what you
-  found out, and what you would do next. Write it as notes — a note per point,
-  nested — in the voice of the notes already there, not as one long paragraph.
+Every wake is the same three steps: read, act, write.
+
+**Read.** The task note and what sits under it, including whatever your last self
+left there. That is where you find out what has already been tried and what was
+going to happen next.
+
+**Act.** Pick the most valuable next thing, do it properly, check it works, and
+commit it. Small commits with clear messages. Finishing one thing beats starting
+three. You are trusted to decide: do not ask for permission to proceed, and do
+not wait to be told which option to take — choose, write down why, and go. Leave
+the repo working; if you cannot, say so plainly in the notes.
+
+**Write.** Before you stop, write what you did, what you found out and what you
+would do next back into the notes. The notes are yours to use as you see fit —
+lay them out however suits the work — but never end a wake without leaving
+something the next one can pick up, because there is nothing else it will have.
+Write them as notes: a note per point, nested, in the voice of the notes already
+there, not as one long paragraph.
 
 ## Reaching the user
 

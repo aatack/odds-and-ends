@@ -42,8 +42,8 @@ Settings (all optional):
   LOOPER_EFFORT          low | medium | high | xhigh | max
   LOOPER_FALLBACK_MODEL  a model to fall back to when the first is overloaded
   LOOPER_PERMISSION_MODE default auto
-  LOOPER_SESSION_MODE    fresh (default) starts a new session each wake;
-                         resume continues the last one
+  LOOPER_SESSION_MODE    resume (default) continues the last session;
+                         fresh starts a new one each wake
   LOOPER_TURN_SLEEP      gap after a clean wake, default 5m
   LOOPER_STALL_SLEEP     gap after a failed wake, doubling, default 30m
   LOOPER_LIMIT_SLEEP     gap after a usage cap with no stated reset, default 3h

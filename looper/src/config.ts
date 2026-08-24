@@ -48,8 +48,8 @@ export interface Config {
   effort: string | null;
   fallbackModel: string | null;
   permissionMode: string;
-  /** `fresh` starts a new Claude session each wake; `resume` continues the last one. */
-  sessionMode: "fresh" | "resume";
+  /** `resume` continues the last Claude session; `fresh` starts a new one each wake. */
+  sessionMode: "resume" | "fresh";
   telegram: { token: string; chatId: string };
   notes: { url: string; token: string };
   timing: Timing;
@@ -323,7 +323,10 @@ export async function loadConfig(opts: LoadOptions): Promise<Config> {
   }
 
   const duration = (key: string, fallback: string) => parseDuration(values[key] ?? fallback);
-  const sessionMode = values.LOOPER_SESSION_MODE ?? "fresh";
+  // Resume by default, and let auto-compaction handle the growth: continuity is
+  // worth more than a tidy transcript, and the notes are still the memory of
+  // record. `fresh` starts every wake from nothing but the notes.
+  const sessionMode = values.LOOPER_SESSION_MODE ?? "resume";
   if (sessionMode !== "fresh" && sessionMode !== "resume") {
     throw new Error(`LOOPER_SESSION_MODE must be "fresh" or "resume", not ${sessionMode}.`);
   }

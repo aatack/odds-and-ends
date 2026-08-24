@@ -28,8 +28,9 @@ and keep the token it gives you.
 
 Write the task as a note, with whatever detail you have, and keep its id. The
 agent reads that note and everything under it at every wake, and writes its
-findings, decisions and next steps back underneath. That note is the agent's
-memory: nothing else survives between wakes.
+findings, decisions and next steps back underneath. Every wake is told to read
+first, act, then write — the notes are where its memory of record lives, whatever
+the session carries over.
 
 ### 3. Run it
 
@@ -80,7 +81,8 @@ be set per repo (see `looper --help`):
 | How the wake ended | What happens | Default |
 | --- | --- | --- |
 | Normally | Short gap, then the next wake | 5m |
-| It asked you something | Waits for your answer, then carries on regardless | 6h |
+| Normally, but it used no tools | The long gap — a wake that did nothing is not worth repeating every five minutes | 30m |
+| It asked you something | Waits for your answer, then carries on anyway if it doesn't come | 6h |
 | It failed | Backs off, doubling with each failure in a row | 30m, capped at a day |
 | A usage cap | Sleeps until the cap resets, or a fixed gap if it isn't told when | 3h |
 
@@ -111,10 +113,14 @@ happened; the id is in `state.json` and in the run's log.
 
 ### Sessions
 
-By default each wake is a **fresh** session: the notes are the memory, and a
-transcript that grows for a week is a transcript that gets compacted into mush.
-The previous wake's closing words are passed in the prompt as a handoff. Set
-`LOOPER_SESSION_MODE=resume` to continue one long session instead.
+By default each wake **resumes** the last session, and auto-compaction handles the
+growth. The notes are still the memory of record — the prompt says so, and each
+wake is told to read them first — but continuity between wakes is worth having on
+top. A session that can't be resumed (deleted, or left half-written by a kill) is
+dropped after one failed attempt, so the next wake starts a new one rather than
+retrying the same dead id forever.
+
+Set `LOOPER_SESSION_MODE=fresh` to start every wake from nothing but the notes.
 
 ## Deliberate omissions
 
