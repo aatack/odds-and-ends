@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs Looper against the current directory. Node 22.18+ executes TypeScript
+# directly, so there is nothing to build or install first.
+exec node "$(dirname "$(dirname "$(readlink -f "$0")")")/src/index.ts" "$@"
