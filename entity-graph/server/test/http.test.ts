@@ -399,8 +399,10 @@ describe('user-defined tools (@tools)', () => {
     await createSource('u', { type: 'sqlite', path: join(dir, 'u.db') })
     uToken = await issueToken('u')
 
-    // Seed a tool-shaped entity and link it under @tools.
-    await call('u', uToken, 'writeValue', { entityId: 'greet', key: 'name', value: 'greet' })
+    // Seed a tool-shaped entity and link it under @tools. Its text is what it is
+    // called, and the type is what says it is a definition at all.
+    await call('u', uToken, 'writeValue', { entityId: 'greet', key: 'type', value: 'tool' })
+    await call('u', uToken, 'writeValue', { entityId: 'greet', key: 'text', value: 'greet' })
     await call('u', uToken, 'writeValue', { entityId: 'greet', key: 'description', value: 'Greet someone' })
     await call('u', uToken, 'writeValue', { entityId: 'greet', key: 'arguments', value: argSchema })
     await call('u', uToken, 'writeLink', { sourceId: '@tools', destinationId: 'greet', action: 0 })
@@ -425,7 +427,8 @@ describe('user-defined tools (@tools)', () => {
   it('publishes a declared argument list as a schema, not as a list', async () => {
     // The form a definition is actually written in. What MCP is handed has to be
     // a schema either way, so the conversion happens before it is published.
-    await call('u', uToken, 'writeValue', { entityId: 'listed', key: 'name', value: 'listed' })
+    await call('u', uToken, 'writeValue', { entityId: 'listed', key: 'type', value: 'tool' })
+    await call('u', uToken, 'writeValue', { entityId: 'listed', key: 'text', value: 'listed' })
     await call('u', uToken, 'writeValue', { entityId: 'listed', key: 'description', value: 'Takes a list' })
     await call('u', uToken, 'writeValue', {
       entityId: 'listed',

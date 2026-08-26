@@ -247,13 +247,12 @@ export const APP_TOOLS: ToolSpec[] = [
       if (!toolName) throw new Error('Tool name is required')
       const id = await createEntity(
         {
-          // `text` is what the outline reads; `name` is what the palette does.
-          // The same word to begin with, and free to diverge after.
+          // The note's text is what the tool is called, in the outline and in the
+          // palette alike. There is one word rather than two, so a tool renamed
+          // in the outline is renamed.
           text: toolName,
-          name: toolName,
-          // Not what makes it a tool — the loader below reads a name and a body
-          // and never looks at this — but it is what puts the fields, and what
-          // each one is for, in the inspector rather than only in the docs.
+          // What makes it a tool, and what puts the fields — and what each one is
+          // for — in the inspector rather than only in the docs.
           type: TOOL_ID,
           // A function of no arguments, since it has none declared yet. Adding
           // one to `arguments` means adding a parameter here, in the same order.

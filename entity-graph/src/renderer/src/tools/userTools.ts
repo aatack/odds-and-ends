@@ -1,3 +1,4 @@
+import { TOOL_ID } from '../../../core/builtins'
 import { str, type Entity } from '../../../core/entity'
 import { readToolArguments } from '../../../core/toolArguments'
 import { runToolScript } from '../helpers/codeRunner'
@@ -8,10 +9,10 @@ import { argsFromSchema, summarise } from './declared'
 import type { KeyBinding } from './keys'
 import type { ArgSpec, ToolReach, ToolScope, ToolSpec } from './types'
 
-// Tools the user wrote in the graph. A note under `@tools` describing itself —
-// what it's called, what arguments it takes, and a body — becomes a tool of the
-// app: it appears in the palette, it can be given a key, and other scripts can
-// call it by name.
+// Tools the user wrote in the graph. A note under `@tools` saying `type: tool`,
+// with what it's called as its text, what arguments it takes, and a body, becomes
+// a tool of the app: it appears in the palette, it can be given a key, and other
+// scripts can call it by name.
 //
 // Which is the whole reason this lives on this side. The body runs in the same
 // sandbox a `type: code` entity does, with the same `tool` façade, so a
@@ -212,8 +213,8 @@ function keyOf(v: unknown): KeyBinding[] | undefined {
 
 /**
  * One definition as a tool, or null when the entity isn't one. Two things are
- * required: a `name`, which is the tool's id and how a script names it, and a
- * body, without which there is nothing to run — so a heading or a note left under
+ * required: `type: tool`, which is how a note says it is one at all, and a body,
+ * without which there is nothing to run — so a heading or a note left under
  * `@tools` is passed over rather than becoming a tool that fails when invoked.
  *
  * Everything else has a default, `arguments` included: a tool that takes none is
@@ -231,9 +232,10 @@ function toolSpec(tool: Entity, id: string, name: string, args: ArgSpec[]): Tool
 
   return {
     id,
-    // `name` and nothing else. The note's `text` is what the outline reads, which
-    // is a different job — a definition should be able to sit under a heading of
-    // "Slack things" without the palette calling the tool that.
+    // The note's own text, which is what the outline shows and so the one name a
+    // definition can't be looking at without having said. There was a `name`
+    // value beside it and the two only ever drifted: a tool renamed in the
+    // outline kept the old word in the palette.
     label: name,
     // The id is an alias so a tool reached by it in a script can be found by the
     // same word in the palette, whatever the name says.
@@ -283,9 +285,16 @@ function toolSpecs(
   for (const id of childIds) {
     const entity = defined[id]
     if (!entity) continue
-    const name = str(entity.values.name)
+    // What makes a note a definition rather than a note filed beside one. A
+    // heading over a group of tools is the ordinary case for a child of `@tools`
+    // that isn't one, and saying so is cheaper than guessing from what it holds.
+    if (str(entity.values.type) !== TOOL_ID) {
+      skipped.push({ id, why: 'not `type: tool`' })
+      continue
+    }
+    const name = str(entity.values.text)
     if (!name) {
-      skipped.push({ id, why: 'no `name`' })
+      skipped.push({ id, why: 'no `text` to call it by' })
       continue
     }
     // What a script reaches it by, and what the palette matches on. Separate from

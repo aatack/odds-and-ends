@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { TOOL_ID } from '../builtins'
 import { toolArgumentsSchema } from '../toolArguments'
 import { entityWrapper } from './defaultTools'
 import type { Permissions } from './permissions'
@@ -17,9 +18,9 @@ function isSafety(v: unknown): v is Safety {
 
 /**
  * Discover user-defined tools stored in the database. The reserved entity
- * `@tools` has one direct child per tool; a child is tool-shaped when its
- * values carry `name`, `description`, and `arguments` (a JSON Schema for the
- * arguments). Each becomes a `ToolDef` spliced alongside the default tools.
+ * `@tools` has one direct child per tool; a child is tool-shaped when it says
+ * `type: tool` and its values carry a `text` to be called by, a `description`,
+ * and `arguments`. Each becomes a `ToolDef` spliced alongside the default tools.
  *
  * Execution is not implemented yet — the eventual Lua handlers are mocked, so
  * calling a user-defined tool throws. If `@tools` is absent or childless this
@@ -41,7 +42,8 @@ export async function loadUserTools(
   for (const id of childIds) {
     const entity = children.get(id)
     if (!entity) continue
-    const { id: declaredId, name, description, arguments: args, safety } = entity.values
+    const { id: declaredId, text: name, description, arguments: args, safety } = entity.values
+    if (entity.values.type !== TOOL_ID) continue
     if (typeof name !== 'string' || typeof description !== 'string' || args == null) continue
     // The id a definition asks to be called by, with the name standing in when it
     // doesn't ask — the same rule the client reads, so a tool answers to one word

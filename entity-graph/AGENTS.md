@@ -111,8 +111,9 @@ is the long form; the rules that matter day to day:
   the same registry, with their argument prompts derived from the JSON Schema the
   server publishes. So read the list through `allTools()`, never a constant, and
   add a new integration on the server rather than here.
-- **The store defines tools too.** A note under `@tools` becomes a tool of the app
-  — palette entry, optional key, callable from other scripts. Its `execute` value
+- **The store defines tools too.** A note under `@tools` saying `type: tool`
+  becomes a tool of the app, called whatever its text says — palette entry,
+  optional key, callable from other scripts. Its `execute` value
   is an expression evaluating to a function, applied to the declared arguments
   positionally and run in the same sandbox a code entity uses, so it reaches the
   whole registry. See [`docs/user-tools.md`](./docs/user-tools.md) for the fields.

@@ -131,7 +131,7 @@ async function openWithTool(execute = 'joined'): Promise<void> {
   stopCode()
   // A tool whose body is, as far as the stand-in worker is concerned, "return
   // this string" — all that matters is that running it needs a worker.
-  for (const [key, value] of Object.entries({ name: 'join', execute })) {
+  for (const [key, value] of Object.entries({ type: 'tool', text: 'join', execute })) {
     await source.call('writeValue', { entityId: 'n1', key, value, author: 'test', timestamp: Date.now() })
   }
   await source.call('writeLink', {
