@@ -50,12 +50,10 @@ const fence: Components['pre'] = ({ children }) => {
 
 const COMPONENTS: Components = {
   pre: fence,
-  // Links open in the browser rather than navigating the app out of existence.
-  a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noreferrer">
-      {children}
-    </a>
-  ),
+  // A link keeps its href — it is what the app's own click handler reads, and
+  // what the cursor hovers over — but nothing here follows it. Where a link goes
+  // when it is clicked is an app-wide gesture, decided in `App`.
+  a: ({ href, children }) => <a href={href}>{children}</a>,
 }
 
 // `$x$` inline and `$$x$$` on its own line, turned into markup by KaTeX rather
