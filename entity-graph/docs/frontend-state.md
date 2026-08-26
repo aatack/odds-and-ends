@@ -468,12 +468,15 @@ flag), a per-entity max-depth map, and any in-progress edit.
   the client: the nearest ancestor with an entry decides, its cap counted from
   itself, and an explicit `null` deep in the tree lifts a cap set above it. The
   *root's* entry is the frame's own limit and is state in its own right, no
-  longer something the sections filter implies: ⇧← and ⇧→ move it, a pill in the
-  corner shows it and carries the same two arrows, and zero is read as no limit
-  at all, which is what lets ⇧← walk it off the bottom of the scale. Turning the
-  outline on gives a frame three levels *unless it already has a limit*, which is
-  the user's and stands; turning the outline off takes the limit away either
-  way.
+  longer something the sections filter implies: ⇧← and ⇧→ move it, and a pill in
+  the corner shows it and carries the same two arrows. No limit is the bottom of
+  that scale rather than something off the end of it — ⇧→ from nothing caps at
+  one level and works up, ⇧← works back down until the cap comes off, and ⇧← with
+  no cap does nothing, so the key can be leant on and always arrives at the whole
+  tree. Neither reports anything: the pill is where a depth is read, and a toast
+  per press would be a stack of them. Turning the outline on gives a frame three
+  levels *unless it already has a limit*, which is the user's and stands; turning
+  the outline off takes the limit away either way.
 - What else a frame's query could be — beyond its root, its depth and its
   direction — is still to be designed. Pre- and post-filters, in particular,
   are only half in the traversal: find and sections-only remain filters over the
@@ -543,8 +546,8 @@ state. It resolves in this order:
 
 Escape therefore has a pecking order without anything spelling one out: a
 pending call, then the activity log, then an in-place edit, then a frame's find
-field, then its sections filter, its open filter and its depth limit — each step
-is just a tool that isn't `enabled`
+field, then its sections filter, then its open filter — each step is just a tool
+that isn't `enabled`
 unless there is something for it to do, declared in the order it should be tried.
 
 Some of the keys the app wants belong to Electron's default menu, which consumes

@@ -6,7 +6,6 @@ import { rowsOf } from '../state/query'
 import * as R from '../state/reducers'
 import { focusOf, getLayout, updateLayout } from '../state/store'
 import {
-  depthLabel,
   directionOf,
   frameDepth,
   last,
@@ -17,7 +16,7 @@ import {
 } from '../state/types'
 import { runCode, stopCode } from '../helpers/codeRunner'
 import { createEntity, link, writeValue } from '../source/entity'
-import type { ToolOutcome, ToolSpec } from './types'
+import type { ToolSpec } from './types'
 
 // Tools scoped to the focused frame: moving the selection, folding, the in-place
 // editor, and the frame stack. They take no arguments — they act on whatever the
@@ -547,7 +546,8 @@ export const FRAME_TOOLS: ToolSpec[] = [
     // The frame's own limit, on the arrow keys: ⇧← takes a level off and ⇧→ adds
     // one, so the outline is read at the depth it makes sense at rather than at
     // the one a filter chose. Both go through `nudgeDepth`, which is where "no
-    // limit" sits on that scale.
+    // limit" sits on that scale — the bottom of it, so ⇧← held down ends at the
+    // whole tree.
     id: 'frame.depth.less',
     label: 'Show one level less',
     aliases: ['shallower', 'depth', 'levels'],
@@ -568,15 +568,14 @@ export const FRAME_TOOLS: ToolSpec[] = [
     run: () => nudge(1),
   },
   {
+    // No Escape: that key gives up a filter, and a depth is not one — it is how
+    // much of the tree you are reading, which ⇧← walks off in its own time.
     id: 'frame.depth.clear',
     label: 'Show every level',
-    aliases: ['no depth limit', 'unfilter', 'show all'],
+    aliases: ['no depth limit', 'depth', 'levels'],
+    hint: 'Frame',
     scope: 'frame',
     reach: 'ui',
-    // Last of the Escape chain in a frame: the text box, then the outline, then
-    // what is left to do, and only then the depth.
-    keys: [{ key: 'Escape' }],
-    listed: false,
     enabled: () => frameDepth(frameOf()) != null,
     run: () => {
       const { frameId } = focusOf(getLayout())
@@ -592,10 +591,10 @@ const frameOf = (): FrameState | null => {
   return frameId ? (layout.frames[frameId] ?? null) : null
 }
 
-function nudge(by: 1 | -1): ToolOutcome | void {
+// No message back: a depth is read off the pill in the corner, and these are
+// keys meant to be leant on — a toast per press would be a stack of them.
+function nudge(by: 1 | -1): void {
   const frame = frameOf()
   if (!frame) return
-  const depth = nudgeDepth(frameDepth(frame), by)
-  A.setFrameDepth(frame.id, depth)
-  return { message: depth == null ? 'Showing every level' : `Showing ${depthLabel(depth)}` }
+  A.setFrameDepth(frame.id, nudgeDepth(frameDepth(frame), by))
 }

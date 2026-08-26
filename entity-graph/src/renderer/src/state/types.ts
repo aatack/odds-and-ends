@@ -231,16 +231,19 @@ export const frameDepth = (frame: FrameState | null | undefined): number | null 
  */
 export const SECTION_DEPTH = 3
 
-/**
- * The cap ⇧← and ⇧→ move to. No limit is the top of the scale, so raising it has
- * nowhere to go and lowering it enters at the depth an outline uses: the pair
- * walks 3, 2, 1, none, 3 … and never needs a number typed in.
- */
+/** How a depth limit is said, in a pill and anywhere else it is named. */
 export const depthLabel = (depth: number): string =>
   `${depth} level${depth === 1 ? '' : 's'} deep`
 
+/**
+ * The cap ⇧← and ⇧→ move to. No limit is the *bottom* of the scale rather than
+ * something off the end of it: ⇧→ from nothing caps at one level and works up,
+ * ⇧← works back down until the cap comes off, and ⇧← with no cap does nothing.
+ * So holding ⇧← always arrives at the whole tree, rather than walking past it
+ * and starting again.
+ */
 export const nudgeDepth = (depth: number | null, by: 1 | -1): number | null => {
-  if (depth == null) return by > 0 ? null : SECTION_DEPTH
+  if (depth == null) return by > 0 ? 1 : null
   const next = depth + by
   return next > 0 ? next : null
 }
