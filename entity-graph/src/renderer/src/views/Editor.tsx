@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, ChevronRight, Play, Square, Stop } from '@untitledui/icons'
+import { Check, ChevronDown, ChevronRight, Loading02, Play, Square, Stop } from '@untitledui/icons'
 import { TextEditor } from '../components/ui/TextEditor'
 import { Button } from '../components/ui/Button'
 import { CodeBlock } from '../components/ui/CodeBlock'
@@ -46,10 +46,16 @@ const sectionStyle = (depth: number): React.CSSProperties => ({
 
 /**
  * The glyph in front of a row: a checkbox when the row has one, otherwise a
- * plain bullet. Shared with the create input, which shows the same mark as the
- * row it is about to become.
+ * plain bullet — and, while the entity is still arriving, the busy mark in place
+ * of either, so a row that is empty because nothing has been read yet doesn't
+ * read as a row that is empty. Shared with the create input, which shows the same
+ * mark as the row it is about to become.
+ *
+ * The busy mark doesn't turn: there is no motion anywhere in the app, so this is
+ * the same still glyph the server list uses while a server is starting.
  */
-function Mark({ open }: { open?: boolean }): React.JSX.Element {
+function Mark({ open, loading }: { open?: boolean; loading?: boolean }): React.JSX.Element {
+  if (loading) return <Loading02 size={13} />
   if (open === true) return <Square size={13} />
   if (open === false) return <Check size={13} />
   return <span className="size-1 rounded-full bg-gray-300" />
@@ -455,7 +461,7 @@ const RowView = React.memo(function RowView({
             {/* A checkbox keeps its box even with children; only a plain row
                 trades its bullet for a chevron. */}
             {row.open !== undefined || !row.hasChildren ? (
-              <Mark open={row.open} />
+              <Mark open={row.open} loading={row.loading} />
             ) : row.collapsed ? (
               <ChevronRight size={14} />
             ) : (

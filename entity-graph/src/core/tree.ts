@@ -36,6 +36,13 @@ export interface TreeRow extends EntitySummary {
   hasChildren: boolean
   collapsed: boolean
   /**
+   * True while this row's own entity is still arriving — its events, or the
+   * derived ones its type's script makes. A row says so in place of its bullet,
+   * which is the difference between an entity with nothing on it and one that
+   * hasn't been read yet.
+   */
+  loading: boolean
+  /**
    * The tools the row's *type* puts on it, by id and in the order the type
    * listed them — a button each, drawn on the end of the row's text. Absent
    * where there is no source to look the type up in, which is the caller
@@ -68,6 +75,7 @@ function rowOf(
   depth: number,
   direction: LinkDirection,
   collapsed: boolean,
+  loading: boolean,
   actions?: string[],
 ): TreeRow {
   const open = entity.values.open
@@ -85,6 +93,7 @@ function rowOf(
     // outbound links.
     hasChildren: (direction === 'in' ? entity.inboundLinks : entity.outboundLinks).length > 0,
     collapsed,
+    loading,
   }
 }
 
@@ -139,7 +148,9 @@ export const rowsOfPage = (
     rows.map((r) => r.path),
     (path) => path.length - 1,
   )
-  return rows.map(({ path, entity }, i) => rowOf(path, entity, depths[i], direction, false))
+  return rows.map(({ path, entity }, i) =>
+    rowOf(path, entity, depths[i], direction, false, false),
+  )
 }
 
 /**
@@ -179,7 +190,15 @@ export function buildTree(
     const id = path[path.length - 1]
     const typeId = str(entities[id]?.values.type)
     const actions = typeId ? actionsOf(types[typeId]?.values) : undefined
-    return rowOf(path, entities[id], depths[i], traversal.direction, folded.has(id), actions)
+    return rowOf(
+      path,
+      entities[id],
+      depths[i],
+      traversal.direction,
+      folded.has(id),
+      source.pending(id),
+      actions,
+    )
   })
 
   return {

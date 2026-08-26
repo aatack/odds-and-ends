@@ -67,6 +67,9 @@ const empty = (id: string): Entity => {
   return made
 }
 
+/** Whether a load state is one that something is still expected to come out of. */
+const waiting = (state: LoadState): boolean => state === 'unloaded' || state === 'loading'
+
 const blank = (id: string): CachedEntity => ({
   events: [],
   loaded: 'unloaded',
@@ -93,8 +96,14 @@ export function entitiesFrom(cache: EntityCache): EntitySource {
       return out
     },
     pending: (id) => {
-      const state = cache[id]?.loaded ?? 'unloaded'
-      return state === 'unloaded' || state === 'loading'
+      const entry = cache[id]
+      if (!entry) return true
+      // The derived events count too: an entity whose type has a script is not
+      // finished arriving until the script has run for it. They only start once
+      // the real events are in, though, so a read that failed leaves their state
+      // at `unloaded` for good — that row is not waiting on anything.
+      if (waiting(entry.loaded)) return true
+      return entry.loaded === 'loaded' && waiting(entry.derivedState)
     },
     error: (id) => cache[id]?.error ?? null,
   }
