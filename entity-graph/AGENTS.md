@@ -83,7 +83,11 @@ is the long form; the rules that matter day to day:
   over whatever is cached and `core/tree.ts` turns that into rows, so folding,
   depth caps and edits redraw without a round trip and the tree fills in as
   events arrive. The only read of the store is `scanEvents`, which fetches a
-  couple of layers ahead. See `docs/frontend-state.md` for the rest — types,
+  couple of layers ahead. **A write says what it changed** — the events it is
+  making, or failing that the ids it touched — so that is all that is read again,
+  and what is marked keeps what it has (`stale`) rather than turning back into a
+  loading row. Reading the whole cache again is for a change made where this side
+  cannot see it. See `docs/frontend-state.md` for the rest — types,
   `events` scripts, and how writes and undo reach the cache.
 - **`src/core` is shared with the server *and* the phone.** Anything put there
   is imported by three builds, so it must stay free of Electron, node and zod.
@@ -143,7 +147,7 @@ is the long form; the rules that matter day to day:
   the tool declares them, or as one object naming them. The calls are
   **synchronous**: the worker blocks on a `SharedArrayBuffer` while the main
   thread runs the call through the same machine a hotkey does, so a script's calls
-  refresh the frames and fail the same way. They are *not* kept in the call log,
+  reach the cache and fail the same way. They are *not* kept in the call log,
   which records what the user did — `callToolByName` is the one way into the
   machine that isn't a gesture, and it says so (`origin: 'code'`).
 - **One key listener, at the top.** `tools/dispatch.ts` owns it and resolves
