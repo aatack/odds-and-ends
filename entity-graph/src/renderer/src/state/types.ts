@@ -154,9 +154,15 @@ export interface FrameState {
    */
   sectionsOnly: boolean
   /**
-   * entity id → depth cap below it (null = uncapped, missing = uncapped). Only
-   * the root's entry reaches the server so far; the rest is provisioned for a
-   * later change to the `query` tool.
+   * Show only rows left open (plus the frame's root), and stop at the ones that
+   * have been ticked — the tree read as what is left to do. Alone among the
+   * filters it prunes the walk as well as the rows; see `core/query`.
+   */
+  openOnly: boolean
+  /**
+   * entity id → depth cap below it (null = uncapped, missing = uncapped). The
+   * root's entry is the frame's own depth limit, which the pill shows and
+   * ⇧←/⇧→ move; the rest is provisioned for a later change to the `query` tool.
    */
   maxDepth: Record<string, number | null>
   edit: EditState | null
@@ -202,6 +208,43 @@ export interface LayoutState {
 export const directionOf = (frame: FrameState | null | undefined): LinkDirection =>
   frame?.direction ?? 'out'
 
+/**
+ * How far below its root a frame walks, or null when it walks all the way. The
+ * cap is the root's entry in the frame's depth map — no longer something the
+ * sections filter implies, so that the two can be moved apart.
+ *
+ * Zero is not a cap but the absence of one: a frame showing its root and nothing
+ * under it is what folding is for, and reading zero as "no limit" is what lets
+ * ⇧← walk the cap off the bottom of the scale.
+ */
+export const frameDepth = (frame: FrameState | null | undefined): number | null => {
+  const cap = frame ? frame.maxDepth[frame.rootId] : null
+  return cap != null && cap > 0 ? cap : null
+}
+
+/**
+ * How far below its root a frame reading only sections walks, unless it already
+ * has a limit of its own. An outline is a table of contents rather than a
+ * search: a heading buried six levels down is not part of the shape of the
+ * thing, and walking to it costs a whole subtree of rows that are then thrown
+ * away. Three levels is what fits on a screen and what the walk can finish.
+ */
+export const SECTION_DEPTH = 3
+
+/**
+ * The cap ⇧← and ⇧→ move to. No limit is the top of the scale, so raising it has
+ * nowhere to go and lowering it enters at the depth an outline uses: the pair
+ * walks 3, 2, 1, none, 3 … and never needs a number typed in.
+ */
+export const depthLabel = (depth: number): string =>
+  `${depth} level${depth === 1 ? '' : 's'} deep`
+
+export const nudgeDepth = (depth: number | null, by: 1 | -1): number | null => {
+  if (depth == null) return by > 0 ? null : SECTION_DEPTH
+  const next = depth + by
+  return next > 0 ? next : null
+}
+
 export function newFrame(tabId: string, rootId: string): FrameState {
   return {
     id: uuid(),
@@ -213,6 +256,7 @@ export function newFrame(tabId: string, rootId: string): FrameState {
     selectedPath: [rootId],
     find: null,
     sectionsOnly: false,
+    openOnly: false,
     maxDepth: {},
     edit: null,
   }

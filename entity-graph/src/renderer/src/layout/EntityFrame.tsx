@@ -1,13 +1,13 @@
 import React, { useRef } from 'react'
-import { SearchSm, X } from '@untitledui/icons'
+import { ChevronLeft, ChevronRight, SearchSm, X } from '@untitledui/icons'
 import { Editor } from '../views/Editor'
+import { cn } from '../helpers/cn'
 import { codeRunsAtom, runCode, stopCode } from '../helpers/codeRunner'
 import * as A from '../state/actions'
-import { sectionDepth } from '../state/derive'
 import { findField } from '../state/focusRequest'
 import { useAtomValue, useFocusRequest, useFrameRows, useLayoutState } from '../state/hooks'
 import { loadMore } from '../state/query'
-import { directionOf } from '../state/types'
+import { depthLabel, directionOf, frameDepth, nudgeDepth } from '../state/types'
 import { contextWithin, runTool } from '../tools/call'
 
 /**
@@ -23,7 +23,7 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
 
   if (!frame) return <div className="p-8 text-center text-[13px] text-gray-400">No frame.</div>
 
-  const depth = sectionDepth(frame)
+  const depth = frameDepth(frame)
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
@@ -40,12 +40,21 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
           />
         )}
         {frame.sectionsOnly && (
-          // The depth an outline implies is said out loud: a heading below it is
-          // simply absent, and a filter that hides things without saying so reads
-          // as the tree having nothing there.
+          <FramePill label="Sections only" onClear={() => A.setSectionsOnly(frameId, false)} />
+        )}
+        {frame.openOnly && (
+          <FramePill label="Open items only" onClear={() => A.setOpenOnly(frameId, false)} />
+        )}
+        {depth != null && (
+          // A depth is said out loud: a row below it is simply absent, and a
+          // limit that hides things without saying so reads as the tree having
+          // nothing there. Its own arrows, since a limit is the one thing up
+          // here that is a number rather than a state to be left.
           <FramePill
-            label={depth == null ? 'Sections only' : `Sections only, ${depth} deep`}
-            onClear={() => A.setSectionsOnly(frameId, false)}
+            label={depthLabel(depth)}
+            onClear={() => A.setFrameDepth(frameId, null)}
+            onLess={() => A.setFrameDepth(frameId, nudgeDepth(depth, -1))}
+            onMore={() => A.setFrameDepth(frameId, nudgeDepth(depth, 1))}
           />
         )}
         {directionOf(frame) === 'in' && (
@@ -82,29 +91,55 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
 }
 
 /**
- * Something the frame is doing that has nothing to configure — a filter with no
- * text, the query running backwards: it says what is going on and offers to
- * stop. Like the find field's own clear button, dismissing it is direct
+ * Something the frame is doing that has little or nothing to configure — a
+ * filter with no text, the query running backwards, a depth: it says what is
+ * going on and offers to stop, and where there is a dial it wears the two
+ * arrows for it. Like the find field's own clear button, working one is direct
  * manipulation — a state action, not a call through the tool machine.
  */
 function FramePill({
   label,
   onClear,
+  onLess,
+  onMore,
 }: {
   label: string
   onClear: () => void
+  onLess?: () => void
+  onMore?: () => void
 }): React.JSX.Element {
   return (
-    <div className="flex items-center gap-1.5 rounded-full bg-white py-1 pl-3 pr-2 text-[12px] text-gray-500 shadow-lg">
+    <div
+      className={cn(
+        'flex items-center gap-1.5 rounded-full bg-white py-1 pr-2 text-[12px] text-gray-500 shadow-lg',
+        onLess ? 'pl-1' : 'pl-3',
+      )}
+    >
+      {onLess && <PillButton icon={ChevronLeft} label={`Less: ${label}`} onClick={onLess} />}
       <span>{label}</span>
-      <button
-        className="text-gray-400 hover:text-gray-700 focus:outline-none"
-        onClick={onClear}
-        aria-label={`Stop: ${label}`}
-      >
-        <X size={11} />
-      </button>
+      {onMore && <PillButton icon={ChevronRight} label={`More: ${label}`} onClick={onMore} />}
+      <PillButton icon={X} label={`Stop: ${label}`} onClick={onClear} />
     </div>
+  )
+}
+
+function PillButton({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: typeof X
+  label: string
+  onClick: () => void
+}): React.JSX.Element {
+  return (
+    <button
+      className="text-gray-400 hover:text-gray-700 focus:outline-none"
+      onClick={onClick}
+      aria-label={label}
+    >
+      <Icon size={11} />
+    </button>
   )
 }
 

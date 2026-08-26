@@ -26,11 +26,18 @@ export const setFind = (frameId: string, find: string | null): void =>
 export const setSectionsOnly = (frameId: string, on: boolean): void =>
   updateLayout((s) => R.setSectionsOnly(s, frameId, on))
 
+export const setOpenOnly = (frameId: string, on: boolean): void =>
+  updateLayout((s) => R.setOpenOnly(s, frameId, on))
+
 export const setDirection = (frameId: string, direction: LinkDirection): void =>
   updateLayout((s) => R.setDirection(s, frameId, direction))
 
 export const setMaxDepth = (frameId: string, entityId: string, depth: number | null): void =>
   updateLayout((s) => R.setMaxDepth(s, frameId, entityId, depth))
+
+/** The frame's own depth limit, below its root. Null takes it off. */
+export const setFrameDepth = (frameId: string, depth: number | null): void =>
+  updateLayout((s) => R.setFrameDepth(s, frameId, depth))
 
 // --- Editing ----------------------------------------------------------------
 

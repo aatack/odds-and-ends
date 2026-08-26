@@ -5,10 +5,19 @@ import { findField, requestFocus } from '../state/focusRequest'
 import { rowsOf } from '../state/query'
 import * as R from '../state/reducers'
 import { focusOf, getLayout, updateLayout } from '../state/store'
-import { directionOf, last, type FrameState, type LayoutState, type TabState } from '../state/types'
+import {
+  depthLabel,
+  directionOf,
+  frameDepth,
+  last,
+  nudgeDepth,
+  type FrameState,
+  type LayoutState,
+  type TabState,
+} from '../state/types'
 import { runCode, stopCode } from '../helpers/codeRunner'
 import { createEntity, link, writeValue } from '../source/entity'
-import type { ToolSpec } from './types'
+import type { ToolOutcome, ToolSpec } from './types'
 
 // Tools scoped to the focused frame: moving the selection, folding, the in-place
 // editor, and the frame stack. They take no arguments — they act on whatever the
@@ -460,6 +469,39 @@ export const FRAME_TOOLS: ToolSpec[] = [
     },
   },
   {
+    id: 'frame.open',
+    label: 'Show open items only',
+    aliases: ['tasks', 'todo', 'unfinished', 'checkboxes', 'filter'],
+    scope: 'frame',
+    reach: 'ui',
+    keys: [{ key: 'q', shift: true }],
+    // Beside the outline on ⇧Q, and a toggle for the same reason: what is left to
+    // do is the other way of reading a page of notes.
+    run: () => {
+      const layout = getLayout()
+      const { frameId } = focusOf(layout)
+      if (frameId) A.setOpenOnly(frameId, !layout.frames[frameId]?.openOnly)
+    },
+  },
+  {
+    id: 'frame.open.clear',
+    label: 'Show finished items too',
+    aliases: ['unfilter', 'show all', 'all rows'],
+    scope: 'frame',
+    reach: 'ui',
+    keys: [{ key: 'Escape' }],
+    listed: false,
+    enabled: () => {
+      const layout = getLayout()
+      const { frameId } = focusOf(layout)
+      return !!(frameId && layout.frames[frameId]?.openOnly)
+    },
+    run: () => {
+      const { frameId } = focusOf(getLayout())
+      if (frameId) A.setOpenOnly(frameId, false)
+    },
+  },
+  {
     // A property of the frame, not a different kind of view: the same tree, read
     // the other way round. `f` toggles, so the key that turns it on turns it off;
     // the pill it raises does the same with the mouse.
@@ -501,4 +543,59 @@ export const FRAME_TOOLS: ToolSpec[] = [
       if (frameId) A.setMaxDepth(frameId, String(entityId), depth == null ? null : Number(depth))
     },
   },
+  {
+    // The frame's own limit, on the arrow keys: ⇧← takes a level off and ⇧→ adds
+    // one, so the outline is read at the depth it makes sense at rather than at
+    // the one a filter chose. Both go through `nudgeDepth`, which is where "no
+    // limit" sits on that scale.
+    id: 'frame.depth.less',
+    label: 'Show one level less',
+    aliases: ['shallower', 'depth', 'levels'],
+    hint: 'Frame',
+    scope: 'frame',
+    reach: 'ui',
+    keys: [{ key: 'ArrowLeft', shift: true }],
+    run: () => nudge(-1),
+  },
+  {
+    id: 'frame.depth.more',
+    label: 'Show one level more',
+    aliases: ['deeper', 'depth', 'levels'],
+    hint: 'Frame',
+    scope: 'frame',
+    reach: 'ui',
+    keys: [{ key: 'ArrowRight', shift: true }],
+    run: () => nudge(1),
+  },
+  {
+    id: 'frame.depth.clear',
+    label: 'Show every level',
+    aliases: ['no depth limit', 'unfilter', 'show all'],
+    scope: 'frame',
+    reach: 'ui',
+    // Last of the Escape chain in a frame: the text box, then the outline, then
+    // what is left to do, and only then the depth.
+    keys: [{ key: 'Escape' }],
+    listed: false,
+    enabled: () => frameDepth(frameOf()) != null,
+    run: () => {
+      const { frameId } = focusOf(getLayout())
+      if (frameId) A.setFrameDepth(frameId, null)
+    },
+  },
 ]
+
+/** The focused frame, for the tools that only want to read one value off it. */
+const frameOf = (): FrameState | null => {
+  const layout = getLayout()
+  const { frameId } = focusOf(layout)
+  return frameId ? (layout.frames[frameId] ?? null) : null
+}
+
+function nudge(by: 1 | -1): ToolOutcome | void {
+  const frame = frameOf()
+  if (!frame) return
+  const depth = nudgeDepth(frameDepth(frame), by)
+  A.setFrameDepth(frame.id, depth)
+  return { message: depth == null ? 'Showing every level' : `Showing ${depthLabel(depth)}` }
+}
