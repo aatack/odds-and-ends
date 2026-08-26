@@ -62,12 +62,16 @@ const link = (parentId: string, childId: string): Promise<unknown> =>
     timestamp: Date.now(),
   })
 
-/** A note carrying the given values, defined under `@tools`. */
+/**
+ * A note carrying the given values, defined under `@tools`. `type: tool` is what
+ * makes one a definition at all, so it is stamped on unless the case being tested
+ * is about the type itself and says otherwise.
+ */
 async function defineTool(
   id: string,
   values: Record<string, unknown>,
 ): Promise<void> {
-  for (const [key, v] of Object.entries(values)) await value(id, key, v)
+  for (const [key, v] of Object.entries({ type: 'tool', ...values })) await value(id, key, v)
   await link(TOOLS_ENTITY_ID, id)
 }
 
@@ -96,9 +100,8 @@ test('has nothing to load from a store with no @tools entity', async () => {
 test('turns a note naming itself and a body into a tool', async () => {
   open()
   await defineTool('greet', {
-    // The outline's text is a different job, and is not read.
-    text: 'Slack things',
-    name: 'greet',
+    // The outline's line and the palette's label are one and the same.
+    text: 'greet',
     description: 'Say hello',
     arguments: [{ name: 'who', type: 'string', required: true }],
     execute: '(who) => tool.setEntityValue(context.entityId, "text", `hello ${who}`)',
@@ -120,8 +123,8 @@ test('turns a note naming itself and a body into a tool', async () => {
 
 test('takes `execute` as the body, and `script` as the older shape', async () => {
   open()
-  await defineTool('fromExecute', { name: 'fromExecute', execute: '(a, b) => a + b' })
-  await defineTool('fromScript', { name: 'fromScript', script: 'context.a + context.b' })
+  await defineTool('fromExecute', { text: 'fromExecute', execute: '(a, b) => a + b' })
+  await defineTool('fromScript', { text: 'fromScript', script: 'context.a + context.b' })
   await loadUserTools()
 
   assert.ok(byId('fromExecute'), 'a tool with an `execute` did not load')
@@ -130,7 +133,7 @@ test('takes `execute` as the body, and `script` as the older shape', async () =>
 
 test('does not look for a body in a code child any more', async () => {
   open()
-  await defineTool('countUp', { name: 'countUp' })
+  await defineTool('countUp', { text: 'countUp' })
   await value('countUp.body', 'type', 'code')
   await value('countUp.body', 'text', '1 + 1')
   await link('countUp', 'countUp.body')
@@ -142,7 +145,7 @@ test('does not look for a body in a code child any more', async () => {
 test('applies `execute` to its arguments in the order they were declared', async () => {
   open()
   await defineTool('add', {
-    name: 'add',
+    text: 'add',
     execute: '(first, second) => { return first + second } // trailing comment',
     arguments: [
       { name: 'first', type: 'number', required: true },
@@ -162,7 +165,7 @@ test('applies `execute` to its arguments in the order they were declared', async
 
 test('refuses an `execute` that is not a function, in the sandbox rather than here', async () => {
   open()
-  await defineTool('notAFunction', { name: 'notAFunction', execute: '42' })
+  await defineTool('notAFunction', { text: 'notAFunction', execute: '42' })
   await loadUserTools()
 
   // Loading it is fine — whether an expression evaluates to a function is not
@@ -174,7 +177,7 @@ test('refuses an `execute` that is not a function, in the sandbox rather than he
 test('quotes an argument name rather than writing it as an identifier', async () => {
   open()
   await defineTool('odd', {
-    name: 'odd',
+    text: 'odd',
     execute: '(x) => x',
     arguments: [{ name: 'not an identifier', type: 'string' }],
   })
@@ -185,15 +188,18 @@ test('quotes an argument name rather than writing it as an identifier', async ()
 
 test('passes over a note under @tools that is not a tool, and says why', async () => {
   open()
-  // A heading, and a tool missing the one thing there is no default for.
-  await defineTool('heading', { text: 'My tools' })
-  await defineTool('bodyless', { name: 'bodyless', description: 'nothing to run' })
+  // A heading, a definition with nothing to call it by, and one missing the body
+  // there is no default for.
+  await defineTool('heading', { type: null, text: 'My tools' })
+  await defineTool('nameless', { text: null, execute: '() => null' })
+  await defineTool('bodyless', { text: 'bodyless', description: 'nothing to run' })
   const found = await loadUserTools()
 
   assert.deepEqual(loaded(), [])
-  assert.equal(found.linked, 2)
+  assert.equal(found.linked, 3)
   assert.deepEqual(found.skipped, [
-    { id: 'heading', why: 'no `name`' },
+    { id: 'heading', why: 'not `type: tool`' },
+    { id: 'nameless', why: 'no `text` to call it by' },
     { id: 'bodyless', why: 'no `execute`' },
   ])
 })
@@ -207,8 +213,8 @@ test('says when nothing is linked under @tools at all', async () => {
 
 test('says which of two tools sharing an id was passed over', async () => {
   open()
-  await defineTool('first', { name: 'shared', execute: '() => null' })
-  await defineTool('second', { name: 'shared', execute: '() => null' })
+  await defineTool('first', { text: 'shared', execute: '() => null' })
+  await defineTool('second', { text: 'shared', execute: '() => null' })
   const found = await loadUserTools()
 
   assert.deepEqual(found.tools.map((t) => t.id), ['shared'])
@@ -220,7 +226,7 @@ test('says which of two tools sharing an id was passed over', async () => {
 test('takes its arguments as a list, in the order the list gives them', async () => {
   open()
   await defineTool('post', {
-    name: 'post',
+    text: 'post',
     execute: '() => null',
     arguments: [
       { name: 'channel', type: 'string', required: true },
@@ -245,7 +251,7 @@ test('takes its arguments as a list, in the order the list gives them', async ()
 test('reads the rest of what a listed argument can say', async () => {
   open()
   await defineTool('post', {
-    name: 'post',
+    text: 'post',
     execute: '() => null',
     arguments: [
       { name: 'target', type: 'entity', required: true },
@@ -271,7 +277,7 @@ test('reads the rest of what a listed argument can say', async () => {
 
 test('names an argument with nothing but a string', async () => {
   open()
-  await defineTool('post', { name: 'post', execute: '() => null', arguments: ['who', 'what'] })
+  await defineTool('post', { text: 'post', execute: '() => null', arguments: ['who', 'what'] })
   await loadUserTools()
 
   assert.deepEqual(byId('post')?.args?.map((a) => [a.name, a.label, a.kind]), [
@@ -283,7 +289,7 @@ test('names an argument with nothing but a string', async () => {
 test('passes over a listed argument that names nothing, and repeats of a name', async () => {
   open()
   await defineTool('post', {
-    name: 'post',
+    text: 'post',
     execute: '() => null',
     arguments: [
       { type: 'string' },
@@ -303,7 +309,7 @@ test('reads an argument list that was written as text, and says it had to', asyn
   // symptom without this is the worst kind: the tool loads, asks nothing, and
   // calls its body with undefined for every parameter.
   await defineTool('post', {
-    name: 'post',
+    text: 'post',
     execute: '(who) => who',
     arguments: '[{"type":"string", "name":"who", "required": true}]',
   })
@@ -317,7 +323,7 @@ test('reads an argument list that was written as text, and says it had to', asyn
 
 test('loads a tool whose arguments cannot be read at all, and warns about it', async () => {
   open()
-  await defineTool('post', { name: 'post', execute: '() => null', arguments: 'who, what' })
+  await defineTool('post', { text: 'post', execute: '() => null', arguments: 'who, what' })
   const found = await loadUserTools()
 
   assert.ok(byId('post'), 'the tool should still load — it just takes nothing')
@@ -329,9 +335,9 @@ test('loads a tool whose arguments cannot be read at all, and warns about it', a
 
 test('says nothing about arguments that were simply never written', async () => {
   open()
-  await defineTool('bare', { name: 'bare', execute: '() => null' })
-  await defineTool('cleared', { name: 'cleared', execute: '() => null', arguments: null })
-  await defineTool('blank', { name: 'blank', execute: '() => null', arguments: '' })
+  await defineTool('bare', { text: 'bare', execute: '() => null' })
+  await defineTool('cleared', { text: 'cleared', execute: '() => null', arguments: null })
+  await defineTool('blank', { text: 'blank', execute: '() => null', arguments: '' })
   const found = await loadUserTools()
 
   assert.equal(found.tools.length, 3)
@@ -341,7 +347,7 @@ test('says nothing about arguments that were simply never written', async () => 
 test('still takes a JSON Schema written out in full', async () => {
   open()
   await defineTool('post', {
-    name: 'post',
+    text: 'post',
     execute: '() => null',
     arguments: { type: 'object', properties: { who: { type: 'string' } }, required: ['who'] },
   })
@@ -354,7 +360,7 @@ test('still takes a JSON Schema written out in full', async () => {
 
 test('takes a tool with no arguments as complete, not as unfinished', async () => {
   open()
-  await defineTool('sync', { name: 'sync', execute: '() => tool.reloadYourTools()' })
+  await defineTool('sync', { text: 'sync', execute: '() => tool.reloadYourTools()' })
   await loadUserTools()
 
   const sync = byId('sync')
@@ -362,12 +368,11 @@ test('takes a tool with no arguments as complete, not as unfinished', async () =
   assert.equal(sync.args, undefined)
 })
 
-test('takes its name from `name` and its id from `id`, and ignores `text`', async () => {
+test('takes its name from its text and its id from `id`', async () => {
   open()
   await defineTool('n1', {
-    text: 'a heading this sits under',
-    label: 'not read either',
-    name: 'Greet someone',
+    label: 'not read',
+    text: 'Greet someone',
     id: 'greet',
     execute: '() => null',
   })
@@ -381,9 +386,9 @@ test('takes its name from `name` and its id from `id`, and ignores `text`', asyn
   assert.equal(findToolByName('greetSomeone')?.id, 'greet')
 })
 
-test('falls back to the name when a definition asks for no id', async () => {
+test('falls back to the text when a definition asks for no id', async () => {
   open()
-  await defineTool('n1', { name: 'greet', execute: '() => null' })
+  await defineTool('n1', { text: 'greet', execute: '() => null' })
   await loadUserTools()
 
   assert.deepEqual(loaded().map((t) => [t.id, t.label]), [['greet', 'greet']])
@@ -392,7 +397,7 @@ test('falls back to the name when a definition asks for no id', async () => {
 test('reads the scope, reach, mutation and key a definition asks for', async () => {
   open()
   await defineTool('jump', {
-    name: 'jump',
+    text: 'jump',
     scope: 'frame',
     reach: 'ui',
     mutates: true,
@@ -411,7 +416,7 @@ test('reads the scope, reach, mutation and key a definition asks for', async () 
 
 test('ignores a scope or reach that is not one of the app’s', async () => {
   open()
-  await defineTool('wonky', { name: 'wonky', scope: 'universe', reach: 'everywhere', execute: '() => null' })
+  await defineTool('wonky', { text: 'wonky', scope: 'universe', reach: 'everywhere', execute: '() => null' })
   await loadUserTools()
 
   const wonky = byId('wonky')
@@ -422,9 +427,9 @@ test('ignores a scope or reach that is not one of the app’s', async () => {
 
 test('keeps the outline order, and the first of two tools sharing an id', async () => {
   open()
-  await defineTool('first', { name: 'The first', id: 'shared', execute: '() => null' })
-  await defineTool('other', { name: 'other', execute: '() => null' })
-  await defineTool('second', { name: 'The second', id: 'shared', execute: '() => null' })
+  await defineTool('first', { text: 'The first', id: 'shared', execute: '() => null' })
+  await defineTool('other', { text: 'other', execute: '() => null' })
+  await defineTool('second', { text: 'The second', id: 'shared', execute: '() => null' })
   await loadUserTools()
 
   assert.deepEqual(loaded().map((t) => t.label), ['The first', 'other'])
@@ -435,7 +440,7 @@ test('cannot rebind a key one of the app’s own tools already has', async () =>
   open()
   // `d` opens an entity; a definition claiming it must lose, since the router
   // takes the first tool in the registry that binds a key within a scope.
-  await defineTool('sneaky', { name: 'sneaky', scope: 'frame', key: 'd', execute: '() => null' })
+  await defineTool('sneaky', { text: 'sneaky', scope: 'frame', key: 'd', execute: '() => null' })
   await loadUserTools()
 
   const binds = allTools().filter((t) => t.scope === 'frame' && t.keys?.some((k) => k.key === 'd'))
@@ -444,7 +449,7 @@ test('cannot rebind a key one of the app’s own tools already has', async () =>
 
 test('forgets the tools when the source closes', async () => {
   open()
-  await defineTool('greet', { name: 'greet', execute: '() => null' })
+  await defineTool('greet', { text: 'greet', execute: '() => null' })
   await loadUserTools()
   assert.equal(loaded().length, 1)
 
@@ -454,7 +459,7 @@ test('forgets the tools when the source closes', async () => {
 
 test('drops a load that lands after the source has moved on', async () => {
   open()
-  await defineTool('greet', { name: 'greet', execute: '() => null' })
+  await defineTool('greet', { text: 'greet', execute: '() => null' })
   const pending = loadUserTools()
   // The source changes under it, exactly as it does when another is opened.
   setSourceTransport({ call: (tool, args) => source.call(tool, args), user: 'test', sourceId: 'elsewhere' })

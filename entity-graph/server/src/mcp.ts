@@ -72,10 +72,10 @@ child, however short.
 ## Where what you write goes
 
 - **A tool you are making for the user goes under \`${TOOLS_ID}\`, and nowhere else.** A note
-  there carrying a \`name\` and an \`execute\` body is a tool of this app: it lists in the
-  command palette, can hold a key, and other tools call it by name. \`get_details\` on
-  \`${TOOL_ID}\` is the whole specification — read it first. Written anywhere else it is an
-  ordinary note and does nothing.
+  there saying \`type: ${TOOL_ID}\`, with an \`execute\` body and its own text for a name, is a
+  tool of this app: it lists in the command palette, can hold a key, and other tools call
+  it by name. \`get_details\` on \`${TOOL_ID}\` is the whole specification — read it first.
+  Written anywhere else it is an ordinary note and does nothing.
 - **A type** — a note describing the notes that name it in their \`type\` — goes under
   \`${TYPES_ID}\`. \`get_details\` on \`${TYPE_ID}\` says what one holds.
 - **Anything else** is a note in the outline. Ask where it goes if you cannot tell.
@@ -302,7 +302,7 @@ const MCP_TOOLS: McpTool[] = [
       'as a value, and is how a note refuses a default its type would otherwise give it.' +
       '\n\nMost of what is not a note\'s text is written through here: a `type` naming ' +
       'the note that describes it, a type\'s own `schema`, and every value that makes a ' +
-      `note under \`${TOOLS_ID}\` a tool — its \`name\`, its \`execute\` body, its ` +
+      `note under \`${TOOLS_ID}\` a tool — its \`type: ${TOOL_ID}\`, its \`execute\` body, its ` +
       '`arguments`. Each is one call, and each wants the JSON type the schema asks for: ' +
       'an `arguments` list written as a string is the usual way a tool ends up taking ' +
       'none.',

@@ -1,8 +1,9 @@
 # Tools you write in the graph
 
-A note under the reserved entity `@tools` can describe a tool of the app. Once it
-does, it is a tool like any other: it lists in the command palette, it can hold a
-key, other scripts can call it by name, and what it did shows in the activity log.
+A note under the reserved entity `@tools`, saying `type: tool`, describes a tool of
+the app. Once it does, it is a tool like any other: it lists in the command
+palette, it can hold a key, other scripts can call it by name, and what it did
+shows in the activity log.
 
 Its body runs in the same QuickJS sandbox a `type: code` entity runs in, with the
 same `tool` façade — so a tool you wrote reaches everything in the registry: the
@@ -21,23 +22,24 @@ it can do instead.
 ## Getting one going
 
 Run **New tool of your own** and give it a name. That creates the note under
-`@tools` with a stub `execute` on it, and opens the inspector so you can fill it
-in. Write the body, declare any `arguments`, then run **Reload your tools** and it
-is in the palette.
+`@tools` — the name as its text, `type: tool` on it, and a stub `execute` — and
+opens the inspector so you can fill it in. Write the body, declare any
+`arguments`, then run **Reload your tools** and it is in the palette.
 
 ## The fields
 
 Values on the note itself. Two are required; everything else has a default.
 
-The note's own `text` is **not** read. That is what the outline shows, and it is a
-different job — a definition should be able to sit under a heading of "Slack
-things" without the palette calling the tool that.
+The note's own `text` is **what the tool is called** — the palette label and the
+outline's line are the same words, so renaming it in the outline renames the tool.
+There was a `name` value beside the text and the two only ever drifted apart. A
+definition that wants to sit under a heading of "Slack things" hangs under one.
 
 | Value | Type | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
-| `name` | string | **yes** | — | What the tool is called: the palette label. |
+| `type` | `tool` | **yes** | — | What says the note is a definition rather than a note filed beside one. |
 | `execute` | string | **yes** | — | The body: an expression evaluating to a function. See below. |
-| `id` | string | no | `name` | What a script reaches it by: `tool.greet(…)`. |
+| `id` | string | no | the note's `text` | What a script reaches it by: `tool.greet(…)`. |
 | `description` | string | no | — | Matched by the palette's search. |
 | `arguments` | list | no | no arguments | What it takes, one entry per argument. See below. |
 | `scope` | `frame` \| `group` \| `app` | no | `app` | Which part of the focus chain a key resolves against. |
@@ -213,7 +215,9 @@ took and what it passed over:
   Link it with **Link entity from…**, naming `@tools` as the source.
 - `2 tools: greet, add` — both loaded.
 - `1 tool: greet. Skipped n7 (no \`execute\`)` — the note is linked and was read,
-  but isn't a tool yet. The reason names the value that's missing.
+  but isn't a tool yet. The reason names the value that's missing. `not
+  \`type: tool\`` is the one to expect on a heading, and on a definition written
+  before the type was required.
 
 A tool that loaded but does the wrong thing is a different problem: look in the
 activity log, which keeps the result of every run, and in the devtools console,
@@ -244,9 +248,9 @@ this file rather than a retelling, so none of them goes stale on its own:
   Nothing truncates a resource, so an agent that wants the whole story can fetch it.
 
 **New tool of your own** stamps `type: tool` on the stub it writes, so a definition
-made in the app reads the same way as one written by an agent. It is not what makes
-the note a tool — the loader wants a `name` and a body and never looks at `type` —
-only what gets the form drawn.
+made in the app reads the same way as one written by an agent. It is both what makes
+the note a tool — the loader wants that type, the note's text and a body — and what
+gets the form drawn in the inspector.
 
 What an agent cannot do is finish. It can write a definition and link it; it cannot
 run **Reload your tools**, and the tool is not in the palette until somebody does.
@@ -272,9 +276,9 @@ disappears.
   a tool that calls itself without end stops with an error saying so, rather than
   taking the window with it. Stop kills every worker, so stopping one run aborts
   any other in flight.
-- The app and the server disagree about what makes a note tool-shaped. The app
-  wants a `name` and a body; the server wants a `name`, a `description` and an
-  `arguments`, and doesn't look for a body at all — it can't run one. So a tool
-  with nothing but a name and a body works here and is absent from the source's
-  tool list. Give it a `description` and an `arguments` if you want it in both
-  places.
+- The app and the server disagree about what makes a note tool-shaped. Both want
+  `type: tool` and a `text` to call it by; beyond that the app wants a body, and
+  the server wants a `description` and an `arguments` and doesn't look for a body
+  at all — it can't run one. So a tool with nothing but a name and a body works
+  here and is absent from the source's tool list. Give it a `description` and an
+  `arguments` if you want it in both places.

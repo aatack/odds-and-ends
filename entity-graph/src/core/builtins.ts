@@ -76,37 +76,32 @@ export const TYPE_SCHEMA: Schema = {
 }
 
 /**
- * What a tool entity holds. The app reads `name` and a body and nothing else is
- * required; the rest is written here because this schema is the only place the
- * shape is spelled out for somebody who cannot read the code — the inspector
- * draws a box and a description per field, and `get_details` over MCP hands the
- * whole thing back.
+ * What a tool entity holds. The app reads this `type`, the note's own text and a
+ * body, and nothing else is required; the rest is written here because this schema
+ * is the only place the shape is spelled out for somebody who cannot read the code
+ * — the inspector draws a box and a description per field, and `get_details` over
+ * MCP hands the whole thing back.
  *
- * The order is the order to fill them in: what it is called, what it does, what
- * it takes, and then the handful of things most tools never say.
+ * The order is the order to fill them in: what it does, what it takes, and then
+ * the handful of things most tools never say. What it is *called* is not among
+ * them: that is the note's text, and so is written when the note is.
  */
 export const TOOL_SCHEMA: Schema = {
   type: 'object',
   description:
     'A tool: a note under `@tools` that this app can run. It lists in the command ' +
     'palette, it can hold a key, other tools and scripts can call it by name, and what ' +
-    'it did shows in the activity log. Two values make one — a `name` and an `execute` ' +
-    'body — and it has to be linked under `@tools` to be found at all.\n\n' +
+    'it did shows in the activity log. Three things make one — `type: tool`, an ' +
+    '`execute` body, and the note\'s own `text`, which is what the tool is called — and ' +
+    'it has to be linked under `@tools` to be found at all. There is no `name` value: ' +
+    'the text is the name, so renaming the note renames the tool.\n\n' +
     'Definitions are read once, when the source opens. A tool written now reaches the ' +
     'palette when somebody runs **Reload your tools** in the app, so writing one and ' +
     'having one are different things: say which you have done. The body runs in the ' +
     'app and only in the app — the server has nothing to run one with, and it is not a ' +
     'tool of this connection, which has the six it started with.',
-  required: ['name', 'execute'],
+  required: ['execute'],
   properties: {
-    name: {
-      type: 'string',
-      description:
-        'What the tool is called: the palette\'s label, and the word a script reaches it ' +
-        'by unless `id` says otherwise. The note\'s own `text` is not read for this — ' +
-        'that is what the outline shows, so a definition can sit under a heading of ' +
-        '"Slack things" without the palette calling it that.',
-    },
     execute: {
       type: 'string',
       description:
@@ -143,7 +138,7 @@ export const TOOL_SCHEMA: Schema = {
     id: {
       type: 'string',
       description:
-        'What a script reaches it by: `tool.greet(…)`. Defaults to the name. A ' +
+        'What a script reaches it by: `tool.greet(…)`. Defaults to the note\'s text. A ' +
         'definition taking a built-in\'s id is unreachable by it, and two sharing one ' +
         'keep the first in outline order.',
     },

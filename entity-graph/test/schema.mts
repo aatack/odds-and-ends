@@ -133,13 +133,14 @@ test('serves the tool type, which is what an agent over MCP reads instead of the
   const rolled = rollupEntity(TOOL_ID, builtinEvents([TOOL_ID]))
   assert.equal(rolled.values.type, TYPE_ID, 'a tool type is an ordinary type')
   const schema = schemaOf(rolled.values)
-  // The two the loader insists on. Everything else has a default, so a schema
-  // that required more would be describing a tool nobody has to write.
-  assert.deepEqual(schema?.required, ['name', 'execute'])
+  // The one value the loader insists on. Its `type` and its text are the other two
+  // things a definition needs, and neither is a field of the schema — one is what
+  // says which schema to read, the other is the note's own line in the outline.
+  assert.deepEqual(schema?.required, ['execute'])
   const fields = fieldsOf(schema)
   assert.deepEqual(
     fields.map((f) => f.key),
-    ['name', 'execute', 'description', 'arguments', 'id', 'key', 'scope', 'reach', 'safety', 'mutates'],
+    ['execute', 'description', 'arguments', 'id', 'key', 'scope', 'reach', 'safety', 'mutates'],
   )
   // The descriptions are the documentation, so a field without one is a field an
   // agent has to guess at.
