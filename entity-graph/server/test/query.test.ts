@@ -134,8 +134,21 @@ const OUTLINE = withValues(graph({ a: ['b', 'c'], b: ['d', 'e', 'f'] }), {
   f: { text: 'Foxtrot' },
 })
 
-const filtered = (start: string[], filters: QueryFilters): string[] =>
-  filterPaths(start, resolveQuery(start, OUTLINE, NO_TRAVERSAL, 100).paths, OUTLINE, filters).map(
+// a ─ b [ ] ─ d [x] ─ g [ ]
+//   │        └ e [ ]
+//   └ c [x] ─ h [ ]
+const TASKS = withValues(graph({ a: ['b', 'c'], b: ['d', 'e'], c: ['h'], d: ['g'] }), {
+  a: { text: 'Alpha' },
+  b: { text: 'Bravo', open: true },
+  c: { text: 'Charlie', open: false },
+  d: { text: 'Delta', open: false },
+  e: { text: 'Echo', open: true },
+  g: { text: 'Golf', open: true },
+  h: { text: 'Hotel', open: true },
+})
+
+const filtered = (start: string[], filters: QueryFilters, get: GetEntities = OUTLINE): string[] =>
+  filterPaths(start, resolveQuery(start, get, NO_TRAVERSAL, 100, filters).paths, get, filters).map(
     (p) => p.join('/'),
   )
 
@@ -146,6 +159,37 @@ describe('filterPaths', () => {
 
   it('keeps the sections, and the row that was asked about', () => {
     expect(filtered(['a'], { sections: true })).toEqual(['a', 'a/b', 'a/b/e'])
+  })
+
+  it('keeps the open items, and the row that was asked about', () => {
+    // `a` is neither open nor ticked, so it is walked through rather than kept
+    // for being open — it is here because it is what was asked about.
+    expect(filtered(['a'], { open: true }, TASKS)).toEqual(['a', 'a/b', 'a/b/e'])
+  })
+
+  it('stops at a ticked item, taking its subtree with it', () => {
+    // `d` and `c` are ticked, so `g` and `h` are never reached however open they
+    // are: what is under something finished is finished too. Without the filter
+    // the walk reads all of them.
+    expect(filtered(['a'], {}, TASKS)).toEqual([
+      'a',
+      'a/b',
+      'a/b/d',
+      'a/b/d/g',
+      'a/b/e',
+      'a/c',
+      'a/c/h',
+    ])
+  })
+
+  it('reads through a plain bullet to the tasks under it', () => {
+    // `null` is not `false`: a note that is not a task at all stops nothing.
+    const notes = withValues(graph({ a: ['b'], b: ['c'] }), {
+      a: { text: 'Alpha' },
+      b: { text: 'Bravo' },
+      c: { text: 'Charlie', open: true },
+    })
+    expect(filtered(['a'], { open: true }, notes)).toEqual(['a', 'a/b/c'])
   })
 
   it('keeps only the resume path itself when a walk carries on mid-outline', () => {

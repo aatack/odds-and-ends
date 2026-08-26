@@ -146,7 +146,8 @@ export const rowsOfPage = (
  * Run a query and describe what it reached.
  *
  * The limit is on the *traversal*, not on what survives the filters, which is
- * what makes find a filter over the rows rather than a different query. An
+ * what makes find a filter over the rows rather than a different query — though
+ * the filters do reach the walk, since `open` also says where not to go. An
  * entity that hasn't loaded looks childless, so the tree fills in as events
  * arrive — and `loading` says whether that is still happening, which is the
  * difference between "there is nothing here" and "there is nothing here yet".
@@ -158,7 +159,7 @@ export function buildTree(
   limit: number,
   filters: QueryFilters = {},
 ): Tree {
-  const { paths, complete } = resolveQuery(start, source.get, traversal, limit)
+  const { paths, complete } = resolveQuery(start, source.get, traversal, limit, filters)
   const kept = filterPaths(start, paths, source.get, filters)
 
   const ids = paths.map((path) => path[path.length - 1])
