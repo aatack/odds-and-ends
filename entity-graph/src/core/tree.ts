@@ -36,6 +36,13 @@ export interface TreeRow extends EntitySummary {
   hasChildren: boolean
   collapsed: boolean
   /**
+   * True when the row has children the outline isn't showing — folded, past a
+   * depth cap, cut by a filter, ticked, or simply below where the walk stopped.
+   * A row saying so is what greying one out means: there is more here than is on
+   * the screen, whatever the reason. Folding is only the most common of them.
+   */
+  hidesChildren: boolean
+  /**
    * True while this row's own entity is still arriving — its events, or the
    * derived ones its type's script makes. A row says so in place of its bullet,
    * which is the difference between an entity with nothing on it and one that
@@ -63,6 +70,14 @@ export interface Tree {
 
 export const EMPTY_TREE: Tree = { rows: [], complete: true, loading: false, error: null }
 
+/** What the caller knows about a row that the entity itself cannot say. */
+interface RowFacts {
+  collapsed: boolean
+  loading: boolean
+  hidesChildren: boolean
+  actions?: string[]
+}
+
 /**
  * One row: what the entity at the end of a path says about itself, plus what the
  * caller knows about where it sits. Depth is passed in rather than read off the
@@ -74,9 +89,7 @@ function rowOf(
   entity: Entity,
   depth: number,
   direction: LinkDirection,
-  collapsed: boolean,
-  loading: boolean,
-  actions?: string[],
+  { collapsed, loading, hidesChildren, actions }: RowFacts,
 ): TreeRow {
   const open = entity.values.open
   return {
@@ -93,9 +106,13 @@ function rowOf(
     // outbound links.
     hasChildren: (direction === 'in' ? entity.inboundLinks : entity.outboundLinks).length > 0,
     collapsed,
+    hidesChildren,
     loading,
   }
 }
+
+/** A path as one string, so a set of them can be asked about. */
+const keyOf = (path: readonly string[]): string => path.join('\0')
 
 const isStrictPrefix = (a: readonly string[], b: readonly string[]): boolean =>
   a.length < b.length && a.every((id, i) => b[i] === id)
@@ -148,8 +165,14 @@ export const rowsOfPage = (
     rows.map((r) => r.path),
     (path) => path.length - 1,
   )
+  // A page was handed over rather than walked, so there is nothing to compare a
+  // row's children against: it says it hides none of them.
   return rows.map(({ path, entity }, i) =>
-    rowOf(path, entity, depths[i], direction, false, false),
+    rowOf(path, entity, depths[i], direction, {
+      collapsed: false,
+      loading: false,
+      hidesChildren: false,
+    }),
   )
 }
 
@@ -186,19 +209,29 @@ export function buildTree(
   ].filter((id): id is string => !!id)
   const types = typeIds.length ? source.get(typeIds) : {}
 
+  // Which rows are on screen, so each of them can be asked whether its own
+  // children are among them. Every reason a child might not be — folded, capped,
+  // filtered, ticked, or past where the walk stopped — has already been decided
+  // by the time this set exists, which is why it is one question here rather than
+  // five conditions spread over the walk.
+  const shown = new Set(kept.map(keyOf))
+
   const rows = kept.map((path, i): TreeRow => {
     const id = path[path.length - 1]
-    const typeId = str(entities[id]?.values.type)
-    const actions = typeId ? actionsOf(types[typeId]?.values) : undefined
-    return rowOf(
-      path,
-      entities[id],
-      depths[i],
-      traversal.direction,
-      folded.has(id),
-      source.pending(id),
-      actions,
-    )
+    const entity = entities[id]
+    const typeId = str(entity?.values.type)
+    const links = traversal.direction === 'in' ? entity.inboundLinks : entity.outboundLinks
+    return rowOf(path, entity, depths[i], traversal.direction, {
+      collapsed: folded.has(id),
+      loading: source.pending(id),
+      // A link back to something already on the path is not a child anybody could
+      // have shown — the walk refuses it so a row can't be its own ancestor — so
+      // it doesn't count as hidden.
+      hidesChildren: links.some(
+        (child) => !path.includes(child) && !shown.has(keyOf([...path, child])),
+      ),
+      actions: typeId ? actionsOf(types[typeId]?.values) : undefined,
+    })
   })
 
   return {
