@@ -47,9 +47,11 @@ const sectionStyle = (depth: number): React.CSSProperties => ({
 /**
  * The glyph in front of a row: a checkbox when the row has one, otherwise a
  * plain bullet — and, while the entity is still arriving, the busy mark in place
- * of either, so a row that is empty because nothing has been read yet doesn't
- * read as a row that is empty. Shared with the create input, which shows the same
- * mark as the row it is about to become.
+ * of whatever it would have been, chevron included, so a row that is empty
+ * because nothing has been read yet doesn't read as a row that is empty. Nothing
+ * is lost by taking the chevron: a row hiding its children is greyed, which says
+ * the same thing. Shared with the create input, which shows the same mark as the
+ * row it is about to become.
  *
  * The busy mark doesn't turn: there is no motion anywhere in the app, so this is
  * the same still glyph the server list uses while a server is starting.
@@ -466,8 +468,9 @@ const RowView = React.memo(function RowView({
             }}
           >
             {/* A checkbox keeps its box even with children; only a plain row
-                trades its bullet for a chevron. */}
-            {row.open !== undefined || !row.hasChildren ? (
+                trades its bullet for a chevron. A row still arriving shows the
+                busy mark whichever it would have been. */}
+            {row.loading || row.open !== undefined || !row.hasChildren ? (
               <Mark open={row.open} loading={row.loading} />
             ) : row.collapsed ? (
               <ChevronRight size={14} />

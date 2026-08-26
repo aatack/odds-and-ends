@@ -36,10 +36,12 @@ export interface TreeRow extends EntitySummary {
   hasChildren: boolean
   collapsed: boolean
   /**
-   * True when the row has children the outline isn't showing — folded, past a
-   * depth cap, cut by a filter, ticked, or simply below where the walk stopped.
-   * A row saying so is what greying one out means: there is more here than is on
-   * the screen, whatever the reason. Folding is only the most common of them.
+   * True when the row has children and *none* of them are on screen — folded,
+   * past a depth cap, cut by a filter, ticked, or simply below where the walk
+   * stopped. A row saying so is what greying one out means: there is more here
+   * than is on the screen, whatever the reason, and folding is only the most
+   * common of them. One child drawn is enough to say the row is showing what it
+   * has, so a filter that keeps some of a row's children doesn't grey it.
    */
   hidesChildren: boolean
   /**
@@ -224,12 +226,11 @@ export function buildTree(
     return rowOf(path, entity, depths[i], traversal.direction, {
       collapsed: folded.has(id),
       loading: source.pending(id),
-      // A link back to something already on the path is not a child anybody could
-      // have shown — the walk refuses it so a row can't be its own ancestor — so
-      // it doesn't count as hidden.
-      hidesChildren: links.some(
-        (child) => !path.includes(child) && !shown.has(keyOf([...path, child])),
-      ),
+      // All or nothing: a row with something under it is showing what it has, and
+      // only one with children and none of them drawn is a door rather than the
+      // whole of it.
+      hidesChildren:
+        links.length > 0 && !links.some((child) => shown.has(keyOf([...path, child]))),
       actions: typeId ? actionsOf(types[typeId]?.values) : undefined,
     })
   })
