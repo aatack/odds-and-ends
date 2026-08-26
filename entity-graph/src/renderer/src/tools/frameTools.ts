@@ -1,8 +1,10 @@
+import { entities } from '../../../core/cache'
 import { subtreeMarkdown } from '../../../core/markdown'
+import { lastPath } from '../../../core/query'
 import * as A from '../state/actions'
-import { entityRows, type EntityRow, type Row } from '../state/derive'
+import { entityRows, frameQuery, type EntityRow, type Row } from '../state/derive'
 import { findField, requestFocus } from '../state/focusRequest'
-import { rowsOf } from '../state/query'
+import { loadMore, rowsOf } from '../state/query'
 import * as R from '../state/reducers'
 import { focusOf, getLayout, updateLayout } from '../state/store'
 import {
@@ -88,6 +90,36 @@ function moveSelection(delta: number): void {
   if (row?.kind === 'entity') A.selectPath(t.frame.id, row.path)
 }
 
+/**
+ * How many times the frame's ceiling may be doubled to reach the row jumped to.
+ * The walk is bounded by a page until the view scrolls, and the whole point of
+ * jumping to the end is not having scrolled — so the ceiling is raised until the
+ * row is among the rows. Doubling means a handful of walks rather than one per
+ * page; the cap is a backstop against a store nobody could reach the bottom of
+ * anyway, and stopping short only means the selection is somewhere the frame has
+ * yet to unroll, which is what it would have been regardless.
+ */
+const UNROLLS = 12
+
+/**
+ * The end of the frame's tree: the last child, then *its* last child, and on
+ * until there are none — the bottom of a list, without having scrolled through
+ * it. Deliberately the end of the *walk* rather than the last row on screen,
+ * which is only as far as the frame has unrolled.
+ */
+function jumpToEnd(): void {
+  const t = target()
+  if (!t) return
+  const collapsed = t.layout.tabs[t.frame.tabId]?.collapsed ?? []
+  const { traversal, filters } = frameQuery(t.frame, collapsed)
+  A.selectPath(t.frame.id, lastPath([t.frame.rootId], entities().get, traversal, filters))
+  for (let i = 0; i < UNROLLS; i++) {
+    const rows = rowsOf(t.frame.id)
+    if (rows.selectedIndex >= 0 || rows.complete) return
+    loadMore(t.frame.id)
+  }
+}
+
 function fold(collapsed: boolean): void {
   const t = target()
   const id = t && selectedId(t)
@@ -131,6 +163,29 @@ export const FRAME_TOOLS: ToolSpec[] = [
       const t = target()
       if (t && t.selectedPath.length > 1) A.selectPath(t.frame.id, t.selectedPath.slice(0, -1))
     },
+  },
+  {
+    id: 'select.start',
+    label: 'Jump to start',
+    aliases: ['top', 'home', 'first', 'root'],
+    scope: 'frame',
+    reach: 'ui',
+    keys: [{ key: 'Home' }],
+    // The frame's own root, which is what selecting the parent repeatedly arrives
+    // at — there is nothing above it in this frame.
+    run: () => {
+      const t = target()
+      if (t) A.selectPath(t.frame.id, [t.frame.rootId])
+    },
+  },
+  {
+    id: 'select.end',
+    label: 'Jump to end',
+    aliases: ['bottom', 'last', 'deepest'],
+    scope: 'frame',
+    reach: 'ui',
+    keys: [{ key: 'End' }],
+    run: jumpToEnd,
   },
   {
     id: 'collapse',

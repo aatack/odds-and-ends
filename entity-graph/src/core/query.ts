@@ -150,6 +150,30 @@ export function resolveQuery(
   return { paths, complete: path == null, next: path }
 }
 
+/**
+ * The last path a depth-first reading would reach: the last child of the start,
+ * then that one's last child, and so on until there are none left.
+ *
+ * The end of the walk without walking it. `resolveQuery` would have to visit
+ * every path in between to arrive at the same one, which for a tree of any size
+ * is the whole tree; this visits one path per level. An entity that hasn't loaded
+ * looks childless, so the answer is the deepest end of what is *known* — and
+ * `childrenOf`'s cycle guard is what makes the descent finite.
+ */
+export function lastPath(
+  start: readonly string[],
+  get: GetEntities,
+  t: Traversal,
+  filters: QueryFilters = {},
+): string[] {
+  let path = [...start]
+  for (;;) {
+    const children = childrenOf(path, get, t, filters)
+    if (!children.length) return path
+    path = [...path, children[children.length - 1]]
+  }
+}
+
 // --- Filters ----------------------------------------------------------------
 
 /**

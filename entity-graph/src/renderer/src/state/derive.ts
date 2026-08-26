@@ -1,5 +1,5 @@
 import { str, summaryOf, type EntitySummary } from '../../../core/entity'
-import type { EntitySource } from '../../../core/query'
+import type { EntitySource, QueryFilters, Traversal } from '../../../core/query'
 import { buildTree, type TreeRow } from '../../../core/tree'
 import { focusOf } from './store'
 import {
@@ -164,6 +164,26 @@ export const setQueryObserver = (
   observer = fn
 }
 
+/**
+ * The walk a frame asks for: where it goes, and what it keeps. Named because two
+ * callers need it — the rows, and anything that wants to know where the walk
+ * *ends* without running it — and a second copy of this is a jump that lands
+ * somewhere the rows don't go.
+ */
+export const frameQuery = (
+  frame: FrameState,
+  collapsed: readonly string[],
+): { traversal: Traversal; filters: QueryFilters } => ({
+  traversal: {
+    direction: directionOf(frame),
+    collapsed: collapsedBelow(collapsed, frame.rootId),
+    // The frame's own limit is already in here, under its root: the sections
+    // filter puts one there rather than implying one of its own.
+    maxDepth: frame.maxDepth,
+  },
+  filters: { find: frame.find, sections: frame.sectionsOnly, open: frame.openOnly },
+})
+
 /** Everything about a frame's rows that its selection cannot change. */
 export function frameTree(
   frame: FrameState,
@@ -172,18 +192,13 @@ export function frameTree(
   limit: number,
 ): FrameTree {
   observer?.(frame, limit)
+  const { traversal, filters } = frameQuery(frame, collapsed)
   const { rows, complete, loading, error } = buildTree(
     [frame.rootId],
     source,
-    {
-      direction: directionOf(frame),
-      collapsed: collapsedBelow(collapsed, frame.rootId),
-      // The frame's own limit is already in here, under its root: the sections
-      // filter puts one there rather than implying one of its own.
-      maxDepth: frame.maxDepth,
-    },
+    traversal,
     limit,
-    { find: frame.find, sections: frame.sectionsOnly, open: frame.openOnly },
+    filters,
   )
 
   // Keys and their index, once, here — where the rows are built and not again
