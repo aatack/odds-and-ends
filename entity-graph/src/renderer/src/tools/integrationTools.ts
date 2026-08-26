@@ -57,6 +57,11 @@ function toolSpec(meta: ToolMeta): ToolSpec {
     // Which is also why every call is kept: a merged pull request is a thing
     // that happened, and the log is the only record of it.
     reach: 'external',
+    // The server may have written to the graph on its way — a Claude session
+    // writes its notes over MCP, which nothing here sees. So the cache is read
+    // again afterwards. It costs one scan of what is on screen, per gesture,
+    // which is affordable in a way doing it per keystroke was not.
+    writesUnseen: true,
     ...(args.length ? { args } : {}),
     run: async (values) => {
       if (!serverId) throw new Error('No server is open')

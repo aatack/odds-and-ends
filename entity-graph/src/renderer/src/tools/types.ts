@@ -86,8 +86,23 @@ export interface ToolSpec {
    * either key should finish it.
    */
   pickAlso?: string[]
-  /** Set when running it changes the entity store, so open frames must refetch. */
+  /**
+   * Set when running it changes the entity store, which is what strands the undo
+   * stack. It says nothing about refetching: a write made through `source/entity`
+   * tells the cache what it changed on its way out, so there is nothing left for
+   * the call machine to invalidate.
+   */
   mutates?: boolean
+  /**
+   * Set when the store may change where this side cannot see it — a Claude
+   * session writing notes over MCP, an integration acting on the graph through
+   * the server. Nothing in the cache accounts for those, so the only honest
+   * answer is to read everything again. Separate from {@link mutates}, since a
+   * tool can be one without the other: a pull request listed changes nothing and
+   * still deserves a look afterwards, and a rename changes everything about a row
+   * without a single unaccounted event.
+   */
+  writesUnseen?: boolean
   /**
    * Set for the tools that work *on* the undo stack. Any other write clears it,
    * since events written back after newer edits would come back out of order.

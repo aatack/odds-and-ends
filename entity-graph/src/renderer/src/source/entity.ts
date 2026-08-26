@@ -72,6 +72,12 @@ export async function readOutline(entityId: string, limit = OUTLINE_LIMIT): Prom
 export interface WriteObserver {
   applied: (events: AppEvent[]) => void
   removed: (events: AppEvent[]) => void
+  /**
+   * Entities changed in a way this side cannot state. `createEntity` mints its id
+   * on the server, so there are no events to hand over — only the names of what
+   * it touched, which is enough to re-read those and nothing else.
+   */
+  touched?: (entityIds: string[]) => void
 }
 
 let observer: WriteObserver | null = null
@@ -108,19 +114,28 @@ export function writeValue(entityId: string, key: string, value: unknown): Promi
 }
 
 // The tool stamps its own author on the events it writes, so unlike writeValue
-// this one takes none — and the id is the server's, so there is nothing to show
-// ahead of the answer either. These two land in the cache with the refresh that
-// follows any write, rather than on their way out.
-export const createEntity = (
+// these two take none — and the id is the server's, so there is nothing to show
+// ahead of the answer either. What they can say is which entities moved, which
+// is what `touched` is for: the new entity and the parent it hangs off, and
+// nothing else on screen need be read again.
+export async function createEntity(
   values: Record<string, unknown>,
   parentId?: string,
-): Promise<string> => callSource('createEntity', { values, parentId }) as Promise<string>
+): Promise<string> {
+  const id = (await callSource('createEntity', { values, parentId })) as string
+  observer?.touched?.(parentId === undefined ? [id] : [id, parentId])
+  return id
+}
 
-export const moveEntity = (
+export async function moveEntity(
   entityId: string,
   fromParentId: string,
   toParentId: string,
-): Promise<unknown> => callSource('moveEntity', { entityId, fromParentId, toParentId })
+): Promise<unknown> {
+  const result = await callSource('moveEntity', { entityId, fromParentId, toParentId })
+  observer?.touched?.([entityId, fromParentId, toParentId])
+  return result
+}
 
 /** Link actions, as the `writeLink` tool numbers them. */
 export const LINK_ADD = 0

@@ -14,9 +14,31 @@ import type { EntitySource } from './query'
 //
 // Nothing is ever evicted. A session's worth of entities is small, and dropping
 // one would only mean fetching it again.
+//
+// Invalidation is by name, not wholesale. A write knows what it touched — the
+// events it is making, or failing that the ids it changed — and that is all that
+// is marked for re-reading, because everything else in here is as true as it was
+// a moment ago. The wholesale version (`refreshEntities`) is kept for the one
+// case that has nothing to go on: a change made somewhere this client cannot see.
 
-/** How far along an entity's events (or its derived events) are. */
-export type LoadState = 'unloaded' | 'loading' | 'loaded' | 'error'
+// Nor does invalidation take anything away. An entry marked for re-reading keeps
+// its events and goes to `stale`, so a row goes on showing what it has instead of
+// emptying out and filling again. Doing it the other way — putting entries back
+// to `unloaded` after every write — is what had every row on screen flash its
+// loading state on every keystroke.
+
+/**
+ * How far along an entity's events (or its derived events) are.
+ *
+ * `stale` is the one that isn't a step along that road: it means read in full
+ * once and worth reading again — the store may have moved on. It is deliberately
+ * *not* a kind of waiting, because an entity that is entirely here does not
+ * become a row with nothing in it just because something might have changed
+ * behind it. That distinction is the whole reason it exists: invalidating by
+ * putting entries back to `unloaded` made every row on screen flash its loading
+ * state on every keystroke.
+ */
+export type LoadState = 'unloaded' | 'loading' | 'loaded' | 'stale' | 'error'
 
 export interface CachedEntity {
   /** Events read from the source. Complete once `loaded` says so. */
@@ -70,6 +92,12 @@ const empty = (id: string): Entity => {
 /** Whether a load state is one that something is still expected to come out of. */
 const waiting = (state: LoadState): boolean => state === 'unloaded' || state === 'loading'
 
+/** Whether the events are all here, whether or not they are known to be current. */
+const complete = (state: LoadState): boolean => state === 'loaded' || state === 'stale'
+
+/** Whether a read is owed: never done, or done and since invalidated. */
+const unread = (state: LoadState): boolean => state === 'unloaded' || state === 'stale'
+
 const blank = (id: string): CachedEntity => ({
   events: [],
   loaded: 'unloaded',
@@ -103,7 +131,7 @@ export function entitiesFrom(cache: EntityCache): EntitySource {
       // the real events are in, though, so a read that failed leaves their state
       // at `unloaded` for good — that row is not waiting on anything.
       if (waiting(entry.loaded)) return true
-      return entry.loaded === 'loaded' && waiting(entry.derivedState)
+      return complete(entry.loaded) && waiting(entry.derivedState)
     },
     error: (id) => cache[id]?.error ?? null,
   }
@@ -127,12 +155,31 @@ export type EntityFetcher = (entityIds: string[]) => Promise<EventScan>
 
 let fetcher: EntityFetcher | null = null
 /**
- * Bumped whenever everything is invalidated. A response issued before the bump
- * describes the store as it was, so it is dropped rather than written over the
- * newer picture — the entities it covered are marked unloaded, and asked for
- * again by whoever still wants them.
+ * Which source the cache belongs to. Bumped when that changes, since everything
+ * held then belonged to the last one and no answer about it is worth having.
  */
 let generation = 0
+/**
+ * A counter over writes, and the count each entity was last written at.
+ *
+ * A read is issued against the store as it stood, so an entity written to since
+ * is one whose answer would put back what has just been changed — and it is only
+ * *that* entity's answer that is wrong. Guarding per entity rather than throwing
+ * the whole response away is what keeps one keystroke from discarding a read of
+ * everything else on screen.
+ */
+let writes = 0
+const writtenAt = new Map<string, number>()
+
+/** Note a write, so no read issued before it is believed about these entities. */
+function noteWrites(ids: Iterable<string>): void {
+  writes++
+  for (const id of ids) writtenAt.set(id, writes)
+}
+
+/** Whether a read issued at `at` can still be believed about this entity. */
+const trustworthy = (id: string, at: number): boolean => (writtenAt.get(id) ?? 0) <= at
+
 /** Ids asked for since the last flush. */
 const wanted = new Set<string>()
 /**
@@ -169,7 +216,7 @@ export function requestEntities(ids: readonly string[]): void {
       asked.add(id)
       newlyAsked = true
     }
-    if (stateOf(cache, id) !== 'unloaded' || wanted.has(id)) continue
+    if (!unread(stateOf(cache, id)) || wanted.has(id)) continue
     wanted.add(id)
     added = true
   }
@@ -185,13 +232,14 @@ export function requestEntities(ids: readonly string[]): void {
 function flush(): void {
   flushing = false
   const cache = entitiesAtom.get()
-  const ids = [...wanted].filter((id) => stateOf(cache, id) === 'unloaded')
+  const ids = [...wanted].filter((id) => unread(stateOf(cache, id)))
   wanted.clear()
   if (!ids.length) return
   const f = fetcher
   if (!f) return // Asked for before a source was open; the next request retries.
 
-  const issued = generation
+  const source = generation
+  const issued = writes
   entitiesAtom.set((c) => {
     const next = { ...c }
     for (const id of ids) next[id] = { ...(next[id] ?? blank(id)), loaded: 'loading' }
@@ -200,11 +248,11 @@ function flush(): void {
 
   void f(ids)
     .then((scan) => {
-      if (issued === generation) receive(ids, scan)
+      if (source === generation) receive(ids, scan, issued)
       else abandon(ids)
     })
     .catch((e) => {
-      if (issued !== generation) return abandon(ids)
+      if (source !== generation) return abandon(ids)
       const failed = message(e)
       update((next) => {
         for (const id of ids) {
@@ -215,18 +263,18 @@ function flush(): void {
 }
 
 /**
- * Give up on a read that the store has moved on from. The entities go back to
- * unloaded rather than staying in flight forever, so whoever still wants them
- * asks again — which, since the thing that invalidated them changed the cache,
- * is about to happen anyway.
+ * Give up on a read the cache has moved on from, so whoever still wants those
+ * entities asks again. One that has its events keeps them and goes back to
+ * `stale` — the answer is unwanted, not the events already in hand.
  */
 function abandon(ids: readonly string[]): void {
   entitiesAtom.set((cache) => {
     const next = { ...cache }
     let any = false
     for (const id of ids) {
-      if (next[id]?.loaded !== 'loading') continue
-      next[id] = { ...next[id], loaded: 'unloaded' }
+      const entry = next[id]
+      if (entry?.loaded !== 'loading') continue
+      next[id] = { ...entry, loaded: entry.events.length ? 'stale' : 'unloaded' }
       any = true
     }
     return any ? next : cache
@@ -237,8 +285,13 @@ function abandon(ids: readonly string[]): void {
  * Take a scan into the cache. An entity the scan covers has its events
  * *replaced*: the source hands back everything it holds for that id, so merging
  * would only be a way of keeping something that has since been undone.
+ *
+ * `issued` is the write count the read went out at, and an entity written to
+ * since is left exactly as it stands: the answer predates the write, so taking it
+ * would undo what the user has already been shown. That entity alone is put back
+ * to needing a read; the rest of the scan is perfectly good.
  */
-function receive(requested: readonly string[], scan: EventScan): void {
+function receive(requested: readonly string[], scan: EventScan, issued: number): void {
   const buckets = new Map<string, AppEvent[]>()
   for (const id of scan.entityIds) buckets.set(id, [])
   // An id that was asked for but isn't in the scan has no events at all — an
@@ -256,7 +309,12 @@ function receive(requested: readonly string[], scan: EventScan): void {
 
   update((next) => {
     for (const [id, events] of buckets) {
-      next[id] = { ...(next[id] ?? blank(id)), events, loaded: 'loaded', error: undefined }
+      const entry = next[id] ?? blank(id)
+      if (!trustworthy(id, issued)) {
+        next[id] = { ...entry, loaded: entry.events.length ? 'stale' : 'unloaded' }
+        continue
+      }
+      next[id] = { ...entry, events, loaded: 'loaded', error: undefined }
     }
   })
 }
@@ -266,6 +324,7 @@ export function setEntityFetcher(next: EntityFetcher | null): void {
   fetcher = next
   generation++
   wanted.clear()
+  writtenAt.clear()
   // Nothing has been asked of *this* source yet. Unlike `refreshEntities`, which
   // keeps what the rows still want, everything here belonged to the last one.
   asked.clear()
@@ -273,23 +332,65 @@ export function setEntityFetcher(next: EntityFetcher | null): void {
 }
 
 /**
- * Mark everything as needing reading again, keeping what is cached in the
- * meantime. Called after any write: rows carry on showing the entities they
- * have while the fresh events are on their way, so nothing flickers and nothing
- * has to be worked out about which entities a write could have touched.
+ * Mark named entities as needing reading again, keeping what is cached in the
+ * meantime — the rows carry on showing the events they have while the fresh ones
+ * are on their way.
+ *
+ * This is for a write the client cannot state: `createEntity` mints its id on the
+ * server, so unlike an edit there are no events to apply here. Naming the
+ * entities it touched is the next best thing, and is the whole difference between
+ * re-reading three rows and re-reading the screen.
+ */
+export function invalidateEntities(ids: readonly string[]): void {
+  if (!ids.length) return
+  noteWrites(ids)
+  entitiesAtom.set((cache) => {
+    const next = { ...cache }
+    let any = false
+    for (const id of ids) {
+      const entry = next[id]
+      const marked = entry && invalidate(entry)
+      if (!marked) continue
+      next[id] = marked
+      any = true
+    }
+    return any ? next : cache
+  })
+}
+
+/**
+ * An entry marked as owing a read, or null where it already owes one. What it has
+ * it keeps: `stale` is complete-but-perhaps-old, which is what a row should go on
+ * showing. An entry still `loading` is left alone — {@link receive} decides what
+ * to make of its answer when it lands, since by then it knows whether the write
+ * beat it.
+ */
+function invalidate(entry: CachedEntity): CachedEntity | null {
+  if (complete(entry.loaded)) return entry.loaded === 'stale' ? null : { ...entry, loaded: 'stale' }
+  // A read that failed is worth trying again: the store has changed under it.
+  if (entry.loaded === 'error') return { ...entry, loaded: 'unloaded', error: undefined }
+  return null
+}
+
+/**
+ * Mark everything as needing reading again. Reserved for changes nothing here
+ * saw at all — a Claude session writing notes over MCP, or the inspector writing
+ * events of its own — since a write made through `source/entity` says what it
+ * changed and only that needs re-reading.
+ *
+ * Entries keep their events and go to `stale` rather than `unloaded`, so no row
+ * turns back into its loading state over this.
  *
  * Derived events are deliberately left alone. They are computed once a session,
- * and re-running a script that reaches out to GitHub on every keystroke would
- * not do.
+ * and re-running a script that reaches out to GitHub every time would not do.
  */
 export function refreshEntities(): void {
-  generation++
+  const cache = entitiesAtom.get()
+  noteWrites(Object.keys(cache))
   wanted.clear()
-  entitiesAtom.set((cache) => {
+  entitiesAtom.set(() => {
     const next: EntityCache = {}
-    for (const [id, entry] of Object.entries(cache)) {
-      next[id] = entry.loaded === 'unloaded' ? entry : { ...entry, loaded: 'unloaded' }
-    }
+    for (const [id, entry] of Object.entries(cache)) next[id] = invalidate(entry) ?? entry
     return next
   })
 }
@@ -304,12 +405,14 @@ export function refreshEntities(): void {
  */
 export function applyEvents(events: readonly AppEvent[]): void {
   if (!events.length) return
+  const touched = byEntity(events)
   // A read already in flight was issued against the store as it was, so its
   // answer would put back what has just been written — or, for a removal, what
-  // has just been taken away.
-  generation++
+  // has just been taken away. Only for these entities, though: the rest of that
+  // answer is as good as it ever was.
+  noteWrites(touched.keys())
   update((next) => {
-    for (const [id, added] of byEntity(events)) {
+    for (const [id, added] of touched) {
       // Including entities nothing has read yet, which is how a client that makes
       // up its own ids — the phone, adding a line — shows the new entity before
       // the write lands. The entry stays unloaded, so the first thing to ask for
@@ -327,10 +430,11 @@ export function applyEvents(events: readonly AppEvent[]): void {
  */
 export function removeEvents(events: readonly AppEvent[]): void {
   if (!events.length) return
-  generation++
+  const touched = byEntity(events)
+  noteWrites(touched.keys())
   const dropped = new Set(events.map(eventKey))
   update((next) => {
-    for (const [id] of byEntity(events)) {
+    for (const [id] of touched) {
       const entry = next[id]
       if (!entry) continue
       const kept = entry.events.filter((e) => !dropped.has(eventKey(e)))
@@ -421,11 +525,11 @@ function reconcile(before: EntityCache, draft: EntityCache): EntityCache {
     const typeId = typeIdOf(entry.entity.values)
     // Naming a type is what asks for it — nothing else reads one, so without
     // this a type would never load at all, and never reload after a write.
-    if (typeId && stateOf(next, typeId) === 'unloaded') staleTypes.add(typeId)
+    if (typeId && unread(stateOf(next, typeId))) staleTypes.add(typeId)
 
     // Only what was asked for: see `asked`. An overscanned entity is left alone
     // until something reads it, and picked up by `requestEntities` when it does.
-    if (asked.has(id) && entry.loaded === 'loaded' && entry.derivedState === 'unloaded') {
+    if (asked.has(id) && complete(entry.loaded) && entry.derivedState === 'unloaded') {
       candidates.push(id)
     }
   }
@@ -483,14 +587,14 @@ function startDerivations(ids: readonly string[]): void {
 
   for (const id of ids) {
     const entry = cache[id]
-    if (!entry || entry.loaded !== 'loaded' || entry.derivedState !== 'unloaded') continue
+    if (!entry || !complete(entry.loaded) || entry.derivedState !== 'unloaded') continue
 
     const typeId = typeIdOf(entry.entity.values)
     if (!typeId) {
       settled.push(id)
       continue
     }
-    if (stateOf(cache, typeId) !== 'loaded') {
+    if (!complete(stateOf(cache, typeId))) {
       requestEntities([typeId])
       continue
     }

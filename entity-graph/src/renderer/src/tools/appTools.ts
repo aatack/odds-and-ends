@@ -1,5 +1,5 @@
 import { TOOL_ID } from '../../../core/builtins'
-import { refreshDerived } from '../../../core/cache'
+import { refreshDerived, refreshEntities } from '../../../core/cache'
 import { createEntity } from '../source/entity'
 import { openExternal, readClipboardText, revealPath } from '../source/files'
 import { copyText } from '../helpers/clipboard'
@@ -135,6 +135,25 @@ export const APP_TOOLS: ToolSpec[] = [
     scope: 'app',
     reach: 'ui',
     run: () => updateUi({ activityOpen: !uiAtom.get().activityOpen }),
+  },
+  {
+    // For a change nothing here made: a Claude session that has been writing
+    // notes for the last ten minutes, or somebody editing the same store from a
+    // phone. The app's own writes need none of this — each one tells the cache
+    // what it changed as it goes — so this is a gesture rather than something on
+    // the end of every keystroke.
+    //
+    // Not `mutates`: it writes nothing, and so leaves the undo stack standing.
+    id: 'source.refresh',
+    label: 'Read the store again',
+    aliases: ['refresh', 'reload', 'refetch', 'sync', 'update'],
+    hint: 'Shell',
+    scope: 'app',
+    reach: 'source',
+    run: () => {
+      refreshEntities()
+      return { message: 'Reading every entity again' }
+    },
   },
   {
     // Not `mutates`: nothing is written. It only throws away what the scripts

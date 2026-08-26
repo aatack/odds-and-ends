@@ -205,17 +205,21 @@ async function execute(call: Invocation): Promise<CallOutcome> {
       callId: call.callId,
       context: call.context,
     })) ?? {}
-    // Anything that wrote to the entity store makes everything cached worth
-    // reading again — the write itself is already showing, since the events went
-    // into the cache on their way out. A tool that decided there was nothing to
-    // write says so and skips even that.
+    // Nothing is invalidated here. A write goes through `source/entity`, which
+    // hands the cache the events it is making — or, where it can't, the names of
+    // the entities it touched — so by the time this runs the cache is already in
+    // step. Marking the whole cache unloaded after every write was what made
+    // every row on screen flash its loading state on every keystroke, and what
+    // had the app re-read the screen for a change to one value.
     if (outcome.mutated ?? tool.mutates) {
-      refreshEntities()
       // A write that didn't come from the undo stack strands it: those events are
       // no longer the store's most recent, so replaying them would land them
       // after the newer edit.
       if (!tool.preservesUndo) clearUndo()
     }
+    // The exception: a tool that may have changed the store somewhere this side
+    // cannot see. There is nothing to work out from, so everything is read again.
+    if (tool.writesUnseen) refreshEntities()
     const succeeded: CallOutcome = { kind: 'success', data: outcome.data, message: outcome.message }
     settle(call, tool, succeeded)
     return succeeded
