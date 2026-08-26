@@ -250,7 +250,7 @@ test('reads the rest of what a listed argument can say', async () => {
     arguments: [
       { name: 'target', type: 'entity', required: true },
       { name: 'tone', options: ['formal', 'casual'] },
-      { name: 'note', type: 'string', description: 'Shown as the placeholder' },
+      { name: 'note', type: 'string', description: 'Shown on hover, not in the field' },
       { name: 'times', type: 'integer', default: 1 },
     ],
   })
@@ -261,7 +261,10 @@ test('reads the rest of what a listed argument can say', async () => {
   assert.equal(args[0].kind, 'entity')
   assert.equal(args[1].kind, 'select')
   assert.deepEqual(args[1].options, ['formal', 'casual'])
-  assert.equal(args[2].placeholder, 'Shown as the placeholder')
+  // The field itself says which argument it wants; the description is the tooltip.
+  assert.equal(args[2].label, 'Note')
+  assert.equal(args[2].placeholder, undefined)
+  assert.equal(args[2].description, 'Shown on hover, not in the field')
   assert.equal(args[3].kind, 'number')
   assert.equal(args[3].hasDefault, true)
 })

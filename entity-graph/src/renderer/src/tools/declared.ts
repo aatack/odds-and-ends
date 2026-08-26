@@ -60,7 +60,11 @@ function argSpec(name: string, schema: PropertySchema, required: boolean): ArgSp
     // which is how the source contract spells "use the default".
     ...(schema.default !== undefined ? { hasDefault: true } : {}),
     ...(required ? {} : { optional: true }),
-    ...(schema.description ? { placeholder: schema.description } : {}),
+    // The description is not the prompt. It is written for a reader of the
+    // schema — a sentence or three — and put in the field it crowded out the one
+    // thing the user needs there, which is which argument is being asked for. It
+    // is kept, and shown on hover instead.
+    ...(schema.description ? { description: schema.description } : {}),
   }
 }
 

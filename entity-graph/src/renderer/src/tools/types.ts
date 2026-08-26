@@ -33,6 +33,11 @@ export interface ArgSpec {
   optional?: boolean
   placeholder?: string
   /**
+   * What the argument is for, at whatever length its author wrote it. Shown on
+   * hover rather than in the field, which belongs to {@link label}.
+   */
+  description?: string
+  /**
    * Filled by pointing at something rather than typing: with the palette hidden,
    * pressing the tool's own hotkey again takes this from the live selection.
    */
