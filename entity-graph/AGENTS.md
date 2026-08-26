@@ -106,8 +106,8 @@ is the long form; the rules that matter day to day:
   both dispatch through that declaration, so they cannot drift. New commands go
   here, never inline in a keydown handler.
 - **The registry isn't all built at build time.** The server's *integrations*
-  (GitHub, Slack, Claude, git — `server/src/integrations/`, documented in
-  `server/docs/integrations.md`) are fetched when a source opens and folded into
+  (GitHub, Slack, Claude, git, a terminal — `server/src/integrations/`, documented
+  in `server/docs/integrations.md`) are fetched when a source opens and folded into
   the same registry, with their argument prompts derived from the JSON Schema the
   server publishes. So read the list through `allTools()`, never a constant, and
   add a new integration on the server rather than here.
@@ -240,7 +240,7 @@ call.
 ## Layout
 
 ```
-server/         the HTTP server: sources, and the integrations (GitHub, Slack, Claude, git)
+server/         the HTTP server: sources, and the integrations (GitHub, Slack, Claude, git, terminal)
 mobile/         a separate phone client (PWA) for one source — its own install, own guide
 scripts/        one-off tools run outside the app with tsx (the pensive v2 migration)
 src/main       Electron main — window, servers, config store, tailscale serve

@@ -56,9 +56,9 @@ describe('the tool list', () => {
     }
   })
 
-  it('covers GitHub, git, Claude and Slack', () => {
+  it('covers GitHub, git, Claude, Slack and the terminal', () => {
     const prefixes = new Set(INTEGRATION_TOOLS.map((t) => t.id.split('.')[0]))
-    expect([...prefixes].sort()).toEqual(['claude', 'git', 'github', 'slack'])
+    expect([...prefixes].sort()).toEqual(['claude', 'git', 'github', 'slack', 'terminal'])
   })
 })
 

@@ -1,9 +1,9 @@
 # Integrations
 
-The server can reach four things outside itself: **GitHub**, **Slack**, **Claude
-Code**, and the **git repositories on this machine** — the last two locally rather
-than over a network. They live in `src/integrations/`, they are listed in one
-registry, and there is exactly one way to invoke one:
+The server can reach five things outside itself: **GitHub**, **Slack**, **Claude
+Code**, the **git repositories on this machine**, and a **terminal** on it — the
+last three locally rather than over a network. They live in `src/integrations/`,
+they are listed in one registry, and there is exactly one way to invoke one:
 
 ```
 GET  /tools     → the list, each with a JSON Schema for its arguments
@@ -484,6 +484,49 @@ wanting a password — or anything that would open an editor — waits for an an
 that is never coming, and is killed on the timeout, which reports the wait rather
 than the reason for it. Use SSH or a credential helper. Pull and push get five
 minutes; the local operations get the usual one.
+
+---
+
+## Terminal
+
+One tool, and the only one here that starts something and lets go of it.
+
+### Tools
+
+| id | what it does |
+|----|--------------|
+| `terminal.open` | open a terminal window standing in a directory |
+
+`~` is expanded, as everywhere else, and the absolute directory comes back along
+with the name of the terminal that was started. The directory is passed to
+`spawn` rather than as a flag, so nothing here has to know each terminal's way of
+being told where to start.
+
+### Which terminal
+
+`$TERMINAL` if it is set — the variable the desktops already agree on — and
+otherwise the first of these that is installed:
+
+```
+x-terminal-emulator  gnome-terminal  konsole  xfce4-terminal  ghostty
+kitty  alacritty  wezterm  foot  xterm
+```
+
+`x-terminal-emulator` leads because on Debian and Ubuntu it is whatever the
+desktop settled on, which is a better answer than any name below it; `xterm`
+trails because it is the one every X install has and nobody chose. On macOS the
+question doesn't arise: `open -a Terminal` hands it to the desktop. Set
+`$TERMINAL` if you want something else, and there is nothing else to configure.
+
+### Letting go
+
+`terminal.open` returns as soon as the window exists, not when it closes. That is
+what `detach` in [`exec.ts`](../src/integrations/exec.ts) is for: `run` waits for
+a program to exit and kills it on the timeout, which for a window somebody is
+typing in is exactly wrong. The window is started in a process group of its own
+with its output going nowhere, so stopping the server leaves it open — and
+nothing comes back from it but the fact that it started, because there is nobody
+here to read what it says.
 
 ---
 

@@ -1,7 +1,7 @@
-import { execFile, type ExecFileException } from 'child_process'
-import { statSync } from 'fs'
+import { execFile, spawn, type ExecFileException } from 'child_process'
+import { existsSync, statSync } from 'fs'
 import { homedir } from 'os'
-import { join, resolve } from 'path'
+import { delimiter, join, resolve } from 'path'
 
 // Running other people's programs. Everything here takes an argument *vector*
 // and never a command line, so no shell is involved and nothing a tool is handed
@@ -139,3 +139,47 @@ export async function json<T>(
  */
 export const said = (result: CommandResult): string =>
   [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n')
+
+/**
+ * Whether a program can be started at all: a name is looked for on the server's
+ * PATH, and anything with a separator in it is a path already and is looked for
+ * where it says. This is how a tool with several programs it could use picks one
+ * without starting all of them to find out.
+ */
+export function onPath(command: string): boolean {
+  if (command.includes('/')) return existsSync(command)
+  return (process.env.PATH ?? '')
+    .split(delimiter)
+    .filter(Boolean)
+    .some((dir) => existsSync(join(dir, command)))
+}
+
+/**
+ * Start a program and let go of it — for something meant to outlive the call, a
+ * terminal window being the case in point. {@link run} would wait for it to exit
+ * and then kill it on the timeout, which for a window somebody is typing in is
+ * exactly wrong.
+ *
+ * Nothing comes back but the fact that it started. Its output goes nowhere,
+ * because there is nobody here to read it, and a new process group is what stops
+ * the server taking it down on the way out.
+ */
+export function detach(command: string, args: string[], options: { cwd?: string } = {}): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { cwd: options.cwd, detached: true, stdio: 'ignore' })
+    child.once('error', (e) => {
+      const code = (e as NodeJS.ErrnoException).code
+      reject(
+        code === 'ENOENT'
+          ? new Error(`\`${command}\` is not installed, or not on this server's PATH`)
+          : e,
+      )
+    })
+    // `spawn` reports a missing program asynchronously, so this waits for the
+    // process to actually exist rather than for the call to return.
+    child.once('spawn', () => {
+      child.unref()
+      resolve()
+    })
+  })
+}

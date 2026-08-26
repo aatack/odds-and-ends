@@ -31,6 +31,21 @@ export const copyFile = (name: string, data: string): Promise<string> =>
 export const openExternal = (url: string): Promise<void> => api.openExternal(url)
 
 /**
+ * What is on the clipboard, as text. The other half — putting text *on* it — is
+ * `helpers/clipboard`, and lives there because the browser will do it: only the
+ * read side is behind a permission prompt, so only the read side comes through
+ * the main process.
+ */
+export const readClipboardText = (): Promise<string> => api.readClipboardText()
+
+/**
+ * Show a file or directory where it lives, with the item selected in whatever
+ * the desktop uses for a file manager. `~` is expanded on the other side, since
+ * that is where the home directory is known; the absolute path comes back.
+ */
+export const revealPath = (path: string): Promise<string> => api.revealPath(path)
+
+/**
  * A plausible extension for bytes that arrived without a name — from the
  * clipboard, say. Only for something short and word-like after the slash, so an
  * exotic mime type ends up with no extension rather than a silly one.
