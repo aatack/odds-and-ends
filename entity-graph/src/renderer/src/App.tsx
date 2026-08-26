@@ -62,6 +62,25 @@ export default function App(): React.JSX.Element | null {
     return () => window.removeEventListener('contextmenu', onContextMenu)
   }, [])
 
+  // A link in a note is a destination written down, not somewhere to be sent: a
+  // plain click on one does nothing at all, and it takes Ctrl (⌘) to open it — in
+  // the desktop's own browser, through the same tool the palette runs, rather than
+  // in an Electron window signed in as nobody.
+  useEffect(() => {
+    const onClick = (e: MouseEvent): void => {
+      const link = e.target instanceof HTMLElement ? e.target.closest('a[href]') : null
+      if (!link) return
+      // Whether or not it is being opened: what must not happen is the app
+      // navigating itself to the page.
+      e.preventDefault()
+      const url = link.getAttribute('href')
+      if (!url || !(e.ctrlKey || e.metaKey)) return
+      runTool('link.open', { extra: { url } })
+    }
+    window.addEventListener('click', onClick)
+    return () => window.removeEventListener('click', onClick)
+  }, [])
+
   // Middle click opens the row under the cursor in a new tab, the way it opens a
   // link in a browser. Same seam as the right-click above: the row publishes its
   // id, the tool takes it from the context.

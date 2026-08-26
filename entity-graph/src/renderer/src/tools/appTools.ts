@@ -2,6 +2,7 @@ import { TOOL_ID } from '../../../core/builtins'
 import { refreshDerived } from '../../../core/cache'
 import { createEntity } from '../source/entity'
 import { openExternal } from '../source/files'
+import { copyText } from '../helpers/clipboard'
 import * as R from '../state/reducers'
 import { focusOf, getLayout, updateLayout } from '../state/store'
 import { toggleTheme, updateUi, uiAtom } from '../state/ui'
@@ -179,6 +180,25 @@ export const APP_TOOLS: ToolSpec[] = [
       // The scheme is checked on the other side of the bridge, where it matters.
       await openExternal(href)
       return { message: `Opened ${href}` }
+    },
+  },
+  {
+    // The other half of what you do with something written down. `entity.copy`
+    // copies a *row*; this copies whatever it is handed, which is what lets a
+    // button in a note put its own URL, its branch name or its id on the
+    // clipboard — `tool.copyToClipboard(values.permalink)`.
+    id: 'clipboard.copy',
+    label: 'Copy to clipboard',
+    aliases: ['copy text', 'clipboard', 'copy url', 'copy link'],
+    hint: 'Shell',
+    scope: 'app',
+    reach: 'ui',
+    args: [{ name: 'text', label: 'Text', placeholder: 'What to copy' }],
+    run: async ({ text }) => {
+      const value = String(text ?? '')
+      if (!value) throw new Error('Nothing to copy')
+      await copyText(value)
+      return { message: 'Copied' }
     },
   },
   {
