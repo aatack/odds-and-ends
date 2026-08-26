@@ -92,6 +92,59 @@ function moveSelection(delta: number): void {
 }
 
 /**
+ * How many rows a search for a match steps over before giving up. A predicate
+ * that never matches would otherwise walk the whole of a very long frame on every
+ * press — and to the caller "I stopped looking" and "there is no next one" are the
+ * same answer, since both leave the selection where it was.
+ */
+const SEARCH_LIMIT = 5000
+
+/**
+ * Step the selection to the next row past it that a predicate accepts: the same
+ * stepping the movement keys do, run until something matches rather than once. So
+ * this is "select the next entity where …", and nothing about it is particular to
+ * the find filter — a caller with another question to ask hands in another
+ * predicate.
+ *
+ * It doesn't cycle. Running off either end leaves the selection alone, which is
+ * what "no more matches" should feel like.
+ */
+function selectMatching(delta: number, matches: (row: EntityRow) => boolean): void {
+  const t = target()
+  if (!t || !t.rows.length) return
+  // From just outside the list when nothing is selected, so the first step lands
+  // on the first row — or the last, going backwards — rather than nowhere.
+  let at = t.selectedIndex >= 0 ? t.selectedIndex : delta > 0 ? -1 : t.rows.length
+  for (let steps = 0; steps < SEARCH_LIMIT; steps++) {
+    at += delta
+    const row = t.rows[at]
+    if (!row) return
+    if (row.kind !== 'entity' || !matches(row)) continue
+    A.selectPath(t.frame.id, row.path)
+    return
+  }
+}
+
+/**
+ * A row that says the phrase itself, as against one the find filter kept because
+ * something *under* it says it. Stepping through matches should step through the
+ * rows that matched, so an ancestor carried along for the tree to still read is
+ * stepped over — which is also what keeps sections-only and find together honest.
+ */
+const says =
+  (phrase: string) =>
+  (row: EntityRow): boolean => {
+    const needle = phrase.trim().toLowerCase()
+    return !!needle && (row.text ?? '').toLowerCase().includes(needle)
+  }
+
+/** Step to the next row that says what the frame is filtering on. */
+function selectMatchingFind(delta: number): void {
+  const find = target()?.frame.find
+  if (find != null) selectMatching(delta, says(find))
+}
+
+/**
  * How many times the frame's ceiling may be doubled to reach the row jumped to.
  * The walk is bounded by a page until the view scrolls, and the whole point of
  * jumping to the end is not having scrolled — so the ceiling is raised until the
@@ -187,6 +240,26 @@ export const FRAME_TOOLS: ToolSpec[] = [
     reach: 'ui',
     keys: [{ key: 'End' }],
     run: jumpToEnd,
+  },
+  {
+    // No key of its own. Tab is `frame.searchInside` everywhere but inside the
+    // find field, and which box has the caret is not something the key router
+    // resolves — it goes through the focus chain on purpose — so the field calls
+    // this itself. In the palette either way.
+    id: 'select.nextMatch',
+    label: 'Select next match',
+    aliases: ['find next', 'next result', 'next match'],
+    scope: 'frame',
+    reach: 'ui',
+    run: () => selectMatchingFind(1),
+  },
+  {
+    id: 'select.prevMatch',
+    label: 'Select previous match',
+    aliases: ['find previous', 'previous result', 'previous match'],
+    scope: 'frame',
+    reach: 'ui',
+    run: () => selectMatchingFind(-1),
   },
   {
     id: 'collapse',
