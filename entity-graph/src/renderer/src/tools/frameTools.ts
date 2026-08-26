@@ -7,6 +7,7 @@ import { findField, requestFocus } from '../state/focusRequest'
 import { loadMore, rowsOf } from '../state/query'
 import * as R from '../state/reducers'
 import { focusOf, getLayout, updateLayout } from '../state/store'
+import { uiAtom } from '../state/ui'
 import {
   directionOf,
   frameDepth,
@@ -445,6 +446,43 @@ export const FRAME_TOOLS: ToolSpec[] = [
   },
 
   // --- Find and depth -----------------------------------------------------
+  {
+    // `d`, `q` and ⌘F in one press, because that is what looking for something in
+    // a deep tree is every single time: open the thing you are standing on, cut it
+    // down to its headings, and start typing. Tab, type, Enter, Tab, type, Enter
+    // is then a search that descends — Enter hands the keyboard back, which is
+    // what leaves Tab free to mean this again.
+    id: 'frame.searchInside',
+    label: 'Search inside',
+    aliases: ['drill in', 'find within', 'outline search', 'descend'],
+    scope: 'frame',
+    reach: 'ui',
+    keys: [{ key: 'Tab' }],
+    // The one bare key worth checking before taking: Tab is how a keyboard moves
+    // between controls, and the app's other letters are only ever letters. So it
+    // is the tree's while the tree is what is on screen, and everywhere else it
+    // is left to do what it has always done.
+    enabled: () => {
+      const ui = uiAtom.get()
+      return ui.page === 'editor' && !ui.inspectEntityId && !ui.debugSource && !ui.activityOpen
+    },
+    run: () => {
+      const t = target()
+      if (!t) return
+      const id = last(t.selectedPath)
+      // The same guard `entity.open` has: a frame rooted at what is selected is
+      // the frame you are already in, so there is nowhere to go and the rest of
+      // this searches where you stand.
+      if (id && id !== t.frame.rootId) A.pushFrame(t.tab.id, id)
+      const { frameId } = focusOf(getLayout())
+      if (!frameId) return
+      // Set rather than toggled. `q` is the toggle; this means "show me the
+      // headings", which pressing again should not undo.
+      A.setSectionsOnly(frameId, true)
+      if (getLayout().frames[frameId]?.find == null) A.setFind(frameId, '')
+      requestFocus(findField(frameId))
+    },
+  },
   {
     // Takes no text: it opens the frame's own field, which edits `find` directly
     // from then on. Asking for the text up front would mean typing the filter
