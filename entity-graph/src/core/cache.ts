@@ -20,7 +20,7 @@ import type { EntitySource } from './query'
 // is marked for re-reading, because everything else in here is as true as it was
 // a moment ago. The wholesale version (`refreshEntities`) is kept for the one
 // case that has nothing to go on: a change made somewhere this client cannot see.
-
+//
 // Nor does invalidation take anything away. An entry marked for re-reading keeps
 // its events and goes to `stale`, so a row goes on showing what it has instead of
 // emptying out and filling again. Doing it the other way — putting entries back
@@ -387,7 +387,6 @@ function invalidate(entry: CachedEntity): CachedEntity | null {
 export function refreshEntities(): void {
   const cache = entitiesAtom.get()
   noteWrites(Object.keys(cache))
-  wanted.clear()
   entitiesAtom.set(() => {
     const next: EntityCache = {}
     for (const [id, entry] of Object.entries(cache)) next[id] = invalidate(entry) ?? entry
