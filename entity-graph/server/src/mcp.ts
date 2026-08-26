@@ -137,8 +137,9 @@ const MCP_TOOLS: McpTool[] = [
       '`path`, with the other arguments unchanged, for the next page.\n\n' +
       '`sections` and `find` narrow what comes back *after* the walk, so `limit` always ' +
       'means "notes visited": a narrow filter over a wide outline answers quickly with ' +
-      `few rows and a path to continue from. Start from \`${ROOT_ID}\` if you have no ` +
-      'better place to begin.',
+      'few rows and a path to continue from. `open` narrows the walk itself as well, ' +
+      `since nothing under a ticked task is outstanding. Start from \`${ROOT_ID}\` if ` +
+      'you have no better place to begin.',
     needs: 'query',
     readOnly: true,
     inputSchema: {
@@ -167,6 +168,13 @@ const MCP_TOOLS: McpTool[] = [
             'Keep only sections (plus the note asked for) — the outline as a table of ' +
             'contents. The way to survey something before reading it.',
         },
+        open: {
+          type: 'boolean',
+          description:
+            'Keep only unticked tasks (plus the note asked for), and stop walking at ' +
+            'ticked ones — the outline as what is left to do. A note that is not a task ' +
+            'is neither, so the walk reads through it to the tasks under it.',
+        },
         find: {
           type: 'string',
           description:
@@ -182,6 +190,7 @@ const MCP_TOOLS: McpTool[] = [
         limit: args.limit ?? QUERY_LIMIT,
         maxDepth: args.maxDepth,
         sections: args.sections,
+        open: args.open,
         find: args.find,
       })) as QueryPage
       const outline = outlineMarkdown(rowsOfPage(page.rows), { ids: true })

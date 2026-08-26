@@ -314,7 +314,8 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
       '`find` and `sections` filter the rows *after* the walk, so `limit` always ' +
       'means "entities visited" (reported as `scanned`) and a narrow filter over ' +
       'a wide tree comes back quickly with few rows and a continuation, rather ' +
-      'than reading the whole thing.',
+      'than reading the whole thing. `open` is the exception: it narrows the walk ' +
+      'as well, since nothing under a ticked item is outstanding.',
     safety: 'pure',
     args: z.object({
       path: z
@@ -353,6 +354,15 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
         .boolean()
         .optional()
         .describe('Keep only section rows — the tree read as a table of contents.'),
+      open: z
+        .boolean()
+        .optional()
+        .describe(
+          'Keep only unticked tasks (`open: true`), and stop walking at ticked ' +
+            'ones (`open: false`) — the tree read as what is left to do. A note ' +
+            'that is not a task at all is neither, so the walk goes through it to ' +
+            'whatever tasks hang off it.',
+        ),
     }),
     handler: (a: {
       path: string | string[]
@@ -361,6 +371,7 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
       direction?: LinkDirection
       find?: string
       sections?: boolean
+      open?: boolean
     }) => {
       const start = typeof a.path === 'string' ? [a.path] : a.path
       if (!start.length) throw new Error('path must name at least one entity')
@@ -381,7 +392,7 @@ export function defaultTools(perms: Permissions, opts: DefaultToolOptions = {}):
           maxDepth: a.maxDepth == null ? {} : { [start[0]]: a.maxDepth },
         },
         a.limit ?? QUERY_LIMIT,
-        { find: a.find, sections: a.sections },
+        { find: a.find, sections: a.sections, open: a.open },
       )
     },
   }
