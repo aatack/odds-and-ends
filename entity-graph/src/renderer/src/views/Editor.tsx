@@ -73,6 +73,8 @@ export interface EditorProps {
   selectedIndex: number
   editIndex: number
   loading: boolean
+  /** The frame's find text, marked in every row that says it. */
+  highlight?: string
   onSelectRow: (path: string[]) => void
   onToggleCollapse: (row: EntityRow) => void
   /** Every keystroke of an in-place edit; the draft is part of the frame's state. */
@@ -113,6 +115,7 @@ export function Editor(props: EditorProps): React.JSX.Element {
     selectedIndex,
     editIndex,
     loading,
+    highlight,
     onSelectRow,
     onToggleCollapse,
     onDraft,
@@ -261,6 +264,7 @@ export function Editor(props: EditorProps): React.JSX.Element {
         row={row}
         measureKey={key}
         run={run}
+        highlight={highlight}
         onMeasure={setHeight}
         onSelectRow={onSelectRow}
         onToggleCollapse={onToggleCollapse}
@@ -319,6 +323,8 @@ interface RowProps {
   row: Row
   measureKey: string
   run?: CodeRunState
+  /** The frame's find text; a string, so it doesn't defeat the memo. */
+  highlight?: string
   onMeasure: (key: string, height: number) => void
   onSelectRow: (path: string[]) => void
   onToggleCollapse: (row: EntityRow) => void
@@ -333,6 +339,7 @@ const RowView = React.memo(function RowView({
   row,
   measureKey,
   run,
+  highlight,
   onMeasure,
   onSelectRow,
   onToggleCollapse,
@@ -496,6 +503,7 @@ const RowView = React.memo(function RowView({
                   entityId={row.id}
                   path={row.path}
                   text={text}
+                  highlight={highlight}
                   className={cn(TEXT, 'text-gray-500')}
                 />
               )}
@@ -508,6 +516,7 @@ const RowView = React.memo(function RowView({
               entityId={row.id}
               path={row.path}
               text={text}
+              highlight={highlight}
               className={cn(
                 TEXT,
                 row.section && 'font-semibold',

@@ -310,6 +310,21 @@ html.dark {
   border-radius: 0.375rem;
 }
 
+/* What a row was kept for, under the words rather than over them: translucent, so
+ * the ink is the row's own and a match inside a heading or a link still reads as
+ * one. Yellow at a quarter, which is enough to find by eye and not enough to be a
+ * colour in the design. */
+.markdown mark {
+  background: rgb(250 204 21 / 0.28);
+  color: inherit;
+  border-radius: 0.125rem;
+  padding: 0 0.05em;
+}
+
+html.dark .markdown mark {
+  background: rgb(250 204 21 / 0.22);
+}
+
 .markdown hr {
   border: 0;
   border-top: 1px solid var(--color-gray-100);

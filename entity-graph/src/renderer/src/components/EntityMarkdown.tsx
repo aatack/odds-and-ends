@@ -38,6 +38,7 @@ export function EntityMarkdown({
   text,
   className,
   style,
+  highlight,
 }: {
   entityId: string
   /** The row's path in the frame, which is what a field's calls are aimed along. */
@@ -45,6 +46,8 @@ export function EntityMarkdown({
   text: string
   className?: string
   style?: React.CSSProperties
+  /** The frame's find text, marked wherever the row says it. */
+  highlight?: string
 }): React.JSX.Element {
   // Keyed on the path's serialisation rather than the array: the rows are rebuilt
   // whenever anything lands in the entity cache, so the array is new constantly
@@ -65,7 +68,15 @@ export function EntityMarkdown({
     }
   }, [entityId, at])
 
-  return <Markdown text={text} className={className} style={style} fields={fields} />
+  return (
+    <Markdown
+      text={text}
+      className={className}
+      style={style}
+      fields={fields}
+      highlight={highlight}
+    />
+  )
 }
 
 /**
