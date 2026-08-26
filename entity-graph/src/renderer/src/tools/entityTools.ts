@@ -253,6 +253,7 @@ export const ENTITY_TOOLS: ToolSpec[] = [
     aliases: ['debug', 'info', 'raw', 'events', 'values', 'links', 'lookup', 'find id'],
     scope: 'frame',
     reach: 'ui',
+    keys: [{ key: '3' }],
     args: [entityArg()],
     run: ({ entityId }) => updateUi({ inspectEntityId: requireId(entityId, 'Entity id') }),
   },
