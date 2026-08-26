@@ -51,14 +51,28 @@ Consequences worth knowing:
   `applyEvents`/`removeEvents`). The client knows exactly what the store will
   hold — timestamp and author included — so it applies that and lets the round
   trip happen behind the change the user already sees. A failed write takes its
-  events back out. `createEntity` is the exception: the id is the server's, so
-  its result arrives with the refresh like anything else.
-- **A mutating tool invalidates everything rather than working out what it
-  touched.** Entries keep their events and are marked unloaded, so rows carry on
-  showing what they have while the fresh events are on their way — and the
-  re-render the invalidation itself causes is what asks for them.
+  events back out. `createEntity` and `moveEntity` are the exceptions: the id is
+  the server's, so there are no events to hand over, and they name the entities
+  they touched instead (`touched`, wired to `invalidateEntities`).
+- **Invalidation is by name.** A write says what it changed, so that is all that
+  is read again — the parent whose links moved, and not the two hundred rows
+  around it. The wholesale version (`refreshEntities`) is kept for what has
+  nothing to go on: a change made where this client cannot see it. That is an
+  integration tool declaring `writesUnseen` — a Claude session writing notes over
+  MCP — the inspector's raw events, and the `source.refresh` tool for saying so
+  by hand. It is pointedly *not* on the end of every keystroke, which is what it
+  used to be.
+- **Invalidation takes nothing away.** An entry marked for re-reading keeps its
+  events and goes to `stale`, which is complete-but-perhaps-old and deliberately
+  not a kind of waiting: a row goes on showing what it has rather than emptying
+  out and filling again. Marking entries `unloaded` instead is what had every row
+  on screen flash its loading state on every keystroke.
 - **Nothing is refetched that nothing is reading.** Invalidation is a mark, not
   a queue.
+- **A read overtaken by a write is distrusted per entity, not per response.** A
+  scan is issued against the store as it stood, so an entity written to since is
+  one whose answer would put the change back; the rest of that answer is as good
+  as it ever was, and is taken.
 
 ### Reading the store
 
@@ -337,7 +351,7 @@ shown where the script is — the code entity's own output, and the error the ca
 records against the entity whose `events` threw.
 
 So `origin` decides two things and they agree: a script's call runs, writes,
-refreshes the frames and returns its value, and leaves no other trace.
+brings the cache into step and returns its value, and leaves no other trace.
 
 A call that would be kept is recorded **before** it runs, as `running`, and
 settled in place afterwards. `claude.runPrompt` holds a session open for minutes,
@@ -511,10 +525,13 @@ that field answers through `useFocusRequest`. It is a signal, not state: runtime
 only, carrying a nonce so asking twice for the same field lands twice, and
 cleared once taken so the next field of that name to mount doesn't inherit it.
 
-A tool declares whether it `mutates`, which is what makes every open frame
-refetch; a run can override that when it turns out there was nothing to write
-(committing an editor that was already empty, say), so a blur doesn't cost a
-round of queries.
+A tool declares whether it `mutates`, which strands the undo stack — a run can
+override that when it turns out there was nothing to write (committing an editor
+that was already empty, say). It says nothing about refetching: a write goes
+through `source/entity`, which tells the cache what it changed on its way out, so
+there is nothing left for the call machine to invalidate. `writesUnseen` is the
+separate declaration for the other case — the store may have changed where this
+side cannot see it, and everything is read again.
 
 One tool takes an argument it could have inferred: `edit.commit` names its frame,
 because a blur can arrive after the click that moved focus somewhere else, and the

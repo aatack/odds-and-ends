@@ -45,7 +45,7 @@ definition that wants to sit under a heading of "Slack things" hangs under one.
 | `scope` | `frame` \| `group` \| `app` | no | `app` | Which part of the focus chain a key resolves against. |
 | `reach` | `ui` \| `source` \| `external` | no | `external` | How far it reaches, and so whether its calls are kept in the log. |
 | `key` | string | no | none | A binding: `g`, `shift+g`, `mod+shift+j`. `mod` is Ctrl or ⌘. |
-| `mutates` | boolean | no | `false` | Rarely needed: a body can only write *through* a write tool, and each of those refreshes the frames on its own way out. |
+| `mutates` | boolean | no | `false` | Rarely needed: a body can only write *through* a write tool, and each of those tells the cache what it changed on its own way out. |
 | `safety` | `pure` \| `safe-mutating` \| `dangerous` | no | `dangerous` | Read by the *server* only, for its capability filters. |
 
 ## Arguments
