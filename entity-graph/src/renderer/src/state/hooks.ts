@@ -16,7 +16,7 @@ import type { EntitySource } from '../../../core/query'
 import { focusRequestAtom, focusTaken } from './focusRequest'
 import { rowLimitsAtom, treeOf } from './query'
 import { loadResource, resourcesAtom, type ResourceState } from './resources'
-import { callsAtom, focusOf, layoutAtom, pendingAtom, type Focus } from './store'
+import { callsAtom, focusOf, layoutAtom, pendingAtom, runningCallsAtom, type Focus } from './store'
 import { themeAtom, uiAtom, type Theme, type UiState } from './ui'
 import type { LayoutState, PendingCall, RecordedCall } from './types'
 
@@ -30,6 +30,15 @@ export function useAtomValue<T>(atom: Atom<T>): T {
 export const useLayoutState = (): LayoutState => useAtomValue(layoutAtom)
 export const usePendingCall = (): PendingCall | null => useAtomValue(pendingAtom)
 export const useCalls = (): RecordedCall[] => useAtomValue(callsAtom)
+
+/**
+ * Whether one particular call is still running. Takes the id rather than the list
+ * so a control can watch its own press and nothing else: the list changes on every
+ * call anything makes, and a button redrawing for somebody else's is noise.
+ */
+export const useCallRunning = (callId: string | null): boolean =>
+  useAtomValue(runningCallsAtom).includes(callId ?? '')
+
 export const useUi = (): UiState => useAtomValue(uiAtom)
 
 /** The theme, applied to <html> so the token overrides take effect. */

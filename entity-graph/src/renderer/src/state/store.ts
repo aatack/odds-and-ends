@@ -1,4 +1,4 @@
-import { persistentAtom } from './atom'
+import { atom, persistentAtom } from './atom'
 import {
   defaultLayout,
   isLayoutState,
@@ -49,6 +49,16 @@ callsAtom.set((list) =>
       )
     : list,
 )
+
+/**
+ * The ids of the calls running right now. Apart from the log, and runtime only,
+ * because it answers a different question: the log keeps what is *worth keeping*,
+ * which is almost none of the calls a gesture makes, while anything that pressed
+ * a button wants to know whether that press is still going — however unremarkable
+ * the call behind it. A window that closes mid-call takes this with it, which is
+ * right: nothing is waiting on those calls any more.
+ */
+export const runningCallsAtom = atom<readonly string[]>([])
 
 export const getLayout = (): LayoutState => layoutAtom.get()
 
