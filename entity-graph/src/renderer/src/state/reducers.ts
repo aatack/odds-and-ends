@@ -1,5 +1,7 @@
 import {
   ROOT_ID,
+  SECTION_DEPTH,
+  frameDepth,
   last,
   newFrame,
   newTab,
@@ -74,8 +76,22 @@ export const setEdit = (s: LayoutState, frameId: string, edit: EditState | null)
 export const setFind = (s: LayoutState, frameId: string, find: string | null): LayoutState =>
   updateFrame(s, frameId, (f) => ({ ...f, find }))
 
+/**
+ * Turning the outline on gives the frame a depth of three *unless it already has
+ * one*, which is the user's and stands; turning it off takes the depth away
+ * whether the outline put it there or not. The two are separate state now — the
+ * depth is a limit the frame holds and ⇧←/⇧→ move — and this is all that is left
+ * of the one implying the other: an opening move rather than a rule.
+ */
 export const setSectionsOnly = (s: LayoutState, frameId: string, on: boolean): LayoutState =>
-  updateFrame(s, frameId, (f) => ({ ...f, sectionsOnly: on }))
+  updateFrame(s, frameId, (f) => {
+    const next = { ...f, sectionsOnly: on }
+    if (!on) return withDepth(next, null)
+    return frameDepth(f) == null ? withDepth(next, SECTION_DEPTH) : next
+  })
+
+export const setOpenOnly = (s: LayoutState, frameId: string, on: boolean): LayoutState =>
+  updateFrame(s, frameId, (f) => ({ ...f, openOnly: on }))
 
 export const setDirection = (
   s: LayoutState,
@@ -89,7 +105,27 @@ export const setMaxDepth = (
   entityId: string,
   depth: number | null,
 ): LayoutState =>
-  updateFrame(s, frameId, (f) => ({ ...f, maxDepth: { ...f.maxDepth, [entityId]: depth } }))
+  updateFrame(s, frameId, (f) => ({
+    ...f,
+    // Zero is not a cap; it says "no limit" here as it does everywhere else, and
+    // is kept as an explicit null so that an entity deep in the tree can still
+    // use one to lift a cap set above it.
+    maxDepth: { ...f.maxDepth, [entityId]: depth != null && depth > 0 ? depth : null },
+  }))
+
+/** The frame's own limit, which is the root's entry: absent when there is none. */
+const withDepth = (f: FrameState, depth: number | null): FrameState => {
+  const maxDepth = { ...f.maxDepth }
+  if (depth != null && depth > 0) maxDepth[f.rootId] = depth
+  else delete maxDepth[f.rootId]
+  return { ...f, maxDepth }
+}
+
+export const setFrameDepth = (
+  s: LayoutState,
+  frameId: string,
+  depth: number | null,
+): LayoutState => updateFrame(s, frameId, (f) => withDepth(f, depth))
 
 // --- Collapse (per tab) -----------------------------------------------------
 

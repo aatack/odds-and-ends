@@ -164,23 +164,6 @@ export const setQueryObserver = (
   observer = fn
 }
 
-/**
- * How far below its root a frame reading only sections walks, unless the frame
- * says otherwise. An outline is a table of contents rather than a search: a
- * heading buried six levels down is not part of the shape of the thing, and
- * walking to it costs a whole subtree of rows that are then thrown away. Three
- * levels is what fits on a screen and what the walk can finish.
- */
-export const SECTION_DEPTH = 3
-
-/**
- * The depth cap sections-only puts on a frame, or null when the frame sets its
- * own for the root — an explicit limit is the user's, including a `null` one,
- * which is how they say "all of it" and get it.
- */
-export const sectionDepth = (frame: FrameState): number | null =>
-  frame.sectionsOnly && !(frame.rootId in frame.maxDepth) ? SECTION_DEPTH : null
-
 /** Everything about a frame's rows that its selection cannot change. */
 export function frameTree(
   frame: FrameState,
@@ -189,17 +172,18 @@ export function frameTree(
   limit: number,
 ): FrameTree {
   observer?.(frame, limit)
-  const implied = sectionDepth(frame)
   const { rows, complete, loading, error } = buildTree(
     [frame.rootId],
     source,
     {
       direction: directionOf(frame),
       collapsed: collapsedBelow(collapsed, frame.rootId),
-      maxDepth: implied == null ? frame.maxDepth : { ...frame.maxDepth, [frame.rootId]: implied },
+      // The frame's own limit is already in here, under its root: the sections
+      // filter puts one there rather than implying one of its own.
+      maxDepth: frame.maxDepth,
     },
     limit,
-    { find: frame.find, sections: frame.sectionsOnly },
+    { find: frame.find, sections: frame.sectionsOnly, open: frame.openOnly },
   )
 
   // Keys and their index, once, here — where the rows are built and not again

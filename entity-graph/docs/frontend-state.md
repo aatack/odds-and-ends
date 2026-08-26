@@ -102,8 +102,8 @@ scroll to ask for more (`state/query.ts`).
 ### One resolution per frame, not one per read
 
 `treeOf` keeps the last traversal each frame resolved, against the values that
-shape it: root, direction, find, sections-only, the depth map, the folded set,
-the row limit, and the cache. Anything else that changes does not re-resolve it.
+shape it: root, direction, find, sections-only, open-only, the depth map, the
+folded set, the row limit, and the cache. Anything else that changes does not re-resolve it.
 
 Chief among the anything else is **the selection**, and that is the point. The
 selection is part of the frame, so a memo keyed on the frame — which is what a
@@ -418,8 +418,8 @@ twice in one frame can be selected in one place but folds in both. That
 asymmetry is intended.
 
 A frame holds its root entity id, which way its query reads, the latent selection
-path, its filters (nullable find text, a sections-only flag), a per-entity
-max-depth map, and any in-progress edit.
+path, its filters (nullable find text, a sections-only flag, an open-items-only
+flag), a per-entity max-depth map, and any in-progress edit.
 
 - The **selection path** is latent and never overwritten by the resolved one.
   Resolution strips trailing ids until the path exists in the rendered rows,
@@ -437,12 +437,21 @@ max-depth map, and any in-progress edit.
   key means the same thing whatever state the frame is in. Enter blurs the
   field, handing bare keys back to navigation; the text stays. Matching rows keep
   their ancestors, so the tree still reads.
-- **Sections only** is the other filter: keep the section rows and the frame's
+- **Sections only** is the second filter: keep the section rows and the frame's
   root, and drop everything else — the tree as a table of contents. Unlike find
   it does *not* keep non-matching ancestors, since the point is to see the
   sections and nothing else; rows keep their real depth, so a section nested
-  inside an ordinary entity still reads as nested. Applied after find, so the two
-  compose. Both are filters over the rows, not different queries, and both show
+  inside an ordinary entity still reads as nested. Find is applied last, so they
+  compose: what comes back is the headings that say the thing, rather than every
+  heading above anything that does.
+- **Open items only** is the third, and the one that is not only a filter over
+  the rows: it keeps what is still open (`open: true`) plus the frame's root, and
+  it also *stops the walk* at anything ticked (`open: false`), since what is
+  under a finished item is finished too. A plain bullet is neither — the walk
+  goes straight through it to whatever tasks hang off it. That is the split
+  `core/query` now draws: whether a row is worth showing (`filterPaths`) and
+  whether the walk carries on below it (`childrenOf`).
+- All three are filters over the rows rather than different queries, and all show
   in the frame's top-right corner — the find field, and a pill for anything with
   nothing to configure.
 - **Direction** is the first thing about a frame's *query* rather than its rows:
@@ -457,11 +466,21 @@ max-depth map, and any in-progress edit.
   carry into a new frame is still an open question.
 - **Per-entity max depth** is honoured in full, now that the traversal runs on
   the client: the nearest ancestor with an entry decides, its cap counted from
-  itself, and an explicit `null` deep in the tree lifts a cap set above it.
+  itself, and an explicit `null` deep in the tree lifts a cap set above it. The
+  *root's* entry is the frame's own limit and is state in its own right, no
+  longer something the sections filter implies: ⇧← and ⇧→ move it, and a pill in
+  the corner shows it and carries the same two arrows. No limit is the bottom of
+  that scale rather than something off the end of it — ⇧→ from nothing caps at
+  one level and works up, ⇧← works back down until the cap comes off, and ⇧← with
+  no cap does nothing, so the key can be leant on and always arrives at the whole
+  tree. Neither reports anything: the pill is where a depth is read, and a toast
+  per press would be a stack of them. Turning the outline on gives a frame three
+  levels *unless it already has a limit*, which is the user's and stands; turning
+  the outline off takes the limit away either way.
 - What else a frame's query could be — beyond its root, its depth and its
   direction — is still to be designed. Pre- and post-filters, in particular,
-  are not in the traversal yet: find and sections-only remain filters over the
-  rows it produces.
+  are only half in the traversal: find and sections-only remain filters over the
+  rows it produces, while open-items-only prunes the walk as well.
 - Scroll position is not tracked. The view keeps the selected row, and the row
   being typed into, scrolled 30% in from the edge; the row being typed into is
   also mounted whatever the virtual window says, or its box would never take the
@@ -527,7 +546,8 @@ state. It resolves in this order:
 
 Escape therefore has a pecking order without anything spelling one out: a
 pending call, then the activity log, then an in-place edit, then a frame's find
-field, then its sections filter — each step is just a tool that isn't `enabled`
+field, then its sections filter, then its open filter — each step is just a tool
+that isn't `enabled`
 unless there is something for it to do, declared in the order it should be tried.
 
 Some of the keys the app wants belong to Electron's default menu, which consumes

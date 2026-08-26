@@ -64,16 +64,31 @@ function budget(path: readonly string[], maxDepth: Record<string, number | null>
 
 /**
  * The children of the entity at the end of `path`, as the traversal sees them:
- * nothing at all when it is folded or out of depth, and never an entity already
- * on the path — the same entity may appear in several branches, but it can't be
- * its own ancestor.
+ * nothing at all when the walk does not carry on through it, and never an entity
+ * already on the path — the same entity may appear in several branches, but it
+ * can't be its own ancestor.
+ *
+ * Whether it carries on is the second half of a filter — see
+ * {@link filterPaths} for the first — and the half that has to happen here
+ * rather than afterwards, since a subtree nobody walks is a subtree nobody pays
+ * for. The order of the tests is the order of their cost: folding and depth are
+ * read off the path, and only what survives them is worth reading an entity for.
  */
-export function childrenOf(path: readonly string[], get: GetEntities, t: Traversal): string[] {
+export function childrenOf(
+  path: readonly string[],
+  get: GetEntities,
+  t: Traversal,
+  filters: QueryFilters = {},
+): string[] {
   const id = last(path)
   if (id === undefined) return []
   if (t.collapsed.includes(id) || budget(path, t.maxDepth) <= 0) return []
   const entity = get([id])[id]
   if (!entity) return []
+  // A ticked item takes its subtree with it: what is under something finished is
+  // finished too. `null` is not `false` — a plain bullet is neither, so the walk
+  // goes through it to whatever tasks hang off it.
+  if (filters.open && entity.values.open === false) return []
   return linksOf(entity, t.direction).filter((child) => !path.includes(child))
 }
 
@@ -91,13 +106,14 @@ export function stepPath(
   path: readonly string[],
   get: GetEntities,
   t: Traversal,
+  filters: QueryFilters = {},
 ): string[] | null {
-  const children = childrenOf(path, get, t)
+  const children = childrenOf(path, get, t, filters)
   if (children.length) return [...path, children[0]]
 
   for (let i = path.length - 1; i > 0; i--) {
     const parentPath = path.slice(0, i)
-    const siblings = childrenOf(parentPath, get, t)
+    const siblings = childrenOf(parentPath, get, t, filters)
     const at = siblings.indexOf(path[i])
     if (at >= 0 && at + 1 < siblings.length) return [...parentPath, siblings[at + 1]]
   }
@@ -123,12 +139,13 @@ export function resolveQuery(
   get: GetEntities,
   t: Traversal,
   limit: number,
+  filters: QueryFilters = {},
 ): ResolvedQuery {
   const paths: string[][] = []
   let path: string[] | null = [...start]
   while (path && paths.length < limit) {
     paths.push(path)
-    path = stepPath(path, get, t)
+    path = stepPath(path, get, t, filters)
   }
   return { paths, complete: path == null, next: path }
 }
@@ -136,38 +153,49 @@ export function resolveQuery(
 // --- Filters ----------------------------------------------------------------
 
 /**
- * What to keep of what the traversal reached. These are filters over the rows
- * rather than part of the walk: the traversal decides where to go, and this
- * decides what is worth showing, so a limit means the same thing either way.
+ * What to keep of what the traversal reached. A filter is two questions rather
+ * than one: whether a row is worth showing ({@link filterPaths}), and whether
+ * the walk carries on below it ({@link childrenOf}). Most of them only answer
+ * the first — the traversal decides where to go and the filter decides what is
+ * worth showing, so a limit means the same thing either way — but `open` answers
+ * both, because a ticked item's subtree is not somewhere to look.
  */
 export interface QueryFilters {
   /** Keep rows whose text contains this, plus their ancestors. */
   find?: string | null
   /** Keep only section rows, plus the row the query started from. */
   sections?: boolean
+  /**
+   * Keep only rows left open (`open: true`), plus the row the query started
+   * from — and stop the walk at the ones that have been ticked (`open: false`).
+   */
+  open?: boolean
 }
 
 const key = (path: readonly string[]): string => path.join('\0')
 
 /**
- * Apply the filters to a set of resolved paths.
+ * Which of the paths the traversal reached are worth showing — the first half of
+ * a filter; {@link childrenOf} is the other, and is where `open` prunes the walk
+ * itself.
  *
- * Find keeps a matching row's ancestors, so the tree still reads. Sections
- * pointedly does not — the point of it is to see the sections and nothing else.
- * Either way this returns the paths as they really are; how far in each of them
- * *reads* once its neighbours have gone is the tree's business, and closing the
- * gaps a filter leaves is what `keptDepths` in ./tree does.
+ * Find keeps a matching row's ancestors, so the tree still reads. Sections and
+ * open pointedly do not — the point of them is to see the headings, or the
+ * tasks, and nothing else. Either way this returns the paths as they really are;
+ * how far in each of them *reads* once its neighbours have gone is the tree's
+ * business, and closing the gaps a filter leaves is what `keptDepths` in ./tree
+ * does.
  *
- * Sections is applied *first*, so that both together mean "sections matching
+ * Find is applied *last*, so that all of them together mean "sections matching
  * this" rather than "sections, and also whatever matches". Find's ancestors are
- * then the ancestors among what sections kept, so a search of an outline comes
+ * then the ancestors among what the others kept, so a search of an outline comes
  * back as the headings that say it, under the headings they sit beneath. The
  * other way round, find kept every heading above any matching row whatsoever —
  * which for a word written somewhere under most headings is every heading there
  * is, and reads as an `or`.
  *
- * Sections keeps the row the query started from whether or not it is one, since
- * it is the thing that was asked about. That is the *path* it started from, not
+ * Both keep the row the query started from whether or not it qualifies, since it
+ * is the thing that was asked about. That is the *path* it started from, not
  * every row at that depth: a walk resumed in the middle of the tree would
  * otherwise let every sibling of the resume point through.
  */
@@ -181,10 +209,14 @@ export function filterPaths(
   const entities = get(paths.map((path) => last(path)))
   const values = (path: readonly string[]): Record<string, unknown> =>
     entities[last(path)]?.values ?? {}
+  const asked = (path: readonly string[]): boolean => key(path) === key(start)
 
   let kept = paths
   if (filters.sections) {
-    kept = kept.filter((path) => key(path) === key(start) || values(path).section === true)
+    kept = kept.filter((path) => asked(path) || values(path).section === true)
+  }
+  if (filters.open) {
+    kept = kept.filter((path) => asked(path) || values(path).open === true)
   }
   if (find) {
     const keep = new Set<string>()
@@ -268,7 +300,7 @@ export async function runQuery(
 
   /** The page as it stands, recording everything it wanted and didn't have. */
   const pass = (): QueryPage => {
-    const resolved = resolveQuery(start, get, t, limit)
+    const resolved = resolveQuery(start, get, t, limit, filters)
     const kept = filterPaths(start, resolved.paths, get, filters)
     return {
       rows: kept.map((path) => ({ path, entity: get([last(path)])[last(path)] })),

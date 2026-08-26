@@ -33,7 +33,14 @@ export const PAGE_SIZE = 200
  * every row it had to walk past to find three.
  */
 const shapeOf = (frame: FrameState): string =>
-  JSON.stringify([frame.rootId, frame.direction, frame.find, frame.sectionsOnly, frame.maxDepth])
+  JSON.stringify([
+    frame.rootId,
+    frame.direction,
+    frame.find,
+    frame.sectionsOnly,
+    frame.openOnly,
+    frame.maxDepth,
+  ])
 
 /** How far one frame's traversal may walk, and the query that was raised for. */
 export interface RowBudget {
@@ -118,6 +125,7 @@ export function treeOf(
     frame.direction,
     frame.find,
     frame.sectionsOnly,
+    frame.openOnly,
     frame.maxDepth,
     collapsed,
     // The cache rather than a source wrapping it: `entities()` hands back a fresh
