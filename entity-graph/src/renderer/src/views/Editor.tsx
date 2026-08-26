@@ -520,7 +520,10 @@ const RowView = React.memo(function RowView({
               className={cn(
                 TEXT,
                 row.section && 'font-semibold',
-                row.hasChildren && row.collapsed ? 'text-gray-400' : 'text-gray-900',
+                // Muted because there is more here than is on screen — folded,
+                // filtered out, past a depth cap, or below where the walk
+                // stopped. The row is a door rather than the whole of it.
+                row.hidesChildren ? 'text-gray-400' : 'text-gray-900',
               )}
               style={heading}
             />
