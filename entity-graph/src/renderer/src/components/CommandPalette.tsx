@@ -253,6 +253,7 @@ export function CommandPalette(): React.JSX.Element | null {
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder={placeholder}
+          title={activeArg?.description}
           // What the user types is entity content, so it takes the editor's
           // serif; the placeholder is UI chrome, so it stays on the sans.
           className="min-w-0 flex-1 bg-transparent px-4 py-3.5 font-serif text-[14px] text-gray-900 outline-none placeholder:font-sans placeholder:text-[13px] placeholder:text-gray-400"
