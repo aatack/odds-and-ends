@@ -14,6 +14,7 @@ import {
   type FieldElementProps,
   type MarkdownFields,
 } from './markdownFields'
+import { markdownHighlightPlugin } from './markdownHighlight'
 import { cn } from '../../helpers/cn'
 
 // Entity text, rendered. Every row goes through here, so the common case — one
@@ -68,6 +69,7 @@ export function Markdown({
   className,
   style,
   fields,
+  highlight,
 }: {
   text: string
   className?: string
@@ -81,12 +83,25 @@ export function Markdown({
    * render reparses the text on every one of them.
    */
   fields?: MarkdownFields
+  /**
+   * A phrase to mark wherever it appears — the find filter's, so a row kept
+   * because it says the word shows where. Case-insensitive, and empty marks
+   * nothing. See `./markdownHighlight`; it is a plain string, so anything else
+   * with something to point out can use it too.
+   */
+  highlight?: string
 }): React.JSX.Element {
   // The parse is the expensive part of a row, and rows re-render whenever the
   // selection moves past them.
   const tree = useMemo(() => {
     const types = fields ? Object.keys(fields) : []
-    const remark = types.length ? [...REMARK, markdownFieldsPlugin(types)] : REMARK
+    const remark: PluggableList = [
+      ...REMARK,
+      ...(types.length ? [markdownFieldsPlugin(types)] : []),
+      // Last, so it marks what the fields left as text rather than the source of
+      // a field it was about to replace.
+      ...(highlight?.trim() ? [markdownHighlightPlugin(highlight)] : []),
+    ]
     const components: Components = !fields
       ? COMPONENTS
       : ({
@@ -106,7 +121,7 @@ export function Markdown({
         {text}
       </ReactMarkdown>
     )
-  }, [text, fields])
+  }, [text, fields, highlight])
   return (
     <div className={cn('markdown', className)} style={style}>
       {tree}

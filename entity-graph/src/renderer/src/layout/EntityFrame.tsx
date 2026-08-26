@@ -68,6 +68,9 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
           selectedIndex={selectedIndex}
           editIndex={editIndex}
           loading={loading}
+          // What the frame is filtering on, marked in the rows it kept. Null while
+          // there is no field open, which is most of the time.
+          highlight={frame.find ?? undefined}
           onSelectRow={(path) => A.selectPath(frameId, path)}
           onToggleCollapse={(row) => {
             A.selectPath(frameId, row.path)
