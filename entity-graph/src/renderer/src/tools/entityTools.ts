@@ -185,6 +185,24 @@ export const ENTITY_TOOLS: ToolSpec[] = [
     },
   },
   {
+    // A row's id is what every tool that points at an entity asks for, and until
+    // now there was no gesture that put one anywhere you could paste it — into a
+    // prompt, into the palette's entity field, into another note. Bare, because
+    // that is the form each of those wants; `entity.copy` is the one that copies
+    // what a row *says*.
+    id: 'entity.copyId',
+    label: 'Copy entity id',
+    aliases: ['copy link', 'link to entity', 'reference', 'copy id', 'permalink'],
+    scope: 'frame',
+    reach: 'ui',
+    args: [entityArg()],
+    run: async ({ entityId }) => {
+      const target = requireId(entityId, 'Entity id')
+      await copyText(target)
+      return { data: target, message: `Copied ${target}` }
+    },
+  },
+  {
     // One tool, not two. The argument fills itself from the selection, so aimed at
     // something — a right-click, or Enter on it in the palette — this runs straight
     // through on that. Opened cold (⌘P) the context only *offers*, so the field is

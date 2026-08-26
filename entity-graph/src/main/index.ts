@@ -1,7 +1,8 @@
 import { app, BrowserWindow, clipboard, ipcMain, Menu, shell, type MenuItemConstructorOptions } from 'electron'
-import { basename, extname, join } from 'path'
+import { basename, extname, join, resolve } from 'path'
 import { existsSync } from 'fs'
 import { mkdir, writeFile } from 'fs/promises'
+import { homedir } from 'os'
 import { pathToFileURL } from 'url'
 import { randomBytes } from 'crypto'
 import { request as httpRequest } from 'http'
@@ -255,6 +256,32 @@ ipcMain.handle('shell:openExternal', async (_e, url: string): Promise<void> => {
     throw new Error(`Won't open a ${parsed.protocol} link — http, https and mailto only`)
   }
   await shell.openExternal(parsed.href)
+})
+
+/**
+ * What is on the clipboard, as text. Read here rather than through
+ * `navigator.clipboard`, which a browser gates behind a permission prompt there is
+ * nobody to answer: this is the user's own clipboard on the user's own machine,
+ * and a tool that reads it was asked to.
+ */
+ipcMain.handle('clipboard:readText', (): string => clipboard.readText())
+
+/**
+ * Show a file or directory where it lives. `showItemInFolder` opens the parent
+ * with the item *selected*, which is the gesture — "here it is", rather than
+ * "here is what is inside it" — and it does nothing at all for a path that isn't
+ * there, so the check is what turns a typo into something that says so.
+ */
+ipcMain.handle('shell:revealPath', async (_e, path: string): Promise<string> => {
+  const trimmed = String(path ?? '').trim()
+  if (!trimmed) throw new Error('Which path?')
+  // `~` is how a path is written down in a note, and nothing below expands it.
+  const expanded =
+    trimmed === '~' || trimmed.startsWith('~/') ? join(homedir(), trimmed.slice(1)) : trimmed
+  const absolute = resolve(expanded)
+  if (!existsSync(absolute)) throw new Error(`${absolute} isn't on this machine`)
+  shell.showItemInFolder(absolute)
+  return absolute
 })
 
 ipcMain.handle('config:getUser', () => store.get('user'))

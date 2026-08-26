@@ -459,7 +459,7 @@ const DOCS: Doc[] = [
   },
   {
     uri: 'docs://integrations',
-    name: "The server's integrations: GitHub, Slack, Claude Code, git",
+    name: "The server's integrations: GitHub, Slack, Claude Code, git, a terminal",
     description:
       'What the server can reach outside itself, and the id and arguments of every ' +
       'one of those tools. You cannot call them from here — they answer to the admin ' +

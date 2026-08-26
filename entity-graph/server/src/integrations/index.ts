@@ -3,6 +3,7 @@ import { CLAUDE_TOOLS } from './claude'
 import { GIT_TOOLS } from './git'
 import { GITHUB_TOOLS } from './github'
 import { SLACK_TOOLS } from './slack'
+import { TERMINAL_TOOLS } from './terminal'
 
 // The integrations: everything the server can do that reaches outside itself.
 //
@@ -17,6 +18,7 @@ export const INTEGRATION_TOOLS: ToolDef[] = [
   ...GIT_TOOLS,
   ...CLAUDE_TOOLS,
   ...SLACK_TOOLS,
+  ...TERMINAL_TOOLS,
 ]
 
 const byId = new Map(INTEGRATION_TOOLS.map((t) => [t.id, t]))

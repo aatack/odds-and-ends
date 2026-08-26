@@ -42,6 +42,19 @@ export interface EntityGraphAPI {
    */
   openExternal: (url: string) => Promise<void>
 
+  /**
+   * What is on the clipboard, as text. Through the main process because the web
+   * clipboard's read side is behind a permission prompt there is nobody to
+   * answer — the write side isn't, which is why only this half is here.
+   */
+  readClipboardText: () => Promise<string>
+
+  /**
+   * Show a file or directory where it lives, in whatever the desktop uses for
+   * one, with the item selected. `~` is expanded; the absolute path comes back.
+   */
+  revealPath: (path: string) => Promise<string>
+
   // The source the editor opens by default
   getCurrentSource: () => Promise<CurrentSource | null>
   setCurrentSource: (source: CurrentSource | null) => Promise<void>
@@ -113,6 +126,8 @@ const api: EntityGraphAPI = {
   saveFile: (name, data) => ipcRenderer.invoke('file:save', name, data),
   copyFile: (name, data) => ipcRenderer.invoke('file:copy', name, data),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+  readClipboardText: () => ipcRenderer.invoke('clipboard:readText'),
+  revealPath: (path) => ipcRenderer.invoke('shell:revealPath', path),
   getCurrentSource: () => ipcRenderer.invoke('config:getCurrentSource'),
   setCurrentSource: (source) => ipcRenderer.invoke('config:setCurrentSource', source),
 

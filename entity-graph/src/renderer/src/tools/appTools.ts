@@ -1,8 +1,9 @@
 import { TOOL_ID } from '../../../core/builtins'
 import { refreshDerived } from '../../../core/cache'
 import { createEntity } from '../source/entity'
-import { openExternal } from '../source/files'
+import { openExternal, readClipboardText, revealPath } from '../source/files'
 import { copyText } from '../helpers/clipboard'
+import { summarise } from './declared'
 import * as R from '../state/reducers'
 import { focusOf, getLayout, updateLayout } from '../state/store'
 import { toggleTheme, updateUi, uiAtom } from '../state/ui'
@@ -199,6 +200,42 @@ export const APP_TOOLS: ToolSpec[] = [
       if (!value) throw new Error('Nothing to copy')
       await copyText(value)
       return { message: 'Copied' }
+    },
+  },
+  {
+    // The other direction, and the one the app had no way to go: `resource.paste`
+    // takes *bytes* off the clipboard, and nothing took words. What it read is the
+    // result, so a tool written in the graph can be "take the link I just copied
+    // and hang it under this note" — `tool['entity.create']({ text:
+    // tool.readTheClipboard() })` — rather than a feature somebody has to build.
+    id: 'clipboard.read',
+    label: 'Read the clipboard',
+    aliases: ['paste text', 'clipboard text', 'what did I copy'],
+    hint: 'Shell',
+    scope: 'app',
+    reach: 'ui',
+    run: async () => {
+      const text = await readClipboardText()
+      if (!text) throw new Error('Nothing on the clipboard')
+      return { data: text, message: summarise(text) ?? undefined }
+    },
+  },
+  {
+    // `link.open` opens what a note points at; this one says where it *is*, which
+    // for a path on this machine is the more useful half. A changeset's worktree
+    // is the case it was written for — `tool.revealInFileManager(values.worktree)`
+    // — so the argument is a plain path and the context key is `path`.
+    id: 'file.reveal',
+    label: 'Reveal in file manager',
+    aliases: ['show in folder', 'finder', 'explorer', 'locate', 'where is it'],
+    hint: 'Shell',
+    scope: 'app',
+    reach: 'external',
+    args: [{ name: 'path', label: 'Path', fromContext: 'path', placeholder: '~/repos/x' }],
+    run: async ({ path }) => {
+      const target = String(path ?? '').trim()
+      if (!target) throw new Error('Which path?')
+      return { message: `Showed ${await revealPath(target)}` }
     },
   },
   {
