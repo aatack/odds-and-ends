@@ -181,10 +181,20 @@ function FindBox({
         // Enter hands the keyboard back: the field owns bare keys while it has
         // focus, so navigation is dead until something lets go of them. The
         // filter stays — it is written through as you type, not on submit.
+        //
+        // Tab walks the matches without handing anything back, so a search is
+        // type, Tab, Tab: the selection steps to the next row that says the
+        // phrase itself while the caret stays here to refine it. Called rather
+        // than routed, because Tab means something else everywhere outside this
+        // box and which box has the caret isn't the key router's business.
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             e.preventDefault()
             inputRef.current?.blur()
+          }
+          if (e.key === 'Tab') {
+            e.preventDefault()
+            runTool(e.shiftKey ? 'select.prevMatch' : 'select.nextMatch')
           }
         }}
         placeholder="Filter rows…"
