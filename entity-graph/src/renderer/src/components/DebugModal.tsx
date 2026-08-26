@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import type { QueryPage } from '../../../core/query'
 import type { ToolMeta } from '../../../core/client'
+import { invalidateEntities } from '../../../core/cache'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
@@ -122,8 +123,12 @@ function RawEvent({ connId, user }: { connId: string; user: string }): React.JSX
           throw new Error('Value must be valid JSON')
         }
         await api.sourceCall(connId, 'writeValue', { entityId: entityId.trim(), key: key.trim(), value: parsed, author: user })
+        // Written behind the cache's back, as everything in here is, so it is
+        // told which entity moved rather than being left to find out.
+        invalidateEntities([entityId.trim()])
       } else {
         await api.sourceCall(connId, 'writeLink', { sourceId: src.trim(), destinationId: dest.trim(), action, author: user })
+        invalidateEntities([src.trim(), dest.trim()])
       }
       setOk(true)
       setTimeout(() => setOk(false), 2000)
