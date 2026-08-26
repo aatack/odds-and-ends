@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { Loading02 } from '@untitledui/icons'
 import { Markdown } from './ui/Markdown'
 import { CodeEditor } from './ui/CodeEditor'
 import { Button } from './ui/Button'
@@ -6,7 +7,7 @@ import { CALL_STATUS } from './callStatus'
 import { TypePill } from './TypePill'
 import type { MarkdownFieldProps, MarkdownFields } from './ui/markdownFields'
 import { elapsedTime } from '../helpers/time'
-import { useAtomValue, useCalls, useGetEntities } from '../state/hooks'
+import { useAtomValue, useCallRunning, useCalls, useGetEntities } from '../state/hooks'
 import { rowKey } from '../state/derive'
 import { runTool } from '../tools/call'
 import { integrationsAtom } from '../tools/integrationTools'
@@ -84,6 +85,13 @@ function useTool(name: string): ToolSpec | undefined {
  * `[@button:tool](label)` — the Actions button, shrunk to sit in a line of prose.
  * Pressing it is a gesture like any other: the call is the user's, so it toasts
  * what it did and keeps itself in the activity log on the same terms.
+ *
+ * It also says while it is going. A button that answers a minute later with a
+ * toast and nothing in between reads as a button that did nothing, so the press
+ * is held on to and the call watched — the mark beside the label is the same
+ * still glyph a row wears while its entity is arriving, since nothing in this app
+ * moves. Pressing a tool that still wants an argument opens the palette instead,
+ * and there is no call to watch: `runTool` says so by handing back nothing.
  */
 function FieldButton({
   where,
@@ -95,6 +103,8 @@ function FieldButton({
   label: string
 }): React.JSX.Element {
   const tool = useTool(name)
+  const [callId, setCallId] = useState<string | null>(null)
+  const running = useCallRunning(callId)
   // Named but not found: the same suggestion a script's error would carry, since
   // there is nowhere else a mistyped name in a row of text can show up.
   const nearest = tool ? [] : nearestToolNames(name)
@@ -105,14 +115,19 @@ function FieldButton({
       // Small enough not to open up the line it sits in, and in the UI's own sans
       // rather than the serif of the text around it: it is a control, not prose.
       className="mx-0.5 h-5 px-1.5 align-middle font-sans text-[12px]"
-      disabled={!tool}
+      // A second press while the first is still going is nearly always a press
+      // that thought nothing had happened.
+      disabled={!tool || running}
       title={
         tool
-          ? tool.label
+          ? running
+            ? `${tool.label} — running`
+            : tool.label
           : `No tool “${name}”${nearest.length ? `. Did you mean ${nearest.join(', ')}?` : ''}`
       }
-      onClick={() => tool && runTool(tool.id, { within: where.path })}
+      onClick={() => tool && setCallId(runTool(tool.id, { within: where.path }))}
     >
+      {running && <Loading02 size={11} className="shrink-0 text-gray-400" />}
       {label || tool?.label || name}
     </Button>
   )

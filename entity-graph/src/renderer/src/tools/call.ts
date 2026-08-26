@@ -1,7 +1,7 @@
 import { v4 as uuid } from 'uuid'
 import { refreshEntities } from '../../../core/cache'
 import { liveContext } from '../state/query'
-import { callsAtom, pendingAtom } from '../state/store'
+import { callsAtom, pendingAtom, runningCallsAtom } from '../state/store'
 import { clearUndo } from '../state/undo'
 import type {
   ArgValue,
@@ -197,6 +197,9 @@ async function execute(call: Invocation): Promise<CallOutcome> {
     return failed
   }
   markRunning(call, tool)
+  // Apart from the log: this is what anything that started a call watches to know
+  // it is still going, and almost no call is worth logging.
+  runningCallsAtom.set((ids) => [...ids, call.callId])
   try {
     const outcome = (await tool.run(resolveArgs(tool, call.args), {
       callId: call.callId,
@@ -220,6 +223,8 @@ async function execute(call: Invocation): Promise<CallOutcome> {
     const failed: CallOutcome = { kind: 'error', message: message(e) }
     settle(call, tool, failed)
     return failed
+  } finally {
+    runningCallsAtom.set((ids) => ids.filter((id) => id !== call.callId))
   }
 }
 
@@ -246,20 +251,20 @@ function begin(
   context: CallContext,
   display: CallDisplay,
   seed?: { callId?: string; args?: ArgValues; fromCallId?: string; autorun?: boolean },
-): void {
+): string | null {
   const tool = findTool(toolId)
-  if (!tool) return
+  if (!tool) return null
   const callId = seed?.callId ?? uuid()
   const args = { ...seedArgs(tool, context), ...(seed?.args ?? {}) }
   const empty = firstEmpty(tool, args)
   if (empty == null && (seed?.autorun ?? true)) {
     void execute({ callId, toolId, args, context, fromCallId: seed?.fromCallId, origin: 'user' })
-    return
+    return callId
   }
   // Nothing outstanding and nothing to show: a tool with no arguments at all has
   // no state to sit in, so it waits for the caller to ask for it again.
   const active = empty ?? argsOf(tool)[0]?.name ?? null
-  if (active == null) return
+  if (active == null) return null
   // The corner guide can only serve an argument that is *pointed at*: there's
   // nowhere to type in it. Anything else opens the palette, even from a hotkey.
   const outstanding = argsOf(tool).find((a) => a.name === active)
@@ -275,6 +280,8 @@ function begin(
     query: '',
     fromCallId: seed?.fromCallId,
   })
+  // It is waiting on the user, not running: nothing to watch yet.
+  return null
 }
 
 /**
@@ -285,12 +292,20 @@ function begin(
  * `within` aims the call at a row other than the selected one — a button inside
  * an entity's own text, which acts on that entity however the keyboard is
  * pointed. See {@link contextWithin}, which is the same thing for a script.
+ *
+ * Hands back the id of the call it started, or null when the tool still wants an
+ * argument and the palette has it instead. That is what lets whatever made the
+ * gesture — a button in a row's prose — say it is still going.
  */
 export function runTool(
   toolId: string,
   opts: { display?: CallDisplay; extra?: Record<string, unknown>; within?: string[] } = {},
-): void {
-  begin(toolId, liveContext({ extra: opts.extra, within: opts.within }), opts.display ?? HIDDEN)
+): string | null {
+  return begin(
+    toolId,
+    liveContext({ extra: opts.extra, within: opts.within }),
+    opts.display ?? HIDDEN,
+  )
 }
 
 /**
