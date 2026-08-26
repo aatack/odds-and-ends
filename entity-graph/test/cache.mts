@@ -46,11 +46,11 @@ const { flushPersisted } = await import('../src/renderer/src/state/atom')
 const { layoutAtom } = await import('../src/renderer/src/state/store')
 const { defaultLayout } = await import('../src/renderer/src/state/types')
 const A = await import('../src/renderer/src/state/actions')
-const { popEvents, scanEvents, setWriteObserver, writeValue } = await import(
+const { createEntity, popEvents, scanEvents, setWriteObserver, writeValue } = await import(
   '../src/renderer/src/source/entity'
 )
 const { setSourceTransport } = await import('../src/renderer/src/source/transport')
-const { applyEvents, removeEvents } = await import('../src/core/cache')
+const { applyEvents, invalidateEntities, removeEvents } = await import('../src/core/cache')
 
 // --- Harness ----------------------------------------------------------------
 
@@ -85,7 +85,11 @@ function open(): void {
     sourceId: 'memory',
   })
   setEntityFetcher(scanEvents)
-  setWriteObserver({ applied: applyEvents, removed: removeEvents })
+  setWriteObserver({
+    applied: applyEvents,
+    removed: removeEvents,
+    touched: invalidateEntities,
+  })
   setCodeEvaluator(null)
   layoutAtom.set(defaultLayout('root'))
   // Stand in for the mounted frame. Reading is what asks the source for
@@ -692,7 +696,7 @@ test('does not let a read already in flight undo a write', async () => {
   assert.equal(getEntity('a').values.text, 'after')
 })
 
-test('keeps showing what it has while a refresh is in flight', async () => {
+test('keeps showing what it has while a refresh is in flight, and says nothing', async () => {
   open()
   source.values({ root: { text: 'Root' } })
   rowsOf(frameId())
@@ -700,9 +704,47 @@ test('keeps showing what it has while a refresh is in flight', async () => {
 
   refreshEntities()
   assert.deepEqual(texts(), ['Root'], 'stale, but there')
-  assert.equal(rowsOf(frameId()).loading, true)
+  // Stale is not waiting. A row that is entirely here does not go back to its
+  // loading state because something might have changed behind it — that flash,
+  // on every row, on every keystroke, was the whole complaint.
+  assert.equal(rowsOf(frameId()).loading, false)
   await settle()
   assert.equal(rowsOf(frameId()).loading, false)
+  assert.deepEqual(texts(), ['Root'])
+})
+
+test('reads nothing again when a write says what it changed', async () => {
+  open()
+  source.tree({ root: ['a', 'b'] })
+  source.values({ root: { text: 'Root' }, a: { text: 'A' }, b: { text: 'B' } })
+  rowsOf(frameId())
+  await settle()
+
+  const before = source.scans.length
+  await writeValue('a', 'text', 'A again')
+  await settle()
+  assert.deepEqual(texts(), ['Root', 'A again', 'B'])
+  // The event went into the cache on its way out, so there is nothing to read:
+  // not `a`, whose events are known, and certainly not `b`.
+  assert.deepEqual(source.scans.slice(before), [])
+})
+
+test('reads back only what a write it could not state touched', async () => {
+  open()
+  source.tree({ root: ['a', 'b'] })
+  source.values({ root: { text: 'Root' }, a: { text: 'A' }, b: { text: 'B' } })
+  rowsOf(frameId())
+  await settle()
+
+  const before = source.scans.length
+  // `createEntity` mints its id on the server, so there are no events to apply —
+  // only the two entities it moved.
+  await createEntity({ text: 'C' }, 'a')
+  await settle()
+  assert.deepEqual(texts(), ['Root', 'A', 'C', 'B'])
+  // One read, of the parent whose links changed — the new entity arrives on the
+  // back of it, since a scan reads a couple of layers past what it was asked for.
+  assert.deepEqual(source.scans.slice(before), [['a']])
 })
 
 test('does not ask again for an entity that failed', async () => {

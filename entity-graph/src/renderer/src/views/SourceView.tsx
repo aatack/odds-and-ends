@@ -8,6 +8,7 @@ import { Button } from '../components/ui/Button'
 import { evaluateCode } from '../helpers/codeRunner'
 import {
   applyEvents,
+  invalidateEntities,
   removeEvents,
   setCodeEvaluator,
   setEntityFetcher,
@@ -44,7 +45,11 @@ export function SourceView({
       sourceId: active.id,
     })
     setEntityFetcher(scanEvents)
-    setWriteObserver({ applied: applyEvents, removed: removeEvents })
+    setWriteObserver({
+      applied: applyEvents,
+      removed: removeEvents,
+      touched: invalidateEntities,
+    })
     setCodeEvaluator(evaluateCode)
     setResourceFetcher(readResource)
     // The integrations belong to the *server*, not to the source — but this is

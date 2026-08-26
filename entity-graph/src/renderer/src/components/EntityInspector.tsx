@@ -2,7 +2,12 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { Check, Trash03 } from '@untitledui/icons'
 import type { Entity } from '../../../core/entity'
 import { str } from '../../../core/entity'
-import { entitiesAtom, refreshDerived, refreshEntities, type LoadState } from '../../../core/cache'
+import {
+  entitiesAtom,
+  invalidateEntities,
+  refreshDerived,
+  type LoadState,
+} from '../../../core/cache'
 import {
   checkValue,
   fieldsOf,
@@ -114,15 +119,17 @@ export function EntityInspector({ sourceId, entityId, user, onClose }: Props): R
   }, [load])
 
   // The inspector writes raw events rather than going through a tool — that's
-  // the point of it — so it has to do by hand what the call machine would: tell
-  // open frames to refetch, and strand the undo stack, whose events are no longer
-  // the store's most recent.
-  const write = async (fn: () => Promise<unknown>): Promise<void> => {
+  // the point of it — so it has to do by hand what a write through
+  // `source/entity` would: tell the cache which entities have moved under it, and
+  // strand the undo stack, whose events are no longer the store's most recent.
+  // It names them rather than refreshing everything, for the same reason a tool
+  // does: nothing else on screen has changed.
+  const write = async (touched: string[], fn: () => Promise<unknown>): Promise<void> => {
     setError(null)
     try {
       await fn()
       clearUndo()
-      refreshEntities()
+      invalidateEntities(touched)
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -130,11 +137,13 @@ export function EntityInspector({ sourceId, entityId, user, onClose }: Props): R
   }
 
   const writeValue = (key: string, value: unknown): Promise<void> =>
-    write(() => api.sourceCall(sourceId, 'writeValue', { entityId, key, value, author: user }))
+    write([entityId], () =>
+      api.sourceCall(sourceId, 'writeValue', { entityId, key, value, author: user }),
+    )
 
   /** `action` is the store's own: 0 adds the link, 1 takes it away. */
   const writeLink = (from: string, to: string, action: 0 | 1): Promise<void> =>
-    write(() =>
+    write([from, to], () =>
       api.sourceCall(sourceId, 'writeLink', {
         sourceId: from,
         destinationId: to,
@@ -529,6 +538,7 @@ const STATE_NOTE: Record<LoadState, string> = {
   unloaded: 'not read yet',
   loading: 'reading',
   loaded: 'read',
+  stale: 'read, worth reading again',
   error: 'failed',
 }
 
