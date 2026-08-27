@@ -459,6 +459,16 @@ const DOCS: Doc[] = [
     path: '../../docs/changesets.md',
   },
   {
+    uri: 'docs://diagrams',
+    name: 'Diagrams: a note that holds a drawing',
+    description:
+      `What a note saying \`type: ${DIAGRAM_ID}\` holds — one shape per value, under a key ` +
+      'beginning `diagram/` — with the fields of a rectangle, a text box and an arrow, ' +
+      'how an arrow names either another shape or a bare point, and what the canvas ' +
+      `over it does. The long version of \`get_details\` on \`${DIAGRAM_ID}\`.`,
+    path: '../../docs/diagrams.md',
+  },
+  {
     uri: 'docs://integrations',
     name: "The server's integrations: GitHub, Slack, Claude Code, git, a terminal",
     description:
