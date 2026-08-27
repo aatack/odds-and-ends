@@ -26,6 +26,7 @@ import {
   useNodesInitialized,
   useNodesState,
   useReactFlow,
+  useStore,
   useStoreApi,
   type Connection,
   type Edge,
@@ -516,17 +517,20 @@ function boxUnder(boxes: ReadonlyMap<string, BoxShape>, at: Point): BoxShape | n
 /**
  * A diagram is drawn from values that arrive after the canvas does, so React
  * Flow's own fit at mount happens over an empty canvas. This does it again, once,
- * when there is something to fit.
+ * when there is something to fit — the count as well as the measuring, since an
+ * empty canvas counts as measured and fitting one would spend the one chance on
+ * nothing.
  */
 function FitWhenDrawn(): null {
   const initialised = useNodesInitialized()
+  const drawn = useStore((s) => s.nodes.length > 0)
   const { fitView } = useReactFlow()
   const fitted = useRef(false)
   useEffect(() => {
-    if (!initialised || fitted.current) return
+    if (!initialised || !drawn || fitted.current) return
     fitted.current = true
     void fitView({ padding: 0.25, maxZoom: 1 })
-  }, [initialised, fitView])
+  }, [initialised, drawn, fitView])
   return null
 }
 

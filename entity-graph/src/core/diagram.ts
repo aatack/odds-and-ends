@@ -163,26 +163,11 @@ export function nextShapeKey(values: Record<string, unknown> | undefined): strin
   return `${SHAPE_PREFIX}${highest + 1}`
 }
 
-/** The middle of a box — where an arrow tied to it aims. */
-export const centreOf = (box: BoxShape): Point => ({
-  x: box.x + box.width / 2,
-  y: box.y + box.height / 2,
-})
-
 /**
- * Where an arrow's end actually is: the middle of the shape it names, or the
- * point itself. Null when it names a shape the diagram no longer has — a dangling
- * end, which is a thing to leave undrawn rather than to draw at the origin.
+ * The boxes of a shape list, by key — what an arrow's ends are resolved against.
+ * Where an end actually *is* is not answered here: an arrow tied to a box is drawn
+ * against where that box has got to on screen, which during a drag is not yet what
+ * the value says, so the one answer lives with the canvas that knows both.
  */
-export function endpointPoint(
-  endpoint: Endpoint,
-  boxes: ReadonlyMap<string, BoxShape>,
-): Point | null {
-  if (typeof endpoint !== 'string') return endpoint
-  const box = boxes.get(endpoint)
-  return box ? centreOf(box) : null
-}
-
-/** The boxes of a shape list, by key — what an arrow's ends are resolved against. */
 export const boxesOf = (shapes: readonly Shape[]): Map<string, BoxShape> =>
   new Map(shapes.filter(isBox).map((box) => [box.key, box]))

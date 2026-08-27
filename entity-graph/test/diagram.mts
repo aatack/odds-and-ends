@@ -1,5 +1,5 @@
 // The reading of a diagram's values: which keys are shapes, what each one says,
-// and where an arrow's ends actually are. Worth asserting rather than clicking
+// and what a canvas is given to draw them in. Worth asserting rather than clicking
 // because these values are written by hand and over MCP as much as they are
 // dragged, so "says half of what a rectangle says" is the ordinary case and not
 // the exception.
@@ -14,7 +14,6 @@ const {
   DEFAULT_WIDTH,
   aspectRatioOf,
   boxesOf,
-  endpointPoint,
   isShapeKey,
   nextShapeKey,
   shapesOf,
@@ -83,20 +82,15 @@ test("an arrow's ends are a key or a point, and a bare id is taken as a key", ()
   })
 })
 
-test('an end naming a shape is the middle of it, and one naming nothing is nowhere', () => {
-  const shapes = shapesOf({
-    'diagram/1': { shape: 'rectangle', x: 10, y: 20, width: 100, height: 40 },
-    'diagram/2': { shape: 'arrow', from: 'diagram/1', to: 'diagram/8' },
-  })
-  const boxes = boxesOf(shapes)
-  const arrow = shapes[1]
-  assert.equal(arrow.shape, 'arrow')
-  if (arrow.shape !== 'arrow') return
-  assert.deepEqual(endpointPoint(arrow.from, boxes), { x: 60, y: 40 })
-  // `diagram/8` was removed, or never existed: a dangling end, left undrawn
-  // rather than drawn at the origin.
-  assert.equal(endpointPoint(arrow.to, boxes), null)
-  assert.deepEqual(endpointPoint({ x: 5, y: 6 }, boxes), { x: 5, y: 6 })
+test('the boxes an arrow can name are the boxes, and only those', () => {
+  const boxes = boxesOf(
+    shapesOf({
+      'diagram/1': { shape: 'rectangle' },
+      'diagram/2': { shape: 'text' },
+      'diagram/3': { shape: 'arrow' },
+    }),
+  )
+  assert.deepEqual([...boxes.keys()], ['diagram/1', 'diagram/2'])
 })
 
 test('a ratio is a number or a ratio written as one, and 16:9 otherwise', () => {
