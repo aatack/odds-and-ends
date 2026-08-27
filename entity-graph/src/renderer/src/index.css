@@ -218,7 +218,11 @@ html.dark {
  * that matter are descendant and sibling ones over elements the markdown renderer
  * creates itself.
  */
-.markdown > * + * {
+/* Written as `:not(:first-child)` rather than `* + *` so that it outweighs the
+ * `margin: 0` each block below sets: `.markdown p` is a class and an element and
+ * would win against a pair of stars, which left this rule dead and every row of
+ * several paragraphs flush. */
+.markdown > :not(:first-child) {
   margin-top: 0.5em;
 }
 
