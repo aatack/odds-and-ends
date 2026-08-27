@@ -29,8 +29,12 @@ import type { ArgSpec, CallInfo, ToolSpec } from './types'
 // move, the far end of a link — carry `pick`, which is what makes "press x,
 // move to the target, press x again" work without a special case.
 
-/** The entity under the selection: filled from the context, never typed by default. */
-const entityArg = (name = 'entityId', label = 'Entity id', from = 'entityId'): ArgSpec => ({
+/**
+ * The entity under the selection: filled from the context, never typed by default.
+ * Exported because it is what *every* tool that names an entity takes, and a second
+ * spelling of it in another file is a tool that fills itself in differently.
+ */
+export const entityArg = (name = 'entityId', label = 'Entity id', from = 'entityId'): ArgSpec => ({
   name,
   label,
   kind: 'entity',
@@ -52,7 +56,7 @@ const id = (v: unknown): string => String(v ?? '')
  * then shows up as a text-less row most tools quietly decline to touch. Removals
  * use the permissive `id` instead, so damage already in the store can be undone.
  */
-function requireId(v: unknown, label: string): string {
+export function requireId(v: unknown, label: string): string {
   const value = id(v).trim()
   if (!value) throw new Error(`${label} is required`)
   return value

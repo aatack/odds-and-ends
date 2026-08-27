@@ -1,3 +1,4 @@
+import { DIAGRAM_ID } from '../../../core/builtins'
 import { entities } from '../../../core/cache'
 import { subtreeMarkdown } from '../../../core/markdown'
 import { lastPath } from '../../../core/query'
@@ -399,6 +400,20 @@ export const FRAME_TOOLS: ToolSpec[] = [
     run: () => {
       const t = target()
       if (t?.selected) A.startCreate(t.frame.id, t.selectedPath, { type: 'code' })
+    },
+  },
+  {
+    // No key. A diagram is drawn once and then lived with, unlike the three
+    // above, and a bare letter spent on it is one taken off something typed all
+    // day. The text typed into the box is the note under the canvas.
+    id: 'create.diagram',
+    label: 'Create diagram',
+    aliases: ['sketch', 'draw', 'canvas', 'boxes', 'arrows'],
+    scope: 'frame',
+    reach: 'ui',
+    run: () => {
+      const t = target()
+      if (t?.selected) A.startCreate(t.frame.id, t.selectedPath, { type: DIAGRAM_ID })
     },
   },
 
