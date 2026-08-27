@@ -54,6 +54,13 @@ import {
   type Point,
   type Shape,
 } from '../../../core/diagram'
+import {
+  diagramAtom,
+  editDiagramShape,
+  focusOn,
+  releaseDiagram,
+  reportDiagramSelection,
+} from '../state/diagram'
 import { useAtomValue, useGetEntities } from '../state/hooks'
 import { themeAtom } from '../state/ui'
 import { runTool } from '../tools/call'
@@ -258,7 +265,13 @@ export function DiagramView({
   // The path is a new array on every render and its serialisation is not, so the
   // callbacks below are stable for as long as the row is where it was.
   const at = path.join('\0')
-  const [editing, setEditing] = useState<string | null>(null)
+  // Which shape is being typed into is not the canvas's own state: Enter starts an
+  // edit and Enter is a tool, so it is held where a tool can reach it.
+  const editing = focusOn(useAtomValue(diagramAtom), entityId)?.editing ?? null
+  const edit = useCallback(
+    (key: string | null): void => editDiagramShape(entityId, key),
+    [entityId],
+  )
 
   const write = useCallback(
     (shape: Shape): void => {
@@ -271,8 +284,8 @@ export function DiagramView({
   )
 
   const editor = useMemo<DiagramEditor>(
-    () => ({ entityId, path: at.split('\0'), highlight, editing, edit: setEditing, write }),
-    [entityId, at, highlight, editing, write],
+    () => ({ entityId, path: at.split('\0'), highlight, editing, edit, write }),
+    [entityId, at, highlight, editing, edit, write],
   )
 
   return (
@@ -412,6 +425,19 @@ function Canvas({
       ].filter((key, i, all) => all.indexOf(key) === i),
     [nodes, edges],
   )
+
+  // Said out loud, because the keys that act on a selection are tools and a tool
+  // has to be able to ask. Keyed on the serialisation rather than the array, which
+  // is new whenever anything about a node is.
+  const entityId = editor.entityId
+  const selection = selected.join('\0')
+  useEffect(() => {
+    reportDiagramSelection(entityId, selection ? selection.split('\0') : [])
+  }, [entityId, selection])
+
+  // Rows are only mounted near the viewport, so a diagram scrolled off the screen
+  // must not still be holding the Backspace key.
+  useEffect(() => () => releaseDiagram(entityId), [entityId])
 
   return (
     <div className="my-1 w-full">

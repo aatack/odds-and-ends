@@ -8,6 +8,10 @@ import {
   type Point,
   type Shape,
 } from '../../../core/diagram'
+import { diagramAtom, editDiagramShape, type DiagramFocus } from '../state/diagram'
+import { rowsOf } from '../state/query'
+import { focusOf, getLayout } from '../state/store'
+import { last } from '../state/types'
 import { readEntities, writeValue } from '../source/entity'
 import { entityArg, requireId } from './entityTools'
 import type { ArgSpec, ToolSpec } from './types'
@@ -36,12 +40,17 @@ const number = (v: unknown, fallback: number): number => {
 
 /**
  * Where a shape a tool is about to add goes: what the caller asked for, or the
- * next step down the stagger. Both arguments are filled from the call's context
- * and neither is typed, so the palette asks for neither.
+ * next step down the stagger.
+ *
+ * `hasDefault` rather than `optional`, and this is the difference between a
+ * gesture that works and one that stops to ask: an *empty* argument opens the
+ * palette however unimportant it is, and only a defaulted one lets the call run
+ * straight through. So every argument on a tool the canvas invokes carries a
+ * default, and the tool decides what nothing means.
  */
 const placeArgs: ArgSpec[] = [
-  { name: 'x', label: 'x', kind: 'number', fromContext: 'shapeX', optional: true },
-  { name: 'y', label: 'y', kind: 'number', fromContext: 'shapeY', optional: true },
+  { name: 'x', label: 'x', kind: 'number', fromContext: 'shapeX', hasDefault: true },
+  { name: 'y', label: 'y', kind: 'number', fromContext: 'shapeY', hasDefault: true },
 ]
 
 const placeAt = (shapes: readonly Shape[], x: unknown, y: unknown): Point => {
@@ -90,6 +99,66 @@ async function addShape(
   await writeValue(id, key, make(placeAt(shapes, x, y)))
   return { data: key }
 }
+
+/**
+ * What the canvas under the cursor has selected — and null unless the row the
+ * frame's selection is on is that very diagram. A canvas holds its selection
+ * while the cursor walks away from it, so without the second half of that
+ * question Backspace on a row three below a diagram would rub out a rectangle.
+ */
+function selectionHere(): DiagramFocus | null {
+  const focus = diagramAtom.get()
+  if (!focus?.selected.length) return null
+  const layout = getLayout()
+  const { selectedPath } = rowsOf(focusOf(layout).frameId, layout)
+  return last(selectedPath) === focus.entityId ? focus : null
+}
+
+/**
+ * The two that take a key off something else, and so have to be found before it:
+ * the router hands a press to the first tool in the registry that binds the key
+ * and says it applies, and both of these apply only while a shape is selected.
+ * See `./registry`, which is where that order is decided.
+ */
+export const DIAGRAM_SELECTION_TOOLS: ToolSpec[] = [
+  {
+    // Backspace and Delete otherwise unlink the row itself, which for a diagram
+    // means throwing the whole picture away to remove one box.
+    id: 'diagram.selection.remove',
+    label: 'Remove selected shapes',
+    aliases: ['diagram', 'delete', 'rub out'],
+    hint: 'Diagram',
+    scope: 'frame',
+    reach: 'source',
+    mutates: true,
+    keys: [{ key: 'Backspace' }, { key: 'Delete' }],
+    enabled: () => selectionHere() != null,
+    run: async () => {
+      const focus = selectionHere()
+      if (!focus) return
+      // One write per shape: they are separate values, and a removal that half
+      // failed should leave the half that worked.
+      for (const key of focus.selected) await writeValue(focus.entityId, key, null)
+    },
+  },
+  {
+    // Enter otherwise starts a new note under the row. With nothing selected on
+    // the canvas that is still what it does — this only applies when there is a
+    // shape for it to mean instead.
+    id: 'diagram.selection.edit',
+    label: 'Edit a diagram shape',
+    aliases: ['diagram', 'label', 'text', 'rename'],
+    hint: 'Diagram',
+    scope: 'frame',
+    reach: 'ui',
+    keys: [{ key: 'Enter' }],
+    enabled: () => selectionHere() != null,
+    run: () => {
+      const focus = selectionHere()
+      if (focus) editDiagramShape(focus.entityId, focus.selected[0])
+    },
+  },
+]
 
 export const DIAGRAM_TOOLS: ToolSpec[] = [
   {
@@ -140,8 +209,8 @@ export const DIAGRAM_TOOLS: ToolSpec[] = [
       entityArg(),
       ...placeArgs,
       // Either end is a shape's key — `"diagram/1"` — or a point, `{"x":0,"y":0}`.
-      { name: 'from', label: 'From', kind: 'json', fromContext: 'shapeFrom', optional: true },
-      { name: 'to', label: 'To', kind: 'json', fromContext: 'shapeTo', optional: true },
+      { name: 'from', label: 'From', kind: 'json', fromContext: 'shapeFrom', hasDefault: true },
+      { name: 'to', label: 'To', kind: 'json', fromContext: 'shapeTo', hasDefault: true },
     ],
     // Tied to a shape at whichever end was named — which is what dragging between
     // two boxes does — and a bare point at the other, which is then a dot to drag.

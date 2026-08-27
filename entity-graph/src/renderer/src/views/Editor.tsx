@@ -430,6 +430,11 @@ const RowView = React.memo(function RowView({
   // so those keep the pill beside the mark, where it lines up with the bullet.
   const prose = !row.editing && !isCode && row.type !== 'file' && !isDiagram
 
+  // A diagram folds whether or not it has children: what folding one puts away is
+  // the canvas, so it wears a chevron and answers to it like any other row that
+  // has something below the line.
+  const foldable = row.hasChildren || isDiagram
+
   // The row's own text, rendered. Named because three of the branches below draw
   // it: a plain row, and the two that draw a surface above it.
   const rendered = text ? (
@@ -489,13 +494,13 @@ const RowView = React.memo(function RowView({
             className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 select-none"
             onClick={(e) => {
               e.stopPropagation()
-              if (row.hasChildren) onToggleCollapse(row)
+              if (foldable) onToggleCollapse(row)
             }}
           >
             {/* A checkbox keeps its box even with children; only a plain row
                 trades its bullet for a chevron. A row still arriving shows the
                 busy mark whichever it would have been. */}
-            {row.loading || row.open !== undefined || !row.hasChildren ? (
+            {row.loading || row.open !== undefined || !foldable ? (
               <Mark open={row.open} loading={row.loading} />
             ) : row.collapsed ? (
               <ChevronRight size={14} />
@@ -541,8 +546,15 @@ const RowView = React.memo(function RowView({
             // row's text does, since that is what it is. A diagram with nothing
             // written under it says nothing rather than "Empty": the picture is
             // the row.
+            //
+            // Folded, the canvas is what is put away, and the row is left as the
+            // line of text it would have been. Folding one is therefore how a
+            // page of diagrams is read as an outline rather than as a wall of
+            // pictures.
             <>
-              <DiagramView entityId={row.id} path={row.path} highlight={highlight} />
+              {!row.collapsed && (
+                <DiagramView entityId={row.id} path={row.path} highlight={highlight} />
+              )}
               {rendered}
             </>
           ) : (

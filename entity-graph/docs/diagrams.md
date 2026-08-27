@@ -73,7 +73,9 @@ gesture, the arrow heads — and none of the parts that are this app's:
   into the palette are the same write. See below.
 - **It holds no keys.** React Flow's own key handling is switched off wholesale —
   `deleteKeyCode`, `selectionKeyCode` and the rest set to null — because there is
-  one key listener in this app and `tools/dispatch.ts` owns it.
+  one key listener in this app and `tools/dispatch.ts` owns it. The two keys that
+  *do* mean something different over a canvas are tools like any other; see
+  `DIAGRAM_SELECTION_TOOLS` below.
 - **The wheel is not the zoom.** A canvas inside an outline that swallowed the
   scroll would be a hole in the page. The wheel scrolls the tree; zooming is on the
   controls in the corner and on a pinch.
@@ -94,8 +96,34 @@ What a pointer can do, all of it deliberately basic:
 | drag a loose end onto a box | the end takes hold of the box and follows it |
 | drag the strip under the canvas | changes the height, and writes `aspectRatio` |
 | the controls in the top right | add a rectangle, a text box or an arrow; remove what is selected |
+| Backspace or Delete, with a shape selected | removes the selected shapes |
+| Enter, with a shape selected | types into it |
+| fold the row | puts the canvas away and leaves the text |
 
 Detaching an end that has taken hold of a box is not a gesture: write the value.
+
+A diagram folds whether or not it has anything under it, because what folding one
+puts away is the canvas. That is how a page of diagrams reads as an outline
+rather than as a wall of pictures.
+
+## What is selected, and the two keys
+
+Backspace over a rectangle should remove the rectangle and not the note, and Enter
+over one should type into it rather than start a new note underneath. Both are
+ordinary tools — there is one key listener in this app — so what the canvas has
+selected has to be something a tool can ask about, and `state/diagram.ts` is where
+it is kept: one canvas at a time, runtime only, released when the row unmounts.
+
+Two conditions before either key means anything: the canvas has a selection, *and*
+the frame's own cursor is on that diagram's row. A canvas keeps its selection
+while the cursor walks away from it, and without the second half a Backspace three
+rows below would rub out a rectangle. With nothing selected both keys mean what
+they always meant.
+
+`DIAGRAM_SELECTION_TOOLS` is those two, and they sit at the very front of the
+registry: the router hands a press to the first tool that binds the key and says
+it applies, so a tool taking a key off another has to be found before it. The rest
+of the diagram tools sit further down, where they read.
 
 ## The tools
 
@@ -111,7 +139,15 @@ pointer does.
 | `diagram.shape.set` | one whole shape, as a drag left it — unlisted |
 | `diagram.shape.remove` | `null` over one key |
 | `diagram.aspectRatio.set` | the canvas's proportions |
+| `diagram.selection.remove` | `null` over every selected key — Backspace, Delete |
+| `diagram.selection.edit` | types into the selected shape — Enter |
 | `create.diagram` | a child note of the selection, typed `diagram` |
+
+Every argument on these carries a `hasDefault` rather than being `optional`, and
+that is the difference between a gesture that works and one that stops to ask: an
+*empty* argument opens the palette however unimportant it is, and only a defaulted
+one lets a call run straight through. A dragged arrow that asked for its
+coordinates in a dialog would be no gesture at all.
 
 A new key is the next number up over whatever the entity already holds —
 `diagram/3` is something a person can name in an arrow's `from`, which a uuid is
