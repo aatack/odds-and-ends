@@ -2,16 +2,16 @@ import type { AppEvent } from './events'
 import type { Schema } from './schema'
 
 // The entities every store has whether or not anything has been written to them.
-// There are two, and both are types: `type`, the type of types, and `tool`, the
-// type of the tools a store defines for itself. Each carries the schema for what
-// an entity of it holds. They are served rather than stored — read the id and the
-// events are handed back with the ones the store actually has — so a fresh store
-// knows what a type and a tool are, and so a schema nobody has to write can't
-// drift from the code that reads it.
+// All three are types: `type`, the type of types; `tool`, the type of the tools a
+// store defines for itself; and `diagram`, a note the app draws a canvas over.
+// Each carries the schema for what an entity of it holds. They are served rather
+// than stored — read the id and the events are handed back with the ones the store
+// actually has — so a fresh store knows what a type, a tool and a diagram are, and
+// so a schema nobody has to write can't drift from the code that reads it.
 //
-// Which is also the only account of either that reaches an agent over MCP. It has
-// the six tools and these instructions and no source code, so a shape it cannot
-// read here is one it will guess at.
+// Which is also the only account of any of them that reaches an agent over MCP. It
+// has the six tools and these instructions and no source code, so a shape it
+// cannot read here is one it will guess at.
 //
 // The events are timestamped 0 and authored `builtin`, which is what makes them
 // defaults rather than facts: a rollup sorts by timestamp, so anything written
@@ -23,6 +23,9 @@ export const TYPE_ID = 'type'
 
 /** The type of tools: what a note under `@tools` is expected to hold. */
 export const TOOL_ID = 'tool'
+
+/** The type of diagrams: a note the app draws a canvas of shapes over. */
+export const DIAGRAM_ID = 'diagram'
 
 /** The author on a value the store supplies, as against one somebody wrote. */
 const BUILTIN_AUTHOR = 'builtin'
@@ -175,6 +178,41 @@ export const TOOL_SCHEMA: Schema = {
   },
 }
 
+/**
+ * What a diagram entity holds. Unlike the two above this is not a schema anything
+ * fills in as a form: one key is a form field and the rest of them are the picture,
+ * under keys minted as shapes are drawn. `properties` cannot name those, so the
+ * description is where the shape of one is spelled out — which is also the only
+ * account of it an agent over MCP has, and an agent writing a diagram by hand is
+ * very much the point of storing them as values.
+ */
+export const DIAGRAM_SCHEMA: Schema = {
+  type: 'object',
+  description:
+    'A diagram: a note the app draws a pannable canvas over, above its own text. The ' +
+    'canvas is as wide as the note and its shapes are the entity\'s own values — one ' +
+    'per key, under a key beginning `diagram/`, so a diagram still has ordinary notes ' +
+    'under it and moving one rectangle writes one key rather than the whole picture.\n\n' +
+    'Each such value is an object saying which `shape` it is:\n\n' +
+    '- `{ "shape": "rectangle", "x": 40, "y": 40, "width": 160, "height": 64, "text": "Ingest" }`\n' +
+    '- `{ "shape": "text", "x": 40, "y": 140, "width": 160, "height": 24, "text": "a caption" }`\n' +
+    '- `{ "shape": "arrow", "from": "diagram/1", "to": { "x": 320, "y": 72 }, "text": "then" }`\n\n' +
+    'Coordinates are the canvas\'s own, positive y downwards, and neither the origin ' +
+    'nor the extent means anything — the view is panned and zoomed over whatever is ' +
+    'there. An arrow\'s `from` and `to` are each either the key of another shape, which ' +
+    'the arrow then follows as that shape moves, or a bare `{ x, y }`. Everything but ' +
+    '`shape` may be left out; a value that names no shape it recognises is not drawn.',
+  properties: {
+    aspectRatio: {
+      type: ['number', 'string'],
+      description:
+        'How wide the canvas is against its height — `1.7778`, or `"16:9"` written as a ' +
+        'ratio. Defaults to 16:9. The height follows from the width the note has, and ' +
+        'dragging the bottom of the canvas is what writes this.',
+    },
+  },
+}
+
 /** Every entity the store supplies, and the values it supplies for each. */
 export const BUILTIN_VALUES: Record<string, Record<string, unknown>> = {
   [TYPE_ID]: {
@@ -191,6 +229,11 @@ export const BUILTIN_VALUES: Record<string, Record<string, unknown>> = {
     // that nobody had to write it.
     type: TYPE_ID,
     schema: TOOL_SCHEMA,
+  },
+  [DIAGRAM_ID]: {
+    text: 'Diagram',
+    type: TYPE_ID,
+    schema: DIAGRAM_SCHEMA,
   },
 }
 
