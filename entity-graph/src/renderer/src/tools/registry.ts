@@ -1,5 +1,6 @@
 import fuzzysort from 'fuzzysort'
 import { APP_TOOLS, GROUP_TOOLS } from './appTools'
+import { DIAGRAM_SELECTION_TOOLS, DIAGRAM_TOOLS } from './diagramTools'
 import { ENTITY_TOOLS } from './entityTools'
 import { FRAME_TOOLS } from './frameTools'
 import { integrationsAtom } from './integrationTools'
@@ -23,8 +24,14 @@ import type { ToolScope, ToolSpec } from './types'
 // from under the user by naming a tool badly.
 
 const BUILT_IN: ToolSpec[] = [
+  // First, and only these two: they take Backspace and Enter off the row tools
+  // below while a diagram's canvas has a shape selected, and the router hands a
+  // press to the first tool that binds the key and says it applies. The rest of
+  // the diagram tools sit where they read, further down.
+  ...DIAGRAM_SELECTION_TOOLS,
   ...ENTITY_TOOLS,
   ...FRAME_TOOLS,
+  ...DIAGRAM_TOOLS,
   ...RESOURCE_TOOLS,
   ...GROUP_TOOLS,
   ...UNDO_TOOLS,

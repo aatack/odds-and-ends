@@ -218,7 +218,11 @@ html.dark {
  * that matter are descendant and sibling ones over elements the markdown renderer
  * creates itself.
  */
-.markdown > * + * {
+/* Written as `:not(:first-child)` rather than `* + *` so that it outweighs the
+ * `margin: 0` each block below sets: `.markdown p` is a class and an element and
+ * would win against a pair of stars, which left this rule dead and every row of
+ * several paragraphs flush. */
+.markdown > :not(:first-child) {
   margin-top: 0.5em;
 }
 
@@ -362,6 +366,65 @@ html.dark .markdown mark {
 .markdown input[type='checkbox'] {
   margin-right: 0.4em;
   accent-color: var(--color-gray-400);
+}
+
+/*
+ * The diagram canvas (components/Diagram.tsx). React Flow ships its own look; what
+ * it actually owns once our nodes and edges are drawn by us is a handful of
+ * surfaces — the dotted field, the zoom controls, the connection dots, the resize
+ * handles — and each of them is re-pointed here at the same tokens as everything
+ * else, so a diagram is light or dark with the rest of the app and nothing about it
+ * is a second palette.
+ */
+.react-flow {
+  /* No pane colour of its own: the canvas takes the tone of the surface it is on. */
+  --xy-background-color: transparent;
+  --xy-background-pattern-color: var(--color-gray-300);
+
+  --xy-edge-stroke: var(--color-gray-500);
+  --xy-edge-stroke-selected: var(--color-brand-600);
+  --xy-edge-stroke-width: 1.5;
+  --xy-connectionline-stroke: var(--color-gray-400);
+
+  --xy-handle-background-color: var(--color-white);
+  --xy-handle-border-color: var(--color-gray-400);
+  --xy-resize-background-color: var(--color-brand-600);
+
+  --xy-controls-button-background-color: var(--color-white);
+  --xy-controls-button-background-color-hover: var(--color-gray-50);
+  --xy-controls-button-color: var(--color-gray-400);
+  --xy-controls-button-color-hover: var(--color-gray-700);
+  --xy-controls-button-border-color: var(--color-gray-100);
+  --xy-controls-box-shadow: var(--shadow-xs);
+
+  --xy-edge-label-background-color: var(--color-white);
+  --xy-edge-label-color: var(--color-gray-900);
+  --xy-selection-background-color: var(--color-blue-100);
+  --xy-selection-border: 1px solid var(--color-blue-200);
+}
+
+/* The cursor stays the arrow on anything pressable — see AGENTS.md. The library
+ * spends a pointer on its zoom buttons and on the pane while a selection is being
+ * drawn; the grab, crosshair and resize cursors it uses elsewhere stay, since each
+ * of those says which gesture the surface under the pointer takes. */
+.react-flow__controls-button,
+.react-flow__pane.selection {
+  cursor: default;
+}
+
+/* The dots a connection is dragged from: out of the way until the pointer is on
+ * the shape they belong to. A diagram is a picture, not a wiring panel, and four
+ * dots on every rectangle read as part of the drawing. They stay grabbable while
+ * invisible, so reaching for one works the moment the shape is hovered. */
+.react-flow__handle {
+  width: 8px;
+  height: 8px;
+  opacity: 0;
+}
+
+.react-flow__node:hover .react-flow__handle,
+.react-flow__handle.connectingfrom {
+  opacity: 1;
 }
 
 /* No motion anywhere — see AGENTS.md. State changes are instantaneous. This

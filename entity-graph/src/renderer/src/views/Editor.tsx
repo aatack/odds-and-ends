@@ -3,9 +3,11 @@ import { Check, ChevronDown, ChevronRight, Loading02, Play, Square, Stop } from 
 import { TextEditor } from '../components/ui/TextEditor'
 import { Button } from '../components/ui/Button'
 import { CodeBlock } from '../components/ui/CodeBlock'
+import { DiagramView } from '../components/Diagram'
 import { EntityMarkdown } from '../components/EntityMarkdown'
 import { ResourceView } from '../components/Resource'
 import { TypePill } from '../components/TypePill'
+import { DIAGRAM_ID } from '../../../core/builtins'
 import { cn } from '../helpers/cn'
 import type { CodeRunState } from '../helpers/codeRunner'
 import type { EntityRow, Row } from '../state/derive'
@@ -414,6 +416,7 @@ const RowView = React.memo(function RowView({
   }
 
   const isCode = row.type === 'code'
+  const isDiagram = row.type === DIAGRAM_ID
   const running = run?.status === 'running'
   const heading = row.section ? sectionStyle(row.depth) : undefined
   const text = withActions(row.text ?? '', row.actions ?? [])
@@ -421,11 +424,38 @@ const RowView = React.memo(function RowView({
   // Where a typed row's pill goes. A row drawing prose floats it into the text:
   // the first line starts after it and every line below runs the full width, so
   // it reads as the first word of the entity rather than as a column in front of
-  // it. Nothing else on a row can flow around a float — a code block and a file's
-  // bytes are surfaces of their own, and a `w-full` textarea beside a float
-  // overflows its container instead of narrowing to fit — so those three keep the
-  // pill beside the mark, where it lines up with the bullet.
-  const prose = !row.editing && !isCode && row.type !== 'file'
+  // it. Nothing else on a row can flow around a float — a code block, a file's
+  // bytes and a diagram's canvas are surfaces of their own, and a `w-full`
+  // textarea beside a float overflows its container instead of narrowing to fit —
+  // so those keep the pill beside the mark, where it lines up with the bullet.
+  const prose = !row.editing && !isCode && row.type !== 'file' && !isDiagram
+
+  // A diagram folds whether or not it has children: what folding one puts away is
+  // the canvas, so it wears a chevron and answers to it like any other row that
+  // has something below the line.
+  const foldable = row.hasChildren || isDiagram
+
+  // The row's own text, rendered. Named because three of the branches below draw
+  // it: a plain row, and the two that draw a surface above it.
+  const rendered = text ? (
+    // Rendered, not printed: a line with no markup in it comes out exactly as the
+    // plain text did, and the blocks are there for the rows that use them.
+    <EntityMarkdown
+      entityId={row.id}
+      path={row.path}
+      text={text}
+      highlight={highlight}
+      className={cn(
+        TEXT,
+        row.section && 'font-semibold',
+        // Muted because there is more here than is on screen — folded, filtered
+        // out, past a depth cap, or below where the walk stopped. The row is a
+        // door rather than the whole of it.
+        row.hidesChildren ? 'text-gray-400' : 'text-gray-900',
+      )}
+      style={heading}
+    />
+  ) : null
 
   return (
     <div
@@ -464,13 +494,13 @@ const RowView = React.memo(function RowView({
             className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 select-none"
             onClick={(e) => {
               e.stopPropagation()
-              if (row.hasChildren) onToggleCollapse(row)
+              if (foldable) onToggleCollapse(row)
             }}
           >
             {/* A checkbox keeps its box even with children; only a plain row
                 trades its bullet for a chevron. A row still arriving shows the
                 busy mark whichever it would have been. */}
-            {row.loading || row.open !== undefined || !row.hasChildren ? (
+            {row.loading || row.open !== undefined || !foldable ? (
               <Mark open={row.open} loading={row.loading} />
             ) : row.collapsed ? (
               <ChevronRight size={14} />
@@ -511,27 +541,24 @@ const RowView = React.memo(function RowView({
                 />
               )}
             </>
-          ) : text ? (
-            // Rendered, not printed: a line with no markup in it comes out
-            // exactly as the plain text did, and the blocks are there for the
-            // rows that use them.
-            <EntityMarkdown
-              entityId={row.id}
-              path={row.path}
-              text={text}
-              highlight={highlight}
-              className={cn(
-                TEXT,
-                row.section && 'font-semibold',
-                // Muted because there is more here than is on screen — folded,
-                // filtered out, past a depth cap, or below where the walk
-                // stopped. The row is a door rather than the whole of it.
-                row.hidesChildren ? 'text-gray-400' : 'text-gray-900',
+          ) : isDiagram ? (
+            // The canvas, and the note itself under it — which reads as any other
+            // row's text does, since that is what it is. A diagram with nothing
+            // written under it says nothing rather than "Empty": the picture is
+            // the row.
+            //
+            // Folded, the canvas is what is put away, and the row is left as the
+            // line of text it would have been. Folding one is therefore how a
+            // page of diagrams is read as an outline rather than as a wall of
+            // pictures.
+            <>
+              {!row.collapsed && (
+                <DiagramView entityId={row.id} path={row.path} highlight={highlight} />
               )}
-              style={heading}
-            />
+              {rendered}
+            </>
           ) : (
-            <span className={`${TEXT} italic text-gray-400`}>Empty</span>
+            (rendered ?? <span className={`${TEXT} italic text-gray-400`}>Empty</span>)
           )}
         </div>
       </div>

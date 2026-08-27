@@ -125,6 +125,15 @@ is the long form; the rules that matter day to day:
   worked example: what the definitions are, and which tools here exist for them
   to be written in terms of. When something a definition needs is missing, the
   answer is a tool it can reach, not a feature in `tools/`.
+- **A diagram is a note that holds a drawing.** `type: diagram` draws a pannable
+  canvas above the note's own text, and its shapes are the entity's own values —
+  one per key, under a key beginning `diagram/`, so a diagram still has ordinary
+  notes under it and moving one rectangle is one small event rather than a rewrite
+  of the picture. `core/diagram.ts` is the reading of them, `components/Diagram.tsx`
+  the canvas, and [`docs/diagrams.md`](./docs/diagrams.md) the long form. React
+  Flow does the viewport, the dragging and the arrow heads; it does not do the
+  state, and it holds no keys — its own key handling is off, since there is one key
+  listener and it is at the top.
 - **A code entity is another caller.** `type: code` runs in a QuickJS worker
   (`helpers/codeRunner*`) whose only globals are `console`, `context` — the folded
   call context of the entity it is on, so `context.channel` is whatever an

@@ -8,6 +8,10 @@ import '@fontsource-variable/lora/index.css'
 import '@fontsource-variable/lora/wght-italic.css'
 // Fira Code for `type: code` entities (the `font-mono` utility).
 import '@fontsource-variable/fira-code/index.css'
+// The canvas a `type: diagram` entity draws (components/Diagram). Before
+// index.css, which re-points the handful of surfaces the library owns at our own
+// tokens — the later stylesheet is the one that wins.
+import '@xyflow/react/dist/style.css'
 import './index.css'
 import App from './App'
 

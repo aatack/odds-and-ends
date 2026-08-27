@@ -9,7 +9,7 @@ import {
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
-import { TOOL_ID, TYPE_ID } from '../../src/core/builtins'
+import { DIAGRAM_ID, TOOL_ID, TYPE_ID } from '../../src/core/builtins'
 import { outlineMarkdown } from '../../src/core/markdown'
 import type { QueryPage } from '../../src/core/query'
 import { rowsOfPage } from '../../src/core/tree'
@@ -206,10 +206,11 @@ const MCP_TOOLS: McpTool[] = [
       '`inboundLinks` — every entity in the store that links to this one, which is how ' +
       'to find where else a note is referenced. An id nothing has been written to comes ' +
       'back empty rather than missing.\n\n' +
-      'Two ids answer even in a store nobody has written either to, because the store ' +
-      `supplies them: \`${TYPE_ID}\`, whose schema says what a type holds, and ` +
+      'Three ids answer even in a store nobody has written to, because the store ' +
+      `supplies them: \`${TYPE_ID}\`, whose schema says what a type holds, ` +
       `\`${TOOL_ID}\`, whose schema says what a tool holds — every value a definition can ` +
-      'carry and what each one does. **Asked to write a tool for the user, read ' +
+      `carry and what each one does — and \`${DIAGRAM_ID}\`, whose schema says how a note ` +
+      'holds a drawing. **Asked to write a tool for the user, read ' +
       `\`${TOOL_ID}\` first and create the note under \`${TOOLS_ID}\`;** the \`docs://tools\` ` +
       'resource is the same thing at length.',
     needs: 'readEntities',
@@ -456,6 +457,16 @@ const DOCS: Doc[] = [
       'tool that touches any of them, since the tools that do are themselves notes ' +
       `under \`${TOOLS_ID}\` and this is what they assume.`,
     path: '../../docs/changesets.md',
+  },
+  {
+    uri: 'docs://diagrams',
+    name: 'Diagrams: a note that holds a drawing',
+    description:
+      `What a note saying \`type: ${DIAGRAM_ID}\` holds — one shape per value, under a key ` +
+      'beginning `diagram/` — with the fields of a rectangle, a text box and an arrow, ' +
+      'how an arrow names either another shape or a bare point, and what the canvas ' +
+      `over it does. The long version of \`get_details\` on \`${DIAGRAM_ID}\`.`,
+    path: '../../docs/diagrams.md',
   },
   {
     uri: 'docs://integrations',
