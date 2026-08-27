@@ -657,7 +657,10 @@ function BoxNode({ type, data, selected }: NodeProps<DiagramNode>): React.JSX.El
 function AnchorNode(): React.JSX.Element {
   return (
     <>
-      <Handle id="a" type="source" position={Position.Top} className="!opacity-0" />
+      {/* Kept out of sight by a style rather than a class: the rule that reveals a
+          box's dots on hover would otherwise reveal this one too, on top of the
+          dot it already is. */}
+      <Handle id="a" type="source" position={Position.Top} style={{ opacity: 0 }} />
       <div className="size-2.5 rounded-full bg-gray-300 ring-2 ring-white" />
     </>
   )

@@ -2,6 +2,7 @@ import { emptyEntity } from '../../../core/entity'
 import {
   DEFAULT_HEIGHT,
   DEFAULT_WIDTH,
+  aspectRatioOf,
   nextShapeKey,
   shapesOf,
   type Point,
@@ -178,12 +179,12 @@ export const DIAGRAM_TOOLS: ToolSpec[] = [
         hasDefault: true,
       },
     ],
+    // A shape rather than nothing: this tool writes one, and `diagram.shape.remove`
+    // is how a key is cleared. Letting the null through would rub a shape out on
+    // its way past.
     run: async ({ entityId, key, shape }) => {
-      await writeValue(
-        requireId(entityId, 'Entity id'),
-        requireId(key, 'Shape key'),
-        shape ?? null,
-      )
+      if (shape == null) throw new Error('A shape is required')
+      await writeValue(requireId(entityId, 'Entity id'), requireId(key, 'Shape key'), shape)
     },
   },
   {
@@ -223,10 +224,16 @@ export const DIAGRAM_TOOLS: ToolSpec[] = [
         placeholder: '1.78 for 16:9',
       },
     ],
+    // Read the same way the canvas reads it, so `16:9` typed into the palette and
+    // `16:9` already on the entity both come back as the number they mean — and so
+    // a call with nothing in it is the way back to the default.
     run: async ({ entityId, ratio }) => {
-      const value = number(ratio, 0)
-      if (value <= 0) throw new Error('A ratio is a positive number — 1.78 for 16:9')
-      await writeValue(requireId(entityId, 'Entity id'), 'aspectRatio', value)
+      const said = typeof ratio === 'number' ? ratio : String(ratio ?? '')
+      await writeValue(
+        requireId(entityId, 'Entity id'),
+        'aspectRatio',
+        aspectRatioOf({ aspectRatio: said }),
+      )
     },
   },
 ]

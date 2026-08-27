@@ -375,7 +375,7 @@ html.dark .markdown mark {
 .react-flow {
   /* No pane colour of its own: the canvas takes the tone of the surface it is on. */
   --xy-background-color: transparent;
-  --xy-background-pattern-dots-color: var(--color-gray-300);
+  --xy-background-pattern-color: var(--color-gray-300);
 
   --xy-edge-stroke: var(--color-gray-500);
   --xy-edge-stroke-selected: var(--color-brand-600);
