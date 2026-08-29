@@ -35,7 +35,7 @@ export function outlineMarkdown(rows: readonly TreeRow[], opts: MarkdownOptions 
   const lines: string[] = []
 
   for (const row of rows) {
-    const bullet = row.depth === 0 ? '' : `${'  '.repeat(row.depth - 1)}- `
+    const bullet = row.depth === 0 ? '' : `${'    '.repeat(row.depth - 1)}- `
     const box =
       row.depth === 0 ? '' : row.open === true ? '[ ] ' : row.open === false ? '[x] ' : ''
     const heading = row.section ? `${'#'.repeat(Math.min(row.depth + 1, HEADING_LIMIT))} ` : ''
