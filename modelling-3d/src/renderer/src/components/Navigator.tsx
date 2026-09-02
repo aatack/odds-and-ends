@@ -16,6 +16,8 @@ export function Navigator() {
   const actions = useActions()
   const [query, setQuery] = useState('')
   const [renaming, setRenaming] = useState<string | null>(null)
+  // Deleting a model takes every node standing for it with it, so it asks once.
+  const [confirming, setConfirming] = useState<string | null>(null)
 
   const models = modelList(state)
   const groups = useMemo(() => searchGroups(paletteGroups(), query), [query])
@@ -42,7 +44,10 @@ export function Navigator() {
                   event.dataTransfer.setData('application/transform', `model:${model.id}`)
                   event.dataTransfer.effectAllowed = 'copy'
                 }}
-                onClick={() => actions.openModel(model.id)}
+                onClick={() => {
+                  actions.openModel(model.id)
+                  setConfirming(null)
+                }}
                 onDoubleClick={() => setRenaming(model.id)}
                 className={cn(
                   'group flex items-center gap-1 rounded-md px-2 py-1',
@@ -71,12 +76,19 @@ export function Navigator() {
                     <button
                       onClick={(event) => {
                         event.stopPropagation()
-                        actions.deleteModel(model.id)
+                        if (confirming === model.id) actions.deleteModel(model.id)
+                        else setConfirming(model.id)
                       }}
-                      title="Delete this model, and anywhere it is used"
-                      className="hidden shrink-0 px-1 text-[11px] text-faint group-hover:block hover:text-danger"
+                      onBlur={() => setConfirming(null)}
+                      title="Delete this model, and every node standing for it"
+                      className={cn(
+                        'shrink-0 px-1 text-[11px]',
+                        confirming === model.id
+                          ? 'block text-danger'
+                          : 'hidden text-faint group-hover:block hover:text-danger',
+                      )}
                     >
-                      ×
+                      {confirming === model.id ? 'delete?' : '×'}
                     </button>
                   </>
                 )}
