@@ -79,12 +79,12 @@ test('types have to match, and a loop is refused', () => {
 test('a dropped input handle becomes a constant carrying what the socket was worth', () => {
   const { actions, state } = app()
   actions.createModel('Bar')
-  const solid = actions.addNode('solid.extrude', 200, 0, { height: 4 })!
-  const constant = actions.spawnConstant(solid, 'height', 0, 0)!
+  const shape = actions.addNode('shape2.polygon', 200, 0, { radius: 4 })!
+  const constant = actions.spawnConstant(shape, 'radius', 0, 0)!
   const model = derive.openModel(state())!
   assert.equal(model.nodes[constant].transform, 'const.number')
   assert.equal(model.nodes[constant].data.value, 4)
-  assert.equal(Object.values(model.edges)[0].target, solid)
+  assert.equal(Object.values(model.edges)[0].target, shape)
 })
 
 test('deleting a node takes its edges with it', () => {

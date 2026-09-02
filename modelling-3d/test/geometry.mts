@@ -54,7 +54,7 @@ test('a fill faces upwards whichever way its outline was wound', () => {
 
 test('an extrusion is closed, and its walls face away from the axis', () => {
   const square = { points: [vec2(-1, -1), vec2(1, -1), vec2(1, 1), vec2(-1, 1)], closed: true }
-  const mesh = g.extrude(square, 2, GREY)
+  const mesh = g.extrude(square, g.line3(vec3(0, 0, 0), vec3(0, 2, 0)), GREY)
   // Four walls and two caps, two triangles each.
   assert.equal(mesh.triangles.length, 12)
   // The solid is a box about (0, 1, 0), so every face points away from there.
@@ -63,6 +63,31 @@ test('an extrusion is closed, and its walls face away from the axis', () => {
     const centre = g.scale3(g.add3(g.add3(t.a, t.b), t.c), 1 / 3)
     assert.ok(g.dot3(normalOf(t), g.sub3(centre, middle)) > 0, 'a triangle faced inwards')
   }
+})
+
+test('an extrusion straight up matches a flat shape lifted, plane for plane', () => {
+  const triangleOutline = { points: [vec2(0, 0), vec2(1, 0), vec2(0, 1)], closed: true }
+  const up = g.extrude(triangleOutline, g.line3(vec3(0, 0, 0), vec3(0, 1, 0)), GREY)
+  const bounds = g.boundsOf(up)!
+  // x from the shape's x, z from its y (negated), y the path.
+  assert.deepEqual(
+    [bounds.min.x, bounds.max.x, bounds.min.z, bounds.max.z, bounds.min.y, bounds.max.y],
+    [0, 1, -1, 0, 0, 1],
+  )
+})
+
+test('a swept path bends the extrusion along it', () => {
+  const square = { points: [vec2(-0.1, -0.1), vec2(0.1, -0.1), vec2(0.1, 0.1), vec2(-0.1, 0.1)], closed: true }
+  const bend = {
+    points: [vec3(0, 0, 0), vec3(0, 1, 0), vec3(1, 2, 0)],
+    closed: false,
+  }
+  const mesh = g.extrude(square, bend, GREY)
+  const bounds = g.boundsOf(mesh)!
+  assert.ok(bounds.max.x > 0.9, `the sweep did not follow the bend: ${bounds.max.x}`)
+  assert.ok(bounds.max.y > 1.9, `the sweep did not reach the top: ${bounds.max.y}`)
+  // Two walls per edge per span, plus a cap at each end.
+  assert.equal(mesh.triangles.length, 4 * 2 * 2 + 2 * 2)
 })
 
 test('a revolve wraps all the way round and back', () => {

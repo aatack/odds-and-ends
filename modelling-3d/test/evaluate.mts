@@ -166,13 +166,13 @@ test('a model on its own uses its ports’ defaults, so it previews alone', () =
   assert.equal(evaluateModel(m, { m }).values.get('times')?.value, 9)
 })
 
-test('a solid comes out of the graph as triangles', () => {
+test('a solid comes out of the graph as triangles, extruded up by default', () => {
   const m = model(
     'm',
     'A box',
     [
       { id: 'rect', transform: 'shape2.rectangle', x: 0, y: 0, data: { width: 2, height: 2 } },
-      { id: 'ext', transform: 'solid.extrude', x: 1, y: 0, data: { height: 3 } },
+      { id: 'ext', transform: 'solid.extrude', x: 1, y: 0 },
     ],
     [['rect', 'path', 'ext', 'path']],
   )

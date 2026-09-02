@@ -57,7 +57,7 @@ export function ValueEditor({
     case 'path2':
       return <PathPad value={value as Path2} onChange={onChange} />
     case 'path3':
-      return <Path3Summary value={value as Path3} />
+      return <Path3Editor value={value as Path3} onChange={onChange} />
     default:
       return null
   }
@@ -205,10 +205,52 @@ function ColourField({ value, onChange }: { value: Colour; onChange: (value: Col
 // Paths
 // ---------------------------------------------------------------------------
 
-function Path3Summary({ value }: { value: Path3 }) {
+/**
+ * A 3D path as a list of points. There is no pad for it — a plane can't show
+ * three axes honestly — so it is typed, which is enough for the thing it is
+ * mostly for: saying how far and in which direction to extrude.
+ */
+function Path3Editor({ value, onChange }: { value: Path3; onChange: (value: Path3) => void }) {
+  const points = value.points
+  const set = (index: number, next: Vec3): void =>
+    onChange({ ...value, points: points.map((p, k) => (k === index ? next : p)) })
+
   return (
-    <div className="rounded bg-sunken px-1.5 py-1 text-[11px] text-muted">
-      {value.points.length} points{value.closed ? ', closed' : ''} — flatten it to edit
+    <div className="nodrag">
+      {points.map((point, index) => (
+        <div key={index} className="flex items-center gap-1 pb-0.5">
+          <NumberField value={point.x} onChange={(x) => set(index, { ...point, x })} />
+          <NumberField value={point.y} onChange={(y) => set(index, { ...point, y })} />
+          <NumberField value={point.z} onChange={(z) => set(index, { ...point, z })} />
+          <button
+            onClick={() =>
+              points.length > 2 && onChange({ ...value, points: points.filter((_, k) => k !== index) })
+            }
+            className="shrink-0 px-0.5 text-[11px] text-faint hover:text-danger"
+            title="Remove this point"
+          >
+            ×
+          </button>
+        </div>
+      ))}
+      <div className="flex items-center gap-2 text-[10px] text-faint">
+        <button
+          onClick={() => {
+            const last = points[points.length - 1] ?? { x: 0, y: 0, z: 0 }
+            onChange({ ...value, points: [...points, { ...last, y: last.y + 1 }] })
+          }}
+          className="hover:text-muted"
+        >
+          + point
+        </button>
+        <span className="grow" />
+        <button
+          onClick={() => onChange({ ...value, closed: !value.closed })}
+          className={cn(value.closed ? 'text-brand-600' : 'hover:text-muted')}
+        >
+          {value.closed ? 'closed' : 'open'}
+        </button>
+      </div>
     </div>
   )
 }

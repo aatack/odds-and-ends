@@ -1,6 +1,10 @@
 /**
  * The built-in transforms: the vocabulary a model is written in.
  *
+ * A solid comes out grey. Colour is `Paint`'s job and nobody else's — a shape
+ * that has to be told what colour it is before it can be a shape is a shape
+ * that has been over-specified.
+ *
  * A transform is data — sockets in, sockets out, and a pure function between
  * them. Nothing here knows about the graph, the store or the UI, which is what
  * makes the set extensible: a user's own model becomes a transform of the same
@@ -10,7 +14,7 @@
 
 import * as g from './geometry'
 import type { Colour, Mesh, Path2, Path3, Value, ValueType, Vec2, Vec3 } from './values'
-import { TYPE_LABELS, VALUE_TYPES, defaultValue, path2, path3, vec2, vec3 } from './values'
+import { GREY, TYPE_LABELS, VALUE_TYPES, defaultValue, path2, path3, vec2, vec3 } from './values'
 
 export interface Socket {
   name: string
@@ -408,6 +412,15 @@ const ops2d: TransformDef[] = [
 
 const ops3d: TransformDef[] = [
   def({
+    id: 'path3.line',
+    label: 'Line in 3D',
+    category: '3D operations',
+    summary: 'A straight path between two points — what an extrusion usually wants.',
+    inputs: [inp('from', 'vec3', 'From'), inp('to', 'vec3', 'To', vec3(0, 1, 0))],
+    outputs: [out('path', 'path3', 'Path')],
+    evaluate: (i) => ({ path: g.line3(i.from, i.to) }),
+  }),
+  def({
     id: 'path3.translate',
     label: 'Translate 3D path',
     category: '3D operations',
@@ -506,26 +519,18 @@ const solids: TransformDef[] = [
     label: 'Fill',
     category: 'Solids',
     summary: 'A flat polygon lying on the ground plane.',
-    inputs: [
-      inp('path', 'path2', 'Outline'),
-      inp('height', 'number', 'Height'),
-      inp('colour', 'colour', 'Colour'),
-    ],
+    inputs: [inp('path', 'path2', 'Outline'), inp('height', 'number', 'Height')],
     outputs: [out('mesh', 'mesh', 'Mesh')],
-    evaluate: (i) => ({ mesh: g.fill(i.path, i.colour, i.height) }),
+    evaluate: (i) => ({ mesh: g.fill(i.path, GREY, i.height) }),
   }),
   def({
     id: 'solid.extrude',
     label: 'Extrude',
     category: 'Solids',
-    summary: 'A closed 2D outline swept upwards, capped at both ends.',
-    inputs: [
-      inp('path', 'path2', 'Outline'),
-      inp('height', 'number', 'Height', 1),
-      inp('colour', 'colour', 'Colour'),
-    ],
+    summary: 'A 2D outline swept along a path, capped at both ends. Straight up by default.',
+    inputs: [inp('path', 'path2', 'Outline'), inp('along', 'path3', 'Along')],
     outputs: [out('mesh', 'mesh', 'Mesh')],
-    evaluate: (i) => ({ mesh: g.extrude(i.path, i.height, i.colour) }),
+    evaluate: (i) => ({ mesh: g.extrude(i.path, i.along, GREY) }),
   }),
   def({
     id: 'solid.revolve',
@@ -536,45 +541,36 @@ const solids: TransformDef[] = [
       inp('profile', 'path2', 'Profile'),
       inp('segments', 'number', 'Segments', 32),
       inp('degrees', 'number', 'Degrees', 360),
-      inp('colour', 'colour', 'Colour'),
     ],
     outputs: [out('mesh', 'mesh', 'Mesh')],
-    evaluate: (i) => ({ mesh: g.revolve(i.profile, i.segments, i.colour, i.degrees) }),
+    evaluate: (i) => ({ mesh: g.revolve(i.profile, i.segments, GREY, i.degrees) }),
   }),
   def({
     id: 'solid.loft',
     label: 'Loft',
     category: 'Solids',
     summary: 'A skin between two 3D paths, point for point.',
-    inputs: [
-      inp('a', 'path3', 'From'),
-      inp('b', 'path3', 'To'),
-      inp('colour', 'colour', 'Colour'),
-    ],
+    inputs: [inp('a', 'path3', 'From'), inp('b', 'path3', 'To')],
     outputs: [out('mesh', 'mesh', 'Mesh')],
-    evaluate: (i) => ({ mesh: g.loft(i.a, i.b, i.colour) }),
+    evaluate: (i) => ({ mesh: g.loft(i.a, i.b, GREY) }),
   }),
   def({
     id: 'solid.box',
     label: 'Box',
     category: 'Solids',
     summary: 'A box centred on the origin.',
-    inputs: [inp('size', 'vec3', 'Size', vec3(1, 1, 1)), inp('colour', 'colour', 'Colour')],
+    inputs: [inp('size', 'vec3', 'Size', vec3(1, 1, 1))],
     outputs: [out('mesh', 'mesh', 'Mesh')],
-    evaluate: (i) => ({ mesh: g.box(i.size, i.colour) }),
+    evaluate: (i) => ({ mesh: g.box(i.size, GREY) }),
   }),
   def({
     id: 'solid.sphere',
     label: 'Sphere',
     category: 'Solids',
     summary: 'A sphere centred on the origin.',
-    inputs: [
-      inp('radius', 'number', 'Radius', 0.5),
-      inp('segments', 'number', 'Segments', 24),
-      inp('colour', 'colour', 'Colour'),
-    ],
+    inputs: [inp('radius', 'number', 'Radius', 0.5), inp('segments', 'number', 'Segments', 24)],
     outputs: [out('mesh', 'mesh', 'Mesh')],
-    evaluate: (i) => ({ mesh: g.sphere(i.radius, i.segments, i.colour) }),
+    evaluate: (i) => ({ mesh: g.sphere(i.radius, i.segments, GREY) }),
   }),
   def({
     id: 'solid.cylinder',
@@ -585,10 +581,9 @@ const solids: TransformDef[] = [
       inp('radius', 'number', 'Radius', 0.5),
       inp('height', 'number', 'Height', 1),
       inp('segments', 'number', 'Segments', 24),
-      inp('colour', 'colour', 'Colour'),
     ],
     outputs: [out('mesh', 'mesh', 'Mesh')],
-    evaluate: (i) => ({ mesh: g.cylinder(i.radius, i.height, i.segments, i.colour) }),
+    evaluate: (i) => ({ mesh: g.cylinder(i.radius, i.height, i.segments, GREY) }),
   }),
 ]
 

@@ -10,7 +10,7 @@
 import assert from 'node:assert/strict'
 
 const { exportGlb } = await import('../src/core/glb')
-const { box, extrude } = await import('../src/core/geometry')
+const { box, extrude, line3 } = await import('../src/core/geometry')
 const { colour, toLinear, vec2, vec3 } = await import('../src/core/values')
 
 const tests: [string, () => void][] = []
@@ -77,7 +77,11 @@ test('an empty mesh still writes a readable file', () => {
 })
 
 test('a positions buffer holds the vertices it was given', () => {
-  const mesh = extrude({ points: [vec2(0, 0), vec2(1, 0), vec2(0, 1)], closed: true }, 1, colour(0, 0, 1))
+  const mesh = extrude(
+    { points: [vec2(0, 0), vec2(1, 0), vec2(0, 1)], closed: true },
+    line3(vec3(0, 0, 0), vec3(0, 1, 0)),
+    colour(0, 0, 1),
+  )
   const { json, bin } = readGlb(exportGlb(mesh))
   const view = json.bufferViews[json.accessors[0].bufferView]
   assert.equal(view.byteLength, mesh.triangles.length * 3 * 3 * 4)

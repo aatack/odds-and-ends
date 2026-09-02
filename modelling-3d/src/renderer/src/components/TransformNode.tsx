@@ -66,8 +66,10 @@ function Control({ children }: { children: ReactNode }) {
   )
 }
 
+const WIDE_TYPES: ValueType[] = ['path2', 'path3', 'vec3']
+
 const wide = (sockets: SocketView[]): boolean =>
-  sockets.some((socket) => !socket.connected && (socket.type === 'path2' || socket.type === 'vec3'))
+  sockets.some((socket) => !socket.connected && WIDE_TYPES.includes(socket.type))
 
 export function TransformNode({ data, selected }: NodeProps & { data: NodeView }) {
   const width = wide([...data.inputs, ...data.params]) ? 196 : 168

@@ -180,28 +180,103 @@ export function fill(path: Path2, colour: Colour, height = 0): Mesh {
   }
 }
 
-/** A closed 2D outline swept upwards, with caps at both ends. */
-export function extrude(path: Path2, height: number, colour: Colour, caps = true): Mesh {
+/**
+ * A frame along a swept path: where it is, and which way the cross-section's
+ * own x and y point there.
+ */
+interface Frame {
+  at: Vec3
+  u: Vec3
+  v: Vec3
+}
+
+/**
+ * Frames along a path, each turned as little as possible from the one before
+ * it (parallel transport), so a cross-section swept through them doesn't spin
+ * about the path as it goes.
+ *
+ * The first frame is chosen to agree with `lift`: a path running straight up
+ * puts the cross-section's x on +X and its y on -Z, which is the same placement
+ * a flat shape gets.
+ */
+export function framesAlong(path: Path3): Frame[] {
   const pts = path.points
-  if (pts.length < 3) return { triangles: [] }
+  if (pts.length < 2) return []
+  const closed = path.closed
+
+  const tangents: Vec3[] = pts.map((p, i) => {
+    const before = i === 0 ? (closed ? sub3(p, pts[pts.length - 1]) : null) : sub3(p, pts[i - 1])
+    const after =
+      i === pts.length - 1 ? (closed ? sub3(pts[0], p) : null) : sub3(pts[i + 1], p)
+    const sum = add3(normalise3(before ?? after!), normalise3(after ?? before!))
+    const t = normalise3(sum)
+    return length3(t) === 0 ? normalise3(after ?? before!) : t
+  })
+
+  const first = tangents[0]
+  let u = cross3(first, vec3(0, 0, 1))
+  if (length3(u) < 1e-6) u = cross3(first, vec3(0, 1, 0))
+  u = normalise3(u)
+
+  const frames: Frame[] = []
+  let previous = first
+  for (let i = 0; i < pts.length; i++) {
+    const t = tangents[i]
+    // Turn the frame by whatever turned the tangent, and nothing more.
+    const axis = cross3(previous, t)
+    if (length3(axis) > 1e-9) {
+      const dot = Math.max(-1, Math.min(1, dot3(previous, t)))
+      u = normalise3(rotateAxis(u, axis, (Math.acos(dot) * 180) / Math.PI))
+    }
+    previous = t
+    frames.push({ at: pts[i], u, v: normalise3(cross3(t, u)) })
+  }
+  return frames
+}
+
+/** A cross-section placed in a frame. */
+const place = (frame: Frame, p: Vec2): Vec3 =>
+  add3(frame.at, add3(scale3(frame.u, p.x), scale3(frame.v, p.y)))
+
+/**
+ * A 2D outline swept along a 3D path, capped at both ends when the outline is
+ * closed and the path isn't. A straight path up is the plain extrusion; any
+ * other path bends it.
+ */
+export function extrude(outline: Path2, path: Path3, colour: Colour, caps = true): Mesh {
+  const pts = outline.points
+  const frames = framesAlong(path)
+  if (pts.length < 2 || frames.length < 2) return { triangles: [] }
   const anticlockwise = signedArea(pts) >= 0
   const ring = anticlockwise ? pts : [...pts].reverse()
+
+  const rings = frames.map((frame) => ring.map((p) => place(frame, p)))
   const triangles: Triangle[] = []
-  const top = Math.max(0, height)
-  const bottom = Math.min(0, height)
-  for (let i = 0; i < ring.length; i++) {
-    const a = ring[i]
-    const b = ring[(i + 1) % ring.length]
-    triangles.push(
-      ...quad(lift(a, bottom), lift(b, bottom), lift(b, top), lift(a, top), colour),
-    )
+  const last = path.closed ? rings.length : rings.length - 1
+  const edges = outline.closed ? ring.length : ring.length - 1
+  for (let s = 0; s < last; s++) {
+    const here = rings[s]
+    const next = rings[(s + 1) % rings.length]
+    for (let i = 0; i < edges; i++) {
+      const j = (i + 1) % ring.length
+      triangles.push(...quad(here[i], here[j], next[j], next[i], colour))
+    }
   }
-  if (caps) {
-    triangles.push(...fill({ points: ring, closed: true }, colour, top).triangles)
-    triangles.push(...flipMesh(fill({ points: ring, closed: true }, colour, bottom)).triangles)
+
+  if (caps && outline.closed && !path.closed && ring.length >= 3) {
+    const cut = triangulate(ring)
+    const start = rings[0]
+    const end = rings[rings.length - 1]
+    for (const [i, j, k] of cut) {
+      triangles.push(triangle(end[i], end[j], end[k], colour))
+      triangles.push(triangle(start[i], start[k], start[j], colour))
+    }
   }
   return { triangles }
 }
+
+/** A straight path, which is what an extrusion wants most of the time. */
+export const line3 = (from: Vec3, to: Vec3): Path3 => ({ points: [from, to], closed: false })
 
 /**
  * A profile spun about the Y axis. The profile's x is a radius and its y a
