@@ -64,7 +64,6 @@ const def = (d: DefInit): TransformDef => ({ params: [], inputs: [], ...d })
 
 export const CATEGORIES = [
   'Constants',
-  'Ports',
   'Numbers',
   'Points',
   '2D shapes',
@@ -73,6 +72,8 @@ export const CATEGORIES = [
   'Convert',
   'Solids',
   'Mesh operations',
+  // Last: ports only matter once a model is being used inside another.
+  'Ports',
 ] as const
 
 // ---------------------------------------------------------------------------

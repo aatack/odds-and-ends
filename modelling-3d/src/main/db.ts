@@ -1,15 +1,24 @@
 /**
  * The store: one sqlite file holding every model, node and edge.
  *
- * Rows rather than a blob per model, so an edit writes only what changed and
- * the file stays something you can open and read with the sqlite CLI. A node's
- * literals are the one thing kept as JSON, because their shape is the value
- * type's business and not the schema's.
+ * Rows rather than a blob per model, so an edit says exactly what it changed
+ * and the file is something you can open with the sqlite CLI. A node's literals
+ * are the one thing kept as JSON, because their shape is the value type's
+ * business and not the schema's.
+ *
+ * The engine is sqlite compiled to wasm rather than a native binding. A native
+ * one has to be rebuilt against Electron's ABI on every install — a toolchain,
+ * a postinstall step, and a binary that then no longer loads under plain node,
+ * which would take these tests with it. The models are kilobytes, so the cost
+ * of the wasm build (the database lives in memory and the whole file is written
+ * out after a change) is nothing, and `npm install` stays instant.
  */
 
-import Database from 'better-sqlite3'
-import type { Model, Models } from '../core/graph'
+import { renameSync, writeFileSync } from 'fs'
+import { readFile } from 'fs/promises'
+import initSqlJs, { type Database } from 'sql.js'
 import type { WriteOp } from '../core/api'
+import type { Model, Models } from '../core/graph'
 import { seedModels } from '../core/seed'
 
 const SCHEMA = `
@@ -20,7 +29,7 @@ create table if not exists models (
 );
 create table if not exists nodes (
   id        text primary key,
-  model_id  text not null references models(id) on delete cascade,
+  model_id  text not null,
   transform text not null,
   x         real not null,
   y         real not null,
@@ -28,7 +37,7 @@ create table if not exists nodes (
 );
 create table if not exists edges (
   id            text primary key,
-  model_id      text not null references models(id) on delete cascade,
+  model_id      text not null,
   source        text not null,
   source_output text not null,
   target        text not null,
@@ -38,26 +47,37 @@ create index if not exists nodes_by_model on nodes(model_id);
 create index if not exists edges_by_model on edges(model_id);
 `
 
-export class Store {
-  private db: Database.Database
+/** How long a burst of edits is allowed to gather before the file is written. */
+const FLUSH_AFTER = 250
 
-  constructor(file: string) {
-    this.db = new Database(file)
-    this.db.pragma('journal_mode = WAL')
-    this.db.pragma('foreign_keys = ON')
-    this.db.exec(SCHEMA)
-    if (this.isEmpty()) this.seed()
+export class Store {
+  private timer: ReturnType<typeof setTimeout> | null = null
+
+  private constructor(
+    private db: Database,
+    private file: string,
+  ) {}
+
+  static async open(file: string): Promise<Store> {
+    const SQL = await initSqlJs()
+    const existing = await readFile(file).catch(() => null)
+    const db = existing ? new SQL.Database(existing) : new SQL.Database()
+    const store = new Store(db, file)
+    db.run(SCHEMA)
+    if (store.isEmpty()) {
+      store.seed()
+      store.flush()
+    }
+    return store
   }
 
   private isEmpty(): boolean {
-    const row = this.db.prepare('select count(*) as n from models').get() as { n: number }
-    return row.n === 0
+    return this.rows<{ n: number }>('select count(*) as n from models')[0].n === 0
   }
 
   private seed(): void {
-    const models = seedModels()
     this.apply(
-      Object.values(models).flatMap((model): WriteOp[] => [
+      Object.values(seedModels()).flatMap((model): WriteOp[] => [
         { kind: 'model.create', model: { ...model, nodes: {}, edges: {} } },
         ...Object.values(model.nodes).map(
           (node): WriteOp => ({ kind: 'node.put', modelId: model.id, node }),
@@ -69,23 +89,29 @@ export class Store {
     )
   }
 
+  private rows<T>(sql: string): T[] {
+    const statement = this.db.prepare(sql)
+    const out: T[] = []
+    while (statement.step()) out.push(statement.getAsObject() as T)
+    statement.free()
+    return out
+  }
+
   load(): Models {
     const models: Models = {}
-    for (const row of this.db.prepare('select * from models order by ord').all() as {
-      id: string
-      name: string
-      ord: number
-    }[]) {
+    for (const row of this.rows<{ id: string; name: string; ord: number }>(
+      'select * from models order by ord',
+    )) {
       models[row.id] = { id: row.id, name: row.name, order: row.ord, nodes: {}, edges: {} }
     }
-    for (const row of this.db.prepare('select * from nodes').all() as {
+    for (const row of this.rows<{
       id: string
       model_id: string
       transform: string
       x: number
       y: number
       data: string
-    }[]) {
+    }>('select * from nodes')) {
       const model = models[row.model_id]
       if (!model) continue
       model.nodes[row.id] = {
@@ -96,14 +122,14 @@ export class Store {
         data: parse(row.data),
       }
     }
-    for (const row of this.db.prepare('select * from edges').all() as {
+    for (const row of this.rows<{
       id: string
       model_id: string
       source: string
       source_output: string
       target: string
       target_input: string
-    }[]) {
+    }>('select * from edges')) {
       const model = models[row.model_id]
       if (!model) continue
       model.edges[row.id] = {
@@ -119,57 +145,85 @@ export class Store {
 
   /** A burst of edits as one transaction, so a half-wired node never lands. */
   apply(ops: WriteOp[]): void {
-    const run = this.db.transaction((batch: WriteOp[]) => {
-      for (const op of batch) this.applyOne(op)
-    })
-    run(ops)
+    if (ops.length === 0) return
+    this.db.run('begin')
+    try {
+      for (const op of ops) this.applyOne(op)
+      this.db.run('commit')
+    } catch (error) {
+      this.db.run('rollback')
+      throw error
+    }
+    this.schedule()
   }
 
   private applyOne(op: WriteOp): void {
     const db = this.db
     switch (op.kind) {
       case 'model.create':
-        db.prepare('insert or replace into models (id, name, ord) values (?, ?, ?)').run(
+        db.run('insert or replace into models (id, name, ord) values (?, ?, ?)', [
           op.model.id,
           op.model.name,
           op.model.order,
-        )
+        ])
         return
       case 'model.rename':
-        db.prepare('update models set name = ? where id = ?').run(op.name, op.id)
+        db.run('update models set name = ? where id = ?', [op.name, op.id])
         return
       case 'model.delete':
-        db.prepare('delete from nodes where model_id = ?').run(op.id)
-        db.prepare('delete from edges where model_id = ?').run(op.id)
-        db.prepare('delete from models where id = ?').run(op.id)
+        db.run('delete from nodes where model_id = ?', [op.id])
+        db.run('delete from edges where model_id = ?', [op.id])
+        db.run('delete from models where id = ?', [op.id])
         return
       case 'node.put':
-        db.prepare(
+        db.run(
           'insert or replace into nodes (id, model_id, transform, x, y, data) values (?, ?, ?, ?, ?, ?)',
-        ).run(op.node.id, op.modelId, op.node.transform, op.node.x, op.node.y, JSON.stringify(op.node.data))
+          [op.node.id, op.modelId, op.node.transform, op.node.x, op.node.y, JSON.stringify(op.node.data)],
+        )
         return
       case 'node.move':
-        db.prepare('update nodes set x = ?, y = ? where id = ?').run(op.x, op.y, op.id)
+        db.run('update nodes set x = ?, y = ? where id = ?', [op.x, op.y, op.id])
         return
       case 'node.data':
-        db.prepare('update nodes set data = ? where id = ?').run(JSON.stringify(op.data), op.id)
+        db.run('update nodes set data = ? where id = ?', [JSON.stringify(op.data), op.id])
         return
       case 'node.delete':
-        db.prepare('delete from edges where source = ? or target = ?').run(op.id, op.id)
-        db.prepare('delete from nodes where id = ?').run(op.id)
+        db.run('delete from edges where source = ? or target = ?', [op.id, op.id])
+        db.run('delete from nodes where id = ?', [op.id])
         return
       case 'edge.put':
-        db.prepare(
+        db.run(
           'insert or replace into edges (id, model_id, source, source_output, target, target_input) values (?, ?, ?, ?, ?, ?)',
-        ).run(op.edge.id, op.modelId, op.edge.source, op.edge.sourceOutput, op.edge.target, op.edge.targetInput)
+          [op.edge.id, op.modelId, op.edge.source, op.edge.sourceOutput, op.edge.target, op.edge.targetInput],
+        )
         return
       case 'edge.delete':
-        db.prepare('delete from edges where id = ?').run(op.id)
+        db.run('delete from edges where id = ?', [op.id])
         return
     }
   }
 
+  private schedule(): void {
+    if (this.timer) return
+    this.timer = setTimeout(() => {
+      this.timer = null
+      this.flush()
+    }, FLUSH_AFTER)
+  }
+
+  /** Write the database out, through a temporary file so a crash can't halve it. */
+  flush(): void {
+    if (this.timer) {
+      clearTimeout(this.timer)
+      this.timer = null
+    }
+    const temporary = `${this.file}.writing`
+    writeFileSync(temporary, Buffer.from(this.db.export()))
+    renameSync(temporary, this.file)
+  }
+
   close(): void {
+    this.flush()
     this.db.close()
   }
 }

@@ -40,7 +40,7 @@ const PLINTH = colour(0.63, 0.62, 0.6)
 const column = model(
   'seed-column',
   'Column',
-  0,
+  1,
   [
     node('c-sides', 'port.in.number', -320, -120, { name: 'sides', value: 8 }),
     node('c-radius', 'port.in.number', -320, 0, { name: 'radius', value: 0.28 }),
@@ -61,7 +61,7 @@ const column = model(
 const colonnade = model(
   'seed-colonnade',
   'Colonnade',
-  1,
+  0,
   [
     node('n-count', 'const.number', -400, -160, { value: 8 }),
     node('n-column', modelTransformId('seed-column'), -140, -160, { radius: 0.28, height: 2.4 }),

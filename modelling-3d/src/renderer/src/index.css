@@ -1,0 +1,116 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/geist';
+@import '@xyflow/react/dist/style.css';
+
+/*
+  Clean and quiet: tone and spacing rather than borders, one muted accent, and
+  nothing that moves. Every colour used anywhere is a token here.
+*/
+@theme {
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
+
+  --color-brand-50: #f2f3fd;
+  --color-brand-100: #e5e7fb;
+  --color-brand-200: #ccd0f6;
+  --color-brand-400: #8b93e6;
+  --color-brand-500: #6169d9;
+  --color-brand-600: #4c53c4;
+  --color-brand-700: #3f45a3;
+
+  --color-ink: #1f2024;
+  --color-muted: #6c6f78;
+  --color-faint: #9a9da6;
+  --color-line: #e8e8ec;
+  --color-panel: #ffffff;
+  --color-body: #f4f4f6;
+  --color-sunken: #fafafb;
+  --color-danger: #b04141;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-body);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* No motion, anywhere. State changes are instantaneous. */
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  input,
+  select {
+    font: inherit;
+    color: inherit;
+  }
+
+  :focus {
+    outline: none;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand-400);
+    outline-offset: 1px;
+  }
+
+  /* Numbers line up when they are being compared, which on a node they are. */
+  input[type='number'] {
+    font-variant-numeric: tabular-nums;
+    -moz-appearance: textfield;
+  }
+
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+}
+
+/* React Flow, dressed down to match the rest. */
+.react-flow {
+  --xy-background-color: var(--color-sunken);
+  --xy-edge-stroke: #b9bcc6;
+  --xy-edge-stroke-selected: var(--color-brand-500);
+  --xy-edge-stroke-width: 1.5;
+  --xy-handle-background-color: var(--color-panel);
+  --xy-handle-border-color: #b9bcc6;
+}
+
+.react-flow__node {
+  font-size: 12px;
+}
+
+.react-flow__handle {
+  width: 9px;
+  height: 9px;
+  border-width: 1.5px;
+}
+
+.react-flow__handle.connectingfrom,
+.react-flow__handle.connectionindicator:hover {
+  background: var(--color-brand-500);
+  border-color: var(--color-brand-500);
+}
+
+.react-flow__attribution {
+  display: none;
+}

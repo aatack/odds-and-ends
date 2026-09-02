@@ -14,7 +14,7 @@ import { constantId } from '@core/transforms'
 import type { ValueType } from '@core/values'
 import { defaultValue } from '@core/values'
 import { connectionProblem, defOf, literalOf, openModel } from './derive'
-import type { AppState, Store } from './store'
+import type { AppState, Notice, Store } from './store'
 
 export function newId(): string {
   return globalThis.crypto?.randomUUID
@@ -41,7 +41,10 @@ export interface Actions {
   toggleSelection(id: string): void
 
   addNode(transform: string, x: number, y: number, data?: Record<string, unknown>): string | null
+  /** Where a node is being dragged to. Not written: a drag is not an edit yet. */
   moveNode(id: string, x: number, y: number): void
+  /** The drag ended here — now it is worth writing down. */
+  commitNode(id: string): void
   setNodeValue(id: string, key: string, value: unknown): void
   deleteNodes(ids: string[]): void
 
@@ -53,7 +56,7 @@ export interface Actions {
    */
   spawnConstant(target: string, targetInput: string, x: number, y: number): string | null
 
-  notify(text: string | null): void
+  notify(notice: Notice | null): void
 }
 
 export function createActions(store: Store, db: Persistence): Actions {
@@ -183,11 +186,14 @@ export function createActions(store: Store, db: Persistence): Actions {
       edit((model) => {
         const node = model.nodes[id]
         if (!node || (node.x === x && node.y === y)) return null
-        return {
-          model: withNodes(model, { ...model.nodes, [id]: { ...node, x, y } }),
-          ops: [{ kind: 'node.move', id, x, y }],
-        }
+        return { model: withNodes(model, { ...model.nodes, [id]: { ...node, x, y } }), ops: [] }
       })
+    },
+
+    commitNode(id) {
+      const model = openModel(store.getState())
+      const node = model?.nodes[id]
+      if (node) write({ kind: 'node.move', id, x: node.x, y: node.y })
     },
 
     setNodeValue(id, key, value) {
@@ -300,8 +306,8 @@ export function createActions(store: Store, db: Persistence): Actions {
       return made ? id : null
     },
 
-    notify(text) {
-      store.update((state) => ({ ...state, notice: text }))
+    notify(notice) {
+      store.update((state) => ({ ...state, notice }))
     },
   }
 }

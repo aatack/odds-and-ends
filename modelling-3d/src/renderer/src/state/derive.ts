@@ -9,7 +9,7 @@
 import type { Evaluation } from '@core/evaluate'
 import { evaluateModel } from '@core/evaluate'
 import type { GraphNode, Model, Models } from '@core/graph'
-import { lookupTransform, modelDef, modelIdOf, terminalNodes } from '@core/graph'
+import { lookupTransform, modelIdOf, terminalNodes } from '@core/graph'
 import type { Scene } from '@core/scene'
 import { sceneOf } from '@core/scene'
 import type { Socket, TransformDef } from '@core/transforms'
@@ -94,38 +94,27 @@ export function previewScene(state: AppState, evaluation: Evaluation): Scene {
 // The navigator
 // ---------------------------------------------------------------------------
 
-export interface NavigatorItem {
+export interface PaletteItem {
   transform: string
   label: string
   summary: string
-  /** Set when the item is one of the user's own models. */
-  modelId?: string
 }
 
-export interface NavigatorGroup {
+export interface PaletteGroup {
   category: string
-  items: NavigatorItem[]
+  items: PaletteItem[]
 }
 
 /**
- * The palette: the user's own models first, since those are the reason for the
- * app, then the built-ins by category. Constants are left out — one is made by
- * dragging an input handle into empty space, which is where you want it.
+ * The built-in vocabulary, by category. The user's own models are not in here:
+ * they are the list above it, which is draggable in the same way — a model is
+ * both a thing you open and a transform you can use.
+ *
+ * Constants are left out too. One is made by dropping an input handle on empty
+ * space, which is where you want it and already the right type.
  */
-export function navigatorGroups(state: AppState, openId: string | null): NavigatorGroup[] {
-  const models: NavigatorItem[] = modelList(state)
-    .filter((model) => model.id !== openId)
-    .map((model) => {
-      const def = modelDef(model)
-      return {
-        transform: def.id,
-        label: model.name,
-        summary: def.summary,
-        modelId: model.id,
-      }
-    })
-
-  const groups: NavigatorGroup[] = models.length > 0 ? [{ category: 'Models', items: models }] : []
+export function paletteGroups(): PaletteGroup[] {
+  const groups: PaletteGroup[] = []
   for (const category of CATEGORIES) {
     if (category === 'Constants') continue
     const items = BUILT_IN.filter((def) => def.category === category).map((def) => ({
@@ -138,7 +127,7 @@ export function navigatorGroups(state: AppState, openId: string | null): Navigat
   return groups
 }
 
-export function searchGroups(groups: NavigatorGroup[], query: string): NavigatorGroup[] {
+export function searchGroups(groups: PaletteGroup[], query: string): PaletteGroup[] {
   const needle = query.trim().toLowerCase()
   if (needle === '') return groups
   return groups

@@ -5,13 +5,8 @@ import { extname, join } from 'path'
 import type { WriteOp } from '../core/api'
 import { Store } from './db'
 
-let store: Store | null = null
-
 /** The one store, opened next to the app's own settings. */
-function models(): Store {
-  if (!store) store = new Store(join(app.getPath('userData'), 'models.sqlite'))
-  return store
-}
+let store: Store | null = null
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -47,9 +42,11 @@ function freePath(name: string): string {
   return candidate
 }
 
-app.whenReady().then(() => {
-  ipcMain.handle('models:load', () => models().load())
-  ipcMain.handle('models:write', (_event, ops: WriteOp[]) => models().apply(ops))
+app.whenReady().then(async () => {
+  store = await Store.open(join(app.getPath('userData'), 'models.sqlite'))
+
+  ipcMain.handle('models:load', () => store!.load())
+  ipcMain.handle('models:write', (_event, ops: WriteOp[]) => store!.apply(ops))
 
   ipcMain.handle('models:save', async (_event, name: string, bytes: Uint8Array) => {
     const path = freePath(name)
@@ -67,7 +64,11 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit()
+})
+
+// Whatever is still only in memory goes to the file before the process ends.
+app.on('before-quit', () => {
   store?.close()
   store = null
-  if (process.platform !== 'darwin') app.quit()
 })

@@ -21,7 +21,13 @@ export interface AppState {
   /** Node ids selected in that model. Empty means "everything terminal". */
   selection: string[]
   /** The last thing worth saying to the user, shown once and dismissible. */
-  notice: string | null
+  notice: Notice | null
+}
+
+/** A line of feedback, optionally about a file that was just written. */
+export interface Notice {
+  text: string
+  path?: string
 }
 
 export const initialState: AppState = {
