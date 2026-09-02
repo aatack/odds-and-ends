@@ -6,6 +6,7 @@
  * as a callback. The builder is what turns the model into these.
  */
 
+import type { ReactNode } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import type { ValueType } from '@core/values'
 import { TYPE_LABELS } from '@core/values'
@@ -47,6 +48,24 @@ const TYPE_TONE: Record<ValueType, string> = {
   mesh: '#7a7f8a',
 }
 
+/**
+ * Everything editable sits in one of these. `nodrag` stops React Flow starting
+ * a drag (and with it a selection) from a control, and swallowing the click
+ * stops the node being selected just because you reached for its number —
+ * clicking the node's own body is how you select it.
+ */
+function Control({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="nodrag"
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+    >
+      {children}
+    </div>
+  )
+}
+
 const wide = (sockets: SocketView[]): boolean =>
   sockets.some((socket) => !socket.connected && (socket.type === 'path2' || socket.type === 'vec3'))
 
@@ -81,11 +100,16 @@ export function TransformNode({ data, selected }: NodeProps & { data: NodeView }
 
       {data.params.map((param) => (
         <div key={param.name} className="px-2.5 py-0.5">
-          <ValueEditor
-            type={param.type}
-            value={param.literal}
-            onChange={(value) => data.onValue(param.name, value)}
-          />
+          {param.label !== 'Value' && (
+            <div className="text-[10px] text-faint">{param.label}</div>
+          )}
+          <Control>
+            <ValueEditor
+              type={param.type}
+              value={param.literal}
+              onChange={(value) => data.onValue(param.name, value)}
+            />
+          </Control>
         </div>
       ))}
 
@@ -105,13 +129,15 @@ export function TransformNode({ data, selected }: NodeProps & { data: NodeView }
             )}
           </div>
           {!socket.connected && (
-            <div className="pt-0.5">
-              <ValueEditor
-                type={socket.type}
-                value={socket.literal}
-                onChange={(value) => data.onValue(socket.name, value)}
-              />
-            </div>
+            <Control>
+              <div className="pt-0.5">
+                <ValueEditor
+                  type={socket.type}
+                  value={socket.literal}
+                  onChange={(value) => data.onValue(socket.name, value)}
+                />
+              </div>
+            </Control>
           )}
         </div>
       ))}

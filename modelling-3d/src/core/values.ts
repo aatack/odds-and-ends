@@ -206,6 +206,48 @@ export function fromHex(hex: string): Colour {
   }
 }
 
+/** A colour as hue (0-360), saturation and value (0-1) — how a picker thinks. */
+export interface Hsv {
+  h: number
+  s: number
+  v: number
+}
+
+export function toHsv(c: Colour): Hsv {
+  const r = clamp01(c.r)
+  const g = clamp01(c.g)
+  const b = clamp01(c.b)
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const span = max - min
+  let h = 0
+  if (span !== 0) {
+    if (max === r) h = ((g - b) / span) % 6
+    else if (max === g) h = (b - r) / span + 2
+    else h = (r - g) / span + 4
+    h *= 60
+    if (h < 0) h += 360
+  }
+  return { h, s: max === 0 ? 0 : span / max, v: max }
+}
+
+export function fromHsv({ h, s, v }: Hsv): Colour {
+  const hue = ((h % 360) + 360) % 360
+  const chroma = clamp01(v) * clamp01(s)
+  const second = chroma * (1 - Math.abs(((hue / 60) % 2) - 1))
+  const lift = clamp01(v) - chroma
+  const sector = Math.floor(hue / 60) % 6
+  const [r, g, b] = [
+    [chroma, second, 0],
+    [second, chroma, 0],
+    [0, chroma, second],
+    [0, second, chroma],
+    [second, 0, chroma],
+    [chroma, 0, second],
+  ][sector]
+  return { r: r + lift, g: g + lift, b: b + lift }
+}
+
 /** sRGB → linear, which is the space glTF wants vertex colours in. */
 export function toLinear(v: number): number {
   const c = clamp01(v)

@@ -17,7 +17,7 @@ import type { Actions } from './state/actions'
 import { createActions } from './state/actions'
 import { evaluationOf, openModel, previewScene } from './state/derive'
 import type { AppState, Store } from './state/store'
-import { createStore } from './state/store'
+import { createStore, initialState } from './state/store'
 
 declare global {
   interface Window {
@@ -46,6 +46,35 @@ function ipcPersistence(api: ModellingAPI): Persistence {
   }
 }
 
+const COLLAPSED_KEY = 'modelling.collapsed'
+
+/**
+ * Which palette sections are folded is a preference, not part of a model, so it
+ * stays out of the database and in the browser's own storage.
+ */
+function rememberCollapsed(store: Store): void {
+  let last = store.getState().collapsed
+  store.subscribe(() => {
+    const now = store.getState().collapsed
+    if (now === last) return
+    last = now
+    try {
+      window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify(now))
+    } catch {
+      // A browser that refuses storage still gets a working navigator.
+    }
+  })
+}
+
+function collapsedAtStart(): string[] {
+  try {
+    const written = JSON.parse(window.localStorage.getItem(COLLAPSED_KEY) ?? '[]')
+    return Array.isArray(written) ? written.filter((v) => typeof v === 'string') : []
+  } catch {
+    return []
+  }
+}
+
 interface AppContext {
   store: Store
   actions: Actions
@@ -57,7 +86,8 @@ const Context = createContext<AppContext | null>(null)
 export function AppProvider({ children }: { children: ReactNode }): ReactNode {
   const value = useMemo<AppContext>(() => {
     const api = bridge()
-    const store = createStore()
+    const store = createStore({ ...initialState, collapsed: collapsedAtStart() })
+    rememberCollapsed(store)
     const actions = createActions(store, api ? ipcPersistence(api) : noPersistence)
     if (api) void api.load().then((models) => actions.load(models))
     else actions.load({})

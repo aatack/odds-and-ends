@@ -3,6 +3,7 @@
  * props in, gestures out.
  */
 
+import { forwardRef, useEffect, useState } from 'react'
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
 
 export const cn = (...parts: (string | false | null | undefined)[]): string =>
@@ -46,22 +47,29 @@ export function PanelHeader({ children }: { children: ReactNode }) {
   )
 }
 
-export function TextField({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      {...rest}
-      className={cn(
-        'h-6 w-full min-w-0 rounded bg-sunken px-1.5 text-xs text-ink placeholder:text-faint',
-        'hover:bg-line/70 focus:bg-line/70',
-        className,
-      )}
-    />
-  )
-}
+export const TextField = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
+  function TextField({ className, ...rest }, ref) {
+    return (
+      <input
+        ref={ref}
+        {...rest}
+        className={cn(
+          'h-6 w-full min-w-0 rounded bg-sunken px-1.5 text-xs text-ink placeholder:text-faint',
+          'hover:bg-line/70 focus:bg-line/70',
+          className,
+        )}
+      />
+    )
+  },
+)
 
 /**
- * A number that can also be scrubbed sideways, which is what makes a
- * parametric model worth having: one drag and the whole thing re-renders.
+ * A number, kept as text while it is being typed.
+ *
+ * The field holds a draft rather than the value, so clearing it leaves it
+ * *empty* instead of snapping to zero, and half-typed things — `-`, `1.`,
+ * `1e` — survive long enough to be finished. Empty reads as zero downstream,
+ * and the draft is only thrown away when the value changes from elsewhere.
  */
 export function NumberField({
   value,
@@ -74,17 +82,37 @@ export function NumberField({
   step?: number
   className?: string
 }) {
+  const shown = Number.isFinite(value) ? String(round(value)) : '0'
+  const [draft, setDraft] = useState<string | null>(null)
+  const [committed, setCommitted] = useState(shown)
+
+  // A change from outside — another node, an undone edit — wins over a draft
+  // that is only a different spelling of the same number.
+  useEffect(() => {
+    if (shown !== committed) {
+      setCommitted(shown)
+      setDraft(null)
+    }
+  }, [shown, committed])
+
   return (
     <input
-      type="number"
-      value={Number.isFinite(value) ? round(value) : 0}
+      type="text"
+      inputMode="decimal"
+      value={draft ?? shown}
       step={step}
       onChange={(event) => {
-        const next = Number(event.target.value)
-        if (Number.isFinite(next)) onChange(next)
+        const text = event.target.value
+        setDraft(text)
+        const next = text.trim() === '' ? 0 : Number(text)
+        if (Number.isFinite(next)) {
+          setCommitted(String(round(next)))
+          onChange(next)
+        }
       }}
+      onBlur={() => setDraft(null)}
       className={cn(
-        'nodrag h-6 w-full min-w-0 rounded bg-sunken px-1.5 text-right text-xs text-ink',
+        'nodrag h-6 w-full min-w-0 rounded bg-sunken px-1.5 text-right text-xs text-ink tabular-nums',
         'hover:bg-line/70 focus:bg-line/70',
         className,
       )}

@@ -9,7 +9,7 @@
 import type { Evaluation } from '@core/evaluate'
 import { evaluateModel } from '@core/evaluate'
 import type { GraphNode, Model, Models } from '@core/graph'
-import { lookupTransform, modelIdOf, terminalNodes } from '@core/graph'
+import { lookupTransform, modelDef, modelIdOf, terminalNodes } from '@core/graph'
 import type { Scene } from '@core/scene'
 import { sceneOf } from '@core/scene'
 import type { Socket, TransformDef } from '@core/transforms'
@@ -110,13 +110,13 @@ export interface PaletteGroup {
  * they are the list above it, which is draggable in the same way — a model is
  * both a thing you open and a transform you can use.
  *
- * Constants are left out too. One is made by dropping an input handle on empty
- * space, which is where you want it and already the right type.
+ * Constants are, even though dropping an input handle on empty space also makes
+ * one: sometimes the shape *is* the thing you sat down to draw, and then you
+ * want to reach for a 2D path rather than work backwards from a socket.
  */
 export function paletteGroups(): PaletteGroup[] {
   const groups: PaletteGroup[] = []
   for (const category of CATEGORIES) {
-    if (category === 'Constants') continue
     const items = BUILT_IN.filter((def) => def.category === category).map((def) => ({
       transform: def.id,
       label: def.label,
@@ -125,6 +125,32 @@ export function paletteGroups(): PaletteGroup[] {
     if (items.length > 0) groups.push({ category, items })
   }
   return groups
+}
+
+/**
+ * Transforms matching a typed query, flattest first — for the search box that
+ * adds a node. `feeding` keeps only those with an input of that type, which is
+ * what an output dragged into empty space is looking for.
+ */
+export function searchTransforms(
+  models: Models,
+  query: string,
+  feeding?: ValueType,
+): { transform: string; label: string; category: string; input?: string }[] {
+  const needle = query.trim().toLowerCase()
+  const own = Object.values(models).map((model) => modelDef(model))
+  const all = [...own, ...BUILT_IN]
+  const out: { transform: string; label: string; category: string; input?: string }[] = []
+  for (const def of all) {
+    const input = feeding ? def.inputs.find((socket) => socket.type === feeding) : undefined
+    if (feeding && !input) continue
+    const haystack = `${def.label} ${def.category} ${def.summary}`.toLowerCase()
+    if (needle !== '' && !haystack.includes(needle)) continue
+    out.push({ transform: def.id, label: def.label, category: def.category, input: input?.name })
+  }
+  const starts = (item: { label: string }): number =>
+    needle !== '' && item.label.toLowerCase().startsWith(needle) ? 0 : 1
+  return out.sort((a, b) => starts(a) - starts(b) || a.label.localeCompare(b.label))
 }
 
 export function searchGroups(groups: PaletteGroup[], query: string): PaletteGroup[] {

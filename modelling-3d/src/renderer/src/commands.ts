@@ -17,6 +17,7 @@ import type { AppState } from './state/store'
 /** What the views lend the registry: the things only a rendered view can do. */
 export interface ViewHandles {
   frameCamera(): void
+  focusSearch(): void
 }
 
 export interface CommandContext {
@@ -65,6 +66,12 @@ export const COMMANDS: Command[] = [
     keys: ['Delete', 'Backspace'],
     enabled: ({ state }) => state.selection.length > 0,
     run: ({ state, actions }) => actions.deleteNodes(state.selection),
+  },
+  {
+    id: 'navigator.search',
+    label: 'Find a transform',
+    keys: ['mod+f'],
+    run: ({ views }) => views.focusSearch(),
   },
   {
     id: 'preview.frame',

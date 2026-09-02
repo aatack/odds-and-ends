@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { COMMANDS, dispatchKey, type CommandContext, type ViewHandles } from './commands'
 import { Builder } from './components/Builder'
-import { Navigator } from './components/Navigator'
+import { Navigator, type NavigatorHandle } from './components/Navigator'
 import { Preview, type PreviewHandle } from './components/Preview'
 import { Button, cn } from './components/ui'
 import { useActions, useApi, useAppState, useEvaluation, usePreviewScene } from './hooks'
@@ -22,11 +22,18 @@ export function App() {
   const evaluation = useEvaluation(state)
   const scene = usePreviewScene(state, evaluation)
   const preview = useRef<PreviewHandle>(null)
+  const navigator = useRef<NavigatorHandle>(null)
 
   const [navWidth, setNavWidth] = useState(224)
   const [previewWidth, setPreviewWidth] = useState(420)
 
-  const views = useMemo<ViewHandles>(() => ({ frameCamera: () => preview.current?.frame() }), [])
+  const views = useMemo<ViewHandles>(
+    () => ({
+      frameCamera: () => preview.current?.frame(),
+      focusSearch: () => navigator.current?.focusSearch(),
+    }),
+    [],
+  )
 
   // The listener is bound once; the context it dispatches with is read fresh.
   const context = useRef<CommandContext>({ state, actions, api, views })
@@ -70,7 +77,7 @@ export function App() {
 
       <div className="flex min-h-0 grow gap-px">
         <div style={{ width: navWidth }} className="shrink-0">
-          <Navigator />
+          <Navigator ref={navigator} />
         </div>
         <Splitter onMove={(dx) => setNavWidth((w) => clamp(w + dx, 170, 400))} />
 

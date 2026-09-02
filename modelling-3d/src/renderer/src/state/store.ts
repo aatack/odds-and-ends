@@ -20,6 +20,8 @@ export interface AppState {
   openModelId: string | null
   /** Node ids selected in that model. Empty means "everything terminal". */
   selection: string[]
+  /** Palette categories folded away in the navigator, by name. */
+  collapsed: string[]
   /** The last thing worth saying to the user, shown once and dismissible. */
   notice: Notice | null
 }
@@ -35,6 +37,7 @@ export const initialState: AppState = {
   loaded: false,
   openModelId: null,
   selection: [],
+  collapsed: [],
   notice: null,
 }
 

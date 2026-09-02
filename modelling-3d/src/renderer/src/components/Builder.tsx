@@ -66,14 +66,12 @@ function buildNodes(
       kind: kindOf(node.transform, def?.category ?? ''),
       accent: modelId !== null,
       error: evaluation.errors.get(node.id),
-      params: (def?.params ?? [])
-        .filter((param) => !(isInputPort(node.transform) && param.name === 'value'))
-        .map((param) => ({
-          name: param.name,
-          label: param.label,
-          type: param.type,
-          literal: literalOf(node, param),
-        })),
+      params: (def?.params ?? []).map((param) => ({
+        name: param.name,
+        label: param.label,
+        type: param.type,
+        literal: literalOf(node, param),
+      })),
       inputs: (def?.inputs ?? []).map((socket) => ({
         name: socket.name,
         label: socket.label,
@@ -264,6 +262,12 @@ function Canvas({ evaluation }: { evaluation: Evaluation }) {
       deleteKeyCode={null}
       selectionKeyCode={null}
       multiSelectionKeyCode={['Meta', 'Control']}
+      // A trackpad scrolls the canvas about; zooming is ctrl/⌘ with it, or a
+      // pinch. Double-click belongs to whatever was double-clicked.
+      panOnScroll
+      zoomOnScroll={false}
+      zoomOnPinch
+      zoomOnDoubleClick={false}
       minZoom={0.2}
       maxZoom={2}
       fitView

@@ -39,6 +39,7 @@ export interface Actions {
 
   setSelection(ids: string[]): void
   toggleSelection(id: string): void
+  toggleCategory(category: string): void
 
   addNode(transform: string, x: number, y: number, data?: Record<string, unknown>): string | null
   /** Where a node is being dragged to. Not written: a drag is not an edit yet. */
@@ -162,6 +163,15 @@ export function createActions(store: Store, db: Persistence): Actions {
         selection: state.selection.includes(id)
           ? state.selection.filter((other) => other !== id)
           : [...state.selection, id],
+      }))
+    },
+
+    toggleCategory(category) {
+      store.update((state) => ({
+        ...state,
+        collapsed: state.collapsed.includes(category)
+          ? state.collapsed.filter((other) => other !== category)
+          : [...state.collapsed, category],
       }))
     },
 
