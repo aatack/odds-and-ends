@@ -10,7 +10,7 @@ import type { Evaluation } from '@core/evaluate'
 import { evaluateModel } from '@core/evaluate'
 import type { GraphNode, Model, Models } from '@core/graph'
 import { lookupTransform, modelDef, modelIdOf, terminalNodes } from '@core/graph'
-import type { Scene } from '@core/scene'
+import type { MarkerHandle, Scene } from '@core/scene'
 import { sceneOf } from '@core/scene'
 import type { Socket, TransformDef } from '@core/transforms'
 import { BUILT_IN, CATEGORIES, isOutputPort, portType } from '@core/transforms'
@@ -81,12 +81,28 @@ export function previewedNodes(state: AppState): string[] {
   return selected.length > 0 ? selected : terminalNodes(model)
 }
 
+/**
+ * A point that can be dragged in the viewer is one whose value is written on a
+ * node as a literal — which means a constant. Everything else on screen is
+ * computed from something upstream, and moving it would have nowhere to go.
+ */
+function handleFor(node: GraphNode, output: OutputValue): MarkerHandle | undefined {
+  if (output.name !== 'value') return undefined
+  if (node.transform === 'const.vec3') return { node: node.id, key: 'value', flat: false }
+  if (node.transform === 'const.vec2') return { node: node.id, key: 'value', flat: true }
+  return undefined
+}
+
 export function previewScene(state: AppState, evaluation: Evaluation): Scene {
   const model = openModel(state)
   if (!model) return sceneOf([])
-  const values = previewedNodes(state).flatMap((id) =>
-    outputsOf(model.nodes[id], state.models, evaluation),
-  )
+  const values = previewedNodes(state).flatMap((id) => {
+    const node = model.nodes[id]
+    return outputsOf(node, state.models, evaluation).map((output) => ({
+      ...output,
+      handle: handleFor(node, output),
+    }))
+  })
   return sceneOf(values)
 }
 

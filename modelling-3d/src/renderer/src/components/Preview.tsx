@@ -13,7 +13,9 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import type { Scene as ModelScene } from '@core/scene'
+import type { MarkerHandle, Scene as ModelScene } from '@core/scene'
+import { flatten } from '@core/geometry'
+import type { Vec2, Vec3 } from '@core/values'
 import { toLinear } from '@core/values'
 
 export interface PreviewHandle {
@@ -26,6 +28,8 @@ interface Viewer {
   camera: THREE.PerspectiveCamera
   controls: OrbitControls
   content: THREE.Group
+  /** The draggable points, kept apart so only they are picked. */
+  handles: THREE.Group
   draw: () => void
 }
 
@@ -66,10 +70,24 @@ function makeViewer(host: HTMLDivElement): Viewer {
 
   const content = new THREE.Group()
   scene.add(content)
+  const handles = new THREE.Group()
+  scene.add(handles)
 
-  const draw = (): void => renderer.render(scene, camera)
+  /**
+   * Handles are scaled by how far away they are, so a point stays the same
+   * size on screen whether the model is a doorknob or a cathedral — and stays
+   * big enough to grab at any zoom.
+   */
+  const draw = (): void => {
+    for (const child of handles.children) {
+      if (!(child as THREE.Mesh).isMesh) continue
+      const distance = camera.position.distanceTo(child.position)
+      child.scale.setScalar(Math.max(distance * 0.011, 1e-4))
+    }
+    renderer.render(scene, camera)
+  }
   controls.addEventListener('change', draw)
-  return { renderer, scene, camera, controls, content, draw }
+  return { renderer, scene, camera, controls, content, handles, draw }
 }
 
 /** Throw away the geometry of the last frame before building the next. */
@@ -136,21 +154,40 @@ function build(group: THREE.Group, model: ModelScene): void {
     )
   }
 
-  if (model.markers.length > 0) {
-    const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute(
-      'position',
-      new THREE.Float32BufferAttribute(
-        model.markers.flatMap((marker) => [marker.position.x, marker.position.y, marker.position.z]),
-        3,
-      ),
-    )
-    group.add(
-      new THREE.Points(
-        geometry,
-        new THREE.PointsMaterial({ color: 0x4c53c4, size: 7, sizeAttenuation: false }),
-      ),
-    )
+}
+
+/**
+ * The points, as little spheres rather than dots, because a dot cannot be
+ * picked up. One that stands for a literal on a node gets a line back to the
+ * origin as well, so it reads as the vector it is.
+ */
+function buildHandles(group: THREE.Group, model: ModelScene): void {
+  clear(group)
+  // Unit spheres: `draw` scales them to a constant size on screen.
+  const geometry = new THREE.SphereGeometry(1, 16, 12)
+  for (const marker of model.markers) {
+    const material = new THREE.MeshBasicMaterial({
+      color: marker.handle ? 0x4c53c4 : 0x8b93e6,
+      depthTest: false,
+    })
+    const ball = new THREE.Mesh(geometry.clone(), material)
+    ball.position.set(marker.position.x, marker.position.y, marker.position.z)
+    ball.renderOrder = 2
+    ball.userData.handle = marker.handle
+    group.add(ball)
+
+    if (marker.handle) {
+      const line = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(marker.position.x, marker.position.y, marker.position.z),
+      ])
+      const arm = new THREE.Line(
+        line,
+        new THREE.LineBasicMaterial({ color: 0x8b93e6, depthTest: false }),
+      )
+      arm.renderOrder = 1
+      group.add(arm)
+    }
   }
 }
 
@@ -183,10 +220,32 @@ function frameContent(viewer: Viewer): void {
   viewer.draw()
 }
 
-export const Preview = forwardRef<PreviewHandle, { scene: ModelScene; frameOn: string | null }>(
-  function Preview({ scene, frameOn }, ref) {
+/** How far a drag on the ground plane is from the pointer's ray. */
+function pointOnPlane(
+  camera: THREE.PerspectiveCamera,
+  ndc: THREE.Vector2,
+  plane: THREE.Plane,
+): THREE.Vector3 | null {
+  const ray = new THREE.Raycaster()
+  ray.setFromCamera(ndc, camera)
+  const hit = new THREE.Vector3()
+  return ray.ray.intersectPlane(plane, hit) ? hit : null
+}
+
+export const Preview = forwardRef<
+  PreviewHandle,
+  {
+    scene: ModelScene
+    frameOn: string | null
+    onMoveHandle?: (handle: MarkerHandle, to: Vec3 | Vec2) => void
+  }
+>(function Preview({ scene, frameOn, onMoveHandle }, ref) {
     const host = useRef<HTMLDivElement>(null)
     const viewer = useRef<Viewer | null>(null)
+    // The drag reads this rather than closing over the prop, so it is never a
+    // render behind.
+    const move = useRef(onMoveHandle)
+    move.current = onMoveHandle
 
     useEffect(() => {
       const element = host.current
@@ -206,10 +265,67 @@ export const Preview = forwardRef<PreviewHandle, { scene: ModelScene; frameOn: s
       observer.observe(element)
       resize()
 
+      /**
+       * Dragging a point. The default plane is the ground, so a point slides
+       * about the model rather than towards the camera; holding shift swaps to
+       * the vertical plane facing you, which is the only other one worth
+       * having. It runs before OrbitControls and takes the event off it.
+       */
+      const onPointerDown = (event: PointerEvent): void => {
+        if (event.button !== 0) return
+        const box = made.renderer.domElement.getBoundingClientRect()
+        const ndc = new THREE.Vector2(
+          ((event.clientX - box.left) / box.width) * 2 - 1,
+          -((event.clientY - box.top) / box.height) * 2 + 1,
+        )
+        const ray = new THREE.Raycaster()
+        ray.setFromCamera(ndc, made.camera)
+        const hit = ray.intersectObjects(made.handles.children, false)[0]
+        const handle = hit?.object.userData.handle as MarkerHandle | undefined
+        if (!handle) return
+
+        event.preventDefault()
+        event.stopPropagation()
+        made.controls.enabled = false
+        const start = hit.object.position.clone()
+
+        const planeFor = (vertical: boolean): THREE.Plane => {
+          if (!vertical || handle.flat) return new THREE.Plane(new THREE.Vector3(0, 1, 0), -start.y)
+          const facing = made.camera.getWorldDirection(new THREE.Vector3())
+          facing.y = 0
+          if (facing.lengthSq() === 0) facing.set(0, 0, 1)
+          facing.normalize()
+          return new THREE.Plane(facing, -facing.dot(start))
+        }
+
+        const drag = (moved: PointerEvent): void => {
+          const at = new THREE.Vector2(
+            ((moved.clientX - box.left) / box.width) * 2 - 1,
+            -((moved.clientY - box.top) / box.height) * 2 + 1,
+          )
+          const point = pointOnPlane(made.camera, at, planeFor(moved.shiftKey))
+          if (!point) return
+          hit.object.position.copy(point)
+          made.draw()
+          const to = { x: point.x, y: point.y, z: point.z }
+          move.current?.(handle, handle.flat ? flatten(to) : to)
+        }
+        const stop = (): void => {
+          made.controls.enabled = true
+          window.removeEventListener('pointermove', drag)
+          window.removeEventListener('pointerup', stop)
+        }
+        window.addEventListener('pointermove', drag)
+        window.addEventListener('pointerup', stop)
+      }
+      made.renderer.domElement.addEventListener('pointerdown', onPointerDown, true)
+
       return () => {
+        made.renderer.domElement.removeEventListener('pointerdown', onPointerDown, true)
         observer.disconnect()
         made.controls.dispose()
         clear(made.content)
+        clear(made.handles)
         made.renderer.dispose()
         element.removeChild(made.renderer.domElement)
         viewer.current = null
@@ -220,6 +336,7 @@ export const Preview = forwardRef<PreviewHandle, { scene: ModelScene; frameOn: s
       const made = viewer.current
       if (!made) return
       build(made.content, scene)
+      buildHandles(made.handles, scene)
       made.draw()
     }, [scene])
 
@@ -235,6 +352,5 @@ export const Preview = forwardRef<PreviewHandle, { scene: ModelScene; frameOn: s
       },
     }))
 
-    return <div ref={host} className="h-full w-full" />
-  },
-)
+  return <div ref={host} className="h-full w-full" />
+})

@@ -87,7 +87,12 @@ export function App() {
         <Splitter onMove={(dx) => setPreviewWidth((w) => clamp(w - dx, 260, 800))} />
 
         <div style={{ width: previewWidth }} className="shrink-0 bg-panel">
-          <Preview ref={preview} scene={scene} frameOn={state.openModelId} />
+          <Preview
+            ref={preview}
+            scene={scene}
+            frameOn={state.openModelId}
+            onMoveHandle={(handle, to) => actions.setNodeValue(handle.node, handle.key, to)}
+          />
         </div>
       </div>
 
