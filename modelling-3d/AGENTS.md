@@ -74,8 +74,20 @@ so reaching for React or the DOM from it fails to compile. That is what keeps
   the select changes; nothing listens to `onSelectionChange`.
 - **No `<input type="color">`.** It opens a popup the page cannot see or
   control — drawn *inside* the window on Linux — and it takes stray clicks, so a
-  colour can change itself. `editors.tsx` has a swatch, a hex field and three
-  channels instead.
+  colour can change itself. `editors.tsx` picks off a saturation/value plane
+  with a hue strip, holding the hue itself because black has none to read back.
+- **A drag listens on the window.** Listeners on the element under the cursor
+  miss moves even with pointer capture, and a drag has to survive leaving the
+  box it started in. Both the path pad and the viewer's handles do it this way.
+- **A view that fits its contents freezes while they are dragged.** The path
+  pad scales to the shape; growing that under a moving cursor sends the point
+  chasing outwards. Same reason the point is tracked by the offset it was
+  grabbed at rather than snapped to the cursor.
+- **A solid comes out grey, and Extrude sweeps along a path.** Colour is
+  `Paint`'s and nothing else's; asking a generator for one over-specifies it.
+  The sweep carries frames along the path by parallel transport so the
+  cross-section doesn't spin, and the first frame is chosen to agree with
+  `lift`, which is what makes a straight path up the plain extrusion.
 - **A drag is not an edit yet.** `moveNode` only moves; `commitNode` writes,
   once, when the drag ends.
 
@@ -116,4 +128,5 @@ screenshot without a display server that cooperates.
 - **Boolean geometry.** `Combine` pools triangles; it is not a union.
 - **Undo.** Every edit is already a small `WriteOp`, which is the half of it
   that usually gets in the way.
-- **Editing a 3D path directly.** Flatten it, edit in 2D, lift it back.
+- **Editing a 3D path in the viewer.** Its points are typed on the node; only a
+  2D/3D *point* constant can be dragged in three dimensions so far.

@@ -39,17 +39,23 @@ with the CLI and have a look.
 | Gesture | What happens |
 | --- | --- |
 | Drag from the navigator | A node of that transform, where you dropped it |
+| Right-click empty canvas | A search box: type a name, press enter, and it lands there |
 | Drag between handles | A connection, if the types agree and it makes no loop |
 | Drag an **input** handle onto empty space | A constant of that type, already holding what the socket was worth |
+| Drag an **output** handle onto empty space | The same search box, offering only what can take that value, and joining it up |
 | Click a node | It is selected, and the preview shows its output |
 | Ctrl/⌘-click | Adds to the selection; the preview overlays them |
 | Click empty canvas | Nothing selected — the preview shows every node nothing reads |
 | Drag a point on a 2D path | The shape changes, and everything downstream with it |
+| Double-click the pad, alt-click a point | Add a point where you clicked; take one away |
 | Double-click a model in the navigator | Rename it |
-| Drag in the preview | Orbit; scroll to zoom, right-drag to pan. The vertical axis stays vertical |
+| Drag in the preview | Orbit. Scroll to zoom, right-drag to pan; the vertical axis stays vertical |
+| Drag a point in the preview | Moves a 2D/3D point constant along the ground — hold shift to move it vertically |
+| Scroll the canvas | Pans; ⌘/ctrl-scroll or pinch zooms |
 
 | Key | |
 | --- | --- |
+| `⌘/Ctrl+F` | Find a transform in the navigator |
 | `Delete` / `Backspace` | Delete the selected nodes |
 | `Escape` | Select nothing |
 | `F` | Frame what is shown |
@@ -69,6 +75,12 @@ polygons, circles, stars and lines, moved, turned and scaled, then lifted into
 point. From there the mesh operations — translate, rotate, scale, paint,
 combine, mirror, repeat, radial array — do the rest. **The 2D plane is the
 ground**: a 2D point `(x, y)` lifts to `(x, 0, -y)`, and height runs along +Y.
+
+**Extrude sweeps along a path**, not up by a number: leave its path alone and
+you get a straight extrusion of height 1, give it a **Line in 3D** and you say
+how far and in which direction, and give it a bent path and the shape bends
+with it. **A solid comes out grey** — colour is **Paint**'s job, so a shape
+doesn't have to know what colour it is before it is allowed to be a shape.
 
 A model of your own becomes a transform as soon as it has ports: drop an
 **In** or **Out** port node on its canvas, name it, and the model's sockets are
