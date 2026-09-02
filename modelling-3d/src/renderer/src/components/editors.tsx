@@ -77,7 +77,13 @@ function fraction(element: Element, event: { clientX: number; clientY: number })
   return vec2(clamp((event.clientX - box.left) / box.width), clamp((event.clientY - box.top) / box.height))
 }
 
-/** Follow a pointer until it is let go, reporting where it is each time. */
+/**
+ * Follow a pointer until it is let go, reporting where it is each time.
+ *
+ * The listeners go on the window rather than on the element under the cursor:
+ * pointer capture on an element is not enough — the moves do not all arrive —
+ * and a drag has to keep working once it leaves the little box it started in.
+ */
 function trackPointer(
   event: React.PointerEvent,
   element: Element,
@@ -86,18 +92,15 @@ function trackPointer(
   event.preventDefault()
   event.stopPropagation()
   report(fraction(element, event))
-  const target = event.currentTarget as HTMLElement
-  target.setPointerCapture(event.pointerId)
   const move = (moved: PointerEvent): void => report(fraction(element, moved))
   const stop = (): void => {
-    target.releasePointerCapture(event.pointerId)
-    target.removeEventListener('pointermove', move)
-    target.removeEventListener('pointerup', stop)
-    target.removeEventListener('pointercancel', stop)
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', stop)
+    window.removeEventListener('pointercancel', stop)
   }
-  target.addEventListener('pointermove', move)
-  target.addEventListener('pointerup', stop)
-  target.addEventListener('pointercancel', stop)
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', stop)
+  window.addEventListener('pointercancel', stop)
 }
 
 /**
@@ -268,9 +271,12 @@ const PAD = 160
 function PathPad({ value, onChange }: { value: Path2; onChange: (value: Path2) => void }) {
   const svg = useRef<SVGSVGElement>(null)
   const points = value.points
+  // The pad fits itself to the shape, but not *while* a point is being moved:
+  // growing the view under a dragging cursor makes the point chase it outwards.
+  const [held, setHeld] = useState<number | null>(null)
 
-  const extent =
-    Math.max(0.5, ...points.flatMap((p) => [Math.abs(p.x), Math.abs(p.y)])) * 1.2
+  const fitted = Math.max(0.5, ...points.flatMap((p) => [Math.abs(p.x), Math.abs(p.y)])) * 1.2
+  const extent = held ?? fitted
   const view = { min: -extent, size: extent * 2 }
   const unit = extent / 50
 
@@ -291,21 +297,29 @@ function PathPad({ value, onChange }: { value: Path2; onChange: (value: Path2) =
       return
     }
     if (event.button !== 0) return
-    const target = event.currentTarget as SVGElement
-    target.setPointerCapture(event.pointerId)
+    event.preventDefault()
+    setHeld(extent)
+    // Where the point sits relative to the cursor, so it doesn't jump to it.
+    const grabbed = at(event)
+    const offset = grabbed
+      ? vec2(points[index].x - grabbed.x, points[index].y - grabbed.y)
+      : vec2(0, 0)
+
     const move = (moved: PointerEvent): void => {
       const here = at(moved)
-      if (here) onChange({ ...value, points: points.map((p, k) => (k === index ? here : p)) })
+      if (!here) return
+      const to = vec2(here.x + offset.x, here.y + offset.y)
+      onChange({ ...value, points: points.map((p, k) => (k === index ? to : p)) })
     }
     const stop = (): void => {
-      target.releasePointerCapture(event.pointerId)
-      target.removeEventListener('pointermove', move)
-      target.removeEventListener('pointerup', stop)
-      target.removeEventListener('pointercancel', stop)
+      setHeld(null)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+      window.removeEventListener('pointercancel', stop)
     }
-    target.addEventListener('pointermove', move)
-    target.addEventListener('pointerup', stop)
-    target.addEventListener('pointercancel', stop)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+    window.addEventListener('pointercancel', stop)
   }
 
   function remove(index: number): void {
