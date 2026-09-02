@@ -6,7 +6,7 @@
  * every gesture comes straight back out as an action.
  */
 
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -23,11 +23,20 @@ import {
   type NodeChange,
 } from '@xyflow/react'
 import { isOutputPort, isInputPort } from '@core/transforms'
-import { describe } from '@core/values'
+import type { ValueType } from '@core/values'
+import { TYPE_LABELS, describe } from '@core/values'
 import type { Evaluation } from '@core/evaluate'
 import { useActions, useAppState } from '../hooks'
-import { connectionProblem, defOf, literalOf, openModel, outputsOf } from '../state/derive'
+import {
+  connectionProblem,
+  defOf,
+  literalOf,
+  openModel,
+  outputsOf,
+  searchTransforms,
+} from '../state/derive'
 import type { AppState } from '../state/store'
+import { NodeSearch } from './NodeSearch'
 import { NodeView, TransformNode } from './TransformNode'
 import { Empty } from './ui'
 
@@ -102,11 +111,57 @@ function buildNodes(
   })
 }
 
+/** An open search box: where it sits, what has been typed, what it will join. */
+interface Search {
+  at: { x: number; y: number }
+  where: { x: number; y: number }
+  query: string
+  from?: { node: string; output: string; type: ValueType }
+}
+
 function Canvas({ evaluation }: { evaluation: Evaluation }) {
   const state = useAppState()
   const actions = useActions()
   const flow = useReactFlow()
   const model = openModel(state)
+  const surface = useRef<HTMLDivElement>(null)
+  const [search, setSearch] = useState<Search | null>(null)
+
+  const openSearch = useCallback(
+    (screen: { x: number; y: number }, where: { x: number; y: number }, from?: Search['from']) => {
+      const box = surface.current?.getBoundingClientRect()
+      setSearch({
+        at: { x: screen.x - (box?.left ?? 0), y: screen.y - (box?.top ?? 0) },
+        where,
+        query: '',
+        from,
+      })
+    },
+    [],
+  )
+
+  const matches = useMemo(
+    () => (search ? searchTransforms(state.models, search.query, search.from?.type) : []),
+    [search, state.models],
+  )
+
+  /** Put the chosen transform down, and join it up if something was dragged. */
+  const pick = useCallback(
+    (item: { transform: string; input?: string }) => {
+      if (!search) return
+      const id = actions.addNode(item.transform, search.where.x - 60, search.where.y - 20)
+      if (!id) actions.notify({ text: 'A model cannot be used inside itself.' })
+      else {
+        if (search.from && item.input) {
+          const problem = actions.connect(search.from.node, search.from.output, id, item.input)
+          if (problem) actions.notify({ text: problem })
+        }
+        actions.setSelection([id])
+      }
+      setSearch(null)
+    },
+    [actions, search],
+  )
 
   const nodes = useMemo(
     () =>
@@ -213,21 +268,32 @@ function Canvas({ evaluation }: { evaluation: Evaluation }) {
   )
 
   /**
-   * An input handle let go over nothing: the value it wanted has to come from
-   * somewhere, so it comes from a constant, already holding what that socket
-   * was worth.
+   * A handle let go over nothing. An *input* wanted a value, so it gets a
+   * constant already holding what that socket was worth. An *output* has a
+   * value looking for somewhere to go, so it asks which transform should take
+   * it — and only transforms that can are offered.
    */
   const onConnectEnd = useCallback(
     (event: MouseEvent | TouchEvent, connection: FinalConnectionState) => {
       if (connection.isValid) return
       const from = connection.fromHandle
       const node = connection.fromNode
-      if (!from || !node || from.type !== 'target' || !from.id) return
+      if (!from || !node || !from.id) return
       const point = 'changedTouches' in event ? event.changedTouches[0] : event
-      const position = flow.screenToFlowPosition({ x: point.clientX, y: point.clientY })
-      actions.spawnConstant(node.id, from.id, position.x - 150, position.y - 20)
+      const screen = { x: point.clientX, y: point.clientY }
+      const position = flow.screenToFlowPosition(screen)
+
+      if (from.type === 'target') {
+        actions.spawnConstant(node.id, from.id, position.x - 150, position.y - 20)
+        return
+      }
+
+      const source = model?.nodes[node.id]
+      const socket = source && defOf(source, state.models)?.outputs.find((o) => o.name === from.id)
+      if (!socket) return
+      openSearch(screen, position, { node: node.id, output: from.id, type: socket.type })
     },
-    [actions, flow],
+    [actions, flow, model, state.models, openSearch],
   )
 
   const onDrop = useCallback(
@@ -244,38 +310,60 @@ function Canvas({ evaluation }: { evaluation: Evaluation }) {
   )
 
   return (
-    <ReactFlow
-      nodes={nodes}
-      edges={edges}
-      nodeTypes={nodeTypes}
-      onNodesChange={onNodesChange}
-      onEdgesChange={onEdgesChange}
-      onConnect={onConnect}
-      onConnectEnd={onConnectEnd}
-      isValidConnection={isValidConnection}
-      onDrop={onDrop}
-      onDragOver={(event) => {
-        event.preventDefault()
-        event.dataTransfer.dropEffect = 'copy'
-      }}
-      // Keys are the command registry's business, not React Flow's.
-      deleteKeyCode={null}
-      selectionKeyCode={null}
-      multiSelectionKeyCode={['Meta', 'Control']}
-      // A trackpad scrolls the canvas about; zooming is ctrl/⌘ with it, or a
-      // pinch. Double-click belongs to whatever was double-clicked.
-      panOnScroll
-      zoomOnScroll={false}
-      zoomOnPinch
-      zoomOnDoubleClick={false}
-      minZoom={0.2}
-      maxZoom={2}
-      fitView
-      fitViewOptions={{ padding: 0.3, maxZoom: 1 }}
-      proOptions={{ hideAttribution: true }}
-    >
-      <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#dedee4" />
-    </ReactFlow>
+    <div ref={surface} className="relative h-full w-full">
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        onConnectEnd={onConnectEnd}
+        onPaneContextMenu={(event) => {
+          event.preventDefault()
+          const screen = { x: event.clientX, y: event.clientY }
+          openSearch(screen, flow.screenToFlowPosition(screen))
+        }}
+        isValidConnection={isValidConnection}
+        onDrop={onDrop}
+        onDragOver={(event) => {
+          event.preventDefault()
+          event.dataTransfer.dropEffect = 'copy'
+        }}
+        // Keys are the command registry's business, not React Flow's.
+        deleteKeyCode={null}
+        selectionKeyCode={null}
+        multiSelectionKeyCode={['Meta', 'Control']}
+        // A trackpad scrolls the canvas about; zooming is ctrl/⌘ with it, or a
+        // pinch. Double-click belongs to whatever was double-clicked.
+        panOnScroll
+        zoomOnScroll={false}
+        zoomOnPinch
+        zoomOnDoubleClick={false}
+        minZoom={0.2}
+        maxZoom={2}
+        fitView
+        fitViewOptions={{ padding: 0.3, maxZoom: 1 }}
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#dedee4" />
+      </ReactFlow>
+
+      {search && (
+        <NodeSearch
+          at={search.at}
+          items={matches}
+          query={search.query}
+          onQuery={(query) => setSearch((was) => (was ? { ...was, query } : was))}
+          onPick={pick}
+          onClose={() => setSearch(null)}
+          note={
+            search.from &&
+            `Something to take a ${TYPE_LABELS[search.from.type].toLowerCase()}`
+          }
+        />
+      )}
+    </div>
   )
 }
 
