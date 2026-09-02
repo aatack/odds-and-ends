@@ -11,10 +11,13 @@
     "noEmit": true,
     "paths": { "@core/*": ["./src/core/*"] }
   },
+  // The state layer is here on purpose: with only the ES libs available,
+  // reaching for the DOM from it fails to compile.
   "include": [
     "src/main/**/*",
     "src/preload/**/*",
     "src/core/**/*",
+    "src/renderer/src/state/**/*",
     "test/**/*",
     "electron.vite.config.ts"
   ]

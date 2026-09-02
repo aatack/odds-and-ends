@@ -8,7 +8,7 @@
     "dev:no-sandbox": "electron-vite dev -- --no-sandbox",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "test": "tsx test/geometry.mts && tsx test/evaluate.mts && tsx test/glb.mts",
+    "test": "tsx test/geometry.mts && tsx test/evaluate.mts && tsx test/glb.mts && tsx test/state.mts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "devDependencies": {
