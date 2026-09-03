@@ -3,15 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "main": "out/main/index.js",
-  "workspaces": [
-    "server"
-  ],
   "scripts": {
     "dev": "electron-vite dev",
     "dev:no-sandbox": "electron-vite dev -- --no-sandbox",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "test": "tsx test/schema.mts && tsx test/cache.mts && tsx test/entityTools.mts && tsx test/userTools.mts && tsx test/nestedRuns.mts && tsx test/markdownFields.mts && tsx test/diagram.mts && tsx test/migrateV2.mts",
+    "test": "tsx test/schema.mts && tsx test/cache.mts && tsx test/entityTools.mts && tsx test/userTools.mts && tsx test/nestedRuns.mts && tsx test/markdownFields.mts && tsx test/diagram.mts && tsx test/migrateV2.mts && tsx test/pensive.mts && tsx test/mcp.mts",
     "migrate:v2": "tsx scripts/migrateV2/index.mts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
@@ -36,6 +33,7 @@
     "@fontsource-variable/lora": "^5.2.8",
     "@fontsource-variable/source-serif-4": "^5.2.9",
     "@jitl/quickjs-singlefile-browser-release-sync": "^0.32.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@xyflow/react": "^12.11.5",
     "better-sqlite3": "^11.1.2",
     "electron-store": "^8.2.0",

@@ -267,22 +267,16 @@ export const APP_TOOLS: ToolSpec[] = [
     run: () => updateUi({ page: 'editor' }),
   },
   {
+    // The one way to the sources page, and the one tool about sources: what is
+    // there is a graph of pensives, and everything that used to be a tool about
+    // them — a server, a token, a debug console — is a node on it.
     id: 'page.sources',
-    label: 'Go to sources',
-    aliases: ['servers', 'connections', 'configuration'],
+    label: 'Configure sources',
+    aliases: ['sources', 'pensives', 'connections', 'configuration', 'tokens', 'broadcast'],
     hint: 'Navigate',
     scope: 'app',
     reach: 'ui',
     run: () => updateUi({ page: 'sources' }),
-  },
-  {
-    id: 'source.debug',
-    label: 'Debug source',
-    aliases: ['events', 'raw', 'tools'],
-    hint: 'Shell',
-    scope: 'app',
-    reach: 'ui',
-    run: () => updateUi({ debugSource: true }),
   },
   {
     // The skeleton, because assembling one by hand means creating a note, then

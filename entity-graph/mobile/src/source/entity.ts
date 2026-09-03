@@ -1,4 +1,4 @@
-import type { EventScan } from '../../../src/core/source/defaultTools'
+import type { EventScan } from '../../../src/core/pensive/types'
 import type { AppEvent, LinkAction, ResourceRecord } from '../core/types'
 import { uuid } from '../helpers/uuid'
 import { callSource, currentUser } from './connection'

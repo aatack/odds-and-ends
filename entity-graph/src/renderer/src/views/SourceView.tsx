@@ -1,14 +1,13 @@
 import React, { useEffect } from 'react'
-import type { ActiveSource } from '../../../core/client'
+import type { CurrentPensive } from '../../../core/client'
 import { Layout } from '../layout/Layout'
-import { DebugModal } from '../components/DebugModal'
 import { EntityInspector } from '../components/EntityInspector'
 import { ResourceModal } from '../components/Resource'
-import { Button } from '../components/ui/Button'
 import { evaluateCode } from '../helpers/codeRunner'
 import {
   applyEvents,
   invalidateEntities,
+  refreshEntities,
   removeEvents,
   setCodeEvaluator,
   setEntityFetcher,
@@ -18,31 +17,34 @@ import { setResourceFetcher } from '../state/resources'
 import { updateUi } from '../state/ui'
 import { readResource, scanEvents, setWriteObserver } from '../source/entity'
 import { setSourceTransport } from '../source/transport'
-import { setIntegrationServer } from '../tools/integrationTools'
 import { clearUserTools, loadUserTools } from '../tools/userTools'
 
 const api = window.entityGraph
 
 /**
- * The open source's shell. Its whole job is to plug the seams together — the
+ * The open pensive's shell. Its whole job is to plug the seams together — the
  * transport, the caches, and the sandbox the entity cache runs `events` scripts
  * in — and then get out of the way: everything below reads state, so no data
  * flows through this component.
+ *
+ * Which pensive it is comes from the sources page, so this component is keyed on
+ * its id: dragging a different store into the desktop node tears the seams down
+ * and lays them again over the new one.
  */
 export function SourceView({
-  active,
+  pensive,
   user,
 }: {
-  active: ActiveSource
+  pensive: CurrentPensive
   user: string
 }): React.JSX.Element {
   const ui = useUi()
 
   useEffect(() => {
     setSourceTransport({
-      call: (tool, args) => api.sourceCall(active.id, tool, args),
+      call: (tool, args) => api.pensiveCall(tool, args),
       user,
-      sourceId: active.id,
+      sourceId: pensive.id,
     })
     setEntityFetcher(scanEvents)
     setWriteObserver({
@@ -52,10 +54,10 @@ export function SourceView({
     })
     setCodeEvaluator(evaluateCode)
     setResourceFetcher(readResource)
-    // The integrations belong to the *server*, not to the source — but this is
-    // where the app is pointed at one, so it is where they are picked up.
-    setIntegrationServer(active.serverId)
-    // The user's own tools belong to the source, and are read through the
+    // Whatever is cached was rolled up from a different store, so it is read
+    // again rather than trusted — the rows keep what they have until it lands.
+    refreshEntities()
+    // The user's own tools belong to the store, and are read through the
     // transport set just above, so this has to come after it.
     void loadUserTools()
     return () => {
@@ -64,10 +66,9 @@ export function SourceView({
       setCodeEvaluator(null)
       setResourceFetcher(null)
       setSourceTransport(null)
-      setIntegrationServer(null)
       clearUserTools()
     }
-  }, [active.id, active.serverId, user])
+  }, [pensive.id, user])
 
   return (
     <div className="relative flex h-full flex-col">
@@ -75,23 +76,9 @@ export function SourceView({
         <Layout />
       </div>
 
-      {/* Debug lives in an unobtrusive corner button rather than a header bar. */}
-      <Button
-        variant="tertiary"
-        size="sm"
-        className="absolute bottom-4 left-4 opacity-60 hover:opacity-100"
-        onClick={() => updateUi({ debugSource: true })}
-      >
-        Debug
-      </Button>
-
-      {ui.debugSource && (
-        <DebugModal sourceId={active.id} user={user} onClose={() => updateUi({ debugSource: false })} />
-      )}
       {ui.resourceId && <ResourceModal id={ui.resourceId} />}
       {ui.inspectEntityId && (
         <EntityInspector
-          sourceId={active.id}
           entityId={ui.inspectEntityId}
           user={user}
           onClose={() => updateUi({ inspectEntityId: null })}

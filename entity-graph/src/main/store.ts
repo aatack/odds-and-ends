@@ -1,16 +1,13 @@
 import Store from 'electron-store'
-import type { CurrentSource, Server, SourceConnection } from '../core/client'
 
 export interface AppConfig {
-  /** Every server the app knows about (external + local). Includes secrets. */
-  servers: Server[]
-  /** Saved source credentials for non-admin servers. */
-  sourceConnections: SourceConnection[]
+  /** Who writes made from this window are recorded as. */
   user: string
-  /** The source the editor opens by default; null until the user picks one. */
-  currentSource: CurrentSource | null
 }
 
-export const store = new Store<AppConfig>({
-  defaults: { servers: [], sourceConnections: [], user: 'anonymous', currentSource: null },
-})
+/**
+ * The app's own settings, and now nearly nothing: what used to be here — every
+ * server, every saved token, which source was open — is the graph of pensives,
+ * which is a SQLite file of its own (`pensive/graph.db` under `userData`).
+ */
+export const store = new Store<AppConfig>({ defaults: { user: 'anonymous' } })

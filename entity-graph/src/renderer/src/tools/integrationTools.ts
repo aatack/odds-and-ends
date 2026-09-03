@@ -3,35 +3,31 @@ import { atom } from '../state/atom'
 import { argsFromSchema, summarise } from './declared'
 import type { ToolSpec } from './types'
 
-// The server's integrations — GitHub, Slack, Claude — as tools of the app.
+// The app's integrations — GitHub, Slack, Claude, git, a terminal — as tools of
+// the palette.
 //
-// They are declared once, on the server, and arrive here as JSON Schema; the
-// palette's argument prompts are built from that rather than restated, so a tool
-// gained or an argument renamed on the server needs nothing doing here. What the
-// app supplies is the half the server can't: a label, an ordering, and the fact
-// that a call is worth keeping in the log.
+// They are declared in the main process, where the hands are, and arrive here as
+// JSON Schema; the palette's argument prompts are built from that rather than
+// restated, so a tool gained or an argument renamed there needs nothing doing
+// here. What this side supplies is the half the declaration can't: a label, an
+// ordering, and the fact that a call is worth keeping in the log.
+//
+// They belong to no pensive, which is deliberate — a store that is published to
+// somebody else must not carry a shell — so they are loaded once, when the app
+// starts, rather than when a source opens.
 
-/** Runtime only, and pointedly not persisted: this is a cache of the server's. */
+/** Runtime only, and pointedly not persisted: a cache of the main process's. */
 export const integrationsAtom = atom<ToolSpec[]>([])
 
-/** Which server's integrations these are. Null when no source is open. */
-let serverId: string | null = null
-
 /**
- * Point the integrations at a server and load its tool list. Failure is not an
- * error: a server with no admin access, or an older one with no `/tools`, simply
- * has no integrations, and the palette should say nothing about it.
+ * Read the integrations into the registry. Failure is not an error: an app whose
+ * `.env` says nothing still has the tools, and each one complains for itself
+ * when it is called.
  */
-export function setIntegrationServer(next: string | null): void {
-  serverId = next
-  integrationsAtom.set([])
-  if (!next) return
+export function loadIntegrations(): void {
   void window.entityGraph
-    .integrationTools(next)
-    .then((tools) => {
-      // Guard against a slow load landing after the source has moved on.
-      if (serverId === next) integrationsAtom.set(tools.map(toolSpec))
-    })
+    .integrationTools()
+    .then((tools) => integrationsAtom.set(tools.map(toolSpec)))
     .catch(() => undefined)
 }
 
@@ -57,15 +53,14 @@ function toolSpec(meta: ToolMeta): ToolSpec {
     // Which is also why every call is kept: a merged pull request is a thing
     // that happened, and the log is the only record of it.
     reach: 'external',
-    // The server may have written to the graph on its way — a Claude session
+    // The tool may have written to the graph on its way — a Claude session
     // writes its notes over MCP, which nothing here sees. So the cache is read
     // again afterwards. It costs one scan of what is on screen, per gesture,
     // which is affordable in a way doing it per keystroke was not.
     writesUnseen: true,
     ...(args.length ? { args } : {}),
     run: async (values) => {
-      if (!serverId) throw new Error('No server is open')
-      const data = await window.entityGraph.runIntegrationTool(serverId, meta.id, values)
+      const data = await window.entityGraph.runIntegrationTool(meta.id, values)
       return { data, message: summarise(data) ?? meta.name }
     },
   }

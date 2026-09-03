@@ -15,10 +15,10 @@ import { Switch } from './ui/Switch'
  *
  * They are two rather than one because they are published independently and
  * mean different things: the app at the root of the tailnet name is the thing a
- * phone installs, and each source under `/api/<id>` is what it then reads and
+ * phone installs, and one broadcast under `/api/<id>` is what it then reads and
  * writes. A phone needs both, but the app is served once for the machine while a
- * source is a per-source decision, which is why one lives on the page and the
- * other in a source's own editor.
+ * broadcast is a per-node decision, which is why one lives on the page and the
+ * other in the node's own panel.
  *
  * All state comes from {@link TailscaleModel}; nothing here talks to IPC.
  */
@@ -96,22 +96,20 @@ export function PhoneAccessPanel({ model }: { model: TailscaleModel }): React.JS
 }
 
 // ---------------------------------------------------------------------------
-// The per-source section, shown inside a source's editor
+// The per-node section, shown inside a broadcast node's panel
 // ---------------------------------------------------------------------------
 
-export function SourcePhoneAccess({
+export function NodePhoneAccess({
   model,
-  serverId,
-  sourceId,
-  baseUrl,
+  nodeId,
+  localUrl,
 }: {
   model: TailscaleModel
-  serverId: string
-  sourceId: string
-  /** The server's own base URL — what the tailnet mount proxies to. */
-  baseUrl: string
+  nodeId: string
+  /** The broadcast's own address on this machine — what the mount proxies to. */
+  localUrl: string | null
 }): React.JSX.Element {
-  const source = model.source(sourceId, baseUrl)
+  const source = model.node(nodeId, localUrl)
   const [author, setAuthor] = useState('phone')
   const [link, setLink] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -121,7 +119,7 @@ export function SourcePhoneAccess({
     setBusy(true)
     setError(null)
     try {
-      setLink(await model.actions.phoneLink(serverId, sourceId, author.trim() || 'phone'))
+      setLink(await model.actions.phoneLink(nodeId, author.trim() || 'phone'))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -141,23 +139,23 @@ export function SourcePhoneAccess({
         <>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[13px] text-gray-900">Serve this source on Tailscale</p>
+              <p className="text-[13px] text-gray-900">Serve this broadcast on Tailscale</p>
               <p className="truncate font-mono text-xs text-gray-400">
-                {baseUrl}/{sourceId}
+                {localUrl ?? 'not listening'}
               </p>
             </div>
             <Switch
-              label="Serve this source on Tailscale"
+              label="Serve this broadcast on Tailscale"
               checked={source.on}
-              disabled={source.busy || !!source.blocked}
-              onChange={(on) => void model.actions.serveSource(serverId, sourceId, on)}
+              disabled={source.busy || !!source.blocked || !localUrl}
+              onChange={(on) => void model.actions.serveNode(nodeId, on)}
             />
           </div>
 
           {source.url && (
-            <UrlRow url={source.url} title="Copy the source’s address on the tailnet">
-              Only this source is exposed, not the whole server — the admin endpoints that create
-              sources and issue tokens stay off the tailnet.
+            <UrlRow url={source.url} title="Copy the broadcast’s address on the tailnet">
+              Only this pensive is exposed. Nothing that configures the app is reachable from the
+              tailnet, and a broadcast has no reach outside its own store.
             </UrlRow>
           )}
 
