@@ -184,16 +184,18 @@ export const readResource = (id: string): Promise<ResourceRecord | null> =>
 // --- Raw events (undo / redo) ----------------------------------------------
 
 /**
- * Take the most recent event, and any within `windowMs` of it, back off the
- * store. Returns what was removed, oldest first — empty once the last write is
- * older than the store's age limit (`POP_AGE_LIMIT_MS`), which nothing here can
- * override.
+ * Take the last action's events back off the store, returning them oldest first.
+ *
+ * How much counts as one action, and how far back it reaches, are the store's —
+ * empty once the last write is older than its age limit (`POP_AGE_LIMIT_MS`),
+ * which nothing here can override. `author` narrows it to one person; the app
+ * passes none, so a write an agent made over MCP is undoable from here too.
  *
  * What came off is taken out of the cache too, which is all undo needs to do to
  * the view: the entities those events belonged to roll up again without them.
  */
-export async function popEvents(windowMs = 100): Promise<AppEvent[]> {
-  const events = (await callSource('popEvents', { windowMs })) as AppEvent[]
+export async function popEvents(author?: string): Promise<AppEvent[]> {
+  const events = (await callSource('popEvents', { author })) as AppEvent[]
   observer?.removed(events)
   return events
 }

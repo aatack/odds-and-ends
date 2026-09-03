@@ -230,9 +230,13 @@ node's type, and what a broadcast serves.
 
 ## Phone access
 
-The Sources page also drives `tailscale serve`, which is how the phone client in
-[`mobile/`](./mobile) reaches this machine: the app's build at `/`, and one
-broadcast node at `/api/<nodeId>`, on the tailnet's HTTPS name.
+**Unwired at the moment.** `tailscale serve` — the app's build at `/` and one
+broadcast node at `/api/<nodeId>`, on the tailnet's HTTPS name — is how the phone
+client in [`mobile/`](./mobile) reaches this machine, and it will come back as a
+*node* on the sources graph rather than as a panel on the page. Everything below
+is still in the tree and still works; what is gone is the UI that called it
+(`components/PhoneAccess.tsx` and `views/useTailscale.ts` are unrendered, and the
+IPC handlers are unreached). Plumbing it back in is wiring, not writing.
 
 `src/main/tailscale.ts` is the whole of it, and is plain Node — the app root is
 passed in rather than read from `electron`, so it runs outside the app. It holds

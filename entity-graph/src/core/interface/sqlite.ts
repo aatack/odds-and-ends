@@ -2,7 +2,7 @@ import { mkdirSync } from 'fs'
 import { resolve, dirname } from 'path'
 import Database from 'better-sqlite3'
 import type { AppEvent, ValueEvent, LinkEvent } from '../events'
-import { POP_AGE_LIMIT_MS, type ResourceRecord } from '../pensive/types'
+import { POP_AGE_LIMIT_MS, POP_GROUP_MS, type ResourceRecord } from '../pensive/types'
 import type { DumpableInterface } from './index'
 
 interface ValueRow {
@@ -196,51 +196,64 @@ export class SqliteInterface implements DumpableInterface {
   }
 
   /**
-   * Remove the most recent event, and any within `windowMs` of it, returning
-   * what was removed (oldest first, ready to be written back).
+   * Remove the last action's events, returning what was removed (oldest first,
+   * ready to be written back).
    *
-   * The window is what makes this useful as an undo step: one user action often
+   * Grouping is what makes this useful as an undo step: one user action often
    * writes several events at the same instant — creating an entity writes its
    * values and the link to its parent together — and they should come off as a
    * unit. Select and delete share one transaction, so a concurrent write can't
    * slip between them.
    *
-   * Nothing older than {@link POP_AGE_LIMIT_MS} is touched, whatever window is
-   * asked for: past that the history is settled and this call is a no-op. The
-   * limit is a floor on the cutoff rather than a refusal, so a window straddling
-   * it takes the recent half and leaves the rest.
+   * **Both windows are this store's**: {@link POP_GROUP_MS} for what counts as
+   * one action and {@link POP_AGE_LIMIT_MS} for how far back it reaches, so
+   * there is nothing a caller can widen. Past the age limit the history is
+   * settled and this is a no-op; the limit is a floor on the cutoff rather than a
+   * refusal, so an action straddling it takes the recent half and leaves the rest.
+   *
+   * `author` narrows it to that person's own events — the *latest* is then their
+   * latest, which may be older than somebody else's. That is the point: on a
+   * store two people are writing to, undo should reach your own last edit and
+   * not theirs.
    */
-  async popLatestEvents(windowMs: number): Promise<AppEvent[]> {
+  async popLatestEvents(author?: string): Promise<AppEvent[]> {
     // Read before the transaction so the clock is sampled once, not per query.
     const oldestPoppable = Date.now() - POP_AGE_LIMIT_MS
+    // Spliced into each statement rather than branched around: the alternative is
+    // two of everything below, differing in one clause.
+    const mine = author === undefined ? '' : ' AND author = :author'
+    const whose = author === undefined ? {} : { author }
     return this.db.transaction(() => {
       const latest = this.db
-        .prepare<[], { ts: number | null }>(
+        .prepare<{ author?: string }, { ts: number | null }>(
           `SELECT MAX(ts) AS ts FROM (
-             SELECT MAX(timestamp) AS ts FROM value_events
+             SELECT MAX(timestamp) AS ts FROM value_events WHERE 1 = 1${mine}
              UNION ALL
-             SELECT MAX(timestamp) AS ts FROM link_events
+             SELECT MAX(timestamp) AS ts FROM link_events WHERE 1 = 1${mine}
            )`
         )
-        .get()
+        .get(whose)
       if (latest?.ts == null) return []
 
-      const cutoff = Math.max(latest.ts - windowMs, oldestPoppable)
+      const cutoff = Math.max(latest.ts - POP_GROUP_MS, oldestPoppable)
+      const from = { ...whose, cutoff }
       const valueRows = this.db
-        .prepare<[number], ValueRow>(
+        .prepare<{ cutoff: number; author?: string }, ValueRow>(
           `SELECT timestamp, author, entity_id, key, value
-           FROM value_events WHERE timestamp >= ?`
+           FROM value_events WHERE timestamp >= :cutoff${mine}`
         )
-        .all(cutoff)
+        .all(from)
       const linkRows = this.db
-        .prepare<[number], LinkRow>(
+        .prepare<{ cutoff: number; author?: string }, LinkRow>(
           `SELECT timestamp, author, source_id, destination_id, action
-           FROM link_events WHERE timestamp >= ?`
+           FROM link_events WHERE timestamp >= :cutoff${mine}`
         )
-        .all(cutoff)
+        .all(from)
 
-      this.db.prepare(`DELETE FROM value_events WHERE timestamp >= ?`).run(cutoff)
-      this.db.prepare(`DELETE FROM link_events WHERE timestamp >= ?`).run(cutoff)
+      this.db
+        .prepare(`DELETE FROM value_events WHERE timestamp >= :cutoff${mine}`)
+        .run(from)
+      this.db.prepare(`DELETE FROM link_events WHERE timestamp >= :cutoff${mine}`).run(from)
 
       const events: AppEvent[] = [
         ...valueRows.map(

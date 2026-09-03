@@ -73,8 +73,9 @@ export interface NodeStatus {
   /** Where a broadcast or MCP node answers, once it is listening. */
   url: string | null
   /**
-   * The same server on loopback. What a tailnet mount proxies to, and so what
-   * the page compares against to decide whether the switch is on.
+   * The same server on loopback — what a tailnet mount would proxy to. Nothing
+   * reads it while phone access is unwired; it is the one thing that side needs
+   * from here, so it is kept rather than worked out again later.
    */
   localUrl: string | null
   /** Why this node isn't working — an actionable sentence, or null. */

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Trash03 } from '@untitledui/icons'
 import type { SourceNode, SourceToken } from '../../../../core/client'
-import { NodePhoneAccess } from '../PhoneAccess'
 import { Button } from '../ui/Button'
 import { CopyButton } from '../ui/CopyButton'
 import { IconButton } from '../ui/IconButton'
@@ -9,7 +8,6 @@ import { Input } from '../ui/Input'
 import { Modal } from '../ui/Modal'
 import { Switch } from '../ui/Switch'
 import type { SourceGraphActions } from '../../views/useSourceGraph'
-import type { TailscaleModel } from '../../views/useTailscale'
 
 // Who may reach one published node, and how.
 //
@@ -23,16 +21,11 @@ const SECTION = 'text-[11px] font-medium uppercase tracking-[0.09em] text-gray-5
 
 export function AccessModal({
   node,
-  localUrl,
   actions,
-  tailscale,
   onClose,
 }: {
   node: SourceNode
-  /** The node's address on this machine, for the Tailscale mount. */
-  localUrl: string | null
   actions: SourceGraphActions
-  tailscale: TailscaleModel
   onClose: () => void
 }): React.JSX.Element {
   const [tokens, setTokens] = useState<SourceToken[]>([])
@@ -134,12 +127,6 @@ export function AccessModal({
 
           {error && <p className="text-[13px] text-error-600">{error}</p>}
         </div>
-
-        {/* MCP is reached by an agent on this machine, so there is no phone half
-            of it — the connect link hands a browser a source it can render. */}
-        {node.config.kind === 'broadcast' && (
-          <NodePhoneAccess model={tailscale} nodeId={node.id} localUrl={localUrl} />
-        )}
       </div>
     </Modal>
   )

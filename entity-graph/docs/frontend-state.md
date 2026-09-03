@@ -381,11 +381,18 @@ it, and the returned events go on a stack. Redo writes them back verbatim, so th
 store ends up as it was — the original timestamps and authors, not the edit
 re-applied at the current time.
 
-The 100ms window is what makes a step a *user action* rather than an event: 
+The 100ms window is what makes a step a *user action* rather than an event:
 creating an entity writes its values and the link to its parent at the same
 instant, and they must come off together. The flip side is that two actions in
 quick succession collapse into one step, which is correct but surprising if you
 drive the app faster than a person can.
+
+**Both windows belong to the store, not to this side.** `popEvents` takes no
+window: the store decides what one action is and how far back undo reaches, so
+there is nothing a client can widen. What it does take is an `author`, which
+narrows undo to one person's own events — the app passes none, so an edit an agent
+made over MCP is undoable from here, while a client holding a bearer token has it
+forced to whoever the token belongs to and can only reach its own.
 
 Consequences worth knowing:
 
@@ -406,8 +413,9 @@ Consequences worth knowing:
 - **A step records the source it came off**, and redo refuses a step belonging to
   another source. Everything else about pointing the app at a different source is
   harmless; injecting one store's events into another would invent entities there.
-- `popEvents` is absent from a source that can't remove events (a read-only
-  wrapper), so the client can tell undo is unavailable by the tool's absence.
+- **A store that cannot remove events refuses rather than pretending**, so undo
+  fails with a sentence saying so — a combiner with no write source is the case
+  that comes up.
 - **What came off the store comes out of the cache**, matched by content rather
   than by identity — the events arrive over the wire, so they are equal to the
   cached ones without being them. That is the whole of undo's effect on the

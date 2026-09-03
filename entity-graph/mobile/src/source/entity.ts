@@ -93,15 +93,17 @@ export const writeEvents = (events: AppEvent[]): Promise<unknown> =>
   write(events, () => callSource('writeEvents', { events }))
 
 /**
- * Take the most recent event, and any within `windowMs` of it, back off the store
+ * Take the last action's events back off the store
  * and return them. Absent on a source that can't remove events, which is how the
  * client knows undo is unavailable.
  *
  * What came off is taken out of the cache too, which is all undo needs to do to
  * the view: the entities those events belonged to roll up again without them.
  */
-export async function popEvents(windowMs = 100): Promise<AppEvent[]> {
-  const events = (await callSource('popEvents', { windowMs })) as AppEvent[]
+export async function popEvents(): Promise<AppEvent[]> {
+  // No author: the broadcast this phone talks to forces its own, so undo here
+  // reaches this phone's edits and nobody else's whatever is sent.
+  const events = (await callSource('popEvents', {})) as AppEvent[]
   observer?.removed(events)
   return events
 }

@@ -58,8 +58,9 @@ other.
 
 ### From the desktop app
 
-The **Sources** page has the two mounts as switches, which is the shortest route and the
-one that keeps the connect link below within reach.
+**Not at the moment.** The two mounts were switches on the **Sources** page and are
+coming back as a node of their own; until they do, use [By hand](#by-hand) below. What
+it looked like, and what to render again:
 
 - **Phone access**, at the top of the page, serves this app's build at `/`. It shows the
   `.ts.net` name, the directory being served, and warns when nothing has been built into
@@ -194,11 +195,11 @@ Tailscale route neither needs nor avoids the LAN one.
 Typing a 48-character token with a thumb is miserable, so a connection can be handed
 over in the URL fragment instead — for either route.
 
-The desktop app builds one: **Sources → a broadcast node → the key button → Phone
-access → Make connect link**, once that node is served. It shows the link as a QR code to point the phone's camera
-at and as text to send yourself, and issues (or reuses) a token labelled `phone` to put
-in it. The **Author** beside the button is what every write from that phone is recorded
-under, `phone` by default.
+The desktop app used to build one — a QR code to point the phone's camera at, over a
+token named `phone` — and will again when serving comes back as a node. Until then it
+is the two lines below; the token itself comes from **Sources → a broadcast node → the
+key button**, and the name you give it there is what every write from that phone is
+recorded under.
 
 By hand, from the repo root:
 

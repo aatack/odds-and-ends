@@ -116,6 +116,40 @@ test('records every write as the person the token was issued to', async () => {
   assert.deepEqual(authors(store), ['kim', 'kim'])
 })
 
+test('takes only one person\'s events off, when it is told whose', async () => {
+  const store = new MemorySource()
+  const now = Date.now()
+  store.given(
+    { type: 'value', entityId: 'a', key: 'text', value: 'kim wrote this', author: 'kim', timestamp: now },
+    { type: 'value', entityId: 'b', key: 'text', value: 'sam wrote this', author: 'sam', timestamp: now },
+  )
+  const popped = (await store.callTool('popEvents', { author: 'kim' })) as { author: string }[]
+  assert.deepEqual(
+    popped.map((e) => e.author),
+    ['kim'],
+  )
+  // Sam's is still there, at the same timestamp, so it was the author that
+  // decided and not the clock.
+  assert.deepEqual(authors(store), ['sam'])
+})
+
+test('refuses to undo somebody else\'s edit, however the client asks', async () => {
+  const store = new MemorySource()
+  const now = Date.now()
+  store.given({
+    type: 'value',
+    entityId: 'a',
+    key: 'text',
+    value: 'not yours',
+    author: 'sam',
+    timestamp: now,
+  })
+  const asKim = new AttributedPensive(store, 'kim')
+  // Naming Sam is exactly the request that has to come back empty.
+  assert.deepEqual(await asKim.callTool('popEvents', { author: 'sam' }), [])
+  assert.deepEqual(authors(store), ['sam'])
+})
+
 // --- Paused -----------------------------------------------------------------
 
 test('refuses everything while it is paused, and says who is paused', async () => {

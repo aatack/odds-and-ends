@@ -9,6 +9,11 @@ import { Input } from './ui/Input'
 import { Switch } from './ui/Switch'
 
 /**
+ * **Unwired.** Nothing renders these at the moment: `tailscale serve` is coming
+ * back as a node on the sources graph rather than as a panel on the page, and
+ * this is left standing so that plumbing it back in is a matter of rendering it
+ * again. The IPC it calls is still there, and so is `src/main/tailscale.ts`.
+ *
  * The controls for reaching this machine from a phone — the same
  * `tailscale serve` mounts that `mobile/README.md` sets up by hand, as two
  * switches.

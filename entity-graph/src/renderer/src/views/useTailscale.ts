@@ -47,6 +47,9 @@ export interface TailscaleModel {
  * All the logic behind the phone-access controls: what Tailscale is currently
  * publishing, and the two switches that change it.
  *
+ * **Unwired**, along with the components that read it — see
+ * `components/PhoneAccess.tsx`. It comes back when serving does, as a node.
+ *
  * Held in one place and passed down rather than called per row, because there is
  * one serve config for the machine — a hook instance per node would be as many
  * reads of the same thing, and they would disagree while one of them was mid-flight.

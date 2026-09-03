@@ -8,12 +8,27 @@ import type { AppEvent } from '../events'
 // the sources page instead of one the app is built out of.
 
 /**
- * How far back popping is allowed to reach. Undo takes events off the store for
- * real, so beyond this the history is settled: an event older than five minutes
- * is never deleted, whatever is asked for. It bounds the damage a runaway client
- * — or a user holding Ctrl+Z — can do to a store that has no other copy.
+ * How far back popping is allowed to reach, as standard. Undo takes events off
+ * the store for real, so beyond this the history is settled: an event older than
+ * five minutes is never deleted, whatever is asked for. It bounds the damage a
+ * runaway client — or a user holding Ctrl+Z — can do to a store that has no other
+ * copy.
+ *
+ * **The store decides this, not the caller.** A pensive is free to allow less —
+ * an archive may allow none at all — and nothing a client sends can widen it.
  */
 export const POP_AGE_LIMIT_MS = 5 * 60 * 1000
+
+/**
+ * How close to the last event another one has to be to count as part of the same
+ * action, as standard. One gesture often writes several events at the same
+ * instant — creating an entity writes its values and the link to its parent
+ * together — and they come off as a unit or not at all.
+ *
+ * The store's too, for the same reason: a caller asking for "everything in the
+ * last four minutes" is asking to undo somebody's afternoon.
+ */
+export const POP_GROUP_MS = 100
 
 /**
  * A stored blob — an image pasted into the tree, a file dropped on it.
@@ -67,12 +82,19 @@ export interface Pensive {
   /** Append events verbatim — the timestamps and authors they carry are kept. */
   writeEvents(events: AppEvent[]): Promise<void>
   /**
-   * Remove the most recent event, and any within `windowMs` of it, returning
-   * them oldest first. Nothing older than {@link POP_AGE_LIMIT_MS} comes off, so
-   * on a store that has been idle that long this answers with nothing rather
-   * than refusing.
+   * Remove the last action's events, returning them oldest first — what undo is.
+   *
+   * How much counts as one action ({@link POP_GROUP_MS}) and how far back this
+   * reaches at all ({@link POP_AGE_LIMIT_MS}) are the *store's* to decide, so
+   * there is nothing here to pass: a store that has been idle past its limit
+   * answers with nothing rather than refusing.
+   *
+   * `author` narrows it to one person's own events, which is what makes undo
+   * safe on a store more than one person is writing to. A pensive reached with a
+   * bearer token has it forced to whoever the token belongs to, so a client
+   * cannot undo somebody else's edit by asking to.
    */
-  popEvents(windowMs: number): Promise<AppEvent[]>
+  popEvents(author?: string): Promise<AppEvent[]>
 
   /** The bytes under an entity id, or null when there are none. */
   readResource(id: string): Promise<ResourceRecord | null>

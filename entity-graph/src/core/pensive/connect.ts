@@ -91,8 +91,8 @@ export class ConnectPensive implements Pensive {
     await this.callTool('writeEvents', { events })
   }
 
-  popEvents(windowMs: number): Promise<AppEvent[]> {
-    return this.callTool('popEvents', { windowMs }) as Promise<AppEvent[]>
+  popEvents(author?: string): Promise<AppEvent[]> {
+    return this.callTool('popEvents', { author }) as Promise<AppEvent[]>
   }
 
   readResource(id: string): Promise<ResourceRecord | null> {
