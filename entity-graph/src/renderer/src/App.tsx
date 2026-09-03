@@ -211,9 +211,8 @@ function EditorPlaceholder({ problem }: { problem: string | null }): React.JSX.E
   return (
     <div className="mx-auto mt-24 w-full max-w-md space-y-4 px-6 text-center">
       <p className="text-[13px] text-gray-400">
-        Nothing is plugged into this app on the sources page.
+        {problem ?? 'Nothing is plugged into this app on the sources page.'}
       </p>
-      {problem && <p className="break-all font-mono text-xs text-gray-400">{problem}</p>}
       <div className="flex justify-center">
         <Button variant="secondary" size="sm" onClick={() => updateUi({ page: 'sources' })}>
           Configure sources

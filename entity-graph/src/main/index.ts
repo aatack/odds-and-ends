@@ -23,7 +23,7 @@ import type {
   SourceToken,
 } from '../core/client'
 import { APP_MOUNT, nodeKind, phoneAppUrl, phoneBaseUrl, sourceMount } from '../core/client'
-import type { Pensive, ToolMeta } from '../core/pensive/index'
+import { PausedPensive, type Pensive, type ToolMeta } from '../core/pensive/index'
 import { toolMeta } from '../core/pensive/tool'
 import { store } from './store'
 import { GraphDb } from './pensive/graph'
@@ -96,15 +96,31 @@ async function readGraph(): Promise<SourceGraph> {
   return { nodes, edges, status }
 }
 
+/**
+ * What the outliner has to work with: a pensive, or the sentence saying why not.
+ *
+ * A paused store counts as the latter rather than as something to show. It would
+ * otherwise open as an outline that fails on every read, and "somebody switched
+ * this off" is worth saying once instead of a screenful of times.
+ */
+async function desktopState(): Promise<{ pensive: Pensive } | { problem: string }> {
+  const built = await registry.desktop()
+  if ('problem' in built) return built
+  if (built.pensive instanceof PausedPensive) {
+    return { problem: `"${built.pensive.label}" is paused` }
+  }
+  return built
+}
+
 /** The pensive the outliner is showing, or nothing if the desktop node is bare. */
 async function currentPensive(): Promise<CurrentPensive | null> {
-  const built = await registry.desktop()
+  const built = await desktopState()
   if ('problem' in built) return null
   return { id: built.pensive.id, label: built.pensive.label }
 }
 
 async function requireDesktop(): Promise<Pensive> {
-  const built = await registry.desktop()
+  const built = await desktopState()
   if ('problem' in built) throw new AppError(built.problem)
   return built.pensive
 }
@@ -115,7 +131,7 @@ async function requireDesktop(): Promise<Pensive> {
 
 ipcMain.handle('pensive:current', () => currentPensive())
 ipcMain.handle('pensive:problem', async () => {
-  const built = await registry.desktop()
+  const built = await desktopState()
   return 'problem' in built ? built.problem : null
 })
 ipcMain.handle('pensive:tools', async (): Promise<ToolMeta[]> => (await requireDesktop()).listTools())
