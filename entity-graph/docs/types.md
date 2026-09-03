@@ -19,7 +19,7 @@ them is acted on.
 
 `core/schema.ts` is the whole reading of them — `schemaOf`, `fieldsOf`,
 `actionsOf`, `checkValue` — and has no dependencies, so the desktop app, the phone
-and the server agree about what a type says.
+and a pensive's own tools agree about what a type says.
 
 **A type lends its instances nothing.** It used to: a key the type defined and the
 entity didn't was taken from the type, one level deep, in the cache's rollup. That
@@ -152,7 +152,7 @@ it: `core/builtins.ts` hands its values back with every read of that id, timesta
 0 and authored `builtin`, so anything written to those keys wins and a fresh store
 still knows what a type is.
 
-The events go in at `readWithBuiltins` in `core/source/defaultTools.ts` — the one
+The events go in at `readWithBuiltins` in `core/pensive/tools.ts` — the one
 read every other read is built on — so a client's cache, a `query`, and an agent
 over MCP all see the same thing, and none of them has to know it was never written
 down. A dump of the whole store (`readEvents` with no ids) leaves them out: that is
@@ -163,7 +163,8 @@ a form for writing one.
 
 ## Writing a type
 
-By hand, or over MCP, which tells an agent the same thing (`server/src/mcp.ts`):
+By hand, or over MCP, which tells an agent the same thing
+(`src/main/pensive/mcpServer.ts`):
 
 1. **Choose the id, which is the name** — `github/pullRequest`. Writing a value to
    an id nothing has been written to is how an entity gets a name rather than a

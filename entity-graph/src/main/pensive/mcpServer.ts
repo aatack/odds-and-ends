@@ -466,6 +466,16 @@ const DOCS: Doc[] = [
     path: 'docs/diagrams.md',
   },
   {
+    uri: 'docs://sources',
+    name: 'What a pensive is, and the graph the user draws them in',
+    description:
+      'The interface every store of notes implements — events, resources, tools — and ' +
+      'the four kinds of one: a file, several read as one, a connection to another ' +
+      "machine, and a store whose writes are all recorded as one person. Read this if " +
+      'you are asked about where these notes live, or about publishing them.',
+    path: 'docs/sources.md',
+  },
+  {
     uri: 'docs://integrations',
     name: "The app's integrations: GitHub, Slack, Claude Code, git, a terminal",
     description:

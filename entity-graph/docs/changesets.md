@@ -9,7 +9,7 @@ next.
 **The tools themselves are not in this repository.** They are notes under
 `@tools` in the store — see [`user-tools.md`](./user-tools.md) — which is what
 lets them be edited in the app rather than rebuilt. This file is about the half
-that *is* here: what the app and the server provide for them to be written in
+that *is* here: what the app and its integrations provide for them to be written in
 terms of, and what a definition has to get right.
 
 | key | tool | what it does |
@@ -152,8 +152,7 @@ having done all of the actual work.
 Nothing here is specific to changesets. Each of these is a tool a definition can
 reach through the `tool` façade, by its id.
 
-From the server's integrations
-([`server/docs/integrations.md`](../server/docs/integrations.md)):
+From the app's integrations ([`docs/integrations.md`](./integrations.md)):
 
 - `git.createWorktree`, taking a `from` — fetches, then branches off it.
 - `git.commitAll`, `git.push`, `git.pull`.

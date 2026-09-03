@@ -1,26 +1,31 @@
 # Entity Graph — agent & contributor guide
 
-An Electron + React + TypeScript desktop client for an entity-graph source
-server. The renderer holds no backend of its own: it opens a source over IPC
-(`window.entityGraph`) and drives it through the source's tools (`scanEvents`,
-`writeValue`, `writeLink`, …). The main outliner edits the tree rooted at
-`@index`.
+An Electron + React + TypeScript app over a store of notes — a **pensive**. The
+renderer holds no backend of its own: it calls the open pensive's tools over IPC
+(`window.entityGraph`) — `scanEvents`, `writeValue`, `writeLink`, … — and the main
+process is where the stores actually are. The main outliner edits the tree rooted
+at `@index`.
 
-This guide is the *desktop* client's. There is a second one in [`mobile/`](./mobile) —
-a phone-shaped PWA over one source, with its own dependencies, its own guide and no
-imports from `src/`. Work on one does not touch the other; the server is the only thing
-they share.
+There is no separate server. Which pensive is open, where it lives and who else
+can reach it are all one graph the user draws on the Sources page; see
+[Pensives and the sources graph](#pensives-and-the-sources-graph).
+
+This guide is the *desktop* app's. There is a second one in [`mobile/`](./mobile) —
+a phone-shaped PWA over one pensive, with its own dependencies, its own guide and no
+imports from `src/`. Work on one does not touch the other; a broadcast node is the
+only thing they share.
 
 ## Never run the app
 
 **Do not start, launch, or run the app yourself under any circumstances unless
 the user explicitly asks you to** — no `npm run dev`, `dev:no-sandbox`,
 `electron-vite dev`, `preview`, or any other command that spawns the Electron
-process. A local instance seizes the source server's port and conflicts with the
-Electron window the user already has open. To check your work, use `npm run
-typecheck`, `npm run build` and `npm test` — the last drives the state and
-source layers headlessly against an in-memory source, so most of what you would
-want to click through can be asserted instead. If you believe the app really
+process. A local instance takes over the ports the user's own window is
+broadcasting on, and opens a second handle on every SQLite store it holds. To
+check your work, use `npm run typecheck`, `npm run build` and `npm test` — the
+last drives the state, tool and pensive layers headlessly against an in-memory
+pensive, so most of what you would want to click through can be asserted
+instead. If you believe the app really
 needs to be run, ask the user to run it.
 
 ## Design language
@@ -89,12 +94,14 @@ is the long form; the rules that matter day to day:
   loading row. Reading the whole cache again is for a change made where this side
   cannot see it. See `docs/frontend-state.md` for the rest — types,
   `events` scripts, and how writes and undo reach the cache.
-- **`src/core` is shared with the server *and* the phone.** Anything put there
-  is imported by three builds, so it must stay free of Electron, node and zod.
+- **`src/core` is shared with the main process *and* the phone.** Anything put
+  there is imported by three builds, so the parts the renderer and the phone
+  reach must stay free of Electron, node and zod — which in practice means they
+  import types from `core/pensive/types` and never the tool definitions.
   The entity and its rollup, the traversal, the tree, the markdown an outline is
   exported as, the cache and the atom under it all live there precisely because
   both clients have to agree on them — and in the markdown's case because the
-  server hands the same outline to an agent over MCP; see
+  same outline goes to an agent over MCP; see
   [`mobile/AGENTS.md`](./mobile/AGENTS.md) for where that line is drawn.
 - **A type describes its instances; it does not lend them values.** An entity's
   `type` names another entity, whose `schema` says which values an entity of that
@@ -109,12 +116,14 @@ is the long form; the rules that matter day to day:
   arguments, its scope, and how far it reaches. Hotkeys and the command palette
   both dispatch through that declaration, so they cannot drift. New commands go
   here, never inline in a keydown handler.
-- **The registry isn't all built at build time.** The server's *integrations*
-  (GitHub, Slack, Claude, git, a terminal — `server/src/integrations/`, documented
-  in `server/docs/integrations.md`) are fetched when a source opens and folded into
-  the same registry, with their argument prompts derived from the JSON Schema the
-  server publishes. So read the list through `allTools()`, never a constant, and
-  add a new integration on the server rather than here.
+- **The registry isn't all built at build time.** The *integrations* (GitHub,
+  Slack, Claude, git, a terminal — `src/main/integrations/`, documented in
+  [`docs/integrations.md`](./docs/integrations.md)) are read from the main process
+  when the app starts and folded into the same registry, with their argument
+  prompts derived from the JSON Schema they publish. So read the list through
+  `allTools()`, never a constant, and add a new integration in `src/main` rather
+  than here. **They are the app's own hands and belong to no pensive** — nothing
+  a broadcast or an MCP node serves can reach them.
 - **The store defines tools too.** A note under `@tools` saying `type: tool`
   becomes a tool of the app, called whatever its text says — palette entry,
   optional key, callable from other scripts. Its `execute` value
@@ -162,11 +171,61 @@ is the long form; the rules that matter day to day:
   toast and the call log are a record of what the *user* did, so a script's calls
   reach neither — its errors belong where the script is.
 
+## Pensives and the sources graph
+
+**A pensive is an interface, not an implementation.** `core/pensive/types.ts` is
+the whole contract: read events, write events, pop events, read a resource, write
+a resource, list tools, call a tool. The first five are the store; the last two
+are the *vocabulary* — `query`, `createEntity`, whatever the user has written
+under `@tools` — which `core/pensive/tools.ts` builds over those five, so a
+pensive gains them by being one. `BasePensive` is that assembly; an
+implementation says how events are stored and nothing else.
+
+Four of them exist:
+
+| | what it is | inputs |
+| --- | --- | --- |
+| `SqlitePensive` | one file on this machine — the only one that holds notes | — |
+| `CombinedPensive` | its inputs read as one store, written to one of them | many |
+| `ConnectPensive` | a pensive on another machine, over HTTP | — |
+| `AttributedPensive` | any pensive, with every write recorded as one person | one |
+
+Plus `PausedPensive`, which is what a switched-off node *is*: every call fails
+with a sentence saying who is paused, so a combiner one of whose inputs is paused
+is broken exactly that far.
+
+**The user draws the arrangement.** The Sources page is a graph of nodes — a
+node per pensive, plus the two that publish one (`broadcast` over HTTP,
+`mcp` for an agent) and one fixed node standing for this window. An edge means
+"read that one", so a combiner's children are edges rather than configuration,
+and what the outliner shows is whatever has been dragged into the desktop node.
+The graph is a SQLite file of the app's own under `userData`; `src/core/client.ts`
+holds the shapes both ends read, `NODE_KINDS` included — the page draws its
+handles from it and the main process refuses an edge that disagrees with it.
+
+Three rules hold on the main-process side rather than in the page, because the
+page is not the only caller:
+
+- **A loop is refused** — while an edge is written (`wouldCycle`) and again while
+  a pensive is built.
+- **A paused node yields a `PausedPensive`**, so pausing works for a broadcast's
+  callers too, which get a 403.
+- **A token is an identity.** A token on a published node is issued to somebody
+  by name, and every write that arrives with it is recorded as that author,
+  whatever the client asks for. That is `AttributedPensive`, wrapped on per
+  request.
+
+`src/main/pensive/` is the rest: `graph.ts` the file, `registry.ts` the building
+of pensives from it, `http.ts` one small server per published node, `mcpServer.ts`
+what an agent sees, `servers.ts` keeping the listeners in step with the drawing.
+[`docs/sources.md`](./docs/sources.md) is the long form — the interface, every
+node's type, and what a broadcast serves.
+
 ## Phone access
 
 The Sources page also drives `tailscale serve`, which is how the phone client in
-[`mobile/`](./mobile) reaches this machine: the app's build at `/`, and one source
-at `/api/<sourceId>`, on the tailnet's HTTPS name.
+[`mobile/`](./mobile) reaches this machine: the app's build at `/`, and one
+broadcast node at `/api/<nodeId>`, on the tailnet's HTTPS name.
 
 `src/main/tailscale.ts` is the whole of it, and is plain Node — the app root is
 passed in rather than read from `electron`, so it runs outside the app. It holds
@@ -253,16 +312,18 @@ call.
 ## Layout
 
 ```
-server/         the HTTP server: sources, and the integrations (GitHub, Slack, Claude, git, terminal)
-mobile/         a separate phone client (PWA) for one source — its own install, own guide
+mobile/         a separate phone client (PWA) for one pensive — its own install, own guide
 scripts/        one-off tools run outside the app with tsx (the pensive v2 migration)
-src/main       Electron main — window, servers, config store, tailscale serve
+src/main       Electron main — window, tailscale serve, and:
+  pensive/        the graph of nodes, the pensives built from it, and the servers publishing them
+  integrations/   the app's reach outside itself (GitHub, Slack, Claude, git, terminal)
 src/preload     contextBridge exposing the typed EntityGraphAPI
-src/core        the shared model: entity + rollup, traversal, tree, markdown, cache, sources
-test/           the state layer driven headlessly (`npm test`)
+src/core        the shared model: entity + rollup, traversal, tree, markdown, cache
+  pensive/        what a pensive is, the tools it wears, and the four kinds of one
+test/           the state, tool and pensive layers driven headlessly (`npm test`)
 src/renderer/src  React app
   state/          latent state, pure derivations, the entity cache
-  source/         the transport seam onto the open source
+  source/         the transport seam onto the open pensive
   tools/          the tool registry, pending-call machine, key router
   helpers/        domain-agnostic utilities (cn, code runner)
   components/     ui/ primitives + feature components
