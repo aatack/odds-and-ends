@@ -72,11 +72,13 @@ export class PensiveServers {
       if (this.servers.has(id)) continue
       if (node.config.kind !== 'broadcast' && node.config.kind !== 'mcp') continue
       const server = new PensiveServer({
-        nodeId: id,
         kind: node.config.kind,
         port: node.config.port,
-        db: this.db,
-        registry: this.registry,
+        // Read per request rather than captured: pausing a node, revoking a
+        // token or re-plugging an edge takes effect on the next call.
+        node: () => this.db.node(id) ?? null,
+        authorOf: (token) => this.db.authorOf(id, token),
+        pensive: () => this.registry.tryGet(id),
       })
       this.servers.set(id, server)
       await server.start()

@@ -158,7 +158,7 @@ test('reads a branch as markdown, out of the store rather than the screen', asyn
   const markdown = await call('readEntityOutline', ['rules'])
   assert.equal(
     markdown,
-    ['# Agent instructions', '- Commit in reasonable chunks', '- Work independently', '  - For anything easily reversible'].join('\n'),
+    ['# Agent instructions', '- Commit in reasonable chunks', '- Work independently', '    - For anything easily reversible'].join('\n'),
   )
 })
 

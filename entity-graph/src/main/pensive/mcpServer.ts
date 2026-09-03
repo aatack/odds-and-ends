@@ -48,15 +48,15 @@ const TYPES_ID = '@types'
  * Anything longer than either is a *resource*, because a resource is fetched and
  * so is never cut. Keep this under 2000 characters; `npm test` says when it isn't.
  */
-const INSTRUCTIONS = `This is a graph database of notes, read as an outline. Every note is an
+export const INSTRUCTIONS = `This is a graph database of notes, read as an outline. Every note is an
 *entity* with an id; a link from one entity to another means "this note sits under that
 one". A note can sit under more than one parent, so the outline is a graph rather than a
 strict tree.
 
-Start at \`${ROOT_ID}\`, the root of all of it. \`query\` walks down from an id and hands back
-one line per note with its id in the left column; \`sections: true\` reads it as a table of
-contents, which is how to survey something before reading it, and \`find\` keeps only the
-notes mentioning a string. Each tool's description says the rest.
+Start at \`${ROOT_ID}\`, the root of all of it. \`query\` walks down from an id, one line per
+note with its id in the left column; \`sections: true\` reads it as a table of contents,
+which is the way to survey something first, and \`find\` keeps only the notes mentioning a
+string. Each tool's description says the rest.
 
 Three values make the outline: \`text\`, the note itself, as markdown; \`section: true\`,
 which makes it a heading; and \`open\`, which makes it a task — \`true\` unticked, \`false\`
@@ -77,8 +77,8 @@ child, however short.
   \`${TYPES_ID}\`. \`get_details\` on \`${TYPE_ID}\` says what one holds.
 - **Anything else** is a note in the outline. Ask where it goes if you cannot tell.
 
-More is written down than fits here: list this server's resources and read the one that
-covers what you are doing.
+More is written down than fits here: list this server's resources and read what covers
+what you are doing.
 
 **Style.** Copy the notes around the one you are writing: the same length of line, the
 same voice, the same amount of detail. This is somebody's own notebook: change what you
@@ -89,7 +89,7 @@ were asked to change and leave the rest.`
  * whose source tool is missing — a read-only source, a narrowed one — is not
  * listed at all, so a model can tell what it may do by what it has.
  */
-interface McpTool {
+export interface McpTool {
   name: string
   description: string
   inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: string[] }
@@ -122,7 +122,7 @@ function tally(page: QueryPage): string {
     : `[${rows}, ${visited}; that is everything under this path.]`
 }
 
-const MCP_TOOLS: McpTool[] = [
+export const MCP_TOOLS: McpTool[] = [
   {
     name: 'query',
     description:
@@ -495,7 +495,7 @@ function docPath(doc: Doc): string | null {
 }
 
 /** The tools this pensive can actually serve, in the order they are declared. */
-async function toolsFor(pensive: Pensive): Promise<McpTool[]> {
+export async function toolsFor(pensive: Pensive): Promise<McpTool[]> {
   const available = new Set((await pensive.listTools()).map((t) => t.id))
   return MCP_TOOLS.filter((t) => available.has(t.needs))
 }
