@@ -1,42 +1,37 @@
 # entity-graph mobile
 
-A phone client for one entity-graph source: read the tree, write to it, navigate it.
-A separate app from the Electron one — its own install, its own dependencies, nothing
-of the desktop renderer in its build — sharing only the server it talks to.
+A phone client for one pensive: read the tree, write to it, navigate it. A separate app
+from the Electron one — its own install, its own dependencies, nothing of the desktop
+renderer in its build — sharing only the broadcast it talks to.
 
 It is a **progressive web app**, not React Native, because the point was to be using
 it on a phone the same day: no SDK, no signing, no store, no build step between an
 edit and the phone reloading. The cost is the things a browser can't do (no share
 target, no camera, no notifications), none of which the basics need.
 
-## Which server?
+## What it talks to
 
-Whichever route below, the same question comes first, and getting it wrong is the
-failure that looks like success. Almost certainly you want the server **the desktop app
-started**, not a new one. A local server spawned by the app keeps its config DB under
-`~/.config/entity-graph/servers/<server-id>/config.db` and listens on a port it picked
-itself and then remembered — so a server you start by hand from `server/` opens
-`server/data/config.db` instead, which is a different, probably empty, set of sources.
-Starting the wrong one looks like the app working perfectly against no data.
+A **broadcast node** on the desktop app's Sources page: add one, drag a pensive into it,
+and the app runs a small HTTP server over that pensive on a port it keeps. The node's
+panel shows the address to copy and issues the bearer tokens — one per person, and a
+write that arrives with a token is recorded as whoever it was issued to, whatever this
+app asks for. [`../docs/sources.md`](../docs/sources.md) is the whole of it.
 
-Find the real one, and its port, by asking the machine rather than trusting a note:
+There is nothing else on that server: no admin surface, no reach outside the store. The
+token is the entire access decision, and the two things to know about it are that
+revoking one is immediate, and that the app's own window issues itself nothing — a
+broadcast with no tokens answers nobody.
 
-```sh
-ss -tlnp | grep node          # the ports; the app's server is the one under tsx
-tr '\0' '\n' < /proc/<pid>/environ | grep -E 'PORT|CONFIG_DB|ADMIN_TOKEN'
-```
-
-A `CONFIG_DB` under `~/.config/entity-graph/servers/` is the app's. One under
-`server/data/` is a hand-started one.
+There is no standalone server any more, so nothing to start by hand and no config DB to
+pick between: the pensive the phone reads is whichever one the drawing says.
 
 ## Getting it on the phone: Tailscale
 
-The route worth taking. One HTTPS origin serves both this app and the source server, so
-the phone reaches the laptop **from any network**, the token stops crossing the wire in
+The route worth taking. One HTTPS origin serves both this app and the broadcast, so the
+phone reaches the laptop **from any network**, the token stops crossing the wire in
 cleartext, and — because a real certificate means a secure context — the app becomes
 genuinely *installable* rather than a home-screen bookmark. Same-origin also means CORS
-stops mattering and the source server can stay on loopback: nothing is on the LAN at
-all.
+stops mattering.
 
 **Once, on the laptop:**
 
@@ -70,8 +65,8 @@ one that keeps the connect link below within reach.
   `.ts.net` name, the directory being served, and warns when nothing has been built into
   it yet — the served files are whatever `mobile/dist` last held, so run `npm run build`
   in `mobile/` at least once. Nothing needs restarting after a rebuild.
-- **Phone access** again, inside a source's editor, serves that source at
-  `/api/<sourceId>`, and — once it is on — will build a **connect link** for it: a QR
+- **Phone access** again, inside a broadcast node's panel, serves that node at
+  `/api/<nodeId>`, and — once it is on — will build a **connect link** for it: a QR
   code and a URL that carry the whole connection, token included. That is the last
   manual step gone; see [Without typing the token](#without-typing-the-token).
 
@@ -97,27 +92,24 @@ The same two mounts. Note this serves `dist/` — a static build read off disk b
 npm run build        # in mobile/ — the served files are whatever dist/ last held
 
 tailscale serve --bg /abs/path/to/entity-graph/mobile/dist
-tailscale serve --bg --set-path=/api/<sourceId> http://127.0.0.1:<port>/<sourceId>
+tailscale serve --bg --set-path=/api/<nodeId> http://127.0.0.1:<port>
 ```
 
 `--set-path` **strips the prefix before proxying**, which is the whole trick: a request
-for `/api/flow/tools` arrives at the server as `/flow/tools`. That is what lets the app's
-base URL be `https://<host>.<tailnet>.ts.net/api` while the server sees the paths it
-expects.
+for `/api/<nodeId>/tools` arrives at the broadcast as `/tools`. That is what lets the
+app's base URL be `https://<host>.<tailnet>.ts.net/api` while the broadcast sees the
+paths it expects — and a broadcast ignores any path in front of its own routes anyway,
+so the id in the middle is harmless either way.
 
-Mount the proxy at `/api/<sourceId>` rather than plain `/api`. Plain `/api` would put the
-*whole* server on the tailnet, including `/admin` — create and delete sources, issue
-tokens — which is exactly the surface `server/src/app.ts` deliberately withholds from
-cross-origin callers. It is still behind `ADMIN_TOKEN`, but the phone only ever needs the
-one source, so give it only that. The cost is that the source id is baked into the serve
-config: a second source needs a second `--set-path`.
+The mount carries the node's id so that a second broadcast is a second `--set-path`
+rather than a collision.
 
 `tailscale serve status` shows the result:
 
 ```
 https://<host>.<tailnet>.ts.net (tailnet only)
 |-- /          path  /abs/path/to/entity-graph/mobile/dist
-|-- /api/flow  proxy http://127.0.0.1:36901/flow
+|-- /api/flow  proxy http://127.0.0.1:36901
 ```
 
 `--bg` stores the config in `tailscaled`, so it survives reboots — set up once, not per
@@ -130,7 +122,7 @@ everything and re-add the handlers you want:
 ```sh
 tailscale serve reset
 tailscale serve --bg /abs/path/to/entity-graph/mobile/dist
-tailscale serve --bg --set-path=/api/<sourceId> http://127.0.0.1:<port>/<sourceId>
+tailscale serve --bg --set-path=/api/<nodeId> http://127.0.0.1:<port>
 ```
 
 (Without `sudo tailscale set --operator=$USER`, every line above needs `sudo`.)
@@ -141,27 +133,18 @@ Then open `https://<host>.<tailnet>.ts.net` on the phone and fill in:
 
 | | |
 |---|---|
-| **Server** | `https://<host>.<tailnet>.ts.net/api` — no source id, no port; the app appends the source id itself |
-| **Source** | the source's id, e.g. `flow` |
-| **Token** | a token issued for that source — see below |
+| **Server** | `https://<host>.<tailnet>.ts.net/api` — no node id, no port; the app appends the id itself |
+| **Source** | the broadcast node's id, which its mount already names |
+| **Token** | a token issued on that node — see below |
 | **Author** | recorded against everything written from the phone; `mobile` by default |
 
 A connect link from the desktop app fills all four, so this table is what you need when
 setting one up by hand.
 
-Issue the token **from the laptop, on loopback**, since the scoped mount deliberately
-leaves the admin surface off the tailnet — the app's source editor issues one for you,
-under the label `phone`, so it can be revoked without logging the desktop out:
-
-```sh
-curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H 'content-type: application/json' -d '{"label":"phone"}' \
-  http://127.0.0.1:<port>/admin/sources/<sourceId>/tokens
-```
-
-or use the console at `http://127.0.0.1:<port>/admin` in a browser on the laptop. The
-app's admin token for a spawned server is in its environment
-(`tr '\0' '\n' < /proc/<pid>/environ | grep ADMIN_TOKEN`).
+The token is issued on the node itself: **Sources → the broadcast node → the key
+button**, then a name and **Create**. The name is not a label — every write that arrives
+with that token is recorded as that author — and it can be paused or revoked from the
+same list, which is how the phone is cut off without touching anything else.
 
 The details are kept in the phone's `localStorage` and nowhere else — which is
 per-origin, so a connection saved against an old `http://<lan-ip>:5180` does **not**
@@ -199,20 +182,20 @@ because Go's MIME table has no entry for the extension. Chrome parses it anyway
 An installed app shares Chrome's storage for the same origin, so a connection set up in
 the browser carries into the installed app — no need to open the `#connect` link twice.
 
-### Serving loopback-only
+### What is on the LAN
 
-With `tailscale serve` proxying, the source server does **not** need `ENTITY_GRAPH_LAN=1`
-any more, and shouldn't have it: `tailscaled` reaches `127.0.0.1` itself. Launch the
-desktop app with the variable unset and the server binds loopback only, which
-`ss -tlnp | grep <port>` will confirm as `127.0.0.1:<port>` rather than `0.0.0.0:<port>`.
+A broadcast binds every interface, so with or without Tailscale it is reachable from the
+network — the token is what makes that safe rather than the bind address, and a node
+with no tokens answers nobody. `tailscaled` proxies to `127.0.0.1` regardless, so the
+Tailscale route neither needs nor avoids the LAN one.
 
 ## Without typing the token
 
 Typing a 48-character token with a thumb is miserable, so a connection can be handed
 over in the URL fragment instead — for either route.
 
-The desktop app builds one: **Sources → a source → Phone access → Make connect link**,
-once that source is served. It shows the link as a QR code to point the phone's camera
+The desktop app builds one: **Sources → a broadcast node → the key button → Phone
+access → Make connect link**, once that node is served. It shows the link as a QR code to point the phone's camera
 at and as text to send yourself, and issues (or reuses) a token labelled `phone` to put
 in it. The **Author** beside the button is what every write from that phone is recorded
 under, `phone` by default.
@@ -223,7 +206,7 @@ By hand, from the repo root:
 node -e '
 const c = {
   baseUrl: "https://<host>.<tailnet>.ts.net/api",
-  sourceId: "flow",
+  sourceId: "<nodeId>",
   token: "…",
   author: "phone",
 }
@@ -246,39 +229,25 @@ the same, it just can't leave the network or leave the browser. Worth knowing fo
 there's no Tailscale.
 
 ```sh
-# 1. the desktop app, with its local servers on the network rather than on loopback
-ENTITY_GRAPH_LAN=1 npm run dev
+# 1. the desktop app, with a broadcast node over the pensive you want
+npm run dev
 
 # 2. this app, in another shell
 npm install          # first time only
 npm run dev          # prints a Network: URL — that is the one to open on the phone
 ```
 
-`ENTITY_GRAPH_LAN=1` is what makes a server the app spawned reachable from anything but
-the laptop; without it they bind `127.0.0.1` and the phone gets nothing. The server's
-port is in the app's server panel, as the base URL.
-
-Or, if the source you want is served by a server you run yourself:
-
-```sh
-ADMIN_TOKEN=secret PORT=4000 HOST=0.0.0.0 CONFIG_DB=./data/config.db \
-  npm run --prefix server start
-```
-
-`ADMIN_TOKEN` is not optional here: the server refuses to start bound to anything but
-loopback without one, since the admin endpoints are open when it is unset.
-
-Either way the port has to be open — on most Linux setups it already is, but a firewall
-will swallow the connection silently. The **Server** field is then the laptop's LAN
-address and the server's port, e.g. `http://192.168.1.20:36901` — `127.0.0.1` from the
-app's server panel swapped for the laptop's address.
+A broadcast binds every interface, so it is reachable from the phone without anything
+extra; the address to type is the one on the node itself, which already names the
+laptop rather than loopback. The port has to be open — on most Linux setups it already
+is, but a firewall will swallow the connection silently.
 
 ### Away from the laptop's network, without Tailscale
 
-A tunnel (`cloudflared tunnel --url http://localhost:36901`) also gives the server a
+A tunnel (`cloudflared tunnel --url http://localhost:36901`) also gives the broadcast a
 reachable URL, and the app holds its own token, so it works. But the tunnel is public:
-the source's token becomes the only thing between the internet and the store. Issue one
-for the occasion and revoke it after.
+the token becomes the only thing between the internet and the store. Issue one for the
+occasion and revoke it after.
 
 ## How it differs from the desktop app
 

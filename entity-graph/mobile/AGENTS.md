@@ -24,17 +24,23 @@ another, and once that is shared the type may as well come with it.
 Practically: `vite.config.ts` opens `fs.allow` one level up, and `src/core/types.ts`
 is a re-export shim so the app's own imports still read `from '../core/types'`.
 
-The server is shared too, and the one change made to it for this app's sake is CORS
-on the source-scoped endpoints (`server/src/app.ts`) — deliberately *not* on the
-admin surface, which is open when `ADMIN_TOKEN` is unset.
+What this app talks to is a **broadcast node** on the desktop app's Sources page: one
+small HTTP server over one pensive, serving `/tools` and `/call` to whoever holds a
+bearer token (`src/main/pensive/http.ts` over there, and
+[`docs/sources.md`](../docs/sources.md) for the whole of it). There is nothing else on
+it — no admin surface, and no reach outside the store — so the token is the entire
+access decision. The path in front of the route is ignored, which is why the
+`baseUrl` + `sourceId` this app keeps still works.
 
-On the Tailscale route that CORS is no longer load-bearing: one origin serves both the
-app and `/api/<sourceId>`, so the calls are same-origin. It still matters for the
-plain-LAN fallback, where the app is on vite's port and the server on its own, and it
-is what keeps a tunnel workable. Don't remove it on the strength of the tunnel setup.
+CORS is allowed there for this app's sake. On the Tailscale route it is no longer
+load-bearing: one origin serves both the app and `/api/<nodeId>`, so the calls are
+same-origin. It still matters for the plain-LAN fallback, where the app is on vite's
+port and the broadcast on its own, and it is what keeps a tunnel workable. Don't
+remove it on the strength of the tunnel setup.
 
-Those two mounts are switches on the desktop app's Sources page (`src/main/tailscale.ts`
-over there), which also builds the `#connect=` link this app reads in `main.tsx`. Nothing
+Those two mounts are switches on the desktop app's Sources page — the app's own, and
+one on each broadcast node (`src/main/tailscale.ts` over there), which also builds the
+`#connect=` link this app reads in `main.tsx`. Nothing
 here depends on that — a mount set up in a shell is the same mount — but if the link
 format changes, `encodeConnection` / `connectionFromHash` in `src/source/connection.ts`
 and the desktop's `tailscale:phoneLink` handler are the two ends of it.
@@ -42,10 +48,10 @@ and the desktop's `tailscale:phoneLink` handler are the two ends of it.
 ## Don't start the desktop app
 
 The same rule as `../AGENTS.md`: **never** run `npm run dev` in `entity-graph/` — it
-seizes the source server's port and fights the Electron window the user has open. This
-app's own `npm run dev`, `npm test`, `npm run build` and `npm run typecheck` are all
-fine; the tests bring up their own in-memory source on a free port and touch nothing
-of the user's.
+takes over the ports the user's own window is broadcasting on and opens a second handle
+on every store it holds. This app's own `npm run dev`, `npm test`, `npm run build` and
+`npm run typecheck` are all fine; the tests bring up their own in-memory source on a
+free port and touch nothing of the user's.
 
 ## Design language
 

@@ -52,7 +52,7 @@ Consequences worth knowing:
   hold — timestamp and author included — so it applies that and lets the round
   trip happen behind the change the user already sees. A failed write takes its
   events back out. `createEntity` and `moveEntity` are the exceptions: the id is
-  the server's, so there are no events to hand over, and they name the entities
+  the store's, so there are no events to hand over, and they name the entities
   they touched instead (`touched`, wired to `invalidateEntities`).
 - **Invalidation is by name.** A write says what it changed, so that is all that
   is read again — the parent whose links moved, and not the two hundred rows
@@ -90,14 +90,14 @@ model pages through a tree by passing the last answer back. It is the same
 traversal, run against the store instead of against a cache — and the answer
 comes out as `core/markdown.ts`, the same export the two clients copy to the
 clipboard, with the entity ids down the left so the model can act on a row.
-`server/README.md` has the five tools that MCP is narrowed to.
+`src/main/pensive/mcpServer.ts` is the six tools MCP is narrowed to.
 
 ### The traversal
 
 `core/query.ts` is the query: a stepper from one path to the next in a
 depth-first reading, whose only reach outside is that synchronous
 `getEntities`. It is shared by everything that reads a tree — this app, the
-phone client, and the `query` tool on the server. Two things fall out of running
+phone client, and the `query` tool a pensive wears. Two things fall out of running
 it on a client:
 
 - **An entity nothing is known about looks childless**, so the tree fills in as
@@ -188,11 +188,11 @@ A **call** is one invocation of a tool: a generated `callId`, the tool's id, the
 argument values so far, and an immutable snapshot of the context it started in.
 
 Most tools are fixed at build time, but the registry is not a constant: the
-server's **integrations** — GitHub, Slack, Claude, git, a terminal, declared in
-`server/src/integrations/` — are fetched when a source is opened and folded in
-alongside the built-ins (`tools/integrationTools.ts`). They arrive as JSON
-Schema, and the argument prompts are derived from it rather than restated, so a
-tool gained on the server needs nothing doing in the app. This is why
+**integrations** — GitHub, Slack, Claude, git, a terminal, declared in
+`src/main/integrations/` — are read from the main process when the app starts and
+folded in alongside the built-ins (`tools/integrationTools.ts`). They arrive as
+JSON Schema, and the argument prompts are derived from it rather than restated, so
+a tool gained there needs nothing doing in the renderer. This is why
 `tools/registry.ts` exposes `allTools()` rather than a `TOOLS` array, and why the
 palette recomputes its list when the integrations land. They are all `external`,
 so every one of them is kept in the call log.
@@ -202,7 +202,7 @@ so every one of them is kept in the call log.
 Each argument value is a discriminated union rather than a bare value, because
 "not supplied yet" and "use the tool's default" are genuinely different states,
 and the source's tool contract already spends `null` on the latter
-(`stripNulls` in `core/source/types.ts`):
+(`stripNulls` in `core/pensive/tool.ts`):
 
 ```ts
 type ArgValue =

@@ -1,46 +1,46 @@
 # Integrations
 
-The server can reach five things outside itself: **GitHub**, **Slack**, **Claude
+The app can reach five things outside itself: **GitHub**, **Slack**, **Claude
 Code**, the **git repositories on this machine**, and a **terminal** on it — the
-last three locally rather than over a network. They live in `src/integrations/`,
-they are listed in one registry, and there is exactly one way to invoke one:
+last three locally rather than over a network. They live in
+`src/main/integrations/`, they are listed in one registry, and the main process is
+the only thing that invokes one:
 
 ```
-GET  /tools     → the list, each with a JSON Schema for its arguments
-POST /runTool   → { "tool": "<id>", "args": { … } }
-                  → { "status": "success", "result": … }
-                  → { "status": "error", "message": "…" }
+integrations:tools  → the list, each with a JSON Schema for its arguments
+integrations:run    → (tool, args) → the result, or a thrown error
 ```
 
-Both answer to the **admin token** (`Authorization: Bearer $ADMIN_TOKEN`), not to
-a source token: integrations are the server's own hands, not part of any source.
-They are not exposed over MCP.
+**They belong to no pensive, and cannot be given to one.** A pensive is a store of
+notes, composed and published by whoever owns it; these are this machine's own
+hands — a shell, a checkout, an account somebody is signed into — and handing them
+out with a bearer token would hand out the machine. So nothing a broadcast or an
+MCP node serves can reach them.
 
 `stripNulls` applies as it does everywhere else — passing `null` for an argument
 means "use the default", and `null` for a required argument is an error.
 
-The Electron app fetches `/tools` from whichever server hosts the open source and
-folds them into the command palette, so every tool here is runnable from ⌘P — and
-from a `type: code` entity, which calls one by the camel case of its name:
+The renderer reads the list when the app starts and folds it into the command
+palette, so every tool here is runnable from ⌘P — and from a `type: code` entity,
+which calls one by the camel case of its name:
 `tool.sendSlackMessage(channel, text)`.
 
 ---
 
 ## Secrets
 
-Everything is configured through **`.env`**, which is gitignored. Copy
-[`.env.example`](../.env.example) to `.env` and fill in what you need. Variables
-already present in the environment win, so the app's `PORT`/`ADMIN_TOKEN`/
-`CONFIG_DB` are never clobbered by a stray line.
+Everything is configured through **`.env`** at the root of the app, which is
+gitignored. Copy [`.env.example`](../.env.example) to `.env` and fill in what you
+need. Variables already present in the environment win.
 
-Restart the server after editing it — the file is read once, at startup.
+Restart the app after editing it — the file is read once, at startup.
 
 ---
 
 ## GitHub
 
 Everything goes through the [`gh` CLI](https://cli.github.com), which must be on
-the server's `PATH`. Arguments are passed as a vector, never a command line, so
+the app's `PATH`. Arguments are passed as a vector, never a command line, so
 no shell is involved.
 
 ### Authentication
@@ -208,7 +208,7 @@ message tools fall back to `bot_id` where a message has no `user`, so an id that
 came from one of them can be either, and `users.info` has never heard of the
 second kind.
 
-Lookups are remembered for the lifetime of the server: a workspace's people
+Lookups are remembered for as long as the app runs: a workspace's people
 rarely change, and naming the authors of a hundred messages should not be a
 hundred calls.
 
@@ -292,7 +292,7 @@ handful of lookups rather than one per conversation.
 ## Claude
 
 Headless Claude Code sessions **on this machine**, through the
-[`claude` CLI](https://claude.com/claude-code), which must be on the server's
+[`claude` CLI](https://claude.com/claude-code), which must be on the app's
 `PATH`.
 
 ### Authentication
@@ -327,7 +327,7 @@ started with — so send it with the first prompt or not at all. Keep it to rule
 and ids; anything long belongs in the prompt.
 
 **`~` is expanded**, since these paths are named by hand. A relative path
-resolves against the *server's* working directory, which is rarely what anyone
+resolves against the *app's* working directory, which is rarely what anyone
 means, so an error names the absolute path it went looking for.
 
 #### The session id names a conversation
@@ -379,8 +379,8 @@ A session that fails part-way still prints its JSON and can still exit cleanly;
 ## Git
 
 The repositories on this machine, through the `git` CLI, which must be on the
-server's `PATH`. Nothing to configure, and no secrets: git runs as whoever the
-server does, with whatever remotes and credentials that user already has.
+app's `PATH`. Nothing to configure, and no secrets: git runs as whoever the app
+does, with whatever remotes and credentials that user already has.
 
 **Every tool takes the directory to run in**, because that is what names the
 repository — there is no "current" one here, and two worktrees of the same
@@ -457,7 +457,7 @@ deleted.
   checkout is an ordinary answer rather than an error; `committed` says which
   happened. It stages with `add --all` — untracked files included — and reads
   `status --porcelain` afterwards, so the answer doesn't depend on git's version
-  or the server's locale.
+  or the app's locale.
 - **`git.push` sets upstream**, always: `git push --set-upstream origin HEAD`.
   `HEAD` rather than the branch's name so it reads the same whatever the branch is
   called, and tracking so that a later pull on it means something. Naming a
@@ -524,7 +524,7 @@ question doesn't arise: `open -a Terminal` hands it to the desktop. Set
 what `detach` in [`exec.ts`](../src/integrations/exec.ts) is for: `run` waits for
 a program to exit and kills it on the timeout, which for a window somebody is
 typing in is exactly wrong. The window is started in a process group of its own
-with its output going nowhere, so stopping the server leaves it open — and
+with its output going nowhere, so quitting the app leaves it open — and
 nothing comes back from it but the fact that it started, because there is nobody
 here to read what it says.
 
@@ -532,7 +532,7 @@ here to read what it says.
 
 ## Adding another
 
-1. Write the tool as a `ToolDef` (`src/core/source/types.ts`) — a zod schema for
+1. Write the tool as a `ToolDef` (`src/core/pensive/tool.ts`) — a zod schema for
    its arguments, `safety: 'dangerous'`, and a handler. Reach for
    [`exec.ts`](../src/integrations/exec.ts) for anything with a CLI and
    [`http.ts`](../src/integrations/http.ts) for anything without.

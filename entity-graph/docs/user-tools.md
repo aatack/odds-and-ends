@@ -7,15 +7,15 @@ shows in the activity log.
 
 Its body runs in the same QuickJS sandbox a `type: code` entity runs in, with the
 same `tool` façade — so a tool you wrote reaches everything in the registry: the
-frame tools, the writes, the server's integrations. That is why this is a frontend
-feature. The server can *list* the same definitions (`core/source/userTools.ts`,
-which splices them into `source.tools()` and so into `GET /:sourceId/tools`) but
-has nothing to run one with, since most of what a tool would want to do only
+frame tools, the writes, the app's integrations. That is why this is a frontend
+feature. A pensive *lists* the same definitions (`core/pensive/userTools.ts`,
+which splices them into its own tool list and so into what a broadcast publishes)
+but has nothing to run one with, since most of what a tool would want to do only
 exists in the app.
 
-What that list is **not** is the MCP surface. `server/src/mcp.ts` publishes a fixed
-six tools over the same store and nothing else, deliberately: an agent handed a
-store's whole API is an agent designing its own reads. So a tool written here is
+What that list is **not** is the MCP surface. `src/main/pensive/mcpServer.ts`
+publishes a fixed six tools over the same store and nothing else, deliberately: an
+agent handed a store's whole API is an agent designing its own reads. So a tool written here is
 never a tool an agent can call — see [Telling an agent](#telling-an-agent) for what
 it can do instead.
 
@@ -46,7 +46,7 @@ definition that wants to sit under a heading of "Slack things" hangs under one.
 | `reach` | `ui` \| `source` \| `external` | no | `external` | How far it reaches, and so whether its calls are kept in the log. |
 | `key` | string | no | none | A binding: `g`, `shift+g`, `mod+shift+j`. `mod` is Ctrl or ⌘. |
 | `mutates` | boolean | no | `false` | Rarely needed: a body can only write *through* a write tool, and each of those tells the cache what it changed on its own way out. |
-| `safety` | `pure` \| `safe-mutating` \| `dangerous` | no | `dangerous` | Read by the *server* only, for its capability filters. |
+| `safety` | `pure` \| `safe-mutating` \| `dangerous` | no | `dangerous` | Carried for a caller that wants to know how risky one is. |
 
 ## Arguments
 
@@ -92,7 +92,7 @@ the body runs, so it arrives as `undefined` rather than `null`.
 ### Behind the scenes
 
 The list is converted to JSON Schema in `core/toolArguments.ts` — that is the form
-the palette derives its prompts from, and the form the server publishes on the
+the palette derives its prompts from, and the form a pensive publishes on the
 source's tool list. A definition that already holds a schema object is passed
 through untouched, so anything written the long way keeps working.
 
@@ -225,7 +225,7 @@ where anything the body logged appears under the tool's name.
 
 ## Telling an agent
 
-An agent on the MCP endpoint has six tools, the server's instructions, and no source
+An agent on an MCP node has six tools, the server's instructions, and no source
 code — so anything about writing a tool that it cannot read *from the endpoint* is
 something it will guess at, and what it guesses is a note somewhere sensible-looking
 that never becomes a tool. Four places tell it otherwise, and all four are code or
@@ -237,7 +237,7 @@ this file rather than a retelling, so none of them goes stale on its own:
   `tool` hands the whole thing back. It is also what the inspector draws, so the
   fields and what they are for are in the same place for a person and for an agent —
   which is the reason to keep this table and that schema saying the same thing.
-- **The instructions** (`server/src/mcp.ts`), whose one job on this subject is the
+- **The instructions** (`src/main/pensive/mcpServer.ts`), whose one job on this subject is the
   destination: a tool the user asked for goes under `@tools` and nowhere else, and
   `get_details` on `tool` is what to read first.
 - **`create` and `get_details`**, in their own descriptions, because those are the
@@ -261,9 +261,8 @@ The reason for four places rather than one is a budget. A client shows an MCP
 server's instructions up to **2048 bytes** and each tool's description up to 2048
 bytes, and cuts the rest silently — so the routing is repeated where it is cheap and
 everything longer than a paragraph is a resource or a served schema, both of which
-arrive whole. See [the server README](../server/README.md#the-2kb-budget); a test
-asserts the limits over a real MCP client, so writing past one fails rather than
-disappears.
+arrive whole. `test/mcp.mts` asserts both limits, so writing past one fails rather
+than disappears.
 
 ## Limits
 
@@ -276,9 +275,9 @@ disappears.
   a tool that calls itself without end stops with an error saying so, rather than
   taking the window with it. Stop kills every worker, so stopping one run aborts
   any other in flight.
-- The app and the server disagree about what makes a note tool-shaped. Both want
+- The app and the pensive disagree about what makes a note tool-shaped. Both want
   `type: tool` and a `text` to call it by; beyond that the app wants a body, and
-  the server wants a `description` and an `arguments` and doesn't look for a body
+  the pensive wants a `description` and an `arguments` and doesn't look for a body
   at all — it can't run one. So a tool with nothing but a name and a body works
-  here and is absent from the source's tool list. Give it a `description` and an
+  here and is absent from the pensive's tool list. Give it a `description` and an
   `arguments` if you want it in both places.

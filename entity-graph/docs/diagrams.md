@@ -58,7 +58,8 @@ note has, so nothing measures anything; dragging the strip along the bottom of t
 canvas is what writes it.
 
 `core/diagram.ts` is the whole reading of all of this, and has no dependencies, so
-the desktop app, the phone and the server agree about what a `diagram/…` key says.
+the desktop app, the phone and a pensive's own tools agree about what a
+`diagram/…` key says.
 
 ## The canvas
 
