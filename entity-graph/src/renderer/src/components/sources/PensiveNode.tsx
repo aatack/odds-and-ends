@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
 import { Key01, PauseCircle, PlayCircle, Trash03 } from '@untitledui/icons'
 import type { NodeStatus, SourceNode } from '../../../../core/client'
-import { nodeKind, publishes } from '../../../../core/client'
+import { nodeKind } from '../../../../core/client'
 import { cn } from '../../helpers/cn'
 import { Badge } from '../ui/Badge'
 import { CopyButton } from '../ui/CopyButton'
@@ -248,7 +248,7 @@ function Body({
             </IconButton>
           </div>
           <p className="text-xs text-gray-400">
-            {publishes(config.kind) && config.kind === 'mcp'
+            {config.kind === 'mcp'
               ? 'An agent points at this, with a token, and gets the outline.'
               : 'Whoever holds a token can read and write through this.'}
           </p>

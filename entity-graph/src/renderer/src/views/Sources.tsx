@@ -7,10 +7,11 @@ import {
   Panel,
   ReactFlow,
   ReactFlowProvider,
-  useReactFlow,
+  useEdgesState,
+  useNodesState,
+  useStoreApi,
   type Connection,
   type Edge,
-  type Node,
   type OnNodeDrag,
 } from '@xyflow/react'
 import { Plus, Wifi } from '@untitledui/icons'
@@ -59,7 +60,7 @@ function Canvas(): React.JSX.Element {
   // One instance for the page: there is a single serve config for the machine.
   const tailscale = useTailscale()
   const theme = useAtomValue(themeAtom)
-  const flow = useReactFlow()
+  const store = useStoreApi()
   const [adding, setAdding] = useState(false)
   const [phone, setPhone] = useState(false)
   const [accessId, setAccessId] = useState<string | null>(null)
@@ -73,29 +74,54 @@ function Canvas(): React.JSX.Element {
     return map
   }, [graph])
 
-  const nodes = useMemo<PensiveFlowNode[]>(
-    () =>
-      (graph?.nodes ?? []).map((node) => ({
+  const [nodes, setNodes, onNodesChange] = useNodesState<PensiveFlowNode>([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
+
+  // The graph in the main process is the drawing and the flow's nodes are a copy
+  // of it, so a node can be dragged before anything has been written. Selection
+  // is the one thing the copy owns, so it survives the sync.
+  useEffect(() => {
+    setNodes((prev) => {
+      const was = new Map(prev.map((n) => [n.id, n.selected]))
+      return (graph?.nodes ?? []).map((node) => ({
         id: node.id,
         type: 'pensive' as const,
         position: { x: node.x, y: node.y },
         data: { node },
         // The window's node is where the graph is anchored, so it stays put.
         draggable: nodeKind(node.config.kind).addable,
-      })),
-    [graph],
-  )
-
-  const edges = useMemo<Edge[]>(
-    () =>
-      (graph?.edges ?? []).map((edge) => ({
+        selected: was.get(node.id) ?? false,
+      }))
+    })
+    setEdges((prev) => {
+      const was = new Map(prev.map((e) => [e.id, e.selected]))
+      return (graph?.edges ?? []).map((edge) => ({
         id: edge.id,
         source: edge.from,
         target: edge.to,
         markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
-      })),
-    [graph],
-  )
+        selected: was.get(edge.id) ?? false,
+      }))
+    })
+  }, [graph, setNodes, setEdges])
+
+  // Said out loud, because the key that acts on a selection is a tool and a tool
+  // has to be able to ask. Keyed on the serialisation rather than the arrays,
+  // which are new whenever anything about a node is.
+  const chosen = nodes
+    .filter((n) => n.selected)
+    .map((n) => n.id)
+    .join('\0')
+  const chosenEdges = edges
+    .filter((e) => e.selected)
+    .map((e) => e.id)
+    .join('\0')
+  useEffect(() => {
+    reportSourceSelection({
+      nodes: chosen ? chosen.split('\0') : [],
+      edges: chosenEdges ? chosenEdges.split('\0') : [],
+    })
+  }, [chosen, chosenEdges])
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -111,18 +137,19 @@ function Canvas(): React.JSX.Element {
     [actions],
   )
 
-  /** Somewhere sensible for a new node: the middle of what is on screen. */
+  /**
+   * Somewhere sensible for a new node: the middle of what is on screen, so it
+   * lands in front of whoever pressed the button rather than at the origin,
+   * which may be a long way off.
+   */
   const addAt = useCallback(
     (kind: (typeof NODE_KINDS)[number]['kind']) => {
-      const { x, y, zoom } = flow.getViewport()
-      const centre = {
-        x: (window.innerWidth / 2 - x) / zoom - 128,
-        y: (window.innerHeight / 2 - y) / zoom - 40,
-      }
+      const { width, height, transform } = store.getState()
+      const [tx, ty, zoom] = transform
       setAdding(false)
-      void actions.addNode(kind, centre.x, centre.y)
+      void actions.addNode(kind, (width / 2 - tx) / zoom - 128, (height / 2 - ty) / zoom - 40)
     },
-    [actions, flow],
+    [actions, store],
   )
 
   const access = graph?.nodes.find((n) => n.id === accessId) ?? null
@@ -142,14 +169,10 @@ function Canvas(): React.JSX.Element {
           nodes={nodes}
           edges={edges}
           nodeTypes={NODE_TYPES}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onNodeDragStop={onNodeDragStop}
-          onSelectionChange={({ nodes: selectedNodes, edges: selectedEdges }) =>
-            reportSourceSelection({
-              nodes: selectedNodes.map((n: Node) => n.id),
-              edges: selectedEdges.map((e: Edge) => e.id),
-            })
-          }
           colorMode={theme === 'dark' ? 'dark' : 'light'}
           minZoom={0.3}
           maxZoom={1.5}
