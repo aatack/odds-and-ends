@@ -40,8 +40,8 @@ export class SqlitePensive extends BasePensive {
     return this.iface.writeEvents(events)
   }
 
-  popEvents(windowMs: number): Promise<AppEvent[]> {
-    return this.iface.popLatestEvents(windowMs)
+  popEvents(author?: string): Promise<AppEvent[]> {
+    return this.iface.popLatestEvents(author)
   }
 
   readResource(id: string): Promise<ResourceRecord | null> {

@@ -47,8 +47,8 @@ export class CombinedPensive extends BasePensive {
     return this.target().writeEvents(events)
   }
 
-  popEvents(windowMs: number): Promise<AppEvent[]> {
-    return this.target().popEvents(windowMs)
+  popEvents(author?: string): Promise<AppEvent[]> {
+    return this.target().popEvents(author)
   }
 
   /**

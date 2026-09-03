@@ -1,7 +1,7 @@
 import type { AppEvent } from '../src/core/events'
 import { BasePensive } from '../src/core/pensive/base'
 import { callInList, type ToolDef } from '../src/core/pensive/tool'
-import { POP_AGE_LIMIT_MS, type ResourceRecord } from '../src/core/pensive/types'
+import { POP_AGE_LIMIT_MS, POP_GROUP_MS, type ResourceRecord } from '../src/core/pensive/types'
 
 // A pensive the tests can be pointed at without a database: the real tools — the
 // real `scanEvents`, overscan and all — over an array of events. A stand-in for
@@ -37,13 +37,16 @@ export class MemorySource extends BasePensive {
     this.events.push(...events)
   }
 
-  async popEvents(windowMs: number): Promise<AppEvent[]> {
-    if (!this.events.length) return []
-    const latest = Math.max(...this.events.map((e) => e.timestamp))
+  async popEvents(author?: string): Promise<AppEvent[]> {
+    const mine = (e: AppEvent): boolean => author === undefined || e.author === author
+    const theirs = this.events.filter(mine)
+    if (!theirs.length) return []
+    const latest = Math.max(...theirs.map((e) => e.timestamp))
     if (latest < Date.now() - POP_AGE_LIMIT_MS) return []
-    const from = latest - windowMs
-    const taken = this.events.filter((e) => e.timestamp >= from)
-    this.events = this.events.filter((e) => e.timestamp < from)
+    const from = latest - POP_GROUP_MS
+    const goes = (e: AppEvent): boolean => e.timestamp >= from && mine(e)
+    const taken = this.events.filter(goes)
+    this.events = this.events.filter((e) => !goes(e))
     return taken.sort((a, b) => a.timestamp - b.timestamp)
   }
 

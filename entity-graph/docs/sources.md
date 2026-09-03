@@ -10,7 +10,7 @@ interface Pensive {
 
   readEvents(entityIds?: string[]): Promise<AppEvent[]>
   writeEvents(events: AppEvent[]): Promise<void>
-  popEvents(windowMs: number): Promise<AppEvent[]>
+  popEvents(author?: string): Promise<AppEvent[]>
 
   readResource(id: string): Promise<ResourceRecord | null>
   writeResource(resource: ResourceRecord): Promise<void>
@@ -22,7 +22,11 @@ interface Pensive {
 }
 ```
 
-Five calls are the store: events in and out, bytes in and out. The last two are
+Five calls are the store: events in and out, bytes in and out. `popEvents` is
+undo, and takes no window: how much counts as one action and how far back it
+reaches at all are the *store's* to decide — five minutes as standard, less if a
+store says so — so there is nothing a client can widen. What it does take is an
+`author`, which narrows undo to one person's own events. The last two are
 its **vocabulary** — `query`, `readEntities`, `createEntity`, `scanEvents`, and
 whatever the user has written under `@tools` — which `core/pensive/tools.ts`
 builds out of those five. So a pensive gains the whole language of the app by
@@ -83,7 +87,9 @@ class PausedPensive implements Pensive {
   written as a note in the remote store is callable from here with the schema it
   published.
 - **`AttributedPensive`** is what a bearer token *means*: every write is recorded
-  as the person it was issued to, whatever the client asks for.
+  as the person it was issued to, whatever the client asks for — and `popEvents`
+  is narrowed to that person too, so a client cannot undo somebody else's edit by
+  naming them.
 - **`PausedPensive`** is what a switched-off node is. Every call fails with a
   sentence naming who is paused, so a combiner one of whose inputs is paused is
   broken exactly that far, and the fix for all of it is to press play.
@@ -168,7 +174,8 @@ caller — a broadcast answers other machines:
 - **A paused node yields a `PausedPensive`**, so a broadcast's callers get a 403
   rather than silence.
 - **A token is an identity**: `authorOf` resolves it to a name, and the pensive
-  handed to that request is wrapped in `AttributedPensive`.
+  handed to that request is wrapped in `AttributedPensive` — which decides both
+  who a write is by and whose edits an undo may reach.
 
 ### What a broadcast serves
 

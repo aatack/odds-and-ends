@@ -41,8 +41,13 @@ export class AttributedPensive extends BasePensive {
     return this.inner.writeEvents(events.map((e) => ({ ...e, author: this.author })))
   }
 
-  popEvents(windowMs: number): Promise<AppEvent[]> {
-    return this.inner.popEvents(windowMs)
+  /**
+   * Undo, narrowed to this person whether they asked for that or not. Somebody
+   * else's edit is not theirs to take off, and a client that could name its own
+   * author for a write could name one here too.
+   */
+  popEvents(): Promise<AppEvent[]> {
+    return this.inner.popEvents(this.author)
   }
 
   readResource(id: string): Promise<ResourceRecord | null> {

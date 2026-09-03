@@ -8,6 +8,11 @@ import { APP_MOUNT } from '../core/client'
  * Driving `tailscale serve` from the app, so the phone route in
  * `mobile/README.md` is a switch rather than a shell session.
  *
+ * **Nothing in the app reaches this at the moment.** The IPC handlers are still
+ * registered and this module still works; what is gone is the UI that called
+ * them, because serving is coming back as a node on the sources graph rather
+ * than as a panel. Left whole so that it is a wiring job when it does.
+ *
  * What it publishes is exactly what that document describes: the phone app's
  * `dist/` at `/`, and one source proxied at `/api/<sourceId>`, both on this
  * machine's HTTPS `.ts.net` name. Tailscale's own config is the only state —

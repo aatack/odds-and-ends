@@ -454,19 +454,25 @@ export function pensiveTools(pensive: Pensive, opts: PensiveToolOptions = {}): T
     id: 'popEvents',
     name: 'Pop latest events',
     description:
-      'Remove the most recent event, and any within `windowMs` of it, and return ' +
-      'them. Backs undo: one user action often writes several events at the same ' +
-      'instant, so they come off together. Hand the result to `writeEvents` to ' +
-      'put them back. Events older than five minutes are never removed, so on a ' +
-      'store that has been idle that long this returns nothing.',
+      'Remove the last action\'s events and return them. Backs undo: one user ' +
+      'action often writes several events at the same instant, so they come off ' +
+      'together. Hand the result to `writeEvents` to put them back.\n\n' +
+      'How much counts as one action, and how far back this reaches at all, are ' +
+      'the store\'s to decide — five minutes as standard, so on a store that has ' +
+      'been idle that long this returns nothing. There is nothing to pass but ' +
+      '`author`.',
     safety: 'safe-mutating',
     args: z.object({
-      windowMs: z
-        .number()
+      author: z
+        .string()
         .optional()
-        .describe('How close to the latest event counts as the same action; defaults to 100.'),
+        .describe(
+          'Only take this person\'s own events off. Forced to whoever the bearer ' +
+            'token belongs to when the store is reached over HTTP, so asking for ' +
+            'somebody else is not a thing a remote client can do.',
+        ),
     }),
-    handler: ({ windowMs }: { windowMs?: number }) => pensive.popEvents(windowMs ?? 100),
+    handler: ({ author }: { author?: string }) => pensive.popEvents(author),
   }
 
   const writeResource: ToolDef = {

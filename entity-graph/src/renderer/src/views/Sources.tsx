@@ -14,10 +14,9 @@ import {
   type Edge,
   type OnNodeDrag,
 } from '@xyflow/react'
-import { Plus, Wifi } from '@untitledui/icons'
+import { Plus } from '@untitledui/icons'
 import type { SourceNode } from '../../../core/client'
 import { NODE_KINDS, nodeKind, publishes } from '../../../core/client'
-import { PhoneAccessPanel } from '../components/PhoneAccess'
 import {
   NodeContextProvider,
   PensiveNode,
@@ -30,7 +29,6 @@ import { useAtomValue } from '../state/hooks'
 import { clearSourceSelection, reportSourceSelection } from '../state/sources'
 import { themeAtom, updateUi } from '../state/ui'
 import { positionPatch, useSourceGraph } from './useSourceGraph'
-import { useTailscale } from './useTailscale'
 
 // The sources page: every pensive this app knows about, drawn as a graph.
 //
@@ -44,6 +42,11 @@ import { useTailscale } from './useTailscale'
 // round trip, and what is drawn is what is running. **No key is bound here** —
 // there is one key listener in this app and it is at the top, so Backspace is a
 // tool (`sources.delete`) reading the selection this page reports.
+//
+// Phone access is deliberately not here: `tailscale serve` will come back as a
+// node of its own rather than as a panel on the page, so the controls for it
+// (`components/PhoneAccess.tsx`, `views/useTailscale.ts`) are left in the tree
+// unwired until it does.
 
 const NODE_TYPES = { pensive: PensiveNode }
 
@@ -57,12 +60,9 @@ export function Sources(): React.JSX.Element {
 
 function Canvas(): React.JSX.Element {
   const { graph, error, actions } = useSourceGraph()
-  // One instance for the page: there is a single serve config for the machine.
-  const tailscale = useTailscale()
   const theme = useAtomValue(themeAtom)
   const store = useStoreApi()
   const [adding, setAdding] = useState(false)
-  const [phone, setPhone] = useState(false)
   const [accessId, setAccessId] = useState<string | null>(null)
 
   useEffect(() => clearSourceSelection, [])
@@ -189,12 +189,9 @@ function Canvas(): React.JSX.Element {
           <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
           <Controls showInteractive={false} position="bottom-right" />
 
-          <Panel position="top-left" className="flex items-center gap-2">
+          <Panel position="top-left">
             <Button variant="primary" size="sm" onClick={() => setAdding(true)}>
               <Plus size={16} /> Add
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => setPhone(true)}>
-              <Wifi size={16} /> Phone
             </Button>
           </Panel>
 
@@ -214,17 +211,10 @@ function Canvas(): React.JSX.Element {
         </ReactFlow>
 
         {adding && <AddNode onPick={addAt} onClose={() => setAdding(false)} />}
-        {phone && (
-          <Modal title="Phone access" onClose={() => setPhone(false)} size="wide">
-            <PhoneAccessPanel model={tailscale} />
-          </Modal>
-        )}
         {access && publishes(access.config.kind) && (
           <AccessModal
             node={access}
-            localUrl={graph?.status[access.id]?.localUrl ?? null}
             actions={actions}
-            tailscale={tailscale}
             onClose={() => setAccessId(null)}
           />
         )}

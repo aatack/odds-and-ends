@@ -27,7 +27,7 @@ export abstract class BasePensive implements Pensive {
 
   abstract readEvents(entityIds?: string[]): Promise<AppEvent[]>
   abstract writeEvents(events: AppEvent[]): Promise<void>
-  abstract popEvents(windowMs: number): Promise<AppEvent[]>
+  abstract popEvents(author?: string): Promise<AppEvent[]>
   abstract readResource(id: string): Promise<ResourceRecord | null>
   abstract writeResource(resource: ResourceRecord): Promise<void>
 

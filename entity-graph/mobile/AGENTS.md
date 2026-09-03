@@ -38,9 +38,10 @@ same-origin. It still matters for the plain-LAN fallback, where the app is on vi
 port and the broadcast on its own, and it is what keeps a tunnel workable. Don't
 remove it on the strength of the tunnel setup.
 
-Those two mounts are switches on the desktop app's Sources page — the app's own, and
-one on each broadcast node (`src/main/tailscale.ts` over there), which also builds the
-`#connect=` link this app reads in `main.tsx`. Nothing
+Those two mounts *were* switches on the desktop app's Sources page, and will be again
+as a node of their own; the code is still there (`src/main/tailscale.ts`, and the
+`#connect=` link this app reads in `main.tsx`) but nothing renders it, so for now the
+mounts are a shell session — `../mobile/README.md` has the commands. Nothing
 here depends on that — a mount set up in a shell is the same mount — but if the link
 format changes, `encodeConnection` / `connectionFromHash` in `src/source/connection.ts`
 and the desktop's `tailscale:phoneLink` handler are the two ends of it.
