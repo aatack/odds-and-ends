@@ -16,6 +16,7 @@ import {
   type SchemaField,
 } from '../../../core/schema'
 import { cn } from '../helpers/cn'
+import { callSource } from '../source/transport'
 import { useAtomValue } from '../state/hooks'
 import { clearUndo } from '../state/undo'
 import { EntityPill } from './EntityPill'
@@ -26,16 +27,12 @@ import { Input } from './ui/Input'
 import { Modal } from './ui/Modal'
 import { TextEditor } from './ui/TextEditor'
 
-const api = window.entityGraph
-
 /** The surface a `type: code` entity is edited on, which is this one too. */
 const CODE = 'font-mono text-[12.5px] leading-5 text-gray-900'
 
 const EMPTY = 'text-xs text-gray-400'
 
 interface Props {
-  /** Id of the open source (the handle `sourceCall` resolves by). */
-  sourceId: string
   /** The entity being inspected. */
   entityId: string
   user: string
@@ -64,7 +61,7 @@ const TABS: { id: Tab; label: string }[] = [
  * entity with thirty values and an entity linked from thirty places are the same
  * entity.
  */
-export function EntityInspector({ sourceId, entityId, user, onClose }: Props): React.JSX.Element {
+export function EntityInspector({ entityId, user, onClose }: Props): React.JSX.Element {
   const [values, setValues] = useState<Record<string, unknown>>({})
   const [links, setLinks] = useState<string[]>([])
   const [inbound, setInbound] = useState<string[]>([])
@@ -81,7 +78,7 @@ export function EntityInspector({ sourceId, entityId, user, onClose }: Props): R
       // Straight from the source rather than from the cache, and rolled up by
       // the store: the point of this panel is what is actually written down,
       // without an `events` script laid over the top.
-      const read = (await api.sourceCall(sourceId, 'readEntities', {
+      const read = (await callSource('readEntities', {
         entityIds: [entityId],
       })) as Record<string, Entity>
       const self = read[entityId]
@@ -94,7 +91,7 @@ export function EntityInspector({ sourceId, entityId, user, onClose }: Props): R
       const type = str(self?.values.type) ?? null
       setTypeId(type)
       if (type) {
-        const readType = (await api.sourceCall(sourceId, 'readEntities', {
+        const readType = (await callSource('readEntities', {
           entityIds: [type],
         })) as Record<string, Entity>
         setFields(fieldsOf(schemaOf(readType[type]?.values)))
@@ -112,7 +109,7 @@ export function EntityInspector({ sourceId, entityId, user, onClose }: Props): R
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
-  }, [sourceId, entityId])
+  }, [entityId])
 
   useEffect(() => {
     void load()
@@ -138,13 +135,13 @@ export function EntityInspector({ sourceId, entityId, user, onClose }: Props): R
 
   const writeValue = (key: string, value: unknown): Promise<void> =>
     write([entityId], () =>
-      api.sourceCall(sourceId, 'writeValue', { entityId, key, value, author: user }),
+      callSource('writeValue', { entityId, key, value, author: user }),
     )
 
   /** `action` is the store's own: 0 adds the link, 1 takes it away. */
   const writeLink = (from: string, to: string, action: 0 | 1): Promise<void> =>
     write([from, to], () =>
-      api.sourceCall(sourceId, 'writeLink', {
+      callSource('writeLink', {
         sourceId: from,
         destinationId: to,
         action,

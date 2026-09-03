@@ -15,8 +15,6 @@ export interface UiState {
   inspectEntityId: string | null
   /** File entity being shown full size over the tree, if any. */
   resourceId: string | null
-  /** The source-level debug modal. */
-  debugSource: boolean
 }
 
 export const uiAtom = atom<UiState>({
@@ -24,7 +22,6 @@ export const uiAtom = atom<UiState>({
   activityOpen: false,
   inspectEntityId: null,
   resourceId: null,
-  debugSource: false,
 })
 
 export const updateUi = (patch: Partial<UiState>): void =>

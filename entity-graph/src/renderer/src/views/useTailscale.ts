@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { TailscaleView } from '../../../core/client'
-import { APP_MOUNT, phoneAppUrl, sourceMount, sourceTarget } from '../../../core/client'
+import { APP_MOUNT, phoneAppUrl, sourceMount } from '../../../core/client'
 
 const graph = window.entityGraph
 
@@ -23,10 +23,10 @@ export interface TailscaleActions {
   refresh: () => Promise<void>
   /** Publish or unpublish the phone app's build at the root of the tailnet name. */
   serveApp: (on: boolean) => Promise<void>
-  /** Publish or unpublish one source at its own path. */
-  serveSource: (serverId: string, sourceId: string, on: boolean) => Promise<void>
+  /** Publish or unpublish one broadcast node at its own path. */
+  serveNode: (nodeId: string, on: boolean) => Promise<void>
   /** A link that hands a phone the whole connection, token included. */
-  phoneLink: (serverId: string, sourceId: string, author: string) => Promise<string>
+  phoneLink: (nodeId: string, author: string) => Promise<string>
 }
 
 export interface TailscaleModel {
@@ -38,8 +38,8 @@ export interface TailscaleModel {
   appUrl: string | null
   /** The phone app's own switch. */
   app: MountState
-  /** One source's switch, and the URL it is reachable at once it is on. */
-  source: (sourceId: string, baseUrl: string) => MountState & { url: string | null }
+  /** One broadcast's switch, and the URL it is reachable at once it is on. */
+  node: (nodeId: string, localUrl: string | null) => MountState & { url: string | null }
   actions: TailscaleActions
 }
 
@@ -48,7 +48,7 @@ export interface TailscaleModel {
  * publishing, and the two switches that change it.
  *
  * Held in one place and passed down rather than called per row, because there is
- * one serve config for the machine — a hook instance per source would be as many
+ * one serve config for the machine — a hook instance per node would be as many
  * reads of the same thing, and they would disagree while one of them was mid-flight.
  */
 export function useTailscale(): TailscaleModel {
@@ -93,9 +93,9 @@ export function useTailscale(): TailscaleModel {
     () => ({
       refresh,
       serveApp: (on) => change(APP_MOUNT, () => graph.tailscaleServeApp(on)),
-      serveSource: (serverId, sourceId, on) =>
-        change(sourceMount(sourceId), () => graph.tailscaleServeSource(serverId, sourceId, on)),
-      phoneLink: (serverId, sourceId, author) => graph.tailscalePhoneLink(serverId, sourceId, author),
+      serveNode: (nodeId, on) =>
+        change(sourceMount(nodeId), () => graph.tailscaleServeNode(nodeId, on)),
+      phoneLink: (nodeId, author) => graph.tailscalePhoneLink(nodeId, author),
     }),
     [refresh, change],
   )
@@ -128,10 +128,10 @@ export function useTailscale(): TailscaleModel {
     [view, pending],
   )
 
-  const source = useCallback(
-    (sourceId: string, baseUrl: string) => {
-      const mount = sourceMount(sourceId)
-      const mountState = state(mount, sourceTarget(baseUrl, sourceId))
+  const node = useCallback(
+    (nodeId: string, localUrl: string | null) => {
+      const mount = sourceMount(nodeId)
+      const mountState = state(mount, localUrl ?? '')
       return {
         ...mountState,
         url: view?.domain && mountState.on ? `https://${view.domain}${mount}` : null,
@@ -145,7 +145,7 @@ export function useTailscale(): TailscaleModel {
     error,
     appUrl: view?.domain ? phoneAppUrl(view.domain) : null,
     app: state(APP_MOUNT, view?.app.path ?? ''),
-    source,
+    node,
     actions,
   }
 }

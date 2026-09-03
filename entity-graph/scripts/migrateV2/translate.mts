@@ -14,7 +14,7 @@
 import { isDeepStrictEqual } from 'node:util'
 import { bucketEvents, rollupEntity } from '../../src/core/entity'
 import type { AppEvent, LinkAction } from '../../src/core/events'
-import type { ResourceRecord } from '../../src/core/source/permissions'
+import type { ResourceRecord } from '../../src/core/pensive/types'
 import type { V2Resource } from './read.mjs'
 import { rollupV2, rootOf, v2Order, type Json, type V2Row } from './v2Reducer.mjs'
 

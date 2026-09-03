@@ -5,6 +5,7 @@ import { ENTITY_TOOLS } from './entityTools'
 import { FRAME_TOOLS } from './frameTools'
 import { integrationsAtom } from './integrationTools'
 import { RESOURCE_TOOLS } from './resourceTools'
+import { SOURCE_TOOLS } from './sourceTools'
 import { UNDO_TOOLS } from './undoTools'
 import { userToolsAtom } from './userTools'
 import type { ToolScope, ToolSpec } from './types'
@@ -24,10 +25,12 @@ import type { ToolScope, ToolSpec } from './types'
 // from under the user by naming a tool badly.
 
 const BUILT_IN: ToolSpec[] = [
-  // First, and only these two: they take Backspace and Enter off the row tools
-  // below while a diagram's canvas has a shape selected, and the router hands a
-  // press to the first tool that binds the key and says it applies. The rest of
-  // the diagram tools sit where they read, further down.
+  // First, and only these: they take Backspace and Enter off the row tools below
+  // while a diagram's canvas has a shape selected — or while the sources page is
+  // the page — and the router hands a press to the first tool that binds the key
+  // and says it applies. The rest of the diagram tools sit where they read,
+  // further down.
+  ...SOURCE_TOOLS,
   ...DIAGRAM_SELECTION_TOOLS,
   ...ENTITY_TOOLS,
   ...FRAME_TOOLS,

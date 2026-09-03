@@ -14,7 +14,7 @@
 
 export type { AppEvent, LinkAction, LinkEvent, ValueEvent } from '../../../src/core/events'
 export type { Entity, EntitySummary, LinkDirection } from '../../../src/core/entity'
-export type { ResourceRecord } from '../../../src/core/source/permissions'
+export type { ResourceRecord } from '../../../src/core/pensive/types'
 
 /**
  * One entry of the source's tool list (`GET /:sourceId/tools`). Still this app's

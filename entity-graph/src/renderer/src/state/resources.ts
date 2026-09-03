@@ -1,4 +1,4 @@
-import type { ResourceRecord } from '../../../core/source/permissions'
+import type { ResourceRecord } from '../../../core/pensive/types'
 import { atom } from './atom'
 
 // The resource cache: the bytes behind every `type: 'file'` row on screen.

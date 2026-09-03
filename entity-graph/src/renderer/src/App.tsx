@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { ChevronDown, Moon01, Sun } from '@untitledui/icons'
-import { Servers } from './components/Servers'
+import { Sources } from './views/Sources'
 import { SourceView } from './views/SourceView'
 import { Activity, cancelledCount } from './components/Activity'
 import { CallGuide } from './components/CallGuide'
@@ -15,11 +15,12 @@ import { useCalls, useTheme, useUi } from './state/hooks'
 import { toggleTheme, updateUi } from './state/ui'
 import { onCallSettled, openToolList, runTool, togglePalette } from './tools/call'
 import { PALETTE_KEY, installKeyRouter } from './tools/dispatch'
+import { loadIntegrations } from './tools/integrationTools'
 import { keyHint } from './tools/keys'
 import { useApp, type AppActions } from './views/useApp'
 
 export default function App(): React.JSX.Element | null {
-  const { ready, user, current, active, openError, actions } = useApp()
+  const { ready, user, pensive, problem, actions } = useApp()
   const ui = useUi()
   const theme = useTheme()
   const calls = useCalls()
@@ -28,6 +29,10 @@ export default function App(): React.JSX.Element | null {
   // One keydown listener for the whole app. Keys act on global state and resolve
   // through the focus chain, not through whatever has DOM focus.
   useEffect(installKeyRouter, [])
+
+  // The integrations are the app's own hands rather than any pensive's, so they
+  // are read once here instead of when a store is opened.
+  useEffect(loadIntegrations, [])
 
   // Every call the user made announces itself when it finishes; errors and
   // confirmations become toasts. Nothing else in the app raises one — and a
@@ -143,10 +148,10 @@ export default function App(): React.JSX.Element | null {
           >
             Entity Graph
           </button>
-          {ui.page === 'editor' && current && (
+          {ui.page === 'editor' && pensive && (
             <>
               <Badge color="gray">source</Badge>
-              <span className="truncate text-[13px] text-gray-500">{current.label}</span>
+              <span className="truncate text-[13px] text-gray-500">{pensive.label}</span>
             </>
           )}
           {ui.page === 'sources' && <span className="text-[13px] text-gray-400">Sources</span>}
@@ -187,13 +192,11 @@ export default function App(): React.JSX.Element | null {
 
       <main className="min-h-0 flex-1">
         {ui.page === 'sources' ? (
-          <div className="mx-auto w-full max-w-3xl p-6">
-            <Servers current={current} onSelectSource={actions.selectSource} />
-          </div>
-        ) : active ? (
-          <SourceView active={active} user={user} />
+          <Sources />
+        ) : pensive ? (
+          <SourceView pensive={pensive} user={user} />
         ) : (
-          <EditorPlaceholder openError={openError} hasCurrent={!!current} />
+          <EditorPlaceholder problem={problem} />
         )}
       </main>
     </div>
@@ -204,28 +207,16 @@ export default function App(): React.JSX.Element | null {
 // Empty / error state shown in the editor area when no source is open
 // ---------------------------------------------------------------------------
 
-function EditorPlaceholder({
-  openError,
-  hasCurrent,
-}: {
-  openError: string | null
-  hasCurrent: boolean
-}): React.JSX.Element {
+function EditorPlaceholder({ problem }: { problem: string | null }): React.JSX.Element {
   return (
     <div className="mx-auto mt-24 w-full max-w-md space-y-4 px-6 text-center">
-      {openError ? (
-        <>
-          <p className="text-[13px] text-error-600">Couldn’t open the current source.</p>
-          <p className="break-all font-mono text-xs text-gray-400">{openError}</p>
-        </>
-      ) : (
-        <p className="text-[13px] text-gray-400">
-          {hasCurrent ? 'Opening source…' : 'No source selected yet.'}
-        </p>
-      )}
+      <p className="text-[13px] text-gray-400">
+        Nothing is plugged into this app on the sources page.
+      </p>
+      {problem && <p className="break-all font-mono text-xs text-gray-400">{problem}</p>}
       <div className="flex justify-center">
         <Button variant="secondary" size="sm" onClick={() => updateUi({ page: 'sources' })}>
-          Go to sources
+          Configure sources
         </Button>
       </div>
     </div>

@@ -2,7 +2,7 @@ import { mkdirSync } from 'fs'
 import { resolve, dirname } from 'path'
 import Database from 'better-sqlite3'
 import type { AppEvent, ValueEvent, LinkEvent } from '../events'
-import { POP_AGE_LIMIT_MS, type ResourceBacking, type ResourceRecord } from '../source/permissions'
+import { POP_AGE_LIMIT_MS, type ResourceRecord } from '../pensive/types'
 import type { DumpableInterface } from './index'
 
 interface ValueRow {
@@ -30,7 +30,7 @@ interface ResourceRow {
   bytes: Buffer
 }
 
-export class SqliteInterface implements DumpableInterface, ResourceBacking {
+export class SqliteInterface implements DumpableInterface {
   private db: Database.Database
 
   constructor(path: string) {

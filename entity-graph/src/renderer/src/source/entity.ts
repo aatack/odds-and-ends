@@ -2,13 +2,12 @@ import type { Entity } from '../../../core/entity'
 import type { AppEvent, LinkAction } from '../../../core/events'
 import { outlineMarkdown } from '../../../core/markdown'
 import type { QueryPage } from '../../../core/query'
-import type { EventScan } from '../../../core/source/defaultTools'
-import type { ResourceRecord } from '../../../core/source/permissions'
+import type { EventScan, ResourceRecord } from '../../../core/pensive/types'
 import { rowsOfPage } from '../../../core/tree'
 import { callSource, currentUser } from './transport'
 
 // Typed wrappers over the source's tools. Thin by design: the argument shapes
-// live in core/source/defaultTools.ts and this is just the calling convention,
+// live in core/pensive/tools.ts and this is just the calling convention,
 // including the author stamped onto writes.
 
 /**

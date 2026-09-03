@@ -1,4 +1,4 @@
-import { POP_AGE_LIMIT_MS } from '../../../core/source/permissions'
+import { POP_AGE_LIMIT_MS } from '../../../core/pensive/types'
 import { popUndo, pushUndo, redoable, undoAtom } from '../state/undo'
 import { popEvents, writeEvents } from '../source/entity'
 import { currentSourceId } from '../source/transport'

@@ -1,20 +1,21 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
-  ActiveSource,
-  CurrentSource,
-  NewServer,
-  NewSourceConnection,
-  ServerView,
-  SourceConnection,
-  SourceRow,
+  CurrentPensive,
+  NodeKind,
+  NodePatch,
+  SourceEdge,
+  SourceGraph,
+  SourceNode,
+  SourceToken,
   TailscaleView,
   ToolMeta,
-  TokenRow,
 } from '../core/client'
 
 /**
- * The renderer's entire capability surface. The app has no local backend: these
- * are thin forwarders to the main process, which proxies HTTP to the server.
+ * The renderer's entire capability surface. Thin forwarders to the main process,
+ * which is where the pensives are: there is no server to reach and no source to
+ * open, so a data call names a tool and nothing else — the pensive it lands on
+ * is whatever is plugged into the desktop node.
  */
 export interface EntityGraphAPI {
   // User
@@ -55,68 +56,57 @@ export interface EntityGraphAPI {
    */
   revealPath: (path: string) => Promise<string>
 
-  // The source the editor opens by default
-  getCurrentSource: () => Promise<CurrentSource | null>
-  setCurrentSource: (source: CurrentSource | null) => Promise<void>
+  // --- The open pensive ---------------------------------------------------
 
-  // Servers
-  listServers: () => Promise<ServerView[]>
-  addServer: (cfg: NewServer) => Promise<string>
-  updateServer: (id: string, patch: Partial<NewServer>) => Promise<void>
-  removeServer: (id: string) => Promise<void>
-  createLocalServer: (label: string) => Promise<{ id: string }>
-  startServer: (id: string) => Promise<void>
-  stopServer: (id: string) => Promise<void>
-
-  // Source connections (saved credentials for non-admin servers)
-  listSourceConnections: () => Promise<SourceConnection[]>
-  addSourceConnection: (cfg: NewSourceConnection) => Promise<string>
-  updateSourceConnection: (id: string, patch: Partial<NewSourceConnection>) => Promise<void>
-  removeSourceConnection: (id: string) => Promise<void>
-
-  // Open / close a source and operate on it
-  openSource: (serverId: string, sourceId: string, label: string) => Promise<ActiveSource>
-  closeSource: (id: string) => Promise<void>
-  sourceTools: (id: string) => Promise<ToolMeta[]>
-  sourceCall: (id: string, tool: string, args: unknown) => Promise<unknown>
-
+  /** What the outliner is showing, or null when nothing is plugged in. */
+  currentPensive: () => Promise<CurrentPensive | null>
+  /** Why there is nothing to show, when there isn't. */
+  pensiveProblem: () => Promise<string | null>
+  pensiveTools: () => Promise<ToolMeta[]>
+  pensiveCall: (tool: string, args: unknown) => Promise<unknown>
   /**
-   * The server's integrations — GitHub, Slack, Claude. Keyed by *server*, not by
-   * open source: they belong to the server, and it is its admin token that
-   * reaches them.
+   * Fires when the graph changes, so the shell can find out it is looking at a
+   * different store. Returns the teardown.
    */
-  integrationTools: (serverId: string) => Promise<ToolMeta[]>
-  runIntegrationTool: (serverId: string, tool: string, args: unknown) => Promise<unknown>
+  onPensiveChanged: (listener: () => void) => () => void
 
-  // Admin (servers with admin access), keyed by server id
-  adminListSources: (serverId: string) => Promise<SourceRow[]>
-  adminGetSource: (serverId: string, id: string) => Promise<SourceRow>
-  adminCreateSource: (
-    serverId: string,
-    body: { id?: string; label?: string; config: SourceRow['config'] },
-  ) => Promise<SourceRow>
-  adminUpdateSource: (
-    serverId: string,
-    id: string,
-    body: { label?: string; config?: SourceRow['config'] },
-  ) => Promise<SourceRow>
-  adminDeleteSource: (serverId: string, id: string) => Promise<{ ok: true }>
-  adminListTokens: (serverId: string, id: string) => Promise<TokenRow[]>
-  adminIssueToken: (serverId: string, id: string, label?: string) => Promise<{ token: string; sourceId: string }>
-  adminRevokeToken: (serverId: string, token: string) => Promise<{ ok: true }>
+  // --- The graph of pensives ----------------------------------------------
+
+  readGraph: () => Promise<SourceGraph>
+  addNode: (kind: NodeKind, x: number, y: number) => Promise<SourceNode>
+  updateNode: (id: string, patch: NodePatch) => Promise<SourceNode>
+  removeNode: (id: string) => Promise<void>
+  /** Plug one node's output into another's input. Refuses a loop. */
+  connectNodes: (from: string, to: string) => Promise<SourceEdge>
+  disconnectNodes: (edgeId: string) => Promise<void>
+
+  // --- Tokens on a broadcast or MCP node ----------------------------------
+
+  listTokens: (nodeId: string) => Promise<SourceToken[]>
+  /** `name` is who writes made with the token are attributed to. */
+  issueToken: (nodeId: string, name: string) => Promise<SourceToken>
+  pauseToken: (token: string, paused: boolean) => Promise<void>
+  revokeToken: (token: string) => Promise<void>
 
   /**
-   * Phone access, over Tailscale. Machine-scoped, not server-scoped: there is
-   * one tailnet name and one serve config, and the phone app and every source
-   * published to it share them.
+   * The app's integrations — GitHub, Slack, Claude, git, a terminal. The app's
+   * own hands rather than anything a pensive holds, which is why they are not
+   * addressed by node.
+   */
+  integrationTools: () => Promise<ToolMeta[]>
+  runIntegrationTool: (tool: string, args: unknown) => Promise<unknown>
+
+  /**
+   * Phone access, over Tailscale. Machine-scoped: there is one tailnet name and
+   * one serve config, and the phone app and every broadcast share them.
    */
   tailscaleStatus: () => Promise<TailscaleView>
   /** Publish or unpublish the phone app's build at the root of the tailnet name. */
   tailscaleServeApp: (on: boolean) => Promise<void>
-  /** Publish or unpublish one source at `/api/<sourceId>`. */
-  tailscaleServeSource: (serverId: string, sourceId: string, on: boolean) => Promise<void>
+  /** Publish or unpublish one broadcast node at `/api/<nodeId>`. */
+  tailscaleServeNode: (nodeId: string, on: boolean) => Promise<void>
   /** A one-tap link that hands a phone the whole connection, token included. */
-  tailscalePhoneLink: (serverId: string, sourceId: string, author: string) => Promise<string>
+  tailscalePhoneLink: (nodeId: string, author: string) => Promise<string>
 }
 
 const api: EntityGraphAPI = {
@@ -128,46 +118,37 @@ const api: EntityGraphAPI = {
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   readClipboardText: () => ipcRenderer.invoke('clipboard:readText'),
   revealPath: (path) => ipcRenderer.invoke('shell:revealPath', path),
-  getCurrentSource: () => ipcRenderer.invoke('config:getCurrentSource'),
-  setCurrentSource: (source) => ipcRenderer.invoke('config:setCurrentSource', source),
 
-  listServers: () => ipcRenderer.invoke('server:list'),
-  addServer: (cfg) => ipcRenderer.invoke('server:add', cfg),
-  updateServer: (id, patch) => ipcRenderer.invoke('server:update', id, patch),
-  removeServer: (id) => ipcRenderer.invoke('server:remove', id),
-  createLocalServer: (label) => ipcRenderer.invoke('server:createLocal', label),
-  startServer: (id) => ipcRenderer.invoke('server:start', id),
-  stopServer: (id) => ipcRenderer.invoke('server:stop', id),
+  currentPensive: () => ipcRenderer.invoke('pensive:current'),
+  pensiveProblem: () => ipcRenderer.invoke('pensive:problem'),
+  pensiveTools: () => ipcRenderer.invoke('pensive:tools'),
+  pensiveCall: (tool, args) => ipcRenderer.invoke('pensive:call', tool, args),
+  onPensiveChanged: (listener) => {
+    const handler = (): void => listener()
+    ipcRenderer.on('pensive:changed', handler)
+    return () => ipcRenderer.off('pensive:changed', handler)
+  },
 
-  listSourceConnections: () => ipcRenderer.invoke('sourceConn:list'),
-  addSourceConnection: (cfg) => ipcRenderer.invoke('sourceConn:add', cfg),
-  updateSourceConnection: (id, patch) => ipcRenderer.invoke('sourceConn:update', id, patch),
-  removeSourceConnection: (id) => ipcRenderer.invoke('sourceConn:remove', id),
+  readGraph: () => ipcRenderer.invoke('graph:read'),
+  addNode: (kind, x, y) => ipcRenderer.invoke('graph:addNode', kind, x, y),
+  updateNode: (id, patch) => ipcRenderer.invoke('graph:updateNode', id, patch),
+  removeNode: (id) => ipcRenderer.invoke('graph:removeNode', id),
+  connectNodes: (from, to) => ipcRenderer.invoke('graph:connect', from, to),
+  disconnectNodes: (edgeId) => ipcRenderer.invoke('graph:disconnect', edgeId),
 
-  openSource: (serverId, sourceId, label) => ipcRenderer.invoke('source:open', serverId, sourceId, label),
-  closeSource: (id) => ipcRenderer.invoke('source:close', id),
-  sourceTools: (id) => ipcRenderer.invoke('source:tools', id),
-  sourceCall: (id, tool, args) => ipcRenderer.invoke('source:call', id, tool, args),
+  listTokens: (nodeId) => ipcRenderer.invoke('graph:tokens', nodeId),
+  issueToken: (nodeId, name) => ipcRenderer.invoke('graph:issueToken', nodeId, name),
+  pauseToken: (token, paused) => ipcRenderer.invoke('graph:pauseToken', token, paused),
+  revokeToken: (token) => ipcRenderer.invoke('graph:revokeToken', token),
 
-  integrationTools: (serverId) => ipcRenderer.invoke('integrations:tools', serverId),
-  runIntegrationTool: (serverId, tool, args) =>
-    ipcRenderer.invoke('integrations:run', serverId, tool, args),
-
-  adminListSources: (serverId) => ipcRenderer.invoke('admin:listSources', serverId),
-  adminGetSource: (serverId, id) => ipcRenderer.invoke('admin:getSource', serverId, id),
-  adminCreateSource: (serverId, body) => ipcRenderer.invoke('admin:createSource', serverId, body),
-  adminUpdateSource: (serverId, id, body) => ipcRenderer.invoke('admin:updateSource', serverId, id, body),
-  adminDeleteSource: (serverId, id) => ipcRenderer.invoke('admin:deleteSource', serverId, id),
-  adminListTokens: (serverId, id) => ipcRenderer.invoke('admin:listTokens', serverId, id),
-  adminIssueToken: (serverId, id, label) => ipcRenderer.invoke('admin:issueToken', serverId, id, label),
-  adminRevokeToken: (serverId, token) => ipcRenderer.invoke('admin:revokeToken', serverId, token),
+  integrationTools: () => ipcRenderer.invoke('integrations:tools'),
+  runIntegrationTool: (tool, args) => ipcRenderer.invoke('integrations:run', tool, args),
 
   tailscaleStatus: () => ipcRenderer.invoke('tailscale:status'),
   tailscaleServeApp: (on) => ipcRenderer.invoke('tailscale:serveApp', on),
-  tailscaleServeSource: (serverId, sourceId, on) =>
-    ipcRenderer.invoke('tailscale:serveSource', serverId, sourceId, on),
-  tailscalePhoneLink: (serverId, sourceId, author) =>
-    ipcRenderer.invoke('tailscale:phoneLink', serverId, sourceId, author),
+  tailscaleServeNode: (nodeId, on) => ipcRenderer.invoke('tailscale:serveNode', nodeId, on),
+  tailscalePhoneLink: (nodeId, author) =>
+    ipcRenderer.invoke('tailscale:phoneLink', nodeId, author),
 }
 
 contextBridge.exposeInMainWorld('entityGraph', api)

@@ -1,119 +1,194 @@
-import type { Safety } from './source/types'
+// The shapes the renderer and the main process agree on: the graph of pensives
+// the user has drawn, and Tailscale, which is how a phone reaches any of it.
+//
+// There are no servers here any more, and no source connections. A pensive is a
+// *node* in one graph the app owns — a SQLite file, several of them joined, one
+// reached over HTTP — and how it is exposed is another node downstream of it. So
+// what used to be "which server, which source, which token" is now an edge.
 
-// ---------------------------------------------------------------------------
-// Servers & sources
-// ---------------------------------------------------------------------------
+/** The kinds of node the sources page can draw. */
+export type NodeKind = 'sqlite' | 'combined' | 'broadcast' | 'connect' | 'mcp' | 'desktop'
 
 /**
- * A server the app knows about. Either *external* (a base URL the user pasted
- * in) or *local* (a child process the app runs — marked by `localPort`). A
- * server has admin access iff it carries an `adminToken`, which lets the UI
- * create/edit/delete that server's sources; without one the user can only
- * connect to existing sources by their id + token.
+ * What one node holds, over and above its name and where it sits.
  *
- * Persisted by the main process in `electron-store`. The secret `adminToken`
- * never crosses to the renderer — see {@link ServerView}.
+ * A node's *inputs* are edges rather than configuration: a combiner does not
+ * list its children, it has children drawn into it. What is left is the part
+ * that is nobody else's business — a path on disk, a port, a URL.
  */
-export interface Server {
+export type NodeConfig =
+  /** A file on this machine. The only node that holds notes itself. */
+  | { kind: 'sqlite'; path: string }
+  /**
+   * Its inputs read as one store. `writeTo` names the input every edit lands
+   * in — null until the user says, at which point the node cannot be written to.
+   */
+  | { kind: 'combined'; writeTo: string | null }
+  /** Its input, published over HTTP on `port`, to whoever holds a token. */
+  | { kind: 'broadcast'; port: number }
+  /** Its input, published over HTTP as an MCP server, for an agent. */
+  | { kind: 'mcp'; port: number }
+  /** A pensive somewhere else, broadcast by another copy of this app. */
+  | { kind: 'connect'; url: string; token: string }
+  /** This app's own window. Its input is the pensive the outliner shows. */
+  | { kind: 'desktop' }
+
+/** One node of the graph, as it is stored and as the page draws it. */
+export interface SourceNode {
   id: string
   label: string
-  /** e.g. `http://127.0.0.1:4000` — no trailing slash. Derived for local servers. */
-  baseUrl: string
-  /** Present ⇔ admin access is configured (always set for local servers). */
-  adminToken?: string
-  /** Present ⇔ this is a managed local child process. */
-  localPort?: number
+  x: number
+  y: number
+  /** Switched off: every call through it fails, and it draws grey. */
+  paused: boolean
+  config: NodeConfig
 }
 
-/** Fields needed to create a server (id/baseUrl assigned by the main process). */
-export interface NewServer {
-  label: string
-  /** Required for external servers; ignored for local. */
-  baseUrl?: string
-  adminToken?: string
+/** A node's output plugged into another node's input. */
+export interface SourceEdge {
+  id: string
+  /** The node being read. */
+  from: string
+  /** The node reading it. */
+  to: string
 }
 
 /**
- * A saved way to reach one source on a *non-admin* server: the source's id plus
- * its bearer token. (Admin servers enumerate their sources live instead.)
+ * A bearer token on a broadcast or MCP node, issued to one person by name.
+ *
+ * The name is not a label: every write that arrives with the token is recorded
+ * as that author, whatever the client asks for. Pausing a token refuses it
+ * without forgetting it; revoking takes it off for good.
  */
-export interface SourceConnection {
-  id: string
-  serverId: string
-  sourceId: string
-  label: string
+export interface SourceToken {
   token: string
+  nodeId: string
+  /** Who writes made with it are attributed to. */
+  name: string
+  paused: boolean
 }
 
-/** A new source connection before the main process assigns it an id. */
-export type NewSourceConnection = Omit<SourceConnection, 'id'>
-
-/** Renderer-facing view of a server: computed flags, secret token stripped. */
-export interface ServerView {
-  id: string
-  label: string
-  baseUrl: string
-  kind: 'local' | 'external'
-  /** `adminToken` is present. */
-  admin: boolean
-  /** Local servers only: whether the child process is currently running. */
-  running: boolean
+/** What the app can say about a node beyond what the user wrote on it. */
+export interface NodeStatus {
+  /** Where a broadcast or MCP node answers, once it is listening. */
+  url: string | null
+  /**
+   * The same server on loopback. What a tailnet mount proxies to, and so what
+   * the page compares against to decide whether the switch is on.
+   */
+  localUrl: string | null
+  /** Why this node isn't working — an actionable sentence, or null. */
+  problem: string | null
 }
 
-/**
- * The source currently open in the viewer. Ephemeral: the main process holds
- * its bearer token in memory and resolves data calls by `id`; nothing extra is
- * persisted per open.
- */
-export interface ActiveSource {
-  id: string
-  label: string
-  serverId: string
-  sourceId: string
+/** The whole page in one answer: the graph, plus how each node is getting on. */
+export interface SourceGraph {
+  nodes: SourceNode[]
+  edges: SourceEdge[]
+  status: Record<string, NodeStatus>
 }
 
 /**
- * The user's chosen "current" source — the one the editor opens by default.
- * Persisted as a durable reference (which server + source), independent of any
- * ephemeral {@link ActiveSource} handle, so it survives restarts.
+ * What each kind of node is, in the one place both ends read it: the page draws
+ * its handles from `inputs` and `output`, the main process refuses an edge that
+ * disagrees with them, and the "add a node" menu is this list.
  */
-export interface CurrentSource {
-  serverId: string
-  sourceId: string
+export interface NodeKindInfo {
+  kind: NodeKind
+  /** What it is called, and the name a new one is given. */
   label: string
+  /** One line saying what it is for, read while picking one. */
+  blurb: string
+  /** How many outputs may be plugged into it. */
+  inputs: 0 | 1 | 'many'
+  /** Whether it can be read from at all. */
+  output: boolean
+  /** False for the one node that is always there and cannot be deleted. */
+  addable: boolean
+  /** What a new one holds. A port of 0 means "pick a free one". */
+  config: NodeConfig
 }
 
-// ---------------------------------------------------------------------------
-// Admin shapes — client-side mirror of `server/src/config.ts`, kept here so the
-// renderer stays decoupled from the server workspace.
-// ---------------------------------------------------------------------------
+export const NODE_KINDS: NodeKindInfo[] = [
+  {
+    kind: 'sqlite',
+    label: 'SQLite file',
+    blurb: 'Notes in a file on this machine.',
+    inputs: 0,
+    output: true,
+    addable: true,
+    config: { kind: 'sqlite', path: '' },
+  },
+  {
+    kind: 'combined',
+    label: 'Combined',
+    blurb: 'Several pensives read as one, written to whichever you choose.',
+    inputs: 'many',
+    output: true,
+    addable: true,
+    config: { kind: 'combined', writeTo: null },
+  },
+  {
+    kind: 'connect',
+    label: 'Connection',
+    blurb: 'A pensive broadcast by another machine.',
+    inputs: 0,
+    output: true,
+    addable: true,
+    config: { kind: 'connect', url: '', token: '' },
+  },
+  {
+    kind: 'broadcast',
+    label: 'Broadcast',
+    blurb: 'Publish one pensive over HTTP, to whoever holds a token.',
+    inputs: 1,
+    output: false,
+    addable: true,
+    config: { kind: 'broadcast', port: 0 },
+  },
+  {
+    kind: 'mcp',
+    label: 'MCP',
+    blurb: 'Publish one pensive to an agent, as an MCP server.',
+    inputs: 1,
+    output: false,
+    addable: true,
+    config: { kind: 'mcp', port: 0 },
+  },
+  {
+    kind: 'desktop',
+    label: 'This app',
+    blurb: 'Whatever is plugged in here is what the outliner shows.',
+    inputs: 1,
+    output: false,
+    addable: false,
+    config: { kind: 'desktop' },
+  },
+]
 
-export type SourceConfig =
-  | { type: 'sqlite'; path: string; defaultAuthor?: string }
-  | { type: 'combined'; children: string[] }
-  | { type: 'frozen'; child: string; beforeTs: number }
-  | { type: 'filter'; child: string; allow?: string[]; deny?: string[]; maxSafety?: Safety }
-  | { type: 'remote'; url: string; token?: string }
+export const nodeKind = (kind: NodeKind): NodeKindInfo =>
+  NODE_KINDS.find((k) => k.kind === kind) ?? NODE_KINDS[0]
 
-export type SourceType = SourceConfig['type']
+/** Whether a node of this kind holds tokens — the two that publish. */
+export const publishes = (kind: NodeKind): boolean => kind === 'broadcast' || kind === 'mcp'
 
-export interface SourceRow {
+/** Fields of a node the user may change. */
+export interface NodePatch {
+  label?: string
+  x?: number
+  y?: number
+  paused?: boolean
+  config?: NodeConfig
+}
+
+/** The pensive the outliner is showing: whatever is plugged into `desktop`. */
+export interface CurrentPensive {
   id: string
   label: string
-  type: SourceType
-  config: SourceConfig
-  createdAt: number
-}
-
-export interface TokenRow {
-  token: string
-  sourceId: string
-  label: string
-  revoked: boolean
 }
 
 // ---------------------------------------------------------------------------
-// Tailscale — putting the phone app and one source on the tailnet
+// Tailscale — putting the phone app and one broadcast on the tailnet
 // ---------------------------------------------------------------------------
 
 /**
@@ -161,24 +236,21 @@ export interface TailscaleView {
 export const APP_MOUNT = '/'
 
 /**
- * One source, mounted under its own id rather than at a plain `/api`. Plain
- * `/api` would put the whole server on the tailnet, admin endpoints included;
- * the phone only ever needs the one source.
+ * One broadcast node, mounted under the id of the node it publishes rather than
+ * at a plain `/api`: the phone only ever needs the one pensive, and the path is
+ * what the app it is handed appends.
  */
-export const sourceMount = (sourceId: string): string => `/api/${sourceId}`
-
-/** What that mount proxies to — the source's own URL on the machine. */
-export const sourceTarget = (baseUrl: string, sourceId: string): string => `${baseUrl}/${sourceId}`
+export const sourceMount = (nodeId: string): string => `/api/${nodeId}`
 
 /**
  * The base URL the phone app is given. `--set-path` strips its prefix before
- * proxying, so the app can carry an `/api` segment the server never sees, and
- * the app appends the source id itself.
+ * proxying, so the app can carry an `/api` segment the broadcast never sees, and
+ * the app appends the node id itself.
  */
 export const phoneBaseUrl = (domain: string): string => `https://${domain}/api`
 
 /** Where the phone app is opened to install it. */
 export const phoneAppUrl = (domain: string): string => `https://${domain}/`
 
-// Re-export the tool metadata shape the `/tools` endpoint returns.
-export type { ToolMeta } from './source/schema'
+// Re-export the tool metadata shape the renderer prompts arguments from.
+export type { ToolMeta } from './pensive/types'

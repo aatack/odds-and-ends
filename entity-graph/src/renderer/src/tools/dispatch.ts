@@ -77,8 +77,13 @@ export function handleKey(e: KeyboardEvent): boolean {
     if (e.key !== 'Escape' && !(e.ctrlKey || e.metaKey || e.altKey)) return false
   }
 
+  // Off the outliner there are no frames and no tab groups, so a key that means
+  // something to a row must not be answered by a row that isn't on screen: the
+  // sources page is a canvas, and its own tools are app-scoped.
+  const scopes = uiAtom.get().page === 'editor' ? SCOPES : (['app'] as ToolScope[])
+
   const tools = allTools()
-  for (const scope of SCOPES) {
+  for (const scope of scopes) {
     const tool = tools.find(
       (t) => t.scope === scope && bindsKey(t.keys, e) && (t.enabled?.() ?? true),
     )

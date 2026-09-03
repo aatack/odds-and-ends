@@ -24,7 +24,7 @@ export const ROOT_ID = '@index'
 /**
  * One argument of a call. "Not supplied yet" and "use the tool's default" are
  * genuinely different states, and the source's tool contract already spends
- * `null` on the latter (see `stripNulls` in core/source/types.ts), so the two
+ * `null` on the latter (see `stripNulls` in core/pensive/tool.ts), so the two
  * are distinguished here rather than both collapsing onto null.
  */
 export type ArgValue =
