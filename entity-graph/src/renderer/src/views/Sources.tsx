@@ -16,7 +16,7 @@ import {
 } from '@xyflow/react'
 import { Plus } from '@untitledui/icons'
 import type { SourceNode } from '../../../core/client'
-import { NODE_KINDS, nodeKind, publishes } from '../../../core/client'
+import { NODE_KINDS, nodeAddress, nodeKind, publishes } from '../../../core/client'
 import {
   NodeContextProvider,
   PensiveNode,
@@ -27,7 +27,7 @@ import { Button } from '../components/ui/Button'
 import { Modal } from '../components/ui/Modal'
 import { useAtomValue } from '../state/hooks'
 import { clearSourceSelection, reportSourceSelection } from '../state/sources'
-import { themeAtom, updateUi } from '../state/ui'
+import { themeAtom } from '../state/ui'
 import { positionPatch, useSourceGraph } from './useSourceGraph'
 
 // The sources page: every pensive this app knows about, drawn as a graph.
@@ -195,12 +195,6 @@ function Canvas(): React.JSX.Element {
             </Button>
           </Panel>
 
-          <Panel position="top-right">
-            <Button variant="secondary" size="sm" onClick={() => updateUi({ page: 'editor' })}>
-              Open the outliner
-            </Button>
-          </Panel>
-
           {error && (
             <Panel position="bottom-left">
               <p className="max-w-md rounded-md bg-white px-3 py-2 text-[13px] text-error-600 shadow-xs">
@@ -214,6 +208,7 @@ function Canvas(): React.JSX.Element {
         {access && publishes(access.config.kind) && (
           <AccessModal
             node={access}
+            url={nodeAddress(graph?.status[access.id], access.config.kind)}
             actions={actions}
             onClose={() => setAccessId(null)}
           />

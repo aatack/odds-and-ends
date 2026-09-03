@@ -14,6 +14,13 @@ import { NotSupportedError, type Pensive, type ResourceRecord } from './types'
  *
  * Undo pops from the write source alone, which is the only honest answer: it is
  * where the edits went.
+ *
+ * **A child that refuses to read is read around, not passed on.** Pausing one
+ * store of five is a thing somebody does on purpose, and it should take that
+ * store's notes out of the outline rather than taking the outline down; the same
+ * goes for one that has gone away. Writing is the exception, because there is one
+ * place it can go: if the write source is the one that is off, the edit fails and
+ * says so.
  */
 export class CombinedPensive extends BasePensive {
   constructor(
@@ -39,7 +46,9 @@ export class CombinedPensive extends BasePensive {
   }
 
   async readEvents(entityIds?: string[]): Promise<AppEvent[]> {
-    const perChild = await Promise.all(this.children.map((c) => c.readEvents(entityIds)))
+    const perChild = await Promise.all(
+      this.children.map((c) => c.readEvents(entityIds).catch(() => [] as AppEvent[])),
+    )
     return perChild.flat()
   }
 

@@ -173,6 +173,44 @@ export const nodeKind = (kind: NodeKind): NodeKindInfo =>
 /** Whether a node of this kind holds tokens — the two that publish. */
 export const publishes = (kind: NodeKind): boolean => kind === 'broadcast' || kind === 'mcp'
 
+/**
+ * The address a published node answers on, ready to be pasted somewhere.
+ *
+ * An MCP node names loopback and carries the `/mcp` path: what it is for is an
+ * agent on this machine, whose config file outlives whatever address the wifi
+ * hands out today. A broadcast is the other way round — it exists to be reached
+ * from somewhere else — and has no one path, since it answers `/tools` and
+ * `/call`.
+ */
+export const nodeAddress = (status: NodeStatus | undefined, kind: NodeKind): string | null => {
+  if (kind !== 'mcp') return status?.url ?? null
+  return status?.localUrl ? `${status.localUrl}/mcp` : null
+}
+
+/** A label as a config key: `Flow migrated` → `flow-migrated`. */
+const slug = (label: string): string =>
+  label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '') || 'pensive'
+
+/**
+ * One MCP server, in the shape an agent's config file wants it — the fragment
+ * that goes inside `mcpServers`, so it can be pasted rather than transcribed.
+ * Copying a URL and a token separately and assembling them by hand is three
+ * chances to get it wrong.
+ */
+export const mcpConfigSnippet = (label: string, url: string, token: string): string =>
+  [
+    `${JSON.stringify(slug(label))}: {`,
+    `  "type": "http",`,
+    `  "url": ${JSON.stringify(url)},`,
+    `  "headers": {`,
+    `    "Authorization": ${JSON.stringify(`Bearer ${token}`)}`,
+    `  }`,
+    `}`,
+  ].join('\n')
+
 /** Fields of a node the user may change. */
 export interface NodePatch {
   label?: string
