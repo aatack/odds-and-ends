@@ -65,11 +65,19 @@ export class ConnectPensive implements Pensive {
       throw this.unreachable(e)
     })
     const text = await res.text()
-    const body = (text ? JSON.parse(text) : {}) as
-      | { status: 'success'; result: unknown }
-      | { status: 'error'; message: string }
+    const body = (text ? JSON.parse(text) : {}) as {
+      status?: 'success' | 'error'
+      result?: unknown
+      /** A tool that ran and refused. */
+      message?: string
+      /** The request never reached a tool — no token, node paused, nothing to serve. */
+      error?: string
+    }
     if (body.status === 'success') return body.result
-    throw new Error(body.message ?? `${this.baseUrl} refused "${toolId}" (${res.status})`)
+    // Both halves say the same thing to the caller, who can act on neither
+    // differently: the message is what a toast will show.
+    const why = body.message ?? body.error
+    throw new Error(why ?? `${this.baseUrl} refused "${toolId}" (${res.status})`)
   }
 
   // The five calls, each of which is one of the tools the other end publishes.

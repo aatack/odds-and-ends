@@ -2,8 +2,6 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { AttributedPensive, PausedError, type Pensive } from '../../core/pensive/index'
 import { formatError } from './format'
 import { handleMcpRequest } from './mcpServer'
-import type { GraphDb } from './graph'
-import type { PensiveRegistry } from './registry'
 
 // How a pensive leaves this machine: one small HTTP server per broadcast or MCP
 // node, run by the app and answering for exactly one pensive.
@@ -67,11 +65,14 @@ function send(res: ServerResponse, status: number, body: unknown): void {
 }
 
 export interface PensiveServerOptions {
-  nodeId: string
   kind: 'broadcast' | 'mcp'
   port: number
-  db: GraphDb
-  registry: PensiveRegistry
+  /** The node as it now stands, or null if it has been deleted under us. */
+  node: () => { label: string; paused: boolean } | null
+  /** Who a token says a write is by, or null when it is not one of ours. */
+  authorOf: (token: string) => string | null
+  /** What to serve, or the reason there is nothing to. */
+  pensive: () => Promise<{ pensive: Pensive } | { problem: string }>
 }
 
 /**
@@ -134,16 +135,15 @@ export class PensiveServer {
   private async caller(
     req: IncomingMessage,
   ): Promise<{ pensive: Pensive } | { status: number; error: string }> {
-    const { db, registry, nodeId } = this.opts
-    const node = db.node(nodeId)
+    const node = this.opts.node()
     if (!node) return { status: 404, error: 'this node no longer exists' }
 
     const token = bearer(req)
-    const author = token ? db.authorOf(nodeId, token) : null
+    const author = token ? this.opts.authorOf(token) : null
     if (!author) return { status: 401, error: 'invalid or missing bearer token' }
     if (node.paused) return { status: 403, error: `"${node.label}" is paused` }
 
-    const built = await registry.tryGet(nodeId)
+    const built = await this.opts.pensive()
     if ('problem' in built) return { status: 503, error: built.problem }
     return { pensive: new AttributedPensive(built.pensive, author) }
   }
