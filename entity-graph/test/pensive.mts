@@ -168,6 +168,29 @@ function serve(store: MemorySource, port: number, paused = { paused: false }) {
 /** A port nothing else in this file is using. */
 let nextPort = 47311
 
+test('publishes what the store itself calls a tool, not only the built-ins', async () => {
+  const store = new MemorySource()
+  store.tree({ '@tools': ['greet'] })
+  store.values({
+    greet: {
+      type: 'tool',
+      text: 'greet',
+      description: 'Say hello',
+      arguments: [{ name: 'who' }],
+    },
+  })
+  const port = nextPort++
+  const server = serve(store, port)
+  await server.start()
+  try {
+    const connected = new ConnectPensive('r', 'Remote', `http://127.0.0.1:${port}`, 'good')
+    const tools = (await connected.listTools()).map((t) => t.id)
+    assert.ok(tools.includes('greet'), tools.join(', '))
+  } finally {
+    await server.stop()
+  }
+})
+
 test('publishes a pensive over HTTP, and reads it back as one', async () => {
   const store = new MemorySource()
   store.values({ a: { text: 'over the wire' } })
