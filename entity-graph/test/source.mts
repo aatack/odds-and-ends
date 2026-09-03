@@ -3,11 +3,11 @@ import { BasePensive } from '../src/core/pensive/base'
 import { callInList, type ToolDef } from '../src/core/pensive/tool'
 import { POP_AGE_LIMIT_MS, type ResourceRecord } from '../src/core/pensive/types'
 
-// A pensive the desktop client can be pointed at without a database or a server:
-// the real tools — the real `scanEvents`, overscan and all — over an array of
-// events. A stand-in for SQLite rather than for the tools, because
-// better-sqlite3 is built against Electron's ABI in this install and rebuilding
-// it for node would break the app it shares that install with.
+// A pensive the tests can be pointed at without a database: the real tools — the
+// real `scanEvents`, overscan and all — over an array of events. A stand-in for
+// SQLite rather than for the tools, because better-sqlite3 has to be built
+// against Electron's ABI for the app to start, and rebuilding it for node to run
+// a test would break the app it shares this install with.
 
 const touches = (e: AppEvent, ids: Set<string>): boolean =>
   e.type === 'value' ? ids.has(e.entityId) : ids.has(e.sourceId) || ids.has(e.destinationId)

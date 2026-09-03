@@ -188,3 +188,25 @@ A port is chosen for a published node when it is added, and kept: a URL worth
 copying is a URL that stays put. The server binds every interface, because being
 reachable from another machine is the whole point of a broadcast — and the only
 way in is a token.
+
+## Coming from the old server
+
+`npm run migrate:sources` reads the configuration the old app left behind —
+`config.json` and each server's `config.db` under Electron's `userData` — and
+draws the equivalent: one `sqlite` node per old source with its path made
+absolute, a `combined` node over all of them writing to whichever source was
+open, and that combiner plugged into the desktop node. It refuses to run over a
+graph that already has nodes, and deletes nothing.
+
+It needs `better-sqlite3` built for node, which is not how the app wants it:
+
+```sh
+npm run rebuild:node
+npm run migrate:sources [old-server-databases-dir]
+npm run rebuild:electron
+```
+
+The argument is where the old *relative* paths resolved against — `server/databases`
+in the checkout the app was running from. Those files are worth moving somewhere
+that isn't inside a checkout; a `sqlite` node takes an absolute path or one
+beginning `~`.

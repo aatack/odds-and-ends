@@ -215,6 +215,13 @@ page is not the only caller:
   whatever the client asks for. That is `AttributedPensive`, wrapped on per
   request.
 
+**`better-sqlite3` has to match whoever is loading it.** The stores are in the
+Electron main process now, so it must be built against Electron's ABI:
+`npm run rebuild:electron` after an install. The tsx tests deliberately never
+touch it — `test/source.mts` is an in-memory pensive for exactly that reason — but
+`npm run migrate:v2` does, and needs `npm run rebuild:node` first (and
+`rebuild:electron` again afterwards, or the app won't start).
+
 `src/main/pensive/` is the rest: `graph.ts` the file, `registry.ts` the building
 of pensives from it, `http.ts` one small server per published node, `mcpServer.ts`
 what an agent sees, `servers.ts` keeping the listeners in step with the drawing.
@@ -313,7 +320,7 @@ call.
 
 ```
 mobile/         a separate phone client (PWA) for one pensive — its own install, own guide
-scripts/        one-off tools run outside the app with tsx (the pensive v2 migration)
+scripts/        one-off tools run outside the app with tsx (the v2 migration, the sources one)
 src/main       Electron main — window, tailscale serve, and:
   pensive/        the graph of nodes, the pensives built from it, and the servers publishing them
   integrations/   the app's reach outside itself (GitHub, Slack, Claude, git, terminal)

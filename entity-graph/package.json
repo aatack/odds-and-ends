@@ -8,8 +8,11 @@
     "dev:no-sandbox": "electron-vite dev -- --no-sandbox",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
+    "rebuild:electron": "electron-builder install-app-deps",
+    "rebuild:node": "npm rebuild better-sqlite3",
     "test": "tsx test/schema.mts && tsx test/cache.mts && tsx test/entityTools.mts && tsx test/userTools.mts && tsx test/nestedRuns.mts && tsx test/markdownFields.mts && tsx test/diagram.mts && tsx test/migrateV2.mts && tsx test/pensive.mts && tsx test/mcp.mts",
     "migrate:v2": "tsx scripts/migrateV2/index.mts",
+    "migrate:sources": "tsx scripts/migrateSources/index.mts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "devDependencies": {
