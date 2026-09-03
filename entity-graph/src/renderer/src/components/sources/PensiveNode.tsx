@@ -71,6 +71,8 @@ function DraftInput({
   return (
     <Input
       {...rest}
+      // Typing in a node must not drag it, and a click in a field must not pan.
+      className={cn('nodrag nopan', rest.className)}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => draft !== value && onCommit(draft)}
@@ -119,6 +121,7 @@ export function PensiveNode({ data, selected }: NodeProps<PensiveFlowNode>): Rea
           )}
         </div>
         <IconButton
+          className="nodrag nopan"
           title={node.paused ? `Switch "${node.label}" back on` : `Switch "${node.label}" off`}
           onClick={() => void actions.updateNode(node.id, { paused: !node.paused })}
         >
@@ -126,6 +129,7 @@ export function PensiveNode({ data, selected }: NodeProps<PensiveFlowNode>): Rea
         </IconButton>
         {!fixed && (
           <IconButton
+            className="nodrag nopan"
             title={`Delete "${node.label}"`}
             onClick={() => void actions.removeNode(node.id)}
           >
@@ -134,7 +138,8 @@ export function PensiveNode({ data, selected }: NodeProps<PensiveFlowNode>): Rea
         )}
       </div>
 
-      <div className="space-y-2 border-t border-gray-100 px-3 py-2">
+      {/* Only the header strip drags the node: everything below is a control. */}
+      <div className="nodrag nopan space-y-2 border-t border-gray-100 px-3 py-2">
         <Body
           node={node}
           nodes={nodes}
@@ -243,7 +248,7 @@ function Body({
               {status?.url ?? `port ${config.port}`}
             </p>
             {status?.url && <CopyButton value={status.url} title="Copy the address" />}
-            <IconButton title="Tokens" onClick={() => openAccess(node.id)}>
+            <IconButton className="nodrag nopan" title="Tokens" onClick={() => openAccess(node.id)}>
               <Key01 size={16} />
             </IconButton>
           </div>
