@@ -191,8 +191,9 @@ Four of them exist:
 | `AttributedPensive` | any pensive, with every write recorded as one person | one |
 
 Plus `PausedPensive`, which is what a switched-off node *is*: every call fails
-with a sentence saying who is paused, so a combiner one of whose inputs is paused
-is broken exactly that far.
+with a sentence saying who is paused. A combiner reads *around* one of those —
+pausing one store of five takes its notes out of the outline rather than taking
+the outline down — but writing to it still fails, having one place to go.
 
 **The user draws the arrangement.** The Sources page is a graph of nodes — a
 node per pensive, plus the two that publish one (`broadcast` over HTTP,
@@ -207,7 +208,10 @@ Three rules hold on the main-process side rather than in the page, because the
 page is not the only caller:
 
 - **A loop is refused** — while an edge is written (`wouldCycle`) and again while
-  a pensive is built.
+  a pensive is built. It is a node downstream of *itself along one path*, so the
+  second check threads the path down the recursion; a shared "being built" set
+  cannot tell that from two callers asking for the same node at once, which is
+  ordinary and must wait for the build in flight instead.
 - **A paused node yields a `PausedPensive`**, so pausing works for a broadcast's
   callers too, which get a 403.
 - **A token is an identity.** A token on a published node is issued to somebody

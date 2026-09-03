@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Trash03 } from '@untitledui/icons'
+import { Code01, Trash03 } from '@untitledui/icons'
 import type { SourceNode, SourceToken } from '../../../../core/client'
+import { mcpConfigSnippet } from '../../../../core/client'
 import { Button } from '../ui/Button'
 import { CopyButton } from '../ui/CopyButton'
 import { IconButton } from '../ui/IconButton'
@@ -21,10 +22,13 @@ const SECTION = 'text-[11px] font-medium uppercase tracking-[0.09em] text-gray-5
 
 export function AccessModal({
   node,
+  url,
   actions,
   onClose,
 }: {
   node: SourceNode
+  /** Where the node answers, for the config a token is pasted into. */
+  url: string | null
   actions: SourceGraphActions
   onClose: () => void
 }): React.JSX.Element {
@@ -84,6 +88,16 @@ export function AccessModal({
                       await read()
                     }}
                   />
+                  {/* The whole config beside the bare token, because for an MCP
+                      node the token alone is a third of what has to be typed
+                      out, and the other two thirds are the same every time. */}
+                  {node.config.kind === 'mcp' && url && (
+                    <CopyButton
+                      value={mcpConfigSnippet(node.label, url, token.token)}
+                      title={`Copy ${token.name}’s MCP config`}
+                      icon={<Code01 size={16} />}
+                    />
+                  )}
                   <CopyButton value={token.token} title={`Copy ${token.name}’s token`} />
                   <IconButton
                     title={`Revoke ${token.name}’s token`}

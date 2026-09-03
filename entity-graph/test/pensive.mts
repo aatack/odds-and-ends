@@ -16,7 +16,9 @@ import { ConnectPensive } from '../src/core/pensive/connect'
 import { AttributedPensive } from '../src/core/pensive/attributed'
 import { PausedPensive } from '../src/core/pensive/paused'
 import { PensiveServer } from '../src/main/pensive/http'
-import { wouldCycle } from '../src/main/pensive/registry'
+import { PensiveRegistry, wouldCycle } from '../src/main/pensive/registry'
+import type { GraphDb } from '../src/main/pensive/graph'
+import type { NodeConfig, SourceNode } from '../src/core/client'
 import { MemorySource } from './source.mjs'
 
 const tests: [string, () => Promise<void>][] = []
@@ -159,7 +161,7 @@ test('refuses everything while it is paused, and says who is paused', async () =
   assert.deepEqual(await paused.listTools(), [])
 })
 
-test('breaks a combiner exactly as far as the input that is paused', async () => {
+test('reads around an input that is paused, rather than going down with it', async () => {
   const live = new MemorySource()
   live.values({ a: { text: 'here' } })
   const combined = new CombinedPensive(
@@ -168,8 +170,18 @@ test('breaks a combiner exactly as far as the input that is paused', async () =>
     [live, new PausedPensive('p', 'Archive')],
     live,
   )
+  // Pausing one store of two is something somebody did on purpose: it takes that
+  // store's notes out of the outline and leaves the rest readable.
+  assert.equal(await text(combined, 'a'), 'here')
+  // Writing has one place to go, so a paused write source is still a refusal.
+  const toArchive = new CombinedPensive(
+    'c2',
+    'Both',
+    [live, new PausedPensive('p', 'Archive')],
+    new PausedPensive('p', 'Archive'),
+  )
   await assert.rejects(
-    () => combined.callTool('readEntities', { entityIds: ['a'] }),
+    () => toArchive.callTool('writeValue', { entityId: 'b', key: 'text', value: 'x' }),
     /"Archive" is paused/,
   )
 })
@@ -184,6 +196,69 @@ test('refuses an edge that would put a node downstream of itself', async () => {
   assert.equal(wouldCycle(edges, 'c', 'a'), true, 'closing the ring')
   assert.equal(wouldCycle(edges, 'a', 'a'), true, 'onto itself')
   assert.equal(wouldCycle(edges, 'a', 'c'), false, 'a second path forwards is fine')
+})
+
+// --- Building the drawing ---------------------------------------------------
+
+/**
+ * A graph without a database under it. The registry only ever asks two things of
+ * one, and a real `GraphDb` wants SQLite — which in this install is built for
+ * Electron, so a test cannot open one.
+ *
+ * Every node here is a `connect` pointing at a port nothing is on, so building
+ * one succeeds and reading it fails at once: what is under test is the building.
+ */
+function stubGraph(shape: Record<string, { config: NodeConfig; inputs?: string[] }>): GraphDb {
+  return {
+    node: (id: string): SourceNode | undefined =>
+      shape[id] && { id, label: id, x: 0, y: 0, paused: false, config: shape[id].config },
+    inputs: (id: string): string[] => shape[id]?.inputs ?? [],
+  } as unknown as GraphDb
+}
+
+const registryOver = (graph: GraphDb): PensiveRegistry =>
+  new PensiveRegistry(graph, { storeRoot: '/tmp', author: () => 'test' })
+
+const nowhere: NodeConfig = { kind: 'connect', url: 'http://127.0.0.1:1', token: 't' }
+
+test('two callers asking for the same node at once is not a loop', async () => {
+  const registry = registryOver(
+    stubGraph({
+      store: { config: nowhere },
+      everything: { config: { kind: 'combined', writeTo: null }, inputs: ['store'] },
+      desktop: { config: { kind: 'desktop' }, inputs: ['everything'] },
+    }),
+  )
+  // The page reading the graph while the window reads a note. Asking twice at
+  // once used to look exactly like a node being downstream of itself.
+  const [a, b] = await Promise.all([registry.get('desktop'), registry.get('desktop')])
+  assert.equal(a, b, 'one build, shared')
+})
+
+test('still refuses a node that really is downstream of itself', async () => {
+  const registry = registryOver(
+    stubGraph({
+      left: { config: { kind: 'combined', writeTo: null }, inputs: ['right'] },
+      right: { config: { kind: 'combined', writeTo: null }, inputs: ['left'] },
+    }),
+  )
+  await assert.rejects(() => registry.get('left'), /downstream of itself/)
+})
+
+test('builds a combiner from the inputs that work, and says what it left out', async () => {
+  const registry = registryOver(
+    stubGraph({
+      good: { config: nowhere },
+      // No URL, so it cannot be built at all — the case a typo makes.
+      broken: { config: { kind: 'connect', url: '', token: '' } },
+      everything: {
+        config: { kind: 'combined', writeTo: null },
+        inputs: ['good', 'broken'],
+      },
+    }),
+  )
+  await registry.get('everything')
+  assert.match(registry.problem('everything') ?? '', /without 1 of its inputs/)
 })
 
 // --- Broadcast and connect, over real HTTP ----------------------------------

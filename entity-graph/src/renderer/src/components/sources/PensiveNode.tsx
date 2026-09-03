@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
 import { Key01, PauseCircle, PlayCircle, Trash03 } from '@untitledui/icons'
 import type { NodeStatus, SourceNode } from '../../../../core/client'
-import { nodeKind } from '../../../../core/client'
+import { nodeAddress, nodeKind } from '../../../../core/client'
 import { cn } from '../../helpers/cn'
 import { Badge } from '../ui/Badge'
 import { CopyButton } from '../ui/CopyButton'
@@ -138,8 +138,9 @@ export function PensiveNode({ data, selected }: NodeProps<PensiveFlowNode>): Rea
         )}
       </div>
 
-      {/* Only the header strip drags the node: everything below is a control. */}
-      <div className="nodrag nopan space-y-2 border-t border-gray-100 px-3 py-2">
+      {/* The card drags from anywhere that isn't something to press or type in:
+          each of those wears `nodrag` itself, so there is no dead surface. */}
+      <div className="space-y-2 border-t border-gray-100 px-3 py-2">
         <Body
           node={node}
           nodes={nodes}
@@ -222,6 +223,7 @@ function Body({
       return (
         <Field label="Edits go to">
           <Select
+            className="nodrag nopan"
             value={config.writeTo ?? ''}
             onChange={(e) =>
               void actions.updateNode(node.id, {
@@ -240,17 +242,22 @@ function Body({
       )
 
     case 'broadcast':
-    case 'mcp':
+    case 'mcp': {
+      // The whole address, path included: an MCP client is given `/mcp` and a
+      // URL that stops short of it is a URL that doesn't work.
+      const url = nodeAddress(status, config.kind)
       return (
         <>
           <div className="flex items-center gap-1">
             <p className="min-w-0 flex-1 truncate font-mono text-xs text-gray-500">
-              {status?.url ?? `port ${config.port}`}
+              {url ?? `port ${config.port}`}
             </p>
-            {status?.url && <CopyButton value={status.url} title="Copy the address" />}
-            <IconButton className="nodrag nopan" title="Tokens" onClick={() => openAccess(node.id)}>
-              <Key01 size={16} />
-            </IconButton>
+            <span className="nodrag nopan flex items-center">
+              {url && <CopyButton value={url} title="Copy the address" />}
+              <IconButton title="Tokens" onClick={() => openAccess(node.id)}>
+                <Key01 size={16} />
+              </IconButton>
+            </span>
           </div>
           <p className="text-xs text-gray-400">
             {config.kind === 'mcp'
@@ -259,6 +266,7 @@ function Body({
           </p>
         </>
       )
+    }
 
     case 'desktop':
       return (

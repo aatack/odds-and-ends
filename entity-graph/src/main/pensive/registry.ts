@@ -18,6 +18,14 @@ import { DESKTOP_NODE_ID, type GraphDb } from './graph'
 // while it is being built, and a paused node yields a pensive that refuses
 // everything. Both have to hold on this side, because the page is not the only
 // caller — a broadcast answers requests from other machines.
+//
+// **A loop is a node that is downstream of itself along one path**, which is why
+// the check is a path passed down the recursion rather than a set of what is
+// being built. A set cannot tell a loop from two callers wanting the same node at
+// the same moment — the page reading the graph while the window reads a note —
+// and the second of those is not a loop, it is a Tuesday. What that case wants is
+// to wait for the build already under way, which is why the cache holds the
+// *promise* rather than the pensive.
 
 /** A path as it is written down: `~` for home, relative to the app's own folder. */
 export function resolveStorePath(path: string, base: string): string {
@@ -41,54 +49,75 @@ export interface RegistryOptions {
 }
 
 export class PensiveRegistry {
-  private cache = new Map<string, Pensive>()
-  private building = new Set<string>()
+  /**
+   * The build in flight or already finished, per node. A promise rather than a
+   * pensive so that two callers asking at once get one build between them.
+   */
+  private cache = new Map<string, Promise<Pensive>>()
   /** Why a node failed to build, from the last time it was asked for. */
   private problems = new Map<string, string>()
+  /** What a node that *did* build is having to do without. */
+  private warnings = new Map<string, string>()
 
   constructor(
     private db: GraphDb,
     private opts: RegistryOptions,
   ) {}
 
-  /** The pensive for a node, built if need be. Throws if it cannot be. */
-  async get(id: string): Promise<Pensive> {
+  /**
+   * The pensive for a node, built if need be. Throws if it cannot be.
+   *
+   * `upstream` is the path taken to get here, innermost last. It is what makes a
+   * loop a loop: a node already on the path is being asked to read itself.
+   */
+  get(id: string, upstream: readonly string[] = []): Promise<Pensive> {
+    const node = this.db.node(id)
+    if (!node) return Promise.reject(new NodeNotFoundError(id))
+    if (upstream.includes(id)) {
+      return Promise.reject(
+        new Error(`"${node.label}" is downstream of itself — that would be a loop`),
+      )
+    }
+    // Paused is not cached: it is a property of the node as it stands now, and
+    // pressing play must not have to wait for anything to be invalidated.
+    if (node.paused) return Promise.resolve(new PausedPensive(node.id, node.label))
+
     const cached = this.cache.get(id)
     if (cached) return cached
 
-    const node = this.db.node(id)
-    if (!node) throw new NodeNotFoundError(id)
-    if (this.building.has(id)) {
-      throw new Error(`"${node.label}" is downstream of itself — that would be a loop`)
-    }
-    if (node.paused) return new PausedPensive(node.id, node.label)
+    const building = this.begin(node, upstream)
+    this.cache.set(id, building)
+    return building
+  }
 
-    this.building.add(id)
+  /** One build, from scratch. Its failure is remembered and then thrown on. */
+  private async begin(node: SourceNode, upstream: readonly string[]): Promise<Pensive> {
     try {
-      const pensive = await this.build(node)
+      const pensive = await this.build(node, [...upstream, node.id])
       // Whatever a pensive discovers rather than declares — the tools written as
       // notes, a remote registry. A failure here is the node's problem to
       // report, not a reason for it not to exist.
       await pensive.refresh?.().catch(() => undefined)
-      this.cache.set(id, pensive)
-      this.problems.delete(id)
+      // It works now, whatever it did last time it was asked.
+      this.problems.delete(node.id)
       return pensive
     } catch (e) {
-      this.problems.set(id, e instanceof Error ? e.message : String(e))
+      this.problems.set(node.id, e instanceof Error ? e.message : String(e))
+      // A failed build is not kept: the answer to a path with a typo in it is to
+      // fix the typo and be asked again, not to restart the app.
+      this.cache.delete(node.id)
       throw e
-    } finally {
-      this.building.delete(id)
     }
   }
 
   /** The one input a single-input node has, or the reason it hasn't got one. */
-  private async only(node: SourceNode): Promise<Pensive> {
+  private async only(node: SourceNode, upstream: readonly string[]): Promise<Pensive> {
     const [input] = this.db.inputs(node.id)
     if (!input) throw new Error(`Nothing is plugged into "${node.label}"`)
-    return this.get(input)
+    return this.get(input, upstream)
   }
 
-  private async build(node: SourceNode): Promise<Pensive> {
+  private async build(node: SourceNode, upstream: readonly string[]): Promise<Pensive> {
     const config = node.config
     switch (config.kind) {
       case 'sqlite':
@@ -102,7 +131,33 @@ export class PensiveRegistry {
       case 'combined': {
         const inputs = this.db.inputs(node.id)
         if (inputs.length === 0) throw new Error(`Nothing is plugged into "${node.label}"`)
-        const children = await Promise.all(inputs.map((i) => this.get(i)))
+        // An input that cannot be built at all — a path with a typo, a loop — is
+        // left out rather than taking the others down with it: a combiner is
+        // several stores read as one, and one of them being broken is not a
+        // reason to lose the rest. What it *is* is worth saying, so the ones
+        // skipped become this node's own problem line. (A paused input builds
+        // fine; refusing to read is its business, and `CombinedPensive` reads
+        // around it.)
+        const built = await Promise.all(
+          inputs.map(async (i) => ({ id: i, ...(await this.tryGet(i, upstream)) })),
+        )
+        const children = built.flatMap((b) => ('pensive' in b ? [b.pensive] : []))
+        if (!children.length) {
+          throw new Error(
+            `Nothing plugged into "${node.label}" can be read: ` +
+              built.map((b) => ('problem' in b ? b.problem : '')).join('; '),
+          )
+        }
+        const skipped = built.filter((b) => 'problem' in b)
+        if (skipped.length) {
+          this.warnings.set(
+            node.id,
+            `Reading without ${skipped.length} of its inputs: ` +
+              skipped.map((b) => ('problem' in b ? b.problem : '')).join('; '),
+          )
+        } else {
+          this.warnings.delete(node.id)
+        }
         const writeTo = config.writeTo
           ? (children.find((c) => c.id === config.writeTo) ?? null)
           : null
@@ -117,14 +172,17 @@ export class PensiveRegistry {
       case 'broadcast':
       case 'mcp':
       case 'desktop':
-        return this.only(node)
+        return this.only(node, upstream)
     }
   }
 
   /** The pensive, or the sentence saying why there isn't one. */
-  async tryGet(id: string): Promise<{ pensive: Pensive } | { problem: string }> {
+  async tryGet(
+    id: string,
+    upstream: readonly string[] = [],
+  ): Promise<{ pensive: Pensive } | { problem: string }> {
     try {
-      return { pensive: await this.get(id) }
+      return { pensive: await this.get(id, upstream) }
     } catch (e) {
       return { problem: e instanceof Error ? e.message : String(e) }
     }
@@ -135,9 +193,12 @@ export class PensiveRegistry {
     return this.tryGet(DESKTOP_NODE_ID)
   }
 
-  /** Why a node isn't working, as of the last attempt to build it. */
+  /**
+   * Why a node isn't working, as of the last attempt to build it — or, for one
+   * that built with something missing, what it is doing without.
+   */
   problem(id: string): string | null {
-    return this.problems.get(id) ?? null
+    return this.problems.get(id) ?? this.warnings.get(id) ?? null
   }
 
   /**
@@ -153,6 +214,7 @@ export class PensiveRegistry {
     }
     this.cache.clear()
     this.problems.clear()
+    this.warnings.clear()
   }
 }
 

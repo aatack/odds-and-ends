@@ -82,7 +82,10 @@ class PausedPensive implements Pensive {
   order, since a rollup sorts by timestamp anyway — and writes to exactly one of
   them, because there is nowhere for "both" to mean anything. That write source is
   the setting worth changing often: the same outline, with today's notes going
-  somewhere else. Undo pops from it alone, which is the only honest answer.
+  somewhere else. Undo pops from it alone, which is the only honest answer. A
+  child that refuses to read is **read around**: pausing one store of five takes
+  its notes out of the outline rather than taking the outline down. Writing is the
+  exception, having one place it can go.
 - **`ConnectPensive`** forwards every call over HTTP, tools included, so a tool
   written as a note in the remote store is callable from here with the schema it
   published.
@@ -170,7 +173,17 @@ Three rules hold here rather than in the page, because the page is not the only
 caller — a broadcast answers other machines:
 
 - **A loop is refused**, both when the edge is written (`wouldCycle`) and while a
-  pensive is built.
+  pensive is built. A loop is a node that is downstream of *itself along one
+  path*, so the check is a path threaded down the recursion rather than a set of
+  what is being built: a set cannot tell a loop from two callers wanting the same
+  node at the same moment, and the second is not a loop. What that case wants is
+  to wait for the build already under way, which is why the cache holds the
+  promise rather than the pensive. A loop closed *outside* the graph — a
+  `connect` node pointing at this machine's own broadcast — is not visible from
+  here and is not caught.
+- **An input that cannot be built at all is left out**, and the combiner says so
+  in its own problem line. A path with a typo in it should not lose the other four
+  stores.
 - **A paused node yields a `PausedPensive`**, so a broadcast's callers get a 403
   rather than silence.
 - **A token is an identity**: `authorOf` resolves it to a name, and the pensive
@@ -190,6 +203,15 @@ paused, 503 when there is nothing to serve. **The path in front of the route is
 ignored** — one server serves one pensive, so `/tools` and `/anything/tools` are
 the same request, which is what keeps a URL the phone client built (it appends a
 source id) working.
+
+`nodeAddress` in `core/client.ts` is the address to hand out, and it differs by
+kind: an **MCP** node names loopback and carries the `/mcp` path, because what it
+is for is an agent on this machine whose config file outlives whatever address the
+wifi hands out today; a **broadcast** names this machine on the network, because
+being reached from elsewhere is the point of one. A token on an MCP node also
+copies as `mcpConfigSnippet` — the whole `mcpServers` fragment, url and header
+included, since assembling that by hand from two clipboard trips is three chances
+to get it wrong.
 
 A port is chosen for a published node when it is added, and kept: a URL worth
 copying is a URL that stays put. The server binds every interface, because being
