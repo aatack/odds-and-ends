@@ -22,6 +22,8 @@ export abstract class BasePensive implements Pensive {
 
   /** The tools as they last stood. Rebuilt by {@link refresh}. */
   private cached: ToolDef[] | null = null
+  /** Whether the store has been asked for its own tools yet. */
+  private discovered = false
 
   abstract readEvents(entityIds?: string[]): Promise<AppEvent[]>
   abstract writeEvents(events: AppEvent[]): Promise<void>
@@ -44,13 +46,21 @@ export abstract class BasePensive implements Pensive {
    * what the sources page needs in order to say what is wrong with it.
    */
   async refresh(): Promise<void> {
+    this.discovered = true
     const declared = await loadUserTools(this, { defaultAuthor: this.defaultAuthor }).catch(
       () => [] as ToolDef[],
     )
     this.cached = [...this.builtinTools(), ...declared]
   }
 
+  /**
+   * Everything callable. The user's own tools are read the first time somebody
+   * asks, rather than only when the registry built this: a pensive wrapped per
+   * request — which is what a bearer token makes of one — would otherwise publish
+   * the built-ins and nothing the store itself defines.
+   */
   async listTools(): Promise<ToolMeta[]> {
+    if (!this.discovered) await this.refresh()
     return this.tools().map(toolMeta)
   }
 

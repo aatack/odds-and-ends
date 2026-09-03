@@ -85,7 +85,28 @@ export class PensiveServer {
   /** Why it isn't listening — a port already taken, most likely. */
   problem: string | null = null
 
+  /**
+   * One wrapper per person, per build of the pensive underneath.
+   *
+   * Wrapping is per request in principle, but a wrapper holds the tool list —
+   * including the ones the store itself defines, which cost a read to discover —
+   * so making a new one each time would read `@tools` on every call. Keyed on the
+   * inner pensive by identity, weakly: the registry mints a new one whenever the
+   * graph changes, which is exactly when these should be dropped.
+   */
+  private wrappers = new WeakMap<Pensive, Map<string, Pensive>>()
+
   constructor(private opts: PensiveServerOptions) {}
+
+  private as(inner: Pensive, author: string): Pensive {
+    let byAuthor = this.wrappers.get(inner)
+    if (!byAuthor) this.wrappers.set(inner, (byAuthor = new Map()))
+    const existing = byAuthor.get(author)
+    if (existing) return existing
+    const wrapped = new AttributedPensive(inner, author)
+    byAuthor.set(author, wrapped)
+    return wrapped
+  }
 
   get port(): number {
     return this.opts.port
@@ -145,7 +166,7 @@ export class PensiveServer {
 
     const built = await this.opts.pensive()
     if ('problem' in built) return { status: 503, error: built.problem }
-    return { pensive: new AttributedPensive(built.pensive, author) }
+    return { pensive: this.as(built.pensive, author) }
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
