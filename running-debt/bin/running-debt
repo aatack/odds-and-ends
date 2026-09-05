@@ -1,0 +1,5 @@
+#!/bin/sh
+# Node 22.18+ runs TypeScript directly, so there is nothing to build first. The
+# flag only silences the warning that node:sqlite is still experimental.
+exec node --disable-warning=ExperimentalWarning \
+  "$(dirname "$(dirname "$(readlink -f "$0")")")/src/index.ts" "$@"
