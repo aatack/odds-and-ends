@@ -1,0 +1,18 @@
+{
+  "name": "running-debt",
+  "version": "0.1.0",
+  "description": "Tracks a running debt that grows 50% every Sunday and is paid off by running and cycling.",
+  "type": "module",
+  "bin": {
+    "running-debt": "bin/running-debt"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  }
+}
