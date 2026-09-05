@@ -28,18 +28,31 @@ export interface Step {
   change: number; // what it did to the debt, signed
   before: number;
   after: number;
+  forgiven: boolean; // a Sunday whose 50% was let off
 }
 
-/** What an event on its own does to a debt of `debt`. */
+/**
+ * What an event on its own does to a debt of `debt`. Nothing takes the debt
+ * below zero: pay off more than you owe and the surplus is simply gone, rather
+ * than banked against the next penalty.
+ */
 function apply(event: DebtEvent, debt: number): number {
   switch (event.kind) {
     case "penalty":
       return debt + PENALTY_KM;
     case "run":
-      return debt - event.km;
+      return Math.max(0, debt - event.km);
     case "cycle":
-      return debt - event.km / CYCLING_RATE;
+      return Math.max(0, debt - event.km / CYCLING_RATE);
   }
+}
+
+/**
+ * What it would take each week, in kilometres cycled, to hold this debt still:
+ * Sunday adds half of it, and cycling clears a kilometre for every three.
+ */
+export function maintenance(debt: number): number {
+  return debt * (GROWTH - 1) * CYCLING_RATE;
 }
 
 /**
@@ -61,13 +74,15 @@ export function growthTimes(from: number, to: number): number[] {
 
 /**
  * The whole history as a staircase: the debt from the first event through to
- * `now`, one step per thing that changed it.
- *
- * Growth compounds only what is owed. A balance at or below zero is credit --
- * distance banked against the next penalty -- and credit does not grow by 50% a
- * week, which would be a reward rather than a debt.
+ * `now`, one step per thing that changed it. A Sunday listed in `forgiven` is
+ * still a step, but one that changes nothing.
  */
-export function steps(events: DebtEvent[], now: number): Step[] {
+export function steps(
+  events: DebtEvent[],
+  now: number,
+  forgiven: Iterable<number> = [],
+): Step[] {
+  const letOff = new Set(forgiven);
   const ordered = [...events].sort((a, b) => a.at - b.at || a.id - b.id);
   if (ordered.length === 0) return [];
 
@@ -87,10 +102,11 @@ export function steps(events: DebtEvent[], now: number): Step[] {
       (nextEvent === undefined || nextGrowth <= nextEvent.at);
 
     const at = isGrowth ? nextGrowth! : nextEvent!.at;
+    const spared = isGrowth && letOff.has(at);
     const after = isGrowth
-      ? debt > 0
-        ? debt * GROWTH
-        : debt
+      ? spared
+        ? debt
+        : debt * GROWTH
       : apply(nextEvent!, debt);
     out.push({
       at,
@@ -99,6 +115,7 @@ export function steps(events: DebtEvent[], now: number): Step[] {
       change: after - debt,
       before: debt,
       after,
+      forgiven: spared,
     });
     debt = after;
     if (isGrowth) growth++;
@@ -108,7 +125,11 @@ export function steps(events: DebtEvent[], now: number): Step[] {
 }
 
 /** What is owed right now. */
-export function balance(events: DebtEvent[], now: number): number {
-  const history = steps(events, now);
+export function balance(
+  events: DebtEvent[],
+  now: number,
+  forgiven: Iterable<number> = [],
+): number {
+  const history = steps(events, now, forgiven);
   return history.length === 0 ? 0 : history[history.length - 1]!.after;
 }

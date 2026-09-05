@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { balance, growthTimes, steps, type DebtEvent } from "../src/debt.ts";
+import { balance, growthTimes, maintenance, steps, type DebtEvent } from "../src/debt.ts";
 import { instantOf } from "../src/time.ts";
 
 let next = 0;
@@ -66,9 +66,29 @@ test("Sunday morning comes before Sunday midday", () => {
   close(found[2]!.after, 1.5);
 });
 
-test("credit does not grow by half a week", () => {
+test("paying off more than you owe leaves nothing owed, not credit", () => {
   const history = [event(6, 4, "penalty"), event(6, 5, "run", 8)];
-  close(balance(history, instantOf(2026, 6, 22, 12)), -5);
+  close(balance(history, instantOf(2026, 6, 22, 12)), 0);
+});
+
+test("a forgiven Sunday changes nothing, and the next one still lands", () => {
+  const history = [event(6, 4, "penalty")];
+  const spared = instantOf(2026, 6, 7, 4);
+  const found = steps(history, instantOf(2026, 6, 15, 12), [spared]);
+  assert.deepEqual(found.map((step) => step.cause), ["penalty", "growth", "growth"]);
+  assert.equal(found[1]!.forgiven, true);
+  close(found[1]!.after, 3);
+  close(found[2]!.after, 4.5);
+});
+
+test("forgiving a Sunday that is not one is simply ignored", () => {
+  const history = [event(6, 4, "penalty")];
+  close(balance(history, instantOf(2026, 6, 8, 12), [instantOf(2026, 6, 6, 4)]), 4.5);
+});
+
+test("holding a debt still costs three kilometres cycled for every two owed", () => {
+  close(maintenance(92), 138);
+  close(maintenance(0), 0);
 });
 
 test("two events at the same minute both count, in the order written", () => {

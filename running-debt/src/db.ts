@@ -50,6 +50,7 @@ export function open(path = databasePath()): DatabaseSync {
     )
   `);
   db.exec("CREATE INDEX IF NOT EXISTS events_at ON events (at)");
+  db.exec("CREATE TABLE IF NOT EXISTS forgiven (at INTEGER PRIMARY KEY)");
   return db;
 }
 
@@ -85,4 +86,15 @@ export function events(db: DatabaseSync): DebtEvent[] {
   return db
     .prepare("SELECT id, at, kind, km FROM events ORDER BY at, id")
     .all() as unknown as DebtEvent[];
+}
+
+/** The Sundays whose 50% has been let off. */
+export function forgiven(db: DatabaseSync): number[] {
+  return (db.prepare("SELECT at FROM forgiven ORDER BY at").all() as
+    unknown as { at: number }[]).map((row) => row.at);
+}
+
+export function forgive(db: DatabaseSync, at: number, letOff: boolean): void {
+  if (letOff) db.prepare("INSERT OR IGNORE INTO forgiven (at) VALUES (?)").run(at);
+  else db.prepare("DELETE FROM forgiven WHERE at = ?").run(at);
 }

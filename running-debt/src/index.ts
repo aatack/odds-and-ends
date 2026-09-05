@@ -3,7 +3,7 @@
  * is for writing down what you did.
  */
 
-import { add, databasePath, events, open, remove, seed } from "./db.ts";
+import { add, databasePath, events, forgiven, open, remove, seed } from "./db.ts";
 import { balance, type EventKind } from "./debt.ts";
 import { serve } from "./server.ts";
 import { instantOf } from "./time.ts";
@@ -73,7 +73,7 @@ async function main(argv: string[]): Promise<void> {
   if (planted > 0) console.log(`Wrote ${planted} events into ${databasePath()}`);
 
   const [command, ...rest] = argv;
-  const now = () => balance(events(db), Date.now());
+  const now = () => balance(events(db), Date.now(), forgiven(db));
 
   switch (command) {
     case undefined:
