@@ -2,7 +2,8 @@
 
 A debt measured in kilometres. It grows by half every Sunday morning, penalties
 add to it, and running and cycling pay it off. This plots what is owed from the
-first penalty to right now, and lets you write down what you did.
+first penalty to right now, says what it would take each week just to hold it
+still, and lets you write down what you did.
 
 Nothing to install: it is TypeScript with no runtime dependencies, and Node runs
 it directly.
@@ -17,6 +18,11 @@ npm start
 ```
 
 That prints what you owe and a URL. Open the URL.
+
+Under **Steps** is every change to the debt, newest first. From there you can add
+what you did -- it starts on a cycle at the current time -- and forgive any
+Sunday's 50%, which the plot then marks with a dotted line. Both are kept in the
+database.
 
 The first run writes the events into `debt.db` beside the code, so there is no
 setup step; delete that file to start again. It is not in the repository, and
@@ -41,10 +47,17 @@ same from anywhere, and `running-debt --help` lists it all.
 
 ## The rules
 
-- Every Sunday at 4am, what is owed grows by 50%.
+- Every Sunday at 4am, what is owed grows by 50%. A Sunday can be forgiven, and
+  then it changes nothing.
 - A penalty adds 3 km.
 - Running clears a kilometre of debt for every kilometre run.
 - Cycling clears a kilometre for every three cycled, fractions included.
+- The debt never goes below zero. Pay off more than you owe and the surplus is
+  gone, rather than banked against the next penalty.
+
+Holding the debt still therefore costs 1.5 km on the bike each week for every
+kilometre owed -- Sunday adds half of it, and it takes three to clear one. That
+is the number under the headline.
 
 ## What it decided for you
 
@@ -58,9 +71,8 @@ line to change if it is wrong:
 - **Sunday's 50% lands before a Sunday run**, since 4am comes before midday. So
   the 3 km run on Sunday 7 June paid off a debt that had already grown to 4.5 km,
   and left 1.5 km rather than nothing -- which is why there is still a debt.
-- **Paying off more than you owe banks the surplus, and the surplus does not
-  grow.** A balance below zero is credit against the next penalty; growing it by
-  half a week would be a reward rather than a debt. `steps` in `src/debt.ts`.
+- **A forgiven Sunday is remembered by its instant, not by which week it is.**
+  The `forgiven` table in `src/db.ts`.
 
 ## The pieces
 
@@ -71,7 +83,8 @@ line to change if it is wrong:
 - **`src/db.ts`** -- one table of events. Everything else is worked out from
   them.
 - **`src/page.ts`** -- the plot, as one file of HTML.
-- **`src/server.ts`** -- the page, and `/debt.json` for reading it yourself.
+- **`src/server.ts`** -- the page, `/debt.json` for reading it yourself, and the
+  two things the page writes back: an event, and a Sunday let off.
 - **`src/index.ts`** -- the command line.
 
 ## Type-checking and tests

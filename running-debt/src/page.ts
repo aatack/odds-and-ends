@@ -1,6 +1,7 @@
 /**
- * The page: one figure, one staircase, one table. It is a single file of HTML
- * with the history baked into it, so opening it needs nothing but the server.
+ * The page: one figure, one staircase, one table you can write back through. It
+ * is a single file of HTML with the history baked into it, so opening it needs
+ * nothing but the server.
  */
 
 import type { Step } from "./debt.ts";
@@ -8,6 +9,7 @@ import type { Step } from "./debt.ts";
 export interface View {
   now: number;
   debt: number;
+  maintenance: number;
   steps: Step[];
 }
 
@@ -27,17 +29,32 @@ export function page(view: View): string {
     <p class="label">Running debt</p>
     <p class="hero"><span id="hero">&mdash;</span> <span class="unit">km</span></p>
     <p class="sub" id="sub"></p>
+    <p class="sub" id="upkeep"></p>
   </header>
 
   <figure>
-    <figcaption>What is owed, since the first penalty. It grows by half every Sunday at 4am; running and cycling pay it down.</figcaption>
     <div id="chart" class="chart"></div>
   </figure>
 
-  <details>
-    <summary>Every step, as a table</summary>
+  <details id="steps">
+    <summary>Steps</summary>
+
+    <form id="add" autocomplete="off">
+      <select name="kind" aria-label="What you did">
+        <option value="cycle">Cycle</option>
+        <option value="run">Run</option>
+        <option value="penalty">Penalty</option>
+      </select>
+      <input name="km" type="number" step="0.01" min="0.01" placeholder="km" aria-label="Distance in kilometres" required>
+      <input name="at" type="datetime-local" aria-label="When, in UK time" required>
+      <button type="submit">Add</button>
+      <span class="error" id="error" role="alert"></span>
+    </form>
+
     <table id="table">
-      <thead><tr><th>When</th><th>What</th><th class="n">Change</th><th class="n">Debt after</th></tr></thead>
+      <thead><tr>
+        <th>When</th><th>What</th><th class="n">Change</th><th class="n">Debt after</th><th class="c">Forgive</th>
+      </tr></thead>
       <tbody></tbody>
     </table>
   </details>
@@ -61,6 +78,7 @@ const STYLE = `
   --axis: #c3c2b7;
   --border: rgba(11, 11, 11, 0.1);
   --series-1: #2a78d6;
+  --critical: #d03b3b;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -74,6 +92,7 @@ const STYLE = `
     --axis: #383835;
     --border: rgba(255, 255, 255, 0.1);
     --series-1: #3987e5;
+    --critical: #d03b3b;
   }
 }
 * { box-sizing: border-box; }
@@ -90,11 +109,11 @@ p { margin: 0; }
 .hero { font-size: 3.25rem; font-weight: 600; line-height: 1.1; letter-spacing: -0.02em; margin-top: 0.25rem; }
 .hero .unit { font-size: 1.25rem; font-weight: 500; color: var(--text-secondary); }
 .sub { color: var(--text-secondary); font-size: 0.9375rem; margin-top: 0.375rem; }
-figure { margin: 0; background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem 1.25rem 0.75rem; }
-figcaption { color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 0.75rem; max-width: 44rem; }
+figure { margin: 0; background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.25rem 0.75rem; }
 .chart { position: relative; }
 svg { display: block; width: 100%; touch-action: none; }
 .tick { fill: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.axis-title { fill: var(--text-secondary); font-size: 12px; }
 .end-label { fill: var(--text-primary); font-size: 13px; font-weight: 600; }
 .tooltip {
   position: absolute; pointer-events: none; opacity: 0; transition: opacity 90ms;
@@ -109,44 +128,78 @@ svg { display: block; width: 100%; touch-action: none; }
 .key { display: inline-block; width: 12px; height: 2px; border-radius: 1px; background: var(--series-1); }
 details { margin-top: 1.75rem; }
 summary { cursor: pointer; color: var(--text-secondary); font-size: 0.875rem; }
+form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 1rem; }
+select, input, button {
+  font: inherit; font-size: 0.875rem; color: var(--text-primary); background: var(--surface-1);
+  border: 1px solid var(--border); border-radius: 6px; padding: 0.3125rem 0.5rem;
+}
+input[name="km"] { width: 6rem; }
+button { cursor: pointer; font-weight: 500; }
+button:disabled { cursor: progress; opacity: 0.6; }
+.error { color: var(--critical); font-size: 0.8125rem; }
 table { border-collapse: collapse; width: 100%; margin-top: 0.875rem; font-size: 0.875rem; }
 th, td { text-align: left; padding: 0.375rem 0.75rem 0.375rem 0; border-bottom: 1px solid var(--grid); }
 th { color: var(--text-muted); font-weight: 500; }
 .n { text-align: right; font-variant-numeric: tabular-nums; }
+.c { text-align: center; width: 5rem; padding-right: 0; }
+tr.spared td { color: var(--text-muted); }
 `;
 
 const SCRIPT = `
-const view = JSON.parse(document.getElementById("view").textContent);
+let view = JSON.parse(document.getElementById("view").textContent);
 const NS = "http://www.w3.org/2000/svg";
-const PAD = { top: 18, right: 72, bottom: 28, left: 44 };
+const PAD = { top: 18, right: 72, bottom: 28, left: 62 };
+const ZONE = "Europe/London";
 
-const when = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London",
+const when = new Intl.DateTimeFormat("en-GB", { timeZone: ZONE,
   day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-const day = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", day: "numeric", month: "short" });
-const month = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", month: "short" });
+const day = new Intl.DateTimeFormat("en-GB", { timeZone: ZONE, day: "numeric", month: "short" });
+const month = new Intl.DateTimeFormat("en-GB", { timeZone: ZONE, month: "short" });
+const field = new Intl.DateTimeFormat("en-CA", { timeZone: ZONE, year: "numeric", month: "2-digit",
+  day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
 const km = (n) => n.toFixed(2).replace(/\\.?0+$/, "") + " km";
 const signed = (n) => (n > 0 ? "+" : n < 0 ? "\\u2212" : "") + km(Math.abs(n));
 
+/** What the UK clocks say, as a datetime-local field wants it. */
+function clock(instant) {
+  const found = {};
+  for (const part of field.formatToParts(instant)) found[part.type] = part.value;
+  return \`\${found.year}-\${found.month}-\${found.day}T\${found.hour}:\${found.minute}\`;
+}
+
 function describe(step) {
-  if (step.cause === "growth") return "Sunday, half again";
+  if (step.cause === "growth") return step.forgiven ? "Sunday, forgiven" : "Sunday, half again";
   if (step.cause === "penalty") return "Penalty";
   return (step.cause === "run" ? "Run" : "Cycle") + ", " + km(step.km);
 }
 
-// The staircase as points: each step holds its level until the next one lands.
-const points = [];
-for (const step of view.steps) {
-  points.push({ at: step.at, debt: step.before, step });
-  points.push({ at: step.at, debt: step.after, step });
-}
-points.push({ at: view.now, debt: view.debt, step: view.steps[view.steps.length - 1] });
+const chart = document.getElementById("chart");
+const tooltip = document.createElement("div");
+tooltip.className = "tooltip";
+tooltip.setAttribute("role", "status");
+chart.appendChild(tooltip);
 
-const first = view.steps[0].at;
-const last = view.now;
-const highest = Math.max(...points.map((p) => p.debt));
-const bottom = Math.min(0, ...points.map((p) => p.debt));
-const top = Math.max(highest * 1.08, highest + 1);
+let shape = null;
+let drawn = null;
+
+/** The staircase as points: each step holds its level until the next one lands. */
+function derive() {
+  const points = [];
+  for (const step of view.steps) {
+    points.push({ at: step.at, debt: step.before, step });
+    points.push({ at: step.at, debt: step.after, step });
+  }
+  points.push({ at: view.now, debt: view.debt, step: view.steps[view.steps.length - 1] });
+  const highest = Math.max(...points.map((p) => p.debt));
+  shape = {
+    points,
+    first: view.steps[0].at,
+    last: view.now,
+    bottom: 0,
+    top: Math.max(highest * 1.08, highest + 1),
+  };
+}
 
 function ticks(low, high) {
   const span = high - low || 1;
@@ -178,25 +231,15 @@ const node = (name, attributes, text) => {
 
 /** The level the staircase is at then, and the step that put it there. */
 function at(time) {
-  const moment = Math.max(first, Math.min(last, time));
-  let found = points[0];
-  for (const point of points) if (point.at <= moment) found = point;
+  const moment = Math.max(shape.first, Math.min(shape.last, time));
+  let found = shape.points[0];
+  for (const point of shape.points) if (point.at <= moment) found = point;
   return { at: moment, debt: found.debt, step: found.step };
 }
 
-const chart = document.getElementById("chart");
-const tooltip = document.createElement("div");
-tooltip.className = "tooltip";
-tooltip.setAttribute("role", "status");
-chart.appendChild(tooltip);
-
-let drawn = null;
-let drawnWidth = 0;
-
 function draw() {
+  const { points, first, last, bottom, top } = shape;
   const width = chart.clientWidth || 880;
-  if (width === drawnWidth) return;
-  drawnWidth = width;
   const height = Math.max(240, Math.min(380, Math.round(width * 0.42)));
   const x = (time) => PAD.left + ((time - first) / (last - first)) * (width - PAD.left - PAD.right);
   const y = (debt) => height - PAD.bottom - ((debt - bottom) / (top - bottom)) * (height - PAD.top - PAD.bottom);
@@ -207,8 +250,12 @@ function draw() {
   for (const value of ticks(bottom, top)) {
     svg.appendChild(node("line", { x1: PAD.left, x2: width - PAD.right, y1: y(value), y2: y(value),
       stroke: value === 0 ? "var(--axis)" : "var(--grid)", "stroke-width": 1 }));
-    svg.appendChild(node("text", { x: PAD.left - 8, y: y(value) + 4, "text-anchor": "end", class: "tick" }, String(value)));
+    svg.appendChild(node("text", { x: PAD.left - 8, y: y(value) + 4, "text-anchor": "end", class: "tick" },
+      String(value)));
   }
+  svg.appendChild(node("text", { x: 14, y: (PAD.top + height - PAD.bottom) / 2, class: "axis-title",
+    "text-anchor": "middle", transform: \`rotate(-90 14 \${(PAD.top + height - PAD.bottom) / 2})\` }, "debt [km]"));
+
   svg.appendChild(node("text", { x: PAD.left, y: height - PAD.bottom + 18, "text-anchor": "middle", class: "tick" },
     day.format(first)));
   for (const time of months(first, last)) {
@@ -217,6 +264,12 @@ function draw() {
       stroke: "var(--grid)", "stroke-width": 1 }));
     svg.appendChild(node("text", { x: x(time), y: height - PAD.bottom + 18, "text-anchor": "middle", class: "tick" },
       month.format(time)));
+  }
+
+  for (const step of view.steps) {
+    if (!step.forgiven) continue;
+    svg.appendChild(node("line", { x1: x(step.at), x2: x(step.at), y1: PAD.top, y2: height - PAD.bottom,
+      stroke: "var(--text-muted)", "stroke-width": 1, "stroke-dasharray": "3 4" }));
   }
 
   const line = points.map((p, i) => \`\${i ? "L" : "M"}\${x(p.at).toFixed(1)} \${y(p.debt).toFixed(1)}\`).join(" ");
@@ -280,22 +333,94 @@ function label(point, left, above) {
 }
 
 const body = document.querySelector("#table tbody");
-for (const step of [...view.steps].reverse()) {
-  const row = document.createElement("tr");
-  for (const [text, kind] of [[when.format(step.at), ""], [describe(step), ""],
-    [signed(step.change), "n"], [km(step.after), "n"]]) {
-    const cell = document.createElement("td");
-    cell.className = kind;
-    cell.textContent = text;
-    row.appendChild(cell);
+
+function table() {
+  body.replaceChildren();
+  for (const step of [...view.steps].reverse()) {
+    const row = document.createElement("tr");
+    if (step.forgiven) row.className = "spared";
+    for (const [text, kind] of [[when.format(step.at), ""], [describe(step), ""],
+      [signed(step.change), "n"], [km(step.after), "n"]]) {
+      const cell = document.createElement("td");
+      cell.className = kind;
+      cell.textContent = text;
+      row.appendChild(cell);
+    }
+    const last = document.createElement("td");
+    last.className = "c";
+    if (step.cause === "growth") {
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = step.forgiven;
+      box.setAttribute("aria-label", "Forgive the increase on " + day.format(step.at));
+      box.addEventListener("change", () => {
+        box.disabled = true;
+        post("/forgive", { at: step.at, forgiven: box.checked }).finally(() => { box.disabled = false; });
+      });
+      last.appendChild(box);
+    }
+    row.appendChild(last);
+    body.appendChild(row);
   }
-  body.appendChild(row);
 }
 
-document.getElementById("hero").textContent = view.debt.toFixed(1);
-document.getElementById("sub").textContent =
-  "Owed now \\u00b7 first incurred " + day.format(first) + " \\u00b7 " + view.steps.length + " changes since";
+function header() {
+  document.getElementById("hero").textContent = view.debt.toFixed(1);
+  document.getElementById("sub").textContent =
+    "Owed now \\u00b7 first incurred " + day.format(view.steps[0].at) +
+    " \\u00b7 " + view.steps.length + " changes since";
+  document.getElementById("upkeep").textContent =
+    km(view.maintenance) + " on the bike each week just to hold it there";
+}
 
-draw();
-new ResizeObserver(draw).observe(chart);
+const form = document.getElementById("add");
+const problem = document.getElementById("error");
+
+async function post(path, sent) {
+  problem.textContent = "";
+  try {
+    const answer = await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(sent),
+    });
+    const got = await answer.json();
+    if (!answer.ok) throw new Error(got.error ?? "That did not work");
+    view = got;
+    render();
+  } catch (error) {
+    problem.textContent = error.message;
+  }
+}
+
+form.kind.addEventListener("change", () => {
+  const penalty = form.kind.value === "penalty";
+  form.km.disabled = penalty;
+  form.km.required = !penalty;
+  if (penalty) form.km.value = "";
+});
+
+form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  form.querySelector("button").disabled = true;
+  post("/events", { kind: form.kind.value, km: form.km.value, at: form.at.value })
+    .then(() => { form.km.value = ""; form.at.value = clock(Date.now()); })
+    .finally(() => { form.querySelector("button").disabled = false; });
+});
+
+function render() {
+  derive();
+  draw();
+  table();
+  header();
+}
+
+let width = 0;
+form.at.value = clock(Date.now());
+render();
+new ResizeObserver(() => {
+  if (chart.clientWidth === width) return;
+  width = chart.clientWidth;
+  draw();
+}).observe(chart);
 `;
