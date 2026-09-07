@@ -27,18 +27,20 @@ const looperDir = join(dirname(fileURLToPath(import.meta.url)), "..");
 function runLooper(
   repo: string,
   env: Record<string, string>
-): Promise<{ status: number | null; stderr: string }> {
+): Promise<{ status: number | null; stdout: string; stderr: string }> {
   return new Promise((settle) => {
     const child = spawn(
       process.execPath,
       [join(looperDir, "src", "index.ts"), "--once", "--repo", repo],
       { env: { ...process.env, ...env } }
     );
+    let stdout = "";
     let stderr = "";
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => (stderr += chunk));
-    child.stdout.resume();
-    child.on("close", (status) => settle({ status, stderr }));
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => (stdout += chunk));
+    child.on("close", (status) => settle({ status, stdout, stderr }));
   });
 }
 
@@ -461,6 +463,44 @@ test("a notes server that has moved stops the loop before it starts", async () =
   assert.match(run.stderr, /NOTES_MCP_URL/);
   // And no wake was spent finding it out.
   assert.throws(() => readFileSync(join(dir, "prompt.txt"), "utf8"));
+});
+
+test("a notes server left in the global file is ignored, not inherited", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "looper-test-"));
+  const repo = join(dir, "repo");
+  mkdirSync(join(repo, ".looper"), { recursive: true });
+  execFileSync("git", ["init", "-q"], { cwd: repo });
+
+  // The arrangement this is about: a stale notes server still written in the
+  // global file, where it used to live, and the real one in the repo's own.
+  mkdirSync(join(dir, "config", "looper"), { recursive: true });
+  writeFileSync(
+    join(dir, "config", "looper", "env"),
+    "NOTES_MCP_URL=http://127.0.0.1:1/mcp\nNOTES_MCP_TOKEN=stale-token\n"
+  );
+  writeFileSync(
+    join(repo, ".looper", "env"),
+    `NOTES_MCP_URL=${notes.url}\nNOTES_MCP_TOKEN=repo-token\nLOOPER_TASK=task-note\n`
+  );
+
+  const telegram = await fakeTelegram([]);
+  const bin = fakeClaude(dir, repo);
+  const run = await runLooper(repo, {
+    PATH: `${bin}:${process.env.PATH}`,
+    TELEGRAM_API_BASE: telegram.url,
+    TELEGRAM_BOT_TOKEN: "111:test",
+    TELEGRAM_CHAT_ID: "999",
+    XDG_CONFIG_HOME: join(dir, "config"),
+  });
+  telegram.server.close();
+
+  // The wake ran at all, which it could not have done on the dead url.
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(readFileSync(join(dir, "args.txt"), "utf8"), /repo-token/);
+  assert.doesNotMatch(readFileSync(join(dir, "args.txt"), "utf8"), /stale-token/);
+  // And it is said out loud, so a global file left behind is a notice rather than
+  // a value silently doing nothing.
+  assert.match(run.stdout, /Ignoring NOTES_MCP_URL, NOTES_MCP_TOKEN/);
 });
 
 test("a cap says when it lifts, in the words the API uses", () => {
