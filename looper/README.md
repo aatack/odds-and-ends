@@ -43,18 +43,25 @@ The first run asks for the bot token, the chat, the notes server and the task
 note, and saves them. Leave the chat blank and it will ask you to message the bot,
 then take the chat id from the message.
 
-- Secrets go in `~/.config/looper/env` — one bot and one notes server serve every
-  task.
-- The task and any settings go in `<repo>/.looper/env`, beside the work.
+- The bot goes in `~/.config/looper/env` — one bot serves every task, so it is
+  the only thing that is yours rather than a repo's.
+- The notes server, the task and any settings go in `<repo>/.looper/env`, beside
+  the work.
 
-`NOTES_MCP_URL` is the only place the notes server is named. A wake is run with
-`--strict-mcp-config`, so it gets that server and Looper's own notify tool and
-nothing else: whatever is configured in the Claude account's own `.claude.json`
-is deliberately not there. If the server moves — a local one on a port that
-changes when it restarts is the usual way — that url is what to change, and
-`looper --dry-run` will say whether it is reachable. Looper also checks it before
-the loop starts, so a stale url costs a message on the terminal rather than every
-wake until you notice.
+`NOTES_MCP_URL` in that file is the only place the notes server is named. A wake
+is run with `--strict-mcp-config`, so it gets that server and Looper's own notify
+tool and nothing else: whatever is configured in the Claude account's own
+`.claude.json` is deliberately not there. If the server moves — a local one on a
+port that changes when it restarts is the usual way — that url is what to change,
+and `looper --dry-run` will say whether it is reachable. Looper also checks it
+before the loop starts, so a stale url costs a message on the terminal rather
+than every wake until you notice.
+
+It lives with the repo for the same reason: a task and the notes it is written in
+are one thing, and the file to fix is then the one next to the work rather than a
+shared file nobody thinks about. A `NOTES_MCP_URL` left in the global file is
+ignored and said so, rather than quietly used as a default — inheriting a stale
+one is the failure this arrangement exists to prevent.
 
 To run it from anywhere, either `npm link` in this directory (which gives you a
 `looper` command) or call it by path: `node /path/to/looper/src/index.ts`.

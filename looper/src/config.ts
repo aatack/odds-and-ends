@@ -256,13 +256,15 @@ const questions: Question[] = [
   },
   {
     key: "NOTES_MCP_URL",
-    scope: "global",
+    scope: "repo",
     prompt: "Notes MCP url: ",
     help:
-      "The notes server the agent reads its task from and writes its findings to,\n" +
-      "e.g. http://127.0.0.1:36901/<key>/mcp.",
+      "The notes server this repo's agent reads its task from and writes its findings\n" +
+      "to, e.g. http://127.0.0.1:40051/mcp. It belongs to the repo rather than to you,\n" +
+      "so it sits beside the task note it serves — and a local server that changes\n" +
+      "port is then one file to fix.",
   },
-  { key: "NOTES_MCP_TOKEN", scope: "global", hidden: true, prompt: "Notes MCP bearer token: " },
+  { key: "NOTES_MCP_TOKEN", scope: "repo", hidden: true, prompt: "Notes MCP bearer token: " },
   {
     key: "LOOPER_TASK",
     scope: "repo",
@@ -272,6 +274,11 @@ const questions: Question[] = [
       "it at every wake, and writes its own notes back under it.",
   },
 ];
+
+/** What a repo answers for itself, and so is not inherited from the global file. */
+const repoScoped = new Set(
+  questions.filter((question) => question.scope === "repo").map((question) => question.key)
+);
 
 // ---------------------------------------------------------------------------
 // loading
@@ -292,10 +299,21 @@ export interface LoadOptions {
  */
 export async function loadConfig(opts: LoadOptions): Promise<Config> {
   const repo = resolve(opts.repo);
-  const values: Record<string, string> = {
-    ...readEnv(globalEnvPath),
-    ...readEnv(repoEnvPath(repo)),
-  };
+  const global = readEnv(globalEnvPath);
+  // A repo-scoped key written in the global file is ignored rather than used as a
+  // default, and said out loud. Falling back to it quietly is how the notes server
+  // got lost: it was global once, so the value that decided which server a wake
+  // saw was in a file nobody thinks about, and it went on being used long after
+  // the server it named had moved.
+  const misplaced = Object.keys(global).filter((key) => repoScoped.has(key));
+  for (const key of misplaced) delete global[key];
+  if (misplaced.length) {
+    console.log(
+      `Ignoring ${misplaced.join(", ")} in ${globalEnvPath}: those belong to a repo now, in ` +
+        `${repoEnvPath(repo)}. Move them there and delete the global lines.`
+    );
+  }
+  const values: Record<string, string> = { ...global, ...readEnv(repoEnvPath(repo)) };
   for (const key of Object.keys(process.env)) {
     if (key.startsWith("LOOPER_") || key.startsWith("TELEGRAM_") || key.startsWith("NOTES_")) {
       const value = process.env[key];

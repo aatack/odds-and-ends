@@ -35,9 +35,13 @@ Options:
 Configuration lives in two files, and you are asked for anything missing the
 first time:
   ${globalEnvPath}
-    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, NOTES_MCP_URL, NOTES_MCP_TOKEN
+    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID — one bot serves every task
   <repo>/.looper/env
-    LOOPER_TASK, and any of the settings below
+    NOTES_MCP_URL, NOTES_MCP_TOKEN, LOOPER_TASK, and any of the settings below
+
+The notes server lives with the task it serves rather than in the global file:
+whichever server a wake sees is decided there and nowhere else, so that is the
+one file to fix when it moves.
 
 Settings (all optional):
   LOOPER_CLAUDE_CONFIG_DIR
@@ -209,7 +213,7 @@ async function main(): Promise<void> {
   // nothing to do, repeated until someone looks.
   const notes = await whichNotes(config.notes.url, config.notes.token).catch((error: Error) => {
     console.error(`The notes server is not reachable: ${error.message}`);
-    console.error(`Check NOTES_MCP_URL and NOTES_MCP_TOKEN in ${globalEnvPath}.`);
+    console.error(`Check NOTES_MCP_URL and NOTES_MCP_TOKEN in ${repoEnvPath(config.repo)}.`);
     process.exit(1);
   });
 
