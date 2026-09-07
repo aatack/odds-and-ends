@@ -47,6 +47,15 @@ then take the chat id from the message.
   task.
 - The task and any settings go in `<repo>/.looper/env`, beside the work.
 
+`NOTES_MCP_URL` is the only place the notes server is named. A wake is run with
+`--strict-mcp-config`, so it gets that server and Looper's own notify tool and
+nothing else: whatever is configured in the Claude account's own `.claude.json`
+is deliberately not there. If the server moves — a local one on a port that
+changes when it restarts is the usual way — that url is what to change, and
+`looper --dry-run` will say whether it is reachable. Looper also checks it before
+the loop starts, so a stale url costs a message on the terminal rather than every
+wake until you notice.
+
 To run it from anywhere, either `npm link` in this directory (which gives you a
 `looper` command) or call it by path: `node /path/to/looper/src/index.ts`.
 
@@ -73,7 +82,8 @@ wake.
 
 ```bash
 looper --once      # one wake, then stop
-looper --dry-run   # print the account, the prompt and the command; run nothing
+looper --dry-run   # print the account, the notes server, the prompt and the
+                   # command; run nothing
 looper --help      # every setting, with its default
 ```
 
@@ -89,6 +99,8 @@ looper --help      # every setting, with its default
 - **`src/notify.ts`** — the tool the agent reaches you with. A small MCP server
   over stdio, exposing `tell_user` and `ask_user`.
 - **`src/telegram.ts`** — the Bot API over `fetch`, long polling for your replies.
+- **`src/notes.ts`** — the notes server reached directly, once, only to check it
+  is there before the loop commits to it.
 - **`src/state.ts`** — everything remembered between wakes, in `<repo>/.looper`.
 - **`src/config.ts`** — the two env files, and asking for what's missing.
 

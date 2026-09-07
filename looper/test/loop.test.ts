@@ -6,7 +6,7 @@
 // is built, run, read and recorded, that asking a question is noticed, and that a
 // message sent while the loop is up lands in the next prompt.
 
-import { test } from "node:test";
+import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -79,6 +79,43 @@ function fakeTelegram(updates: unknown[]): Promise<{ server: Server; sent: strin
 }
 
 /**
+ * A notes server, but only as far as the check before the loop reaches: one
+ * `initialize` answered. Nothing else is needed, because every real use of notes
+ * happens inside the agent, and the agent is faked whole.
+ *
+ * It is shared by every test rather than made per test: it holds no state, and
+ * the check is the same call each time.
+ */
+function fakeNotes(): Promise<{ server: Server; url: string }> {
+  const server = createServer((request, response) => {
+    request.resume();
+    request.on("end", () => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          result: { serverInfo: { name: "fake-notes", version: "0.1.0" } },
+        })
+      );
+    });
+  });
+  return new Promise((settle) => {
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      settle({ server, url: `http://127.0.0.1:${port}/mcp` });
+    });
+  });
+}
+
+let notes: { server: Server; url: string };
+before(async () => {
+  notes = await fakeNotes();
+});
+after(() => notes.server.close());
+
+/**
  * A `claude` that behaves like the real one for one wake: it saves the prompt and
  * the arguments it was given, says it asked the user something by writing to the
  * outbox, and prints the events Looper reads. `dies` instead makes it fall over
@@ -143,7 +180,7 @@ test("a wake is run, read and recorded", async () => {
     TELEGRAM_API_BASE: telegram.url,
     TELEGRAM_BOT_TOKEN: "111:test",
     TELEGRAM_CHAT_ID: "999",
-    NOTES_MCP_URL: "http://127.0.0.1:1/mcp",
+    NOTES_MCP_URL: notes.url,
     NOTES_MCP_TOKEN: "notes-token",
     LOOPER_TASK: "task-note",
     XDG_CONFIG_HOME: join(dir, "config"),
@@ -211,7 +248,7 @@ test("a message sent while the loop is up reaches the next prompt", async () => 
     TELEGRAM_API_BASE: telegram.url,
     TELEGRAM_BOT_TOKEN: "111:test",
     TELEGRAM_CHAT_ID: "999",
-    NOTES_MCP_URL: "http://127.0.0.1:1/mcp",
+    NOTES_MCP_URL: notes.url,
     NOTES_MCP_TOKEN: "notes-token",
     LOOPER_TASK: "task-note",
     XDG_CONFIG_HOME: join(dir, "config"),
@@ -258,7 +295,7 @@ test("a session that cannot be resumed is dropped, not retried forever", async (
     TELEGRAM_API_BASE: telegram.url,
     TELEGRAM_BOT_TOKEN: "111:test",
     TELEGRAM_CHAT_ID: "999",
-    NOTES_MCP_URL: "http://127.0.0.1:1/mcp",
+    NOTES_MCP_URL: notes.url,
     NOTES_MCP_TOKEN: "notes-token",
     LOOPER_TASK: "task-note",
     XDG_CONFIG_HOME: join(dir, "config"),
@@ -311,7 +348,7 @@ test("an overloaded API is waited out, not treated as a failure", async () => {
     TELEGRAM_API_BASE: telegram.url,
     TELEGRAM_BOT_TOKEN: "111:test",
     TELEGRAM_CHAT_ID: "999",
-    NOTES_MCP_URL: "http://127.0.0.1:1/mcp",
+    NOTES_MCP_URL: notes.url,
     NOTES_MCP_TOKEN: "notes-token",
     LOOPER_TASK: "task-note",
     XDG_CONFIG_HOME: join(dir, "config"),
@@ -375,7 +412,7 @@ test("a spent session cap is read as one, and waited out rather than retried", a
     TELEGRAM_API_BASE: telegram.url,
     TELEGRAM_BOT_TOKEN: "111:test",
     TELEGRAM_CHAT_ID: "999",
-    NOTES_MCP_URL: "http://127.0.0.1:1/mcp",
+    NOTES_MCP_URL: notes.url,
     NOTES_MCP_TOKEN: "notes-token",
     LOOPER_TASK: "task-note",
     XDG_CONFIG_HOME: join(dir, "config"),
@@ -393,6 +430,37 @@ test("a spent session cap is read as one, and waited out rather than retried", a
   assert.equal(state.lastRun.sessionId, "11111111-2222-3333-4444-555555555555");
   assert.equal(state.pending.length, 1, "the message the agent never saw is kept");
   assert.equal(state.pending[0].tried, true, "but it has had its turn at waking the loop");
+});
+
+test("a notes server that has moved stops the loop before it starts", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "looper-test-"));
+  const repo = join(dir, "repo");
+  mkdirSync(join(repo, ".looper"), { recursive: true });
+  execFileSync("git", ["init", "-q"], { cwd: repo });
+
+  const telegram = await fakeTelegram([]);
+  const bin = fakeClaude(dir, repo);
+  const run = await runLooper(repo, {
+    PATH: `${bin}:${process.env.PATH}`,
+    TELEGRAM_API_BASE: telegram.url,
+    TELEGRAM_BOT_TOKEN: "111:test",
+    TELEGRAM_CHAT_ID: "999",
+    // Port 1 is nothing, which is what a notes server that has changed port looks
+    // like from here.
+    NOTES_MCP_URL: "http://127.0.0.1:1/mcp",
+    NOTES_MCP_TOKEN: "notes-token",
+    LOOPER_TASK: "task-note",
+    XDG_CONFIG_HOME: join(dir, "config"),
+  });
+  telegram.server.close();
+
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /notes server is not reachable/);
+  // The url is the thing to change, so it is said, and so is where it is written.
+  assert.match(run.stderr, /127\.0\.0\.1:1/);
+  assert.match(run.stderr, /NOTES_MCP_URL/);
+  // And no wake was spent finding it out.
+  assert.throws(() => readFileSync(join(dir, "prompt.txt"), "utf8"));
 });
 
 test("a cap says when it lifts, in the words the API uses", () => {
