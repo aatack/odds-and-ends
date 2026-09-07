@@ -11,6 +11,7 @@ import type { Account } from "./claude.ts";
 import { buildPrompt } from "./prompt.ts";
 import { State } from "./state.ts";
 import { Telegram, detectChatId } from "./telegram.ts";
+import { whichNotes } from "./notes.ts";
 import { Loop } from "./loop.ts";
 
 const looperDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -34,9 +35,13 @@ Options:
 Configuration lives in two files, and you are asked for anything missing the
 first time:
   ${globalEnvPath}
-    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, NOTES_MCP_URL, NOTES_MCP_TOKEN
+    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID — one bot serves every task
   <repo>/.looper/env
-    LOOPER_TASK, and any of the settings below
+    NOTES_MCP_URL, NOTES_MCP_TOKEN, LOOPER_TASK, and any of the settings below
+
+The notes server lives with the task it serves rather than in the global file:
+whichever server a wake sees is decided there and nowhere else, so that is the
+one file to fix when it moves.
 
 Settings (all optional):
   LOOPER_CLAUDE_CONFIG_DIR
@@ -123,6 +128,14 @@ function readAccount(config: Config): Account {
   return account;
 }
 
+/** The notes server as one line, for `--dry-run`, reachable or not. */
+async function describeNotes(config: Config): Promise<string> {
+  return await whichNotes(config.notes.url, config.notes.token).then(
+    (name) => `${name} at ${config.notes.url}`,
+    (error: Error) => `unreachable — ${error.message}`
+  );
+}
+
 /** The account as one line, for `--dry-run`, whatever state it is in. */
 function describeAccount(config: Config): string {
   const where = config.claudeConfigDir ?? "the default config directory";
@@ -179,6 +192,7 @@ async function main(): Promise<void> {
     const account = describeAccount(config);
     const prefix = config.claudeConfigDir ? `CLAUDE_CONFIG_DIR=${config.claudeConfigDir} ` : "";
     console.log(`--- account ---\n${account}\n`);
+    console.log(`--- notes ---\n${await describeNotes(config)}\n`);
     console.log(`--- claude ---\n${prefix}claude ${redact(claudeArgs, config)}\n`);
     console.log(`--- prompt ---\n${prompt}`);
     return;
@@ -194,6 +208,15 @@ async function main(): Promise<void> {
     process.exit(1);
   });
 
+  // And the same for notes, which matters more: the agent reads its task from
+  // there, so a stale url is not a wake that goes badly but a wake that has
+  // nothing to do, repeated until someone looks.
+  const notes = await whichNotes(config.notes.url, config.notes.token).catch((error: Error) => {
+    console.error(`The notes server is not reachable: ${error.message}`);
+    console.error(`Check NOTES_MCP_URL and NOTES_MCP_TOKEN in ${repoEnvPath(config.repo)}.`);
+    process.exit(1);
+  });
+
   const { timing } = config;
   state.log(
     `looper on ${config.repo} — task ${config.task}, model ${config.model}, ` +
@@ -204,6 +227,9 @@ async function main(): Promise<void> {
       `${account.subscriptionType ? ` (${account.subscriptionType})` : ""}` +
       `${config.claudeConfigDir ? ` from ${config.claudeConfigDir}` : ""}`
   );
+  // Named, not just confirmed: one server can hold several stores, and pointing a
+  // repo at the wrong one looks exactly like pointing it at the right one.
+  state.log(`notes: ${notes} at ${config.notes.url}`);
   state.log(
     `gaps: ${formatDuration(timing.turn)} between wakes, ${formatDuration(timing.stall)} after a ` +
       `failure, ${formatDuration(timing.limit)} on a cap, ${formatDuration(timing.question)} for an answer`
