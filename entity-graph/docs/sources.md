@@ -170,7 +170,7 @@ once (`pensive:changed` → `useApp` re-reads → `SourceView` re-lays its seams
 | `servers.ts` | keeping the listeners in step with the drawing |
 
 Three rules hold here rather than in the page, because the page is not the only
-caller — a broadcast answers other machines:
+caller — a broadcast answers anything on this machine holding a token:
 
 - **A loop is refused**, both when the edge is written (`wouldCycle`) and while a
   pensive is built. A loop is a node that is downstream of *itself along one
@@ -204,19 +204,24 @@ ignored** — one server serves one pensive, so `/tools` and `/anything/tools` a
 the same request, which is what keeps a URL the phone client built (it appends a
 source id) working.
 
-`nodeAddress` in `core/client.ts` is the address to hand out, and it differs by
-kind: an **MCP** node names loopback and carries the `/mcp` path, because what it
-is for is an agent on this machine whose config file outlives whatever address the
-wifi hands out today; a **broadcast** names this machine on the network, because
-being reached from elsewhere is the point of one. A token on an MCP node also
-copies as `mcpConfigSnippet` — the whole `mcpServers` fragment, url and header
-included, since assembling that by hand from two clipboard trips is three chances
-to get it wrong.
+`nodeAddress` in `core/client.ts` is the address to hand out. Both kinds name
+loopback and differ only in the path — an **MCP** node carries `/mcp`, a
+**broadcast** carries none, answering `/tools` and `/call`. A token on an MCP
+node also copies as `mcpConfigSnippet` — the whole `mcpServers` fragment, url and
+header included, since assembling that by hand from two clipboard trips is three
+chances to get it wrong.
 
 A port is chosen for a published node when it is added, and kept: a URL worth
-copying is a URL that stays put. The server binds every interface, because being
-reachable from another machine is the whole point of a broadcast — and the only
-way in is a token.
+copying is a URL that stays put.
+
+**Published nodes bind loopback only.** A URL is pasted into a config file that
+outlives the session — an agent's `mcpServers`, a note — and an address handed
+out by whatever wifi is up is not an address, it is today's guess: swap the
+router for a phone hotspot and every URL ever copied points at nothing, timing
+out rather than failing fast. So nothing published is reachable off this machine.
+Getting a pensive to another machine is a `connect` node at the far end and, at
+this end, a node kind that does not exist yet; `tailscale serve` is the other
+route, and proxies to loopback anyway, so the phone never needed the wider bind.
 
 ## Coming from the old server
 

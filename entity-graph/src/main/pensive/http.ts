@@ -134,7 +134,7 @@ export class PensiveServer {
         this.server = null
         resolve()
       })
-      server.listen(this.opts.port, '0.0.0.0', () => {
+      server.listen(this.opts.port, '127.0.0.1', () => {
         this.problem = null
         resolve()
       })

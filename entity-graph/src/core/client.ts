@@ -24,9 +24,12 @@ export type NodeConfig =
    * in — null until the user says, at which point the node cannot be written to.
    */
   | { kind: 'combined'; writeTo: string | null }
-  /** Its input, published over HTTP on `port`, to whoever holds a token. */
+  /**
+   * Its input, published over HTTP on `port` on this machine, to whoever holds
+   * a token.
+   */
   | { kind: 'broadcast'; port: number }
-  /** Its input, published over HTTP as an MCP server, for an agent. */
+  /** Its input, published over HTTP as an MCP server, for an agent here. */
   | { kind: 'mcp'; port: number }
   /** A pensive somewhere else, broadcast by another copy of this app. */
   | { kind: 'connect'; url: string; token: string }
@@ -70,12 +73,16 @@ export interface SourceToken {
 
 /** What the app can say about a node beyond what the user wrote on it. */
 export interface NodeStatus {
-  /** Where a broadcast or MCP node answers, once it is listening. */
+  /**
+   * Where a broadcast or MCP node answers, once it is listening — always on
+   * loopback, since that is the only interface one binds.
+   */
   url: string | null
   /**
-   * The same server on loopback — what a tailnet mount would proxy to. Nothing
-   * reads it while phone access is unwired; it is the one thing that side needs
-   * from here, so it is kept rather than worked out again later.
+   * The same server on loopback — what a tailnet mount would proxy to. Equal to
+   * `url` while everything published is local-only, and kept apart from it
+   * because a node meant to be reached from elsewhere is what would separate
+   * them again.
    */
   localUrl: string | null
   /** Why this node isn't working — an actionable sentence, or null. */
@@ -141,7 +148,7 @@ export const NODE_KINDS: NodeKindInfo[] = [
   {
     kind: 'broadcast',
     label: 'Broadcast',
-    blurb: 'Publish one pensive over HTTP, to whoever holds a token.',
+    blurb: 'Publish one pensive over HTTP on this machine, to whoever holds a token.',
     inputs: 1,
     output: false,
     addable: true,
@@ -150,7 +157,7 @@ export const NODE_KINDS: NodeKindInfo[] = [
   {
     kind: 'mcp',
     label: 'MCP',
-    blurb: 'Publish one pensive to an agent, as an MCP server.',
+    blurb: 'Publish one pensive to an agent on this machine, as an MCP server.',
     inputs: 1,
     output: false,
     addable: true,
@@ -176,15 +183,16 @@ export const publishes = (kind: NodeKind): boolean => kind === 'broadcast' || ki
 /**
  * The address a published node answers on, ready to be pasted somewhere.
  *
- * An MCP node names loopback and carries the `/mcp` path: what it is for is an
- * agent on this machine, whose config file outlives whatever address the wifi
- * hands out today. A broadcast is the other way round — it exists to be reached
- * from somewhere else — and has no one path, since it answers `/tools` and
- * `/call`.
+ * Both kinds name loopback, because nothing published is reachable off this
+ * machine: an address that outlives whatever the wifi hands out today is the
+ * only one worth copying into a config file. They differ in the path alone — an
+ * MCP node carries `/mcp`, a broadcast has no one path, since it answers
+ * `/tools` and `/call`.
  */
 export const nodeAddress = (status: NodeStatus | undefined, kind: NodeKind): string | null => {
-  if (kind !== 'mcp') return status?.url ?? null
-  return status?.localUrl ? `${status.localUrl}/mcp` : null
+  const url = status?.url ?? null
+  if (!url) return null
+  return kind === 'mcp' ? `${url}/mcp` : url
 }
 
 /** A label as a config key: `Flow migrated` → `flow-migrated`. */

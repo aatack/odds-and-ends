@@ -1,5 +1,4 @@
 import net from 'net'
-import { networkInterfaces } from 'os'
 import type { NodeStatus } from '../../core/client'
 import { PensiveServer } from './http'
 import type { GraphDb } from './graph'
@@ -21,21 +20,6 @@ export function findFreePort(): Promise<number> {
       probe.close(() => resolve(port))
     })
   })
-}
-
-/**
- * This machine's address on the network, if it has one worth showing. A
- * broadcast exists to be reached from somewhere else, so the URL offered for
- * copying is the one that works there; loopback is the fallback and says plainly
- * that nothing else can reach it.
- */
-export function lanAddress(): string | null {
-  for (const addresses of Object.values(networkInterfaces())) {
-    for (const address of addresses ?? []) {
-      if (address.family === 'IPv4' && !address.internal) return address.address
-    }
-  }
-  return null
 }
 
 export class PensiveServers {
@@ -90,9 +74,11 @@ export class PensiveServers {
     const server = this.servers.get(nodeId)
     const problem = this.registry.problem(nodeId)
     if (!server) return { url: null, localUrl: null, problem }
-    const host = lanAddress() ?? '127.0.0.1'
+    // Both are loopback, and equal, while everything published is local-only:
+    // a node reached from another machine is a kind that doesn't exist yet, and
+    // the two fields are what will tell it apart from these when it does.
     return {
-      url: server.listening ? `http://${host}:${server.port}` : null,
+      url: server.listening ? server.url : null,
       localUrl: server.listening ? server.url : null,
       problem: server.problem ?? problem,
     }

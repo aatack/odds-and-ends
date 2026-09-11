@@ -229,6 +229,9 @@ touch it — `test/source.mts` is an in-memory pensive for exactly that reason �
 `src/main/pensive/` is the rest: `graph.ts` the file, `registry.ts` the building
 of pensives from it, `http.ts` one small server per published node, `mcpServer.ts`
 what an agent sees, `servers.ts` keeping the listeners in step with the drawing.
+**A published node binds loopback only** — a copied URL has to outlive the wifi
+that was up when it was copied, so reaching one from another machine is a node
+kind yet to be written, not a wider bind.
 [`docs/sources.md`](./docs/sources.md) is the long form — the interface, every
 node's type, and what a broadcast serves.
 
