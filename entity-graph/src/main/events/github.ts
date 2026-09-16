@@ -344,7 +344,10 @@ export class GithubFeed extends Feed<GithubFeedConfig> {
       })
     }
 
-    for (const [number] of threads) {
+    for (const [number, notification] of threads) {
+      // Only a pull request has reviews; asking an issue for its own is a 404
+      // per notification, which is a request spent saying nothing.
+      if (notification.subject?.type !== 'PullRequest') continue
       const { body: reviews } = await this.get<Review[]>(
         `/repos/${repo}/pulls/${number}/reviews`,
         { per_page: 100 },
