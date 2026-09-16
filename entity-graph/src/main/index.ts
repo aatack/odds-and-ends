@@ -169,6 +169,12 @@ ipcMain.handle('graph:addNode', async (_e, kind: NodeKind, x: number, y: number)
   if ((config.kind === 'broadcast' || config.kind === 'mcp') && !config.port) {
     config.port = await findFreePort()
   }
+  // A feed's cursor starts *now*, set here rather than defaulted in the feed:
+  // switching one on is a decision about what happens next, not a request to
+  // import whatever has already been said. Winding it back is a thing somebody
+  // can choose to do; being handed a week of history is not.
+  if (config.kind === 'slackEvents') config.cursor = (Date.now() / 1000).toFixed(6)
+  if (config.kind === 'githubEvents') config.cursor = new Date().toISOString()
   const node = graph.addNode({ label: info.label, x, y, config })
   await graphChanged()
   return node

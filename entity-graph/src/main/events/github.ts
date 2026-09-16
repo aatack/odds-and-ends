@@ -188,7 +188,10 @@ export class GithubFeed extends Feed<GithubFeedConfig> {
   protected async pass(): Promise<void> {
     const { cursor, lastModified } = this.config()
     const started = Date.now()
-    const since = new Date((cursor ? Date.parse(cursor) : started - 86_400_000) - OVERLAP_MS)
+    // A node is given its cursor when it is added, so an empty one means a node
+    // from before that. Now rather than yesterday: a feed switched on today is
+    // asking to be told what happens next, not to import what already did.
+    const since = new Date((cursor ? Date.parse(cursor) : started) - OVERLAP_MS)
 
     const answer = await this.get<Notification[]>(
       '/notifications',

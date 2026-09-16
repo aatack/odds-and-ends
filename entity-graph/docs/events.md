@@ -13,12 +13,20 @@ keeping them in step with the drawing.
 
 ## The one property everything rests on
 
-**An entity's id is made from the thing's own id.** A Slack message is
-`C0123ABCD:1712345678.000100`, a pull request is `owner/repo#123`, a comment is
+**An entity's id is made from the thing's own id.** A Slack message is its
+permalink, a pull request is `owner/repo#123`, a comment is
 `issuecomment-2412345678` — the fragment GitHub's own URL ends in. So reading the
 same message a second time writes to the same entity rather than to a new one,
 and `EntityWriter` compares what it is about to write with what is already there
 and writes only the difference.
+
+A permalink earns the job twice over: it names the workspace, the channel and the
+timestamp in one string, and it is a thing that can be clicked. It is always
+*built* rather than taken from the search hit that came with one — one way of
+arriving at the string means a message found twice is one note, where two ways
+that usually agree would be two notes on the day they didn't. What is stripped is
+the `?thread_ts=…&cid=…` a reply's link carries: learning that a message is a
+reply must not move it to another entity.
 
 Reading a stretch twice therefore costs nothing, and every catch-up rule is an
 application of that:
@@ -34,6 +42,9 @@ application of that:
   last page and the socket coming up would be a hole.
 - **A cursor more than a week behind is walked a day at a time**, so a first run
   over a year asks for a day per request rather than for a year at once.
+- **A new node's cursor is now**, written when the node is added. Switching a
+  feed on is a decision about what happens next, not a request to import what has
+  already been said; winding it back is something somebody can choose.
 
 Two other rules follow from the writer rather than from the cursor:
 
@@ -52,12 +63,24 @@ if you want one, and everything here works without it.
 
 | type | id | values | hangs under |
 | --- | --- | --- | --- |
-| `slack/message` | `<channel>:<ts>` | `text`, `slack/ts`, `slack/channel`, `slack/user`, `slack/permalink`, `slack/threadTs`, `slack/deleted`, `slack/reactions` | its thread, or its channel |
+| `slack/message` | its permalink | `text`, `slack/ts`, `slack/user`, `slack/permalink`, `slack/deleted`, `slack/reactions` | its thread, or its channel |
 | `slack/channel` | the channel id | `text` (the name), `slack/channel`, `slack/kind` | — |
 | `github/pullRequest` | `owner/repo#123` | `text` (the title), `github/url`, `github/state`, `github/author`, `github/repo`, `github/reason`, `github/checks` | — |
 | `github/comment` | `issuecomment-…`, `discussion_r…`, `pullrequestreview-…` | `text`, `github/author`, `github/url`, `github/reviewState` | its pull request |
 
 Everything new is also linked under **`@inbox`**.
+
+Neither the channel nor the thread is written on a message. The channel is in the
+permalink and the message hangs under the channel's own note; the thread is the
+note it hangs off. A value saying either again is a second copy to keep in step
+with the first.
+
+**A message is never written blank.** A thread parent older than the cursor is
+not in the batch that turns up its replies, so it is *fetched* — once per thread
+per run — rather than stubbed: a note with children and nothing written on it is
+the one thing nobody can act on. Where even that fails, `text` is left unwritten
+rather than written empty, so a later reading fills it in instead of confirming a
+blank.
 
 A **channel** is made when the first message in it arrives, never by listing
 conversations: a channel nothing has been said in is not news. An **edit** writes

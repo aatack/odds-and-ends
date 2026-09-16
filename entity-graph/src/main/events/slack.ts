@@ -3,11 +3,13 @@ import { bucketEvents, rollupEntity } from '../../core/entity'
 import {
   conversationInfo,
   kindOf,
+  messageAt,
   searchPage,
   whoHolds,
   SEARCH_PAGES,
   type Conversation,
   type SearchMatch,
+  type SlackMessage,
   type SlackWorkspace,
 } from '../integrations/slack'
 import { EntityWriter, type EntityDraft } from './writer'
@@ -50,8 +52,24 @@ const asSeconds = (ts: string | undefined | null): number | null => {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
-/** The entity one message is. Made from its own id, so a re-read lands on it. */
-const messageId = (channel: string, ts: string): string => `${channel}:${ts}`
+/**
+ * The entity one message is: its permalink, with the query string taken off.
+ *
+ * The permalink *is* the message's own id — it names the workspace, the channel
+ * and the timestamp all at once, it is what Slack's own "Copy link" gives you,
+ * and it is a thing that can be clicked. What is stripped is the
+ * `?thread_ts=…&cid=…` a reply's link carries: whether we happened to learn about
+ * a message *as a reply* must not change which entity it is, or the same message
+ * read two ways would be two notes.
+ */
+export function messageId(permalink: string): string {
+  try {
+    const url = new URL(permalink)
+    return `${url.origin}${url.pathname}`
+  } catch {
+    return permalink
+  }
+}
 
 /**
  * The thread a search hit belongs to, or null. A match carries no `thread_ts`
@@ -71,14 +89,18 @@ export function threadOf(permalink: string | undefined | null): string | null {
  * A permalink, built rather than asked for. Slack's own form is the workspace
  * URL, the channel and the timestamp with its dot taken out — so a message that
  * arrived over the socket, which carries no permalink, costs no call to name.
+ *
+ * Built for every message rather than taken from a search hit when there is one,
+ * because this is what an entity is *identified* by: one way of arriving at the
+ * string means a message found twice is one note, where two ways that usually
+ * agree would be two notes on the day they didn't.
  */
 export function permalinkFor(
   workspace: string,
   channel: string,
   ts: string,
   threadTs?: string | null,
-): string | null {
-  if (!workspace) return null
+): string {
   const base = `${workspace.replace(/\/$/, '')}/archives/${channel}/p${ts.replace('.', '')}`
   return threadTs && threadTs !== ts ? `${base}?thread_ts=${threadTs}&cid=${channel}` : base
 }
@@ -129,6 +151,8 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
   private workspace: SlackWorkspace | null = null
   /** Conversations already described, so a busy channel is looked up once. */
   private conversations = new Map<string, Conversation>()
+  /** Thread parents already read, so a busy thread is fetched once. */
+  private parents = new Map<string, EntityDraft>()
 
   constructor(options: FeedOptions<SlackFeedConfig>) {
     super(options, POLL_MS)
@@ -138,6 +162,9 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
     const { userToken } = this.config()
     if (!userToken.trim()) throw new Error('No user token — this node has nothing to read with')
     this.workspace = await whoHolds(userToken)
+    // Every entity here is named by its permalink, and a permalink begins with
+    // the workspace's own address. Without one there is nothing to call anything.
+    if (!this.workspace.url) throw new Error('Slack did not say which workspace this token is for')
     await this.connect()
   }
 
@@ -145,6 +172,7 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
     const socket = this.socket
     this.socket = null
     this.held = null
+    this.parents.clear()
     await socket?.disconnect().catch(() => undefined)
   }
 
@@ -193,7 +221,10 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
   protected async pass(): Promise<void> {
     const { userToken, cursor } = this.config()
     const now = Date.now() / 1000
-    const from = asSeconds(cursor) ?? now - DAY
+    // A node is given its cursor when it is added, so an empty one means a node
+    // from before that. Now rather than yesterday: a feed switched on today is
+    // asking to be told what happens next, not to import what already did.
+    const from = asSeconds(cursor) ?? now
     // Wound back before every request, not only the first: a message indexed a
     // few seconds late is otherwise behind the cursor by the time it appears.
     const floor = from - OVERLAP
@@ -293,18 +324,57 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
     }
   }
 
+  /** A message's permalink, which is also the id of the entity it becomes. */
+  private link(channel: string, ts: string, threadTs?: string | null): string {
+    return permalinkFor(this.workspace?.url ?? '', channel, ts, threadTs)
+  }
+
+  private idFor(channel: string, ts: string): string {
+    return messageId(this.link(channel, ts))
+  }
+
   /**
-   * The message a reply hangs off, as much of it as is known. A thread parent
-   * the search did not return would otherwise be an entity with children and no
-   * account of itself; this at least says where it is, and the real thing
-   * overwrites it whenever it turns up.
+   * One message, as the note it becomes.
+   *
+   * Neither the channel nor the thread is written down. The channel is in the
+   * permalink and the message is linked under the channel's own note; the thread
+   * is the note it hangs off. A value saying either again is a second copy to
+   * keep in step with the first.
+   *
+   * `text` is left out when it isn't known rather than written empty, so a
+   * message read again later fills it in instead of confirming a blank.
    */
-  private stubDraft(channel: string, ts: string): EntityDraft {
+  private messageDraft(channel: string, message: Partial<SlackMessage> & { ts: string }, parentId: string): EntityDraft {
+    const threadTs =
+      message.thread_ts && message.thread_ts !== message.ts ? message.thread_ts : null
     return {
-      id: messageId(channel, ts),
-      parentId: channel,
-      values: { type: 'slack/message', 'slack/ts': ts, 'slack/channel': channel },
+      id: this.idFor(channel, message.ts),
+      parentId,
+      values: {
+        type: 'slack/message',
+        text: message.text,
+        'slack/ts': message.ts,
+        'slack/user': message.user ?? message.bot_id ?? null,
+        'slack/permalink': this.link(channel, message.ts, threadTs),
+      },
     }
+  }
+
+  /**
+   * The message a reply hangs off, read in full. A thread parent older than the
+   * cursor is never in the batch that turns up its replies, and a note with
+   * children and nothing written on it is the one thing nobody can act on — so
+   * it is fetched rather than stubbed. Once per thread per run: the answer does
+   * not change, and a busy thread would otherwise cost a call per reply.
+   */
+  private async parentDraft(channel: string, ts: string): Promise<EntityDraft> {
+    const id = this.idFor(channel, ts)
+    const known = this.parents.get(id)
+    if (known) return known
+    const message = await messageAt(this.config().userToken, channel, ts).catch(() => null)
+    const draft = this.messageDraft(channel, message ?? { ts }, channel)
+    this.parents.set(id, draft)
+    return draft
   }
 
   /** Every entity a page of search hits implies, ready to be written as one. */
@@ -323,21 +393,14 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
           match.channel?.name ? { ...match.channel, id: channel } : await this.conversation(channel),
         ),
       )
-      if (reply) drafts.push(this.stubDraft(channel, reply))
-      drafts.push({
-        id: messageId(channel, ts),
-        parentId: reply ? messageId(channel, reply) : channel,
-        values: {
-          type: 'slack/message',
-          text: match.text ?? '',
-          'slack/ts': ts,
-          'slack/channel': channel,
-          'slack/user': match.user ?? null,
-          'slack/permalink':
-            match.permalink ?? permalinkFor(this.workspace?.url ?? '', channel, ts, reply),
-          'slack/threadTs': reply,
-        },
-      })
+      if (reply) drafts.push(await this.parentDraft(channel, reply))
+      drafts.push(
+        this.messageDraft(
+          channel,
+          { ts, text: match.text, user: match.user, thread_ts: reply ?? undefined },
+          reply ? this.idFor(channel, reply) : channel,
+        ),
+      )
     }
     return drafts
   }
@@ -361,7 +424,7 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
         const ts = event.item?.ts
         if (!channel || !ts || !event.reaction || muted.has(channel)) continue
         reactions.push({
-          id: messageId(channel, ts),
+          id: this.idFor(channel, ts),
           name: event.reaction,
           delta: event.type === 'reaction_added' ? 1 : -1,
         })
@@ -377,7 +440,7 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
         // Kept rather than removed: what was said and then unsaid is a thing
         // that happened, and the note may already have been read and filed.
         drafts.push({
-          id: messageId(channel, ts),
+          id: this.idFor(channel, ts),
           values: { type: 'slack/message', 'slack/deleted': true },
         })
         continue
@@ -392,20 +455,14 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
       const threadTs = message.thread_ts && message.thread_ts !== ts ? message.thread_ts : null
 
       drafts.push(this.channelDraft(await this.conversation(channel)))
-      if (threadTs) drafts.push(this.stubDraft(channel, threadTs))
-      drafts.push({
-        id: messageId(channel, ts),
-        parentId: threadTs ? messageId(channel, threadTs) : channel,
-        values: {
-          type: 'slack/message',
-          text: message.text ?? '',
-          'slack/ts': ts,
-          'slack/channel': channel,
-          'slack/user': message.user ?? message.bot_id ?? null,
-          'slack/permalink': permalinkFor(this.workspace?.url ?? '', channel, ts, threadTs),
-          'slack/threadTs': threadTs,
-        },
-      })
+      if (threadTs) drafts.push(await this.parentDraft(channel, threadTs))
+      drafts.push(
+        this.messageDraft(
+          channel,
+          { ts, text: message.text ?? '', user: message.user ?? message.bot_id, thread_ts: threadTs ?? undefined },
+          threadTs ? this.idFor(channel, threadTs) : channel,
+        ),
+      )
     }
 
     if (reactions.length) drafts.push(...(await this.reactionDrafts(reactions)))
