@@ -37,9 +37,6 @@ application of that:
 - **The cursor moves after the entities are written, never before.** A crash
   between the two reads the same minute again on the next start, which is free.
   The other order loses it, silently.
-- **The socket connects before the catch-up runs**, and everything it delivers
-  is held until the catch-up is done. Connected afterwards, the gap between the
-  last page and the socket coming up would be a hole.
 - **A cursor more than a week behind is walked a day at a time**, so a first run
   over a year asks for a day per request rather than for a year at once.
 - **A new node's cursor is now**, written when the node is added. Switching a
@@ -54,10 +51,6 @@ Two other rules follow from the writer rather than from the cursor:
   notification put there.
 - **Only a brand new entity goes in the inbox.** A note read and filed somewhere
   by hand is not dragged back the next time the thing it names is mentioned.
-- **A draft marked `ifKnown` is dropped when the entity is new.** A reaction or a
-  deletion is *about* a note rather than a reading of one; for a message older
-  than the cursor it would otherwise put a note in the inbox whose whole content
-  was that somebody had reacted to something nobody has read.
 
 ## What gets written
 
@@ -67,7 +60,7 @@ if you want one, and everything here works without it.
 
 | type | id | values | hangs under |
 | --- | --- | --- | --- |
-| `slack/message` | its permalink | `text`, `slack/ts`, `slack/user`, `slack/permalink`, `slack/deleted`, `slack/reactions` | its thread, or its channel |
+| `slack/message` | its permalink | `text`, `slack/ts`, `slack/user`, `slack/permalink` | its thread, or its channel |
 | `slack/channel` | the channel id | `text` (the name), `slack/channel`, `slack/kind` | — |
 | `github/pullRequest` | `owner/repo#123` | `text` (the title), `github/url`, `github/state`, `github/author`, `github/repo`, `github/reason`, `github/checks` | — |
 | `github/comment` | `issuecomment-…`, `discussion_r…`, `pullrequestreview-…` | `text`, `github/author`, `github/url`, `github/reviewState` | its pull request |
@@ -87,11 +80,12 @@ rather than written empty, so a later reading fills it in instead of confirming 
 blank.
 
 A **channel** is made when the first message in it arrives, never by listing
-conversations: a channel nothing has been said in is not news. An **edit** writes
-`text` again. A **delete** sets `slack/deleted` rather than removing anything —
-what was said and then unsaid is a thing that happened, and the note may already
-have been read. A **reaction** makes no entity: it is one value, `slack/reactions`,
-an object of name to count, on the message it was left on.
+conversations: a channel nothing has been said in is not news.
+
+Nothing is written about **reactions, edits or deletions**. A search hands back
+the message as it now stands and says nothing about what happened to it; the only
+way to hear about those is Socket Mode, and that is a second token and, in most
+workspaces, an administrator's approval — see [Socket Mode](#socket-mode).
 
 A **notification** makes no entity either. It says that something happened on a
 thread and why you were told, not what happened — so it decides where to look and
@@ -131,14 +125,20 @@ reply survives only in its `permalink`, which ends `?thread_ts=…` when it is o
 so that is what is parsed. Search is Tier 2 — twenty requests a minute — and
 needs a user token; a bot token cannot search under any scope.
 
-**Socket Mode** makes the same entities appear sooner, and the poll stays. The
-app opens a WebSocket *out* to Slack, so nothing listens on this machine and no
-endpoint is exposed. `@slack/socket-mode` owns the reconnection and the
-acknowledgements. One handler covers every message event, because Slack's own
-shapes do: a thread reply is a `message` with `thread_ts` set, an edit and a
-delete are a `message` with a subtype saying which. A message that came over the
-socket carries no permalink, so one is *built* — Slack's own form is the
-workspace URL, the channel, and the timestamp with its dot taken out.
+A message's permalink is *built* rather than asked for — Slack's own form is the
+workspace URL, the channel, and the timestamp with its dot taken out — which is
+what makes it usable as an id even for a message no search hit came with.
+
+#### Socket Mode
+
+Not implemented, and the node has one field because of it. Socket Mode would make
+the same entities appear within seconds rather than within the minute, and would
+be the only way to hear about a reaction, an edit or a deletion. It costs a
+second token (`xapp-…` with `connections:write`), a second set of event
+subscriptions under *on behalf of users*, and in most workspaces an
+administrator's approval of the app — for promptness, and for three kinds of
+event that are not what an inbox is for. It was built once and taken out again;
+`git log` has it if it is wanted back.
 
 ### GitHub
 
@@ -190,14 +190,12 @@ them.
 
 | | |
 | --- | --- |
-| `slackEvents` | `userToken` (`xoxp-…`), `appToken` (`xapp-…`, optional), `cursor`, `muted` |
+| `slackEvents` | `userToken` (`xoxp-…`), `cursor` |
 | `githubEvents` | `token` (empty for `gh auth token`), `cursor`, `lastModified` |
 
-`muted` is a comma-separated list of conversation ids never to write. It is the
-node's own, and deliberately not Slack's mute state: what is worth reading later
-is a different question from what is worth a red dot now, so the feed keeps
-everything else — your own messages, channels you are not in, conversations you
-have muted.
+Nothing is filtered. Your own messages, channels you are not a member of and
+conversations you have muted are all written: what is worth reading later is a
+different question from what is worth a red dot now.
 
 ## Pausing, and the cursor
 
@@ -220,3 +218,24 @@ A feed's own line about itself — how far it has read, what refused it — reac
 the page over `feeds:changed`, which is its own channel because nothing about the
 graph has changed. `pensive:changed` means "you are looking at a different store
 now", which a cursor moving is not.
+
+## Being able to see what it is doing
+
+**A feed polling happily and finding nothing looks exactly like a feed that is
+not polling at all.** Both draw a quiet node. So every feed keeps a ring of the
+last forty things it did — what it asked for, how much came back, what it wrote,
+what refused it — with the raw answer under each line, and the node has a
+terminal icon that shows them.
+
+The ring lives on `EventFeeds` rather than on the feed itself, so it survives a
+restart: a token edited *because* the old one was refused restarts the feed, and
+the line saying it was refused is the one still worth reading. `feeds:log` is its
+own IPC call rather than part of `graph:read`, since it is only ever wanted while
+somebody has the panel open and it is the one answer on that page that is a page
+long.
+
+If nothing is arriving, that panel answers the questions in order: did it ask
+(a `Searched …` line), did Slack hand anything back (the raw matches under it),
+did any of it survive the cursor, and did the write land (`Wrote N notes`). A
+feed that has never said anything has never run — which means nothing is plugged
+into it, or it is switched off.

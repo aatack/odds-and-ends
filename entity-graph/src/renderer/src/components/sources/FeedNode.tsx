@@ -1,12 +1,14 @@
-import React, { useState } from 'react'
-import { HelpCircle } from '@untitledui/icons'
-import type { NodeConfig, NodeStatus, SourceNode } from '../../../../core/client'
+import React, { useCallback, useEffect, useState } from 'react'
+import { HelpCircle, Terminal } from '@untitledui/icons'
+import type { FeedRecord, NodeConfig, NodeStatus, SourceNode } from '../../../../core/client'
 import { relativeTime } from '../../helpers/time'
 import { Field } from '../ui/Field'
 import { IconButton } from '../ui/IconButton'
 import { Modal } from '../ui/Modal'
 import type { SourceGraphActions } from '../../views/useSourceGraph'
 import { DraftInput } from './DraftInput'
+
+const api = window.entityGraph
 
 // The body of the two nodes that *do* something rather than being something.
 //
@@ -44,40 +46,22 @@ export function FeedBody({
   actions: SourceGraphActions
 }): React.JSX.Element {
   const [helping, setHelping] = useState(false)
+  const [inspecting, setInspecting] = useState(false)
   const set = (patch: Partial<FeedConfig>): void =>
     void actions.updateNode(node.id, { config: { ...config, ...patch } as NodeConfig })
 
   return (
     <>
       {config.kind === 'slackEvents' ? (
-        <>
-          <Field label="User token">
-            <DraftInput
-              mono
-              type="password"
-              value={config.userToken}
-              placeholder="xoxp-…"
-              onCommit={(userToken) => set({ userToken })}
-            />
-          </Field>
-          <Field label="App token">
-            <DraftInput
-              mono
-              type="password"
-              value={config.appToken}
-              placeholder="xapp-… (optional)"
-              onCommit={(appToken) => set({ appToken })}
-            />
-          </Field>
-          <Field label="Never write">
-            <DraftInput
-              mono
-              value={config.muted}
-              placeholder="C0123ABCD, D0456EFGH"
-              onCommit={(muted) => set({ muted })}
-            />
-          </Field>
-        </>
+        <Field label="User token">
+          <DraftInput
+            mono
+            type="password"
+            value={config.userToken}
+            placeholder="xoxp-…"
+            onCommit={(userToken) => set({ userToken })}
+          />
+        </Field>
       ) : (
         <Field label="Token">
           <DraftInput
@@ -99,12 +83,17 @@ export function FeedBody({
               'Not running. Starting it again reads everything said in the meantime.'
             : (status?.activity ?? readTo(config) ?? 'Waiting to start.')}
         </p>
-        <span className="nodrag nopan">
-          <IconButton title="Where these come from" onClick={() => setHelping(true)}>
+        <span className="nodrag nopan flex items-center">
+          <IconButton title="What it has been doing" onClick={() => setInspecting(true)}>
+            <Terminal size={16} />
+          </IconButton>
+          <IconButton title="Where this comes from" onClick={() => setHelping(true)}>
             <HelpCircle size={16} />
           </IconButton>
         </span>
       </div>
+
+      {inspecting && <FeedLog node={node} onClose={() => setInspecting(false)} />}
 
       {helping && (
         <Modal
@@ -116,6 +105,57 @@ export function FeedBody({
         </Modal>
       )}
     </>
+  )
+}
+
+/**
+ * What the feed has been doing, newest first.
+ *
+ * The thing worth being able to see, and the reason this exists: a feed polling
+ * happily and finding nothing looks exactly like one that is not polling at all.
+ * So each line says what was asked for and how much came back, and carries the
+ * raw answer underneath it — because the next question after "did it ask?" is
+ * always "then what did Slack actually say?".
+ */
+function FeedLog({ node, onClose }: { node: SourceNode; onClose: () => void }): React.JSX.Element {
+  const [records, setRecords] = useState<FeedRecord[] | null>(null)
+  const read = useCallback(() => {
+    void api.feedLog(node.id).then(setRecords)
+  }, [node.id])
+
+  useEffect(read, [read])
+  // The feed says so itself whenever it does something, so an open panel keeps up.
+  useEffect(() => api.onFeedsChanged(read), [read])
+
+  return (
+    <Modal title={`${node.label} — what it has been doing`} onClose={onClose} size="wide">
+      {records === null ? (
+        <p className="text-[13px] text-gray-400">Reading…</p>
+      ) : records.length === 0 ? (
+        <p className="text-[13px] text-gray-400">
+          Nothing yet. A feed that has never said anything has never run — check that something is
+          plugged into it and that it is switched on.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {records.map((record, at) => (
+            <div key={`${record.at}-${at}`} className="space-y-1">
+              <p className="text-[13px] text-gray-900">
+                <span className="mr-2 font-mono text-xs text-gray-400">
+                  {new Date(record.at).toLocaleTimeString()}
+                </span>
+                {record.summary}
+              </p>
+              {record.detail && (
+                <pre className="max-h-48 overflow-auto rounded-md bg-gray-50 p-2 font-mono text-[11px] leading-snug text-gray-600">
+                  {record.detail}
+                </pre>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
   )
 }
 
@@ -160,37 +200,24 @@ function SlackHelp(): React.JSX.Element {
           Scopes: <Mono>search:read</Mono>, <Mono>channels:history</Mono>, <Mono>groups:history</Mono>,{' '}
           <Mono>im:history</Mono>, <Mono>mpim:history</Mono>, <Mono>channels:read</Mono>,{' '}
           <Mono>groups:read</Mono>, <Mono>im:read</Mono>, <Mono>mpim:read</Mono>,{' '}
-          <Mono>users:read</Mono>, <Mono>reactions:read</Mono>.
+          <Mono>users:read</Mono>.
         </p>
         <p>
           A new scope does nothing until the app is reinstalled to the workspace, and reinstalling
-          issues a new token — so copy the new one in here afterwards.
+          issues a new token — so copy the new one in here afterwards. Keep the app <b>internal</b>{' '}
+          to your workspace: a distributed one is allowed a fraction of the requests.
         </p>
       </Help>
-      <Help label="App token">
+      <Help label="What it reads">
         <p>
-          A <Mono>xapp-…</Mono> token with <Mono>connections:write</Mono>, made on the app&rsquo;s
-          Basic Information page. It buys Socket Mode: the same messages arrive seconds after they
-          are sent rather than on the next poll. Leave it empty and the node polls only, which loses
-          nothing but the promptness.
+          One search a minute, covering channels, DMs, group DMs and thread replies alike — muted or
+          not, joined or not, your own messages included. What is worth reading later is not the same
+          question as what is worth a red dot now.
         </p>
         <p>
-          Subscribe the events under <b>on behalf of users</b> rather than the bot list:{' '}
-          <Mono>message.channels</Mono>, <Mono>message.groups</Mono>, <Mono>message.im</Mono>,{' '}
-          <Mono>message.mpim</Mono>, <Mono>reaction_added</Mono>, <Mono>reaction_removed</Mono>. A
-          workspace admin may have to approve the app first.
-        </p>
-        <p>
-          Keep the app <b>internal</b> to your workspace either way. A distributed app is allowed one
-          request a minute to <Mono>conversations.history</Mono> and{' '}
-          <Mono>conversations.replies</Mono>; an internal one keeps fifty.
-        </p>
-      </Help>
-      <Help label="Never write">
-        <p>
-          Conversation ids to leave out, comma-separated — the <Mono>C…</Mono> / <Mono>D…</Mono> id
-          from a channel&rsquo;s link. Everything else you can see is written, muted or not: what is
-          worth reading later is not the same question as what is worth a red dot now.
+          Within the minute rather than the second, and nothing about reactions, edits or deletions:
+          those need Socket Mode, which is a second token and, in most workspaces, an
+          administrator&rsquo;s approval.
         </p>
       </Help>
     </>

@@ -1,5 +1,3 @@
-import { LogLevel, SocketModeClient } from '@slack/socket-mode'
-import { bucketEvents, rollupEntity } from '../../core/entity'
 import {
   conversationInfo,
   kindOf,
@@ -12,15 +10,20 @@ import {
   type SlackMessage,
   type SlackWorkspace,
 } from '../integrations/slack'
-import { EntityWriter, type EntityDraft } from './writer'
+import { EntityWriter, type EntityDraft, type WriteReport } from './writer'
 import { Feed, type FeedOptions } from './feed'
 
-// Slack, read into the store. Two ways in and one way out: a search that walks
-// backwards from a cursor, and — when there is an app-level token — a WebSocket
-// that hands over the same messages seconds after they are sent. Both make the
-// same entities, and the entity ids are what lets them overlap freely: the
-// socket delivering a message the search then finds again writes nothing the
-// second time.
+// Slack, read into the store: a search that walks backwards from a cursor, once
+// a minute.
+//
+// **There is one way in, and it is a poll.** Socket Mode would make the same
+// entities appear seconds after a message is sent rather than within the minute,
+// but it costs a second token, a second set of event subscriptions and, in most
+// workspaces, an administrator's approval — and what it buys is promptness
+// rather than anything the inbox does not eventually get. So the node takes one
+// field, and everything else about it follows: no reactions, no edits, no
+// deletions, because a search hands back the message as it now stands and says
+// nothing about what happened to it.
 //
 // **Search is the one call that covers everywhere.** `conversations.history` is
 // one channel's top-level messages and nothing else, so a feed built on it would
@@ -112,42 +115,19 @@ const conversationName = (c: Conversation): string => {
   return kind === 'dm' ? `@${c.name}` : `#${c.name}`
 }
 
-/** A message as the socket delivers one; the fields this cares about. */
-interface SocketMessage {
-  type?: string
-  subtype?: string
-  channel?: string
-  ts?: string
-  thread_ts?: string
-  user?: string
-  bot_id?: string
-  text?: string
-  deleted_ts?: string
-  message?: SocketMessage
-  previous_message?: SocketMessage
-  item?: { type?: string; channel?: string; ts?: string }
-  reaction?: string
-}
-
 export interface SlackFeedConfig {
   userToken: string
-  appToken: string
   cursor: string
-  muted: string
 }
 
 /**
  * One `slackEvents` node, running.
  *
- * The order at start is the whole of why a restart is safe. The socket is
- * connected *first* and everything it delivers is held; then the catch-up runs
- * from the cursor; then the held events are written. Connected afterwards
- * instead, the gap between the last page of the catch-up and the socket coming
- * up would be a hole — short, and silent, which is worse.
+ * A restart is safe because a pass is safe: it reads from the cursor, writes,
+ * and only then moves the cursor, and reading the same stretch twice writes
+ * nothing the second time.
  */
 export class SlackFeed extends Feed<SlackFeedConfig> {
-  private socket: SocketModeClient | null = null
-  private held: SocketMessage[] | null = null
   private workspace: SlackWorkspace | null = null
   /** Conversations already described, so a busy channel is looked up once. */
   private conversations = new Map<string, Conversation>()
@@ -165,50 +145,11 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
     // Every entity here is named by its permalink, and a permalink begins with
     // the workspace's own address. Without one there is nothing to call anything.
     if (!this.workspace.url) throw new Error('Slack did not say which workspace this token is for')
-    await this.connect()
+    this.note(`Signed in to ${this.workspace.url} as @${this.workspace.handle}`, this.workspace)
   }
 
   protected async end(): Promise<void> {
-    const socket = this.socket
-    this.socket = null
-    this.held = null
     this.parents.clear()
-    await socket?.disconnect().catch(() => undefined)
-  }
-
-  // --- Socket Mode ---------------------------------------------------------
-
-  /**
-   * The WebSocket, when there is an app-level token for one. It goes *out* from
-   * this machine, so nothing here listens and no endpoint is exposed; the
-   * library owns the reconnection and the acknowledgements.
-   */
-  private async connect(): Promise<void> {
-    const { appToken } = this.config()
-    if (!appToken.trim()) return
-    // Quiet: the library narrates every ping at the default level, and there is
-    // nobody reading this app's stdout.
-    const socket = new SocketModeClient({ appToken, logLevel: LogLevel.ERROR })
-    socket.on('slack_event', async (payload: { ack: () => Promise<void>; body?: unknown }) => {
-      // Acknowledged first and always: Slack redelivers what it is not told
-      // about, and an event this cannot make sense of is still received.
-      await payload.ack().catch(() => undefined)
-      const body = payload.body as { event?: SocketMessage } | undefined
-      if (body?.event) void this.deliver(body.event)
-    })
-    this.socket = socket
-    // Held from the moment it is connected, and released by the first catch-up.
-    this.held = []
-    await socket.start()
-  }
-
-  /** One socket event: held while the catch-up runs, written otherwise. */
-  private async deliver(event: SocketMessage): Promise<void> {
-    if (this.held) {
-      this.held.push(event)
-      return
-    }
-    await this.apply([event]).catch((e) => this.failed(e))
   }
 
   // --- The poll ------------------------------------------------------------
@@ -242,6 +183,13 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
     const matches: SearchMatch[] = []
     for (let page = 1; page <= SEARCH_PAGES && this.running; page++) {
       const found = await searchPage(userToken, query, page)
+      // Kept raw, page by page: when nothing is arriving, the question is
+      // whether Slack is handing anything over at all, and this is the only
+      // place that can answer it.
+      this.note(
+        `Searched \`${query}\`, page ${page} of ${found.pages} — ${found.matches.length} back`,
+        found.matches,
+      )
       if (!found.matches.length) break
       matches.push(...found.matches)
       // Newest first, so the page's last hit says whether the walk has gone past
@@ -256,7 +204,14 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
       const ts = asSeconds(m.ts)
       return ts !== null && ts >= floor && (ceiling === null || ts < ceiling)
     })
-    await this.write(await this.fromMatches(kept))
+    if (matches.length !== kept.length) {
+      this.note(
+        `Kept ${kept.length} of ${matches.length} — the rest are older than the cursor`,
+        { cursor: new Date(floor * 1000).toISOString(), until: ceiling && new Date(ceiling * 1000).toISOString() },
+      )
+    }
+    const written = await this.write(await this.fromMatches(kept))
+    if (written) this.note(`Wrote ${written.touched} notes, ${written.created} of them new`, written)
 
     this.advance({ cursor: (ceiling ?? now).toFixed(6) })
     this.say(
@@ -266,32 +221,13 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
     )
     // Still behind: come straight back rather than waiting out the poll.
     if (ceiling && this.running) return this.pass()
-
-    // The catch-up is complete, so whatever the socket held while it ran can go
-    // in — after it, and in the order it arrived.
-    const held = this.held
-    if (held) {
-      this.held = null
-      await this.apply(held)
-    }
   }
 
   // --- Turning what arrived into entities -----------------------------------
 
-  /** Conversation ids this node is told never to write. */
-  private muted(): Set<string> {
-    return new Set(
-      this.config()
-        .muted.split(',')
-        .map((s) => s.trim())
-        .filter(Boolean),
-    )
-  }
-
   /**
-   * The conversation an id names. Search hands one over with the hit, so this is
-   * only reached for what came off the socket, which names the channel and
-   * nothing else. Remembered: a workspace's channels do not get renamed often.
+   * The conversation an id names, for the hits search did not name one on.
+   * Remembered: a workspace's channels do not get renamed often.
    */
   private async conversation(channel: string): Promise<Conversation> {
     const known = this.conversations.get(channel)
@@ -379,12 +315,11 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
 
   /** Every entity a page of search hits implies, ready to be written as one. */
   private async fromMatches(matches: SearchMatch[]): Promise<EntityDraft[]> {
-    const muted = this.muted()
     const drafts: EntityDraft[] = []
     for (const match of matches) {
       const channel = match.channel?.id
       const ts = match.ts
-      if (!channel || !ts || muted.has(channel)) continue
+      if (!channel || !ts) continue
       const threadTs = threadOf(match.permalink)
       const reply = threadTs && threadTs !== ts ? threadTs : null
 
@@ -405,117 +340,11 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
     return drafts
   }
 
-  /**
-   * A batch off the socket. One handler covers all of it, because Slack's own
-   * shapes do: a thread reply is a `message` with `thread_ts` set, and an edit
-   * and a delete are a `message` with a subtype saying which.
-   */
-  private async apply(events: SocketMessage[]): Promise<void> {
-    const muted = this.muted()
-    const drafts: EntityDraft[] = []
-    // A reaction says which one changed, not what the set now is, so the set is
-    // read off the entity and the changes applied to it. Gathered first so that
-    // several reactions to one message cost one read between them.
-    const reactions: { id: string; name: string; delta: number }[] = []
-
-    for (const event of events) {
-      if (event.type === 'reaction_added' || event.type === 'reaction_removed') {
-        const channel = event.item?.channel
-        const ts = event.item?.ts
-        if (!channel || !ts || !event.reaction || muted.has(channel)) continue
-        reactions.push({
-          id: this.idFor(channel, ts),
-          name: event.reaction,
-          delta: event.type === 'reaction_added' ? 1 : -1,
-        })
-        continue
-      }
-      if (event.type !== 'message') continue
-      const channel = event.channel
-      if (!channel || muted.has(channel)) continue
-
-      if (event.subtype === 'message_deleted') {
-        const ts = event.deleted_ts ?? event.previous_message?.ts
-        if (!ts) continue
-        // Kept rather than removed: what was said and then unsaid is a thing
-        // that happened, and the note may already have been read and filed.
-        drafts.push({
-          id: this.idFor(channel, ts),
-          values: { 'slack/deleted': true },
-          ifKnown: true,
-        })
-        continue
-      }
-
-      // An edit arrives wrapped: the new message is inside, the old one beside
-      // it. Only the text can have changed, but writing the lot is the same code
-      // as a new message and the writer drops whatever already matches.
-      const message = event.subtype === 'message_changed' ? event.message : event
-      const ts = message?.ts
-      if (!message || !ts) continue
-      const threadTs = message.thread_ts && message.thread_ts !== ts ? message.thread_ts : null
-
-      drafts.push(this.channelDraft(await this.conversation(channel)))
-      if (threadTs) drafts.push(await this.parentDraft(channel, threadTs))
-      drafts.push(
-        this.messageDraft(
-          channel,
-          { ts, text: message.text ?? '', user: message.user ?? message.bot_id, thread_ts: threadTs ?? undefined },
-          threadTs ? this.idFor(channel, threadTs) : channel,
-        ),
-      )
-    }
-
-    if (reactions.length) drafts.push(...(await this.reactionDrafts(reactions)))
-    await this.write(drafts)
-  }
-
-  /**
-   * Reactions as they now stand. A reaction makes no entity of its own — it is
-   * something that happened *to* a message — so this is one value on the
-   * message, an object of name to count, which both reads plainly and takes a
-   * delta without ambiguity.
-   */
-  private async reactionDrafts(
-    changes: { id: string; name: string; delta: number }[],
-  ): Promise<EntityDraft[]> {
-    const built = await this.pensive()
-    if ('problem' in built) throw new Error(built.problem)
-    const ids = [...new Set(changes.map((c) => c.id))]
-    const buckets = bucketEvents(ids, await built.pensive.readEvents(ids))
-
-    const counts = new Map<string, Record<string, number>>()
-    for (const id of ids) {
-      const held = rollupEntity(id, buckets.get(id) ?? []).values['slack/reactions']
-      counts.set(id, { ...((held as Record<string, number> | undefined) ?? {}) })
-    }
-    for (const change of changes) {
-      const on = counts.get(change.id)!
-      const next = (on[change.name] ?? 0) + change.delta
-      if (next > 0) on[change.name] = next
-      else delete on[change.name]
-    }
-    return ids.map((id) => ({
-      id,
-      // A reaction is not a reading of the message, so it does not conjure one:
-      // a note whose whole content is that somebody reacted to something nobody
-      // has read is worse than not knowing.
-      ifKnown: true,
-      // Sorted, so that the same set of reactions is the same value however it
-      // was arrived at — otherwise every read would look like a change.
-      values: {
-        'slack/reactions': Object.fromEntries(
-          Object.entries(counts.get(id)!).sort(([a], [b]) => a.localeCompare(b)),
-        ),
-      },
-    }))
-  }
-
   /** Write a batch through the store this node is plugged into. */
-  private async write(drafts: EntityDraft[]): Promise<void> {
-    if (!drafts.length) return
+  private async write(drafts: EntityDraft[]): Promise<WriteReport | null> {
+    if (!drafts.length) return null
     const built = await this.pensive()
     if ('problem' in built) throw new Error(built.problem)
-    await new EntityWriter(built.pensive, 'slack').write(drafts)
+    return new EntityWriter(built.pensive, 'slack').write(drafts)
   }
 }

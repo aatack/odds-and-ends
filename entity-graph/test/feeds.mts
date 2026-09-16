@@ -116,30 +116,6 @@ test('folds an entity named twice in one batch, later winning', async () => {
   assert.deepEqual(new Set(note.inboundLinks), new Set(['C1', INBOX_ID]))
 })
 
-test('does not conjure a note out of a reaction to something nobody read', async () => {
-  const store = new MemorySource()
-  const writer = new EntityWriter(store, 'slack')
-  const reacted = [{ id: LINK, values: { 'slack/reactions': { smile: 1 } }, ifKnown: true }]
-
-  await writer.write(reacted)
-  assert.equal(store.events.length, 0, 'a reaction alone made a note')
-
-  await writer.write(message('hello'))
-  await writer.write(reacted)
-  assert.deepEqual((await entity(store, LINK)).values['slack/reactions'], { smile: 1 })
-})
-
-test('takes a reaction that arrives beside the message it is on', async () => {
-  const store = new MemorySource()
-  await new EntityWriter(store, 'slack').write([
-    ...message('hello'),
-    { id: LINK, values: { 'slack/reactions': { smile: 1 } }, ifKnown: true },
-  ])
-  const note = await entity(store, LINK)
-  assert.equal(note.values.text, 'hello')
-  assert.deepEqual(note.values['slack/reactions'], { smile: 1 })
-})
-
 // --- What a service handed over ---------------------------------------------
 
 test('reads a thread reply out of its permalink, since a hit has no thread_ts', async () => {
@@ -226,7 +202,7 @@ test('a cursor that moved is not a reason to restart the feed that moved it', as
     x: 0,
     y: 0,
     paused: false,
-    config: { kind: 'slackEvents', userToken, appToken: '', cursor, muted: '' },
+    config: { kind: 'slackEvents', userToken, cursor },
   })
   assert.equal(feedSignature(node('1')), feedSignature(node('2')))
   assert.notEqual(feedSignature(node('1')), feedSignature(node('1', 'xoxp-2')))

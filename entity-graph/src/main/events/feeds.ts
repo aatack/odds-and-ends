@@ -1,4 +1,4 @@
-import type { NodeConfig, SourceNode } from '../../core/client'
+import type { FeedRecord, NodeConfig, SourceNode } from '../../core/client'
 import { watches } from '../../core/client'
 import type { GraphDb } from '../pensive/graph'
 import type { PensiveRegistry } from '../pensive/registry'
@@ -29,8 +29,29 @@ export function feedSignature(node: SourceNode): string {
   return JSON.stringify([node.paused, node.label, rest])
 }
 
+/** How many lines of a feed's own account of itself are kept. */
+const LOG = 40
+
+/** How much of one raw response is worth keeping to look at. */
+const DETAIL = 4000
+
+/**
+ * How often a feed saying something may redraw the page. A catch-up writes a
+ * line per page of search results, and each one would otherwise be a round trip
+ * to the renderer and back.
+ */
+const REDRAW_MS = 500
+
 export class EventFeeds {
   private feeds = new Map<string, { feed: RunningFeed; signature: string }>()
+  /**
+   * What each node has been doing, newest first. Held here rather than on the
+   * feed so that it survives a restart — a token edited because the old one was
+   * refused restarts the feed, and the line saying it was refused is exactly the
+   * one worth still being able to read.
+   */
+  private logs = new Map<string, FeedRecord[]>()
+  private redrawnAt = 0
 
   constructor(
     private db: GraphDb,
@@ -67,6 +88,38 @@ export class EventFeeds {
     }
   }
 
+  /** One line of a node's account of itself. */
+  private note(nodeId: string, summary: string, detail?: unknown): void {
+    const log = this.logs.get(nodeId) ?? []
+    log.unshift({
+      at: Date.now(),
+      summary,
+      detail: detail === undefined ? null : this.describe(detail),
+    })
+    log.length = Math.min(log.length, LOG)
+    this.logs.set(nodeId, log)
+    const now = Date.now()
+    if (now - this.redrawnAt < REDRAW_MS) return
+    this.redrawnAt = now
+    this.changed()
+  }
+
+  /** The raw thing, as much of it as is worth reading. */
+  private describe(detail: unknown): string {
+    let json: string
+    try {
+      json = JSON.stringify(detail, null, 2) ?? String(detail)
+    } catch {
+      json = String(detail)
+    }
+    return json.length > DETAIL ? `${json.slice(0, DETAIL)}\n… (${json.length} characters)` : json
+  }
+
+  /** What a node has been doing, newest first. */
+  log(nodeId: string): FeedRecord[] {
+    return this.logs.get(nodeId) ?? []
+  }
+
   private build(node: SourceNode): RunningFeed | null {
     // Typed per kind rather than once over a union: a feed's config is the shape
     // of its own node, and the node's kind is what has just been checked.
@@ -79,6 +132,7 @@ export class EventFeeds {
       advance: (patch: Partial<C>) => this.write(node.id, patch as Partial<NodeConfig>),
       pensive: () => this.registry.tryGet(node.id),
       changed: this.changed,
+      note: (summary, detail) => this.note(node.id, summary, detail),
     })
     if (node.config.kind === 'slackEvents') return new SlackFeed(options<SlackFeedConfig>())
     if (node.config.kind === 'githubEvents') return new GithubFeed(options<GithubFeedConfig>())

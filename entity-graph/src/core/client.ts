@@ -46,7 +46,7 @@ export type NodeConfig =
   /**
    * Slack, watched and written into the pensive plugged into it.
    *
-   * The tokens sit here rather than in a note because this file is the app's
+   * The token sits here rather than in a note because this file is the app's
    * own, not a pensive: it already holds the bearer tokens a broadcast issues,
    * and a secret copied into a store is a secret published with it.
    */
@@ -54,12 +54,8 @@ export type NodeConfig =
       kind: 'slackEvents'
       /** The `xoxp-…` user token. Search is user-token only; a bot cannot. */
       userToken: string
-      /** The `xapp-…` app-level token. Without it the node only polls. */
-      appToken: string
       /** A Slack `ts`. Everything after it has been read. */
       cursor: string
-      /** Conversation ids never to write, comma-separated. */
-      muted: string
     }
   /** GitHub notifications, watched and written into the pensive plugged in. */
   | {
@@ -128,6 +124,21 @@ export interface NodeStatus {
    * and when. Null for the nodes that only sit there being read.
    */
   activity: string | null
+}
+
+/**
+ * One thing a feed did, as the node's inspector shows it. A ring of these is the
+ * answer to "is this working?", which nothing else on the page can give: a feed
+ * that is polling happily and finding nothing looks exactly like one that is not
+ * polling at all.
+ */
+export interface FeedRecord {
+  /** Unix ms. */
+  at: number
+  /** One line: what was asked for, or what came back. */
+  summary: string
+  /** The raw thing it is about, as JSON, cut off past a few thousand characters. */
+  detail: string | null
 }
 
 /** The whole page in one answer: the graph, plus how each node is getting on. */
@@ -211,7 +222,7 @@ export const NODE_KINDS: NodeKindInfo[] = [
     inputs: 1,
     output: false,
     addable: true,
-    config: { kind: 'slackEvents', userToken: '', appToken: '', cursor: '', muted: '' },
+    config: { kind: 'slackEvents', userToken: '', cursor: '' },
   },
   {
     kind: 'githubEvents',

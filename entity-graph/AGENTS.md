@@ -237,7 +237,10 @@ same stretch twice writes nothing the second time — which is what lets the cur
 be wound back before every request and moved only *after* the entities are in.
 Their credentials live on the node, in the app's own graph file, and are never
 copied into a store. Pausing one **stops** it, unlike every other node, where
-pausing means refusing.
+pausing means refusing. Each keeps a ring of the last few things it did, raw
+answers included, which the node shows behind a terminal icon — a feed polling
+happily and finding nothing is otherwise indistinguishable from one that never
+ran.
 
 `src/main/pensive/` is the rest: `graph.ts` the file, `registry.ts` the building
 of pensives from it, `http.ts` one small server per published node, `mcpServer.ts`

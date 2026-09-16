@@ -1,7 +1,7 @@
 import { ok } from '../integrations/exec'
 import { fetchJsonResponse } from '../integrations/http'
 import { runIntegrationTool } from '../integrations/index'
-import { EntityWriter, type EntityDraft } from './writer'
+import { EntityWriter, type EntityDraft, type WriteReport } from './writer'
 import { Feed, type FeedOptions } from './feed'
 
 // GitHub, read into the store. One call covers every repository — `/notifications`
@@ -163,6 +163,7 @@ export class GithubFeed extends Feed<GithubFeedConfig> {
         'No token, and `gh auth token` had none — run `gh auth refresh --scopes notifications`',
       )
     }
+    this.note('Using the token `gh auth token` gave')
   }
 
   /** One GitHub request, as this node. */
@@ -206,6 +207,13 @@ export class GithubFeed extends Feed<GithubFeedConfig> {
     const interval = Number(answer.headers.get('x-poll-interval'))
     if (Number.isFinite(interval) && interval > 0) this.pollMs = interval * 1000
 
+    this.note(
+      answer.status === 304
+        ? `Nothing new since ${lastModified || since.toISOString()}`
+        : `Asked for notifications since ${since.toISOString()} — ${answer.body?.length ?? 0} back`,
+      answer.status === 304 ? null : answer.body,
+    )
+
     if (answer.status === 304 || !answer.body?.length) {
       await this.mine()
       this.advance({ cursor: new Date(started).toISOString() })
@@ -225,7 +233,8 @@ export class GithubFeed extends Feed<GithubFeedConfig> {
       next = nextPage(more.headers)
     }
 
-    await this.write(await this.fromNotifications(notifications, since))
+    const written = await this.write(await this.fromNotifications(notifications, since))
+    if (written) this.note(`Wrote ${written.touched} notes, ${written.created} of them new`, written)
 
     // Only now: the entities are in, so a crash before the next line costs a
     // re-read of the same minute and nothing else.
@@ -418,13 +427,14 @@ export class GithubFeed extends Feed<GithubFeedConfig> {
         },
       })
     }
+    this.note(`Swept up ${drafts.length} of my own pull requests`, answer?.pullRequests ?? null)
     await this.write(drafts)
   }
 
-  private async write(drafts: EntityDraft[]): Promise<void> {
-    if (!drafts.length) return
+  private async write(drafts: EntityDraft[]): Promise<WriteReport | null> {
+    if (!drafts.length) return null
     const built = await this.pensive()
     if ('problem' in built) throw new Error(built.problem)
-    await new EntityWriter(built.pensive, 'github').write(drafts)
+    return new EntityWriter(built.pensive, 'github').write(drafts)
   }
 }
