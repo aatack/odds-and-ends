@@ -383,6 +383,10 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
     this.conversations.set(c.id, c)
     return {
       id: c.id,
+      // Never in the inbox, however it was first heard of. A channel is where
+      // messages arrive, not one of the things that arrives — an inbox is a list
+      // of what to read, and nobody reads a channel.
+      context: true,
       values: {
         // The `type` is what makes a row read as the thing it is rather than as
         // a plain bullet, and is what a type note under `@types` would describe
@@ -416,12 +420,11 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
       names[id] = name
       // Written down, but not into the inbox: somebody mentioned in passing is
       // a thing to point at, not a thing that has arrived. A channel gets the
-      // note it would have got anyway, so a mention of one and a message in one
-      // describe it the same way.
+      // note it would have got anyway, which is already out of the inbox.
       into.push(
         isPerson(id)
           ? { id, context: true, values: { type: 'slack/user', text: name } }
-          : { ...this.channelDraft(await this.conversation(id)), context: true },
+          : this.channelDraft(await this.conversation(id)),
       )
     }
     return slackToMarkdown(text, names)
