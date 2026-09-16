@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   CurrentPensive,
+  FeedRecord,
   NodeKind,
   NodePatch,
   SourceEdge,
@@ -76,6 +77,12 @@ export interface EntityGraphAPI {
    * a cursor moving is not.
    */
   onFeedsChanged: (listener: () => void) => () => void
+  /**
+   * What a feed node has been doing, newest first — what it asked for and what
+   * came back. The only way to tell a feed finding nothing from a feed that is
+   * not running, which from outside look exactly alike.
+   */
+  feedLog: (nodeId: string) => Promise<FeedRecord[]>
 
   // --- The graph of pensives ----------------------------------------------
 
@@ -140,6 +147,8 @@ const api: EntityGraphAPI = {
     ipcRenderer.on('feeds:changed', handler)
     return () => ipcRenderer.off('feeds:changed', handler)
   },
+
+  feedLog: (nodeId) => ipcRenderer.invoke('feeds:log', nodeId),
 
   readGraph: () => ipcRenderer.invoke('graph:read'),
   addNode: (kind, x, y) => ipcRenderer.invoke('graph:addNode', kind, x, y),

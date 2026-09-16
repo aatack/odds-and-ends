@@ -15,6 +15,7 @@ import { pathToFileURL } from 'url'
 import { v4 as uuidv4 } from 'uuid'
 import type {
   CurrentPensive,
+  FeedRecord,
   NodeKind,
   NodePatch,
   SourceEdge,
@@ -225,6 +226,11 @@ ipcMain.handle('graph:disconnect', async (_e, edgeId: string) => {
 // ---------------------------------------------------------------------------
 // IPC — tokens on a broadcast or MCP node
 // ---------------------------------------------------------------------------
+
+// What a feed has been doing, newest first. Its own call rather than part of
+// `graph:read`, because it is only ever read while somebody has the inspector
+// open and it is the one answer on this page that is a page long.
+ipcMain.handle('feeds:log', (_e, nodeId: string): FeedRecord[] => feeds.log(nodeId))
 
 ipcMain.handle('graph:tokens', (_e, nodeId: string): SourceToken[] => graph.tokens(nodeId))
 ipcMain.handle('graph:issueToken', (_e, nodeId: string, name: string): SourceToken =>

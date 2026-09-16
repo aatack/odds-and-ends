@@ -37,7 +37,6 @@
     "@fontsource-variable/source-serif-4": "^5.2.9",
     "@jitl/quickjs-singlefile-browser-release-sync": "^0.32.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@slack/socket-mode": "^3.0.1",
     "@xyflow/react": "^12.11.5",
     "better-sqlite3": "^11.1.2",
     "electron-store": "^8.2.0",

@@ -38,6 +38,13 @@ export interface FeedOptions<C> {
   pensive: () => Promise<{ pensive: Pensive } | { problem: string }>
   /** Something the page would want to redraw for. */
   changed: () => void
+  /**
+   * Keep one line, and optionally the raw thing it is about, for the node's
+   * inspector. This is the only account of a feed that is *working*: a poll that
+   * finds nothing and a poll that never happened look identical from outside,
+   * and telling them apart is the whole of debugging one of these.
+   */
+  note: (summary: string, detail?: unknown) => void
 }
 
 export abstract class Feed<C> implements RunningFeed {
@@ -67,6 +74,11 @@ export abstract class Feed<C> implements RunningFeed {
     return this.options.pensive()
   }
 
+  /** One line for the inspector, and the raw thing it is about. */
+  protected note(summary: string, detail?: unknown): void {
+    this.options.note(summary, detail)
+  }
+
   /** Whatever a feed has to do once, before its first pass. */
   protected async begin(): Promise<void> {}
   /** Whatever it has to let go of. */
@@ -85,6 +97,9 @@ export abstract class Feed<C> implements RunningFeed {
   /** What went wrong. Said once rather than on every pass that repeats it. */
   protected failed(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error)
+    // Kept every time, unlike the line the node shows: the same failure twice is
+    // not news to look at, but it is very much news that it is still happening.
+    this.options.note(`Failed: ${message}`, error instanceof Error ? error.stack : error)
     if (this.problem === message) return
     this.problem = message
     this.options.changed()
