@@ -1,6 +1,7 @@
 import {
   conversationInfo,
   historySince,
+  identityFor,
   kindOf,
   listConversations,
   messageAt,
@@ -14,6 +15,7 @@ import {
   type SlackWorkspace,
 } from '../integrations/slack'
 import { EntityWriter, type EntityDraft, type WriteReport } from './writer'
+import { mentionsIn, slackToMarkdown } from './mrkdwn'
 import { Feed, type FeedOptions } from './feed'
 
 // Slack, read into the store: a search that walks backwards from a cursor, twice
@@ -215,6 +217,9 @@ export function permalinkFor(
   return threadTs && threadTs !== ts ? `${base}?thread_ts=${threadTs}&cid=${channel}` : base
 }
 
+/** Whether an id is somebody rather than somewhere. `W…` is an enterprise grid. */
+const isPerson = (id: string): boolean => id.startsWith('U') || id.startsWith('W')
+
 /** What to call a conversation: a channel wears a `#`, somebody wears an `@`. */
 const conversationName = (c: Conversation): string => {
   const kind = kindOf(c)
@@ -240,6 +245,10 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
   private conversations = new Map<string, Conversation>()
   /** Thread parents already read, so a busy thread is fetched once. */
   private parents = new Map<string, EntityDraft>()
+  /** The notes each of those mentions, kept beside it for the same reason. */
+  private mentions = new Map<string, EntityDraft[]>()
+  /** What a mentioned id is called, so a name costs one lookup ever. */
+  private names = new Map<string, string>()
   /** Everywhere this token can see, and when that was last asked. */
   private everywhere: { at: number; value: Conversation[] } | null = null
   /** How far round the sweep has got, so each pass takes the next few. */
@@ -261,6 +270,7 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
 
   protected async end(): Promise<void> {
     this.parents.clear()
+    this.names.clear()
   }
 
   // --- The poll ------------------------------------------------------------
@@ -385,6 +395,52 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
     }
   }
 
+  /**
+   * A message's text as markdown, with everybody and everywhere it mentions
+   * written down as a note so the mention has a name to show.
+   *
+   * The lookups are the only reason this is asynchronous: a mention is a raw id
+   * and Slack is the only thing that knows whose. Each one is asked about once
+   * for as long as the feed runs — a workspace's people do not get renamed
+   * often, and a busy channel mentions the same handful of them all day.
+   */
+  private async render(
+    text: string | undefined,
+    into: EntityDraft[],
+  ): Promise<string | undefined> {
+    if (text === undefined) return undefined
+    const names: Record<string, string> = {}
+    for (const id of mentionsIn(text)) {
+      const name = await this.nameOf(id)
+      if (name === null) continue
+      names[id] = name
+      // Written down, but not into the inbox: somebody mentioned in passing is
+      // a thing to point at, not a thing that has arrived. A channel gets the
+      // note it would have got anyway, so a mention of one and a message in one
+      // describe it the same way.
+      into.push(
+        isPerson(id)
+          ? { id, context: true, values: { type: 'slack/user', text: name } }
+          : { ...this.channelDraft(await this.conversation(id)), context: true },
+      )
+    }
+    return slackToMarkdown(text, names)
+  }
+
+  /** What a mentioned id is called: `@alex`, `#general`. Null if nobody knows. */
+  private async nameOf(id: string): Promise<string | null> {
+    const known = this.names.get(id)
+    if (known !== undefined) return known
+    const name = isPerson(id)
+      ? await identityFor(this.config().userToken, id)
+          .then((who) => `@${who.name}`)
+          .catch(() => null)
+      : await this.conversation(id).then((c) => conversationName(c))
+    if (name === null || name === id) return null
+    this.names.set(id, name)
+    return name
+  }
+
   /** A message's permalink, which is also the id of the entity it becomes. */
   private link(channel: string, ts: string, threadTs?: string | null): string {
     return permalinkFor(this.workspace?.url ?? '', channel, ts, threadTs)
@@ -430,17 +486,29 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
    * it is fetched rather than stubbed. Once per thread per run: the answer does
    * not change, and a busy thread would otherwise cost a call per reply.
    */
-  private async parentDraft(channel: string, ts: string): Promise<EntityDraft> {
+  private async parentDraft(channel: string, ts: string, into: EntityDraft[]): Promise<EntityDraft> {
     const id = this.idFor(channel, ts)
     const known = this.parents.get(id)
-    if (known) return known
+    if (known) {
+      into.push(...(this.mentions.get(id) ?? []))
+      return known
+    }
     const message = await messageAt(this.config().userToken, channel, ts).catch(() => null)
-    const draft = this.messageDraft(channel, message ?? { ts }, channel)
+    const mentioned: EntityDraft[] = []
+    const text = await this.render(message?.text, mentioned)
+    const draft = this.messageDraft(channel, { ...(message ?? { ts }), text }, channel)
+    // The people it mentions go in beside it: the cached draft is the message
+    // alone, but the notes it points at have to be written the first time too.
+    this.mentions.set(id, mentioned)
     // Forgotten wholesale rather than one at a time: this is a saving, not a
     // record, and a feed left running for a month must not grow a map of every
     // thread it has ever seen a reply in.
-    if (this.parents.size >= PARENTS) this.parents.clear()
+    if (this.parents.size >= PARENTS) {
+      this.parents.clear()
+      this.mentions.clear()
+    }
     this.parents.set(id, draft)
+    into.push(...mentioned)
     return draft
   }
 
@@ -477,7 +545,8 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
       if (!messages.length) continue
       drafts.push(this.channelDraft(conversation))
       for (const message of messages) {
-        drafts.push(this.messageDraft(conversation.id, message, conversation.id))
+        const text = await this.render(message.text, drafts)
+        drafts.push(this.messageDraft(conversation.id, { ...message, text }, conversation.id))
         found++
         // `conversations.history` is top-level messages only, so a thread's
         // replies are a call of their own — worth making only when the parent
@@ -489,8 +558,13 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
           const at = asSeconds(reply.ts)
           if (reply.ts === message.ts || at === null || at < floor) continue
           if (ceiling !== null && at >= ceiling) continue
+          const body = await this.render(reply.text, drafts)
           drafts.push(
-            this.messageDraft(conversation.id, reply, this.idFor(conversation.id, message.ts)),
+            this.messageDraft(
+              conversation.id,
+              { ...reply, text: body },
+              this.idFor(conversation.id, message.ts),
+            ),
           )
           found++
         }
@@ -532,11 +606,12 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
           match.channel?.name ? { ...match.channel, id: channel } : await this.conversation(channel),
         ),
       )
-      if (reply) drafts.push(await this.parentDraft(channel, reply))
+      if (reply) drafts.push(await this.parentDraft(channel, reply, drafts))
+      const text = await this.render(match.text, drafts)
       drafts.push(
         this.messageDraft(
           channel,
-          { ts, text: match.text, user: match.user, thread_ts: reply ?? undefined },
+          { ts, text, user: match.user, thread_ts: reply ?? undefined },
           reply ? this.idFor(channel, reply) : channel,
         ),
       )

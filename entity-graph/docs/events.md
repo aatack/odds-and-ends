@@ -67,6 +67,7 @@ if you want one, and everything here works without it.
 | --- | --- | --- | --- |
 | `slack/message` | its permalink | `text`, `slack/user` | its thread, or its channel |
 | `slack/channel` | the channel id | `text` (the name), `slack/channel`, `slack/kind` | — |
+| `slack/user` | the user id | `text` (the name) | — |
 | `github/pullRequest` | `owner/repo#123` | `text` (the title), `github/url`, `github/state`, `github/author`, `github/repo`, `github/reason`, `github/checks` | — |
 | `github/comment` | `issuecomment-…`, `discussion_r…`, `pullrequestreview-…` | `text`, `github/author`, `github/url`, `github/reviewState` | its pull request |
 
@@ -79,6 +80,32 @@ timestamp spelled out — so a value for any of those would be a second copy of
 something already there, to be kept in step with it for no gain. Where the note
 sits says the rest: under the channel's note, or under the message it replies
 to.
+
+### Slack's mrkdwn is not markdown
+
+They look alike, which is the worst kind of difference: `*bold*` is bold in one
+and italic in the other, `~struck~` wants two tildes here, a link is written
+inside angle brackets rather than square ones, and `&`, `<` and `>` arrive
+escaped. A message put through untouched comes out subtly wrong rather than
+obviously wrong, so `events/mrkdwn.ts` converts one to the other **as the text is
+first written**, not on the way out.
+
+Nothing inside a code span or a fence is touched, so a message explaining the
+syntax survives being read. The escapes are undone *after* the angle forms are
+parsed, so `&lt;@U1&gt;` — somebody spelling out what a mention looks like — stays
+text instead of becoming one.
+
+**A mention becomes an entity mention.** `<@U0123ABCD>` is the one form with no
+markdown at all to translate into: there is no markdown for "this is a person".
+So it becomes `[@entity:U0123ABCD](@alex)`, which the outliner draws as a pill —
+and since the id Slack uses *is* the id the entity has, the pill points at the
+note about that person and follows it when it is renamed. The label in the parens
+is only what shows until that note has text.
+
+Those notes are written too, and are the one thing a feed writes that does **not**
+go in the inbox: somebody mentioned in passing is a thing to point at, not a
+thing that has arrived (`EntityDraft.context`). An audience — `@here`,
+`@channel`, a user group — stays a word, there being nothing to point at.
 
 **A message is never written blank.** A thread parent older than the cursor is
 not in the batch that turns up its replies, so it is *fetched* — once per thread

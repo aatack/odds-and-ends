@@ -31,6 +31,14 @@ export interface EntityDraft {
   values: Record<string, unknown>
   /** Where it hangs in the outline: the thread, the channel, the pull request. */
   parentId?: string
+  /**
+   * Something the arrivals *refer to* rather than an arrival: the person a
+   * message mentions, who is written down so the mention has a name to show and
+   * a note to hang things off. It is written like anything else, but it does not
+   * go in the inbox — an inbox full of everybody who has ever been mentioned is
+   * an inbox nobody reads.
+   */
+  context?: boolean
 }
 
 /** What one batch actually changed, which is what a feed reports it did. */
@@ -81,6 +89,9 @@ export class EntityWriter {
         id: draft.id,
         values: { ...before?.values, ...draft.values },
         parentId: draft.parentId ?? before?.parentId,
+        // One mention of a note as an arrival is enough: a message that is both
+        // mentioned and read is read.
+        context: (before?.context ?? true) && (draft.context ?? false),
       })
     }
 
@@ -134,7 +145,7 @@ export class EntityWriter {
         })
       }
       if (draft.parentId) link(draft.parentId)
-      if (fresh) link(INBOX_ID)
+      if (fresh && !draft.context) link(INBOX_ID)
 
       if (fresh) created++
       if (events.length > before) touched++

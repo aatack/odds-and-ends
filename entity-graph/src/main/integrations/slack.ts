@@ -293,11 +293,11 @@ export interface SlackIdentity {
  * `users.info` has never heard of. Which one it is is legible from the id, and
  * the answer is the same shape either way, so nobody asking has to know.
  */
-async function identityOf(id: string): Promise<SlackIdentity> {
+export async function identityFor(token: string, id: string): Promise<SlackIdentity> {
   if (id.startsWith('B')) {
-    const res = await slack<
+    const res = await slackCall<
       SlackResponse & { bot?: { id?: string; name?: string; deleted?: boolean } }
-    >('bots.info', { bot: id })
+    >(token, 'bots.info', { bot: id })
     const bot = res.bot ?? {}
     return {
       id: bot.id ?? id,
@@ -307,6 +307,29 @@ async function identityOf(id: string): Promise<SlackIdentity> {
       isBot: true,
       deleted: !!bot.deleted,
     }
+  }
+  const res = await slackCall<SlackResponse & { user?: SlackUser }>(token, 'users.info', {
+    user: id,
+  })
+  const person = res.user ?? { id }
+  return {
+    id: person.id ?? id,
+    name: personName(person, id),
+    handle: person.name ? `@${person.name}` : null,
+    realName: person.profile?.real_name || person.real_name || null,
+    isBot: !!person.is_bot,
+    deleted: !!person.deleted,
+  }
+}
+
+/**
+ * The same, as the app itself. Memoised through {@link fetchUser}, unlike the
+ * token-taking one above: a feed has its own cache and its own token, and one
+ * map shared between two workspaces would name somebody after a stranger.
+ */
+async function identityOf(id: string): Promise<SlackIdentity> {
+  if (id.startsWith('B')) {
+    return identityFor(requireEnv('SLACK_TOKEN', 'SLACK_USER_TOKEN', 'SLACK_BOT_TOKEN'), id)
   }
   const person = await fetchUser(id)
   return {
