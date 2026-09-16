@@ -41,17 +41,33 @@ export function slackError(method: string, res: SlackResponse): string {
   ].join(' ')
 }
 
-/** One Web API call. Every method takes a form body, so one shape covers them all. */
-async function slack<T extends SlackResponse>(
+/**
+ * One Web API call, as whoever the token belongs to. Every method takes a form
+ * body, so one shape covers them all.
+ *
+ * The token is an argument rather than read from `.env` here because there is
+ * more than one holder of one: the tools below are the app's own hands and use
+ * what is in `.env`, while a `slackEvents` node on the sources page carries its
+ * own, which is the token the *node* was configured with and nobody else's.
+ */
+export async function slackCall<T extends SlackResponse>(
+  token: string,
   method: string,
   params: Record<string, string | number | boolean | undefined>,
 ): Promise<T> {
-  const token = requireEnv('SLACK_TOKEN', 'SLACK_USER_TOKEN', 'SLACK_BOT_TOKEN')
   const res = await postForm<T>(`${API}/${method}`, params, {
     Authorization: `Bearer ${token}`,
   })
   if (!res.ok) throw new Error(slackError(method, res))
   return res
+}
+
+/** One Web API call as the app itself — the token in `.env`. */
+async function slack<T extends SlackResponse>(
+  method: string,
+  params: Record<string, string | number | boolean | undefined>,
+): Promise<T> {
+  return slackCall<T>(requireEnv('SLACK_TOKEN', 'SLACK_USER_TOKEN', 'SLACK_BOT_TOKEN'), method, params)
 }
 
 /** Slack's own ceiling on a page; asking for more is capped silently. */
@@ -357,8 +373,21 @@ const daysAgo = (n: number): string =>
 export const recentQuery = (since: string, excludeHandle: string | null): string =>
   excludeHandle ? `after:${since} -from:@${excludeHandle}` : `after:${since}`
 
-interface SearchMatch {
-  channel?: { id?: string; name?: string }
+/**
+ * One hit from `search.messages`. It is not a message: it carries no
+ * `thread_ts`, so whether it is a reply is legible only from its `permalink`,
+ * which ends `?thread_ts=…` when it is one.
+ */
+export interface SearchMatch {
+  channel?: {
+    id?: string
+    name?: string
+    is_channel?: boolean
+    is_group?: boolean
+    is_im?: boolean
+    is_mpim?: boolean
+    is_private?: boolean
+  }
   user?: string
   username?: string
   ts?: string
@@ -366,9 +395,71 @@ interface SearchMatch {
   permalink?: string
 }
 
+/** Slack's ceilings on `search.messages`: 100 per page, 100 pages. */
+export const SEARCH_COUNT = 100
+export const SEARCH_PAGES = 100
+
+/**
+ * One page of a search, newest first. Paged by number rather than by cursor —
+ * `search.messages` is the one method that is — and the page count comes back
+ * with it, so a caller walking backwards in time knows where the end is.
+ */
+export async function searchPage(
+  token: string,
+  query: string,
+  page = 1,
+  count = SEARCH_COUNT,
+): Promise<{ matches: SearchMatch[]; pages: number }> {
+  const found = await slackCall<
+    SlackResponse & {
+      messages?: { matches?: SearchMatch[]; pagination?: { page_count?: number } }
+    }
+  >(token, 'search.messages', {
+    query,
+    sort: 'timestamp',
+    sort_dir: 'desc',
+    count,
+    page,
+  })
+  return {
+    matches: found.messages?.matches ?? [],
+    pages: found.messages?.pagination?.page_count ?? page,
+  }
+}
+
+/**
+ * Who a token belongs to, and where its workspace lives. The `url` is what makes
+ * a permalink constructible rather than a call of its own: Slack's own form is
+ * `<url>archives/<channel>/p<ts without its dot>`.
+ */
+export interface SlackWorkspace {
+  id: string
+  handle: string
+  url: string
+}
+
+export async function whoHolds(token: string): Promise<SlackWorkspace> {
+  const res = await slackCall<SlackResponse & { user?: string; user_id?: string; url?: string }>(
+    token,
+    'auth.test',
+    {},
+  )
+  return { id: res.user_id ?? '', handle: res.user ?? '', url: res.url ?? '' }
+}
+
+/** One conversation's own description — its name and which kind it is. */
+export async function conversationInfo(token: string, channel: string): Promise<Conversation> {
+  const res = await slackCall<SlackResponse & { channel?: Conversation }>(
+    token,
+    'conversations.info',
+    { channel },
+  )
+  return res.channel ?? { id: channel }
+}
+
 // --- Conversations ----------------------------------------------------------
 
-interface Conversation {
+export interface Conversation {
   id: string
   name?: string
   user?: string
@@ -380,9 +471,14 @@ interface Conversation {
   purpose?: { value?: string }
 }
 
-type ConversationKind = 'dm' | 'group' | 'private' | 'channel'
+export type ConversationKind = 'dm' | 'group' | 'private' | 'channel'
 
-const kindOf = (c: Conversation): ConversationKind =>
+/** Which kind of conversation something is, from whatever flags it came with. */
+export const kindOf = (c: {
+  is_im?: boolean
+  is_mpim?: boolean
+  is_private?: boolean
+}): ConversationKind =>
   c.is_im ? 'dm' : c.is_mpim ? 'group' : c.is_private ? 'private' : 'channel'
 
 /**
@@ -577,22 +673,26 @@ export const SLACK_TOOLS: ToolDef[] = [
       const filters = includeUnjoined && includeMuted ? null : await feedFilters()
 
       // Both filters run after the search, so some of what comes back is thrown
-      // away — ask for more than is wanted, or a busy hour in channels you don't
-      // follow could swallow the lot. `scanned` against `count` is the ratio.
-      const wanted = Math.min(100, filters ? limit * 4 : limit)
-      const found = await slack<SlackResponse & { messages?: { matches?: SearchMatch[] } }>(
-        'search.messages',
-        {
-          query: recentQuery(from, handle || null),
-          sort: 'timestamp',
-          sort_dir: 'desc',
-          count: wanted,
-        },
-      )
-      const matches = found.messages?.matches ?? []
-      const kept = matches.filter((m) =>
-        keepInFeed(m.channel?.id, filters, { unjoined: includeUnjoined, muted: includeMuted }),
-      )
+      // away, and a busy hour in channels you don't follow could swallow a whole
+      // page of it. So this pages: it asks for more until it has the window it
+      // was after or Slack runs out, rather than returning short because the
+      // first hundred happened to be noise. `scanned` against `count` is the
+      // ratio it cost.
+      const token = requireEnv('SLACK_TOKEN', 'SLACK_USER_TOKEN', 'SLACK_BOT_TOKEN')
+      const query = recentQuery(from, handle || null)
+      const matches: SearchMatch[] = []
+      const kept: SearchMatch[] = []
+      for (let page = 1; page <= SEARCH_PAGES && kept.length < limit; page++) {
+        const found = await searchPage(token, query, page, filters ? SEARCH_COUNT : limit)
+        if (!found.matches.length) break
+        matches.push(...found.matches)
+        kept.push(
+          ...found.matches.filter((m) =>
+            keepInFeed(m.channel?.id, filters, { unjoined: includeUnjoined, muted: includeMuted }),
+          ),
+        )
+        if (page >= found.pages) break
+      }
 
       return {
         since: from,

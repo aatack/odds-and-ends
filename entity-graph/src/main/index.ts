@@ -29,6 +29,7 @@ import { store } from './store'
 import { GraphDb } from './pensive/graph'
 import { PensiveRegistry, wouldCycle } from './pensive/registry'
 import { PensiveServers, findFreePort } from './pensive/servers'
+import { EventFeeds } from './events/feeds'
 import { setDocsRoot } from './pensive/mcpServer'
 import { INTEGRATION_TOOLS, runIntegrationTool } from './integrations/index'
 import { loadEnvFile } from './integrations/env'
@@ -51,6 +52,7 @@ class AppError extends Error {}
 let graph: GraphDb
 let registry: PensiveRegistry
 let servers: PensiveServers
+let feeds: EventFeeds
 
 function setUpPensives(): void {
   const root = app.getAppPath()
@@ -62,6 +64,13 @@ function setUpPensives(): void {
     author: () => store.get('user'),
   })
   servers = new PensiveServers(graph, registry)
+  // A feed says a new thing about itself every minute or so, which the sources
+  // page draws. Its own channel rather than `pensive:changed`: nothing about the
+  // graph has changed, and rebuilding every store to redraw a line of text would
+  // close the SQLite handles under the window.
+  feeds = new EventFeeds(graph, registry, () => {
+    for (const win of BrowserWindow.getAllWindows()) win.webContents.send('feeds:changed')
+  })
   setDocsRoot(root)
   loadEnvFile(root)
 }
@@ -74,6 +83,7 @@ function setUpPensives(): void {
 async function graphChanged(): Promise<void> {
   registry.invalidate()
   await servers.sync()
+  await feeds.sync()
   for (const win of BrowserWindow.getAllWindows()) win.webContents.send('pensive:changed')
 }
 
@@ -87,10 +97,14 @@ async function readGraph(): Promise<SourceGraph> {
     // cheap, since the answers are cached until the graph changes.
     const built = await registry.tryGet(node.id)
     const server = servers.status(node.id)
+    const feed = feeds.status(node.id)
     status[node.id] = {
       url: server.url,
       localUrl: server.localUrl,
-      problem: 'problem' in built ? built.problem : server.problem,
+      // A feed's own trouble — a token Slack refused — comes first: by the time
+      // it has one, whatever it is plugged into built fine.
+      problem: feed.problem ?? ('problem' in built ? built.problem : server.problem),
+      activity: feed.activity,
     }
   }
   return { nodes, edges, status }
@@ -468,6 +482,9 @@ app.whenReady().then(async () => {
   // Every broadcast and MCP node comes back up with the app: they are part of
   // the drawing rather than something started by hand.
   await servers.sync()
+  // The feeds too, and each begins by reading everything said while the app was
+  // shut. Not awaited: that catch-up is the long one, and the window should draw.
+  void feeds.sync()
   createWindow()
 })
 app.on('window-all-closed', () => {
@@ -477,6 +494,7 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()
 })
 app.on('will-quit', () => {
+  void feeds.stopAll()
   void servers.stopAll()
   registry?.invalidate()
   graph?.close()

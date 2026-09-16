@@ -166,12 +166,17 @@ export class PensiveRegistry {
       case 'connect':
         if (!config.url.trim()) throw new Error(`"${node.label}" has no URL`)
         return new ConnectPensive(node.id, node.label, config.url, config.token)
-      // The three that only pass a pensive on: what they *are* is the pensive
+      // The ones that only pass a pensive on: what they *are* is the pensive
       // plugged into them, and what makes them different is what the app does
-      // with them — listens on a port, hands it to the window.
+      // with them — listens on a port, hands it to the window, writes what it
+      // read off Slack into it. So a feed builds to the store it writes to,
+      // which is also how "nothing is plugged in" becomes its problem line
+      // without the feed having to say it a second time.
       case 'broadcast':
       case 'mcp':
       case 'desktop':
+      case 'slackEvents':
+      case 'githubEvents':
         return this.only(node, upstream)
     }
   }

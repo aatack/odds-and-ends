@@ -32,7 +32,27 @@ const withQuery = (url: string, query: JsonRequest['query']): string => {
   return q ? `${url}${url.includes('?') ? '&' : '?'}${q}` : url
 }
 
-export async function fetchJson<T>(url: string, req: JsonRequest = {}): Promise<T> {
+/** A request whose answer includes what the service said *about* the answer. */
+export interface JsonResponse<T> {
+  status: number
+  /** Null when the service answered with no body — a 304, a 204. */
+  body: T | null
+  headers: Headers
+}
+
+/**
+ * One request, with the status and the headers kept. Most callers only want the
+ * body and reach for {@link fetchJson}; this is for the ones where the envelope
+ * is the point — a conditional GET that answers `304`, a `Link` header that says
+ * there is another page, a poll interval the service is asking to be obeyed.
+ *
+ * A status the caller named in `expect` comes back as an ordinary answer rather
+ * than a throw, since "nothing has changed" is an answer.
+ */
+export async function fetchJsonResponse<T>(
+  url: string,
+  req: JsonRequest & { expect?: number[] } = {},
+): Promise<JsonResponse<T>> {
   const res = await fetch(withQuery(url, req.query), {
     method: req.method ?? (req.body === undefined ? 'GET' : 'POST'),
     headers: {
@@ -43,13 +63,18 @@ export async function fetchJson<T>(url: string, req: JsonRequest = {}): Promise<
     body: req.body !== undefined ? JSON.stringify(req.body) : undefined,
   })
   const text = await res.text()
-  if (!res.ok) throw new HttpError(res.status, text)
-  if (!text) return undefined as T
+  if (!res.ok && !req.expect?.includes(res.status)) throw new HttpError(res.status, text)
+  if (!text) return { status: res.status, body: null, headers: res.headers }
   try {
-    return JSON.parse(text) as T
+    return { status: res.status, body: JSON.parse(text) as T, headers: res.headers }
   } catch {
     throw new HttpError(res.status, text)
   }
+}
+
+export async function fetchJson<T>(url: string, req: JsonRequest = {}): Promise<T> {
+  const { body } = await fetchJsonResponse<T>(url, req)
+  return body as T
 }
 
 /**

@@ -69,6 +69,13 @@ export interface EntityGraphAPI {
    * different store. Returns the teardown.
    */
   onPensiveChanged: (listener: () => void) => () => void
+  /**
+   * Fires when a feed node says a new thing about itself — how far it has read,
+   * what refused it. Its own channel because nothing about the graph changed:
+   * `onPensiveChanged` means "you are looking at a different store now", which
+   * a cursor moving is not.
+   */
+  onFeedsChanged: (listener: () => void) => () => void
 
   // --- The graph of pensives ----------------------------------------------
 
@@ -127,6 +134,11 @@ const api: EntityGraphAPI = {
     const handler = (): void => listener()
     ipcRenderer.on('pensive:changed', handler)
     return () => ipcRenderer.off('pensive:changed', handler)
+  },
+  onFeedsChanged: (listener) => {
+    const handler = (): void => listener()
+    ipcRenderer.on('feeds:changed', handler)
+    return () => ipcRenderer.off('feeds:changed', handler)
   },
 
   readGraph: () => ipcRenderer.invoke('graph:read'),
