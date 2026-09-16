@@ -210,9 +210,14 @@ function SlackHelp(): React.JSX.Element {
       </Help>
       <Help label="What it reads">
         <p>
-          One search a minute, covering channels, DMs, group DMs and thread replies alike — muted or
-          not, joined or not, your own messages included. What is worth reading later is not the same
-          question as what is worth a red dot now.
+          One search every thirty seconds, covering channels, DMs, group DMs and thread replies
+          alike — muted or not, joined or not, your own messages included. What is worth reading
+          later is not the same question as what is worth a red dot now.
+        </p>
+        <p>
+          When that search comes back with nothing at all, it reads the conversations themselves
+          instead, a few at a time. Search is an index, and an index can be wrong; a conversation
+          read directly cannot be.
         </p>
         <p>
           Within the minute rather than the second, and nothing about reactions, edits or deletions:

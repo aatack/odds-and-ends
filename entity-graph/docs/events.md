@@ -129,9 +129,36 @@ There is no search text at all. Slack requires a non-empty query but not a
 comes back older than the window — to there rather than to a count, since how
 many messages a day holds is not something to guess at.
 
+**Each bound gets two days of room.** `after:` and `before:` take a date, not a
+time, and Slack reads that date in the *searcher's own* timezone — while this end
+can only write one in UTC, that being the only timezone it knows they share. The
+two disagree by up to a day. The bounds only keep the search shallow; the window
+is enforced on the timestamps, so the margin costs nothing.
+
+#### When search finds nothing, the conversations are read directly
+
 `conversations.history` and `conversations.replies` are the fallback, not the
-route: each is one channel's top-level messages, so a feed built on them would be
-a call per conversation and would still miss every thread reply.
+route: each is one channel's top-level messages, so a feed built on them alone
+would be a call per conversation and would still need a second call per thread.
+
+But **search is an index, and an index can be wrong**. It answers `total: 0` for
+a workspace that is plainly not empty often enough that a feed built on it alone
+is a feed that silently does nothing — and there is no way to tell that apart
+from a quiet afternoon by looking at it. So when a pass finds *no matches at
+all*, it reads the conversations themselves:
+
+- `users.conversations` for everywhere the token can see, kept for five minutes.
+- `conversations.history` with `oldest` and `latest`, which are exact timestamps
+  rather than dates, over **eight conversations a pass, round-robin**. Tier 3 is
+  fifty requests a minute for an app internal to its workspace; eight a pass at
+  two passes a minute leaves most of that for the threads. A workspace of forty
+  conversations comes round every two and a half minutes, well inside the ten
+  the window reaches back — so taking it slowly misses nothing.
+- `conversations.replies` for a thread whose parent says `latest_reply` is inside
+  the window, which is the only reason to spend a call on one.
+
+The entities are the same entities, by the same ids, so a message found both ways
+is one note.
 
 A search hit is **not a message**: it carries no `thread_ts`. Whether it is a
 reply survives only in its `permalink`, which ends `?thread_ts=…` when it is one,

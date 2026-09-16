@@ -196,6 +196,7 @@ export function parseUserId(reference: string): string {
 export interface SlackMessage {
   ts: string
   thread_ts?: string
+  latest_reply?: string
   user?: string
   bot_id?: string
   username?: string
@@ -345,6 +346,50 @@ export async function messagesAround(
     { channel, latest: ts, oldest: ts, inclusive: true, limit: 1 },
   )
   return history.messages ?? []
+}
+
+/**
+ * Everywhere the token can see, for the feed that has to read them one at a time.
+ * The whole list, not a window: this is the set to sweep, not a page to show.
+ */
+export async function listConversations(token: string): Promise<Conversation[]> {
+  const out: Conversation[] = []
+  let cursor: string | undefined
+  do {
+    const res = await slackCall<Paged>(token, 'users.conversations', {
+      types: ALL_KINDS,
+      exclude_archived: true,
+      limit: PAGE,
+      cursor,
+    })
+    const batch = (res.channels as Conversation[] | undefined) ?? []
+    if (!batch.length) break
+    out.push(...batch)
+    cursor = res.response_metadata?.next_cursor || undefined
+  } while (cursor && out.length < 1000)
+  return out
+}
+
+/**
+ * One conversation's messages within a stretch of time. `oldest` and `latest` are
+ * Slack timestamps and are exact, unlike the dates a search takes — which is the
+ * whole reason this is worth having as a second way in.
+ *
+ * Top-level messages only: a thread's replies are `conversations.replies`, and
+ * `latest_reply` on the parent is what says whether asking is worth a call.
+ */
+export async function historySince(
+  token: string,
+  channel: string,
+  oldest: number,
+  latest?: number | null,
+): Promise<SlackMessage[]> {
+  const res = await slackCall<SlackResponse & { messages?: SlackMessage[] }>(
+    token,
+    'conversations.history',
+    { channel, oldest: oldest.toFixed(6), latest: latest?.toFixed(6), limit: PAGE },
+  )
+  return res.messages ?? []
 }
 
 /** One message, by where it is. Null when there is nothing there to read. */
