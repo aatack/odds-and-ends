@@ -197,9 +197,11 @@ the outline down — but writing to it still fails, having one place to go.
 
 **The user draws the arrangement.** The Sources page is a graph of nodes — a
 node per pensive, plus the two that publish one (`broadcast` over HTTP,
-`mcp` for an agent) and one fixed node standing for this window. An edge means
-"read that one", so a combiner's children are edges rather than configuration,
-and what the outliner shows is whatever has been dragged into the desktop node.
+`mcp` for an agent), the two that *write into* one (`slackEvents`,
+`githubEvents`) and one fixed node standing for this window. An edge names the
+pensive at the other end of it, so a combiner's children are edges rather than
+configuration, and what the outliner shows is whatever has been dragged into the
+desktop node.
 The graph is a SQLite file of the app's own under `userData`; `src/core/client.ts`
 holds the shapes both ends read, `NODE_KINDS` included — the page draws its
 handles from it and the main process refuses an edge that disagrees with it.
@@ -225,6 +227,17 @@ Electron main process now, so it must be built against Electron's ABI:
 touch it — `test/source.mts` is an in-memory pensive for exactly that reason — but
 `npm run migrate:v2` does, and needs `npm run rebuild:node` first (and
 `rebuild:electron` again afterwards, or the app won't start).
+
+**Two nodes run rather than sit there.** `slackEvents` and `githubEvents` watch
+one service each from a cursor and write what they find into whatever is plugged
+into them, as notes under `@inbox`; `src/main/events/` is the whole of it and
+[`docs/events.md`](./docs/events.md) the long form. The thing to know before
+touching one: **an entity's id is made from the thing's own id**, so reading the
+same stretch twice writes nothing the second time — which is what lets the cursor
+be wound back before every request and moved only *after* the entities are in.
+Their credentials live on the node, in the app's own graph file, and are never
+copied into a store. Pausing one **stops** it, unlike every other node, where
+pausing means refusing.
 
 `src/main/pensive/` is the rest: `graph.ts` the file, `registry.ts` the building
 of pensives from it, `http.ts` one small server per published node, `mcpServer.ts`
@@ -334,6 +347,7 @@ mobile/         a separate phone client (PWA) for one pensive — its own instal
 scripts/        one-off tools run outside the app with tsx (the v2 migration, the sources one)
 src/main       Electron main — window, tailscale serve, and:
   pensive/        the graph of nodes, the pensives built from it, and the servers publishing them
+  events/         the two nodes that watch a service and write into a pensive
   integrations/   the app's reach outside itself (GitHub, Slack, Claude, git, terminal)
 src/preload     contextBridge exposing the typed EntityGraphAPI
 src/core        the shared model: entity + rollup, traversal, tree, markdown, cache
