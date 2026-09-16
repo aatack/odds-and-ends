@@ -46,6 +46,10 @@ Two other rules follow from the writer rather than from the cursor:
 
 ## What gets written
 
+Each carries its own `type`, so a row reads as the thing it is. Nothing writes
+the type *notes* — a schema for `slack/message` under `@types` is yours to write
+if you want one, and everything here works without it.
+
 | type | id | values | hangs under |
 | --- | --- | --- | --- |
 | `slack/message` | `<channel>:<ts>` | `text`, `slack/ts`, `slack/channel`, `slack/user`, `slack/permalink`, `slack/threadTs`, `slack/deleted`, `slack/reactions` | its thread, or its channel |

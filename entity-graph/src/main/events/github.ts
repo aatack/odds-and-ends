@@ -35,6 +35,23 @@ const OVERLAP_MS = 60_000
  */
 const MINE_MS = 15 * 60_000
 
+/** One page of notifications, and how many pages are worth following. */
+const PER_PAGE = 100
+const MAX_PAGES = 10
+
+/**
+ * The next page, out of the `Link` header — GitHub's own way of saying there is
+ * one. Read rather than counted: a page number guessed at past the end is a
+ * request for nothing, where the absence of this header is the end, stated.
+ */
+export function nextPage(headers: Headers): string | null {
+  for (const part of (headers.get('link') ?? '').split(',')) {
+    const match = /<([^>]+)>\s*;\s*rel="next"/.exec(part)
+    if (match) return match[1]
+  }
+  return null
+}
+
 export interface GithubFeedConfig {
   token: string
   cursor: string
@@ -175,7 +192,7 @@ export class GithubFeed extends Feed<GithubFeedConfig> {
 
     const answer = await this.get<Notification[]>(
       '/notifications',
-      { since: since.toISOString(), all: true, per_page: 100 },
+      { since: since.toISOString(), all: true, per_page: PER_PAGE },
       // Sent rather than the cursor: it is GitHub's own idea of when the feed
       // last changed, and `since` alone would re-download an unchanged list.
       lastModified ? { 'If-Modified-Since': lastModified } : {},
@@ -193,8 +210,19 @@ export class GithubFeed extends Feed<GithubFeedConfig> {
       return
     }
 
-    const drafts = await this.fromNotifications(answer.body, since)
-    await this.write(drafts)
+    // A minute's worth fits in one page; a first run over a day of a busy
+    // account does not, and the pages past the first are the ones that would be
+    // lost for good once the cursor moves over them.
+    const notifications = [...answer.body]
+    let next = nextPage(answer.headers)
+    for (let page = 1; page < MAX_PAGES && next && this.running; page++) {
+      const more = await this.get<Notification[]>(next.slice(API.length))
+      if (!more.body?.length) break
+      notifications.push(...more.body)
+      next = nextPage(more.headers)
+    }
+
+    await this.write(await this.fromNotifications(notifications, since))
 
     // Only now: the entities are in, so a crash before the next line costs a
     // re-read of the same minute and nothing else.
@@ -203,7 +231,7 @@ export class GithubFeed extends Feed<GithubFeedConfig> {
       lastModified: answer.headers.get('last-modified') ?? lastModified,
     })
     await this.mine()
-    this.say(`Read ${answer.body.length} notification${answer.body.length === 1 ? '' : 's'}`)
+    this.say(`Read ${notifications.length} notification${notifications.length === 1 ? '' : 's'}`)
   }
 
   /**
@@ -253,6 +281,9 @@ export class GithubFeed extends Feed<GithubFeedConfig> {
     return {
       id: threadId(repo, number),
       values: {
+        // An issue and a pull request are one type here, as they nearly are to
+        // GitHub: the same thread, the same comments, the same reasons to care.
+        type: 'github/pullRequest',
         text: subject.title ?? notification.subject?.title ?? threadId(repo, number),
         'github/url': subject.html_url ?? null,
         'github/state': stateOf(subject),
@@ -304,6 +335,7 @@ export class GithubFeed extends Feed<GithubFeedConfig> {
         id: commentId(comment.html_url, `comment-${comment.id}`),
         parentId: threadId(repo, number),
         values: {
+          type: 'github/comment',
           text: comment.body ?? '',
           'github/author': comment.user?.login ?? null,
           'github/url': comment.html_url ?? null,
@@ -326,6 +358,7 @@ export class GithubFeed extends Feed<GithubFeedConfig> {
           id: commentId(review.html_url, `pullrequestreview-${review.id}`),
           parentId: threadId(repo, number),
           values: {
+            type: 'github/comment',
             text: review.body ?? '',
             'github/author': review.user?.login ?? null,
             'github/url': review.html_url ?? null,
@@ -368,6 +401,7 @@ export class GithubFeed extends Feed<GithubFeedConfig> {
       drafts.push({
         id: threadId(repo, pull.number),
         values: {
+          type: 'github/pullRequest',
           text: pull.title,
           'github/url': pull.url,
           'github/state': pull.isDraft ? 'draft' : (pull.state?.toLowerCase() ?? 'open'),

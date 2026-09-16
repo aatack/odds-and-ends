@@ -280,6 +280,10 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
     return {
       id: c.id,
       values: {
+        // The `type` is what makes a row read as the thing it is rather than as
+        // a plain bullet, and is what a type note under `@types` would describe
+        // if the user writes one. Nothing here depends on that note existing.
+        type: 'slack/channel',
         text: conversationName(c),
         'slack/channel': c.id,
         'slack/kind': kindOf(c),
@@ -297,7 +301,7 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
     return {
       id: messageId(channel, ts),
       parentId: channel,
-      values: { 'slack/ts': ts, 'slack/channel': channel },
+      values: { type: 'slack/message', 'slack/ts': ts, 'slack/channel': channel },
     }
   }
 
@@ -322,6 +326,7 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
         id: messageId(channel, ts),
         parentId: reply ? messageId(channel, reply) : channel,
         values: {
+          type: 'slack/message',
           text: match.text ?? '',
           'slack/ts': ts,
           'slack/channel': channel,
@@ -369,7 +374,10 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
         if (!ts) continue
         // Kept rather than removed: what was said and then unsaid is a thing
         // that happened, and the note may already have been read and filed.
-        drafts.push({ id: messageId(channel, ts), values: { 'slack/deleted': true } })
+        drafts.push({
+          id: messageId(channel, ts),
+          values: { type: 'slack/message', 'slack/deleted': true },
+        })
         continue
       }
 
@@ -387,6 +395,7 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
         id: messageId(channel, ts),
         parentId: threadTs ? messageId(channel, threadTs) : channel,
         values: {
+          type: 'slack/message',
           text: message.text ?? '',
           'slack/ts': ts,
           'slack/channel': channel,

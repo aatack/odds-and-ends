@@ -16,7 +16,7 @@
 import assert from 'node:assert/strict'
 import { EntityWriter, INBOX_ID } from '../src/main/events/writer'
 import { permalinkFor, threadOf } from '../src/main/events/slack'
-import { checksOf, commentId, stateOf } from '../src/main/events/github'
+import { checksOf, commentId, nextPage, stateOf } from '../src/main/events/github'
 import { feedSignature } from '../src/main/events/feeds'
 import type { SourceNode } from '../src/core/client'
 import { MemorySource } from './source.mjs'
@@ -177,6 +177,18 @@ test('rolls check runs up, with "still going" outranking a failure', async () =>
     ]),
     'running',
   )
+})
+
+test('follows GitHub to the next page, and knows when there isn\'t one', async () => {
+  const link =
+    '<https://api.github.com/notifications?page=2>; rel="next", ' +
+    '<https://api.github.com/notifications?page=9>; rel="last"'
+  assert.equal(
+    nextPage(new Headers({ link })),
+    'https://api.github.com/notifications?page=2',
+  )
+  assert.equal(nextPage(new Headers({ link: '<https://x>; rel="prev"' })), null)
+  assert.equal(nextPage(new Headers()), null)
 })
 
 // --- Keeping a feed in step with the drawing --------------------------------

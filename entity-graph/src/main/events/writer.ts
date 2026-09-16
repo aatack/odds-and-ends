@@ -50,6 +50,13 @@ export interface WriteReport {
  */
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 
+/**
+ * Entities looked up in one go. A read names every id at once, and SQLite has a
+ * ceiling on how many placeholders one statement may carry — which a catch-up
+ * stepping through a month of Slack would otherwise walk straight into.
+ */
+const BATCH = 200
+
 export class EntityWriter {
   constructor(
     private pensive: Pensive,
@@ -58,9 +65,9 @@ export class EntityWriter {
   ) {}
 
   /**
-   * Write a batch, and hand back what changed. One read and at most one write,
-   * whatever the batch holds: the drafts are looked up together, the difference
-   * is worked out in memory, and the events go in as one action.
+   * Write a batch, and hand back what changed. The drafts are folded, looked up
+   * together, and the difference worked out in memory, so an ordinary batch is
+   * one read and one write however many entities it names.
    */
   async write(drafts: EntityDraft[]): Promise<WriteReport> {
     if (!drafts.length) return { created: 0, touched: 0, events: 0 }
@@ -77,14 +84,27 @@ export class EntityWriter {
       })
     }
 
-    const ids = [...merged.keys()]
+    const all = [...merged.values()]
+    const report = { created: 0, touched: 0, events: 0 }
+    for (let at = 0; at < all.length; at += BATCH) {
+      const batch = await this.batch(all.slice(at, at + BATCH))
+      report.created += batch.created
+      report.touched += batch.touched
+      report.events += batch.events
+    }
+    return report
+  }
+
+  /** One read, one write, and the difference between them. */
+  private async batch(drafts: EntityDraft[]): Promise<WriteReport> {
+    const ids = drafts.map((d) => d.id)
     const buckets = bucketEvents(ids, await this.pensive.readEvents(ids))
     const timestamp = Date.now()
     const events: AppEvent[] = []
     let created = 0
     let touched = 0
 
-    for (const draft of merged.values()) {
+    for (const draft of drafts) {
       const existing = rollupEntity(draft.id, buckets.get(draft.id) ?? [])
       // Nothing has ever been written here, so this is the first reading of it,
       // and only then does it go in the inbox: a note filed somewhere by hand
