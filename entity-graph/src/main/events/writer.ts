@@ -31,6 +31,16 @@ export interface EntityDraft {
   values: Record<string, unknown>
   /** Where it hangs in the outline: the thread, the channel, the pull request. */
   parentId?: string
+  /**
+   * Skip this entirely if nothing has ever been written to the entity.
+   *
+   * For a draft that is *about* a note rather than a reading of one — a reaction
+   * left on a message, a message deleted — where the note itself was never seen
+   * because it predates the cursor. Written anyway it would put a note in the
+   * inbox whose whole content was that somebody had reacted to something, which
+   * is worse than not knowing.
+   */
+  ifKnown?: boolean
 }
 
 /** What one batch actually changed, which is what a feed reports it did. */
@@ -81,6 +91,9 @@ export class EntityWriter {
         id: draft.id,
         values: { ...before?.values, ...draft.values },
         parentId: draft.parentId ?? before?.parentId,
+        // One reading of a note in the batch is enough to write the rest of it:
+        // the message arriving beside a reaction to it is the ordinary case.
+        ifKnown: (before?.ifKnown ?? true) && (draft.ifKnown ?? false),
       })
     }
 
@@ -112,6 +125,7 @@ export class EntityWriter {
       // Values rather than events, so an entity that exists only because a reply
       // was hung off it still counts as unread when the message itself turns up.
       const fresh = Object.keys(existing.values).length === 0
+      if (draft.ifKnown && fresh) continue
       const before = events.length
 
       for (const [key, value] of Object.entries(draft.values)) {

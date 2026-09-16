@@ -54,6 +54,10 @@ Two other rules follow from the writer rather than from the cursor:
   notification put there.
 - **Only a brand new entity goes in the inbox.** A note read and filed somewhere
   by hand is not dragged back the next time the thing it names is mentioned.
+- **A draft marked `ifKnown` is dropped when the entity is new.** A reaction or a
+  deletion is *about* a note rather than a reading of one; for a message older
+  than the cursor it would otherwise put a note in the inbox whose whole content
+  was that somebody had reacted to something nobody has read.
 
 ## What gets written
 

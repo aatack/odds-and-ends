@@ -441,7 +441,8 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
         // that happened, and the note may already have been read and filed.
         drafts.push({
           id: this.idFor(channel, ts),
-          values: { type: 'slack/message', 'slack/deleted': true },
+          values: { 'slack/deleted': true },
+          ifKnown: true,
         })
         continue
       }
@@ -496,6 +497,10 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
     }
     return ids.map((id) => ({
       id,
+      // A reaction is not a reading of the message, so it does not conjure one:
+      // a note whose whole content is that somebody reacted to something nobody
+      // has read is worse than not knowing.
+      ifKnown: true,
       // Sorted, so that the same set of reactions is the same value however it
       // was arrived at — otherwise every read would look like a change.
       values: {
