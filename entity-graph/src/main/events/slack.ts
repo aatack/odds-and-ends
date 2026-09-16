@@ -283,9 +283,16 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
       // Kept raw, page by page: when nothing is arriving, the question is
       // whether Slack is handing anything over at all, and this is the only
       // place that can answer it.
+      // Said in words rather than in counts. "page 1 of 0, 0 of 0 back" is
+      // perfectly precise and tells nobody anything; the question somebody has
+      // in front of this panel is "did Slack have anything to give me", and that
+      // is what the line should answer.
       this.note(
-        `Searched \`${query}\` — page ${page} of ${found.pages}, ${found.matches.length} of ` +
-          `${found.total} back`,
+        found.total === 0
+          ? `Slack's search matched nothing at all — not one message anywhere it can see, ` +
+            `over the whole period it was asked about (\`${query}\`)`
+          : `Slack's search matched ${found.total} messages; this is page ${page} of ` +
+            `${found.pages}, with ${found.matches.length} of them (\`${query}\`)`,
         // The window as well as the query: the bounds are dates and the window
         // is to the second, so "the search found nothing" and "the search found
         // things and none were recent enough" read alike without both.
@@ -312,10 +319,14 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
       return ts !== null && ts >= floor && (ceiling === null || ts < ceiling)
     })
     if (matches.length !== kept.length) {
-      this.note(`Kept ${kept.length} of ${matches.length} — the rest are outside the window`, {
-        from: new Date(floor * 1000).toISOString(),
-        until: ceiling ? new Date(ceiling * 1000).toISOString() : 'now',
-      })
+      this.note(
+        `${kept.length} of those ${matches.length} are inside the window and will be written; ` +
+          'the rest are older than it and have been read already',
+        {
+          from: new Date(floor * 1000).toISOString(),
+          until: ceiling ? new Date(ceiling * 1000).toISOString() : 'now',
+        },
+      )
     }
     const drafts = await this.fromMatches(kept)
     // Search found nothing at all — not "nothing recent", nothing in the whole
@@ -484,7 +495,14 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
       }
     }
     this.note(
-      `Search found nothing, so read ${take.length} conversations directly — ${found} messages`,
+      found === 0
+        ? `Read ${take.length} of your ${all.length} conversations directly; nothing in them ` +
+          'inside the window either, so Slack really is quiet'
+        : // The decisive line, and the reason the sweep exists. Search said there
+          // was nothing anywhere; the conversations themselves say otherwise, and
+          // the two cannot both be right.
+          `Slack's search is not answering for this token — it matched nothing, but reading ` +
+          `${take.length} of your ${all.length} conversations directly found ${found} messages`,
       take.map((c) => ({ id: c.id, name: c.name ?? null })),
     )
     return drafts
