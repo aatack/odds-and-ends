@@ -44,7 +44,11 @@ const LINK = 'https://acme.slack.com/archives/C1/p1712345678000100'
 
 /** The batch a feed would write for one message, twice over the same period. */
 const message = (text: string) => [
-  { id: 'C1', values: { text: '#general', 'slack/channel': 'C1', 'slack/kind': 'channel' } },
+  {
+    id: 'C1',
+    context: true,
+    values: { text: '#general', 'slack/channel': 'C1', 'slack/kind': 'channel' },
+  },
   { id: LINK, parentId: 'C1', values: { type: 'slack/message', text, 'slack/user': 'U1' } },
 ]
 
@@ -59,8 +63,12 @@ test('writes an entity, hangs it where it belongs, and files it in the inbox', a
   // The permalink is the id, so it is not also a value: one copy of a fact.
   assert.deepEqual(Object.keys(note.values).sort(), ['slack/user', 'text', 'type'])
   assert.deepEqual(new Set(note.inboundLinks), new Set(['C1', INBOX_ID]))
-  // The channel is made by the first message in it rather than by a listing.
-  assert.equal((await entity(store, 'C1')).values.text, '#general')
+  // The channel is made by the first message in it rather than by a listing —
+  // and is never in the inbox itself: it is where messages arrive, not one of
+  // the things that arrives, and nobody reads a channel.
+  const channel = await entity(store, 'C1')
+  assert.equal(channel.values.text, '#general')
+  assert.deepEqual(channel.inboundLinks, [])
 })
 
 test('writes nothing at all the second time over the same period', async () => {

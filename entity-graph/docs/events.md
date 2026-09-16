@@ -102,10 +102,10 @@ and since the id Slack uses *is* the id the entity has, the pill points at the
 note about that person and follows it when it is renamed. The label in the parens
 is only what shows until that note has text.
 
-Those notes are written too, and are the one thing a feed writes that does **not**
-go in the inbox: somebody mentioned in passing is a thing to point at, not a
-thing that has arrived (`EntityDraft.context`). An audience — `@here`,
-`@channel`, a user group — stays a word, there being nothing to point at.
+Those notes are written too, and like a channel they stay out of the inbox
+(`EntityDraft.context`): somebody mentioned in passing is a thing to point at,
+not a thing that has arrived. An audience — `@here`, `@channel`, a user group —
+stays a word, there being nothing to point at.
 
 **A message is never written blank.** A thread parent older than the cursor is
 not in the batch that turns up its replies, so it is *fetched* — once per thread
@@ -115,7 +115,9 @@ rather than written empty, so a later reading fills it in instead of confirming 
 blank.
 
 A **channel** is made when the first message in it arrives, never by listing
-conversations: a channel nothing has been said in is not news.
+conversations: a channel nothing has been said in is not news. It never goes in
+the inbox — a channel is *where* messages arrive rather than one of the things
+that arrives, and nobody reads a channel.
 
 Nothing is written about **reactions, edits or deletions**. A search hands back
 the message as it now stands and says nothing about what happened to it; the only
