@@ -395,28 +395,30 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
   }
 
   /**
-   * One message, as the note it becomes.
+   * One message, as the note it becomes: what was said, and who said it.
    *
-   * Neither the channel nor the thread is written down. The channel is in the
-   * permalink and the message is linked under the channel's own note; the thread
-   * is the note it hangs off. A value saying either again is a second copy to
-   * keep in step with the first.
+   * **Nothing else is written down, because nothing else would be new.** The
+   * note's own id is the permalink, and the permalink is the workspace, the
+   * channel and the timestamp spelled out — so a value for any of those is a
+   * second copy of something already there, to be kept in step with it for no
+   * gain. Where it is in the outline says the rest: under the channel's note, or
+   * under the message it replies to.
    *
    * `text` is left out when it isn't known rather than written empty, so a
    * message read again later fills it in instead of confirming a blank.
    */
-  private messageDraft(channel: string, message: Partial<SlackMessage> & { ts: string }, parentId: string): EntityDraft {
-    const threadTs =
-      message.thread_ts && message.thread_ts !== message.ts ? message.thread_ts : null
+  private messageDraft(
+    channel: string,
+    message: Partial<SlackMessage> & { ts: string },
+    parentId: string,
+  ): EntityDraft {
     return {
       id: this.idFor(channel, message.ts),
       parentId,
       values: {
         type: 'slack/message',
         text: message.text,
-        'slack/ts': message.ts,
         'slack/user': message.user ?? message.bot_id ?? null,
-        'slack/permalink': this.link(channel, message.ts, threadTs),
       },
     }
   }
