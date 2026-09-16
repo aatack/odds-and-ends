@@ -1,7 +1,10 @@
 import {
   conversationInfo,
+  historySince,
   kindOf,
+  listConversations,
   messageAt,
+  messagesAround,
   searchPage,
   whoHolds,
   SEARCH_PAGES,
@@ -13,8 +16,19 @@ import {
 import { EntityWriter, type EntityDraft, type WriteReport } from './writer'
 import { Feed, type FeedOptions } from './feed'
 
-// Slack, read into the store: a search that walks backwards from a cursor, once
-// a minute.
+// Slack, read into the store: a search that walks backwards from a cursor, twice
+// a minute — and, when the search comes back empty-handed, the conversations
+// themselves, read one at a time.
+//
+// **The sweep is there because search is an index and an index can be wrong.**
+// One `search.messages` call covers every channel, DM and thread at once, which
+// is why it is the route; but it answers `total: 0` for a workspace that is
+// plainly not empty often enough that a feed built on it alone is a feed that
+// silently does nothing. `conversations.history` takes exact timestamps rather
+// than dates and reads the conversation rather than an index of it, so it cannot
+// be wrong in that way — it is only expensive, being a call per conversation. So
+// it runs when search has found nothing, a handful of conversations per pass,
+// round-robin.
 //
 // **There is one way in, and it is a poll.** Socket Mode would make the same
 // entities appear seconds after a message is sent rather than within the minute,
@@ -89,11 +103,58 @@ export function searchWindow(
   return { floor, ceiling: now - floor > WEEK ? floor + DAY : null }
 }
 
+/**
+ * The query one pass runs: a date bound, and no search text at all. Slack wants a
+ * non-empty `query` but not a *term*, so bounds alone filter the lot, and
+ * `sort: timestamp` is what turns "everything" into "the most recent of
+ * everything".
+ *
+ * Both bounds are given {@link MARGIN} of room, which is what stops a date
+ * written in UTC from landing on the wrong side of a bound read in somebody
+ * else's timezone. The window is enforced on the timestamps, not here.
+ */
+export function searchQuery(floor: number, ceiling: number | null): string {
+  return [
+    `after:${day(floor - MARGIN)}`,
+    ...(ceiling ? [`before:${day(ceiling + MARGIN)}`] : []),
+  ].join(' ')
+}
+
 /** Thread parents remembered before the lot is forgotten and read again. */
 const PARENTS = 500
 
+/**
+ * How many conversations one pass reads when it is sweeping, and how long the
+ * list of them is kept.
+ *
+ * `conversations.history` is Tier 3 — fifty requests a minute for an app that is
+ * internal to its workspace — so eight a pass at two passes a minute leaves most
+ * of that for the threads. A workspace of forty conversations comes round every
+ * two and a half minutes, which is well inside the ten the window reaches back.
+ */
+const SWEEP = 8
+const CONVERSATIONS_MS = 5 * 60_000
+
 /** `YYYY-MM-DD`, which is the only granularity `after:` and `before:` have. */
 const day = (seconds: number): string => new Date(seconds * 1000).toISOString().slice(0, 10)
+
+/**
+ * How much slack to leave around each date bound, in days.
+ *
+ * **One day was not enough, and that was the bug that made the feed find
+ * nothing.** `after:` and `before:` take a date, not a time, and Slack reads that
+ * date in the *searcher's own timezone* — while {@link day} can only write one in
+ * UTC, since that is the only timezone this end knows it shares with the other.
+ * The two disagree by up to a day: at ten at night the machine's UTC date has
+ * already rolled over, so `after:<a day before the window>` came out as today's
+ * date, which to Slack means *tomorrow* — a bound in the future, matching
+ * nothing, every poll, all evening.
+ *
+ * Two days of margin covers any timezone on earth in either direction. It costs
+ * nothing: the bounds only keep the search shallow, and the timestamps below do
+ * the precise work.
+ */
+const MARGIN = 2 * DAY
 
 /** A Slack `ts` as a number of seconds, or null for anything that isn't one. */
 const asSeconds = (ts: string | undefined | null): number | null => {
@@ -179,6 +240,10 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
   private conversations = new Map<string, Conversation>()
   /** Thread parents already read, so a busy thread is fetched once. */
   private parents = new Map<string, EntityDraft>()
+  /** Everywhere this token can see, and when that was last asked. */
+  private everywhere: { at: number; value: Conversation[] } | null = null
+  /** How far round the sweep has got, so each pass takes the next few. */
+  private sweptTo = 0
 
   constructor(options: FeedOptions<SlackFeedConfig>) {
     super(options, POLL_MS)
@@ -210,12 +275,7 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
     const now = Date.now() / 1000
     const { floor, ceiling } = searchWindow(asSeconds(cursor), now)
 
-    const query = [
-      // Both bounds are dates, and exclusive of the day they name, so each is
-      // given a day of room and the timestamps are compared properly below.
-      `after:${day(floor - DAY)}`,
-      ...(ceiling ? [`before:${day(ceiling + DAY)}`] : []),
-    ].join(' ')
+    const query = searchQuery(floor, ceiling)
 
     const matches: SearchMatch[] = []
     for (let page = 1; page <= SEARCH_PAGES && this.running; page++) {
@@ -226,7 +286,16 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
       this.note(
         `Searched \`${query}\` — page ${page} of ${found.pages}, ${found.matches.length} of ` +
           `${found.total} back`,
-        found.matches,
+        // The window as well as the query: the bounds are dates and the window
+        // is to the second, so "the search found nothing" and "the search found
+        // things and none were recent enough" read alike without both.
+        {
+          window: {
+            from: new Date(floor * 1000).toISOString(),
+            until: ceiling ? new Date(ceiling * 1000).toISOString() : 'now',
+          },
+          matches: found.matches,
+        },
       )
       if (!found.matches.length) break
       matches.push(...found.matches)
@@ -248,7 +317,14 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
         until: ceiling ? new Date(ceiling * 1000).toISOString() : 'now',
       })
     }
-    const written = await this.write(await this.fromMatches(kept))
+    const drafts = await this.fromMatches(kept)
+    // Search found nothing at all — not "nothing recent", nothing in the whole
+    // couple of days it was asked about. For a workspace anybody is using that
+    // is a broken index rather than a quiet afternoon, so the conversations get
+    // read directly instead. Paced, and only while search is unhelpful.
+    if (!matches.length) drafts.push(...(await this.sweep(floor, ceiling)))
+
+    const written = await this.write(drafts)
     if (written) this.note(`Wrote ${written.touched} notes, ${written.created} of them new`, written)
 
     this.advance({ cursor: (ceiling ?? now).toFixed(6) })
@@ -353,6 +429,65 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
     if (this.parents.size >= PARENTS) this.parents.clear()
     this.parents.set(id, draft)
     return draft
+  }
+
+  /** Everywhere the token can see, asked for again now and then. */
+  private async places(): Promise<Conversation[]> {
+    const now = Date.now()
+    if (this.everywhere && now - this.everywhere.at < CONVERSATIONS_MS) return this.everywhere.value
+    const value = await listConversations(this.config().userToken)
+    this.everywhere = { at: now, value }
+    return value
+  }
+
+  /**
+   * A few conversations, read straight rather than through the index.
+   *
+   * Round-robin rather than all of them: this is a call per conversation and the
+   * window reaches back ten minutes, so as long as the whole ring comes round
+   * inside that, nothing is missed by taking it slowly.
+   */
+  private async sweep(floor: number, ceiling: number | null): Promise<EntityDraft[]> {
+    const token = this.config().userToken
+    const all = await this.places()
+    if (!all.length) return []
+
+    // Wrapped by hand: the ring has to come round, and `slice` past the end
+    // would quietly shorten the last batch of every lap.
+    const take = Array.from({ length: Math.min(SWEEP, all.length) }, (_, i) => all[(this.sweptTo + i) % all.length])
+    this.sweptTo = (this.sweptTo + take.length) % all.length
+
+    const drafts: EntityDraft[] = []
+    let found = 0
+    for (const conversation of take) {
+      const messages = await historySince(token, conversation.id, floor, ceiling).catch(() => [])
+      if (!messages.length) continue
+      drafts.push(this.channelDraft(conversation))
+      for (const message of messages) {
+        drafts.push(this.messageDraft(conversation.id, message, conversation.id))
+        found++
+        // `conversations.history` is top-level messages only, so a thread's
+        // replies are a call of their own — worth making only when the parent
+        // says one has arrived inside the window.
+        const latest = asSeconds(message.latest_reply)
+        if (latest === null || latest < floor) continue
+        const thread = await messagesAround(token, conversation.id, message.ts).catch(() => [])
+        for (const reply of thread) {
+          const at = asSeconds(reply.ts)
+          if (reply.ts === message.ts || at === null || at < floor) continue
+          if (ceiling !== null && at >= ceiling) continue
+          drafts.push(
+            this.messageDraft(conversation.id, reply, this.idFor(conversation.id, message.ts)),
+          )
+          found++
+        }
+      }
+    }
+    this.note(
+      `Search found nothing, so read ${take.length} conversations directly — ${found} messages`,
+      take.map((c) => ({ id: c.id, name: c.name ?? null })),
+    )
+    return drafts
   }
 
   /** Every entity a page of search hits implies, ready to be written as one. */

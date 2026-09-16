@@ -15,7 +15,13 @@
 
 import assert from 'node:assert/strict'
 import { EntityWriter, INBOX_ID } from '../src/main/events/writer'
-import { messageId, permalinkFor, searchWindow, threadOf } from '../src/main/events/slack'
+import {
+  messageId,
+  permalinkFor,
+  searchQuery,
+  searchWindow,
+  threadOf,
+} from '../src/main/events/slack'
 import { checksOf, commentId, nextPage, stateOf } from '../src/main/events/github'
 import { feedSignature } from '../src/main/events/feeds'
 import type { SourceNode } from '../src/core/client'
@@ -217,6 +223,21 @@ test('reads back further than the poll, so a slow index cannot lose a message', 
   const { floor, ceiling } = searchWindow(now - 30, now)
   assert.ok(now - floor >= 600, `only reached back ${now - floor}s`)
   assert.equal(ceiling, null)
+})
+
+test('leaves a margin around a date bound, which can only be written in UTC', async () => {
+  // `after:` and `before:` take a date, not a time, and Slack reads that date in
+  // the searcher's own timezone — which this end cannot know. So each bound gets
+  // two days of room, and the timestamps do the precise work.
+  const at = Date.parse('2026-09-17T00:12:00Z') / 1000
+  const { floor, ceiling } = searchWindow(at - 30, at)
+  assert.equal(searchQuery(floor, ceiling), 'after:2026-09-15')
+
+  // And with a ceiling, the same room the other side.
+  assert.equal(
+    searchQuery(at - 30 * 86_400, at - 29 * 86_400),
+    'after:2026-08-16 before:2026-08-21',
+  )
 })
 
 test('walks a day at a time when the cursor is more than a week behind', async () => {
