@@ -193,7 +193,7 @@ export function parseUserId(reference: string): string {
   )
 }
 
-interface SlackMessage {
+export interface SlackMessage {
   ts: string
   thread_ts?: string
   user?: string
@@ -324,9 +324,14 @@ async function identityOf(id: string): Promise<SlackIdentity> {
  * in, and given a message that was never threaded it returns just that message.
  * `conversations.history` is the fallback for the workspaces where it isn't.
  */
-async function messagesAt(channel: string, ts: string): Promise<SlackMessage[]> {
+export async function messagesAround(
+  token: string,
+  channel: string,
+  ts: string,
+): Promise<SlackMessage[]> {
   try {
-    const replies = await slack<SlackResponse & { messages?: SlackMessage[] }>(
+    const replies = await slackCall<SlackResponse & { messages?: SlackMessage[] }>(
+      token,
       'conversations.replies',
       { channel, ts, limit: 200, inclusive: true },
     )
@@ -334,12 +339,26 @@ async function messagesAt(channel: string, ts: string): Promise<SlackMessage[]> 
   } catch {
     // Not a thread, or this workspace disagrees — fall through to the history.
   }
-  const history = await slack<SlackResponse & { messages?: SlackMessage[] }>(
+  const history = await slackCall<SlackResponse & { messages?: SlackMessage[] }>(
+    token,
     'conversations.history',
     { channel, latest: ts, oldest: ts, inclusive: true, limit: 1 },
   )
   return history.messages ?? []
 }
+
+/** One message, by where it is. Null when there is nothing there to read. */
+export async function messageAt(
+  token: string,
+  channel: string,
+  ts: string,
+): Promise<SlackMessage | null> {
+  const around = await messagesAround(token, channel, ts)
+  return around.find((m) => m.ts === ts) ?? null
+}
+
+const messagesAt = (channel: string, ts: string): Promise<SlackMessage[]> =>
+  messagesAround(requireEnv('SLACK_TOKEN', 'SLACK_USER_TOKEN', 'SLACK_BOT_TOKEN'), channel, ts)
 
 /** A canonical link to a message. Best-effort: not worth failing a read over. */
 const permalinkOf = (channel: string, ts: string): Promise<string | null> =>

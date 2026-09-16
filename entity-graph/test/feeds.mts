@@ -15,7 +15,7 @@
 
 import assert from 'node:assert/strict'
 import { EntityWriter, INBOX_ID } from '../src/main/events/writer'
-import { permalinkFor, threadOf } from '../src/main/events/slack'
+import { messageId, permalinkFor, threadOf } from '../src/main/events/slack'
 import { checksOf, commentId, nextPage, stateOf } from '../src/main/events/github'
 import { feedSignature } from '../src/main/events/feeds'
 import type { SourceNode } from '../src/core/client'
@@ -33,13 +33,15 @@ async function entity(store: MemorySource, id: string) {
   return read[id]
 }
 
+const LINK = 'https://acme.slack.com/archives/C1/p1712345678000100'
+
 /** The batch a feed would write for one message, twice over the same period. */
 const message = (text: string) => [
   { id: 'C1', values: { text: '#general', 'slack/channel': 'C1', 'slack/kind': 'channel' } },
   {
-    id: 'C1:1712345678.000100',
+    id: LINK,
     parentId: 'C1',
-    values: { text, 'slack/ts': '1712345678.000100', 'slack/channel': 'C1' },
+    values: { text, 'slack/ts': '1712345678.000100', 'slack/permalink': LINK },
   },
 ]
 
@@ -49,9 +51,9 @@ test('writes an entity, hangs it where it belongs, and files it in the inbox', a
   const store = new MemorySource()
   await new EntityWriter(store, 'slack').write(message('hello'))
 
-  const note = await entity(store, 'C1:1712345678.000100')
+  const note = await entity(store, LINK)
   assert.equal(note.values.text, 'hello')
-  assert.equal(note.values['slack/channel'], 'C1')
+  assert.equal(note.values['slack/permalink'], LINK)
   assert.deepEqual(new Set(note.inboundLinks), new Set(['C1', INBOX_ID]))
   // The channel is made by the first message in it rather than by a listing.
   assert.equal((await entity(store, 'C1')).values.text, '#general')
@@ -78,7 +80,7 @@ test('writes only what changed when a message is edited', async () => {
   // One value event, and nothing else: not the channel, not the links, not the
   // three values on the message that are the same as they were.
   assert.equal(store.events.length, before + 1)
-  assert.equal((await entity(store, 'C1:1712345678.000100')).values.text, 'hello, edited')
+  assert.equal((await entity(store, LINK)).values.text, 'hello, edited')
 })
 
 test('leaves a note alone once it has been filed somewhere', async () => {
@@ -86,14 +88,10 @@ test('leaves a note alone once it has been filed somewhere', async () => {
   const writer = new EntityWriter(store, 'slack')
   await writer.write(message('hello'))
   // Read, and moved out of the inbox by hand.
-  await store.callTool('writeLink', {
-    sourceId: INBOX_ID,
-    destinationId: 'C1:1712345678.000100',
-    action: 1,
-  })
+  await store.callTool('writeLink', { sourceId: INBOX_ID, destinationId: LINK, action: 1 })
 
   await writer.write(message('hello'))
-  const note = await entity(store, 'C1:1712345678.000100')
+  const note = await entity(store, LINK)
   assert.ok(!note.inboundLinks.includes(INBOX_ID), 'it was dragged back into the inbox')
 })
 
@@ -130,15 +128,19 @@ test('reads a thread reply out of its permalink, since a hit has no thread_ts', 
 })
 
 test('builds a permalink rather than asking for one', async () => {
-  assert.equal(
-    permalinkFor('https://acme.slack.com/', 'C1', '1712345678.000100'),
-    'https://acme.slack.com/archives/C1/p1712345678000100',
-  )
+  assert.equal(permalinkFor('https://acme.slack.com/', 'C1', '1712345678.000100'), LINK)
   assert.equal(
     permalinkFor('https://acme.slack.com', 'C1', '1712345679.000200', '1712345678.000100'),
     'https://acme.slack.com/archives/C1/p1712345679000200?thread_ts=1712345678.000100&cid=C1',
   )
-  assert.equal(permalinkFor('', 'C1', '1712345678.000100'), null)
+})
+
+test('names a message by its permalink, thread or no thread', async () => {
+  const reply = permalinkFor('https://acme.slack.com', 'C1', '1712345679.000200', '1712345678.000100')
+  // Learning that a message is a reply must not move it to another entity, so
+  // the `?thread_ts=…&cid=…` a reply's link carries is not part of its id.
+  assert.equal(messageId(reply), 'https://acme.slack.com/archives/C1/p1712345679000200')
+  assert.equal(messageId(LINK), LINK)
 })
 
 test('names a comment the way GitHub does, so the two kinds cannot collide', async () => {
