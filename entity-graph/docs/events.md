@@ -65,7 +65,12 @@ if you want one, and everything here works without it.
 | `github/pullRequest` | `owner/repo#123` | `text` (the title), `github/url`, `github/state`, `github/author`, `github/repo`, `github/reason`, `github/checks` | — |
 | `github/comment` | `issuecomment-…`, `discussion_r…`, `pullrequestreview-…` | `text`, `github/author`, `github/url`, `github/reviewState` | its pull request |
 
-Everything new is also linked under **`@inbox`**.
+Everything new is also linked under **`@inbox`** — which the first write names
+`Inbox` and hangs under `@index`, since an id nobody has written to is an entity
+in the sense that links to it work and in no other: no text, nowhere in the
+outline, and so a feed writing into it faithfully looks exactly like a feed doing
+nothing. Once only, and only while it has nothing written on it at all, so
+renaming it or filing it somewhere else is the last word.
 
 Neither the channel nor the thread is written on a message. The channel is in the
 permalink and the message hangs under the channel's own note; the thread is the

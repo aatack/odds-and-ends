@@ -179,8 +179,8 @@ function Inbox(): React.JSX.Element {
     <Help label="Where it all lands">
       <p>
         Everything new is linked under the entity <Mono>@inbox</Mono>, in whatever store is plugged
-        into this node. Nothing creates that note for you — link it in wherever you want it with{' '}
-        <b>Link entity to…</b> and the id, and the inbox fills up underneath it.
+        into this node. The first thing written makes that note and hangs it at the top of the
+        outline; move it or rename it and it stays where you put it.
       </p>
     </Help>
   )

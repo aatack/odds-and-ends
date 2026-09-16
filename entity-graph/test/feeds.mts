@@ -59,6 +59,22 @@ test('writes an entity, hangs it where it belongs, and files it in the inbox', a
   assert.equal((await entity(store, 'C1')).values.text, '#general')
 })
 
+test('gives the inbox a name and a place, once', async () => {
+  const store = new MemorySource()
+  const writer = new EntityWriter(store, 'slack')
+  await writer.write(message('hello'))
+
+  const inbox = await entity(store, INBOX_ID)
+  assert.equal(inbox.values.text, 'Inbox')
+  // Under the root, so the notes going into it are somewhere somebody can see.
+  assert.deepEqual(inbox.inboundLinks, ['@index'])
+
+  // Filed somewhere else by hand, and left there.
+  await store.callTool('writeLink', { sourceId: '@index', destinationId: INBOX_ID, action: 1 })
+  await writer.write(message('hello, edited'))
+  assert.deepEqual((await entity(store, INBOX_ID)).inboundLinks, [])
+})
+
 test('writes nothing at all the second time over the same period', async () => {
   const store = new MemorySource()
   await new EntityWriter(store, 'slack').write(message('hello'))
