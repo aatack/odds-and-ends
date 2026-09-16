@@ -319,6 +319,8 @@ something other than text: `[@type:arg](text)` renders as a component instead of
 as markup — `[@button:tool](label)` is the Actions button inline, naming a tool
 the way a script does (its id, or the camel case of its label),
 `[@codeEditor:key](hint)` a code box over one of the entity's values,
+`[@entity:id](label)` another entity as a pill mid-sentence — the label a fallback
+for while that entity has no text of its own —
 `[@pill](text)` the type pill's shape around a word the sentence wants set apart,
 and `[@tool:callId](label)` how one call is getting on — counting while it runs,
 and how it ended after. The `:arg` is optional, as the pill shows: a form that

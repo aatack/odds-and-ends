@@ -22,6 +22,7 @@ import {
   searchWindow,
   threadOf,
 } from '../src/main/events/slack'
+import { mentionsIn, slackToMarkdown } from '../src/main/events/mrkdwn'
 import { checksOf, commentId, nextPage, stateOf } from '../src/main/events/github'
 import { feedSignature } from '../src/main/events/feeds'
 import type { SourceNode } from '../src/core/client'
@@ -230,6 +231,67 @@ test('walks a day at a time when the cursor is more than a week behind', async (
 
   // And stops walking once it is inside the week.
   assert.equal(searchWindow(now - 86_400, now).ceiling, null)
+})
+
+// --- Slack's mrkdwn, which is not markdown ----------------------------------
+
+test('turns a mention into an entity mention, so the pill can be drawn', async () => {
+  assert.equal(
+    slackToMarkdown('morning <@U0123ABCD>', { U0123ABCD: '@alex' }),
+    'morning [@entity:U0123ABCD](@alex)',
+  )
+  // Nobody asked Slack who that was, so the name it wrote in the message stands
+  // in — and failing even that, the id, which the pill would have shown anyway.
+  assert.equal(slackToMarkdown('hi <@U0123ABCD|alex>'), 'hi [@entity:U0123ABCD](@alex)')
+  assert.equal(slackToMarkdown('hi <@U0123ABCD>'), 'hi [@entity:U0123ABCD](U0123ABCD)')
+  assert.equal(
+    slackToMarkdown('see <#C0123ABCD|general>', { C0123ABCD: '#general' }),
+    'see [@entity:C0123ABCD](#general)',
+  )
+})
+
+test('names everybody a message mentions, so they can be looked up at once', async () => {
+  assert.deepEqual(
+    mentionsIn('<@U1> and <@U2> in <#C3|general>, but not `<@U4>`'),
+    ['U1', 'U2', 'C3'],
+  )
+  assert.deepEqual(mentionsIn('nothing here'), [])
+})
+
+test('writes the marks that differ, and leaves the ones that do not', async () => {
+  assert.equal(slackToMarkdown('*bold* and _italic_ and ~gone~'), '**bold** and _italic_ and ~~gone~~')
+  // Arithmetic and globs are not emphasis, whatever they look like.
+  assert.equal(slackToMarkdown('2 * 3 * 4'), '2 * 3 * 4')
+  assert.equal(slackToMarkdown('a*b*c'), 'a*b*c')
+})
+
+test('leaves code alone, so a message about the syntax survives being read', async () => {
+  assert.equal(slackToMarkdown('`*not bold*` but *this is*'), '`*not bold*` but **this is**')
+  assert.equal(slackToMarkdown('```\n<@U1>\n```'), '```\n<@U1>\n```')
+})
+
+test('reads a link the way Slack writes one', async () => {
+  assert.equal(
+    slackToMarkdown('<https://example.com|the docs>'),
+    '[the docs](https://example.com)',
+  )
+  assert.equal(slackToMarkdown('<https://example.com>'), 'https://example.com')
+  // A name with a bracket in it would close the form early.
+  assert.equal(
+    slackToMarkdown('<https://example.com|a (good) page>'),
+    '[a  good  page](https://example.com)',
+  )
+})
+
+test('unescapes only after reading the forms, so a typed-out mention stays text', async () => {
+  assert.equal(slackToMarkdown('a &amp; b &lt; c'), 'a & b < c')
+  // Somebody spelling out what a mention looks like, rather than making one.
+  assert.equal(slackToMarkdown('write &lt;@U1&gt;'), 'write <@U1>')
+})
+
+test('keeps an audience a word, since there is no note to point at', async () => {
+  assert.equal(slackToMarkdown('<!here> please'), '@here please')
+  assert.equal(slackToMarkdown('<!subteam^S123|@platform> please'), '@platform please')
 })
 
 // --- Keeping a feed in step with the drawing --------------------------------

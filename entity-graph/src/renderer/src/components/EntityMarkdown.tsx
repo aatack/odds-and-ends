@@ -5,6 +5,7 @@ import { CodeEditor } from './ui/CodeEditor'
 import { Button } from './ui/Button'
 import { CALL_STATUS } from './callStatus'
 import { TypePill } from './TypePill'
+import { PillBackground, PillContent, PillWrapper } from './EntityPill'
 import type { MarkdownFieldProps, MarkdownFields } from './ui/markdownFields'
 import { elapsedTime } from '../helpers/time'
 import { useAtomValue, useCallRunning, useCalls, useGetEntities } from '../state/hooks'
@@ -63,6 +64,7 @@ export function EntityMarkdown({
       codeEditor: ({ arg, text }: MarkdownFieldProps) => (
         <FieldCodeEditor where={where} field={arg} hint={text} />
       ),
+      entity: ({ arg, text }: MarkdownFieldProps) => <FieldEntity id={arg} fallback={text} />,
       pill: ({ text }: MarkdownFieldProps) => <FieldPill label={text} />,
       tool: ({ arg, text }: MarkdownFieldProps) => <FieldToolCall callId={arg} label={text} />,
     }
@@ -187,6 +189,29 @@ function FieldCodeEditor({
  */
 function FieldPill({ label }: { label: string }): React.JSX.Element {
   return <TypePill label={label} className="mx-0.5 align-middle" />
+}
+
+/**
+ * `[@entity:id](label)` — another entity, mentioned in the middle of a sentence,
+ * as a pill that can be right-clicked and followed like any other.
+ *
+ * The label is a *fallback* rather than the caption: an entity with text of its
+ * own shows that, so a note renamed is renamed everywhere it is mentioned, which
+ * is the whole reason a mention names an id rather than spelling out a name. The
+ * fallback is what shows until the entity has one — which for a Slack feed is
+ * the ordinary case on the way in, where somebody is mentioned before there is
+ * any note about them.
+ */
+function FieldEntity({ id, fallback }: { id: string; fallback: string }): React.JSX.Element {
+  const entities = useGetEntities()
+  const known = !!entities([id])[id]?.values.text
+  return (
+    <PillWrapper id={id} title={fallback} className="mx-0.5 align-middle">
+      <PillBackground>
+        {known ? <PillContent id={id} /> : <span className="font-serif">{fallback}</span>}
+      </PillBackground>
+    </PillWrapper>
+  )
 }
 
 /** A clock, ticking while something is going on and stopped when it isn't. */
