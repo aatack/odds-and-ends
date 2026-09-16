@@ -128,7 +128,7 @@ function FeedLog({ node, onClose }: { node: SourceNode; onClose: () => void }): 
   useEffect(() => api.onFeedsChanged(read), [read])
 
   return (
-    <Modal title={`${node.label} — what it has been doing`} onClose={onClose} size="wide">
+    <Modal title={`${node.label} — what it has been doing`} onClose={onClose} size="large">
       {records === null ? (
         <p className="text-[13px] text-gray-400">Reading…</p>
       ) : records.length === 0 ? (
@@ -137,7 +137,7 @@ function FeedLog({ node, onClose }: { node: SourceNode; onClose: () => void }): 
           plugged into it and that it is switched on.
         </p>
       ) : (
-        <div className="space-y-3">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
           {records.map((record, at) => (
             <div key={`${record.at}-${at}`} className="space-y-1">
               <p className="text-[13px] text-gray-900">
@@ -147,7 +147,7 @@ function FeedLog({ node, onClose }: { node: SourceNode; onClose: () => void }): 
                 {record.summary}
               </p>
               {record.detail && (
-                <pre className="max-h-48 overflow-auto rounded-md bg-gray-50 p-2 font-mono text-[11px] leading-snug text-gray-600">
+                <pre className="max-h-64 overflow-auto rounded-md bg-gray-50 p-2 font-mono text-[11px] leading-snug text-gray-600">
                   {record.detail}
                 </pre>
               )}

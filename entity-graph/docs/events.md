@@ -31,9 +31,14 @@ reply must not move it to another entity.
 Reading a stretch twice therefore costs nothing, and every catch-up rule is an
 application of that:
 
-- **The cursor is wound back a minute before every request**, not only the first.
-  Slack's search runs off an index and an index lags; a comment written on the
-  cursor's own second would otherwise fall in the gap.
+- **Every pass reaches back ten minutes whatever the cursor says.** This is the
+  important one. Slack's search runs off an index, and the index is behind the
+  workspace by an amount nobody gets to know — seconds usually, minutes
+  sometimes. With the window bounded by a cursor that moves to *now* on every
+  pass, a message indexed ninety seconds late falls between two windows and is
+  never seen again: the feed polls happily, finds nothing, and the message is
+  lost. So the floor is `min(cursor − a minute, now − ten minutes)`, and the same
+  message is read and discarded twenty times before it stops being recent.
 - **The cursor moves after the entities are written, never before.** A crash
   between the two reads the same minute again on the next start, which is free.
   The other order loses it, silently.
@@ -108,17 +113,20 @@ One `search.messages` call covers everywhere — channels, DMs, group DMs and
 thread replies alike:
 
 ```
-query:    "after:<the day before the cursor>"   (plus "before:…" while catching up)
+query:    "after:<the day before the window starts>"   (plus "before:…" while catching up)
 sort:     "timestamp"
 sort_dir: "desc"
 count:    100
 page:     1, 2, 3, …
 ```
 
+Every thirty seconds — search is Tier 2, twenty requests a minute, and a pass is
+one of them in the ordinary case.
+
 There is no search text at all. Slack requires a non-empty query but not a
 *term*, so a query of bounds alone filters the lot, and `sort: timestamp` turns
 "everything" into "the most recent of everything". The pages are read until one
-comes back older than the cursor — to there rather than to a count, since how
+comes back older than the window — to there rather than to a count, since how
 many messages a day holds is not something to guess at.
 
 `conversations.history` and `conversations.replies` are the fallback, not the

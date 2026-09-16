@@ -428,10 +428,14 @@ export async function searchPage(
   query: string,
   page = 1,
   count = SEARCH_COUNT,
-): Promise<{ matches: SearchMatch[]; pages: number }> {
+): Promise<{ matches: SearchMatch[]; pages: number; total: number }> {
   const found = await slackCall<
     SlackResponse & {
-      messages?: { matches?: SearchMatch[]; pagination?: { page_count?: number } }
+      messages?: {
+        matches?: SearchMatch[]
+        total?: number
+        pagination?: { page_count?: number; total_count?: number }
+      }
     }
   >(token, 'search.messages', {
     query,
@@ -440,9 +444,14 @@ export async function searchPage(
     count,
     page,
   })
+  const matches = found.messages?.matches ?? []
   return {
-    matches: found.messages?.matches ?? [],
+    matches,
     pages: found.messages?.pagination?.page_count ?? page,
+    // What the query matched in total, as against what this page holds. The
+    // difference between "the search found nothing" and "the search found
+    // plenty and we threw it away" is the first question to ask of a quiet feed.
+    total: found.messages?.total ?? found.messages?.pagination?.total_count ?? matches.length,
   }
 }
 

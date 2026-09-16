@@ -37,14 +37,60 @@ const DAY = 86_400
 const WEEK = 7 * DAY
 
 /**
- * How far the cursor is wound back before each request. Search runs off an index
- * and an index lags; a minute of overlap costs nothing, because reading the same
- * message twice writes nothing the second time.
+ * How far the cursor is wound back before each request, and — separately — how
+ * far back every pass reaches whatever the cursor says.
+ *
+ * **`REACH` is the one that matters, and the absence of it was a bug.** Search
+ * runs off an index, and an index lags: a message sent at T is findable at
+ * T+something, and that something is seconds usually and minutes sometimes. With
+ * the window bounded by a cursor that moves to *now* on every pass, a message
+ * indexed a minute and a half late falls between two windows and is never seen
+ * again — the feed polls happily, finds nothing, and loses the message. So every
+ * pass re-reads the last ten minutes regardless of where the cursor is, which
+ * costs nothing: reading the same message twice writes nothing the second time.
+ *
+ * `OVERLAP` still does the same job for the other direction — a catch-up whose
+ * cursor is older than `REACH`, where the window is set by the cursor.
  */
 const OVERLAP = 60
+const REACH = 10 * 60
 
-/** How often the search runs. Tier 2 allows twenty a minute; this wants one. */
-const POLL_MS = 60_000
+/**
+ * How often the search runs. Search is Tier 2 — twenty requests a minute — and a
+ * pass is one of them in the ordinary case, so twice a minute is well inside it
+ * and halves how long a message sits in Slack before it is here.
+ */
+const POLL_MS = 30_000
+
+/**
+ * The stretch of time one pass reads, in seconds.
+ *
+ * `floor` is where it starts. It is the cursor wound back a little — and never
+ * less far back than {@link REACH}, which is the whole of the fix for a feed
+ * that polls happily and finds nothing: a message indexed after the window that
+ * should have held it has moved on is a message lost for good, and a window
+ * wider than the poll is what stops that happening.
+ *
+ * `ceiling` is where it stops, and is null in the ordinary case — a pass reads
+ * up to now. It is only set when the cursor is more than a week behind, where
+ * the whole gap in one search would be an unbounded request; then it is a day at
+ * a time, and a pass that sets one comes straight back for the next day.
+ *
+ * A cursor of null means a node from before the app started writing one when the
+ * node is added. Now rather than yesterday: switching a feed on is a decision
+ * about what happens next, not a request to import what has already been said.
+ */
+export function searchWindow(
+  cursor: number | null,
+  now: number,
+): { floor: number; ceiling: number | null } {
+  const from = cursor ?? now
+  const floor = Math.min(from - OVERLAP, now - REACH)
+  return { floor, ceiling: now - floor > WEEK ? floor + DAY : null }
+}
+
+/** Thread parents remembered before the lot is forgotten and read again. */
+const PARENTS = 500
 
 /** `YYYY-MM-DD`, which is the only granularity `after:` and `before:` have. */
 const day = (seconds: number): string => new Date(seconds * 1000).toISOString().slice(0, 10)
@@ -162,16 +208,7 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
   protected async pass(): Promise<void> {
     const { userToken, cursor } = this.config()
     const now = Date.now() / 1000
-    // A node is given its cursor when it is added, so an empty one means a node
-    // from before that. Now rather than yesterday: a feed switched on today is
-    // asking to be told what happens next, not to import what already did.
-    const from = asSeconds(cursor) ?? now
-    // Wound back before every request, not only the first: a message indexed a
-    // few seconds late is otherwise behind the cursor by the time it appears.
-    const floor = from - OVERLAP
-    // A cursor left behind for a week is not caught up in one search. Stepping a
-    // day at a time keeps each request the size of a day whatever it is reading.
-    const ceiling = now - floor > WEEK ? floor + DAY : null
+    const { floor, ceiling } = searchWindow(asSeconds(cursor), now)
 
     const query = [
       // Both bounds are dates, and exclusive of the day they name, so each is
@@ -187,7 +224,8 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
       // whether Slack is handing anything over at all, and this is the only
       // place that can answer it.
       this.note(
-        `Searched \`${query}\`, page ${page} of ${found.pages} — ${found.matches.length} back`,
+        `Searched \`${query}\` — page ${page} of ${found.pages}, ${found.matches.length} of ` +
+          `${found.total} back`,
         found.matches,
       )
       if (!found.matches.length) break
@@ -205,10 +243,10 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
       return ts !== null && ts >= floor && (ceiling === null || ts < ceiling)
     })
     if (matches.length !== kept.length) {
-      this.note(
-        `Kept ${kept.length} of ${matches.length} — the rest are older than the cursor`,
-        { cursor: new Date(floor * 1000).toISOString(), until: ceiling && new Date(ceiling * 1000).toISOString() },
-      )
+      this.note(`Kept ${kept.length} of ${matches.length} — the rest are outside the window`, {
+        from: new Date(floor * 1000).toISOString(),
+        until: ceiling ? new Date(ceiling * 1000).toISOString() : 'now',
+      })
     }
     const written = await this.write(await this.fromMatches(kept))
     if (written) this.note(`Wrote ${written.touched} notes, ${written.created} of them new`, written)
@@ -217,7 +255,7 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
     this.say(
       ceiling
         ? `Catching up — read to ${day(ceiling)}`
-        : `Up to date${kept.length ? `, ${kept.length} in the last minute` : ''}`,
+        : `Up to date${kept.length ? `, ${kept.length} in the last ${Math.round(REACH / 60)} minutes` : ''}`,
     )
     // Still behind: come straight back rather than waiting out the poll.
     if (ceiling && this.running) return this.pass()
@@ -309,6 +347,10 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
     if (known) return known
     const message = await messageAt(this.config().userToken, channel, ts).catch(() => null)
     const draft = this.messageDraft(channel, message ?? { ts }, channel)
+    // Forgotten wholesale rather than one at a time: this is a saving, not a
+    // record, and a feed left running for a month must not grow a map of every
+    // thread it has ever seen a reply in.
+    if (this.parents.size >= PARENTS) this.parents.clear()
     this.parents.set(id, draft)
     return draft
   }
@@ -316,6 +358,13 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
   /** Every entity a page of search hits implies, ready to be written as one. */
   private async fromMatches(matches: SearchMatch[]): Promise<EntityDraft[]> {
     const drafts: EntityDraft[] = []
+    // A hit with no channel or no timestamp cannot be named, so it cannot be
+    // written. It should never happen, which is exactly why it is worth saying
+    // when it does rather than quietly returning nothing.
+    const unnameable = matches.filter((m) => !m.channel?.id || !m.ts)
+    if (unnameable.length) {
+      this.note(`Skipped ${unnameable.length} hits with no channel or timestamp`, unnameable)
+    }
     for (const match of matches) {
       const channel = match.channel?.id
       const ts = match.ts

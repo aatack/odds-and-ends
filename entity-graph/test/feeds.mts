@@ -15,7 +15,7 @@
 
 import assert from 'node:assert/strict'
 import { EntityWriter, INBOX_ID } from '../src/main/events/writer'
-import { messageId, permalinkFor, threadOf } from '../src/main/events/slack'
+import { messageId, permalinkFor, searchWindow, threadOf } from '../src/main/events/slack'
 import { checksOf, commentId, nextPage, stateOf } from '../src/main/events/github'
 import { feedSignature } from '../src/main/events/feeds'
 import type { SourceNode } from '../src/core/client'
@@ -207,6 +207,27 @@ test('follows GitHub to the next page, and knows when there isn\'t one', async (
   )
   assert.equal(nextPage(new Headers({ link: '<https://x>; rel="prev"' })), null)
   assert.equal(nextPage(new Headers()), null)
+})
+
+test('reads back further than the poll, so a slow index cannot lose a message', async () => {
+  const now = 1_760_000_000
+  // The cursor moves to now on every pass, so a window bounded by it alone would
+  // be a minute wide — and a message Slack indexes ninety seconds late would
+  // fall between two of them and never be read at all.
+  const { floor, ceiling } = searchWindow(now - 30, now)
+  assert.ok(now - floor >= 600, `only reached back ${now - floor}s`)
+  assert.equal(ceiling, null)
+})
+
+test('walks a day at a time when the cursor is more than a week behind', async () => {
+  const now = 1_760_000_000
+  const month = now - 30 * 86_400
+  const { floor, ceiling } = searchWindow(month, now)
+  assert.equal(floor, month - 60)
+  assert.equal(ceiling, month - 60 + 86_400)
+
+  // And stops walking once it is inside the week.
+  assert.equal(searchWindow(now - 86_400, now).ceiling, null)
 })
 
 // --- Keeping a feed in step with the drawing --------------------------------
