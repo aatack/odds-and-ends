@@ -65,22 +65,20 @@ if you want one, and everything here works without it.
 
 | type | id | values | hangs under |
 | --- | --- | --- | --- |
-| `slack/message` | its permalink | `text`, `slack/ts`, `slack/user`, `slack/permalink` | its thread, or its channel |
+| `slack/message` | its permalink | `text`, `slack/user` | its thread, or its channel |
 | `slack/channel` | the channel id | `text` (the name), `slack/channel`, `slack/kind` | — |
 | `github/pullRequest` | `owner/repo#123` | `text` (the title), `github/url`, `github/state`, `github/author`, `github/repo`, `github/reason`, `github/checks` | — |
 | `github/comment` | `issuecomment-…`, `discussion_r…`, `pullrequestreview-…` | `text`, `github/author`, `github/url`, `github/reviewState` | its pull request |
 
-Everything new is also linked under **`@inbox`** — which the first write names
-`Inbox` and hangs under `@index`, since an id nobody has written to is an entity
-in the sense that links to it work and in no other: no text, nowhere in the
-outline, and so a feed writing into it faithfully looks exactly like a feed doing
-nothing. Once only, and only while it has nothing written on it at all, so
-renaming it or filing it somewhere else is the last word.
+Everything new is also linked under **`@inbox`**. Nothing creates that note for
+you: link the id in wherever you want it and the inbox fills up underneath it.
 
-Neither the channel nor the thread is written on a message. The channel is in the
-permalink and the message hangs under the channel's own note; the thread is the
-note it hangs off. A value saying either again is a second copy to keep in step
-with the first.
+**A Slack message holds what was said and who said it, and nothing else.** Its
+own id is the permalink, and a permalink is the workspace, the channel and the
+timestamp spelled out — so a value for any of those would be a second copy of
+something already there, to be kept in step with it for no gain. Where the note
+sits says the rest: under the channel's note, or under the message it replies
+to.
 
 **A message is never written blank.** A thread parent older than the cursor is
 not in the batch that turns up its replies, so it is *fetched* — once per thread

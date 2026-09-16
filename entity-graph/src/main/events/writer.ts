@@ -19,9 +19,6 @@ import type { Pensive } from '../../core/pensive/index'
 /** Where a note nobody has sorted yet goes. */
 export const INBOX_ID = '@inbox'
 
-/** The root of the outline, which is what the app shows. */
-const ROOT_ID = '@index'
-
 /** One entity as a feed wants it to read, once it has been written. */
 export interface EntityDraft {
   /** Made from the thing's own id, and the same every time it is read. */
@@ -87,7 +84,7 @@ export class EntityWriter {
       })
     }
 
-    const all = [...(await this.inbox()), ...merged.values()]
+    const all = [...merged.values()]
     const report = { created: 0, touched: 0, events: 0 }
     for (let at = 0; at < all.length; at += BATCH) {
       const batch = await this.batch(all.slice(at, at + BATCH))
@@ -96,22 +93,6 @@ export class EntityWriter {
       report.events += batch.events
     }
     return report
-  }
-
-  /**
-   * The inbox note itself, the first time anything is put in it.
-   *
-   * `@inbox` is an id, and an id nobody has written to is an entity that exists
-   * in the sense that links to it work and in no other sense: it has no text and
-   * it is nowhere in the outline, so a feed writing into it faithfully looks
-   * exactly like a feed doing nothing. So it is given a name and hung under the
-   * root — once, and only while it has nothing written on it at all, so renaming
-   * it or filing it somewhere else is the last word.
-   */
-  private async inbox(): Promise<EntityDraft[]> {
-    const existing = rollupEntity(INBOX_ID, await this.pensive.readEvents([INBOX_ID]))
-    if (Object.keys(existing.values).length) return []
-    return [{ id: INBOX_ID, parentId: ROOT_ID, values: { text: 'Inbox' } }]
   }
 
   /** One read, one write, and the difference between them. */
@@ -153,8 +134,7 @@ export class EntityWriter {
         })
       }
       if (draft.parentId) link(draft.parentId)
-      // Everything except the inbox, which would otherwise be filed in itself.
-      if (fresh && draft.id !== INBOX_ID) link(INBOX_ID)
+      if (fresh) link(INBOX_ID)
 
       if (fresh) created++
       if (events.length > before) touched++

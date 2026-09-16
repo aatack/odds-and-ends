@@ -44,11 +44,7 @@ const LINK = 'https://acme.slack.com/archives/C1/p1712345678000100'
 /** The batch a feed would write for one message, twice over the same period. */
 const message = (text: string) => [
   { id: 'C1', values: { text: '#general', 'slack/channel': 'C1', 'slack/kind': 'channel' } },
-  {
-    id: LINK,
-    parentId: 'C1',
-    values: { text, 'slack/ts': '1712345678.000100', 'slack/permalink': LINK },
-  },
+  { id: LINK, parentId: 'C1', values: { type: 'slack/message', text, 'slack/user': 'U1' } },
 ]
 
 // --- The writer -------------------------------------------------------------
@@ -59,26 +55,11 @@ test('writes an entity, hangs it where it belongs, and files it in the inbox', a
 
   const note = await entity(store, LINK)
   assert.equal(note.values.text, 'hello')
-  assert.equal(note.values['slack/permalink'], LINK)
+  // The permalink is the id, so it is not also a value: one copy of a fact.
+  assert.deepEqual(Object.keys(note.values).sort(), ['slack/user', 'text', 'type'])
   assert.deepEqual(new Set(note.inboundLinks), new Set(['C1', INBOX_ID]))
   // The channel is made by the first message in it rather than by a listing.
   assert.equal((await entity(store, 'C1')).values.text, '#general')
-})
-
-test('gives the inbox a name and a place, once', async () => {
-  const store = new MemorySource()
-  const writer = new EntityWriter(store, 'slack')
-  await writer.write(message('hello'))
-
-  const inbox = await entity(store, INBOX_ID)
-  assert.equal(inbox.values.text, 'Inbox')
-  // Under the root, so the notes going into it are somewhere somebody can see.
-  assert.deepEqual(inbox.inboundLinks, ['@index'])
-
-  // Filed somewhere else by hand, and left there.
-  await store.callTool('writeLink', { sourceId: '@index', destinationId: INBOX_ID, action: 1 })
-  await writer.write(message('hello, edited'))
-  assert.deepEqual((await entity(store, INBOX_ID)).inboundLinks, [])
 })
 
 test('writes nothing at all the second time over the same period', async () => {
@@ -100,7 +81,7 @@ test('writes only what changed when a message is edited', async () => {
 
   await writer.write(message('hello, edited'))
   // One value event, and nothing else: not the channel, not the links, not the
-  // three values on the message that are the same as they were.
+  // author, which is the same as it was.
   assert.equal(store.events.length, before + 1)
   assert.equal((await entity(store, LINK)).values.text, 'hello, edited')
 })
