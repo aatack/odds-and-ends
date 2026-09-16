@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from '@untitledui/icons'
 import { cn } from '../../helpers/cn'
 import { IconButton } from './IconButton'
@@ -19,6 +20,14 @@ const WIDTHS: Record<ModalSize, string> = {
 
 // A centred overlay with a click-away backdrop and a soft-edged card. The one
 // dialog shell for the whole app, so every modal reads the same.
+//
+// **It renders into `document.body`, not where it was written.** `position:
+// fixed` is fixed to the *viewport* only while no ancestor is transformed; under
+// one it resolves against that ancestor instead. The sources page is a React Flow
+// canvas, which pans and zooms by transforming everything on it — so a modal
+// opened from a node without this appears inside the node, at whatever the zoom
+// happens to be. Nothing else about a modal is positional, so the portal costs
+// the callers nothing.
 export function Modal({
   title,
   onClose,
@@ -31,7 +40,7 @@ export function Modal({
   children: ReactNode
 }): React.JSX.Element {
   const large = size === 'large'
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-gray-950/30 p-6"
       onClick={onClose}
@@ -59,6 +68,7 @@ export function Modal({
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
