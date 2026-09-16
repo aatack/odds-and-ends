@@ -53,6 +53,8 @@ export function useSourceGraph(): SourceGraphModel {
   // Something else may have changed it — a token revoked from a node's panel,
   // or the user renaming themselves, both of which rebuild every pensive.
   useEffect(() => api.onPensiveChanged(() => void refresh()), [refresh])
+  // And a feed reporting on itself, which changes nothing but what is drawn.
+  useEffect(() => api.onFeedsChanged(() => void refresh()), [refresh])
 
   /** Run a change, keep what it refused, and re-read either way. */
   const change = useCallback(

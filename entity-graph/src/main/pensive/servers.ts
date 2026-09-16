@@ -73,7 +73,7 @@ export class PensiveServers {
   status(nodeId: string): NodeStatus {
     const server = this.servers.get(nodeId)
     const problem = this.registry.problem(nodeId)
-    if (!server) return { url: null, localUrl: null, problem }
+    if (!server) return { url: null, localUrl: null, problem, activity: null }
     // Both are loopback, and equal, while everything published is local-only:
     // a node reached from another machine is a kind that doesn't exist yet, and
     // the two fields are what will tell it apart from these when it does.
@@ -81,6 +81,7 @@ export class PensiveServers {
       url: server.listening ? server.url : null,
       localUrl: server.listening ? server.url : null,
       problem: server.problem ?? problem,
+      activity: null,
     }
   }
 

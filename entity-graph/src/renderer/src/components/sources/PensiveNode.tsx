@@ -1,16 +1,17 @@
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext } from 'react'
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
 import { Key01, PauseCircle, PlayCircle, Trash03 } from '@untitledui/icons'
 import type { NodeStatus, SourceNode } from '../../../../core/client'
-import { nodeAddress, nodeKind } from '../../../../core/client'
+import { nodeAddress, nodeKind, watches } from '../../../../core/client'
 import { cn } from '../../helpers/cn'
 import { Badge } from '../ui/Badge'
 import { CopyButton } from '../ui/CopyButton'
 import { Field } from '../ui/Field'
 import { IconButton } from '../ui/IconButton'
-import { Input } from '../ui/Input'
 import { Select } from '../ui/Select'
 import type { SourceGraphActions } from '../../views/useSourceGraph'
+import { DraftInput } from './DraftInput'
+import { FeedBody } from './FeedNode'
 
 // One node of the sources graph, drawn as a small card.
 //
@@ -50,39 +51,6 @@ export interface PensiveNodeData extends Record<string, unknown> {
 }
 
 export type PensiveFlowNode = Node<PensiveNodeData, 'pensive'>
-
-/**
- * A field whose value is committed rather than written per keystroke: a path is
- * not a path until it is finished being typed, and each write rebuilds every
- * pensive downstream of the node.
- */
-function DraftInput({
-  value,
-  onCommit,
-  ...rest
-}: {
-  value: string
-  onCommit: (next: string) => void
-  mono?: boolean
-} & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'>): React.JSX.Element {
-  const [draft, setDraft] = useState(value)
-  // Somebody else may have changed it — a node deleted upstream, a rebuild.
-  useEffect(() => setDraft(value), [value])
-  return (
-    <Input
-      {...rest}
-      // Typing in a node must not drag it, and a click in a field must not pan.
-      className={cn('nodrag nopan', rest.className)}
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => draft !== value && onCommit(draft)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') e.currentTarget.blur()
-        if (e.key === 'Escape') setDraft(value)
-      }}
-    />
-  )
-}
 
 export function PensiveNode({ data, selected }: NodeProps<PensiveFlowNode>): React.JSX.Element {
   const { node } = data
@@ -149,7 +117,9 @@ export function PensiveNode({ data, selected }: NodeProps<PensiveFlowNode>): Rea
           actions={actions}
           openAccess={openAccess}
         />
-        {node.paused ? (
+        {node.paused && !watches(node.config.kind) ? (
+          // A feed says its own version of this: being switched off means it has
+          // stopped rather than that it is refusing, which is a different thing.
           <p className="text-xs text-gray-400">Switched off — calls through it are refused.</p>
         ) : (
           state?.problem && <p className="text-xs text-error-600">{state.problem}</p>
@@ -267,6 +237,12 @@ function Body({
         </>
       )
     }
+
+    // The two that run rather than sit there. Their own file: they hold three
+    // fields apiece and a page of instructions on where each one comes from.
+    case 'slackEvents':
+    case 'githubEvents':
+      return <FeedBody node={node} config={config} status={status} actions={actions} />
 
     case 'desktop':
       return (
