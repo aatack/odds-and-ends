@@ -89,14 +89,14 @@ export function threadOf(permalink: string | undefined | null): string | null {
 }
 
 /**
- * A permalink, built rather than asked for. Slack's own form is the workspace
- * URL, the channel and the timestamp with its dot taken out — so a message that
- * arrived over the socket, which carries no permalink, costs no call to name.
+ * A permalink, built rather than asked for: Slack's own form is the workspace
+ * URL, the channel, and the timestamp with its dot taken out.
  *
- * Built for every message rather than taken from a search hit when there is one,
- * because this is what an entity is *identified* by: one way of arriving at the
- * string means a message found twice is one note, where two ways that usually
- * agree would be two notes on the day they didn't.
+ * Built for every message rather than taken from the search hit that came with
+ * one, because this is what an entity is *identified* by. One way of arriving at
+ * the string means a message found twice is one note, where two ways that
+ * usually agree would be two notes on the day they didn't — and a thread parent
+ * fetched by timestamp has no hit to take a permalink from at all.
  */
 export function permalinkFor(
   workspace: string,
