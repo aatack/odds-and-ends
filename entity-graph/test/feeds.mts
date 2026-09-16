@@ -304,17 +304,29 @@ test('keeps an audience a word, since there is no note to point at', async () =>
 
 // --- Keeping a feed in step with the drawing --------------------------------
 
+const slackNode = (cursor: string, userToken = 'xoxp-1'): SourceNode => ({
+  id: 'n',
+  label: 'Slack',
+  x: 0,
+  y: 0,
+  paused: false,
+  config: { kind: 'slackEvents', userToken, cursor },
+})
+
 test('a cursor that moved is not a reason to restart the feed that moved it', async () => {
-  const node = (cursor: string, userToken = 'xoxp-1'): SourceNode => ({
-    id: 'n',
-    label: 'Slack',
-    x: 0,
-    y: 0,
-    paused: false,
-    config: { kind: 'slackEvents', userToken, cursor },
-  })
-  assert.equal(feedSignature(node('1')), feedSignature(node('2')))
-  assert.notEqual(feedSignature(node('1')), feedSignature(node('1', 'xoxp-2')))
+  assert.equal(feedSignature(slackNode('1')), feedSignature(slackNode('2')))
+  assert.notEqual(feedSignature(slackNode('1')), feedSignature(slackNode('1', 'xoxp-2')))
+})
+
+test('the store it writes into is part of what a feed is', async () => {
+  // Drawing the edge changes nothing on the node's own row, so without this the
+  // feed was never restarted and went on saying "nothing is plugged in" — which
+  // had been true when it started, and was all it had ever had cause to say.
+  assert.notEqual(feedSignature(slackNode('1'), []), feedSignature(slackNode('1'), ['store']))
+  assert.notEqual(
+    feedSignature(slackNode('1'), ['one']),
+    feedSignature(slackNode('1'), ['another']),
+  )
 })
 
 // --- Runner -----------------------------------------------------------------

@@ -19,14 +19,22 @@ import { SlackFeed, type SlackFeedConfig } from './slack'
 // off is lost.
 
 /**
- * What about a node means "restart the feed". Everything except the two values
- * the feed writes itself — a cursor that moved is the feed working, not a reason
- * to throw away the connection it moved with.
+ * What about a node means "restart the feed".
+ *
+ * Everything except the two values the feed writes itself — a cursor that moved
+ * is the feed working, not a reason to throw away the connection it moved with.
+ *
+ * **`inputs` is in here because a feed's edge is its configuration too**: it is
+ * the store the feed writes into, which is as much a part of what the feed is as
+ * the token it reads with. Left out, drawing that edge changed nothing about the
+ * node's own row, so the feed was not restarted and went on saying "nothing is
+ * plugged in" — which had been true when it started and was the only thing it
+ * had ever had occasion to say.
  */
-export function feedSignature(node: SourceNode): string {
+export function feedSignature(node: SourceNode, inputs: readonly string[] = []): string {
   const config = node.config as Record<string, unknown>
   const { cursor: _cursor, lastModified: _lastModified, ...rest } = config
-  return JSON.stringify([node.paused, node.label, rest])
+  return JSON.stringify([node.paused, node.label, rest, [...inputs]])
 }
 
 /** How many lines of a feed's own account of itself are kept. */
@@ -71,21 +79,30 @@ export class EventFeeds {
 
     for (const [id, running] of [...this.feeds]) {
       const node = wanted.get(id)
-      if (node && feedSignature(node) === running.signature) continue
+      if (node && this.signatureOf(node) === running.signature) continue
       this.feeds.delete(id)
-      await running.feed.stop()
+      // Not awaited. Stopping waits for the pass in flight, and a Slack catch-up
+      // stepping through a month of history is minutes of it — which the page
+      // would otherwise spend frozen on the gesture that caused it. The feed is
+      // out of the map already and stops writing on its next check either way.
+      void running.feed.stop()
     }
 
     for (const [id, node] of wanted) {
       if (this.feeds.has(id)) continue
       const feed = this.build(node)
       if (!feed) continue
-      this.feeds.set(id, { feed, signature: feedSignature(node) })
+      this.feeds.set(id, { feed, signature: this.signatureOf(node) })
       // Not awaited: a feed's first act is to read everything it missed, which
       // for a cursor a week old is minutes of work, and the app must not wait
       // for it to finish before its window will draw.
       void feed.start()
     }
+  }
+
+  /** A node's signature, edges included — `inputs` is where the feed writes. */
+  private signatureOf(node: SourceNode): string {
+    return feedSignature(node, this.db.inputs(node.id))
   }
 
   /** One line of a node's account of itself. */
