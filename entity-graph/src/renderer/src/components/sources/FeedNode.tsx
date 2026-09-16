@@ -112,6 +112,7 @@ export function FeedBody({
           onClose={() => setHelping(false)}
         >
           {config.kind === 'slackEvents' ? <SlackHelp /> : <GithubHelp />}
+          <Inbox />
         </Modal>
       )}
     </>
@@ -131,6 +132,19 @@ function Help({ label, children }: { label: string; children: React.ReactNode })
 const Mono = ({ children }: { children: React.ReactNode }): React.JSX.Element => (
   <code className="rounded bg-gray-50 px-1 font-mono text-xs text-gray-700">{children}</code>
 )
+
+/** The same for both, and the thing somebody will look for first. */
+function Inbox(): React.JSX.Element {
+  return (
+    <Help label="Where it all lands">
+      <p>
+        Everything new is linked under the entity <Mono>@inbox</Mono>, in whatever store is plugged
+        into this node. Nothing creates that note for you — link it in wherever you want it with{' '}
+        <b>Link entity to…</b> and the id, and the inbox fills up underneath it.
+      </p>
+    </Help>
+  )
+}
 
 function SlackHelp(): React.JSX.Element {
   return (
