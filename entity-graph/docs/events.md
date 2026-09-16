@@ -274,6 +274,18 @@ it holds open is exactly what should not survive being switched off. Pressing
 play starts it again, beginning with the catch-up, so nothing said in the
 meantime is lost.
 
+**A feed restarts when anything about it changes, its edge included.** The edge
+is the store it writes into, which is as much a part of what a feed is as the
+token it reads with — so `feedSignature` counts the node's inputs alongside its
+config. Left out, drawing that edge changed nothing on the node's own row, the
+feed was never restarted, and it went on reporting "nothing is plugged in", which
+had been true when it started and was the only thing it had had cause to say.
+
+**A bad start is retried rather than fatal.** Beginning and the first pass are
+one step, so a token the service refuses or a network that was down when the app
+opened is something the next poll tries again — a feed that has given up looks
+exactly like one that is working and finding nothing.
+
 The cursor is written straight onto the node rather than through the IPC handler
 that ordinarily edits one. That handler rebuilds every pensive downstream and
 re-syncs the servers — for a value that moves once a minute it would be the most

@@ -55,6 +55,8 @@ export abstract class Feed<C> implements RunningFeed {
   private problem: string | null = null
   /** Whichever pass is in flight, so two never overlap. */
   private inFlight: Promise<void> | null = null
+  /** Whether {@link begin} has been through once without throwing. */
+  private begun = false
 
   constructor(
     protected options: FeedOptions<C>,
@@ -117,21 +119,13 @@ export abstract class Feed<C> implements RunningFeed {
     if (this.running) return
     this.running = true
     this.say(`Starting ${this.options.label}`)
-    try {
-      await this.begin()
-    } catch (e) {
-      this.failed(e)
-      // Begun badly — a token that isn't one — is not a reason to spin: the
-      // node says what is wrong and waits to be edited, which restarts it.
-      this.running = false
-      return
-    }
     await this.tick()
     this.schedule()
   }
 
   async stop(): Promise<void> {
     this.running = false
+    this.begun = false
     if (this.timer) clearTimeout(this.timer)
     this.timer = null
     // The pass in flight is waited for rather than abandoned: it may be half way
@@ -156,9 +150,26 @@ export abstract class Feed<C> implements RunningFeed {
   /** One pass, never two at once — a slow one must not be lapped by the timer. */
   private async tick(): Promise<void> {
     if (!this.running || this.inFlight) return
-    const run = this.pass().catch((e) => this.failed(e))
+    const run = this.once().catch((e) => this.failed(e))
     this.inFlight = run
     await run
     this.inFlight = null
+  }
+
+  /**
+   * Beginning, if it has not begun, and then one pass.
+   *
+   * The two are one step so that **a bad start is retried rather than fatal**. A
+   * token Slack refuses, a network that was down when the app opened: none of
+   * those is a reason for a node to sit there dead until something else happens
+   * to restart it, and a feed that has given up looks exactly like one that is
+   * working and finding nothing.
+   */
+  private async once(): Promise<void> {
+    if (!this.begun) {
+      await this.begin()
+      this.begun = true
+    }
+    await this.pass()
   }
 }
