@@ -1,4 +1,4 @@
-import { SocketModeClient } from '@slack/socket-mode'
+import { LogLevel, SocketModeClient } from '@slack/socket-mode'
 import { bucketEvents, rollupEntity } from '../../core/entity'
 import {
   conversationInfo,
@@ -158,7 +158,9 @@ export class SlackFeed extends Feed<SlackFeedConfig> {
   private async connect(): Promise<void> {
     const { appToken } = this.config()
     if (!appToken.trim()) return
-    const socket = new SocketModeClient({ appToken, logLevel: 'error' as never })
+    // Quiet: the library narrates every ping at the default level, and there is
+    // nobody reading this app's stdout.
+    const socket = new SocketModeClient({ appToken, logLevel: LogLevel.ERROR })
     socket.on('slack_event', async (payload: { ack: () => Promise<void>; body?: unknown }) => {
       // Acknowledged first and always: Slack redelivers what it is not told
       // about, and an event this cannot make sense of is still received.

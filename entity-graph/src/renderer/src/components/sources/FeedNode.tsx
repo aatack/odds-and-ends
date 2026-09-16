@@ -180,6 +180,11 @@ function SlackHelp(): React.JSX.Element {
           <Mono>message.mpim</Mono>, <Mono>reaction_added</Mono>, <Mono>reaction_removed</Mono>. A
           workspace admin may have to approve the app first.
         </p>
+        <p>
+          Keep the app <b>internal</b> to your workspace either way. A distributed app is allowed one
+          request a minute to <Mono>conversations.history</Mono> and{' '}
+          <Mono>conversations.replies</Mono>; an internal one keeps fifty.
+        </p>
       </Help>
       <Help label="Never write">
         <p>
