@@ -99,9 +99,9 @@ class PausedPensive implements Pensive {
 
 ## The graph
 
-The Sources page is the arrangement, drawn. A node is a pensive or a way of
-publishing one; an edge means "read that one". `src/core/client.ts` holds the
-shapes both ends agree on:
+The Sources page is the arrangement, drawn. A node is a pensive, a way of
+publishing one, or something that writes into one; an edge names the pensive at
+the other end of it. `src/core/client.ts` holds the shapes both ends agree on:
 
 ```ts
 type NodeConfig =
@@ -111,6 +111,8 @@ type NodeConfig =
   | { kind: 'mcp'; port: number }
   | { kind: 'connect'; url: string; token: string }
   | { kind: 'desktop' }
+  | { kind: 'slackEvents'; userToken: string; appToken: string; cursor: string; muted: string }
+  | { kind: 'githubEvents'; token: string; cursor: string; lastModified: string }
 
 interface SourceNode {
   id: string
@@ -146,6 +148,14 @@ interface SourceToken {
 | `broadcast` | its input, over HTTP, to whoever holds a token | 1 | no |
 | `mcp` | its input, as an MCP server, for an agent | 1 | no |
 | `desktop` | this window; its input is what the outliner shows | 1 | no |
+| `slackEvents` | Slack, written into its input | 1 | no |
+| `githubEvents` | your GitHub notifications, written into its input | 1 | no |
+
+The last two are the only nodes that *do* something rather than being something:
+they hold a cursor, they run, and pausing one stops it rather than making it
+refuse. [`events.md`](./events.md) is the whole of them. They hold their own
+credentials, which is why this file is the app's own and never a pensive — a
+secret copied into a store is a secret published with it.
 
 `NODE_KINDS` is that table as data: the page draws its handles from it and the
 main process refuses an edge that disagrees with it. A node's inputs are edges
@@ -168,6 +178,10 @@ once (`pensive:changed` → `useApp` re-reads → `SourceView` re-lays its seams
 | `http.ts` | one small `node:http` server per published node |
 | `mcpServer.ts` | what an agent sees: six tools over the same store |
 | `servers.ts` | keeping the listeners in step with the drawing |
+
+`src/main/events/` is the other half of "keeping the drawing and what is running
+in step": `feeds.ts` starts and stops a feed per `slackEvents` / `githubEvents`
+node, the way `servers.ts` does for the ones that publish.
 
 Three rules hold here rather than in the page, because the page is not the only
 caller — a broadcast answers anything on this machine holding a token:

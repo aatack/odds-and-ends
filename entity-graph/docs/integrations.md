@@ -113,6 +113,10 @@ SLACK_TOKEN=xoxp-…
 `SLACK_USER_TOKEN` and `SLACK_BOT_TOKEN` are also read, in that order of
 preference, if `SLACK_TOKEN` is unset.
 
+This is the token the *app* reads Slack with. A `slackEvents` node carries its
+own, written on the node, and shares nothing here but the code that makes the
+calls.
+
 A **user token** (`xoxp-`) is what you want: it sees everything you see,
 including DMs and private channels, and posts as you. To get one:
 
@@ -240,6 +244,12 @@ Caveats: `after:` is day-granular, hence a day count rather than a timestamp
 (default 2, so today is covered whether or not the bound counts the day it
 names). Compare `ts` against your own cursor to get finer resolution. Search runs
 off an index, so expect it to trail real-time by seconds.
+
+It **pages**: `search.messages` takes a page number (up to 100 pages of up to 100
+matches), and the filters below throw enough away that one page can come back
+mostly empty. So it asks for another rather than returning short. The paging
+itself is `searchPage`, which the `slackEvents` node on the sources page walks
+backwards to a cursor with — see [`events.md`](./events.md).
 
 #### What it leaves out
 
