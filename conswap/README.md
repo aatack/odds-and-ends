@@ -11,12 +11,20 @@ desktop app starts for itself.
 
 ```bash
 npm install
-npm run dev            # builds the backend, then starts the app
-npm run dev:no-sandbox # the same, on a machine where electron needs it
+npm run dev
 ```
 
 That is one command and one window. The app starts the backend as a child
 process, so there is nothing else to run.
+
+`dev` passes `--no-sandbox`, because Electron's setuid sandbox helper is not set
+up on this machine. To run with it instead, give the helper its permissions once
+per `npm install` and use `npm run dev:sandboxed`:
+
+```bash
+sudo chown root:root node_modules/electron/dist/chrome-sandbox
+sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+```
 
 ## The idea
 

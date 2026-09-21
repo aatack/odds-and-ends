@@ -6,8 +6,8 @@
   "description": "The desktop app. Starts the backend itself, so there is only ever one thing to run.",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
-    "dev:no-sandbox": "electron-vite dev -- --no-sandbox",
+    "dev": "electron-vite dev -- --no-sandbox",
+    "dev:sandboxed": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "type-check": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"

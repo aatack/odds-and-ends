@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "dev": "npm run build:server && npm -w @conswap/desktop run dev",
-    "dev:no-sandbox": "npm run build:server && npm -w @conswap/desktop run dev:no-sandbox",
+    "dev:sandboxed": "npm run build:server && npm -w @conswap/desktop run dev:sandboxed",
     "build:server": "npm -w @conswap/backend run build",
     "server": "npm -w @conswap/backend run dev",
     "build": "npm -w @conswap/backend run build && npm -w @conswap/desktop run build",

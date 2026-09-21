@@ -1,6 +1,6 @@
 import type { IntegrationStatus } from '@conswap/common/types'
 import type { Context, Integration } from '../context.js'
-import { readJson, writeJson } from '../database.js'
+import { readJson, readKey, writeJson, writeKey } from '../database.js'
 import { addEvent } from '../lifecycle.js'
 import { run, runJson } from '../shell.js'
 import { getTopic, updateTopic, upsertTopic } from '../topics.js'
@@ -53,6 +53,9 @@ function checksVerdict(rollup: PullRequestDetail['statusCheckRollup']): string {
   }
   return pending ? 'running' : 'passing'
 }
+
+/** How far the notification feed has been read. */
+const watermark = 'github:notifications:since'
 
 const reasons: Record<string, string> = {
   review_requested: 'your review was requested',
@@ -139,16 +142,31 @@ export class GithubIntegration implements Integration {
     return id
   }
 
+  /**
+   * Notifications since the last time we looked. The first poll only writes the
+   * watermark down: a standing backlog of unread notifications is not a list of
+   * things that need me today.
+   */
   private async readNotifications(): Promise<number> {
+    const since = readKey(this.context.db, watermark)
+    if (since === null) {
+      writeKey(this.context.db, watermark, new Date().toISOString())
+      this.context.log('github', 'catching up from now, not from the whole backlog')
+      return 0
+    }
+
     const notifications = await runJson<Notification[]>(
       'gh',
-      ['api', '-X', 'GET', 'notifications', '-f', 'all=false', '--paginate'],
+      ['api', '-X', 'GET', 'notifications', '-f', 'all=false', '-f', `since=${since}`, '-f', 'per_page=50'],
       { timeoutMs: 60_000 },
     )
     if (!notifications) return 0
+
     const seen = new Set(readJson<string[]>(this.context.db, 'github:notifications', []))
+    let newest = since
     let filed = 0
     for (const notification of notifications) {
+      if (notification.updated_at > newest) newest = notification.updated_at
       const key = `${notification.id}:${notification.updated_at}`
       if (seen.has(key)) continue
       seen.add(key)
@@ -172,7 +190,8 @@ export class GithubIntegration implements Integration {
       })
       filed += 1
     }
-    writeJson(this.context.db, 'github:notifications', [...seen].slice(-800))
+    writeJson(this.context.db, 'github:notifications', [...seen].slice(-500))
+    writeKey(this.context.db, watermark, newest)
     return filed
   }
 
