@@ -1,7 +1,9 @@
 import type { Client } from './client'
+import type { Environment } from './environment'
+import { headlessEnvironment } from './environment'
 import type { Entry } from './store'
 import { Store } from './store'
-import type { AppState, ComposerMode, FeedRow, OverlayKind, Toast } from './state'
+import type { AppState, ComposerMode, FeedRow, OverlayKind, Theme, Toast } from './state'
 import { feedRows, initialState, moveCursor, rowAt } from './state'
 import type {
   ActionRequest,
@@ -44,7 +46,31 @@ export class Session {
   private listeners = new Set<() => void>()
   private disconnect: (() => void) | null = null
 
-  constructor(readonly client: Client) {}
+  constructor(
+    readonly client: Client,
+    readonly environment: Environment = headlessEnvironment(),
+  ) {
+    const remembered = environment.read('theme')
+    if (remembered === 'light' || remembered === 'dark' || remembered === 'system') {
+      this.state = { ...this.state, theme: remembered }
+    }
+  }
+
+  /** What the screen should actually be, once 'system' has been resolved. */
+  effectiveTheme(): 'light' | 'dark' {
+    if (this.state.theme !== 'system') return this.state.theme
+    return this.environment.prefersDark() ? 'dark' : 'light'
+  }
+
+  setTheme(theme: Theme): void {
+    this.environment.write('theme', theme)
+    this.update((state) => ({ ...state, theme }))
+  }
+
+  /** Flips whatever is on screen now, which is what a toggle should do. */
+  toggleTheme(): void {
+    this.setTheme(this.effectiveTheme() === 'dark' ? 'light' : 'dark')
+  }
 
   getState(): AppState {
     return this.state

@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 
 const port = Number.parseInt(process.env.CONSWAP_PORT ?? '4319', 10)
 const serverUrl = process.env.CONSWAP_SERVER ?? `http://127.0.0.1:${port}`
@@ -63,7 +63,8 @@ function createWindow(): void {
     minWidth: 820,
     minHeight: 520,
     show: false,
-    backgroundColor: '#0b0b0d',
+    // Only until the first paint; the app picks its own side after that.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0b0b0d' : '#f4f4f7',
     title: 'conswap',
     webPreferences: {
       preload: fileURLToPath(new URL('../preload/index.mjs', import.meta.url)),

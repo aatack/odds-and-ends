@@ -23,7 +23,10 @@ export function App({ session }: { session: Session }): ReactNode {
           queue={model.queue}
           status={model.status}
           focus={model.state.focus}
+          theme={model.theme}
+          effectiveTheme={model.effectiveTheme}
           onFocusTopic={model.onFocusTopic}
+          onToggleTheme={model.onToggleTheme}
         />
       )}
 

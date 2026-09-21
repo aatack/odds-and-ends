@@ -3,7 +3,7 @@ import { dispatchKey, runTool } from './dispatch'
 import { clampIndex, overlayItems, overlayPlaceholders, overlayTitles } from './overlay'
 import type { OverlayItem } from './overlay'
 import type { Session } from './session'
-import type { AppState, ComposerMode, FeedRow } from './state'
+import type { AppState, ComposerMode, FeedRow, Theme } from './state'
 import { feedRows, visibleRows } from './state'
 import type { Entry } from './store'
 import type { QueueView, ServerStatus, TopicDetail, TopicId } from './types'
@@ -50,6 +50,8 @@ export interface ConswapModel {
   overlay: OverlayModel | null
   loading: boolean
   error: string | null
+  theme: Theme
+  effectiveTheme: 'light' | 'dark'
   onFocusTopic(id: TopicId): void
   onSelectRow(path: TopicId[]): void
   onToggleRow(id: TopicId): void
@@ -68,6 +70,7 @@ export interface ConswapModel {
   onSetMetadata(key: string, value: string): void
   onShowEarlier(): void
   onRunTool(id: string): void
+  onToggleTheme(): void
 }
 
 /**
@@ -81,6 +84,14 @@ export function useConswap(session: Session): ConswapModel {
   const status = useEntry<ServerStatus>(session, 'status')
 
   useEffect(() => session.connect(), [session])
+
+  // The one place the app writes to the document: 'system' leaves the root alone
+  // so `color-scheme: light dark` can follow the machine.
+  useEffect(() => {
+    const root = document.documentElement
+    if (state.theme === 'system') delete root.dataset.theme
+    else root.dataset.theme = state.theme
+  }, [state.theme])
 
   useEffect(() => {
     const listener = (event: KeyboardEvent): void => {
@@ -135,6 +146,8 @@ export function useConswap(session: Session): ConswapModel {
     overlay,
     loading: detail.loading || queue.loading,
     error: detail.error ?? queue.error,
+    theme: state.theme,
+    effectiveTheme: session.effectiveTheme(),
     onFocusTopic: useCallback((id) => session.focusTopic(id), [session]),
     onSelectRow: useCallback((path) => session.update((current) => ({ ...current, cursor: path })), [session]),
     onToggleRow: useCallback((id) => session.toggleExpanded(id), [session]),
@@ -156,5 +169,6 @@ export function useConswap(session: Session): ConswapModel {
     onSetMetadata: useCallback((key, value) => void session.setMetadata(key, value), [session]),
     onShowEarlier: useCallback(() => session.update((current) => ({ ...current, showEarlier: true })), [session]),
     onRunTool: useCallback((id) => runTool(session, id), [session]),
+    onToggleTheme: useCallback(() => session.toggleTheme(), [session]),
   }
 }

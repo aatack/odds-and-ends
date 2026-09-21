@@ -16,6 +16,9 @@ are separate, and the app must be drivable with no DOM at all.**
   it can do is an entry in `src/actions.ts`, reached through one `POST /actions`.
 - **`packages/common/src/session.ts`** is the app without a screen: latent state,
   the cache, and every effect. It can be driven from node.
+- **`packages/common/src/environment.ts`** is the seam for the world outside:
+  where a per-device preference is kept, and what the machine wants to look like.
+  Nothing else in `common` may touch `localStorage` or `matchMedia`.
 - **`packages/common/src/state.ts`** holds the latent state and the *pure*
   derivations of it. Latent means the minimum — focus, the trail, the expanded
   set, the cursor, drafts. Anything derivable is a function here, and a
@@ -60,7 +63,9 @@ Clean and quiet, in the Linear and Apple direction.
   composer, `xl` for the overlay.
 - **Colour carries meaning or is not used.** One indigo accent, one colour per
   source for the rule beside an event, desaturated status hues.
-- Tokens are in `packages/common/src/styles.css`, light and dark together.
+- Tokens are in `packages/common/src/styles.css`, written once: every token
+  carries both values through `light-dark()`, and `color-scheme` picks the side.
+  `system` leaves the root alone; the toggle pins it with `data-theme`.
 
 ## Data
 

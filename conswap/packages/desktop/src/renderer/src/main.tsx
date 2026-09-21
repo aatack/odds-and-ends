@@ -1,4 +1,4 @@
-import { App, Client, HttpTransport, Session } from '@conswap/common'
+import { App, browserEnvironment, Client, HttpTransport, Session } from '@conswap/common'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
@@ -10,7 +10,7 @@ declare global {
 }
 
 const serverUrl = window.conswap?.serverUrl ?? 'http://127.0.0.1:4319'
-const session = new Session(new Client(new HttpTransport(serverUrl)))
+const session = new Session(new Client(new HttpTransport(serverUrl)), browserEnvironment)
 
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>

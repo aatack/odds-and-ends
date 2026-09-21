@@ -1,55 +1,43 @@
 /*
- * The whole palette. Light and dark are the same design with different values, so
- * there is only ever one set of class names to reason about.
+ * The whole palette, written once. Each token carries both values, and the pair
+ * is chosen by `color-scheme`: `light dark` follows the machine, and the toggle
+ * pins it by setting `data-theme` on the root.
  */
 :root {
-  --bg: #fbfbfc;
-  --panel: #ffffff;
-  --raised: #ffffff;
-  --line: #e7e7ec;
-  --line-strong: #d5d5dd;
-  --ink: #17171b;
-  --muted: #6c6c77;
-  --faint: #9c9ca7;
-  --accent: #4f46e5;
-  --accent-soft: #eef0ff;
-  --ok: #15803d;
-  --warn: #b45309;
-  --bad: #dc2626;
-  --shadow: 0 1px 2px rgb(16 16 20 / 6%), 0 8px 24px rgb(16 16 20 / 8%);
+  color-scheme: light dark;
 
-  --accent-note: #a1a1ad;
-  --accent-system: #c9c9d2;
+  --bg: light-dark(#f4f4f7, #0b0b0d);
+  --panel: light-dark(#ffffff, #121216);
+  --raised: light-dark(#f7f7fa, #17171c);
+  --line: light-dark(#e7e7ec, #232329);
+  --line-strong: light-dark(#d5d5dd, #32323b);
+  --ink: light-dark(#17171b, #e9e9ee);
+  --muted: light-dark(#6c6c77, #9696a2);
+  --faint: light-dark(#9c9ca7, #63636e);
+  --accent: light-dark(#4f46e5, #8b87fb);
+  --accent-soft: light-dark(#eef0ff, #1c1b2c);
+  --ok: light-dark(#15803d, #4ade80);
+  --warn: light-dark(#b45309, #fbbf24);
+  --bad: light-dark(#dc2626, #f87171);
+
+  --shadow-key: light-dark(rgb(16 16 20 / 6%), rgb(0 0 0 / 40%));
+  --shadow-ambient: light-dark(rgb(16 16 20 / 8%), rgb(0 0 0 / 45%));
+  --shadow: 0 1px 2px var(--shadow-key), 0 12px 32px var(--shadow-ambient);
+
+  --accent-note: light-dark(#a1a1ad, #5c5c68);
+  --accent-system: light-dark(#c9c9d2, #3c3c46);
   --accent-slack: #2eb67d;
   --accent-claude: #d97757;
-  --accent-github: #7c7c88;
-  --accent-topic: #4f46e5;
+  --accent-github: light-dark(#7c7c88, #6e7681);
+  --accent-topic: light-dark(#4f46e5, #8b87fb);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0b0b0d;
-    --panel: #121216;
-    --raised: #17171c;
-    --line: #232329;
-    --line-strong: #32323b;
-    --ink: #e9e9ee;
-    --muted: #9696a2;
-    --faint: #63636e;
-    --accent: #8b87fb;
-    --accent-soft: #1c1b2c;
-    --ok: #4ade80;
-    --warn: #fbbf24;
-    --bad: #f87171;
-    --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 45%);
+:root[data-theme='light'] {
+  color-scheme: light;
+}
 
-    --accent-note: #5c5c68;
-    --accent-system: #3c3c46;
-    --accent-slack: #2eb67d;
-    --accent-claude: #d97757;
-    --accent-github: #6e7681;
-    --accent-topic: #8b87fb;
-  }
+:root[data-theme='dark'] {
+  color-scheme: dark;
 }
 
 @theme inline {

@@ -1,5 +1,7 @@
 import type { ActionRequest, BlockerSuggestion, TopicDetail, TopicId, TopicNode } from './types'
 
+export type Theme = 'system' | 'light' | 'dark'
+
 export type ComposerMode = 'note' | 'slack' | 'claude' | 'subtopic' | 'topic' | 'rename'
 
 export interface Composer {
@@ -40,6 +42,8 @@ export interface AppState {
   overlay: Overlay | null
   toasts: Toast[]
   sidebar: boolean
+  /** Follows the machine until I say otherwise. */
+  theme: Theme
   /** Whether the topic's metadata is showing under the title. */
   details: boolean
   /** The feed shows the tail of a long topic until this is turned on. */
@@ -55,6 +59,7 @@ export const initialState: AppState = {
   overlay: null,
   toasts: [],
   sidebar: true,
+  theme: 'system',
   details: false,
   showEarlier: false,
 }

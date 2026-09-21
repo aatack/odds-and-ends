@@ -7,7 +7,10 @@ interface QueueProps {
   queue: QueueView | null
   status: ServerStatus | null
   focus: TopicId | null
+  theme: string
+  effectiveTheme: 'light' | 'dark'
   onFocusTopic(id: TopicId): void
+  onToggleTheme(): void
 }
 
 function blockerSummary(label: string, config: Record<string, unknown>): string {
@@ -16,7 +19,15 @@ function blockerSummary(label: string, config: Record<string, unknown>): string 
   return label
 }
 
-export function Queue({ queue, status, focus, onFocusTopic }: QueueProps): ReactNode {
+export function Queue({
+  queue,
+  status,
+  focus,
+  theme,
+  effectiveTheme,
+  onFocusTopic,
+  onToggleTheme,
+}: QueueProps): ReactNode {
   const open = queue?.open ?? []
   const waiting = queue?.waiting ?? []
 
@@ -96,6 +107,14 @@ export function Queue({ queue, status, focus, onFocusTopic }: QueueProps): React
             {integration.name}
           </span>
         ))}
+        <button
+          onClick={onToggleTheme}
+          title={theme === 'system' ? 'following the machine — click to pin it' : `pinned ${effectiveTheme}`}
+          className="ml-auto rounded px-1 hover:text-muted"
+        >
+          {effectiveTheme === 'dark' ? 'dark' : 'light'}
+          {theme === 'system' ? '' : ' · pinned'}
+        </button>
       </div>
     </aside>
   )

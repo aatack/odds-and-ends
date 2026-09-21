@@ -1,5 +1,6 @@
 export * from './types'
 export * from './client'
+export * from './environment'
 export * from './store'
 export * from './state'
 export * from './session'

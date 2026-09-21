@@ -60,6 +60,7 @@ Pressing `.` goes to the next open topic. That is the whole loop.
 | `o` | look at a subtopic on its own |
 | `l` | associate another topic with this one |
 | `i` | show the topic's metadata |
+| `d` | light or dark; the palette has "follow the machine" |
 | `⌃k` | everything I can do |
 
 ## Packages
