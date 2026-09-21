@@ -49,6 +49,13 @@ network outside `client.ts`.
   `backend/src/integrations/`, registered in `index.ts`. Events enter through
   `addEvent`, never by writing to the tables.
 
+**An integration earns the right to make topics.** GitHub used to open one per
+pull request, from the notification feed, and filed two hundred branches that
+had nothing to do with anything I was working on. It now only reports whether
+`gh` is signed in; the waiting lives in the blockers, attached to topics I made
+myself. Do not put that polling back. Slack makes topics because a conversation
+I am in is a thing that can need me; a branch somebody else pushed is not.
+
 ## Design
 
 Clean and quiet, in the Linear and Apple direction.

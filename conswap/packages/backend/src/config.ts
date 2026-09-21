@@ -8,7 +8,7 @@ export interface Config {
   /** Where claude worktrees are made. */
   worktreeRoot: string
   slack: { token: string | null; pollSeconds: number; requestsPerMinute: number }
-  github: { enabled: boolean; pollSeconds: number }
+  github: { enabled: boolean; checkSeconds: number }
   claude: { binary: string; model: string }
   tickSeconds: number
 }
@@ -32,7 +32,7 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     },
     github: {
       enabled: process.env.CONSWAP_GITHUB !== 'off',
-      pollSeconds: integer(process.env.CONSWAP_GITHUB_POLL, 180),
+      checkSeconds: integer(process.env.CONSWAP_GITHUB_CHECK, 600),
     },
     claude: {
       binary: process.env.CONSWAP_CLAUDE_BINARY ?? 'claude',

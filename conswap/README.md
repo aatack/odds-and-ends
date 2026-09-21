@@ -85,12 +85,17 @@ Everything is environment variables; nothing is required to start.
 | `CONSWAP_DATABASE` | the sqlite file itself. |
 | `CONSWAP_PORT` | the backend port. Default `4319`. |
 | `CONSWAP_SERVER` | talk to a backend somewhere else, and do not start one. |
-| `CONSWAP_GITHUB` | `off` to stop polling GitHub. |
+| `CONSWAP_GITHUB` | `off` to stop checking that `gh` is signed in. |
 | `CONSWAP_SLACK_POLL` | seconds between Slack polls. Default `15`. |
 | `CONSWAP_SLACK_RATE` | requests a minute allowed to Slack. Default `45`. |
-| `CONSWAP_GITHUB_POLL` | seconds between GitHub polls. Default `180`. |
+| `CONSWAP_GITHUB_CHECK` | seconds between `gh` sign-in checks. Default `600`. |
 | `CONSWAP_CLAUDE_MODEL` | default `opus`. |
 | `CONSWAP_CLAUDE_PERMISSIONS` | `ask` to stop Claude accepting its own edits. |
 
 GitHub goes through the `gh` CLI, so it works as soon as `gh auth status` does.
 Claude goes through `claude -p`.
+
+GitHub never makes topics of its own. A pull request is something one of my
+topics can be waiting on — give the topic `repo` and `number` metadata and the
+CI, review and merge blockers appear in the list — not a thing that needs me in
+its own right.
