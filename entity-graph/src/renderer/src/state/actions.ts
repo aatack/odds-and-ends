@@ -20,6 +20,16 @@ export const toggleCollapse = (tabId: string, entityId: string): void =>
 export const setCollapsed = (tabId: string, entityId: string, collapsed: boolean): void =>
   updateLayout((s) => R.setCollapsed(s, tabId, entityId, collapsed))
 
+export const addChat = (tabId: string, chatId: string): void =>
+  updateLayout((s) => R.addChat(s, tabId, chatId))
+
+export const removeChat = (tabId: string, chatId: string): void =>
+  updateLayout((s) => R.removeChat(s, tabId, chatId))
+
+/** Show a chat's panel, or shut the one that is open (`null`). */
+export const openChat = (tabId: string, chatId: string | null): void =>
+  updateLayout((s) => R.openChat(s, tabId, chatId))
+
 export const setFind = (frameId: string, find: string | null): void =>
   updateLayout((s) => R.setFind(s, frameId, find))
 

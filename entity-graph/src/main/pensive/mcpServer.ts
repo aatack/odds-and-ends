@@ -9,7 +9,7 @@ import {
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
-import { DIAGRAM_ID, TOOL_ID, TYPE_ID } from '../../core/builtins'
+import { CHAT_ID, DIAGRAM_ID, TOOL_ID, TYPE_ID } from '../../core/builtins'
 import { outlineMarkdown } from '../../core/markdown'
 import type { QueryPage } from '../../core/query'
 import { rowsOfPage } from '../../core/tree'
@@ -203,11 +203,12 @@ export const MCP_TOOLS: McpTool[] = [
       '`inboundLinks` — every entity in the store that links to this one, which is how ' +
       'to find where else a note is referenced. An id nothing has been written to comes ' +
       'back empty rather than missing.\n\n' +
-      'Three ids answer even in a store nobody has written to, because the store ' +
+      'Four ids answer even in a store nobody has written to, because the store ' +
       `supplies them: \`${TYPE_ID}\`, whose schema says what a type holds, ` +
       `\`${TOOL_ID}\`, whose schema says what a tool holds — every value a definition can ` +
-      `carry and what each one does — and \`${DIAGRAM_ID}\`, whose schema says how a note ` +
-      'holds a drawing. **Asked to write a tool for the user, read ' +
+      `carry and what each one does — \`${DIAGRAM_ID}\`, whose schema says how a note ` +
+      `holds a drawing, and \`${CHAT_ID}\`, whose schema says how one holds a ` +
+      'conversation. **Asked to write a tool for the user, read ' +
       `\`${TOOL_ID}\` first and create the note under \`${TOOLS_ID}\`;** the \`docs://tools\` ` +
       'resource is the same thing at length.',
     needs: 'readEntities',
@@ -464,6 +465,17 @@ const DOCS: Doc[] = [
       'how an arrow names either another shape or a bare point, and what the canvas ' +
       `over it does. The long version of \`get_details\` on \`${DIAGRAM_ID}\`.`,
     path: 'docs/diagrams.md',
+  },
+  {
+    uri: 'docs://chats',
+    name: 'Chats: a note you talk to a tool through',
+    description:
+      `What a note saying \`type: ${CHAT_ID}\` holds — a \`${CHAT_ID}\` value naming the tool ` +
+      'every message goes to — and how the exchange is stored: each message is an ' +
+      'ordinary child note, yours authored by you and the answers carrying `owner`. ' +
+      'How the tool is called, and what a chat has to hold for it to be called with ' +
+      `anything. The long version of \`get_details\` on \`${CHAT_ID}\`.`,
+    path: 'docs/chats.md',
   },
   {
     uri: 'docs://sources',

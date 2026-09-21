@@ -1,5 +1,6 @@
 import fuzzysort from 'fuzzysort'
 import { APP_TOOLS, GROUP_TOOLS } from './appTools'
+import { CHAT_TOOLS } from './chatTools'
 import { DIAGRAM_SELECTION_TOOLS, DIAGRAM_TOOLS } from './diagramTools'
 import { ENTITY_TOOLS } from './entityTools'
 import { FRAME_TOOLS } from './frameTools'
@@ -36,6 +37,7 @@ const BUILT_IN: ToolSpec[] = [
   ...FRAME_TOOLS,
   ...DIAGRAM_TOOLS,
   ...RESOURCE_TOOLS,
+  ...CHAT_TOOLS,
   ...GROUP_TOOLS,
   ...UNDO_TOOLS,
   ...APP_TOOLS,

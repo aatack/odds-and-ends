@@ -5,6 +5,7 @@ import {
   last,
   newFrame,
   newTab,
+  tabChats,
   type EditState,
   type FrameState,
   type GroupState,
@@ -147,6 +148,35 @@ export function setCollapsed(
 
 export const toggleCollapsed = (s: LayoutState, tabId: string, entityId: string): LayoutState =>
   setCollapsed(s, tabId, entityId, !(s.tabs[tabId]?.collapsed.includes(entityId) ?? false))
+
+// --- Chats (per tab) --------------------------------------------------------
+
+/**
+ * Put a chat in a tab's corner, and open it. Adding one is always in order to
+ * say something, so a picture that appeared shut would only be a second click;
+ * a chat already there is opened rather than added twice.
+ */
+export const addChat = (s: LayoutState, tabId: string, chatId: string): LayoutState =>
+  updateTab(s, tabId, (t) => ({
+    ...t,
+    chats: tabChats(t).includes(chatId) ? tabChats(t) : [...tabChats(t), chatId],
+    openChatId: chatId,
+  }))
+
+/** Take one out of the corner. Its panel goes with it if that is what was open. */
+export const removeChat = (s: LayoutState, tabId: string, chatId: string): LayoutState =>
+  updateTab(s, tabId, (t) => ({
+    ...t,
+    chats: tabChats(t).filter((id) => id !== chatId),
+    openChatId: t.openChatId === chatId ? null : (t.openChatId ?? null),
+  }))
+
+/**
+ * Show one of the tab's chats, or shut whatever is showing. One at a time: the
+ * panel sits over the rows, and two of them would be a window manager.
+ */
+export const openChat = (s: LayoutState, tabId: string, chatId: string | null): LayoutState =>
+  updateTab(s, tabId, (t) => ({ ...t, openChatId: chatId }))
 
 // --- Frame stack ------------------------------------------------------------
 

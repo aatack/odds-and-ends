@@ -108,8 +108,8 @@ is the long form; the rules that matter day to day:
   kind holds, whose `actions` name the tools every row of it wears as a button,
   and whose `events` script is run once per instance. Nothing of it is inherited — what an
   entity holds is what was written to it. `core/schema.ts` is the reading of a
-  type and `core/builtins.ts` the one type the store supplies (`type` itself,
-  schema and all, whether or not anybody wrote it);
+  type and `core/builtins.ts` the types the store supplies whether or not anybody
+  wrote them — `type` itself, schema and all, plus `tool`, `diagram` and `chat`;
   [`docs/types.md`](./docs/types.md) is the long form.
 - **`tools/` is the only way the user does anything.** Every command — moving the
   selection, opening a tab, writing a value — is one `ToolSpec` declaring its
@@ -147,6 +147,20 @@ is the long form; the rules that matter day to day:
   Flow does the viewport, the dragging and the arrow heads; it does not do the
   state, and it holds no keys — its own key handling is off, since there is one key
   listener and it is at the top.
+- **A chat is a note you talk to a tool through.** `type: chat` on a note, with a
+  `chat` value naming a tool, makes its children the messages in a conversation;
+  a tab carries a list of them and draws one small round picture per chat in its
+  bottom right corner, over the rows rather than in them. Pressing Enter in one
+  runs `chat.send`, which writes what you typed as a child, calls that tool with
+  the chat's own values for whatever arguments it declares plus the message as
+  `text`, and writes the answer as the next child. A reply carries `owner`, which
+  is what keeps it on the left: the app wrote that note too, so without it the
+  answer would look like something the user said. `tools/chatTools.ts` is the
+  three tools, `components/ChatDock.tsx` the corner, `helpers/identicon.ts` the
+  picture (drawn from the id, stored nowhere), and
+  [`docs/chats.md`](./docs/chats.md) the long form. Nothing here is a new kind of
+  thing in the store — a chat is notes under a note, written by the write tools
+  that were already there.
 - **A code entity is another caller.** `type: code` runs in a QuickJS worker
   (`helpers/codeRunner*`) whose only globals are `console`, `context` — the folded
   call context of the entity it is on, so `context.channel` is whatever an

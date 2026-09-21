@@ -2,12 +2,13 @@ import type { AppEvent } from './events'
 import type { Schema } from './schema'
 
 // The entities every store has whether or not anything has been written to them.
-// All three are types: `type`, the type of types; `tool`, the type of the tools a
-// store defines for itself; and `diagram`, a note the app draws a canvas over.
+// All four are types: `type`, the type of types; `tool`, the type of the tools a
+// store defines for itself; `diagram`, a note the app draws a canvas over; and
+// `chat`, a note the app talks to a tool through.
 // Each carries the schema for what an entity of it holds. They are served rather
 // than stored — read the id and the events are handed back with the ones the store
-// actually has — so a fresh store knows what a type, a tool and a diagram are, and
-// so a schema nobody has to write can't drift from the code that reads it.
+// actually has — so a fresh store knows what each of them is, and so a schema
+// nobody has to write can't drift from the code that reads it.
 //
 // Which is also the only account of any of them that reaches an agent over MCP. It
 // has the six tools and these instructions and no source code, so a shape it
@@ -26,6 +27,24 @@ export const TOOL_ID = 'tool'
 
 /** The type of diagrams: a note the app draws a canvas of shapes over. */
 export const DIAGRAM_ID = 'diagram'
+
+/** The type of chats: a note whose children are messages to and from a tool. */
+export const CHAT_ID = 'chat'
+
+/**
+ * The value naming the tool a chat sends to — on the chat entity, and read by
+ * `chat.send`. The same word as the type, which is not a coincidence: the type
+ * says the note *is* a conversation, and this says who it is with.
+ */
+export const CHAT_TOOL_KEY = 'chat'
+
+/**
+ * The value on a *message* saying who said it, when that is not whoever wrote
+ * the event. A message the user typed carries none — its author is the person at
+ * the keyboard — and a reply carries the id of the tool that answered, which is
+ * what puts the two sides of a conversation on opposite sides of the panel.
+ */
+export const CHAT_OWNER_KEY = 'owner'
 
 /** The author on a value the store supplies, as against one somebody wrote. */
 const BUILTIN_AUTHOR = 'builtin'
@@ -213,6 +232,44 @@ export const DIAGRAM_SCHEMA: Schema = {
   },
 }
 
+/**
+ * What a chat entity holds. Like the diagram above, most of what there is to say
+ * about one is not a field on it: a chat's *children* are its messages, which
+ * `properties` has no way to name, so the description carries them. It is also
+ * the only account of a chat an agent over MCP has, and an agent writing the note
+ * that starts a conversation is the point of storing them this way.
+ */
+export const CHAT_SCHEMA: Schema = {
+  type: 'object',
+  description:
+    'A chat: a note the app draws as a messenger window, whose children are the ' +
+    'messages in it, oldest first. A tab carries a list of them and shows one small ' +
+    'round picture per chat in its bottom right corner; the picture is drawn from the ' +
+    "note's id, so a chat looks like itself wherever it appears. Add one to the tab " +
+    'you are in with **Add chat to tab**, run on the note.\n\n' +
+    'Typing a line and pressing Enter runs `chat.send`, which writes what you typed as ' +
+    'a child of the chat, calls the tool named in `chat`, and writes what it answered ' +
+    'as the next child. The tool is called with the chat\'s own values for whatever ' +
+    'arguments it declares, with `text` — the message — laid over the top; a value the ' +
+    'tool does not declare is not passed, since a tool handed an argument it has never ' +
+    'heard of refuses the call. So a chat holds the standing half of the conversation ' +
+    '(which repo, which session, which channel) and each message supplies the rest.\n\n' +
+    'A message is an ordinary note: its `text` is what was said, rendered the way every ' +
+    'other note is, and whoever wrote it is who said it. A reply carries `owner` naming ' +
+    'the tool that answered, which is what keeps it on the left of the panel while your ' +
+    'own messages sit on the right.',
+  required: [CHAT_TOOL_KEY],
+  properties: {
+    [CHAT_TOOL_KEY]: {
+      type: 'string',
+      description:
+        'The tool every message is sent to, by its id — `claude.runPrompt`, `echo` — or ' +
+        'by the camel case of its name, the way a script would call it. Without one the ' +
+        'chat opens and says so rather than sending anywhere.',
+    },
+  },
+}
+
 /** Every entity the store supplies, and the values it supplies for each. */
 export const BUILTIN_VALUES: Record<string, Record<string, unknown>> = {
   [TYPE_ID]: {
@@ -234,6 +291,11 @@ export const BUILTIN_VALUES: Record<string, Record<string, unknown>> = {
     text: 'Diagram',
     type: TYPE_ID,
     schema: DIAGRAM_SCHEMA,
+  },
+  [CHAT_ID]: {
+    text: 'Chat',
+    type: TYPE_ID,
+    schema: CHAT_SCHEMA,
   },
 }
 
