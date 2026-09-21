@@ -1,0 +1,24 @@
+{
+  "name": "@conswap/backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The whole of the logic: one sqlite file, a small HTTP API, and the integrations that feed it.",
+  "main": "./dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "type-check": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1"
+  },
+  "devDependencies": {
+    "@conswap/common": "*",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^24.10.1",
+    "tsx": "^4.20.3",
+    "typescript": "~5.9.3"
+  }
+}

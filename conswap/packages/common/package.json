@@ -1,0 +1,16 @@
+{
+  "name": "@conswap/common",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Everything both the desktop app and a future phone app need: the wire types, the client, the cache, the tools, and the views.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types.ts",
+    "./styles.css": "./src/styles.css"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  }
+}

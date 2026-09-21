@@ -1,0 +1,162 @@
+/*
+ * The whole palette. Light and dark are the same design with different values, so
+ * there is only ever one set of class names to reason about.
+ */
+:root {
+  --bg: #fbfbfc;
+  --panel: #ffffff;
+  --raised: #ffffff;
+  --line: #e7e7ec;
+  --line-strong: #d5d5dd;
+  --ink: #17171b;
+  --muted: #6c6c77;
+  --faint: #9c9ca7;
+  --accent: #4f46e5;
+  --accent-soft: #eef0ff;
+  --ok: #15803d;
+  --warn: #b45309;
+  --bad: #dc2626;
+  --shadow: 0 1px 2px rgb(16 16 20 / 6%), 0 8px 24px rgb(16 16 20 / 8%);
+
+  --accent-note: #a1a1ad;
+  --accent-system: #c9c9d2;
+  --accent-slack: #2eb67d;
+  --accent-claude: #d97757;
+  --accent-github: #7c7c88;
+  --accent-topic: #4f46e5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b0b0d;
+    --panel: #121216;
+    --raised: #17171c;
+    --line: #232329;
+    --line-strong: #32323b;
+    --ink: #e9e9ee;
+    --muted: #9696a2;
+    --faint: #63636e;
+    --accent: #8b87fb;
+    --accent-soft: #1c1b2c;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --bad: #f87171;
+    --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 45%);
+
+    --accent-note: #5c5c68;
+    --accent-system: #3c3c46;
+    --accent-slack: #2eb67d;
+    --accent-claude: #d97757;
+    --accent-github: #6e7681;
+    --accent-topic: #8b87fb;
+  }
+}
+
+@theme inline {
+  --color-canvas: var(--bg);
+  --color-panel: var(--panel);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 13.5px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Nothing in here animates: a key press should land before the eye moves. */
+*,
+*::before,
+*::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+button,
+a {
+  font: inherit;
+  color: inherit;
+  cursor: default;
+  text-decoration: none;
+}
+
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+  resize: none;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+.scroller {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+.scroller::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+.scroller::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.drag {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
