@@ -1,4 +1,4 @@
-import type { Entity } from '../../../core/entity'
+import type { Entity, LinkDirection } from '../../../core/entity'
 import type { AppEvent, LinkAction } from '../../../core/events'
 import { outlineMarkdown } from '../../../core/markdown'
 import type { QueryPage } from '../../../core/query'
@@ -56,9 +56,33 @@ const OUTLINE_LIMIT = 400
  * only hide.
  */
 export async function readOutline(entityId: string, limit = OUTLINE_LIMIT): Promise<string> {
-  const page = (await callSource('query', { path: entityId, limit })) as QueryPage
-  return outlineMarkdown(rowsOfPage(page.rows))
+  return outlineMarkdown(rowsOfPage((await readQuery({ path: entityId, limit })).rows))
 }
+
+/**
+ * One page of the *store's* depth-first walk. The argument shape is the
+ * pensive's `query` (see `core/pensive/tools.ts`); this is only the calling
+ * convention.
+ *
+ * The cache walks the same graph and answers at once, which is what every row on
+ * screen goes through. This is for the callers that need the walk itself to be
+ * the answer — a script asking what is outstanding cannot render half a tree and
+ * improve, and `open` here prunes the walk rather than only filtering its rows,
+ * which is not something a caller can reconstruct from what it is handed back.
+ */
+export interface QueryRequest {
+  /** An entity id, or a `continuation` path to resume a walk mid-tree. */
+  path: string | string[]
+  limit?: number
+  maxDepth?: number
+  direction?: LinkDirection
+  find?: string
+  sections?: boolean
+  open?: boolean
+}
+
+export const readQuery = (request: QueryRequest): Promise<QueryPage> =>
+  callSource('query', request) as Promise<QueryPage>
 
 // --- Writes -----------------------------------------------------------------
 
