@@ -13,6 +13,7 @@ import {
   moveEntity,
   readEntities,
   readOutline,
+  readQuery,
   readResource,
   unlink,
   writeValue,
@@ -267,6 +268,76 @@ export const ENTITY_TOOLS: ToolSpec[] = [
       const markdown = await readOutline(target, typeof limit === 'number' ? limit : undefined)
       const lines = markdown ? markdown.split('\n').length : 0
       return { data: markdown, message: `${lines} line${lines === 1 ? '' : 's'}` }
+    },
+  },
+  {
+    // `entity.outline` renders the same walk as markdown, which is the right
+    // answer for a prompt and the wrong one for a script: the ids go into the
+    // prose and the filters aren't offered. This hands the walk back as it is —
+    // one row per path, the entity rolled up on it — so a definition in the
+    // store can ask the store a question about a subtree rather than reading it
+    // an entity at a time.
+    //
+    // `open` is the reason it is worth having at all. It is the one filter that
+    // prunes the *walk*, stopping at a ticked item rather than only dropping it
+    // from the rows, and nothing a caller is handed back lets it work that out
+    // for itself.
+    id: 'entity.query',
+    label: 'Query entity tree',
+    aliases: ['walk', 'traverse', 'subtree', 'rows', 'outstanding', 'search tree'],
+    hint: 'Entity',
+    scope: 'frame',
+    reach: 'source',
+    args: [
+      entityArg(),
+      {
+        name: 'open',
+        label: 'Only what is open',
+        kind: 'boolean',
+        optional: true,
+        description: 'Keep unticked tasks, and stop walking at ticked ones.',
+      },
+      {
+        name: 'sections',
+        label: 'Only sections',
+        kind: 'boolean',
+        optional: true,
+        description: 'The tree read as a table of contents.',
+      },
+      {
+        name: 'find',
+        label: 'Text to find',
+        optional: true,
+        description: 'Keep rows whose text contains this, plus their ancestors.',
+      },
+      {
+        name: 'maxDepth',
+        label: 'Levels below the entity',
+        kind: 'number',
+        optional: true,
+        placeholder: 'No limit',
+      },
+      {
+        name: 'limit',
+        label: 'Most entities to visit',
+        kind: 'number',
+        optional: true,
+        placeholder: "The store's own default",
+      },
+    ],
+    run: async ({ entityId, open, sections, find, maxDepth, limit }) => {
+      const page = await readQuery({
+        path: requireId(entityId, 'Entity id'),
+        ...(open === true ? { open: true } : {}),
+        ...(sections === true ? { sections: true } : {}),
+        ...(typeof find === 'string' && find ? { find } : {}),
+        ...(typeof maxDepth === 'number' ? { maxDepth } : {}),
+        ...(typeof limit === 'number' ? { limit } : {}),
+      })
+      return {
+        data: page,
+        message: `${page.rows.length} row${page.rows.length === 1 ? '' : 's'} of ${page.scanned}`,
+      }
     },
   },
   {
