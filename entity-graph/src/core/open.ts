@@ -90,3 +90,28 @@ export function openNow(values: Record<string, unknown>, probes: WaitProbes): un
   if (waiting === undefined) return PENDING
   return !waiting
 }
+
+const UNIT_MS: Record<string, number> = { h: 3_600_000, d: 86_400_000, w: 604_800_000 }
+
+/** `3d`, `1w`, `12h` as milliseconds; null when it is not one of those. */
+export function parseDuration(text: string): number | null {
+  const match = /^\s*(\d+(?:\.\d+)?)\s*([hdw])\s*$/i.exec(text)
+  if (!match) return null
+  return Number(match[1]) * UNIT_MS[match[2].toLowerCase()]
+}
+
+/**
+ * A `wait` value with its snooze set to `until`, and every other condition kept:
+ * snoozing a task that waits on a call still wakes it when the call ends.
+ */
+export function withSnooze(wait: unknown, until: string): unknown {
+  const snooze = { snooze: until }
+  if (Array.isArray(wait)) {
+    const rest = conditionsOf(wait)
+      .map(({ snooze: _, ...other }) => other)
+      .filter((c) => Object.keys(c).length > 0)
+    return [...rest, snooze]
+  }
+  const [only] = conditionsOf(wait)
+  return only ? { ...only, ...snooze } : snooze
+}
