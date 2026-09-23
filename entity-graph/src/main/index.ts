@@ -249,9 +249,21 @@ ipcMain.handle('integrations:tools', (): ToolMeta[] => INTEGRATION_TOOLS.map(too
 // Waits as long as the tool takes: `claude.runPrompt` holds a session open for
 // minutes and can hold one for tens of them. Nothing here gives up first — the
 // call shows as running in the activity log until it answers.
-ipcMain.handle('integrations:run', (_e, tool: string, args: unknown) =>
-  runIntegrationTool(tool, args),
-)
+//
+// Unless the renderer stops it. Each run is held here by the id of the call it
+// answers, so `integrations:stop` can abort it — which kills whatever process the
+// tool has open.
+const integrationRuns = new Map<string, AbortController>()
+ipcMain.handle('integrations:run', async (_e, tool: string, args: unknown, callId?: string) => {
+  const controller = new AbortController()
+  if (callId) integrationRuns.set(callId, controller)
+  try {
+    return await runIntegrationTool(tool, args, { signal: controller.signal })
+  } finally {
+    if (callId && integrationRuns.get(callId) === controller) integrationRuns.delete(callId)
+  }
+})
+ipcMain.handle('integrations:stop', (_e, callId: string) => integrationRuns.get(callId)?.abort())
 
 // ---------------------------------------------------------------------------
 // IPC — user config

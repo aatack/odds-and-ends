@@ -26,7 +26,16 @@ export interface ToolDef<A = any, R = any> {
    */
   jsonSchema?: Record<string, unknown>
   safety: Safety
-  handler: (args: A) => Promise<R>
+  handler: (args: A, run?: ToolRun) => Promise<R>
+}
+
+/**
+ * What a handler is told about the call it is answering. `signal` aborts when the
+ * caller has stopped waiting — the activity log's Stop — and a handler that holds
+ * something open for long, a process or a request, lets it go when it fires.
+ */
+export interface ToolRun {
+  signal?: AbortSignal
 }
 
 /** JSON Schema for a tool's args: the pre-computed one if present, else derived. */
@@ -64,9 +73,13 @@ export function stripNulls(raw: unknown): unknown {
 }
 
 /** Validate `rawArgs` against a tool's schema and invoke its handler. */
-export async function invokeTool<R>(tool: ToolDef<any, R>, rawArgs: unknown): Promise<R> {
+export async function invokeTool<R>(
+  tool: ToolDef<any, R>,
+  rawArgs: unknown,
+  run?: ToolRun,
+): Promise<R> {
   const parsed = tool.args.parse(stripNulls(rawArgs ?? {}))
-  return tool.handler(parsed)
+  return tool.handler(parsed, run)
 }
 
 /** Find a tool by id in a list, validate the arguments, and run it. */

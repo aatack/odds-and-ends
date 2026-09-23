@@ -136,6 +136,12 @@ export interface ToolSpec {
 export interface CallInfo {
   callId: string
   context: CallContext
+  /**
+   * Aborts when the user stops the call. The call is settled as cancelled at
+   * that moment whatever the tool does; a tool holding something open — a
+   * process in the main process, a request — lets it go when this fires.
+   */
+  signal: AbortSignal
 }
 
 export const argsOf = (tool: ToolSpec): ArgSpec[] => tool.args ?? []

@@ -36,6 +36,8 @@ export interface RunOptions {
    * waits until the timeout kills it, and reports that instead of the reason.
    */
   env?: Record<string, string>
+  /** Kills the program when it aborts: a caller that has stopped waiting. */
+  signal?: AbortSignal
 }
 
 /**
@@ -77,11 +79,18 @@ export function run(
         timeout,
         encoding: 'utf8',
         cwd: options.cwd,
+        ...(options.signal ? { signal: options.signal } : {}),
         ...(options.env ? { env: { ...process.env, ...options.env } } : {}),
       },
       (error: ExecFileException | null, stdout, stderr) => {
         if (error?.code === 'ENOENT') {
           reject(new Error(`\`${command}\` is not installed, or not on this server's PATH`))
+          return
+        }
+        // Checked before `killed`, which an abort sets too: this one was a decision,
+        // and must not read as a timeout.
+        if (options.signal?.aborted) {
+          reject(new Error(`\`${command}\` was stopped`))
           return
         }
         if (error?.killed) {

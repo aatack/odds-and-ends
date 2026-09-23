@@ -194,6 +194,11 @@ otherwise stay out of. Nothing names a call except to point at it afterwards, an
 `[@tool:callId](label)` in a note's text is what points: write the note first, and
 it shows the call counting up while it runs and how it ended after.
 
+A running call in the log has a **Stop**. It settles the call as cancelled at
+once, and the script waiting on it gets an error saying so. An integration is
+stopped where it runs — a Claude session's process is killed. A tool the user
+wrote is not interrupted: nothing waits on it any more, but it runs to its end.
+
 ### The older shape
 
 A `script` value still works: statements rather than an expression, reading their

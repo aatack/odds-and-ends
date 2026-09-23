@@ -1,4 +1,4 @@
-import { ToolNotFoundError, invokeTool, type ToolDef } from '../../core/pensive/index'
+import { ToolNotFoundError, invokeTool, type ToolDef, type ToolRun } from '../../core/pensive/index'
 import { CLAUDE_TOOLS } from './claude'
 import { GIT_TOOLS } from './git'
 import { GITHUB_TOOLS } from './github'
@@ -27,8 +27,8 @@ const byId = new Map(INTEGRATION_TOOLS.map((t) => [t.id, t]))
 export const findIntegrationTool = (id: string): ToolDef | undefined => byId.get(id)
 
 /** Validate the arguments against the tool's schema, then run it. */
-export async function runIntegrationTool(id: string, args: unknown): Promise<unknown> {
+export async function runIntegrationTool(id: string, args: unknown, run?: ToolRun): Promise<unknown> {
   const tool = byId.get(id)
   if (!tool) throw new ToolNotFoundError(id)
-  return invokeTool(tool, args)
+  return invokeTool(tool, args, run)
 }

@@ -109,8 +109,16 @@ const attempt = (
   prompt: string,
   cwd: string,
   system: string[],
+  signal?: AbortSignal,
 ): Promise<CommandResult> =>
-  run(CLI, [...PRINT, ...session, ...system], { cwd, stdin: prompt, timeoutMs: TIMEOUT_MS })
+  run(CLI, [...PRINT, ...session, ...system], { cwd, stdin: prompt, timeoutMs: TIMEOUT_MS, signal })
+
+/**
+ * The sessions with a turn in progress, by the UUID the CLI knows them by. Two
+ * turns at once in one conversation write one transcript from two processes, and
+ * neither sees what the other said — so a second is refused rather than started.
+ */
+const busy = new Set<string>()
 
 export const CLAUDE_TOOLS: ToolDef[] = [
   {
@@ -157,34 +165,54 @@ export const CLAUDE_TOOLS: ToolDef[] = [
         .optional()
         .describe('Appended to the system prompt. Only read on the turn that starts a session'),
     }),
-    handler: async ({ path, prompt, sessionId, systemPrompt }) => {
+    handler: async ({ path, prompt, sessionId, systemPrompt }, call) => {
       // No name is a new conversation, so there is nothing to try resuming.
       const fresh = !sessionId
       const session = sessionId ? sessionUuid(sessionId) : randomUUID()
-      const cwd = path ? directory(path) : scratch(session)
-      // The one thing here that has to go in the argument vector: the CLI takes it
-      // no other way. Keep it to rules and ids — anything long belongs in the
-      // prompt, which goes over standard input.
-      const system = systemPrompt ? ['--append-system-prompt', systemPrompt] : []
-
-      // There is no "resume it, or start it if it isn't there" flag, so the two
-      // are tried in turn. Resuming goes first because being wrong about it is
-      // free: the CLI looks for the transcript before it does anything else, and
-      // says so in a line and an exit code without reaching the API.
-      let result = await attempt([fresh ? '--session-id' : '--resume', session], prompt, cwd, system)
-      if (!fresh && result.exitCode !== 0 && NO_SESSION.test(complaint(result))) {
-        result = await attempt(['--session-id', session], prompt, cwd, system)
+      if (busy.has(session)) {
+        throw new Error('That session already has a turn running. Wait for it, or stop it first')
       }
-      if (result.exitCode !== 0) throw new Error(complaint(result))
-
-      const output = asJson(result.stdout)
-      if (!output) {
-        throw new Error(`\`${CLI}\` did not return JSON: ${result.stdout.trim().slice(0, 300)}`)
+      busy.add(session)
+      try {
+        return await turn(fresh, session, path, prompt, systemPrompt, call?.signal)
+      } finally {
+        busy.delete(session)
       }
-      // A session can fail inside a turn and still exit cleanly. That is a failed
-      // call, not a result to hand back as though it worked.
-      if (output.is_error) throw new Error(saidBy(output) || `\`${CLI}\` reported an error`)
-      return output
     },
   },
 ]
+
+/** One turn of a session nothing else is running a turn of. */
+async function turn(
+  fresh: boolean,
+  session: string,
+  path: string | undefined,
+  prompt: string,
+  systemPrompt: string | undefined,
+  signal: AbortSignal | undefined,
+): Promise<Record<string, unknown>> {
+  const cwd = path ? directory(path) : scratch(session)
+  // The one thing here that has to go in the argument vector: the CLI takes it
+  // no other way. Keep it to rules and ids — anything long belongs in the
+  // prompt, which goes over standard input.
+  const system = systemPrompt ? ['--append-system-prompt', systemPrompt] : []
+
+  // There is no "resume it, or start it if it isn't there" flag, so the two
+  // are tried in turn. Resuming goes first because being wrong about it is
+  // free: the CLI looks for the transcript before it does anything else, and
+  // says so in a line and an exit code without reaching the API.
+  let result = await attempt([fresh ? '--session-id' : '--resume', session], prompt, cwd, system, signal)
+  if (!fresh && result.exitCode !== 0 && NO_SESSION.test(complaint(result))) {
+    result = await attempt(['--session-id', session], prompt, cwd, system, signal)
+  }
+  if (result.exitCode !== 0) throw new Error(complaint(result))
+
+  const output = asJson(result.stdout)
+  if (!output) {
+    throw new Error(`\`${CLI}\` did not return JSON: ${result.stdout.trim().slice(0, 300)}`)
+  }
+  // A session can fail inside a turn and still exit cleanly. That is a failed
+  // call, not a result to hand back as though it worked.
+  if (output.is_error) throw new Error(saidBy(output) || `\`${CLI}\` reported an error`)
+  return output
+}
