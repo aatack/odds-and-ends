@@ -60,9 +60,9 @@ export interface CallContext {
    */
   autofill?: boolean
   /**
-   * The entity path the values were folded along: each frame root in the tab's
-   * stack, outermost first, then the selection path inside the top frame. Kept
-   * for the record — the fold is what tools actually read.
+   * The entity path the values were folded along: the full path from the tab's
+   * root to the selection, through each lower frame's selection. Also in
+   * `values` as `path`.
    */
   path: string[]
   groupId: string | null

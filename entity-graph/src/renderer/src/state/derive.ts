@@ -296,14 +296,35 @@ export const entityRows = (rows: Row[]): EntityRow[] =>
 // --- Call context -----------------------------------------------------------
 
 /**
+ * The full path from a tab's root to `selectedPath` in its top frame. Each frame
+ * below the top contributes its own selection up to where the next frame is
+ * rooted — which is where the user drilled in — so every entity walked through on
+ * the way down is on it, not only the roots. A frame whose selection does not
+ * reach the next root (it moved, or the next frame was opened some other way)
+ * contributes just its root.
+ */
+export function tabPath(s: LayoutState, frameIds: readonly string[], selectedPath: string[]): string[] {
+  const frames = frameIds.map((id) => s.frames[id]).filter((f): f is FrameState => !!f)
+  const path: string[] = []
+  for (let i = 0; i < frames.length - 1; i++) {
+    const sel = frames[i].selectedPath
+    const at = sel[0] === frames[i].rootId ? sel.lastIndexOf(frames[i + 1].rootId) : -1
+    path.push(...(at > 0 ? sel.slice(0, at) : [frames[i].rootId]))
+  }
+  path.push(...selectedPath)
+  return path
+}
+
+/**
  * The context a call is born with. Two layers:
  *
- * 1. Entity values, folded along the path the user is looking at — every frame
- *    root in the tab's stack (outermost first), then the selection path inside
- *    the top frame. Later entries win, so the selected entity's values take
+ * 1. Entity values, folded along the path the user is looking at — the full
+ *    path from the tab's root to the selection (see {@link tabPath}), outermost
+ *    first. Later entries win, so the selected entity's values take
  *    precedence; `null` values are skipped rather than folded.
  * 2. The positional keys arguments actually reference (`entityId`, `parentId`,
- *    …), which override any same-named entity value, and then `extra` — what a
+ *    …, and `path`, that path as a list of ids), which override any same-named
+ *    entity value, and then `extra` — what a
  *    right-click supplies, which need not be the current selection.
  *
  * `autofill` says whether the result applies itself to a tool's arguments or is
@@ -328,8 +349,7 @@ export function buildCallContext(
   const frame = frameId ? s.frames[frameId] : null
   const selectedPath = opts.within ?? rows.selectedPath
 
-  const stackRoots = (tab?.frameIds ?? []).map((id) => s.frames[id]?.rootId).filter(Boolean) as string[]
-  const path = [...stackRoots, ...selectedPath]
+  const path = tabPath(s, tab?.frameIds ?? [], selectedPath)
   const values: Record<string, unknown> = {}
   // Reading these is also what asks for them, so an outer frame that isn't
   // mounted contributes nothing the first time and its own values the next.
@@ -349,6 +369,7 @@ export function buildCallContext(
     ...(frameId ? { frameId } : {}),
     ...(tabId ? { tabId } : {}),
     ...(groupId ? { groupId } : {}),
+    path,
   }
 
   return {

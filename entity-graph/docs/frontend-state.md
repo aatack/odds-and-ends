@@ -229,12 +229,15 @@ showing it.
 
 The context is assembled once when the call starts and never changes:
 
-- **Folded entity values.** The frame stack's root entities (outermost first)
-  then the selection path within the top frame (root → leaf), each entity's
+- **Folded entity values.** The full path from the tab's root to the selection:
+  each lower frame's selection up to where the next frame is rooted (just its
+  root when the selection does not reach it), then the selection path within
+  the top frame (root → leaf), each entity's
   values folded into one map so later entries win — the selected entity's values
   therefore take precedence. `null` values are skipped, not folded.
 - **Positional keys**, layered on top: `entityId` (the selected entity),
-  `parentId`, `rootId`, `frameId`, `tabId`, `groupId`. These are what arguments
+  `parentId`, `rootId`, `frameId`, `tabId`, `groupId`, and `path` (the full
+  path above, as a list of entity ids). These are what arguments
   actually reference, and they take precedence over any same-named entity value.
 - **Extras**, highest precedence: what a right-click supplies (the entity under
   the cursor), which need not be the current selection.
