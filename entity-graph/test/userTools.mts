@@ -275,6 +275,50 @@ test('reads the rest of what a listed argument can say', async () => {
   assert.equal(args[3].hasDefault, true)
 })
 
+test('fills an argument from the context, or skips it when the context answers it', async () => {
+  open()
+  await defineTool('run', {
+    text: 'run',
+    execute: '() => null',
+    arguments: [
+      {
+        name: 'repo',
+        type: 'string',
+        required: true,
+        fromContext: 'repo',
+        unlessContext: 'claudeSession',
+        recent: true,
+      },
+    ],
+  })
+  await loadUserTools()
+  const tool = byId('run')!
+  const [repo] = tool.args ?? []
+  assert.equal(repo.fromContext, 'repo')
+  assert.equal(repo.unlessContext, 'claudeSession')
+  assert.equal(repo.recent, true)
+
+  const { seedArgs, missingRequired } = await import('../src/renderer/src/tools/args')
+  const at = (values: Record<string, unknown>) =>
+    ({ values, path: [], groupId: null, tabId: null, frameId: null, startedAt: 0 }) as const
+  // Nothing says which: asked for.
+  assert.equal(missingRequired(tool, seedArgs(tool, at({})))?.name, 'repo')
+  // Named above: taken.
+  assert.deepEqual(seedArgs(tool, at({ repo: '~/x' })).repo, { kind: 'value', value: '~/x' })
+  // A session already running: not asked for, and sent as the default.
+  const answered = seedArgs(tool, at({ claudeSession: { name: 'n' } }))
+  assert.equal(missingRequired(tool, answered), null)
+  assert.equal(answered.repo.kind, 'default')
+
+  const { recentArgValues } = await import('../src/renderer/src/tools/call')
+  const call = (callId: string, value: unknown) =>
+    ({ callId, toolId: 'any', args: { repo: { kind: 'value', value } } }) as never
+  assert.deepEqual(
+    recentArgValues([call('a', '~/x'), call('b', '~/y'), call('c', '~/x'), call('d', 3)], 'repo'),
+    ['~/x', '~/y'],
+  )
+})
+
 test('names an argument with nothing but a string', async () => {
   open()
   await defineTool('post', { text: 'post', execute: '() => null', arguments: ['who', 'what'] })

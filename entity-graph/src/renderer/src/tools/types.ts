@@ -25,6 +25,18 @@ export interface ArgSpec {
    */
   fromContext?: string
   /**
+   * Context key that makes this argument unnecessary: while the context holds it,
+   * the argument is not asked for, and reaches `run` as the default. For a value
+   * only needed when something isn't there yet — a repository for a session that
+   * hasn't been started.
+   */
+  unlessContext?: string
+  /**
+   * Offer what recent calls, of any tool, passed under this argument's name —
+   * deduplicated, newest first — as values to pick from.
+   */
+  recent?: boolean
+  /**
    * The tool supplies its own value when this is left as `default`. Tab still
    * lands on it (unlike a context-filled argument), so it can be overridden.
    */

@@ -47,6 +47,17 @@ const SCHEMA_TYPES: Record<string, string> = {
  */
 export const KIND_KEYWORD = 'x-kind'
 
+/**
+ * The app's other readings of an argument, which JSON Schema has no words for
+ * either: the context key that fills it, a context key whose presence means it
+ * need not be asked for at all, and whether to offer what recent calls passed
+ * under the same name. Extension keywords for the same reason as {@link
+ * KIND_KEYWORD}.
+ */
+export const FROM_CONTEXT_KEYWORD = 'x-from-context'
+export const UNLESS_CONTEXT_KEYWORD = 'x-unless-context'
+export const RECENT_KEYWORD = 'x-recent'
+
 const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
 
 /** One entry of the list as a schema property, or null when it names nothing. */
@@ -77,6 +88,11 @@ function propertyFrom(entry: unknown): { name: string; property: Record<string, 
   const description = text(declared.description)
   if (description) property.description = description
   if (declared.default !== undefined) property.default = declared.default
+  const fromContext = text(declared.fromContext)
+  if (fromContext) property[FROM_CONTEXT_KEYWORD] = fromContext
+  const unlessContext = text(declared.unlessContext)
+  if (unlessContext) property[UNLESS_CONTEXT_KEYWORD] = unlessContext
+  if (declared.recent === true) property[RECENT_KEYWORD] = true
 
   // Absent means false, so an argument is optional until it says it isn't —
   // which is the safe direction to be wrong in: a call is refused for want of a

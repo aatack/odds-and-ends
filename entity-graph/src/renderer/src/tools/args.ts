@@ -68,9 +68,14 @@ export function formatArg(value: ArgValue | undefined): string {
 export const contextValue = (arg: ArgSpec, context: CallContext): unknown =>
   arg.fromContext != null ? context.values[arg.fromContext] : undefined
 
+/** True when the context says this argument need not be asked for at all. */
+const answeredByContext = (arg: ArgSpec, context: CallContext): boolean =>
+  arg.unlessContext != null && context.values[arg.unlessContext] != null
+
 /** True when the context supplied this argument, so Tab should skip past it. */
 export const filledFromContext = (arg: ArgSpec, context: CallContext): boolean =>
-  context.autofill !== false && contextValue(arg, context) !== undefined
+  context.autofill !== false &&
+  (contextValue(arg, context) !== undefined || answeredByContext(arg, context))
 
 /** Every argument's starting value: from the context, then from the tool's default. */
 export function seedArgs(tool: ToolSpec, context: CallContext): ArgValues {
@@ -80,7 +85,7 @@ export function seedArgs(tool: ToolSpec, context: CallContext): ArgValues {
     out[arg.name] =
       fromContext !== undefined
         ? argValue(fromContext)
-        : arg.hasDefault
+        : arg.hasDefault || (context.autofill !== false && answeredByContext(arg, context))
           ? DEFAULT_ARG
           : EMPTY_ARG
   }

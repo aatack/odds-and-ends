@@ -67,6 +67,9 @@ A list, one entry per argument, in the order you want to be asked for them:
 | `required` | Absent means `false`. A call won't run with a required argument outstanding. |
 | `options` | A list. Makes it a picker, whatever `type` says. |
 | `description` | Shown as the field's placeholder. |
+| `fromContext` | A context key that fills it, as `repo` from a note above. The palette skips past it then. |
+| `unlessContext` | A context key whose presence means it is not asked for at all: it reaches the body as `null`. |
+| `recent` | `true` offers every value recent calls, of any tool, passed under this name, deduplicated. The arrow keys walk them. |
 | `default` | See the gotcha below. |
 
 The **label** is derived from the name — `pullRequest` is prompted for as "Pull

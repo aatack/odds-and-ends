@@ -1,4 +1,4 @@
-import { createHash } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import { mkdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -123,7 +123,8 @@ export const CLAUDE_TOOLS: ToolDef[] = [
       '',
       'The session id is a name for the conversation *in that directory*: pass one',
       'you have used before to carry on where it left off, and an unused one to',
-      'start fresh. It need not be a UUID.',
+      'start fresh. It need not be a UUID. Omit it to start a new session under an id',
+      'made up here, which comes back as `session_id`.',
       '',
       '`systemPrompt` is appended to the session’s system prompt. It only means',
       'anything on the turn that starts a conversation — a resumed one already has',
@@ -149,14 +150,17 @@ export const CLAUDE_TOOLS: ToolDef[] = [
       sessionId: z
         .string()
         .min(1)
-        .describe('Names the conversation in that directory; an unused name starts a new one'),
+        .optional()
+        .describe('Names the conversation in that directory; an unused name starts a new one, and none a new one with an id of its own'),
       systemPrompt: z
         .string()
         .optional()
         .describe('Appended to the system prompt. Only read on the turn that starts a session'),
     }),
     handler: async ({ path, prompt, sessionId, systemPrompt }) => {
-      const session = sessionUuid(sessionId)
+      // No name is a new conversation, so there is nothing to try resuming.
+      const fresh = !sessionId
+      const session = sessionId ? sessionUuid(sessionId) : randomUUID()
       const cwd = path ? directory(path) : scratch(session)
       // The one thing here that has to go in the argument vector: the CLI takes it
       // no other way. Keep it to rules and ids — anything long belongs in the
@@ -167,8 +171,8 @@ export const CLAUDE_TOOLS: ToolDef[] = [
       // are tried in turn. Resuming goes first because being wrong about it is
       // free: the CLI looks for the transcript before it does anything else, and
       // says so in a line and an exit code without reaching the API.
-      let result = await attempt(['--resume', session], prompt, cwd, system)
-      if (result.exitCode !== 0 && NO_SESSION.test(complaint(result))) {
+      let result = await attempt([fresh ? '--session-id' : '--resume', session], prompt, cwd, system)
+      if (!fresh && result.exitCode !== 0 && NO_SESSION.test(complaint(result))) {
         result = await attempt(['--session-id', session], prompt, cwd, system)
       }
       if (result.exitCode !== 0) throw new Error(complaint(result))
