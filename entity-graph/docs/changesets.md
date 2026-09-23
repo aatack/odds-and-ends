@@ -37,8 +37,10 @@ conversation, and the notes are where you come back to it.
 | `sessionId` | the conversation, written when there *is* one: the id `claude.runPrompt` made up for it on the first turn |
 | `pullRequest` | the URL, once anything has been pushed |
 
-**The first turn makes the session.** It is written on the root, and the root is
-given `open: true`, so the notes come up in the stack until the work is done.
+**The first turn makes the session.** It is written on the root. Every turn then
+gives the notes holding the session `open: { toolCall: <note id> }` — the turn's
+own call — so they come up in the stack once the turn is over, and not while
+there is nothing to do but wait for it. See [`open.ts`](../src/core/open.ts).
 
 **The key picks the kind of a new session only.** With a session on the path,
 `k` and `shift+k` do the same thing: carry it on. Without one, `k` wants a
