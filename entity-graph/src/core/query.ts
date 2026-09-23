@@ -1,4 +1,5 @@
 import { emptyEntity, summaryOf, type Entity, type LinkDirection } from './entity'
+import { checkboxOf } from './open'
 
 // The query, as a stepper over paths. One function knows how to get from a path
 // to the next one in a depth-first reading of the graph; a query is that
@@ -297,7 +298,7 @@ export function filterPaths(
     kept = kept.filter((path) => asked(path) || values(path).section === true)
   }
   if (filters.open) {
-    kept = kept.filter((path) => asked(path) || values(path).open === true)
+    kept = kept.filter((path) => asked(path) || checkboxOf(values(path).open) === true)
   }
   if (find) {
     const keep = new Set<string>()

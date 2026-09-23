@@ -220,13 +220,13 @@ test('reaches a folded entity but does not walk below it', async () => {
 test('steps past a task still waiting, and below it too', async () => {
   open()
   outstanding()
-  source.values({ a: { wait: { snooze: new Date(Date.now() + 86400000).toISOString() } } })
+  source.values({ a: { open: { snooze: new Date(Date.now() + 86400000).toISOString() } } })
   const found = await call('findNextEntity', [
     { path: ['root'], match: openSection, collapse: { open: false } },
   ])
   // `a` is snoozed, so it reads as ticked: neither it nor `a1` under it is offered.
   assert.deepEqual(found, ['root', 'c'])
-  source.values({ a: { wait: { snooze: new Date(Date.now() - 1000).toISOString() } } })
+  source.values({ a: { open: { snooze: new Date(Date.now() - 1000).toISOString() } } })
   assert.deepEqual(await call('findNextEntity', [['root'], openSection]), ['root', 'a'])
 })
 
@@ -234,8 +234,8 @@ test('snoozes an entity, and the walk steps past it until then', async () => {
   open()
   outstanding()
   await call('snoozeEntity', ['a', '2d'])
-  const { wait } = (await get('a')).values
-  const until = Date.parse(wait.snooze)
+  const { open: snoozed } = (await get('a')).values
+  const until = Date.parse(snoozed.snooze)
   assert.ok(Math.abs(until - (Date.now() + 2 * 86_400_000)) < 60_000)
   const found = await call('findNextEntity', [
     { path: ['root'], match: openSection, collapse: { open: false } },
