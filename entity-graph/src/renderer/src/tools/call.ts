@@ -93,7 +93,11 @@ interface Invocation {
 const worthKeeping = (call: Invocation, tool: ToolSpec, outcome: CallOutcome): boolean => {
   if (call.named) return true
   if (call.origin === 'code') return false
-  return outcome.kind === 'cancelled' ? argsOf(tool).length > 0 : tool.reach === 'external'
+  // A cancelled call that reached outside was stopped while it ran — it may have
+  // done half its work, so it stays where the log said it was running.
+  return outcome.kind === 'cancelled'
+    ? argsOf(tool).length > 0 || tool.reach === 'external'
+    : tool.reach === 'external'
 }
 
 /**
@@ -180,6 +184,24 @@ function settle(call: Invocation, tool: ToolSpec, outcome: CallOutcome): void {
 
 // --- Running ----------------------------------------------------------------
 
+/** The calls in progress, by id: what {@link stopCall} settles and aborts. */
+const inFlight = new Map<string, { call: Invocation; tool: ToolSpec; controller: AbortController }>()
+
+/**
+ * Stop a call that is still running. It is settled as cancelled at once, and
+ * its signal aborts so the tool can let go of what it holds; whatever the tool
+ * hands back afterwards is ignored. A tool that pays no attention to the signal
+ * carries on out of sight, but nothing waits on it any more.
+ */
+export function stopCall(callId: string): void {
+  const running = inFlight.get(callId)
+  if (!running) return
+  inFlight.delete(callId)
+  running.controller.abort()
+  runningCallsAtom.set((ids) => ids.filter((id) => id !== callId))
+  settle(running.call, running.tool, { kind: 'cancelled' })
+}
+
 /** Run a call to completion, recording it. The outcome is settled either way. */
 async function execute(call: Invocation): Promise<CallOutcome> {
   const tool = findTool(call.toolId)
@@ -200,11 +222,22 @@ async function execute(call: Invocation): Promise<CallOutcome> {
   // Apart from the log: this is what anything that started a call watches to know
   // it is still going, and almost no call is worth logging.
   runningCallsAtom.set((ids) => [...ids, call.callId])
+  const controller = new AbortController()
+  inFlight.set(call.callId, { call, tool, controller })
+  const stopped: CallOutcome = { kind: 'cancelled' }
   try {
-    const outcome = (await tool.run(resolveArgs(tool, call.args), {
-      callId: call.callId,
-      context: call.context,
-    })) ?? {}
+    // Raced against the stop, so whoever is waiting — a script, a note watching
+    // the call — is let go at once rather than when the tool gets round to it.
+    const outcome = (await Promise.race([
+      tool.run(resolveArgs(tool, call.args), {
+        callId: call.callId,
+        context: call.context,
+        signal: controller.signal,
+      }),
+      new Promise<void>((resolve) => controller.signal.addEventListener('abort', () => resolve())),
+    ])) ?? {}
+    // Stopped while it ran: `stopCall` has settled it already.
+    if (controller.signal.aborted) return stopped
     // Nothing is invalidated here. A write goes through `source/entity`, which
     // hands the cache the events it is making — or, where it can't, the names of
     // the entities it touched — so by the time this runs the cache is already in
@@ -224,10 +257,12 @@ async function execute(call: Invocation): Promise<CallOutcome> {
     settle(call, tool, succeeded)
     return succeeded
   } catch (e) {
+    if (controller.signal.aborted) return stopped
     const failed: CallOutcome = { kind: 'error', message: message(e) }
     settle(call, tool, failed)
     return failed
   } finally {
+    if (inFlight.get(call.callId)?.controller === controller) inFlight.delete(call.callId)
     runningCallsAtom.set((ids) => ids.filter((id) => id !== call.callId))
   }
 }
@@ -395,6 +430,8 @@ export async function callToolByName(
     named: callId != null,
   })
   if (outcome.kind === 'error') throw new Error(outcome.message)
+  // Stopped: the script was waiting on an answer that is not coming.
+  if (outcome.kind === 'cancelled') throw new Error(`${tool.label} was stopped`)
   return outcome.kind === 'success' ? outcome.data : undefined
 }
 

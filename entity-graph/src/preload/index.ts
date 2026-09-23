@@ -108,7 +108,10 @@ export interface EntityGraphAPI {
    * addressed by node.
    */
   integrationTools: () => Promise<ToolMeta[]>
-  runIntegrationTool: (tool: string, args: unknown) => Promise<unknown>
+  /** `callId` names the run, so {@link stopIntegrationTool} can stop it. */
+  runIntegrationTool: (tool: string, args: unknown, callId?: string) => Promise<unknown>
+  /** Abort a run still in progress. Nothing happens if it has already answered. */
+  stopIntegrationTool: (callId: string) => Promise<void>
 
   /**
    * Phone access, over Tailscale. Machine-scoped: there is one tailnet name and
@@ -163,7 +166,9 @@ const api: EntityGraphAPI = {
   revokeToken: (token) => ipcRenderer.invoke('graph:revokeToken', token),
 
   integrationTools: () => ipcRenderer.invoke('integrations:tools'),
-  runIntegrationTool: (tool, args) => ipcRenderer.invoke('integrations:run', tool, args),
+  runIntegrationTool: (tool, args, callId) =>
+    ipcRenderer.invoke('integrations:run', tool, args, callId),
+  stopIntegrationTool: (callId) => ipcRenderer.invoke('integrations:stop', callId),
 
   tailscaleStatus: () => ipcRenderer.invoke('tailscale:status'),
   tailscaleServeApp: (on) => ipcRenderer.invoke('tailscale:serveApp', on),

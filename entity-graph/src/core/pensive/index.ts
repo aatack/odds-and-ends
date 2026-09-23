@@ -7,7 +7,7 @@ export {
   ToolNotFoundError,
 } from './types'
 
-export type { ToolDef } from './tool'
+export type { ToolDef, ToolRun } from './tool'
 export { argsJsonSchema, callInList, invokeTool, stripNulls, toolMeta } from './tool'
 
 export type { PensiveToolOptions } from './tools'

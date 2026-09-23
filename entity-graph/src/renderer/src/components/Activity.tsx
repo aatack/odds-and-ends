@@ -4,7 +4,7 @@ import { relativeTime } from '../helpers/time'
 import { useCalls } from '../state/hooks'
 import { updateUi } from '../state/ui'
 import type { RecordedCall } from '../state/types'
-import { clearCalls, editRecordedCall, isRunnable, rerunRecordedCall } from '../tools/call'
+import { clearCalls, editRecordedCall, isRunnable, rerunRecordedCall, stopCall } from '../tools/call'
 import { findTool } from '../tools/registry'
 import { formatArg } from '../tools/args'
 import { argsOf } from '../tools/types'
@@ -119,9 +119,14 @@ function CallRow({ call, onClose }: { call: RecordedCall; onClose: () => void })
           <Badge dot color={status.color}>
             {status.label}
           </Badge>
-          {/* Nothing to offer on a call that hasn't answered yet: it has no
+          {/* A call that hasn't answered yet can only be stopped: it has no
               result, and starting a second one — another turn in the same Claude
               conversation — is the last thing wanted. */}
+          {running && (
+            <Button size="sm" variant="tertiary" onClick={() => stopCall(call.callId)}>
+              Stop
+            </Button>
+          )}
           {!running && (
             <div className="flex gap-1">
               {/* The only place a call's result is visible. Tools that reach

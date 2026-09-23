@@ -59,8 +59,13 @@ function toolSpec(meta: ToolMeta): ToolSpec {
     // which is affordable in a way doing it per keystroke was not.
     writesUnseen: true,
     ...(args.length ? { args } : {}),
-    run: async (values) => {
-      const data = await window.entityGraph.runIntegrationTool(meta.id, values)
+    run: async (values, call) => {
+      // Stopping the call stops the run over there: a Claude session is a
+      // process in the main process, and only it can kill that.
+      call.signal.addEventListener('abort', () => {
+        void window.entityGraph.stopIntegrationTool(call.callId)
+      })
+      const data = await window.entityGraph.runIntegrationTool(meta.id, values, call.callId)
       return { data, message: summarise(data) ?? meta.name }
     },
   }
