@@ -13,6 +13,7 @@ import {
   fillActiveArg,
   lastArgValue,
   minimisePending,
+  recentArgValues,
   retreatArg,
   setArg,
   setPendingQuery,
@@ -41,7 +42,8 @@ const TAKE_RECENT: KeyBinding = { key: 'Enter', shift: true }
 interface Offer {
   /** Where it came from, in the palette's own voice. */
   note: string
-  key: KeyBinding
+  /** Absent for an offer reached by the arrow keys alone. */
+  key?: KeyBinding
   /** As it will read in the field. */
   text: string
   value: unknown
@@ -73,6 +75,14 @@ export function CommandPalette(): React.JSX.Element | null {
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [activeIndex, setActiveIndex] = useState(0)
+  /** Which offer the arrow keys are on, while entering an argument; -1 for none. */
+  const [offerIndex, setOfferIndex] = useState(-1)
+  /**
+   * The field as it read before the arrow keys put an offer in it. Offers are
+   * weighed against this rather than the field, so the list holds still while it
+   * is walked.
+   */
+  const [typed, setTyped] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const activeRowRef = useRef<HTMLButtonElement>(null)
 
@@ -82,8 +92,11 @@ export function CommandPalette(): React.JSX.Element | null {
   const seedKey = `${visible?.callId ?? ''}|${visible?.toolId ?? ''}|${visible?.activeArg ?? ''}`
   useEffect(() => {
     if (!visible) return
-    setText(visible.activeArg ? formatArg(visible.args[visible.activeArg]) : '')
+    const seeded = visible.activeArg ? formatArg(visible.args[visible.activeArg]) : ''
+    setText(seeded)
+    setTyped(seeded)
     setError(null)
+    setOfferIndex(-1)
     inputRef.current?.focus()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedKey])
@@ -131,17 +144,24 @@ export function CommandPalette(): React.JSX.Element | null {
   // nothing to press it for. The same goes for a remembered value the context is
   // already offering, which would otherwise be the same row twice.
   const offers: Offer[] = []
-  const push = (note: string, key: KeyBinding, value: unknown): void => {
+  const push = (note: string, key: KeyBinding | undefined, value: unknown): void => {
     if (value === undefined) return
     const shown = formatArg(argValue(value))
     // Nothing to read is nothing to offer: a null reads as blank, and a blank row
     // with a key on it would be a promise of something that isn't there.
-    if (shown === '' || shown === text || offers.some((o) => o.text === shown)) return
+    if (shown === '' || shown === typed || offers.some((o) => o.text === shown)) return
     offers.push({ note, key, text: shown, value })
   }
   if (activeArg) {
     push('From here', TAKE_CONTEXT, contextValue(activeArg, visible.context))
     push('Last used', TAKE_RECENT, remembered)
+    // An argument that asks for them gets everything recent calls were given
+    // under its name, as a list the arrow keys walk.
+    if (activeArg.recent) {
+      for (const value of recentArgValues(calls, activeArg.name, visible.callId)) {
+        push('Recent', undefined, value)
+      }
+    }
   }
 
   /** Write the buffer into the call. Returns false when it doesn't parse. */
@@ -158,6 +178,8 @@ export function CommandPalette(): React.JSX.Element | null {
 
   const onChange = (next: string): void => {
     setText(next)
+    setTyped(next)
+    setOfferIndex(-1)
     setError(null)
     if (!activeArg) {
       setPendingQuery(next)
@@ -178,6 +200,8 @@ export function CommandPalette(): React.JSX.Element | null {
     // The call may have stayed on this argument, in which case nothing reseeds
     // the buffer and it would still hold what was there before.
     setText(formatArg(applied))
+    setTyped(formatArg(applied))
+    setOfferIndex(-1)
     setError(null)
   }
 
@@ -195,8 +219,24 @@ export function CommandPalette(): React.JSX.Element | null {
         // does nothing at all — and in particular does not run, since a key
         // pressed for one thing must not quietly do another.
         e.preventDefault()
-        const offer = offers.find((o) => matchesKey(o.key, e))
+        const offer = offers.find((o) => o.key && matchesKey(o.key, e))
         if (offer) take(offer)
+      } else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && offers.length) {
+        // Walk the offers, putting each in the field as it is reached — like a
+        // shell's history. Nothing runs until Enter.
+        e.preventDefault()
+        const next =
+          e.key === 'ArrowDown'
+            ? (offerIndex + 1) % offers.length
+            : offerIndex <= 0
+              ? offers.length - 1
+              : offerIndex - 1
+        const offer = offers[next]
+        setText(offer.text)
+        setOfferIndex(next)
+        setError(null)
+        const parsed = activeArg ? parseArg(activeArg, offer.text) : null
+        if (activeArg && parsed?.ok) setArg(activeArg.name, parsed.value)
       } else if (e.key === 'Enter') {
         e.preventDefault()
         if (flush()) setError(submitCall())
@@ -287,14 +327,17 @@ export function CommandPalette(): React.JSX.Element | null {
               you can see is worth more than a symbol you have to remember. */}
           {offers.length > 0 && (
             <ul className="py-1">
-              {offers.map((offer) => (
-                <li key={offer.note}>
+              {offers.map((offer, i) => (
+                <li key={`${offer.note}|${offer.text}`}>
                   <button
                     // Keeps the caret where it is: the field is being filled in,
                     // not left.
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => take(offer)}
-                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left focus:outline-none hover:bg-gray-100/70"
+                    className={cn(
+                      'flex w-full items-center gap-3 px-4 py-2.5 text-left focus:outline-none hover:bg-gray-100/70',
+                      i === offerIndex && 'bg-gray-100/70',
+                    )}
                   >
                     <span className="shrink-0 text-xs text-gray-400">{offer.note}</span>
                     {/* The value is the user's content, so it takes the serif —
@@ -302,7 +345,7 @@ export function CommandPalette(): React.JSX.Element | null {
                     <span className="min-w-0 flex-1 truncate font-serif text-[13px] text-gray-800">
                       {offer.text}
                     </span>
-                    <Badge className="shrink-0">{keyHint([offer.key])}</Badge>
+                    {offer.key && <Badge className="shrink-0">{keyHint([offer.key])}</Badge>}
                   </button>
                 </li>
               ))}

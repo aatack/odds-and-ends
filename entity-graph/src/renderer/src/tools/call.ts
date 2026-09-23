@@ -574,6 +574,31 @@ export function lastArgValue(
 }
 
 /**
+ * Every distinct value recent calls passed under an argument's name, whichever
+ * tool they were to, newest first. Only text is offered: an argument worth
+ * picking from a list is one somebody typed, and the same name on another tool
+ * holding an object is not the same thing.
+ */
+export function recentArgValues(
+  calls: RecordedCall[],
+  name: string,
+  except?: string,
+  limit = 8,
+): string[] {
+  const out: string[] = []
+  for (const call of calls) {
+    if (call.callId === except) continue
+    const value = call.args[name]
+    if (value?.kind !== 'value' || typeof value.value !== 'string') continue
+    const text = value.value.trim()
+    if (!text || out.includes(text)) continue
+    out.push(text)
+    if (out.length >= limit) break
+  }
+  return out
+}
+
+/**
  * Reopen a recorded call's arguments for editing. A cancelled one is popped from
  * the log and keeps its id, so finishing or re-cancelling it updates that entry;
  * a finished one is left alone and its replay gets a fresh id pointing back at

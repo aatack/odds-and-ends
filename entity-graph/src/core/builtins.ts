@@ -151,7 +151,10 @@ export const TOOL_SCHEMA: Schema = {
         'real list rather than a string holding one. An entry is `{ "name": "who", ' +
         '"type": "string", "required": true }`, or a bare `"who"` when the name is all ' +
         'of it; `type` is `string`, `number`, `integer`, `boolean`, `entity`, or absent ' +
-        'for a value entered as JSON, and `options` makes it a picker. Add a parameter ' +
+        'for a value entered as JSON, and `options` makes it a picker. `fromContext` ' +
+        'names a context key that fills it, `unlessContext` one whose presence means it ' +
+        'is not asked for, and `recent: true` offers what recent calls passed under ' +
+        'the same name. Add a parameter ' +
         'to `execute` for each one, in the same order. A `default` does not fill the ' +
         'value in — it sends `null` for the body to interpret — so read an optional ' +
         'argument as `context.times ?? 1`.',
