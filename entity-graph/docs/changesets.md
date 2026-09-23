@@ -13,17 +13,18 @@ terms of, and what a definition has to get right.
 
 | key | tool | what it does |
 | --- | --- | --- |
-| `k` | **Prompt Claude** (`changeset.prompt`) | says something to the session on the frame's root; a new one gets a worktree |
+| `k` | **Prompt Claude** (`changeset.prompt`) | asks the selected note of the session on the path; a new one gets a worktree |
 | `shift+k` | **Prompt Claude anonymously** (`changeset.promptAnonymously`) | the same, but a new one runs in an empty scratch directory |
 | — | **Run Claude session** (`changeset.run`) | what both keys call |
 | — | **Publish changeset** (`changeset.publish`) | commits, pushes and raises a pull request |
 
 ## The session lives on the notes
 
-There is no entity for a changeset. The **root entity of the frame** the key was
-pressed in holds the whole of it, as one value, `claudeSession`. So any row in
-that frame talks to the same conversation, and the notes are where you come back
-to it.
+There is no entity for a changeset. A new session is written on the **root
+entity of the frame** the key was pressed in, as one value, `claudeSession`. A
+turn carries on whichever session is nearest on the path down to the selected
+row — the one the folded context shows — so any row under it talks to the same
+conversation, and the notes are where you come back to it.
 
 | key in `claudeSession` | what it is |
 | --- | --- |
@@ -33,16 +34,17 @@ to it.
 | `worktree` | the full path of the worktree on this machine |
 | `branch` | the branch in it — also the worktree's own id |
 | `base` | what the branch was cut from — `base` in the context, `origin/master` otherwise |
-| `sessionId` | the conversation, written when there *is* one. See below |
+| `sessionId` | the conversation, written when there *is* one: the id `claude.runPrompt` made up for it on the first turn |
 | `pullRequest` | the URL, once anything has been pushed |
 
 **The first turn makes the session.** It is written on the root, and the root is
 given `open: true`, so the notes come up in the stack until the work is done.
 
-**The key picks the kind of a new session only.** A root has one session, and a
-turn never turns one kind into the other: `shift+k` on a root with a worktree
-session, or `k` on an anonymous one, is an error rather than a second
-conversation. Blank `claudeSession` to start again.
+**The key picks the kind of a new session only.** With a session on the path,
+`k` and `shift+k` do the same thing: carry it on. Without one, `k` wants a
+repository — `repo` from the context, or else asked for, with the repositories
+recent calls were given to pick from — and `shift+k` passes none, which makes
+the session anonymous. Blank `claudeSession` to start again.
 
 **An anonymous session has no directory written down.** `claude.runPrompt` is
 called with no `path`, and runs in an empty scratch directory named for the
@@ -101,23 +103,18 @@ delete it out from under one is not a tidy-up.
    `entity.outline`, which goes to the **store** — nothing on screen has
    necessarily ever looked at that tree — and read *every time a session starts*,
    which is the point of keeping rules as notes rather than as a constant.
-2. **The prompt goes down as a note** under the row it was asked from, before the
-   answer comes back: a session that runs for an hour should leave the question on
-   screen the whole time.
-   
-   Both ids go out **with every turn**, appended to the prompt, and they are the
-   two things that change from one turn to the next: the row the key was pressed
-   on, which is the difference between "do this bit" and "do something in here
-   somewhere", and the note the prompt landed in, so the session has somewhere to
-   write back that isn't the root of everything. The system prompt names the root
-   once and never again, which is not enough on its own.
+2. **The prompt is the selected note's text.** Nothing is typed: press `k` on
+   each of a list of things to be done. Its id, its text and the frame root's id
+   go out **with every turn**, appended to the prompt, so the session knows which
+   note it is answering and hangs its reply under it. The system prompt names the
+   notes once and never again, which is not enough on its own.
 3. **The note is given a pill that watches the turn.** `[@tool:<noteId>](Claude)`
-   is appended to it and the same id is passed to the session's call as
-   `$callId`, so the question carries a clock while the session runs and says how
-   it ended after. It is two writes rather than one — the id doesn't exist until
-   the note does.
+   is appended to it — replacing the last turn's — and the same id is passed to
+   the session's call as `$callId`, so the question carries a clock while the
+   session runs and says how it ended after.
 4. **The session runs**, for as long as it takes; there is no ceiling.
-5. **`sessionId` is written** — now, and not in step 1. Its absence is what says
+5. **`sessionId` is written** — now, and not in step 1, as the id the run
+   hands back. Its absence is what says
    "this conversation still needs a system prompt", so writing it ahead of a turn
    that then fails would cost the *next* attempt its rules.
 6. **The answer is thrown away**, and the prompt says so. Anything worth keeping
@@ -152,8 +149,8 @@ From the app's integrations ([`docs/integrations.md`](./integrations.md)):
   `owner/repo` off its remote.
 - `github.mergePullRequest`, which the **Merge** button is.
 - `claude.runPrompt`, with no time limit, an optional `systemPrompt` read on
-  the turn that starts a conversation, and a scratch directory when no `path` is
-  given.
+  the turn that starts a conversation, a scratch directory when no `path` is
+  given, and a new session under a fresh id when no `sessionId` is.
 
 From the app:
 
@@ -176,8 +173,10 @@ Things a body has to get right, none of which the sandbox will warn about:
   marked `async` returns a promise, which comes back as nothing.
 - **Reach tools by id**, `tool['git.createWorktree']({…})`, rather than by the
   camel case of a label — the labels are prose and the ids are not.
-- **Read the context, don't declare an argument for it.** A definition's
-  arguments get no `fromContext`, but the folded context is right there:
+- **Read the context, don't declare an argument for it** — unless it has to be
+  asked for when the context is silent, as `k`'s `repo` is; then see
+  `fromContext`, `unlessContext` and `recent` in
+  [`user-tools.md`](./user-tools.md#arguments). The folded context is right there:
   `context.entityId` is the selected row, `context.rootId` the frame's root,
   `context.repo` and `context.base` whatever the notes above said. Every
   one of those saves a field in the palette.
