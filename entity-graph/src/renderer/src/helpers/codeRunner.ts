@@ -148,7 +148,7 @@ export async function evaluateCode(
   // A script called upon by the entity rather than by the user has no frame and
   // no selection behind it; the context is the entity, as promised.
   const context: CallContext = {
-    values: { ...values, entityId },
+    values: { ...values, entityId, path: [entityId] },
     path: [entityId],
     groupId: null,
     tabId: null,
