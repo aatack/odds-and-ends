@@ -1,4 +1,7 @@
 import { createHash } from 'crypto'
+import { mkdirSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { z } from 'zod'
 import type { ToolDef } from '../../core/pensive/index'
 import { directory, run, type CommandResult } from './exec'
@@ -63,6 +66,18 @@ function sessionUuid(name: string): string {
   ].join('-')
 }
 
+/**
+ * Where a session with no directory of its own runs: an empty one, named for the
+ * session. The same session always gets the same directory, which is what lets it
+ * resume — the CLI keeps transcripts by directory, not by id — and nothing is ever
+ * written here that anyone has to tidy up.
+ */
+function scratch(session: string): string {
+  const path = join(tmpdir(), 'entity-graph-claude', session)
+  mkdirSync(path, { recursive: true })
+  return path
+}
+
 const asJson = (text: string): Record<string, unknown> | null => {
   try {
     const parsed: unknown = JSON.parse(text)
@@ -114,6 +129,9 @@ export const CLAUDE_TOOLS: ToolDef[] = [
       'anything on the turn that starts a conversation — a resumed one already has',
       'the one it was started with — so send it with the first prompt or not at all.',
       '',
+      'Without a `path`, the session runs in an empty scratch directory of its own:',
+      'a session that reads and writes notes, with no code to change.',
+      '',
       'There is no time limit: a session runs until it is done. The session runs',
       'with permissions bypassed and can do anything you can.',
     ].join('\n'),
@@ -122,7 +140,8 @@ export const CLAUDE_TOOLS: ToolDef[] = [
       path: z
         .string()
         .min(1)
-        .describe('Directory to run in — `~/repos/local-helpers` works'),
+        .optional()
+        .describe('Directory to run in — `~/repos/local-helpers` works. Omit for a scratch directory'),
       prompt: z
         .string()
         .min(1)
@@ -137,8 +156,8 @@ export const CLAUDE_TOOLS: ToolDef[] = [
         .describe('Appended to the system prompt. Only read on the turn that starts a session'),
     }),
     handler: async ({ path, prompt, sessionId, systemPrompt }) => {
-      const cwd = directory(path)
       const session = sessionUuid(sessionId)
+      const cwd = path ? directory(path) : scratch(session)
       // The one thing here that has to go in the argument vector: the CLI takes it
       // no other way. Keep it to rules and ids — anything long belongs in the
       // prompt, which goes over standard input.
