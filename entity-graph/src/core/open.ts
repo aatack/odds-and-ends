@@ -1,16 +1,17 @@
-// Whether a task is open *now*. `open: true` says it is left to do; a `wait`
-// value says what it is waiting on, and while every one of those is still
-// waiting the task reads as done. So the walk to the next open task steps past
-// what cannot be done yet, and comes back to it without anybody ticking it.
+// Whether a task is open *now*. `open: true` says it is left to do and `false`
+// that it is done. `open` may instead say what the task is waiting on, and while
+// every one of those is still waiting the task reads as done. So the walk to the
+// next open task steps past what cannot be done yet, and comes back to it
+// without anybody ticking it.
 //
-//   wait: { snooze: '2026-09-23T09:00:00Z' }            until then
-//   wait: { toolCall: '<call id>' }                     while that call runs
-//   wait: { code: 'tool.getEntity("x").values.done' }   until this says true
+//   open: { snooze: '2026-09-23T09:00:00Z' }            until then
+//   open: { toolCall: '<call id>' }                     while that call runs
+//   open: { code: 'tool.getEntity("x").values.done' }   until this says true
 //
 // Any number of them, in one object or a list of objects. The task opens as
 // soon as *any* of them does: a snooze beside a tool call is how to say "tell me
 // anyway if it has not finished by tomorrow", and a call that finishes early
-// needs no snooze to run out first.
+// needs no snooze to run out first. Drawn, a waiting task is an unticked one.
 
 /** What a wait condition needs from outside the entity. */
 export interface WaitProbes {
@@ -30,9 +31,23 @@ interface Condition {
   code?: unknown
 }
 
-const conditionsOf = (wait: unknown): Condition[] => {
-  const list = Array.isArray(wait) ? wait : [wait]
-  return list.filter((c): c is Condition => c != null && typeof c === 'object' && !Array.isArray(c))
+const isCondition = (c: unknown): c is Condition =>
+  c != null && typeof c === 'object' && !Array.isArray(c)
+
+/** True when `open` says what a task waits on, rather than `true` or `false`. */
+const waits = (open: unknown): boolean => isCondition(open) || Array.isArray(open)
+
+const conditionsOf = (open: unknown): Condition[] =>
+  (Array.isArray(open) ? open : [open]).filter(isCondition)
+
+/**
+ * `open` as a checkbox: unticked for a task left to do, whatever it waits on;
+ * ticked for one done; undefined for anything that is not a task.
+ */
+export function checkboxOf(open: unknown): boolean | undefined {
+  if (open === true || waits(open)) return true
+  if (open === false) return false
+  return undefined
 }
 
 /** A snooze that cannot be read as a time has run out: better offered than lost. */
@@ -43,12 +58,12 @@ const snoozedUntil = (value: unknown): number => {
 }
 
 /**
- * True while every wait condition on these values is still waiting; false once
- * one of them has stopped, or when there are none. Undefined when the answer
+ * True while every condition in `open` is still waiting; false once one of them
+ * has stopped, or when there are none. Undefined when the answer
  * rests on a `code` condition that has yet to run.
  */
-export function isWaiting(values: Record<string, unknown>, probes: WaitProbes): boolean | undefined {
-  const conditions = conditionsOf(values.wait)
+export function isWaiting(open: unknown, probes: WaitProbes): boolean | undefined {
+  const conditions = conditionsOf(open)
   const code: string[] = []
   let any = false
   for (const c of conditions) {
@@ -80,13 +95,13 @@ export function isWaiting(values: Record<string, unknown>, probes: WaitProbes): 
 export const PENDING = Symbol('pending')
 
 /**
- * `open` as it stands now: a task still waiting reads as ticked, so the walk
- * steps past it and does not look below it. Anything that is not a task is
- * handed back as written.
+ * `open` as it stands now: `true` or `false` for a task that waits on something,
+ * so the walk steps past one still waiting and does not look below it. Anything
+ * else is handed back as written.
  */
-export function openNow(values: Record<string, unknown>, probes: WaitProbes): unknown {
-  if (values.open !== true) return values.open
-  const waiting = isWaiting(values, probes)
+export function openNow(open: unknown, probes: WaitProbes): unknown {
+  if (!waits(open)) return open
+  const waiting = isWaiting(open, probes)
   if (waiting === undefined) return PENDING
   return !waiting
 }
@@ -101,17 +116,17 @@ export function parseDuration(text: string): number | null {
 }
 
 /**
- * A `wait` value with its snooze set to `until`, and every other condition kept:
- * snoozing a task that waits on a call still wakes it when the call ends.
+ * An `open` value snoozed until `until`. Whatever else it waits on is kept, so
+ * snoozing a task that waits on a call still wakes it when the call ends; `true`,
+ * `false` or nothing at all become a task waiting on the snooze alone.
  */
-export function withSnooze(wait: unknown, until: string): unknown {
+export function withSnooze(open: unknown, until: string): unknown {
   const snooze = { snooze: until }
-  if (Array.isArray(wait)) {
-    const rest = conditionsOf(wait)
+  if (Array.isArray(open)) {
+    const rest = conditionsOf(open)
       .map(({ snooze: _, ...other }) => other)
       .filter((c) => Object.keys(c).length > 0)
     return [...rest, snooze]
   }
-  const [only] = conditionsOf(wait)
-  return only ? { ...only, ...snooze } : snooze
+  return isCondition(open) ? { ...open, ...snooze } : snooze
 }

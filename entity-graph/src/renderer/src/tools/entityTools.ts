@@ -142,7 +142,7 @@ async function findNext(
     const found = await settle(readEntities, (get) => {
       wanted.clear()
       const openOf = (path: readonly string[], entity: Entity): unknown =>
-        openNow(entity.values, {
+        openNow(entity.values.open, {
           now,
           running: (callId) => runningCallsAtom.get().includes(callId),
           code: (code) => {
@@ -508,7 +508,7 @@ export const ENTITY_TOOLS: ToolSpec[] = [
       if (ms == null) throw new Error(`"${String(duration ?? '')}" is not a duration such as 3h, 2d or 1w`)
       const until = new Date(Date.now() + ms)
       const entity = (await readEntities([target]))[target] ?? emptyEntity(target)
-      await writeValue(target, 'wait', withSnooze(entity.values.wait, until.toISOString()))
+      await writeValue(target, 'open', withSnooze(entity.values.open, until.toISOString()))
       return { message: `Snoozed until ${until.toLocaleString()}` }
     },
   },

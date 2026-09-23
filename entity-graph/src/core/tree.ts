@@ -1,5 +1,6 @@
 import { str, summaryOf, type Entity, type EntitySummary, type LinkDirection } from './entity'
 import { actionsOf } from './schema'
+import { checkboxOf } from './open'
 import {
   filterPaths,
   resolveQuery,
@@ -93,7 +94,6 @@ function rowOf(
   direction: LinkDirection,
   { collapsed, loading, hidesChildren, actions }: RowFacts,
 ): TreeRow {
-  const open = entity.values.open
   return {
     ...(actions?.length ? { actions } : {}),
     id: path[path.length - 1],
@@ -102,7 +102,7 @@ function rowOf(
     parentId: path.length > 1 ? path[path.length - 2] : null,
     ...summaryOf(entity.values),
     section: entity.values.section === true,
-    open: open === true ? true : open === false ? false : undefined,
+    open: checkboxOf(entity.values.open),
     // Which links count is the direction the query reads in, so a chevron
     // means "there is more under this here" rather than always meaning
     // outbound links.
