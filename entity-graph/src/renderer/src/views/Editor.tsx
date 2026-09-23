@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, ChevronRight, Loading02, Play, Square, Stop } from '@untitledui/icons'
+import { Check, ChevronDown, ChevronRight, Clock, Loading02, Play, Square, Stop } from '@untitledui/icons'
 import { TextEditor } from '../components/ui/TextEditor'
 import { Button } from '../components/ui/Button'
 import { CodeBlock } from '../components/ui/CodeBlock'
@@ -11,6 +11,7 @@ import { DIAGRAM_ID } from '../../../core/builtins'
 import { cn } from '../helpers/cn'
 import type { CodeRunState } from '../helpers/codeRunner'
 import type { EntityRow, Row } from '../state/derive'
+import { usePaused } from '../state/hooks'
 
 // ---------------------------------------------------------------------------
 // Layout constants
@@ -58,11 +59,29 @@ const sectionStyle = (depth: number): React.CSSProperties => ({
  * The busy mark doesn't turn: there is no motion anywhere in the app, so this is
  * the same still glyph the server list uses while a server is starting.
  */
-function Mark({ open, loading }: { open?: boolean; loading?: boolean }): React.JSX.Element {
+function Mark({
+  open,
+  wait,
+  loading,
+}: {
+  open?: boolean
+  wait?: unknown
+  loading?: boolean
+}): React.JSX.Element {
   if (loading) return <Loading02 size={13} />
+  if (open === true && wait !== undefined) return <WaitingMark wait={wait} />
   if (open === true) return <Square size={13} />
   if (open === false) return <Check size={13} />
   return <span className="size-1 rounded-full bg-gray-300" />
+}
+
+/**
+ * A task that waits on something: a clock while a snooze or a call keeps it shut,
+ * and its box again once one of them lets go. A component of its own so only the
+ * rows that wait watch the clock and the running calls.
+ */
+function WaitingMark({ wait }: { wait: unknown }): React.JSX.Element {
+  return usePaused(wait) ? <Clock size={13} /> : <Square size={13} />
 }
 
 // ---------------------------------------------------------------------------
@@ -501,7 +520,7 @@ const RowView = React.memo(function RowView({
                 trades its bullet for a chevron. A row still arriving shows the
                 busy mark whichever it would have been. */}
             {row.loading || row.open !== undefined || !foldable ? (
-              <Mark open={row.open} loading={row.loading} />
+              <Mark open={row.open} wait={row.wait} loading={row.loading} />
             ) : row.collapsed ? (
               <ChevronRight size={14} />
             ) : (
