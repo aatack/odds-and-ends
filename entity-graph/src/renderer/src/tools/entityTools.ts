@@ -7,7 +7,7 @@ import { updateUi } from '../state/ui'
 import { base64ToBlob } from '../helpers/base64'
 import { copyImage, copyText } from '../helpers/clipboard'
 import { emptyEntity, str, type Entity } from '../../../core/entity'
-import { PENDING, openNow, parseDuration, withSnooze } from '../../../core/open'
+import { PENDING, checkboxOf, openNow, parseDuration, withSnooze } from '../../../core/open'
 import {
   findPath,
   NO_TRAVERSAL,
@@ -128,13 +128,27 @@ function foldedValues(path: readonly string[], get: GetEntities): Record<string,
  * Walk on from `start` to the first match. A `code` wait condition is only run
  * once the walk reaches its task, so each pass collects the ones it needed and
  * could not answer, runs them, and walks again with what they said.
+ *
+ * With `checkbox`, `open` is read as its checkbox instead: a task that waits on
+ * something is unticked, so it is open. That is how to ask whether anything
+ * below a task is still left to do, done or not yet.
  */
 async function findNext(
   start: string[],
   match: unknown,
   collapse: unknown,
   limit: number | undefined,
+  checkbox = false,
 ): Promise<FoundPath> {
+  if (checkbox) {
+    const openOf = (_: readonly string[], entity: Entity): unknown => checkboxOf(entity.values.open)
+    return settle(readEntities, (get) =>
+      findPath(start, get, NO_TRAVERSAL, valuesTest(match, 'Values to match', openOf), {
+        collapse: collapse === undefined ? undefined : valuesTest(collapse, 'Values to fold shut', openOf),
+        ...(limit === undefined ? {} : { limit }),
+      }),
+    )
+  }
   const now = Date.now()
   const ran = new Map<string, { result: unknown }>()
   for (;;) {
@@ -471,10 +485,23 @@ export const ENTITY_TOOLS: ToolSpec[] = [
         optional: true,
         placeholder: 'No limit',
       },
+      {
+        name: 'checkbox',
+        label: 'Read open as its checkbox',
+        kind: 'boolean',
+        optional: true,
+        description: 'A task that waits on something counts as open, not as done.',
+      },
     ],
-    run: async ({ path, match, collapse, limit }) => {
+    run: async ({ path, match, collapse, limit, checkbox }) => {
       const start = pathArg(path, 'Start after')
-      const found = await findNext(start, match, collapse, typeof limit === 'number' ? limit : undefined)
+      const found = await findNext(
+        start,
+        match,
+        collapse,
+        typeof limit === 'number' ? limit : undefined,
+        checkbox === true,
+      )
       if (found.continuation) {
         throw new Error(`Gave up after ${found.scanned} entities without a match`)
       }
