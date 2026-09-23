@@ -7,7 +7,7 @@ import { updateUi } from '../state/ui'
 import { base64ToBlob } from '../helpers/base64'
 import { copyImage, copyText } from '../helpers/clipboard'
 import { emptyEntity, str, type Entity } from '../../../core/entity'
-import { PENDING, openNow } from '../../../core/open'
+import { PENDING, openNow, parseDuration, withSnooze } from '../../../core/open'
 import {
   findPath,
   NO_TRAVERSAL,
@@ -482,6 +482,34 @@ export const ENTITY_TOOLS: ToolSpec[] = [
         data: found.path,
         message: found.path ? `Found after ${found.scanned}` : 'Nothing further matches',
       }
+    },
+  },
+  {
+    id: 'entity.snooze',
+    label: 'Snooze entity',
+    aliases: ['wait', 'later', 'defer', 'remind me'],
+    hint: 'Entity',
+    scope: 'frame',
+    reach: 'source',
+    mutates: true,
+    keys: [{ key: 't' }],
+    args: [
+      entityArg(),
+      {
+        name: 'duration',
+        label: 'Snooze for',
+        placeholder: 'e.g. 3h, 2d, 1w',
+        description: 'A number followed by h, d or w, for hours, days or weeks.',
+      },
+    ],
+    run: async ({ entityId, duration }) => {
+      const target = requireId(entityId, 'Entity id')
+      const ms = parseDuration(String(duration ?? ''))
+      if (ms == null) throw new Error(`"${String(duration ?? '')}" is not a duration such as 3h, 2d or 1w`)
+      const until = new Date(Date.now() + ms)
+      const entity = (await readEntities([target]))[target] ?? emptyEntity(target)
+      await writeValue(target, 'wait', withSnooze(entity.values.wait, until.toISOString()))
+      return { message: `Snoozed until ${until.toLocaleString()}` }
     },
   },
   {

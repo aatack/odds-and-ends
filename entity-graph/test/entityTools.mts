@@ -230,6 +230,20 @@ test('steps past a task still waiting, and below it too', async () => {
   assert.deepEqual(await call('findNextEntity', [['root'], openSection]), ['root', 'a'])
 })
 
+test('snoozes an entity, and the walk steps past it until then', async () => {
+  open()
+  outstanding()
+  await call('snoozeEntity', ['a', '2d'])
+  const { wait } = (await get('a')).values
+  const until = Date.parse(wait.snooze)
+  assert.ok(Math.abs(until - (Date.now() + 2 * 86_400_000)) < 60_000)
+  const found = await call('findNextEntity', [
+    { path: ['root'], match: openSection, collapse: { open: false } },
+  ])
+  assert.deepEqual(found, ['root', 'c'])
+  await assert.rejects(call('snoozeEntity', ['a', 'soon']), /not a duration/)
+})
+
 test('reads each frame where it stands, and selects a path in one of them', async () => {
   const { layoutAtom } = await import('../src/renderer/src/state/store')
   const { defaultLayout } = await import('../src/renderer/src/state/types')

@@ -3,7 +3,7 @@
 //   npm test
 
 import assert from 'node:assert/strict'
-import { isWaiting, openNow, PENDING, type WaitProbes } from '../src/core/open'
+import { isWaiting, openNow, parseDuration, PENDING, withSnooze, type WaitProbes } from '../src/core/open'
 
 const NOW = Date.parse('2026-09-22T12:00:00Z')
 const LATER = '2026-09-23T12:00:00Z'
@@ -67,6 +67,24 @@ test('leaves anything that is not an open task as written', () => {
   assert.equal(openNow({ wait: { snooze: LATER } }, probes()), undefined)
   assert.equal(openNow({ open: true }, probes()), true)
   assert.equal(openNow({ open: true, wait: {} }, probes()), true)
+})
+
+test('reads a duration in hours, days or weeks', () => {
+  assert.equal(parseDuration('3h'), 3 * 3_600_000)
+  assert.equal(parseDuration(' 2D '), 2 * 86_400_000)
+  assert.equal(parseDuration('1w'), 604_800_000)
+  assert.equal(parseDuration('3'), null)
+  assert.equal(parseDuration('3m'), null)
+  assert.equal(parseDuration(''), null)
+})
+
+test('sets a snooze and keeps what else the task waits on', () => {
+  assert.deepEqual(withSnooze(undefined, LATER), { snooze: LATER })
+  assert.deepEqual(withSnooze({ toolCall: 'c', snooze: EARLIER }, LATER), { toolCall: 'c', snooze: LATER })
+  assert.deepEqual(withSnooze([{ toolCall: 'c' }, { snooze: EARLIER }], LATER), [
+    { toolCall: 'c' },
+    { snooze: LATER },
+  ])
 })
 
 let failed = 0
