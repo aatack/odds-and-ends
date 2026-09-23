@@ -108,16 +108,73 @@ export function stepPath(
   t: Traversal,
   filters: QueryFilters = {},
 ): string[] | null {
-  const children = childrenOf(path, get, t, filters)
-  if (children.length) return [...path, children[0]]
+  return stepThrough(path, (at) => childrenOf(at, get, t, filters))
+}
+
+function stepThrough(
+  path: readonly string[],
+  children: (path: readonly string[]) => string[],
+): string[] | null {
+  const below = children(path)
+  if (below.length) return [...path, below[0]]
 
   for (let i = path.length - 1; i > 0; i--) {
     const parentPath = path.slice(0, i)
-    const siblings = childrenOf(parentPath, get, t, filters)
+    const siblings = children(parentPath)
     const at = siblings.indexOf(path[i])
     if (at >= 0 && at + 1 < siblings.length) return [...parentPath, siblings[at + 1]]
   }
   return null
+}
+
+/** A question asked of one path a walk reaches, and the entity at the end of it. */
+export type PathTest = (path: readonly string[], entity: Entity) => boolean
+
+export interface FoundPath {
+  /** The first path after the start that matched; null when none did. */
+  path: string[] | null
+  /** Where to carry on when the limit ran out before an answer; null otherwise. */
+  continuation: string[] | null
+  /** How many paths were stepped onto, the start not counted. */
+  scanned: number
+}
+
+/**
+ * The first path after `start`, in a depth-first reading, that `matches` accepts.
+ * The start itself is never the answer — this is "the next one", so handing an
+ * answer back in finds the one after it — and the walk never climbs above
+ * `start[0]`, so a path of one id searches that entity's subtree and nothing else.
+ *
+ * `collapse` folds a path shut for this walk alone: an entity it accepts is still
+ * reached, and may still match, but nothing below it is looked at. It is asked of
+ * the start too, so a start that has since been ticked carries on past its
+ * subtree rather than into it.
+ */
+export function findPath(
+  start: readonly string[],
+  get: GetEntities,
+  t: Traversal,
+  matches: PathTest,
+  opts: { collapse?: PathTest; limit?: number } = {},
+): FoundPath {
+  const entityAt = (path: readonly string[]): Entity => {
+    const id = last(path)
+    return get([id])[id] ?? emptyEntity(id)
+  }
+  const { collapse } = opts
+  const children = (path: readonly string[]): string[] =>
+    collapse && collapse(path, entityAt(path)) ? [] : childrenOf(path, get, t)
+
+  const limit = opts.limit ?? Infinity
+  let path = stepThrough(start, children)
+  let scanned = 0
+  while (path) {
+    if (scanned >= limit) return { path: null, continuation: path, scanned }
+    scanned++
+    if (matches(path, entityAt(path))) return { path, continuation: null, scanned }
+    path = stepThrough(path, children)
+  }
+  return { path: null, continuation: null, scanned }
 }
 
 export interface ResolvedQuery {
@@ -299,13 +356,30 @@ export interface QueryPage {
  * narrow filter over a wide tree comes back with few rows and a continuation
  * rather than with a long silence.
  */
-export async function runQuery(
+export const runQuery = (
   start: readonly string[],
   load: LoadEntities,
   t: Traversal,
   limit: number,
   filters: QueryFilters = {},
-): Promise<QueryPage> {
+): Promise<QueryPage> =>
+  settle(load, (get) => {
+    const resolved = resolveQuery(start, get, t, limit, filters)
+    const kept = filterPaths(start, resolved.paths, get, filters)
+    return {
+      rows: kept.map((path) => ({ path, entity: get([last(path)])[last(path)] })),
+      continuation: resolved.next,
+      scanned: resolved.paths.length,
+    }
+  })
+
+/**
+ * Run a synchronous derivation over a store: pass it a cache that starts empty,
+ * read whatever it asked for and could not have, and run it again until it asks
+ * for nothing new. Each pass reaches one level deeper than the last, so a walk
+ * settles in as many round trips as it is deep. See {@link runQuery}.
+ */
+export async function settle<T>(load: LoadEntities, pass: (get: GetEntities) => T): Promise<T> {
   const known = new Map<string, Entity>()
   let missing = new Set<string>()
 
@@ -322,18 +396,7 @@ export async function runQuery(
     return out
   }
 
-  /** The page as it stands, recording everything it wanted and didn't have. */
-  const pass = (): QueryPage => {
-    const resolved = resolveQuery(start, get, t, limit, filters)
-    const kept = filterPaths(start, resolved.paths, get, filters)
-    return {
-      rows: kept.map((path) => ({ path, entity: get([last(path)])[last(path)] })),
-      continuation: resolved.next,
-      scanned: resolved.paths.length,
-    }
-  }
-
-  let page = pass()
+  let result = pass(get)
   while (missing.size) {
     const batch = [...missing]
     missing = new Set()
@@ -341,7 +404,7 @@ export async function runQuery(
     // An id that came back with nothing is still an answer; recording it stops
     // the next pass asking for it again, which is what makes this terminate.
     for (const id of batch) if (!known.has(id)) known.set(id, emptyEntity(id))
-    page = pass()
+    result = pass(get)
   }
-  return page
+  return result
 }

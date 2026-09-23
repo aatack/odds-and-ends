@@ -167,6 +167,56 @@ test('reads an outline of nothing without complaining', async () => {
   assert.equal(await call('readEntityOutline', ['never-written-to']), '')
 })
 
+// --- Finding the next entity ------------------------------------------------
+
+// root
+//   a (open section)
+//     a1 (open section)
+//   b (ticked section)
+//     b1 (open section)
+//   c (open section)
+const outstanding = (): void => {
+  source.tree({ root: ['a', 'b', 'c'], a: ['a1'], b: ['b1'] })
+  source.values({
+    a: { text: 'a', section: true, open: true },
+    a1: { text: 'a1', section: true, open: true },
+    b: { text: 'b', section: true, open: false },
+    b1: { text: 'b1', section: true, open: true },
+    c: { text: 'c', section: true, open: true },
+  })
+}
+const openSection = { open: true, section: true }
+
+test('finds the next match after a path, out of the store', async () => {
+  open()
+  outstanding()
+  assert.deepEqual(await call('findNextEntity', [['root'], openSection]), ['root', 'a'])
+  // Carrying on from an answer climbs back out to the next sibling.
+  assert.deepEqual(await call('findNextEntity', [['root', 'a', 'a1'], openSection]), [
+    'root',
+    'b',
+    'b1',
+  ])
+})
+
+test('searches only inside the entity when given one id', async () => {
+  open()
+  outstanding()
+  assert.deepEqual(await call('findNextEntity', ['a', openSection]), ['a', 'a1'])
+  assert.equal(await call('findNextEntity', ['a1', openSection]), null)
+})
+
+test('reaches a folded entity but does not walk below it', async () => {
+  open()
+  outstanding()
+  const found = await call('findNextEntity', [
+    { path: ['root', 'a', 'a1'], match: openSection, collapse: { open: false } },
+  ])
+  assert.deepEqual(found, ['root', 'c'])
+  // `open: false` is ticked, not "anything not open": a plain note does not match.
+  assert.deepEqual(await call('findNextEntity', [['root'], { open: false }]), ['root', 'b'])
+})
+
 // --- Naming arguments a tool doesn't have -----------------------------------
 
 test('says which key it did not recognise, rather than reading the object as one argument', async () => {

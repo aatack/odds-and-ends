@@ -6,7 +6,8 @@ import { directionOf, last, samePath, type LinkDirection } from '../state/types'
 import { updateUi } from '../state/ui'
 import { base64ToBlob } from '../helpers/base64'
 import { copyImage, copyText } from '../helpers/clipboard'
-import { emptyEntity, str } from '../../../core/entity'
+import { emptyEntity, str, type Entity } from '../../../core/entity'
+import { findPath, NO_TRAVERSAL, settle, type PathTest } from '../../../core/query'
 import {
   createEntity,
   link,
@@ -73,6 +74,27 @@ async function linkEntities(sourceId: unknown, destinationId: unknown): Promise<
   const to = requireId(destinationId, 'Destination id')
   if (from === to) throw new Error('An entity cannot be linked to itself')
   await link(from, to)
+}
+
+/** A path as a script writes one: a list of ids, or one id for its subtree. */
+function pathArg(v: unknown, label: string): string[] {
+  if (Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'string' && x)) return v
+  if (typeof v === 'string' && v.trim()) return [v.trim()]
+  throw new Error(`${label} must be an id or a non-empty list of ids`)
+}
+
+/**
+ * An object of values as a test: every key it names must hold that value on the
+ * entity. Nothing written is not `false`, so `{ open: false }` is what ticked
+ * means rather than "anything not left open".
+ */
+function valuesTest(v: unknown, label: string): PathTest {
+  if (v == null || typeof v !== 'object' || Array.isArray(v)) {
+    throw new Error(`${label} must be an object of values, such as { open: true }`)
+  }
+  const wanted = Object.entries(v)
+  return (_path, entity: Entity) =>
+    wanted.every(([key, value]) => JSON.stringify(entity.values[key]) === JSON.stringify(value))
 }
 
 /** A row of the focused frame by id — how a tool asks what it is acting on. */
@@ -337,6 +359,65 @@ export const ENTITY_TOOLS: ToolSpec[] = [
       return {
         data: page,
         message: `${page.rows.length} row${page.rows.length === 1 ? '' : 's'} of ${page.scanned}`,
+      }
+    },
+  },
+  {
+    // The walk asked a question rather than read out: where the next entity is,
+    // after a given path, that holds these values. A definition in the store
+    // chains these — the next open section, then the first open section inside
+    // it — which `entity.query` could only answer by being handed every row.
+    id: 'entity.findNext',
+    label: 'Find next entity',
+    aliases: ['walk', 'next match', 'search after', 'next open'],
+    hint: 'Entity',
+    scope: 'frame',
+    reach: 'source',
+    args: [
+      {
+        name: 'path',
+        label: 'Start after',
+        kind: 'json',
+        fromContext: 'entityId',
+        description: 'A path of ids to carry on after, or one id to search inside it.',
+      },
+      {
+        name: 'match',
+        label: 'Values to match',
+        kind: 'json',
+        description: 'Every key given must hold that value, e.g. { "open": true }.',
+      },
+      {
+        name: 'collapse',
+        label: 'Values to fold shut',
+        kind: 'json',
+        optional: true,
+        description: 'Entities holding all of these are reached, but not walked below.',
+      },
+      {
+        name: 'limit',
+        label: 'Most entities to visit',
+        kind: 'number',
+        optional: true,
+        placeholder: 'No limit',
+      },
+    ],
+    run: async ({ path, match, collapse, limit }) => {
+      const start = pathArg(path, 'Start after')
+      const matches = valuesTest(match, 'Values to match')
+      const folds = collapse === undefined ? undefined : valuesTest(collapse, 'Values to fold shut')
+      const found = await settle(readEntities, (get) =>
+        findPath(start, get, NO_TRAVERSAL, matches, {
+          collapse: folds,
+          ...(typeof limit === 'number' ? { limit } : {}),
+        }),
+      )
+      if (found.continuation) {
+        throw new Error(`Gave up after ${found.scanned} entities without a match`)
+      }
+      return {
+        data: found.path,
+        message: found.path ? `Found after ${found.scanned}` : 'Nothing further matches',
       }
     },
   },
