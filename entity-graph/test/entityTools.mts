@@ -217,6 +217,24 @@ test('reaches a folded entity but does not walk below it', async () => {
   assert.deepEqual(await call('findNextEntity', [['root'], { open: false }]), ['root', 'b'])
 })
 
+test('reads each frame where it stands, and selects a path in one of them', async () => {
+  const { layoutAtom } = await import('../src/renderer/src/state/store')
+  const { defaultLayout } = await import('../src/renderer/src/state/types')
+  open()
+  outstanding()
+  layoutAtom.set(defaultLayout('root'))
+  const [base] = await call('readFrameStack', [])
+  assert.deepEqual(base.selectedPath, ['root'])
+
+  await call('selectPath', [{ path: ['root', 'a', 'a1'], frameId: base.frameId }])
+  await call('openEntity', ['a1'])
+  const frames = await call('readFrameStack', [])
+  assert.equal(frames.length, 2)
+  // The frame below keeps the path it was given, so a walk can carry on from it.
+  assert.deepEqual(frames[0].selectedPath, ['root', 'a', 'a1'])
+  assert.equal(frames[1].rootId, 'a1')
+})
+
 // --- Naming arguments a tool doesn't have -----------------------------------
 
 test('says which key it did not recognise, rather than reading the object as one argument', async () => {

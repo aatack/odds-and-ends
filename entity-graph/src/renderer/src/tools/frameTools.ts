@@ -508,6 +508,54 @@ export const FRAME_TOOLS: ToolSpec[] = [
     },
   },
   {
+    // What a definition in the store needs to walk on from where each frame
+    // stands. The latent selection rather than the resolved one: a path this
+    // side selected is still the path when the row it ends at has yet to unroll.
+    id: 'frame.stack',
+    label: 'Read frame stack',
+    aliases: ['frames', 'breadcrumbs', 'where am i'],
+    scope: 'frame',
+    reach: 'ui',
+    run: () => {
+      const layout = getLayout()
+      const { tabId } = focusOf(layout)
+      const tab = tabId ? layout.tabs[tabId] : null
+      if (!tab) throw new Error('No tab is focused')
+      const frames = tab.frameIds.flatMap((frameId) => {
+        const frame = layout.frames[frameId]
+        if (!frame) return []
+        const selected = frame.selectedPath[0] === frame.rootId ? frame.selectedPath : [frame.rootId]
+        return [{ frameId, rootId: frame.rootId, selectedPath: selected }]
+      })
+      return { data: frames }
+    },
+  },
+  {
+    id: 'frame.select',
+    label: 'Select path',
+    aliases: ['go to', 'jump to', 'reveal'],
+    scope: 'frame',
+    reach: 'ui',
+    args: [
+      {
+        name: 'path',
+        label: 'Path',
+        kind: 'json',
+        description: "Ids from the frame's root to the entity to select.",
+      },
+      { name: 'frameId', label: 'Frame id', fromContext: 'frameId', optional: true },
+    ],
+    run: ({ path, frameId }) => {
+      const layout = getLayout()
+      const frame = layout.frames[String(frameId ?? focusOf(layout).frameId ?? '')]
+      if (!frame) throw new Error('No such frame')
+      if (!Array.isArray(path) || path[0] !== frame.rootId || !path.every((id) => typeof id === 'string')) {
+        throw new Error("A path must be a list of ids starting at the frame's root")
+      }
+      A.selectPath(frame.id, path)
+    },
+  },
+  {
     id: 'frame.undoPop',
     label: 'Undo pop frame',
     aliases: ['forward', 'reopen'],
