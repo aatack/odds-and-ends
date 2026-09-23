@@ -230,6 +230,17 @@ test('steps past a task still waiting, and below it too', async () => {
   assert.deepEqual(await call('findNextEntity', [['root'], openSection]), ['root', 'a'])
 })
 
+test('reads a waiting task as open when asked for its checkbox', async () => {
+  open()
+  outstanding()
+  source.values({ a: { open: { snooze: new Date(Date.now() + 86400000).toISOString() } } })
+  const found = await call('findNextEntity', [
+    { path: ['root'], match: openSection, collapse: { open: false }, checkbox: true },
+  ])
+  // Snoozed is not done: `a` is still left to do, so whatever is above it waits on it.
+  assert.deepEqual(found, ['root', 'a'])
+})
+
 test('snoozes an entity, and the walk steps past it until then', async () => {
   open()
   outstanding()
