@@ -217,6 +217,19 @@ test('reaches a folded entity but does not walk below it', async () => {
   assert.deepEqual(await call('findNextEntity', [['root'], { open: false }]), ['root', 'b'])
 })
 
+test('steps past a task still waiting, and below it too', async () => {
+  open()
+  outstanding()
+  source.values({ a: { wait: { snooze: new Date(Date.now() + 86400000).toISOString() } } })
+  const found = await call('findNextEntity', [
+    { path: ['root'], match: openSection, collapse: { open: false } },
+  ])
+  // `a` is snoozed, so it reads as ticked: neither it nor `a1` under it is offered.
+  assert.deepEqual(found, ['root', 'c'])
+  source.values({ a: { wait: { snooze: new Date(Date.now() - 1000).toISOString() } } })
+  assert.deepEqual(await call('findNextEntity', [['root'], openSection]), ['root', 'a'])
+})
+
 test('reads each frame where it stands, and selects a path in one of them', async () => {
   const { layoutAtom } = await import('../src/renderer/src/state/store')
   const { defaultLayout } = await import('../src/renderer/src/state/types')
