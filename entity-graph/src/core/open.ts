@@ -35,7 +35,7 @@ const isCondition = (c: unknown): c is Condition =>
   c != null && typeof c === 'object' && !Array.isArray(c)
 
 /** True when `open` says what a task waits on, rather than `true` or `false`. */
-const waits = (open: unknown): boolean => isCondition(open) || Array.isArray(open)
+export const waits = (open: unknown): boolean => isCondition(open) || Array.isArray(open)
 
 const conditionsOf = (open: unknown): Condition[] =>
   (Array.isArray(open) ? open : [open]).filter(isCondition)
@@ -89,6 +89,28 @@ export function isWaiting(open: unknown, probes: WaitProbes): boolean | undefine
     else if (ran.result) return false
   }
   return unknown ? undefined : true
+}
+
+/**
+ * True while a snooze or a tool call is keeping the task shut: it has at least
+ * one of those, and nothing has opened it yet. A `code` condition is taken as
+ * not having said, since drawing a row is no reason to run one — so a task that
+ * waits on code alone is never paused in this sense.
+ */
+export function isPaused(open: unknown, probes: Omit<WaitProbes, 'code'>): boolean {
+  const timed = conditionsOf(open).some((c) => c.snooze != null || typeof c.toolCall === 'string')
+  return timed && isWaiting(open, { ...probes, code: () => undefined }) !== false
+}
+
+/** The soonest snooze in `open` still to run out after `now`, if any. */
+export function nextWake(open: unknown, now: number): number | undefined {
+  let soonest: number | undefined
+  for (const c of conditionsOf(open)) {
+    if (c.snooze == null) continue
+    const until = snoozedUntil(c.snooze)
+    if (until > now && (soonest === undefined || until < soonest)) soonest = until
+  }
+  return soonest
 }
 
 /** What {@link openNow} says while a `code` condition has yet to run. */

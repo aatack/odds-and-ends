@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { isPaused, nextWake } from '../../../core/open'
 import type { GetEntities } from '../../../core/query'
 import type { Atom } from './atom'
 import {
@@ -38,6 +39,25 @@ export const useCalls = (): RecordedCall[] => useAtomValue(callsAtom)
  */
 export const useCallRunning = (callId: string | null): boolean =>
   useAtomValue(runningCallsAtom).includes(callId ?? '')
+
+/**
+ * Whether a snooze or a tool call is keeping a task shut right now. Watches the
+ * running calls, and wakes itself when the soonest snooze runs out, so the row
+ * changes without anything else having to.
+ */
+export function usePaused(wait: unknown): boolean {
+  const running = useAtomValue(runningCallsAtom)
+  const [now, setNow] = useState(Date.now)
+  const wake = nextWake(wait, now)
+  useEffect(() => {
+    if (wake === undefined) return
+    // A timer longer than this fires at once, so a far-off snooze is looked at
+    // again in a few weeks rather than on every tick.
+    const timer = setTimeout(() => setNow(Date.now()), Math.min(wake - Date.now(), 2 ** 31 - 1))
+    return () => clearTimeout(timer)
+  }, [wake])
+  return isPaused(wait, { now, running: (id) => running.includes(id) })
+}
 
 export const useUi = (): UiState => useAtomValue(uiAtom)
 

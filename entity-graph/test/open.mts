@@ -3,7 +3,7 @@
 //   npm test
 
 import assert from 'node:assert/strict'
-import { checkboxOf, isWaiting, openNow, parseDuration, PENDING, withSnooze, type WaitProbes } from '../src/core/open'
+import { checkboxOf, isPaused, isWaiting, nextWake, openNow, parseDuration, PENDING, withSnooze, type WaitProbes } from '../src/core/open'
 
 const NOW = Date.parse('2026-09-22T12:00:00Z')
 const LATER = '2026-09-23T12:00:00Z'
@@ -23,6 +23,22 @@ test('waits out a snooze, and opens once it has passed', () => {
   assert.equal(openNow({ snooze: LATER }, probes()), false)
   assert.equal(openNow({ snooze: EARLIER }, probes()), true)
   assert.equal(openNow({ snooze: Date.parse(LATER) }, probes()), false)
+})
+
+test('is paused while a snooze or a call keeps it shut, and not for code alone', () => {
+  const at = { now: NOW, running: (id: string) => id === 'c' }
+  assert.equal(isPaused({ snooze: LATER }, at), true)
+  assert.equal(isPaused({ snooze: EARLIER }, at), false)
+  assert.equal(isPaused({ toolCall: 'c' }, at), true)
+  assert.equal(isPaused({ toolCall: 'd' }, at), false)
+  assert.equal(isPaused({ code: 'true' }, at), false)
+  assert.equal(isPaused({ snooze: LATER, code: 'true' }, at), true)
+  assert.equal(isPaused(true, at), false)
+})
+
+test('wakes at the soonest snooze still to run out', () => {
+  assert.equal(nextWake([{ snooze: LATER }, { snooze: EARLIER }, { toolCall: 'c' }], NOW), Date.parse(LATER))
+  assert.equal(nextWake({ snooze: EARLIER }, NOW), undefined)
 })
 
 test('waits on a tool call only while it runs', () => {
