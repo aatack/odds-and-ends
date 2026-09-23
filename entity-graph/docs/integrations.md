@@ -336,6 +336,11 @@ starts a conversation — a resumed session already has the system prompt it was
 started with — so send it with the first prompt or not at all. Keep it to rules
 and ids; anything long belongs in the prompt.
 
+**`path` can be left out.** The session then runs in an empty scratch directory
+under the system's temporary directory, named for the session id — so the same id
+finds the same directory, and resumes. This is for a session that works on notes
+and has no code to change.
+
 **`~` is expanded**, since these paths are named by hand. A relative path
 resolves against the *app's* working directory, which is rarely what anyone
 means, so an error names the absolute path it went looking for.

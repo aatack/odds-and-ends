@@ -1,9 +1,8 @@
 # Changesets
 
 A **changeset** is one piece of work, held open across a git worktree, a branch,
-a Claude session and a pull request, and written down as an entity so that the
-notes can point at it and it can point back. It is how a change to a codebase is
-made from inside the outliner: write the notes, press a key, talk to what happens
+a Claude session and a pull request. It is how a change to a codebase is made
+from inside the outliner: write the notes, press a key, talk to what happens
 next.
 
 **The tools themselves are not in this repository.** They are notes under
@@ -14,56 +13,47 @@ terms of, and what a definition has to get right.
 
 | key | tool | what it does |
 | --- | --- | --- |
-| `shift+k` | **New changeset** | names a piece of work and cuts a worktree for it |
-| `k` | **Prompt changeset** | says something to it, and writes both halves down |
-| — | **Publish changeset** | commits, pushes and raises a pull request |
+| `k` | **Prompt Claude** (`changeset.prompt`) | says something to the session on the frame's root; a new one gets a worktree |
+| `shift+k` | **Prompt Claude anonymously** (`changeset.promptAnonymously`) | the same, but a new one runs in an empty scratch directory |
+| — | **Run Claude session** (`changeset.run`) | what both keys call |
+| — | **Publish changeset** (`changeset.publish`) | commits, pushes and raises a pull request |
 
-Creating one does *not* prompt it. The two gestures stay separate so that
-`shift+k` returns as soon as the worktree exists, and the first thing you say is
-said the same way as everything after it.
+## The session lives on the notes
 
-## The entity
+There is no entity for a changeset. The **root entity of the frame** the key was
+pressed in holds the whole of it, as one value, `claudeSession`. So any row in
+that frame talks to the same conversation, and the notes are where you come back
+to it.
 
-`type: changeset`, hanging off the reserved entity **`@changesets`**, so there is
-one place to find them all.
-
-| value | what it is |
+| key in `claudeSession` | what it is |
 | --- | --- |
-| `text` | what the changeset is called. Also the pull request's title |
-| `type` | `changeset` |
-| `open` | `true` as it is created: a changeset is a piece of work, so it is a task |
-| `repo` | the checkout it was cut from |
+| `name` | the root's text, first line, as the session started. Also the pull request's title |
+| `anonymous` | `true` for a session with no worktree |
+| `repo` | the checkout the worktree was cut from — `repo` in the context |
 | `worktree` | the full path of the worktree on this machine |
 | `branch` | the branch in it — also the worktree's own id |
-| `base` | what the branch was cut from, `origin/master` unless told otherwise |
-| `rootId` | the notes it was started from, absent for a changeset with none |
+| `base` | what the branch was cut from — `base` in the context, `origin/master` otherwise |
 | `sessionId` | the conversation, written when there *is* one. See below |
 | `pullRequest` | the URL, once anything has been pushed |
 
-**Two ids, and both are written down.** The changeset's id is the entity's, minted
-by the store. The worktree's is git's — six characters, and the branch name too.
-Nothing derives one from the other, which is why the path and the branch are both
-values on the entity rather than something to reconstruct.
+**The first turn makes the session.** It is written on the root, and the root is
+given `open: true`, so the notes come up in the stack until the work is done.
 
-### Which way the links run
+**The key picks the kind of a new session only.** A root has one session, and a
+turn never turns one kind into the other: `shift+k` on a root with a worktree
+session, or `k` on an anonymous one, is an error rather than a second
+conversation. Blank `claudeSession` to start again.
 
-Three links, and they are the whole reason this is an entity rather than a record:
+**An anonymous session has no directory written down.** `claude.runPrompt` is
+called with no `path`, and runs in an empty scratch directory named for the
+session id — the same one every turn, which is what lets it resume. It is told
+to make no code changes, and there is nothing to publish or clean up.
 
-- `@changesets` → the changeset, written as it is created.
-- the changeset → the notes it was started from, **and** the notes → the
-  changeset. Both, so the changeset shows up under the notes you were reading and
-  the notes show up under the changeset when you come at it from the list. The
-  query's cycle guard is what makes that safe — an entity already in its own
-  ancestry is not descended into — so the pair reads as two views rather than a
-  loop.
+**Notes from before this** carry `changesetId`, naming a `type: changeset` entity
+under `@changesets`. The first turn on such a root copies that entity's worktree,
+branch and session into `claudeSession`, and carries on with them.
 
-`changesetId` is then written on the **root entity**, not on the changeset. That
-is the one that matters: values fold down the path a call is made from, so a
-`changesetId` on the notes is in the context of everything underneath them, and
-`k` finds the changeset from any row in the subtree without anything having to be
-selected in particular.
-
-### The buttons a changeset wears
+### The buttons
 
 `changeset` is a type like any other, written in the store under `@types` — see
 [`types.md`](./types.md) — and its `actions` name four more tools under `@tools`,
@@ -77,11 +67,10 @@ to do with the conversation: what to do with the branch once it exists.
 | **Merge** | `changeset.merge` | merge the pull request, and tick the changeset off |
 | **Open PR** | `changeset.openPullRequest` | open the pull request in the browser |
 
-None of them declares an argument. Each asks `changeset.here` which changeset it
-is on — the row itself when that is one, and otherwise the `changesetId` folded
-down from the notes — which is what makes them work from a row halfway down a
-changeset's tree as well as from the changeset, and from the palette and the
-right-click menu as well as from the button.
+None of them declares an argument. Each asks `changeset.here` which session it
+is on: the row itself when that is an old changeset or holds a `claudeSession`,
+then the frame's root, then the `changesetId` folded down from old notes. That is
+what makes them work from the palette as well as from a button.
 
 **Check out is detached**, and has to be: the worktree is still holding the
 branch, and git will only let one checkout have it. So `git.checkout` is asked
@@ -99,15 +88,16 @@ The branch it switches to is `base` with the remote stripped — `origin/master`
 somewhere else goes back to where it came from.
 
 Merging is the one thing that finishes a changeset, and nothing else watches for
-it, so the button that merges is also the one that writes `open: false`. The
+it, so the button that merges is also the one that writes `open: false` — on the
+notes holding the session. The
 branch is left behind on purpose: the worktree still holds it, and having `gh`
 delete it out from under one is not a tidy-up.
 
 ## A turn
 
-1. **The system prompt, once.** A changeset with no `sessionId` has never been
-   prompted, so this turn builds one: the changeset's name and id, the id of the
-   notes to read, and a tree of rules pasted in whole. Those are read with
+1. **The system prompt, once.** A session with no `sessionId` has never been
+   prompted, so this turn builds one: whether it has a worktree, the id and name
+   of the notes to read, and a tree of rules pasted in whole. Those are read with
    `entity.outline`, which goes to the **store** — nothing on screen has
    necessarily ever looked at that tree — and read *every time a session starts*,
    which is the point of keeping rules as notes rather than as a constant.
@@ -119,7 +109,7 @@ delete it out from under one is not a tidy-up.
    two things that change from one turn to the next: the row the key was pressed
    on, which is the difference between "do this bit" and "do something in here
    somewhere", and the note the prompt landed in, so the session has somewhere to
-   write back that isn't the root of everything. The system prompt names `rootId`
+   write back that isn't the root of everything. The system prompt names the root
    once and never again, which is not enough on its own.
 3. **The note is given a pill that watches the turn.** `[@tool:<noteId>](Claude)`
    is appended to it and the same id is passed to the session's call as
@@ -135,8 +125,8 @@ delete it out from under one is not a tidy-up.
    question as well only said it again, at length, in a voice nobody else in the
    tree uses.
 7. **Publish**: commit whatever is loose with the prompt as its message, push, and
-   raise a pull request if the branch hasn't got one. Then the URL goes onto the
-   changeset.
+   raise a pull request if the branch hasn't got one. Then the URL goes into
+   `claudeSession`. An anonymous session skips this.
 
 Every prompt already ends with an instruction to commit, push and raise a pull
 request, so step 7 is meant to find nothing to do. It is there for the turn where
@@ -161,14 +151,14 @@ From the app's integrations ([`docs/integrations.md`](./integrations.md)):
   nothing. Both are told the worktree rather than a repo, since `gh` reads the
   `owner/repo` off its remote.
 - `github.mergePullRequest`, which the **Merge** button is.
-- `claude.runPrompt`, with no time limit and an optional `systemPrompt` read on
-  the turn that starts a conversation.
+- `claude.runPrompt`, with no time limit, an optional `systemPrompt` read on
+  the turn that starts a conversation, and a scratch directory when no `path` is
+  given.
 
 From the app:
 
-- `entity.create` hands back **the id of what it made**, and takes a `values` map
-  — so a changeset is one write rather than seven, and the turn's note has an id
-  to be named by.
+- `entity.create` hands back **the id of what it made**, so the turn's note has an
+  id to be named by.
 - `entity.outline` reads a branch as markdown **through the store**, for the rules
   and for a pull request's description.
 - `entity.get`, `entity.link`, `entity.value.set` for the rest.
@@ -188,8 +178,8 @@ Things a body has to get right, none of which the sandbox will warn about:
   camel case of a label — the labels are prose and the ids are not.
 - **Read the context, don't declare an argument for it.** A definition's
   arguments get no `fromContext`, but the folded context is right there:
-  `context.entityId` is the selected row, `context.changesetId` the changeset in
-  scope, `context.repo` and `context.base` whatever the notes above said. Every
+  `context.entityId` is the selected row, `context.rootId` the frame's root,
+  `context.repo` and `context.base` whatever the notes above said. Every
   one of those saves a field in the palette.
 - **`execute` is an expression evaluating to a function**, applied to the declared
   arguments positionally.
@@ -198,12 +188,12 @@ Things a body has to get right, none of which the sandbox will warn about:
 
 ## Known edges
 
-- **Overlapping prompts don't queue.** Two turns against one changeset are two
+- **Overlapping prompts don't queue.** Two turns against one session are two
   `claude --resume` processes against one transcript, and nothing serialises
   them. One at a time until something does.
 - **A turn in flight lives in a worker.** Closing the window or pressing Stop
   loses the note-writing, though not the session — the work is in the worktree
   and the conversation resumes under the same id.
 - **A worktree gets no MCP servers by default**, being a directory `claude` has
-  never seen. An agent pointed at `rootId` needs whatever configuration lets it
-  read the store; that is a machine-level concern and nothing here sets it up.
+  never seen, and a scratch directory is the same. An agent pointed at the notes
+  needs whatever configuration lets it read the store; that is a machine-level concern and nothing here sets it up.
