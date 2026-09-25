@@ -33,7 +33,7 @@ import { PensiveServers, findFreePort } from './pensive/servers'
 import { EventFeeds } from './events/feeds'
 import { setDocsRoot } from './pensive/mcpServer'
 import { INTEGRATION_TOOLS, runIntegrationTool } from './integrations/index'
-import { loadEnvFile } from './integrations/env'
+import { loadEnvFile, requireEnv } from './integrations/env'
 import { phoneAppDist, setServed, tailscaleView } from './tailscale'
 
 // The app is the whole of it now. There is no server to start, no admin token to
@@ -264,6 +264,13 @@ ipcMain.handle('integrations:run', async (_e, tool: string, args: unknown, callI
   }
 })
 ipcMain.handle('integrations:stop', (_e, callId: string) => integrationRuns.get(callId)?.abort())
+
+// The Deepgram key, for live transcription. The renderer holds the socket, since
+// it holds the microphone and the main process has no WebSocket client on this
+// Node — so the key is handed over, on its own channel rather than as a tool: a
+// tool is reachable from a script and listed in the palette, and a secret is
+// neither. See docs/recordings.md.
+ipcMain.handle('transcription:key', (): string => requireEnv('DEEPGRAM_API_KEY'))
 
 // ---------------------------------------------------------------------------
 // IPC — user config

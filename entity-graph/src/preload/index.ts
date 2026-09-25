@@ -114,6 +114,13 @@ export interface EntityGraphAPI {
   stopIntegrationTool: (callId: string) => Promise<void>
 
   /**
+   * The Deepgram key live transcription streams with, from `.env`. Not a tool:
+   * the renderer holds the socket, and a secret is not something to list in the
+   * palette or hand to a script. Throws when the key is not set.
+   */
+  transcriptionKey: () => Promise<string>
+
+  /**
    * Phone access, over Tailscale. Machine-scoped: there is one tailnet name and
    * one serve config, and the phone app and every broadcast share them.
    */
@@ -169,6 +176,7 @@ const api: EntityGraphAPI = {
   runIntegrationTool: (tool, args, callId) =>
     ipcRenderer.invoke('integrations:run', tool, args, callId),
   stopIntegrationTool: (callId) => ipcRenderer.invoke('integrations:stop', callId),
+  transcriptionKey: () => ipcRenderer.invoke('transcription:key'),
 
   tailscaleStatus: () => ipcRenderer.invoke('tailscale:status'),
   tailscaleServeApp: (on) => ipcRenderer.invoke('tailscale:serveApp', on),
