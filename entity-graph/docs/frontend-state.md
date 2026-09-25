@@ -442,6 +442,15 @@ while selection is per frame and keyed by *path* — so the same entity appearin
 twice in one frame can be selected in one place but folds in both. That
 asymmetry is intended.
 
+A tab can also hold `highlightSince`, a time in ms. Every row in the tab whose
+*values* were written at or after it is drawn in a brand tone; a link does not
+count, so a note that only gained a child is not marked. It is a highlight, not a
+filter: nothing is hidden. The time a row compares against is the entity's
+`valuesEditedAt`, which the rollup keeps beside `editedAt` (that one moves on a
+link too). `tab.highlightSince` sets it — to now, when given nothing — and a pill
+in the corner of each frame says since when and clears it. `changeset.run` calls
+it just before the Claude turn starts, so the answers stand out when they come.
+
 A frame holds its root entity id, which way its query reads, the latent selection
 path, its filters (nullable find text, a sections-only flag, an open-items-only
 flag), a per-entity max-depth map, and any in-progress edit.

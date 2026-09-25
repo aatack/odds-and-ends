@@ -20,6 +20,9 @@ export const toggleCollapse = (tabId: string, entityId: string): void =>
 export const setCollapsed = (tabId: string, entityId: string, collapsed: boolean): void =>
   updateLayout((s) => R.setCollapsed(s, tabId, entityId, collapsed))
 
+export const setHighlightSince = (tabId: string, since: number | null): void =>
+  updateLayout((s) => R.setHighlightSince(s, tabId, since))
+
 export const addChat = (tabId: string, chatId: string): void =>
   updateLayout((s) => R.addChat(s, tabId, chatId))
 

@@ -169,6 +169,34 @@ test('folds and caps depth without asking the source anything', async () => {
   assert.equal(source.calls, before, 'folding is a derivation, not a query')
 })
 
+test("says when a row's values last changed, and not when it gained a child", async () => {
+  open()
+  source.tree({ root: ['a'] })
+  source.values({ root: { text: 'Root' }, a: { text: 'A' } })
+  rowsOf(frameId())
+  await settle()
+  const changedAt = (id: string): number => {
+    const row = rowsOf(frameId()).rows.find((r) => r.kind === 'entity' && r.id === id)
+    return row?.kind === 'entity' ? row.changedAt : -1
+  }
+  const rootBefore = changedAt('root')
+  assert.ok(rootBefore > 0)
+
+  const since = Date.now() + 1
+  await new Promise((r) => setTimeout(r, 5))
+  await createEntity({ text: 'B' }, 'root')
+  await writeValue('a', 'text', 'A, again')
+  await settle()
+  assert.equal(changedAt('root'), rootBefore, 'a new child is not a change to the parent')
+  assert.ok(changedAt('a') >= since, 'a new value is')
+  const b = rowsOf(frameId()).rows.find((r) => r.kind === 'entity' && r.text === 'B')
+  assert.ok(b?.kind === 'entity' && b.changedAt >= since, 'and so is a new note')
+
+  A.setHighlightSince(layoutAtom.get().frames[frameId()].tabId, since)
+  const tab = Object.values(layoutAtom.get().tabs)[0]
+  assert.equal(tab.highlightSince, since)
+})
+
 test('does not re-resolve the query when the selection moves', async () => {
   open()
   // A great many siblings under one parent: the shape that made holding a

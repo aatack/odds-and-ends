@@ -38,6 +38,8 @@ export interface TreeRow extends EntitySummary {
   wait?: unknown
   hasChildren: boolean
   collapsed: boolean
+  /** When a value of the entity was last written; see `Entity.valuesEditedAt`. */
+  changedAt: number
   /**
    * True when the row has children and *none* of them are on screen — folded,
    * past a depth cap, cut by a filter, ticked, or simply below where the walk
@@ -111,6 +113,7 @@ function rowOf(
     // outbound links.
     hasChildren: (direction === 'in' ? entity.inboundLinks : entity.outboundLinks).length > 0,
     collapsed,
+    changedAt: entity.valuesEditedAt,
     hidesChildren,
     loading,
   }

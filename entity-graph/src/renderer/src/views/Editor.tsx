@@ -98,6 +98,8 @@ export interface EditorProps {
   loading: boolean
   /** The frame's find text, marked in every row that says it. */
   highlight?: string
+  /** Rows whose values were written at or after this time (ms) are highlighted. */
+  changedSince?: number
   onSelectRow: (path: string[]) => void
   onToggleCollapse: (row: EntityRow) => void
   /** Every keystroke of an in-place edit; the draft is part of the frame's state. */
@@ -139,6 +141,7 @@ export function Editor(props: EditorProps): React.JSX.Element {
     editIndex,
     loading,
     highlight,
+    changedSince,
     onSelectRow,
     onToggleCollapse,
     onDraft,
@@ -288,6 +291,11 @@ export function Editor(props: EditorProps): React.JSX.Element {
         measureKey={key}
         run={run}
         highlight={highlight}
+        // A flag rather than the time, so moving it re-renders only the rows it
+        // moves past.
+        changed={
+          changedSince != null && row.kind === 'entity' && row.changedAt >= changedSince
+        }
         onMeasure={setHeight}
         onSelectRow={onSelectRow}
         onToggleCollapse={onToggleCollapse}
@@ -348,6 +356,8 @@ interface RowProps {
   run?: CodeRunState
   /** The frame's find text; a string, so it doesn't defeat the memo. */
   highlight?: string
+  /** Its values were written since the tab's highlight time. */
+  changed: boolean
   onMeasure: (key: string, height: number) => void
   onSelectRow: (path: string[]) => void
   onToggleCollapse: (row: EntityRow) => void
@@ -363,6 +373,7 @@ const RowView = React.memo(function RowView({
   measureKey,
   run,
   highlight,
+  changed,
   onMeasure,
   onSelectRow,
   onToggleCollapse,
@@ -491,7 +502,7 @@ const RowView = React.memo(function RowView({
       <div
         className={cn(
           'flex items-start my-px py-0.5 mx-2 pr-2 rounded-md flex-1 min-w-0 cursor-default',
-          row.selected ? 'bg-blue-100' : 'hover:bg-gray-100/70',
+          row.selected ? 'bg-blue-100' : changed ? 'bg-brand-50 hover:bg-brand-100' : 'hover:bg-gray-100/70',
         )}
         style={{ paddingLeft: row.depth * INDENT + 4 }}
       >
