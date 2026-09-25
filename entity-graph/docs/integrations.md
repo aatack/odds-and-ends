@@ -330,6 +330,9 @@ argument vector or `ps`. The result is the CLI's JSON verbatim: `result` is what
 Claude said, `session_id` the conversation it said it in, plus the turn count,
 duration, cost and token usage.
 
+`model` picks the model — `sonnet`, `opus`, or a full id — and is passed as
+`--model`. Leave it out for whatever the CLI defaults to.
+
 `systemPrompt` is the one argument that *does* go in the vector, because
 `--append-system-prompt` takes it no other way. It is read only on the turn that
 starts a conversation — a resumed session already has the system prompt it was
