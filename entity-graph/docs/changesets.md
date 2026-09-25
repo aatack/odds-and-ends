@@ -114,7 +114,9 @@ delete it out from under one is not a tidy-up.
    is appended to it — replacing the last turn's — and the same id is passed to
    the session's call as `$callId`, so the question carries a clock while the
    session runs and says how it ended after.
-4. **The session runs**, for as long as it takes; there is no ceiling.
+4. **The session runs**, for as long as it takes; there is no ceiling. Just
+   before, `tab.highlightSince` marks the moment on the focused tab, so what the
+   session writes is highlighted as it arrives.
 5. **`sessionId` is written** — now, and not in step 1, as the id the run
    hands back. Its absence is what says
    "this conversation still needs a system prompt", so writing it ahead of a turn
