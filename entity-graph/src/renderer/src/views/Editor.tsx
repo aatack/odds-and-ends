@@ -4,10 +4,11 @@ import { TextEditor } from '../components/ui/TextEditor'
 import { Button } from '../components/ui/Button'
 import { CodeBlock } from '../components/ui/CodeBlock'
 import { DiagramView } from '../components/Diagram'
+import { RecordingPill } from '../components/RecordingPill'
 import { EntityMarkdown } from '../components/EntityMarkdown'
 import { ResourceView } from '../components/Resource'
 import { TypePill } from '../components/TypePill'
-import { DIAGRAM_ID } from '../../../core/builtins'
+import { DIAGRAM_ID, RECORDING_ID } from '../../../core/builtins'
 import { cn } from '../helpers/cn'
 import type { CodeRunState } from '../helpers/codeRunner'
 import type { EntityRow, Row } from '../state/derive'
@@ -575,6 +576,13 @@ const RowView = React.memo(function RowView({
                 <DiagramView entityId={row.id} path={row.path} highlight={highlight} />
               )}
               {rendered}
+            </>
+          ) : row.type === RECORDING_ID ? (
+            // The recording's name, then the pill that runs it. Beneath the text
+            // rather than above it, so the type pill still reads as its first word.
+            <>
+              {rendered}
+              <RecordingPill entityId={row.id} path={row.path} />
             </>
           ) : (
             (rendered ?? <span className={`${TEXT} italic text-gray-400`}>Empty</span>)
