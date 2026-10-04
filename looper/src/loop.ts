@@ -14,7 +14,7 @@ import { runWake } from "./claude.ts";
 import type { RunResult } from "./claude.ts";
 import { buildPrompt } from "./prompt.ts";
 import { State } from "./state.ts";
-import type { Outcome } from "./state.ts";
+import type { Outcome, StateData } from "./state.ts";
 import type { Telegram } from "./telegram.ts";
 
 /** How long a cap is given past its stated reset, so the first retry isn't a second too early. */
@@ -68,14 +68,21 @@ export class Loop {
 
     while (!this.stopping) {
       const messages = state.takePending();
+      const tidy = tidyDue(config, state.data, messages.length);
       const prompt = buildPrompt({
         config,
         state: state.data,
         messages,
         conversation: state.conversation(),
+        tidy,
       });
       const run = state.data.runs + 1;
-      const resume = config.sessionMode === "resume" ? (state.data.lastRun?.sessionId ?? null) : null;
+      // A tidy-up always starts a new session: it is there to read the notes as
+      // they stand, with nothing in its context to paper over what they leave out.
+      // The wakes after it carry on from it, which is the point — they start from
+      // a session that has just read everything afresh.
+      const resume =
+        config.sessionMode === "resume" && !tidy ? (state.data.lastRun?.sessionId ?? null) : null;
 
       const wake = runWake({
         config,
@@ -88,7 +95,8 @@ export class Loop {
       });
       this.stopCurrentWake = wake.stop;
       state.log(
-        `wake ${run} started (session ${wake.sessionId.slice(0, 8)}, ${config.model}` +
+        `wake ${run} started${tidy ? " to tidy the notes" : ""} ` +
+          `(session ${wake.sessionId.slice(0, 8)}, ${config.model}` +
           `${messages.length ? `, ${messages.length} message(s) from you` : ""})`
       );
 
@@ -99,7 +107,7 @@ export class Loop {
       const sent = state.drainOutbox();
       const asked = sent.some((message) => message.kind === "ask");
       const outcome = describe(result, asked);
-      this.record(outcome, result);
+      this.record(outcome, result, tidy);
 
       // A wake that never got as far as a single tool call never really read the
       // prompt, so anything you had said goes back in the queue for the next one
@@ -145,9 +153,12 @@ export class Loop {
   }
 
   /** Fold a wake's result and what it sent into one word for how it ended. */
-  private record(outcome: Outcome, result: RunResult): void {
+  private record(outcome: Outcome, result: RunResult, tidy: boolean): void {
     const { state } = this.options;
     state.data.runs += 1;
+    // Only a tidy-up that finished counts; one cut short by a cap or a failure is
+    // tried again at the next quiet wake.
+    if (tidy && outcome === "done") state.data.lastTidy = state.data.runs;
     state.data.awaitingReply = outcome === "asked";
     // An overload leaves the failure count alone rather than clearing it: it is
     // neither a failure nor a wake that worked, so it should not reset a backoff
@@ -162,6 +173,7 @@ export class Loop {
       text: result.text,
       durationMs: result.durationMs,
       costUsd: result.costUsd,
+      ...(tidy ? { tidy: true } : {}),
       ...(result.error ? { error: result.error } : {}),
     };
     state.save();
@@ -305,6 +317,16 @@ export class Loop {
       }
     }
   }
+}
+
+/**
+ * Whether the next wake should tidy the notes rather than work. One is due every
+ * `tidyEvery` wakes, but never in place of a wake you have just written to: what
+ * you said comes first, and the tidy-up waits for the next quiet wake.
+ */
+export function tidyDue(config: Config, data: StateData, messages: number): boolean {
+  if (!config.tidyEvery || messages) return false;
+  return data.runs - data.lastTidy >= config.tidyEvery;
 }
 
 function describe(result: RunResult, asked: boolean): Outcome {

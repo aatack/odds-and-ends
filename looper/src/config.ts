@@ -63,6 +63,8 @@ export interface Config {
   permissionMode: string;
   /** `resume` continues the last Claude session; `fresh` starts a new one each wake. */
   sessionMode: "resume" | "fresh";
+  /** Every this many wakes, one is spent tidying the notes in a new session. 0 never. */
+  tidyEvery: number;
   telegram: { token: string; chatId: string };
   timing: Timing;
 }
@@ -371,6 +373,11 @@ export async function loadConfig(opts: LoadOptions): Promise<Config> {
     throw new Error(`LOOPER_SESSION_MODE must be "fresh" or "resume", not ${sessionMode}.`);
   }
 
+  const tidyEvery = Number(values.LOOPER_TIDY_EVERY ?? "20");
+  if (!Number.isInteger(tidyEvery) || tidyEvery < 0) {
+    throw new Error(`LOOPER_TIDY_EVERY must be a whole number of wakes, not ${values.LOOPER_TIDY_EVERY}.`);
+  }
+
   const task = withinRepo(repo, "LOOPER_TASK", values.LOOPER_TASK ?? "TASK.md");
   const notesDir = withinRepo(repo, "LOOPER_NOTES_DIR", values.LOOPER_NOTES_DIR ?? "notes");
   await ensureTask(repo, task, opts.interactive);
@@ -389,6 +396,7 @@ export async function loadConfig(opts: LoadOptions): Promise<Config> {
     fallbackModel: values.LOOPER_FALLBACK_MODEL ?? null,
     permissionMode: values.LOOPER_PERMISSION_MODE ?? "auto",
     sessionMode,
+    tidyEvery,
     telegram: { token: values.TELEGRAM_BOT_TOKEN, chatId: values.TELEGRAM_CHAT_ID },
     timing: {
       turn: duration("LOOPER_TURN_SLEEP", "5m"),

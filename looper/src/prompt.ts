@@ -29,14 +29,16 @@ export interface PromptInput {
   messages: Incoming[];
   /** Everything said on Telegram before now, both ways, oldest first. */
   conversation: Exchange[];
+  /** Spend this wake tidying the notes rather than working on the task. */
+  tidy?: boolean;
 }
 
-export function buildPrompt({ config, state, messages, conversation }: PromptInput): string {
+export function buildPrompt({ config, state, messages, conversation, tidy }: PromptInput): string {
   const wake = state.runs + 1;
   const sections = [
     standing(config),
     situation(config, state, messages, conversation, wake),
-    working(config),
+    tidy ? tidying(config) : working(config),
   ];
   return sections.join("\n\n");
 }
@@ -81,7 +83,7 @@ whatever is already in ${config.notesDir}/, then get your bearings in the repo.
 If there are no notes yet, they are yours to lay out.`
     );
   } else {
-    const { at, outcome, durationMs, text, error } = state.lastRun;
+    const { at, outcome, durationMs, text, error, tidy } = state.lastRun;
     const ago = describeGap(Date.parse(at));
     const ended =
       outcome === "done"
@@ -94,7 +96,8 @@ If there are no notes yet, they are yours to lay out.`
               ? "never really ran: the API was overloaded"
               : `ended badly (${error ?? "unknown error"})`;
     parts.push(
-      `Your last wake ${ended}, ${ago}, after ${Math.round(durationMs / 60_000)} minutes of work.`
+      `Your last wake ${ended}, ${ago}, after ${Math.round(durationMs / 60_000)} minutes of ` +
+        (tidy ? "tidying the notes. They should be in good order to work from." : "work.")
     );
     if (text.trim()) {
       parts.push(`It signed off with:\n\n${indent(tail(text, handoffLimit))}`);
@@ -127,6 +130,44 @@ the notes and stop.`
   if (repo) parts.push(`Where the repo stands:\n\n${indent(repo)}`);
 
   return parts.join("\n\n");
+}
+
+/**
+ * The brief for a tidy-up wake: every so often, a new session that does no work
+ * on the task and only puts the notes back in order. Wakes edit the notes as they
+ * go, but each one in a hurry and from inside its own context, so the notes drift
+ * towards a log however they are told; a reader with no context of its own is
+ * what notices.
+ */
+function tidying(config: Config): string {
+  return `## This wake is for tidying the notes
+
+This wake is not for work on the task. It is a new session, with none of your
+earlier context, and its only job is to put the notes in ${config.notesDir}/ back
+in order, so that the wakes after it can work from them. Read them as someone
+coming to them cold — that is what you are.
+
+1. Read the task note, every note in ${config.notesDir}/, and enough of the repo
+   and its recent git log to know where things really stand.
+2. Make the notes say how things stand now, and nothing else:
+   - Delete what is no longer true, what has been superseded, and anything that
+     is only history — what was done, and when. Git keeps that.
+   - Remove todos that are done, and put the rest in order, most valuable first.
+   - Check findings against the code where that is cheap, and fix or delete the
+     ones that are wrong.
+   - Merge notes that say the same thing; split a note that covers several
+     topics; fix broken [[wikilinks]]; make sure every note is linked from
+     ${config.notesDir}/Index.md, and that the index is short.
+   - Keep what the next wake needs: findings, the reasons behind decisions,
+     what was ruled out and why, open questions. Shorter is better, but do not
+     throw away anything that cost real work to find out.
+3. Leave the task note as the user wrote it, and do not change any code.
+4. Commit the notes, with a message that says they were tidied, and end your
+   turn.
+
+Do not message the user about the tidy-up. If you find something in the notes
+that they need to know — a question nobody asked them, a problem nobody told
+them about — use \`mcp__looper__tell_user\` or \`mcp__looper__ask_user\` as normal.`;
 }
 
 function working(config: Config): string {

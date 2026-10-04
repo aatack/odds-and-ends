@@ -11,7 +11,7 @@ import type { Account } from "./claude.ts";
 import { buildPrompt } from "./prompt.ts";
 import { State } from "./state.ts";
 import { Telegram, detectChatId } from "./telegram.ts";
-import { Loop } from "./loop.ts";
+import { Loop, tidyDue } from "./loop.ts";
 
 const looperDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -53,6 +53,8 @@ Settings (all optional):
   LOOPER_PERMISSION_MODE default auto
   LOOPER_SESSION_MODE    resume (default) continues the last session;
                          fresh starts a new one each wake
+  LOOPER_TIDY_EVERY      every this many wakes, one tidies the notes in a new
+                         session instead of working; default 20, 0 for never
   LOOPER_TURN_SLEEP      gap after a clean wake, default 5m
   LOOPER_STALL_SLEEP     gap after a failed wake, doubling, default 30m
   LOOPER_OVERLOAD_SLEEP  gap after an overloaded API, doubling, default 2m
@@ -168,6 +170,7 @@ async function main(): Promise<void> {
       state: state.data,
       messages: state.data.pending,
       conversation: state.conversation(),
+      tidy: tidyDue(config, state.data, state.data.pending.length),
     });
     const { args: claudeArgs } = buildArgs({
       config,

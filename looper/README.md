@@ -166,6 +166,18 @@ retrying the same dead id forever.
 
 Set `LOOPER_SESSION_MODE=fresh` to start every wake from nothing but the notes.
 
+### Tidying the notes
+
+The notes are meant to say where things stand — findings, todos, open questions —
+not to be a log of what each wake did; git is the log. Every wake is told so, but
+notes edited in a hurry from inside one session drift that way regardless. So
+every 20 wakes (`LOOPER_TIDY_EVERY`; 0 turns it off) one wake is spent in a new
+session, doing no work on the task, only reading the notes cold and putting them
+back in order: stale findings and finished todos deleted, duplicates merged, links
+fixed, the index kept short. A tidy-up never takes the place of a wake you have
+just messaged; it waits for the next quiet one. The wakes after it resume its
+session, so they start from one that has just read everything afresh.
+
 ## Deliberate omissions
 
 - It does not push, publish, or touch anything outside the repo — the agent is

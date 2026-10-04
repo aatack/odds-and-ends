@@ -31,6 +31,8 @@ export interface LastRun {
   costUsd: number | null;
   /** Why it failed, when it did. */
   error?: string;
+  /** Set when the wake was a tidy-up of the notes rather than work on the task. */
+  tidy?: boolean;
 }
 
 export interface StateData {
@@ -50,6 +52,8 @@ export interface StateData {
    * is not worth waking you up for.
    */
   overloads: number;
+  /** The wake that last tidied the notes, counted like `runs`; 0 for never. */
+  lastTidy: number;
   lastRun: LastRun | null;
 }
 
@@ -68,6 +72,7 @@ const empty: StateData = {
   awaitingReply: false,
   failures: 0,
   overloads: 0,
+  lastTidy: 0,
   lastRun: null,
 };
 
