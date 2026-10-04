@@ -54,9 +54,7 @@ that your next wake can continue from immediately.
 
 ## Where you are
 
-- Your working directory is ${config.repo}. It is a git repository. Do all your
-  work in this directory.
-- Do not read or write files outside this directory.
+${where(config)}
 - Do not push to a remote. Do not publish anything.
 - This directory is also an Obsidian vault. Your task and your memory are notes
   in this vault. The notes are Markdown files. Use your usual file tools to read
@@ -89,6 +87,23 @@ includes your notes, your commit messages and your messages to the user.
 - Write a maximum of six sentences in a paragraph. Use lists for steps.
 - Write technical names, for example file names, commands and code, exactly as
   they are.`;
+}
+
+/** Where the agent works: a whole repo, or one directory of a bigger one. */
+function where(config: Config): string {
+  if (config.gitRoot === config.repo) {
+    return `- Your working directory is ${config.repo}. It is a git repository. Do all your
+  work in this directory.
+- Do not read or write files outside this directory.`;
+  }
+  return `- Your working directory is ${config.repo}. It is a subdirectory of the
+  git repository at ${config.gitRoot}. Do all your work in your working
+  directory.
+- You can read files in other parts of the repository. Do not change files
+  outside your working directory. Do not read or write files outside the
+  repository.
+- Commit only the changes in your working directory. Other persons possibly
+  have changes in other directories. Do not commit these changes.`;
 }
 
 function situation(
@@ -351,15 +366,18 @@ function describeRepo(repo: string): string | null {
   };
   const branch = git("rev-parse", "--abbrev-ref", "HEAD");
   if (!branch) return null;
-  const log = git("log", "-3", "--format=%h %s");
-  const dirty = git("status", "--porcelain");
+  // Limited to this directory, which is all of the repo when Looper runs at the
+  // top, and only the agent's part of it when it runs in a subdirectory: other
+  // people's commits and edits elsewhere are not its business.
+  const log = git("log", "-3", "--format=%h %s", "--", ".");
+  const dirty = git("status", "--porcelain", "--", ".");
   const lines = [`The branch is ${branch}.`];
-  if (log) lines.push("The last commits are:", ...log.split("\n").map((line) => `  ${line}`));
+  if (log) lines.push("The last commits in your working directory are:", ...log.split("\n").map((line) => `  ${line}`));
   lines.push(
     dirty
-      ? `${dirty.split("\n").length} file(s) have changes that are not committed. ` +
-          "Possibly your last wake made these changes."
-      : "All changes are committed."
+      ? `In your working directory, ${dirty.split("\n").length} file(s) have changes that ` +
+          "are not committed. Possibly your last wake made these changes."
+      : "In your working directory, all changes are committed."
   );
   return lines.join("\n");
 }

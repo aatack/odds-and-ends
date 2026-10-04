@@ -48,6 +48,12 @@ cd ~/repos/the-idea      # a git repo; `git init` if it's new
 looper
 ```
 
+It also runs in any directory inside a repo — `~/repos/odds-and-ends/the-idea`, say.
+That directory is then the task's own: its task note, its notes and `.looper/` all
+live there, the agent may read the rest of the repo but changes nothing outside
+its directory, and it commits only what is inside it, so other work in the same
+repo is left alone.
+
 The first run asks for the bot token and the chat, and saves them. Leave the chat blank and it will ask you to message the bot,
 then take the chat id from the message.
 
@@ -197,7 +203,8 @@ session, so they start from one that has just read everything afresh.
 - It does not push, publish, or touch anything outside the repo — the agent is
   told not to, and the notify tool refuses to attach a file from outside it.
 - It only reads text you send. Voice notes and photos are consumed and dropped.
-- There is one task per directory. Two tasks means two directories.
+- There is one task per directory. Two tasks means two directories — which can be
+  two subdirectories of one repo.
 
 ## Type-checking and tests
 

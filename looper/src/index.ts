@@ -2,9 +2,9 @@
 // you stop it.
 
 import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConfig, globalEnvPath, repoEnvPath, formatDuration } from "./config.ts";
+import { loadConfig, findGitRoot, globalEnvPath, repoEnvPath, formatDuration } from "./config.ts";
 import type { Config } from "./config.ts";
 import { buildArgs, whoseAccount } from "./claude.ts";
 import { describeIdentity, settleAccount } from "./account.ts";
@@ -20,11 +20,12 @@ const help = `looper — keep an agent working on one task in the background.
 Usage:
   looper [options]
 
-Run it in the git repo you want the agent to work in. The repo doubles as an
-Obsidian vault: the agent reads its task from a note in it, keeps its own notes
-beside the work, and commits both. It messages you on Telegram when it has
-something to say or something to ask, and everything you send reaches it at its
-next wake.
+Run it in the directory you want the agent to work in: a git repo, or any
+directory inside one. That directory doubles as an Obsidian vault: the agent
+reads its task from a note in it, keeps its own notes beside the work, and
+commits both — only what is in that directory, when it is part of a bigger repo.
+It messages you on Telegram when it has something to say or something to ask,
+and everything you send reaches it at its next wake.
 
 Options:
   --once        Run a single wake and stop. The way to try a task out.
@@ -119,9 +120,11 @@ async function main(): Promise<void> {
   }
 
   const repo = resolve(args.repo);
-  if (!existsSync(join(repo, ".git"))) {
+  // Anywhere inside a repo will do: a subdirectory of a bigger repo is a task of
+  // its own, with its own notes and state, committing into the repo around it.
+  if (!findGitRoot(repo)) {
     console.error(
-      `${repo} is not a git repository. Looper keeps the agent inside one repo, and\n` +
+      `${repo} is not in a git repository. Looper keeps the agent inside one repo, and\n` +
         `commits are how a wake hands work to the next, so run \`git init\` there first.`
     );
     process.exit(1);

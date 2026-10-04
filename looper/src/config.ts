@@ -7,6 +7,7 @@
 // required but absent is prompted for before the loop starts and then written
 // back, so the second run of a directory is unattended.
 
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -22,6 +23,25 @@ export const globalEnvPath = join(
 /** Where a directory's own settings live: which task it serves, and its timings. */
 export function repoEnvPath(repo: string): string {
   return join(repo, ".looper", "env");
+}
+
+/**
+ * The top of the git repo a directory is in, or null when it is in none. Asked of
+ * git rather than found by looking for `.git`, so a subdirectory, a worktree and
+ * a submodule all count.
+ */
+export function findGitRoot(dir: string): string | null {
+  try {
+    const top = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: dir,
+      encoding: "utf8",
+      timeout: 5000,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return top ? resolve(top) : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface Timing {
@@ -42,8 +62,17 @@ export interface Timing {
 }
 
 export interface Config {
-  /** The git repo the agent works in, and never outside of. */
+  /**
+   * The directory the agent works in, and never changes anything outside of: a
+   * git repo, or any directory inside one. Its task, its notes and `.looper`
+   * all live here.
+   */
   repo: string;
+  /**
+   * The top of the git repo that `repo` is in — the same directory when Looper
+   * runs at the top, and a parent when it runs in a subdirectory of a bigger repo.
+   */
+  gitRoot: string;
   /**
    * A `CLAUDE_CONFIG_DIR` for the wakes, which is what pins this repo to one
    * Claude account: the whole config directory, credentials included, lives
@@ -389,6 +418,7 @@ export async function loadConfig(opts: LoadOptions): Promise<Config> {
 
   return {
     repo,
+    gitRoot: findGitRoot(repo) ?? repo,
     claudeConfigDir: values.LOOPER_CLAUDE_CONFIG_DIR
       ? expandPath(values.LOOPER_CLAUDE_CONFIG_DIR)
       : null,
