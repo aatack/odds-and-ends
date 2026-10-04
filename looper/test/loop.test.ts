@@ -134,10 +134,7 @@ test("a wake is run, read and recorded", async () => {
   const repo = join(dir, "repo");
   mkdirSync(join(repo, ".looper"), { recursive: true });
   execFileSync("git", ["init", "-q"], { cwd: repo });
-  writeFileSync(join(repo, "TASK.md"), "# Task
-
-Build the parser.
-");
+  writeFileSync(join(repo, "TASK.md"), "# Task\n\nBuild the parser.\n");
 
   const telegram = await fakeTelegram([
     { update_id: 7, message: { text: "try the other one", date: 1767225600, chat: { id: 999 } } },
@@ -156,14 +153,12 @@ Build the parser.
   assert.equal(run.status, 0, run.stderr);
 
   const prompt = readFileSync(join(dir, "prompt.txt"), "utf8");
-  assert.match(prompt, /The task is in TASK.md/);
+  assert.match(prompt, /The task is in TASK\.md/);
   assert.match(prompt, /This is the first wake/);
 
   const args = readFileSync(join(dir, "args.txt"), "utf8");
   assert.match(args, /--permission-mode\nauto/);
-  assert.match(args, /--allowedTools
-mcp__looper
-/);
+  assert.match(args, /--allowedTools\nmcp__looper\n/);
   assert.doesNotMatch(args, /mcp__notes/);
 
   const state = JSON.parse(readFileSync(join(repo, ".looper", "state.json"), "utf8")) as {
@@ -188,10 +183,7 @@ test("a message sent while the loop is up reaches the next prompt", async () => 
   const repo = join(dir, "repo");
   mkdirSync(join(repo, ".looper"), { recursive: true });
   execFileSync("git", ["init", "-q"], { cwd: repo });
-  writeFileSync(join(repo, "TASK.md"), "# Task
-
-Build the parser.
-");
+  writeFileSync(join(repo, "TASK.md"), "# Task\n\nBuild the parser.\n");
   // A message that arrived before this run, as if it had been picked up by the
   // listener and left in the state for the next wake.
   writeFileSync(
@@ -238,10 +230,7 @@ test("a session that cannot be resumed is dropped, not retried forever", async (
   const repo = join(dir, "repo");
   mkdirSync(join(repo, ".looper"), { recursive: true });
   execFileSync("git", ["init", "-q"], { cwd: repo });
-  writeFileSync(join(repo, "TASK.md"), "# Task
-
-Build the parser.
-");
+  writeFileSync(join(repo, "TASK.md"), "# Task\n\nBuild the parser.\n");
   writeFileSync(
     join(repo, ".looper", "state.json"),
     JSON.stringify({
@@ -289,10 +278,7 @@ test("an overloaded API is waited out, not treated as a failure", async () => {
   const repo = join(dir, "repo");
   mkdirSync(join(repo, ".looper"), { recursive: true });
   execFileSync("git", ["init", "-q"], { cwd: repo });
-  writeFileSync(join(repo, "TASK.md"), "# Task
-
-Build the parser.
-");
+  writeFileSync(join(repo, "TASK.md"), "# Task\n\nBuild the parser.\n");
   // A message waiting to be handed over, and a session worth keeping: an overload
   // must lose neither, since the agent never got as far as reading the prompt.
   writeFileSync(
@@ -353,10 +339,7 @@ test("a spent session cap is read as one, and waited out rather than retried", a
   const repo = join(dir, "repo");
   mkdirSync(join(repo, ".looper"), { recursive: true });
   execFileSync("git", ["init", "-q"], { cwd: repo });
-  writeFileSync(join(repo, "TASK.md"), "# Task
-
-Build the parser.
-");
+  writeFileSync(join(repo, "TASK.md"), "# Task\n\nBuild the parser.\n");
   // A message waiting, and failures already piled up: a cap is not a fault, so it
   // must clear the count rather than adding to it, and the message must come back
   // marked so that it cannot wake the loop straight back into the same cap.
