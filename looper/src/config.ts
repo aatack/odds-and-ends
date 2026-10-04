@@ -227,6 +227,7 @@ export async function ask(question: string, opts: { hidden?: boolean } = {}): Pr
 /** Ctrl-C, and the two things a terminal sends for backspace. */
 const interrupt = String.fromCharCode(3);
 const rubout = [String.fromCharCode(127), String.fromCharCode(8)];
+const escape = String.fromCharCode(27);
 
 function askHidden(question: string): Promise<string> {
   return new Promise((resolvePromise, reject) => {
@@ -239,8 +240,19 @@ function askHidden(question: string): Promise<string> {
       stdin.setRawMode(wasRaw);
       stdin.pause();
     };
+    // Inside an escape sequence: a terminal can wrap a paste in bracketed-paste
+    // markers, or send arrow keys, and none of that is part of the answer.
+    let escaping = false;
     const onData = (chunk: string) => {
       for (const char of chunk) {
+        if (escaping) {
+          if (/[A-Za-z~]/.test(char)) escaping = false;
+          continue;
+        }
+        if (char === escape) {
+          escaping = true;
+          continue;
+        }
         if (char === "\r" || char === "\n") {
           restore();
           process.stdout.write("\n");
@@ -253,10 +265,15 @@ function askHidden(question: string): Promise<string> {
           return;
         }
         if (rubout.includes(char)) {
+          if (value) process.stdout.write("\b \b");
           value = value.slice(0, -1);
           continue;
         }
+        // Any other control character — a Ctrl+V that a console delivers as a
+        // keystroke rather than a paste, say — would only corrupt the answer.
+        if (char < " ") continue;
         value += char;
+        process.stdout.write("*");
       }
     };
     stdin.setRawMode(true);
@@ -332,6 +349,46 @@ async function ensureTask(repo: string, task: string, interactive: boolean): Pro
   console.log(`Saved to ${path}\n`);
 }
 
+/** What a bot token looks like: the bot's number, a colon, and a long secret. */
+const botTokenShape = /^\d+:[A-Za-z0-9_-]{30,}$/;
+
+/**
+ * Take a bot token as typed, and keep asking until Telegram accepts one. Checked
+ * here rather than after the chat question, because detecting the chat needs a
+ * working token, and a token that has picked up something odd on the way in — a
+ * paste that did not paste, a stray space — otherwise fails as a bare
+ * "Not Found" from Telegram, with nothing to say which answer was wrong.
+ */
+async function settleBotToken(
+  first: string,
+  check: ((token: string) => Promise<string>) | undefined
+): Promise<string> {
+  let token = first.replace(/\s+/g, "");
+  for (;;) {
+    if (!token) throw new Error("TELEGRAM_BOT_TOKEN is required.");
+    if (!botTokenShape.test(token)) {
+      console.log(
+        `That is not a bot token: one looks like 123456789:AAaBb..., about 46 characters, ` +
+          `and ${token.length} arrived. If pasting did nothing, paste with a right-click.`
+      );
+    } else if (check) {
+      try {
+        const name = await check(token);
+        console.log(`That is @${name}.`);
+        return token;
+      } catch (error) {
+        console.log(
+          `Telegram does not accept that token (${(error as Error).message}). Copy it again ` +
+            `from @BotFather — /mybots, the bot, API Token.`
+        );
+      }
+    } else {
+      return token;
+    }
+    token = (await ask("Telegram bot token: ", { hidden: true })).replace(/\s+/g, "");
+  }
+}
+
 // ---------------------------------------------------------------------------
 // loading
 
@@ -342,6 +399,8 @@ export interface LoadOptions {
   interactive: boolean;
   /** Called with a bot token to watch for a first message, when no chat id is set. */
   detectChatId?: (token: string) => Promise<string>;
+  /** Called with a bot token to see whether Telegram accepts it; resolves to the bot's name. */
+  checkBotToken?: (token: string) => Promise<string>;
 }
 
 /**
@@ -380,6 +439,13 @@ export async function loadConfig(opts: LoadOptions): Promise<Config> {
     }
     if (question.help) console.log(question.help);
     let answer = await ask(question.prompt, { hidden: question.hidden });
+    if (question.key === "TELEGRAM_BOT_TOKEN") {
+      answer = await settleBotToken(answer, opts.checkBotToken);
+      // Saved now rather than with the rest: detecting the chat comes next and
+      // can time out, and a token Telegram has just accepted should not have to
+      // be pasted again because of it.
+      upsertEnv(globalEnvPath, { TELEGRAM_BOT_TOKEN: answer });
+    }
     if (!answer && question.key === "TELEGRAM_CHAT_ID" && opts.detectChatId) {
       answer = await opts.detectChatId(values.TELEGRAM_BOT_TOKEN ?? "");
     }

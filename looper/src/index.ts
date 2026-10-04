@@ -134,6 +134,7 @@ async function main(): Promise<void> {
     repo,
     interactive: !args.dryRun,
     detectChatId: (token) => detectChatId(token),
+    checkBotToken: (token) => new Telegram(token, "").whoAmI(),
   });
   const state = new State(config.repo);
   const telegram = new Telegram(config.telegram.token, config.telegram.chatId);
