@@ -41,8 +41,8 @@ const tools = [
       "that they want to know. Examples are a result that they asked for, or a " +
       "decision that changes the work. Possibly the user does not reply. Do not " +
       "wait for a reply. Do not use this tool frequently. Use it a maximum of a " +
-      "few times each day, not in each wake. You can attach files from the " +
-      "working repository. Images show in the message.",
+      "few times each day. You can attach files from the working repository. " +
+      "Images show in the message.",
     inputSchema: {
       type: "object",
       properties: {
@@ -67,7 +67,7 @@ const tools = [
       "without the answer. Examples are a decision that only the user can make, " +
       "a credential that you do not have, or a decision about the direction of " +
       "the work. Looper sends the question to Telegram. The answer comes to you " +
-      "in your next wake. After you ask, write in the notes where you stopped. " +
+      "in a later prompt. After you ask, write in the notes where you stopped. " +
       "Then stop. Do not use this tool to ask for permission to continue. You " +
       "make the decisions.",
     inputSchema: {
@@ -119,7 +119,7 @@ async function deliver(kind: "tell" | "ask", text: string, files: string[]): Pro
     JSON.stringify({ at: new Date().toISOString(), kind, text, files: attachments }) + "\n"
   );
   return kind === "ask"
-    ? "Looper sent the question. The answer will be in the prompt of your next wake. " +
+    ? "Looper sent the question. The answer will come in a later prompt. " +
         "Write in the notes where you stopped. Then stop now."
     : `Looper sent the message${attachments.length ? ` with ${attachments.length} attachment(s)` : ""}.`;
 }

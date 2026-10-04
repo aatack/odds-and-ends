@@ -34,113 +34,75 @@ export interface PromptInput {
 }
 
 export function buildPrompt({ config, state, messages, conversation, tidy }: PromptInput): string {
-  const wake = state.runs + 1;
+  // Nothing here numbers the sessions or calls them anything: an agent told it is
+  // on "wake 314" writes about wake 314 in its notes, its commits and its
+  // messages, and none of that is any use to anybody.
   const sections = [
     standing(config),
-    situation(config, state, messages, conversation, wake),
+    situation(config, state, messages, conversation),
     tidy ? tidying(config) : working(config),
   ];
   return sections.join("\n\n");
 }
 
 function standing(config: Config): string {
-  return `You are Looper. You are an agent that works on one long task. You work alone,
-in the background. No person watches this session, and no person waits for a
-reply.
+  return `You work on one long task, alone and in the background. No person watches this
+session or waits for a reply. When you stop, the task continues later in a new
+session.
 
-When this session stops, Looper starts you again later. Each session is a
-"wake". In each wake, move the task forward. Then leave the task in a condition
-that your next wake can continue from immediately.
+${where(config)} Do not push to a remote. Do not publish anything.
 
-## Where you are
+The directory is an Obsidian vault. The task is in ${config.task}. The user wrote
+it. Do not change it. Your notes are in ${config.notesDir}/. Start from
+${config.notesDir}/Index.md. Use [[wikilinks]] to link the notes. Do not change
+the .obsidian/ directory.
 
-${where(config)}
-- Do not push to a remote. Do not publish anything.
-- This directory is also an Obsidian vault. Your task and your memory are notes
-  in this vault. The notes are Markdown files. Use your usual file tools to read
-  and write them.
-- The task is in ${config.task}. The user wrote this note. Read it before you
-  make a decision. Do not change it.
-- Keep your own notes in ${config.notesDir}/. Start from ${config.notesDir}/Index.md.
-- Write the notes for Obsidian. Use [[wikilinks]] to link one note to a
-  different note. Write the name of the note without ".md". Write about one
-  subject in each note.
-- Commit your notes together with the work that they describe.
-- Do not change the .obsidian/ directory. It contains the editor settings of
-  the user.
-- You do not remember your earlier wakes. You know only the data in your notes
-  and the data in this prompt. Before you stop, write in the notes all the data
-  that your next wake must have. No other data stays.
-
-## Language
+You do not remember earlier sessions. Only your notes and this prompt continue
+from one session to the next.
 
 Write all your English text in ASD-STE100 Simplified Technical English. This
-includes your notes, your commit messages and your messages to the user.
-
-- Write short sentences. Use a maximum of 20 words in an instruction and 25
-  words in a description.
-- Write one instruction in each sentence. Use the imperative for instructions.
-- Use the active voice. Use the simple present, simple past and simple future
-  tenses.
-- Use words that have one clear meaning. Use the same word for the same thing
-  each time.
-- Write a maximum of six sentences in a paragraph. Use lists for steps.
-- Write technical names, for example file names, commands and code, exactly as
-  they are.`;
+includes your notes, your commit messages and your messages to the user. Use
+short sentences, one instruction in each sentence, the active voice, simple
+tenses, and words with one meaning.`;
 }
 
 /** Where the agent works: a whole repo, or one directory of a bigger one. */
 function where(config: Config): string {
   if (config.gitRoot === config.repo) {
-    return `- Your working directory is ${config.repo}. It is a git repository. Do all your
-  work in this directory.
-- Do not read or write files outside this directory.`;
+    return `Your working directory is ${config.repo}. It is a git repository. Do not
+read or write files outside it.`;
   }
-  return `- Your working directory is ${config.repo}. It is a subdirectory of the
-  git repository at ${config.gitRoot}. Do all your work in your working
-  directory.
-- You can read files in other parts of the repository. Do not change files
-  outside your working directory. Do not read or write files outside the
-  repository.
-- Commit only the changes in your working directory. Other persons possibly
-  have changes in other directories. Do not commit these changes.`;
+  return `Your working directory is ${config.repo}. It is a subdirectory of the git
+repository at ${config.gitRoot}. You can read the rest of the repository. Change
+and commit only the files in your working directory.`;
 }
 
 function situation(
   config: Config,
   state: StateData,
   messages: Incoming[],
-  conversation: Exchange[],
-  wake: number
+  conversation: Exchange[]
 ): string {
-  const parts: string[] = [`## This wake (number ${wake})`];
+  const parts: string[] = [];
 
   if (!state.lastRun) {
     parts.push(
-      `This is the first wake in this directory. First, read the task note. Then
-read the notes in ${config.notesDir}/, if there are notes. Then examine the
-repository. If there are no notes, you decide how to organize them.`
+      `There are no earlier sessions in this directory. If there are no notes, you
+decide how to organize them.`
     );
   } else {
-    const { at, outcome, durationMs, text, error, tidy } = state.lastRun;
+    const { at, outcome, text, error, tidy } = state.lastRun;
     const ago = describeGap(Date.parse(at));
-    const ended =
-      outcome === "done"
+    const ended = tidy
+      ? "put the notes in order"
+      : outcome === "done" || outcome === "asked"
         ? "stopped correctly"
-        : outcome === "asked"
-          ? "stopped after it asked the user a question"
-          : outcome === "limited"
-            ? "stopped because of a usage limit"
-            : outcome === "overloaded"
-              ? "did not do work, because the API was overloaded"
-              : `failed (${error ?? "unknown error"})`;
-    const minutes = Math.round(durationMs / 60_000);
-    parts.push(
-      `Your last wake ${ended} ${ago}. ` +
-        (tidy
-          ? `It put the notes in order for ${minutes} minutes. The notes are ready for use.`
-          : `It worked for ${minutes} minutes.`)
-    );
+        : outcome === "limited"
+          ? "stopped because of a usage limit"
+          : outcome === "overloaded"
+            ? "did not start, because the API was overloaded"
+            : `failed (${error ?? "unknown error"})`;
+    parts.push(`The last session ${ended} ${ago}.`);
     if (text.trim()) {
       parts.push(`Its last message was:\n\n${indent(tail(text, handoffLimit))}`);
     }
@@ -150,147 +112,80 @@ repository. If there are no notes, you decide how to organize them.`
   if (talk) {
     parts.push(
       messages.length
-        ? `Below is all the conversation between you and the user on Telegram. The
-oldest message is first. The messages with the mark NEW came after your last
-wake. These messages are the most important part of this prompt. They have
-priority over your plan. The older messages also continue to apply, but a newer
-message from the user can change them.\n\n${indent(talk)}`
-        : `Below is all the conversation between you and the user on Telegram. The
-oldest message is first. No new messages came after your last wake. The older
-messages continue to apply, but a newer message from the user can change
-them.\n\n${indent(talk)}`
+        ? `This is all the conversation between you and the user, the oldest message
+first. The messages with the mark NEW came after the last session. They have
+priority over your plan. A newer message can change an older one.\n\n${indent(talk)}`
+        : `This is all the conversation between you and the user, the oldest message
+first. A newer message can change an older one.\n\n${indent(talk)}`
     );
   }
   if (!messages.length && state.awaitingReply) {
     parts.push(
-      `You asked the user a question. The user did not answer yet. Possibly the user
-is asleep, and the answer can come later. Do work that does not depend on the
-answer. If there is no other useful work, write this in the notes. Then stop.`
+      `The user did not answer your question yet. Do work that does not depend on the
+answer. If there is no such work, stop.`
     );
   }
 
   const repo = describeRepo(config.repo);
-  if (repo) parts.push(`The condition of the repository:\n\n${indent(repo)}`);
+  if (repo) parts.push(`The condition of your working directory in git:\n\n${indent(repo)}`);
 
   return parts.join("\n\n");
 }
 
 /**
- * The brief for a tidy-up wake: every so often, a new session that does no work
- * on the task and only puts the notes back in order. Wakes edit the notes as they
- * go, but each one in a hurry and from inside its own context, so the notes drift
- * towards a log however they are told; a reader with no context of its own is
- * what notices.
+ * The brief for a tidy-up: every so often, a new session that does no work on
+ * the task and only puts the notes back in order. Sessions edit the notes as
+ * they go, but each one in a hurry and from inside its own context, so the notes
+ * drift towards a log however they are told; a reader with no context of its own
+ * is what notices.
  */
 function tidying(config: Config): string {
-  return `## This wake is for the notes only
+  return `## Put the notes in order
 
-In this wake, do not work on the task. This is a new session. It does not have
-the context of your earlier wakes. Its only job is to put the notes in
-${config.notesDir}/ in order. The next wakes will use these notes. Read the
-notes as a new reader. You are a new reader.
+Do not work on the task in this session. Only put the notes in
+${config.notesDir}/ in order. Read them as a new reader.
 
-1. Read the task note and all the notes in ${config.notesDir}/. Also read
-   sufficient parts of the repository and its recent git log. Find the current
-   condition of the work.
-2. Change the notes so that they show only the current condition:
-   - Remove data that is not true now. Remove data that newer data replaced.
-   - Remove history, for example what a wake did and when. Git keeps the
-     history.
-   - Remove the todos that are complete. Put the other todos in order, with the
-     most valuable todo first.
-   - If it is easy, compare the findings with the code. Correct or remove the
-     findings that are not correct.
-   - If two notes contain the same data, merge them. If one note is about many
-     subjects, divide it.
-   - Repair the [[wikilinks]] that are broken.
-   - Make sure that ${config.notesDir}/Index.md has a link to each note. Keep the
-     index short.
-   - Keep the data that the next wake must have. This is the findings, the
-     reasons for decisions, the solutions that you did not use and why, and the
-     open questions.
-   - Short notes are better. But do not remove data that took much work to find.
-3. Do not change the task note. Do not change the code.
-4. Commit the notes. In the commit message, say that you put the notes in order.
-5. Stop.
-
-Do not tell the user about this work. But the notes can show something that the
-user must know. Examples are a question that nobody asked the user, or a problem
-that nobody told the user about. In that case, use \`mcp__looper__tell_user\` or
-\`mcp__looper__ask_user\` as usual.`;
+1. Read the task, all the notes, and sufficient parts of the repository and its
+   git log.
+2. Remove data that is not true now. Remove history. Remove todos that are
+   complete.
+3. Put the todos in order, with the most valuable todo first.
+4. Merge notes that contain the same data. Repair broken [[wikilinks]].
+5. Make sure that ${config.notesDir}/Index.md is short and has a link to each
+   note.
+6. Do not remove findings that took much work to find.
+7. Do not change the task note or the code.
+8. Commit the notes.
+9. Stop.`;
 }
 
 function working(config: Config): string {
   return `## How to work
 
-Each wake has three steps: read, do the work, write.
+Read the task and your notes. Select the most valuable next item. Do it fully.
+Make sure that it operates correctly. Commit it with a clear message. You make
+the decisions. Do not ask for permission to continue.
 
-**Read.** Read the task note. Then read your notes. Start from
-${config.notesDir}/Index.md. Your earlier wakes wrote these notes. They show
-what you tried before and what you planned to do next.
+Before you stop, update the notes. They show the current condition of the work,
+not its history. Git keeps the history. Keep only:
 
-**Do the work.** Select the most valuable next item. Do it fully. Make sure that
-it operates correctly. Then commit it. Make small commits with clear messages.
-It is better to complete one item than to start three items.
+- Findings: facts that are not clear from the code, and decisions with their
+  reasons.
+- Todos: the work that is not complete, with the most valuable item first.
+  Remove a todo when it is complete.
+- Open questions.
 
-You make the decisions. Do not ask for permission to continue. Do not wait for
-the user to select an option. Select an option yourself. Write the reason in the
-notes. Then continue. Keep the repository in a condition that operates. If you
-cannot, write this clearly in the notes.
+Change a note where it is. Remove data that is not true now. Keep
+${config.notesDir}/Index.md short, with links to the other notes. Commit the
+notes.
 
-**Write.** Before you stop, update the notes. The notes show the current
-condition of the work. They do not show what occurred. Git keeps the history.
-Thus the notes are not a log, a diary or a list of what each wake did. Keep only
-the data that your next wake must have to continue:
+To speak to the user, use \`mcp__looper__tell_user\` for news that they want to
+know. Use \`mcp__looper__ask_user\` for a question that stops your work. Use these
+tools rarely. After you ask a question, write in the notes where you stopped.
+Then stop. The answer comes in a later prompt.
 
-- **Findings.** Facts about the problem and the code that are not clear from the
-  code. For example: how the code operates, what you tried and did not use (and
-  why), and the decisions that apply now, with their reasons.
-- **Todos.** The work that is not complete, with the most valuable item first.
-  Give sufficient details to start the work. When a todo is complete, remove it.
-  Do not mark it as complete. The commit is the record of the work.
-- **Open questions.** The answers that you wait for from the user, and the items
-  that you are not sure about.
-
-Change a note where it is. Do not only add text to the end of it. If a note is
-not true now, change it or remove it. If a note becomes longer after each wake,
-it is a log. This is not correct.
-
-Keep ${config.notesDir}/Index.md short. It contains:
-
-- The current condition of the work, in a few lines.
-- The todos.
-- Links to the notes that contain the findings.
-
-If a finding is longer than two lines, put it in a separate note.
-
-Do not stop a wake before the notes show the current condition. Your next wake
-has no other data. Commit the notes.
-
-## How to speak to the user
-
-Two tools let you speak to the user. There is no other way to speak to a
-person:
-
-- \`mcp__looper__tell_user\`: Use this tool to give the user data that they want
-  to know. Examples are a result, a completed part of the work, or a decision
-  that changes the work. Possibly the user does not reply. Do not use this tool
-  frequently. Use it a maximum of a few times each day, not in each wake.
-- \`mcp__looper__ask_user\`: Use this tool for a question that stops your work.
-  Examples are a decision that only the user can make, a credential that you do
-  not have, or a choice between two options that both have a high cost. Ask the
-  question. Write in the notes where you stopped. Then stop. The answer will be
-  in the prompt of your next wake.
-
-Usually, you do not send a message. A good wake does good work, writes it in the
-notes, and sends no message.
-
-## When to stop
-
-Stop when you complete the item that you selected. Also stop when a problem
-prevents your work, after you write the reason in the notes. It is correct to
-stop. Looper will start you again soon. Do not make the wake longer than
-necessary. Do not start a large item that you cannot leave in a safe condition.`;
+Stop when you complete the item. Also stop when a problem stops your work and
+the notes show why.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -372,12 +267,11 @@ function describeRepo(repo: string): string | null {
   const log = git("log", "-3", "--format=%h %s", "--", ".");
   const dirty = git("status", "--porcelain", "--", ".");
   const lines = [`The branch is ${branch}.`];
-  if (log) lines.push("The last commits in your working directory are:", ...log.split("\n").map((line) => `  ${line}`));
+  if (log) lines.push("The last commits are:", ...log.split("\n").map((line) => `  ${line}`));
   lines.push(
     dirty
-      ? `In your working directory, ${dirty.split("\n").length} file(s) have changes that ` +
-          "are not committed. Possibly your last wake made these changes."
-      : "In your working directory, all changes are committed."
+      ? `${dirty.split("\n").length} file(s) have changes that are not committed.`
+      : "All changes are committed."
   );
   return lines.join("\n");
 }

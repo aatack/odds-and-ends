@@ -150,8 +150,9 @@ point it at the task's markdown file.
   how long to leave it, go again. All the interesting behaviour is in that
   decision, and it is the file to read first.
 - **`src/prompt.ts`** — what the agent is told: the standing brief, plus what
-  happened last wake, the whole Telegram conversation, and where its folder
-  stands in git.
+  happened last time, the whole Telegram conversation, and where its folder
+  stands in git. It is kept short, and never mentions wakes or numbers them:
+  told it was on wake 314, the agent wrote about wake 314 everywhere.
 - **`src/claude.ts`** — one wake: `claude --print` in the folder with the notify
   tool wired in, its event stream read as it goes.
 - **`src/notify.ts`** — the tool the agent reaches you with. A small MCP server

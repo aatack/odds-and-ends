@@ -154,7 +154,9 @@ test("a wake is run, read and recorded", async () => {
 
   const prompt = readFileSync(join(dir, "prompt.txt"), "utf8");
   assert.match(prompt, /The task is in TASK\.md/);
-  assert.match(prompt, /This is the first wake/);
+  assert.match(prompt, /There are no earlier sessions/);
+  // The agent is never told it is on wake N, or that there are wakes at all.
+  assert.doesNotMatch(prompt, /wake/i);
 
   const args = readFileSync(join(dir, "args.txt"), "utf8");
   assert.match(args, /--permission-mode\nauto/);
@@ -220,7 +222,7 @@ test("a message sent while the loop is up reaches the next prompt", async () => 
   const prompt = readFileSync(join(dir, "prompt.txt"), "utf8");
   assert.match(prompt, /use sqlite, not postgres/);
   assert.match(prompt, /I asked which database to use/);
-  assert.match(prompt, /wake \(number 4\)/);
+  assert.doesNotMatch(prompt, /wake/i);
   // Resume is the default, so a wake after another continues its session.
   assert.match(readFileSync(join(dir, "args.txt"), "utf8"), /--resume\nold/);
 });
