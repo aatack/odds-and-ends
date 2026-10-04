@@ -2,17 +2,17 @@
 // when something is missing.
 //
 // Secrets go in one global file (~/.config/looper/env) because the same Telegram
-// bot and the same notes server serve every task, while what a particular
-// directory is *for* belongs beside the work, in <repo>/.looper/env. Anything
+// bot serves every task, while what a particular directory is *for* belongs
+// beside the work, in <repo>/.looper/env. Anything
 // required but absent is prompted for before the loop starts and then written
 // back, so the second run of a directory is unattended.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline/promises";
 
-/** Where the shared secrets live: one Telegram bot and one notes server for every task. */
+/** Where the shared secrets live: one Telegram bot for every task. */
 export const globalEnvPath = join(
   process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"),
   "looper",
@@ -50,8 +50,13 @@ export interface Config {
    * there. Null means whichever account `claude` is logged into normally.
    */
   claudeConfigDir: string | null;
-  /** The note that defines the task: an entity id, or an alias like `@index`. */
+  /**
+   * The note that defines the task, as a path relative to the repo. The repo is
+   * the agent's Obsidian vault, so this is an ordinary markdown file in it.
+   */
   task: string;
+  /** The folder in the repo, relative to it, where the agent keeps its own notes. */
+  notesDir: string;
   model: string;
   effort: string | null;
   fallbackModel: string | null;
@@ -59,7 +64,6 @@ export interface Config {
   /** `resume` continues the last Claude session; `fresh` starts a new one each wake. */
   sessionMode: "resume" | "fresh";
   telegram: { token: string; chatId: string };
-  notes: { url: string; token: string };
   timing: Timing;
 }
 
@@ -254,31 +258,43 @@ const questions: Question[] = [
       "Which chat the bot talks to. Leave this blank and Looper will wait for you\n" +
       "to send your bot a message, then take the chat id from that.",
   },
-  {
-    key: "NOTES_MCP_URL",
-    scope: "repo",
-    prompt: "Notes MCP url: ",
-    help:
-      "The notes server this repo's agent reads its task from and writes its findings\n" +
-      "to, e.g. http://127.0.0.1:40051/mcp. It belongs to the repo rather than to you,\n" +
-      "so it sits beside the task note it serves — and a local server that changes\n" +
-      "port is then one file to fix.",
-  },
-  { key: "NOTES_MCP_TOKEN", scope: "repo", hidden: true, prompt: "Notes MCP bearer token: " },
-  {
-    key: "LOOPER_TASK",
-    scope: "repo",
-    prompt: "Task note id: ",
-    help:
-      "The note that says what to build. The agent reads it and everything under\n" +
-      "it at every wake, and writes its own notes back under it.",
-  },
 ];
 
-/** What a repo answers for itself, and so is not inherited from the global file. */
-const repoScoped = new Set(
-  questions.filter((question) => question.scope === "repo").map((question) => question.key)
-);
+/**
+ * A path from an env file as one inside the repo, with forward slashes so it
+ * reads the same in the prompt on every platform. Anything that would land
+ * outside the repo is refused: the agent is told never to go there.
+ */
+function withinRepo(repo: string, key: string, path: string): string {
+  const inside = relative(repo, resolve(repo, path));
+  if (!inside || inside.startsWith("..") || isAbsolute(inside)) {
+    throw new Error(`${key} must be a path inside the repo, not ${path}.`);
+  }
+  return inside.split("\\").join("/");
+}
+
+/**
+ * Make sure the task note exists, asking for it on the terminal when it does not.
+ * The agent can do nothing without a task, so a wake with no note is a wake
+ * spent finding that out; one line typed here is enough to start from, and the
+ * note is a file in the vault to flesh out by hand whenever you like.
+ */
+async function ensureTask(repo: string, task: string, interactive: boolean): Promise<void> {
+  const path = join(repo, task);
+  if (existsSync(path) || !interactive) return;
+  if (!process.stdin.isTTY) {
+    throw new Error(`There is no task note at ${path}. Write the task there, then run Looper again.`);
+  }
+  console.log(
+    `\nThere is no task note at ${task} yet. Say what the agent should work on — a line\n` +
+      `is enough, and you can expand the note in Obsidian later.`
+  );
+  const description = await ask("Task: ");
+  if (!description) throw new Error(`Write the task into ${path}, then run Looper again.`);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `# Task\n\n${description}\n`);
+  console.log(`Saved to ${path}\n`);
+}
 
 // ---------------------------------------------------------------------------
 // loading
@@ -300,22 +316,9 @@ export interface LoadOptions {
 export async function loadConfig(opts: LoadOptions): Promise<Config> {
   const repo = resolve(opts.repo);
   const global = readEnv(globalEnvPath);
-  // A repo-scoped key written in the global file is ignored rather than used as a
-  // default, and said out loud. Falling back to it quietly is how the notes server
-  // got lost: it was global once, so the value that decided which server a wake
-  // saw was in a file nobody thinks about, and it went on being used long after
-  // the server it named had moved.
-  const misplaced = Object.keys(global).filter((key) => repoScoped.has(key));
-  for (const key of misplaced) delete global[key];
-  if (misplaced.length) {
-    console.log(
-      `Ignoring ${misplaced.join(", ")} in ${globalEnvPath}: those belong to a repo now, in ` +
-        `${repoEnvPath(repo)}. Move them there and delete the global lines.`
-    );
-  }
   const values: Record<string, string> = { ...global, ...readEnv(repoEnvPath(repo)) };
   for (const key of Object.keys(process.env)) {
-    if (key.startsWith("LOOPER_") || key.startsWith("TELEGRAM_") || key.startsWith("NOTES_")) {
+    if (key.startsWith("LOOPER_") || key.startsWith("TELEGRAM_")) {
       const value = process.env[key];
       if (value) values[key] = value;
     }
@@ -368,12 +371,17 @@ export async function loadConfig(opts: LoadOptions): Promise<Config> {
     throw new Error(`LOOPER_SESSION_MODE must be "fresh" or "resume", not ${sessionMode}.`);
   }
 
+  const task = withinRepo(repo, "LOOPER_TASK", values.LOOPER_TASK ?? "TASK.md");
+  const notesDir = withinRepo(repo, "LOOPER_NOTES_DIR", values.LOOPER_NOTES_DIR ?? "notes");
+  await ensureTask(repo, task, opts.interactive);
+
   return {
     repo,
     claudeConfigDir: values.LOOPER_CLAUDE_CONFIG_DIR
       ? expandPath(values.LOOPER_CLAUDE_CONFIG_DIR)
       : null,
-    task: values.LOOPER_TASK,
+    task,
+    notesDir,
     // `opus` is the alias for the latest Opus, which is what a long-running
     // background task wants; pin LOOPER_MODEL to a full name to be specific.
     model: values.LOOPER_MODEL ?? "opus",
@@ -382,7 +390,6 @@ export async function loadConfig(opts: LoadOptions): Promise<Config> {
     permissionMode: values.LOOPER_PERMISSION_MODE ?? "auto",
     sessionMode,
     telegram: { token: values.TELEGRAM_BOT_TOKEN, chatId: values.TELEGRAM_CHAT_ID },
-    notes: { url: values.NOTES_MCP_URL, token: values.NOTES_MCP_TOKEN },
     timing: {
       turn: duration("LOOPER_TURN_SLEEP", "5m"),
       stall: duration("LOOPER_STALL_SLEEP", "30m"),

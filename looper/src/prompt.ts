@@ -3,8 +3,9 @@
 //
 // Every wake is the same standing brief plus a short account of the situation:
 // what happened last time, what you have said since, and where the repo stands.
-// The agent's memory is the notes MCP, not this prompt — the prompt only carries
-// what the notes cannot know.
+// The agent's memory is its notes — markdown files in the repo, which doubles as
+// an Obsidian vault — not this prompt: the prompt only carries what the notes
+// cannot know.
 
 import { execFileSync } from "node:child_process";
 import type { Config } from "./config.ts";
@@ -26,7 +27,7 @@ export function buildPrompt({ config, state, messages }: PromptInput): string {
   const sections = [
     standing(config),
     situation(config, state, messages, wake),
-    working(),
+    working(config),
   ];
   return sections.join("\n\n");
 }
@@ -42,13 +43,17 @@ task on and leave it in a state your next self can pick straight up.
 - Your working directory is ${config.repo}, a git repo. Everything you build,
   write or run goes in there. Do not read or write anything outside it, and do
   not push to a remote or publish anything anywhere.
-- Your task, your memory and your working notes all live in the notes server
-  (the \`mcp__notes__*\` tools). The task is note ${config.task}: read it, and
-  what sits under it, before you decide anything.
+- The repo is also an Obsidian vault, and your task and your memory are notes
+  in it: plain markdown files, read and written with your ordinary file tools.
+  The task is ${config.task}, written by the user — read it before you decide
+  anything, and leave it as they wrote it. Your own notes live in
+  ${config.notesDir}/, starting from ${config.notesDir}/Index.md.
+- Write them for Obsidian: link notes to each other with [[wikilinks]] (by note
+  name, without the .md), one topic to a note. Commit them alongside the work
+  they describe. Leave .obsidian/ alone — it is the user's editor settings.
 - You have no memory of earlier wakes beyond what is written in those notes and
-  what appears below. So anything your next self will need — what you learnt,
-  what you tried, what you would do next — has to be written into the notes
-  before you stop. Nothing else survives.`;
+  what appears below. So anything your next self will need has to be written
+  into the notes before you stop. Nothing else survives.`;
 }
 
 function situation(
@@ -62,8 +67,8 @@ function situation(
   if (!state.lastRun) {
     parts.push(
       `This is the first wake in this directory. Start by reading the task note and
-everything under it, then get your bearings in the repo. If it is empty, it is
-yours to lay out.`
+whatever is already in ${config.notesDir}/, then get your bearings in the repo.
+If there are no notes yet, they are yours to lay out.`
     );
   } else {
     const { at, outcome, durationMs, text, error } = state.lastRun;
@@ -109,14 +114,14 @@ the notes and stop.`
   return parts.join("\n\n");
 }
 
-function working(): string {
+function working(config: Config): string {
   return `## How to work
 
 Every wake is the same three steps: read, act, write.
 
-**Read.** The task note and what sits under it, including whatever your last self
-left there. That is where you find out what has already been tried and what was
-going to happen next.
+**Read.** The task note, then your notes from ${config.notesDir}/Index.md
+outwards, including whatever your last self left there. That is where you find
+out what has already been tried and what was going to happen next.
 
 **Act.** Pick the most valuable next thing, do it properly, check it works, and
 commit it. Small commits with clear messages. Finishing one thing beats starting
@@ -128,8 +133,8 @@ the repo working; if you cannot, say so plainly in the notes.
 would do next back into the notes. The notes are yours to use as you see fit —
 lay them out however suits the work — but never end a wake without leaving
 something the next one can pick up, because there is nothing else it will have.
-Write them as notes: a note per point, nested, in the voice of the notes already
-there, not as one long paragraph.
+Write them as notes: a note per topic, linked from the index, in the voice of the
+notes already there, not as one long paragraph — and commit them.
 
 ## Reaching the user
 

@@ -11,7 +11,6 @@ import type { Account } from "./claude.ts";
 import { buildPrompt } from "./prompt.ts";
 import { State } from "./state.ts";
 import { Telegram, detectChatId } from "./telegram.ts";
-import { whichNotes } from "./notes.ts";
 import { Loop } from "./loop.ts";
 
 const looperDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -21,10 +20,11 @@ const help = `looper — keep an agent working on one task in the background.
 Usage:
   looper [options]
 
-Run it in the git repo you want the agent to work in. It reads its task from a
-note on your notes server, wakes an agent to work on it, and messages you on
-Telegram when the agent has something to say or something to ask. Answer the
-message and your reply reaches the agent at its next wake.
+Run it in the git repo you want the agent to work in. The repo doubles as an
+Obsidian vault: the agent reads its task from a note in it, keeps its own notes
+beside the work, and commits both. It messages you on Telegram when it has
+something to say or something to ask, and everything you send reaches it at its
+next wake.
 
 Options:
   --once        Run a single wake and stop. The way to try a task out.
@@ -37,13 +37,11 @@ first time:
   ${globalEnvPath}
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID — one bot serves every task
   <repo>/.looper/env
-    NOTES_MCP_URL, NOTES_MCP_TOKEN, LOOPER_TASK, and any of the settings below
-
-The notes server lives with the task it serves rather than in the global file:
-whichever server a wake sees is decided there and nowhere else, so that is the
-one file to fix when it moves.
+    any of the settings below, for this repo only
 
 Settings (all optional):
+  LOOPER_TASK            the task note, default TASK.md — asked for if missing
+  LOOPER_NOTES_DIR       where the agent keeps its notes, default notes
   LOOPER_CLAUDE_CONFIG_DIR
                          a CLAUDE_CONFIG_DIR for this repo's wakes, which is how
                          a repo is pinned to one Claude account.  Log that
@@ -88,14 +86,10 @@ function parseArgs(argv: string[]): Args | null {
   return args;
 }
 
-/** The command line, with the two tokens taken out, for `--dry-run` and the log. */
+/** The command line, with the bot token taken out, for `--dry-run` and the log. */
 function redact(args: string[], config: Config): string {
   return args
-    .map((argument) =>
-      argument
-        .replaceAll(config.notes.token, "<notes-token>")
-        .replaceAll(config.telegram.token, "<telegram-token>")
-    )
+    .map((argument) => argument.replaceAll(config.telegram.token, "<telegram-token>"))
     .map((argument) => (/[\s"]/.test(argument) ? JSON.stringify(argument) : argument))
     .join(" ");
 }
@@ -126,14 +120,6 @@ function readAccount(config: Config): Account {
     process.exit(1);
   }
   return account;
-}
-
-/** The notes server as one line, for `--dry-run`, reachable or not. */
-async function describeNotes(config: Config): Promise<string> {
-  return await whichNotes(config.notes.url, config.notes.token).then(
-    (name) => `${name} at ${config.notes.url}`,
-    (error: Error) => `unreachable — ${error.message}`
-  );
 }
 
 /** The account as one line, for `--dry-run`, whatever state it is in. */
@@ -192,7 +178,7 @@ async function main(): Promise<void> {
     const account = describeAccount(config);
     const prefix = config.claudeConfigDir ? `CLAUDE_CONFIG_DIR=${config.claudeConfigDir} ` : "";
     console.log(`--- account ---\n${account}\n`);
-    console.log(`--- notes ---\n${await describeNotes(config)}\n`);
+    console.log(`--- notes ---\ntask ${config.task}, the agent's own in ${config.notesDir}/\n`);
     console.log(`--- claude ---\n${prefix}claude ${redact(claudeArgs, config)}\n`);
     console.log(`--- prompt ---\n${prompt}`);
     return;
@@ -208,15 +194,6 @@ async function main(): Promise<void> {
     process.exit(1);
   });
 
-  // And the same for notes, which matters more: the agent reads its task from
-  // there, so a stale url is not a wake that goes badly but a wake that has
-  // nothing to do, repeated until someone looks.
-  const notes = await whichNotes(config.notes.url, config.notes.token).catch((error: Error) => {
-    console.error(`The notes server is not reachable: ${error.message}`);
-    console.error(`Check NOTES_MCP_URL and NOTES_MCP_TOKEN in ${repoEnvPath(config.repo)}.`);
-    process.exit(1);
-  });
-
   const { timing } = config;
   state.log(
     `looper on ${config.repo} — task ${config.task}, model ${config.model}, ` +
@@ -227,9 +204,7 @@ async function main(): Promise<void> {
       `${account.subscriptionType ? ` (${account.subscriptionType})` : ""}` +
       `${config.claudeConfigDir ? ` from ${config.claudeConfigDir}` : ""}`
   );
-  // Named, not just confirmed: one server can hold several stores, and pointing a
-  // repo at the wrong one looks exactly like pointing it at the right one.
-  state.log(`notes: ${notes} at ${config.notes.url}`);
+  state.log(`notes: task ${config.task}, the agent's own in ${config.notesDir}/`);
   state.log(
     `gaps: ${formatDuration(timing.turn)} between wakes, ${formatDuration(timing.stall)} after a ` +
       `failure, ${formatDuration(timing.limit)} on a cap, ${formatDuration(timing.question)} for an answer`

@@ -2,9 +2,12 @@
 
 Keeps an agent working on one long-running task in the background. You go to a
 git repo, run `looper`, and it wakes a Claude agent over and over: the agent reads
-its task from a note on your notes server, does a piece of work, commits it,
-writes down where it got to, and stops. Then Looper waits a bit and wakes it
-again.
+its task from a note in the repo, does a piece of work, commits it, writes down
+where things stand, and stops. Then Looper waits a bit and wakes it again.
+
+The repo doubles as an [Obsidian](https://obsidian.md/) vault: the task and the
+agent's notes are markdown files beside the work, linked with `[[wikilinks]]`,
+so you can open the repo in Obsidian and read along.
 
 It messages you on Telegram when it has something worth saying or something it
 genuinely can't get past, and whatever you reply is in the prompt at its next
@@ -16,8 +19,7 @@ it directly.
 ## Setup
 
 You need [Node.js](https://nodejs.org/) v22.18+ (it runs TypeScript as-is), the
-[`claude` CLI](https://claude.com/claude-code) installed and logged in, and a
-notes server to keep the task in.
+[`claude` CLI](https://claude.com/claude-code) installed.
 
 ### 1. A bot to talk to
 
@@ -26,11 +28,12 @@ and keep the token it gives you.
 
 ### 2. A note that says what to do
 
-Write the task as a note, with whatever detail you have, and keep its id. The
-agent reads that note and everything under it at every wake, and writes its
-findings, decisions and next steps back underneath. Every wake is told to read
-first, act, then write — the notes are where its memory of record lives, whatever
-the session carries over.
+Write the task in `TASK.md` at the root of the repo, with whatever detail you
+have (or let the first run ask you for a line and write it for you). The agent
+reads it at every wake and leaves it as you wrote it; its own notes go in
+`notes/`, starting from `notes/Index.md`. Every wake is told to read first, act,
+then write — the notes are where its memory of record lives, whatever the session
+carries over. `LOOPER_TASK` and `LOOPER_NOTES_DIR` move either.
 
 ### 3. Run it
 
@@ -39,29 +42,16 @@ cd ~/repos/the-idea      # a git repo; `git init` if it's new
 looper
 ```
 
-The first run asks for the bot token, the chat, the notes server and the task
-note, and saves them. Leave the chat blank and it will ask you to message the bot,
+The first run asks for the bot token and the chat, and saves them. Leave the chat blank and it will ask you to message the bot,
 then take the chat id from the message.
 
 - The bot goes in `~/.config/looper/env` — one bot serves every task, so it is
   the only thing that is yours rather than a repo's.
-- The notes server, the task and any settings go in `<repo>/.looper/env`, beside
-  the work.
+- Any settings for one repo go in `<repo>/.looper/env`, beside the work.
 
-`NOTES_MCP_URL` in that file is the only place the notes server is named. A wake
-is run with `--strict-mcp-config`, so it gets that server and Looper's own notify
-tool and nothing else: whatever is configured in the Claude account's own
-`.claude.json` is deliberately not there. If the server moves — a local one on a
-port that changes when it restarts is the usual way — that url is what to change,
-and `looper --dry-run` will say whether it is reachable. Looper also checks it
-before the loop starts, so a stale url costs a message on the terminal rather
-than every wake until you notice.
-
-It lives with the repo for the same reason: a task and the notes it is written in
-are one thing, and the file to fix is then the one next to the work rather than a
-shared file nobody thinks about. A `NOTES_MCP_URL` left in the global file is
-ignored and said so, rather than quietly used as a default — inheriting a stale
-one is the failure this arrangement exists to prevent.
+A wake is run with `--strict-mcp-config`, so it gets Looper's own notify tool and
+nothing else: whatever MCP servers the Claude account has configured are
+deliberately not there. Its notes are files, so it needs no server for them.
 
 To run it from anywhere, either `npm link` in this directory (which gives you a
 `looper` command) or call it by path: `node /path/to/looper/src/index.ts`.
@@ -89,8 +79,8 @@ wake.
 
 ```bash
 looper --once      # one wake, then stop
-looper --dry-run   # print the account, the notes server, the prompt and the
-                   # command; run nothing
+looper --dry-run   # print the account, the notes, the prompt and the command;
+                   # run nothing
 looper --help      # every setting, with its default
 ```
 
@@ -101,13 +91,11 @@ looper --help      # every setting, with its default
   decision, and it is the file to read first.
 - **`src/prompt.ts`** — what the agent is told: the standing brief, plus what
   happened last wake, what you have said since, and where the repo stands.
-- **`src/claude.ts`** — one wake: `claude --print` in the repo with the notes
-  server and the notify tool wired in, its event stream read as it goes.
+- **`src/claude.ts`** — one wake: `claude --print` in the repo with the notify
+  tool wired in, its event stream read as it goes.
 - **`src/notify.ts`** — the tool the agent reaches you with. A small MCP server
   over stdio, exposing `tell_user` and `ask_user`.
 - **`src/telegram.ts`** — the Bot API over `fetch`, long polling for your replies.
-- **`src/notes.ts`** — the notes server reached directly, once, only to check it
-  is there before the loop commits to it.
 - **`src/state.ts`** — everything remembered between wakes, in `<repo>/.looper`.
 - **`src/config.ts`** — the two env files, and asking for what's missing.
 

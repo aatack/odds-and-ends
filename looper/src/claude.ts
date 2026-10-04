@@ -1,5 +1,5 @@
-// One wake: `claude -p` run once in the repo, with the notes server and Looper's
-// own notify tool wired in, and its stream of events read as it goes.
+// One wake: `claude -p` run once in the repo, with Looper's notify tool wired
+// in, and its stream of events read as it goes.
 //
 // The stream (`--output-format stream-json`) is kept for two reasons: every line
 // is written to `.looper/runs/`, which is the only record of what the agent
@@ -201,15 +201,13 @@ function readOverload(text: string): { status: number | null; transient: boolean
   return { status: status ? Number(status[1]) : null, transient: true };
 }
 
-/** The MCP servers the agent gets, and nothing else: `--strict-mcp-config` drops the rest. */
+/**
+ * The MCP servers the agent gets, and nothing else: `--strict-mcp-config` drops
+ * the rest. Its notes are files in the repo, so the notify tool is all it needs.
+ */
 function mcpConfig(config: Config, stateDir: string, looperDir: string): string {
   return JSON.stringify({
     mcpServers: {
-      notes: {
-        type: "http",
-        url: config.notes.url,
-        headers: { Authorization: `Bearer ${config.notes.token}` },
-      },
       looper: {
         type: "stdio",
         command: process.execPath,
@@ -257,11 +255,11 @@ export function buildArgs(options: RunOptions): { args: string[]; sessionId: str
     "--mcp-config",
     mcpConfig(config, options.stateDir, options.looperDir),
     "--strict-mcp-config",
-    // The two servers are allowed wholesale: an autonomous agent that has to ask
-    // for permission to read its own task cannot get started, and the classifier
-    // named by --permission-mode still governs everything else.
+    // The notify server is allowed wholesale: an agent that has to ask permission
+    // to reach you cannot ask you anything, and the classifier named by
+    // --permission-mode still governs everything else.
     "--allowedTools",
-    "mcp__notes mcp__looper",
+    "mcp__looper",
   ];
   if (config.effort) args.push("--effort", config.effort);
   if (config.fallbackModel) args.push("--fallback-model", config.fallbackModel);
