@@ -60,22 +60,30 @@ To run it from anywhere, either `npm link` in this directory (which gives you a
 
 ### Which Claude account it uses
 
-By default, whichever account `claude` is logged into. To give a repo its own
-account — a personal subscription for background work, kept apart from the one you
-use for everything else — point it at its own config directory:
+The first run in a repo shows which account `claude` is logged into on this
+computer and asks whether the wakes should use it. Say no and it sets up another
+one for you — a personal subscription for background work, say, kept apart from
+the one you use for everything else. It asks for:
 
-```bash
-mkdir -p ~/.config/claude-looper
-CLAUDE_CONFIG_DIR=~/.config/claude-looper claude auth login   # once, interactively
-echo 'LOOPER_CLAUDE_CONFIG_DIR=~/.config/claude-looper' >> .looper/env
-```
+- the account's email address, to fill in on the login page (or leave it blank
+  and choose in the browser);
+- a short name for it, which becomes its directory,
+  `~/.config/looper/claude/<name>`;
+- whether its usage is paid by a Claude subscription or by Anthropic Console API
+  credit.
+
+Then it runs `claude auth login` in that directory — a browser window opens — and
+writes `LOOPER_CLAUDE_CONFIG_DIR=<that directory>` into the repo's `.looper/env`.
+An account set up once can be picked again by name for another repo, without
+logging in again. Saying yes writes `LOOPER_CLAUDE_ACCOUNT=default` instead, so the
+question is not asked again.
 
 `CLAUDE_CONFIG_DIR` moves the whole of Claude Code's configuration — credentials,
 settings and saved sessions — so one directory is one account, and the setting
 lives in `.looper/env`, which makes it a property of the repo. Looper checks the
 account before the loop starts and logs who it is running as; if that account
-isn't logged in it says so, with the command to fix it, rather than failing every
-wake.
+has been logged out, it offers to log it in again there and then (or, without a
+terminal, says how to), rather than failing every wake.
 
 ### Trying it out
 
@@ -100,6 +108,8 @@ looper --help      # every setting, with its default
 - **`src/telegram.ts`** — the Bot API over `fetch`, long polling for your replies.
 - **`src/state.ts`** — everything remembered between wakes, in `<repo>/.looper`.
 - **`src/config.ts`** — the two env files, and asking for what's missing.
+- **`src/account.ts`** — which Claude account the wakes use, and logging in a
+  different one when asked.
 
 ### The timings
 

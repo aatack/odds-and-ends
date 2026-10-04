@@ -16,7 +16,7 @@ import type { Config } from "./config.ts";
  * account is chosen: credentials, settings and sessions all live in that
  * directory, so pointing a repo at its own is what makes it that repo's account.
  */
-export function claudeEnv(config: Config): NodeJS.ProcessEnv {
+export function claudeEnv(config: Pick<Config, "claudeConfigDir">): NodeJS.ProcessEnv {
   return config.claudeConfigDir
     ? { ...process.env, CLAUDE_CONFIG_DIR: config.claudeConfigDir }
     : process.env;
@@ -34,7 +34,7 @@ export interface Account {
  * starts: an account that isn't logged in fails every wake identically, and it is
  * far better to say so on the terminal than to discover it an hour later.
  */
-export function whoseAccount(config: Config): Account {
+export function whoseAccount(config: Pick<Config, "claudeConfigDir">): Account {
   // `claude auth status --json` exits 1 when nobody is logged in, but still prints
   // the JSON that says so — so the output is what matters here and the exit code
   // is not. Only output that isn't JSON at all counts as a real failure.

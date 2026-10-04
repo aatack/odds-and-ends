@@ -51,6 +51,11 @@ export interface Config {
    */
   claudeConfigDir: string | null;
   /**
+   * Set once you have said this repo should use the computer's own account, so
+   * the question of which account to use is not asked again.
+   */
+  defaultAccountChosen: boolean;
+  /**
    * The note that defines the task, as a path relative to the repo. The repo is
    * the agent's Obsidian vault, so this is an ordinary markdown file in it.
    */
@@ -102,7 +107,7 @@ function readEnv(path: string): Record<string, string> {
  * appending the rest. Rewriting rather than regenerating keeps the comments and
  * ordering a person put there by hand.
  */
-function upsertEnv(path: string, values: Record<string, string>): void {
+export function upsertEnv(path: string, values: Record<string, string>): void {
   mkdirSync(dirname(path), { recursive: true });
   const lines = existsSync(path) ? readFileSync(path, "utf8").split("\n") : [];
   const remaining = { ...values };
@@ -180,7 +185,7 @@ export function formatDuration(ms: number): string {
  * token doesn't sit in the scrollback; it needs a TTY, and falls back to a plain
  * visible read when there isn't one.
  */
-async function ask(question: string, opts: { hidden?: boolean } = {}): Promise<string> {
+export async function ask(question: string, opts: { hidden?: boolean } = {}): Promise<string> {
   if (opts.hidden && process.stdin.isTTY) return askHidden(question);
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
@@ -387,6 +392,7 @@ export async function loadConfig(opts: LoadOptions): Promise<Config> {
     claudeConfigDir: values.LOOPER_CLAUDE_CONFIG_DIR
       ? expandPath(values.LOOPER_CLAUDE_CONFIG_DIR)
       : null,
+    defaultAccountChosen: values.LOOPER_CLAUDE_ACCOUNT === "default",
     task,
     notesDir,
     // `opus` is the alias for the latest Opus, which is what a long-running
