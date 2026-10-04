@@ -10,23 +10,32 @@
 import { execFileSync } from "node:child_process";
 import type { Config } from "./config.ts";
 import type { Incoming } from "./telegram.ts";
-import type { StateData } from "./state.ts";
+import type { Exchange, StateData } from "./state.ts";
 
 /** How much of the last wake's closing words to carry over. */
 const handoffLimit = 3000;
+
+/**
+ * How much of each of the agent's own Telegram messages to show it again. Its
+ * side is there so that your replies make sense, and the gist does that; yours
+ * are always shown whole.
+ */
+const ownMessageLimit = 1500;
 
 export interface PromptInput {
   config: Config;
   state: StateData;
   /** Your messages since the agent last ran. */
   messages: Incoming[];
+  /** Everything said on Telegram before now, both ways, oldest first. */
+  conversation: Exchange[];
 }
 
-export function buildPrompt({ config, state, messages }: PromptInput): string {
+export function buildPrompt({ config, state, messages, conversation }: PromptInput): string {
   const wake = state.runs + 1;
   const sections = [
     standing(config),
-    situation(config, state, messages, wake),
+    situation(config, state, messages, conversation, wake),
     working(config),
   ];
   return sections.join("\n\n");
@@ -60,6 +69,7 @@ function situation(
   config: Config,
   state: StateData,
   messages: Incoming[],
+  conversation: Exchange[],
   wake: number
 ): string {
   const parts: string[] = [`## This wake (number ${wake})`];
@@ -91,15 +101,20 @@ If there are no notes yet, they are yours to lay out.`
     }
   }
 
-  if (messages.length) {
-    const rendered = messages
-      .map((message) => `[${new Date(message.at).toISOString()}] ${message.text}`)
-      .join("\n");
+  const talk = describeConversation(conversation, messages);
+  if (talk) {
     parts.push(
-      `The user has sent you this since — it is the most important thing in this
-prompt, and takes priority over whatever you had planned:\n\n${indent(rendered)}`
+      messages.length
+        ? `Everything said between you and the user on Telegram, oldest first. The
+messages marked NEW arrived since your last wake: they are the most important
+thing in this prompt, and take priority over whatever you had planned. The older
+ones still stand unless the user has since said otherwise.\n\n${indent(talk)}`
+        : `Everything said between you and the user on Telegram, oldest first. Nothing
+new has arrived since your last wake, but what is here still stands unless the
+user has since said otherwise.\n\n${indent(talk)}`
     );
-  } else if (state.awaitingReply) {
+  }
+  if (!messages.length && state.awaitingReply) {
     parts.push(
       `You asked the user something and they have not answered yet — they may simply be
 asleep, and the answer may still arrive. Get on with something that does not
@@ -188,6 +203,34 @@ function indent(text: string): string {
 function tail(text: string, limit: number): string {
   const trimmed = text.trim();
   return trimmed.length <= limit ? trimmed : `[...] ${trimmed.slice(-limit)}`;
+}
+
+/**
+ * The whole Telegram conversation as lines to read, with the user's new messages
+ * marked. A new message that is not in the logs yet — one handed back after a
+ * wake that never read it is, but a hand-edited state might not be — is added
+ * rather than lost.
+ */
+function describeConversation(conversation: Exchange[], messages: Incoming[]): string {
+  const key = (said: { at: number; text: string }) => `${said.at} ${said.text}`;
+  const fresh = new Set(messages.map(key));
+  const known = new Set(conversation.filter((said) => said.from === "user").map(key));
+  const all = [...conversation];
+  for (const message of messages) {
+    if (!known.has(key(message))) all.push({ at: message.at, from: "user", text: message.text });
+  }
+  all.sort((a, b) => a.at - b.at);
+  return all
+    .map((exchange) => {
+      const when = new Date(exchange.at).toISOString().slice(0, 16).replace("T", " ");
+      if (exchange.from === "agent") {
+        const how = exchange.kind === "ask" ? "you asked" : "you said";
+        return `[${when}] ${how}: ${tail(exchange.text, ownMessageLimit).replace(/\n/g, "\n    ")}`;
+      }
+      const mark = fresh.has(key(exchange)) ? "NEW " : "";
+      return `[${when}] ${mark}user: ${exchange.text.replace(/\n/g, "\n    ")}`;
+    })
+    .join("\n");
 }
 
 function describeGap(from: number): string {

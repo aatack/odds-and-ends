@@ -163,7 +163,12 @@ async function main(): Promise<void> {
   const telegram = new Telegram(config.telegram.token, config.telegram.chatId);
 
   if (args.dryRun) {
-    const prompt = buildPrompt({ config, state: state.data, messages: state.data.pending });
+    const prompt = buildPrompt({
+      config,
+      state: state.data,
+      messages: state.data.pending,
+      conversation: state.conversation(),
+    });
     const { args: claudeArgs } = buildArgs({
       config,
       prompt,

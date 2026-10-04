@@ -164,6 +164,28 @@ export class State {
     this.save();
   }
 
+  /**
+   * Everything said on Telegram in this directory, both ways, oldest first. The
+   * logs are the record rather than the state, because the state only holds what
+   * the agent has not seen yet; a reply like "yes, do that" means nothing without
+   * the question before it, so the agent is shown the lot.
+   */
+  conversation(): Exchange[] {
+    const said = new Map<number, Exchange>();
+    for (const message of readLines<Incoming>(join(this.dir, "inbox.jsonl"))) {
+      said.set(message.updateId, { at: message.at, from: "user", text: message.text });
+    }
+    const sent = readLines<Sent>(join(this.dir, "sent.jsonl")).map(
+      (message): Exchange => ({
+        at: Date.parse(message.at),
+        from: "agent",
+        kind: message.kind,
+        text: message.text,
+      })
+    );
+    return [...said.values(), ...sent].sort((a, b) => a.at - b.at);
+  }
+
   /** Hand the pending messages to a wake, clearing them and the question flag. */
   takePending(): Incoming[] {
     const pending = this.data.pending;
@@ -172,4 +194,29 @@ export class State {
     this.save();
     return pending;
   }
+}
+
+/** One message on Telegram, from either side, as the prompt shows it. */
+export interface Exchange {
+  /** When it was sent, in milliseconds. */
+  at: number;
+  from: "user" | "agent";
+  /** For the agent's messages: whether it was telling or asking. */
+  kind?: "tell" | "ask";
+  text: string;
+}
+
+/** A JSON-lines log, skipping anything half-written. Missing is empty. */
+function readLines<T>(path: string): T[] {
+  if (!existsSync(path)) return [];
+  const values: T[] = [];
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      values.push(JSON.parse(line) as T);
+    } catch {
+      /* a line cut off by a kill; the rest are still worth having */
+    }
+  }
+  return values;
 }

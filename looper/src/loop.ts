@@ -68,7 +68,12 @@ export class Loop {
 
     while (!this.stopping) {
       const messages = state.takePending();
-      const prompt = buildPrompt({ config, state: state.data, messages });
+      const prompt = buildPrompt({
+        config,
+        state: state.data,
+        messages,
+        conversation: state.conversation(),
+      });
       const run = state.data.runs + 1;
       const resume = config.sessionMode === "resume" ? (state.data.lastRun?.sessionId ?? null) : null;
 

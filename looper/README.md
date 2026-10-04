@@ -11,7 +11,9 @@ so you can open the repo in Obsidian and read along.
 
 It messages you on Telegram when it has something worth saying or something it
 genuinely can't get past, and whatever you reply is in the prompt at its next
-wake. Most of the time it says nothing.
+wake. Every wake is shown the whole conversation — everything you have sent, and
+what it said to you — with your new messages marked, so a reply never loses the
+question it answers. Most of the time it says nothing.
 
 Nothing to install: it is TypeScript with no runtime dependencies, and Node runs
 it directly.
@@ -90,7 +92,7 @@ looper --help      # every setting, with its default
   how long to leave it, go again. All the interesting behaviour is in that
   decision, and it is the file to read first.
 - **`src/prompt.ts`** — what the agent is told: the standing brief, plus what
-  happened last wake, what you have said since, and where the repo stands.
+  happened last wake, the whole Telegram conversation, and where the repo stands.
 - **`src/claude.ts`** — one wake: `claude --print` in the repo with the notify
   tool wired in, its event stream read as it goes.
 - **`src/notify.ts`** — the tool the agent reaches you with. A small MCP server
