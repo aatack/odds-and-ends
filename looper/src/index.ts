@@ -49,7 +49,7 @@ Settings (all optional):
                          asks which account to use, and sets this up and logs
                          it in for you when it is not this computer's own
   LOOPER_CLAUDE_ACCOUNT  default, once you have said to use this computer's own
-  LOOPER_MODEL           default opus
+  LOOPER_MODEL           default claude-opus-5-5 (Opus 5.5)
   LOOPER_EFFORT          low | medium | high | xhigh | max
   LOOPER_FALLBACK_MODEL  a model to fall back to when the first is overloaded
   LOOPER_PERMISSION_MODE default auto

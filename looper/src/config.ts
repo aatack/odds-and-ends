@@ -425,11 +425,14 @@ export async function loadConfig(opts: LoadOptions): Promise<Config> {
     defaultAccountChosen: values.LOOPER_CLAUDE_ACCOUNT === "default",
     task,
     notesDir,
-    // `opus` is the alias for the latest Opus, which is what a long-running
-    // background task wants; pin LOOPER_MODEL to a full name to be specific.
-    model: values.LOOPER_MODEL ?? "opus",
+    // Pinned to a full name rather than the `opus` alias, so a new release does
+    // not change the model under a task part way through; LOOPER_MODEL moves it.
+    model: values.LOOPER_MODEL ?? "claude-opus-5-5",
     effort: values.LOOPER_EFFORT ?? null,
     fallbackModel: values.LOOPER_FALLBACK_MODEL ?? null,
+    // Auto mode: a classifier approves or refuses each action, so an agent with
+    // nobody watching can work without permission prompts, and without the
+    // blanket approval of --dangerously-skip-permissions.
     permissionMode: values.LOOPER_PERMISSION_MODE ?? "auto",
     sessionMode,
     tidyEvery,
