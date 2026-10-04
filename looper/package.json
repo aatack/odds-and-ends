@@ -4,7 +4,7 @@
   "description": "Keeps a Claude agent looping on one long-running task in the background, pinging you on Telegram when it needs you.",
   "type": "module",
   "bin": {
-    "looper": "bin/looper"
+    "looper": "bin/looper.js"
   },
   "scripts": {
     "start": "node src/index.ts",

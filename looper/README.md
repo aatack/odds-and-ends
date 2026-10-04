@@ -65,8 +65,17 @@ A wake is run with `--strict-mcp-config`, so it gets Looper's own notify tool an
 nothing else: whatever MCP servers the Claude account has configured are
 deliberately not there. Its notes are files, so it needs no server for them.
 
-To run it from anywhere, either `npm link` in this directory (which gives you a
-`looper` command) or call it by path: `node /path/to/looper/src/index.ts`.
+To run it from anywhere, run `npm link` once in this directory. That puts a
+`looper` command on your PATH — on Windows too, in PowerShell, cmd and Git Bash —
+which links back to this checkout, so a `git pull` takes effect with nothing to
+reinstall; `npm unlink -g looper` takes it away. Link it rather than installing a
+copy: Node will not run TypeScript from inside `node_modules`, and a link is
+followed back to the real files. Or call it by path:
+`node /path/to/looper/src/index.ts`.
+
+On Windows, do the first run of a directory in PowerShell or Windows Terminal
+rather than Git Bash's own window: there Node does not see a terminal, so the
+questions about the task and the account are skipped.
 
 ### Which Claude account it uses
 
