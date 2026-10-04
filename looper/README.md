@@ -9,6 +9,10 @@ The repo doubles as an [Obsidian](https://obsidian.md/) vault: the task and the
 agent's notes are markdown files beside the work, linked with `[[wikilinks]]`,
 so you can open the repo in Obsidian and read along.
 
+Everything the agent is told is written in
+[ASD-STE100 Simplified Technical English](https://www.asd-ste100.org/), and it is
+told to write its notes, commits and messages to you the same way.
+
 It messages you on Telegram when it has something worth saying or something it
 genuinely can't get past, and whatever you reply is in the prompt at its next
 wake. Every wake is shown the whole conversation — everything you have sent, and

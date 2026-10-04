@@ -156,7 +156,7 @@ Build the parser.
   assert.equal(run.status, 0, run.stderr);
 
   const prompt = readFileSync(join(dir, "prompt.txt"), "utf8");
-  assert.match(prompt, /The task is TASK.md/);
+  assert.match(prompt, /The task is in TASK.md/);
   assert.match(prompt, /This is the first wake/);
 
   const args = readFileSync(join(dir, "args.txt"), "utf8");

@@ -37,15 +37,19 @@ const tools = [
   {
     name: "tell_user",
     description:
-      "Send the user a Telegram message: something worth knowing, a result they " +
-      "asked for, or a decision you have taken that they would want to hear " +
-      "about. They may not reply, and you should not wait for one. Use this " +
-      "sparingly — a few times a day, not every wake. Files inside the working " +
-      "repo can be attached; images arrive inline.",
+      "Send a Telegram message to the user. Use this tool to give the user data " +
+      "that they want to know. Examples are a result that they asked for, or a " +
+      "decision that changes the work. Possibly the user does not reply. Do not " +
+      "wait for a reply. Do not use this tool frequently. Use it a maximum of a " +
+      "few times each day, not in each wake. You can attach files from the " +
+      "working repository. Images show in the message.",
     inputSchema: {
       type: "object",
       properties: {
-        message: { type: "string", description: "The message, as plain text." },
+        message: {
+          type: "string",
+          description: "The message, as plain text, in ASD-STE100 Simplified Technical English.",
+        },
         files: {
           type: "array",
           items: { type: "string" },
@@ -59,15 +63,20 @@ const tools = [
   {
     name: "ask_user",
     description:
-      "Ask the user something you genuinely cannot proceed without: a decision " +
-      "only they can make, a missing credential, a judgement call on direction. " +
-      "The question is sent to Telegram and their answer reaches you at your next " +
-      "wake, so end your turn after asking — write down where you got to first. " +
-      "Do not use this for permission to continue: you are trusted to decide.",
+      "Ask the user a question. Use this tool only when you cannot continue " +
+      "without the answer. Examples are a decision that only the user can make, " +
+      "a credential that you do not have, or a decision about the direction of " +
+      "the work. Looper sends the question to Telegram. The answer comes to you " +
+      "in your next wake. After you ask, write in the notes where you stopped. " +
+      "Then stop. Do not use this tool to ask for permission to continue. You " +
+      "make the decisions.",
     inputSchema: {
       type: "object",
       properties: {
-        question: { type: "string", description: "The question, as plain text." },
+        question: {
+          type: "string",
+          description: "The question, as plain text, in ASD-STE100 Simplified Technical English.",
+        },
         files: {
           type: "array",
           items: { type: "string" },
@@ -89,12 +98,14 @@ function resolveAttachment(path: string): string {
   const absolute = isAbsolute(path) ? resolve(path) : resolve(repo!, path);
   const within = relative(repo!, absolute);
   if (within.startsWith("..") || isAbsolute(within)) {
-    throw new Error(`${path} is outside the working repo; only files inside it can be sent.`);
+    throw new Error(
+      `${path} is outside the working repository. You can send only files in the repository.`
+    );
   }
   if (!existsSync(absolute)) throw new Error(`${path} does not exist.`);
   const size = statSync(absolute).size;
   if (size > maxFileBytes) {
-    throw new Error(`${path} is ${Math.round(size / 1e6)}MB, too big for Telegram.`);
+    throw new Error(`${path} is ${Math.round(size / 1e6)} MB. This is too large for Telegram.`);
   }
   return absolute;
 }
@@ -108,9 +119,9 @@ async function deliver(kind: "tell" | "ask", text: string, files: string[]): Pro
     JSON.stringify({ at: new Date().toISOString(), kind, text, files: attachments }) + "\n"
   );
   return kind === "ask"
-    ? "Question sent. The answer will be in the prompt at your next wake — write down " +
-        "where you got to and end your turn now."
-    : `Message sent${attachments.length ? ` with ${attachments.length} attachment(s)` : ""}.`;
+    ? "Looper sent the question. The answer will be in the prompt of your next wake. " +
+        "Write in the notes where you stopped. Then stop now."
+    : `Looper sent the message${attachments.length ? ` with ${attachments.length} attachment(s)` : ""}.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -164,21 +175,21 @@ async function handle(request: Request): Promise<void> {
     try {
       if (name === "tell_user") {
         const message = String(args.message ?? "").trim();
-        if (!message) throw new Error("message is required.");
+        if (!message) throw new Error("The message is empty. Write a message.");
         respond(id, text(await deliver("tell", message, files)));
         return;
       }
       if (name === "ask_user") {
         const question = String(args.question ?? "").trim();
-        if (!question) throw new Error("question is required.");
+        if (!question) throw new Error("The question is empty. Write a question.");
         respond(id, text(await deliver("ask", question, files)));
         return;
       }
-      fail(id, -32602, `Unknown tool: ${String(name)}`);
+      fail(id, -32602, `There is no tool with the name ${String(name)}.`);
     } catch (error) {
       // Reported as a tool result rather than a protocol error, so the agent sees
       // what went wrong and can fix its own call.
-      respond(id, { ...text(`Failed: ${(error as Error).message}`), isError: true });
+      respond(id, { ...text(`Error: ${(error as Error).message}`), isError: true });
     }
     return;
   }
