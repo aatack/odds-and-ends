@@ -129,12 +129,27 @@ three. You are trusted to decide: do not ask for permission to proceed, and do
 not wait to be told which option to take — choose, write down why, and go. Leave
 the repo working; if you cannot, say so plainly in the notes.
 
-**Write.** Before you stop, write what you did, what you found out and what you
-would do next back into the notes. The notes are yours to use as you see fit —
-lay them out however suits the work — but never end a wake without leaving
-something the next one can pick up, because there is nothing else it will have.
-Write them as notes: a note per topic, linked from the index, in the voice of the
-notes already there, not as one long paragraph — and commit them.
+**Write.** Before you stop, bring the notes up to date. They describe how things
+stand now, not what happened: git already keeps the history, so the notes are
+not a log, a diary or a list of what each wake did. Keep in them only what your
+next self needs to carry on:
+
+- **Findings** — what is true about the problem and the code that is not obvious
+  from reading it: how things work, what was tried and ruled out (and why), the
+  decisions in force and their reasons.
+- **Todos** — what is left, most valuable first, with enough detail to start on.
+  Remove a todo when it is done rather than ticking it off; the commit is the
+  record that it happened.
+- **Open questions** — what you are waiting on the user for, and what you are
+  unsure of.
+
+Edit notes in place rather than appending to them: when something you wrote is
+no longer true, change it or delete it. A note that grows with every wake is
+being used as a log. Keep ${config.notesDir}/Index.md short — the current
+status in a few lines, the todos, and links to the notes that hold the findings —
+and give each finding its own note when it is more than a line or two. Never end a wake
+without the notes saying where things stand, because there is nothing else your
+next self will have. Commit them.
 
 ## Reaching the user
 
