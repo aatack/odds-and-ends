@@ -9,7 +9,7 @@ waits a bit and wakes it again.
 The folder doubles as an [Obsidian](https://obsidian.md/) vault: the task and the
 agent's notes are markdown files beside the work, linked with `[[wikilinks]]`, so
 you can open it in Obsidian and read along. The notes say where things stand —
-findings, todos, open questions — rather than logging what each wake did; git is
+findings, open tasks, open questions — rather than logging what each wake did; git is
 the log.
 
 It messages you on Telegram when it has something worth saying or something it
@@ -68,7 +68,10 @@ Write the task in `TASK.md` in the folder Looper will run in, with whatever deta
 you have — or let the first run ask you for a line and write it for you. The agent
 reads it at every wake and leaves it as you wrote it; its own notes go in
 `notes/`, starting from `notes/Index.md`. `LOOPER_TASK` and `LOOPER_NOTES_DIR`
-move either.
+move either. The open work lives in `notes/Tasks.md`: each wake reads it first,
+and before stopping writes down every task still open with what it is, how far it
+got, the next step and the files and decisions involved — enough for a session
+with no memory of the last one to carry on.
 
 ### 4. Run it
 
@@ -252,11 +255,12 @@ Set `LOOPER_SESSION_MODE=fresh` to start every wake from nothing but the notes.
 ### Tidying the notes
 
 Every wake is told to keep the notes to where things stand, but notes edited in a
-hurry from inside one session drift towards a log regardless. So every 20 wakes
+hurry from inside one session drift towards a log regardless. So every 5 wakes
 (`LOOPER_TIDY_EVERY`; 0 turns it off) one wake is spent in a new session, doing no
 work on the task, only reading the notes cold and putting them back in order:
-stale findings and finished todos deleted, duplicates merged, links fixed, the
-index kept short. A tidy-up never takes the place of a wake you have just
+stale findings and finished tasks deleted, every open task in `Tasks.md` with
+the context to start it cold, duplicates merged, links fixed, the index kept
+short. A tidy-up never takes the place of a wake you have just
 messaged; it waits for the next quiet one. The wakes after it resume its session,
 so they start from one that has just read everything afresh.
 

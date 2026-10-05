@@ -53,7 +53,8 @@ session.
 ${where(config)} Do not push to a remote. Do not publish anything.
 
 The directory is an Obsidian vault. The task is in ${config.task}. The user wrote
-it. Do not change it. Your notes are in ${config.notesDir}/. Start from
+it. Do not change it. Your notes are in ${config.notesDir}/. At the start of
+each session, read ${tasksNote(config)} first. Then read
 ${config.notesDir}/Index.md. Use [[wikilinks]] to link the notes. Do not change
 the .obsidian/ directory.
 
@@ -147,9 +148,11 @@ ${config.notesDir}/ in order. Read them as a new reader.
 
 1. Read the task, all the notes, and sufficient parts of the repository and its
    git log.
-2. Remove data that is not true now. Remove history. Remove todos that are
+2. Remove data that is not true now. Remove history. Remove tasks that are
    complete.
-3. Put the todos in order, with the most valuable todo first.
+3. Make sure that ${tasksNote(config)} contains all the open tasks and no
+   others. Put them in order, with the most valuable task first. Make sure that
+   each task has sufficient context for a new session to start it.
 4. Merge notes that contain the same data. Repair broken [[wikilinks]].
 5. Make sure that ${config.notesDir}/Index.md is short and has a link to each
    note.
@@ -162,17 +165,27 @@ ${config.notesDir}/ in order. Read them as a new reader.
 function working(config: Config): string {
   return `## How to work
 
-Read the task and your notes. Select the most valuable next item. Do it fully.
-Make sure that it operates correctly. Commit it with a clear message. You make
-the decisions. Do not ask for permission to continue.
+Read ${tasksNote(config)}, the task and your notes. Select the most valuable
+next item. Do it fully. Make sure that it operates correctly. Commit it with a
+clear message. You make the decisions. Do not ask for permission to continue.
 
-Before you stop, update the notes. They show the current condition of the work,
-not its history. Git keeps the history. Keep only:
+Before you stop, update ${tasksNote(config)}. It contains all the open tasks,
+with the most valuable task first. Remove a task when it is complete. For each
+task, write the context that a new session needs to continue it:
+
+- What the task is, and why it is necessary.
+- What is done, and where you stopped.
+- The next step.
+- The related files, notes, commits and decisions.
+
+A new session can start with no memory of this session. Then it knows only
+what the notes contain.
+
+Also update the other notes. They show the current condition of the work, not
+its history. Git keeps the history. Keep only:
 
 - Findings: facts that are not clear from the code, and decisions with their
   reasons.
-- Todos: the work that is not complete, with the most valuable item first.
-  Remove a todo when it is complete.
 - Open questions.
 
 Change a note where it is. Remove data that is not true now. Keep
@@ -181,8 +194,8 @@ notes.
 
 To speak to the user, use \`mcp__looper__tell_user\` for news that they want to
 know. Use \`mcp__looper__ask_user\` for a question that stops your work. Use these
-tools rarely. After you ask a question, write in the notes where you stopped.
-Then stop. The answer comes in a later prompt.
+tools rarely. After you ask a question, write in ${tasksNote(config)} where you
+stopped. Then stop. The answer comes in a later prompt.
 
 Stop when you complete the item. Also stop when a problem stops your work and
 the notes show why.`;
@@ -190,6 +203,15 @@ the notes show why.`;
 
 // ---------------------------------------------------------------------------
 // small helpers
+
+/**
+ * The note of open tasks, each with enough context to pick it up cold. Most
+ * wakes resume the last session, but a tidy-up starts a new one, and this is
+ * what that session, and every one after it, starts from.
+ */
+function tasksNote(config: Config): string {
+  return `${config.notesDir}/Tasks.md`;
+}
 
 function indent(text: string): string {
   return text

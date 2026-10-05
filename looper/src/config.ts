@@ -475,7 +475,7 @@ export async function loadConfig(opts: LoadOptions): Promise<Config> {
     throw new Error(`LOOPER_SESSION_MODE must be "fresh" or "resume", not ${sessionMode}.`);
   }
 
-  const tidyEvery = Number(values.LOOPER_TIDY_EVERY ?? "20");
+  const tidyEvery = Number(values.LOOPER_TIDY_EVERY ?? "5");
   if (!Number.isInteger(tidyEvery) || tidyEvery < 0) {
     throw new Error(`LOOPER_TIDY_EVERY must be a whole number of wakes, not ${values.LOOPER_TIDY_EVERY}.`);
   }
