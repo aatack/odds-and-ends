@@ -115,6 +115,10 @@ export class Session {
     this.update(S.setDraft(this.state, text))
   }
 
+  hasDraft(): boolean {
+    return Boolean(this.state.drafts[S.focused(this.state)]?.trim())
+  }
+
   async send(): Promise<void> {
     const id = S.focused(this.state)
     const text = this.state.drafts[id] ?? ''
