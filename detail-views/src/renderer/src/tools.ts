@@ -18,7 +18,12 @@ const hasChildren = (session: Session) => (session.get().focus?.children.length 
 const focusType = (session: Session) => session.get().focus?.entity?.type
 
 export const tools: Tool[] = [
-  { id: 'composer.send', scope: 'input', keys: ['Enter'], run: (s) => void s.send() },
+  {
+    id: 'composer.send',
+    scope: 'input',
+    keys: ['Enter'],
+    run: (s) => (s.hasDraft() ? void s.send() : s.compose(false)),
+  },
   { id: 'composer.leave', scope: 'input', keys: ['Escape'], run: (s) => s.compose(false) },
 
   { id: 'cursor.down', scope: 'list', keys: ['s', 'ArrowDown'], run: (s) => s.move(1) },
@@ -27,7 +32,7 @@ export const tools: Tool[] = [
   { id: 'cursor.bottom', scope: 'list', keys: ['G', 'End'], run: (s) => s.move(Infinity) },
   { id: 'cursor.pageDown', scope: 'list', keys: ['PageDown', 'Ctrl+d'], run: (s) => s.move(15) },
   { id: 'cursor.pageUp', scope: 'list', keys: ['PageUp', 'Ctrl+u'], run: (s) => s.move(-15) },
-  { id: 'focus.open', scope: 'list', keys: ['d', 'Enter', 'ArrowRight'], enabled: hasChildren, run: (s) => s.open() },
+  { id: 'focus.open', scope: 'list', keys: ['d', 'ArrowRight'], enabled: hasChildren, run: (s) => s.open() },
   {
     id: 'task.toggle',
     scope: 'list',
@@ -49,7 +54,7 @@ export const tools: Tool[] = [
   {
     id: 'composer.enter',
     scope: 'app',
-    keys: ['c', 'i', '/'],
+    keys: ['Enter'],
     enabled: (s) => Boolean(s.get().focus?.compose),
     run: (s) => s.compose(true),
   },

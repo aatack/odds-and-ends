@@ -16,13 +16,15 @@ export function Tasks(props: FocusProps) {
         ))}
       </div>
       <Status error={focus.error} />
-      <Composer
-        kind="task"
+      {props.composing && (
+        <Composer
+          kind="task"
         draft={props.draft}
         composing={props.composing}
         onDraft={props.onDraft}
-        onCompose={props.onCompose}
-      />
+          onCompose={props.onCompose}
+        />
+      )}
     </div>
   )
 }

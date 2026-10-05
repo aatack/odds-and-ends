@@ -11,7 +11,7 @@
   --danger: light-dark(#c2410c, #f0864f);
   --radius: 6px;
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  font-size: 14px;
+  font-size: 15.5px;
   line-height: 1.45;
 }
 
@@ -130,7 +130,7 @@ body,
 }
 
 .count {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
@@ -166,7 +166,7 @@ body,
 }
 
 .time {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 
@@ -177,7 +177,7 @@ body,
 }
 
 .replies {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--accent);
 }
 
@@ -199,7 +199,7 @@ body,
 }
 
 .status {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--danger);
   padding: 0 10px;
 }
@@ -224,7 +224,7 @@ body,
   margin: 0;
   padding: 0 10px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .list > .body {
