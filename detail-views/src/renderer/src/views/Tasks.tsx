@@ -38,7 +38,7 @@ const TaskRow = memo(function TaskRow(props: {
   const { data } = props.entity
   if (props.entity.type !== 'task') return <GenericRow {...props} />
   return (
-    <Row id={props.entity.id} selected={props.selected} className={data.done ? 'done' : ''} onSelect={props.onSelect} onOpen={props.onOpen}>
+    <Row id={props.entity.id} selected={props.selected} className={data.done ? 'done' : ''} onSelect={props.onSelect}>
       <span className="check">{data.done ? '✓' : '○'}</span>
       <span className="grow">{String(data.text)}</span>
     </Row>
@@ -54,7 +54,7 @@ export const GenericRow = memo(function GenericRow(props: {
   const { data } = props.entity
   const label = data.title ?? data.text ?? data.name ?? props.entity.id
   return (
-    <Row id={props.entity.id} selected={props.selected} onSelect={props.onSelect} onOpen={props.onOpen}>
+    <Row id={props.entity.id} selected={props.selected} onSelect={props.onSelect}>
       <span className="grow">{String(label)}</span>
     </Row>
   )

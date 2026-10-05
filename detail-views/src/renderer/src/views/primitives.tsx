@@ -7,7 +7,6 @@ export const Row = memo(function Row(props: {
   selected: boolean
   className?: string
   onSelect(id: string): void
-  onOpen?(id: string): void
   children: ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -19,7 +18,6 @@ export const Row = memo(function Row(props: {
       ref={ref}
       className={`row${props.selected ? ' selected' : ''}${props.className ? ` ${props.className}` : ''}`}
       onMouseDown={() => props.onSelect(props.id)}
-      onDoubleClick={() => props.onOpen?.(props.id)}
     >
       {props.children}
     </div>
