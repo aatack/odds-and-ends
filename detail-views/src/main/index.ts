@@ -12,7 +12,7 @@ function createWindow(): BrowserWindow {
     minWidth: 640,
     minHeight: 420,
     show: false,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#111113' : '#fafafa',
+    backgroundColor: '#fafafa',
     title: 'detail-views',
     autoHideMenuBar: true,
     webPreferences: {
@@ -33,6 +33,7 @@ function createWindow(): BrowserWindow {
 }
 
 void app.whenReady().then(() => {
+  nativeTheme.themeSource = 'light'
   const path = process.env.DETAIL_VIEWS_DB ?? join(app.getPath('userData'), 'detail-views.sqlite')
   core = new Core({ path })
   core.start()
