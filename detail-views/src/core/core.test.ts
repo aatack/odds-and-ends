@@ -139,3 +139,21 @@ test('slack: read-only refuses writes before they reach the network', async () =
   assert.ok(!called.includes('conversations.mark'))
   assert.match(core.focus('slack:conv:C1').error ?? '', /read-only/)
 })
+
+test('slack: user mentions are parts that open the DM with that user', () => {
+  const core = new Core({ path: ':memory:' })
+  core.store.put('slack:user:U1', 'slack.user', { name: 'Sam' }, { ttl: 1000 })
+  core.store.put('slack:user:U2', 'slack.user', { name: 'Priya' }, { ttl: 1000 })
+  core.store.put('slack:conv:D1', 'slack.conversation', { channel: 'D1', kind: 'im', user: 'U1' }, { ttl: 1000 })
+  core.store.put('slack:conv:C1', 'slack.conversation', { channel: 'C1', kind: 'channel' }, { ttl: 1000 })
+  core.store.put('slack:msg:C1:1.0', 'slack.message', { channel: 'C1', ts: '1.0', text: 'hi <@U1> and <@U2|priya> &amp; co' }, { ttl: 1000 })
+  core.store.link('slack:conv:C1', 'slack:msg:C1:1.0', { ttl: 1000 })
+  const [message] = core.focus('slack:conv:C1').children
+  assert.deepEqual(message.data.parts, [
+    'hi ',
+    { mention: 'Sam', target: 'slack:conv:D1' },
+    ' and ',
+    { mention: 'Priya', target: null },
+    ' & co',
+  ])
+})

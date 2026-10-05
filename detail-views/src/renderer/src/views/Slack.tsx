@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import type { Entity } from '../../../core/types.ts'
+import type { Entity, TextPart } from '../../../core/types.ts'
 import { shortTime } from '../format.ts'
 import { Composer, Row, Status } from './primitives.tsx'
 import type { FocusProps } from './types.ts'
@@ -83,7 +83,7 @@ export function SlackThread(props: FocusProps) {
   return (
     <div className="pane">
       <div className="list chat">
-        {focus.entity && <MessageBody entity={focus.entity} author={true} replies={false} />}
+        {focus.entity && <MessageBody entity={focus.entity} author={true} replies={false} onOpen={props.onOpen} />}
         <div className="divider" />
         {focus.children.map((child, index) => (
           <MessageRow
@@ -117,12 +117,12 @@ const MessageRow = memo(function MessageRow(props: {
       onSelect={props.onSelect}
       onOpen={props.onOpen}
     >
-      <MessageBody entity={props.entity} author={props.author} />
+      <MessageBody entity={props.entity} author={props.author} onOpen={props.onOpen} />
     </Row>
   )
 })
 
-function MessageBody(props: { entity: Entity; author: boolean; replies?: boolean }) {
+function MessageBody(props: { entity: Entity; author: boolean; replies?: boolean; onOpen(id: string): void }) {
   const data = props.entity.data
   const replies = props.replies === false ? 0 : Number(data.replyCount ?? 0)
   return (
@@ -133,12 +133,36 @@ function MessageBody(props: { entity: Entity; author: boolean; replies?: boolean
           <span className="time">{shortTime(String(data.ts))}</span>
         </div>
       )}
-      <div className="text">{String(data.text)}</div>
+      <div className="text">
+        {((data.parts as TextPart[] | undefined) ?? [String(data.text)]).map((part, index) =>
+          typeof part === 'string' ? (
+            part
+          ) : (
+            <Mention key={index} name={part.mention} target={part.target} onOpen={props.onOpen} />
+          ),
+        )}
+      </div>
       {replies > 0 && (
         <div className="replies">
           {replies} {replies === 1 ? 'reply' : 'replies'} · {shortTime(data.latestReply as string | undefined)}
         </div>
       )}
     </div>
+  )
+}
+
+function Mention(props: { name: string; target: string | null; onOpen(id: string): void }) {
+  const { target, onOpen } = props
+  return (
+    <span
+      className={`pill${target ? '' : ' inert'}`}
+      onMouseDown={(event) => {
+        if (!target) return
+        event.stopPropagation()
+        onOpen(target)
+      }}
+    >
+      {props.name}
+    </span>
   )
 }
