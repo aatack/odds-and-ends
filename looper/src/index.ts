@@ -62,7 +62,8 @@ Settings (all optional):
   LOOPER_OVERLOAD_SLEEP  gap after an overloaded API, doubling, default 2m
   LOOPER_LIMIT_SLEEP     gap after a usage cap with no stated reset, default 3h
   LOOPER_QUESTION_WAIT   how long to wait for your answer, default 6h
-  LOOPER_GRACE           quiet time before your reply counts as done, default 90s
+  LOOPER_GRACE           quiet time before your messages count as done, default 60s
+  LOOPER_LONG_GRACE      the same after you send /wait, for one session, default 5m
   LOOPER_RUN_TIMEOUT     ceiling on one wake, default 60m
 
 State, logs and every wake's transcript are kept in <repo>/.looper, which
@@ -213,7 +214,8 @@ async function main(): Promise<void> {
     await telegram
       .send(
         `Looper is running on ${config.repo}, working on ${config.task}. ` +
-          `Message me here and the agent will see it at its next wake.`
+          `Message me here and the agent will see it at its next session. Send /wait ` +
+          `for longer to finish your thoughts, and /go to start a session now.`
       )
       .catch((error: Error) => state.log(`could not send the opening message: ${error.message}`));
   }

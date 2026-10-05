@@ -15,7 +15,9 @@ import type { RunResult } from "./claude.ts";
 import { buildPrompt } from "./prompt.ts";
 import { State } from "./state.ts";
 import type { Outcome, StateData } from "./state.ts";
-import type { Telegram } from "./telegram.ts";
+import type { Incoming, Telegram } from "./telegram.ts";
+import { nextMove, readCommand } from "./commands.ts";
+import type { Command } from "./commands.ts";
 
 /** How long a cap is given past its stated reset, so the first retry isn't a second too early. */
 const capBuffer = 2 * 60_000;
@@ -48,6 +50,12 @@ export class Loop {
   private readonly options: LoopOptions;
   private stopping = false;
   private stopCurrentWake: (() => void) | null = null;
+  /** True while a wake is running, so a command can say what it will do. */
+  private running = false;
+  /** Set by /go: the next wait ends at once. */
+  private goRequested = false;
+  /** Set while Telegram refuses to poll because something else is, so it is said once. */
+  private conflicted = false;
 
   constructor(options: LoopOptions) {
     this.options = options;
@@ -68,6 +76,13 @@ export class Loop {
 
     while (!this.stopping) {
       const messages = state.takePending();
+      // Starting a wake answers both commands: /go has had its way, and /wait
+      // only ever asked for the one longer pause.
+      this.goRequested = false;
+      if (state.data.waitLonger) {
+        state.data.waitLonger = false;
+        state.save();
+      }
       const tidy = tidyDue(config, state.data, messages.length);
       const prompt = buildPrompt({
         config,
@@ -94,6 +109,7 @@ export class Loop {
         onEvent: (line) => state.log(`  · ${line}`),
       });
       this.stopCurrentWake = wake.stop;
+      this.running = true;
       state.log(
         `wake ${run} started${tidy ? " to tidy the notes" : ""} ` +
           `(session ${wake.sessionId.slice(0, 8)}, ${config.model}` +
@@ -102,6 +118,7 @@ export class Loop {
 
       const result = await wake.completion;
       this.stopCurrentWake = null;
+      this.running = false;
       if (this.stopping) break;
 
       const sent = state.drainOutbox();
@@ -268,28 +285,74 @@ export class Loop {
     return { until: now + timing.turn, reason: "between wakes", wakeOnMessage: true };
   }
 
+  /** How long you must have been quiet before a wake may start. */
+  private quiet(): number {
+    const { state, config } = this.options;
+    return state.data.waitLonger ? config.timing.longGrace : config.timing.grace;
+  }
+
   /**
    * Sleep until `until`, or until you have finished talking. A message doesn't
-   * wake the agent on its own: the wait continues until the grace period has
-   * passed with nothing new, so three messages in a row arrive as one thought
-   * rather than interrupting the loop three times. Only something you have said
-   * since the last wake counts — a message already handed to a wake that died
-   * waits with the rest.
+   * wake the agent on its own: the wait continues until you have been quiet for
+   * the grace period, so several messages in a row arrive as one thought rather
+   * than interrupting the loop several times — and a wake that falls due while
+   * you are still typing waits for you too, so a burst is never split across two
+   * wakes. Only something you have said since the last wake brings a wake
+   * forward: a message already handed to a wake that died waits with the rest.
+   * /go ends the wait at once, whatever else is true.
    */
   private async wait(until: number, wakeOnMessage: boolean): Promise<void> {
-    const { state, config } = this.options;
-    while (!this.stopping && Date.now() < until) {
-      const fresh = state.data.pending.filter((message) => !message.tried);
-      if (wakeOnMessage && fresh.length) {
-        const last = Math.max(...fresh.map((message) => message.at));
-        const settled = Date.now() - Math.max(last, 0) >= config.timing.grace;
-        if (settled) {
-          state.log(`waking early: ${state.data.pending.length} message(s) from you`);
-          return;
-        }
+    const { state } = this.options;
+    let held = false;
+    while (!this.stopping) {
+      const move = nextMove({
+        now: Date.now(),
+        until,
+        lastHeard: state.data.lastHeard,
+        quiet: this.quiet(),
+        fresh: state.data.pending.filter((message) => !message.tried).length,
+        wakeOnMessage,
+        go: this.goRequested,
+      });
+      if (move === "go") {
+        this.goRequested = false;
+        state.log("starting now: you said /go");
+        return;
       }
-      await sleep(1000);
+      if (move === "message") {
+        state.log(`waking early: ${state.data.pending.length} message(s) from you`);
+        return;
+      }
+      if (move === "due") return;
+      if (!held && Date.now() >= until) {
+        held = true;
+        state.log(`holding until you have been quiet for ${formatDuration(this.quiet())}`);
+      }
+      await sleep(250);
     }
+  }
+
+  /** Carry out a command, and say on Telegram what it did. */
+  private obey(command: Command): void {
+    const { state, telegram, config } = this.options;
+    state.log(`you said /${command}`);
+    // Telegram sends /start when you first open a bot; it is not for anyone.
+    if (command === "start") return;
+    let reply: string;
+    if (command === "go") {
+      this.goRequested = true;
+      reply = this.running
+        ? "A session is running. The next one starts as soon as it ends."
+        : "Starting now.";
+    } else {
+      state.data.waitLonger = true;
+      state.hear();
+      const pause = formatDuration(config.timing.longGrace);
+      reply =
+        (this.running ? "The session that is running carries on. " : "") +
+        `The next session waits until you have been quiet for ${pause}. Send /go to start it sooner.`;
+    }
+    void telegram.send(reply).catch(() => undefined);
   }
 
   /**
@@ -302,17 +365,36 @@ export class Loop {
     while (!this.stopping) {
       try {
         const { messages, offset } = await telegram.poll(state.data.telegramOffset, 25);
-        if (messages.length) {
-          state.receive(messages);
-          for (const message of messages) {
-            state.log(`you said: ${message.text.replace(/\s+/g, " ").slice(0, 120)}`);
-          }
-        } else if (offset !== state.data.telegramOffset) {
-          state.data.telegramOffset = offset;
-          state.save();
+        this.conflicted = false;
+        const said: Incoming[] = [];
+        for (const message of messages) {
+          const command = readCommand(message.text);
+          if (command) this.obey(command);
+          else said.push(message);
+        }
+        // Every message is kept, and the offset moves past commands too, so
+        // Telegram never hands any of them over twice.
+        state.receive(said, offset);
+        for (const message of said) {
+          state.log(`you said: ${message.text.replace(/\s+/g, " ").slice(0, 120)}`);
         }
       } catch (error) {
-        state.log(`telegram poll failed: ${(error as Error).message}`);
+        const reason = (error as Error).message;
+        // Telegram lets one program at a time ask a bot for its messages, and
+        // whichever asks takes them: two Loopers on one bot each lose some of
+        // what you send to the other. That is worth saying plainly, once.
+        if (/conflict/i.test(reason)) {
+          if (!this.conflicted) {
+            state.log(
+              "another program is reading this bot's messages — most likely a second Looper " +
+                "with the same bot token. Messages go to whichever asks first, so each running " +
+                "Looper needs a bot of its own."
+            );
+          }
+          this.conflicted = true;
+        } else {
+          state.log(`telegram poll failed: ${reason}`);
+        }
         await sleep(15_000);
       }
     }

@@ -54,6 +54,13 @@ export interface StateData {
   overloads: number;
   /** The wake that last tidied the notes, counted like `runs`; 0 for never. */
   lastTidy: number;
+  /**
+   * When you last sent anything — a message or a command — by this machine's
+   * clock, in milliseconds; 0 for never. The debounce is measured from here.
+   */
+  lastHeard: number;
+  /** Set by /wait: the next wake waits for the longer quiet. Cleared when one starts. */
+  waitLonger: boolean;
   lastRun: LastRun | null;
 }
 
@@ -73,6 +80,8 @@ const empty: StateData = {
   failures: 0,
   overloads: 0,
   lastTidy: 0,
+  lastHeard: 0,
+  waitLonger: false,
   lastRun: null,
 };
 
@@ -154,18 +163,29 @@ export class State {
     return sent;
   }
 
-  /** Record an arriving message, both in the state and in a durable log. */
-  receive(messages: Incoming[]): void {
-    if (!messages.length) return;
-    this.data.pending.push(...messages);
-    this.data.telegramOffset = Math.max(
-      this.data.telegramOffset,
-      ...messages.map((m) => m.updateId + 1)
-    );
-    appendFileSync(
-      join(this.dir, "inbox.jsonl"),
-      messages.map((m) => JSON.stringify(m)).join("\n") + "\n"
-    );
+  /**
+   * Record what a poll brought: the messages, both in the state and in a durable
+   * log, and the offset to poll from next. The offset is written in the same save
+   * as the messages, so a restart can neither skip one nor take one twice.
+   */
+  receive(messages: Incoming[], offset: number): void {
+    const next = Math.max(this.data.telegramOffset, offset, ...messages.map((m) => m.updateId + 1));
+    if (!messages.length && next === this.data.telegramOffset) return;
+    if (messages.length) {
+      this.data.pending.push(...messages);
+      this.data.lastHeard = Date.now();
+      appendFileSync(
+        join(this.dir, "inbox.jsonl"),
+        messages.map((m) => JSON.stringify(m)).join("\n") + "\n"
+      );
+    }
+    this.data.telegramOffset = next;
+    this.save();
+  }
+
+  /** Note that you said something, for the debounce, without anything to keep. */
+  hear(): void {
+    this.data.lastHeard = Date.now();
     this.save();
   }
 
@@ -178,7 +198,12 @@ export class State {
   conversation(): Exchange[] {
     const said = new Map<number, Exchange>();
     for (const message of readLines<Incoming>(join(this.dir, "inbox.jsonl"))) {
-      said.set(message.updateId, { at: message.at, from: "user", text: message.text });
+      said.set(message.updateId, {
+        id: message.updateId,
+        at: message.at,
+        from: "user",
+        text: message.text,
+      });
     }
     const sent = readLines<Sent>(join(this.dir, "sent.jsonl")).map(
       (message): Exchange => ({
@@ -203,6 +228,8 @@ export class State {
 
 /** One message on Telegram, from either side, as the prompt shows it. */
 export interface Exchange {
+  /** Telegram's update id, for your messages: what tells two of them apart. */
+  id?: number;
   /** When it was sent, in milliseconds. */
   at: number;
   from: "user" | "agent";

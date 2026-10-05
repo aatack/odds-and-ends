@@ -57,6 +57,8 @@ export interface Timing {
   question: number;
   /** Quiet time after your last Telegram message before the reply counts as finished. */
   grace: number;
+  /** The same, after /wait, for the next wake only. */
+  longGrace: number;
   /** Hard ceiling on one wake, after which the process is killed. */
   runTimeout: number;
 }
@@ -509,7 +511,8 @@ export async function loadConfig(opts: LoadOptions): Promise<Config> {
       overload: duration("LOOPER_OVERLOAD_SLEEP", "2m"),
       limit: duration("LOOPER_LIMIT_SLEEP", "3h"),
       question: duration("LOOPER_QUESTION_WAIT", "6h"),
-      grace: duration("LOOPER_GRACE", "90s"),
+      grace: duration("LOOPER_GRACE", "60s"),
+      longGrace: duration("LOOPER_LONG_GRACE", "5m"),
       runTimeout: duration("LOOPER_RUN_TIMEOUT", "60m"),
     },
   };

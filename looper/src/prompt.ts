@@ -211,12 +211,15 @@ function tail(text: string, limit: number): string {
  * rather than lost.
  */
 function describeConversation(conversation: Exchange[], messages: Incoming[]): string {
-  const key = (said: { at: number; text: string }) => `${said.at} ${said.text}`;
-  const fresh = new Set(messages.map(key));
-  const known = new Set(conversation.filter((said) => said.from === "user").map(key));
+  // Told apart by Telegram's id, not by when and what: Telegram stamps a message
+  // to the second, so two quick identical ones would otherwise be shown as one.
+  const fresh = new Set(messages.map((message) => message.updateId));
+  const known = new Set(conversation.map((said) => said.id));
   const all = [...conversation];
   for (const message of messages) {
-    if (!known.has(key(message))) all.push({ at: message.at, from: "user", text: message.text });
+    if (!known.has(message.updateId)) {
+      all.push({ id: message.updateId, at: message.at, from: "user", text: message.text });
+    }
   }
   all.sort((a, b) => a.at - b.at);
   return all
@@ -226,7 +229,7 @@ function describeConversation(conversation: Exchange[], messages: Incoming[]): s
         const how = exchange.kind === "ask" ? "you asked" : "you said";
         return `[${when}] ${how}: ${tail(exchange.text, ownMessageLimit).replace(/\n/g, "\n    ")}`;
       }
-      const mark = fresh.has(key(exchange)) ? "NEW " : "";
+      const mark = exchange.id !== undefined && fresh.has(exchange.id) ? "NEW " : "";
       return `[${when}] ${mark}user: ${exchange.text.replace(/\n/g, "\n    ")}`;
     })
     .join("\n");

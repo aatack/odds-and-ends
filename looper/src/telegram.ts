@@ -24,9 +24,58 @@ export interface Incoming {
   tried?: boolean;
 }
 
+interface Message {
+  text?: string;
+  caption?: string;
+  date?: number;
+  chat?: { id?: number | string };
+  photo?: unknown;
+  voice?: unknown;
+  audio?: unknown;
+  video?: unknown;
+  video_note?: unknown;
+  animation?: unknown;
+  document?: unknown;
+  sticker?: unknown;
+}
+
 interface Update {
   update_id: number;
-  message?: { text?: string; date?: number; chat?: { id?: number | string } };
+  message?: Message;
+  edited_message?: Message;
+}
+
+/**
+ * A message as text for the agent, or null for one with nothing in it to pass
+ * on. Text and captions come through; anything Looper cannot pass on is named
+ * rather than dropped without a word, so the agent at least knows you sent it
+ * and can ask; and an edit arrives as a new message saying it is one, since the
+ * agent may already have read the old version.
+ */
+export function readMessage(message: Message, edited = false): string | null {
+  const body = (message.text ?? message.caption ?? "").trim();
+  const kind = message.animation
+    ? "a GIF"
+    : message.photo
+      ? "a photo"
+      : message.voice
+        ? "a voice message"
+        : message.video || message.video_note
+          ? "a video"
+          : message.audio
+            ? "an audio file"
+            : message.document
+              ? "a file"
+              : message.sticker
+                ? "a sticker"
+                : null;
+  if (!body && !kind) return null;
+  const parts = [
+    edited ? "[The user changed an earlier message to this text.]" : "",
+    kind ? `[The user sent ${kind}. Looper cannot show it to you.]` : "",
+    body,
+  ];
+  return parts.filter(Boolean).join(" ");
 }
 
 const imageExtensions = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
@@ -89,14 +138,14 @@ export class Telegram {
   async pollAny(offset: number, seconds: number): Promise<Update[]> {
     return (await this.call(
       "getUpdates",
-      { offset, timeout: seconds, allowed_updates: ["message"] },
+      { offset, timeout: seconds, allowed_updates: ["message", "edited_message"] },
       (seconds + 20) * 1000
     )) as Update[];
   }
 
   /**
-   * The same poll, keeping only text messages from the configured chat. Anything
-   * else — a sticker, a photo, another chat — still advances the offset, so it is
+   * The same poll, keeping the messages from the configured chat, edits included,
+   * as text. Anything from another chat still advances the offset, so it is
    * consumed once and never seen again.
    */
   async poll(offset: number, seconds: number): Promise<{ messages: Incoming[]; offset: number }> {
@@ -105,13 +154,14 @@ export class Telegram {
     let next = offset;
     for (const update of updates) {
       next = Math.max(next, update.update_id + 1);
-      const message = update.message;
-      if (!message?.text) continue;
-      if (String(message.chat?.id) !== this.chatId) continue;
+      const message = update.message ?? update.edited_message;
+      if (!message || String(message.chat?.id) !== this.chatId) continue;
+      const text = readMessage(message, !update.message);
+      if (text === null) continue;
       messages.push({
         updateId: update.update_id,
         at: (message.date ?? 0) * 1000,
-        text: message.text,
+        text,
       });
     }
     return { messages, offset: next };
@@ -186,7 +236,7 @@ export async function detectChatId(token: string, timeoutMs = 5 * 60_000): Promi
   while (Date.now() < deadline) {
     for (const update of await api.pollAny(offset, 25)) {
       offset = Math.max(offset, update.update_id + 1);
-      const id = update.message?.chat?.id;
+      const id = (update.message ?? update.edited_message)?.chat?.id;
       if (id !== undefined) {
         console.log(`Found chat ${id}.`);
         return String(id);

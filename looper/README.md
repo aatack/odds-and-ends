@@ -18,6 +18,17 @@ wake. Every wake is shown the whole conversation — everything you have sent, a
 what it said to you — with your new messages marked, so a reply never loses the
 question it answers. Most of the time it says nothing.
 
+Send it several things in a row and they arrive together: a session doesn't
+start until you have been quiet for a minute. Two commands steer that:
+
+| Send | What happens |
+| --- | --- |
+| `/wait` | The next session waits until you have been quiet for five minutes, for when there's a lot to get down. It applies once; the one after is back to a minute. |
+| `/go` | A session starts now — or, if one is running, as soon as it ends — however long you have been typing and whatever it was waiting for. |
+
+The bot replies to say what it did. Commands are for Looper, not the agent, and
+never reach it.
+
 Everything the agent is told is written in
 [ASD-STE100 Simplified Technical English](https://www.asd-ste100.org/), and it is
 told to write its notes, commits and messages to you the same way.
@@ -74,8 +85,10 @@ is left alone.
 
 The first run asks for what it needs and saves it:
 
-- **The bot token and the chat**, once per computer, in `~/.config/looper/env` —
-  one bot serves every task. Leave the chat blank and it will ask you to message
+- **The bot token and the chat**, once per computer, in `~/.config/looper/env`.
+  That bot serves one running Looper at a time; to run another alongside it, give
+  that folder a bot of its own with `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in
+  its `.looper/env`, which wins over the global file. Leave the chat blank and it will ask you to message
   the bot, then take the chat id from the message.
 - **The task**, if there is no `TASK.md` yet.
 - **Which Claude account to use**, once per folder — see below.
@@ -158,6 +171,8 @@ point it at the task's markdown file.
 - **`src/notify.ts`** — the tool the agent reaches you with. A small MCP server
   over stdio, exposing `tell_user` and `ask_user`.
 - **`src/telegram.ts`** — the Bot API over `fetch`, long polling for your replies.
+- **`src/commands.ts`** — `/go` and `/wait`, and the decision of when a wait for
+  you to finish typing is over.
 - **`src/state.ts`** — everything remembered between wakes, in `.looper/`.
 - **`src/config.ts`** — the two env files, and asking for what's missing.
 - **`src/account.ts`** — which Claude account the wakes use, and logging in a
@@ -185,8 +200,11 @@ epoch, or a clock time in a named zone like `resets 9:50am (America/Los_Angeles)
 will lift a cap.
 
 A message from you cuts the waiting short — but not the instant you send it. It
-waits until you have been quiet for 90 seconds, so three messages in a row arrive
-as one thought. It also only happens once per message: one handed to a wake that
+waits until you have been quiet for a minute (`LOOPER_GRACE`, or five after
+`/wait`: `LOOPER_LONG_GRACE`), so several messages in a row arrive as one
+thought; and a session that falls due while you are still typing waits for you to
+finish too, so a burst is never split across two sessions. `/go` overrides all of
+it. A message only cuts a wait short once: one handed to a wake that
 died before reading it goes back in the queue, but waits its turn with the rest,
 so a wake that fails in two seconds can't be woken straight back into the same
 failure by the same message.
@@ -246,7 +264,12 @@ so they start from one that has just read everything afresh.
 
 - It does not push, publish, or change anything outside its folder — the agent is
   told not to, and the notify tool refuses to attach a file from outside it.
-- It only reads text you send. Voice notes and photos are consumed and dropped.
+- It only reads text you send, captions and edits included. A photo, voice note
+  or file reaches the agent only as a note that you sent one.
+- One bot serves one running Looper. Telegram hands each message to whichever
+  program asks for it first, so two Loopers on one bot would each miss some of
+  what you send; Looper logs it when it sees that happening. Make a bot per task
+  and put its token and chat in that folder's `.looper/env`.
 - There is one task per folder. Two tasks means two folders — which can be two
   subdirectories of one repo.
 
