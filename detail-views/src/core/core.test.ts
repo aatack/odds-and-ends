@@ -120,3 +120,22 @@ test('slack: conversations list unread first, then by recency', async () => {
   const titles = core.focus('slack').children.map((child) => child.data.title)
   assert.deepEqual(titles, ['#busy', 'Ann', '#quiet'])
 })
+
+test('slack: read-only refuses writes before they reach the network', async () => {
+  const called: string[] = []
+  const core = new Core({
+    path: ':memory:',
+    fetch: (async (input: string | URL | Request) => {
+      called.push(String(input).split('/').pop()!)
+      return new Response(JSON.stringify({ ok: true, user_id: 'UME', url: '', channels: [] }))
+    }) as typeof fetch,
+  })
+  await core.slack.setToken('xoxp-1')
+  core.store.put('slack:conv:C1', 'slack.conversation', { channel: 'C1', kind: 'channel', latestTs: '1.0' }, { ttl: 1000 })
+  assert.equal(core.focus('slack:conv:C1').compose, null)
+  await core.actions.submit({ id: 'slack:conv:C1', text: 'oops' })
+  await core.actions.markRead({ id: 'slack:conv:C1' })
+  assert.ok(!called.includes('chat.postMessage'))
+  assert.ok(!called.includes('conversations.mark'))
+  assert.match(core.focus('slack:conv:C1').error ?? '', /read-only/)
+})

@@ -43,6 +43,22 @@ class RateLimiter {
   }
 }
 
+/**
+ * Everything the app may call while Slack is read-only. Anything else, which
+ * includes every method that writes, is refused before it leaves the machine.
+ */
+const reads = new Set([
+  'auth.test',
+  'users.conversations',
+  'users.info',
+  'conversations.info',
+  'conversations.history',
+  'conversations.replies',
+])
+
+/** Off while the app is being developed, so nothing is sent by accident. */
+export const slackWrites = false
+
 export class SlackError extends Error {
   readonly code: string
   constructor(method: string, code: string) {
@@ -62,6 +78,7 @@ export class SlackApi {
   }
 
   async call<T>(method: string, params: Params = {}): Promise<T> {
+    if (!slackWrites && !reads.has(method)) throw new SlackError(method, 'Slack is read-only')
     const body = new URLSearchParams()
     for (const [key, value] of Object.entries(params)) if (value !== undefined) body.set(key, String(value))
     for (let attempt = 0; attempt < 4; attempt += 1) {

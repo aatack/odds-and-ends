@@ -21,13 +21,13 @@ export const tools: Tool[] = [
   { id: 'composer.send', scope: 'input', keys: ['Enter'], run: (s) => void s.send() },
   { id: 'composer.leave', scope: 'input', keys: ['Escape'], run: (s) => s.compose(false) },
 
-  { id: 'cursor.down', scope: 'list', keys: ['j', 'ArrowDown'], run: (s) => s.move(1) },
-  { id: 'cursor.up', scope: 'list', keys: ['k', 'ArrowUp'], run: (s) => s.move(-1) },
+  { id: 'cursor.down', scope: 'list', keys: ['s', 'ArrowDown'], run: (s) => s.move(1) },
+  { id: 'cursor.up', scope: 'list', keys: ['w', 'ArrowUp'], run: (s) => s.move(-1) },
   { id: 'cursor.top', scope: 'list', keys: ['g', 'Home'], run: (s) => s.move(-Infinity) },
   { id: 'cursor.bottom', scope: 'list', keys: ['G', 'End'], run: (s) => s.move(Infinity) },
   { id: 'cursor.pageDown', scope: 'list', keys: ['PageDown', 'Ctrl+d'], run: (s) => s.move(15) },
   { id: 'cursor.pageUp', scope: 'list', keys: ['PageUp', 'Ctrl+u'], run: (s) => s.move(-15) },
-  { id: 'focus.open', scope: 'list', keys: ['Enter', 'l', 'ArrowRight'], enabled: hasChildren, run: (s) => s.open() },
+  { id: 'focus.open', scope: 'list', keys: ['d', 'Enter', 'ArrowRight'], enabled: hasChildren, run: (s) => s.open() },
   {
     id: 'task.toggle',
     scope: 'list',
@@ -43,7 +43,7 @@ export const tools: Tool[] = [
     run: (s) => s.markRead(),
   },
 
-  { id: 'focus.back', scope: 'app', keys: ['h', 'ArrowLeft', 'Backspace', 'Alt+ArrowLeft'], run: (s) => s.back() },
+  { id: 'focus.back', scope: 'app', keys: ['A', 'ArrowLeft', 'Backspace', 'Alt+ArrowLeft'], run: (s) => s.back() },
   { id: 'focus.forward', scope: 'app', keys: ['Alt+ArrowRight'], run: (s) => s.forward() },
   { id: 'focus.refresh', scope: 'app', keys: ['r', 'F5'], run: (s) => s.refresh() },
   {
