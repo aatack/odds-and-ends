@@ -1,5 +1,5 @@
 import type { Store } from '../../store.ts'
-import type { Entity } from '../../types.ts'
+import type { Entity, TextPart } from '../../types.ts'
 import type { Module, ModuleContext } from '../module.ts'
 import { SlackApi, slackWrites } from './api.ts'
 
@@ -190,6 +190,7 @@ export class Slack implements Module {
           ...data,
           author: data.user ? this.userName(data.user) : (data.botName ?? 'bot'),
           text: this.render(data.text),
+          parts: this.parts(data.text),
           quiet: Boolean(data.subtype && quiet.has(data.subtype)),
         },
       }
@@ -204,6 +205,22 @@ export class Slack implements Module {
       return names.join(', ')
     }
     return `#${data.name ?? data.channel}`
+  }
+
+  /** User mentions become pills that open my DM with that person. */
+  private parts(text: string): TextPart[] {
+    const parts: TextPart[] = []
+    const pattern = /<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/g
+    let last = 0
+    for (const match of text.matchAll(pattern)) {
+      if (match.index > last) parts.push(this.render(text.slice(last, match.index)))
+      const user = match[1]
+      const dm = this.store.findBy('slack.conversation', 'user', user)
+      parts.push({ mention: this.userName(user), target: dm?.data.kind === 'im' ? dm.id : null })
+      last = match.index + match[0].length
+    }
+    if (last < text.length) parts.push(this.render(text.slice(last)))
+    return parts
   }
 
   /** Mentions, channel links and links rendered as text. */

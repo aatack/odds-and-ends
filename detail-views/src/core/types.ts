@@ -10,6 +10,12 @@ export interface Entity {
   expiresAt: number | null
 }
 
+/**
+ * Message text split for display: plain runs, and mentions that open the
+ * entity they name (null when the app has nothing to open).
+ */
+export type TextPart = string | { mention: string; target: string | null }
+
 /** What the composer under a focus view does, if there is one. */
 export type ComposeKind = 'slack' | 'slack-token' | 'task'
 

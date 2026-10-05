@@ -230,3 +230,18 @@ body,
 .list > .body {
   padding: 0 20px;
 }
+
+.pill {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: light-dark(#e9e8fc, #2a2850);
+  color: var(--accent);
+  font-weight: 500;
+  user-select: none;
+}
+
+.pill.inert {
+  background: var(--select);
+  color: var(--muted);
+}
