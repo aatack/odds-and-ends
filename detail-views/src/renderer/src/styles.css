@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --canvas: light-dark(#fafafa, #111113);
   --panel: light-dark(#f1f1f3, #18181b);
   --ink: light-dark(#1c1c1f, #e6e6e9);
