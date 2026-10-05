@@ -1,0 +1,31 @@
+import type { Focus, ModuleInfo } from '../../core/types.ts'
+
+/** The seam between the UI and the core. Nothing else reaches the core. */
+export interface Api {
+  modules(): Promise<ModuleInfo[]>
+  focus(id: string): Promise<Focus>
+  refresh(id: string): Promise<void>
+  submit(id: string, text: string): Promise<void>
+  toggle(id: string): Promise<void>
+  markRead(id: string): Promise<void>
+  onChange(listener: () => void): () => void
+}
+
+interface Bridge {
+  invoke(name: string, args?: unknown): Promise<unknown>
+  onChange(listener: () => void): () => void
+}
+
+export function electronApi(): Api {
+  const bridge = (window as unknown as { core: Bridge }).core
+  const call = <T,>(name: string, args?: unknown) => bridge.invoke(name, args) as Promise<T>
+  return {
+    modules: () => call('modules'),
+    focus: (id) => call('focus', { id }),
+    refresh: (id) => call('refresh', { id }),
+    submit: (id, text) => call('submit', { id, text }),
+    toggle: (id) => call('toggle', { id }),
+    markRead: (id) => call('markRead', { id }),
+    onChange: (listener) => bridge.onChange(listener),
+  }
+}

@@ -1,0 +1,61 @@
+import { memo, useEffect, useRef } from 'react'
+import type { ReactNode } from 'react'
+
+/** A list row that keeps itself on screen while it holds the cursor. */
+export const Row = memo(function Row(props: {
+  id: string
+  selected: boolean
+  className?: string
+  onSelect(id: string): void
+  onOpen?(id: string): void
+  children: ReactNode
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (props.selected) ref.current?.scrollIntoView({ block: 'nearest' })
+  }, [props.selected])
+  return (
+    <div
+      ref={ref}
+      className={`row${props.selected ? ' selected' : ''}${props.className ? ` ${props.className}` : ''}`}
+      onMouseDown={() => props.onSelect(props.id)}
+      onDoubleClick={() => props.onOpen?.(props.id)}
+    >
+      {props.children}
+    </div>
+  )
+})
+
+export function Composer(props: {
+  kind: 'slack' | 'slack-token' | 'task'
+  draft: string
+  composing: boolean
+  placeholder?: string
+  onDraft(text: string): void
+  onCompose(composing: boolean): void
+}) {
+  const ref = useRef<HTMLTextAreaElement & HTMLInputElement>(null)
+  useEffect(() => {
+    const element = ref.current
+    if (!element) return
+    if (props.composing && document.activeElement !== element) element.focus()
+    if (!props.composing && document.activeElement === element) element.blur()
+  }, [props.composing])
+  const shared = {
+    ref,
+    className: 'composer',
+    value: props.draft,
+    placeholder: props.placeholder,
+    spellCheck: props.kind !== 'slack-token',
+    onChange: (event: { target: { value: string } }) => props.onDraft(event.target.value),
+    onFocus: () => props.onCompose(true),
+    onBlur: () => props.onCompose(false),
+  }
+  if (props.kind === 'slack-token') return <input {...shared} type="password" autoFocus />
+  const rows = Math.min(8, props.draft.split('\n').length)
+  return <textarea {...shared} rows={rows} />
+}
+
+export function Status(props: { error: string | null }) {
+  return props.error ? <div className="status">{props.error}</div> : null
+}
