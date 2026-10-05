@@ -7,8 +7,8 @@ let core: Core | null = null
 
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
-    width: 1200,
-    height: 820,
+    width: 1440,
+    height: 960,
     minWidth: 640,
     minHeight: 420,
     show: false,
@@ -19,6 +19,8 @@ function createWindow(): BrowserWindow {
       preload: fileURLToPath(new URL('../preload/index.mjs', import.meta.url)),
       sandbox: false,
       contextIsolation: true,
+      // Scales text and spacing together.
+      zoomFactor: 1.25,
     },
   })
   window.on('ready-to-show', () => window.show())
