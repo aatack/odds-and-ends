@@ -10,7 +10,7 @@
   --accent: light-dark(#4f46e5, #8b85ff);
   --danger: light-dark(#c2410c, #f0864f);
   --radius: 6px;
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: Lato, system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 15.5px;
   line-height: 1.45;
 }
@@ -136,8 +136,7 @@ body,
 }
 
 .message {
-  padding-top: 2px;
-  padding-bottom: 2px;
+  padding: 3px 10px;
 }
 
 .message.quiet {
@@ -147,33 +146,74 @@ body,
 .body {
   min-width: 0;
   flex: none;
-  padding: 0 10px;
+  display: flex;
+  align-items: baseline;
 }
 
 .row > .body {
   flex: 1;
 }
 
-.meta {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  margin-top: 6px;
+.body.head {
+  margin-top: 4px;
+}
+
+.gutter {
+  flex: none;
+  width: 52px;
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+}
+
+.body:not(.head) .content {
+  padding-left: 10px;
 }
 
 .author {
-  font-weight: 600;
-}
-
-.time {
-  font-size: 13px;
-  color: var(--muted);
+  font-weight: 700;
 }
 
 .text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;
+}
+
+.reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0 2px;
+}
+
+.reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: light-dark(#efefef, #26262b);
+  border: 1px solid transparent;
+  font-size: 13px;
+}
+
+.reaction.mine {
+  background: light-dark(#e8f1fb, #1d2b3a);
+  border-color: light-dark(#1d74b5, #4a8fd0);
+}
+
+.reaction-count {
+  color: var(--muted);
+}
+
+.reaction.mine .reaction-count {
+  color: light-dark(#1d74b5, #7ab3e6);
 }
 
 .replies {
@@ -228,7 +268,7 @@ body,
 }
 
 .list > .body {
-  padding: 0 20px;
+  padding: 0 10px;
 }
 
 .pill {

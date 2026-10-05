@@ -1,6 +1,6 @@
 import { memo } from 'react'
 import type { Entity, TextPart } from '../../../core/types.ts'
-import { shortTime } from '../format.ts'
+import { authorColour, shortTime } from '../format.ts'
 import { Composer, Row, Status } from './primitives.tsx'
 import type { FocusProps } from './types.ts'
 
@@ -122,31 +122,53 @@ const MessageRow = memo(function MessageRow(props: {
   )
 })
 
+interface Reaction {
+  emoji: string
+  count: number
+  mine: boolean
+}
+
+/**
+ * One line of chat: time in the gutter and name in colour where a speaker's
+ * run starts, then the text, reactions and thread.
+ */
 function MessageBody(props: { entity: Entity; author: boolean; replies?: boolean; onOpen(id: string): void }) {
   const data = props.entity.data
   const replies = props.replies === false ? 0 : Number(data.replyCount ?? 0)
+  const reactions = (data.reactions as Reaction[] | undefined) ?? []
   return (
-    <div className="body">
-      {props.author && (
-        <div className="meta">
-          <span className="author">{String(data.author)}</span>
-          <span className="time">{shortTime(String(data.ts))}</span>
+    <div className={`body${props.author ? ' head' : ''}`}>
+      <span className="gutter">{props.author ? shortTime(String(data.ts)) : ''}</span>
+      <div className="content">
+        <div className="text">
+          {props.author && (
+            <span className="author" style={{ color: authorColour(String(data.authorKey)) }}>
+              {String(data.author)}{' '}
+            </span>
+          )}
+          {((data.parts as TextPart[] | undefined) ?? [String(data.text)]).map((part, index) =>
+            typeof part === 'string' ? (
+              part
+            ) : (
+              <Mention key={index} name={part.mention} target={part.target} onOpen={props.onOpen} />
+            ),
+          )}
         </div>
-      )}
-      <div className="text">
-        {((data.parts as TextPart[] | undefined) ?? [String(data.text)]).map((part, index) =>
-          typeof part === 'string' ? (
-            part
-          ) : (
-            <Mention key={index} name={part.mention} target={part.target} onOpen={props.onOpen} />
-          ),
+        {reactions.length > 0 && (
+          <div className="reactions">
+            {reactions.map((reaction) => (
+              <span key={reaction.emoji} className={`reaction${reaction.mine ? ' mine' : ''}`}>
+                {reaction.emoji} <span className="reaction-count">{reaction.count}</span>
+              </span>
+            ))}
+          </div>
+        )}
+        {replies > 0 && (
+          <div className="replies">
+            {replies} {replies === 1 ? 'reply' : 'replies'} · {shortTime(data.latestReply as string | undefined)}
+          </div>
         )}
       </div>
-      {replies > 0 && (
-        <div className="replies">
-          {replies} {replies === 1 ? 'reply' : 'replies'} · {shortTime(data.latestReply as string | undefined)}
-        </div>
-      )}
     </div>
   )
 }

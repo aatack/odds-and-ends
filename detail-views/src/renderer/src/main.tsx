@@ -8,6 +8,8 @@ import { Session } from './session.ts'
 import { cursorIndex, focused } from './state.ts'
 import { tools } from './tools.ts'
 import { App } from './views/App.tsx'
+import '@fontsource/lato/400.css'
+import '@fontsource/lato/700.css'
 import './styles.css'
 
 const session = new Session(electronApi(), browserEnvironment())

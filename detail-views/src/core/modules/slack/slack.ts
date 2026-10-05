@@ -2,6 +2,7 @@ import type { Store } from '../../store.ts'
 import type { Entity, TextPart } from '../../types.ts'
 import type { Module, ModuleContext } from '../module.ts'
 import { SlackApi, slackWrites } from './api.ts'
+import { emoji, emojify } from './emoji.ts'
 
 const hour = 60 * 60 * 1000
 const day = 24 * hour
@@ -41,6 +42,7 @@ interface RawMessage {
   reply_count?: number
   latest_reply?: string
   files?: { name?: string }[]
+  reactions?: { name: string; count: number; users?: string[] }[]
 }
 
 interface ConversationInfo {
@@ -69,6 +71,7 @@ export interface MessageData {
   text: string
   replyCount?: number
   latestReply?: string
+  reactions?: { name: string; count: number; users: string[] }[]
 }
 
 function maxTs(...values: (string | undefined)[]): string | undefined {
@@ -89,6 +92,7 @@ function messageData(channel: string, raw: RawMessage): MessageData {
     text: [raw.text ?? '', ...files.map((name) => `[${name}]`)].filter(Boolean).join('\n'),
     replyCount: raw.reply_count,
     latestReply: raw.latest_reply,
+    reactions: raw.reactions?.map(({ name, count, users }) => ({ name, count, users: users ?? [] })),
   }
 }
 
@@ -191,7 +195,13 @@ export class Slack implements Module {
           author: data.user ? this.userName(data.user) : (data.botName ?? 'bot'),
           text: this.render(data.text),
           parts: this.parts(data.text),
+          authorKey: data.user ?? data.botName ?? 'bot',
           quiet: Boolean(data.subtype && quiet.has(data.subtype)),
+          reactions: (data.reactions ?? []).map((reaction) => ({
+            emoji: emoji(reaction.name),
+            count: reaction.count,
+            mine: reaction.users.includes(this.store.getSetting('slack.self') ?? ''),
+          })),
         },
       }
     }
@@ -235,6 +245,7 @@ export class Slack implements Module {
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
       .replace(/&amp;/g, '&')
+      .replace(/:[a-z0-9_+-]+(?:::skin-tone-\d)?:/g, (match) => emojify(match))
   }
 
   /** Cached name, or the id while it is looked up in the background. */
