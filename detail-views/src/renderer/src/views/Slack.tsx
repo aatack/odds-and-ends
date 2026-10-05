@@ -1,6 +1,6 @@
 import { memo } from 'react'
 import type { Entity, TextPart } from '../../../core/types.ts'
-import { authorColour, shortTime } from '../format.ts'
+import { authorColour, fullTime, shortTime } from '../format.ts'
 import { Composer, Row, Status } from './primitives.tsx'
 import type { FocusProps } from './types.ts'
 
@@ -46,6 +46,11 @@ function composerProps(props: FocusProps) {
 }
 
 /** Grouped like Slack: a name only where the speaker changes or time passes. */
+/** A time is shown unless the message above already shows the same one. */
+function showsTime(messages: Entity[], index: number): boolean {
+  return index === 0 || shortTime(String(messages[index].data.ts)) !== shortTime(String(messages[index - 1].data.ts))
+}
+
 function showsAuthor(messages: Entity[], index: number): boolean {
   if (index === 0) return true
   const previous = messages[index - 1].data
@@ -64,6 +69,7 @@ export function SlackConversation(props: FocusProps) {
             key={child.id}
             entity={child}
             author={showsAuthor(focus.children, index)}
+            time={showsTime(focus.children, index)}
             selected={index === props.cursor}
             onSelect={props.onSelect}
             onOpen={props.onOpen}
@@ -83,13 +89,14 @@ export function SlackThread(props: FocusProps) {
   return (
     <div className="pane">
       <div className="list chat">
-        {focus.entity && <MessageBody entity={focus.entity} author={true} replies={false} onOpen={props.onOpen} />}
+        {focus.entity && <MessageBody entity={focus.entity} author={true} time={true} replies={false} onOpen={props.onOpen} />}
         <div className="divider" />
         {focus.children.map((child, index) => (
           <MessageRow
             key={child.id}
             entity={child}
             author={showsAuthor(all, index + 1) || index === 0}
+            time={showsTime(all, index + 1) || index === 0}
             selected={index === props.cursor}
             onSelect={props.onSelect}
             onOpen={props.onOpen}
@@ -105,6 +112,7 @@ export function SlackThread(props: FocusProps) {
 const MessageRow = memo(function MessageRow(props: {
   entity: Entity
   author: boolean
+  time: boolean
   selected: boolean
   onSelect(id: string): void
   onOpen(id: string): void
@@ -115,9 +123,9 @@ const MessageRow = memo(function MessageRow(props: {
       selected={props.selected}
       className={`message${props.entity.data.quiet ? ' quiet' : ''}`}
       onSelect={props.onSelect}
-      onOpen={props.onOpen}
+     
     >
-      <MessageBody entity={props.entity} author={props.author} onOpen={props.onOpen} />
+      <MessageBody entity={props.entity} author={props.author} time={props.time} onOpen={props.onOpen} />
     </Row>
   )
 })
@@ -132,13 +140,23 @@ interface Reaction {
  * One line of chat: time in the gutter and name in colour where a speaker's
  * run starts, then the text, reactions and thread.
  */
-function MessageBody(props: { entity: Entity; author: boolean; replies?: boolean; onOpen(id: string): void }) {
+function MessageBody(props: {
+  entity: Entity
+  author: boolean
+  time: boolean
+  replies?: boolean
+  onOpen(id: string): void
+}) {
   const data = props.entity.data
   const replies = props.replies === false ? 0 : Number(data.replyCount ?? 0)
   const reactions = (data.reactions as Reaction[] | undefined) ?? []
   return (
     <div className={`body${props.author ? ' head' : ''}`}>
-      <span className="gutter">{props.author ? shortTime(String(data.ts)) : ''}</span>
+      <span className="gutter">
+        <span className={`stamp${props.time ? '' : ' repeat'}`} data-full={fullTime(String(data.ts))}>
+          {shortTime(String(data.ts))}
+        </span>
+      </span>
       <div className="content">
         <div className="text">
           {props.author && (
