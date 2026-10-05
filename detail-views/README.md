@@ -13,16 +13,19 @@ npm run dev
 | | |
 |-|-|
 | `1`–`9` | module |
-| `j` `k` / arrows | move |
-| `Enter` `l` | open |
-| `h` `Backspace` / `Alt+←` | back |
+| `w` `s` / arrows | up, down |
+| `d` / `Enter` | focus the selected item |
+| `Shift+A` / `Backspace` / `Alt+←` | back: pop the focus off the trail |
 | `Alt+→` | forward |
 | `c` `i` `/` | write; `Enter` sends, `Shift+Enter` new line, `Esc` leaves |
 | `r` | refresh |
-| `m` | mark a Slack conversation read |
 | `x` `Space` | tick a task |
 
 ## Slack
+
+**Read-only for now.** `slackWrites` in `src/core/modules/slack/api.ts` is off,
+so the app has no composer in Slack and refuses any method not on its read
+list. Turn it on to send messages and mark conversations read (`m`).
 
 Paste a user token (`xoxp-…`) into the Slack view; it is checked, then kept in
 the local database. The Slack app it belongs to needs these user scopes:

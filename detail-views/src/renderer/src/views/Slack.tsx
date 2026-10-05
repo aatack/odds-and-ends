@@ -71,7 +71,7 @@ export function SlackConversation(props: FocusProps) {
         ))}
       </div>
       <Status error={focus.error} />
-      <Composer kind="slack" {...composerProps(props)} />
+      {focus.compose === 'slack' && <Composer kind="slack" {...composerProps(props)} />}
     </div>
   )
 }
@@ -97,7 +97,7 @@ export function SlackThread(props: FocusProps) {
         ))}
       </div>
       <Status error={focus.error} />
-      <Composer kind="slack" {...composerProps(props)} />
+      {focus.compose === 'slack' && <Composer kind="slack" {...composerProps(props)} />}
     </div>
   )
 }

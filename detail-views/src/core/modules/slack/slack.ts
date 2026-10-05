@@ -1,7 +1,7 @@
 import type { Store } from '../../store.ts'
 import type { Entity } from '../../types.ts'
 import type { Module, ModuleContext } from '../module.ts'
-import { SlackApi } from './api.ts'
+import { SlackApi, slackWrites } from './api.ts'
 
 const hour = 60 * 60 * 1000
 const day = 24 * hour
@@ -116,6 +116,7 @@ export class Slack implements Module {
 
   compose(entity: Entity) {
     if (!this.api) return 'slack-token' as const
+    if (!slackWrites) return null
     return entity.type === 'slack.conversation' || entity.type === 'slack.message' ? ('slack' as const) : null
   }
 

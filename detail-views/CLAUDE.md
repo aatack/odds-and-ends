@@ -29,6 +29,9 @@ constraints every change must keep.
   of its ends alive past their expiry, so my own notes never dangle.
 - **Cached ids are namespaced by service** (`slack:conv:C123`), so they cannot
   collide with owned ids (uuids) or with each other.
+- **Slack is read-only during development.** `slackWrites` in
+  `modules/slack/api.ts` gates an allowlist of read methods; do not turn it on
+  or widen the list unless I ask.
 - **Secrets and settings are local**, in the `settings` table of the same file.
 - Migrations are append-only in `src/core/db.ts`. Never edit a shipped one.
 
@@ -39,6 +42,9 @@ constraints every change must keep.
 - **Keyboard first.** Every key press goes through one listener
   (`renderer/src/dispatch.ts`) that runs a tool from the single registry
   (`renderer/src/tools.ts`). Never add a `keydown` listener anywhere else.
+- **Navigation keys are a fixed rule** across every focus view: `w` up, `s`
+  down, `d` focuses the selected item, `Shift+A` pops the focus (back). Other
+  bindings may be added beside them, never in their place.
 - No animations. The cursor never becomes a pointer.
 
 ### Code
