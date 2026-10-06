@@ -45,6 +45,9 @@ constraints every change must keep.
 - **Navigation keys are a fixed rule** across every focus view: `w` up, `s`
   down, `d` focuses the selected item, `Shift+A` pops the focus (back). Other
   bindings may be added beside them, never in their place.
+- **A click highlights, it never focuses.** Clicking an item moves the cursor
+  to it; only `d` focuses. The exceptions are deliberate shortcuts: a person
+  or mention pushes their conversation, and a thumbnail opens the image.
 - No animations. The cursor never becomes a pointer.
 
 ### Code

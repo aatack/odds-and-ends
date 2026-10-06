@@ -24,7 +24,7 @@ export function SlackHome(props: FocusProps) {
     <div className="pane">
       <div className="list">
         {focus.children.map((child, index) => (
-          <ConversationRow key={child.id} entity={child} selected={index === props.cursor} onSelect={props.onOpen} />
+          <ConversationRow key={child.id} entity={child} selected={index === props.cursor} onSelect={props.onSelect} />
         ))}
       </div>
       <Status error={focus.error} />
@@ -194,6 +194,15 @@ function MessageBody(props: {
             />
           )}
           <Markdown text={String(data.markdown ?? data.text)} onOpen={props.onOpen} />
+          {reactions.length > 0 && (
+            <span className="reactions">
+              {reactions.map((reaction) => (
+                <span key={reaction.emoji} className={`reaction${reaction.mine ? ' mine' : ''}`}>
+                  {reaction.emoji} <span className="reaction-count">{reaction.count}</span>
+                </span>
+              ))}
+            </span>
+          )}
         </div>
         {images.length > 0 && (
           <div className="images">
@@ -206,15 +215,6 @@ function MessageBody(props: {
                 {...thumbSize(image)}
                 onClick={() => props.onImage(image.full)}
               />
-            ))}
-          </div>
-        )}
-        {reactions.length > 0 && (
-          <div className="reactions">
-            {reactions.map((reaction) => (
-              <span key={reaction.emoji} className={`reaction${reaction.mine ? ' mine' : ''}`}>
-                {reaction.emoji} <span className="reaction-count">{reaction.count}</span>
-              </span>
             ))}
           </div>
         )}
