@@ -3,6 +3,8 @@ import { Focus } from './Focus.tsx'
 import type { FocusProps } from './types.ts'
 
 export function App(props: {
+  viewing: string | null
+  onImage(ref: string | null): void
   modules: ModuleInfo[]
   module: string | null
   focus: FocusData | null
@@ -23,6 +25,11 @@ export function App(props: {
         ))}
       </nav>
       <main className="focus">{props.focus && <Focus focus={props.focus} {...props.view} />}</main>
+      {props.viewing && (
+        <div className="viewer" onMouseDown={() => props.onImage(null)}>
+          <img src={`slack-image://${props.viewing}`} />
+        </div>
+      )}
     </div>
   )
 }

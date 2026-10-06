@@ -73,6 +73,7 @@ export function SlackConversation(props: FocusProps) {
             selected={index === props.cursor}
             onSelect={props.onSelect}
             onOpen={props.onOpen}
+            onImage={props.onImage}
           />
         ))}
       </div>
@@ -89,7 +90,7 @@ export function SlackThread(props: FocusProps) {
   return (
     <div className="pane">
       <div className="list chat">
-        {focus.entity && <MessageBody entity={focus.entity} author={true} time={true} replies={false} onOpen={props.onOpen} />}
+        {focus.entity && <MessageBody entity={focus.entity} author={true} time={true} replies={false} onOpen={props.onOpen} onImage={props.onImage} />}
         <div className="divider" />
         {focus.children.map((child, index) => (
           <MessageRow
@@ -100,6 +101,7 @@ export function SlackThread(props: FocusProps) {
             selected={index === props.cursor}
             onSelect={props.onSelect}
             onOpen={props.onOpen}
+            onImage={props.onImage}
           />
         ))}
       </div>
@@ -116,6 +118,7 @@ const MessageRow = memo(function MessageRow(props: {
   selected: boolean
   onSelect(id: string): void
   onOpen(id: string): void
+  onImage(ref: string): void
 }) {
   return (
     <Row
@@ -125,10 +128,25 @@ const MessageRow = memo(function MessageRow(props: {
       onSelect={props.onSelect}
      
     >
-      <MessageBody entity={props.entity} author={props.author} time={props.time} onOpen={props.onOpen} />
+      <MessageBody entity={props.entity} author={props.author} time={props.time} onOpen={props.onOpen} onImage={props.onImage} />
     </Row>
   )
 })
+
+interface Image {
+  name: string
+  thumb: string
+  full: string
+  width?: number
+  height?: number
+}
+
+/** Fits a thumbnail in 360×240, sized up front so the list doesn't jump. */
+function thumbSize(image: Image): { width?: number; height?: number } {
+  if (!image.width || !image.height) return {}
+  const scale = Math.min(1, 360 / image.width, 240 / image.height)
+  return { width: Math.round(image.width * scale), height: Math.round(image.height * scale) }
+}
 
 interface Reaction {
   emoji: string
@@ -146,10 +164,12 @@ function MessageBody(props: {
   time: boolean
   replies?: boolean
   onOpen(id: string): void
+  onImage(ref: string): void
 }) {
   const data = props.entity.data
   const replies = props.replies === false ? 0 : Number(data.replyCount ?? 0)
   const reactions = (data.reactions as Reaction[] | undefined) ?? []
+  const images = (data.images as Image[] | undefined) ?? []
   return (
     <div className={`body${props.author ? ' head' : ''}`}>
       <span className="gutter">
@@ -172,6 +192,20 @@ function MessageBody(props: {
             ),
           )}
         </div>
+        {images.length > 0 && (
+          <div className="images">
+            {images.map((image) => (
+              <img
+                key={image.thumb}
+                className="thumb"
+                src={`slack-image://${image.thumb}`}
+                alt={image.name}
+                {...thumbSize(image)}
+                onClick={() => props.onImage(image.full)}
+              />
+            ))}
+          </div>
+        )}
         {reactions.length > 0 && (
           <div className="reactions">
             {reactions.map((reaction) => (

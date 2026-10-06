@@ -14,12 +14,14 @@ export interface State {
   drafts: Record<string, string>
   /** Whether the composer has the keyboard. Not persisted. */
   composing: boolean
+  /** An image shown full size over everything, by its ref. Not persisted. */
+  viewing: string | null
 }
 
 const trailLimit = 200
 
 export function initialState(root: string): State {
-  return { trail: [root], at: 0, cursors: {}, drafts: {}, composing: false }
+  return { trail: [root], at: 0, cursors: {}, drafts: {}, composing: false, viewing: null }
 }
 
 export function focused(state: State): string {
@@ -47,7 +49,7 @@ export function selected(state: State, focus: Focus | null): Entity | null {
 export function navigate(state: State, id: string): State {
   if (focused(state) === id) return state
   const trail = [...state.trail.slice(0, state.at + 1), id].slice(-trailLimit)
-  return { ...state, trail, at: trail.length - 1, composing: false }
+  return { ...state, trail, at: trail.length - 1, composing: false, viewing: null }
 }
 
 export function back(state: State): State {
@@ -75,13 +77,17 @@ export function setDraft(state: State, text: string): State {
   return { ...state, drafts }
 }
 
+export function view(state: State, ref: string | null): State {
+  return state.viewing === ref ? state : { ...state, viewing: ref }
+}
+
 export function setComposing(state: State, composing: boolean): State {
   return state.composing === composing ? state : { ...state, composing }
 }
 
 /** What is kept across reloads. */
-export function persisted(state: State): Omit<State, 'composing'> {
-  const { composing: _, ...rest } = state
+export function persisted(state: State): Omit<State, 'composing' | 'viewing'> {
+  const { composing: _, viewing: __, ...rest } = state
   return rest
 }
 
@@ -94,5 +100,6 @@ export function restore(saved: unknown, root: string): State {
     cursors: value.cursors ?? {},
     drafts: value.drafts ?? {},
     composing: false,
+    viewing: null,
   }
 }

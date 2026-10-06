@@ -10,4 +10,5 @@ export interface FocusProps {
   onOpen(id: string): void
   onDraft(text: string): void
   onCompose(composing: boolean): void
+  onImage(ref: string | null): void
 }

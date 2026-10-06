@@ -31,6 +31,7 @@ function Root() {
   const onDraft = useCallback((text: string) => session.setDraft(text), [])
   const onCompose = useCallback((composing: boolean) => session.compose(composing), [])
   const onModule = useCallback((root: string) => session.navigate(root), [])
+  const onImage = useCallback((ref: string | null) => session.view(ref), [])
 
   const view = useMemo(
     () => ({
@@ -41,11 +42,12 @@ function Root() {
       onOpen,
       onDraft,
       onCompose,
+      onImage,
     }),
-    [state, focus, onSelect, onOpen, onDraft, onCompose],
+    [state, focus, onSelect, onOpen, onDraft, onCompose, onImage],
   )
 
-  return <App modules={modules} module={focus?.module ?? null} focus={focus} view={view} onModule={onModule} />
+  return <App viewing={state.viewing} onImage={onImage} modules={modules} module={focus?.module ?? null} focus={focus} view={view} onModule={onModule} />
 }
 
 createRoot(document.getElementById('root')!).render(

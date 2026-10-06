@@ -26,6 +26,11 @@ export interface CacheOptions {
   ttl?: number
 }
 
+export interface Blob {
+  mime: string
+  data: Uint8Array
+}
+
 export interface ChildLink {
   id: string
   rank: number
@@ -188,8 +193,26 @@ export class Store {
         )
         .run()
     })
+    this.db.prepare('DELETE FROM blobs WHERE expires_at <= ?').run(now)
     if (removed > 0) this.onChange([])
     return removed
+  }
+
+  /** Bytes fetched from a service, such as an image. Always cached. */
+  getBlob(key: string): Blob | null {
+    const row = this.db.prepare('SELECT mime, data FROM blobs WHERE key = ?').get(key) as
+      | { mime: string; data: Uint8Array }
+      | undefined
+    return row ? { mime: row.mime, data: row.data } : null
+  }
+
+  putBlob(key: string, blob: Blob, options: Required<CacheOptions>): void {
+    this.db
+      .prepare(
+        `INSERT INTO blobs (key, mime, data, created_at, expires_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (key) DO UPDATE SET mime = excluded.mime, data = excluded.data, expires_at = excluded.expires_at`,
+      )
+      .run(key, blob.mime, blob.data, this.now(), this.now() + options.ttl)
   }
 
   getSetting(key: string): string | null {

@@ -31,7 +31,7 @@ Paste a user token (`xoxp-…`) into the Slack view; it is checked, then kept in
 the local database. The Slack app it belongs to needs these user scopes:
 
 `channels:read groups:read im:read mpim:read channels:history groups:history
-im:history mpim:history users:read chat:write channels:write groups:write
+im:history mpim:history users:read files:read chat:write channels:write groups:write
 im:write mpim:write`
 
 Unread counts come one conversation at a time (Slack has no public call for all

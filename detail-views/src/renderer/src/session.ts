@@ -107,6 +107,10 @@ export class Session {
     void this.api.refresh(S.focused(this.state))
   }
 
+  view(ref: string | null): void {
+    this.update(S.view(this.state, ref))
+  }
+
   compose(composing: boolean): void {
     this.update(S.setComposing(this.state, composing))
   }

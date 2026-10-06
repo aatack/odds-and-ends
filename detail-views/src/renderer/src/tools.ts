@@ -26,6 +26,13 @@ export const tools: Tool[] = [
   },
   { id: 'composer.leave', scope: 'input', keys: ['Escape'], run: (s) => s.compose(false) },
 
+  {
+    id: 'image.close',
+    scope: 'list',
+    keys: ['Escape', 'A', 'Backspace', 'ArrowLeft'],
+    enabled: (s) => s.get().state.viewing !== null,
+    run: (s) => s.view(null),
+  },
   { id: 'cursor.down', scope: 'list', keys: ['s', 'ArrowDown'], run: (s) => s.move(1) },
   { id: 'cursor.up', scope: 'list', keys: ['w', 'ArrowUp'], run: (s) => s.move(-1) },
   { id: 'cursor.top', scope: 'list', keys: ['g', 'Home'], run: (s) => s.move(-Infinity) },
