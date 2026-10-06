@@ -311,6 +311,12 @@ export class Session {
     if (child) void this.api.toggle(child.id).then((outcome) => this.settle(child.id, outcome))
   }
 
+  /** Loads the focus further back: a conversation's history, a thread, or all of Slack. */
+  older(): void {
+    const id = S.focused(this.state)
+    void this.api.older(id).then((outcome) => this.settle(id, outcome))
+  }
+
   markRead(): void {
     const id = S.focused(this.state)
     void this.api.markRead(id).then((outcome) => this.settle(id, outcome))

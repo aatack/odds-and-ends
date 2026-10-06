@@ -10,7 +10,17 @@ import { link, value, values } from './graph/events.ts'
 import { focusOf, foreignOf } from './present.ts'
 import { fakeSlack, memoryCore } from './testing.ts'
 
-const auth = { 'auth.test': () => ({ user_id: 'UME', url: 'https://x.slack.com/' }), 'users.conversations': () => ({ channels: [] }) }
+const auth = {
+  'auth.test': () => ({ user_id: 'UME', url: 'https://x.slack.com/' }),
+  'users.conversations': () => ({ channels: [] }),
+  'conversations.list': () => ({ channels: [] }),
+  'users.list': () => ({ members: [] }),
+  'search.messages': () => ({ messages: { matches: [], paging: { pages: 1 } } }),
+}
+
+const searchAnswer = (matches: unknown[]) => () => ({ messages: { matches, paging: { pages: 1 } } })
+const permalink = (channel: string, ts: string, thread?: string) =>
+  `https://x.slack.com/archives/${channel}/p${ts.replace('.', '')}${thread ? `?thread_ts=${thread}` : ''}`
 
 test('both stores read as one: a later event wins, and mine win a tie', () => {
   const core = memoryCore()
@@ -56,77 +66,6 @@ test('tasks: composing adds an owned child, undone first', async () => {
   assert.equal(focus.compose, 'task')
   assert.ok(core.owned.read([id]).length > 0)
   assert.equal(core.cache.read([id]).length, 0)
-})
-
-test('slack: no token asks for one, and a token is checked before it is kept', async () => {
-  const core = memoryCore({ fetch: fakeSlack(auth) })
-  await core.load({ id: 'slack', part: 'children' })
-  assert.equal(core.focus('slack').compose, 'slack-token')
-  await core.actions.submit({ id: 'slack', text: 'xoxp-1' })
-  assert.equal(core.settings.get('slack.token'), 'xoxp-1')
-  assert.equal(core.focus('slack').compose, null)
-})
-
-test('slack: conversations list by their newest message, which is not moved by loading again', async () => {
-  const latest: Record<string, string> = { C1: '1700000020.000000', C2: '1700000050.000000', D1: '1700000030.000000' }
-  const core = memoryCore({
-    fetch: fakeSlack({
-      ...auth,
-      'users.conversations': () => ({
-        channels: [
-          { id: 'C1', name: 'quiet' },
-          { id: 'C2', name: 'busy' },
-          { id: 'D1', is_im: true, user: 'U1' },
-        ],
-      }),
-      'conversations.history': (params) => ({ messages: [{ ts: latest[params.get('channel')!], user: 'U1', text: 'x' }] }),
-      'users.info': () => ({ user: { name: 'ann', profile: { display_name: 'Ann' } } }),
-    }),
-  })
-  await core.slack.setToken('xoxp-1')
-  const order = () => core.focus('slack').children.map((child) => child.data.title)
-  for (const id of ['slack:conv:C1', 'slack:conv:C2', 'slack:conv:D1', 'slack:user:U1']) await core.load({ id, part: 'self' })
-  assert.deepEqual(order(), ['#busy', 'Ann', '#quiet'])
-  await core.refresh('slack:conv:C1')
-  await core.load({ id: 'slack', part: 'children', force: true })
-  assert.deepEqual(order(), ['#busy', 'Ann', '#quiet'])
-  assert.equal(core.focus('slack').children[0].data.unread, undefined)
-})
-
-test('slack: messages are written when they were sent, reactions at 0, and marked loaded', async () => {
-  const calls: string[] = []
-  const core = memoryCore({
-    fetch: fakeSlack(
-      {
-        ...auth,
-        'conversations.history': () => ({
-          messages: [
-            { ts: '1700000002.000200', user: 'U1', text: 'second', reactions: [{ name: 'tada', count: 1, users: ['UME'] }] },
-            { ts: '1700000001.000100', user: 'U1', text: 'first', edited: { ts: '1700000005.000000' } },
-          ],
-        }),
-      },
-      calls,
-    ),
-  })
-  await core.slack.setToken('xoxp-1')
-  await core.load({ id: 'slack:conv:C1', part: 'children' })
-  const events = core.cache.read(['slack:msg:C1:1700000002.000200'])
-  const at = (key: string) => events.find((e) => e.type === 'value' && e.key === key)!.timestamp
-  assert.equal(at('text'), 1700000002000)
-  assert.equal(at('reactions'), 0)
-  assert.equal(core.cache.read(['slack:msg:C1:1700000001.000100']).find((e) => e.type === 'value' && e.key === 'text')!.timestamp, 1700000005000)
-  assert.deepEqual(
-    core.focus('slack:conv:C1').children.map((child) => child.data.text),
-    ['first', 'second'],
-  )
-  // Loaded once; asked again while fresh, nothing is fetched.
-  const before = calls.length
-  await core.load({ id: 'slack:conv:C1', part: 'children' })
-  await core.load({ id: 'slack:msg:C1:1700000001.000100', part: 'self' })
-  assert.equal(calls.length, before)
-  await core.load({ id: 'slack:conv:C1', part: 'children', force: true })
-  assert.equal(calls.length, before + 1)
 })
 
 test('slack: read-only refuses writes before they reach the network', async () => {
@@ -205,47 +144,6 @@ test('slack: the token is never sent to a host outside Slack', async () => {
   assert.ok(!urls.some((url) => url.includes('evil')))
 })
 
-test('the frontend cache loads from other services on its own, once', async () => {
-  const calls: string[] = []
-  const core = memoryCore({
-    fetch: fakeSlack(
-      {
-        ...auth,
-        'users.conversations': () => ({ channels: [{ id: 'C1', name: 'general' }] }),
-        'conversations.history': () => ({ messages: [{ ts: '1700000001.000100', user: 'U1', text: 'hello' }] }),
-        'users.info': () => ({ user: { name: 'sam' } }),
-      },
-      calls,
-    ),
-  })
-  const cache = new EntityCache({
-    scan: async (ids) => core.actions.scan({ ids }),
-    load: (request) => core.actions.load(request),
-    foreign: foreignOf,
-  })
-  core.onChange((changed) => cache.invalidate(changed))
-  // A screen reads, waits, and reads again: here, until nothing changes.
-  const settle = async (id: string) => {
-    for (let i = 0; i < 20; i++) {
-      focusOf(id, cache.source())
-      await cache.idle()
-      await new Promise((resolve) => setTimeout(resolve, 160))
-    }
-    return focusOf(id, cache.source())
-  }
-  await core.actions.submit({ id: 'slack', text: 'xoxp-1' })
-  const home = await settle('slack')
-  assert.deepEqual(home.children.map((child) => child.data.title), ['#general'])
-  const conversation = await settle('slack:conv:C1')
-  assert.deepEqual(conversation.children.map((child) => [child.data.author, child.data.text]), [['sam', 'hello']])
-  // Each part was loaded once, however often it was read.
-  const count = (method: string) => calls.filter((call) => call === method).length
-  // Once for the newest message when the row showed, once for the history when opened.
-  assert.equal(count('conversations.history'), 2)
-  assert.equal(count('conversations.info'), 0)
-  assert.equal(count('users.info'), 1)
-})
-
 test('the first database is imported once, read-only, and left as it was', () => {
   const dir = mkdtempSync(join(tmpdir(), 'detail-views-'))
   const legacy = join(dir, 'detail-views.sqlite')
@@ -272,19 +170,154 @@ test('the first database is imported once, read-only, and left as it was', () =>
   assert.deepEqual(new DatabaseSync(legacy).prepare('SELECT count(*) AS n FROM entities').get(), before)
 })
 
-test('slack: the watch brings in new messages by search, without loading any conversation', async () => {
-  let time = 1_700_000_000_000
+test('slack: no token asks for one, and a token is checked before it is kept', async () => {
+  const core = memoryCore({ fetch: fakeSlack(auth) })
+  await core.load({ id: 'slack', part: 'children' })
+  assert.equal(core.focus('slack').compose, 'slack-token')
+  await core.actions.submit({ id: 'slack', text: 'xoxp-1' })
+  assert.equal(core.settings.get('slack.token'), 'xoxp-1')
+  assert.equal(core.focus('slack').compose, null)
+})
+
+test('slack: the lists name everyone and every channel, and the first batch of history orders them', async () => {
   const calls: string[] = []
-  let matches: unknown[] = []
   const core = memoryCore({
-    now: () => time,
+    now: () => 1_700_000_100_000,
     fetch: fakeSlack(
-      { ...auth, 'search.messages': () => ({ messages: { matches, paging: { pages: 1 } } }) },
+      {
+        ...auth,
+        'users.conversations': () => ({
+          channels: [{ id: 'C1', name: 'quiet' }, { id: 'C2', name: 'busy' }, { id: 'C3', name: 'silent' }, { id: 'D1', is_im: true, user: 'U1' }],
+        }),
+        'conversations.list': () => ({ channels: [{ id: 'C9', name: 'not-mine' }] }),
+        'users.list': () => ({ members: [{ id: 'U1', name: 'ann', profile: { display_name: 'Ann' } }] }),
+        'search.messages': searchAnswer([
+          { ts: '1700000050.000000', user: 'U1', text: 'b', channel: { id: 'C2', name: 'busy' }, permalink: permalink('C2', '1700000050.000000') },
+          { ts: '1700000030.000000', user: 'U1', text: 'd', channel: { id: 'D1', is_im: true }, permalink: permalink('D1', '1700000030.000000') },
+          { ts: '1700000020.000000', user: 'U1', text: 'q', channel: { id: 'C1', name: 'quiet' }, permalink: permalink('C1', '1700000020.000000') },
+        ]),
+      },
       calls,
     ),
   })
   await core.slack.setToken('xoxp-1')
-  // A conversation whose count and history have loaded once.
+  await core.slack.poll()
+  const order = () => core.focus('slack').children.map((child) => child.data.title)
+  // Newest message first; one with nothing in the batch sits at the bottom.
+  assert.deepEqual(order(), ['#busy', 'Ann', '#quiet', '#silent'])
+  // Loading the lists again moves nothing.
+  await core.load({ id: 'slack', part: 'children', force: true })
+  assert.deepEqual(order(), ['#busy', 'Ann', '#quiet', '#silent'])
+  assert.equal(core.item('slack:conv:C9')!.data.name, 'not-mine')
+  assert.ok(!core.entity('slack').outboundLinks.includes('slack:conv:C9'))
+  // The batch covered everything up to now, so the watch starts from now.
+  assert.equal(core.item('slack')!.data['watch.at'], '1700000100.000000')
+  assert.equal(core.item('slack')!.data['history.oldest'], '1700000020.000000')
+  assert.equal(core.item('slack')!.data['history.complete'], true)
+  // No conversation was loaded on its own, and no name needed a call.
+  assert.ok(!calls.some((call) => ['conversations.history', 'conversations.info', 'users.info'].includes(call)))
+})
+
+test('slack: going further back, all of Slack by search, a conversation by its history', async () => {
+  const queries: string[] = []
+  const histories: (string | null)[] = []
+  const core = memoryCore({
+    now: () => 1_700_000_100_000,
+    fetch: fakeSlack({
+      ...auth,
+      'search.messages': (params) => {
+        queries.push(params.get('query')!)
+        return {
+          messages: {
+            matches: [
+              // After the cursor: already cached, skipped.
+              { ts: '1700000060.000000', user: 'U1', text: 'new', channel: { id: 'C1' }, permalink: permalink('C1', '1700000060.000000') },
+              { ts: '1699990000.000000', user: 'U1', text: 'old', channel: { id: 'C1' }, permalink: permalink('C1', '1699990000.000000') },
+            ],
+            paging: { pages: 1 },
+          },
+        }
+      },
+      'conversations.history': (params) => {
+        histories.push(params.get('latest'))
+        return {
+          messages: [{ ts: '1699900000.000000', user: 'U1', text: 'older', reactions: [{ name: 'tada', count: 1, users: ['UME'] }], edited: { ts: '1699950000.000000' } }],
+          has_more: false,
+        }
+      },
+    }),
+  })
+  await core.slack.setToken('xoxp-1')
+  core.cache.write([...values('slack:conv:C1', { type: 'slack.conversation', channel: 'C1', kind: 'channel' }, 0, 'slack'), link('slack', 'slack:conv:C1', 0, 'slack')])
+  core.cache.write(values('slack', { 'watch.at': '1700000060.000000', 'history.oldest': '1700000050.000000' }, 0, 'slack'))
+  await core.actions.older({ id: 'slack' })
+  assert.match(queries[0], /^before:2023-11-1\d$/)
+  assert.deepEqual(core.focus('slack:conv:C1').children.map((child) => child.data.text), ['old'])
+  assert.equal(core.item('slack')!.data['history.oldest'], '1699990000.000000')
+
+  // A conversation starts from the global cursor, since everything after it is cached.
+  await core.actions.older({ id: 'slack:conv:C1' })
+  assert.deepEqual(histories, ['1699990000.000000'])
+  const events = core.cache.read(['slack:msg:C1:1699900000.000000'])
+  const at = (key: string) => events.find((e) => e.type === 'value' && e.key === key)!.timestamp
+  assert.equal(at('text'), 1699950000000)
+  assert.equal(at('reactions'), 0)
+  assert.equal(core.item('slack:conv:C1')!.data['history.oldest'], '1699900000.000000')
+  assert.equal(core.item('slack:conv:C1')!.data['history.complete'], true)
+  await core.actions.older({ id: 'slack:conv:C1' })
+  assert.deepEqual(histories, ['1699990000.000000', '1699900000.000000'])
+  assert.deepEqual(core.focus('slack:conv:C1').children.map((child) => child.data.text), ['older', 'old'])
+})
+
+test('the frontend cache loads only the lists on its own; history waits to be asked for', async () => {
+  const calls: string[] = []
+  const core = memoryCore({
+    fetch: fakeSlack(
+      {
+        ...auth,
+        'users.conversations': () => ({ channels: [{ id: 'C1', name: 'general' }] }),
+        'users.list': () => ({ members: [{ id: 'U1', name: 'sam' }] }),
+        'search.messages': searchAnswer([
+          { ts: '1700000001.000100', user: 'U1', text: 'hello', channel: { id: 'C1', name: 'general' }, permalink: permalink('C1', '1700000001.000100') },
+        ]),
+      },
+      calls,
+    ),
+  })
+  const cache = new EntityCache({
+    scan: async (ids) => core.actions.scan({ ids }),
+    load: (request) => core.actions.load(request),
+    foreign: foreignOf,
+  })
+  core.onChange((changed) => cache.invalidate(changed))
+  const settle = async (id: string) => {
+    for (let i = 0; i < 10; i++) {
+      focusOf(id, cache.source())
+      await cache.idle()
+      await new Promise((resolve) => setTimeout(resolve, 160))
+    }
+    return focusOf(id, cache.source())
+  }
+  await core.actions.submit({ id: 'slack', text: 'xoxp-1' })
+  await core.slack.poll()
+  assert.deepEqual((await settle('slack')).children.map((child) => child.data.title), ['#general'])
+  const conversation = await settle('slack:conv:C1')
+  assert.deepEqual(conversation.children.map((child) => [child.data.author, child.data.text]), [['sam', 'hello']])
+  assert.equal(conversation.older, true)
+  const count = (method: string) => calls.filter((call) => call === method).length
+  assert.equal(count('users.conversations'), 1)
+  assert.equal(count('conversations.history'), 0)
+  assert.equal(count('users.info'), 0)
+})
+
+test('slack: the watch brings in new messages by search, under their conversation or thread', async () => {
+  let time = 1_700_000_000_000
+  let matches: unknown[] = []
+  const core = memoryCore({
+    now: () => time,
+    fetch: fakeSlack({ ...auth, 'search.messages': () => ({ messages: { matches, paging: { pages: 1 } } }) }),
+  })
+  await core.slack.setToken('xoxp-1')
   core.cache.write([
     ...values('slack:conv:C1', { type: 'slack.conversation', channel: 'C1', kind: 'channel', name: 'general' }, 0, 'slack'),
     link('slack', 'slack:conv:C1', 0, 'slack'),
@@ -292,47 +325,25 @@ test('slack: the watch brings in new messages by search, without loading any con
     link('slack', 'slack:conv:C2', 0, 'slack'),
     link('slack:conv:C2', 'slack:msg:C2:1699999000.000000', 1699999000000, 'slack'),
   ])
-  // The first look only notes where the watch starts.
+  // The first look is the first batch back: nothing there, so the watch starts now.
   await core.slack.poll()
   assert.equal(core.item('slack')!.data['watch.at'], '1700000000.000000')
 
   time += 30_000
   const channel = { id: 'C1', name: 'general' }
   matches = [
-    { ts: '1700000020.000100', user: 'U2', text: 'reply', channel, permalink: 'https://x.slack.com/archives/C1/p1700000020000100?thread_ts=1700000010.000100' },
-    { ts: '1700000010.000100', user: 'U2', text: 'hello', channel, permalink: 'https://x.slack.com/archives/C1/p1700000010000100?thread_ts=1700000010.000100' },
-    { ts: '1700000015.000100', user: 'U3', text: 'hi Ann', channel: { id: 'D9', is_im: true, name: 'U3' }, permalink: 'https://x.slack.com/archives/D9/p1700000015000100' },
-    { ts: '1700000016.000100', user: 'U3', text: 'elsewhere', channel: { id: 'C7', name: 'not-mine' }, permalink: 'https://x.slack.com/archives/C7/p1700000016000100' },
+    { ts: '1700000020.000100', user: 'U2', text: 'reply', channel, permalink: permalink('C1', '1700000020.000100', '1700000010.000100') },
+    { ts: '1700000010.000100', user: 'U2', text: 'hello', channel, permalink: permalink('C1', '1700000010.000100', '1700000010.000100') },
+    { ts: '1700000015.000100', user: 'U3', text: 'hi Ann', channel: { id: 'D9', is_im: true, name: 'U3' }, permalink: permalink('D9', '1700000015.000100') },
+    { ts: '1700000016.000100', user: 'U3', text: 'elsewhere', channel: { id: 'C7', name: 'not-mine' }, permalink: permalink('C7', '1700000016.000100') },
   ]
   await core.slack.poll()
   await core.slack.poll()
   const general = core.focus('slack:conv:C1')
   assert.deepEqual(general.children.map((child) => child.data.text), ['hello'])
-  // Its new message puts it first; the DM's came later still.
-  assert.deepEqual(core.focus('slack').children.map((child) => child.id).slice(0, 3), ['slack:conv:D9', 'slack:conv:C1', 'slack:conv:C2'])
   assert.equal(general.children[0].data.replyCount, 1)
   assert.deepEqual(core.focus('slack:msg:C1:1700000010.000100').children.map((child) => child.data.text), ['reply'])
-  // A DM nobody had loaded yet joins the list.
-  assert.ok(core.entity('slack').outboundLinks.includes('slack:conv:D9'))
-  assert.equal(core.item('slack:conv:D9')!.data.kind, 'im')
-  // A public channel I am not in is not.
+  assert.deepEqual(core.focus('slack').children.map((child) => child.id).slice(0, 3), ['slack:conv:D9', 'slack:conv:C1', 'slack:conv:C2'])
   assert.ok(!core.entity('slack').outboundLinks.includes('slack:conv:C7'))
   assert.equal(core.item('slack')!.data['watch.at'], '1700000020.000100')
-  assert.ok(!calls.includes('conversations.history') && !calls.includes('conversations.info'))
-})
-
-test('slack: conversations and threads load once, and only again when I refresh them', async () => {
-  const calls: string[] = []
-  let time = 1_700_000_000_000
-  const core = memoryCore({
-    now: () => time,
-    fetch: fakeSlack({ ...auth, 'conversations.history': () => ({ messages: [] }) }, calls),
-  })
-  await core.slack.setToken('xoxp-1')
-  await core.load({ id: 'slack:conv:C1', part: 'children' })
-  time += 30 * 24 * 60 * 60_000
-  await core.load({ id: 'slack:conv:C1', part: 'children' })
-  assert.equal(calls.filter((call) => call === 'conversations.history').length, 1)
-  await core.refresh('slack:conv:C1')
-  assert.equal(calls.filter((call) => call === 'conversations.history').length, 2)
 })

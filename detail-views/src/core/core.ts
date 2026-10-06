@@ -324,6 +324,16 @@ export class Core {
     return outcome
   }
 
+  older(id: string): Promise<Outcome> {
+    const entity = this.item(id)
+    const module = entity && this.moduleFor(id, { type: entity.type })
+    if (!entity || !module?.older || !module.view.older?.(entity)) return Promise.resolve({ events: [], error: null })
+    return this.attempt(id, async () => {
+      await module.older!(id)
+      return []
+    })
+  }
+
   private write(events: AppEvent[]): Outcome {
     this.owned.write(events)
     return { events, error: null }
@@ -346,6 +356,8 @@ export class Core {
       return this.write([value(id, 'done', !entity.data.done, this.now(), me)])
     },
     markRead: ({ id }: { id: string }): Promise<Outcome> => this.attempt(id, () => this.slack.markRead(id)),
+    /** Loads further back than anything loads on its own. */
+    older: ({ id }: { id: string }): Promise<Outcome> => this.older(id),
     /** Bytes of an image a message presented, by the ref it gave. */
     slackImage: ({ ref }: { ref: string }) => this.slack.image(ref),
     link: ({ parent, child }: { parent: string; child: string }): Outcome => this.write([link(parent, child, this.now(), me)]),

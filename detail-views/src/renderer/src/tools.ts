@@ -81,6 +81,13 @@ export const tools: Tool[] = [
   { id: 'focus.forward', scope: 'app', keys: ['Alt+ArrowRight'], run: (s) => s.forward() },
   { id: 'focus.refresh', scope: 'app', keys: ['r', 'F5'], run: (s) => s.refresh() },
   {
+    id: 'focus.older',
+    scope: 'app',
+    keys: ['o'],
+    enabled: (s) => Boolean(s.get().focus?.older),
+    run: (s) => s.older(),
+  },
+  {
     id: 'composer.enter',
     scope: 'app',
     keys: ['Enter'],

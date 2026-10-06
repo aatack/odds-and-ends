@@ -40,6 +40,8 @@ export interface ModuleView {
   compose?(entity: Entity, lens: Lens): ComposeKind | null
   /** What can be done to an entity right now. */
   actions?(entity: Entity, lens: Lens): Action[]
+  /** Whether more of it can be loaded from further back, on demand (`Module.older`). */
+  older?(entity: Entity): boolean
 }
 
 /** The sidebar, in order. */
@@ -110,7 +112,7 @@ export function focusOf(id: string, source: Source): Focus {
   const error = source.error(id)
   const raw = lens.read(id)
   if (!raw) {
-    return { entity: null, children: [], module: null, compose: null, actions: [], loading, error: error ?? (loading ? null : 'not found') }
+    return { entity: null, children: [], module: null, compose: null, actions: [], older: false, loading, error: error ?? (loading ? null : 'not found') }
   }
   const view = moduleOf(raw.type)
   source.expand(id)
@@ -129,6 +131,7 @@ export function focusOf(id: string, source: Source): Focus {
     module: view?.id ?? null,
     compose: view?.compose?.(entity, lens) ?? null,
     actions: view?.actions?.(entity, lens) ?? [],
+    older: view?.older?.(entity) ?? false,
     loading,
     error,
   }

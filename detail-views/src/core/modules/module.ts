@@ -34,6 +34,8 @@ export interface Module {
   load?(id: string, part: LoadPart, type: ItemType): Promise<void>
   /** Does one of `view.actions`, confirmed, with whatever was typed. Returns the owned events written. */
   perform?(entity: Entity, action: string, text: string): Promise<AppEvent[]>
+  /** Loads further back, on demand (only where `view.older` says it can). */
+  older?(id: string): Promise<void>
   /** What the composer does. Returns the owned events written. */
   submit?(entity: Entity, text: string): Promise<AppEvent[]>
 }

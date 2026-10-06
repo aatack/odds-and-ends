@@ -19,6 +19,7 @@ npm run dev
 | `Alt+→` | forward |
 | `Enter` | write; `Enter` again sends (or closes when empty), `Shift+Enter` new line, `Esc` closes |
 | `r` | refresh |
+| `o` | load further back: all of Slack, this conversation, or this thread |
 | `x` `Space` | tick a task |
 | `a` | approve a PR |
 | `X` | close my PR and delete its branch |
@@ -36,11 +37,16 @@ the local database. The Slack app it belongs to needs these user scopes:
 im:history mpim:history users:read files:read search:read chat:write channels:write groups:write
 im:write mpim:write`
 
-The list is ordered by each conversation's newest message. Each conversation
-loads once: its newest message when it is first shown (one call each, so the
-order settles over the first few minutes), its history when it is first opened. After that, one search every 15 seconds
-brings in whatever is new across all of them, and catches up on start with
-what came while the app was closed. `r` loads a conversation whole again.
+On a new cache the app loads Slack's lists (my conversations, every public
+channel, every user: a few calls each) and the newest 1000 messages across
+every conversation, by one search. The list is ordered by each conversation's
+newest message; one with nothing in that batch sits at the bottom. After that,
+one search every 15 seconds brings in whatever is new, and catches up on start
+with what came while the app was closed.
+
+Nothing older loads on its own. `o` on the Slack list goes 1000 messages
+further back across everything; `o` in a conversation loads its 100 before
+what is there; `o` in a thread loads the thread whole.
 
 ## GitHub
 
