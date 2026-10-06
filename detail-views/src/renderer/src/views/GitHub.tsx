@@ -3,7 +3,7 @@ import type { Badge as BadgeData } from '../../../core/types.ts'
 import { authorColour } from '../format.ts'
 import type { PillProps, RowProps } from './kindTypes.ts'
 import { MessageBody, MessageRow, showsAuthor, showsTime } from './messages.tsx'
-import { Badge, Composer, HeaderPill, Link, Row, Status } from './primitives.tsx'
+import { Badge, Composer, HeaderPill, Link, Row, Status, Working } from './primitives.tsx'
 import type { FocusProps } from './types.ts'
 
 const reviewWords: Record<string, string> = {
@@ -186,13 +186,13 @@ export function GitHubPr(props: FocusProps) {
             {data.files === 1 ? 'file' : 'files'}
           </span>
           {focus.actions.map((action) => (
-            <button
+            <Working
               key={action.id}
-              className={`action${props.acting === action.id ? ' active' : ''}`}
+              busy={props.working?.includes(action.id)}
+              active={props.acting === action.id}
+              label={action.label}
               onClick={() => props.onAction?.(action.id)}
-            >
-              {action.label}
-            </button>
+            />
           ))}
         </div>
       ) : null}

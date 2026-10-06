@@ -612,7 +612,12 @@ body,
   background: var(--canvas);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 0 10px;
+  padding: 3px 6px;
+}
+
+.facts .action.busy,
+.history .action.busy {
+  color: var(--muted);
 }
 
 .facts .action.active {

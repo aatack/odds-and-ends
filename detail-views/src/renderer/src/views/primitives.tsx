@@ -184,3 +184,16 @@ function PageLink(props: { href: string; children: ReactNode }) {
     </a>
   )
 }
+
+/** A button that does something slow: while it is under way it says so and can't be pressed again. */
+export function Working(props: { label: string; busyLabel?: string; busy?: boolean; active?: boolean; onClick(): void }) {
+  return (
+    <button
+      className={`action${props.active ? ' active' : ''}${props.busy ? ' busy' : ''}`}
+      disabled={props.busy}
+      onClick={props.onClick}
+    >
+      {props.busy ? (props.busyLabel ?? `${props.label}…`) : props.label}
+    </button>
+  )
+}
