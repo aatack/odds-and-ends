@@ -47,10 +47,7 @@ export const PrRow = memo(function PrRow(props: RowProps) {
     <Row id={props.entity.id} selected={props.selected} className={data.draft ? 'draft' : ''} onSelect={props.onSelect}>
       <Badge badge={data.badge as BadgeData | null | undefined} />
       <span className="grow">
-        <span className="muted">
-          {String(data.repo ?? '').split('/').pop()}#{String(data.number ?? '')}
-        </span>{' '}
-        {String(data.title ?? data.url)}
+        <span className="muted">{String(data.repo ?? '').split('/').pop()}</span> {String(data.name ?? data.url)}
       </span>
     </Row>
   )
@@ -62,7 +59,7 @@ export function PrPill(props: PillProps) {
     <>
       <Badge badge={data.badge as BadgeData | null | undefined} />
       <span className="item-name">
-        {data.number ? `#${String(data.number)} ${String(data.title ?? '')}` : (props.fallback ?? String(data.url ?? props.entity.id))}
+        {data.name ? String(data.name) : (props.fallback ?? String(data.url ?? props.entity.id))}
       </span>
     </>
   )

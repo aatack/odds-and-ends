@@ -186,6 +186,18 @@ const reviewWords: Record<string, string> = {
 }
 
 /**
+ * A PR's name as shown: its title without a leading `#1234` or a
+ * conventional-commit prefix (`feat: `, `fix(ui): `, `chore!: `).
+ */
+export function prName(title: string): string {
+  const name = title
+    .replace(/^#\d+\s*/, '')
+    .replace(/^[a-z]+(?:\/[a-z]+)*(?:\([^)]*\))?!?:\s+/, '')
+    .trim()
+  return name || title
+}
+
+/**
  * Merged, anyone's: purple.
  * Someone else's PR: whether it is approved, and whether by me.
  * Mine: what stands in its way, worst first, then how approved it is.
@@ -316,7 +328,8 @@ export class GitHub implements Module {
       const data = entity.data
       // `label` names the PR where nothing else does, as in a peek's bar.
       const locallyApproved = Boolean(this.localApproval(entity.id))
-      return { ...entity, data: { ...data, locallyApproved, badge: badge(data, locallyApproved), label: data.title ? `${String(data.repo)}#${String(data.number)} ${String(data.title)}` : String(data.url) } }
+      const name = data.title ? prName(String(data.title)) : undefined
+      return { ...entity, data: { ...data, locallyApproved, badge: badge(data, locallyApproved), name, label: name ?? String(data.url) } }
     }
     if (entity.type === 'github.item') {
       // Shaped like a Slack message, so the same views draw it.
