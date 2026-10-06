@@ -161,6 +161,8 @@ export class Core {
         this.setError(id, error instanceof Error ? error.message : String(error))
       }
     },
+    /** Bytes of an image a message presented, by the ref it gave. */
+    slackImage: ({ ref }: { ref: string }) => this.slack.image(ref),
     link: ({ parent, child }: { parent: string; child: string }): void => this.store.link(parent, child),
     unlink: ({ parent, child }: { parent: string; child: string }): void => this.store.unlink(parent, child),
   }

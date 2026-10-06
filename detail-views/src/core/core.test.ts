@@ -157,3 +157,42 @@ test('slack: user mentions are parts that open the DM with that user', () => {
     ' & co',
   ])
 })
+
+test('slack: images download once with the token, then come from the cache', async () => {
+  const seen: { url: string; auth: string | null }[] = []
+  const core = new Core({
+    path: ':memory:',
+    fetch: (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.startsWith('https://files.slack.com/')) {
+        seen.push({ url, auth: new Headers(init?.headers).get('authorization') })
+        return new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/png' } })
+      }
+      return new Response(JSON.stringify({ ok: true, user_id: 'UME', url: '', channels: [] }))
+    }) as typeof fetch,
+  })
+  await core.slack.setToken('xoxp-1')
+  const image = { id: 'F1', name: 'a.png', full: 'https://files.slack.com/a.png', thumb: 'https://files.slack.com/a_480.png' }
+  core.store.put('slack:msg:C1:1.0', 'slack.message', { channel: 'C1', ts: '1.0', text: '', images: [image] }, { ttl: 1000 })
+  const presented = core.slack.present(core.store.get('slack:msg:C1:1.0')!).data.images as { thumb: string }[]
+  const first = await core.actions.slackImage({ ref: presented[0].thumb })
+  await core.actions.slackImage({ ref: presented[0].thumb })
+  assert.deepEqual([...first.data], [1, 2, 3])
+  assert.deepEqual(seen, [{ url: image.thumb, auth: 'Bearer xoxp-1' }])
+})
+
+test('slack: the token is never sent to a host outside Slack', async () => {
+  const urls: string[] = []
+  const core = new Core({
+    path: ':memory:',
+    fetch: (async (input: string | URL | Request) => {
+      urls.push(String(input))
+      return new Response(JSON.stringify({ ok: true, user_id: 'UME', url: '', channels: [] }))
+    }) as typeof fetch,
+  })
+  await core.slack.setToken('xoxp-1')
+  const image = { id: 'F1', name: 'a.png', full: 'https://evil.example/a.png', thumb: 'https://evil.example/a.png' }
+  core.store.put('slack:msg:C1:1.0', 'slack.message', { channel: 'C1', ts: '1.0', text: '', images: [image] }, { ttl: 1000 })
+  await assert.rejects(core.actions.slackImage({ ref: 'thumb/slack:msg:C1:1.0/F1' }), /refusing/)
+  assert.ok(!urls.some((url) => url.includes('evil')))
+})

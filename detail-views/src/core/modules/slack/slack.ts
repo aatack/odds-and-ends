@@ -41,8 +41,31 @@ interface RawMessage {
   text?: string
   reply_count?: number
   latest_reply?: string
-  files?: { name?: string }[]
+  files?: RawFile[]
   reactions?: { name: string; count: number; users?: string[] }[]
+}
+
+interface RawFile {
+  id: string
+  name?: string
+  mimetype?: string
+  url_private?: string
+  thumb_360?: string
+  thumb_480?: string
+  thumb_360_w?: number
+  thumb_360_h?: number
+  thumb_480_w?: number
+  thumb_480_h?: number
+}
+
+/** An image attached to a message. */
+export interface ImageData {
+  id: string
+  name: string
+  full: string
+  thumb: string
+  width?: number
+  height?: number
 }
 
 interface ConversationInfo {
@@ -72,6 +95,7 @@ export interface MessageData {
   replyCount?: number
   latestReply?: string
   reactions?: { name: string; count: number; users: string[] }[]
+  images?: ImageData[]
 }
 
 function maxTs(...values: (string | undefined)[]): string | undefined {
@@ -81,7 +105,18 @@ function maxTs(...values: (string | undefined)[]): string | undefined {
 }
 
 function messageData(channel: string, raw: RawMessage): MessageData {
-  const files = (raw.files ?? []).map((file) => file.name).filter(Boolean)
+  const isImage = (file: RawFile) => Boolean(file.mimetype?.startsWith('image/') && file.url_private)
+  const files = (raw.files ?? []).filter((file) => !isImage(file)).map((file) => file.name).filter(Boolean)
+  const images = (raw.files ?? []).filter(isImage).map(
+    (file): ImageData => ({
+      id: file.id,
+      name: file.name ?? file.id,
+      full: file.url_private!,
+      thumb: file.thumb_480 ?? file.thumb_360 ?? file.url_private!,
+      width: file.thumb_480_w ?? file.thumb_360_w,
+      height: file.thumb_480_h ?? file.thumb_360_h,
+    }),
+  )
   return {
     channel,
     ts: raw.ts,
@@ -92,6 +127,7 @@ function messageData(channel: string, raw: RawMessage): MessageData {
     text: [raw.text ?? '', ...files.map((name) => `[${name}]`)].filter(Boolean).join('\n'),
     replyCount: raw.reply_count,
     latestReply: raw.latest_reply,
+    images: images.length ? images : undefined,
     reactions: raw.reactions?.map(({ name, count, users }) => ({ name, count, users: users ?? [] })),
   }
 }
@@ -106,6 +142,7 @@ export class Slack implements Module {
   private api: SlackApi | null = null
   private readonly lookups = new Set<string>()
   private counting: Promise<void> | null = null
+  private readonly downloads = new Map<string, Promise<{ mime: string; data: Uint8Array }>>()
 
   constructor(context: ModuleContext) {
     this.context = context
@@ -161,6 +198,31 @@ export class Slack implements Module {
     await this.refresh(ids.root)
   }
 
+  /**
+   * An image attached to a message, from the cache or from Slack. `ref` is
+   * `<size>/<message id>/<file id>`, as handed out by `present`.
+   */
+  async image(ref: string): Promise<{ mime: string; data: Uint8Array }> {
+    const cached = this.store.getBlob(`slack:image:${ref}`)
+    if (cached) return cached
+    const [size, ...rest] = ref.split('/')
+    const fileId = rest.pop()
+    const message = this.store.get(rest.join('/'))
+    const image = (message?.data as MessageData | undefined)?.images?.find((candidate) => candidate.id === fileId)
+    if (!image || !this.api) throw new Error('image not found')
+    const pending = this.downloads.get(ref)
+    if (pending) return pending
+    const download = this.api
+      .download(size === 'full' ? image.full : image.thumb, 'image/')
+      .then((blob) => {
+        this.store.putBlob(`slack:image:${ref}`, blob, { ttl: ttl.message })
+        return blob
+      })
+      .finally(() => this.downloads.delete(ref))
+    this.downloads.set(ref, download)
+    return download
+  }
+
   /** Marks a conversation read up to its newest message, in Slack too. */
   async markRead(id: string): Promise<void> {
     const entity = this.store.get(id)
@@ -196,6 +258,13 @@ export class Slack implements Module {
           text: this.render(data.text),
           parts: this.parts(data.text),
           authorKey: data.user ?? data.botName ?? 'bot',
+          images: (data.images ?? []).map((image) => ({
+            name: image.name,
+            thumb: `thumb/${entity.id}/${image.id}`,
+            full: `full/${entity.id}/${image.id}`,
+            width: image.width,
+            height: image.height,
+          })),
           quiet: Boolean(data.subtype && quiet.has(data.subtype)),
           reactions: (data.reactions ?? []).map((reaction) => ({
             emoji: emoji(reaction.name),

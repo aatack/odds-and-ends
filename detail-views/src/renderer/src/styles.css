@@ -341,3 +341,37 @@ body,
   background: var(--select);
   color: var(--muted);
 }
+
+.images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 2px;
+}
+
+.thumb {
+  display: block;
+  max-width: 360px;
+  max-height: 240px;
+  border-radius: var(--radius);
+  background: var(--select);
+  object-fit: cover;
+}
+
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgb(0 0 0 / 0.8);
+}
+
+.viewer img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--radius);
+}

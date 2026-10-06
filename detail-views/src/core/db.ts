@@ -28,6 +28,15 @@ const migrations: string[] = [
     value TEXT NOT NULL
   );
   `,
+  `
+  CREATE TABLE blobs (
+    key TEXT PRIMARY KEY,
+    mime TEXT NOT NULL,
+    data BLOB NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+  `,
 ]
 
 export function openDatabase(path: string): DatabaseSync {

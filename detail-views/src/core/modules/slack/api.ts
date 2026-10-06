@@ -103,6 +103,24 @@ export class SlackApi {
     throw new SlackError(method, 'ratelimited')
   }
 
+  /**
+   * Downloads a private file. The token only ever goes to Slack's own hosts,
+   * and an answer that isn't the kind of file asked for (Slack's sign-in
+   * page, when a scope is missing) is refused.
+   */
+  async download(url: string, expect: string): Promise<{ mime: string; data: Uint8Array }> {
+    const { protocol, hostname } = new URL(url)
+    if (protocol !== 'https:' || !(hostname === 'slack.com' || hostname.endsWith('.slack.com') || hostname.endsWith('.slack-edge.com'))) {
+      throw new SlackError('download', `refusing to send the token to ${hostname}`)
+    }
+    await this.limiter.take()
+    const response = await this.fetch(url, { headers: { authorization: `Bearer ${this.token}` } })
+    const mime = response.headers.get('content-type')?.split(';')[0] ?? ''
+    if (!response.ok) throw new SlackError('download', String(response.status))
+    if (!mime.startsWith(expect)) throw new SlackError('download', `got ${mime || 'nothing'}; is files:read granted?`)
+    return { mime, data: new Uint8Array(await response.arrayBuffer()) }
+  }
+
   /** Follows `response_metadata.next_cursor` to the end. */
   async paginate<T>(method: string, key: string, params: Params = {}): Promise<T[]> {
     const items: T[] = []

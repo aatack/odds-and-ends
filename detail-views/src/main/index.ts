@@ -1,9 +1,12 @@
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeTheme, protocol, shell } from 'electron'
 import { Core } from '../core/core.ts'
 
 let core: Core | null = null
+
+/** `slack-image://<size>/<message id>/<file id>`: Slack images, through the core's cache. */
+protocol.registerSchemesAsPrivileged([{ scheme: 'slack-image', privileges: { standard: false, secure: true } }])
 
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -40,6 +43,16 @@ void app.whenReady().then(() => {
   core = new Core({ path })
   core.start()
   const actions = core.actions as Record<string, (args: unknown) => unknown>
+
+  protocol.handle('slack-image', async (request) => {
+    try {
+      const ref = decodeURIComponent(request.url.slice('slack-image://'.length))
+      const { mime, data } = await core!.slack.image(ref)
+      return new Response(Buffer.from(data), { headers: { 'content-type': mime } })
+    } catch (error) {
+      return new Response(error instanceof Error ? error.message : String(error), { status: 404 })
+    }
+  })
 
   ipcMain.handle('invoke', (_event, name: string, args: unknown) => {
     const action = actions[name]
