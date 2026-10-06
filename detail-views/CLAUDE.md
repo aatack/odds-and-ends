@@ -76,7 +76,7 @@ constraints every change must keep.
   `itemTypes` and giving it all three views.
 - **Pills are one component.** The same pill names an item everywhere: in
   text (`ItemPill`: peek on hover, push on click), heading a full view and in a
-  peek's bar (`HeaderPill`: inert). A full view inside a peek drops its own
+  peek's bar (`HeaderPill`: inert, and without the pill's frame). A full view inside a peek drops its own
   header (`headed={false}`) because the bar already names it. Badges are worked
   out by the module (`Badge` in `core/types.ts`).
 - No animations. The cursor never becomes a pointer.

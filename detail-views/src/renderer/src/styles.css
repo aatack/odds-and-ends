@@ -660,15 +660,18 @@ body,
 .badge.tick.green { color: #2e9d5b; }
 .badge.cross.red { color: #d1453b; }
 
-/* A pill heading a view or window: framed the same, nothing to press. */
+/* A pill heading a view or window: the same content, without the frame. */
 .item-pill.header {
   font-size: 1em;
   max-width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
   vertical-align: baseline;
 }
 
 .item-pill.header:hover {
-  background: var(--canvas);
+  background: none;
 }
 
 .item-pill .count {
