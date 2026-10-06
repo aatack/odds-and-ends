@@ -267,3 +267,62 @@ test('the first database is imported once, read-only, and left as it was', () =>
   assert.equal(core.item('slack:conv:C1')?.data.kind, undefined)
   assert.deepEqual(new DatabaseSync(legacy).prepare('SELECT count(*) AS n FROM entities').get(), before)
 })
+
+test('slack: the watch brings in new messages by search, without loading any conversation', async () => {
+  let time = 1_700_000_000_000
+  const calls: string[] = []
+  let matches: unknown[] = []
+  const core = memoryCore({
+    now: () => time,
+    fetch: fakeSlack(
+      { ...auth, 'search.messages': () => ({ messages: { matches, paging: { pages: 1 } } }) },
+      calls,
+    ),
+  })
+  await core.slack.setToken('xoxp-1')
+  // A conversation whose count and history have loaded once.
+  core.cache.write([
+    ...values('slack:conv:C1', { type: 'slack.conversation', channel: 'C1', kind: 'channel', name: 'general', lastRead: '1700000000.000000', unread: 0 }, 0, 'slack'),
+    link('slack', 'slack:conv:C1', 0, 'slack'),
+  ])
+  // The first look only notes where the watch starts.
+  await core.slack.poll()
+  assert.equal(core.item('slack')!.data['watch.at'], '1700000000.000000')
+
+  time += 30_000
+  const channel = { id: 'C1', name: 'general' }
+  matches = [
+    { ts: '1700000020.000100', user: 'U2', text: 'reply', channel, permalink: 'https://x.slack.com/archives/C1/p1700000020000100?thread_ts=1700000010.000100' },
+    { ts: '1700000010.000100', user: 'U2', text: 'hello', channel, permalink: 'https://x.slack.com/archives/C1/p1700000010000100?thread_ts=1700000010.000100' },
+    { ts: '1700000015.000100', user: 'U3', text: 'hi Ann', channel: { id: 'D9', is_im: true, name: 'U3' }, permalink: 'https://x.slack.com/archives/D9/p1700000015000100' },
+  ]
+  await core.slack.poll()
+  await core.slack.poll()
+  const general = core.focus('slack:conv:C1')
+  assert.deepEqual(general.children.map((child) => child.data.text), ['hello'])
+  assert.equal(general.entity!.data.unread, 1)
+  assert.equal(general.entity!.data.latestTs, '1700000010.000100')
+  assert.equal(general.children[0].data.replyCount, 1)
+  assert.deepEqual(core.focus('slack:msg:C1:1700000010.000100').children.map((child) => child.data.text), ['reply'])
+  // A DM nobody had loaded yet joins the list.
+  assert.ok(core.entity('slack').outboundLinks.includes('slack:conv:D9'))
+  assert.equal(core.item('slack:conv:D9')!.data.kind, 'im')
+  assert.equal(core.item('slack')!.data['watch.at'], '1700000020.000100')
+  assert.ok(!calls.includes('conversations.history') && !calls.includes('conversations.info'))
+})
+
+test('slack: conversations and threads load once, and only again when I refresh them', async () => {
+  const calls: string[] = []
+  let time = 1_700_000_000_000
+  const core = memoryCore({
+    now: () => time,
+    fetch: fakeSlack({ ...auth, 'conversations.history': () => ({ messages: [] }) }, calls),
+  })
+  await core.slack.setToken('xoxp-1')
+  await core.load({ id: 'slack:conv:C1', part: 'children' })
+  time += 30 * 24 * 60 * 60_000
+  await core.load({ id: 'slack:conv:C1', part: 'children' })
+  assert.equal(calls.filter((call) => call === 'conversations.history').length, 1)
+  await core.refresh('slack:conv:C1')
+  assert.equal(calls.filter((call) => call === 'conversations.history').length, 2)
+})

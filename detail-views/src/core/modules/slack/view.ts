@@ -130,14 +130,17 @@ export const slackView: ModuleView = {
 
   owns: (type) => type.startsWith('slack.'),
 
+  // Conversations, messages and threads load once: after that the watch
+  // (`Slack.poll`) brings in what is new, so nothing is fetched again unless
+  // I refresh it.
   foreign(_id, type) {
     switch (type) {
       case 'slack.home':
-        return { children: 2 * minute }
+        return { children: 60 * minute }
       case 'slack.conversation':
-        return { self: 5 * minute, children: 30_000 }
+        return { self: Infinity, children: Infinity }
       case 'slack.message':
-        return { self: day, children: 30_000 }
+        return { self: Infinity, children: Infinity }
       case 'slack.user':
         return { self: 7 * day }
       default:

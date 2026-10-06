@@ -75,6 +75,7 @@ const reads = new Set([
   'conversations.info',
   'conversations.history',
   'conversations.replies',
+  'search.messages',
 ])
 
 /** Off while the app is being developed, so nothing is sent by accident. */

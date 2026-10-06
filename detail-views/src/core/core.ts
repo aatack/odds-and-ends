@@ -73,6 +73,7 @@ export class Core {
   private notifying = false
   private lastNotified = 0
   private clearer: ReturnType<typeof setInterval> | null = null
+  private stopWatches: (() => void) | null = null
 
   constructor(options: CoreOptions) {
     this.now = options.now ?? Date.now
@@ -113,15 +114,22 @@ export class Core {
     this.modules = [this.slack, this.github, tasksModule(context)]
   }
 
-  /** Starts the weekly clear-out of the cache. Leave it off in tests and call `clearCache` directly. */
+  /**
+   * Starts what runs while the app is open: the weekly clear-out of the cache,
+   * and the watches that keep it current. Leave it off in tests and call
+   * `clearCache` and `slack.poll` directly.
+   */
   start(): void {
     this.clearCacheIfOld()
     this.clearer ??= setInterval(() => this.clearCacheIfOld(), checkEvery)
+    this.stopWatches ??= this.slack.watch()
   }
 
   stop(): void {
     if (this.clearer) clearInterval(this.clearer)
     this.clearer = null
+    this.stopWatches?.()
+    this.stopWatches = null
   }
 
   private clearCacheIfOld(): void {
@@ -255,7 +263,7 @@ export class Core {
     const fresh = type && module?.view.foreign?.(id, type)?.[part]
     if (!type || !module?.load || fresh === undefined || fresh === null) return Promise.resolve({ error: null })
     const loadedAt = Number(entity.values[loadedKey(part)]) || 0
-    if (!request.force && this.now() - loadedAt < fresh) return Promise.resolve({ error: null })
+    if (!request.force && loadedAt && this.now() - loadedAt < fresh) return Promise.resolve({ error: null })
 
     const started = module
       .load(id, part, type)
