@@ -452,7 +452,7 @@ body,
   color: var(--muted);
 }
 
-.preview {
+.peek {
   position: fixed;
   z-index: 50;
   display: flex;
@@ -464,7 +464,8 @@ body,
   box-shadow: 0 12px 40px rgb(0 0 0 / 0.18);
 }
 
-.preview-bar {
+.peek-bar {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -472,9 +473,10 @@ body,
   font-size: 13px;
   color: var(--muted);
   background: var(--panel);
+  user-select: none;
 }
 
-.preview-bar button {
+.peek-bar button {
   font: inherit;
   color: var(--ink);
   background: var(--canvas);
@@ -483,9 +485,46 @@ body,
   padding: 2px 10px;
 }
 
-.preview-page {
+.peek-bar .peek-close {
+  border-color: transparent;
+  background: none;
+  padding: 0 6px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.peek-bar .peek-close:hover {
+  color: var(--ink);
+}
+
+.peek-body {
   flex: 1;
-  width: 100%;
+  min-height: 0;
+  display: flex;
+}
+
+.peek-page {
+  flex: 1;
   border: none;
   background: white;
+}
+
+.peek-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+}
+
+/* While dragging, catches the pointer even over a page in a webview. */
+.peek-capture {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+}
+
+.peek-resize {
+  cursor: nwse-resize;
 }

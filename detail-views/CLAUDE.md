@@ -48,8 +48,11 @@ constraints every change must keep.
 - **A click highlights, it never focuses.** Clicking an item moves the cursor
   to it; only `d` focuses. The exceptions are deliberate shortcuts: a person
   or mention pushes their conversation, and a thumbnail opens the image.
-- **Every link is `Link`** (`views/primitives.tsx`). Hovering previews the page
-  in a locked-down `<webview>`; the browser opens only from the preview.
+- **Peeks.** Anything that refers to something else is peekable: hovering it
+  opens a floating window onto a URL (a locked-down `<webview>`) or an entity
+  (its normal focus view). Use `Link` for URLs and `usePeek` for anything else
+  (`views/primitives.tsx`). Moving or resizing a peek pins it (with an `×`);
+  pinned peeks persist. `Open` sends a URL to the browser or pushes an entity.
 - No animations. The cursor never becomes a pointer.
 
 ### Code

@@ -7,6 +7,8 @@ export interface Snapshot {
   state: S.State
   focus: Focus | null
   modules: ModuleInfo[]
+  /** What each open entity peek shows, by entity id. */
+  peekFoci: Record<string, Focus>
 }
 
 const storageKey = 'detail-views.state'
@@ -18,20 +20,24 @@ export class Session {
   private readonly listeners = new Set<() => void>()
   private snapshot: Snapshot
   private request = 0
-  private previewOpening: ReturnType<typeof setTimeout> | null = null
-  private previewClosing: ReturnType<typeof setTimeout> | null = null
+  private previousPeeks: S.Peek[] = []
+  private peekOpening: ReturnType<typeof setTimeout> | null = null
+  private peekClosing: ReturnType<typeof setTimeout> | null = null
 
   constructor(api: Api, env: Environment) {
     this.api = api
     this.env = env
-    this.snapshot = { state: S.restore(env.load(storageKey), 'slack'), focus: null, modules: [] }
+    this.snapshot = { state: S.restore(env.load(storageKey), 'slack'), focus: null, modules: [], peekFoci: {} }
   }
 
   async start(): Promise<() => void> {
     const modules = await this.api.modules()
     this.set({ modules })
-    const stop = this.api.onChange(() => void this.load())
-    await this.load()
+    const stop = this.api.onChange(() => {
+      void this.load()
+      void this.loadPeeks()
+    })
+    await Promise.all([this.load(), this.loadPeeks()])
     return stop
   }
 
@@ -53,6 +59,10 @@ export class Session {
     const moved = S.focused(next) !== S.focused(this.snapshot.state)
     this.set({ state: next, ...(moved ? { focus: null } : {}) })
     if (moved) void this.load()
+    if (next.peeks !== this.previousPeeks) {
+      this.previousPeeks = next.peeks
+      void this.loadPeeks()
+    }
   }
 
   /** Reads the focused entity; a slower answer for an older focus is dropped. */
@@ -109,40 +119,65 @@ export class Session {
     void this.api.refresh(S.focused(this.state))
   }
 
-  /** Hovering a link previews it after a moment, so passing over one doesn't. */
-  hoverLink(url: string, anchor: S.Rect): void {
-    this.holdPreview()
-    if (this.previewOpening) clearTimeout(this.previewOpening)
-    this.previewOpening = setTimeout(() => {
-      this.previewOpening = null
-      this.update(S.setPreview(this.state, { url, anchor }))
+  /** Hovering something peekable opens a peek after a moment, so passing over one doesn't. */
+  hoverPeek(target: S.PeekTarget, anchor: S.Rect): void {
+    this.holdPeek()
+    if (this.peekOpening) clearTimeout(this.peekOpening)
+    const current = S.transientPeek(this.state)
+    if (current && S.sameTarget(current.target, target)) return
+    this.peekOpening = setTimeout(() => {
+      this.peekOpening = null
+      const key = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+      this.update(S.showPeek(this.state, { key, target, anchor, rect: null, pinned: false }))
     }, 350)
   }
 
-  /** Leaving the link or the preview closes it, unless the pointer moves between them. */
-  leaveLink(): void {
-    if (this.previewOpening) clearTimeout(this.previewOpening)
-    this.previewOpening = null
-    if (this.previewClosing) clearTimeout(this.previewClosing)
-    this.previewClosing = setTimeout(() => {
-      this.previewClosing = null
-      this.update(S.setPreview(this.state, null))
+  /** Leaving the trigger or the peek closes it, unless the pointer moves between them. */
+  leavePeek(): void {
+    if (this.peekOpening) clearTimeout(this.peekOpening)
+    this.peekOpening = null
+    if (this.peekClosing) clearTimeout(this.peekClosing)
+    this.peekClosing = setTimeout(() => {
+      this.peekClosing = null
+      this.update(S.closePeek(this.state, null))
     }, 300)
   }
 
-  holdPreview(): void {
-    if (this.previewClosing) clearTimeout(this.previewClosing)
-    this.previewClosing = null
+  holdPeek(): void {
+    if (this.peekClosing) clearTimeout(this.peekClosing)
+    this.peekClosing = null
   }
 
-  closePreview(): void {
-    this.holdPreview()
-    this.update(S.setPreview(this.state, null))
+  /** `null` closes the transient peek only. */
+  closePeek(key: string | null): void {
+    if (key === null) this.holdPeek()
+    this.update(S.closePeek(this.state, key))
   }
 
-  openExternal(url: string): void {
-    this.api.openExternal(url)
-    this.closePreview()
+  placePeek(key: string, rect: S.Rect): void {
+    this.holdPeek()
+    this.update(S.placePeek(this.state, key, rect))
+  }
+
+  raisePeek(key: string): void {
+    this.update(S.raisePeek(this.state, key))
+  }
+
+  /** A link to the browser, an entity onto the trail. */
+  openPeek(target: S.PeekTarget): void {
+    if (target.kind === 'url') this.api.openExternal(target.url)
+    else this.navigate(target.id)
+    this.closePeek(null)
+  }
+
+  /** Loads what each entity peek shows; a reply for a peek since closed is dropped. */
+  private async loadPeeks(): Promise<void> {
+    const ids = [...new Set(this.state.peeks.flatMap((peek) => (peek.target.kind === 'entity' ? [peek.target.id] : [])))]
+    const loaded = await Promise.all(ids.map(async (id) => [id, await this.api.focus(id)] as const))
+    const open = new Set(
+      this.state.peeks.flatMap((peek) => (peek.target.kind === 'entity' ? [peek.target.id] : [])),
+    )
+    this.set({ peekFoci: Object.fromEntries(loaded.filter(([id]) => open.has(id))) })
   }
 
   view(ref: string | null): void {

@@ -1,6 +1,6 @@
 import { createContext, memo, useContext, useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
-import type { Rect } from '../state.ts'
+import type { PeekTarget, Rect } from '../state.ts'
 
 /** A list row that keeps itself on screen while it holds the cursor. */
 export const Row = memo(function Row(props: {
@@ -59,29 +59,38 @@ export function Status(props: { error: string | null }) {
   return props.error ? <div className="status">{props.error}</div> : null
 }
 
-/** Gestures every link forwards, wherever it is drawn. Provided by App. */
-export interface LinkGestures {
-  onLinkEnter(url: string, anchor: Rect): void
-  onLinkLeave(): void
+/** Gestures anything peekable forwards, wherever it is drawn. Provided by App. */
+export interface PeekGestures {
+  onPeekEnter(target: PeekTarget, anchor: Rect): void
+  onPeekLeave(): void
 }
 
-export const LinkContext = createContext<LinkGestures>({ onLinkEnter: () => {}, onLinkLeave: () => {} })
+export const PeekContext = createContext<PeekGestures>({ onPeekEnter: () => {}, onPeekLeave: () => {} })
+
+/** Hover handlers that peek at `target`; spread onto any element. */
+export function usePeek(target: PeekTarget | null) {
+  const { onPeekEnter, onPeekLeave } = useContext(PeekContext)
+  if (!target) return {}
+  return {
+    onMouseEnter: (event: { currentTarget: Element }) => {
+      const { x, y, width, height } = event.currentTarget.getBoundingClientRect()
+      onPeekEnter(target, { x, y, width, height })
+    },
+    onMouseLeave: onPeekLeave,
+  }
+}
 
 /**
- * Every link in the app. Hovering previews it; a click does nothing else, so
- * the browser is only ever opened from the preview.
+ * Every link in the app. Hovering peeks at the page; a click does nothing
+ * else, so the browser is only ever opened from the peek.
  */
 export function Link(props: { href: string; children: ReactNode }) {
-  const { onLinkEnter, onLinkLeave } = useContext(LinkContext)
+  const peek = usePeek({ kind: 'url', url: props.href })
   return (
     <a
       className="link"
       href={props.href}
-      onMouseEnter={(event) => {
-        const { x, y, width, height } = event.currentTarget.getBoundingClientRect()
-        onLinkEnter(props.href, { x, y, width, height })
-      }}
-      onMouseLeave={onLinkLeave}
+      {...peek}
       onMouseDown={(event) => event.stopPropagation()}
       onClick={(event) => event.preventDefault()}
     >
