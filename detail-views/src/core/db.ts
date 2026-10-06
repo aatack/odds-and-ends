@@ -37,6 +37,11 @@ const migrations: string[] = [
     expires_at INTEGER NOT NULL
   );
   `,
+  // findBy on a conversation's user runs for every author and mention shown;
+  // without this it scans every cached row.
+  `
+  CREATE INDEX entities_user ON entities (type, json_extract(data, '$.user'));
+  `,
 ]
 
 export function openDatabase(path: string): DatabaseSync {
