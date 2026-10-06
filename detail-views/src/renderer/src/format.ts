@@ -55,3 +55,14 @@ export function fullTime(ts: string): string {
     hourCycle: 'h23',
   })
 }
+
+/** `5 Oct, 07:52`: where loaded history starts. */
+export function cursorTime(ts: string): string {
+  return new Date(Number(ts) * 1000).toLocaleString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  })
+}

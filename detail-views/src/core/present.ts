@@ -101,9 +101,10 @@ export function itemOf(id: string, source: Source): Entity | null {
 
 /**
  * The most children a focus view walks to. `order` sorts what the walk
- * reached, so this sits above any list that is sorted (Slack's conversations).
+ * reached, so this sits above any list that is sorted (Slack's workspace:
+ * its conversations and every thread in them).
  */
-export const focusLimit = 1000
+export const focusLimit = 3000
 
 /** What the focus view of `id` shows, from whatever `source` has now. */
 export function focusOf(id: string, source: Source): Focus {

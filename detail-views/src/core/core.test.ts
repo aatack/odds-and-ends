@@ -343,7 +343,49 @@ test('slack: the watch brings in new messages by search, under their conversatio
   assert.deepEqual(general.children.map((child) => child.data.text), ['hello'])
   assert.equal(general.children[0].data.replyCount, 1)
   assert.deepEqual(core.focus('slack:msg:C1:1700000010.000100').children.map((child) => child.data.text), ['reply'])
-  assert.deepEqual(core.focus('slack').children.map((child) => child.id).slice(0, 3), ['slack:conv:D9', 'slack:conv:C1', 'slack:conv:C2'])
+  // The thread is listed too, by its newest reply, ahead of the conversations.
+  assert.deepEqual(core.focus('slack').children.map((child) => child.id).slice(0, 4), [
+    'slack:msg:C1:1700000010.000100',
+    'slack:conv:D9',
+    'slack:conv:C1',
+    'slack:conv:C2',
+  ])
   assert.ok(!core.entity('slack').outboundLinks.includes('slack:conv:C7'))
   assert.equal(core.item('slack')!.data['watch.at'], '1700000020.000100')
+})
+
+test('slack: threads stay in the workspace through a list reload, and each header knows where its history starts', async () => {
+  const core = memoryCore({
+    now: () => 1_700_000_100_000,
+    fetch: fakeSlack({
+      ...auth,
+      'users.conversations': () => ({ channels: [{ id: 'C1', name: 'general' }] }),
+      'search.messages': searchAnswer([
+        { ts: '1700000050.000000', user: 'U1', text: 'reply', channel: { id: 'C1' }, permalink: permalink('C1', '1700000050.000000', '1690000000.000000') },
+        { ts: '1700000040.000000', user: 'U1', text: 'top', channel: { id: 'C1' }, permalink: permalink('C1', '1700000040.000000') },
+      ]),
+      'conversations.replies': () => ({ messages: [{ ts: '1690000000.000000', user: 'U1', text: 'old question', reply_count: 1, latest_reply: '1700000050.000000' }, { ts: '1700000050.000000', user: 'U1', text: 'reply', thread_ts: '1690000000.000000' }] }),
+    }),
+  })
+  await core.slack.setToken('xoxp-1')
+  await core.slack.poll()
+  const thread = 'slack:msg:C1:1690000000.000000'
+  const listed = () => core.focus('slack').children.map((child) => child.id)
+  // A reply on a message older than anything cached still lists its thread, first.
+  assert.deepEqual(listed(), [thread, 'slack:conv:C1'])
+  await core.load({ id: 'slack', part: 'children', force: true })
+  assert.deepEqual(listed(), [thread, 'slack:conv:C1'])
+
+  const home = core.focus('slack')
+  assert.equal(home.entity!.data.from, '1700000040.000000')
+  // Search had nothing older than these two, so there is no further back to go.
+  assert.equal(home.entity!.data.complete, true)
+  assert.equal(home.older, false)
+  // The conversation starts where the workspace does.
+  assert.equal(core.focus('slack:conv:C1').entity!.data.from, '1700000040.000000')
+  // A thread loads whole once, and then has nothing older.
+  assert.equal(core.focus(thread).older, true)
+  await core.actions.older({ id: thread })
+  assert.equal(core.focus(thread).older, false)
+  assert.equal(core.focus(thread).entity!.data.text, 'old question')
 })

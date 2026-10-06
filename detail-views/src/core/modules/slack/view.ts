@@ -146,7 +146,11 @@ export const slackView: ModuleView = {
 
   newestFirst: (type) => type === 'slack.conversation',
 
-  older: (entity) => ['slack.home', 'slack.conversation', 'slack.message'].includes(entity.type),
+  // Further back is always possible until a load reached the start. A message
+  // goes further back only as a thread: its whole thread.
+  older: (entity) =>
+    !entity.data.complete &&
+    (entity.type === 'slack.home' || entity.type === 'slack.conversation' || (entity.type === 'slack.message' && Boolean(entity.data.replyCount))),
 
   compose(entity, lens) {
     if (lens.read(slackIds.root)?.data.connected === false) return 'slack-token'
@@ -162,10 +166,25 @@ export const slackView: ModuleView = {
     return [...children].sort((a, b) => b.updatedAt - a.updatedAt)
   },
 
+  // `from` is where what is cached starts: everything after it is here. For a
+  // conversation that is the older of its own cursor and the workspace's,
+  // since every conversation is cached back to the workspace's. `complete`
+  // says nothing is older.
   present(entity, lens) {
+    const cursor = (data: Record<string, unknown> | undefined) =>
+      typeof data?.['history.oldest'] === 'string' ? (data['history.oldest'] as string) : undefined
+    if (entity.type === 'slack.home') {
+      return { ...entity, data: { ...entity.data, from: cursor(entity.data) ?? null, complete: Boolean(entity.data['history.complete']) } }
+    }
     if (entity.type === 'slack.conversation') {
       const data = { channel: entity.id.slice('slack:conv:'.length), ...entity.data } as unknown as ConversationData
-      return { ...entity, data: { ...entity.data, title: conversationTitle(lens, data) } }
+      const global = cursor(lens.read(slackIds.root)?.data)
+      const own = cursor(entity.data)
+      const from = own && global ? (Number(own) < Number(global) ? own : global) : (own ?? global ?? null)
+      return {
+        ...entity,
+        data: { ...entity.data, title: conversationTitle(lens, data), from, complete: Boolean(entity.data['history.complete']) },
+      }
     }
     if (entity.type !== 'slack.message') return entity
     const data = entity.data as unknown as MessageData
@@ -188,6 +207,9 @@ export const slackView: ModuleView = {
           height: image.height,
         })),
         quiet: Boolean(data.subtype && quiet.has(data.subtype)),
+        // Where the thread is, for when it is listed away from its conversation.
+        where: data.channel ? conversationTitle(lens, { channel: data.channel, ...lens.read(slackIds.conversation(data.channel))?.data } as ConversationData) : null,
+        complete: Boolean(entity.data['history.complete']),
         reactions: (data.reactions ?? []).map((reaction) => ({
           emoji: emoji(reaction.name),
           count: reaction.count,
