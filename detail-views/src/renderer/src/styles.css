@@ -236,19 +236,22 @@ body,
   user-select: text;
 }
 
+/* Reactions run on at the end of the last line of text. */
 .reactions {
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin: 4px 0 2px;
+  margin-left: 8px;
+  vertical-align: 1px;
 }
 
 .reaction {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  padding: 1px 8px;
+  padding: 0 7px;
   border-radius: 999px;
+  line-height: 1.5;
   background: light-dark(#efefef, #26262b);
   border: 1px solid transparent;
   font-size: 13px;
@@ -345,8 +348,16 @@ body,
   margin: 0;
 }
 
-.text > p:first-of-type {
+.text > p:first-of-type,
+.text > p:last-of-type {
   display: inline;
+}
+
+/* An inline last paragraph still starts its own line. */
+.text > p:last-of-type:not(:first-of-type)::before {
+  content: '';
+  display: block;
+  margin-top: 4px;
 }
 
 .text > p + *,
