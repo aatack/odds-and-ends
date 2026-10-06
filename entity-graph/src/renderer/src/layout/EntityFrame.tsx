@@ -24,6 +24,7 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
   if (!frame) return <div className="p-8 text-center text-[13px] text-gray-400">No frame.</div>
 
   const depth = frameDepth(frame)
+  const since = layout.tabs[frame.tabId]?.highlightSince ?? null
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
@@ -57,6 +58,12 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
             onMore={() => A.setFrameDepth(frameId, nudgeDepth(depth, 1))}
           />
         )}
+        {since != null && (
+          <FramePill
+            label={`Changes since ${sinceLabel(since)}`}
+            onClear={() => A.setHighlightSince(frame.tabId, null)}
+          />
+        )}
         {directionOf(frame) === 'in' && (
           <FramePill label="Inbound links" onClear={() => A.setDirection(frameId, 'out')} />
         )}
@@ -71,6 +78,7 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
           // What the frame is filtering on, marked in the rows it kept. Null while
           // there is no field open, which is most of the time.
           highlight={frame.find ?? undefined}
+          changedSince={since ?? undefined}
           onSelectRow={(path) => A.selectPath(frameId, path)}
           onToggleCollapse={(row) => {
             A.selectPath(frameId, row.path)
@@ -91,6 +99,14 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
       </div>
     </div>
   )
+}
+
+/** A moment as the pill says it: the time alone today, the date as well otherwise. */
+function sinceLabel(at: number): string {
+  const when = new Date(at)
+  const time = when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  if (when.toDateString() === new Date().toDateString()) return time
+  return `${when.toLocaleDateString([], { day: 'numeric', month: 'short' })}, ${time}`
 }
 
 /**

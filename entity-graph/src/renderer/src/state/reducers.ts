@@ -149,6 +149,10 @@ export function setCollapsed(
 export const toggleCollapsed = (s: LayoutState, tabId: string, entityId: string): LayoutState =>
   setCollapsed(s, tabId, entityId, !(s.tabs[tabId]?.collapsed.includes(entityId) ?? false))
 
+/** Highlight what changed in a tab from `since` on, or stop (`null`). */
+export const setHighlightSince = (s: LayoutState, tabId: string, since: number | null): LayoutState =>
+  updateTab(s, tabId, (t) => ({ ...t, highlightSince: since }))
+
 // --- Chats (per tab) --------------------------------------------------------
 
 /**

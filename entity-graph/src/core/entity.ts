@@ -10,6 +10,12 @@ export interface Entity {
   editedAt: number
   createdBy: string
   editedBy: string
+  /**
+   * When a *value* was last written — its text, its flags, anything but a link.
+   * Zero when none ever has. `editedAt` moves whenever a child is linked in, so
+   * this is the one that says the note itself has changed.
+   */
+  valuesEditedAt: number
   values: Record<string, unknown>
   inboundLinks: string[]
   /** Ordered — this is the child order an outline reads top to bottom. */
@@ -35,6 +41,7 @@ export function rollupEntity(id: string, events: AppEvent[]): Entity {
   let editedAt = -Infinity
   let createdBy = ''
   let editedBy = ''
+  let valuesEditedAt = 0
   const values: Record<string, unknown> = {}
   const outbound: string[] = []
   // sourceId → currently active?
@@ -46,6 +53,7 @@ export function rollupEntity(id: string, events: AppEvent[]): Entity {
 
     if (e.type === 'value') {
       values[e.key] = e.value
+      if (e.timestamp > valuesEditedAt) valuesEditedAt = e.timestamp
     } else {
       if (e.sourceId === id) {
         const dest = e.destinationId
@@ -77,6 +85,7 @@ export function rollupEntity(id: string, events: AppEvent[]): Entity {
     editedAt:  isFinite(editedAt)  ? editedAt  : Date.now(),
     createdBy,
     editedBy,
+    valuesEditedAt,
     values,
     outboundLinks: outbound,
     inboundLinks:  [...inboundState.entries()].filter(([, v]) => v).map(([k]) => k),
@@ -113,6 +122,7 @@ export const emptyEntity = (id: string): Entity => ({
   editedAt: 0,
   createdBy: '',
   editedBy: '',
+  valuesEditedAt: 0,
   values: {},
   inboundLinks: [],
   outboundLinks: [],

@@ -97,7 +97,60 @@ export const GROUP_TOOLS: ToolSpec[] = [
       if (groupId && tabId) updateLayout((s) => R.moveTab(s, groupId, tabId, 1))
     },
   },
+  {
+    // What `changeset.run` calls as a turn starts, so the answers stand out when
+    // they arrive. From the palette it takes a date, or now when left empty.
+    id: 'tab.highlightSince',
+    label: 'Highlight changes since',
+    aliases: ['diff', 'recent', 'changed', 'new', 'since'],
+    hint: 'Tab',
+    scope: 'group',
+    reach: 'ui',
+    args: [
+      {
+        name: 'since',
+        label: 'Since',
+        optional: true,
+        placeholder: 'Now',
+        description: 'A date, or a time in milliseconds. Empty means now.',
+      },
+    ],
+    run: ({ since }) => {
+      const { tabId } = focusOf(getLayout())
+      if (!tabId) throw new Error('No tab is focused')
+      const at = sinceOf(since)
+      updateLayout((s) => R.setHighlightSince(s, tabId, at))
+      return { data: at }
+    },
+  },
+  {
+    id: 'tab.highlightSince.clear',
+    label: 'Stop highlighting changes',
+    aliases: ['diff', 'unhighlight'],
+    hint: 'Tab',
+    scope: 'group',
+    reach: 'ui',
+    enabled: () => {
+      const layout = getLayout()
+      const { tabId } = focusOf(layout)
+      return tabId != null && layout.tabs[tabId]?.highlightSince != null
+    },
+    run: () => {
+      const { tabId } = focusOf(getLayout())
+      if (tabId) updateLayout((s) => R.setHighlightSince(s, tabId, null))
+    },
+  },
 ]
+
+/** A moment as the highlight takes it: a time in ms, a date, or now when absent. */
+function sinceOf(value: unknown): number {
+  if (value == null || value === '') return Date.now()
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  const text = String(value).trim()
+  const at = /^\d+$/.test(text) ? Number(text) : Date.parse(text)
+  if (!Number.isFinite(at)) throw new Error(`Not a date: ${text}`)
+  return at
+}
 
 export const APP_TOOLS: ToolSpec[] = [
   {

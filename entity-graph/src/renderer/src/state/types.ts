@@ -193,6 +193,14 @@ export interface TabState {
    * which one you last had open is a fact about the tab.
    */
   openChatId?: string | null
+  /**
+   * Rows whose values were written at or after this time (ms) are highlighted,
+   * so what changed since then stands out without hiding the rest. Only values
+   * count: a note that merely gained a child has not changed. Per tab, since it
+   * marks a moment in the work the tab is for — asking Claude sets it, so its
+   * answers show. Absent or null when nothing is highlighted.
+   */
+  highlightSince?: number | null
 }
 
 export interface GroupState {
