@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import type { Entity } from '../../../core/types.ts'
 import { MessageRow, showsAuthor, showsTime } from './messages.tsx'
-import { Link, Row, Status } from './primitives.tsx'
+import { Composer, Link, Row, Status } from './primitives.tsx'
 import type { FocusProps } from './types.ts'
 
 const reviewWords: Record<string, string> = {
@@ -78,6 +78,8 @@ export function GitHubPr(props: FocusProps) {
         <div className="facts">
           <span>{data.state === 'OPEN' ? (data.draft ? 'draft' : 'open') : String(data.state).toLowerCase()}</span>
           {review && <span className={`verdict ${String(data.review).toLowerCase()}`}>{review}</span>}
+          {data.locallyApproved ? <span className="verdict approved">approved by me</span> : null}
+          {data.autoMerge ? <span className="verdict approved">auto-merge on</span> : null}
           {data.mergeable === 'CONFLICTING' && <span className="verdict changes_requested">conflicts</span>}
           {checkSummary && (
             <span>
@@ -91,6 +93,15 @@ export function GitHubPr(props: FocusProps) {
             +{String(data.additions)} −{String(data.deletions)} in {String(data.files)}{' '}
             {data.files === 1 ? 'file' : 'files'}
           </span>
+          {focus.actions.map((action) => (
+            <button
+              key={action.id}
+              className={`action${props.acting === action.id ? ' active' : ''}`}
+              onClick={() => props.onAction?.(action.id)}
+            >
+              {action.label}
+            </button>
+          ))}
         </div>
       ) : null}
       <div className="list">
@@ -113,6 +124,16 @@ export function GitHubPr(props: FocusProps) {
         {focus.loading && <div className="loading">Loading…</div>}
       </div>
       <Status error={focus.error} />
+      {props.acting && props.composing && (
+        <Composer
+          kind="action"
+          placeholder={focus.actions.find((action) => action.id === props.acting)?.prompt}
+          draft={props.draft}
+          composing={props.composing}
+          onDraft={props.onDraft}
+          onCompose={props.onCompose}
+        />
+      )}
     </div>
   )
 }

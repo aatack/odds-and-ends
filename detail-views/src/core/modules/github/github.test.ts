@@ -4,9 +4,10 @@ import { Core } from '../../core.ts'
 
 const url = 'https://github.com/o/r/pull/7'
 
-function fakeGh(calls: string[][]) {
+function fakeGh(calls: string[][], options: { author?: string } = {}) {
   return async (args: string[]) => {
     calls.push(args)
+    if (args[0] === 'pr') return ''
     const query = args[3]
     if (query.includes('search(')) {
       return JSON.stringify({
@@ -22,10 +23,12 @@ function fakeGh(calls: string[][]) {
     }
     return JSON.stringify({
       data: {
+        viewer: { login: 'me' },
         resource: {
           url, number: 7, title: 'Fix it', body: '<!-- bot -->Does the thing', state: 'OPEN', isDraft: false, mergeable: 'MERGEABLE',
           reviewDecision: 'APPROVED', additions: 3, deletions: 1, changedFiles: 1, headRefName: 'fix', baseRefName: 'main',
-          createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-02T00:00:00Z', author: { login: 'me' }, repository: { nameWithOwner: 'o/r' },
+          createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-02T00:00:00Z', author: { login: options.author ?? 'me' },
+          repository: { nameWithOwner: 'o/r', viewerDefaultMergeMethod: 'SQUASH' }, autoMergeRequest: null,
           comments: { nodes: [{ id: 'C1', url: `${url}#c1`, author: { login: 'bot' }, body: '<!-- only bookkeeping -->', createdAt: '2026-10-01T01:00:00Z' }] },
           reviews: { nodes: [
             { id: 'R1', url: `${url}#r1`, author: { login: 'ann' }, body: '', state: 'COMMENTED', createdAt: '2026-10-01T02:00:00Z', comments: { nodes: [] } },
@@ -81,4 +84,47 @@ test('github: only queries, never mutations', async () => {
   const core = new Core({ path: ':memory:', gh: fakeGh(calls) })
   await core.refresh('github')
   assert.ok(calls.every((args) => args[0] === 'api' && args[1] === 'graphql' && !/^\s*mutation/.test(args[3].slice('query='.length))))
+})
+
+async function loaded(author: string) {
+  const calls: string[][] = []
+  const core = new Core({ path: ':memory:', gh: fakeGh(calls, { author }) })
+  const id = `github:pr:${url}`
+  core.focus(id)
+  await core.refresh(id)
+  calls.length = 0
+  return { core, id, calls }
+}
+
+test("github: approving someone else's PR leaves an approving review", async () => {
+  const { core, id, calls } = await loaded('ann')
+  assert.deepEqual(core.focus(id).actions.map((action) => action.id), ['approve'])
+  await core.actions.perform({ id, action: 'approve', text: 'looks good' })
+  assert.deepEqual(calls[0], ['pr', 'review', url, '--approve', '--body', 'looks good'])
+})
+
+test('github: approving my own PR is kept locally and turns on auto-merge', async () => {
+  const { core, id, calls } = await loaded('me')
+  assert.deepEqual(core.focus(id).actions.map((action) => action.id), ['approve', 'close'])
+  await core.actions.perform({ id, action: 'approve', text: '' })
+  assert.deepEqual(calls[0], ['pr', 'merge', url, '--auto', '--squash'])
+  const focus = core.focus(id)
+  assert.equal(focus.entity!.data.locallyApproved, true)
+  assert.ok(focus.children.every((child) => child.type !== 'github.localApproval'))
+  // Owned: survives the cache being swept.
+  const approval = core.store.children(id).find((child) => child.type === 'github.localApproval')!
+  assert.equal(approval.expiresAt, null)
+})
+
+test('github: closing my own PR deletes the branch, with an optional comment', async () => {
+  const { core, id, calls } = await loaded('me')
+  await core.actions.perform({ id, action: 'close', text: 'superseded by #8' })
+  assert.deepEqual(calls[0], ['pr', 'close', url, '--delete-branch', '--comment', 'superseded by #8'])
+})
+
+test("github: no closing someone else's PR", async () => {
+  const { core, id, calls } = await loaded('ann')
+  await core.actions.perform({ id, action: 'close', text: '' })
+  assert.equal(calls.filter((args) => args[0] === 'pr').length, 0)
+  assert.match(core.focus(id).error ?? '', /not available/)
 })

@@ -5,7 +5,7 @@ import { installDispatch } from './dispatch.ts'
 import { browserEnvironment } from './environment.ts'
 import { useSnapshot } from './hooks.ts'
 import { Session } from './session.ts'
-import { cursorIndex, focused } from './state.ts'
+import { cursorIndex, draftKey } from './state.ts'
 import type { PeekTarget, Rect } from './state.ts'
 import { tools } from './tools.ts'
 import { App } from './views/App.tsx'
@@ -33,6 +33,7 @@ function Root() {
   const onCompose = useCallback((composing: boolean) => session.compose(composing), [])
   const onModule = useCallback((root: string) => session.navigate(root), [])
   const onImage = useCallback((ref: string | null) => session.view(ref), [])
+  const onAction = useCallback((action: string) => session.startAction(action), [])
   const gestures = useMemo(
     () => ({
       onPeekEnter: (target: PeekTarget, anchor: Rect) => session.hoverPeek(target, anchor),
@@ -56,7 +57,9 @@ function Root() {
   const view = useMemo(
     () => ({
       cursor: cursorIndex(state, focus),
-      draft: state.drafts[focused(state)] ?? '',
+      draft: state.drafts[draftKey(state)] ?? '',
+      acting: state.acting,
+      onAction,
       composing: state.composing,
       onSelect,
       onOpen,
@@ -64,7 +67,7 @@ function Root() {
       onCompose,
       onImage,
     }),
-    [state, focus, onSelect, onOpen, onDraft, onCompose, onImage],
+    [state, focus, onSelect, onOpen, onDraft, onCompose, onImage, onAction],
   )
 
   return <App peek={peek} viewing={state.viewing} onImage={onImage} modules={modules} module={focus?.module ?? null} focus={focus} view={view} onModule={onModule} />

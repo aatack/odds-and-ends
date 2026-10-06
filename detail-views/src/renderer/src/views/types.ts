@@ -6,6 +6,9 @@ export interface FocusProps {
   cursor: number
   draft: string
   composing: boolean
+  /** The action waiting on the prompt, if any. */
+  acting?: string | null
+  onAction?(action: string): void
   onSelect(id: string): void
   onOpen(id: string): void
   onDraft(text: string): void

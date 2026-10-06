@@ -14,6 +14,8 @@ export interface State {
   drafts: Record<string, string>
   /** Whether the composer has the keyboard. Not persisted. */
   composing: boolean
+  /** An action started on the focus and waiting for Enter. Not persisted. */
+  acting: string | null
   /** An image shown full size over everything, by its ref. Not persisted. */
   viewing: string | null
   /**
@@ -76,7 +78,7 @@ export function raisePeek(state: State, key: string): State {
 const trailLimit = 200
 
 export function initialState(root: string): State {
-  return { trail: [root], at: 0, cursors: {}, drafts: {}, composing: false, viewing: null, peeks: [] }
+  return { trail: [root], at: 0, cursors: {}, drafts: {}, composing: false, acting: null, viewing: null, peeks: [] }
 }
 
 export function focused(state: State): string {
@@ -104,15 +106,15 @@ export function selected(state: State, focus: Focus | null): Entity | null {
 export function navigate(state: State, id: string): State {
   if (focused(state) === id) return state
   const trail = [...state.trail.slice(0, state.at + 1), id].slice(-trailLimit)
-  return { ...state, trail, at: trail.length - 1, composing: false, viewing: null, peeks: state.peeks.filter((peek) => peek.pinned) }
+  return { ...state, trail, at: trail.length - 1, composing: false, acting: null, viewing: null, peeks: state.peeks.filter((peek) => peek.pinned) }
 }
 
 export function back(state: State): State {
-  return state.at > 0 ? { ...state, at: state.at - 1, composing: false } : state
+  return state.at > 0 ? { ...state, at: state.at - 1, composing: false, acting: null } : state
 }
 
 export function forward(state: State): State {
-  return state.at < state.trail.length - 1 ? { ...state, at: state.at + 1, composing: false } : state
+  return state.at < state.trail.length - 1 ? { ...state, at: state.at + 1, composing: false, acting: null } : state
 }
 
 export function select(state: State, id: string): State {
@@ -127,8 +129,8 @@ export function move(state: State, focus: Focus | null, delta: number): State {
 
 export function setDraft(state: State, text: string): State {
   const drafts = { ...state.drafts }
-  if (text) drafts[focused(state)] = text
-  else delete drafts[focused(state)]
+  if (text) drafts[draftKey(state)] = text
+  else delete drafts[draftKey(state)]
   return { ...state, drafts }
 }
 
@@ -137,12 +139,23 @@ export function view(state: State, ref: string | null): State {
 }
 
 export function setComposing(state: State, composing: boolean): State {
-  return state.composing === composing ? state : { ...state, composing }
+  if (state.composing === composing) return state
+  // Leaving the prompt abandons the action.
+  return { ...state, composing, acting: composing ? state.acting : null }
+}
+
+export function startAction(state: State, action: string): State {
+  return { ...state, acting: action, composing: true }
+}
+
+/** Drafts for an action are kept apart from the focus's own composer. */
+export function draftKey(state: State): string {
+  return state.acting ? `${focused(state)}#${state.acting}` : focused(state)
 }
 
 /** What is kept across reloads. */
-export function persisted(state: State): Omit<State, 'composing' | 'viewing'> {
-  const { composing: _, viewing: __, ...rest } = state
+export function persisted(state: State): Omit<State, 'composing' | 'viewing' | 'acting'> {
+  const { composing: _, viewing: __, acting: ___, ...rest } = state
   return { ...rest, peeks: rest.peeks.filter((peek) => peek.pinned) }
 }
 
@@ -155,6 +168,7 @@ export function restore(saved: unknown, root: string): State {
     cursors: value.cursors ?? {},
     drafts: value.drafts ?? {},
     composing: false,
+    acting: null,
     viewing: null,
     peeks: Array.isArray(value.peeks) ? value.peeks.filter((peek) => peek.pinned) : [],
   }

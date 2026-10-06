@@ -1,6 +1,7 @@
 import { openDatabase } from './db.ts'
 import type { Module, ModuleContext } from './modules/module.ts'
 import { execFile } from 'node:child_process'
+import { tmpdir } from 'node:os'
 import { GitHub } from './modules/github/github.ts'
 import { Slack } from './modules/slack/slack.ts'
 import { tasksModule } from './modules/tasks.ts'
@@ -19,7 +20,8 @@ export interface CoreOptions {
 
 function runGh(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('gh', args, { maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => {
+    // Away from any checkout, so `--delete-branch` can only touch the remote.
+    execFile('gh', args, { cwd: tmpdir(), maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) reject(new Error(stderr.trim() || error.message))
       else resolve(stdout)
     })
@@ -110,7 +112,7 @@ export class Core {
   focus(id: string): Focus {
     const entity = this.store.get(id) ?? this.materialise(id)
     if (!entity) {
-      return { entity: null, children: [], module: null, compose: null, loading: false, error: 'not found' }
+      return { entity: null, children: [], module: null, compose: null, actions: [], loading: false, error: 'not found' }
     }
     const module = this.moduleOf(entity)
     const stale = this.now() - (this.refreshedAt.get(id) ?? 0) > (module?.staleAfter?.(id) ?? 60_000)
@@ -122,6 +124,7 @@ export class Core {
       children: (module?.order?.(entity, children) ?? children).map(present),
       module: module?.id ?? null,
       compose: module?.compose?.(entity) ?? null,
+      actions: module?.actions?.(entity) ?? [],
       loading: this.inFlight.has(id),
       error: this.errors.get(id) ?? null,
     }
@@ -165,11 +168,31 @@ export class Core {
     }
   }
 
+  /** Does an action the focus offered. Errors land on the entity. */
+  async perform(id: string, action: string, text: string): Promise<void> {
+    const entity = this.store.get(id)
+    const module = entity && this.moduleOf(entity)
+    if (!entity || !module?.perform) return
+    if (!module.actions?.(entity).some((offered) => offered.id === action)) {
+      this.setError(id, `${action} is not available here`)
+      return
+    }
+    try {
+      await module.perform(entity, action, text.trim())
+      this.setError(id, null)
+    } catch (error) {
+      this.setError(id, error instanceof Error ? error.message : String(error))
+    }
+    await this.refresh(id)
+  }
+
   /** The single registry of what a UI may ask for. */
   readonly actions = {
     modules: (): ModuleInfo[] => this.modules.map(({ id, name, root }) => ({ id, name, root: root.id })),
     focus: ({ id }: { id: string }): Focus => this.focus(id),
     refresh: ({ id }: { id: string }): Promise<void> => this.refresh(id),
+    perform: ({ id, action, text }: { id: string; action: string; text: string }): Promise<void> =>
+      this.perform(id, action, text),
     submit: ({ id, text }: { id: string; text: string }): Promise<void> => this.submit(id, text),
     toggle: ({ id }: { id: string }): void => {
       const entity = this.store.get(id)

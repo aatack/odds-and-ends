@@ -20,12 +20,23 @@ export interface Entity {
 /** What the composer under a focus view does, if there is one. */
 export type ComposeKind = 'slack' | 'slack-token' | 'task'
 
+/**
+ * Something a person can do to an entity. Starting it opens a prompt; Enter
+ * confirms (with any text typed), Escape cancels.
+ */
+export interface Action {
+  id: string
+  label: string
+  prompt: string
+}
+
 export interface Focus {
   entity: Entity | null
   /** Ordered and shaped by the owning module. */
   children: Entity[]
   module: string | null
   compose: ComposeKind | null
+  actions: Action[]
   loading: boolean
   error: string | null
 }

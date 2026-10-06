@@ -193,7 +193,21 @@ export class Session {
   }
 
   hasDraft(): boolean {
-    return Boolean(this.state.drafts[S.focused(this.state)]?.trim())
+    return Boolean(this.state.drafts[S.draftKey(this.state)]?.trim())
+  }
+
+  startAction(action: string): void {
+    if (this.focus?.actions.some((offered) => offered.id === action)) this.update(S.startAction(this.state, action))
+  }
+
+  /** Confirms the action waiting on the prompt, with whatever was typed. */
+  async perform(): Promise<void> {
+    const action = this.state.acting
+    if (!action) return
+    const id = S.focused(this.state)
+    const text = this.state.drafts[S.draftKey(this.state)] ?? ''
+    this.update(S.setComposing(S.setDraft(this.state, ''), false))
+    await this.api.perform(id, action, text)
   }
 
   async send(): Promise<void> {

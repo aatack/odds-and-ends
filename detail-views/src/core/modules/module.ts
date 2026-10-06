@@ -1,5 +1,5 @@
 import type { Store } from '../store.ts'
-import type { ComposeKind, Entity } from '../types.ts'
+import type { Action, ComposeKind, Entity } from '../types.ts'
 
 export interface ModuleContext {
   store: Store
@@ -29,6 +29,10 @@ export interface Module {
   /** Fills in display fields that are derived, never stored (names, say). */
   present?(entity: Entity): Entity
   compose?(entity: Entity): ComposeKind | null
+  /** What can be done to an entity right now. */
+  actions?(entity: Entity): Action[]
+  /** Does one of `actions`, confirmed, with whatever text was typed. */
+  perform?(entity: Entity, action: string, text: string): Promise<void>
   /** What the composer does. */
   submit?(entity: Entity, text: string): Promise<void>
 }

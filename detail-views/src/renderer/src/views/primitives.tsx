@@ -27,7 +27,7 @@ export const Row = memo(function Row(props: {
 })
 
 export function Composer(props: {
-  kind: 'slack' | 'slack-token' | 'task'
+  kind: 'slack' | 'slack-token' | 'task' | 'action'
   draft: string
   composing: boolean
   placeholder?: string

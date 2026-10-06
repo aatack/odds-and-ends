@@ -32,8 +32,15 @@ constraints every change must keep.
 - **Slack is read-only during development.** `slackWrites` in
   `modules/slack/api.ts` gates an allowlist of read methods; do not turn it on
   or widen the list unless I ask.
-- **GitHub goes through `gh`, read-only.** Only `gh api graphql` queries;
-  never a mutation. A PR is an entity keyed by its URL
+- **GitHub goes through `gh`.** Reads are `gh api graphql` queries, never a
+  mutation. The only writes are the PR actions I asked for, allowlisted in
+  `checkWrite` (`modules/github/github.ts`): approve someone else's PR; on my
+  own, approve locally (an owned entity) and turn on auto-merge; close mine and
+  delete the branch. Each is started by me and confirmed with Enter. `gh` runs
+  from the temp dir so `--delete-branch` never touches a local checkout.
+- **Actions are generic.** A module offers `actions(entity)` and does them in
+  `perform`; the UI shows each as a button and a key (`tools.ts`), opens a
+  prompt, and only Enter confirms. A PR is an entity keyed by its URL
   (`prEntityId` in `core/types.ts`), so a link to one anywhere is that item;
   `Module.materialise` makes the entity the first time an unseen one is looked at.
 - **Secrets and settings are local**, in the `settings` table of the same file.
