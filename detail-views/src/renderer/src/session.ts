@@ -13,6 +13,8 @@ export interface Snapshot {
   peekFoci: Record<string, Focus>
   /** An item named on screen (a pill), presented. Reading one asks for it. */
   item(id: string): Entity | null
+  /** What is under way for each entity: `older`, or an action's id. */
+  working: Record<string, string[]>
 }
 
 const storageKey = 'detail-views.state'
@@ -46,7 +48,7 @@ export class Session {
     this.env = env
     this.cache = new EntityCache({ scan: (ids) => api.scan(ids), load: (request) => api.load(request), foreign: foreignOf })
     const state = S.restore(env.load(storageKey), 'slack')
-    this.snapshot = { state, modules: moduleInfos, focus: null, peekFoci: {}, item: () => null }
+    this.snapshot = { state, modules: moduleInfos, focus: null, peekFoci: {}, item: () => null, working: {} }
     this.snapshot = this.derive(state, this.cache.get())
   }
 
@@ -133,7 +135,7 @@ export class Session {
       peekFoci[id] ??= focusFor(id, previous.peekFoci[id])
     }
     if (same) {
-      return { state, modules: moduleInfos, focus, peekFoci, item: previous.item }
+      return { state, modules: moduleInfos, focus, peekFoci, item: previous.item, working: previous.working }
     }
     const items = new Map<string, Entity | null>()
     const item = (id: string): Entity | null => {
@@ -143,7 +145,27 @@ export class Session {
       }
       return items.get(id)!
     }
-    return { state, modules: moduleInfos, focus, peekFoci, item }
+    return { state, modules: moduleInfos, focus, peekFoci, item, working: previous.working }
+  }
+
+  private isWorking(id: string, what: string): boolean {
+    return this.snapshot.working[id]?.includes(what) ?? false
+  }
+
+  /** Marks something under way on an entity until it settles, so its button can say so. */
+  private async working<T>(id: string, what: string, run: () => Promise<T>): Promise<T> {
+    const mark = (on: boolean) => {
+      const now = (this.snapshot.working[id] ?? []).filter((other) => other !== what)
+      const working = { ...this.snapshot.working, [id]: on ? [...now, what] : now }
+      if (!working[id].length) delete working[id]
+      this.publish({ ...this.snapshot, working })
+    }
+    mark(true)
+    try {
+      return await run()
+    } finally {
+      mark(false)
+    }
   }
 
   /** Shows what a write did straight away, and any failure on the entity it was for. */
@@ -295,7 +317,7 @@ export class Session {
     const id = S.focused(this.state)
     const text = this.state.drafts[S.draftKey(this.state)] ?? ''
     this.update(S.setComposing(S.setDraft(this.state, ''), false))
-    this.settle(id, await this.api.perform(id, action, text))
+    this.settle(id, await this.working(id, action, () => this.api.perform(id, action, text)))
   }
 
   async send(): Promise<void> {
@@ -314,7 +336,8 @@ export class Session {
   /** Loads the focus further back: a conversation's history, a thread, or all of Slack. */
   older(): void {
     const id = S.focused(this.state)
-    void this.api.older(id).then((outcome) => this.settle(id, outcome))
+    if (this.isWorking(id, 'older')) return
+    void this.working(id, 'older', () => this.api.older(id)).then((outcome) => this.settle(id, outcome))
   }
 
   markRead(): void {

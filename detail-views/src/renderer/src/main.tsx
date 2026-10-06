@@ -5,7 +5,7 @@ import { installDispatch } from './dispatch.ts'
 import { browserEnvironment } from './environment.ts'
 import { useSnapshot } from './hooks.ts'
 import { Session } from './session.ts'
-import { cursorIndex, draftKey } from './state.ts'
+import { cursorIndex, draftKey, focused } from './state.ts'
 import type { PeekTarget, Rect } from './state.ts'
 import { tools } from './tools.ts'
 import { App } from './views/App.tsx'
@@ -16,7 +16,7 @@ import './styles.css'
 const session = new Session(electronApi(), browserEnvironment())
 
 function Root() {
-  const { state, focus, modules, peekFoci, item } = useSnapshot(session)
+  const { state, focus, modules, peekFoci, item, working } = useSnapshot(session)
   useEffect(() => {
     const stopDispatch = installDispatch(session, tools)
     let stopSession: (() => void) | undefined
@@ -71,8 +71,9 @@ function Root() {
       onCompose,
       onImage,
       onOlder,
+      working: working[focused(state)],
     }),
-    [state, focus, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder],
+    [state, focus, working, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder],
   )
 
   return <App items={items} peek={peek} viewing={state.viewing} onImage={onImage} modules={modules} module={focus?.module ?? null} focus={focus} view={view} onModule={onModule} />

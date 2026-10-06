@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { MessageBody, MessageRow, showsAuthor, showsTime } from './messages.tsx'
 import { authorColour, cursorTime } from '../format.ts'
 import type { PillProps, RowProps } from './kindTypes.ts'
-import { Composer, HeaderPill, Row, Status } from './primitives.tsx'
+import { Composer, HeaderPill, Row, Status, Working } from './primitives.tsx'
 import type { FocusProps } from './types.ts'
 
 /** Every conversation I am in, most recent first. */
@@ -54,9 +54,7 @@ function History(props: FocusProps) {
     <span className="history">
       {typeof data.from === 'string' && <span title="Everything since is loaded">{cursorTime(data.from)}</span>}
       {props.onOlder && (
-        <button className="action" onClick={props.onOlder}>
-          Older
-        </button>
+        <Working busy={props.working?.includes('older')} label="Older" busyLabel="Loading…" onClick={props.onOlder} />
       )}
     </span>
   )
