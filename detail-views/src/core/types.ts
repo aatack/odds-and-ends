@@ -35,3 +35,12 @@ export interface ModuleInfo {
   name: string
   root: string
 }
+
+/**
+ * The entity for a GitHub pull request URL, whatever page of it the link
+ * points at; null for anything else. A PR is tracked by its URL.
+ */
+export function prEntityId(url: string): string | null {
+  const match = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:[/?#]|$)/.exec(url)
+  return match ? `github:pr:https://github.com/${match[1]}/${match[2]}/pull/${match[3]}` : null
+}

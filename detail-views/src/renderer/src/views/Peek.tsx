@@ -20,6 +20,7 @@ function title(target: PeekTarget, focus: FocusData | undefined): string {
   if (target.kind === 'url') return target.url
   const data = focus?.entity?.data
   if (!data) return ''
+  if (data.label) return String(data.label)
   if (data.title) return String(data.title)
   if (data.author) return `${String(data.author)}: ${String(data.text ?? '')}`
   return String(data.text ?? data.name ?? focus?.entity?.id ?? '')

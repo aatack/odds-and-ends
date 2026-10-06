@@ -37,6 +37,14 @@ im:write mpim:write`
 Unread counts come one conversation at a time (Slack has no public call for all
 of them), so the list fills in over the first minute or two and is cached after.
 
+## GitHub
+
+Uses the `gh` CLI as it is signed in; nothing to configure. The list is my open
+pull requests. A PR shows the checks that need attention (passing and skipped
+ones are counted), then its description, comments and reviews in order, with
+inline review comments and the diff lines they point at. Any link to a PR, in
+Slack or elsewhere, peeks at the PR itself. Read-only, like Slack.
+
 ## Data
 
 `~/.config/detail-views/detail-views.sqlite`, or `DETAIL_VIEWS_DB`. Anything

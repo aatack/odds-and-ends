@@ -1,5 +1,6 @@
 import { createContext, memo, useContext, useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
+import { prEntityId } from '../../../core/types.ts'
 import type { PeekTarget, Rect } from '../state.ts'
 
 /** A list row that keeps itself on screen while it holds the cursor. */
@@ -84,8 +85,11 @@ export function usePeek(target: PeekTarget | null) {
  * Every link in the app. Hovering peeks at the page; a click does nothing
  * else, so the browser is only ever opened from the peek.
  */
-export function Link(props: { href: string; children: ReactNode }) {
-  const peek = usePeek({ kind: 'url', url: props.href })
+export function Link(props: { href: string; children: ReactNode; page?: boolean }) {
+  // A link to something the app tracks peeks at the item, not the page,
+  // unless the page itself is wanted.
+  const entity = props.page ? null : prEntityId(props.href)
+  const peek = usePeek(entity ? { kind: 'entity', id: entity } : { kind: 'url', url: props.href })
   return (
     <a
       className="link"
