@@ -16,7 +16,7 @@ export interface Snapshot {
 }
 
 const storageKey = 'detail-views.state'
-/** How often what is on screen is looked at again, to load whatever has gone stale. */
+/** How often everything in the cache is looked at again, to load whatever has gone stale. */
 const revisitEvery = 20_000
 
 /**
@@ -53,7 +53,7 @@ export class Session {
   async start(): Promise<() => void> {
     const stopCache = this.cache.subscribe(() => this.scheduleDerive())
     const stopChanges = this.api.onChange((changed) => this.cache.invalidate(changed))
-    const revisit = setInterval(() => this.cache.revisit(this.onScreen()), revisitEvery)
+    const revisit = setInterval(() => this.cache.revisit(), revisitEvery)
     return () => {
       stopCache()
       stopChanges()
@@ -144,12 +144,6 @@ export class Session {
       return items.get(id)!
     }
     return { state, modules: moduleInfos, focus, peekFoci, item }
-  }
-
-  /** The ids on screen: the focus, its rows and the peeks. */
-  private onScreen(): string[] {
-    const { state, focus, peekFoci } = this.snapshot
-    return [S.focused(state), ...(focus?.children.map((child) => child.id) ?? []), ...Object.keys(peekFoci)]
   }
 
   /** Shows what a write did straight away, and any failure on the entity it was for. */

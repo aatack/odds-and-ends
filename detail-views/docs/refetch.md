@@ -6,9 +6,10 @@ Written in ASD-STE100.
 
 - Each module gives a freshness time for each part of an entity (`ModuleView.foreign`).
 - The cache loads a part when it is on screen and older than its freshness time.
-- Each 20 s, the session examines the entities on screen again (`revisit`).
+- Each 20 s, the session examines all entities that the frontend cache has read in this session (`revisit`). Thus, an entity stays current after it goes off screen.
+- `children` loads only for an entity that was opened.
 - Each load gets all of the data again. No load uses a cursor.
-- Nothing loads when the entity is not on screen.
+- All entities use the same freshness time, on screen or not.
 
 ## Strategies
 
@@ -101,6 +102,42 @@ Use these strategies. One item type can use more than one.
 
 - `task`, `tasks.home` and `github.localApproval` are in the owned store. The app does not load them from a service.
 
+## Watch and catch up
+
+Polling each item costs many calls. Where a service can tell the app about a change, use that.
+A watch works only while the app runs. Thus, each watch needs a catch-up. A catch-up finds the changes that occurred while the app was closed.
+
+Keep the time of the last event that each watch received (`watch.<service>.at`). Keep it in the cache store. When the cache store is cleared, this time is also cleared. The next start then does a full load. This is correct.
+
+On start, do these steps in this sequence:
+
+1. Read the time of the last event.
+2. Open the watch. Keep the events that come in.
+3. Do the catch-up from the time of the last event.
+4. Apply the events that came in during step 3.
+
+Open the watch before the catch-up. If not, the app can lose an event that occurs between the two steps.
+
+An event or a catch-up does not write data to the screen. It marks entities as stale in the cache store, or it writes the data to the cache store. The frontend cache then reads it as usual.
+
+### Slack
+
+- **Watch:** Socket Mode. Slack sends events through a WebSocket. Subscribe to these user events: `message.channels`, `message.groups`, `message.im`, `message.mpim`, `reaction_added`, `reaction_removed`, `channel_marked`.
+- Socket Mode needs an app-level token (`xapp-`, scope `connections:write`). Socket Mode must be on in the Slack app settings. You must do these steps in the Slack app settings. The app cannot do them.
+- `apps.connections.open` is not on the read list in `api.ts`. Socket Mode needs it. It writes nothing.
+- **An event:** a new message is a dated event. Write it to the cache store at its ts. Then increase the unread count of its conversation. `channel_marked` sets the read position. Thus, the app does not need to call `conversations.info` for each conversation all the time.
+- **Catch-up:** `search.messages` with `after:<date of last event>`. One query gives the new messages in all conversations. Load only the conversations that it names. This needs the `search:read` user scope. The search gives days, not times. Thus, the catch-up can get some messages again. This is safe, because a cache write of the same event changes nothing.
+- **Without a watch:** if there is no app-level token, use the polling in "Item types".
+
+### GitHub
+
+- **Watch:** GitHub has no WebSocket for a user, and a webhook needs a public server. Thus, poll. But poll the notifications, not each PR.
+- Poll `GET /notifications` through `gh api`. Send `If-Modified-Since` with the `Last-Modified` value from the last response. When nothing changed, GitHub sends `304`, and the call does not count against the rate limit. Obey `X-Poll-Interval` (usually 60 s).
+- **An event:** a notification names a PR and its `updated_at`. Mark that PR stale, so the cache loads it again.
+- Notifications do not show changes to CI checks. Thus, keep the fast poll for a PR with pending checks (30 s), and the list poll of `github.home` (2 min).
+- Notifications do not show pushes to a branch that is not in a PR. To watch a branch, poll its head commit with a conditional REST request (`GET /repos/{owner}/{repo}/branches/{branch}` with `If-None-Match`). A `304` is free.
+- **Catch-up:** `GET /notifications?all=true&since=<time of last event>`. Also load `github.home` one time.
+
 ## Changes to make
 
 1. Add `ModuleView.watch(entity)`. It gives an interval, or null. The core keeps a timer for each watched entity while the app is open.
@@ -108,3 +145,5 @@ Use these strategies. One item type can use more than one.
 3. Give each loader the entity that it loads. Then the loader can read its cursor (`latestTs`, the newest reply) and send `oldest`.
 4. Add a change signal to the cache: a load of a list compares `updatedAt` and `latestReply`, and marks only the changed items as stale.
 5. Each 10 min, do a full load of the newest window of an open conversation, to get edits and reactions.
+6. Add watches to the core: a Slack Socket Mode client and a GitHub notifications poll. Each keeps its last event time and does a catch-up on start.
+7. While a watch is open, make the freshness times of the items that it covers long. The watch then does the work, and the polls are only a fallback.
