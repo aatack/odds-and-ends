@@ -19,8 +19,9 @@ export interface State {
   /** An image shown full size over everything, by its ref. Not persisted. */
   viewing: string | null
   /**
-   * Floating windows peeking at a link or an entity, bottom first. At most
-   * one is transient (follows the hover); the rest are pinned and persisted.
+   * Floating windows peeking at a link or an entity, bottom first. Transient
+   * ones follow the hover and stack: one opened from inside another is its
+   * child. Pinned ones stay, and are persisted.
    */
   peeks: Peek[]
 }
@@ -42,6 +43,8 @@ export interface Peek {
   /** Set once the window is moved or resized, which also pins it. */
   rect: Rect | null
   pinned: boolean
+  /** The peek this one was opened from, or null for the main view. */
+  parent: string | null
 }
 
 export function sameTarget(a: PeekTarget, b: PeekTarget): boolean {
@@ -49,16 +52,41 @@ export function sameTarget(a: PeekTarget, b: PeekTarget): boolean {
 }
 
 export function transientPeek(state: State): Peek | null {
-  return state.peeks.find((peek) => !peek.pinned) ?? null
+  return state.peeks.findLast((peek) => !peek.pinned) ?? null
 }
 
-/** Replaces the transient peek, leaving pinned ones where they are. */
+/** A peek and the peeks it was opened from, by key. */
+export function peekChain(state: State, key: string | null): Set<string> {
+  const chain = new Set<string>()
+  let current = key
+  while (current && !chain.has(current)) {
+    chain.add(current)
+    current = state.peeks.find((peek) => peek.key === current)?.parent ?? null
+  }
+  return chain
+}
+
+/**
+ * Opens a transient peek on top of the one it came from. Transient peeks off
+ * that line (siblings and their children) close; pinned ones stay.
+ */
 export function showPeek(state: State, peek: Peek): State {
-  return { ...state, peeks: [...state.peeks.filter((other) => other.pinned), peek] }
+  const keep = peekChain(state, peek.parent)
+  return { ...state, peeks: [...state.peeks.filter((other) => other.pinned || keep.has(other.key)), peek] }
 }
 
+/** Closes transient peeks the pointer is no longer in or under. */
+export function keepHovered(state: State, hovering: string | null): State {
+  const keep = peekChain(state, hovering)
+  const peeks = state.peeks.filter((peek) => peek.pinned || keep.has(peek.key))
+  return peeks.length === state.peeks.length ? state : { ...state, peeks }
+}
+
+/** Closes one peek, and any transient ones stacked on it. `null` closes the top transient one. */
 export function closePeek(state: State, key: string | null): State {
-  const peeks = state.peeks.filter((peek) => (key === null ? peek.pinned : peek.key !== key))
+  const target = key ?? transientPeek(state)?.key
+  if (!target) return state
+  const peeks = state.peeks.filter((peek) => peek.key !== target && !(!peek.pinned && peekChain(state, peek.key).has(target)))
   return peeks.length === state.peeks.length ? state : { ...state, peeks }
 }
 
@@ -170,6 +198,6 @@ export function restore(saved: unknown, root: string): State {
     composing: false,
     acting: null,
     viewing: null,
-    peeks: Array.isArray(value.peeks) ? value.peeks.filter((peek) => peek.pinned) : [],
+    peeks: Array.isArray(value.peeks) ? value.peeks.filter((peek) => peek.pinned).map((peek) => ({ ...peek, parent: peek.parent ?? null })) : [],
   }
 }

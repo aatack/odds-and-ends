@@ -23,6 +23,8 @@ export class Session {
   private snapshot: Snapshot
   private request = 0
   private previousPeeks: S.Peek[] = []
+  /** The peek the pointer is in, or null for the main view. */
+  private hovering: string | null = null
   /** How many things on screen mention each item. */
   private readonly wanted = new Map<string, number>()
   private summariesPending = false
@@ -125,27 +127,45 @@ export class Session {
     void this.api.refresh(S.focused(this.state))
   }
 
-  /** Hovering something peekable opens a peek after a moment, so passing over one doesn't. */
-  hoverPeek(target: S.PeekTarget, anchor: S.Rect): void {
+  /**
+   * Hovering something peekable opens a peek after a moment, so passing over
+   * one doesn't. `origin` is the peek the thing is in (null: the main view);
+   * the new one stacks on it.
+   */
+  hoverPeek(target: S.PeekTarget, anchor: S.Rect, origin: string | null): void {
+    this.hovering = origin
     this.holdPeek()
     if (this.peekOpening) clearTimeout(this.peekOpening)
-    const current = S.transientPeek(this.state)
-    if (current && S.sameTarget(current.target, target)) return
+    const top = S.transientPeek(this.state)
+    if (top && top.parent === origin && S.sameTarget(top.target, target)) return
     this.peekOpening = setTimeout(() => {
       this.peekOpening = null
       const key = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-      this.update(S.showPeek(this.state, { key, target, anchor, rect: null, pinned: false }))
+      this.update(S.showPeek(this.state, { key, target, anchor, rect: null, pinned: false, parent: origin }))
     }, 350)
   }
 
-  /** Leaving the trigger or the peek closes it, unless the pointer moves between them. */
-  leavePeek(): void {
+  /** The pointer went into a peek. */
+  enterPeek(key: string): void {
+    // Any close already scheduled still runs; it keeps this peek and those
+    // under it, and closes whatever was stacked above.
+    this.hovering = key
+  }
+
+  /**
+   * The pointer left a trigger (`window` null) or a peek window. After a
+   * moment, transient peeks it is no longer in or under close.
+   */
+  leavePeek(window: string | null): void {
     if (this.peekOpening) clearTimeout(this.peekOpening)
     this.peekOpening = null
+    // Leaving a trigger leaves the pointer in the same window; leaving a
+    // window leaves it on the main view until it enters another.
+    if (window !== null && this.hovering === window) this.hovering = null
     if (this.peekClosing) clearTimeout(this.peekClosing)
     this.peekClosing = setTimeout(() => {
       this.peekClosing = null
-      this.update(S.closePeek(this.state, null))
+      this.update(S.keepHovered(this.state, this.hovering))
     }, 300)
   }
 
@@ -154,9 +174,9 @@ export class Session {
     this.peekClosing = null
   }
 
-  /** `null` closes the transient peek only. */
+  /** `null` closes the top transient peek. */
   closePeek(key: string | null): void {
-    if (key === null) this.holdPeek()
+    this.holdPeek()
     this.update(S.closePeek(this.state, key))
   }
 
