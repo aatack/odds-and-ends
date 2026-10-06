@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { Core } from '../../core.ts'
-import { badge } from './github.ts'
+import { badge, prName } from './github.ts'
 
 const url = 'https://github.com/o/r/pull/7'
 
@@ -56,7 +56,7 @@ test('github: my open PRs, keyed by URL', async () => {
   const [pr] = core.focus('github').children
   assert.equal(pr.id, `github:pr:${url}`)
   assert.equal(pr.data.checks, 'failing')
-  assert.equal(pr.data.label, 'o/r#7 Fix it')
+  assert.equal(pr.data.label, 'Fix it')
 })
 
 test('github: a PR shows checks that need me, then the discussion in order', async () => {
@@ -130,6 +130,15 @@ test("github: no closing someone else's PR", async () => {
   await core.actions.perform({ id, action: 'close', text: '' })
   assert.equal(calls.filter((args) => args[0] === 'pr').length, 0)
   assert.match(core.focus(id).error ?? '', /not available/)
+})
+
+test('github: PR names drop the number and conventional prefix', () => {
+  assert.equal(prName('feat: add decide() backed by OpenRouter'), 'add decide() backed by OpenRouter')
+  assert.equal(prName('fix(frontend): bump prosemirror-view'), 'bump prosemirror-view')
+  assert.equal(prName('#5779 chore!: drop node 18'), 'drop node 18')
+  assert.equal(prName('feat/fix(ui): both'), 'both')
+  assert.equal(prName('Next steps'), 'Next steps')
+  assert.equal(prName('Note: capitalised words stay'), 'Note: capitalised words stay')
 })
 
 test('github: badges', () => {
