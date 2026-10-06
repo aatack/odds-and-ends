@@ -48,6 +48,8 @@ constraints every change must keep.
 - **A click highlights, it never focuses.** Clicking an item moves the cursor
   to it; only `d` focuses. The exceptions are deliberate shortcuts: a person
   or mention pushes their conversation, and a thumbnail opens the image.
+- **Every link is `Link`** (`views/primitives.tsx`). Hovering previews the page
+  in a locked-down `<webview>`; the browser opens only from the preview.
 - No animations. The cursor never becomes a pointer.
 
 ### Code

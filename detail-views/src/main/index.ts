@@ -24,7 +24,16 @@ function createWindow(): BrowserWindow {
       contextIsolation: true,
       // Scales text and spacing together.
       zoomFactor: 1.25,
+      // Link previews. Every guest is locked down in will-attach-webview.
+      webviewTag: true,
     },
+  })
+  window.webContents.on('will-attach-webview', (event, preferences, params) => {
+    delete preferences.preload
+    preferences.nodeIntegration = false
+    preferences.contextIsolation = true
+    preferences.sandbox = true
+    if (!/^https?:/.test(params.src) || params.partition !== 'persist:preview') event.preventDefault()
   })
   window.on('ready-to-show', () => window.show())
   window.webContents.setWindowOpenHandler((details) => {
@@ -52,6 +61,10 @@ void app.whenReady().then(() => {
     } catch (error) {
       return new Response(error instanceof Error ? error.message : String(error), { status: 404 })
     }
+  })
+
+  ipcMain.handle('openExternal', (_event, url: string) => {
+    if (/^(https?|mailto):/.test(url)) void shell.openExternal(url)
   })
 
   ipcMain.handle('invoke', (_event, name: string, args: unknown) => {

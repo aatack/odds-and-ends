@@ -27,6 +27,13 @@ export const tools: Tool[] = [
   { id: 'composer.leave', scope: 'input', keys: ['Escape'], run: (s) => s.compose(false) },
 
   {
+    id: 'preview.close',
+    scope: 'list',
+    keys: ['Escape'],
+    enabled: (s) => s.get().state.preview !== null,
+    run: (s) => s.closePreview(),
+  },
+  {
     id: 'image.close',
     scope: 'list',
     keys: ['Escape', 'A', 'Backspace', 'ArrowLeft'],

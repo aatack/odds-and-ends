@@ -1,4 +1,5 @@
 import type { Focus } from '../../../core/types.ts'
+import type { Rect } from '../state.ts'
 
 /** What every focus view is given. Gestures out, nothing decided here. */
 export interface FocusProps {
@@ -11,4 +12,6 @@ export interface FocusProps {
   onDraft(text: string): void
   onCompose(composing: boolean): void
   onImage(ref: string | null): void
+  onLinkEnter(url: string, anchor: Rect): void
+  onLinkLeave(): void
 }

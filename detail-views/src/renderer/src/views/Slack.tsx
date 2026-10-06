@@ -6,7 +6,7 @@ import remarkGfm from 'remark-gfm'
 import { mentionScheme } from '../../../core/types.ts'
 import type { Entity } from '../../../core/types.ts'
 import { authorColour, fullTime, shortTime } from '../format.ts'
-import { Composer, Row, Status } from './primitives.tsx'
+import { Composer, Link, Row, Status } from './primitives.tsx'
 import type { FocusProps } from './types.ts'
 
 /** Every conversation I am in, unread first. */
@@ -283,11 +283,7 @@ const Markdown = memo(function Markdown(props: { text: string; onOpen(id: string
             />
           )
         }
-        return (
-          <a href={href} target="_blank" rel="noreferrer" onMouseDown={(event) => event.stopPropagation()}>
-            {children}
-          </a>
-        )
+        return href ? <Link href={href}>{children}</Link> : <>{children}</>
       },
     }),
     [onOpen],
