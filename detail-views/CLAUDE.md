@@ -32,6 +32,10 @@ constraints every change must keep.
 - **Slack is read-only during development.** `slackWrites` in
   `modules/slack/api.ts` gates an allowlist of read methods; do not turn it on
   or widen the list unless I ask.
+- **GitHub goes through `gh`, read-only.** Only `gh api graphql` queries;
+  never a mutation. A PR is an entity keyed by its URL
+  (`prEntityId` in `core/types.ts`), so a link to one anywhere is that item;
+  `Module.materialise` makes the entity the first time an unseen one is looked at.
 - **Secrets and settings are local**, in the `settings` table of the same file.
 - Migrations are append-only in `src/core/db.ts`. Never edit a shipped one.
 

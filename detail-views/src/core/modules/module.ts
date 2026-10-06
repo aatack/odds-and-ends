@@ -4,6 +4,8 @@ import type { ComposeKind, Entity } from '../types.ts'
 export interface ModuleContext {
   store: Store
   fetch: typeof fetch
+  /** Runs the GitHub CLI and returns what it printed. */
+  gh(args: string[]): Promise<string>
   /** Reports a failure against an entity; the focus view shows it. Null clears it. */
   setError(id: string, error: string | null): void
 }
@@ -16,6 +18,8 @@ export interface Module {
   root: { id: string; type: string }
   /** Whether this module answers for an entity. */
   owns(entity: Entity): boolean
+  /** Makes an entity for an id seen only as a reference (a link, say), if it can. */
+  materialise?(id: string): Entity | null
   /** Brings cached children of `id` up to date. Optional for owned-only modules. */
   refresh?(id: string): Promise<void>
   /** How long a refresh of `id` stays fresh, in ms. */

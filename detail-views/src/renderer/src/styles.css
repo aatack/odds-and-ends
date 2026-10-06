@@ -528,3 +528,67 @@ body,
 .peek-resize {
   cursor: nwse-resize;
 }
+
+.muted {
+  color: var(--muted);
+}
+
+.row.draft {
+  color: var(--muted);
+}
+
+.dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+  vertical-align: 1px;
+}
+
+.dot.passing {
+  background: #2e9d5b;
+}
+
+.dot.failing {
+  background: #d1453b;
+}
+
+.dot.pending {
+  background: #d39a1c;
+}
+
+.verdict {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.verdict.approved {
+  color: #2e9d5b;
+}
+
+.verdict.changes_requested {
+  color: #d1453b;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+/* Headings in a message read as emphasis, not as page titles. */
+.text h1,
+.text h2,
+.text h3,
+.text h4,
+.text h5,
+.text h6 {
+  font-size: 1em;
+  font-weight: 700;
+  margin: 8px 0 2px;
+}

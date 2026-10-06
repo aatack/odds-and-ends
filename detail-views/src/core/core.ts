@@ -1,5 +1,7 @@
 import { openDatabase } from './db.ts'
 import type { Module, ModuleContext } from './modules/module.ts'
+import { execFile } from 'node:child_process'
+import { GitHub } from './modules/github/github.ts'
 import { Slack } from './modules/slack/slack.ts'
 import { tasksModule } from './modules/tasks.ts'
 import { Store } from './store.ts'
@@ -11,7 +13,17 @@ export interface CoreOptions {
   /** A file path, or `:memory:`. */
   path: string
   fetch?: typeof fetch
+  gh?: ModuleContext['gh']
   now?: () => number
+}
+
+function runGh(args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('gh', args, { maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error) reject(new Error(stderr.trim() || error.message))
+      else resolve(stdout)
+    })
+  })
 }
 
 /**
@@ -37,10 +49,11 @@ export class Core {
     const context: ModuleContext = {
       store: this.store,
       fetch: options.fetch ?? fetch,
+      gh: options.gh ?? runGh,
       setError: (id, error) => this.setError(id, error),
     }
     this.slack = new Slack(context)
-    this.modules = [this.slack, tasksModule(this.store)]
+    this.modules = [this.slack, new GitHub(context), tasksModule(this.store)]
     for (const module of this.modules) {
       if (!this.store.get(module.root.id)) this.store.put(module.root.id, module.root.type, {})
     }
@@ -78,6 +91,14 @@ export class Core {
     this.changed()
   }
 
+  private materialise(id: string): Entity | null {
+    for (const module of this.modules) {
+      const made = module.materialise?.(id)
+      if (made) return made
+    }
+    return null
+  }
+
   moduleOf(entity: Entity): Module | null {
     return this.modules.find((module) => module.owns(entity)) ?? null
   }
@@ -87,7 +108,7 @@ export class Core {
    * cache is stale a refresh starts behind it and a change follows.
    */
   focus(id: string): Focus {
-    const entity = this.store.get(id)
+    const entity = this.store.get(id) ?? this.materialise(id)
     if (!entity) {
       return { entity: null, children: [], module: null, compose: null, loading: false, error: 'not found' }
     }
