@@ -33,12 +33,14 @@ Paste a user token (`xoxp-…`) into the Slack view; it is checked, then kept in
 the local database. The Slack app it belongs to needs these user scopes:
 
 `channels:read groups:read im:read mpim:read channels:history groups:history
-im:history mpim:history users:read files:read chat:write channels:write groups:write
+im:history mpim:history users:read files:read search:read chat:write channels:write groups:write
 im:write mpim:write`
 
-Unread counts come one conversation at a time (Slack has no public call for all
-of them), so the list fills in over the first few minutes and is cached after.
-Whatever is opened goes ahead of them.
+Each conversation loads once: its unread count when it is first shown (Slack
+has no call for all of them, so the list fills in over the first few minutes),
+its messages when it is first opened. After that, one search every 15 seconds
+brings in whatever is new across all of them, and catches up on start with
+what came while the app was closed. `r` loads a conversation whole again.
 
 ## GitHub
 

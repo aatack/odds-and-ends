@@ -17,6 +17,27 @@ import {
 
 const author = 'slack'
 
+/** How often the watch asks Slack for what is new. Search is Tier 2: 20 calls a minute. */
+const pollEvery = 15_000
+/**
+ * How far before the newest message seen the watch looks again, in seconds:
+ * search indexes a message a little after it is sent, so one sent just before
+ * another can turn up after it.
+ */
+const overlap = 120
+/** The most pages one poll reads. Past this the gap is too big to fill from search. */
+const maxPages = 10
+
+interface SearchMatch {
+  ts: string
+  user?: string
+  username?: string
+  text?: string
+  permalink?: string
+  files?: RawFile[]
+  channel: RawConversation
+}
+
 interface RawConversation {
   id: string
   name?: string
@@ -132,6 +153,7 @@ export class Slack implements Module {
 
   private readonly context: ModuleContext
   private api: SlackApi | null = null
+  private polling = false
   private readonly downloads = new Map<string, Promise<{ mime: string; data: Uint8Array }>>()
 
   constructor(context: ModuleContext) {
@@ -228,6 +250,152 @@ export class Slack implements Module {
     this.cache.write(values(id, { lastRead: newest, unread: 0 }, 0, author))
     return []
   }
+
+  // --- The watch ----------------------------------------------------------------
+
+  /**
+   * Keeps Slack current while the app runs, so no conversation is polled:
+   * each loads once, and after that this brings in what is new. Returns the
+   * stop.
+   */
+  watch(): () => void {
+    void this.poll()
+    const timer = setInterval(() => void this.poll(), pollEvery)
+    return () => clearInterval(timer)
+  }
+
+  /**
+   * One look at what is new: every message since the newest one seen, by one
+   * search across all conversations, newest first. Each new message is written
+   * as history would write it and linked under its conversation (or its
+   * thread), and its conversation's position is moved on.
+   *
+   * The newest ts seen is kept on the Slack root (`watch.at`), in the cache
+   * store, so a start catches up on what came while the app was closed. When
+   * the cache store is new there is nothing to catch up on: everything loads
+   * whole when it is first looked at.
+   */
+  async poll(): Promise<void> {
+    const api = this.api
+    if (!api || this.polling) return
+    this.polling = true
+    try {
+      const cursor = this.data<Record<string, unknown>>(ids.root)['watch.at']
+      if (typeof cursor !== 'string') {
+        this.cache.write([value(ids.root, 'watch.at', (this.context.now() / 1000).toFixed(6), 0, author)])
+        return
+      }
+      const since = Number(cursor) - overlap
+      // `after:` takes a day and excludes it; two back covers any time zone.
+      const after = new Date((since - 2 * 86_400) * 1000).toISOString().slice(0, 10)
+      const found: SearchMatch[] = []
+      let reached = false
+      for (let page = 1; page <= maxPages && !reached; page++) {
+        const { messages } = await api.urgent.call<{ messages: { matches: SearchMatch[]; paging: { pages: number } } }>(
+          'search.messages',
+          { query: `after:${after}`, sort: 'timestamp', sort_dir: 'desc', count: 100, page },
+        )
+        for (const match of messages.matches) {
+          if (Number(match.ts) <= since) {
+            reached = true
+            break
+          }
+          found.push(match)
+        }
+        if (page >= messages.paging.pages) reached = true
+      }
+      const events = this.searchEvents(found)
+      // Too much came while the app was closed to read it all from search:
+      // what is cached may miss messages, so every conversation loads whole again.
+      if (!reached) events.push(...this.forgetHistories())
+      events.push(value(ids.root, 'watch.at', maxTs(cursor, ...found.map((match) => match.ts))!, 0, author))
+      this.cache.write(events)
+    } finally {
+      this.polling = false
+    }
+  }
+
+  /** New messages from a search, as events. Ones already cached are left alone, so a repeat counts nothing twice. */
+  private searchEvents(matches: SearchMatch[]): AppEvent[] {
+    const { lens } = this.context
+    const self = this.context.settings.get('slack.self')
+    const now = this.context.now()
+    const events: AppEvent[] = []
+    const conversations = new Map<string, Partial<ConversationData>>()
+    const threads = new Map<string, { replyCount: number; latestReply?: string }>()
+
+    for (const match of [...matches].sort((a, b) => Number(a.ts) - Number(b.ts))) {
+      const channel = match.channel.id
+      const id = ids.message(channel, match.ts)
+      if (lens.read(id)?.data.ts) continue
+      const conversationId = ids.conversation(channel)
+      let conversation = conversations.get(conversationId)
+      if (!conversation) {
+        conversation = this.data<ConversationData>(conversationId)
+        conversations.set(conversationId, conversation)
+        // A conversation not in the list yet (a new DM, say): enough to show it; it loads whole when looked at.
+        if (!conversation.channel) {
+          events.push(
+            ...values(
+              conversationId,
+              { type: 'slack.conversation', channel, kind: kindOf(match.channel), name: match.channel.is_im ? undefined : match.channel.name },
+              0,
+              author,
+            ),
+            link(ids.root, conversationId, 0, author),
+          )
+        }
+      }
+
+      const threadTs = match.permalink ? (new URL(match.permalink).searchParams.get('thread_ts') ?? undefined) : undefined
+      const reply = Boolean(threadTs && threadTs !== match.ts)
+      events.push(
+        ...messageEvents(
+          channel,
+          { ts: match.ts, thread_ts: threadTs, user: match.user, username: match.username, text: match.text, files: match.files },
+          now,
+        ),
+      )
+      if (reply) {
+        const parent = ids.message(channel, threadTs!)
+        const known = this.data<MessageData>(parent)
+        const thread = threads.get(parent) ?? { replyCount: known.replyCount ?? 0, latestReply: known.latestReply ?? undefined }
+        threads.set(parent, { replyCount: thread.replyCount + 1, latestReply: maxTs(thread.latestReply, match.ts) })
+        events.push(link(parent, id, tsMillis(match.ts), author))
+      } else {
+        events.push(link(conversationId, id, tsMillis(match.ts), author))
+      }
+
+      if (!reply) conversation.latestTs = maxTs(conversation.latestTs, match.ts)
+      if (match.user && match.user === self) {
+        // Writing in a conversation reads it.
+        conversation.lastRead = maxTs(conversation.lastRead, match.ts)
+        conversation.unread = 0
+      } else if (!reply && conversation.unread !== undefined && Number(match.ts) > Number(conversation.lastRead ?? 0)) {
+        // Only once its own count has loaded; until then that load counts it.
+        conversation.unread += 1
+      }
+    }
+
+    for (const [id, conversation] of conversations) {
+      events.push(
+        ...values(id, { latestTs: conversation.latestTs, lastRead: conversation.lastRead, unread: conversation.unread }, 0, author),
+      )
+    }
+    for (const [id, thread] of threads) events.push(...values(id, thread, 0, author))
+    return events
+  }
+
+  /** Marks every conversation as never loaded, so each loads whole when it is next looked at. */
+  private forgetHistories(): AppEvent[] {
+    const conversations = this.context.lens.children(ids.root)
+    return conversations.flatMap((id) => [
+      value(id, loadedKey('self'), 0, 0, author),
+      value(id, loadedKey('children'), 0, 0, author),
+    ])
+  }
+
+  // --- Loads ---------------------------------------------------------------------
 
   /** Every conversation I am in. Their unread counts load one by one as each is shown. */
   private async loadHome(): Promise<void> {

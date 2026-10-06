@@ -26,11 +26,11 @@ Use these strategies. One item type can use more than one.
 
 | Item | Part | Strategies | Interval |
 |-|-|-|-|
-| `slack.home` | children | Freshness time | 10 min |
-| `slack.conversation` | self | Freshness time, watch (some) | 5 min on screen; 1 min for watched |
-| `slack.conversation` | children | Cursor, freshness time | 30 s when open |
+| `slack.home` | children | Freshness time | 60 min |
+| `slack.conversation` | self | Load once, then the watch | Never again |
+| `slack.conversation` | children | Load once, then the watch | Never again |
 | `slack.message` | self | Load once | Never again |
-| `slack.message` | children | Change signal, cursor | 30 s when open |
+| `slack.message` | children | Load once, then the watch | Never again |
 | `slack.user` | self | Freshness time | 7 days |
 | Slack images | blob | Load once | Never again |
 | `github.home` | children | Watch, change signal | 2 min |
@@ -39,36 +39,23 @@ Use these strategies. One item type can use more than one.
 | `github.check`, `github.item` | self | None. They come with their PR. | None |
 | `task`, `tasks.home`, `github.localApproval` | none | None. They are owned. | None |
 
-### `slack.home`
+### Slack: load once, then watch (done)
 
-- The list of conversations changes almost never.
-- Load it again after 10 min.
-- Also load it again when a message refers to a conversation that is not in the list.
-
-### `slack.conversation`, self (unread count)
-
-- Slack has no call that gives all unread counts. Each conversation needs one call.
-- Load the counts for conversations on screen after 5 min. Keep these calls behind urgent calls. The app does this now.
-- Watch the conversations that are most important: DMs, group DMs, and conversations with unread messages. Load these each 1 min.
-- Do not watch all conversations. 600 conversations at 90 calls each minute use the full rate limit.
-
-### `slack.conversation`, children (messages)
-
-- Use a cursor. Keep `latestTs` (the newest message that you have) on the conversation. The app keeps this value now.
-- Call `conversations.history` with `oldest = latestTs`. Slack then sends only new messages.
-- A cursor does not show edits, deletions or new reactions on old messages. Thus, each 10 min, load the newest 100 messages again while the conversation is open.
-- When the cache store is cleared, `latestTs` is also cleared. The next load is then a full load. This is correct.
-
-### `slack.message`, self
-
-- A message comes with its conversation history. It has a date and almost never changes.
-- Load it alone only when a link points to it and the cache store does not have it.
-
-### `slack.message`, children (thread replies)
-
-- Use a change signal. The parent message has `latestReply` and `replyCount`. The conversation history updates these values.
-- Load the thread only when `latestReply` is newer than the newest reply that you have.
-- Use a cursor: call `conversations.replies` with `oldest` set to the newest reply that you have.
+- A conversation, its unread count and a thread load one time, when they are first looked at.
+- After that, the watch (`Slack.poll`) keeps them current. The app does not load them again, unless I refresh one (`r`).
+- Each 15 s, the watch does one `search.messages` call: all messages after the newest message that it saw, newest first. It reads pages until it gets to a message that it saw before.
+- For each new message, the watch:
+  - writes the message at its ts, as the history load does;
+  - links it under its conversation, or under its thread parent when it is a reply;
+  - sets the `latestTs` of the conversation, and adds 1 to its unread count (not for replies, and not for my own messages);
+  - when the message is mine, sets the read position of the conversation to it;
+  - adds a conversation that is not in the list (a new DM, for example).
+- The watch ignores a message that the cache store has. Thus, two looks at the same message do not count it two times.
+- The watch keeps the ts of the newest message that it saw on the Slack root (`watch.at`), in the cache store.
+- **Catch-up:** on start, the first poll reads everything after `watch.at`. This finds the messages that came while the app was closed.
+- If the catch-up needs more than 10 pages (1000 messages), the watch marks all conversations as not loaded. Each then loads whole when it is next looked at.
+- If the cache store is new, there is no `watch.at`. The first poll only sets it. Each conversation then loads whole when it is first looked at.
+- Search indexes a message a short time after it is sent. Thus, each poll looks again at the 120 s before `watch.at`.
 
 ### `slack.user`
 
@@ -122,12 +109,8 @@ An event or a catch-up does not write data to the screen. It marks entities as s
 
 ### Slack
 
-- **Watch:** Socket Mode. Slack sends events through a WebSocket. Subscribe to these user events: `message.channels`, `message.groups`, `message.im`, `message.mpim`, `reaction_added`, `reaction_removed`, `channel_marked`.
-- Socket Mode needs an app-level token (`xapp-`, scope `connections:write`). Socket Mode must be on in the Slack app settings. You must do these steps in the Slack app settings. The app cannot do them.
-- `apps.connections.open` is not on the read list in `api.ts`. Socket Mode needs it. It writes nothing.
-- **An event:** a new message is a dated event. Write it to the cache store at its ts. Then increase the unread count of its conversation. `channel_marked` sets the read position. Thus, the app does not need to call `conversations.info` for each conversation all the time.
-- **Catch-up:** `search.messages` with `after:<date of last event>`. One query gives the new messages in all conversations. Load only the conversations that it names. This needs the `search:read` user scope. The search gives days, not times. Thus, the catch-up can get some messages again. This is safe, because a cache write of the same event changes nothing.
-- **Without a watch:** if there is no app-level token, use the polling in "Item types".
+- The watch is a poll of `search.messages`. See "Slack: load once, then watch".
+- Socket Mode can replace the poll later. It sends events at once, but it needs an app-level token (`xapp-`) and changes to the Slack app settings. The catch-up stays the same.
 
 ### GitHub
 
@@ -140,10 +123,10 @@ An event or a catch-up does not write data to the screen. It marks entities as s
 
 ## Changes to make
 
-1. Add `ModuleView.watch(entity)`. It gives an interval, or null. The core keeps a timer for each watched entity while the app is open.
+1. Add `ModuleView.watch(entity)` for GitHub. It gives an interval, or null. The core keeps a timer for each watched entity while the app is open.
 2. Let the freshness time come from the entity, not only from its type. Then a merged PR is final, and a PR with pending checks is fast.
 3. Give each loader the entity that it loads. Then the loader can read its cursor (`latestTs`, the newest reply) and send `oldest`.
 4. Add a change signal to the cache: a load of a list compares `updatedAt` and `latestReply`, and marks only the changed items as stale.
 5. Each 10 min, do a full load of the newest window of an open conversation, to get edits and reactions.
-6. Add watches to the core: a Slack Socket Mode client and a GitHub notifications poll. Each keeps its last event time and does a catch-up on start.
+6. Add a GitHub notifications poll. It keeps its last event time and does a catch-up on start. (The Slack watch is done.)
 7. While a watch is open, make the freshness times of the items that it covers long. The watch then does the work, and the polls are only a fallback.

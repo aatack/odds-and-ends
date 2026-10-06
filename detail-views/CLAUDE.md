@@ -49,6 +49,10 @@ constraints every change must keep.
   collide with owned ids (uuids) or with each other, and an id's shape alone
   gives its type (`ModuleView.typeOf`): a PR seen only as a link is that item
   and loads itself.
+- **Slack loads once, then is watched.** Conversations and threads load whole
+  the first time they are looked at; after that `Slack.poll` (one
+  `search.messages` call every 15 s, started by `Core.start`) brings in new
+  messages and catches up on start from `watch.at`. Do not poll conversations.
 - **Slack is read-only during development.** `slackWrites` in
   `modules/slack/api.ts` gates an allowlist of read methods; do not turn it on
   or widen the list unless I ask.

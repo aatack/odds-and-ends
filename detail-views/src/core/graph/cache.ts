@@ -15,7 +15,8 @@ import { loadedKey, type Freshness, type LoadPart, type LoadRequest, type LoadRe
 //
 // It is also what reaches out to other services. Once an entity that was asked
 // for has arrived, its module says which parts of it come from elsewhere
-// (`Freshness`); a part never loaded, or loaded longer ago than it stays fresh,
+// (`Freshness`); a part never loaded, or loaded longer ago than it stays fresh
+// (which may be never: some parts load once and are then kept current otherwise),
 // is loaded by the core into the cache store, which says so on the entity
 // itself (`loaded.<part>`), and the change comes back here like any other.
 // `children` is only loaded for an entity something has walked into
@@ -67,6 +68,9 @@ const waiting = (state: LoadState): boolean => state === 'unloaded' || state ===
 const complete = (state: LoadState): boolean => state === 'loaded' || state === 'stale'
 const unread = (state: LoadState): boolean => state === 'unloaded' || state === 'stale'
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
+
+/** How long a load that was started (or failed) is not started again. */
+const retryAfter = 60_000
 
 const blank = (id: string): CachedEntity => ({ events: [], loaded: 'unloaded', entity: emptyEntity(id) })
 
@@ -306,8 +310,11 @@ export class EntityCache {
         if (part === 'children' && !this.expanded.has(id)) continue
         const key = `${id} ${part}`
         if (this.inFlight.has(key)) continue
+        // Never loaded (or marked for loading again with 0): load, however long it stays fresh.
         const loadedAt = Number(entry.entity.values[loadedKey(part)]) || 0
-        if (now - Math.max(loadedAt, this.attempted.get(key) ?? 0) < fresh) continue
+        if (loadedAt && now - loadedAt < fresh) continue
+        // Started a moment ago: its reply may not have been read yet.
+        if (now - (this.attempted.get(key) ?? -Infinity) < Math.min(fresh, retryAfter)) continue
         this.startLoad(id, part, false)
       }
     }
