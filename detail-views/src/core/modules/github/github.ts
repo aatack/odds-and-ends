@@ -41,7 +41,7 @@ async function query<T>(gh: ModuleContext['gh'], text: string, variables: Record
 const listQuery = `query { viewer { login }
   search(query: "is:pr is:open author:@me archived:false sort:updated-desc", type: ISSUE, first: 50) {
     nodes { ... on PullRequest {
-      url number title isDraft updatedAt reviewDecision mergeable
+      url number title state isDraft updatedAt reviewDecision mergeable
       author { login } repository { nameWithOwner }
       latestReviews(first: 30) { nodes { author { login } state } }
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
@@ -67,6 +67,7 @@ const prQuery = `query($url: URI!) { viewer { login } resource(url: $url) { ... 
 type Login = { login: string } | null
 
 interface RawListPr {
+  state: string
   author: Login
   mergeable: string
   latestReviews: { nodes: { author: Login; state: string }[] }
@@ -82,7 +83,6 @@ interface RawListPr {
 
 interface RawPr extends RawListPr {
   body: string
-  state: string
   additions: number
   deletions: number
   changedFiles: number
@@ -186,12 +186,15 @@ const reviewWords: Record<string, string> = {
 }
 
 /**
+ * Merged, anyone's: purple.
  * Someone else's PR: whether it is approved, and whether by me.
  * Mine: what stands in its way, worst first, then how approved it is.
  * Null until enough is known.
  */
 export function badge(data: Record<string, unknown>, locallyApproved: boolean): Badge | null {
   if (data.mine === undefined) return null
+  // Merged is the end of the story, whoever's it is.
+  if (data.state === 'MERGED') return { shape: 'dot', tone: 'purple', reason: 'merged' }
   if (!data.mine) {
     if (data.approvedByMe) return { shape: 'tick', tone: 'green', reason: 'approved by me' }
     if (data.approvedByOthers) return { shape: 'dot', tone: 'green', reason: 'approved' }
@@ -346,6 +349,7 @@ export class GitHub implements Module {
       .filter((review) => review.state === 'APPROVED')
       .map((review) => review.author?.login)
     return {
+      state: pr.state,
       mine: author === viewer,
       conflicts: pr.mergeable === 'CONFLICTING',
       approvedByMe: approvers.includes(viewer),

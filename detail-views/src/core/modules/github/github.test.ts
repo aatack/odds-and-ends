@@ -16,7 +16,7 @@ function fakeGh(calls: string[][], options: { author?: string } = {}) {
           viewer: { login: 'me' },
           search: {
             nodes: [
-              { url, number: 7, title: 'Fix it', isDraft: false, updatedAt: '2026-10-01T00:00:00Z', reviewDecision: 'APPROVED',
+              { url, number: 7, title: 'Fix it', state: 'OPEN', isDraft: false, updatedAt: '2026-10-01T00:00:00Z', reviewDecision: 'APPROVED',
                 mergeable: 'MERGEABLE', author: { login: 'me' }, latestReviews: { nodes: [{ author: { login: 'ann' }, state: 'APPROVED' }] },
                 repository: { nameWithOwner: 'o/r' }, commits: { nodes: [{ commit: { statusCheckRollup: { state: 'FAILURE' } } }] } },
             ],
@@ -148,6 +148,9 @@ test('github: badges', () => {
   assert.equal(b({ mine: true, checks: 'passing' }, true), 'yellow dot')
   assert.equal(b({ mine: true, checks: 'passing', approvedByOthers: true }), 'green dot')
   assert.equal(b({ mine: true, checks: 'passing', approvedByOthers: true }, true), 'green tick')
+  // Merged outranks everything, mine or not.
+  assert.equal(b({ mine: false, state: 'MERGED' }), 'purple dot')
+  assert.equal(b({ mine: true, state: 'MERGED', conflicts: true, checks: 'failing' }), 'purple dot')
   // Not loaded yet.
   assert.equal(b({}), null)
 })

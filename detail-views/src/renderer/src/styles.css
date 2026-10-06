@@ -680,3 +680,7 @@ body,
   align-items: center;
   gap: 6px;
 }
+
+.badge.dot.purple { background: #8250df; }
+.badge.tick.purple,
+.badge.cross.purple { color: #8250df; }

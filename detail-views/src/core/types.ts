@@ -56,7 +56,7 @@ export interface Action {
  */
 export interface Badge {
   shape: 'dot' | 'tick' | 'cross'
-  tone: 'red' | 'yellow' | 'green'
+  tone: 'red' | 'yellow' | 'green' | 'purple'
   /** What it means, for a tooltip. */
   reason: string
 }
