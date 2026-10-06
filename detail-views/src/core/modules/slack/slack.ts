@@ -136,7 +136,7 @@ function messageData(channel: string, raw: RawMessage): MessageData {
 export class Slack implements Module {
   readonly id = 'slack'
   readonly name = 'Slack'
-  readonly root = { id: ids.root, type: 'slack.home' }
+  readonly root = { id: ids.root, type: 'slack.home' as const }
 
   private readonly store: Store
   private readonly context: ModuleContext

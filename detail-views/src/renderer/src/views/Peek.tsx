@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { Focus as FocusData } from '../../../core/types.ts'
 import type { Peek, PeekTarget, Rect } from '../state.ts'
 import { Focus } from './Focus.tsx'
+import { HeaderPill } from './primitives.tsx'
 
 const size = { width: 720, height: 480 }
 const gap = 6
@@ -14,16 +15,6 @@ function place(anchor: Rect): Rect {
   const y = below + size.height <= window.innerHeight ? below : Math.max(gap, anchor.y - gap - size.height)
   const x = Math.min(Math.max(gap, anchor.x), window.innerWidth - size.width - gap)
   return { x, y, ...size }
-}
-
-function title(target: PeekTarget, focus: FocusData | undefined): string {
-  if (target.kind === 'url') return target.url
-  const data = focus?.entity?.data
-  if (!data) return ''
-  if (data.label) return String(data.label)
-  if (data.title) return String(data.title)
-  if (data.author) return `${String(data.author)}: ${String(data.text ?? '')}`
-  return String(data.text ?? data.name ?? focus?.entity?.id ?? '')
 }
 
 type Grab = { mode: 'move' | 'resize'; start: Rect; x: number; y: number; moved: boolean }
@@ -95,7 +86,9 @@ export function PeekWindow(props: {
       onPointerDown={() => props.onRaise(peek.key)}
     >
       <div className="peek-bar" onPointerDown={begin('move')}>
-        <span className="grow">{title(peek.target, props.focus)}</span>
+        <span className="grow">
+          {peek.target.kind === 'entity' ? <HeaderPill entity={props.focus?.entity} /> : peek.target.url}
+        </span>
         <button onPointerDown={(event) => event.stopPropagation()} onClick={() => props.onOpen(peek.target)}>
           Open
         </button>
@@ -118,6 +111,7 @@ export function PeekWindow(props: {
             cursor={-1}
             draft=""
             composing={false}
+            headed={false}
             onSelect={noop}
             onOpen={props.onOpenEntity}
             onDraft={noop}

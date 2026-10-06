@@ -1,6 +1,6 @@
 import { memo } from 'react'
-import type { Entity } from '../../../core/types.ts'
-import { Composer, Row, Status } from './primitives.tsx'
+import type { PillProps, RowProps } from './kindTypes.ts'
+import { Composer, HeaderPill, PillContent, Row, RowFor, Status } from './primitives.tsx'
 import type { FocusProps } from './types.ts'
 
 /** A task, or the root of all of them, with what sits under it. */
@@ -9,10 +9,21 @@ export function Tasks(props: FocusProps) {
   const isTask = focus.entity?.type === 'task'
   return (
     <div className="pane">
-      {isTask && <div className="title">{String(focus.entity!.data.text)}</div>}
+      {isTask && props.headed !== false && (
+        <div className="title">
+          <HeaderPill entity={focus.entity} />
+        </div>
+      )}
       <div className="list">
         {focus.children.map((child, index) => (
-          <TaskRow key={child.id} entity={child} selected={index === props.cursor} onSelect={props.onSelect} onOpen={props.onOpen} />
+          <RowFor
+            key={child.id}
+            entity={child}
+            selected={index === props.cursor}
+            onSelect={props.onSelect}
+            onOpen={props.onOpen}
+            onImage={props.onImage}
+          />
         ))}
       </div>
       <Status error={focus.error} />
@@ -29,14 +40,8 @@ export function Tasks(props: FocusProps) {
   )
 }
 
-const TaskRow = memo(function TaskRow(props: {
-  entity: Entity
-  selected: boolean
-  onSelect(id: string): void
-  onOpen(id: string): void
-}) {
+export const TaskRow = memo(function TaskRow(props: RowProps) {
   const { data } = props.entity
-  if (props.entity.type !== 'task') return <GenericRow {...props} />
   return (
     <Row id={props.entity.id} selected={props.selected} className={data.done ? 'done' : ''} onSelect={props.onSelect}>
       <span className="check">{data.done ? '✓' : '○'}</span>
@@ -45,17 +50,27 @@ const TaskRow = memo(function TaskRow(props: {
   )
 })
 
-export const GenericRow = memo(function GenericRow(props: {
-  entity: Entity
-  selected: boolean
-  onSelect(id: string): void
-  onOpen(id: string): void
-}) {
+export function TaskPill(props: PillProps) {
   const { data } = props.entity
-  const label = data.title ?? data.text ?? data.name ?? props.entity.id
+  return (
+    <>
+      <span className="check">{data.done ? '✓' : '○'}</span>
+      <span className="item-name">{String(data.text)}</span>
+    </>
+  )
+}
+
+export function TasksHomePill() {
+  return <span className="item-name">Tasks</span>
+}
+
+/** A row for any item with nothing more to say than its pill. */
+export const GenericRow = memo(function GenericRow(props: RowProps) {
   return (
     <Row id={props.entity.id} selected={props.selected} onSelect={props.onSelect}>
-      <span className="grow">{String(label)}</span>
+      <span className="grow pill-row">
+        <PillContent entity={props.entity} />
+      </span>
     </Row>
   )
 })
@@ -65,10 +80,22 @@ export function Generic(props: FocusProps) {
   const { focus } = props
   return (
     <div className="pane">
+      {props.headed !== false && (
+        <div className="title">
+          <HeaderPill entity={focus.entity} />
+        </div>
+      )}
       <pre className="data">{JSON.stringify(focus.entity?.data ?? {}, null, 2)}</pre>
       <div className="list">
         {focus.children.map((child, index) => (
-          <GenericRow key={child.id} entity={child} selected={index === props.cursor} onSelect={props.onSelect} onOpen={props.onOpen} />
+          <RowFor
+            key={child.id}
+            entity={child}
+            selected={index === props.cursor}
+            onSelect={props.onSelect}
+            onOpen={props.onOpen}
+            onImage={props.onImage}
+          />
         ))}
       </div>
       <Status error={focus.error} />

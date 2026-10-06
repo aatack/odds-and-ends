@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type { Entity } from './types.ts'
+import type { Entity, ItemType } from './types.ts'
 
 interface EntityRow {
   id: string
@@ -13,7 +13,7 @@ interface EntityRow {
 function toEntity(row: EntityRow): Entity {
   return {
     id: row.id,
-    type: row.type,
+    type: row.type as ItemType,
     data: JSON.parse(row.data) as Record<string, unknown>,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -80,7 +80,7 @@ export class Store {
    * Writes an entity whole. A cached write to something owned keeps it owned:
    * the data is replaced but the row never gains an expiry.
    */
-  put(id: string, type: string, data: Record<string, unknown>, options?: CacheOptions): Entity {
+  put(id: string, type: ItemType, data: Record<string, unknown>, options?: CacheOptions): Entity {
     const now = this.now()
     this.db
       .prepare(

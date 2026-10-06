@@ -1,5 +1,5 @@
 import type { Store } from '../store.ts'
-import type { Action, ComposeKind, Entity } from '../types.ts'
+import type { Action, ComposeKind, Entity, ItemType } from '../types.ts'
 
 export interface ModuleContext {
   store: Store
@@ -15,7 +15,7 @@ export interface Module {
   id: string
   name: string
   /** The entity the sidebar entry focuses. Created owned on first start. */
-  root: { id: string; type: string }
+  root: { id: string; type: ItemType }
   /** Whether this module answers for an entity. */
   owns(entity: Entity): boolean
   /** Makes an entity for an id seen only as a reference (a link, say), if it can. */

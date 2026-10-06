@@ -2,7 +2,8 @@ import type { Focus as FocusData, ModuleInfo } from '../../../core/types.ts'
 import type { Peek, PeekTarget, Rect } from '../state.ts'
 import { Focus } from './Focus.tsx'
 import { PeekWindow } from './Peek.tsx'
-import { ItemContext, PeekContext } from './primitives.tsx'
+import { kinds } from './kinds.tsx'
+import { ItemContext, KindsContext, PeekContext } from './primitives.tsx'
 import type { ItemGestures, PeekGestures } from './primitives.tsx'
 import type { FocusProps } from './types.ts'
 
@@ -30,6 +31,7 @@ export function App(props: {
 }) {
   const { peek } = props
   return (
+    <KindsContext.Provider value={kinds}>
     <ItemContext.Provider value={props.items}>
       <PeekContext.Provider value={peek.gestures}>
         <div className="app">
@@ -68,5 +70,6 @@ export function App(props: {
         </div>
       </PeekContext.Provider>
     </ItemContext.Provider>
+    </KindsContext.Provider>
   )
 }

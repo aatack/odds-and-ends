@@ -9,6 +9,8 @@ export interface FocusProps {
   /** The action waiting on the prompt, if any. */
   acting?: string | null
   onAction?(action: string): void
+  /** False where something else already names the item, as a peek's bar does. */
+  headed?: boolean
   onSelect(id: string): void
   onOpen(id: string): void
   onDraft(text: string): void
