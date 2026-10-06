@@ -127,17 +127,16 @@ export const slackView: ModuleView = {
 
   owns: (type) => type.startsWith('slack.'),
 
-  // Conversations, messages and threads load once: after that the watch
-  // (`Slack.poll`) brings in what is new, so nothing is fetched again unless
-  // I refresh it.
+  // Only the workspace's lists load on their own. Messages come from the
+  // watch (`Slack.poll`) and its first batch back through history; anything
+  // older is asked for (`older`). A message seen only by its id (linked from a
+  // task, say) loads itself, once.
   foreign(_id, type) {
     switch (type) {
       case 'slack.home':
         return { children: 60 * minute }
-      case 'slack.conversation':
-        return { self: Infinity, children: Infinity }
       case 'slack.message':
-        return { self: Infinity, children: Infinity }
+        return { self: Infinity }
       case 'slack.user':
         return { self: 7 * day }
       default:
@@ -146,6 +145,8 @@ export const slackView: ModuleView = {
   },
 
   newestFirst: (type) => type === 'slack.conversation',
+
+  older: (entity) => ['slack.home', 'slack.conversation', 'slack.message'].includes(entity.type),
 
   compose(entity, lens) {
     if (lens.read(slackIds.root)?.data.connected === false) return 'slack-token'

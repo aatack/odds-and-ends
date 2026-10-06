@@ -52,10 +52,14 @@ constraints every change must keep.
 - **Slack keeps no unread counts.** The list is ordered by each
   conversation's most recent event (`updatedAt`: the link to its newest
   message), never by when it was loaded.
-- **Slack loads once, then is watched.** Conversations and threads load whole
-  the first time they are looked at; after that `Slack.poll` (one
-  `search.messages` call every 15 s, started by `Core.start`) brings in new
-  messages and catches up on start from `watch.at`. Do not poll conversations.
+- **Slack loads lists, one batch of history, then watches.** On its own the
+  app loads only the workspace's lists (`users.conversations`,
+  `conversations.list`, `users.list`), a first batch of 1000 messages across
+  every conversation by search, and then `Slack.poll` (one `search.messages`
+  call every 15 s, started by `Core.start`, catching up on start from
+  `watch.at`). Anything older, for all of Slack, one conversation or one
+  thread, loads only when I ask (`o`, `Module.older`). Never poll or load
+  conversations one by one on their own.
 - **Slack is read-only during development.** `slackWrites` in
   `modules/slack/api.ts` gates an allowlist of read methods; do not turn it on
   or widen the list unless I ask.

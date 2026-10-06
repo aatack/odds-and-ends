@@ -72,6 +72,8 @@ const reads = new Set([
   'auth.test',
   'users.conversations',
   'users.info',
+  'users.list',
+  'conversations.list',
   'conversations.info',
   'conversations.history',
   'conversations.replies',

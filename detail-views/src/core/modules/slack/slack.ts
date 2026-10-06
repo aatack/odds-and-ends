@@ -24,8 +24,10 @@ const pollEvery = 15_000
  * another can turn up after it.
  */
 const overlap = 120
-/** The most pages one poll reads. Past this the gap is too big to fill from search. */
-const maxPages = 10
+/** The most pages one search reads: Slack's own limit. Past this the gap is too big to fill from search. */
+const maxPages = 100
+/** How many messages one batch back through history brings in: the first on start, more on demand. */
+const batch = 1000
 
 interface SearchMatch {
   ts: string
@@ -76,6 +78,17 @@ interface RawFile {
   thumb_480_h?: number
 }
 
+interface RawUser {
+  id: string
+  name: string
+  real_name?: string
+  profile?: { display_name?: string; real_name?: string }
+}
+
+function userName(user: RawUser): string {
+  return user.profile?.display_name || user.profile?.real_name || user.real_name || user.name
+}
+
 function kindOf(conversation: RawConversation): ConversationData['kind'] {
   return conversation.is_im ? 'im' : conversation.is_mpim ? 'mpim' : conversation.is_private ? 'private' : 'channel'
 }
@@ -98,8 +111,11 @@ function conversationEvents(conversation: RawConversation): AppEvent[] {
  * A message as events. What was said is written at the time it was said (or
  * last edited), so a later edit of mine wins over it; what changes without a
  * date (reactions, the thread under it) at 0. Marked loaded: this is all of it.
+ *
+ * A message from search is `partial`: search leaves out reactions and replies,
+ * so those are not written, rather than written as nothing.
  */
-function messageEvents(channel: string, raw: RawMessage, now: number): AppEvent[] {
+function messageEvents(channel: string, raw: RawMessage, now: number, partial = false): AppEvent[] {
   const id = ids.message(channel, raw.ts)
   const isImage = (file: RawFile) => Boolean(file.mimetype?.startsWith('image/') && file.url_private)
   const files = (raw.files ?? []).filter((file) => !isImage(file)).map((file) => file.name).filter(Boolean)
@@ -127,7 +143,7 @@ function messageEvents(channel: string, raw: RawMessage, now: number): AppEvent[
   return [
     value(id, 'type', 'slack.message', 0, author),
     ...values(id, Object.fromEntries(Object.entries(data).map(([key, v]) => [key, v ?? null])), said, author),
-    ...values(
+    ...(partial ? [] : values(
       id,
       {
         replyCount: raw.reply_count ?? null,
@@ -136,7 +152,7 @@ function messageEvents(channel: string, raw: RawMessage, now: number): AppEvent[
       },
       0,
       author,
-    ),
+    )),
     value(id, loadedKey('self'), now, 0, author),
   ]
 }
@@ -147,6 +163,8 @@ export class Slack implements Module {
   private readonly context: ModuleContext
   private api: SlackApi | null = null
   private polling = false
+  /** Searches run one at a time: each moves cursors the next one reads. */
+  private searching: Promise<unknown> = Promise.resolve()
   private readonly downloads = new Map<string, Promise<{ mime: string; data: Uint8Array }>>()
 
   constructor(context: ModuleContext) {
@@ -167,15 +185,23 @@ export class Slack implements Module {
     if (type === 'slack.home') return this.loadHome()
     const api = this.api
     if (!api) throw new Error('no Slack token')
-    const channel = id.startsWith('slack:conv:') ? id.slice('slack:conv:'.length) : null
     const message = parseMessageId(id)
-    if (type === 'slack.conversation' && channel) {
-      return part === 'self' ? this.loadConversation(api, channel) : this.loadHistory(api, channel)
-    }
-    if (type === 'slack.message' && message) {
-      return part === 'self' ? this.loadMessage(api, message.channel, message.ts) : this.loadThread(api, id)
-    }
+    if (type === 'slack.message' && message && part === 'self') return this.loadMessage(api, message.channel, message.ts)
     if (type === 'slack.user') return this.loadUser(api, id.slice('slack:user:'.length))
+  }
+
+  /**
+   * Loads further back, on demand: the workspace one batch further back
+   * through every conversation, a conversation 100 messages further back, a
+   * thread whole. Nothing else loads history except the first batch.
+   */
+  async older(id: string): Promise<void> {
+    const api = this.api
+    if (!api) throw new Error('no Slack token')
+    const type = this.view.typeOf(id)
+    if (type === 'slack.home') return this.serially(() => this.searchBack(api))
+    if (type === 'slack.conversation') return this.channelBack(api, id.slice('slack:conv:'.length))
+    if (type === 'slack.message' && parseMessageId(id)) return this.loadThread(api, id)
   }
 
   async submit(entity: Entity, text: string): Promise<AppEvent[]> {
@@ -190,7 +216,6 @@ export class Slack implements Module {
       const { channel, ts, threadTs } = entity.data as unknown as MessageData
       await this.api.call('chat.postMessage', { channel, text, thread_ts: threadTs ?? ts })
     } else return []
-    await this.context.load(entity.id, 'children', true)
     return []
   }
 
@@ -240,12 +265,11 @@ export class Slack implements Module {
     return []
   }
 
-  // --- The watch ----------------------------------------------------------------
+  // --- The watch and the history behind it ----------------------------------------
 
   /**
-   * Keeps Slack current while the app runs, so no conversation is polled:
-   * each loads once, and after that this brings in what is new. Returns the
-   * stop.
+   * Keeps Slack current while the app runs, so no conversation is polled.
+   * Returns the stop.
    */
   watch(): () => void {
     void this.poll()
@@ -253,55 +277,153 @@ export class Slack implements Module {
     return () => clearInterval(timer)
   }
 
+  private serially<T>(body: () => Promise<T>): Promise<T> {
+    const run = this.searching.then(body, body)
+    this.searching = run.catch(() => {})
+    return run
+  }
+
+  private cursor(id: string, key: string): string | null {
+    const found = this.data<Record<string, unknown>>(id)[key]
+    return typeof found === 'string' ? found : null
+  }
+
   /**
-   * One look at what is new: every message since the newest one seen, by one
-   * search across all conversations, newest first. Each new message is written
-   * as history would write it and linked under its conversation (or its
-   * thread).
+   * One search, newest first, collecting what `keep` accepts until `enough`
+   * says stop or the results run out. Says whether it got to the end.
+   */
+  private async search(
+    api: SlackApi,
+    query: string,
+    keep: (match: SearchMatch) => 'keep' | 'skip' | 'stop',
+    enough: (found: SearchMatch[]) => boolean,
+    from = 1,
+  ): Promise<{ found: SearchMatch[]; ended: boolean; stopped: boolean; next: number }> {
+    const found: SearchMatch[] = []
+    for (let page = from; page <= maxPages; page++) {
+      const { messages } = await api.urgent.call<{ messages: { matches: SearchMatch[]; paging: { pages: number } } }>(
+        'search.messages',
+        { query, sort: 'timestamp', sort_dir: 'desc', count: 100, page },
+      )
+      for (const match of messages.matches) {
+        const verdict = keep(match)
+        if (verdict === 'stop') return { found, ended: false, stopped: true, next: page }
+        if (verdict === 'keep') found.push(match)
+      }
+      // Whole pages only, so the next batch can start on the page after.
+      if (page >= messages.paging.pages) return { found, ended: true, stopped: false, next: page + 1 }
+      if (enough(found)) return { found, ended: false, stopped: false, next: page + 1 }
+    }
+    return { found, ended: false, stopped: false, next: maxPages + 1 }
+  }
+
+  /**
+   * One look at what is new: every message since the newest one seen
+   * (`watch.at`, on the workspace), across all conversations at once. On a new
+   * cache store there is no `watch.at`, so this is instead the first batch
+   * back through history, which sets it.
    *
-   * The newest ts seen is kept on the Slack root (`watch.at`), in the cache
-   * store, so a start catches up on what came while the app was closed. When
-   * the cache store is new there is nothing to catch up on: everything loads
-   * whole when it is first looked at.
+   * On start this is also the catch-up on what came while the app was closed.
+   * If that is more than search will page through, what is cached is no longer
+   * unbroken back to the global oldest cursor: that cursor moves up to where
+   * the catch-up ended, and every conversation's own cursor is dropped.
    */
   async poll(): Promise<void> {
     const api = this.api
     if (!api || this.polling) return
     this.polling = true
     try {
-      const cursor = this.data<Record<string, unknown>>(ids.root)['watch.at']
-      if (typeof cursor !== 'string') {
-        this.cache.write([value(ids.root, 'watch.at', (this.context.now() / 1000).toFixed(6), 0, author)])
-        return
-      }
-      const since = Number(cursor) - overlap
-      // `after:` takes a day and excludes it; two back covers any time zone.
-      const after = new Date((since - 2 * 86_400) * 1000).toISOString().slice(0, 10)
-      const found: SearchMatch[] = []
-      let reached = false
-      for (let page = 1; page <= maxPages && !reached; page++) {
-        const { messages } = await api.urgent.call<{ messages: { matches: SearchMatch[]; paging: { pages: number } } }>(
-          'search.messages',
-          { query: `after:${after}`, sort: 'timestamp', sort_dir: 'desc', count: 100, page },
+      await this.serially(async () => {
+        const cursor = this.cursor(ids.root, 'watch.at')
+        if (!cursor) return this.searchBack(api)
+        const since = Number(cursor) - overlap
+        // `after:` takes a day and excludes it; two back covers any time zone.
+        const after = new Date((since - 2 * 86_400) * 1000).toISOString().slice(0, 10)
+        const { found, ended, stopped } = await this.search(
+          api,
+          `after:${after}`,
+          (match) => (Number(match.ts) <= since ? 'stop' : 'keep'),
+          () => false,
         )
-        for (const match of messages.matches) {
-          if (Number(match.ts) <= since) {
-            reached = true
-            break
-          }
-          found.push(match)
+        const events = this.searchEvents(found)
+        if (!ended && !stopped) {
+          const oldest = found.reduce((least, match) => (Number(match.ts) < Number(least) ? match.ts : least), cursor)
+          events.push(value(ids.root, 'history.oldest', oldest, 0, author), value(ids.root, 'history.query', null, 0, author))
+          for (const id of this.context.lens.children(ids.root)) events.push(value(id, 'history.oldest', null, 0, author))
         }
-        if (page >= messages.paging.pages) reached = true
-      }
-      const events = this.searchEvents(found)
-      // Too much came while the app was closed to read it all from search:
-      // what is cached may miss messages, so every conversation loads whole again.
-      if (!reached) events.push(...this.forgetHistories())
-      events.push(value(ids.root, 'watch.at', maxTs(cursor, ...found.map((match) => match.ts))!, 0, author))
-      this.cache.write(events)
+        events.push(value(ids.root, 'watch.at', maxTs(cursor, ...found.map((match) => match.ts))!, 0, author), value(ids.root, 'watch.error', null, 0, author))
+        this.cache.write(events)
+      })
+    } catch (error) {
+      this.cache.write([value(ids.root, 'watch.error', error instanceof Error ? error.message : String(error), 0, author)])
     } finally {
       this.polling = false
     }
+  }
+
+  /**
+   * One batch further back through every conversation at once: the
+   * `batch` messages before the global oldest cursor (`history.oldest`, on the
+   * workspace), or before now for the first. Everything from that cursor to
+   * now is then cached, in every conversation, which is what lets a
+   * conversation's own history start from it rather than from now.
+   */
+  private async searchBack(api: SlackApi): Promise<void> {
+    const oldest = this.cursor(ids.root, 'history.oldest')
+    const start = oldest ?? (this.context.now() / 1000).toFixed(6)
+    // Carry on with the last batch's search from the page after it, while
+    // search will still page that far; otherwise start one from the cursor.
+    // `before:` takes a day and excludes it; two on covers any time zone, and
+    // what that brings in from after the cursor is skipped. New messages
+    // pushing results down a page only bring back ones already seen.
+    const resumed = oldest ? this.cursor(ids.root, 'history.query') : null
+    const page = Number(this.data<Record<string, unknown>>(ids.root)['history.page']) || 1
+    const fresh = !resumed || page > maxPages
+    const query = fresh ? `before:${new Date((Number(start) + 2 * 86_400) * 1000).toISOString().slice(0, 10)}` : resumed
+    const { found, ended, next } = await this.search(
+      api,
+      query,
+      (match) => (Number(match.ts) < Number(start) ? 'keep' : 'skip'),
+      (kept) => kept.length >= batch,
+      fresh ? 1 : page,
+    )
+    const reached = found.reduce((least, match) => (Number(match.ts) < Number(least) ? match.ts : least), start)
+    const events = this.searchEvents(found)
+    events.push(
+      value(ids.root, 'history.oldest', reached, 0, author),
+      value(ids.root, 'history.query', query, 0, author),
+      value(ids.root, 'history.page', next, 0, author),
+    )
+    if (ended) events.push(value(ids.root, 'history.complete', true, 0, author))
+    if (!this.cursor(ids.root, 'watch.at')) events.push(value(ids.root, 'watch.at', maxTs(start, ...found.map((match) => match.ts))!, 0, author))
+    this.cache.write(events)
+  }
+
+  /**
+   * A conversation 100 messages further back. It starts from whichever is
+   * older, its own cursor or the global one, since everything after the global
+   * cursor is cached already.
+   */
+  private async channelBack(api: SlackApi, channel: string): Promise<void> {
+    const id = ids.conversation(channel)
+    const own = this.cursor(id, 'history.oldest')
+    const global = this.cursor(ids.root, 'history.oldest')
+    const starts = [own, global].filter((ts): ts is string => ts !== null)
+    const start = starts.length ? starts.reduce((a, b) => (Number(a) < Number(b) ? a : b)) : undefined
+    const { messages, has_more: more } = await api.urgent.call<{ messages: RawMessage[]; has_more?: boolean }>(
+      'conversations.history',
+      { channel, latest: start, limit: 100 },
+    )
+    const now = this.context.now()
+    const reached = messages.reduce((least, message) => (Number(message.ts) < Number(least) ? message.ts : least), start ?? (now / 1000).toFixed(6))
+    this.cache.write([
+      ...messages.flatMap((message) => [
+        ...messageEvents(channel, message, now),
+        link(id, ids.message(channel, message.ts), tsMillis(message.ts), author),
+      ]),
+      value(id, 'history.oldest', reached, 0, author),
+      ...(more ? [] : [value(id, 'history.complete', true, 0, author)]),
+    ])
   }
 
   /**
@@ -350,6 +472,7 @@ export class Slack implements Module {
           channel,
           { ts: match.ts, thread_ts: threadTs, user: match.user, username: match.username, text: match.text, files: match.files },
           now,
+          true,
         ),
       )
       if (reply) {
@@ -367,32 +490,39 @@ export class Slack implements Module {
     return events
   }
 
-  /** Marks every conversation as never loaded, so each loads whole when it is next looked at. */
-  private forgetHistories(): AppEvent[] {
-    const conversations = this.context.lens.children(ids.root)
-    return conversations.flatMap((id) => [
-      value(id, loadedKey('self'), 0, 0, author),
-      value(id, loadedKey('children'), 0, 0, author),
-    ])
-  }
-
   // --- Loads ---------------------------------------------------------------------
 
-  /** Every conversation I am in. Each one's latest message loads as it is first shown. */
+  /**
+   * The workspace's lists, each a call or a few: the conversations I am in
+   * (which make the list), every public channel (so a mention of one has a
+   * name) and every user (so a name never needs a call of its own). Nothing
+   * here has a date, so all of it sits at 0 and none of it reorders the list.
+   */
   private async loadHome(): Promise<void> {
-    if (!this.api) {
+    const api = this.api
+    if (!api) {
       this.cache.write([value(ids.root, 'connected', false, 0, author)])
       return
     }
-    const raw = await this.api.paginate<RawConversation>('users.conversations', 'channels', {
-      types: 'public_channel,private_channel,mpim,im',
-      exclude_archived: true,
-      limit: 200,
-    })
-    const live = raw.filter((conversation) => !conversation.is_user_deleted)
+    const [mine, everyChannel, users] = await Promise.all([
+      api.paginate<RawConversation>('users.conversations', 'channels', {
+        types: 'public_channel,private_channel,mpim,im',
+        exclude_archived: true,
+        limit: 200,
+      }),
+      api.paginate<RawConversation>('conversations.list', 'channels', { types: 'public_channel', exclude_archived: true, limit: 1000 }),
+      api.paginate<RawUser>('users.list', 'members', { limit: 200 }),
+    ])
+    const live = mine.filter((conversation) => !conversation.is_user_deleted)
+    const now = this.context.now()
     this.cache.write(
       [
         ...values(ids.root, { connected: true, self: this.context.settings.get('slack.self') }, 0, author),
+        ...everyChannel.flatMap(conversationEvents),
+        ...users.flatMap((user) => [
+          ...values(ids.user(user.id), { type: 'slack.user', name: userName(user) }, 0, author),
+          value(ids.user(user.id), loadedKey('self'), now, 0, author),
+        ]),
         ...live.flatMap(conversationEvents),
         ...live.map((conversation) => link(ids.root, ids.conversation(conversation.id), 0, author)),
       ],
@@ -400,42 +530,7 @@ export class Slack implements Module {
     )
   }
 
-  /**
-   * What a conversation is, and its latest message, linked at its ts: the
-   * list is ordered by the newest event on each conversation, so this is what
-   * puts it in its place. Runs once per conversation, as each is first shown,
-   * behind anything urgent; the watch keeps it current after that.
-   */
-  private async loadConversation(api: SlackApi, channelId: string): Promise<void> {
-    const id = ids.conversation(channelId)
-    const events: AppEvent[] = []
-    // The list says what most conversations are; one seen only in a mention needs asking.
-    if (!this.data<ConversationData>(id).kind) {
-      const { channel } = await api.call<{ channel: RawConversation }>('conversations.info', { channel: channelId })
-      events.push(...conversationEvents({ ...channel, id: channelId }))
-    }
-    const { messages } = await api.call<{ messages: RawMessage[] }>('conversations.history', { channel: channelId, limit: 1 })
-    const now = this.context.now()
-    for (const message of messages) {
-      events.push(...messageEvents(channelId, message, now), link(id, ids.message(channelId, message.ts), tsMillis(message.ts), author))
-    }
-    this.cache.write(events)
-  }
-
-  /** The latest messages. Older ones already loaded stay, so scrolling back doesn't lose them. */
-  private async loadHistory(api: SlackApi, channel: string): Promise<void> {
-    const id = ids.conversation(channel)
-    const { messages } = await api.urgent.call<{ messages: RawMessage[] }>('conversations.history', { channel, limit: 100 })
-    const now = this.context.now()
-    this.cache.write([
-      ...messages.flatMap((message) => [
-        ...messageEvents(channel, message, now),
-        link(id, ids.message(channel, message.ts), tsMillis(message.ts), author),
-      ]),
-    ])
-  }
-
-  /** The replies under a message, which become its children. */
+  /** A thread whole: the replies under a message, which become its children. On demand only. */
   private async loadThread(api: SlackApi, id: string): Promise<void> {
     const data = this.data<MessageData>(id)
     const { channel, ts } = parseMessageId(id)!
@@ -474,11 +569,8 @@ export class Slack implements Module {
   }
 
   private async loadUser(api: SlackApi, user: string): Promise<void> {
-    // Urgent: a name is wanted wherever someone is mentioned, and should not wait behind the list filling in.
-    const { user: raw } = await api.urgent.call<{
-      user: { name: string; real_name?: string; profile?: { display_name?: string; real_name?: string } }
-    }>('users.info', { user })
-    const name = raw.profile?.display_name || raw.profile?.real_name || raw.real_name || raw.name
-    this.cache.write(values(ids.user(user), { type: 'slack.user', name }, 0, author))
+    // Only for someone `users.list` didn't name: from another workspace, say.
+    const { user: raw } = await api.urgent.call<{ user: RawUser }>('users.info', { user })
+    this.cache.write(values(ids.user(user), { type: 'slack.user', name: userName(raw) }, 0, author))
   }
 }

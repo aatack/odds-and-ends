@@ -30,7 +30,7 @@ export function SlackHome(props: FocusProps) {
           />
         ))}
       </div>
-      <Status error={focus.error} />
+      <Status error={focus.error ?? ((focus.entity?.data['watch.error'] as string | null | undefined) ?? null)} />
     </div>
   )
 }

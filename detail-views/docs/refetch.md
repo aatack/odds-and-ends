@@ -26,12 +26,12 @@ Use these strategies. One item type can use more than one.
 
 | Item | Part | Strategies | Interval |
 |-|-|-|-|
-| `slack.home` | children | Freshness time | 60 min |
-| `slack.conversation` | self (its newest message) | Load once, then the watch | Never again |
-| `slack.conversation` | children | Load once, then the watch | Never again |
-| `slack.message` | self | Load once | Never again |
-| `slack.message` | children | Load once, then the watch | Never again |
-| `slack.user` | self | Freshness time | 7 days |
+| `slack.home` | children (the lists) | Freshness time | 60 min |
+| `slack.home` | history | One batch, then the watch; more on demand | 15 s (watch) |
+| `slack.conversation` | history | The watch; more on demand | Never alone |
+| `slack.message` | self | Load once, only when no load or search got it | Never again |
+| `slack.message` | children | The watch; the full thread on demand | Never alone |
+| `slack.user` | self | With the lists; alone only for a user that `users.list` does not have | 60 min / 7 days |
 | Slack images | blob | Load once | Never again |
 | `github.home` | children | Watch, change signal | 2 min |
 | `github.pr` | self | Change signal, fast while busy, load once when final | 30 s to 5 min |
@@ -39,23 +39,45 @@ Use these strategies. One item type can use more than one.
 | `github.check`, `github.item` | self | None. They come with their PR. | None |
 | `task`, `tasks.home`, `github.localApproval` | none | None. They are owned. | None |
 
-### Slack: load once, then watch (done)
+### Slack: lists, one batch, then the watch (done)
 
 - The app does not keep unread counts.
-- A conversation and its newest message load one time, when the conversation is first shown. Its history and its threads load one time, when they are first opened.
-- The list shows the conversation with the newest message first. The app uses the time of the newest event on each conversation (`updatedAt`). This is the link to its newest message. A load writes at timestamp 0. Thus, a load does not move a conversation in the list.
-- After that, the watch (`Slack.poll`) keeps them current. The app does not load them again, unless I refresh one (`r`).
-- Each 15 s, the watch does one `search.messages` call: all messages after the newest message that it saw, newest first. It reads pages until it gets to a message that it saw before.
+- On its own, the app loads only these:
+  - The lists of the workspace, each in a few calls: my conversations (`users.conversations`), all public channels (`conversations.list`) and all users (`users.list`). Load them again after 60 min.
+  - The first batch of history: the newest 1000 messages in all conversations, by one search (about 10 calls).
+  - The watch (`Slack.poll`), each 15 s.
+- The app does not load a conversation or a thread alone, unless I ask for it (`o`).
+- The list shows the conversation with the newest message first. The app uses the time of the newest event on each conversation (`updatedAt`). This is the link to its newest message. A load writes at timestamp 0. Thus, a load does not move a conversation. A conversation with no message in the batch stays at the bottom.
+
+#### Cursors
+
+All cursors are values in the cache store, at timestamp 0. When the cache store is cleared, all cursors are cleared together.
+
+| Cursor | On | Meaning | Moves |
+|-|-|-|-|
+| `watch.at` | workspace | The newest message that the watch saw | Each poll |
+| `history.oldest` | workspace | All messages after this ts are in the cache store, in all conversations | Each batch back (`o` on the list) |
+| `history.query`, `history.page` | workspace | The search that the last batch used, and its next page | Each batch back |
+| `history.oldest` | conversation | All messages of this conversation after this ts are in the cache store | Each `o` in the conversation |
+| `history.complete` | workspace, conversation | There is nothing older | When a load gets to the start |
+
+#### The watch
+
+- Each 15 s, one `search.messages` call gets all messages after `watch.at`, newest first.
 - For each new message, the watch:
-  - writes the message at its ts, as the history load does;
+  - writes the message at its ts;
   - links it under its conversation at its ts, or under its thread parent when it is a reply. The link moves the conversation to the top of the list. A reply does not move it;
   - adds a new DM, group DM or private channel to the list. Search also finds public channels that I am not in. Thus, a new public channel comes only with the next load of the list.
 - The watch ignores a message that the cache store has. Thus, two looks at the same message do not add it two times.
-- The watch keeps the ts of the newest message that it saw on the Slack root (`watch.at`), in the cache store.
-- **Catch-up:** on start, the first poll reads everything after `watch.at`. This finds the messages that came while the app was closed.
-- If the catch-up needs more than 10 pages (1000 messages), the watch marks all conversations as not loaded. Each then loads whole when it is next looked at.
-- If the cache store is new, there is no `watch.at`. The first poll only sets it. Each conversation then loads whole when it is first looked at.
 - Search indexes a message a short time after it is sent. Thus, each poll looks again at the 120 s before `watch.at`.
+- **Catch-up:** on start, the first poll gets all messages after `watch.at`, up to 100 pages (10000 messages). If there are more, the cached messages are not continuous. Then the workspace `history.oldest` moves to the oldest message of the catch-up, and the cursor of each conversation is cleared.
+
+#### Going further back (on demand)
+
+- **All conversations (`o` on the list):** one more batch of 1000 messages before the workspace `history.oldest`. The batch continues the search of the last batch, from its next page. Thus, it does not get messages again. When the search gets to page 100, the next batch starts a new search from the cursor.
+- **One conversation (`o` in it):** `conversations.history` gets the 100 messages before its start. Its start is the older of its own `history.oldest` and the workspace `history.oldest`, because all messages after the workspace cursor are in the cache store.
+- **One thread (`o` in it):** `conversations.replies` gets the full thread.
+- A message from search has no reactions or replies. A message from history has them. When history gets a message that search got, it writes the full message.
 
 ### `slack.user`
 

@@ -103,6 +103,8 @@ export interface Focus {
   module: string | null
   compose: ComposeKind | null
   actions: Action[]
+  /** Whether more can be loaded from further back, on demand. */
+  older: boolean
   loading: boolean
   error: string | null
 }
