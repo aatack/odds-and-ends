@@ -276,8 +276,12 @@ export class EntityCache {
     queueMicrotask(() => this.considerLoads([id]))
   }
 
-  /** Look again at what is on screen, loading whatever has gone stale since. */
-  revisit(ids: readonly string[]): void {
+  /**
+   * Look again at everything read this session, or at `ids`, loading whatever
+   * has gone stale since. Not only what is on screen: anything looked at stays
+   * current while the app runs.
+   */
+  revisit(ids: readonly string[] = [...this.asked]): void {
     this.considerLoads(ids)
   }
 
