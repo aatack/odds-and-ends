@@ -81,6 +81,7 @@ export function SlackConversation(props: FocusProps) {
             onImage={props.onImage}
           />
         ))}
+        {focus.loading && <div className="loading">Loading…</div>}
       </div>
       <Status error={focus.error} />
       {focus.compose === 'slack' && props.composing && <Composer kind="slack" {...composerProps(props)} />}
@@ -109,6 +110,7 @@ export function SlackThread(props: FocusProps) {
             onImage={props.onImage}
           />
         ))}
+        {focus.loading && <div className="loading">Loading…</div>}
       </div>
       <Status error={focus.error} />
       {focus.compose === 'slack' && props.composing && <Composer kind="slack" {...composerProps(props)} />}
