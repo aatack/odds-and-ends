@@ -67,7 +67,8 @@ test('slack: no token asks for one, and a token is checked before it is kept', a
   assert.equal(core.focus('slack').compose, null)
 })
 
-test('slack: conversations list unread first, then by recency', async () => {
+test('slack: conversations list by their newest message, which is not moved by loading again', async () => {
+  const latest: Record<string, string> = { C1: '1700000020.000000', C2: '1700000050.000000', D1: '1700000030.000000' }
   const core = memoryCore({
     fetch: fakeSlack({
       ...auth,
@@ -78,19 +79,18 @@ test('slack: conversations list unread first, then by recency', async () => {
           { id: 'D1', is_im: true, user: 'U1' },
         ],
       }),
-      'conversations.info': (params) => {
-        const channel = params.get('channel')
-        if (channel === 'C2') return { channel: { id: 'C2', name: 'busy', last_read: '10.0', unread_count_display: 3 } }
-        if (channel === 'D1') return { channel: { id: 'D1', is_im: true, user: 'U1', last_read: '50.0', unread_count_display: 0 } }
-        return { channel: { id: 'C1', name: 'quiet', last_read: '20.0' } }
-      },
-      'conversations.history': () => ({ messages: [] }),
+      'conversations.history': (params) => ({ messages: [{ ts: latest[params.get('channel')!], user: 'U1', text: 'x' }] }),
       'users.info': () => ({ user: { name: 'ann', profile: { display_name: 'Ann' } } }),
     }),
   })
   await core.slack.setToken('xoxp-1')
+  const order = () => core.focus('slack').children.map((child) => child.data.title)
   for (const id of ['slack:conv:C1', 'slack:conv:C2', 'slack:conv:D1', 'slack:user:U1']) await core.load({ id, part: 'self' })
-  assert.deepEqual(core.focus('slack').children.map((child) => child.data.title), ['#busy', 'Ann', '#quiet'])
+  assert.deepEqual(order(), ['#busy', 'Ann', '#quiet'])
+  await core.refresh('slack:conv:C1')
+  await core.load({ id: 'slack', part: 'children', force: true })
+  assert.deepEqual(order(), ['#busy', 'Ann', '#quiet'])
+  assert.equal(core.focus('slack').children[0].data.unread, undefined)
 })
 
 test('slack: messages are written when they were sent, reactions at 0, and marked loaded', async () => {
@@ -138,7 +138,11 @@ test('slack: read-only refuses writes before they reach the network', async () =
     }) as typeof fetch,
   })
   await core.slack.setToken('xoxp-1')
-  core.cache.write([...values('slack:conv:C1', { channel: 'C1', kind: 'channel', latestTs: '1.0' }, 0, 'slack')])
+  core.cache.write([
+    ...values('slack:conv:C1', { channel: 'C1', kind: 'channel' }, 0, 'slack'),
+    ...values('slack:msg:C1:1.0', { channel: 'C1', ts: '1.0', text: 'hi' }, 1000, 'slack'),
+    link('slack:conv:C1', 'slack:msg:C1:1.0', 1000, 'slack'),
+  ])
   assert.equal(core.focus('slack:conv:C1').compose, null)
   await core.actions.submit({ id: 'slack:conv:C1', text: 'oops' })
   const marked = await core.actions.markRead({ id: 'slack:conv:C1' })
@@ -208,7 +212,6 @@ test('the frontend cache loads from other services on its own, once', async () =
       {
         ...auth,
         'users.conversations': () => ({ channels: [{ id: 'C1', name: 'general' }] }),
-        'conversations.info': () => ({ channel: { id: 'C1', name: 'general', last_read: '1.0', unread_count_display: 2 } }),
         'conversations.history': () => ({ messages: [{ ts: '1700000001.000100', user: 'U1', text: 'hello' }] }),
         'users.info': () => ({ user: { name: 'sam' } }),
       },
@@ -232,13 +235,14 @@ test('the frontend cache loads from other services on its own, once', async () =
   }
   await core.actions.submit({ id: 'slack', text: 'xoxp-1' })
   const home = await settle('slack')
-  assert.deepEqual(home.children.map((child) => [child.data.title, child.data.unread]), [['#general', 2]])
+  assert.deepEqual(home.children.map((child) => child.data.title), ['#general'])
   const conversation = await settle('slack:conv:C1')
   assert.deepEqual(conversation.children.map((child) => [child.data.author, child.data.text]), [['sam', 'hello']])
   // Each part was loaded once, however often it was read.
   const count = (method: string) => calls.filter((call) => call === method).length
-  assert.equal(count('conversations.history'), 1)
-  assert.equal(count('conversations.info'), 1)
+  // Once for the newest message when the row showed, once for the history when opened.
+  assert.equal(count('conversations.history'), 2)
+  assert.equal(count('conversations.info'), 0)
   assert.equal(count('users.info'), 1)
 })
 
@@ -282,8 +286,11 @@ test('slack: the watch brings in new messages by search, without loading any con
   await core.slack.setToken('xoxp-1')
   // A conversation whose count and history have loaded once.
   core.cache.write([
-    ...values('slack:conv:C1', { type: 'slack.conversation', channel: 'C1', kind: 'channel', name: 'general', lastRead: '1700000000.000000', unread: 0 }, 0, 'slack'),
+    ...values('slack:conv:C1', { type: 'slack.conversation', channel: 'C1', kind: 'channel', name: 'general' }, 0, 'slack'),
     link('slack', 'slack:conv:C1', 0, 'slack'),
+    ...values('slack:conv:C2', { type: 'slack.conversation', channel: 'C2', kind: 'channel', name: 'older' }, 0, 'slack'),
+    link('slack', 'slack:conv:C2', 0, 'slack'),
+    link('slack:conv:C2', 'slack:msg:C2:1699999000.000000', 1699999000000, 'slack'),
   ])
   // The first look only notes where the watch starts.
   await core.slack.poll()
@@ -301,8 +308,8 @@ test('slack: the watch brings in new messages by search, without loading any con
   await core.slack.poll()
   const general = core.focus('slack:conv:C1')
   assert.deepEqual(general.children.map((child) => child.data.text), ['hello'])
-  assert.equal(general.entity!.data.unread, 1)
-  assert.equal(general.entity!.data.latestTs, '1700000010.000100')
+  // Its new message puts it first; the DM's came later still.
+  assert.deepEqual(core.focus('slack').children.map((child) => child.id).slice(0, 3), ['slack:conv:D9', 'slack:conv:C1', 'slack:conv:C2'])
   assert.equal(general.children[0].data.replyCount, 1)
   assert.deepEqual(core.focus('slack:msg:C1:1700000010.000100').children.map((child) => child.data.text), ['reply'])
   // A DM nobody had loaded yet joins the list.

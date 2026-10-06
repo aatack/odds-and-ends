@@ -57,6 +57,14 @@ export const cacheMigrations: string[] = [
     value TEXT NOT NULL
   );
   `,
+  // Conversations now load their newest message with them, which is what the
+  // list is ordered by. Ones marked loaded before that never would: empty the
+  // cache once, and everything loads again as it is looked at.
+  `
+  DELETE FROM value_events;
+  DELETE FROM link_events;
+  DELETE FROM blobs;
+  `,
 ]
 
 export function openDatabase(path: string, migrations: string[]): DatabaseSync {

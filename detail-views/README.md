@@ -36,9 +36,9 @@ the local database. The Slack app it belongs to needs these user scopes:
 im:history mpim:history users:read files:read search:read chat:write channels:write groups:write
 im:write mpim:write`
 
-Each conversation loads once: its unread count when it is first shown (Slack
-has no call for all of them, so the list fills in over the first few minutes),
-its messages when it is first opened. After that, one search every 15 seconds
+The list is ordered by each conversation's newest message. Each conversation
+loads once: its newest message when it is first shown (one call each, so the
+order settles over the first few minutes), its history when it is first opened. After that, one search every 15 seconds
 brings in whatever is new across all of them, and catches up on start with
 what came while the app was closed. `r` loads a conversation whole again.
 

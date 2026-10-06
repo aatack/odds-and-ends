@@ -5,7 +5,7 @@ import type { PillProps, RowProps } from './kindTypes.ts'
 import { Composer, HeaderPill, Row, Status } from './primitives.tsx'
 import type { FocusProps } from './types.ts'
 
-/** Every conversation I am in, unread first. */
+/** Every conversation I am in, most recent first. */
 export function SlackHome(props: FocusProps) {
   const { focus } = props
   if (focus.compose === 'slack-token') {
@@ -36,23 +36,15 @@ export function SlackHome(props: FocusProps) {
 }
 
 export const ConversationRow = memo(function ConversationRow(props: RowProps) {
-  const unread = Number(props.entity.data.unread ?? 0)
   return (
-    <Row id={props.entity.id} selected={props.selected} className={unread ? 'unread' : 'read'} onSelect={props.onSelect}>
+    <Row id={props.entity.id} selected={props.selected} onSelect={props.onSelect}>
       <span className="grow">{String(props.entity.data.title)}</span>
-      {unread > 0 && <span className="count">{unread >= 100 ? '99+' : unread}</span>}
     </Row>
   )
 })
 
 export function ConversationPill(props: PillProps) {
-  const unread = Number(props.entity.data.unread ?? 0)
-  return (
-    <>
-      <span className="item-name">{String(props.entity.data.title ?? props.entity.id)}</span>
-      {unread > 0 && <span className="count">{unread >= 100 ? '99+' : unread}</span>}
-    </>
-  )
+  return <span className="item-name">{String(props.entity.data.title ?? props.entity.id)}</span>
 }
 
 /** A message in a list other than its own conversation: always says who and when. */
