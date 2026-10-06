@@ -64,9 +64,21 @@ constraints every change must keep.
   (its normal focus view). Use `Link` for URLs and `usePeek` for anything else
   (`views/primitives.tsx`). Moving or resizing a peek pins it (with an `×`);
   pinned peeks persist. `Open` sends a URL to the browser or pushes an entity.
-- **Items named in text are pills.** A link to something the app tracks (a PR)
-  renders as `ItemPill`: the item's badge and name, peek on hover, push on
-  click. Badges are worked out by the module (`Badge` in `core/types.ts`).
+- **Every item type has three views**, registered in `views/kinds.tsx`:
+  - **full**: the item focused, filling the view (or a peek);
+  - **row** ("normal"): the item as a child in another item's view, some detail
+    but not all;
+  - **pill**: the item in a small space: named in text, heading its own full
+    view, or in a peek's bar.
+  `itemTypes` in `core/types.ts` lists every type, `Store.put` only takes those,
+  and the registry is typed against the list, so `npm run type-check` fails if
+  any type lacks any of the three. Adding a type means adding it to
+  `itemTypes` and giving it all three views.
+- **Pills are one component.** The same pill names an item everywhere: in
+  text (`ItemPill`: peek on hover, push on click), heading a full view and in a
+  peek's bar (`HeaderPill`: inert). A full view inside a peek drops its own
+  header (`headed={false}`) because the bar already names it. Badges are worked
+  out by the module (`Badge` in `core/types.ts`).
 - No animations. The cursor never becomes a pointer.
 
 ### Code
@@ -90,8 +102,8 @@ constraints every change must keep.
 
 - **A module**: a `Module` in `src/core/modules/`, registered in `core.ts`. It
   declares its root entity, refreshes what it caches, and orders children.
-- **A focus view**: a component in `views/`, keyed by entity type in
-  `views/Focus.tsx`. Unknown types fall back to a generic view.
+- **An item type**: add it to `itemTypes` in `core/types.ts`, then give it a
+  full view, a row and a pill in `views/kinds.tsx`.
 - **A key or command**: a tool in `tools.ts`. Nothing else.
 
 ## Checking work

@@ -1,7 +1,9 @@
 import { memo } from 'react'
-import type { Entity } from '../../../core/types.ts'
-import { MessageRow, showsAuthor, showsTime } from './messages.tsx'
-import { Composer, Link, Row, Status } from './primitives.tsx'
+import type { Badge as BadgeData } from '../../../core/types.ts'
+import { authorColour } from '../format.ts'
+import type { PillProps, RowProps } from './kindTypes.ts'
+import { MessageBody, MessageRow, showsAuthor, showsTime } from './messages.tsx'
+import { Badge, Composer, HeaderPill, Link, Row, Status } from './primitives.tsx'
 import type { FocusProps } from './types.ts'
 
 const reviewWords: Record<string, string> = {
@@ -23,7 +25,14 @@ export function GitHubHome(props: FocusProps) {
     <div className="pane">
       <div className="list">
         {focus.children.map((child, index) => (
-          <PrRow key={child.id} entity={child} selected={index === props.cursor} onSelect={props.onSelect} />
+          <PrRow
+            key={child.id}
+            entity={child}
+            selected={index === props.cursor}
+            onSelect={props.onSelect}
+            onOpen={props.onOpen}
+            onImage={props.onImage}
+          />
         ))}
       </div>
       <Status error={focus.error} />
@@ -31,22 +40,105 @@ export function GitHubHome(props: FocusProps) {
   )
 }
 
-const PrRow = memo(function PrRow(props: { entity: Entity; selected: boolean; onSelect(id: string): void }) {
+/** A PR in a list: its badge, where it lives, and its title. */
+export const PrRow = memo(function PrRow(props: RowProps) {
   const { data } = props.entity
-  const review = reviewWords[String(data.review)]
   return (
     <Row id={props.entity.id} selected={props.selected} className={data.draft ? 'draft' : ''} onSelect={props.onSelect}>
-      <Dot outcome={data.checks} />
+      <Badge badge={data.badge as BadgeData | null | undefined} />
       <span className="grow">
         <span className="muted">
           {String(data.repo ?? '').split('/').pop()}#{String(data.number ?? '')}
         </span>{' '}
         {String(data.title ?? data.url)}
       </span>
-      {review && <span className={`verdict ${String(data.review).toLowerCase()}`}>{review}</span>}
     </Row>
   )
 })
+
+export function PrPill(props: PillProps) {
+  const { data } = props.entity
+  return (
+    <>
+      <Badge badge={data.badge as BadgeData | null | undefined} />
+      <span className="item-name">
+        {data.number ? `#${String(data.number)} ${String(data.title ?? '')}` : (props.fallback ?? String(data.url ?? props.entity.id))}
+      </span>
+    </>
+  )
+}
+
+export function CheckPill(props: PillProps) {
+  return (
+    <>
+      <Dot outcome={props.entity.data.outcome} />
+      <span className="item-name">{String(props.entity.data.name)}</span>
+    </>
+  )
+}
+
+/** A check on its own: what it is and where its run is. */
+export function CheckFull(props: FocusProps) {
+  const data = props.focus.entity?.data ?? {}
+  return (
+    <div className="pane">
+      {props.headed !== false && (
+        <div className="title">
+          <HeaderPill entity={props.focus.entity} />
+        </div>
+      )}
+      <div className="facts">
+        <span>{String(data.outcome)}</span>
+        {data.url ? (
+          <Link href={String(data.url)} page>
+            run
+          </Link>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+/** A comment, review or description outside its PR: says who and when. */
+export function GhItemRow(props: RowProps) {
+  return <MessageRow {...props} author time />
+}
+
+export function GhItemPill(props: PillProps) {
+  const { data } = props.entity
+  return (
+    <span className="item-name">
+      <span style={{ color: authorColour(String(data.author)), fontWeight: 700 }}>{String(data.author ?? '')}</span>{' '}
+      {String(data.verdict ?? data.kind ?? '')}
+    </span>
+  )
+}
+
+/** A comment, review or description on its own. */
+export function GhItemFull(props: FocusProps) {
+  const { entity } = props.focus
+  if (!entity) return null
+  return (
+    <div className="pane">
+      <div className="list">
+        <MessageBody entity={entity} author time onOpen={props.onOpen} onImage={props.onImage} />
+      </div>
+    </div>
+  )
+}
+
+export function LocalApprovalPill() {
+  return (
+    <>
+      <span className="badge tick green">✓</span>
+      <span className="item-name">approved by me</span>
+    </>
+  )
+}
+
+export function GitHubHomePill() {
+  return <span className="item-name">GitHub</span>
+}
 
 function plural(count: number, word: string): string {
   return `${count} ${word}`
@@ -66,16 +158,19 @@ export function GitHubPr(props: FocusProps) {
     .join(' · ')
   return (
     <div className="pane">
-      <div className="title">
-        <span className="muted">
-          {String(data.repo ?? '')}#{String(data.number ?? '')}
-        </span>{' '}
-        {data.url ? <Link href={String(data.url)} page>
-            {String(data.title ?? data.url)}
-          </Link> : null}
-      </div>
+      {props.headed !== false && (
+        <div className="title">
+          <HeaderPill entity={focus.entity} />
+        </div>
+      )}
       {data.state ? (
         <div className="facts">
+          <span className="muted">{String(data.repo ?? '')}</span>
+          {data.url ? (
+            <Link href={String(data.url)} page>
+              on GitHub
+            </Link>
+          ) : null}
           <span>{data.state === 'OPEN' ? (data.draft ? 'draft' : 'open') : String(data.state).toLowerCase()}</span>
           {review && <span className={`verdict ${String(data.review).toLowerCase()}`}>{review}</span>}
           {data.locallyApproved ? <span className="verdict approved">approved by me</span> : null}
@@ -107,7 +202,14 @@ export function GitHubPr(props: FocusProps) {
       <div className="list">
         {focus.children.map((child, index) =>
           child.type === 'github.check' ? (
-            <CheckRow key={child.id} entity={child} selected={index === props.cursor} onSelect={props.onSelect} />
+            <CheckRow
+              key={child.id}
+              entity={child}
+              selected={index === props.cursor}
+              onSelect={props.onSelect}
+              onOpen={props.onOpen}
+              onImage={props.onImage}
+            />
           ) : (
             <MessageRow
               key={child.id}
@@ -138,7 +240,7 @@ export function GitHubPr(props: FocusProps) {
   )
 }
 
-const CheckRow = memo(function CheckRow(props: { entity: Entity; selected: boolean; onSelect(id: string): void }) {
+export const CheckRow = memo(function CheckRow(props: RowProps) {
   const { data } = props.entity
   const name = String(data.name)
   const started = Number(data.startedAt)

@@ -213,7 +213,7 @@ const outcomeOrder: CheckOutcome[] = ['failing', 'pending', 'skipped', 'passing'
 export class GitHub implements Module {
   readonly id = 'github'
   readonly name = 'GitHub'
-  readonly root = { id: ids.root, type: 'github.home' }
+  readonly root = { id: ids.root, type: 'github.home' as const }
 
   private readonly store: Store
   private readonly gh: ModuleContext['gh']

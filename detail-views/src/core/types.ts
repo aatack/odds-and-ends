@@ -7,9 +7,29 @@
 export const mentionScheme = 'mention:'
 
 
+/**
+ * Every kind of item. Each has three views in the renderer (full, row, pill;
+ * `views/kinds.tsx`), and the type checker holds the registry to this list.
+ */
+export const itemTypes = [
+  'slack.home',
+  'slack.conversation',
+  'slack.message',
+  'slack.user',
+  'github.home',
+  'github.pr',
+  'github.check',
+  'github.item',
+  'github.localApproval',
+  'tasks.home',
+  'task',
+] as const
+
+export type ItemType = (typeof itemTypes)[number]
+
 export interface Entity {
   id: string
-  type: string
+  type: ItemType
   data: Record<string, unknown>
   createdAt: number
   updatedAt: number

@@ -1,5 +1,6 @@
 import { createContext, memo, useContext, useEffect, useRef } from 'react'
 import type { Badge as BadgeData, Entity } from '../../../core/types.ts'
+import type { Kinds, RowProps } from './kindTypes.ts'
 import type { ReactNode } from 'react'
 import { prEntityId } from '../../../core/types.ts'
 import type { PeekTarget, Rect } from '../state.ts'
@@ -102,16 +103,42 @@ export function Badge(props: { badge: BadgeData | null | undefined }) {
   )
 }
 
+/** The item views, by type; provided by App so any view can draw any item. */
+export const KindsContext = createContext<Kinds | null>(null)
+
+/** An item's pill content, through the registry. */
+export function PillContent(props: { entity: Entity; fallback?: ReactNode }) {
+  const kinds = useContext(KindsContext)
+  const Pill = kinds?.[props.entity.type]?.Pill
+  return Pill ? <Pill entity={props.entity} fallback={props.fallback} /> : <span className="item-name">{props.entity.id}</span>
+}
+
+/** An item's row, through the registry. */
+export function RowFor(props: RowProps) {
+  const kinds = useContext(KindsContext)
+  const Row = kinds?.[props.entity.type]?.Row
+  return Row ? <Row {...props} /> : null
+}
+
+/** An item's pill heading a view or a window: nothing to do on it there. */
+export function HeaderPill(props: { entity: Entity | null | undefined }) {
+  if (!props.entity) return null
+  return (
+    <span className="item-pill header">
+      <PillContent entity={props.entity} />
+    </span>
+  )
+}
+
 /**
- * An in-app item named somewhere, as a pill: its badge and its name. Hovering
- * peeks at it; a click pushes it.
+ * An in-app item named somewhere, as a pill. Hovering peeks at it; a click
+ * pushes it.
  */
 export function ItemPill(props: { id: string; fallback: ReactNode }) {
   const { summaries, want, onOpen } = useContext(ItemContext)
   useEffect(() => want(props.id), [want, props.id])
   const peek = usePeek({ kind: 'entity', id: props.id })
-  const data = summaries[props.id]?.data
-  const name = data?.number ? `#${String(data.number)} ${String(data.title ?? '')}` : props.fallback
+  const entity = summaries[props.id]
   return (
     <span
       className="item-pill"
@@ -121,8 +148,14 @@ export function ItemPill(props: { id: string; fallback: ReactNode }) {
         onOpen(props.id)
       }}
     >
-      <Badge badge={data?.badge as BadgeData | null | undefined} />
-      <span className="item-name">{name}</span>
+      {entity ? (
+        <PillContent entity={entity} fallback={props.fallback} />
+      ) : (
+        <>
+          <Badge badge={null} />
+          <span className="item-name">{props.fallback}</span>
+        </>
+      )}
     </span>
   )
 }

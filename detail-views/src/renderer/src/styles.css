@@ -659,3 +659,24 @@ body,
 .badge.dot.red { background: #d1453b; }
 .badge.tick.green { color: #2e9d5b; }
 .badge.cross.red { color: #d1453b; }
+
+/* A pill heading a view or window: framed the same, nothing to press. */
+.item-pill.header {
+  font-size: 1em;
+  max-width: 100%;
+  vertical-align: baseline;
+}
+
+.item-pill.header:hover {
+  background: var(--canvas);
+}
+
+.item-pill .count {
+  margin-left: 2px;
+}
+
+.pill-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
