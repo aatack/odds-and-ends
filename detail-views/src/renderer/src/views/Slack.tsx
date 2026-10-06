@@ -6,7 +6,7 @@ import remarkGfm from 'remark-gfm'
 import { mentionScheme } from '../../../core/types.ts'
 import type { Entity } from '../../../core/types.ts'
 import { authorColour, fullTime, shortTime } from '../format.ts'
-import { Composer, Link, Row, Status } from './primitives.tsx'
+import { Composer, Link, Row, Status, usePeek } from './primitives.tsx'
 import type { FocusProps } from './types.ts'
 
 /** Every conversation I am in, unread first. */
@@ -220,11 +220,7 @@ function MessageBody(props: {
             ))}
           </div>
         )}
-        {replies > 0 && (
-          <div className="replies">
-            {replies} {replies === 1 ? 'reply' : 'replies'} · {shortTime(data.latestReply as string | undefined)}
-          </div>
-        )}
+        {replies > 0 && <Replies id={props.entity.id} count={replies} latest={data.latestReply as string | undefined} />}
       </div>
     </div>
   )
@@ -242,8 +238,10 @@ function Person(props: {
   onOpen(id: string): void
 }) {
   const { target, onOpen } = props
+  const peek = usePeek(target ? { kind: 'entity', id: target } : null)
   return (
     <span
+      {...peek}
       className={`person${target ? ' live' : ''}${props.strong ? ' strong' : ''}`}
       style={props.colour ? { color: props.colour } : undefined}
       onMouseDown={(event) => {
@@ -294,3 +292,15 @@ const Markdown = memo(function Markdown(props: { text: string; onOpen(id: string
     </ReactMarkdown>
   )
 })
+
+/** The thread under a message; hovering peeks at it. */
+function Replies(props: { id: string; count: number; latest: string | undefined }) {
+  const peek = usePeek({ kind: 'entity', id: props.id })
+  return (
+    <div className="replies">
+      <span {...peek}>
+        {props.count} {props.count === 1 ? 'reply' : 'replies'} · {shortTime(props.latest)}
+      </span>
+    </div>
+  )
+}

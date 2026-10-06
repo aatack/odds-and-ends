@@ -6,7 +6,7 @@ import { browserEnvironment } from './environment.ts'
 import { useSnapshot } from './hooks.ts'
 import { Session } from './session.ts'
 import { cursorIndex, focused } from './state.ts'
-import type { Rect } from './state.ts'
+import type { PeekTarget, Rect } from './state.ts'
 import { tools } from './tools.ts'
 import { App } from './views/App.tsx'
 import '@fontsource/lato/400.css'
@@ -16,7 +16,7 @@ import './styles.css'
 const session = new Session(electronApi(), browserEnvironment())
 
 function Root() {
-  const { state, focus, modules } = useSnapshot(session)
+  const { state, focus, modules, peekFoci } = useSnapshot(session)
   useEffect(() => {
     const stopDispatch = installDispatch(session, tools)
     let stopSession: (() => void) | undefined
@@ -33,15 +33,25 @@ function Root() {
   const onCompose = useCallback((composing: boolean) => session.compose(composing), [])
   const onModule = useCallback((root: string) => session.navigate(root), [])
   const onImage = useCallback((ref: string | null) => session.view(ref), [])
-  const links = useMemo(
+  const gestures = useMemo(
     () => ({
-      onLinkEnter: (url: string, anchor: Rect) => session.hoverLink(url, anchor),
-      onLinkLeave: () => session.leaveLink(),
+      onPeekEnter: (target: PeekTarget, anchor: Rect) => session.hoverPeek(target, anchor),
+      onPeekLeave: () => session.leavePeek(),
     }),
     [],
   )
-  const onPreviewEnter = useCallback(() => session.holdPreview(), [])
-  const onOpenExternal = useCallback((url: string) => session.openExternal(url), [])
+  const peekHandlers = useMemo(
+    () => ({
+      gestures,
+      onHold: () => session.holdPeek(),
+      onPlace: (key: string, rect: Rect) => session.placePeek(key, rect),
+      onRaise: (key: string) => session.raisePeek(key),
+      onClose: (key: string) => session.closePeek(key),
+      onOpen: (target: PeekTarget) => session.openPeek(target),
+    }),
+    [gestures],
+  )
+  const peek = useMemo(() => ({ ...peekHandlers, peeks: state.peeks, foci: peekFoci }), [peekHandlers, state.peeks, peekFoci])
 
   const view = useMemo(
     () => ({
@@ -53,12 +63,11 @@ function Root() {
       onDraft,
       onCompose,
       onImage,
-      ...links,
     }),
-    [state, focus, onSelect, onOpen, onDraft, onCompose, onImage, links],
+    [state, focus, onSelect, onOpen, onDraft, onCompose, onImage],
   )
 
-  return <App preview={state.preview} links={links} onPreviewEnter={onPreviewEnter} onOpenExternal={onOpenExternal} viewing={state.viewing} onImage={onImage} modules={modules} module={focus?.module ?? null} focus={focus} view={view} onModule={onModule} />
+  return <App peek={peek} viewing={state.viewing} onImage={onImage} modules={modules} module={focus?.module ?? null} focus={focus} view={view} onModule={onModule} />
 }
 
 createRoot(document.getElementById('root')!).render(

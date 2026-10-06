@@ -1,4 +1,5 @@
 import type { Session } from './session.ts'
+import * as S from './state.ts'
 
 /**
  * The single registry of what a person can do. Keys are matched by
@@ -27,11 +28,11 @@ export const tools: Tool[] = [
   { id: 'composer.leave', scope: 'input', keys: ['Escape'], run: (s) => s.compose(false) },
 
   {
-    id: 'preview.close',
+    id: 'peek.close',
     scope: 'list',
     keys: ['Escape'],
-    enabled: (s) => s.get().state.preview !== null,
-    run: (s) => s.closePreview(),
+    enabled: (s) => S.transientPeek(s.get().state) !== null,
+    run: (s) => s.closePeek(null),
   },
   {
     id: 'image.close',
