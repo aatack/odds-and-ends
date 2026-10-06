@@ -1,4 +1,11 @@
-/** Shared with the renderer, which imports types only. */
+/** Shared with the renderer, which imports nothing else from core. */
+
+/**
+ * Links with this scheme are mentions: `mention:<user or channel id>/<entity
+ * to open>`, the entity left empty when there is nothing to open.
+ */
+export const mentionScheme = 'mention:'
+
 
 export interface Entity {
   id: string
@@ -9,12 +16,6 @@ export interface Entity {
   /** Null for owned data; set for anything cached from another service. */
   expiresAt: number | null
 }
-
-/**
- * Message text split for display: plain runs, and mentions that open the
- * entity they name (null when the app has nothing to open).
- */
-export type TextPart = string | { mention: string; target: string | null }
 
 /** What the composer under a focus view does, if there is one. */
 export type ComposeKind = 'slack' | 'slack-token' | 'task'
