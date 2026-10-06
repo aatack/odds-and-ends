@@ -1,5 +1,6 @@
-import { memo, useEffect, useRef } from 'react'
+import { createContext, memo, useContext, useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
+import type { Rect } from '../state.ts'
 
 /** A list row that keeps itself on screen while it holds the cursor. */
 export const Row = memo(function Row(props: {
@@ -56,4 +57,35 @@ export function Composer(props: {
 
 export function Status(props: { error: string | null }) {
   return props.error ? <div className="status">{props.error}</div> : null
+}
+
+/** Gestures every link forwards, wherever it is drawn. Provided by App. */
+export interface LinkGestures {
+  onLinkEnter(url: string, anchor: Rect): void
+  onLinkLeave(): void
+}
+
+export const LinkContext = createContext<LinkGestures>({ onLinkEnter: () => {}, onLinkLeave: () => {} })
+
+/**
+ * Every link in the app. Hovering previews it; a click does nothing else, so
+ * the browser is only ever opened from the preview.
+ */
+export function Link(props: { href: string; children: ReactNode }) {
+  const { onLinkEnter, onLinkLeave } = useContext(LinkContext)
+  return (
+    <a
+      className="link"
+      href={props.href}
+      onMouseEnter={(event) => {
+        const { x, y, width, height } = event.currentTarget.getBoundingClientRect()
+        onLinkEnter(props.href, { x, y, width, height })
+      }}
+      onMouseLeave={onLinkLeave}
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.preventDefault()}
+    >
+      {props.children}
+    </a>
+  )
 }

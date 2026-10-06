@@ -6,6 +6,7 @@ import { browserEnvironment } from './environment.ts'
 import { useSnapshot } from './hooks.ts'
 import { Session } from './session.ts'
 import { cursorIndex, focused } from './state.ts'
+import type { Rect } from './state.ts'
 import { tools } from './tools.ts'
 import { App } from './views/App.tsx'
 import '@fontsource/lato/400.css'
@@ -32,6 +33,15 @@ function Root() {
   const onCompose = useCallback((composing: boolean) => session.compose(composing), [])
   const onModule = useCallback((root: string) => session.navigate(root), [])
   const onImage = useCallback((ref: string | null) => session.view(ref), [])
+  const links = useMemo(
+    () => ({
+      onLinkEnter: (url: string, anchor: Rect) => session.hoverLink(url, anchor),
+      onLinkLeave: () => session.leaveLink(),
+    }),
+    [],
+  )
+  const onPreviewEnter = useCallback(() => session.holdPreview(), [])
+  const onOpenExternal = useCallback((url: string) => session.openExternal(url), [])
 
   const view = useMemo(
     () => ({
@@ -43,11 +53,12 @@ function Root() {
       onDraft,
       onCompose,
       onImage,
+      ...links,
     }),
-    [state, focus, onSelect, onOpen, onDraft, onCompose, onImage],
+    [state, focus, onSelect, onOpen, onDraft, onCompose, onImage, links],
   )
 
-  return <App viewing={state.viewing} onImage={onImage} modules={modules} module={focus?.module ?? null} focus={focus} view={view} onModule={onModule} />
+  return <App preview={state.preview} links={links} onPreviewEnter={onPreviewEnter} onOpenExternal={onOpenExternal} viewing={state.viewing} onImage={onImage} modules={modules} module={focus?.module ?? null} focus={focus} view={view} onModule={onModule} />
 }
 
 createRoot(document.getElementById('root')!).render(

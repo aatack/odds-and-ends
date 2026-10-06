@@ -9,11 +9,14 @@ export interface Api {
   toggle(id: string): Promise<void>
   markRead(id: string): Promise<void>
   onChange(listener: () => void): () => void
+  /** Opens a link in my browser. */
+  openExternal(url: string): void
 }
 
 interface Bridge {
   invoke(name: string, args?: unknown): Promise<unknown>
   onChange(listener: () => void): () => void
+  openExternal(url: string): Promise<void>
 }
 
 export function electronApi(): Api {
@@ -27,5 +30,6 @@ export function electronApi(): Api {
     toggle: (id) => call('toggle', { id }),
     markRead: (id) => call('markRead', { id }),
     onChange: (listener) => bridge.onChange(listener),
+    openExternal: (url) => void bridge.openExternal(url),
   }
 }

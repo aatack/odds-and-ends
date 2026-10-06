@@ -402,12 +402,12 @@ body,
   padding-left: 22px;
 }
 
-.text a {
+.link {
   color: light-dark(#1264a3, #6cb4ee);
   text-decoration: none;
 }
 
-.text a:hover {
+.link:hover {
   text-decoration: underline;
 }
 
@@ -450,4 +450,42 @@ body,
   padding: 6px 10px 6px 62px;
   font-size: 13px;
   color: var(--muted);
+}
+
+.preview {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.18);
+}
+
+.preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  font-size: 13px;
+  color: var(--muted);
+  background: var(--panel);
+}
+
+.preview-bar button {
+  font: inherit;
+  color: var(--ink);
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 2px 10px;
+}
+
+.preview-page {
+  flex: 1;
+  width: 100%;
+  border: none;
+  background: white;
 }

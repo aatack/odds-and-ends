@@ -18,6 +18,8 @@ export class Session {
   private readonly listeners = new Set<() => void>()
   private snapshot: Snapshot
   private request = 0
+  private previewOpening: ReturnType<typeof setTimeout> | null = null
+  private previewClosing: ReturnType<typeof setTimeout> | null = null
 
   constructor(api: Api, env: Environment) {
     this.api = api
@@ -105,6 +107,42 @@ export class Session {
 
   refresh(): void {
     void this.api.refresh(S.focused(this.state))
+  }
+
+  /** Hovering a link previews it after a moment, so passing over one doesn't. */
+  hoverLink(url: string, anchor: S.Rect): void {
+    this.holdPreview()
+    if (this.previewOpening) clearTimeout(this.previewOpening)
+    this.previewOpening = setTimeout(() => {
+      this.previewOpening = null
+      this.update(S.setPreview(this.state, { url, anchor }))
+    }, 350)
+  }
+
+  /** Leaving the link or the preview closes it, unless the pointer moves between them. */
+  leaveLink(): void {
+    if (this.previewOpening) clearTimeout(this.previewOpening)
+    this.previewOpening = null
+    if (this.previewClosing) clearTimeout(this.previewClosing)
+    this.previewClosing = setTimeout(() => {
+      this.previewClosing = null
+      this.update(S.setPreview(this.state, null))
+    }, 300)
+  }
+
+  holdPreview(): void {
+    if (this.previewClosing) clearTimeout(this.previewClosing)
+    this.previewClosing = null
+  }
+
+  closePreview(): void {
+    this.holdPreview()
+    this.update(S.setPreview(this.state, null))
+  }
+
+  openExternal(url: string): void {
+    this.api.openExternal(url)
+    this.closePreview()
   }
 
   view(ref: string | null): void {

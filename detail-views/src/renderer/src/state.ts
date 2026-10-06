@@ -16,12 +16,26 @@ export interface State {
   composing: boolean
   /** An image shown full size over everything, by its ref. Not persisted. */
   viewing: string | null
+  /** A link previewed beside where it was hovered. Not persisted. */
+  preview: Preview | null
+}
+
+export interface Rect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface Preview {
+  url: string
+  anchor: Rect
 }
 
 const trailLimit = 200
 
 export function initialState(root: string): State {
-  return { trail: [root], at: 0, cursors: {}, drafts: {}, composing: false, viewing: null }
+  return { trail: [root], at: 0, cursors: {}, drafts: {}, composing: false, viewing: null, preview: null }
 }
 
 export function focused(state: State): string {
@@ -49,7 +63,7 @@ export function selected(state: State, focus: Focus | null): Entity | null {
 export function navigate(state: State, id: string): State {
   if (focused(state) === id) return state
   const trail = [...state.trail.slice(0, state.at + 1), id].slice(-trailLimit)
-  return { ...state, trail, at: trail.length - 1, composing: false, viewing: null }
+  return { ...state, trail, at: trail.length - 1, composing: false, viewing: null, preview: null }
 }
 
 export function back(state: State): State {
@@ -81,13 +95,17 @@ export function view(state: State, ref: string | null): State {
   return state.viewing === ref ? state : { ...state, viewing: ref }
 }
 
+export function setPreview(state: State, preview: Preview | null): State {
+  return state.preview === preview ? state : { ...state, preview }
+}
+
 export function setComposing(state: State, composing: boolean): State {
   return state.composing === composing ? state : { ...state, composing }
 }
 
 /** What is kept across reloads. */
-export function persisted(state: State): Omit<State, 'composing' | 'viewing'> {
-  const { composing: _, viewing: __, ...rest } = state
+export function persisted(state: State): Omit<State, 'composing' | 'viewing' | 'preview'> {
+  const { composing: _, viewing: __, preview: ___, ...rest } = state
   return rest
 }
 
@@ -101,5 +119,6 @@ export function restore(saved: unknown, root: string): State {
     drafts: value.drafts ?? {},
     composing: false,
     viewing: null,
+    preview: null,
   }
 }
