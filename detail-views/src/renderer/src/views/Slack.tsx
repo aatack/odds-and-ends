@@ -1,5 +1,10 @@
-import { memo } from 'react'
-import type { Entity, TextPart } from '../../../core/types.ts'
+import { memo, useMemo } from 'react'
+import ReactMarkdown from 'react-markdown'
+import type { Components } from 'react-markdown'
+import remarkBreaks from 'remark-breaks'
+import remarkGfm from 'remark-gfm'
+import { mentionScheme } from '../../../core/types.ts'
+import type { Entity } from '../../../core/types.ts'
 import { authorColour, fullTime, shortTime } from '../format.ts'
 import { Composer, Row, Status } from './primitives.tsx'
 import type { FocusProps } from './types.ts'
@@ -180,17 +185,15 @@ function MessageBody(props: {
       <div className="content">
         <div className="text">
           {props.author && (
-            <span className="author" style={{ color: authorColour(String(data.authorKey)) }}>
-              {String(data.author)}{' '}
-            </span>
+            <Person
+              name={String(data.author)}
+              target={(data.authorTarget as string | null | undefined) ?? null}
+              colour={authorColour(String(data.authorKey))}
+              strong
+              onOpen={props.onOpen}
+            />
           )}
-          {((data.parts as TextPart[] | undefined) ?? [String(data.text)]).map((part, index) =>
-            typeof part === 'string' ? (
-              part
-            ) : (
-              <Mention key={index} name={part.mention} target={part.target} onOpen={props.onOpen} />
-            ),
-          )}
+          <Markdown text={String(data.markdown ?? data.text)} onOpen={props.onOpen} />
         </div>
         {images.length > 0 && (
           <div className="images">
@@ -225,11 +228,22 @@ function MessageBody(props: {
   )
 }
 
-function Mention(props: { name: string; target: string | null; onOpen(id: string): void }) {
+/**
+ * A person or channel named in Slack: an author or a mention. Hovering shows
+ * a background and a click pushes their conversation, when the app has one.
+ */
+function Person(props: {
+  name: string
+  target: string | null
+  colour?: string
+  strong?: boolean
+  onOpen(id: string): void
+}) {
   const { target, onOpen } = props
   return (
     <span
-      className={`pill${target ? '' : ' inert'}`}
+      className={`person${target ? ' live' : ''}${props.strong ? ' strong' : ''}`}
+      style={props.colour ? { color: props.colour } : undefined}
       onMouseDown={(event) => {
         if (!target) return
         event.stopPropagation()
@@ -240,3 +254,45 @@ function Mention(props: { name: string; target: string | null; onOpen(id: string
     </span>
   )
 }
+
+const plugins = [remarkGfm, remarkBreaks]
+
+/** Mentions keep their scheme; other links only if they are web or mail. */
+function keepUrl(url: string): string {
+  return /^(mention:|https?:|mailto:)/.test(url) ? url : ''
+}
+
+const Markdown = memo(function Markdown(props: { text: string; onOpen(id: string): void }) {
+  const { onOpen } = props
+  const components = useMemo<Components>(
+    () => ({
+      a: ({ href, children }) => {
+        if (href?.startsWith(mentionScheme)) {
+          const [key, ...rest] = href.slice(mentionScheme.length).split('/')
+          const target = rest.join('/') || null
+          const label = String(Array.isArray(children) ? children.join('') : children)
+          const channel = label.startsWith('#')
+          return (
+            <Person
+              name={channel ? label : `@${label}`}
+              target={target}
+              colour={channel ? undefined : authorColour(key)}
+              onOpen={onOpen}
+            />
+          )
+        }
+        return (
+          <a href={href} target="_blank" rel="noreferrer" onMouseDown={(event) => event.stopPropagation()}>
+            {children}
+          </a>
+        )
+      },
+    }),
+    [onOpen],
+  )
+  return (
+    <ReactMarkdown remarkPlugins={plugins} urlTransform={keepUrl} components={components}>
+      {props.text}
+    </ReactMarkdown>
+  )
+})

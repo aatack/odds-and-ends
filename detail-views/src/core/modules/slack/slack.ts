@@ -1,8 +1,9 @@
 import type { Store } from '../../store.ts'
-import type { Entity, TextPart } from '../../types.ts'
+import type { Entity } from '../../types.ts'
 import type { Module, ModuleContext } from '../module.ts'
 import { SlackApi, slackWrites } from './api.ts'
 import { emoji, emojify } from './emoji.ts'
+import { slackToMarkdown } from './markdown.ts'
 
 const hour = 60 * 60 * 1000
 const day = 24 * hour
@@ -256,7 +257,8 @@ export class Slack implements Module {
           ...data,
           author: data.user ? this.userName(data.user) : (data.botName ?? 'bot'),
           text: this.render(data.text),
-          parts: this.parts(data.text),
+          markdown: this.markdown(data.text),
+          authorTarget: data.user ? this.dmWith(data.user) : null,
           authorKey: data.user ?? data.botName ?? 'bot',
           images: (data.images ?? []).map((image) => ({
             name: image.name,
@@ -286,20 +288,17 @@ export class Slack implements Module {
     return `#${data.name ?? data.channel}`
   }
 
-  /** User mentions become pills that open my DM with that person. */
-  private parts(text: string): TextPart[] {
-    const parts: TextPart[] = []
-    const pattern = /<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/g
-    let last = 0
-    for (const match of text.matchAll(pattern)) {
-      if (match.index > last) parts.push(this.render(text.slice(last, match.index)))
-      const user = match[1]
-      const dm = this.store.findBy('slack.conversation', 'user', user)
-      parts.push({ mention: this.userName(user), target: dm?.data.kind === 'im' ? dm.id : null })
-      last = match.index + match[0].length
-    }
-    if (last < text.length) parts.push(this.render(text.slice(last)))
-    return parts
+  /** My DM with a user, if the app has one. */
+  private dmWith(user: string): string | null {
+    const dm = this.store.findBy('slack.conversation', 'user', user)
+    return dm?.data.kind === 'im' ? dm.id : null
+  }
+
+  private markdown(text: string): string {
+    return slackToMarkdown(text, {
+      user: (id) => ({ name: this.userName(id), target: this.dmWith(id) }),
+      channel: (id) => (this.store.get(`slack:conv:${id}`) ? `slack:conv:${id}` : null),
+    })
   }
 
   /** Mentions, channel links and links rendered as text. */

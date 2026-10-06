@@ -231,12 +231,7 @@ body,
   padding-left: 10px;
 }
 
-.author {
-  font-weight: 700;
-}
-
 .text {
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;
 }
@@ -327,19 +322,82 @@ body,
   padding: 0 10px;
 }
 
-.pill {
-  display: inline-block;
-  padding: 0 6px;
-  border-radius: var(--radius);
-  background: light-dark(#e9e8fc, #2a2850);
+.person {
+  border-radius: 4px;
+  padding: 0 2px;
+  margin: 0 -2px;
+  font-weight: 600;
   color: var(--accent);
-  font-weight: 500;
   user-select: none;
 }
 
-.pill.inert {
-  background: var(--select);
+.person.strong {
+  font-weight: 700;
+  margin-right: 2px;
+}
+
+.person.live:hover {
+  background: light-dark(rgb(0 0 0 / 0.07), rgb(255 255 255 / 0.1));
+}
+
+/* Markdown inside a message. The first paragraph runs on from the name. */
+.text p {
+  margin: 0;
+}
+
+.text > p:first-of-type {
+  display: inline;
+}
+
+.text > p + *,
+.text > * + p {
+  margin-top: 4px;
+}
+
+.text code {
+  font-family: ui-monospace, 'JetBrains Mono', Menlo, monospace;
+  font-size: 0.88em;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: light-dark(#f0f0f2, #232328);
+  color: light-dark(#b42318, #f08c7e);
+}
+
+.text pre {
+  margin: 4px 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: light-dark(#f4f4f6, #1c1c20);
+  border: 1px solid var(--line);
+  white-space: pre-wrap;
+}
+
+.text pre code {
+  padding: 0;
+  background: none;
+  color: inherit;
+}
+
+.text blockquote {
+  margin: 4px 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--line);
   color: var(--muted);
+}
+
+.text ul,
+.text ol {
+  margin: 4px 0;
+  padding-left: 22px;
+}
+
+.text a {
+  color: light-dark(#1264a3, #6cb4ee);
+  text-decoration: none;
+}
+
+.text a:hover {
+  text-decoration: underline;
 }
 
 .images {
