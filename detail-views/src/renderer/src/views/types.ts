@@ -16,4 +16,6 @@ export interface FocusProps {
   onDraft(text: string): void
   onCompose(composing: boolean): void
   onImage(ref: string | null): void
+  /** Loads further back than what is cached. Absent where it can't be asked (a peek). */
+  onOlder?(): void
 }

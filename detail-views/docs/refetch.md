@@ -47,7 +47,11 @@ Use these strategies. One item type can use more than one.
   - The first batch of history: the newest 1000 messages in all conversations, by one search (about 10 calls).
   - The watch (`Slack.poll`), each 15 s.
 - The app does not load a conversation or a thread alone, unless I ask for it (`o`).
-- The list shows the conversation with the newest message first. The app uses the time of the newest event on each conversation (`updatedAt`). This is the link to its newest message. A load writes at timestamp 0. Thus, a load does not move a conversation. A conversation with no message in the batch stays at the bottom.
+- The workspace lists the conversations (channels, DMs, group DMs) and the threads in them.
+- A reply adds its thread to the workspace. A message from history that has replies also adds its thread.
+- The list shows the item with the newest event first (`updatedAt`). For a conversation, this is the link to its newest message. For a thread, this is the link to its newest reply. A load writes at timestamp 0. Thus, a load does not move an item. A conversation with no message in the batch stays at the bottom.
+- The load of the lists (each 60 min) replaces only the conversation links of the workspace. It keeps the thread links.
+- The header of the workspace, of a conversation and of a thread shows where the cached history starts (`from`), and a button (**Older**) that loads further back. The button goes when nothing is older (`history.complete`).
 
 #### Cursors
 
@@ -76,7 +80,7 @@ All cursors are values in the cache store, at timestamp 0. When the cache store 
 
 - **All conversations (`o` on the list):** one more batch of 1000 messages before the workspace `history.oldest`. The batch continues the search of the last batch, from its next page. Thus, it does not get messages again. When the search gets to page 100, the next batch starts a new search from the cursor.
 - **One conversation (`o` in it):** `conversations.history` gets the 100 messages before its start. Its start is the older of its own `history.oldest` and the workspace `history.oldest`, because all messages after the workspace cursor are in the cache store.
-- **One thread (`o` in it):** `conversations.replies` gets the full thread.
+- **One thread (`o` in it):** `conversations.replies` gets the full thread. Then the thread is complete.
 - A message from search has no reactions or replies. A message from history has them. When history gets a message that search got, it writes the full message.
 
 ### `slack.user`

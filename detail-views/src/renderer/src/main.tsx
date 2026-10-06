@@ -34,6 +34,7 @@ function Root() {
   const onModule = useCallback((root: string) => session.navigate(root), [])
   const onImage = useCallback((ref: string | null) => session.view(ref), [])
   const onAction = useCallback((action: string) => session.startAction(action), [])
+  const onOlder = useCallback(() => session.older(), [])
   const gestures = useMemo(
     () => ({
       onPeekEnter: (target: PeekTarget, anchor: Rect) => session.hoverPeek(target, anchor, null),
@@ -69,8 +70,9 @@ function Root() {
       onDraft,
       onCompose,
       onImage,
+      onOlder,
     }),
-    [state, focus, onSelect, onOpen, onDraft, onCompose, onImage, onAction],
+    [state, focus, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder],
   )
 
   return <App items={items} peek={peek} viewing={state.viewing} onImage={onImage} modules={modules} module={focus?.module ?? null} focus={focus} view={view} onModule={onModule} />

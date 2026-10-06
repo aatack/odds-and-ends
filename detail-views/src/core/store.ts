@@ -39,9 +39,10 @@ export interface WriteOptions {
   /**
    * Cache only: sources whose links are exactly those in this write. Any
    * other link from one of them is dropped, so a list that lost an item
-   * loses its row.
+   * loses its row. `within` narrows it to destinations starting with that,
+   * for a source whose links come from more than one list.
    */
-  replaceLinksFrom?: string[]
+  replaceLinksFrom?: (string | { source: string; within: string })[]
 }
 
 /**
@@ -113,15 +114,17 @@ export class EventStore {
           if (changes) touched.add(e.sourceId).add(e.destinationId)
         }
       }
-      for (const source of options.replaceLinksFrom ?? []) {
+      for (const replace of options.replaceLinksFrom ?? []) {
         if (!snapshot) throw new Error('only the cache replaces links')
+        const { source, within } = typeof replace === 'string' ? { source: replace, within: '' } : replace
         const keep = events.flatMap((e) => (e.type === 'link' && e.sourceId === source ? [e.destinationId] : []))
         const dropped = this.db
           .prepare(
-            `DELETE FROM link_events WHERE source_id = ? AND destination_id NOT IN (SELECT value FROM json_each(?))
+            `DELETE FROM link_events WHERE source_id = ? AND substr(destination_id, 1, length(?)) = ?
+             AND destination_id NOT IN (SELECT value FROM json_each(?))
              RETURNING destination_id`,
           )
-          .all(source, JSON.stringify(keep)) as { destination_id: string }[]
+          .all(source, within, within, JSON.stringify(keep)) as { destination_id: string }[]
         if (dropped.length) touched.add(source)
         for (const row of dropped) touched.add(row.destination_id)
       }

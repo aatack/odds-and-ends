@@ -82,8 +82,28 @@ body,
 }
 
 .title {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
   font-weight: 600;
   padding: 2px 10px;
+}
+
+/* Where cached history starts, and the button to load further back. */
+.history {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.line {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .list {
@@ -585,7 +605,8 @@ body,
   margin: 8px 0 2px;
 }
 
-.facts .action {
+.facts .action,
+.history .action {
   font: inherit;
   color: var(--ink);
   background: var(--canvas);

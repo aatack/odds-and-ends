@@ -114,6 +114,10 @@ function conversationEvents(conversation: RawConversation): AppEvent[] {
  *
  * A message from search is `partial`: search leaves out reactions and replies,
  * so those are not written, rather than written as nothing.
+ *
+ * A message with replies is a thread, and every thread is also listed in the
+ * workspace. Its newest reply is written at that reply's time, so the thread's
+ * own newest event, which orders it there, is that reply.
  */
 function messageEvents(channel: string, raw: RawMessage, now: number, partial = false): AppEvent[] {
   const id = ids.message(channel, raw.ts)
@@ -143,16 +147,21 @@ function messageEvents(channel: string, raw: RawMessage, now: number, partial = 
   return [
     value(id, 'type', 'slack.message', 0, author),
     ...values(id, Object.fromEntries(Object.entries(data).map(([key, v]) => [key, v ?? null])), said, author),
-    ...(partial ? [] : values(
-      id,
-      {
-        replyCount: raw.reply_count ?? null,
-        latestReply: raw.latest_reply ?? null,
-        reactions: raw.reactions?.map(({ name, count, users }) => ({ name, count, users: users ?? [] })) ?? null,
-      },
-      0,
-      author,
-    )),
+    ...(partial
+      ? []
+      : [
+          ...values(
+            id,
+            {
+              replyCount: raw.reply_count ?? null,
+              reactions: raw.reactions?.map(({ name, count, users }) => ({ name, count, users: users ?? [] })) ?? null,
+            },
+            0,
+            author,
+          ),
+          value(id, 'latestReply', raw.latest_reply ?? null, raw.latest_reply ? tsMillis(raw.latest_reply) : 0, author),
+          ...(raw.reply_count ? [link(ids.root, id, tsMillis(raw.ts), author)] : []),
+        ]),
     value(id, loadedKey('self'), now, 0, author),
   ]
 }
@@ -438,10 +447,13 @@ export class Slack implements Module {
     const conversations = new Map<string, Partial<ConversationData>>()
     const threads = new Map<string, { replyCount: number; latestReply?: string }>()
 
+    const seen = new Set<string>()
     for (const match of [...matches].sort((a, b) => Number(a.ts) - Number(b.ts))) {
       const channel = match.channel.id
       const id = ids.message(channel, match.ts)
-      if (lens.read(id)?.data.ts) continue
+      // New messages push results down a page, so one batch can meet a message twice.
+      if (seen.has(id) || lens.read(id)?.data.ts) continue
+      seen.add(id)
       const conversationId = ids.conversation(channel)
       let conversation = conversations.get(conversationId)
       if (!conversation) {
@@ -480,13 +492,19 @@ export class Slack implements Module {
         const known = this.data<MessageData>(parent)
         const thread = threads.get(parent) ?? { replyCount: known.replyCount ?? 0, latestReply: known.latestReply ?? undefined }
         threads.set(parent, { replyCount: thread.replyCount + 1, latestReply: maxTs(thread.latestReply, match.ts) })
-        events.push(link(parent, id, tsMillis(match.ts), author))
+        // The thread joins the workspace's list; a parent not cached loads itself, once, when shown.
+        events.push(link(parent, id, tsMillis(match.ts), author), link(ids.root, parent, tsMillis(threadTs!), author))
       } else {
         events.push(link(conversationId, id, tsMillis(match.ts), author))
       }
     }
 
-    for (const [id, thread] of threads) events.push(...values(id, thread, 0, author))
+    for (const [id, thread] of threads) {
+      events.push(
+        value(id, 'replyCount', thread.replyCount, 0, author),
+        value(id, 'latestReply', thread.latestReply ?? null, thread.latestReply ? tsMillis(thread.latestReply) : 0, author),
+      )
+    }
     return events
   }
 
@@ -526,7 +544,8 @@ export class Slack implements Module {
         ...live.flatMap(conversationEvents),
         ...live.map((conversation) => link(ids.root, ids.conversation(conversation.id), 0, author)),
       ],
-      { replaceLinksFrom: [ids.root] },
+      // Only the conversations: the threads listed here come from messages, not from this list.
+      { replaceLinksFrom: [{ source: ids.root, within: 'slack:conv:' }] },
     )
   }
 
@@ -546,6 +565,7 @@ export class Slack implements Module {
           ...messageEvents(channel, message, now),
           link(id, ids.message(channel, message.ts), tsMillis(message.ts), author),
         ]),
+        value(id, 'history.complete', true, 0, author),
       ],
       { replaceLinksFrom: [id] },
     )

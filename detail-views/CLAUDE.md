@@ -49,9 +49,10 @@ constraints every change must keep.
   collide with owned ids (uuids) or with each other, and an id's shape alone
   gives its type (`ModuleView.typeOf`): a PR seen only as a link is that item
   and loads itself.
-- **Slack keeps no unread counts.** The list is ordered by each
-  conversation's most recent event (`updatedAt`: the link to its newest
-  message), never by when it was loaded.
+- **Slack keeps no unread counts.** The workspace lists conversations (channels,
+  DMs, group DMs) and every thread in them, ordered by each one's most recent
+  event (`updatedAt`): a conversation's newest message, a thread's newest
+  reply. Never by when it was loaded.
 - **Slack loads lists, one batch of history, then watches.** On its own the
   app loads only the workspace's lists (`users.conversations`,
   `conversations.list`, `users.list`), a first batch of 1000 messages across

@@ -1,6 +1,6 @@
 import { memo } from 'react'
 import { MessageBody, MessageRow, showsAuthor, showsTime } from './messages.tsx'
-import { authorColour } from '../format.ts'
+import { authorColour, cursorTime } from '../format.ts'
 import type { PillProps, RowProps } from './kindTypes.ts'
 import { Composer, HeaderPill, Row, Status } from './primitives.tsx'
 import type { FocusProps } from './types.ts'
@@ -18,22 +18,65 @@ export function SlackHome(props: FocusProps) {
   }
   return (
     <div className="pane">
+      {props.headed !== false && (
+        <div className="title">
+          <History {...props} />
+        </div>
+      )}
       <div className="list">
-        {focus.children.map((child, index) => (
-          <ConversationRow
-            key={child.id}
-            entity={child}
-            selected={index === props.cursor}
-            onSelect={props.onSelect}
-            onOpen={props.onOpen}
-            onImage={props.onImage}
-          />
-        ))}
+        {focus.children.map((child, index) => {
+          const Row = child.type === 'slack.message' ? ThreadRow : ConversationRow
+          return (
+            <Row
+              key={child.id}
+              entity={child}
+              selected={index === props.cursor}
+              onSelect={props.onSelect}
+              onOpen={props.onOpen}
+              onImage={props.onImage}
+            />
+          )
+        })}
       </div>
       <Status error={focus.error ?? ((focus.entity?.data['watch.error'] as string | null | undefined) ?? null)} />
     </div>
   )
 }
+
+/**
+ * Where what is cached starts, and the button that loads further back. Gone
+ * once nothing is older.
+ */
+function History(props: FocusProps) {
+  const data = props.focus.entity?.data ?? {}
+  if (!props.focus.older) return null
+  return (
+    <span className="history">
+      {typeof data.from === 'string' && <span title="Everything since is loaded">{cursorTime(data.from)}</span>}
+      {props.onOlder && (
+        <button className="action" onClick={props.onOlder}>
+          Older
+        </button>
+      )}
+    </span>
+  )
+}
+
+/** A thread in the workspace's list: where it is, who started it, and how far it has gone. */
+export const ThreadRow = memo(function ThreadRow(props: RowProps) {
+  const { data } = props.entity
+  const replies = Number(data.replyCount ?? 0)
+  return (
+    <Row id={props.entity.id} selected={props.selected} onSelect={props.onSelect}>
+      <span className="grow line">
+        <span className="muted">{String(data.where ?? '')}</span>{' '}
+        <span style={{ color: authorColour(String(data.authorKey)), fontWeight: 700 }}>{String(data.author ?? '')}</span>{' '}
+        {String(data.text ?? '').split('\n')[0]}
+      </span>
+      {replies > 0 && <span className="muted">{replies}</span>}
+    </Row>
+  )
+})
 
 export const ConversationRow = memo(function ConversationRow(props: RowProps) {
   return (
@@ -83,6 +126,7 @@ export function SlackConversation(props: FocusProps) {
       {props.headed !== false && (
         <div className="title">
           <HeaderPill entity={focus.entity} />
+          <History {...props} />
         </div>
       )}
       <div className="list chat">
@@ -112,6 +156,11 @@ export function SlackThread(props: FocusProps) {
   const all = focus.entity ? [focus.entity, ...focus.children] : focus.children
   return (
     <div className="pane">
+      {props.headed !== false && focus.older && (
+        <div className="title">
+          <History {...props} />
+        </div>
+      )}
       <div className="list chat">
         {focus.entity && <MessageBody entity={focus.entity} author={true} time={true} replies={false} onOpen={props.onOpen} onImage={props.onImage} />}
         <div className="divider" />

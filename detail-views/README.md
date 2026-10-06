@@ -44,9 +44,14 @@ newest message; one with nothing in that batch sits at the bottom. After that,
 one search every 15 seconds brings in whatever is new, and catches up on start
 with what came while the app was closed.
 
-Nothing older loads on its own. `o` on the Slack list goes 1000 messages
-further back across everything; `o` in a conversation loads its 100 before
-what is there; `o` in a thread loads the thread whole.
+The list holds every thread too: a reply puts its thread there, ordered by its
+newest reply, even when the message it started from is older than anything
+loaded.
+
+Nothing older loads on its own. The header of the Slack list, a conversation
+and a thread shows where what is loaded starts, with **Older** to go further
+back (also `o`): on the list, 1000 messages further back across everything; in
+a conversation, its 100 before that; in a thread, the thread whole.
 
 ## GitHub
 
