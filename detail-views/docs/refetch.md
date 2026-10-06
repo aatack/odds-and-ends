@@ -27,7 +27,7 @@ Use these strategies. One item type can use more than one.
 | Item | Part | Strategies | Interval |
 |-|-|-|-|
 | `slack.home` | children | Freshness time | 60 min |
-| `slack.conversation` | self | Load once, then the watch | Never again |
+| `slack.conversation` | self (its newest message) | Load once, then the watch | Never again |
 | `slack.conversation` | children | Load once, then the watch | Never again |
 | `slack.message` | self | Load once | Never again |
 | `slack.message` | children | Load once, then the watch | Never again |
@@ -41,16 +41,16 @@ Use these strategies. One item type can use more than one.
 
 ### Slack: load once, then watch (done)
 
-- A conversation, its unread count and a thread load one time, when they are first looked at.
+- The app does not keep unread counts.
+- A conversation and its newest message load one time, when the conversation is first shown. Its history and its threads load one time, when they are first opened.
+- The list shows the conversation with the newest message first. The app uses the time of the newest event on each conversation (`updatedAt`). This is the link to its newest message. A load writes at timestamp 0. Thus, a load does not move a conversation in the list.
 - After that, the watch (`Slack.poll`) keeps them current. The app does not load them again, unless I refresh one (`r`).
 - Each 15 s, the watch does one `search.messages` call: all messages after the newest message that it saw, newest first. It reads pages until it gets to a message that it saw before.
 - For each new message, the watch:
   - writes the message at its ts, as the history load does;
-  - links it under its conversation, or under its thread parent when it is a reply;
-  - sets the `latestTs` of the conversation, and adds 1 to its unread count (not for replies, and not for my own messages);
-  - when the message is mine, sets the read position of the conversation to it;
+  - links it under its conversation at its ts, or under its thread parent when it is a reply. The link moves the conversation to the top of the list. A reply does not move it;
   - adds a new DM, group DM or private channel to the list. Search also finds public channels that I am not in. Thus, a new public channel comes only with the next load of the list.
-- The watch ignores a message that the cache store has. Thus, two looks at the same message do not count it two times.
+- The watch ignores a message that the cache store has. Thus, two looks at the same message do not add it two times.
 - The watch keeps the ts of the newest message that it saw on the Slack root (`watch.at`), in the cache store.
 - **Catch-up:** on start, the first poll reads everything after `watch.at`. This finds the messages that came while the app was closed.
 - If the catch-up needs more than 10 pages (1000 messages), the watch marks all conversations as not loaded. Each then loads whole when it is next looked at.

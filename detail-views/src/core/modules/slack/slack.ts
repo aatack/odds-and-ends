@@ -6,7 +6,6 @@ import { SlackApi } from './api.ts'
 import {
   maxTs,
   parseMessageId,
-  quiet,
   slackIds as ids,
   slackView,
   tsMillis,
@@ -75,12 +74,6 @@ interface RawFile {
   thumb_360_h?: number
   thumb_480_w?: number
   thumb_480_h?: number
-}
-
-interface ConversationInfo extends RawConversation {
-  last_read?: string
-  unread_count_display?: number
-  latest?: { ts?: string } | string
 }
 
 function kindOf(conversation: RawConversation): ConversationData['kind'] {
@@ -177,7 +170,7 @@ export class Slack implements Module {
     const channel = id.startsWith('slack:conv:') ? id.slice('slack:conv:'.length) : null
     const message = parseMessageId(id)
     if (type === 'slack.conversation' && channel) {
-      return part === 'self' ? this.loadInfo(api, channel) : this.loadHistory(api, channel)
+      return part === 'self' ? this.loadConversation(api, channel) : this.loadHistory(api, channel)
     }
     if (type === 'slack.message' && message) {
       return part === 'self' ? this.loadMessage(api, message.channel, message.ts) : this.loadThread(api, id)
@@ -241,13 +234,9 @@ export class Slack implements Module {
     const conversation = this.context.lens.read(id)
     if (!this.api || conversation?.type !== 'slack.conversation') return []
     const data = conversation.data as unknown as ConversationData
-    const newest = maxTs(
-      data.latestTs,
-      ...this.context.lens.children(id).map((child) => this.data<MessageData>(child).ts),
-    )
+    const newest = maxTs(...this.context.lens.children(id).map((child) => this.data<MessageData>(child).ts))
     if (!newest) return []
     await this.api.call('conversations.mark', { channel: data.channel, ts: newest })
-    this.cache.write(values(id, { lastRead: newest, unread: 0 }, 0, author))
     return []
   }
 
@@ -268,7 +257,7 @@ export class Slack implements Module {
    * One look at what is new: every message since the newest one seen, by one
    * search across all conversations, newest first. Each new message is written
    * as history would write it and linked under its conversation (or its
-   * thread), and its conversation's position is moved on.
+   * thread).
    *
    * The newest ts seen is kept on the Slack root (`watch.at`), in the cache
    * store, so a start catches up on what came while the app was closed. When
@@ -315,10 +304,13 @@ export class Slack implements Module {
     }
   }
 
-  /** New messages from a search, as events. Ones already cached are left alone, so a repeat counts nothing twice. */
+  /**
+   * New messages from a search, as events. Ones already cached are left
+   * alone, so a repeat counts nothing twice. A message's link is written at
+   * its ts, which is what moves its conversation up the list.
+   */
   private searchEvents(matches: SearchMatch[]): AppEvent[] {
     const { lens } = this.context
-    const self = this.context.settings.get('slack.self')
     const now = this.context.now()
     const events: AppEvent[] = []
     const conversations = new Map<string, Partial<ConversationData>>()
@@ -369,23 +361,8 @@ export class Slack implements Module {
       } else {
         events.push(link(conversationId, id, tsMillis(match.ts), author))
       }
-
-      if (!reply) conversation.latestTs = maxTs(conversation.latestTs, match.ts)
-      if (match.user && match.user === self) {
-        // Writing in a conversation reads it.
-        conversation.lastRead = maxTs(conversation.lastRead, match.ts)
-        conversation.unread = 0
-      } else if (!reply && conversation.unread !== undefined && Number(match.ts) > Number(conversation.lastRead ?? 0)) {
-        // Only once its own count has loaded; until then that load counts it.
-        conversation.unread += 1
-      }
     }
 
-    for (const [id, conversation] of conversations) {
-      events.push(
-        ...values(id, { latestTs: conversation.latestTs, lastRead: conversation.lastRead, unread: conversation.unread }, 0, author),
-      )
-    }
     for (const [id, thread] of threads) events.push(...values(id, thread, 0, author))
     return events
   }
@@ -401,7 +378,7 @@ export class Slack implements Module {
 
   // --- Loads ---------------------------------------------------------------------
 
-  /** Every conversation I am in. Their unread counts load one by one as each is shown. */
+  /** Every conversation I am in. Each one's latest message loads as it is first shown. */
   private async loadHome(): Promise<void> {
     if (!this.api) {
       this.cache.write([value(ids.root, 'connected', false, 0, author)])
@@ -424,32 +401,25 @@ export class Slack implements Module {
   }
 
   /**
-   * Where a conversation stands: what it is, how far I have read, and how
-   * much is unread. Slack has no call for every unread count at once, so this
-   * runs per conversation, as each is shown, behind anything urgent.
+   * What a conversation is, and its latest message, linked at its ts: the
+   * list is ordered by the newest event on each conversation, so this is what
+   * puts it in its place. Runs once per conversation, as each is first shown,
+   * behind anything urgent; the watch keeps it current after that.
    */
-  private async loadInfo(api: SlackApi, channelId: string): Promise<void> {
+  private async loadConversation(api: SlackApi, channelId: string): Promise<void> {
     const id = ids.conversation(channelId)
-    const { channel } = await api.call<{ channel: ConversationInfo }>('conversations.info', { channel: channelId })
-    const lastRead = channel.last_read
-    const latest = typeof channel.latest === 'object' ? channel.latest?.ts : undefined
-    let unread = channel.unread_count_display
-    let newest: string | undefined
-    if (unread === undefined && lastRead) {
-      const self = this.context.settings.get('slack.self')
-      const { messages } = await api.call<{ messages: RawMessage[] }>('conversations.history', {
-        channel: channelId,
-        oldest: lastRead,
-        limit: 100,
-      })
-      unread = messages.filter((message) => message.user !== self && !(message.subtype && quiet.has(message.subtype))).length
-      newest = messages[0]?.ts
+    const events: AppEvent[] = []
+    // The list says what most conversations are; one seen only in a mention needs asking.
+    if (!this.data<ConversationData>(id).kind) {
+      const { channel } = await api.call<{ channel: RawConversation }>('conversations.info', { channel: channelId })
+      events.push(...conversationEvents({ ...channel, id: channelId }))
     }
-    const known = this.data<ConversationData>(id)
-    this.cache.write([
-      ...conversationEvents({ ...channel, id: channelId }),
-      ...values(id, { lastRead: lastRead ?? null, unread: unread ?? 0, latestTs: maxTs(known.latestTs, latest, newest) ?? null }, 0, author),
-    ])
+    const { messages } = await api.call<{ messages: RawMessage[] }>('conversations.history', { channel: channelId, limit: 1 })
+    const now = this.context.now()
+    for (const message of messages) {
+      events.push(...messageEvents(channelId, message, now), link(id, ids.message(channelId, message.ts), tsMillis(message.ts), author))
+    }
+    this.cache.write(events)
   }
 
   /** The latest messages. Older ones already loaded stay, so scrolling back doesn't lose them. */
@@ -462,7 +432,6 @@ export class Slack implements Module {
         ...messageEvents(channel, message, now),
         link(id, ids.message(channel, message.ts), tsMillis(message.ts), author),
       ]),
-      value(id, 'latestTs', maxTs(this.data<ConversationData>(id).latestTs, messages[0]?.ts) ?? null, 0, author),
     ])
   }
 
@@ -505,7 +474,7 @@ export class Slack implements Module {
   }
 
   private async loadUser(api: SlackApi, user: string): Promise<void> {
-    // Urgent: a name is wanted wherever someone is mentioned, and should not wait behind unread counts.
+    // Urgent: a name is wanted wherever someone is mentioned, and should not wait behind the list filling in.
     const { user: raw } = await api.urgent.call<{
       user: { name: string; real_name?: string; profile?: { display_name?: string; real_name?: string } }
     }>('users.info', { user })

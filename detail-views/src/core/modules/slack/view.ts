@@ -1,5 +1,5 @@
 import type { Lens, ModuleView } from '../../present.ts'
-import type { Entity, ItemType } from '../../types.ts'
+import type { ItemType } from '../../types.ts'
 import { slackWrites } from './api.ts'
 import { emoji, emojify } from './emoji.ts'
 import { slackToMarkdown } from './markdown.ts'
@@ -38,9 +38,6 @@ export interface ConversationData {
   kind: 'channel' | 'private' | 'im' | 'mpim'
   name?: string
   user?: string
-  lastRead?: string
-  latestTs?: string
-  unread?: number
 }
 
 export interface MessageData {
@@ -156,14 +153,12 @@ export const slackView: ModuleView = {
     return entity.type === 'slack.conversation' || entity.type === 'slack.message' ? 'slack' : null
   },
 
+  // Most recently changed first: the newest event on a conversation, which is
+  // the link to its newest message. Loads and undated values sit at 0, so
+  // fetching a conversation again never moves it.
   order(entity, children) {
     if (entity.type !== 'slack.home') return children
-    const key = (child: Entity) => {
-      const data = child.data as unknown as ConversationData
-      return Number(maxTs(data.latestTs, data.lastRead) ?? 0)
-    }
-    const unread = (child: Entity) => ((child.data as unknown as ConversationData).unread ?? 0) > 0
-    return [...children].sort((a, b) => Number(unread(b)) - Number(unread(a)) || key(b) - key(a))
+    return [...children].sort((a, b) => b.updatedAt - a.updatedAt)
   },
 
   present(entity, lens) {

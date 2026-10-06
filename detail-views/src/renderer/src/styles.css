@@ -113,14 +113,6 @@ body,
   background: var(--select);
 }
 
-.row.read {
-  color: var(--muted);
-}
-
-.row.unread {
-  font-weight: 600;
-}
-
 .grow {
   flex: 1;
   min-width: 0;

@@ -36,8 +36,8 @@ constraints every change must keep.
     import what I owned (`legacy.ts`). Never write to it.
 - **Fetched events carry the time they happened elsewhere**: a Slack message at
   its ts (or its edit's), a PR comment and its link from the PR at its
-  `createdAt`. What has no date of its own (channel names, unread counts,
-  reactions, PR titles and state, checks) is written at **timestamp 0**. So an
+  `createdAt`. What has no date of its own (channel names, reactions, PR
+  titles and state, checks) is written at **timestamp 0**. So an
   owned event written now overrides fetched data: renaming a channel or
   unlinking a PR comment for me only is an ordinary owned event.
 - **Loads are marked on the entity.** A load writes `loaded.<part>` (Unix ms)
@@ -49,6 +49,9 @@ constraints every change must keep.
   collide with owned ids (uuids) or with each other, and an id's shape alone
   gives its type (`ModuleView.typeOf`): a PR seen only as a link is that item
   and loads itself.
+- **Slack keeps no unread counts.** The list is ordered by each
+  conversation's most recent event (`updatedAt`: the link to its newest
+  message), never by when it was loaded.
 - **Slack loads once, then is watched.** Conversations and threads load whole
   the first time they are looked at; after that `Slack.poll` (one
   `search.messages` call every 15 s, started by `Core.start`) brings in new

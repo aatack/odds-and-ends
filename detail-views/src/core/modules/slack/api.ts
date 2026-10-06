@@ -7,7 +7,7 @@ function sleep(ms: number): Promise<void> {
 /**
  * One token bucket for every method, well under Slack's lowest tier, plus
  * whatever back-off Slack asks for. Urgent callers (what is on screen being
- * opened) go ahead of the rest (unread counts filling in behind).
+ * opened) go ahead of the rest (the list filling in behind).
  */
 class RateLimiter {
   private tokens: number
