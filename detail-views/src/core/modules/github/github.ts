@@ -1,18 +1,14 @@
 import { randomUUID } from 'node:crypto'
-import type { Store } from '../../store.ts'
-import { prEntityId } from '../../types.ts'
-import type { Action, Badge, Entity } from '../../types.ts'
+import { link, value, values, type AppEvent } from '../../graph/events.ts'
+import { loadedKey } from '../../types.ts'
+import type { Entity, ItemType, LoadPart } from '../../types.ts'
 import type { Module, ModuleContext } from '../module.ts'
+import { me } from '../tasks/tasks.ts'
+import { githubIds as ids, githubView, localApproval, outcomeOrder, prUrl, type CheckOutcome } from './view.ts'
 
-const day = 24 * 60 * 60 * 1000
-const ttl = day
+export { badge, prName } from './view.ts'
 
-const ids = {
-  root: 'github',
-  pr: (url: string) => prEntityId(url)!,
-  check: (pr: string, name: string) => `${pr}#check:${name}`,
-  item: (pr: string, id: string) => `${pr}#item:${id}`,
-}
+const author = 'github'
 
 /**
  * The only writes the app makes to GitHub, each started by me and confirmed.
@@ -140,9 +136,6 @@ type RawContext =
     }
   | { __typename: 'StatusContext'; context: string; state: string; targetUrl: string | null; createdAt: string }
 
-/** One word for where a check is: what the view colours. */
-export type CheckOutcome = 'failing' | 'pending' | 'passing' | 'skipped'
-
 function outcome(context: RawContext): CheckOutcome {
   if (context.__typename === 'StatusContext') {
     return context.state === 'SUCCESS' ? 'passing' : context.state === 'PENDING' || context.state === 'EXPECTED' ? 'pending' : 'failing'
@@ -168,6 +161,11 @@ function seconds(iso: string | null | undefined): string | undefined {
   return iso ? String(Date.parse(iso) / 1000) : undefined
 }
 
+/** When something on GitHub happened, as an event's timestamp. */
+function millis(iso: string | null | undefined): number {
+  return iso ? Date.parse(iso) : 0
+}
+
 /** HTML comments are bot bookkeeping; nothing to read. */
 function clean(body: string): string {
   return body.replace(/<!--[\s\S]*?-->/g, '').trim()
@@ -186,206 +184,117 @@ const reviewWords: Record<string, string> = {
 }
 
 /**
- * A PR's name as shown: its title without a leading `#1234` or a
- * conventional-commit prefix (`feat: `, `fix(ui): `, `chore!: `).
- */
-export function prName(title: string): string {
-  const name = title
-    .replace(/^#\d+\s*/, '')
-    .replace(/^[a-z]+(?:\/[a-z]+)*(?:\([^)]*\))?!?:\s+/, '')
-    .trim()
-  return name || title
-}
-
-/**
- * Merged, anyone's: purple.
- * Someone else's PR: whether it is approved, and whether by me.
- * Mine: what stands in its way, worst first, then how approved it is.
- * Null until enough is known.
- */
-export function badge(data: Record<string, unknown>, locallyApproved: boolean): Badge | null {
-  if (data.mine === undefined) return null
-  // Merged is the end of the story, whoever's it is.
-  if (data.state === 'MERGED') return { shape: 'dot', tone: 'purple', reason: 'merged' }
-  if (!data.mine) {
-    if (data.approvedByMe) return { shape: 'tick', tone: 'green', reason: 'approved by me' }
-    if (data.approvedByOthers) return { shape: 'dot', tone: 'green', reason: 'approved' }
-    return { shape: 'dot', tone: 'yellow', reason: 'not approved' }
-  }
-  if (data.conflicts) return { shape: 'dot', tone: 'red', reason: 'merge conflicts' }
-  if (data.checks === 'failing') return { shape: 'cross', tone: 'red', reason: 'CI failing' }
-  if (!data.approvedByOthers) return { shape: 'dot', tone: 'yellow', reason: 'no approvals' }
-  if (locallyApproved) return { shape: 'tick', tone: 'green', reason: 'approved by me and others' }
-  return { shape: 'dot', tone: 'green', reason: 'approved by others' }
-}
-
-const outcomeOrder: CheckOutcome[] = ['failing', 'pending', 'skipped', 'passing']
-
-/**
  * My pull requests. Each is an entity keyed by its URL, so a link to one
  * anywhere in the app is the same item.
  */
 export class GitHub implements Module {
-  readonly id = 'github'
-  readonly name = 'GitHub'
-  readonly root = { id: ids.root, type: 'github.home' as const }
+  readonly view = githubView
 
-  private readonly store: Store
-  private readonly gh: ModuleContext['gh']
+  private readonly context: ModuleContext
+  /** One query per PR at a time, whichever of its parts asked. */
+  private readonly loading = new Map<string, Promise<void>>()
 
   constructor(context: ModuleContext) {
-    this.store = context.store
-    this.gh = context.gh
+    this.context = context
   }
 
-  owns(entity: Entity): boolean {
-    return entity.type.startsWith('github.')
-  }
-
-  /** My own approval of my own PR: owned, so it lasts past the cache. */
-  private localApproval(prId: string): Entity | null {
-    return this.store.children(prId).find((child) => child.type === 'github.localApproval') ?? null
-  }
-
-  actions(entity: Entity): Action[] {
-    if (entity.type !== 'github.pr' || entity.data.state !== 'OPEN') return []
-    const actions: Action[] = []
-    if (!entity.data.mine) {
-      actions.push({ id: 'approve', label: 'Approve', prompt: 'Approve: comment (optional), Enter to approve' })
-    } else {
-      if (!this.localApproval(entity.id) || !entity.data.autoMerge) {
-        actions.push({
-          id: 'approve',
-          label: 'Approve',
-          prompt: 'Approve locally and turn on auto-merge: Enter to confirm',
-        })
-      }
-      actions.push({
-        id: 'close',
-        label: 'Close',
-        prompt: 'Close and delete the branch: comment (optional), Enter to close',
-      })
-    }
-    return actions
-  }
-
-  async perform(entity: Entity, action: string, text: string): Promise<void> {
-    const url = String(entity.data.url)
+  async perform(entity: Entity, action: string, text: string): Promise<AppEvent[]> {
+    const url = prUrl(entity.id)
+    const events: AppEvent[] = []
     if (action === 'approve' && !entity.data.mine) {
       await this.write(['pr', 'review', url, '--approve', ...(text ? ['--body', text] : [])])
     } else if (action === 'approve') {
-      if (!this.localApproval(entity.id)) {
+      if (!localApproval(this.context.lens, entity.id)) {
         const id = randomUUID()
-        this.store.transaction(() => {
-          this.store.put(id, 'github.localApproval', { at: Date.now(), ...(text ? { note: text } : {}) })
-          this.store.link(entity.id, id)
-        })
+        const now = this.context.now()
+        events.push(...values(id, { type: 'github.localApproval', at: now, note: text || undefined }, now, me), link(entity.id, id, now, me))
+        this.context.owned.write(events)
       }
       const method = String(entity.data.mergeMethod ?? 'SQUASH').toLowerCase()
       await this.write(['pr', 'merge', url, '--auto', `--${method === 'merge' ? 'merge' : method}`])
     } else if (action === 'close') {
       await this.write(['pr', 'close', url, '--delete-branch', ...(text ? ['--comment', text] : [])])
     }
+    return events
   }
 
   private async write(args: string[]): Promise<void> {
     checkWrite(args)
-    await this.gh(args)
+    await this.context.gh(args)
   }
 
-  /** A PR seen only as a link becomes an item the first time it is looked at. */
-  materialise(id: string): Entity | null {
-    const url = id.startsWith('github:pr:') ? id.slice('github:pr:'.length) : null
-    if (!url || prEntityId(url) !== id) return null
-    return this.store.put(id, 'github.pr', { url }, { ttl })
-  }
-
-  staleAfter(id: string): number {
-    return id === ids.root ? 2 * 60_000 : 60_000
-  }
-
-  async refresh(id: string): Promise<void> {
-    const entity = this.store.get(id)
-    if (entity?.type === 'github.home') await this.refreshList()
-    else if (entity?.type === 'github.pr') await this.refreshPr(String(entity.data.url))
-  }
-
-  order(entity: Entity, children: Entity[]): Entity[] {
-    if (entity.type !== 'github.pr') return children
-    children = children.filter((child) => child.type !== 'github.localApproval')
-    const checks = children.filter((child) => child.type === 'github.check')
-    const discussion = children.filter((child) => child.type !== 'github.check')
-    checks.sort(
-      (a, b) =>
-        outcomeOrder.indexOf(a.data.outcome as CheckOutcome) - outcomeOrder.indexOf(b.data.outcome as CheckOutcome) ||
-        String(a.data.name).localeCompare(String(b.data.name)),
-    )
-    return [...checks, ...discussion]
-  }
-
-  present(entity: Entity): Entity {
-    if (entity.type === 'github.pr') {
-      const data = entity.data
-      // `label` names the PR where nothing else does, as in a peek's bar.
-      const locallyApproved = Boolean(this.localApproval(entity.id))
-      const name = data.title ? prName(String(data.title)) : undefined
-      return { ...entity, data: { ...data, locallyApproved, badge: badge(data, locallyApproved), name, label: name ?? String(data.url) } }
-    }
-    if (entity.type === 'github.item') {
-      // Shaped like a Slack message, so the same views draw it.
-      return { ...entity, data: { ...entity.data, authorKey: entity.data.author, markdown: entity.data.text } }
-    }
-    return entity
-  }
-
-  private async refreshList(): Promise<void> {
-    const data = await query<{ search: { nodes: RawListPr[] }; viewer: { login: string } }>(this.gh, listQuery)
-    const prs = data.search.nodes.filter((node) => node.url)
-    this.store.transaction(() => {
-      for (const pr of prs) {
-        const id = ids.pr(pr.url)
-        const previous = this.store.get(id)?.data ?? {}
-        this.store.put(id, 'github.pr', { ...previous, ...this.summary(pr, data.viewer.login) }, { ttl })
+  async load(id: string, _part: LoadPart, type: ItemType): Promise<void> {
+    if (type === 'github.home') await this.loadList()
+    // A PR is one query whichever part was asked for, so it marks both.
+    else if (type === 'github.pr') {
+      const url = prUrl(id)
+      let running = this.loading.get(url)
+      if (!running) {
+        running = this.loadPr(url).finally(() => this.loading.delete(url))
+        this.loading.set(url, running)
       }
-      this.store.setCachedChildren(
-        ids.root,
-        prs.map((pr, index) => ({ id: ids.pr(pr.url), rank: index })),
-        { ttl },
-      )
-    })
+      await running
+    }
   }
 
-  /** What a PR is like at a glance; enough to work out its badge. */
-  private summary(pr: RawListPr, viewer: string) {
-    const author = pr.author?.login
+  private async loadList(): Promise<void> {
+    const data = await query<{ search: { nodes: RawListPr[] }; viewer: { login: string } }>(this.context.gh, listQuery)
+    const prs = data.search.nodes.filter((node) => node.url)
+    const now = this.context.now()
+    this.context.cache.write(
+      [
+        ...prs.flatMap((pr) => [
+          ...this.summary(pr, data.viewer.login),
+          value(ids.pr(pr.url), loadedKey('self'), now, 0, author),
+          link(ids.root, ids.pr(pr.url), 0, author),
+        ]),
+      ],
+      { replaceLinksFrom: [ids.root] },
+    )
+  }
+
+  /**
+   * What a PR is like at a glance; enough to work out its badge. None of it
+   * has a date of its own, so all of it sits at 0, under anything of mine.
+   */
+  private summary(pr: RawListPr, viewer: string): AppEvent[] {
+    const author_ = pr.author?.login
     const approvers = pr.latestReviews.nodes
       .filter((review) => review.state === 'APPROVED')
       .map((review) => review.author?.login)
-    return {
-      state: pr.state,
-      mine: author === viewer,
-      conflicts: pr.mergeable === 'CONFLICTING',
-      approvedByMe: approvers.includes(viewer),
-      approvedByOthers: approvers.some((login) => login && login !== viewer && login !== author),
-      url: prEntityId(pr.url)!.slice('github:pr:'.length),
-      number: pr.number,
-      title: pr.title,
-      repo: pr.repository.nameWithOwner,
-      draft: pr.isDraft,
-      review: pr.reviewDecision,
-      checks: rollup(pr.commits.nodes[0]?.commit.statusCheckRollup?.state),
-      updatedAt: pr.updatedAt,
-    }
+    return values(
+      ids.pr(pr.url),
+      {
+        type: 'github.pr',
+        state: pr.state,
+        mine: author_ === viewer,
+        conflicts: pr.mergeable === 'CONFLICTING',
+        approvedByMe: approvers.includes(viewer),
+        approvedByOthers: approvers.some((login) => login && login !== viewer && login !== author_),
+        url: prUrl(ids.pr(pr.url)),
+        number: pr.number,
+        title: pr.title,
+        repo: pr.repository.nameWithOwner,
+        draft: pr.isDraft,
+        review: pr.reviewDecision,
+        checks: rollup(pr.commits.nodes[0]?.commit.statusCheckRollup?.state),
+        updatedAt: pr.updatedAt,
+      },
+      0,
+      author,
+    )
   }
 
-  private async refreshPr(url: string): Promise<void> {
-    const { resource: pr, viewer } = await query<{ resource: RawPr | null; viewer: { login: string } }>(
-      this.gh,
-      prQuery,
-      { url },
-    )
+  /**
+   * Everything about a PR. The description, comments and reviews are written
+   * at the time they were made, as are their links from the PR, so I can hide
+   * one by unlinking it later; checks and the PR's state have no date, so 0.
+   */
+  private async loadPr(url: string): Promise<void> {
+    const { resource: pr, viewer } = await query<{ resource: RawPr | null; viewer: { login: string } }>(this.context.gh, prQuery, { url })
     if (!pr) throw new Error('not a pull request, or not visible to gh')
     const id = ids.pr(url)
+    const now = this.context.now()
     const contexts = pr.commits.nodes[0]?.commit.statusCheckRollup?.contexts.nodes ?? []
     const checks = contexts.map((context) => ({
       name:
@@ -393,16 +302,17 @@ export class GitHub implements Module {
           ? [context.checkSuite?.workflowRun?.workflow.name, context.name].filter(Boolean).join(' / ')
           : context.context,
       outcome: outcome(context),
-      url: (context.__typename === 'CheckRun' ? context.detailsUrl : context.targetUrl) ?? undefined,
-      startedAt: seconds(context.__typename === 'CheckRun' ? context.startedAt : context.createdAt),
-      completedAt: seconds(context.__typename === 'CheckRun' ? context.completedAt : undefined),
+      url: (context.__typename === 'CheckRun' ? context.detailsUrl : context.targetUrl) ?? null,
+      startedAt: seconds(context.__typename === 'CheckRun' ? context.startedAt : context.createdAt) ?? null,
+      completedAt: seconds(context.__typename === 'CheckRun' ? context.completedAt : undefined) ?? null,
     }))
     const counts = Object.fromEntries(outcomeOrder.map((kind) => [kind, checks.filter((check) => check.outcome === kind).length]))
 
-    const items: { key: string; data: Record<string, unknown> }[] = []
+    const items: { key: string; at: number; data: Record<string, unknown> }[] = []
     const body = clean(pr.body)
     items.push({
       key: 'description',
+      at: millis(pr.createdAt),
       data: { kind: 'description', author: pr.author?.login ?? 'ghost', ts: seconds(pr.createdAt), text: body || '_No description._', url },
     })
     for (const comment of pr.comments.nodes) {
@@ -410,6 +320,7 @@ export class GitHub implements Module {
       if (!text) continue
       items.push({
         key: comment.id,
+        at: millis(comment.createdAt),
         data: { kind: 'comment', author: comment.author?.login ?? 'ghost', ts: seconds(comment.createdAt), text, url: comment.url },
       })
     }
@@ -424,6 +335,7 @@ export class GitHub implements Module {
       if (!text && review.state === 'COMMENTED') continue
       items.push({
         key: review.id,
+        at: millis(review.createdAt),
         data: {
           kind: 'review',
           author: review.author?.login ?? 'ghost',
@@ -435,16 +347,12 @@ export class GitHub implements Module {
         },
       })
     }
-    items.sort((a, b) => Number(a.data.ts) - Number(b.data.ts))
 
-    this.store.transaction(() => {
-      const previous = this.store.get(id)?.data ?? {}
-      this.store.put(
+    const events: AppEvent[] = [
+      ...this.summary(pr, viewer.login),
+      ...values(
         id,
-        'github.pr',
         {
-          ...previous,
-          ...this.summary(pr, viewer.login),
           state: pr.state,
           mergeable: pr.mergeable,
           additions: pr.additions,
@@ -454,23 +362,23 @@ export class GitHub implements Module {
           base: pr.baseRefName,
           counts,
           autoMerge: Boolean(pr.autoMergeRequest),
-          mergeMethod: pr.repository.viewerDefaultMergeMethod,
+          mergeMethod: pr.repository.viewerDefaultMergeMethod ?? null,
         },
-        { ttl },
-      )
-      const children: { id: string; rank: number }[] = []
-      // Only checks that need me get a row; passing and skipped ones are counted.
-      for (const check of checks.filter((candidate) => candidate.outcome === 'failing' || candidate.outcome === 'pending')) {
-        const checkId = ids.check(id, check.name)
-        this.store.put(checkId, 'github.check', check, { ttl })
-        children.push({ id: checkId, rank: 0 })
-      }
-      items.forEach((item, index) => {
-        const itemId = ids.item(id, item.key)
-        this.store.put(itemId, 'github.item', item.data, { ttl })
-        children.push({ id: itemId, rank: index + 1 })
-      })
-      this.store.setCachedChildren(id, children, { ttl })
-    })
+        0,
+        author,
+      ),
+      value(id, loadedKey('self'), now, 0, author),
+      value(id, loadedKey('children'), now, 0, author),
+    ]
+    // Only checks that need me get a row; passing and skipped ones are counted.
+    for (const check of checks.filter((candidate) => candidate.outcome === 'failing' || candidate.outcome === 'pending')) {
+      const checkId = ids.check(id, check.name)
+      events.push(...values(checkId, { type: 'github.check', ...check }, 0, author), link(id, checkId, 0, author))
+    }
+    for (const item of items) {
+      const itemId = ids.item(id, item.key)
+      events.push(value(itemId, 'type', 'github.item', 0, author), ...values(itemId, item.data, item.at, author), link(id, itemId, item.at, author))
+    }
+    this.context.cache.write(events, { replaceLinksFrom: [id] })
   }
 }

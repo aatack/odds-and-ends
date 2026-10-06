@@ -1,52 +1,64 @@
-import type { Entity, Focus, ModuleInfo } from '../../core/types.ts'
+import { EntityCache, type CacheState } from '../../core/graph/cache.ts'
+import { focusOf, foreignOf, itemOf, moduleInfos } from '../../core/present.ts'
+import type { Entity, Focus, ModuleInfo, Outcome } from '../../core/types.ts'
 import type { Api } from './api.ts'
 import type { Environment } from './environment.ts'
 import * as S from './state.ts'
 
 export interface Snapshot {
   state: S.State
-  focus: Focus | null
   modules: ModuleInfo[]
+  focus: Focus | null
   /** What each open entity peek shows, by entity id. */
   peekFoci: Record<string, Focus>
-  /** Items mentioned on screen (as pills, say), by id. */
-  summaries: Record<string, Entity | null>
+  /** An item named on screen (a pill), presented. Reading one asks for it. */
+  item(id: string): Entity | null
 }
 
 const storageKey = 'detail-views.state'
+/** How often what is on screen is looked at again, to load whatever has gone stale. */
+const revisitEvery = 20_000
 
-/** The app without a screen: latent state, the focus cache, every effect. */
+/**
+ * The app without a screen: latent state, the entity cache, every effect.
+ *
+ * Everything shown is worked out from the cache (`focusOf`, `itemOf`), which
+ * answers at once with whatever it has and fetches the rest behind. Nothing
+ * here asks the core what to show.
+ */
 export class Session {
+  readonly cache: EntityCache
   private readonly api: Api
   private readonly env: Environment
   private readonly listeners = new Set<() => void>()
   private snapshot: Snapshot
-  private request = 0
-  private previousPeeks: S.Peek[] = []
-  /** The peek the pointer is in, or null for the main view. */
+  /** The pointer's peek, or null for the main view. */
   private hovering: string | null = null
-  /** How many things on screen mention each item. */
-  private readonly wanted = new Map<string, number>()
-  private summariesPending = false
   private peekOpening: ReturnType<typeof setTimeout> | null = null
   private peekClosing: ReturnType<typeof setTimeout> | null = null
+  private deriving = false
+  private derivedFrom: CacheState | null = null
+  /** The last thing shown for each item, so an item that hasn't changed keeps its identity and its row doesn't redraw. */
+  private readonly shown = new Map<string, { json: string; entity: Entity }>()
 
   constructor(api: Api, env: Environment) {
     this.api = api
     this.env = env
-    this.snapshot = { state: S.restore(env.load(storageKey), 'slack'), focus: null, modules: [], peekFoci: {}, summaries: {} }
+    this.cache = new EntityCache({ scan: (ids) => api.scan(ids), load: (request) => api.load(request), foreign: foreignOf })
+    const state = S.restore(env.load(storageKey), 'slack')
+    this.snapshot = { state, modules: moduleInfos, focus: null, peekFoci: {}, item: () => null }
+    this.snapshot = this.derive(state, this.cache.get())
   }
 
   async start(): Promise<() => void> {
-    const modules = await this.api.modules()
-    this.set({ modules })
-    const stop = this.api.onChange(() => {
-      void this.load()
-      void this.loadPeeks()
-      this.loadSummaries()
-    })
-    await Promise.all([this.load(), this.loadPeeks()])
-    return stop
+    const stopCache = this.cache.subscribe(() => this.scheduleDerive())
+    const stopChanges = this.api.onChange((changed) => this.cache.invalidate(changed))
+    const revisit = setInterval(() => this.cache.revisit(this.onScreen()), revisitEvery)
+    return () => {
+      stopCache()
+      stopChanges()
+      clearInterval(revisit)
+    }
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -56,29 +68,94 @@ export class Session {
 
   get = (): Snapshot => this.snapshot
 
-  private set(patch: Partial<Snapshot>): void {
-    const previous = this.snapshot.state
-    this.snapshot = { ...this.snapshot, ...patch }
-    if (patch.state && patch.state !== previous) this.env.save(storageKey, S.persisted(patch.state))
+  private publish(next: Snapshot): void {
+    if (next.state !== this.snapshot.state) this.env.save(storageKey, S.persisted(next.state))
+    this.snapshot = next
     for (const listener of this.listeners) listener()
   }
 
-  private update(next: S.State): void {
-    const moved = S.focused(next) !== S.focused(this.snapshot.state)
-    this.set({ state: next, ...(moved ? { focus: null } : {}) })
-    if (moved) void this.load()
-    if (next.peeks !== this.previousPeeks) {
-      this.previousPeeks = next.peeks
-      void this.loadPeeks()
-    }
+  private update(state: S.State): void {
+    if (state === this.snapshot.state) return
+    this.publish(this.derive(state, this.cache.get()))
   }
 
-  /** Reads the focused entity; a slower answer for an older focus is dropped. */
-  private async load(): Promise<void> {
-    const id = S.focused(this.snapshot.state)
-    const request = ++this.request
-    const focus = await this.api.focus(id)
-    if (request === this.request) this.set({ focus })
+  /** One derivation per burst of cache changes, however many there were. */
+  private scheduleDerive(): void {
+    if (this.deriving) return
+    this.deriving = true
+    queueMicrotask(() => {
+      this.deriving = false
+      this.publish(this.derive(this.snapshot.state, this.cache.get()))
+    })
+  }
+
+  /** An item as last shown, if nothing about it has changed. */
+  private stable = (entity: Entity): Entity => {
+    const json = JSON.stringify(entity)
+    const known = this.shown.get(entity.id)
+    if (known?.json === json) return known.entity
+    this.shown.set(entity.id, { json, entity })
+    return entity
+  }
+
+  private stableFocus(focus: Focus, previous: Focus | null | undefined): Focus {
+    const next = { ...focus, entity: focus.entity && this.stable(focus.entity), children: focus.children.map(this.stable) }
+    if (
+      previous &&
+      previous.entity === next.entity &&
+      previous.loading === next.loading &&
+      previous.error === next.error &&
+      previous.compose === next.compose &&
+      JSON.stringify(previous.actions) === JSON.stringify(next.actions) &&
+      previous.children.length === next.children.length &&
+      previous.children.every((child, index) => child === next.children[index])
+    ) {
+      return previous
+    }
+    return next
+  }
+
+  /** Everything shown, from latent state and the cache. Reading is what asks for what is missing. */
+  private derive(state: S.State, cache: CacheState): Snapshot {
+    const source = this.cache.source(cache)
+    const previous = this.snapshot
+    // A cursor move changes neither the focus nor the cache: nothing to work out again.
+    const same = cache === this.derivedFrom
+    this.derivedFrom = cache
+    const focusFor = (id: string, before: Focus | null | undefined) =>
+      same && before ? before : this.stableFocus(focusOf(id, source), before)
+    const focused = S.focused(state)
+    const focus = focusFor(focused, focused === S.focused(previous.state) ? previous.focus : null)
+    const peekFoci: Record<string, Focus> = {}
+    for (const peek of state.peeks) {
+      if (peek.target.kind !== 'entity') continue
+      const id = peek.target.id
+      peekFoci[id] ??= focusFor(id, previous.peekFoci[id])
+    }
+    if (same) {
+      return { state, modules: moduleInfos, focus, peekFoci, item: previous.item }
+    }
+    const items = new Map<string, Entity | null>()
+    const item = (id: string): Entity | null => {
+      if (!items.has(id)) {
+        const found = itemOf(id, source)
+        items.set(id, found && this.stable(found))
+      }
+      return items.get(id)!
+    }
+    return { state, modules: moduleInfos, focus, peekFoci, item }
+  }
+
+  /** The ids on screen: the focus, its rows and the peeks. */
+  private onScreen(): string[] {
+    const { state, focus, peekFoci } = this.snapshot
+    return [S.focused(state), ...(focus?.children.map((child) => child.id) ?? []), ...Object.keys(peekFoci)]
+  }
+
+  /** Shows what a write did straight away, and any failure on the entity it was for. */
+  private settle(id: string, outcome: Outcome): void {
+    this.cache.apply(outcome.events)
+    this.cache.setError(id, outcome.error)
   }
 
   private get state(): S.State {
@@ -123,8 +200,9 @@ export class Session {
     if (child) this.navigate(child.id)
   }
 
+  /** Loads the focus again from its service, fresh or not. */
   refresh(): void {
-    void this.api.refresh(S.focused(this.state))
+    this.cache.refresh(S.focused(this.state))
   }
 
   /**
@@ -196,43 +274,6 @@ export class Session {
     this.closePeek(null)
   }
 
-  /**
-   * Something on screen mentions an item and wants it kept fresh. Returns
-   * the release, for when it goes.
-   */
-  want = (id: string): (() => void) => {
-    this.wanted.set(id, (this.wanted.get(id) ?? 0) + 1)
-    if (!(id in this.snapshot.summaries)) this.loadSummaries()
-    return () => {
-      const count = (this.wanted.get(id) ?? 1) - 1
-      if (count > 0) this.wanted.set(id, count)
-      else this.wanted.delete(id)
-    }
-  }
-
-  /** One request for everything wanted, however many asked this tick. */
-  private loadSummaries(): void {
-    if (this.summariesPending) return
-    this.summariesPending = true
-    queueMicrotask(async () => {
-      this.summariesPending = false
-      const ids = [...this.wanted.keys()]
-      if (ids.length === 0) return
-      const summaries = await this.api.summaries(ids)
-      this.set({ summaries: { ...this.snapshot.summaries, ...summaries } })
-    })
-  }
-
-  /** Loads what each entity peek shows; a reply for a peek since closed is dropped. */
-  private async loadPeeks(): Promise<void> {
-    const ids = [...new Set(this.state.peeks.flatMap((peek) => (peek.target.kind === 'entity' ? [peek.target.id] : [])))]
-    const loaded = await Promise.all(ids.map(async (id) => [id, await this.api.focus(id)] as const))
-    const open = new Set(
-      this.state.peeks.flatMap((peek) => (peek.target.kind === 'entity' ? [peek.target.id] : [])),
-    )
-    this.set({ peekFoci: Object.fromEntries(loaded.filter(([id]) => open.has(id))) })
-  }
-
   view(ref: string | null): void {
     this.update(S.view(this.state, ref))
   }
@@ -260,7 +301,7 @@ export class Session {
     const id = S.focused(this.state)
     const text = this.state.drafts[S.draftKey(this.state)] ?? ''
     this.update(S.setComposing(S.setDraft(this.state, ''), false))
-    await this.api.perform(id, action, text)
+    this.settle(id, await this.api.perform(id, action, text))
   }
 
   async send(): Promise<void> {
@@ -268,15 +309,16 @@ export class Session {
     const text = this.state.drafts[id] ?? ''
     if (!text.trim()) return
     this.update(S.setDraft(this.state, ''))
-    await this.api.submit(id, text)
+    this.settle(id, await this.api.submit(id, text))
   }
 
   toggle(): void {
     const child = this.selected()
-    if (child) void this.api.toggle(child.id)
+    if (child) void this.api.toggle(child.id).then((outcome) => this.settle(child.id, outcome))
   }
 
   markRead(): void {
-    void this.api.markRead(S.focused(this.state))
+    const id = S.focused(this.state)
+    void this.api.markRead(id).then((outcome) => this.settle(id, outcome))
   }
 }

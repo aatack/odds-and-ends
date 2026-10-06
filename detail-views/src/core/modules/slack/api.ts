@@ -6,7 +6,8 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * One token bucket for every method, well under Slack's lowest tier, plus
- * whatever back-off Slack asks for.
+ * whatever back-off Slack asks for. Urgent callers (what is on screen being
+ * opened) go ahead of the rest (unread counts filling in behind).
  */
 class RateLimiter {
   private tokens: number
@@ -14,6 +15,8 @@ class RateLimiter {
   private readonly perMs: number
   private last = Date.now()
   private blockedUntil = 0
+  private readonly queue: { urgent: boolean; resolve: () => void }[] = []
+  private pumping = false
 
   constructor(perMinute: number) {
     this.capacity = perMinute
@@ -25,20 +28,38 @@ class RateLimiter {
     this.blockedUntil = Math.max(this.blockedUntil, Date.now() + seconds * 1000)
   }
 
-  async take(): Promise<void> {
-    for (;;) {
-      const now = Date.now()
-      this.tokens = Math.min(this.capacity, this.tokens + (now - this.last) * this.perMs)
-      this.last = now
-      if (this.blockedUntil > now) {
-        await sleep(this.blockedUntil - now)
-        continue
+  take(urgent = false): Promise<void> {
+    return new Promise((resolve) => {
+      const waiter = { urgent, resolve }
+      // Behind every other urgent waiter, ahead of everything else.
+      const at = urgent ? this.queue.findIndex((other) => !other.urgent) : -1
+      if (at === -1) this.queue.push(waiter)
+      else this.queue.splice(at, 0, waiter)
+      void this.pump()
+    })
+  }
+
+  private async pump(): Promise<void> {
+    if (this.pumping) return
+    this.pumping = true
+    try {
+      while (this.queue.length) {
+        const now = Date.now()
+        this.tokens = Math.min(this.capacity, this.tokens + (now - this.last) * this.perMs)
+        this.last = now
+        if (this.blockedUntil > now) {
+          await sleep(this.blockedUntil - now)
+          continue
+        }
+        if (this.tokens >= 1) {
+          this.tokens -= 1
+          this.queue.shift()!.resolve()
+          continue
+        }
+        await sleep(Math.ceil((1 - this.tokens) / this.perMs))
       }
-      if (this.tokens >= 1) {
-        this.tokens -= 1
-        return
-      }
-      await sleep(Math.ceil((1 - this.tokens) / this.perMs))
+    } finally {
+      this.pumping = false
     }
   }
 }
@@ -70,11 +91,17 @@ export class SlackError extends Error {
 export class SlackApi {
   private readonly token: string
   private readonly fetch: typeof fetch
-  private readonly limiter = new RateLimiter(90)
+  private readonly limiter: RateLimiter
+  private readonly isUrgent: boolean
+  /** The same API, its calls let ahead of the queue: for what I have just opened. */
+  readonly urgent: SlackApi
 
-  constructor(token: string, fetchImpl: typeof fetch) {
+  constructor(token: string, fetchImpl: typeof fetch, shared?: { limiter: RateLimiter; urgent: true }) {
     this.token = token
     this.fetch = fetchImpl
+    this.limiter = shared?.limiter ?? new RateLimiter(90)
+    this.isUrgent = Boolean(shared)
+    this.urgent = shared ? this : new SlackApi(token, fetchImpl, { limiter: this.limiter, urgent: true })
   }
 
   async call<T>(method: string, params: Params = {}): Promise<T> {
@@ -82,7 +109,7 @@ export class SlackApi {
     const body = new URLSearchParams()
     for (const [key, value] of Object.entries(params)) if (value !== undefined) body.set(key, String(value))
     for (let attempt = 0; attempt < 4; attempt += 1) {
-      await this.limiter.take()
+      await this.limiter.take(this.isUrgent)
       const response = await this.fetch(`https://slack.com/api/${method}`, {
         method: 'POST',
         headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/x-www-form-urlencoded' },
@@ -113,7 +140,7 @@ export class SlackApi {
     if (protocol !== 'https:' || !(hostname === 'slack.com' || hostname.endsWith('.slack.com') || hostname.endsWith('.slack-edge.com'))) {
       throw new SlackError('download', `refusing to send the token to ${hostname}`)
     }
-    await this.limiter.take()
+    await this.limiter.take(this.isUrgent)
     const response = await this.fetch(url, { headers: { authorization: `Bearer ${this.token}` } })
     const mime = response.headers.get('content-type')?.split(';')[0] ?? ''
     if (!response.ok) throw new SlackError('download', String(response.status))

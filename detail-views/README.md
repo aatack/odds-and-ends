@@ -37,7 +37,8 @@ im:history mpim:history users:read files:read chat:write channels:write groups:w
 im:write mpim:write`
 
 Unread counts come one conversation at a time (Slack has no public call for all
-of them), so the list fills in over the first minute or two and is cached after.
+of them), so the list fills in over the first few minutes and is cached after.
+Whatever is opened goes ahead of them.
 
 ## GitHub
 
@@ -54,6 +55,12 @@ prompt; Enter confirms, Esc cancels.
 
 ## Data
 
-`~/.config/detail-views/detail-views.sqlite`, or `DETAIL_VIEWS_DB`. Anything
-from Slack expires after a day (users after a week) and is swept every ten
-minutes; what I type stays.
+Two files in `~/.config/detail-views/` (or `DETAIL_VIEWS_DIR`):
+
+- `detail-views.owned.sqlite`: what I make, as an event log, and settings.
+- `detail-views.cache.sqlite`: what was loaded from Slack and GitHub. Emptied
+  every week, and safe to delete any time: it all loads again as it is looked
+  at.
+
+The first database, `detail-views.sqlite`, is read once to bring tasks and
+settings over, and otherwise left alone.

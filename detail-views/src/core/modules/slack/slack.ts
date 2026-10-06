@@ -1,25 +1,21 @@
-import type { Store } from '../../store.ts'
-import type { Entity } from '../../types.ts'
+import { link, value, values, type AppEvent } from '../../graph/events.ts'
+import { loadedKey } from '../../types.ts'
+import type { Entity, ItemType, LoadPart } from '../../types.ts'
 import type { Module, ModuleContext } from '../module.ts'
-import { SlackApi, slackWrites } from './api.ts'
-import { emoji, emojify } from './emoji.ts'
-import { slackToMarkdown } from './markdown.ts'
+import { SlackApi } from './api.ts'
+import {
+  maxTs,
+  parseMessageId,
+  quiet,
+  slackIds as ids,
+  slackView,
+  tsMillis,
+  type ConversationData,
+  type ImageData,
+  type MessageData,
+} from './view.ts'
 
-const hour = 60 * 60 * 1000
-const day = 24 * hour
-
-/** How long anything fetched from Slack lives in the cache. */
-export const ttl = { conversation: day, message: day, user: 7 * day }
-
-const ids = {
-  root: 'slack',
-  conversation: (channel: string) => `slack:conv:${channel}`,
-  message: (channel: string, ts: string) => `slack:msg:${channel}:${ts}`,
-  user: (user: string) => `slack:user:${user}`,
-}
-
-/** Messages that are not somebody saying something. */
-const quiet = new Set(['channel_join', 'channel_leave', 'group_join', 'group_leave', 'bot_add', 'bot_remove'])
+const author = 'slack'
 
 interface RawConversation {
   id: string
@@ -40,6 +36,7 @@ interface RawMessage {
   bot_profile?: { name?: string }
   subtype?: string
   text?: string
+  edited?: { ts?: string }
   reply_count?: number
   latest_reply?: string
   files?: RawFile[]
@@ -59,53 +56,37 @@ interface RawFile {
   thumb_480_h?: number
 }
 
-/** An image attached to a message. */
-export interface ImageData {
-  id: string
-  name: string
-  full: string
-  thumb: string
-  width?: number
-  height?: number
-}
-
-interface ConversationInfo {
+interface ConversationInfo extends RawConversation {
   last_read?: string
   unread_count_display?: number
   latest?: { ts?: string } | string
 }
 
-export interface ConversationData {
-  channel: string
-  kind: 'channel' | 'private' | 'im' | 'mpim'
-  name?: string
-  user?: string
-  lastRead?: string
-  latestTs?: string
-  unread?: number
+function kindOf(conversation: RawConversation): ConversationData['kind'] {
+  return conversation.is_im ? 'im' : conversation.is_mpim ? 'mpim' : conversation.is_private ? 'private' : 'channel'
 }
 
-export interface MessageData {
-  channel: string
-  ts: string
-  threadTs?: string
-  user?: string
-  botName?: string
-  subtype?: string
-  text: string
-  replyCount?: number
-  latestReply?: string
-  reactions?: { name: string; count: number; users: string[] }[]
-  images?: ImageData[]
+/** A conversation's name and shape: no date to it, so timestamp 0, where anything of mine overrides it. */
+function conversationEvents(conversation: RawConversation): AppEvent[] {
+  const id = ids.conversation(conversation.id)
+  const events = values(
+    id,
+    { type: 'slack.conversation', channel: conversation.id, kind: kindOf(conversation), name: conversation.name ?? null, user: conversation.user ?? null },
+    0,
+    author,
+  )
+  // Noted on the user, so a mention of them can open our DM.
+  if (conversation.is_im && conversation.user) events.push(value(ids.user(conversation.user), 'dm', id, 0, author))
+  return events
 }
 
-function maxTs(...values: (string | undefined)[]): string | undefined {
-  let best: string | undefined
-  for (const value of values) if (value && (!best || Number(value) > Number(best))) best = value
-  return best
-}
-
-function messageData(channel: string, raw: RawMessage): MessageData {
+/**
+ * A message as events. What was said is written at the time it was said (or
+ * last edited), so a later edit of mine wins over it; what changes without a
+ * date (reactions, the thread under it) at 0. Marked loaded: this is all of it.
+ */
+function messageEvents(channel: string, raw: RawMessage, now: number): AppEvent[] {
+  const id = ids.message(channel, raw.ts)
   const isImage = (file: RawFile) => Boolean(file.mimetype?.startsWith('image/') && file.url_private)
   const files = (raw.files ?? []).filter((file) => !isImage(file)).map((file) => file.name).filter(Boolean)
   const images = (raw.files ?? []).filter(isImage).map(
@@ -118,7 +99,8 @@ function messageData(channel: string, raw: RawMessage): MessageData {
       height: file.thumb_480_h ?? file.thumb_360_h,
     }),
   )
-  return {
+  const said = tsMillis(raw.edited?.ts ?? raw.ts)
+  const data: Omit<MessageData, 'replyCount' | 'latestReply' | 'reactions'> = {
     channel,
     ts: raw.ts,
     threadTs: raw.thread_ts,
@@ -126,77 +108,86 @@ function messageData(channel: string, raw: RawMessage): MessageData {
     botName: raw.bot_profile?.name ?? raw.username,
     subtype: raw.subtype,
     text: [raw.text ?? '', ...files.map((name) => `[${name}]`)].filter(Boolean).join('\n'),
-    replyCount: raw.reply_count,
-    latestReply: raw.latest_reply,
     images: images.length ? images : undefined,
-    reactions: raw.reactions?.map(({ name, count, users }) => ({ name, count, users: users ?? [] })),
   }
+  return [
+    value(id, 'type', 'slack.message', 0, author),
+    ...values(id, Object.fromEntries(Object.entries(data).map(([key, v]) => [key, v ?? null])), said, author),
+    ...values(
+      id,
+      {
+        replyCount: raw.reply_count ?? null,
+        latestReply: raw.latest_reply ?? null,
+        reactions: raw.reactions?.map(({ name, count, users }) => ({ name, count, users: users ?? [] })) ?? null,
+      },
+      0,
+      author,
+    ),
+    value(id, loadedKey('self'), now, 0, author),
+  ]
 }
 
 export class Slack implements Module {
-  readonly id = 'slack'
-  readonly name = 'Slack'
-  readonly root = { id: ids.root, type: 'slack.home' as const }
+  readonly view = slackView
 
-  private readonly store: Store
   private readonly context: ModuleContext
   private api: SlackApi | null = null
-  private readonly lookups = new Set<string>()
-  private counting: Promise<void> | null = null
   private readonly downloads = new Map<string, Promise<{ mime: string; data: Uint8Array }>>()
 
   constructor(context: ModuleContext) {
     this.context = context
-    this.store = context.store
-    const token = this.store.getSetting('slack.token')
+    const token = context.settings.get('slack.token')
     if (token) this.api = new SlackApi(token, context.fetch)
   }
 
-  owns(entity: Entity): boolean {
-    return entity.type.startsWith('slack.')
+  private get cache() {
+    return this.context.cache
   }
 
-  compose(entity: Entity) {
-    if (!this.api) return 'slack-token' as const
-    if (!slackWrites) return null
-    return entity.type === 'slack.conversation' || entity.type === 'slack.message' ? ('slack' as const) : null
+  private data<T>(id: string): Partial<T> {
+    return (this.context.lens.read(id)?.data ?? {}) as Partial<T>
   }
 
-  staleAfter(id: string): number {
-    return id === ids.root ? 2 * 60_000 : 30_000
+  async load(id: string, part: LoadPart, type: ItemType): Promise<void> {
+    if (type === 'slack.home') return this.loadHome()
+    const api = this.api
+    if (!api) throw new Error('no Slack token')
+    const channel = id.startsWith('slack:conv:') ? id.slice('slack:conv:'.length) : null
+    const message = parseMessageId(id)
+    if (type === 'slack.conversation' && channel) {
+      return part === 'self' ? this.loadInfo(api, channel) : this.loadHistory(api, channel)
+    }
+    if (type === 'slack.message' && message) {
+      return part === 'self' ? this.loadMessage(api, message.channel, message.ts) : this.loadThread(api, id)
+    }
+    if (type === 'slack.user') return this.loadUser(api, id.slice('slack:user:'.length))
   }
 
-  async refresh(id: string): Promise<void> {
-    if (!this.api) return
-    const entity = this.store.get(id)
-    if (!entity) return
-    if (entity.type === 'slack.home') await this.refreshHome(this.api)
-    else if (entity.type === 'slack.conversation') await this.refreshConversation(this.api, entity.data as unknown as ConversationData)
-    else if (entity.type === 'slack.message') await this.refreshThread(this.api, entity.data as unknown as MessageData)
-  }
-
-  async submit(entity: Entity, text: string): Promise<void> {
-    if (!this.api) return this.setToken(text.trim())
+  async submit(entity: Entity, text: string): Promise<AppEvent[]> {
+    if (!this.api) {
+      await this.setToken(text.trim())
+      return []
+    }
     if (entity.type === 'slack.conversation') {
       const { channel } = entity.data as unknown as ConversationData
       await this.api.call('chat.postMessage', { channel, text })
     } else if (entity.type === 'slack.message') {
       const { channel, ts, threadTs } = entity.data as unknown as MessageData
       await this.api.call('chat.postMessage', { channel, text, thread_ts: threadTs ?? ts })
-    } else return
-    await this.refresh(entity.id)
+    } else return []
+    await this.context.load(entity.id, 'children', true)
+    return []
   }
 
   /** Checks the token before keeping it, so a typo is caught at once. */
   async setToken(token: string): Promise<void> {
     const api = new SlackApi(token, this.context.fetch)
     const auth = await api.call<{ user_id: string; url: string }>('auth.test')
-    this.store.setSetting('slack.token', token)
-    this.store.setSetting('slack.self', auth.user_id)
-    this.store.setSetting('slack.url', auth.url)
+    this.context.settings.set('slack.token', token)
+    this.context.settings.set('slack.self', auth.user_id)
+    this.context.settings.set('slack.url', auth.url)
     this.api = api
-    this.context.setError(ids.root, null)
-    await this.refresh(ids.root)
+    await this.context.load(ids.root, 'children', true)
   }
 
   /**
@@ -204,19 +195,18 @@ export class Slack implements Module {
    * `<size>/<message id>/<file id>`, as handed out by `present`.
    */
   async image(ref: string): Promise<{ mime: string; data: Uint8Array }> {
-    const cached = this.store.getBlob(`slack:image:${ref}`)
+    const cached = this.context.blobs.get(`slack:image:${ref}`)
     if (cached) return cached
     const [size, ...rest] = ref.split('/')
     const fileId = rest.pop()
-    const message = this.store.get(rest.join('/'))
-    const image = (message?.data as MessageData | undefined)?.images?.find((candidate) => candidate.id === fileId)
+    const image = this.data<MessageData>(rest.join('/')).images?.find((candidate) => candidate.id === fileId)
     if (!image || !this.api) throw new Error('image not found')
     const pending = this.downloads.get(ref)
     if (pending) return pending
     const download = this.api
       .download(size === 'full' ? image.full : image.thumb, 'image/')
       .then((blob) => {
-        this.store.putBlob(`slack:image:${ref}`, blob, { ttl: ttl.message })
+        this.context.blobs.put(`slack:image:${ref}`, blob)
         return blob
       })
       .finally(() => this.downloads.delete(ref))
@@ -225,230 +215,129 @@ export class Slack implements Module {
   }
 
   /** Marks a conversation read up to its newest message, in Slack too. */
-  async markRead(id: string): Promise<void> {
-    const entity = this.store.get(id)
-    if (!this.api || entity?.type !== 'slack.conversation') return
-    const data = entity.data as unknown as ConversationData
-    const newest = maxTs(data.latestTs, ...this.store.children(id).map((child) => (child.data as unknown as MessageData).ts))
-    if (!newest) return
+  async markRead(id: string): Promise<AppEvent[]> {
+    const conversation = this.context.lens.read(id)
+    if (!this.api || conversation?.type !== 'slack.conversation') return []
+    const data = conversation.data as unknown as ConversationData
+    const newest = maxTs(
+      data.latestTs,
+      ...this.context.lens.children(id).map((child) => this.data<MessageData>(child).ts),
+    )
+    if (!newest) return []
     await this.api.call('conversations.mark', { channel: data.channel, ts: newest })
-    this.store.patch(id, { lastRead: newest, unread: 0 })
+    this.cache.write(values(id, { lastRead: newest, unread: 0 }, 0, author))
+    return []
   }
 
-  order(entity: Entity, children: Entity[]): Entity[] {
-    if (entity.type !== 'slack.home') return children
-    const key = (child: Entity) => {
-      const data = child.data as unknown as ConversationData
-      return Number(maxTs(data.latestTs, data.lastRead) ?? 0)
+  /** Every conversation I am in. Their unread counts load one by one as each is shown. */
+  private async loadHome(): Promise<void> {
+    if (!this.api) {
+      this.cache.write([value(ids.root, 'connected', false, 0, author)])
+      return
     }
-    const unread = (child: Entity) => ((child.data as unknown as ConversationData).unread ?? 0) > 0
-    return [...children].sort((a, b) => Number(unread(b)) - Number(unread(a)) || key(b) - key(a))
-  }
-
-  present(entity: Entity): Entity {
-    if (entity.type === 'slack.conversation') {
-      return { ...entity, data: { ...entity.data, title: this.conversationTitle(entity.data as unknown as ConversationData) } }
-    }
-    if (entity.type === 'slack.message') {
-      const data = entity.data as unknown as MessageData
-      return {
-        ...entity,
-        data: {
-          ...data,
-          author: data.user ? this.userName(data.user) : (data.botName ?? 'bot'),
-          text: this.render(data.text),
-          markdown: this.markdown(data.text),
-          authorTarget: data.user ? this.dmWith(data.user) : null,
-          authorKey: data.user ?? data.botName ?? 'bot',
-          images: (data.images ?? []).map((image) => ({
-            name: image.name,
-            thumb: `thumb/${entity.id}/${image.id}`,
-            full: `full/${entity.id}/${image.id}`,
-            width: image.width,
-            height: image.height,
-          })),
-          quiet: Boolean(data.subtype && quiet.has(data.subtype)),
-          reactions: (data.reactions ?? []).map((reaction) => ({
-            emoji: emoji(reaction.name),
-            count: reaction.count,
-            mine: reaction.users.includes(this.store.getSetting('slack.self') ?? ''),
-          })),
-        },
-      }
-    }
-    return entity
-  }
-
-  private conversationTitle(data: ConversationData): string {
-    if (data.kind === 'im') return data.user ? this.userName(data.user) : data.channel
-    if (data.kind === 'mpim') {
-      const names = (data.name ?? '').replace(/^mpdm-/, '').replace(/-\d+$/, '').split('--')
-      return names.join(', ')
-    }
-    return `#${data.name ?? data.channel}`
-  }
-
-  /** My DM with a user, if the app has one. */
-  private dmWith(user: string): string | null {
-    const dm = this.store.findBy('slack.conversation', 'user', user)
-    return dm?.data.kind === 'im' ? dm.id : null
-  }
-
-  private markdown(text: string): string {
-    return slackToMarkdown(text, {
-      user: (id) => ({ name: this.userName(id), target: this.dmWith(id) }),
-      channel: (id) => (this.store.get(`slack:conv:${id}`) ? `slack:conv:${id}` : null),
-    })
-  }
-
-  /** Mentions, channel links and links rendered as text. */
-  private render(text: string): string {
-    return text
-      .replace(/<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/g, (_, user: string) => `@${this.userName(user)}`)
-      .replace(/<#[A-Z0-9]+\|([^>]*)>/g, '#$1')
-      .replace(/<!(here|channel|everyone)[^>]*>/g, '@$1')
-      .replace(/<!subteam\^[A-Z0-9]+\|([^>]*)>/g, '$1')
-      .replace(/<([^>|]+)\|([^>]+)>/g, '$2')
-      .replace(/<([^>]+)>/g, '$1')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&amp;/g, '&')
-      .replace(/:[a-z0-9_+-]+(?:::skin-tone-\d)?:/g, (match) => emojify(match))
-  }
-
-  /** Cached name, or the id while it is looked up in the background. */
-  private userName(user: string): string {
-    const cached = this.store.get(ids.user(user))
-    if (cached) return String(cached.data.name)
-    this.lookUp(user)
-    return user
-  }
-
-  private lookUp(user: string): void {
-    if (!this.api || this.lookups.has(user)) return
-    this.lookups.add(user)
-    const api = this.api
-    void (async () => {
-      try {
-        const { user: raw } = await api.call<{
-          user: { name: string; real_name?: string; profile?: { display_name?: string; real_name?: string } }
-        }>('users.info', { user })
-        const name = raw.profile?.display_name || raw.profile?.real_name || raw.real_name || raw.name
-        this.store.put(ids.user(user), 'slack.user', { name }, { ttl: ttl.user })
-      } catch {
-        // Left as the id; tried again after a restart.
-      }
-    })()
-  }
-
-  private async refreshHome(api: SlackApi): Promise<void> {
-    const raw = await api.paginate<RawConversation>('users.conversations', 'channels', {
+    const raw = await this.api.paginate<RawConversation>('users.conversations', 'channels', {
       types: 'public_channel,private_channel,mpim,im',
       exclude_archived: true,
       limit: 200,
     })
     const live = raw.filter((conversation) => !conversation.is_user_deleted)
-    this.store.transaction(() => {
-      for (const conversation of live) {
-        const id = ids.conversation(conversation.id)
-        const previous = (this.store.get(id)?.data ?? {}) as Partial<ConversationData>
-        const kind = conversation.is_im ? 'im' : conversation.is_mpim ? 'mpim' : conversation.is_private ? 'private' : 'channel'
-        this.store.put(
-          id,
-          'slack.conversation',
-          { ...previous, channel: conversation.id, kind, name: conversation.name, user: conversation.user },
-          { ttl: ttl.conversation },
-        )
-      }
-      this.store.setCachedChildren(
-        ids.root,
-        live.map((conversation) => ({ id: ids.conversation(conversation.id), rank: 0 })),
-        { ttl: ttl.conversation },
-      )
-    })
-    this.counting ??= this.countUnread(api).finally(() => {
-      this.counting = null
-    })
+    this.cache.write(
+      [
+        ...values(ids.root, { connected: true, self: this.context.settings.get('slack.self') }, 0, author),
+        ...live.flatMap(conversationEvents),
+        ...live.map((conversation) => link(ids.root, ids.conversation(conversation.id), 0, author)),
+      ],
+      { replaceLinksFrom: [ids.root] },
+    )
   }
 
   /**
-   * Slack has no public call for every unread count at once, so this walks
-   * the conversations one at a time, most likely to matter first, and each
-   * answer lands in the view as it arrives.
+   * Where a conversation stands: what it is, how far I have read, and how
+   * much is unread. Slack has no call for every unread count at once, so this
+   * runs per conversation, as each is shown, behind anything urgent.
    */
-  private async countUnread(api: SlackApi): Promise<void> {
-    const home = this.store.get(ids.root)
-    if (!home) return
-    for (const conversation of this.order(home, this.store.children(ids.root))) {
-      try {
-        await this.countOne(api, conversation.data as unknown as ConversationData)
-      } catch (error) {
-        this.context.setError(conversation.id, error instanceof Error ? error.message : String(error))
-      }
-    }
-  }
-
-  private async countOne(api: SlackApi, data: ConversationData): Promise<void> {
-    const { channel } = await api.call<{ channel: ConversationInfo }>('conversations.info', { channel: data.channel })
+  private async loadInfo(api: SlackApi, channelId: string): Promise<void> {
+    const id = ids.conversation(channelId)
+    const { channel } = await api.call<{ channel: ConversationInfo }>('conversations.info', { channel: channelId })
     const lastRead = channel.last_read
     const latest = typeof channel.latest === 'object' ? channel.latest?.ts : undefined
     let unread = channel.unread_count_display
     let newest: string | undefined
     if (unread === undefined && lastRead) {
-      const self = this.store.getSetting('slack.self')
+      const self = this.context.settings.get('slack.self')
       const { messages } = await api.call<{ messages: RawMessage[] }>('conversations.history', {
-        channel: data.channel,
+        channel: channelId,
         oldest: lastRead,
         limit: 100,
       })
-      const counted = messages.filter((message) => message.user !== self && !(message.subtype && quiet.has(message.subtype)))
-      unread = counted.length
+      unread = messages.filter((message) => message.user !== self && !(message.subtype && quiet.has(message.subtype))).length
       newest = messages[0]?.ts
     }
-    this.store.patch(
-      ids.conversation(data.channel),
-      { lastRead, unread: unread ?? 0, latestTs: maxTs(data.latestTs, latest, newest) },
-      { ttl: ttl.conversation },
+    const known = this.data<ConversationData>(id)
+    this.cache.write([
+      ...conversationEvents({ ...channel, id: channelId }),
+      ...values(id, { lastRead: lastRead ?? null, unread: unread ?? 0, latestTs: maxTs(known.latestTs, latest, newest) ?? null }, 0, author),
+    ])
+  }
+
+  /** The latest messages. Older ones already loaded stay, so scrolling back doesn't lose them. */
+  private async loadHistory(api: SlackApi, channel: string): Promise<void> {
+    const id = ids.conversation(channel)
+    const { messages } = await api.urgent.call<{ messages: RawMessage[] }>('conversations.history', { channel, limit: 100 })
+    const now = this.context.now()
+    this.cache.write([
+      ...messages.flatMap((message) => [
+        ...messageEvents(channel, message, now),
+        link(id, ids.message(channel, message.ts), tsMillis(message.ts), author),
+      ]),
+      value(id, 'latestTs', maxTs(this.data<ConversationData>(id).latestTs, messages[0]?.ts) ?? null, 0, author),
+    ])
+  }
+
+  /** The replies under a message, which become its children. */
+  private async loadThread(api: SlackApi, id: string): Promise<void> {
+    const data = this.data<MessageData>(id)
+    const { channel, ts } = parseMessageId(id)!
+    const root = data.threadTs ?? ts
+    const messages = await api.urgent.paginate<RawMessage>('conversations.replies', 'messages', { channel, ts: root, limit: 200 })
+    const now = this.context.now()
+    const replies = messages.filter((message) => message.ts !== root)
+    const parent = messages.find((message) => message.ts === root && root === ts)
+    this.cache.write(
+      [
+        ...(parent ? messageEvents(channel, parent, now) : []),
+        ...replies.flatMap((message) => [
+          ...messageEvents(channel, message, now),
+          link(id, ids.message(channel, message.ts), tsMillis(message.ts), author),
+        ]),
+      ],
+      { replaceLinksFrom: [id] },
     )
   }
 
-  private async refreshConversation(api: SlackApi, data: ConversationData): Promise<void> {
-    const { messages } = await api.call<{ messages: RawMessage[] }>('conversations.history', {
-      channel: data.channel,
-      limit: 100,
+  /** One message seen only by its id: linked from a task, say, after the cache was cleared. */
+  private async loadMessage(api: SlackApi, channel: string, ts: string): Promise<void> {
+    const { messages } = await api.urgent.call<{ messages: RawMessage[] }>('conversations.history', {
+      channel,
+      latest: ts,
+      inclusive: true,
+      limit: 1,
     })
-    this.storeMessages(ids.conversation(data.channel), data.channel, messages)
-    this.store.patch(ids.conversation(data.channel), { latestTs: maxTs(data.latestTs, messages[0]?.ts) }, { ttl: ttl.conversation })
-  }
-
-  private async refreshThread(api: SlackApi, data: MessageData): Promise<void> {
-    const messages = await api.paginate<RawMessage>('conversations.replies', 'messages', {
-      channel: data.channel,
-      ts: data.threadTs ?? data.ts,
-      limit: 200,
-    })
-    const root = data.threadTs ?? data.ts
-    this.storeMessages(
-      ids.message(data.channel, data.ts),
-      data.channel,
-      messages.filter((message) => message.ts !== root),
-    )
-    const parent = messages.find((message) => message.ts === root)
-    if (parent && parent.ts === data.ts) {
-      this.store.put(ids.message(data.channel, data.ts), 'slack.message', { ...messageData(data.channel, parent) }, { ttl: ttl.message })
+    let found = messages.find((message) => message.ts === ts)
+    if (!found) {
+      const thread = await api.urgent.call<{ messages: RawMessage[] }>('conversations.replies', { channel, ts, limit: 1 })
+      found = thread.messages.find((message) => message.ts === ts)
     }
+    if (!found) throw new Error('message not found')
+    this.cache.write(messageEvents(channel, found, this.context.now()))
   }
 
-  private storeMessages(parent: string, channel: string, messages: RawMessage[]): void {
-    this.store.transaction(() => {
-      for (const message of messages) {
-        this.store.put(ids.message(channel, message.ts), 'slack.message', { ...messageData(channel, message) }, { ttl: ttl.message })
-      }
-      this.store.setCachedChildren(
-        parent,
-        messages.map((message) => ({ id: ids.message(channel, message.ts), rank: Number(message.ts) })),
-        { ttl: ttl.message },
-      )
-    })
+  private async loadUser(api: SlackApi, user: string): Promise<void> {
+    // Urgent: a name is wanted wherever someone is mentioned, and should not wait behind unread counts.
+    const { user: raw } = await api.urgent.call<{
+      user: { name: string; real_name?: string; profile?: { display_name?: string; real_name?: string } }
+    }>('users.info', { user })
+    const name = raw.profile?.display_name || raw.profile?.real_name || raw.real_name || raw.name
+    this.cache.write(values(ids.user(user), { type: 'slack.user', name }, 0, author))
   }
 }

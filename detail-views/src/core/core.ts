@@ -1,19 +1,33 @@
-import { openDatabase } from './db.ts'
-import type { Module, ModuleContext } from './modules/module.ts'
 import { execFile } from 'node:child_process'
 import { tmpdir } from 'node:os'
+import type { Source } from './graph/cache.ts'
+import { bucketEvents, rollupEntity, type GraphEntity } from './graph/entity.ts'
+import { eventKey, link, value, type AppEvent, type Changed, type Scan } from './graph/events.ts'
+import { cacheMigrations, openDatabase, ownedMigrations } from './db.ts'
+import { importLegacy } from './legacy.ts'
 import { GitHub } from './modules/github/github.ts'
+import type { Module, ModuleContext } from './modules/module.ts'
 import { Slack } from './modules/slack/slack.ts'
-import { tasksModule } from './modules/tasks.ts'
-import { Store } from './store.ts'
-import type { Entity, Focus, ModuleInfo } from './types.ts'
+import { me, tasksModule } from './modules/tasks/tasks.ts'
+import { focusOf, lensOf, moduleInfos, toItem, typeOf, type Lens } from './present.ts'
+import { Blobs, EventStore, Settings } from './store.ts'
+import { loadedKey } from './types.ts'
+import type { Entity, Focus, LoadPart, LoadRequest, LoadResult, ModuleInfo, Outcome } from './types.ts'
 
-const sweepEvery = 10 * 60_000
 const changeEvery = 150
+const clearEvery = 7 * 24 * 60 * 60_000
+const checkEvery = 10 * 60_000
+/** How far a scan reads past what it was asked for, in layers and in entities per layer. */
+const scanDepth = 1
+const scanOverscan = 64
 
 export interface CoreOptions {
-  /** A file path, or `:memory:`. */
-  path: string
+  /** The owned event log: a file path, or `:memory:`. */
+  owned: string
+  /** The cache store, likewise. Safe to delete at any time. */
+  cache: string
+  /** The database before these two, imported once if it is there. */
+  legacy?: string
   fetch?: typeof fetch
   gh?: ModuleContext['gh']
   now?: () => number
@@ -29,210 +43,306 @@ function runGh(args: string[]): Promise<string> {
   })
 }
 
+const message = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
 /**
  * The whole app without a screen. Everything it can do is in `actions`, which
  * is the only thing a UI reaches.
+ *
+ * It holds two stores: `owned`, the log of what I made, and `cache`, what was
+ * loaded from elsewhere. Every read is of both together, so a later event in
+ * either wins: what I write now overrides what Slack said, and a cached value
+ * written at timestamp 0 never overrides anything of mine.
  */
 export class Core {
-  readonly store: Store
+  readonly owned: EventStore
+  readonly cache: EventStore
+  readonly settings: Settings
+  readonly blobs: Blobs
   readonly modules: Module[]
   readonly slack: Slack
+  readonly github: GitHub
 
-  private readonly listeners = new Set<() => void>()
+  private readonly listeners = new Set<(changed: Changed) => void>()
   private readonly errors = new Map<string, string>()
-  private readonly refreshedAt = new Map<string, number>()
-  private readonly inFlight = new Map<string, Promise<void>>()
+  private readonly inFlight = new Map<string, Promise<LoadResult>>()
   private readonly now: () => number
-  private pending = false
-  private sweeper: ReturnType<typeof setInterval> | null = null
+  private readonly cacheMeta: { get(): number | null; set(at: number): void }
+  private pendingChange: Set<string> | null = null
+  private everything = false
+  private notifying = false
+  private lastNotified = 0
+  private clearer: ReturnType<typeof setInterval> | null = null
 
   constructor(options: CoreOptions) {
     this.now = options.now ?? Date.now
-    this.store = new Store(openDatabase(options.path), { now: this.now, onChange: () => this.changed() })
+    const ownedDb = openDatabase(options.owned, ownedMigrations)
+    const cacheDb = openDatabase(options.cache, cacheMigrations)
+    this.owned = new EventStore(ownedDb, 'log', (ids) => this.changed(ids))
+    this.cache = new EventStore(cacheDb, 'snapshot', (ids) => this.changed(ids))
+    this.settings = new Settings(ownedDb)
+    this.blobs = new Blobs(cacheDb)
+    this.cacheMeta = {
+      get: () => {
+        const row = cacheDb.prepare(`SELECT value FROM meta WHERE key = 'created'`).get() as { value: string } | undefined
+        return row ? Number(row.value) : null
+      },
+      set: (at) => {
+        cacheDb.prepare(`INSERT INTO meta (key, value) VALUES ('created', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`).run(String(at))
+      },
+    }
+    if (this.cacheMeta.get() === null) this.cacheMeta.set(this.now())
+    if (options.legacy) importLegacy(options.legacy, this.owned, this.settings)
+
     const context: ModuleContext = {
-      store: this.store,
+      owned: this.owned,
+      cache: this.cache,
+      settings: this.settings,
+      blobs: this.blobs,
+      lens: this.lens(),
       fetch: options.fetch ?? fetch,
       gh: options.gh ?? runGh,
-      setError: (id, error) => this.setError(id, error),
+      load: async (id, part, force) => {
+        const { error } = await this.load({ id, part, force })
+        if (error) throw new Error(error)
+      },
+      now: this.now,
     }
     this.slack = new Slack(context)
-    this.modules = [this.slack, new GitHub(context), tasksModule(this.store)]
-    for (const module of this.modules) {
-      if (!this.store.get(module.root.id)) this.store.put(module.root.id, module.root.type, {})
-    }
+    this.github = new GitHub(context)
+    this.modules = [this.slack, this.github, tasksModule(context)]
   }
 
-  /** Starts the sweeper. Leave it off in tests and call `sweep` directly. */
+  /** Starts the weekly clear-out of the cache. Leave it off in tests and call `clearCache` directly. */
   start(): void {
-    this.store.sweep()
-    this.sweeper ??= setInterval(() => this.store.sweep(), sweepEvery)
+    this.clearCacheIfOld()
+    this.clearer ??= setInterval(() => this.clearCacheIfOld(), checkEvery)
   }
 
   stop(): void {
-    if (this.sweeper) clearInterval(this.sweeper)
-    this.sweeper = null
+    if (this.clearer) clearInterval(this.clearer)
+    this.clearer = null
   }
 
+  private clearCacheIfOld(): void {
+    if (this.now() - (this.cacheMeta.get() ?? 0) > clearEvery) this.clearCache()
+  }
+
+  /** Empties the cache store. Everything in it loads again as it is next looked at. */
+  clearCache(): void {
+    this.cache.clear()
+    this.blobs.clear()
+    this.cacheMeta.set(this.now())
+    this.changed(null)
+  }
+
+  // --- Change notification -----------------------------------------------------
+
   /**
-   * Called at most once per `changeEvery` ms, however many writes there were:
-   * a refresh that writes a row per answer (Slack's unread counts) would
-   * otherwise have every view re-read hundreds of times.
+   * Hears which entities changed, at most once per `changeEvery` ms however
+   * many writes there were. Null means anything may have.
    */
-  onChange(listener: () => void): () => void {
+  onChange(listener: (changed: Changed) => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
   }
 
-  private lastNotified = 0
-
-  private changed(): void {
-    if (this.pending) return
-    this.pending = true
+  private changed(ids: string[] | null): void {
+    if (ids === null) this.everything = true
+    else for (const id of ids) (this.pendingChange ??= new Set()).add(id)
+    if (this.notifying) return
+    this.notifying = true
     const wait = Math.max(0, this.lastNotified + changeEvery - Date.now())
     setTimeout(() => {
-      this.pending = false
+      const changed = this.everything ? null : [...(this.pendingChange ?? [])]
+      this.notifying = false
+      this.everything = false
+      this.pendingChange = null
       this.lastNotified = Date.now()
-      for (const listener of this.listeners) listener()
+      for (const listener of this.listeners) listener(changed)
     }, wait)
   }
 
-  private setError(id: string, error: string | null): void {
-    if (error === null) this.errors.delete(id)
-    else this.errors.set(id, error)
-    this.changed()
+  // --- Reading -----------------------------------------------------------------
+
+  /** Every event touching `ids`, from both stores. Cached first, so on a tie mine win. */
+  read(ids: readonly string[]): AppEvent[] {
+    return [...this.cache.read(ids), ...this.owned.read(ids)]
   }
 
-  private materialise(id: string): Entity | null {
-    for (const module of this.modules) {
-      const made = module.materialise?.(id)
-      if (made) return made
+  entity(id: string): GraphEntity {
+    return rollupEntity(id, this.read([id]))
+  }
+
+  /** The stores as a cache that already has everything: what a headless caller reads through. */
+  source(): Source {
+    return {
+      get: (ids) => {
+        const buckets = bucketEvents(ids, this.read(ids))
+        return Object.fromEntries(ids.map((id) => [id, rollupEntity(id, buckets.get(id) ?? [])]))
+      },
+      pending: () => false,
+      loading: (id) => [...this.inFlight.keys()].some((key) => key.startsWith(`${id} `)),
+      error: (id) => this.errors.get(id) ?? null,
+      expand: () => {},
     }
-    return null
   }
 
-  moduleOf(entity: Entity): Module | null {
-    return this.modules.find((module) => module.owns(entity)) ?? null
+  lens(): Lens {
+    return lensOf(this.source())
+  }
+
+  item(id: string): Entity | null {
+    return toItem(this.entity(id))
+  }
+
+  /** What the focus view of `id` shows, worked out exactly as the UI does. */
+  focus(id: string): Focus {
+    return focusOf(id, this.source())
   }
 
   /**
-   * What the focus view of `id` shows, from the cache, straight away. If the
-   * cache is stale a refresh starts behind it and a change follows.
+   * Complete events for `ids`, and for what they link out to a layer down: a
+   * view almost always walks downwards, so reading ahead saves a round trip.
+   * A layer clipped by the overscan isn't reported as covered.
    */
-  focus(id: string): Focus {
-    const entity = this.store.get(id) ?? this.materialise(id)
-    if (!entity) {
-      return { entity: null, children: [], module: null, compose: null, actions: [], loading: false, error: 'not found' }
+  scan(ids: readonly string[]): Scan {
+    const covered = new Set<string>()
+    const seen = new Set<string>()
+    const events: AppEvent[] = []
+    let frontier = [...new Set(ids)]
+    for (const id of frontier) covered.add(id)
+    for (let layer = 0; frontier.length; layer++) {
+      const batch = this.read(frontier)
+      for (const e of batch) {
+        const key = eventKey(e)
+        if (seen.has(key)) continue
+        seen.add(key)
+        events.push(e)
+      }
+      if (layer >= scanDepth) break
+      const buckets = bucketEvents(frontier, batch)
+      const next = new Set<string>()
+      for (const id of frontier) {
+        for (const child of rollupEntity(id, buckets.get(id) ?? []).outboundLinks) if (!covered.has(child)) next.add(child)
+      }
+      frontier = [...next].slice(0, scanOverscan)
+      for (const id of frontier) covered.add(id)
     }
-    const module = this.moduleOf(entity)
-    const stale = this.now() - (this.refreshedAt.get(id) ?? 0) > (module?.staleAfter?.(id) ?? 60_000)
-    if (module?.refresh && stale && !this.inFlight.has(id)) void this.refresh(id)
-    const present = (child: Entity) => this.moduleOf(child)?.present?.(child) ?? child
-    const children = this.store.children(id)
-    return {
-      entity: present(entity),
-      children: (module?.order?.(entity, children) ?? children).map(present),
-      module: module?.id ?? null,
-      compose: module?.compose?.(entity) ?? null,
-      actions: module?.actions?.(entity) ?? [],
-      loading: this.inFlight.has(id),
-      error: this.errors.get(id) ?? null,
-    }
+    return { entityIds: [...covered], events }
   }
 
-  private focusEntity(id: string): Entity | null {
-    const entity = this.store.get(id) ?? this.materialise(id)
-    if (!entity) return null
-    const module = this.moduleOf(entity)
-    const stale = this.now() - (this.refreshedAt.get(id) ?? 0) > (module?.staleAfter?.(id) ?? 60_000)
-    if (module?.refresh && stale && !this.inFlight.has(id)) void this.refresh(id)
-    return module?.present?.(entity) ?? entity
+  // --- Loading from other services ----------------------------------------------
+
+  private moduleFor(id: string, values: Record<string, unknown> = {}): Module | null {
+    const type = typeOf(id, values)
+    return type ? (this.modules.find((module) => module.view.owns(type)) ?? null) : null
   }
 
-  refresh(id: string): Promise<void> {
-    const existing = this.inFlight.get(id)
-    if (existing) return existing
-    const entity = this.store.get(id)
-    const module = entity && this.moduleOf(entity)
-    if (!module?.refresh) return Promise.resolve()
-    const running = module
-      .refresh(id)
-      .then(() => {
-        this.refreshedAt.set(id, this.now())
+  /**
+   * Loads part of an entity from its service into the cache store, then marks
+   * it loaded on the entity. Unless forced, a part still fresh is left alone,
+   * and a load already running is joined rather than repeated.
+   */
+  load(request: LoadRequest): Promise<LoadResult> {
+    const { id, part } = request
+    const key = `${id} ${part}`
+    const running = this.inFlight.get(key)
+    if (running) return running
+    const entity = this.entity(id)
+    const type = typeOf(id, entity.values)
+    const module = this.moduleFor(id, entity.values)
+    const fresh = type && module?.view.foreign?.(id, type)?.[part]
+    if (!type || !module?.load || fresh === undefined || fresh === null) return Promise.resolve({ error: null })
+    const loadedAt = Number(entity.values[loadedKey(part)]) || 0
+    if (!request.force && this.now() - loadedAt < fresh) return Promise.resolve({ error: null })
+
+    const started = module
+      .load(id, part, type)
+      .then((): LoadResult => {
+        this.cache.write([value(id, loadedKey(part), this.now(), 0, 'app')])
         this.errors.delete(id)
+        return { error: null }
       })
-      .catch((error: unknown) => {
-        this.refreshedAt.set(id, this.now())
-        this.errors.set(id, error instanceof Error ? error.message : String(error))
+      .catch((error: unknown): LoadResult => {
+        this.errors.set(id, message(error))
+        this.changed([id])
+        return { error: message(error) }
       })
-      .finally(() => {
-        this.inFlight.delete(id)
-        this.changed()
-      })
-    this.inFlight.set(id, running)
-    this.changed()
-    return running
+      .finally(() => this.inFlight.delete(key))
+    this.inFlight.set(key, started)
+    return started
   }
 
-  /** The composer under a focus view. Errors land on the focused entity. */
-  async submit(id: string, text: string): Promise<void> {
-    const entity = this.store.get(id)
-    const module = entity && this.moduleOf(entity)
-    if (!entity || !module?.submit || !text.trim()) return
+  /** Loads every part of an entity again, fresh or not. */
+  async refresh(id: string): Promise<void> {
+    const parts: LoadPart[] = ['self', 'children']
+    await Promise.all(parts.map((part) => this.load({ id, part, force: true })))
+  }
+
+  // --- Doing things --------------------------------------------------------------
+
+  private async attempt(id: string, body: () => Promise<AppEvent[]>): Promise<Outcome> {
     try {
-      await module.submit(entity, text)
-      this.setError(id, null)
+      const events = await body()
+      this.errors.delete(id)
+      return { events, error: null }
     } catch (error) {
-      this.setError(id, error instanceof Error ? error.message : String(error))
+      this.errors.set(id, message(error))
+      this.changed([id])
+      return { events: [], error: message(error) }
     }
   }
 
-  /** Does an action the focus offered. Errors land on the entity. */
-  async perform(id: string, action: string, text: string): Promise<void> {
-    const entity = this.store.get(id)
-    const module = entity && this.moduleOf(entity)
-    if (!entity || !module?.perform) return
-    if (!module.actions?.(entity).some((offered) => offered.id === action)) {
-      this.setError(id, `${action} is not available here`)
-      return
+  /** The composer under a focus view. */
+  submit(id: string, text: string): Promise<Outcome> {
+    const entity = this.item(id)
+    const module = entity && this.moduleFor(id, { type: entity.type })
+    if (!entity || !module?.submit || !text.trim()) return Promise.resolve({ events: [], error: null })
+    return this.attempt(id, () => module.submit!(entity, text))
+  }
+
+  /** Does an action the focus offered, then loads the entity again to show what it did. */
+  async perform(id: string, action: string, text: string): Promise<Outcome> {
+    const lens = this.lens()
+    const entity = this.item(id)
+    const module = entity && this.moduleFor(id, { type: entity.type })
+    if (!entity || !module?.perform) return { events: [], error: null }
+    if (!module.view.actions?.(entity, lens).some((offered) => offered.id === action)) {
+      return this.attempt(id, () => Promise.reject(new Error(`${action} is not available here`)))
     }
-    try {
-      await module.perform(entity, action, text.trim())
-      this.setError(id, null)
-    } catch (error) {
-      this.setError(id, error instanceof Error ? error.message : String(error))
-    }
-    await this.refresh(id)
+    const outcome = await this.attempt(id, () => module.perform!(entity, action, text.trim()))
+    await this.load({ id, part: 'children', force: true })
+    return outcome
+  }
+
+  private write(events: AppEvent[]): Outcome {
+    this.owned.write(events)
+    return { events, error: null }
   }
 
   /** The single registry of what a UI may ask for. */
   readonly actions = {
-    modules: (): ModuleInfo[] => this.modules.map(({ id, name, root }) => ({ id, name, root: root.id })),
+    modules: (): ModuleInfo[] => moduleInfos,
+    /** Complete events for entities: the only way the UI reads. */
+    scan: ({ ids }: { ids: string[] }): Scan => this.scan(ids),
+    load: (request: LoadRequest): Promise<LoadResult> => this.load(request),
+    /** What a focus view shows, for a caller with no cache of its own. */
     focus: ({ id }: { id: string }): Focus => this.focus(id),
-    refresh: ({ id }: { id: string }): Promise<void> => this.refresh(id),
-    /**
-     * Just the entities, presented, for showing them where they are mentioned.
-     * Unseen ones are materialised and anything stale is refreshed behind.
-     */
-    summaries: ({ ids }: { ids: string[] }): Record<string, Entity | null> =>
-      Object.fromEntries(ids.map((id) => [id, this.focusEntity(id)])),
-    perform: ({ id, action, text }: { id: string; action: string; text: string }): Promise<void> =>
+    perform: ({ id, action, text }: { id: string; action: string; text: string }): Promise<Outcome> =>
       this.perform(id, action, text),
-    submit: ({ id, text }: { id: string; text: string }): Promise<void> => this.submit(id, text),
-    toggle: ({ id }: { id: string }): void => {
-      const entity = this.store.get(id)
-      if (entity?.type === 'task') this.store.patch(id, { done: !entity.data.done })
+    submit: ({ id, text }: { id: string; text: string }): Promise<Outcome> => this.submit(id, text),
+    toggle: ({ id }: { id: string }): Outcome => {
+      const entity = this.item(id)
+      if (entity?.type !== 'task') return { events: [], error: null }
+      return this.write([value(id, 'done', !entity.data.done, this.now(), me)])
     },
-    markRead: async ({ id }: { id: string }): Promise<void> => {
-      try {
-        await this.slack.markRead(id)
-      } catch (error) {
-        this.setError(id, error instanceof Error ? error.message : String(error))
-      }
-    },
+    markRead: ({ id }: { id: string }): Promise<Outcome> => this.attempt(id, () => this.slack.markRead(id)),
     /** Bytes of an image a message presented, by the ref it gave. */
     slackImage: ({ ref }: { ref: string }) => this.slack.image(ref),
-    link: ({ parent, child }: { parent: string; child: string }): void => this.store.link(parent, child),
-    unlink: ({ parent, child }: { parent: string; child: string }): void => this.store.unlink(parent, child),
+    link: ({ parent, child }: { parent: string; child: string }): Outcome => this.write([link(parent, child, this.now(), me)]),
+    unlink: ({ parent, child }: { parent: string; child: string }): Outcome =>
+      this.write([link(parent, child, this.now(), me, 1)]),
   }
 }
 

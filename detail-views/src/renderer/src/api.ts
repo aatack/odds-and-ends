@@ -1,23 +1,25 @@
-import type { Entity, Focus, ModuleInfo } from '../../core/types.ts'
+import type { Changed, Scan } from '../../core/graph/events.ts'
+import type { LoadRequest, LoadResult, Outcome } from '../../core/types.ts'
 
 /** The seam between the UI and the core. Nothing else reaches the core. */
 export interface Api {
-  modules(): Promise<ModuleInfo[]>
-  focus(id: string): Promise<Focus>
-  summaries(ids: string[]): Promise<Record<string, Entity | null>>
-  refresh(id: string): Promise<void>
-  submit(id: string, text: string): Promise<void>
-  perform(id: string, action: string, text: string): Promise<void>
-  toggle(id: string): Promise<void>
-  markRead(id: string): Promise<void>
-  onChange(listener: () => void): () => void
+  /** Complete events for entities: the only read. */
+  scan(ids: string[]): Promise<Scan>
+  /** Loads part of an entity from its service into the cache store. */
+  load(request: LoadRequest): Promise<LoadResult>
+  submit(id: string, text: string): Promise<Outcome>
+  perform(id: string, action: string, text: string): Promise<Outcome>
+  toggle(id: string): Promise<Outcome>
+  markRead(id: string): Promise<Outcome>
+  /** Which entities changed in the stores; null for anything. */
+  onChange(listener: (changed: Changed) => void): () => void
   /** Opens a link in my browser. */
   openExternal(url: string): void
 }
 
 interface Bridge {
   invoke(name: string, args?: unknown): Promise<unknown>
-  onChange(listener: () => void): () => void
+  onChange(listener: (changed: Changed) => void): () => void
   openExternal(url: string): Promise<void>
 }
 
@@ -25,10 +27,8 @@ export function electronApi(): Api {
   const bridge = (window as unknown as { core: Bridge }).core
   const call = <T,>(name: string, args?: unknown) => bridge.invoke(name, args) as Promise<T>
   return {
-    modules: () => call('modules'),
-    focus: (id) => call('focus', { id }),
-    summaries: (ids) => call('summaries', { ids }),
-    refresh: (id) => call('refresh', { id }),
+    scan: (ids) => call('scan', { ids }),
+    load: (request) => call('load', request),
     submit: (id, text) => call('submit', { id, text }),
     perform: (id, action, text) => call('perform', { id, action, text }),
     toggle: (id) => call('toggle', { id }),
