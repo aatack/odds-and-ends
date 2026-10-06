@@ -9,6 +9,7 @@ import { Store } from './store.ts'
 import type { Entity, Focus, ModuleInfo } from './types.ts'
 
 const sweepEvery = 10 * 60_000
+const changeEvery = 150
 
 export interface CoreOptions {
   /** A file path, or `:memory:`. */
@@ -72,19 +73,27 @@ export class Core {
     this.sweeper = null
   }
 
-  /** Called at most once per tick, however many writes there were. */
+  /**
+   * Called at most once per `changeEvery` ms, however many writes there were:
+   * a refresh that writes a row per answer (Slack's unread counts) would
+   * otherwise have every view re-read hundreds of times.
+   */
   onChange(listener: () => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
   }
 
+  private lastNotified = 0
+
   private changed(): void {
     if (this.pending) return
     this.pending = true
-    queueMicrotask(() => {
+    const wait = Math.max(0, this.lastNotified + changeEvery - Date.now())
+    setTimeout(() => {
       this.pending = false
+      this.lastNotified = Date.now()
       for (const listener of this.listeners) listener()
-    })
+    }, wait)
   }
 
   private setError(id: string, error: string | null): void {

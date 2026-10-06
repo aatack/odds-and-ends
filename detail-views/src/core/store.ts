@@ -61,10 +61,13 @@ export class Store {
   }
 
   /** The first entity of `type` whose top-level `field` equals `value`. */
-  findBy(type: string, field: string, value: string): Entity | null {
+  findBy(type: ItemType, field: string, value: string): Entity | null {
+    // The path is written into the SQL, not bound, so an index on the same
+    // expression (see db.ts) can serve it.
+    if (!/^\w+$/.test(field)) throw new Error(`bad field ${field}`)
     const row = this.db
-      .prepare(`SELECT * FROM entities WHERE type = ? AND json_extract(data, '$.' || ?) = ? LIMIT 1`)
-      .get(type, field, value) as EntityRow | undefined
+      .prepare(`SELECT * FROM entities WHERE type = ? AND json_extract(data, '$.${field}') = ? LIMIT 1`)
+      .get(type, value) as EntityRow | undefined
     return row ? toEntity(row) : null
   }
 
