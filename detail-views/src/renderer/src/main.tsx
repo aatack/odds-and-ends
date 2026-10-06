@@ -36,15 +36,17 @@ function Root() {
   const onAction = useCallback((action: string) => session.startAction(action), [])
   const gestures = useMemo(
     () => ({
-      onPeekEnter: (target: PeekTarget, anchor: Rect) => session.hoverPeek(target, anchor),
-      onPeekLeave: () => session.leavePeek(),
+      onPeekEnter: (target: PeekTarget, anchor: Rect) => session.hoverPeek(target, anchor, null),
+      onPeekLeave: () => session.leavePeek(null),
     }),
     [],
   )
   const peekHandlers = useMemo(
     () => ({
       gestures,
-      onHold: () => session.holdPeek(),
+      hover: (target: PeekTarget, anchor: Rect, origin: string | null) => session.hoverPeek(target, anchor, origin),
+      enter: (key: string) => session.enterPeek(key),
+      leave: (window: string | null) => session.leavePeek(window),
       onPlace: (key: string, rect: Rect) => session.placePeek(key, rect),
       onRaise: (key: string) => session.raisePeek(key),
       onClose: (key: string) => session.closePeek(key),

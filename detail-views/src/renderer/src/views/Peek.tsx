@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { Focus as FocusData } from '../../../core/types.ts'
 import type { Peek, PeekTarget, Rect } from '../state.ts'
 import { Focus } from './Focus.tsx'
-import { HeaderPill } from './primitives.tsx'
+import { HeaderPill, PeekContext } from './primitives.tsx'
 
 const size = { width: 720, height: 480 }
 const gap = 6
@@ -26,8 +26,10 @@ type Grab = { mode: 'move' | 'resize'; start: Rect; x: number; y: number; moved:
 export function PeekWindow(props: {
   peek: Peek
   focus: FocusData | undefined
-  onEnter(): void
-  onLeave(): void
+  /** Hovering something inside opens a peek stacked on this one. */
+  hover(target: PeekTarget, anchor: Rect, origin: string | null): void
+  onEnter(key: string): void
+  onLeave(window: string | null): void
   onPlace(key: string, rect: Rect): void
   onRaise(key: string): void
   onClose(key: string): void
@@ -40,6 +42,14 @@ export function PeekWindow(props: {
   const [live, setLive] = useState<Rect | null>(null)
   const grab = useRef<Grab | null>(null)
   const rect = live ?? placed
+  const { hover, onLeave } = props
+  const gestures = useMemo(
+    () => ({
+      onPeekEnter: (target: PeekTarget, anchor: Rect) => hover(target, anchor, peek.key),
+      onPeekLeave: () => onLeave(null),
+    }),
+    [hover, onLeave, peek.key],
+  )
 
   const begin = (mode: Grab['mode']) => (event: ReactPointerEvent) => {
     if (event.button !== 0) return
@@ -81,8 +91,8 @@ export function PeekWindow(props: {
     <div
       className={`peek${peek.pinned ? ' pinned' : ''}`}
       style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
-      onMouseEnter={props.onEnter}
-      onMouseLeave={peek.pinned ? undefined : props.onLeave}
+      onMouseEnter={() => props.onEnter(peek.key)}
+      onMouseLeave={() => props.onLeave(peek.key)}
       onPointerDown={() => props.onRaise(peek.key)}
     >
       <div className="peek-bar" onPointerDown={begin('move')}>
@@ -102,24 +112,26 @@ export function PeekWindow(props: {
           </button>
         )}
       </div>
-      <div className="peek-body">
-        {peek.target.kind === 'url' ? (
-          <webview key={peek.target.url} src={peek.target.url} partition="persist:preview" className="peek-page" />
-        ) : props.focus ? (
-          <Focus
-            focus={props.focus}
-            cursor={-1}
-            draft=""
-            composing={false}
-            headed={false}
-            onSelect={noop}
-            onOpen={props.onOpenEntity}
-            onDraft={noop}
-            onCompose={noop}
-            onImage={props.onImage}
-          />
-        ) : null}
-      </div>
+      <PeekContext.Provider value={gestures}>
+        <div className="peek-body">
+          {peek.target.kind === 'url' ? (
+            <webview key={peek.target.url} src={peek.target.url} partition="persist:preview" className="peek-page" />
+          ) : props.focus ? (
+            <Focus
+              focus={props.focus}
+              cursor={-1}
+              draft=""
+              composing={false}
+              headed={false}
+              onSelect={noop}
+              onOpen={props.onOpenEntity}
+              onDraft={noop}
+              onCompose={noop}
+              onImage={props.onImage}
+            />
+          ) : null}
+        </div>
+      </PeekContext.Provider>
       <div className="peek-resize" onPointerDown={begin('resize')} />
       {live && <div className="peek-capture" onPointerMove={move} onPointerUp={end} onPointerCancel={end} />}
     </div>

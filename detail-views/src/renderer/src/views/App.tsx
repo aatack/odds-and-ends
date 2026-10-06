@@ -11,7 +11,9 @@ export interface PeekProps {
   peeks: Peek[]
   foci: Record<string, FocusData>
   gestures: PeekGestures
-  onHold(): void
+  hover(target: PeekTarget, anchor: Rect, origin: string | null): void
+  enter(key: string): void
+  leave(window: string | null): void
   onPlace(key: string, rect: Rect): void
   onRaise(key: string): void
   onClose(key: string): void
@@ -52,8 +54,9 @@ export function App(props: {
               key={one.key}
               peek={one}
               focus={one.target.kind === 'entity' ? peek.foci[one.target.id] : undefined}
-              onEnter={peek.onHold}
-              onLeave={peek.gestures.onPeekLeave}
+              hover={peek.hover}
+              onEnter={peek.enter}
+              onLeave={peek.leave}
               onPlace={peek.onPlace}
               onRaise={peek.onRaise}
               onClose={peek.onClose}
