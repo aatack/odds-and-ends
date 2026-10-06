@@ -30,6 +30,17 @@ export interface Action {
   prompt: string
 }
 
+/**
+ * A small status mark beside an item's name, wherever it is mentioned.
+ * Worked out by the module, so every view agrees.
+ */
+export interface Badge {
+  shape: 'dot' | 'tick' | 'cross'
+  tone: 'red' | 'yellow' | 'green'
+  /** What it means, for a tooltip. */
+  reason: string
+}
+
 export interface Focus {
   entity: Entity | null
   /** Ordered and shaped by the owning module. */

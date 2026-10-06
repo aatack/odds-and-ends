@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Store } from '../../store.ts'
 import { prEntityId } from '../../types.ts'
-import type { Action, Entity } from '../../types.ts'
+import type { Action, Badge, Entity } from '../../types.ts'
 import type { Module, ModuleContext } from '../module.ts'
 
 const day = 24 * 60 * 60 * 1000
@@ -38,11 +38,12 @@ async function query<T>(gh: ModuleContext['gh'], text: string, variables: Record
   return parsed.data!
 }
 
-const listQuery = `query {
+const listQuery = `query { viewer { login }
   search(query: "is:pr is:open author:@me archived:false sort:updated-desc", type: ISSUE, first: 50) {
     nodes { ... on PullRequest {
-      url number title isDraft updatedAt reviewDecision
-      repository { nameWithOwner }
+      url number title isDraft updatedAt reviewDecision mergeable
+      author { login } repository { nameWithOwner }
+      latestReviews(first: 30) { nodes { author { login } state } }
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
     } }
   }
@@ -50,6 +51,7 @@ const listQuery = `query {
 
 const prQuery = `query($url: URI!) { viewer { login } resource(url: $url) { ... on PullRequest {
   url number title body state isDraft mergeable reviewDecision additions deletions changedFiles
+  latestReviews(first: 30) { nodes { author { login } state } }
   headRefName baseRefName createdAt updatedAt
   author { login } repository { nameWithOwner viewerDefaultMergeMethod }
   autoMergeRequest { enabledAt }
@@ -65,6 +67,9 @@ const prQuery = `query($url: URI!) { viewer { login } resource(url: $url) { ... 
 type Login = { login: string } | null
 
 interface RawListPr {
+  author: Login
+  mergeable: string
+  latestReviews: { nodes: { author: Login; state: string }[] }
   url: string
   number: number
   title: string
@@ -78,7 +83,6 @@ interface RawListPr {
 interface RawPr extends RawListPr {
   body: string
   state: string
-  mergeable: string
   additions: number
   deletions: number
   changedFiles: number
@@ -179,6 +183,25 @@ const reviewWords: Record<string, string> = {
   CHANGES_REQUESTED: 'requested changes',
   COMMENTED: 'reviewed',
   DISMISSED: 'review dismissed',
+}
+
+/**
+ * Someone else's PR: whether it is approved, and whether by me.
+ * Mine: what stands in its way, worst first, then how approved it is.
+ * Null until enough is known.
+ */
+export function badge(data: Record<string, unknown>, locallyApproved: boolean): Badge | null {
+  if (data.mine === undefined) return null
+  if (!data.mine) {
+    if (data.approvedByMe) return { shape: 'tick', tone: 'green', reason: 'approved by me' }
+    if (data.approvedByOthers) return { shape: 'dot', tone: 'green', reason: 'approved' }
+    return { shape: 'dot', tone: 'yellow', reason: 'not approved' }
+  }
+  if (data.conflicts) return { shape: 'dot', tone: 'red', reason: 'merge conflicts' }
+  if (data.checks === 'failing') return { shape: 'cross', tone: 'red', reason: 'CI failing' }
+  if (!data.approvedByOthers) return { shape: 'dot', tone: 'yellow', reason: 'no approvals' }
+  if (locallyApproved) return { shape: 'tick', tone: 'green', reason: 'approved by me and others' }
+  return { shape: 'dot', tone: 'green', reason: 'approved by others' }
 }
 
 const outcomeOrder: CheckOutcome[] = ['failing', 'pending', 'skipped', 'passing']
@@ -289,7 +312,8 @@ export class GitHub implements Module {
     if (entity.type === 'github.pr') {
       const data = entity.data
       // `label` names the PR where nothing else does, as in a peek's bar.
-      return { ...entity, data: { ...data, locallyApproved: Boolean(this.localApproval(entity.id)), label: data.title ? `${String(data.repo)}#${String(data.number)} ${String(data.title)}` : String(data.url) } }
+      const locallyApproved = Boolean(this.localApproval(entity.id))
+      return { ...entity, data: { ...data, locallyApproved, badge: badge(data, locallyApproved), label: data.title ? `${String(data.repo)}#${String(data.number)} ${String(data.title)}` : String(data.url) } }
     }
     if (entity.type === 'github.item') {
       // Shaped like a Slack message, so the same views draw it.
@@ -299,13 +323,13 @@ export class GitHub implements Module {
   }
 
   private async refreshList(): Promise<void> {
-    const data = await query<{ search: { nodes: RawListPr[] } }>(this.gh, listQuery)
+    const data = await query<{ search: { nodes: RawListPr[] }; viewer: { login: string } }>(this.gh, listQuery)
     const prs = data.search.nodes.filter((node) => node.url)
     this.store.transaction(() => {
       for (const pr of prs) {
         const id = ids.pr(pr.url)
         const previous = this.store.get(id)?.data ?? {}
-        this.store.put(id, 'github.pr', { ...previous, ...this.summary(pr) }, { ttl })
+        this.store.put(id, 'github.pr', { ...previous, ...this.summary(pr, data.viewer.login) }, { ttl })
       }
       this.store.setCachedChildren(
         ids.root,
@@ -315,8 +339,17 @@ export class GitHub implements Module {
     })
   }
 
-  private summary(pr: RawListPr) {
+  /** What a PR is like at a glance; enough to work out its badge. */
+  private summary(pr: RawListPr, viewer: string) {
+    const author = pr.author?.login
+    const approvers = pr.latestReviews.nodes
+      .filter((review) => review.state === 'APPROVED')
+      .map((review) => review.author?.login)
     return {
+      mine: author === viewer,
+      conflicts: pr.mergeable === 'CONFLICTING',
+      approvedByMe: approvers.includes(viewer),
+      approvedByOthers: approvers.some((login) => login && login !== viewer && login !== author),
       url: prEntityId(pr.url)!.slice('github:pr:'.length),
       number: pr.number,
       title: pr.title,
@@ -394,7 +427,7 @@ export class GitHub implements Module {
         'github.pr',
         {
           ...previous,
-          ...this.summary(pr),
+          ...this.summary(pr, viewer.login),
           state: pr.state,
           mergeable: pr.mergeable,
           additions: pr.additions,
@@ -403,7 +436,6 @@ export class GitHub implements Module {
           head: pr.headRefName,
           base: pr.baseRefName,
           counts,
-          mine: pr.author?.login === viewer.login,
           autoMerge: Boolean(pr.autoMergeRequest),
           mergeMethod: pr.repository.viewerDefaultMergeMethod,
         },

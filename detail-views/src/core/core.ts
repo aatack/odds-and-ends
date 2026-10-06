@@ -130,6 +130,15 @@ export class Core {
     }
   }
 
+  private focusEntity(id: string): Entity | null {
+    const entity = this.store.get(id) ?? this.materialise(id)
+    if (!entity) return null
+    const module = this.moduleOf(entity)
+    const stale = this.now() - (this.refreshedAt.get(id) ?? 0) > (module?.staleAfter?.(id) ?? 60_000)
+    if (module?.refresh && stale && !this.inFlight.has(id)) void this.refresh(id)
+    return module?.present?.(entity) ?? entity
+  }
+
   refresh(id: string): Promise<void> {
     const existing = this.inFlight.get(id)
     if (existing) return existing
@@ -191,6 +200,12 @@ export class Core {
     modules: (): ModuleInfo[] => this.modules.map(({ id, name, root }) => ({ id, name, root: root.id })),
     focus: ({ id }: { id: string }): Focus => this.focus(id),
     refresh: ({ id }: { id: string }): Promise<void> => this.refresh(id),
+    /**
+     * Just the entities, presented, for showing them where they are mentioned.
+     * Unseen ones are materialised and anything stale is refreshed behind.
+     */
+    summaries: ({ ids }: { ids: string[] }): Record<string, Entity | null> =>
+      Object.fromEntries(ids.map((id) => [id, this.focusEntity(id)])),
     perform: ({ id, action, text }: { id: string; action: string; text: string }): Promise<void> =>
       this.perform(id, action, text),
     submit: ({ id, text }: { id: string; text: string }): Promise<void> => this.submit(id, text),

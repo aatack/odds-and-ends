@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { Core } from '../../core.ts'
+import { badge } from './github.ts'
 
 const url = 'https://github.com/o/r/pull/7'
 
@@ -12,9 +13,11 @@ function fakeGh(calls: string[][], options: { author?: string } = {}) {
     if (query.includes('search(')) {
       return JSON.stringify({
         data: {
+          viewer: { login: 'me' },
           search: {
             nodes: [
               { url, number: 7, title: 'Fix it', isDraft: false, updatedAt: '2026-10-01T00:00:00Z', reviewDecision: 'APPROVED',
+                mergeable: 'MERGEABLE', author: { login: 'me' }, latestReviews: { nodes: [{ author: { login: 'ann' }, state: 'APPROVED' }] },
                 repository: { nameWithOwner: 'o/r' }, commits: { nodes: [{ commit: { statusCheckRollup: { state: 'FAILURE' } } }] } },
             ],
           },
@@ -26,7 +29,7 @@ function fakeGh(calls: string[][], options: { author?: string } = {}) {
         viewer: { login: 'me' },
         resource: {
           url, number: 7, title: 'Fix it', body: '<!-- bot -->Does the thing', state: 'OPEN', isDraft: false, mergeable: 'MERGEABLE',
-          reviewDecision: 'APPROVED', additions: 3, deletions: 1, changedFiles: 1, headRefName: 'fix', baseRefName: 'main',
+          reviewDecision: 'APPROVED', latestReviews: { nodes: [{ author: { login: 'ann' }, state: 'APPROVED' }] }, additions: 3, deletions: 1, changedFiles: 1, headRefName: 'fix', baseRefName: 'main',
           createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-02T00:00:00Z', author: { login: options.author ?? 'me' },
           repository: { nameWithOwner: 'o/r', viewerDefaultMergeMethod: 'SQUASH' }, autoMergeRequest: null,
           comments: { nodes: [{ id: 'C1', url: `${url}#c1`, author: { login: 'bot' }, body: '<!-- only bookkeeping -->', createdAt: '2026-10-01T01:00:00Z' }] },
@@ -127,4 +130,35 @@ test("github: no closing someone else's PR", async () => {
   await core.actions.perform({ id, action: 'close', text: '' })
   assert.equal(calls.filter((args) => args[0] === 'pr').length, 0)
   assert.match(core.focus(id).error ?? '', /not available/)
+})
+
+test('github: badges', () => {
+  const b = (data: Record<string, unknown>, local = false) => {
+    const found = badge(data, local)
+    return found && `${found.tone} ${found.shape}`
+  }
+  // Someone else's.
+  assert.equal(b({ mine: false }), 'yellow dot')
+  assert.equal(b({ mine: false, approvedByOthers: true }), 'green dot')
+  assert.equal(b({ mine: false, approvedByOthers: true, approvedByMe: true }), 'green tick')
+  // Mine, worst first.
+  assert.equal(b({ mine: true, conflicts: true, checks: 'failing' }), 'red dot')
+  assert.equal(b({ mine: true, checks: 'failing', approvedByOthers: true }), 'red cross')
+  assert.equal(b({ mine: true, checks: 'passing' }), 'yellow dot')
+  assert.equal(b({ mine: true, checks: 'passing' }, true), 'yellow dot')
+  assert.equal(b({ mine: true, checks: 'passing', approvedByOthers: true }), 'green dot')
+  assert.equal(b({ mine: true, checks: 'passing', approvedByOthers: true }, true), 'green tick')
+  // Not loaded yet.
+  assert.equal(b({}), null)
+})
+
+test('github: summaries materialise a linked PR and carry its badge once loaded', async () => {
+  const core = new Core({ path: ':memory:', gh: fakeGh([]) })
+  const id = `github:pr:${url}`
+  const first = core.actions.summaries({ ids: [id] })[id]!
+  assert.equal(first.data.badge, null)
+  await core.refresh(id)
+  const loaded = core.actions.summaries({ ids: [id] })[id]!
+  // Mine, one failing check: CI failure outranks the approval.
+  assert.deepEqual(loaded.data.badge, { shape: 'cross', tone: 'red', reason: 'CI failing' })
 })
