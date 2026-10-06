@@ -64,6 +64,9 @@ constraints every change must keep.
   (its normal focus view). Use `Link` for URLs and `usePeek` for anything else
   (`views/primitives.tsx`). Moving or resizing a peek pins it (with an `×`);
   pinned peeks persist. `Open` sends a URL to the browser or pushes an entity.
+- **Items named in text are pills.** A link to something the app tracks (a PR)
+  renders as `ItemPill`: the item's badge and name, peek on hover, push on
+  click. Badges are worked out by the module (`Badge` in `core/types.ts`).
 - No animations. The cursor never becomes a pointer.
 
 ### Code

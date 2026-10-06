@@ -1,4 +1,5 @@
 import { createContext, memo, useContext, useEffect, useRef } from 'react'
+import type { Badge as BadgeData, Entity } from '../../../core/types.ts'
 import type { ReactNode } from 'react'
 import { prEntityId } from '../../../core/types.ts'
 import type { PeekTarget, Rect } from '../state.ts'
@@ -81,15 +82,64 @@ export function usePeek(target: PeekTarget | null) {
   }
 }
 
+/** Items mentioned on screen, and the gestures on them. Provided by App. */
+export interface ItemGestures {
+  summaries: Record<string, Entity | null>
+  want(id: string): () => void
+  onOpen(id: string): void
+}
+
+export const ItemContext = createContext<ItemGestures>({ summaries: {}, want: () => () => {}, onOpen: () => {} })
+
+/** The status mark an item carries, as its module worked it out. */
+export function Badge(props: { badge: BadgeData | null | undefined }) {
+  const { badge } = props
+  if (!badge) return <span className="badge dot none" />
+  return (
+    <span className={`badge ${badge.shape} ${badge.tone}`} title={badge.reason}>
+      {badge.shape === 'tick' ? '✓' : badge.shape === 'cross' ? '✕' : ''}
+    </span>
+  )
+}
+
+/**
+ * An in-app item named somewhere, as a pill: its badge and its name. Hovering
+ * peeks at it; a click pushes it.
+ */
+export function ItemPill(props: { id: string; fallback: ReactNode }) {
+  const { summaries, want, onOpen } = useContext(ItemContext)
+  useEffect(() => want(props.id), [want, props.id])
+  const peek = usePeek({ kind: 'entity', id: props.id })
+  const data = summaries[props.id]?.data
+  const name = data?.number ? `#${String(data.number)} ${String(data.title ?? '')}` : props.fallback
+  return (
+    <span
+      className="item-pill"
+      {...peek}
+      onMouseDown={(event) => {
+        event.stopPropagation()
+        onOpen(props.id)
+      }}
+    >
+      <Badge badge={data?.badge as BadgeData | null | undefined} />
+      <span className="item-name">{name}</span>
+    </span>
+  )
+}
+
 /**
  * Every link in the app. Hovering peeks at the page; a click does nothing
  * else, so the browser is only ever opened from the peek.
  */
 export function Link(props: { href: string; children: ReactNode; page?: boolean }) {
-  // A link to something the app tracks peeks at the item, not the page,
-  // unless the page itself is wanted.
+  // A link to something the app tracks is that item, unless the page itself is wanted.
   const entity = props.page ? null : prEntityId(props.href)
-  const peek = usePeek(entity ? { kind: 'entity', id: entity } : { kind: 'url', url: props.href })
+  if (entity) return <ItemPill id={entity} fallback={props.children} />
+  return <PageLink href={props.href}>{props.children}</PageLink>
+}
+
+function PageLink(props: { href: string; children: ReactNode }) {
+  const peek = usePeek({ kind: 'url', url: props.href })
   return (
     <a
       className="link"

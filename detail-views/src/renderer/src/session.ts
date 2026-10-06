@@ -1,4 +1,4 @@
-import type { Focus, ModuleInfo } from '../../core/types.ts'
+import type { Entity, Focus, ModuleInfo } from '../../core/types.ts'
 import type { Api } from './api.ts'
 import type { Environment } from './environment.ts'
 import * as S from './state.ts'
@@ -9,6 +9,8 @@ export interface Snapshot {
   modules: ModuleInfo[]
   /** What each open entity peek shows, by entity id. */
   peekFoci: Record<string, Focus>
+  /** Items mentioned on screen (as pills, say), by id. */
+  summaries: Record<string, Entity | null>
 }
 
 const storageKey = 'detail-views.state'
@@ -21,13 +23,16 @@ export class Session {
   private snapshot: Snapshot
   private request = 0
   private previousPeeks: S.Peek[] = []
+  /** How many things on screen mention each item. */
+  private readonly wanted = new Map<string, number>()
+  private summariesPending = false
   private peekOpening: ReturnType<typeof setTimeout> | null = null
   private peekClosing: ReturnType<typeof setTimeout> | null = null
 
   constructor(api: Api, env: Environment) {
     this.api = api
     this.env = env
-    this.snapshot = { state: S.restore(env.load(storageKey), 'slack'), focus: null, modules: [], peekFoci: {} }
+    this.snapshot = { state: S.restore(env.load(storageKey), 'slack'), focus: null, modules: [], peekFoci: {}, summaries: {} }
   }
 
   async start(): Promise<() => void> {
@@ -36,6 +41,7 @@ export class Session {
     const stop = this.api.onChange(() => {
       void this.load()
       void this.loadPeeks()
+      this.loadSummaries()
     })
     await Promise.all([this.load(), this.loadPeeks()])
     return stop
@@ -168,6 +174,33 @@ export class Session {
     if (target.kind === 'url') this.api.openExternal(target.url)
     else this.navigate(target.id)
     this.closePeek(null)
+  }
+
+  /**
+   * Something on screen mentions an item and wants it kept fresh. Returns
+   * the release, for when it goes.
+   */
+  want = (id: string): (() => void) => {
+    this.wanted.set(id, (this.wanted.get(id) ?? 0) + 1)
+    if (!(id in this.snapshot.summaries)) this.loadSummaries()
+    return () => {
+      const count = (this.wanted.get(id) ?? 1) - 1
+      if (count > 0) this.wanted.set(id, count)
+      else this.wanted.delete(id)
+    }
+  }
+
+  /** One request for everything wanted, however many asked this tick. */
+  private loadSummaries(): void {
+    if (this.summariesPending) return
+    this.summariesPending = true
+    queueMicrotask(async () => {
+      this.summariesPending = false
+      const ids = [...this.wanted.keys()]
+      if (ids.length === 0) return
+      const summaries = await this.api.summaries(ids)
+      this.set({ summaries: { ...this.snapshot.summaries, ...summaries } })
+    })
   }
 
   /** Loads what each entity peek shows; a reply for a peek since closed is dropped. */

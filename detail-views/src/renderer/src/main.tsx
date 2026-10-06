@@ -16,7 +16,7 @@ import './styles.css'
 const session = new Session(electronApi(), browserEnvironment())
 
 function Root() {
-  const { state, focus, modules, peekFoci } = useSnapshot(session)
+  const { state, focus, modules, peekFoci, summaries } = useSnapshot(session)
   useEffect(() => {
     const stopDispatch = installDispatch(session, tools)
     let stopSession: (() => void) | undefined
@@ -52,6 +52,7 @@ function Root() {
     }),
     [gestures],
   )
+  const items = useMemo(() => ({ summaries, want: session.want, onOpen }), [summaries, onOpen])
   const peek = useMemo(() => ({ ...peekHandlers, peeks: state.peeks, foci: peekFoci }), [peekHandlers, state.peeks, peekFoci])
 
   const view = useMemo(
@@ -70,7 +71,7 @@ function Root() {
     [state, focus, onSelect, onOpen, onDraft, onCompose, onImage, onAction],
   )
 
-  return <App peek={peek} viewing={state.viewing} onImage={onImage} modules={modules} module={focus?.module ?? null} focus={focus} view={view} onModule={onModule} />
+  return <App items={items} peek={peek} viewing={state.viewing} onImage={onImage} modules={modules} module={focus?.module ?? null} focus={focus} view={view} onModule={onModule} />
 }
 
 createRoot(document.getElementById('root')!).render(
