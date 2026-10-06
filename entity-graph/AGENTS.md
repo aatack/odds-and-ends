@@ -161,6 +161,13 @@ is the long form; the rules that matter day to day:
   [`docs/chats.md`](./docs/chats.md) the long form. Nothing here is a new kind of
   thing in the store — a chat is notes under a note, written by the write tools
   that were already there.
+- **A recording is a meeting noted as it happens.** `type: recording` gives a
+  note two children, a transcript and the notes. The microphone streams to
+  Deepgram from the renderer and each sentence heard lands under the transcript
+  as an open task; every 20 seconds a Claude session folds the open lines into
+  the notes over MCP, and the app ticks them off. The row draws a pill with a
+  pause button (`components/RecordingPill.tsx`); `tools/recordingTools.ts` is the
+  loop, and [`docs/recordings.md`](./docs/recordings.md) the long form.
 - **A code entity is another caller.** `type: code` runs in a QuickJS worker
   (`helpers/codeRunner*`) whose only globals are `console`, `context` — the folded
   call context of the entity it is on, so `context.channel` is whatever an

@@ -5,6 +5,7 @@ import { DIAGRAM_SELECTION_TOOLS, DIAGRAM_TOOLS } from './diagramTools'
 import { ENTITY_TOOLS } from './entityTools'
 import { FRAME_TOOLS } from './frameTools'
 import { integrationsAtom } from './integrationTools'
+import { RECORDING_TOOLS } from './recordingTools'
 import { RESOURCE_TOOLS } from './resourceTools'
 import { SOURCE_TOOLS } from './sourceTools'
 import { UNDO_TOOLS } from './undoTools'
@@ -38,6 +39,7 @@ const BUILT_IN: ToolSpec[] = [
   ...DIAGRAM_TOOLS,
   ...RESOURCE_TOOLS,
   ...CHAT_TOOLS,
+  ...RECORDING_TOOLS,
   ...GROUP_TOOLS,
   ...UNDO_TOOLS,
   ...APP_TOOLS,

@@ -9,7 +9,7 @@ import {
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
-import { CHAT_ID, DIAGRAM_ID, TOOL_ID, TYPE_ID } from '../../core/builtins'
+import { CHAT_ID, DIAGRAM_ID, RECORDING_ID, TOOL_ID, TYPE_ID } from '../../core/builtins'
 import { outlineMarkdown } from '../../core/markdown'
 import type { QueryPage } from '../../core/query'
 import { rowsOfPage } from '../../core/tree'
@@ -203,12 +203,13 @@ export const MCP_TOOLS: McpTool[] = [
       '`inboundLinks` — every entity in the store that links to this one, which is how ' +
       'to find where else a note is referenced. An id nothing has been written to comes ' +
       'back empty rather than missing.\n\n' +
-      'Four ids answer even in a store nobody has written to, because the store ' +
+      'Five ids answer even in a store nobody has written to, because the store ' +
       `supplies them: \`${TYPE_ID}\`, whose schema says what a type holds, ` +
       `\`${TOOL_ID}\`, whose schema says what a tool holds — every value a definition can ` +
       `carry and what each one does — \`${DIAGRAM_ID}\`, whose schema says how a note ` +
-      `holds a drawing, and \`${CHAT_ID}\`, whose schema says how one holds a ` +
-      'conversation. **Asked to write a tool for the user, read ' +
+      `holds a drawing, \`${CHAT_ID}\`, whose schema says how one holds a ` +
+      `conversation, and \`${RECORDING_ID}\`, whose schema says which child of a ` +
+      'recorded meeting is the transcript and which the notes. **Asked to write a tool for the user, read ' +
       `\`${TOOL_ID}\` first and create the note under \`${TOOLS_ID}\`;** the \`docs://tools\` ` +
       'resource is the same thing at length.',
     needs: 'readEntities',
@@ -476,6 +477,16 @@ const DOCS: Doc[] = [
       'How the tool is called, and what a chat has to hold for it to be called with ' +
       `anything. The long version of \`get_details\` on \`${CHAT_ID}\`.`,
     path: 'docs/chats.md',
+  },
+  {
+    uri: 'docs://recordings',
+    name: 'Recordings: a meeting transcribed and noted as it happens',
+    description:
+      `What a note saying \`type: ${RECORDING_ID}\` holds — a transcript and a set of notes, ` +
+      'both children of it — and the loop between them: heard sentences arrive as open ' +
+      'lines, a Claude session folds them into the notes, and the app ticks them off. ' +
+      `The long version of \`get_details\` on \`${RECORDING_ID}\`.`,
+    path: 'docs/recordings.md',
   },
   {
     uri: 'docs://sources',

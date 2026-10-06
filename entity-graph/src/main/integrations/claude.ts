@@ -164,8 +164,13 @@ export const CLAUDE_TOOLS: ToolDef[] = [
         .string()
         .optional()
         .describe('Appended to the system prompt. Only read on the turn that starts a session'),
+      model: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('The model to run — `sonnet`, `opus`, or a full id. Omit for the CLI’s default'),
     }),
-    handler: async ({ path, prompt, sessionId, systemPrompt }, call) => {
+    handler: async ({ path, prompt, sessionId, systemPrompt, model }, call) => {
       // No name is a new conversation, so there is nothing to try resuming.
       const fresh = !sessionId
       const session = sessionId ? sessionUuid(sessionId) : randomUUID()
@@ -174,7 +179,7 @@ export const CLAUDE_TOOLS: ToolDef[] = [
       }
       busy.add(session)
       try {
-        return await turn(fresh, session, path, prompt, systemPrompt, call?.signal)
+        return await turn(fresh, session, path, prompt, systemPrompt, model, call?.signal)
       } finally {
         busy.delete(session)
       }
@@ -189,13 +194,17 @@ async function turn(
   path: string | undefined,
   prompt: string,
   systemPrompt: string | undefined,
+  model: string | undefined,
   signal: AbortSignal | undefined,
 ): Promise<Record<string, unknown>> {
   const cwd = path ? directory(path) : scratch(session)
   // The one thing here that has to go in the argument vector: the CLI takes it
   // no other way. Keep it to rules and ids — anything long belongs in the
   // prompt, which goes over standard input.
-  const system = systemPrompt ? ['--append-system-prompt', systemPrompt] : []
+  const system = [
+    ...(systemPrompt ? ['--append-system-prompt', systemPrompt] : []),
+    ...(model ? ['--model', model] : []),
+  ]
 
   // There is no "resume it, or start it if it isn't there" flag, so the two
   // are tried in turn. Resuming goes first because being wrong about it is

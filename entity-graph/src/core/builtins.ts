@@ -2,9 +2,10 @@ import type { AppEvent } from './events'
 import type { Schema } from './schema'
 
 // The entities every store has whether or not anything has been written to them.
-// All four are types: `type`, the type of types; `tool`, the type of the tools a
-// store defines for itself; `diagram`, a note the app draws a canvas over; and
-// `chat`, a note the app talks to a tool through.
+// All five are types: `type`, the type of types; `tool`, the type of the tools a
+// store defines for itself; `diagram`, a note the app draws a canvas over;
+// `chat`, a note the app talks to a tool through; and `recording`, a meeting the
+// app transcribes and takes notes of as it happens.
 // Each carries the schema for what an entity of it holds. They are served rather
 // than stored — read the id and the events are handed back with the ones the store
 // actually has — so a fresh store knows what each of them is, and so a schema
@@ -45,6 +46,17 @@ export const CHAT_TOOL_KEY = 'chat'
  * what puts the two sides of a conversation on opposite sides of the panel.
  */
 export const CHAT_OWNER_KEY = 'owner'
+
+/** The type of recordings: a live transcript, and the notes a model keeps of it. */
+export const RECORDING_ID = 'recording'
+
+/**
+ * The value on a recording naming its two halves — `{ transcriptId, notesId }`.
+ * The same word as the type, as with a chat. Both are children of the recording,
+ * made when it starts, and neither is found any other way: the transcript is
+ * read for its open lines and the notes are handed to the model by id.
+ */
+export const RECORDING_KEY = 'recording'
 
 /** The author on a value the store supplies, as against one somebody wrote. */
 const BUILTIN_AUTHOR = 'builtin'
@@ -273,6 +285,39 @@ export const CHAT_SCHEMA: Schema = {
   },
 }
 
+/**
+ * What a recording holds. The description is the longer half again, since what
+ * matters about one is what happens under it — and an agent asked to tidy the
+ * notes of a meeting reads this to find out which child is which.
+ */
+export const RECORDING_SCHEMA: Schema = {
+  type: 'object',
+  description:
+    'A recording: a meeting transcribed live, with notes kept of it as it goes. ' +
+    '**Start a recording** makes one under the selected note, with two children: a ' +
+    'transcript, and the notes. The app listens to the microphone and writes each ' +
+    'sentence it hears as an open task under the transcript. Every few seconds it ' +
+    'hands the open lines to a Claude session, which folds them into the notes over ' +
+    'MCP; the app then ticks the lines off, so the next pass does not take them ' +
+    'again. The row draws a pill with a button to pause and resume; a recording is ' +
+    'paused whenever the app is not listening to it, including after a restart.\n\n' +
+    'Edit the notes freely while it runs — the next pass reads them as they are. ' +
+    'Leave the transcript to the app: an open line in it is one not yet taken.',
+  required: [RECORDING_KEY],
+  properties: {
+    [RECORDING_KEY]: {
+      type: 'object',
+      description:
+        '`transcriptId`, the child the heard lines go under, and `notesId`, the child ' +
+        'the notes are kept under. Written when the recording starts.',
+      properties: {
+        transcriptId: { type: 'string' },
+        notesId: { type: 'string' },
+      },
+    },
+  },
+}
+
 /** Every entity the store supplies, and the values it supplies for each. */
 export const BUILTIN_VALUES: Record<string, Record<string, unknown>> = {
   [TYPE_ID]: {
@@ -299,6 +344,11 @@ export const BUILTIN_VALUES: Record<string, Record<string, unknown>> = {
     text: 'Chat',
     type: TYPE_ID,
     schema: CHAT_SCHEMA,
+  },
+  [RECORDING_ID]: {
+    text: 'Recording',
+    type: TYPE_ID,
+    schema: RECORDING_SCHEMA,
   },
 }
 
