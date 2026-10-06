@@ -295,6 +295,7 @@ test('slack: the watch brings in new messages by search, without loading any con
     { ts: '1700000020.000100', user: 'U2', text: 'reply', channel, permalink: 'https://x.slack.com/archives/C1/p1700000020000100?thread_ts=1700000010.000100' },
     { ts: '1700000010.000100', user: 'U2', text: 'hello', channel, permalink: 'https://x.slack.com/archives/C1/p1700000010000100?thread_ts=1700000010.000100' },
     { ts: '1700000015.000100', user: 'U3', text: 'hi Ann', channel: { id: 'D9', is_im: true, name: 'U3' }, permalink: 'https://x.slack.com/archives/D9/p1700000015000100' },
+    { ts: '1700000016.000100', user: 'U3', text: 'elsewhere', channel: { id: 'C7', name: 'not-mine' }, permalink: 'https://x.slack.com/archives/C7/p1700000016000100' },
   ]
   await core.slack.poll()
   await core.slack.poll()
@@ -307,6 +308,8 @@ test('slack: the watch brings in new messages by search, without loading any con
   // A DM nobody had loaded yet joins the list.
   assert.ok(core.entity('slack').outboundLinks.includes('slack:conv:D9'))
   assert.equal(core.item('slack:conv:D9')!.data.kind, 'im')
+  // A public channel I am not in is not.
+  assert.ok(!core.entity('slack').outboundLinks.includes('slack:conv:C7'))
   assert.equal(core.item('slack')!.data['watch.at'], '1700000020.000100')
   assert.ok(!calls.includes('conversations.history') && !calls.includes('conversations.info'))
 })

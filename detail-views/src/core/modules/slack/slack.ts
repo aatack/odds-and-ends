@@ -333,7 +333,7 @@ export class Slack implements Module {
       if (!conversation) {
         conversation = this.data<ConversationData>(conversationId)
         conversations.set(conversationId, conversation)
-        // A conversation not in the list yet (a new DM, say): enough to show it; it loads whole when looked at.
+        // A conversation not known yet: enough to show it; it loads whole when looked at.
         if (!conversation.channel) {
           events.push(
             ...values(
@@ -342,8 +342,12 @@ export class Slack implements Module {
               0,
               author,
             ),
-            link(ids.root, conversationId, 0, author),
           )
+          // Search also finds public channels I am not in. Only a DM, a group
+          // DM or a private channel is surely mine, so only those join the list
+          // here; a public one I join comes with the list's next load.
+          const mine = match.channel.is_im || match.channel.is_mpim || match.channel.is_private
+          if (mine) events.push(link(ids.root, conversationId, 0, author))
         }
       }
 

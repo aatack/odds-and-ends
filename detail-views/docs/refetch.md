@@ -49,7 +49,7 @@ Use these strategies. One item type can use more than one.
   - links it under its conversation, or under its thread parent when it is a reply;
   - sets the `latestTs` of the conversation, and adds 1 to its unread count (not for replies, and not for my own messages);
   - when the message is mine, sets the read position of the conversation to it;
-  - adds a conversation that is not in the list (a new DM, for example).
+  - adds a new DM, group DM or private channel to the list. Search also finds public channels that I am not in. Thus, a new public channel comes only with the next load of the list.
 - The watch ignores a message that the cache store has. Thus, two looks at the same message do not count it two times.
 - The watch keeps the ts of the newest message that it saw on the Slack root (`watch.at`), in the cache store.
 - **Catch-up:** on start, the first poll reads everything after `watch.at`. This finds the messages that came while the app was closed.
