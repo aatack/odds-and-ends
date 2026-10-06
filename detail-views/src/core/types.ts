@@ -1,4 +1,10 @@
-/** Shared with the renderer, which imports nothing else from core. */
+import type { AppEvent } from './graph/events.ts'
+
+/**
+ * Shared with the renderer. So are `graph/`, `present.ts` and each module's
+ * `view.ts`: everything else in core is node, reached only through
+ * `Core.actions`.
+ */
 
 /**
  * Links with this scheme are mentions: `mention:<user or channel id>/<entity
@@ -27,15 +33,44 @@ export const itemTypes = [
 
 export type ItemType = (typeof itemTypes)[number]
 
+/**
+ * An item as the views see it: an entity's values, with `type` lifted out and
+ * whatever its module works out for showing it added (`ModuleView.present`).
+ */
 export interface Entity {
   id: string
   type: ItemType
   data: Record<string, unknown>
   createdAt: number
   updatedAt: number
-  /** Null for owned data; set for anything cached from another service. */
-  expiresAt: number | null
 }
+
+/**
+ * What of an entity is loaded from another service: its own fields (`self`),
+ * or what sits under it (`children`), loaded only once something walks into it.
+ */
+export type LoadPart = 'self' | 'children'
+
+/** Each part loaded from elsewhere, and how many ms it stays fresh. */
+export type Freshness = Partial<Record<LoadPart, number>>
+
+export interface LoadRequest {
+  id: string
+  part: LoadPart
+  /** Load even if it is still fresh: a refresh I asked for. */
+  force?: boolean
+}
+
+export interface LoadResult {
+  error: string | null
+}
+
+/**
+ * The value, on the entity a load was for, saying when that part was last
+ * loaded. Kept in the cache store with what it loaded, so clearing one clears
+ * the other.
+ */
+export const loadedKey = (part: LoadPart): string => `loaded.${part}`
 
 /** What the composer under a focus view does, if there is one. */
 export type ComposeKind = 'slack' | 'slack-token' | 'task'
@@ -85,4 +120,10 @@ export interface ModuleInfo {
 export function prEntityId(url: string): string | null {
   const match = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:[/?#]|$)/.exec(url)
   return match ? `github:pr:https://github.com/${match[1]}/${match[2]}/pull/${match[3]}` : null
+}
+
+/** What doing something produced: the owned events written, or why it failed. */
+export interface Outcome {
+  events: AppEvent[]
+  error: string | null
 }

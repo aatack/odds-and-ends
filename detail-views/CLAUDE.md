@@ -21,14 +21,34 @@ constraints every change must keep.
 
 ### Data
 
-- **One local SQLite file** (`node:sqlite`, no native modules).
-- **Owned vs cached.** What I type is owned: `expires_at` is null and it is
-  never deleted by the app. Data fetched from another service is a cache: it
-  carries an `expires_at` and the sweeper deletes it once it has passed.
-- **A cache write never downgrades owned data**, and an owned link keeps both
-  of its ends alive past their expiry, so my own notes never dangle.
+- **Everything is events.** An entity is what its value and link events roll
+  up to (`core/graph/`, ported from entity-graph): sorted by timestamp, so the
+  later event wins.
+- **Two SQLite files** (`node:sqlite`, no native modules), read as one:
+  - **owned** (`detail-views.owned.sqlite`): what I make. An append-only event
+    log the app never deletes from, plus the `settings` table (secrets and
+    settings stay local).
+  - **cache** (`detail-views.cache.sqlite`): what was loaded from other
+    services. One event per value and per link, replaced by the next load; it
+    is emptied weekly (`Core.clearCache`) and may be deleted any time, since
+    everything in it loads again on demand.
+  - The file before these (`detail-views.sqlite`) is read once, read-only, to
+    import what I owned (`legacy.ts`). Never write to it.
+- **Fetched events carry the time they happened elsewhere**: a Slack message at
+  its ts (or its edit's), a PR comment and its link from the PR at its
+  `createdAt`. What has no date of its own (channel names, unread counts,
+  reactions, PR titles and state, checks) is written at **timestamp 0**. So an
+  owned event written now overrides fetched data: renaming a channel or
+  unlinking a PR comment for me only is an ordinary owned event.
+- **Loads are marked on the entity.** A load writes `loaded.<part>` (Unix ms)
+  into the cache with what it fetched. A part is `self` (the entity's own
+  fields) or `children` (what sits under it, only loaded once something walks
+  into it). `ModuleView.foreign` says which parts come from elsewhere and how
+  long each stays fresh; nothing fresh is loaded again unless I refresh.
 - **Cached ids are namespaced by service** (`slack:conv:C123`), so they cannot
-  collide with owned ids (uuids) or with each other.
+  collide with owned ids (uuids) or with each other, and an id's shape alone
+  gives its type (`ModuleView.typeOf`): a PR seen only as a link is that item
+  and loads itself.
 - **Slack is read-only during development.** `slackWrites` in
   `modules/slack/api.ts` gates an allowlist of read methods; do not turn it on
   or widen the list unless I ask.
@@ -38,13 +58,30 @@ constraints every change must keep.
   own, approve locally (an owned entity) and turn on auto-merge; close mine and
   delete the branch. Each is started by me and confirmed with Enter. `gh` runs
   from the temp dir so `--delete-branch` never touches a local checkout.
-- **Actions are generic.** A module offers `actions(entity)` and does them in
-  `perform`; the UI shows each as a button and a key (`tools.ts`), opens a
-  prompt, and only Enter confirms. A PR is an entity keyed by its URL
-  (`prEntityId` in `core/types.ts`), so a link to one anywhere is that item;
-  `Module.materialise` makes the entity the first time an unseen one is looked at.
-- **Secrets and settings are local**, in the `settings` table of the same file.
-- Migrations are append-only in `src/core/db.ts`. Never edit a shipped one.
+- **Actions are generic.** A module offers `actions(entity)` (in its view) and
+  does them in `perform`; the UI shows each as a button and a key (`tools.ts`),
+  opens a prompt, and only Enter confirms. A PR is an entity keyed by its URL
+  (`prEntityId` in `core/types.ts`), so a link to one anywhere is that item.
+- Migrations are append-only, per file, in `src/core/db.ts`. Never edit a
+  shipped one.
+
+### Rendering
+
+- **Data is only ever rendered from the frontend cache** (`EntityCache`,
+  `core/graph/cache.ts`). Reading an entity from it answers at once with
+  whatever it has and is what fetches the rest; nothing on screen waits on a
+  request or asks the core what to show.
+- **Anything from elsewhere is loaded into the cache store, never straight to
+  the screen.** When an entity arrives in the frontend cache and a part of it
+  is foreign and not fresh, the cache asks the core to load it
+  (`Core.actions.load`) asynchronously; the core writes it to the cache store,
+  says which ids changed, and the frontend cache re-reads them, so the view
+  updates on its own. Until then the view shows what the cache has.
+- **Views walk the graph, bounded** (`core/graph/walk.ts`): a focus view walks
+  at most `focusLimit` children, so nothing renders unbounded data.
+- **Writes say what they wrote.** A core action that writes returns the owned
+  events (`Outcome`), which go into the frontend cache at once; the change
+  notification then confirms them.
 
 ### UI
 
@@ -85,23 +122,30 @@ constraints every change must keep.
 
 - **State, logic and views are separate, and the app must be drivable with no
   UI.**
-  - `src/core/` is plain Node: database, store, modules, integrations. It
-    never imports Electron or React. Everything it can do is an entry in
-    `Core.actions`, which is the only surface the UI reaches it through.
+  - `src/core/` is plain TypeScript with no Electron or React. Its node half
+    (stores, loaders, writes) is reached only through `Core.actions`.
+  - Its pure half is shared with the renderer and must not import node:
+    `graph/` (events, rollup, walk, the entity cache), `present.ts`
+    (`focusOf`, `itemOf`) and each module's `view.ts`. The renderer runs it
+    over its cache; `Core.focus` runs the same code over the stores, so a
+    headless caller sees what the UI sees (`npm test` drives an `EntityCache`
+    against a `Core` in plain node).
   - `src/main/` only hosts the core and forwards IPC.
   - `src/renderer/src/state.ts` is latent UI state (the trail, cursors,
     drafts) plus *pure* derivations. Derived values are never written back.
-  - `src/renderer/src/session.ts` holds state and runs effects through the
-    `Api` seam (`api.ts`); `environment.ts` is the only place touching
-    `localStorage`.
+  - `src/renderer/src/session.ts` holds state and the entity cache, and runs
+    effects through the `Api` seam (`api.ts`); `environment.ts` is the only
+    place touching `localStorage`.
   - `src/renderer/src/views/` are dumb: props in, gestures out.
-- **Ordering and shaping of children is core's job** (`Module.order`,
-  `Module.present`) so a headless caller sees what the UI sees.
+- **Ordering and shaping is the module view's job** (`ModuleView.order`,
+  `ModuleView.present`), pure and shared, never the renderer's.
 
 ## Adding things
 
-- **A module**: a `Module` in `src/core/modules/`, registered in `core.ts`. It
-  declares its root entity, refreshes what it caches, and orders children.
+- **A module**: a `ModuleView` in `src/core/modules/<id>/view.ts` (types by id,
+  what is foreign and how fresh, present, order, actions), listed in
+  `moduleViews` in `present.ts`; and a `Module` beside it that loads into the
+  cache store and performs actions, registered in `core.ts`.
 - **An item type**: add it to `itemTypes` in `core/types.ts`, then give it a
   full view, a row and a pill in `views/kinds.tsx`.
 - **A key or command**: a tool in `tools.ts`. Nothing else.

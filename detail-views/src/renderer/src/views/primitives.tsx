@@ -85,12 +85,12 @@ export function usePeek(target: PeekTarget | null) {
 
 /** Items mentioned on screen, and the gestures on them. Provided by App. */
 export interface ItemGestures {
-  summaries: Record<string, Entity | null>
-  want(id: string): () => void
+  /** The item, as far as it has loaded; reading it is what loads it. */
+  item(id: string): Entity | null
   onOpen(id: string): void
 }
 
-export const ItemContext = createContext<ItemGestures>({ summaries: {}, want: () => () => {}, onOpen: () => {} })
+export const ItemContext = createContext<ItemGestures>({ item: () => null, onOpen: () => {} })
 
 /** The status mark an item carries, as its module worked it out. */
 export function Badge(props: { badge: BadgeData | null | undefined }) {
@@ -135,10 +135,9 @@ export function HeaderPill(props: { entity: Entity | null | undefined }) {
  * pushes it.
  */
 export function ItemPill(props: { id: string; fallback: ReactNode }) {
-  const { summaries, want, onOpen } = useContext(ItemContext)
-  useEffect(() => want(props.id), [want, props.id])
+  const { item, onOpen } = useContext(ItemContext)
   const peek = usePeek({ kind: 'entity', id: props.id })
-  const entity = summaries[props.id]
+  const entity = item(props.id)
   return (
     <span
       className="item-pill"

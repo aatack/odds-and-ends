@@ -48,8 +48,14 @@ function createWindow(): BrowserWindow {
 
 void app.whenReady().then(() => {
   nativeTheme.themeSource = 'light'
-  const path = process.env.DETAIL_VIEWS_DB ?? join(app.getPath('userData'), 'detail-views.sqlite')
-  core = new Core({ path })
+  // What I make, and what was loaded from elsewhere (safe to delete). The
+  // single file before them is only read, once, to bring what I owned over.
+  const dir = process.env.DETAIL_VIEWS_DIR ?? app.getPath('userData')
+  core = new Core({
+    owned: join(dir, 'detail-views.owned.sqlite'),
+    cache: join(dir, 'detail-views.cache.sqlite'),
+    legacy: join(dir, 'detail-views.sqlite'),
+  })
   core.start()
   const actions = core.actions as Record<string, (args: unknown) => unknown>
 
@@ -72,8 +78,8 @@ void app.whenReady().then(() => {
     if (!action) throw new Error(`no action ${name}`)
     return action(args)
   })
-  core.onChange(() => {
-    for (const window of BrowserWindow.getAllWindows()) window.webContents.send('changed')
+  core.onChange((changed) => {
+    for (const window of BrowserWindow.getAllWindows()) window.webContents.send('changed', changed)
   })
 
   createWindow()

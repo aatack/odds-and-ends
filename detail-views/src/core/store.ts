@@ -1,243 +1,143 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type { Entity, ItemType } from './types.ts'
+import type { AppEvent, LinkAction } from './graph/events.ts'
 
-interface EntityRow {
-  id: string
-  type: string
-  data: string
-  created_at: number
-  updated_at: number
-  expires_at: number | null
+interface ValueRow {
+  timestamp: number
+  author: string
+  entity_id: string
+  key: string
+  value: string
 }
 
-function toEntity(row: EntityRow): Entity {
-  return {
-    id: row.id,
-    type: row.type as ItemType,
-    data: JSON.parse(row.data) as Record<string, unknown>,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    expiresAt: row.expires_at,
-  }
+interface LinkRow {
+  timestamp: number
+  author: string
+  source_id: string
+  destination_id: string
+  action: number
 }
 
-/** How long a cached write lives. Leave it out for owned data. */
-export interface CacheOptions {
-  ttl?: number
-}
+const fromValue = (row: ValueRow): AppEvent => ({
+  type: 'value',
+  timestamp: row.timestamp,
+  author: row.author,
+  entityId: row.entity_id,
+  key: row.key,
+  value: JSON.parse(row.value),
+})
 
-export interface Blob {
-  mime: string
-  data: Uint8Array
-}
+const fromLink = (row: LinkRow): AppEvent => ({
+  type: 'link',
+  timestamp: row.timestamp,
+  author: row.author,
+  sourceId: row.source_id,
+  destinationId: row.destination_id,
+  action: row.action as LinkAction,
+})
 
-export interface ChildLink {
-  id: string
-  rank: number
+export interface WriteOptions {
+  /**
+   * Cache only: sources whose links are exactly those in this write. Any
+   * other link from one of them is dropped, so a list that lost an item
+   * loses its row.
+   */
+  replaceLinksFrom?: string[]
 }
 
 /**
- * Entities and the directional links between them. Owned rows have no expiry;
- * cached rows do, and `sweep` removes them once it passes.
+ * Events in one SQLite file. `log` appends, and is what I own. `snapshot`
+ * keeps one event per value and per link, replacing it on the next write, and
+ * is the cache of what other services said: a reload states what is true now
+ * rather than adding to a history nothing needs.
  */
-export class Store {
+export class EventStore {
   private readonly db: DatabaseSync
-  private readonly now: () => number
+  private readonly mode: 'log' | 'snapshot'
   private readonly onChange: (ids: string[]) => void
-
-  constructor(db: DatabaseSync, options: { now?: () => number; onChange?: (ids: string[]) => void } = {}) {
-    this.db = db
-    this.now = options.now ?? Date.now
-    this.onChange = options.onChange ?? (() => {})
-  }
-
-  private expiry(options: CacheOptions | undefined): number | null {
-    return options?.ttl === undefined ? null : this.now() + options.ttl
-  }
-
-  get(id: string): Entity | null {
-    const row = this.db.prepare('SELECT * FROM entities WHERE id = ?').get(id) as EntityRow | undefined
-    return row ? toEntity(row) : null
-  }
-
-  /** The first entity of `type` whose top-level `field` equals `value`. */
-  findBy(type: ItemType, field: string, value: string): Entity | null {
-    // The path is written into the SQL, not bound, so an index on the same
-    // expression (see db.ts) can serve it.
-    if (!/^\w+$/.test(field)) throw new Error(`bad field ${field}`)
-    const row = this.db
-      .prepare(`SELECT * FROM entities WHERE type = ? AND json_extract(data, '$.${field}') = ? LIMIT 1`)
-      .get(type, value) as EntityRow | undefined
-    return row ? toEntity(row) : null
-  }
-
-  getMany(ids: string[]): Map<string, Entity> {
-    const found = new Map<string, Entity>()
-    if (ids.length === 0) return found
-    const statement = this.db.prepare(`SELECT * FROM entities WHERE id IN (SELECT value FROM json_each(?))`)
-    for (const row of statement.all(JSON.stringify(ids)) as unknown as EntityRow[]) found.set(row.id, toEntity(row))
-    return found
-  }
-
-  /**
-   * Writes an entity whole. A cached write to something owned keeps it owned:
-   * the data is replaced but the row never gains an expiry.
-   */
-  put(id: string, type: ItemType, data: Record<string, unknown>, options?: CacheOptions): Entity {
-    const now = this.now()
-    this.db
-      .prepare(
-        `INSERT INTO entities (id, type, data, created_at, updated_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT (id) DO UPDATE SET
-           type = excluded.type,
-           data = excluded.data,
-           updated_at = excluded.updated_at,
-           expires_at = CASE WHEN entities.expires_at IS NULL THEN NULL ELSE excluded.expires_at END`,
-      )
-      .run(id, type, JSON.stringify(data), now, now, this.expiry(options))
-    this.onChange([id])
-    return this.get(id)!
-  }
-
-  /** Merges fields into an existing entity. Returns null if it is not there. */
-  patch(id: string, fields: Record<string, unknown>, options?: CacheOptions): Entity | null {
-    const existing = this.get(id)
-    if (!existing) return null
-    return this.put(id, existing.type, { ...existing.data, ...fields }, existing.expiresAt === null ? undefined : options)
-  }
-
-  remove(id: string): void {
-    this.db.prepare('DELETE FROM links WHERE parent = ? OR child = ?').run(id, id)
-    this.db.prepare('DELETE FROM entities WHERE id = ?').run(id)
-    this.onChange([id])
-  }
-
-  children(parent: string): Entity[] {
-    const rows = this.db
-      .prepare(
-        `SELECT e.* FROM links l JOIN entities e ON e.id = l.child
-         WHERE l.parent = ? ORDER BY l.rank, l.created_at`,
-      )
-      .all(parent) as unknown as EntityRow[]
-    return rows.map(toEntity)
-  }
-
-  parents(child: string): Entity[] {
-    const rows = this.db
-      .prepare(`SELECT e.* FROM links l JOIN entities e ON e.id = l.parent WHERE l.child = ? ORDER BY l.created_at`)
-      .all(child) as unknown as EntityRow[]
-    return rows.map(toEntity)
-  }
-
-  /** An owned link stays owned, like an owned entity. Without a rank it goes last. */
-  link(parent: string, child: string, options: CacheOptions & { rank?: number } = {}): void {
-    const rank =
-      options.rank ??
-      (this.db.prepare('SELECT COALESCE(MAX(rank), 0) + 1 AS next FROM links WHERE parent = ?').get(parent) as { next: number })
-        .next
-    this.db
-      .prepare(
-        `INSERT INTO links (parent, child, rank, created_at, expires_at) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT (parent, child) DO UPDATE SET
-           rank = excluded.rank,
-           expires_at = CASE WHEN links.expires_at IS NULL THEN NULL ELSE excluded.expires_at END`,
-      )
-      .run(parent, child, rank, this.now(), this.expiry(options))
-    this.onChange([parent, child])
-  }
-
-  unlink(parent: string, child: string): void {
-    this.db.prepare('DELETE FROM links WHERE parent = ? AND child = ?').run(parent, child)
-    this.onChange([parent, child])
-  }
-
-  /**
-   * Replaces the cached children of `parent` with `children`. Owned links
-   * under it are left alone, so my own notes survive a refresh.
-   */
-  setCachedChildren(parent: string, children: ChildLink[], options: Required<CacheOptions>): void {
-    this.transaction(() => {
-      const keep = JSON.stringify(children.map((child) => child.id))
-      this.db
-        .prepare(
-          `DELETE FROM links WHERE parent = ? AND expires_at IS NOT NULL
-           AND child NOT IN (SELECT value FROM json_each(?))`,
-        )
-        .run(parent, keep)
-      for (const child of children) this.link(parent, child.id, { rank: child.rank, ttl: options.ttl })
-    })
-    this.onChange([parent])
-  }
-
-  /**
-   * Deletes expired links, then expired entities that no owned link still
-   * points at or from, then any link left without an end. Returns how many
-   * entities went.
-   */
-  sweep(): number {
-    const now = this.now()
-    let removed = 0
-    this.transaction(() => {
-      this.db.prepare('DELETE FROM links WHERE expires_at IS NOT NULL AND expires_at <= ?').run(now)
-      removed = Number(
-        this.db
-          .prepare(
-            `DELETE FROM entities WHERE expires_at IS NOT NULL AND expires_at <= ?
-             AND id NOT IN (SELECT child FROM links WHERE expires_at IS NULL)
-             AND id NOT IN (SELECT parent FROM links WHERE expires_at IS NULL)`,
-          )
-          .run(now).changes,
-      )
-      this.db
-        .prepare(
-          `DELETE FROM links WHERE parent NOT IN (SELECT id FROM entities)
-           OR child NOT IN (SELECT id FROM entities)`,
-        )
-        .run()
-    })
-    this.db.prepare('DELETE FROM blobs WHERE expires_at <= ?').run(now)
-    if (removed > 0) this.onChange([])
-    return removed
-  }
-
-  /** Bytes fetched from a service, such as an image. Always cached. */
-  getBlob(key: string): Blob | null {
-    const row = this.db.prepare('SELECT mime, data FROM blobs WHERE key = ?').get(key) as
-      | { mime: string; data: Uint8Array }
-      | undefined
-    return row ? { mime: row.mime, data: row.data } : null
-  }
-
-  putBlob(key: string, blob: Blob, options: Required<CacheOptions>): void {
-    this.db
-      .prepare(
-        `INSERT INTO blobs (key, mime, data, created_at, expires_at) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT (key) DO UPDATE SET mime = excluded.mime, data = excluded.data, expires_at = excluded.expires_at`,
-      )
-      .run(key, blob.mime, blob.data, this.now(), this.now() + options.ttl)
-  }
-
-  getSetting(key: string): string | null {
-    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
-    return row?.value ?? null
-  }
-
-  setSetting(key: string, value: string | null): void {
-    if (value === null) this.db.prepare('DELETE FROM settings WHERE key = ?').run(key)
-    else
-      this.db
-        .prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value')
-        .run(key, value)
-  }
-
   private depth = 0
 
+  constructor(db: DatabaseSync, mode: 'log' | 'snapshot', onChange: (ids: string[]) => void = () => {}) {
+    this.db = db
+    this.mode = mode
+    this.onChange = onChange
+  }
+
+  /**
+   * Every event touching any of `ids`, oldest first. Ties keep the order they
+   * were written in, which is what a rollup's stable sort relies on.
+   */
+  read(ids: readonly string[]): AppEvent[] {
+    if (!ids.length) return []
+    const list = JSON.stringify([...new Set(ids)])
+    const values = this.db
+      .prepare(
+        `SELECT timestamp, author, entity_id, key, value FROM value_events
+         WHERE entity_id IN (SELECT value FROM json_each(?)) ORDER BY timestamp, id`,
+      )
+      .all(list) as unknown as ValueRow[]
+    const links = this.db
+      .prepare(
+        `SELECT timestamp, author, source_id, destination_id, action FROM link_events
+         WHERE source_id IN (SELECT value FROM json_each(?1)) OR destination_id IN (SELECT value FROM json_each(?1))
+         ORDER BY timestamp, id`,
+      )
+      .all(list) as unknown as LinkRow[]
+    return [...values.map(fromValue), ...links.map(fromLink)]
+  }
+
+  /** Writes events, and says which entities changed. A snapshot write that changes nothing says nothing. */
+  write(events: readonly AppEvent[], options: WriteOptions = {}): void {
+    const touched = new Set<string>()
+    const snapshot = this.mode === 'snapshot'
+    const insertValue = this.db.prepare(
+      `INSERT INTO value_events (timestamp, author, entity_id, key, value) VALUES (?, ?, ?, ?, ?)` +
+        (snapshot
+          ? ` ON CONFLICT (entity_id, key) DO UPDATE SET timestamp = excluded.timestamp, author = excluded.author, value = excluded.value
+              WHERE value IS NOT excluded.value OR timestamp IS NOT excluded.timestamp`
+          : ''),
+    )
+    const insertLink = this.db.prepare(
+      `INSERT INTO link_events (timestamp, author, source_id, destination_id, action) VALUES (?, ?, ?, ?, ?)` +
+        (snapshot
+          ? ` ON CONFLICT (source_id, destination_id) DO UPDATE SET timestamp = excluded.timestamp, author = excluded.author, action = excluded.action
+              WHERE action IS NOT excluded.action OR timestamp IS NOT excluded.timestamp`
+          : ''),
+    )
+    this.transaction(() => {
+      for (const e of events) {
+        if (e.type === 'value') {
+          const { changes } = insertValue.run(e.timestamp, e.author, e.entityId, e.key, JSON.stringify(e.value ?? null))
+          if (changes) touched.add(e.entityId)
+        } else {
+          const { changes } = insertLink.run(e.timestamp, e.author, e.sourceId, e.destinationId, e.action)
+          if (changes) touched.add(e.sourceId).add(e.destinationId)
+        }
+      }
+      for (const source of options.replaceLinksFrom ?? []) {
+        if (!snapshot) throw new Error('only the cache replaces links')
+        const keep = events.flatMap((e) => (e.type === 'link' && e.sourceId === source ? [e.destinationId] : []))
+        const dropped = this.db
+          .prepare(
+            `DELETE FROM link_events WHERE source_id = ? AND destination_id NOT IN (SELECT value FROM json_each(?))
+             RETURNING destination_id`,
+          )
+          .all(source, JSON.stringify(keep)) as { destination_id: string }[]
+        if (dropped.length) touched.add(source)
+        for (const row of dropped) touched.add(row.destination_id)
+      }
+    })
+    if (touched.size) this.onChange([...touched])
+  }
+
+  /** Empties the store: the cache's weekly clear-out. */
+  clear(): void {
+    this.transaction(() => {
+      this.db.exec('DELETE FROM value_events; DELETE FROM link_events;')
+    })
+  }
+
   transaction(body: () => void): void {
-    if (this.depth > 0) {
-      body()
-      return
-    }
+    if (this.depth > 0) return body()
     this.depth += 1
     this.db.exec('BEGIN')
     try {
@@ -249,5 +149,59 @@ export class Store {
     } finally {
       this.depth -= 1
     }
+  }
+}
+
+/** Secrets and settings, in the owned file. */
+export class Settings {
+  private readonly db: DatabaseSync
+
+  constructor(db: DatabaseSync) {
+    this.db = db
+  }
+
+  get(key: string): string | null {
+    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
+    return row?.value ?? null
+  }
+
+  set(key: string, value: string | null): void {
+    if (value === null) this.db.prepare('DELETE FROM settings WHERE key = ?').run(key)
+    else
+      this.db
+        .prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value')
+        .run(key, value)
+  }
+}
+
+export interface Blob {
+  mime: string
+  data: Uint8Array
+}
+
+/** Bytes fetched from a service, such as an image, in the cache file. */
+export class Blobs {
+  private readonly db: DatabaseSync
+
+  constructor(db: DatabaseSync) {
+    this.db = db
+  }
+
+  get(key: string): Blob | null {
+    const row = this.db.prepare('SELECT mime, data FROM blobs WHERE key = ?').get(key) as Blob | undefined
+    return row ? { mime: row.mime, data: row.data } : null
+  }
+
+  put(key: string, blob: Blob): void {
+    this.db
+      .prepare(
+        `INSERT INTO blobs (key, mime, data) VALUES (?, ?, ?)
+         ON CONFLICT (key) DO UPDATE SET mime = excluded.mime, data = excluded.data`,
+      )
+      .run(key, blob.mime, blob.data)
+  }
+
+  clear(): void {
+    this.db.exec('DELETE FROM blobs')
   }
 }

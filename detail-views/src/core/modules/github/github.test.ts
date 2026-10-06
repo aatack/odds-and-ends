@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { Core } from '../../core.ts'
-import { badge, prName } from './github.ts'
+import { memoryCore } from '../../testing.ts'
+import { badge, prName } from './view.ts'
 
 const url = 'https://github.com/o/r/pull/7'
 
@@ -51,7 +51,7 @@ function fakeGh(calls: string[][], options: { author?: string } = {}) {
 }
 
 test('github: my open PRs, keyed by URL', async () => {
-  const core = new Core({ path: ':memory:', gh: fakeGh([]) })
+  const core = memoryCore({ gh: fakeGh([]) })
   await core.refresh('github')
   const [pr] = core.focus('github').children
   assert.equal(pr.id, `github:pr:${url}`)
@@ -59,8 +59,21 @@ test('github: my open PRs, keyed by URL', async () => {
   assert.equal(pr.data.label, 'Fix it')
 })
 
+test('github: comments are written when they were made, and can be hidden for me only', async () => {
+  const core = memoryCore({ gh: fakeGh([]) })
+  const id = `github:pr:${url}`
+  await core.refresh(id)
+  const review = `${id}#item:R2`
+  const linked = core.cache.read([id]).find((e) => e.type === 'link' && e.destinationId === review)!
+  assert.equal(linked.timestamp, Date.parse('2026-10-01T03:00:00Z'))
+  assert.equal(core.cache.read([id]).find((e) => e.type === 'value' && e.key === 'title')!.timestamp, 0)
+  core.actions.unlink({ parent: id, child: review })
+  await core.refresh(id)
+  assert.ok(!core.focus(id).children.some((child) => child.id === review))
+})
+
 test('github: a PR shows checks that need me, then the discussion in order', async () => {
-  const core = new Core({ path: ':memory:', gh: fakeGh([]) })
+  const core = memoryCore({ gh: fakeGh([]) })
   const id = `github:pr:${url}`
   // Seen only as a link: becomes an item when looked at.
   assert.ok(core.focus(id).entity)
@@ -84,14 +97,14 @@ test('github: a PR shows checks that need me, then the discussion in order', asy
 
 test('github: only queries, never mutations', async () => {
   const calls: string[][] = []
-  const core = new Core({ path: ':memory:', gh: fakeGh(calls) })
+  const core = memoryCore({ gh: fakeGh(calls) })
   await core.refresh('github')
   assert.ok(calls.every((args) => args[0] === 'api' && args[1] === 'graphql' && !/^\s*mutation/.test(args[3].slice('query='.length))))
 })
 
 async function loaded(author: string) {
   const calls: string[][] = []
-  const core = new Core({ path: ':memory:', gh: fakeGh(calls, { author }) })
+  const core = memoryCore({ gh: fakeGh(calls, { author }) })
   const id = `github:pr:${url}`
   core.focus(id)
   await core.refresh(id)
@@ -114,9 +127,10 @@ test('github: approving my own PR is kept locally and turns on auto-merge', asyn
   const focus = core.focus(id)
   assert.equal(focus.entity!.data.locallyApproved, true)
   assert.ok(focus.children.every((child) => child.type !== 'github.localApproval'))
-  // Owned: survives the cache being swept.
-  const approval = core.store.children(id).find((child) => child.type === 'github.localApproval')!
-  assert.equal(approval.expiresAt, null)
+  // Owned: survives the cache being cleared.
+  core.clearCache()
+  assert.equal(core.item(id)!.data.title, undefined)
+  assert.equal(core.focus(id).entity!.data.locallyApproved, true)
 })
 
 test('github: closing my own PR deletes the branch, with an optional comment', async () => {
@@ -164,13 +178,14 @@ test('github: badges', () => {
   assert.equal(b({}), null)
 })
 
-test('github: summaries materialise a linked PR and carry its badge once loaded', async () => {
-  const core = new Core({ path: ':memory:', gh: fakeGh([]) })
+test('github: a PR seen only as a link is an item, and carries its badge once loaded', async () => {
+  const core = memoryCore({ gh: fakeGh([]) })
   const id = `github:pr:${url}`
-  const first = core.actions.summaries({ ids: [id] })[id]!
+  const first = core.focus(id).entity!
   assert.equal(first.data.badge, null)
-  await core.refresh(id)
-  const loaded = core.actions.summaries({ ids: [id] })[id]!
+  assert.equal(first.data.label, url)
+  await core.load({ id, part: 'self' })
+  const loaded = core.focus(id).entity!
   // Mine, one failing check: CI failure outranks the approval.
   assert.deepEqual(loaded.data.badge, { shape: 'cross', tone: 'red', reason: 'CI failing' })
 })
