@@ -6,6 +6,7 @@ export interface Api {
   focus(id: string): Promise<Focus>
   refresh(id: string): Promise<void>
   submit(id: string, text: string): Promise<void>
+  perform(id: string, action: string, text: string): Promise<void>
   toggle(id: string): Promise<void>
   markRead(id: string): Promise<void>
   onChange(listener: () => void): () => void
@@ -27,6 +28,7 @@ export function electronApi(): Api {
     focus: (id) => call('focus', { id }),
     refresh: (id) => call('refresh', { id }),
     submit: (id, text) => call('submit', { id, text }),
+    perform: (id, action, text) => call('perform', { id, action, text }),
     toggle: (id) => call('toggle', { id }),
     markRead: (id) => call('markRead', { id }),
     onChange: (listener) => bridge.onChange(listener),

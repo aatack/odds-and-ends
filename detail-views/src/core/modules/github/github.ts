@@ -1,6 +1,7 @@
+import { randomUUID } from 'node:crypto'
 import type { Store } from '../../store.ts'
 import { prEntityId } from '../../types.ts'
-import type { Entity } from '../../types.ts'
+import type { Action, Entity } from '../../types.ts'
 import type { Module, ModuleContext } from '../module.ts'
 
 const day = 24 * 60 * 60 * 1000
@@ -13,7 +14,21 @@ const ids = {
   item: (pr: string, id: string) => `${pr}#item:${id}`,
 }
 
-/** Read-only: queries, never mutations. */
+/**
+ * The only writes the app makes to GitHub, each started by me and confirmed.
+ * Anything else is refused before gh runs.
+ */
+function checkWrite(args: string[]): void {
+  const [noun, verb] = args
+  const allowed =
+    noun === 'pr' &&
+    ((verb === 'review' && args.includes('--approve')) ||
+      (verb === 'merge' && args.includes('--auto')) ||
+      (verb === 'close' && args.includes('--delete-branch')))
+  if (!allowed) throw new Error(`refusing gh ${args.slice(0, 2).join(' ')}`)
+}
+
+/** Reads: queries, never mutations. */
 async function query<T>(gh: ModuleContext['gh'], text: string, variables: Record<string, string> = {}): Promise<T> {
   if (/^\s*mutation\b/.test(text)) throw new Error('GitHub is read-only')
   const args = ['api', 'graphql', '-f', `query=${text}`]
@@ -33,10 +48,11 @@ const listQuery = `query {
   }
 }`
 
-const prQuery = `query($url: URI!) { resource(url: $url) { ... on PullRequest {
+const prQuery = `query($url: URI!) { viewer { login } resource(url: $url) { ... on PullRequest {
   url number title body state isDraft mergeable reviewDecision additions deletions changedFiles
   headRefName baseRefName createdAt updatedAt
-  author { login } repository { nameWithOwner }
+  author { login } repository { nameWithOwner viewerDefaultMergeMethod }
+  autoMergeRequest { enabledAt }
   comments(first: 100) { nodes { id url author { login } body createdAt } }
   reviews(first: 50) { nodes { id url author { login } body state createdAt
     comments(first: 50) { nodes { id url path line originalLine diffHunk body createdAt } } } }
@@ -70,6 +86,8 @@ interface RawPr extends RawListPr {
   baseRefName: string
   createdAt: string
   author: Login
+  repository: { nameWithOwner: string; viewerDefaultMergeMethod?: string }
+  autoMergeRequest: { enabledAt: string } | null
   comments: { nodes: { id: string; url: string; author: Login; body: string; createdAt: string }[] }
   reviews: {
     nodes: {
@@ -186,6 +204,57 @@ export class GitHub implements Module {
     return entity.type.startsWith('github.')
   }
 
+  /** My own approval of my own PR: owned, so it lasts past the cache. */
+  private localApproval(prId: string): Entity | null {
+    return this.store.children(prId).find((child) => child.type === 'github.localApproval') ?? null
+  }
+
+  actions(entity: Entity): Action[] {
+    if (entity.type !== 'github.pr' || entity.data.state !== 'OPEN') return []
+    const actions: Action[] = []
+    if (!entity.data.mine) {
+      actions.push({ id: 'approve', label: 'Approve', prompt: 'Approve: comment (optional), Enter to approve' })
+    } else {
+      if (!this.localApproval(entity.id) || !entity.data.autoMerge) {
+        actions.push({
+          id: 'approve',
+          label: 'Approve',
+          prompt: 'Approve locally and turn on auto-merge: Enter to confirm',
+        })
+      }
+      actions.push({
+        id: 'close',
+        label: 'Close',
+        prompt: 'Close and delete the branch: comment (optional), Enter to close',
+      })
+    }
+    return actions
+  }
+
+  async perform(entity: Entity, action: string, text: string): Promise<void> {
+    const url = String(entity.data.url)
+    if (action === 'approve' && !entity.data.mine) {
+      await this.write(['pr', 'review', url, '--approve', ...(text ? ['--body', text] : [])])
+    } else if (action === 'approve') {
+      if (!this.localApproval(entity.id)) {
+        const id = randomUUID()
+        this.store.transaction(() => {
+          this.store.put(id, 'github.localApproval', { at: Date.now(), ...(text ? { note: text } : {}) })
+          this.store.link(entity.id, id)
+        })
+      }
+      const method = String(entity.data.mergeMethod ?? 'SQUASH').toLowerCase()
+      await this.write(['pr', 'merge', url, '--auto', `--${method === 'merge' ? 'merge' : method}`])
+    } else if (action === 'close') {
+      await this.write(['pr', 'close', url, '--delete-branch', ...(text ? ['--comment', text] : [])])
+    }
+  }
+
+  private async write(args: string[]): Promise<void> {
+    checkWrite(args)
+    await this.gh(args)
+  }
+
   /** A PR seen only as a link becomes an item the first time it is looked at. */
   materialise(id: string): Entity | null {
     const url = id.startsWith('github:pr:') ? id.slice('github:pr:'.length) : null
@@ -205,6 +274,7 @@ export class GitHub implements Module {
 
   order(entity: Entity, children: Entity[]): Entity[] {
     if (entity.type !== 'github.pr') return children
+    children = children.filter((child) => child.type !== 'github.localApproval')
     const checks = children.filter((child) => child.type === 'github.check')
     const discussion = children.filter((child) => child.type !== 'github.check')
     checks.sort(
@@ -219,7 +289,7 @@ export class GitHub implements Module {
     if (entity.type === 'github.pr') {
       const data = entity.data
       // `label` names the PR where nothing else does, as in a peek's bar.
-      return { ...entity, data: { ...data, label: data.title ? `${String(data.repo)}#${String(data.number)} ${String(data.title)}` : String(data.url) } }
+      return { ...entity, data: { ...data, locallyApproved: Boolean(this.localApproval(entity.id)), label: data.title ? `${String(data.repo)}#${String(data.number)} ${String(data.title)}` : String(data.url) } }
     }
     if (entity.type === 'github.item') {
       // Shaped like a Slack message, so the same views draw it.
@@ -259,7 +329,11 @@ export class GitHub implements Module {
   }
 
   private async refreshPr(url: string): Promise<void> {
-    const { resource: pr } = await query<{ resource: RawPr | null }>(this.gh, prQuery, { url })
+    const { resource: pr, viewer } = await query<{ resource: RawPr | null; viewer: { login: string } }>(
+      this.gh,
+      prQuery,
+      { url },
+    )
     if (!pr) throw new Error('not a pull request, or not visible to gh')
     const id = ids.pr(url)
     const contexts = pr.commits.nodes[0]?.commit.statusCheckRollup?.contexts.nodes ?? []
@@ -329,6 +403,9 @@ export class GitHub implements Module {
           head: pr.headRefName,
           base: pr.baseRefName,
           counts,
+          mine: pr.author?.login === viewer.login,
+          autoMerge: Boolean(pr.autoMergeRequest),
+          mergeMethod: pr.repository.viewerDefaultMergeMethod,
         },
         { ttl },
       )

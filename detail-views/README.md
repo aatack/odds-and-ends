@@ -20,6 +20,8 @@ npm run dev
 | `Enter` | write; `Enter` again sends (or closes when empty), `Shift+Enter` new line, `Esc` closes |
 | `r` | refresh |
 | `x` `Space` | tick a task |
+| `a` | approve a PR |
+| `X` | close my PR and delete its branch |
 
 ## Slack
 
@@ -43,7 +45,12 @@ Uses the `gh` CLI as it is signed in; nothing to configure. The list is my open
 pull requests. A PR shows the checks that need attention (passing and skipped
 ones are counted), then its description, comments and reviews in order, with
 inline review comments and the diff lines they point at. Any link to a PR, in
-Slack or elsewhere, peeks at the PR itself. Read-only, like Slack.
+Slack or elsewhere, peeks at the PR itself.
+
+Inside a PR, `a` approves (someone else's: an approving review, with an
+optional comment; mine: marked approved here and auto-merge turned on) and `X`
+closes mine and deletes the branch, with an optional comment. Both open a
+prompt; Enter confirms, Esc cancels.
 
 ## Data
 

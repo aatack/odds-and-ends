@@ -592,3 +592,17 @@ body,
   font-weight: 700;
   margin: 8px 0 2px;
 }
+
+.facts .action {
+  font: inherit;
+  color: var(--ink);
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0 10px;
+}
+
+.facts .action.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}

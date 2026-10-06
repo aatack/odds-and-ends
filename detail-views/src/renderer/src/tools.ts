@@ -23,7 +23,7 @@ export const tools: Tool[] = [
     id: 'composer.send',
     scope: 'input',
     keys: ['Enter'],
-    run: (s) => (s.hasDraft() ? void s.send() : s.compose(false)),
+    run: (s) => (s.get().state.acting ? void s.perform() : s.hasDraft() ? void s.send() : s.compose(false)),
   },
   { id: 'composer.leave', scope: 'input', keys: ['Escape'], run: (s) => s.compose(false) },
 
@@ -63,6 +63,20 @@ export const tools: Tool[] = [
     run: (s) => s.markRead(),
   },
 
+  ...(
+    [
+      ['approve', 'a'],
+      ['close', 'X'],
+    ] as const
+  ).map(
+    ([action, key]): Tool => ({
+      id: `action.${action}`,
+      scope: 'app',
+      keys: [key],
+      enabled: (s) => Boolean(s.get().focus?.actions.some((offered) => offered.id === action)),
+      run: (s) => s.startAction(action),
+    }),
+  ),
   { id: 'focus.back', scope: 'app', keys: ['A', 'ArrowLeft', 'Backspace', 'Alt+ArrowLeft'], run: (s) => s.back() },
   { id: 'focus.forward', scope: 'app', keys: ['Alt+ArrowRight'], run: (s) => s.forward() },
   { id: 'focus.refresh', scope: 'app', keys: ['r', 'F5'], run: (s) => s.refresh() },
