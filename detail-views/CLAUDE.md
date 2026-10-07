@@ -156,8 +156,12 @@ doc for the area you change, and keep it up to date in the same commit.
 - No animations. The cursor never becomes a pointer.
 - **Anything interactable shows it on hover** (rows, pills, links, sidebar
   entries, thumbnails, buttons), since the cursor never changes. Every button
-  is `Button` (`views/primitives.tsx`): raised at rest, darker on hover,
-  pressed in on click.
+  is `Button` (`views/primitives.tsx`): a soft gray fill, darker on hover and
+  pressed, no border (after entity-graph). A button whose action has a key
+  shows it first, in a key cap, read from the tool registry (`hotkeyOf`).
+- **Muted colours**: gray first, one quiet indigo accent, desaturated status
+  hues, all as tokens on `:root` in `styles.css`. No colour is written
+  anywhere else.
 - **A slow action says it is under way**: its button shows `busy` (a
   `…` label, pressed in, not pressable) from `Session.working` until it
   settles.

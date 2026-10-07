@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import { authorColour, cursorTime } from '../format.ts'
+import { hotkeyOf } from '../tools.ts'
 import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
 import { MessageBody, MessageRow } from './messages.tsx'
 import { Button, Composer, HeaderPill, Highlight, ItemPill, Status } from './primitives.tsx'
@@ -57,7 +58,7 @@ function History(props: OverviewProps) {
     <span className="history">
       {typeof data.from === 'string' && <span title="Everything since is loaded">{cursorTime(data.from)}</span>}
       {props.interactive && props.onOlder && (
-        <Button busy={props.working?.includes('older')} label="Older" busyLabel="Loading…" onClick={props.onOlder} />
+        <Button busy={props.working?.includes('older')} label="Older" busyLabel="Loading…" hotkey={hotkeyOf('view.older')} onClick={props.onOlder} />
       )}
     </span>
   )
@@ -121,7 +122,8 @@ export function MessageOverview(props: OverviewProps) {
               label="Hide chat"
               busyLabel="Hiding…"
               busy={props.working?.includes('hide')}
-              title="Hide this chat and its threads (Shift+Backspace)"
+              hotkey={hotkeyOf('chat.hide')}
+              title="Hide this chat and its threads"
               onClick={props.onHideChat}
             />
           </span>

@@ -2,13 +2,25 @@
   color-scheme: light;
   --canvas: light-dark(#fafafa, #111113);
   --panel: light-dark(#f1f1f3, #18181b);
-  --ink: light-dark(#1c1c1f, #e6e6e9);
-  --muted: light-dark(#7a7a83, #85858f);
-  --faint: light-dark(#b3b3bb, #4a4a52);
-  --line: light-dark(#e6e6ea, #26262b);
-  --select: light-dark(#e8e8ee, #232329);
-  --accent: light-dark(#4f46e5, #8b85ff);
-  --danger: light-dark(#c2410c, #f0864f);
+  /* Muted, after entity-graph: gray first, one quiet indigo, desaturated status hues. */
+  --ink: light-dark(#292929, #e6e6e9);
+  --ink-soft: light-dark(#344054, #c9ccd4);
+  --muted: light-dark(#667085, #8b8f9b);
+  --faint: light-dark(#98a2b3, #4f525c);
+  --line: light-dark(#eaecf0, #26262b);
+  --select: light-dark(#e9eaf3, #232329);
+  --accent: light-dark(#5b63d3, #8b90e6);
+  --accent-soft: light-dark(#eef0fb, #24263a);
+  --danger: light-dark(#c0473c, #e0796f);
+  --success: light-dark(#3a875f, #6fbf93);
+  --warning: light-dark(#b8862f, #d9aa55);
+  --error: light-dark(#c0473c, #e0796f);
+  --merged: light-dark(#7a6cc4, #a99de8);
+  --link: light-dark(#3a5f9e, #8fb0e6);
+  /* Fills for buttons and chips: a soft gray, a step darker on hover, another pressed. */
+  --fill: light-dark(#f2f4f7, #202027);
+  --fill-hover: light-dark(#eaecf0, #2a2a32);
+  --fill-press: light-dark(#e1e4ea, #31313a);
   --radius: 6px;
   font-family: Lato, system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 15.5px;
@@ -226,14 +238,14 @@ body,
   padding: 0 7px;
   border-radius: 999px;
   line-height: 1.5;
-  background: light-dark(#efefef, #26262b);
+  background: var(--fill);
   border: 1px solid transparent;
   font-size: 13px;
 }
 
 .reaction.mine {
-  background: light-dark(#e8f1fb, #1d2b3a);
-  border-color: light-dark(#1d74b5, #4a8fd0);
+  background: var(--accent-soft);
+  border-color: light-dark(#c7cbef, #3b3f66);
 }
 
 .reaction-count {
@@ -241,7 +253,7 @@ body,
 }
 
 .reaction.mine .reaction-count {
-  color: light-dark(#1d74b5, #7ab3e6);
+  color: var(--accent);
 }
 
 .replies {
@@ -349,7 +361,7 @@ body,
   padding: 1px 4px;
   border-radius: 4px;
   background: light-dark(#f0f0f2, #232328);
-  color: light-dark(#b42318, #f08c7e);
+  color: light-dark(#a03b32, #e0796f);
 }
 
 .text pre {
@@ -381,7 +393,7 @@ body,
 }
 
 .link {
-  color: light-dark(#1264a3, #6cb4ee);
+  color: var(--link);
   text-decoration: none;
 }
 
@@ -508,15 +520,15 @@ body,
 }
 
 .dot.passing {
-  background: #2e9d5b;
+  background: var(--success);
 }
 
 .dot.failing {
-  background: #d1453b;
+  background: var(--error);
 }
 
 .dot.pending {
-  background: #d39a1c;
+  background: var(--warning);
 }
 
 .verdict {
@@ -525,11 +537,11 @@ body,
 }
 
 .verdict.approved {
-  color: #2e9d5b;
+  color: var(--success);
 }
 
 .verdict.changes_requested {
-  color: #d1453b;
+  color: var(--error);
 }
 
 .facts {
@@ -554,73 +566,88 @@ body,
 }
 
 /*
- * Every button (`Button` in views/primitives.tsx). Raised a little at rest,
- * darker on hover, pressed in on click; no motion, and the cursor stays an
- * arrow, so hover is what says it can be pressed.
+ * Every button (`Button` in views/primitives.tsx), after entity-graph's: no
+ * border, a soft gray fill, a step darker on hover and another while pressed.
+ * No motion, and the cursor stays an arrow, so the fill is what says it can be
+ * pressed. A hotkey, where it has one, leads it in a small key cap.
  */
 .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font: inherit;
   font-size: 13px;
+  font-weight: 600;
   line-height: 1.3;
-  color: var(--ink);
-  background: light-dark(#ffffff, #1f1f24);
-  border: 1px solid light-dark(#d4d4dc, #34343c);
-  border-bottom-color: light-dark(#c2c2cc, #2a2a30);
+  color: var(--ink-soft);
+  background: var(--fill);
+  border: none;
   border-radius: var(--radius);
-  padding: 3px 7px;
-  box-shadow: 0 1px 1px light-dark(rgb(0 0 0 / 0.06), rgb(0 0 0 / 0.4));
+  padding: 4px 9px;
   white-space: nowrap;
 }
 
 .button:hover:not(:disabled) {
-  background: light-dark(#f0f0f5, #2a2a31);
-  border-color: light-dark(#b9b9c4, #45454f);
+  background: var(--fill-hover);
+  color: var(--ink);
 }
 
 .button:active:not(:disabled) {
-  background: light-dark(#e4e4eb, #232329);
-  box-shadow: inset 0 1px 2px light-dark(rgb(0 0 0 / 0.12), rgb(0 0 0 / 0.5));
+  background: var(--fill-press);
 }
 
 .button:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
   outline-offset: 1px;
 }
 
+/* Its action waiting on the prompt. */
 .button.active {
-  border-color: var(--accent);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
-/* Under way: says so in its label, and stays pressed in until it is done. */
+/* Under way: says so in its label, and can't be pressed again. */
 .button.busy {
   color: var(--muted);
-  background: light-dark(#e9e9ef, #232329);
-  box-shadow: inset 0 1px 2px light-dark(rgb(0 0 0 / 0.1), rgb(0 0 0 / 0.5));
+  background: var(--fill-hover);
 }
 
 /* Can't be pressed now; its tooltip says why. */
 .button:disabled:not(.busy) {
-  color: var(--faint);
-  background: transparent;
-  border-color: var(--line);
-  box-shadow: none;
+  opacity: 0.5;
 }
 
 /* A button that is only a glyph (a peek's ×). */
 .button.quiet {
-  border-color: transparent;
   background: none;
-  box-shadow: none;
   padding: 0 6px;
   font-size: 18px;
+  font-weight: 400;
   line-height: 1;
   color: var(--muted);
 }
 
 .button.quiet:hover {
   color: var(--ink);
-  background: var(--select);
+  background: var(--fill);
+}
+
+/* A hotkey, in a key cap. */
+.key {
+  font-family: ui-monospace, 'JetBrains Mono', Menlo, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  padding: 0 4px;
+  border-radius: 4px;
+  color: var(--muted);
+  background: light-dark(#e1e4ea, #31313a);
+}
+
+.button.active .key {
+  color: var(--accent);
+  background: light-dark(#e0e3f7, #2f3250);
 }
 
 /* An in-app item named in text: its badge and its name. */
@@ -631,15 +658,15 @@ body,
   max-width: 28em;
   padding: 0 7px 0 6px;
   border-radius: 999px;
-  border: 1px solid light-dark(#dcdce3, #34343c);
-  background: var(--canvas);
+  border: 1px solid var(--line);
+  background: var(--fill);
   vertical-align: bottom;
   font-size: 0.92em;
   user-select: none;
 }
 
 .item-pill:hover {
-  background: light-dark(#dcdce4, #2e2e36);
+  background: var(--fill-hover);
 }
 
 .item-name {
@@ -670,11 +697,11 @@ body,
   width: 10px;
 }
 
-.badge.dot.green { background: #2e9d5b; }
-.badge.dot.yellow { background: #d39a1c; }
-.badge.dot.red { background: #d1453b; }
-.badge.tick.green { color: #2e9d5b; }
-.badge.cross.red { color: #d1453b; }
+.badge.dot.green { background: var(--success); }
+.badge.dot.yellow { background: var(--warning); }
+.badge.dot.red { background: var(--error); }
+.badge.tick.green { color: var(--success); }
+.badge.cross.red { color: var(--error); }
 
 /* A pill heading a view or window: the same content, without the frame. */
 .item-pill.header {
@@ -700,9 +727,9 @@ body,
   gap: 6px;
 }
 
-.badge.dot.purple { background: #8250df; }
+.badge.dot.purple { background: var(--merged); }
 .badge.tick.purple,
-.badge.cross.purple { color: #8250df; }
+.badge.cross.purple { color: var(--merged); }
 
 /* --- The tree a view is drawn as --------------------------------------------- */
 

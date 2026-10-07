@@ -138,3 +138,35 @@ export const tools: Tool[] = [
 function blur(): void {
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
 }
+
+const keyNames: Record<string, string> = {
+  Shift: '⇧',
+  Ctrl: 'Ctrl',
+  Alt: 'Alt',
+  Backspace: '⌫',
+  Delete: 'Del',
+  Enter: '↵',
+  Escape: 'Esc',
+  ArrowLeft: '←',
+  ArrowRight: '→',
+  ArrowUp: '↑',
+  ArrowDown: '↓',
+  ' ': 'Space',
+}
+
+/** A key as a key cap shows it: `Shift+Backspace` → `⇧⌫`. */
+export function keyLabel(key: string): string {
+  return key
+    .split('+')
+    .map((part) => keyNames[part] ?? part)
+    .join('')
+}
+
+/**
+ * The key a tool is bound to, as shown on its button: the first of its keys.
+ * Read from the registry, so a button can't show a key that doesn't do it.
+ */
+export function hotkeyOf(toolId: string): string | undefined {
+  const key = tools.find((tool) => tool.id === toolId)?.keys[0]
+  return key === undefined ? undefined : keyLabel(key)
+}
