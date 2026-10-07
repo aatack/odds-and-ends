@@ -23,7 +23,8 @@ doc for the area you change, and keep it up to date in the same commit.
 - **Links are directional, parent → child.** Focusing an entity shows its
   children. Any entity may link to any other, across modules.
 - **Navigation is a stack of views.** `d` pushes a view rooted at the
-  selected row; `Shift+A` pops it.
+  selected row; `Shift+A` pops it. Entering a module (sidebar or `1`–`9`)
+  starts the stack again at its root.
 - **Any item can be worked on the same way**, whatever its type: Enter adds a
   note under it (an owned entity with no type, just text), `e` edits its text,
   Backspace takes it out from under its parent *in this view* (nothing at the

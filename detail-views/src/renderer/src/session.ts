@@ -276,9 +276,14 @@ export class Session {
     this.update(S.navigate(this.state, id))
   }
 
+  /** Enters a module: the stack starts again at its root. */
+  enterModule(root: string): void {
+    this.update(S.enter(this.state, root))
+  }
+
   openModule(index: number): void {
     const module = this.snapshot.modules[index]
-    if (module) this.navigate(module.root)
+    if (module) this.enterModule(module.root)
   }
 
   back(): void {

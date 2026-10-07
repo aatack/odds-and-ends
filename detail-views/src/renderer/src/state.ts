@@ -273,6 +273,12 @@ export function navigate(state: State, id: string): State {
   return { ...state, trail, at: trail.length - 1, composing: false, acting: null, viewing: null, edit: null, peeks: state.peeks.filter((peek) => peek.pinned) }
 }
 
+/** Entering a module: its root becomes the whole stack, rather than one more view on it. */
+export function enter(state: State, root: string): State {
+  if (state.trail.length === 1 && focused(state) === root) return state
+  return { ...state, trail: [root], at: 0, composing: false, acting: null, viewing: null, edit: null, peeks: state.peeks.filter((peek) => peek.pinned) }
+}
+
 export function back(state: State): State {
   return state.at > 0 ? { ...state, at: state.at - 1, composing: false, acting: null, edit: null } : state
 }
