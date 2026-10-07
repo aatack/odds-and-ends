@@ -18,7 +18,8 @@ export function NoteOverview(props: OverviewProps) {
   const { data } = props.entity
   return (
     <div className={`note-overview ${noteClass(data)}`}>
-      <Checkbox open={data.open} /> <Text text={text(data)} find={props.findText} />
+      <Checkbox open={data.open} />
+      <Text text={text(data)} find={props.findText} />
     </div>
   )
 }
@@ -27,7 +28,7 @@ export const NoteRow = memo(function NoteRow(props: RowProps) {
   const { data } = props.entity
   return (
     <span className={noteClass(data)}>
-      <Checkbox open={data.open} /> <Text text={text(data)} find={props.findText} />
+      <Text text={text(data)} find={props.findText} />
     </span>
   )
 })
@@ -55,7 +56,7 @@ export const TaskRow = memo(function TaskRow(props: RowProps) {
   const { data } = props.entity
   return (
     <span className={`line${data.done ? ' done' : ''}`}>
-      <span className="check">{data.done ? '✓' : '○'}</span> <Text text={text(data)} find={props.findText} inline />
+      <Text text={text(data)} find={props.findText} inline />
     </span>
   )
 })

@@ -749,15 +749,16 @@ body,
   gap: 4px;
 }
 
-/* The fold mark: ▸ folded, ▾ open, nothing for no children. */
-.fold {
+/* What leads a row: its box, its fold mark (▸ folded, ▾ open), or a bullet. */
+.marker {
   flex: none;
-  width: 12px;
+  width: 14px;
+  text-align: center;
   font-size: 11px;
   color: var(--faint);
 }
 
-.row.selected .fold {
+.row.selected .marker {
   color: var(--muted);
 }
 
@@ -983,7 +984,7 @@ mark {
   user-select: text;
 }
 
-.fold,
+.marker,
 .button,
 .key,
 .badge,
@@ -1141,4 +1142,25 @@ mark {
 
 .md.inline {
   display: inline;
+}
+
+.marker .check {
+  font-size: 13px;
+}
+
+.bullet {
+  font-size: 9px;
+  vertical-align: 2px;
+}
+
+/* A note heading its view: its box and its text on one line. */
+.note-overview {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.note-overview > .md {
+  flex: 1;
+  min-width: 0;
 }

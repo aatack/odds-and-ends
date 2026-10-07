@@ -113,6 +113,7 @@ const TreeRow = memo(function TreeRow(props: {
   onImage(ref: string | null): void
   onEditDraft(text: string): void
   onCommitEdit(): void
+  onToggle?(path: string[]): void
   findText?: string
 }) {
   const kinds = useContext(KindsContext)!
@@ -125,7 +126,7 @@ const TreeRow = memo(function TreeRow(props: {
       style={indent(row.depth)}
       onSelect={props.interactive ? props.onSelect : undefined}
     >
-      <span className="fold">{row.hasChildren ? (row.open ? '▾' : '▸') : ''}</span>
+      <Marker row={row} onToggle={props.interactive ? props.onToggle : undefined} />
       <div className="cell">
         {props.shown.editing ? (
           <TextBox edit={props.edit} onEditDraft={props.onEditDraft} onCommitEdit={props.onCommitEdit} />
@@ -152,13 +153,43 @@ function rowClass(row: ViewRow): string {
 function EditRow(props: { depth: number; values?: NoteValues; props: ViewProps }) {
   return (
     <div className={`row tree selected${props.values?.section ? ' section' : ''}`} style={indent(props.depth)}>
-      <span className="fold" />
-      <div className="cell edit-cell">
-        <Checkbox open={props.values?.open} />
+      <span className="marker">{typeof props.values?.open === 'boolean' ? <Checkbox open={props.values.open} /> : <span className="bullet">•</span>}</span>
+      <div className="cell">
         <EditBox props={props.props} />
       </div>
     </div>
   )
+}
+
+/**
+ * What leads a row: its box if it has one (ticked with a click, or Space),
+ * else its fold mark if it has children, else a bullet.
+ */
+function Marker(props: { row: ViewRow; onToggle?(path: string[]): void }) {
+  const { row, onToggle } = props
+  const box = boxOf(row)
+  if (box !== null) {
+    return (
+      <span
+        className="marker"
+        onMouseDown={(event) => {
+          if (!onToggle) return
+          event.stopPropagation()
+          onToggle(row.path)
+        }}
+      >
+        <Checkbox open={box} />
+      </span>
+    )
+  }
+  return <span className="marker">{row.hasChildren ? (row.open ? '▾' : '▸') : <span className="bullet">•</span>}</span>
+}
+
+/** A row's box: true while open, false once ticked, null for none (a note's `open`, an old task's `done`). */
+function boxOf(row: ViewRow): boolean | null {
+  const { data, type } = row.entity
+  if (type === 'task') return !data.done
+  return typeof data.open === 'boolean' ? data.open : null
 }
 
 /** Typing in place: Enter (or leaving it) writes, Escape gives up. */
@@ -324,6 +355,7 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
             onImage={view.onImage}
             onEditDraft={view.onEditDraft}
             onCommitEdit={view.onCommitEdit}
+            onToggle={view.onToggle}
             findText={view.find ?? undefined}
           />
         )}
