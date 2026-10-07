@@ -1,5 +1,5 @@
 // The app shell, kept so the PWA opens at once; data is never cached here:
-// it comes from the desktop's core, live (docs/phone.md).
+// it comes from the desktop's core, live (docs/mobile.md).
 const shell = 'detail-views-shell-v1'
 
 self.addEventListener('install', () => self.skipWaiting())

@@ -81,7 +81,7 @@ prompt; Enter confirms, Esc cancels.
 
 ## Phone
 
-The same app as a PWA over Tailscale; `docs/phone.md` has the whole of it.
+The same app as a PWA over Tailscale. **Read [docs/mobile.md](docs/mobile.md)**: setup, use, how it works, security.
 
 ```bash
 npm run build:phone          # once, and after changes

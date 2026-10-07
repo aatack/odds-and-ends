@@ -123,7 +123,7 @@ void app.whenReady().then(() => {
   })
 
   // The phone: the core over HTTP on 127.0.0.1, for Tailscale to publish
-  // (docs/phone.md). Its link, token in the hash, is written where I can find it.
+  // (docs/mobile.md). Its link, token in the hash, is written where I can find it.
   stopPhone = startPhoneServer(core, { dist: join(app.getAppPath(), 'out', 'phone') })
   writeFileSync(join(dir, 'phone-link.txt'), `${phoneLink(core)}\n`, { mode: 0o600 })
 

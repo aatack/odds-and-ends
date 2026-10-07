@@ -186,7 +186,7 @@ doc for the area you change, and keep it up to date in the same commit.
     phone (`phone.ts`: `Core.actions` as POSTs, changes as Server-Sent Events,
     a token on every call, bound to 127.0.0.1 for Tailscale to publish).
   - **The phone is a second entry, not a second app** (`phone.tsx`,
-    `docs/phone.md`): the same `Session`, cache, views and loading, over
+    `docs/mobile.md`): the same `Session`, cache, views and loading, over
     `httpApi` instead of `electronApi`. Anything added to the `Api` seam gets
     both implementations; anything platform-specific goes behind it (or, for
     images, `images.ts`), never into the views.
