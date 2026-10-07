@@ -17,12 +17,6 @@ export function startsRun(above: Entity | null, current: Entity): boolean {
   return above.data.author !== current.data.author || Number(current.data.ts) - Number(above.data.ts) > 300
 }
 
-/** A time is shown unless the message above already shows the same one. */
-export function newTime(above: Entity | null, current: Entity): boolean {
-  if (!above || above.type !== current.type) return true
-  return shortTime(String(current.data.ts)) !== shortTime(String(above.data.ts))
-}
-
 /** A message as a row: grouped with the one above it, like Slack, unless told to say who and when. */
 export const MessageRow = memo(function MessageRow(props: RowProps & { always?: boolean }) {
   return (
@@ -30,7 +24,6 @@ export const MessageRow = memo(function MessageRow(props: RowProps & { always?: 
       <MessageBody
         entity={props.entity}
         author={props.always || startsRun(props.above, props.entity)}
-        time={props.always || newTime(props.above, props.entity)}
         onOpen={props.onOpen}
         onImage={props.onImage}
       />
@@ -66,7 +59,6 @@ interface Reaction {
 export function MessageBody(props: {
   entity: Entity
   author: boolean
-  time: boolean
   replies?: boolean
   onOpen(id: string): void
   onImage(ref: string | null): void
@@ -77,11 +69,6 @@ export function MessageBody(props: {
   const images = (data.images as Image[] | undefined) ?? []
   return (
     <div className={`body${props.author ? ' head' : ''}`}>
-      <span className="gutter">
-        <span className={`stamp${props.time ? '' : ' repeat'}`} data-full={fullTime(String(data.ts))}>
-          {shortTime(String(data.ts))}
-        </span>
-      </span>
       <div className="content">
         <div className="text">
           {props.author && (
@@ -123,6 +110,10 @@ export function MessageBody(props: {
         )}
         {replies > 0 && <Replies id={props.entity.id} count={replies} latest={data.latestReply as string | undefined} />}
       </div>
+      {/* On the right, and only while the row is hovered, so every message starts at the left edge. */}
+      <span className="stamp" title={fullTime(String(data.ts))}>
+        {shortTime(String(data.ts))}
+      </span>
     </div>
   )
 }

@@ -116,7 +116,7 @@ export function MessageOverview(props: OverviewProps) {
         )}
         <History {...props} />
       </div>
-      <MessageBody entity={entity} author time replies={false} onOpen={props.onOpen} onImage={props.onImage} />
+      <MessageBody entity={entity} author replies={false} onOpen={props.onOpen} onImage={props.onImage} />
     </>
   )
 }
