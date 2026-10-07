@@ -201,6 +201,8 @@ export const slackView: ModuleView = {
     }
     if (entity.type !== 'slack.message') return entity
     const data = entity.data as unknown as MessageData
+    // From the id when the message itself hasn't loaded (a thread known only by a reply).
+    const channel = data.channel ?? parseMessageId(entity.id)?.channel ?? ''
     const self = lens.read(slackIds.root)?.data.self
     const text = String(data.text ?? '')
     return {
@@ -221,8 +223,8 @@ export const slackView: ModuleView = {
         })),
         quiet: Boolean(data.subtype && quiet.has(data.subtype)),
         // Where the message is, for when it is shown away from its conversation.
-        conversation: data.channel ? slackIds.conversation(data.channel) : null,
-        where: data.channel ? conversationTitle(lens, { channel: data.channel, ...lens.read(slackIds.conversation(data.channel))?.data } as ConversationData) : null,
+        conversation: slackIds.conversation(channel),
+        where: conversationTitle(lens, { channel, ...lens.read(slackIds.conversation(channel))?.data } as ConversationData),
         complete: Boolean(entity.data['history.complete']),
         reactions: (data.reactions ?? []).map((reaction) => ({
           emoji: emoji(reaction.name),

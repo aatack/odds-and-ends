@@ -442,3 +442,32 @@ test('slack: a thread is listed only while its conversation is, and Backspace-st
   assert.ok(!listed().includes('slack:msg:C1:1690000000.000000'))
   assert.ok(listed().includes('slack:conv:C1'))
 })
+
+test('slack: hiding a chat from one of its messages, even a channel I am not in; stray thread links are pruned', async () => {
+  let matches: unknown[] = []
+  let time = 1_700_000_000_000
+  const core = memoryCore({
+    now: () => time,
+    fetch: fakeSlack({
+      ...auth,
+      'users.conversations': () => ({ channels: [{ id: 'C1', name: 'mine' }] }),
+      'search.messages': () => ({ messages: { matches, paging: { pages: 1 } } }),
+    }),
+  })
+  await core.slack.setToken('xoxp-1')
+  await core.slack.poll()
+  // A thread link from before the rule, under a channel I'm not in.
+  core.cache.write([link('slack', 'slack:msg:C9:1690000000.000000', 1690000000000, 'slack')])
+  time += 30_000
+  await core.slack.poll()
+  assert.ok(!core.entity('slack').outboundLinks.includes('slack:msg:C9:1690000000.000000'))
+
+  // Hiding a listed chat from its message: the message knows its chat.
+  matches = [{ ts: '1700000040.000000', user: 'U1', text: 'r', channel: { id: 'C1' }, permalink: permalink('C1', '1700000040.000000', '1690000005.000000') }]
+  time += 30_000
+  await core.slack.poll()
+  const thread = core.focus('slack').children.find((child) => child.type === 'slack.message')!
+  assert.equal(thread.data.conversation, 'slack:conv:C1')
+  core.actions.unlink({ parent: 'slack', child: String(thread.data.conversation) })
+  assert.deepEqual(core.entity('slack').outboundLinks, [])
+})

@@ -35,6 +35,7 @@ function Root() {
   const onImage = useCallback((ref: string | null) => session.view(ref), [])
   const onAction = useCallback((action: string) => session.startAction(action), [])
   const onOlder = useCallback(() => session.older(), [])
+  const onHideChat = useCallback(() => session.hideChatOfMessage(), [])
   const gestures = useMemo(
     () => ({
       onPeekEnter: (target: PeekTarget, anchor: Rect) => session.hoverPeek(target, anchor, null),
@@ -71,10 +72,11 @@ function Root() {
       onCompose,
       onImage,
       onOlder,
+      onHideChat,
       working: working[focused(state)],
       now,
     }),
-    [state, focus, working, now, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder],
+    [state, focus, working, now, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onHideChat],
   )
 
   return <App items={items} peek={peek} viewing={state.viewing} onImage={onImage} modules={modules} module={focus?.module ?? null} focus={focus} view={view} onModule={onModule} />
