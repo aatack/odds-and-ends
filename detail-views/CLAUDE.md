@@ -27,6 +27,8 @@ doc for the area you change, and keep it up to date in the same commit.
   starts the stack again at its root.
 - **Any item can be worked on the same way**, whatever its type: Enter adds a
   note under it (an owned entity with no type, just text), `e` edits its text,
+  `b` splits its text into its first part and notes under it (headings,
+  bullets, blocks: `core/outline.ts`, as Claude's answers are),
   Backspace takes it out from under its parent *in this view* (nothing at the
   view's root), `x` moves it, `r` / `Shift+R` link it to or from another row.
   `x`, `r` and `Shift+R` are finished by pressing the same key on the other

@@ -71,7 +71,10 @@ Newest last. Each says what was chosen, why, and what was turned down.
     own way, through pill / overview / row / optional detail.
 24. **Generic editing on any item**: notes (untyped owned entities) with
     Enter, `e` writes an owned `text` over the service's, Backspace unlinks in
-    context, `x` / `r` / `Shift+R` pick their other end by a second press.
+    context, `x` / `r` / `Shift+R` pick their other end by a second press,
+    `b` splits its text (`core/outline.ts`, as Claude's answers are) into
+    its first part and notes under it, all at one timestamp so one undo
+    takes it back.
     *Why:* the event model makes all of these one or two owned events,
     whatever the item. Old `task` items still tick with Space; new ones are
     notes.

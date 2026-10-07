@@ -4,6 +4,7 @@ import type { Entity, ModuleInfo, NoteValues, Outcome, View, ViewRow } from '../
 import type { Api } from './api.ts'
 import type { Environment } from './environment.ts'
 import * as S from './state.ts'
+import { splitText } from '../../core/outline.ts'
 
 export interface Snapshot {
   state: S.State
@@ -735,6 +736,24 @@ export class Session {
   }
 
   /** Whether Space has a box to tick on the selected row. */
+  /** Whether the selected row's text has headings, bullets or blocks to split out. */
+  canSplit(): boolean {
+    const text = this.selected()?.entity.data.text
+    return typeof text === 'string' && splitText(text) !== null
+  }
+
+  /** `b`: the selected row's text split into its first part and notes under it; the row opens to show them. */
+  split(): void {
+    const row = this.selected()
+    if (!row || !this.canSplit()) return
+    const id = row.entity.id
+    if (row.depth > 0) this.update(S.fold(this.state, id, true))
+    void this.api.split(id).then((outcome) => {
+      this.settle(id, outcome)
+      if (outcome.error) this.showToast(outcome.error)
+    })
+  }
+
   canToggle(): boolean {
     const row = this.selected()
     return row?.entity.type === 'task' || typeof row?.entity.data.open === 'boolean'

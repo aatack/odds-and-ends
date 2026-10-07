@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { outlineEvents, splitText } from './outline.ts'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import type { Source } from './graph/cache.ts'
@@ -468,6 +469,18 @@ export class Core {
      * overrides it without changing it for anyone else.
      */
     setText: ({ id, text }: { id: string; text: string }): Outcome => this.write([value(id, 'text', text, this.now(), me)]),
+    /**
+     * Splits an item's text by its headings, bullets and blocks: the text
+     * becomes the first part, the rest notes under it, all at one time so one
+     * undo takes it back.
+     */
+    split: ({ id }: { id: string }): Outcome => {
+      const text = this.item(id)?.data.text
+      const split = typeof text === 'string' ? splitText(text) : null
+      if (!split) return { events: [], error: 'Nothing to split' }
+      const now = this.now()
+      return this.write([value(id, 'text', split.lead, now, me), ...outlineEvents(id, split.items, now, me)])
+    },
     /** Moves `child` from under `from` to under `to`. */
     move: ({ child, from, to }: { child: string; from: string; to: string }): Outcome => {
       if (from === to) return { events: [], error: null }

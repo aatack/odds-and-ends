@@ -1,3 +1,5 @@
+import { link, values, type AppEvent } from './graph/events.ts'
+
 /** An item made from a piece of Claude's answer: a heading, a bullet, or a block. */
 export interface OutlineItem {
   text: string
@@ -114,4 +116,32 @@ export function outline(markdown: string): Outline {
   }
   flush()
   return { lead: lead.join('\n\n'), items: root }
+}
+
+/**
+ * Splits a text into its outline: the text becomes its lead, and its items
+ * notes under it. When there is no lead, the first item is it, its children
+ * moved up beside the rest. Null when there is nothing to split.
+ */
+export function splitText(text: string): Outline | null {
+  const { lead, items } = outline(text)
+  if (!items.length) return null
+  if (lead) return { lead, items }
+  const [first, ...rest] = items
+  return { lead: first.text, items: [...first.children, ...rest] }
+}
+
+/**
+ * An outline's items as notes under `parent`, all written at `at`: links at
+ * one time keep the order they are written in, and undo takes them together.
+ */
+export function outlineEvents(parent: string, items: OutlineItem[], at: number, author: string): AppEvent[] {
+  return items.flatMap((item) => {
+    const id = crypto.randomUUID()
+    return [
+      ...values(id, { text: item.text, section: item.section, open: item.open }, at, author),
+      link(parent, id, at, author),
+      ...outlineEvents(id, item.children, at, author),
+    ]
+  })
 }

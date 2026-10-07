@@ -22,6 +22,8 @@ export interface Api {
   setValue(id: string, key: string, value: unknown): Promise<Outcome>
   /** My text for an item, over whatever its service says. */
   setText(id: string, text: string): Promise<Outcome>
+  /** Splits an item's text into its first part and notes under it. */
+  split(id: string): Promise<Outcome>
   /** A new Claude session under `attachTo`, in a temporary directory, `cwd`, or a new worktree of it. */
   claudeCreate(input: { name: string; cwd: string; worktree: boolean; attachTo: string }): Promise<Outcome>
   /** A prompt to a Claude session, under `parent`; the answer arrives as a change. */
@@ -73,6 +75,7 @@ export function httpApi(base: string, token: string): Api {
     create: (parent, text, values) => call('create', { parent, text, values }),
     setValue: (id, key, value) => call('setValue', { id, key, value }),
     setText: (id, text) => call('setText', { id, text }),
+    split: (id) => call('split', { id }),
     undo: () => call('undo'),
     redo: (events) => call('redo', { events }),
     claudeCreate: (input) => call('claudeCreate', input),
@@ -110,6 +113,7 @@ export function electronApi(): Api {
     create: (parent, text, values) => call('create', { parent, text, values }),
     setValue: (id, key, value) => call('setValue', { id, key, value }),
     setText: (id, text) => call('setText', { id, text }),
+    split: (id) => call('split', { id }),
     undo: () => call('undo'),
     redo: (events) => call('redo', { events }),
     claudeCreate: (input) => call('claudeCreate', input),

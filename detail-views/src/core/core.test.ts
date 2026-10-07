@@ -504,3 +504,25 @@ test('slack: hiding a chat from one of its messages, even a channel I am not in;
   core.actions.unlink({ parent: 'slack', child: String(thread.data.conversation) })
   assert.deepEqual(core.entity('slack').outboundLinks, [])
 })
+
+test('split: a note becomes its first part, the rest notes under it, all at one time; one undo takes it back', () => {
+  const core = memoryCore()
+  // Written a while ago, so undo (which takes edits within 100 ms together) leaves it.
+  const note = 'note'
+  const then = Date.now() - 1000
+  core.actions.redo({ events: [value(note, 'text', 'Plan\n\n- one\n  - detail\n- two', then, 'me'), link('tasks', note, then, 'me')] })
+  const { events } = core.actions.split({ id: note })
+  assert.equal(new Set(events.map((event) => event.timestamp)).size, 1)
+  assert.equal(core.item(note)!.data.text, 'Plan')
+  const texts = (id: string): unknown[] =>
+    core.entity(id).outboundLinks.map((child) => {
+      const text = String(core.entity(child).values.text)
+      return core.entity(child).outboundLinks.length ? [text, texts(child)] : text
+    })
+  assert.deepEqual(texts(note), [['one', ['detail']], 'two'])
+  assert.equal(core.actions.split({ id: note }).error, 'Nothing to split')
+
+  core.actions.undo()
+  assert.equal(core.item(note)!.data.text, 'Plan\n\n- one\n  - detail\n- two')
+  assert.deepEqual(core.entity(note).outboundLinks, [])
+})
