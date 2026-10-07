@@ -24,6 +24,7 @@
     "src/renderer/src/**/*.tsx",
     "src/core/types.ts",
     "src/core/present.ts",
+    "src/core/outline.ts",
     "src/core/graph/*.ts",
     "src/core/modules/*/view.ts",
     "src/core/modules/slack/api.ts",

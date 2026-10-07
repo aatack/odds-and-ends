@@ -25,6 +25,7 @@ async function headless(options: Parameters<typeof memoryCore>[0] = {}) {
     create: async (parent, text, values) => a.create({ parent, text, values }),
     setValue: async (id, key, value) => a.setValue({ id, key, value }),
     setText: async (id, text) => a.setText({ id, text }),
+    split: async (id) => a.split({ id }),
     undo: async () => a.undo(),
     redo: async (events) => a.redo({ events }),
     claudeCreate: (input) => a.claudeCreate(input),
