@@ -397,12 +397,15 @@ export class Session {
     this.update(S.startEdit(this.state, row.path, typeof text === 'string' ? text : ''))
   }
 
-  /** Enter: a new note under the selected row, which opens so the note shows. `/` makes it a heading, `?` a checkbox. */
+  /**
+   * Enter: a new note under the selected row, typed in a box just below it.
+   * The row isn't opened until the note is written, so its children don't
+   * spill out under the box. `/` makes it a heading, `?` a checkbox.
+   */
   startCreate(values?: NoteValues): void {
     const row = this.selected()
     if (!row) return
-    const opened = row.depth > 0 ? S.fold(this.state, row.entity.id, true) : this.state
-    this.update(S.startCreate(opened, row.path, values))
+    this.update(S.startCreate(this.state, row.path, values))
   }
 
   setEditDraft(draft: string): void {
@@ -424,6 +427,8 @@ export class Session {
       void this.api.setText(id, edit.draft).then((outcome) => this.settle(id, outcome))
       return
     }
+    // Now the row opens, so the new note shows, selected, among its siblings.
+    if (edit.path.length > 1) this.update(S.fold(this.state, id, true))
     void this.api.create(id, edit.draft, edit.values).then((outcome) => {
       this.settle(id, outcome)
       const made = outcome.events.find((event) => event.type === 'link')
