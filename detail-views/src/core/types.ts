@@ -95,7 +95,7 @@ export interface Action {
  */
 export interface Badge {
   shape: 'dot' | 'tick' | 'cross'
-  tone: 'red' | 'yellow' | 'green' | 'purple'
+  tone: 'red' | 'yellow' | 'green' | 'purple' | 'gray'
   /** What it means, for a tooltip. */
   reason: string
 }
