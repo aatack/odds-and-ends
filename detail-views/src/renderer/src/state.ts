@@ -38,8 +38,11 @@ export interface State {
   drafts: Record<string, string>
   /** Whether the action prompt has the keyboard. Not persisted. */
   composing: boolean
-  /** An action started on the view's root and waiting for Enter. Not persisted. */
-  acting: string | null
+  /**
+   * An action started on an item and waiting for Enter: the view's root
+   * (`peek` null) or a peek's (by its key). Not persisted.
+   */
+  acting: Acting | null
   /** An image shown full size over everything, by its ref. Not persisted. */
   viewing: string | null
   /** Whether the phone's list of every action is open. Not persisted. */
@@ -99,6 +102,14 @@ export interface Rect {
   height: number
 }
 
+export interface Acting {
+  action: string
+  /** The entity it is done to. */
+  on: string
+  /** The peek it was started in, or null for the main view. */
+  peek: string | null
+}
+
 export type PeekTarget = { kind: 'url'; url: string } | { kind: 'entity'; id: string }
 
 export interface Peek {
@@ -138,12 +149,15 @@ export function peekChain(state: State, key: string | null): Set<string> {
  */
 export function showPeek(state: State, peek: Peek): State {
   const keep = peekChain(state, peek.parent)
+  for (const key of peekChain(state, state.acting?.peek ?? null)) keep.add(key)
   return { ...state, peeks: [...state.peeks.filter((other) => other.pinned || keep.has(other.key)), peek] }
 }
 
 /** Closes transient peeks the pointer is no longer in or under. */
 export function keepHovered(state: State, hovering: string | null): State {
   const keep = peekChain(state, hovering)
+  // A peek with an action waiting in it stays until the action is done or given up.
+  for (const key of peekChain(state, state.acting?.peek ?? null)) keep.add(key)
   const peeks = state.peeks.filter((peek) => peek.pinned || keep.has(peek.key))
   return peeks.length === state.peeks.length ? state : { ...state, peeks }
 }
@@ -153,7 +167,9 @@ export function closePeek(state: State, key: string | null): State {
   const target = key ?? transientPeek(state)?.key
   if (!target) return state
   const peeks = state.peeks.filter((peek) => peek.key !== target && !(!peek.pinned && peekChain(state, peek.key).has(target)))
-  return peeks.length === state.peeks.length ? state : { ...state, peeks }
+  if (peeks.length === state.peeks.length) return state
+  const acting = state.acting?.peek && !peeks.some((peek) => peek.key === state.acting?.peek) ? null : state.acting
+  return { ...state, peeks, acting, composing: acting ? state.composing : false }
 }
 
 /** Moving or resizing pins a peek and brings it to the front. */
@@ -417,13 +433,18 @@ export function setComposing(state: State, composing: boolean): State {
   return { ...state, composing, acting: composing ? state.acting : null }
 }
 
-export function startAction(state: State, action: string): State {
-  return { ...state, acting: action, composing: true }
+export function startAction(state: State, acting: Acting): State {
+  return { ...state, acting, composing: true }
 }
 
-/** Drafts for an action are kept apart per view and action. */
+/** Drafts for an action are kept apart per item and action. */
 export function draftKey(state: State): string {
-  return state.acting ? `${focused(state)}#${state.acting}` : focused(state)
+  return state.acting ? `${state.acting.on}#${state.acting.action}` : focused(state)
+}
+
+/** The action waiting in the main view (`peek` null) or in a peek, by its key. */
+export function actingIn(state: State, peek: string | null): string | null {
+  return state.acting && state.acting.peek === peek ? state.acting.action : null
 }
 
 /** What is kept across reloads. */

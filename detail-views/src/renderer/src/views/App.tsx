@@ -22,6 +22,14 @@ export interface PeekProps {
   onOpen(target: PeekTarget): void
   /** A peek's view is scrolled near its end: walk further. */
   loadMore(root: string): void
+  /** What is under way, by entity, so a peek's buttons can say so. */
+  working: Record<string, string[]>
+  /** An action waiting in a peek, by the peek's key, and its prompt. */
+  acting: { action: string; peek: string; draft: string; composing: boolean } | null
+  /** Starts one of a peek's root's actions. */
+  onAction(key: string, action: string): void
+  onDraft(text: string): void
+  onCompose(composing: boolean): void
 }
 
 export function App(props: {
@@ -99,6 +107,11 @@ export function App(props: {
               onOpenEntity={(id) => props.view?.onOpen(id)}
               onImage={props.onImage}
               onNearEnd={() => one.target.kind === 'entity' && peek.loadMore(one.target.id)}
+              working={one.target.kind === 'entity' ? peek.working[one.target.id] : undefined}
+              acting={peek.acting?.peek === one.key ? peek.acting : null}
+              onAction={(action) => peek.onAction(one.key, action)}
+              onDraft={peek.onDraft}
+              onCompose={peek.onCompose}
             />
           ))}
           {props.viewing && (
