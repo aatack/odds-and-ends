@@ -118,7 +118,7 @@ export function badge(data: Record<string, unknown>, locallyApproved: boolean): 
  * Repos whose PRs each get a preview deployment, by the PR's number: the
  * frontend to try a branch in. Only these; anywhere else a PR has none.
  */
-const previews: Record<string, (number: number) => string> = {
+const previews: Partial<Record<string, (number: number) => string>> = {
   'theengineeringco/branch-demo': (number) => `https://pr-${number}.preview.theeng.co/demo`,
 }
 
