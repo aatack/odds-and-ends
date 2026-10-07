@@ -520,9 +520,17 @@ test('split: a note becomes its first part, the rest notes under it, all at one 
       return core.entity(child).outboundLinks.length ? [text, texts(child)] : text
     })
   assert.deepEqual(texts(note), [['one', ['detail']], 'two'])
+  // A plain note's parts are plain notes.
+  assert.equal(core.entity(core.entity(note).outboundLinks[0]).values.type, undefined)
   assert.equal(core.actions.split({ id: note }).error, 'Nothing to split')
 
   core.actions.undo()
   assert.equal(core.item(note)!.data.text, 'Plan\n\n- one\n  - detail\n- two')
   assert.deepEqual(core.entity(note).outboundLinks, [])
+
+  // A typed item's parts keep its type.
+  const typed = 'typed'
+  core.actions.redo({ events: [...values(typed, { type: 'claude.response', text: 'Done.\n\n- one' }, then, 'claude'), link('tasks', typed, then, 'me')] })
+  core.actions.split({ id: typed })
+  assert.equal(core.item(core.entity(typed).outboundLinks[0])!.type, 'claude.response')
 })

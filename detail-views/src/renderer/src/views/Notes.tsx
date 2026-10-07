@@ -11,7 +11,8 @@ export function Checkbox(props: { open: unknown }) {
   return <span className={`check${props.open ? '' : ' ticked'}`}>{props.open ? '☐' : '☑'}</span>
 }
 
-const noteClass = (data: Record<string, unknown>) => `note${data.section ? ' section' : ''}${data.open === false ? ' ticked' : ''}`
+/** A heading is bold, a ticked box struck through: for notes, and for any item split into parts like them. */
+export const noteClass = (data: Record<string, unknown>) => `note${data.section ? ' section' : ''}${data.open === false ? ' ticked' : ''}`
 
 /** A note: text that means nothing more, or a heading, or a task. */
 export function NoteOverview(props: OverviewProps) {
