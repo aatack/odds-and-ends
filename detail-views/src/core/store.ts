@@ -133,30 +133,33 @@ export class EventStore {
   }
 
   /**
-   * Takes the last action off the log and hands it back, oldest first: what
-   * undo is. One action is everything within `group` ms of the newest event
+   * Takes `author`'s last action off the log and hands it back, oldest
+   * first: what undo is. Only that author's: a module's own data (a token)
+   * is never undone with my edits. One action is everything within `group` ms of the newest event
    * (a note and its link are written together). Nothing older than `horizon`
    * ms is ever taken: past that an edit is settled.
    */
-  pop(now: number, group = 100, horizon = 5 * 60_000): AppEvent[] {
+  pop(now: number, author: string, group = 100, horizon = 5 * 60_000): AppEvent[] {
     if (this.mode !== 'log') throw new Error('only the owned log pops')
     let popped: AppEvent[] = []
     this.transaction(() => {
       const latest = (
         this.db
-          .prepare('SELECT MAX(ts) AS ts FROM (SELECT MAX(timestamp) AS ts FROM value_events UNION ALL SELECT MAX(timestamp) AS ts FROM link_events)')
-          .get() as { ts: number | null }
+          .prepare(
+            'SELECT MAX(ts) AS ts FROM (SELECT MAX(timestamp) AS ts FROM value_events WHERE author = ?1 UNION ALL SELECT MAX(timestamp) AS ts FROM link_events WHERE author = ?1)',
+          )
+          .get(author) as { ts: number | null }
       ).ts
       if (latest === null) return
       const cutoff = Math.max(latest - group, now - horizon)
       const values = this.db
-        .prepare('SELECT timestamp, author, entity_id, key, value FROM value_events WHERE timestamp >= ? ORDER BY timestamp, id')
-        .all(cutoff) as unknown as ValueRow[]
+        .prepare('SELECT timestamp, author, entity_id, key, value FROM value_events WHERE timestamp >= ? AND author = ? ORDER BY timestamp, id')
+        .all(cutoff, author) as unknown as ValueRow[]
       const links = this.db
-        .prepare('SELECT timestamp, author, source_id, destination_id, action FROM link_events WHERE timestamp >= ? ORDER BY timestamp, id')
-        .all(cutoff) as unknown as LinkRow[]
-      this.db.prepare('DELETE FROM value_events WHERE timestamp >= ?').run(cutoff)
-      this.db.prepare('DELETE FROM link_events WHERE timestamp >= ?').run(cutoff)
+        .prepare('SELECT timestamp, author, source_id, destination_id, action FROM link_events WHERE timestamp >= ? AND author = ? ORDER BY timestamp, id')
+        .all(cutoff, author) as unknown as LinkRow[]
+      this.db.prepare('DELETE FROM value_events WHERE timestamp >= ? AND author = ?').run(cutoff, author)
+      this.db.prepare('DELETE FROM link_events WHERE timestamp >= ? AND author = ?').run(cutoff, author)
       popped = [...values.map(fromValue), ...links.map(fromLink)].sort((a, b) => a.timestamp - b.timestamp)
     })
     if (popped.length) {

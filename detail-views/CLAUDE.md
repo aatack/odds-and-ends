@@ -45,9 +45,10 @@ doc for the area you change, and keep it up to date in the same commit.
   up to (`core/graph/`, ported from entity-graph): sorted by timestamp, so the
   later event wins.
 - **Two SQLite files** (`node:sqlite`, no native modules), read as one:
-  - **owned** (`detail-views.owned.sqlite`): what I make. An append-only event
-    log the app never deletes from, plus the `settings` table (secrets and
-    settings stay local).
+  - **owned** (`detail-views.owned.sqlite`): what I make, and each module's
+    own data on its root entity. An append-only event log the app never
+    deletes from (except undo, of my own last edit), plus a `settings` table
+    for what belongs to no module.
   - **cache** (`detail-views.cache.sqlite`): what was loaded from other
     services. One event per value and per link, replaced by the next load; it
     is emptied weekly (`Core.clearCache`) and may be deleted any time, since
@@ -81,6 +82,14 @@ doc for the area you change, and keep it up to date in the same commit.
   `watch.at`). Anything older, for all of Slack, one conversation or one
   thread, loads only when I ask (`o`, `Module.older`). Never poll or load
   conversations one by one on their own.
+- **A module's data lives on its root entity.** Each module in the sidebar
+  has a root entity (`slack`, `github`, `tasks`), and what belongs to the
+  module (Slack's token, who I am there, its workspace URL) is owned values
+  on it, written by the module (`ModuleContext.data`) under the author
+  `module`, so undo never takes them back. Keys beginning `secret.` (the
+  token) never leave the core: scans strip them and items never carry them.
+  The `settings` table is only for what belongs to no module (the phone's
+  token).
 - **Slack is read-only during development.** `slackWrites` in
   `modules/slack/api.ts` gates an allowlist of read methods; do not turn it on
   or widen the list unless I ask.

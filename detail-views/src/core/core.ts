@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import type { Source } from './graph/cache.ts'
 import { bucketEvents, rollupEntity, type GraphEntity } from './graph/entity.ts'
-import { eventKey, link, value, type AppEvent, type Changed, type Scan } from './graph/events.ts'
+import { eventKey, link, value, values, type AppEvent, type Changed, type Scan } from './graph/events.ts'
 import { cacheMigrations, openDatabase, ownedMigrations } from './db.ts'
 import { importLegacy } from './legacy.ts'
 import { GitHub } from './modules/github/github.ts'
@@ -16,6 +16,8 @@ import { loadedKey } from './types.ts'
 import type { Entity, Focus, LoadPart, LoadRequest, LoadResult, ModuleInfo, NoteValues, Outcome, View } from './types.ts'
 
 const changeEvery = 150
+/** The author of a module's own data on its root (a token): not mine to undo. */
+const moduleAuthor = 'module'
 const clearEvery = 7 * 24 * 60 * 60_000
 const checkEvery = 10 * 60_000
 /** How far a scan reads past what it was asked for, in layers and in entities per layer. */
@@ -95,11 +97,15 @@ export class Core {
     }
     if (this.cacheMeta.get() === null) this.cacheMeta.set(this.now())
     if (options.legacy) importLegacy(options.legacy, this.owned, this.settings)
+    this.moveSettingsToModules()
 
     const context: ModuleContext = {
       owned: this.owned,
       cache: this.cache,
-      settings: this.settings,
+      data: {
+        get: (root) => this.entity(root).values,
+        set: (root, fields) => this.owned.write(values(root, fields, this.now(), moduleAuthor)),
+      },
       blobs: this.blobs,
       lens: this.lens(),
       fetch: options.fetch ?? fetch,
@@ -113,6 +119,25 @@ export class Core {
     this.slack = new Slack(context)
     this.github = new GitHub(context)
     this.modules = [this.slack, this.github, tasksModule()]
+  }
+
+  /**
+   * A module's data lives on its root entity, not in the settings table:
+   * what an earlier version kept there (Slack's token and who I am) moves
+   * over once, and leaves the table.
+   */
+  private moveSettingsToModules(): void {
+    const moves: [string, string, string][] = [
+      ['slack.token', 'slack', 'secret.token'],
+      ['slack.self', 'slack', 'self'],
+      ['slack.url', 'slack', 'url'],
+    ]
+    for (const [setting, root, key] of moves) {
+      const held = this.settings.get(setting)
+      if (held === null) continue
+      this.owned.write([value(root, key, held, this.now(), moduleAuthor)])
+      this.settings.set(setting, null)
+    }
   }
 
   /**
@@ -179,6 +204,11 @@ export class Core {
     return [...this.cache.read(ids), ...this.owned.read(ids)]
   }
 
+  /** What leaves the core (to the window, to the phone): everything but secrets. */
+  private readOut(ids: readonly string[]): AppEvent[] {
+    return this.read(ids).filter((e) => !(e.type === 'value' && e.key.startsWith('secret.')))
+  }
+
   entity(id: string): GraphEntity {
     return rollupEntity(id, this.read([id]))
   }
@@ -222,7 +252,7 @@ export class Core {
     let frontier = [...new Set(ids)]
     for (const id of frontier) covered.add(id)
     for (let layer = 0; frontier.length; layer++) {
-      const batch = this.read(frontier)
+      const batch = this.readOut(frontier)
       for (const e of batch) {
         const key = eventKey(e)
         if (seen.has(key)) continue
@@ -370,7 +400,7 @@ export class Core {
      * Takes my last action back off the owned log (within five minutes) and
      * returns its events, so they can come out of a cache and be redone.
      */
-    undo: (): Outcome => ({ events: this.owned.pop(this.now()), error: null }),
+    undo: (): Outcome => ({ events: this.owned.pop(this.now(), me), error: null }),
     /** Writes undone events back verbatim, times and all. */
     redo: ({ events }: { events: AppEvent[] }): Outcome => this.write(events),
     /** What a view shows, as a tree, for a caller with no cache of its own. */

@@ -186,8 +186,8 @@ export class Slack implements Module {
 
   constructor(context: ModuleContext) {
     this.context = context
-    const token = context.settings.get('slack.token')
-    if (token) this.api = new SlackApi(token, context.fetch)
+    const token = context.data.get(ids.root)['secret.token']
+    if (typeof token === 'string' && token) this.api = new SlackApi(token, context.fetch)
   }
 
   private get cache() {
@@ -243,9 +243,7 @@ export class Slack implements Module {
   async setToken(token: string): Promise<void> {
     const api = new SlackApi(token, this.context.fetch)
     const auth = await api.call<{ user_id: string; url: string }>('auth.test')
-    this.context.settings.set('slack.token', token)
-    this.context.settings.set('slack.self', auth.user_id)
-    this.context.settings.set('slack.url', auth.url)
+    this.context.data.set(ids.root, { 'secret.token': token, self: auth.user_id, url: auth.url })
     this.api = api
     await this.context.load(ids.root, 'children', true)
   }
@@ -605,7 +603,7 @@ export class Slack implements Module {
     const now = this.context.now()
     this.cache.write(
       [
-        ...values(ids.root, { connected: true, self: this.context.settings.get('slack.self') }, 0, author),
+        value(ids.root, 'connected', true, 0, author),
         ...everyChannel.flatMap(conversationEvents),
         ...users.flatMap((user) => [
           ...values(ids.user(user.id), { type: 'slack.user', name: userName(user) }, 0, author),

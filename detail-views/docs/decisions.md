@@ -97,3 +97,7 @@ Newest last. Each says what was chosen, why, and what was turned down.
     serve`. *Why:* loading, caching and presentation stay one code path.
     *Turned down:* a separate mobile app with copied models (entity-graph
     learnt that the fold must be shared); exposing the port on the LAN.
+30. **A module's data is owned values on its root entity**, not rows in a
+    settings table: Slack's token is `secret.token` on `slack`. Secrets never
+    leave the core (stripped from scans and items); module data is written
+    under its own author so undo can't remove it. Old settings move over once.
