@@ -4,12 +4,18 @@ import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
 import { Text } from './messages.tsx'
 import { ClockContext, HeaderPill, Highlight } from './primitives.tsx'
 
+/** The Claude mark (src/renderer/src/assets/claude.svg), in Claude's colour. */
+export function ClaudeMark(props: { large?: boolean }) {
+  return <span className={`claude-mark${props.large ? ' large' : ''}`} role="img" aria-label="Claude" />
+}
+
 const text = (data: Record<string, unknown>, fallback = ''): string =>
   typeof data.text === 'string' && data.text ? data.text : fallback
 
 export function ClaudeHomePill(props: PillProps) {
   return (
     <span className="item-name">
+      <ClaudeMark />
       <Highlight text={text(props.entity.data, 'Claude')} find={props.findText} />
     </span>
   )
@@ -20,7 +26,7 @@ export function ClaudeHomePill(props: PillProps) {
 export function SessionPill(props: PillProps) {
   return (
     <span className="item-name">
-      <Highlight text={text(props.entity.data, 'Session')} find={props.findText} />
+      <ClaudeMark /> <Highlight text={text(props.entity.data, 'Session')} find={props.findText} />
     </span>
   )
 }
@@ -29,8 +35,8 @@ export function SessionPill(props: PillProps) {
 export const SessionRow = memo(function SessionRow(props: RowProps) {
   const { data } = props.entity
   return (
-    <span className="line">
-      <Highlight text={text(data, 'Session')} find={props.findText} />{' '}
+    <span className="line session">
+      <ClaudeMark /> <Highlight text={text(data, 'Session')} find={props.findText} />{' '}
       <span className="muted">{String(data.branch ?? data.cwd ?? '')}</span>
     </span>
   )
@@ -41,7 +47,7 @@ export function SessionOverview(props: OverviewProps) {
   const { data } = props.entity
   return (
     <>
-      <div className="title">
+      <div className="title session">
         <HeaderPill entity={props.entity} />
       </div>
       <div className="facts muted">
@@ -88,13 +94,25 @@ function elapsed(ms: number): string {
   return minutes ? `${minutes}m ${String(seconds % 60).padStart(2, '0')}s` : `${seconds}s`
 }
 
-/** Claude's answer: how long it has been working, the error in its place, or the answer in full. */
+/** Claude's answer, on Claude's rail: how long it has been working, the error in its place, or the answer in full. */
 function Response(props: { entity: Entity; findText?: string }) {
   const { data } = props.entity
   const now = useContext(ClockContext)
-  if (data.running) return <span className="muted">Claude is working… {elapsed(now - props.entity.createdAt)}</span>
-  if (typeof data.error === 'string' && data.error) return <span className="error-text">{data.error}</span>
-  return <Text text={text(data)} find={props.findText} />
+  const failed = typeof data.error === 'string' && data.error
+  return (
+    <div className={`response${failed ? ' failed' : ''}`}>
+      <ClaudeMark />
+      <div className="response-body">
+        {data.running ? (
+          <span className="muted">Working… {elapsed(now - props.entity.createdAt)}</span>
+        ) : failed ? (
+          <span className="error-text">{failed}</span>
+        ) : (
+          <Text text={text(data)} find={props.findText} />
+        )}
+      </div>
+    </div>
+  )
 }
 
 export const ResponseRow = memo(function ResponseRow(props: RowProps) {
@@ -109,7 +127,7 @@ export function ResponsePill(props: PillProps) {
   const { data } = props.entity
   return (
     <span className="item-name">
-      {data.running ? 'Claude is working…' : <Text text={text(data).split('\n')[0]} find={props.findText} inline />}
+      <ClaudeMark /> {data.running ? 'Working…' : <Text text={text(data).split('\n')[0]} find={props.findText} inline />}
     </span>
   )
 }

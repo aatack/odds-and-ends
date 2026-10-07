@@ -17,6 +17,8 @@
   --error: light-dark(#c0473c, #e0796f);
   --merged: light-dark(#7a6cc4, #a99de8);
   --link: light-dark(#3a5f9e, #8fb0e6);
+  /* Claude's own terracotta, for what Claude says and the sessions it runs. */
+  --claude: light-dark(#c96442, #e08a6b);
   /* Fills for buttons and chips: a soft gray, a step darker on hover, another pressed. */
   --fill: light-dark(#f2f4f7, #202027);
   --fill-hover: light-dark(#eaecf0, #2a2a32);
@@ -1167,10 +1169,55 @@ mark {
 
 /* --- Claude --------------------------------------------------------------------- */
 
+/* What I asked Claude: on my rail (the accent), a faint fill. */
 .prompt {
   display: block;
-  padding-left: 8px;
-  border-left: 2px solid var(--accent-line);
+  padding: 2px 8px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--accent-soft);
+}
+
+/* What Claude answered: its mark, on its own rail (terracotta), a faint fill. */
+.response {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 8px;
+  border-left: 3px solid var(--claude);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: color-mix(in srgb, var(--claude) 6%, var(--canvas));
+}
+
+.response.failed {
+  border-left-color: var(--error);
+}
+
+.response-body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The Claude mark, drawn in Claude's colour from the downloaded icon. */
+.claude-mark {
+  flex: none;
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  vertical-align: -0.08em;
+  background: var(--claude);
+  mask: url('./assets/claude.svg') center / contain no-repeat;
+}
+
+.claude-mark.large {
+  width: 1.1em;
+  height: 1.1em;
+}
+
+/* A session's name, in Claude's colour where it heads its view or a row. */
+.line.session,
+.title.session .item-name {
+  font-weight: 600;
 }
 
 .error-text {

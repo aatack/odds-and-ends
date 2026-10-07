@@ -8,7 +8,7 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 2. Each session is an item of type `claude.session`.
 3. The ID of the session item is the ID of the Claude session. The app makes the ID and gives it to Claude (`--session-id`).
 4. A session has a name.
-5. A session has an optional working directory, and a worktree checkbox. The checkbox is available only when there is a working directory.
+5. A session has an optional working directory, and a worktree checkbox. The form shows the checkbox only when the directory field has text.
 6. If there is no working directory, make a new temporary directory. Run the agent there.
 7. If there is a working directory and no worktree, run the agent in that directory.
 8. If there is a working directory and a worktree, make a git worktree of the repo of that directory. Run the agent in the worktree.
@@ -43,6 +43,7 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 - **PR look-up is a read.** `git rev-parse --abbrev-ref HEAD` and `git remote get-url origin` give the branch and the repo. A GraphQL query through `gh` finds the PR. The app does not write to GitHub for this.
 - **Errors.** A failure of `claude` (a non-zero exit, or `is_error` in its JSON) sets the response item: `text` and `error` are the message, `running` is false.
 - **Phone.** Shift+K and k are tools with labels. Thus, they are also buttons on the phone.
+- **Look.** Sessions and responses start with the Claude mark (`src/renderer/src/assets/claude.svg`, from Simple Icons, CC0-1.0), in the `--claude` colour (terracotta). A response has a terracotta rail and a faint fill. A prompt has an accent (indigo) rail and a faint fill. Thus, my words and Claude's words are different at a glance.
 
 ## Items
 
