@@ -205,7 +205,7 @@ function TextBox(props: { edit: Edit | null; onEditDraft(text: string): void; on
       autoFocus
       spellCheck
       value={edit?.draft ?? ''}
-      placeholder={edit?.mode === 'create' ? 'Note' : ''}
+      placeholder={edit?.mode === 'create' ? (edit.prompt ? 'Prompt Claude' : 'Note') : ''}
       onChange={(event) => onEditDraft(event.target.value)}
       onBlur={() => onCommitEdit()}
       onMouseDown={(event) => event.stopPropagation()}

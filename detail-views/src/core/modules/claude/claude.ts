@@ -1,0 +1,158 @@
+import { randomUUID } from 'node:crypto'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
+import { link, value, values, type AppEvent } from '../../graph/events.ts'
+import { prEntityId } from '../../types.ts'
+import type { Module, ModuleContext } from '../module.ts'
+import { me } from '../tasks/tasks.ts'
+import { claudeIds as ids, claudeView } from './view.ts'
+
+/** The author of what Claude writes back: not mine to undo. */
+const author = 'claude'
+/** What a session may do without asking: edit files; anything else that would ask is refused (`-p` has nobody to ask). */
+export const defaultPermissionMode = 'acceptEdits'
+/** How many working directories the new-session dialog remembers. */
+const rememberedCwds = 10
+
+export interface NewSession {
+  name: string
+  /** Where to run it; blank for a new temporary directory. */
+  cwd: string
+  /** Run in a new git worktree of `cwd`'s repo, on a branch of its own. */
+  worktree: boolean
+  /** The item it is started from: it goes under it, and the item points at it (`claudeSessionId`). */
+  attachTo: string
+}
+
+function slug(text: string): string {
+  return (
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'session'
+  )
+}
+
+/** Owner and name from a GitHub remote URL, ssh or https. */
+function repoOf(remote: string): { owner: string; name: string } | null {
+  const match = /github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?\s*$/.exec(remote)
+  return match ? { owner: match[1], name: match[2] } : null
+}
+
+/**
+ * Claude Code sessions, run with `claude -p` in a directory of the session's
+ * own: a temporary one, the one I gave, or a new git worktree of its repo.
+ * Everything is owned: sessions, prompts and responses are mine to keep.
+ */
+export class Claude implements Module {
+  readonly view = claudeView
+
+  private readonly context: ModuleContext
+  /** One prompt at a time per session, in the order asked. */
+  private readonly queues = new Map<string, Promise<unknown>>()
+
+  constructor(context: ModuleContext) {
+    this.context = context
+  }
+
+  /** A new session: its directory made, its item written, linked under the item it came from. */
+  async createSession(input: NewSession): Promise<AppEvent[]> {
+    const { run, now } = this.context
+    const id = randomUUID()
+    const short = id.slice(0, 8)
+    const name = input.name.trim() || 'Session'
+    const requested = input.cwd.trim()
+    let cwd: string
+    let worktree: string | null = null
+    let branch: string | null = null
+    let repo: string | null = null
+    if (!requested) {
+      cwd = mkdtempSync(join(tmpdir(), 'claude-'))
+    } else if (!input.worktree) {
+      cwd = requested
+    } else {
+      // Outside every repo (the app's own data directory), so no repo ever commits it.
+      repo = (await run('git', ['rev-parse', '--show-toplevel'], requested)).trim()
+      branch = `claude/${slug(name)}-${short}`
+      worktree = join(this.context.dataDir, 'worktrees', `${basename(repo)}-${short}`)
+      await run('git', ['worktree', 'add', '-b', branch, worktree], repo)
+      cwd = worktree
+    }
+    const at = now()
+    const events: AppEvent[] = [
+      ...values(id, { type: 'claude.session', text: name, cwd, worktree, branch, repo, permissionMode: defaultPermissionMode }, at, me),
+      link(ids.root, id, at, me),
+    ]
+    if (input.attachTo !== ids.root) {
+      events.push(link(input.attachTo, id, at, me), value(input.attachTo, 'claudeSessionId', id, at, me))
+    }
+    this.context.owned.write(events)
+    if (requested) {
+      const known = this.context.data.get(ids.root).cwds
+      const cwds = [requested, ...(Array.isArray(known) ? (known as string[]) : []).filter((one) => one !== requested)]
+      this.context.data.set(ids.root, { cwds: cwds.slice(0, rememberedCwds) })
+    }
+    return events
+  }
+
+  /**
+   * A prompt to a session: the prompt item under `parent` (and under the
+   * session), and an empty response under it, now; Claude's answer fills the
+   * response when it comes. Returns what was written now.
+   */
+  prompt(session: string, parent: string, text: string): AppEvent[] {
+    const at = this.context.now()
+    const promptId = randomUUID()
+    const responseId = randomUUID()
+    const events: AppEvent[] = [
+      ...values(promptId, { type: 'claude.prompt', text, session }, at, me),
+      link(parent, promptId, at, me),
+      ...(parent === session ? [] : [link(session, promptId, at, me)]),
+      ...values(responseId, { type: 'claude.response', text: '', running: true }, at, author),
+      link(promptId, responseId, at, author),
+    ]
+    this.context.owned.write(events)
+    const before = this.queues.get(session) ?? Promise.resolve()
+    const next = before.then(() => this.answer(session, responseId, text))
+    this.queues.set(session, next.catch(() => {}))
+    return events
+  }
+
+  private async answer(session: string, responseId: string, text: string): Promise<void> {
+    const data = this.context.data.get(session)
+    const cwd = String(data.cwd)
+    const mode = String(data.permissionMode ?? defaultPermissionMode)
+    const started = Boolean(data.started)
+    const args = ['-p', text, '--output-format', 'json', '--permission-mode', mode, ...(started ? ['--resume', session] : ['--session-id', session])]
+    try {
+      const out = JSON.parse(await this.context.run('claude', args, cwd)) as { result?: string; is_error?: boolean; total_cost_usd?: number }
+      this.context.owned.write([
+        ...values(responseId, { text: out.result ?? '', running: false, error: out.is_error ? 'Claude reported an error' : null, cost: out.total_cost_usd ?? null }, this.context.now(), author),
+        ...(started ? [] : [value(session, 'started', true, this.context.now(), author)]),
+      ])
+    } catch (error) {
+      this.context.owned.write(
+        values(responseId, { running: false, error: error instanceof Error ? error.message : String(error) }, this.context.now(), author),
+      )
+    }
+    await this.linkPullRequest(session, cwd).catch(() => {})
+  }
+
+  /** The branch checked out where the session runs, if it has a PR: linked under the session. */
+  private async linkPullRequest(session: string, cwd: string): Promise<void> {
+    const { run } = this.context
+    const branch = (await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], cwd)).trim()
+    const repo = repoOf(await run('git', ['remote', 'get-url', 'origin'], cwd))
+    if (!branch || branch === 'HEAD' || !repo) return
+    const query = `query($owner: String!, $name: String!, $branch: String!) { repository(owner: $owner, name: $name) {
+      pullRequests(headRefName: $branch, first: 1, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { url } } } }`
+    const raw = await this.context.gh(['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${repo.owner}`, '-F', `name=${repo.name}`, '-F', `branch=${branch}`])
+    const url = (JSON.parse(raw) as { data?: { repository?: { pullRequests?: { nodes?: { url: string }[] } } } }).data?.repository?.pullRequests
+      ?.nodes?.[0]?.url
+    const pr = url && prEntityId(url)
+    if (!pr || this.context.lens.children(session).includes(pr)) return
+    this.context.owned.write([link(session, pr, this.context.now(), author)])
+  }
+}

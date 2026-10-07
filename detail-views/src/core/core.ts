@@ -6,6 +6,7 @@ import { bucketEvents, rollupEntity, type GraphEntity } from './graph/entity.ts'
 import { eventKey, link, value, values, type AppEvent, type Changed, type Scan } from './graph/events.ts'
 import { cacheMigrations, openDatabase, ownedMigrations } from './db.ts'
 import { importLegacy } from './legacy.ts'
+import { Claude, type NewSession } from './modules/claude/claude.ts'
 import { GitHub } from './modules/github/github.ts'
 import type { Module, ModuleContext } from './modules/module.ts'
 import { Slack } from './modules/slack/slack.ts'
@@ -33,7 +34,20 @@ export interface CoreOptions {
   legacy?: string
   fetch?: typeof fetch
   gh?: ModuleContext['gh']
+  /** Runs git and claude; tests give a fake. */
+  run?: ModuleContext['run']
+  /** Where the app keeps its files (worktrees go under it). Defaults to a temporary directory. */
+  dataDir?: string
   now?: () => number
+}
+
+function runCommand(command: string, args: string[], cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, { cwd, maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error) reject(new Error(stderr.trim() || error.message))
+      else resolve(stdout)
+    })
+  })
 }
 
 function runGh(args: string[]): Promise<string> {
@@ -65,6 +79,7 @@ export class Core {
   readonly modules: Module[]
   readonly slack: Slack
   readonly github: GitHub
+  readonly claude: Claude
 
   private readonly listeners = new Set<(changed: Changed) => void>()
   private readonly errors = new Map<string, string>()
@@ -110,6 +125,8 @@ export class Core {
       lens: this.lens(),
       fetch: options.fetch ?? fetch,
       gh: options.gh ?? runGh,
+      run: options.run ?? runCommand,
+      dataDir: options.dataDir ?? tmpdir(),
       load: async (id, part, force) => {
         const { error } = await this.load({ id, part, force })
         if (error) throw new Error(error)
@@ -118,7 +135,8 @@ export class Core {
     }
     this.slack = new Slack(context)
     this.github = new GitHub(context)
-    this.modules = [this.slack, this.github, tasksModule()]
+    this.claude = new Claude(context)
+    this.modules = [this.slack, this.github, tasksModule(), this.claude]
   }
 
   /**
@@ -403,6 +421,12 @@ export class Core {
     undo: (): Outcome => ({ events: this.owned.pop(this.now(), me), error: null }),
     /** Writes undone events back verbatim, times and all. */
     redo: ({ events }: { events: AppEvent[] }): Outcome => this.write(events),
+    /** A new Claude session, under the item it is started from. Its directory may take a moment (a worktree). */
+    claudeCreate: (input: NewSession): Promise<Outcome> =>
+      this.attempt(input.attachTo, () => this.claude.createSession(input)),
+    /** A prompt to a session, under `parent`; the answer arrives as a change. */
+    claudePrompt: ({ session, parent, text }: { session: string; parent: string; text: string }): Outcome =>
+      text.trim() ? { events: this.claude.prompt(session, parent, text), error: null } : { events: [], error: null },
     /** What a view shows, as a tree, for a caller with no cache of its own. */
     view: ({ id, folds }: { id: string; folds?: Folds }): View => viewOf(id, this.source(), { folds }),
     /** A note under `parent`: an owned entity with no type, just text. */

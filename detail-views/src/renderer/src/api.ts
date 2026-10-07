@@ -22,6 +22,10 @@ export interface Api {
   setValue(id: string, key: string, value: unknown): Promise<Outcome>
   /** My text for an item, over whatever its service says. */
   setText(id: string, text: string): Promise<Outcome>
+  /** A new Claude session under `attachTo`, in a temporary directory, `cwd`, or a new worktree of it. */
+  claudeCreate(input: { name: string; cwd: string; worktree: boolean; attachTo: string }): Promise<Outcome>
+  /** A prompt to a Claude session, under `parent`; the answer arrives as a change. */
+  claudePrompt(session: string, parent: string, text: string): Promise<Outcome>
   /** Takes my last action off the owned log; returns what came off. */
   undo(): Promise<Outcome>
   /** Writes undone events back, as they were. */
@@ -69,6 +73,8 @@ export function httpApi(base: string, token: string): Api {
     setText: (id, text) => call('setText', { id, text }),
     undo: () => call('undo'),
     redo: (events) => call('redo', { events }),
+    claudeCreate: (input) => call('claudeCreate', input),
+    claudePrompt: (session, parent, text) => call('claudePrompt', { session, parent, text }),
     onChange: (listener) => {
       // EventSource reconnects by itself; a reconnect may have missed changes, so it re-reads everything.
       const events = new EventSource(`${base}/api/changes?token=${encodeURIComponent(token)}`)
@@ -103,6 +109,8 @@ export function electronApi(): Api {
     setText: (id, text) => call('setText', { id, text }),
     undo: () => call('undo'),
     redo: (events) => call('redo', { events }),
+    claudeCreate: (input) => call('claudeCreate', input),
+    claudePrompt: (session, parent, text) => call('claudePrompt', { session, parent, text }),
     onChange: (listener) => bridge.onChange(listener),
     openExternal: (url) => void bridge.openExternal(url),
   }

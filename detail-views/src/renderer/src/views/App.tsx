@@ -1,5 +1,5 @@
 import type { Entity, ModuleInfo, View } from '../../../core/types.ts'
-import type { Peek, PeekTarget, Pick, Rect } from '../state.ts'
+import type { Peek, PeekTarget, Pick, Rect, SessionDialog } from '../state.ts'
 import { imageSrc } from '../images.ts'
 import { PeekWindow } from './Peek.tsx'
 import { ViewPane } from './View.tsx'
@@ -39,6 +39,10 @@ export function App(props: {
   phone: PhoneBarProps | null
   /** The stack of views to here, oldest first; the last is the one on screen. */
   crumbs: (Entity | null)[]
+  /** A form being filled in, and what it can offer. */
+  dialog: DialogProps | null
+  /** A passing message. */
+  toast: string | null
   onCrumb(at: number): void
 }) {
   const { peek } = props
@@ -72,6 +76,8 @@ export function App(props: {
             {props.phone && <PhoneBar {...props.phone} />}
           </main>
           {props.picking && <PickBar {...props.picking} />}
+          {props.dialog && <SessionForm {...props.dialog} />}
+          {props.toast && <div className="toast">{props.toast}</div>}
           {peek.peeks.map((one) => (
             <PeekWindow
               key={one.key}
@@ -158,5 +164,68 @@ function PhoneBar(props: PhoneBarProps) {
         <Button label="More" active={props.menuOpen} disabled={!props.more.length && 'Nothing more here'} onClick={() => props.onMenu(!props.menuOpen)} />
       </nav>
     </>
+  )
+}
+
+export interface DialogProps {
+  dialog: SessionDialog
+  /** Directories used before, most recent first, to pick from. */
+  cwds: string[]
+  busy: boolean
+  onChange(fields: Partial<SessionDialog>): void
+  onSubmit(): void
+  onCancel(): void
+}
+
+/**
+ * A new Claude session: its name, where it runs (blank for a new temporary
+ * directory), and whether in a new worktree there. Enter makes it, Escape
+ * gives up.
+ */
+function SessionForm(props: DialogProps) {
+  const { dialog } = props
+  const hasCwd = Boolean(dialog.cwd.trim())
+  return (
+    <div className="dialog-backdrop" onMouseDown={props.onCancel}>
+      <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="dialog-title">New Claude session</div>
+        <input
+          className="find"
+          data-field="dialog-name"
+          autoFocus
+          placeholder="Name"
+          value={dialog.name}
+          onChange={(event) => props.onChange({ name: event.target.value })}
+        />
+        <input
+          className="find"
+          data-field="dialog-cwd"
+          list="claude-cwds"
+          placeholder="Directory (blank: a new temporary one)"
+          spellCheck={false}
+          value={dialog.cwd}
+          onChange={(event) => props.onChange({ cwd: event.target.value })}
+        />
+        <datalist id="claude-cwds">
+          {props.cwds.map((cwd) => (
+            <option key={cwd} value={cwd} />
+          ))}
+        </datalist>
+        <label className={`dialog-check${hasCwd ? '' : ' muted'}`}>
+          <input
+            type="checkbox"
+            data-field="dialog-worktree"
+            disabled={!hasCwd}
+            checked={hasCwd && dialog.worktree}
+            onChange={(event) => props.onChange({ worktree: event.target.checked })}
+          />
+          In a new worktree, on a branch of its own
+        </label>
+        <div className="dialog-buttons">
+          <Button label="Cancel" hotkey="Esc" onClick={props.onCancel} />
+          <Button label="Start" hotkey="↵" busy={props.busy} busyLabel="Starting…" onClick={props.onSubmit} />
+        </div>
+      </div>
+    </div>
   )
 }

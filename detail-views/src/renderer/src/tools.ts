@@ -49,6 +49,9 @@ export const tools: Tool[] = [
     run: (s) => void s.perform(),
   },
   { id: 'composer.submit', scope: 'input', keys: ['Enter'], enabled: (s) => s.composerOpen(), run: (s) => void s.send() },
+  // The new-session form: Enter makes it, Escape gives up.
+  { id: 'dialog.submit', scope: 'input', keys: ['Enter'], enabled: (s, field) => s.hasDialog() && field?.startsWith('dialog') === true, run: (s) => s.submitDialog() },
+  { id: 'dialog.cancel', scope: 'input', keys: ['Escape'], enabled: (s) => s.hasDialog(), run: (s) => s.cancelDialog() },
   { id: 'composer.leave', scope: 'input', keys: ['Escape'], run: (s) => s.compose(false) },
 
   // --- Escape, innermost first; the find last ------------------------------------
@@ -98,6 +101,8 @@ export const tools: Tool[] = [
     enabled: (s) => picking(s, 'linkReverse') || selected(s) !== null,
     run: (s) => s.pick('linkReverse'),
   },
+  { id: 'claude.new', label: 'Claude session', scope: 'list', keys: ['K'], enabled: (s) => selected(s) !== null, run: (s) => s.openClaudeDialog() },
+  { id: 'claude.prompt', label: 'Prompt Claude', scope: 'list', keys: ['k'], enabled: (s) => selected(s) !== null, run: (s) => s.startPrompt() },
   { id: 'checkbox.toggle', label: 'Tick', scope: 'list', keys: [' '], enabled: (s) => s.canToggle(), run: (s) => s.toggle() },
   {
     id: 'chat.hide', label: 'Hide chat',

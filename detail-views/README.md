@@ -33,6 +33,8 @@ Every view is a tree: the item it is rooted at, then what is under it.
 | `Shift+Backspace` | on a Slack message: hide the whole chat it is in |
 | `Ctrl+F` | find in this view: rows that say it (highlighted), and the rows above them; `Enter` back to the tree, `Esc` clears |
 | `Ctrl+Z` / `Ctrl+Y` | undo / redo my own edits (up to five minutes back) |
+| `Shift+K` | start a Claude session from the selected row |
+| `k` | prompt the nearest Claude session, in a box under the selected row |
 | `F5` | refresh |
 | `p` | approve a PR |
 | `X` | close my PR and delete its branch |
@@ -78,6 +80,11 @@ Inside a PR, `p` approves (someone else's: an approving review, with an
 optional comment; mine: marked approved here and auto-merge turned on) and `X`
 closes mine and deletes the branch, with an optional comment. Both open a
 prompt; Enter confirms, Esc cancels.
+
+## Claude
+
+Sessions of Claude Code (`claude -p`), each in a temporary directory, a directory
+of mine, or a new git worktree. See [docs/claude.md](docs/claude.md).
 
 ## Phone
 
