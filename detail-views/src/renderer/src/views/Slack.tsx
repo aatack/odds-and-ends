@@ -145,18 +145,19 @@ export const SlackMessageRow = memo(function SlackMessageRow(props: RowProps) {
   return <MessageRow {...props} always={props.parent?.type !== 'slack.conversation' && props.parent?.type !== 'slack.message'} />
 })
 
+/** A thread in the workspace: its chat, then the whole message (mentions, images, its replies line), as in the chat itself. */
 function ThreadLine(props: RowProps) {
-  const { data } = props.entity
-  const replies = Number(data.replyCount ?? 0)
   return (
-    <span className="line-row">
-      <span className="line">
-        <span className="muted">{String(data.where ?? '')}</span>{' '}
-        <span style={{ color: authorColour(String(data.authorKey)), fontWeight: 700 }}>{String(data.author ?? '')}</span>{' '}
-        <Highlight text={String(data.text ?? '').split('\n')[0]} find={props.findText} />
-      </span>
-      {replies > 0 && <span className="muted">{replies}</span>}
-    </span>
+    <div className="message">
+      <MessageBody
+        entity={props.entity}
+        author
+        lead={<span className="muted">{String(props.entity.data.where ?? '')} </span>}
+        onOpen={props.onOpen}
+        onImage={props.onImage}
+        findText={props.findText}
+      />
+    </div>
   )
 }
 

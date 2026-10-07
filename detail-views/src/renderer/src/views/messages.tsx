@@ -1,4 +1,5 @@
 import { memo, useMemo } from 'react'
+import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import type { Components, Options } from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
@@ -65,6 +66,8 @@ export function MessageBody(props: {
   onOpen(id: string): void
   onImage(ref: string | null): void
   findText?: string
+  /** Before the name, on the same line: where a message is, when shown away from its chat. */
+  lead?: ReactNode
 }) {
   const data = props.entity.data
   const replies = props.replies === false ? 0 : Number(data.replyCount ?? 0)
@@ -74,6 +77,7 @@ export function MessageBody(props: {
     <div className={`body${props.author ? ' head' : ''}`}>
       <div className="content">
         <div className="text">
+          {props.lead}
           {props.author && (
             <Person
               name={String(data.author)}
