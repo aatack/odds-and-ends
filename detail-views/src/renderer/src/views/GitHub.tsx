@@ -165,7 +165,7 @@ export function GhItemPill(props: PillProps) {
 }
 
 export function GhItemOverview(props: OverviewProps) {
-  return <MessageBody entity={props.entity} author time onOpen={props.onOpen} onImage={props.onImage} />
+  return <MessageBody entity={props.entity} author onOpen={props.onOpen} onImage={props.onImage} />
 }
 
 export function LocalApprovalPill() {

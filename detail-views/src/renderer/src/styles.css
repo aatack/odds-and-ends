@@ -186,77 +186,23 @@ body,
   margin-top: 4px;
 }
 
-.gutter {
-  flex: none;
-  width: 52px;
-  font-size: 13px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.stamp {
-  position: relative;
-}
-
-/* A repeated time is hidden until its row is hovered. */
-.stamp.repeat {
-  visibility: hidden;
-}
-
-.row:hover .stamp.repeat {
-  visibility: visible;
-}
-
-.stamp:hover::after {
-  content: attr(data-full);
-  position: absolute;
-  left: calc(100% + 6px);
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 10;
-  white-space: nowrap;
-  padding: 4px 8px;
-  border-radius: var(--radius);
-  background: var(--ink);
-  color: var(--canvas);
-  font-size: 12px;
-}
-
 .content {
   flex: 1;
   min-width: 0;
 }
 
-.body:not(.head) .stamp {
-  position: relative;
-}
-
-/* A repeated time is hidden until its row is hovered. */
-.stamp.repeat {
+/* A message's time: at the right, shown while its row is hovered. */
+.stamp {
+  flex: none;
+  margin-left: 12px;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
   visibility: hidden;
 }
 
-.row:hover .stamp.repeat {
+.row:hover .stamp {
   visibility: visible;
-}
-
-.stamp:hover::after {
-  content: attr(data-full);
-  position: absolute;
-  left: calc(100% + 6px);
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 10;
-  white-space: nowrap;
-  padding: 4px 8px;
-  border-radius: var(--radius);
-  background: var(--ink);
-  color: var(--canvas);
-  font-size: 12px;
-}
-
-.content {
-  padding-left: 10px;
 }
 
 .text {
