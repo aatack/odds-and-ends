@@ -479,7 +479,9 @@ export class Core {
       const split = typeof text === 'string' ? splitText(text) : null
       if (!split) return { events: [], error: 'Nothing to split' }
       const now = this.now()
-      return this.write([value(id, 'text', split.lead, now, me), ...outlineEvents(id, split.items, now, me)])
+      // The parts keep the item's own type (a Claude response's stay Claude's); a service's type, given by its id, isn't copied.
+      const type = this.entity(id).values.type
+      return this.write([value(id, 'text', split.lead, now, me), ...outlineEvents(id, split.items, now, me, typeof type === 'string' ? type : undefined)])
     },
     /** Moves `child` from under `from` to under `to`. */
     move: ({ child, from, to }: { child: string; from: string; to: string }): Outcome => {

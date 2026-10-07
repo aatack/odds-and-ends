@@ -2,6 +2,7 @@ import { memo, useContext } from 'react'
 import type { Entity } from '../../../core/types.ts'
 import type { OverviewProps, PillProps, RowProps, Tint } from './kindTypes.ts'
 import { Text } from './messages.tsx'
+import { noteClass } from './Notes.tsx'
 import { ClockContext, HeaderPill, Highlight } from './primitives.tsx'
 
 /** The Claude mark (src/renderer/src/assets/claude.svg), in Claude's colour. */
@@ -98,7 +99,7 @@ function Response(props: { entity: Entity; findText?: string }) {
   return (
     <div className="response">
       <ClaudeMark />
-      <div className="response-body">
+      <div className={`response-body ${noteClass(data)}`}>
         {data.running ? (
           <span className="muted">Working… {elapsed(now - props.entity.createdAt)}</span>
         ) : failed ? (

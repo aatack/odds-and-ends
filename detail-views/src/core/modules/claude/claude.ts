@@ -170,7 +170,7 @@ export class Claude implements Module {
       const { lead, items } = failed ? { lead: failed, items: [] } : outline(out.result ?? '')
       this.context.owned.write([
         ...values(responseId, { text: lead, running: false, error: failed, cost: out.total_cost_usd ?? null }, at, author),
-        ...outlineEvents(responseId, items, at, author),
+        ...outlineEvents(responseId, items, at, author, 'claude.response'),
         ...(started ? [] : [value(session, 'started', true, this.context.now(), author)]),
       ])
     } catch (error) {

@@ -134,14 +134,16 @@ export function splitText(text: string): Outline | null {
 /**
  * An outline's items as notes under `parent`, all written at `at`: links at
  * one time keep the order they are written in, and undo takes them together.
+ * `type`, if given, is the type of every item, so the parts of a Claude
+ * response are Claude's too.
  */
-export function outlineEvents(parent: string, items: OutlineItem[], at: number, author: string): AppEvent[] {
+export function outlineEvents(parent: string, items: OutlineItem[], at: number, author: string, type?: string): AppEvent[] {
   return items.flatMap((item) => {
     const id = crypto.randomUUID()
     return [
-      ...values(id, { text: item.text, section: item.section, open: item.open }, at, author),
+      ...values(id, { type, text: item.text, section: item.section, open: item.open }, at, author),
       link(parent, id, at, author),
-      ...outlineEvents(id, item.children, at, author),
+      ...outlineEvents(id, item.children, at, author, type),
     ]
   })
 }

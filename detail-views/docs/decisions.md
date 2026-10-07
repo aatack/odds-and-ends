@@ -74,7 +74,9 @@ Newest last. Each says what was chosen, why, and what was turned down.
     context, `x` / `r` / `Shift+R` pick their other end by a second press,
     `b` splits its text (`core/outline.ts`, as Claude's answers are) into
     its first part and notes under it, all at one timestamp so one undo
-    takes it back.
+    takes it back. The parts keep the item's own `type` value (a Claude
+    response's parts are responses, with its tint); a type that comes from
+    a service's id isn't copied.
     *Why:* the event model makes all of these one or two owned events,
     whatever the item. Old `task` items still tick with Space; new ones are
     notes.

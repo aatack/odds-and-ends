@@ -133,4 +133,5 @@ test('claude: an answer with headings and bullets is written as notes under the 
       return core.entity(child).outboundLinks.length ? [text, tree(child)] : text
     })
   assert.deepEqual(tree(response), [['# Changes', [['one', ['detail']], 'two']]])
+  assert.equal(core.item(core.entity(response).outboundLinks[0])!.type, 'claude.response')
 })
