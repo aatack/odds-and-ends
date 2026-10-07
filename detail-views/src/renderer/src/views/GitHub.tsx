@@ -1,10 +1,9 @@
 import { memo } from 'react'
-import type { Badge as BadgeData } from '../../../core/types.ts'
 import { authorColour } from '../format.ts'
 import { hotkeyOf } from '../tools.ts'
 import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
 import { MessageBody, MessageRow } from './messages.tsx'
-import { Badge, Button, HeaderPill, Highlight, Link } from './primitives.tsx'
+import { Button, HeaderPill, Highlight, Link } from './primitives.tsx'
 
 /** A coloured dot for where CI is; the word rides in the tooltip. */
 function Dot(props: { outcome: unknown }) {
@@ -32,60 +31,49 @@ interface Blocker {
 const blockersOf = (data: Record<string, unknown>): Blocker[] => (Array.isArray(data.blockers) ? (data.blockers as Blocker[]) : [])
 
 /**
- * One thing in a PR's way. Mine to do stands out (filled); someone else's is
- * its colour only; nobody's (waiting, done) is quiet.
+ * What's in a PR's way first, as a quiet chip in its colour, where the dot
+ * used to be. The others wait their turn: once this is done, the next shows.
  */
-function BlockerChip(props: { blocker: Blocker; lead?: boolean }) {
-  const { blocker } = props
+function PrStatus(props: { data: Record<string, unknown> }) {
+  const [first] = blockersOf(props.data)
+  if (!first) return <span className="status-chip gray">…</span>
   return (
     <span
-      className={`blocker ${blocker.tone} turn-${blocker.turn}${props.lead ? ' lead' : ''}`}
-      title={blocker.turn === 'me' ? 'Yours to do' : blocker.turn === 'them' ? 'Waiting on someone else' : undefined}
+      className={`status-chip ${first.tone}${first.turn === 'me' ? ' mine' : ''}`}
+      title={first.turn === 'me' ? 'Yours to do' : first.turn === 'them' ? 'Waiting on someone else' : undefined}
     >
-      {blocker.label}
+      {first.label}
     </span>
   )
 }
 
-/** A PR in a list: its badge and name, and at the right what's in its way first (with how much more follows). */
+/** A PR in a list: what's in its way, its name, and where it lives. */
 export const PrRow = memo(function PrRow(props: RowProps) {
   const { data } = props.entity
-  const [first, ...rest] = blockersOf(data)
   return (
-    <span className="line-row">
-      <span className={`line${data.draft ? ' muted' : ''}`}>
-        <Badge badge={data.badge as BadgeData | null | undefined} />{' '}
-        <Highlight text={String(data.text ?? data.url)} find={props.findText} /> <span className="muted">{String(data.repo ?? '').split('/').pop()}</span>
-      </span>
-      {first && <BlockerChip blocker={first} />}
-      {rest.length > 0 && (
-        <span className="muted" title={rest.map((blocker) => blocker.label).join('\n')}>
-          +{rest.length}
-        </span>
-      )}
+    <span className={`line${data.draft ? ' muted' : ''}`}>
+      <PrStatus data={data} /> <Highlight text={String(data.text ?? data.url)} find={props.findText} />{' '}
+      <span className="muted">{String(data.repo ?? '').split('/').pop()}</span>
     </span>
   )
 })
 
-/** A PR named in passing: its badge, its name, and what's in its way first, in its colour. */
+/** A PR named in passing: what's in its way, and its name. */
 export function PrPill(props: PillProps) {
   const { data } = props.entity
-  const [first] = blockersOf(data)
   return (
     <>
-      <Badge badge={data.badge as BadgeData | null | undefined} />
+      <PrStatus data={data} />
       <span className="item-name">
         {data.name ? <Highlight text={String(data.name)} find={props.findText} /> : (props.fallback ?? String(data.url ?? props.entity.id))}
       </span>
-      {first && <span className={`pill-status ${first.tone}`}>{first.label}</span>}
     </>
   )
 }
 
 /**
- * A PR heading its view: what stands in its way, most pressing first and
- * yours marked, then what can be done, then the rest quietly. Its checks and
- * discussion are the tree below.
+ * A PR heading its view: what's in its way and its name (its pill), what can
+ * be done, then the rest quietly. Its checks and discussion are the tree below.
  */
 export function PrOverview(props: OverviewProps) {
   const { entity, view } = props
@@ -95,19 +83,11 @@ export function PrOverview(props: OverviewProps) {
     .filter((kind) => counts[kind])
     .map((kind) => `${counts[kind]} ${kind}`)
     .join(' · ')
-  const blocking = blockersOf(data)
   return (
     <>
       <div className="title">
         <HeaderPill entity={entity} />
       </div>
-      {blocking.length > 0 && (
-        <div className="blockers">
-          {blocking.map((blocker, index) => (
-            <BlockerChip key={blocker.id} blocker={blocker} lead={index === 0} />
-          ))}
-        </div>
-      )}
       {props.interactive && view.actions.length > 0 && (
         <div className="facts">
           {view.actions.map((action) => (

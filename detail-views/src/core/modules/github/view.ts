@@ -47,16 +47,26 @@ export interface Blocker {
 }
 
 /**
+ * Whether a PR of mine counts as approved: GitHub's review decision says so,
+ * or I approved it here (GitHub won't let me approve my own). One rule, for
+ * the blocker and for whether Approve is offered.
+ */
+export function approvedMine(data: Record<string, unknown>, locallyApproved: boolean): boolean {
+  return data.review === 'APPROVED' || locallyApproved
+}
+
+/**
  * What stands between a PR and being merged, most pressing first, worked out
- * from what GitHub says and from my own approval here. The first is what I
- * should know at a glance; the rest are what follows once it's done. Empty
- * until enough is known.
+ * from what GitHub says and from my own approval here. Views show only the
+ * first: what I need to know (and usually do) to move the PR on. Empty until
+ * enough is known.
  *
- * In order: merged or closed (nothing more to do); a draft; my review (mine:
- * approving it here; theirs: reviewing it, especially if asked); changes
- * requested; unresolved threads; reviews from others; failing CI; conflicts;
- * behind its base; CI still running; and then, clear: merging (or auto-merge
- * doing it).
+ * The order is mine, as I asked for it: merged or closed; not reviewed by me
+ * (mine: not approved, here or on GitHub; theirs: not approved by me); waiting
+ * for someone else's review; failing CI; merge conflicts; CI still running;
+ * then clear. Slotted in where they belong: a draft first (nothing else moves
+ * until it is marked ready); changes requested and unresolved threads with the
+ * reviews; behind its base with the conflicts.
  */
 export function blockers(data: Record<string, unknown>, locallyApproved: boolean): Blocker[] {
   if (data.mine === undefined) return []
@@ -68,29 +78,30 @@ export function blockers(data: Record<string, unknown>, locallyApproved: boolean
   const add = (id: string, label: string, turn: Turn, tone: Blocker['tone']) => out.push({ id, label, turn, tone })
   const others = Array.isArray(data.reviewers) ? (data.reviewers as string[]) : []
 
-  if (data.draft) add('draft', mine ? 'Draft: mark it ready' : 'Draft', mine ? 'me' : 'them', 'yellow')
-  if (mine && !locallyApproved) add('self-review', 'Review it', 'me', 'yellow')
+  if (data.draft) add('draft', 'Draft', mine ? 'me' : 'them', 'gray')
+  // Not reviewed by me.
+  if (mine && !approvedMine(data, locallyApproved)) add('self-review', 'Review it', 'me', 'yellow')
   if (theirs && !data.approvedByMe && !data.changesRequestedByMe) {
-    add('review', data.reviewRequestedOfMe ? 'Review requested of you' : 'Not reviewed by you', 'me', 'yellow')
+    add('review', data.reviewRequestedOfMe ? 'Review requested' : 'Not reviewed', 'me', 'yellow')
+  }
+  // Waiting on someone else's review.
+  if (data.review !== 'APPROVED' && data.review !== 'CHANGES_REQUESTED' && (mine ? !data.approvedByOthers : data.approvedByMe)) {
+    add('awaiting', others.length ? `Awaiting ${others.join(', ')}` : 'Awaiting review', 'them', 'yellow')
   }
   if (data.review === 'CHANGES_REQUESTED') {
     if (mine) add('changes', 'Changes requested', 'me', 'red')
-    else if (data.changesRequestedByMe) add('changes', 'You requested changes', 'them', 'yellow')
-    else add('changes', 'Changes requested', 'them', 'yellow')
+    else add('changes', data.changesRequestedByMe ? 'You requested changes' : 'Changes requested', 'them', 'yellow')
   }
   const unresolved = Number(data.unresolved ?? 0)
-  if (unresolved > 0) add('threads', `${unresolved} unresolved ${unresolved === 1 ? 'thread' : 'threads'}`, mine ? 'me' : 'them', 'yellow')
-  if (data.review !== 'APPROVED' && data.review !== 'CHANGES_REQUESTED' && (mine ? !data.approvedByOthers : data.approvedByMe)) {
-    add('awaiting', others.length ? `Awaiting review: ${others.join(', ')}` : 'Awaiting review', 'them', 'yellow')
-  }
+  if (unresolved > 0) add('threads', `${unresolved} unresolved`, mine ? 'me' : 'them', 'yellow')
   if (data.checks === 'failing') add('ci', 'CI failing', mine ? 'me' : 'them', 'red')
-  if (data.conflicts || data.mergeState === 'DIRTY') add('conflicts', 'Merge conflicts', mine ? 'me' : 'them', 'red')
-  if (data.mergeState === 'BEHIND') add('behind', 'Behind its base', mine ? 'me' : 'them', 'yellow')
-  if (data.checks === 'pending') add('pending', 'CI running', 'none', 'yellow')
+  if (data.conflicts || data.mergeState === 'DIRTY') add('conflicts', 'Conflicts', mine ? 'me' : 'them', 'red')
+  if (data.mergeState === 'BEHIND') add('behind', 'Behind base', mine ? 'me' : 'them', 'yellow')
+  if (data.checks === 'pending') add('pending', 'CI running', 'none', 'gray')
   if (!out.length) {
-    if (mine && data.autoMerge) add('auto', 'Will auto-merge', 'none', 'green')
-    else if (mine) add('merge', 'Ready: merge it', 'me', 'green')
-    else add('clear', data.approvedByMe ? 'Approved by you' : 'Ready', 'none', 'green')
+    if (mine && data.autoMerge) add('auto', 'Auto-merging', 'none', 'green')
+    else if (mine) add('merge', 'Ready to merge', 'me', 'green')
+    else add('clear', data.approvedByMe ? 'Approved' : 'Ready', 'none', 'green')
   }
   return out
 }
@@ -147,7 +158,7 @@ export const githubView: ModuleView = {
       // GitHub won't let me approve my own PR, so "approved" is GitHub's
       // review decision, or my own approval here. Approving turns on
       // auto-merge, so once both are true there is nothing left to do.
-      const approved = entity.data.review === 'APPROVED' || Boolean(localApproval(lens, entity.id))
+      const approved = approvedMine(entity.data, Boolean(localApproval(lens, entity.id)))
       actions.push({
         id: 'approve',
         label: 'Approve',
