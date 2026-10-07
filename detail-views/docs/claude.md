@@ -16,7 +16,7 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 10. A worktree session has a new branch. Make its name from the session name and the session ID. Keep the branch name on the session item.
 11. Keep these on the session item: the directory where it runs (`cwd`), the worktree directory (`worktree`), the branch (`branch`), the repo (`repo`).
 12. **Shift+K** opens a form: name, directory, worktree. Enter starts the session. Escape cancels.
-13. The new session item goes under the selected item. The selected item gets `claudeSessionId: <session ID>`.
+13. The new session item is a pill on the selected item (in its `pills`), not a child of it. The selected item gets `claudeSessionId: <session ID>`.
 14. Keep each directory that I enter on the Claude root (`cwds`). Give these as options in the next form. Put the last one in the field.
 15. **k** opens a text box under the selected item. This is the same box as a new note, with a different action when I write it.
 16. To find the session for **k**, look along the selection path, from the selected item to the root of the view. Use the first item that is a session, or that has `claudeSessionId`. If there is no such item, show an error toast.
@@ -24,7 +24,7 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 18. When Claude answers, put the answer in an item under the prompt item. The structure is: `[item + session] → [prompt] → [response]`.
 19. If Claude fails, put an error message in the response item instead of the answer.
 20. While Claude works, the response item shows how long it has run.
-21. After each prompt, if the branch in the session directory has a GitHub PR, link the PR item under the session item. (A "branch" here is a PR. The app has no branch items.)
+21. After each prompt, if the branch in the session directory has a GitHub PR, put the PR item in the session's `pills`. Do not link it under the session. (A "branch" here is a PR. The app has no branch items.)
 22. Do not stream the answer. Show it when Claude is done.
 23. Use the model Opus 5.5 (`claude-opus-5-5`).
 24. Use Claude Code auto mode for permissions (`--permission-mode auto`).
@@ -53,12 +53,12 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 | Type | Is | Under |
 |-|-|-|
 | `claude.home` | The module root. Keeps `cwds`. | The sidebar |
-| `claude.session` | A session. `text` is its name. | The item it started from, and `claude` |
+| `claude.session` | A session. `text` is its name. `pills` has its PR. | `claude`. A pill on the item it started from. |
 | `claude.prompt` | What I asked. `session` is its session. | The item I asked from, and the session |
 | `claude.response` | The answer, or the error. `running` while Claude works. | Its prompt |
 
 ## Not done
 
 - No streaming of the answer.
-- No branch items. A branch without a PR gets no link.
+- No branch items. A branch without a PR gets no pill.
 - No form to change the permission mode or the model of a session.

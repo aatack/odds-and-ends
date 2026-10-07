@@ -110,7 +110,8 @@ export class Claude implements Module {
       link(ids.root, id, at, me),
     ]
     if (input.attachTo !== ids.root) {
-      events.push(link(input.attachTo, id, at, me), value(input.attachTo, 'claudeSessionId', id, at, me))
+      // A pill beside the item it came from, not a child under it.
+      events.push(value(input.attachTo, 'pills', this.withPill(input.attachTo, id), at, me), value(input.attachTo, 'claudeSessionId', id, at, me))
     }
     this.context.owned.write(events)
     if (requested) {
@@ -184,7 +185,7 @@ export class Claude implements Module {
     await this.linkPullRequest(session, cwd).catch(() => {})
   }
 
-  /** The branch checked out where the session runs, if it has a PR: linked under the session. */
+  /** The branch checked out where the session runs, if it has a PR: a pill on the session. */
   private async linkPullRequest(session: string, cwd: string): Promise<void> {
     const { run } = this.context
     const branch = (await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], cwd)).trim()
@@ -196,7 +197,19 @@ export class Claude implements Module {
     const url = (JSON.parse(raw) as { data?: { repository?: { pullRequests?: { nodes?: { url: string }[] } } } }).data?.repository?.pullRequests
       ?.nodes?.[0]?.url
     const pr = url && prEntityId(url)
-    if (!pr || this.context.lens.children(session).includes(pr)) return
-    this.context.owned.write([link(session, pr, this.context.now(), author)])
+    if (!pr || this.pillsOf(session).includes(pr)) return
+    this.context.owned.write([value(session, 'pills', this.withPill(session, pr), this.context.now(), author)])
+  }
+
+  /** The ids an item's `pills` names. */
+  private pillsOf(id: string): string[] {
+    const pills = this.context.lens.read(id)?.data.pills
+    return Array.isArray(pills) ? pills.filter((one): one is string => typeof one === 'string') : []
+  }
+
+  /** An item's `pills` with one more, at the end, unless it is there already. */
+  private withPill(id: string, pill: string): string[] {
+    const pills = this.pillsOf(id)
+    return pills.includes(pill) ? pills : [...pills, pill]
   }
 }

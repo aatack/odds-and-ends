@@ -37,7 +37,9 @@ test('claude: a session in a new worktree, prompted twice, links its PR; each an
   assert.match(String(data.worktree), /^\/data\/worktrees\/app-[0-9a-f]{8}$/)
   assert.equal(data.cwd, data.worktree)
   assert.deepEqual(calls[1].args, ['worktree', 'add', '-b', data.branch, data.worktree])
-  assert.ok(core.entity(note).outboundLinks.includes(session))
+  // A pill on the note, not a child of it.
+  assert.deepEqual(core.item(note)!.data.pills, [session])
+  assert.ok(!core.entity(note).outboundLinks.includes(session))
   assert.ok(core.entity('claude').outboundLinks.includes(session))
   // The directory is remembered for next time.
   assert.deepEqual(core.item('claude')!.data.cwds, [src])
@@ -63,8 +65,9 @@ test('claude: a session in a new worktree, prompted twice, links its PR; each an
   await settle()
   assert.deepEqual(calls.filter((call) => call.command.endsWith('claude'))[1].args.slice(-2), ['--resume', session])
 
-  // The worktree's branch has a PR: it is linked under the session, once.
-  assert.equal(core.entity(session).outboundLinks.filter((id) => id === 'github:pr:https://github.com/o/app/pull/9').length, 1)
+  // The worktree's branch has a PR: a pill on the session, once, and not a child of it.
+  assert.deepEqual(core.item(session)!.data.pills, ['github:pr:https://github.com/o/app/pull/9'])
+  assert.ok(!core.entity(session).outboundLinks.includes('github:pr:https://github.com/o/app/pull/9'))
   // Claude's writes aren't mine to undo.
   const undone = core.actions.undo().events
   assert.ok(!undone.some((e) => e.author === 'claude'))
