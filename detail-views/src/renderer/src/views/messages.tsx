@@ -1,6 +1,6 @@
 import { memo, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
-import type { Components } from 'react-markdown'
+import type { Components, Options } from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 import { mentionScheme } from '../../../core/types.ts'
@@ -26,6 +26,7 @@ export const MessageRow = memo(function MessageRow(props: RowProps & { always?: 
         author={props.always || startsRun(props.above, props.entity)}
         onOpen={props.onOpen}
         onImage={props.onImage}
+        findText={props.findText}
       />
     </div>
   )
@@ -62,6 +63,7 @@ export function MessageBody(props: {
   replies?: boolean
   onOpen(id: string): void
   onImage(ref: string | null): void
+  findText?: string
 }) {
   const data = props.entity.data
   const replies = props.replies === false ? 0 : Number(data.replyCount ?? 0)
@@ -83,7 +85,7 @@ export function MessageBody(props: {
           {props.author && data.verdict ? (
             <span className={`verdict ${String(data.state ?? '').toLowerCase()}`}>{String(data.verdict)} </span>
           ) : null}
-          <Markdown text={String(data.markdown ?? data.text)} onOpen={props.onOpen} />
+          <Markdown text={String(data.markdown ?? data.text)} onOpen={props.onOpen} findText={props.findText} />
           {reactions.length > 0 && (
             <span className="reactions">
               {reactions.map((reaction) => (
@@ -149,13 +151,53 @@ export function Person(props: {
 
 const plugins = [remarkGfm, remarkBreaks]
 
+interface MdNode {
+  type: string
+  value?: string
+  children?: MdNode[]
+  data?: Record<string, unknown>
+}
+
+/**
+ * Marks what a find matched in markdown's text, as `<mark>`: text nodes are
+ * split around each match, outside code, so links and formatting are kept.
+ */
+function remarkHighlight(options: { find: string }) {
+  const needle = options.find.trim().toLowerCase()
+  const split = (node: MdNode): MdNode[] => {
+    const text = node.value ?? ''
+    const lower = text.toLowerCase()
+    const out: MdNode[] = []
+    let at = 0
+    for (let found = lower.indexOf(needle); found >= 0; found = lower.indexOf(needle, at)) {
+      if (found > at) out.push({ type: 'text', value: text.slice(at, found) })
+      out.push({ type: 'mark', data: { hName: 'mark' }, children: [{ type: 'text', value: text.slice(found, found + needle.length) }] })
+      at = found + needle.length
+    }
+    if (at < text.length) out.push({ type: 'text', value: text.slice(at) })
+    return out
+  }
+  const walk = (node: MdNode): void => {
+    if (!node.children) return
+    node.children = node.children.flatMap((child) => {
+      if (child.type === 'text') return split(child)
+      if (child.type !== 'code' && child.type !== 'inlineCode') walk(child)
+      return [child]
+    })
+  }
+  return (tree: MdNode) => {
+    if (needle) walk(tree)
+  }
+}
+
 /** Mentions keep their scheme; other links only if they are web or mail. */
 function keepUrl(url: string): string {
   return /^(mention:|https?:|mailto:)/.test(url) ? url : ''
 }
 
-export const Markdown = memo(function Markdown(props: { text: string; onOpen(id: string): void }) {
-  const { onOpen } = props
+export const Markdown = memo(function Markdown(props: { text: string; onOpen(id: string): void; findText?: string }) {
+  const { onOpen, findText } = props
+  const withFind = useMemo<NonNullable<Options['remarkPlugins']>>(() => (findText?.trim() ? [...plugins, [remarkHighlight, { find: findText }]] : plugins), [findText])
   const components = useMemo<Components>(
     () => ({
       a: ({ href, children }) => {
@@ -184,7 +226,7 @@ export const Markdown = memo(function Markdown(props: { text: string; onOpen(id:
     [onOpen],
   )
   return (
-    <ReactMarkdown remarkPlugins={plugins} urlTransform={keepUrl} components={components}>
+    <ReactMarkdown remarkPlugins={withFind} urlTransform={keepUrl} components={components}>
       {props.text}
     </ReactMarkdown>
   )

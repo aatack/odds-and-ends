@@ -124,6 +124,7 @@ export function PeekWindow(props: {
               find={null}
               findFocus={0}
               onFind={noop}
+              onFindFocused={noop}
               onEditDraft={noop}
               onCommitEdit={noop}
               onCancelEdit={noop}

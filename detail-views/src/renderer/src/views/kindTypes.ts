@@ -14,6 +14,8 @@ export interface RowProps {
   above: Entity | null
   onOpen(id: string): void
   onImage(ref: string | null): void
+  /** The view's find, if any: what to highlight in its text. */
+  findText?: string
 }
 
 /** An item in a small space: named in text, or heading its own view or a peek. */
@@ -21,10 +23,12 @@ export interface PillProps {
   entity: Entity
   /** What to show while the item is still loading, such as the link's text. */
   fallback?: ReactNode
+  /** What to highlight in its text. */
+  findText?: string
 }
 
 /** An item heading a view of itself: more than its row. */
-export type OverviewProps = ViewProps & { entity: Entity }
+export type OverviewProps = ViewProps & { entity: Entity; findText?: string }
 
 /**
  * The views every item type has:

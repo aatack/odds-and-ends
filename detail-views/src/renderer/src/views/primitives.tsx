@@ -84,10 +84,29 @@ export function Badge(props: { badge: BadgeData | null | undefined }) {
 export const KindsContext = createContext<Kinds | null>(null)
 
 /** An item's pill content, through the registry. */
-export function PillContent(props: { entity: Entity; fallback?: ReactNode }) {
+export function PillContent(props: { entity: Entity; fallback?: ReactNode; findText?: string }) {
   const kinds = useContext(KindsContext)
   const Pill = kinds?.[props.entity.type]?.Pill
-  return Pill ? <Pill entity={props.entity} fallback={props.fallback} /> : <span className="item-name">{props.entity.id}</span>
+  return Pill ? <Pill entity={props.entity} fallback={props.fallback} findText={props.findText} /> : <span className="item-name">{props.entity.id}</span>
+}
+
+/**
+ * Text with what a find matched marked, case-insensitively. Every renderer
+ * draws its text through this, so a find shows where it matched.
+ */
+export function Highlight(props: { text: string; find?: string }) {
+  const needle = props.find?.trim().toLowerCase()
+  if (!needle) return <>{props.text}</>
+  const parts: ReactNode[] = []
+  const lower = props.text.toLowerCase()
+  let at = 0
+  for (let found = lower.indexOf(needle); found >= 0; found = lower.indexOf(needle, at)) {
+    if (found > at) parts.push(props.text.slice(at, found))
+    parts.push(<mark key={found}>{props.text.slice(found, found + needle.length)}</mark>)
+    at = found + needle.length
+  }
+  if (at < props.text.length) parts.push(props.text.slice(at))
+  return <>{parts}</>
 }
 
 /** An item's pill heading a view or a window: nothing to do on it there. */

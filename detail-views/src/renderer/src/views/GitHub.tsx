@@ -3,7 +3,7 @@ import type { Badge as BadgeData } from '../../../core/types.ts'
 import { authorColour } from '../format.ts'
 import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
 import { MessageBody, MessageRow } from './messages.tsx'
-import { Badge, Button, HeaderPill, Link } from './primitives.tsx'
+import { Badge, Button, HeaderPill, Highlight, Link } from './primitives.tsx'
 
 const reviewWords: Record<string, string> = {
   APPROVED: 'approved',
@@ -18,7 +18,11 @@ function Dot(props: { outcome: unknown }) {
 }
 
 export function GitHubHomePill(props: PillProps) {
-  return <span className="item-name">{String(props.entity.data.text ?? 'GitHub')}</span>
+  return (
+    <span className="item-name">
+      <Highlight text={String(props.entity.data.text ?? 'GitHub')} find={props.findText} />
+    </span>
+  )
 }
 
 // --- Pull requests -----------------------------------------------------------------
@@ -29,7 +33,7 @@ export const PrRow = memo(function PrRow(props: RowProps) {
   return (
     <span className={`line${data.draft ? ' muted' : ''}`}>
       <Badge badge={data.badge as BadgeData | null | undefined} />{' '}
-      <span className="muted">{String(data.repo ?? '').split('/').pop()}</span> {String(data.text ?? data.url)}
+      <span className="muted">{String(data.repo ?? '').split('/').pop()}</span> <Highlight text={String(data.text ?? data.url)} find={props.findText} />
     </span>
   )
 })
@@ -39,7 +43,9 @@ export function PrPill(props: PillProps) {
   return (
     <>
       <Badge badge={data.badge as BadgeData | null | undefined} />
-      <span className="item-name">{data.name ? String(data.name) : (props.fallback ?? String(data.url ?? props.entity.id))}</span>
+      <span className="item-name">
+        {data.name ? <Highlight text={String(data.name)} find={props.findText} /> : (props.fallback ?? String(data.url ?? props.entity.id))}
+      </span>
     </>
   )
 }
@@ -106,7 +112,9 @@ export function CheckPill(props: PillProps) {
   return (
     <>
       <Dot outcome={props.entity.data.outcome} />
-      <span className="item-name">{String(props.entity.data.text ?? props.entity.data.name)}</span>
+      <span className="item-name">
+        <Highlight text={String(props.entity.data.text ?? props.entity.data.name)} find={props.findText} />
+      </span>
     </>
   )
 }
@@ -120,7 +128,14 @@ export const CheckRow = memo(function CheckRow(props: RowProps) {
   return (
     <span className="line-row">
       <span className="line">
-        <Dot outcome={data.outcome} /> {data.url ? <Link href={String(data.url)}>{name}</Link> : name}
+        <Dot outcome={data.outcome} />{' '}
+        {data.url ? (
+          <Link href={String(data.url)}>
+            <Highlight text={name} find={props.findText} />
+          </Link>
+        ) : (
+          <Highlight text={name} find={props.findText} />
+        )}
       </span>
       {minutes !== null && <span className="muted">{minutes}m</span>}
     </span>
@@ -165,7 +180,7 @@ export function GhItemPill(props: PillProps) {
 }
 
 export function GhItemOverview(props: OverviewProps) {
-  return <MessageBody entity={props.entity} author onOpen={props.onOpen} onImage={props.onImage} />
+  return <MessageBody entity={props.entity} author onOpen={props.onOpen} onImage={props.onImage} findText={props.findText} />
 }
 
 export function LocalApprovalPill() {

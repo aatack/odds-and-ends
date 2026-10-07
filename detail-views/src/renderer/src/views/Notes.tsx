@@ -1,6 +1,6 @@
 import { memo } from 'react'
 import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
-import { HeaderPill, PillContent } from './primitives.tsx'
+import { HeaderPill, Highlight, PillContent } from './primitives.tsx'
 
 const text = (data: Record<string, unknown>): string => (typeof data.text === 'string' ? data.text : '')
 
@@ -17,7 +17,7 @@ export function NoteOverview(props: OverviewProps) {
   const { data } = props.entity
   return (
     <div className={`note-overview ${noteClass(data)}`}>
-      <Checkbox open={data.open} /> {text(data)}
+      <Checkbox open={data.open} /> <Highlight text={text(data)} find={props.findText} />
     </div>
   )
 }
@@ -26,7 +26,7 @@ export const NoteRow = memo(function NoteRow(props: RowProps) {
   const { data } = props.entity
   return (
     <span className={noteClass(data)}>
-      <Checkbox open={data.open} /> {text(data)}
+      <Checkbox open={data.open} /> <Highlight text={text(data)} find={props.findText} />
     </span>
   )
 })
@@ -36,7 +36,7 @@ export function NotePill(props: PillProps) {
   return (
     <>
       <Checkbox open={data.open} />
-      <span className="item-name">{text(data) || props.fallback}</span>
+      <span className="item-name">{text(data) ? <Highlight text={text(data)} find={props.findText} /> : props.fallback}</span>
     </>
   )
 }
@@ -54,7 +54,7 @@ export const TaskRow = memo(function TaskRow(props: RowProps) {
   const { data } = props.entity
   return (
     <span className={`line${data.done ? ' done' : ''}`}>
-      <span className="check">{data.done ? '✓' : '○'}</span> {text(data)}
+      <span className="check">{data.done ? '✓' : '○'}</span> <Highlight text={text(data)} find={props.findText} />
     </span>
   )
 })
@@ -64,13 +64,19 @@ export function TaskPill(props: PillProps) {
   return (
     <>
       <span className="check">{data.done ? '✓' : '○'}</span>
-      <span className="item-name">{text(data)}</span>
+      <span className="item-name">
+        <Highlight text={text(data)} find={props.findText} />
+      </span>
     </>
   )
 }
 
 export function HomePill(props: PillProps) {
-  return <span className="item-name">{text(props.entity.data) || props.entity.id}</span>
+  return (
+    <span className="item-name">
+      <Highlight text={text(props.entity.data) || props.entity.id} find={props.findText} />
+    </span>
+  )
 }
 
 /** Any item heading its view with nothing more to say than its name. */
@@ -86,7 +92,7 @@ export function PillOverview(props: OverviewProps) {
 export const PillRow = memo(function PillRow(props: RowProps) {
   return (
     <span className="pill-row">
-      <PillContent entity={props.entity} />
+      <PillContent entity={props.entity} findText={props.findText} />
     </span>
   )
 })

@@ -873,3 +873,10 @@ body,
 .focus > .pane {
   min-height: 0;
 }
+
+/* What a find matched. */
+mark {
+  background: light-dark(#fde68a, #6b5313);
+  color: inherit;
+  border-radius: 2px;
+}
