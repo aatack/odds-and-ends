@@ -358,6 +358,12 @@ export class Session {
     this.update(S.select(this.state, path))
   }
 
+  /** `a`: the selection moves to the selected row's parent in this view. */
+  selectParent(): void {
+    const row = this.selected()
+    if (row && row.path.length > 1) this.select(row.path.slice(0, -1))
+  }
+
   /** `d`: a new view rooted at the selected row. */
   open(): void {
     const row = this.selected()

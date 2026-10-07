@@ -83,6 +83,11 @@ test('a view is a tree to navigate and edit, from the keyboard, with nothing on 
   assert.deepEqual(screen(), ['Tasks', '  groceries', '    >milk', '    eggs'])
   assert.equal(session.get().view, walked)
 
+  // a: up to the parent row.
+  session.selectParent()
+  assert.equal(session.selected()?.entity.data.text, 'groceries')
+  select('milk')
+
   // e: edit the text in place.
   session.startEdit()
   await type('oat milk')
