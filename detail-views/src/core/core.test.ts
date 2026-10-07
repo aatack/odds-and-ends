@@ -189,7 +189,9 @@ test('the first database is imported once, read-only, and left as it was', () =>
   memoryCore(options)
   const core = new Core(options)
   assert.deepEqual(core.focus('tasks').children.map((child) => [child.data.text, child.data.done]), [['keep', true]])
-  assert.equal(core.settings.get('slack.token'), 'xoxp-old')
+  // The old token moved onto Slack's own entity, and out of the settings table.
+  assert.equal(core.entity('slack').values['secret.token'], 'xoxp-old')
+  assert.equal(core.settings.get('slack.token'), null)
   assert.equal(core.owned.read(['t1']).length, 4)
   assert.equal(core.item('slack:conv:C1')?.data.kind, undefined)
   assert.deepEqual(new DatabaseSync(legacy).prepare('SELECT count(*) AS n FROM entities').get(), before)
@@ -200,7 +202,13 @@ test('slack: no token asks for one, and a token is checked before it is kept', a
   await core.load({ id: 'slack', part: 'children' })
   assert.equal(core.focus('slack').compose, 'slack-token')
   await core.actions.submit({ id: 'slack', text: 'xoxp-1' })
-  assert.equal(core.settings.get('slack.token'), 'xoxp-1')
+  // Kept on Slack's own entity, as a secret: it never leaves the core.
+  assert.equal(core.entity('slack').values['secret.token'], 'xoxp-1')
+  assert.equal(core.entity('slack').values.self, 'UME')
+  assert.ok(!core.actions.scan({ ids: ['slack'] }).events.some((e) => e.type === 'value' && e.key.startsWith('secret.')))
+  assert.equal(core.item('slack')!.data['secret.token'], undefined)
+  // And undo, of my own edits, can't take it back.
+  assert.deepEqual(core.actions.undo().events, [])
   assert.equal(core.focus('slack').compose, null)
 })
 

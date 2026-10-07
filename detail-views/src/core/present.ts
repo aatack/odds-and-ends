@@ -75,7 +75,7 @@ export function toItem(entity: GraphEntity): Entity | null {
   if (!type) return null
   const data: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(entity.values)) {
-    if (key !== 'type' && !key.startsWith('loaded.')) data[key] = value
+    if (key !== 'type' && !key.startsWith('loaded.') && !key.startsWith('secret.')) data[key] = value
   }
   return { id: entity.id, type, data, createdAt: entity.createdAt, updatedAt: entity.editedAt }
 }

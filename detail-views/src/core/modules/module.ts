@@ -1,6 +1,6 @@
 import type { AppEvent } from '../graph/events.ts'
 import type { Lens, ModuleView } from '../present.ts'
-import type { Blobs, EventStore, Settings } from '../store.ts'
+import type { Blobs, EventStore } from '../store.ts'
 import type { Entity, ItemType, LoadPart } from '../types.ts'
 
 export interface ModuleContext {
@@ -8,7 +8,15 @@ export interface ModuleContext {
   owned: EventStore
   /** What other services said. Emptied weekly; anything in it can be loaded again. */
   cache: EventStore
-  settings: Settings
+  /**
+   * The module's own data: owned values on its root entity (a token, who I
+   * am there). Keys beginning `secret.` are read here and never leave the
+   * core: scans strip them, and items never carry them.
+   */
+  data: {
+    get(root: string): Record<string, unknown>
+    set(root: string, fields: Record<string, unknown>): void
+  }
   blobs: Blobs
   /** Reads entities from both stores, as the UI would see them. */
   lens: Lens
