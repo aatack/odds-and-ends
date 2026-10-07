@@ -12,5 +12,6 @@ area you are changing before changing it, and update it in the same commit.
 | [presentation.md](presentation.md) | Module views, `focusOf`, the bounded walk, ordering |
 | [slack.md](slack.md) | Slack: lists, the history batch, the watch, cursors, threads |
 | [github.md](github.md) | GitHub: what loads, and the PR writes |
+| [mobile.md](mobile.md) | **The phone**: setting it up, using it, how it works, security |
 | [decisions.md](decisions.md) | Decisions made, with the alternatives turned down |
 | [refetch.md](refetch.md) | Refetch strategy per item type, and what is still to do (ASD-STE100) |

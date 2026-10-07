@@ -5,7 +5,7 @@ import { mount } from './root.tsx'
 import { Session } from './session.ts'
 
 /**
- * The phone: the same app, over HTTP to the desktop's core (docs/phone.md).
+ * The phone: the same app, over HTTP to the desktop's core (docs/mobile.md).
  * The token arrives once in the link's hash, is kept, and leaves the address.
  */
 const env = browserEnvironment()

@@ -5,7 +5,7 @@ import { extname, join, normalize } from 'node:path'
 import type { Core } from '../core/core.ts'
 
 /**
- * The core over HTTP, for the phone (`docs/phone.md`): the same actions and
+ * The core over HTTP, for the phone (`docs/mobile.md`): the same actions and
  * change notifications the window gets over IPC, and the built PWA beside them
  * on one origin. Listens on 127.0.0.1 only; Tailscale publishes it to my
  * devices. Every `/api` call needs the token.
