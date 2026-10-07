@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react'
+import { memo, useContext, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import type { Components, Options } from 'react-markdown'
@@ -9,7 +9,7 @@ import type { Entity } from '../../../core/types.ts'
 import { authorColour, fullTime, shortTime } from '../format.ts'
 import { imageSrc } from '../images.ts'
 import type { RowProps } from './kindTypes.ts'
-import { Link, usePeek } from './primitives.tsx'
+import { ItemContext, Link, usePeek } from './primitives.tsx'
 
 /** Chat-style messages, shared by every module that has a discussion. */
 
@@ -200,8 +200,17 @@ function keepUrl(url: string): string {
   return /^(mention:|https?:|mailto:)/.test(url) ? url : ''
 }
 
-export const Markdown = memo(function Markdown(props: { text: string; onOpen(id: string): void; findText?: string }) {
-  const { onOpen, findText } = props
+/** What an inline rendering keeps: formatting within a line. Anything else is unwrapped to its text. */
+const inlineElements = ['p', 'strong', 'em', 'del', 'code', 'a', 'mark', 'br']
+
+export const Markdown = memo(function Markdown(props: {
+  text: string
+  onOpen(id: string): void
+  findText?: string
+  /** One line's worth (a pill, a row): inline formatting only, no blocks. */
+  inline?: boolean
+}) {
+  const { onOpen, findText, inline } = props
   const withFind = useMemo<NonNullable<Options['remarkPlugins']>>(() => (findText?.trim() ? [...plugins, [remarkHighlight, { find: findText }]] : plugins), [findText])
   const components = useMemo<Components>(
     () => ({
@@ -227,15 +236,37 @@ export const Markdown = memo(function Markdown(props: { text: string; onOpen(id:
         const href = typeof src === 'string' ? src : ''
         return href ? <Link href={href}>{alt || 'image'}</Link> : null
       },
+      // Inline, a paragraph is just its text, so the line stays a line.
+      ...(inline ? { p: ({ children }) => <>{children}</> } : {}),
     }),
-    [onOpen],
+    [onOpen, inline],
   )
   return (
-    <ReactMarkdown remarkPlugins={withFind} urlTransform={keepUrl} components={components}>
+    <ReactMarkdown
+      remarkPlugins={withFind}
+      urlTransform={keepUrl}
+      components={components}
+      {...(inline ? { allowedElements: inlineElements, unwrapDisallowed: true } : {})}
+    >
       {props.text}
     </ReactMarkdown>
   )
 })
+
+/**
+ * An item's text, as markdown: how text is drawn anywhere it is prose (a
+ * note, a PR's name, a message's first line in a pill). `inline` for one
+ * line; otherwise blocks too. Names that aren't prose (people, channels,
+ * checks) are drawn plain, with `Highlight`.
+ */
+export function Text(props: { text: string; find?: string; inline?: boolean }) {
+  const { onOpen } = useContext(ItemContext)
+  return (
+    <span className={`md${props.inline ? ' inline' : ''}`}>
+      <Markdown text={props.text} onOpen={onOpen} findText={props.find} inline={props.inline} />
+    </span>
+  )
+}
 
 /** The thread under a message; hovering peeks at it. */
 function Replies(props: { id: string; count: number; latest: string | undefined }) {

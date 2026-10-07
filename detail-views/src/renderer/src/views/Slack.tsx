@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { authorColour, cursorTime } from '../format.ts'
 import { hotkeyOf } from '../tools.ts'
 import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
-import { MessageBody, MessageRow } from './messages.tsx'
+import { MessageBody, MessageRow, Text } from './messages.tsx'
 import { Button, Composer, HeaderPill, Highlight, ItemPill, Status } from './primitives.tsx'
 
 const text = (data: Record<string, unknown>, fallback = ''): string =>
@@ -167,7 +167,7 @@ export function MessagePill(props: PillProps) {
   return (
     <span className="item-name">
       <span style={{ color: authorColour(String(data.authorKey)), fontWeight: 700 }}>{String(data.author ?? '')}</span>{' '}
-      <Highlight text={firstLine} find={props.findText} />
+      <Text text={firstLine} find={props.findText} inline />
     </span>
   )
 }

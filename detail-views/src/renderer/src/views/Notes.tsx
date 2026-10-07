@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
-import { HeaderPill, Highlight, PillContent } from './primitives.tsx'
+import { Text } from './messages.tsx'
+import { HeaderPill, PillContent } from './primitives.tsx'
 
 const text = (data: Record<string, unknown>): string => (typeof data.text === 'string' ? data.text : '')
 
@@ -17,7 +18,7 @@ export function NoteOverview(props: OverviewProps) {
   const { data } = props.entity
   return (
     <div className={`note-overview ${noteClass(data)}`}>
-      <Checkbox open={data.open} /> <Highlight text={text(data)} find={props.findText} />
+      <Checkbox open={data.open} /> <Text text={text(data)} find={props.findText} />
     </div>
   )
 }
@@ -26,7 +27,7 @@ export const NoteRow = memo(function NoteRow(props: RowProps) {
   const { data } = props.entity
   return (
     <span className={noteClass(data)}>
-      <Checkbox open={data.open} /> <Highlight text={text(data)} find={props.findText} />
+      <Checkbox open={data.open} /> <Text text={text(data)} find={props.findText} />
     </span>
   )
 })
@@ -36,7 +37,7 @@ export function NotePill(props: PillProps) {
   return (
     <>
       <Checkbox open={data.open} />
-      <span className="item-name">{text(data) ? <Highlight text={text(data)} find={props.findText} /> : props.fallback}</span>
+      <span className="item-name">{text(data) ? <Text text={text(data)} find={props.findText} inline /> : props.fallback}</span>
     </>
   )
 }
@@ -54,7 +55,7 @@ export const TaskRow = memo(function TaskRow(props: RowProps) {
   const { data } = props.entity
   return (
     <span className={`line${data.done ? ' done' : ''}`}>
-      <span className="check">{data.done ? '✓' : '○'}</span> <Highlight text={text(data)} find={props.findText} />
+      <span className="check">{data.done ? '✓' : '○'}</span> <Text text={text(data)} find={props.findText} inline />
     </span>
   )
 })
@@ -65,7 +66,7 @@ export function TaskPill(props: PillProps) {
     <>
       <span className="check">{data.done ? '✓' : '○'}</span>
       <span className="item-name">
-        <Highlight text={text(data)} find={props.findText} />
+        <Text text={text(data)} find={props.findText} inline />
       </span>
     </>
   )
@@ -74,7 +75,7 @@ export function TaskPill(props: PillProps) {
 export function HomePill(props: PillProps) {
   return (
     <span className="item-name">
-      <Highlight text={text(props.entity.data) || props.entity.id} find={props.findText} />
+      <Text text={text(props.entity.data) || props.entity.id} find={props.findText} inline />
     </span>
   )
 }

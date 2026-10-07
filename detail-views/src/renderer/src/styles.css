@@ -782,13 +782,12 @@ body,
 }
 
 .note {
-  white-space: pre-wrap;
+  min-width: 0;
 }
 
 .note-overview {
   font-size: 1.15em;
   font-weight: 600;
-  white-space: pre-wrap;
 }
 
 /* Typing in place: the row's own text, or a new note. */
@@ -1100,4 +1099,46 @@ mark {
   justify-content: center;
   min-height: 44px;
   font-size: 15px;
+}
+
+/* An item's text as markdown (Text). Inline: one line's worth. */
+.md p {
+  margin: 0;
+}
+
+.md > * + * {
+  margin-top: 4px;
+}
+
+.md ul,
+.md ol {
+  margin: 2px 0;
+  padding-left: 20px;
+}
+
+.md code {
+  font-family: ui-monospace, 'JetBrains Mono', Menlo, monospace;
+  font-size: 0.88em;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--fill);
+  color: var(--code);
+}
+
+.md pre {
+  margin: 4px 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--fill);
+  white-space: pre-wrap;
+}
+
+.md pre code {
+  padding: 0;
+  background: none;
+  color: inherit;
+}
+
+.md.inline {
+  display: inline;
 }

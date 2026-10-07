@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { authorColour } from '../format.ts'
 import { hotkeyOf } from '../tools.ts'
 import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
-import { MessageBody, MessageRow } from './messages.tsx'
+import { MessageBody, MessageRow, Text } from './messages.tsx'
 import { Button, HeaderPill, Highlight, Link } from './primitives.tsx'
 
 /** A coloured dot for where CI is; the word rides in the tooltip. */
@@ -52,7 +52,7 @@ export const PrRow = memo(function PrRow(props: RowProps) {
   const { data } = props.entity
   return (
     <span className={`line${data.draft ? ' muted' : ''}`}>
-      <PrStatus data={data} /> <Highlight text={String(data.text ?? data.url)} find={props.findText} />{' '}
+      <PrStatus data={data} /> <Text text={String(data.text ?? data.url)} find={props.findText} inline />{' '}
       <span className="muted">{String(data.repo ?? '').split('/').pop()}</span>
     </span>
   )
@@ -65,7 +65,7 @@ export function PrPill(props: PillProps) {
     <>
       <PrStatus data={data} />
       <span className="item-name">
-        {data.name ? <Highlight text={String(data.name)} find={props.findText} /> : (props.fallback ?? String(data.url ?? props.entity.id))}
+        {data.name ? <Text text={String(data.name)} find={props.findText} inline /> : (props.fallback ?? String(data.url ?? props.entity.id))}
       </span>
     </>
   )

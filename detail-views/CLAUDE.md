@@ -156,6 +156,11 @@ doc for the area you change, and keep it up to date in the same commit.
   text (`ItemPill`: peek on hover, push on click), heading a view and in a
   peek's bar (`HeaderPill`: inert, and without the pill's frame). Badges are
   worked out by the module (`Badge` in `core/types.ts`).
+- **Text is markdown.** Wherever an item's text is prose (a note, a task, a
+  PR's name, a message), it is drawn as markdown through `Text` (or a
+  message's own markdown): `inline` for one line (a pill, a row: formatting,
+  code and links, blocks unwrapped), in full otherwise. Names that aren't
+  prose (people, channels, checks, repos) are drawn plain with `Highlight`.
 - **Every renderer takes `findText`** (rows, pills, overviews) and draws its
   text through `Highlight` (or markdown's highlight plugin), so a find shows
   where it matched.
