@@ -66,6 +66,7 @@ body,
   flex: 1;
   min-width: 0;
   display: flex;
+  flex-direction: column;
 }
 
 .pane {
@@ -861,4 +862,68 @@ body,
 
 .find:focus {
   border-color: var(--accent);
+}
+
+/* Notes: a heading, or a task's box. */
+.note.section,
+.row.section .edit,
+.note-overview.section {
+  font-weight: 700;
+}
+
+.note.ticked,
+.note-overview.ticked {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.check {
+  color: var(--muted);
+}
+
+.check.ticked {
+  color: var(--accent);
+}
+
+.edit-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+/* The stack of views to here; a crumb pops back to its view. */
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 10px 16px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.crumb + .crumb::before {
+  content: '›';
+  padding: 0 6px;
+  color: var(--faint);
+}
+
+.crumb {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  max-width: 24em;
+  border-radius: var(--radius);
+  padding: 0 4px;
+}
+
+.crumb:last-child {
+  color: var(--ink);
+}
+
+.crumb:hover {
+  background: var(--select);
+}
+
+.focus > .pane {
+  min-height: 0;
 }

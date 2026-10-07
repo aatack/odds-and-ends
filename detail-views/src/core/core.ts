@@ -13,7 +13,7 @@ import { me, tasksModule } from './modules/tasks/tasks.ts'
 import { focusOf, lensOf, moduleInfos, toItem, typeOf, viewOf, type Folds, type Lens } from './present.ts'
 import { Blobs, EventStore, Settings } from './store.ts'
 import { loadedKey } from './types.ts'
-import type { Entity, Focus, LoadPart, LoadRequest, LoadResult, ModuleInfo, Outcome, View } from './types.ts'
+import type { Entity, Focus, LoadPart, LoadRequest, LoadResult, ModuleInfo, NoteValues, Outcome, View } from './types.ts'
 
 const changeEvery = 150
 const clearEvery = 7 * 24 * 60 * 60_000
@@ -376,12 +376,16 @@ export class Core {
     /** What a view shows, as a tree, for a caller with no cache of its own. */
     view: ({ id, folds }: { id: string; folds?: Folds }): View => viewOf(id, this.source(), { folds }),
     /** A note under `parent`: an owned entity with no type, just text. */
-    create: ({ parent, text }: { parent: string; text: string }): Outcome => {
+    create: ({ parent, text, values = {} }: { parent: string; text: string; values?: NoteValues }): Outcome => {
       if (!text.trim()) return { events: [], error: null }
       const id = randomUUID()
       const now = this.now()
-      return this.write([value(id, 'text', text, now, me), link(parent, id, now, me)])
+      const extra = Object.entries(values).filter(([, v]) => v !== undefined).map(([key, v]) => value(id, key, v, now, me))
+      return this.write([value(id, 'text', text, now, me), ...extra, link(parent, id, now, me)])
     },
+    /** One of my values on an item (a note's checkbox, say). */
+    setValue: ({ id, key, value: v }: { id: string; key: string; value: unknown }): Outcome =>
+      this.write([value(id, key, v, this.now(), me)]),
     /**
      * An item's text, for me: what it is called or says everywhere it is
      * shown. Fetched text sits at its own time or at 0, so this, written now,

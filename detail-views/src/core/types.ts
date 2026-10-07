@@ -168,6 +168,15 @@ export function prEntityId(url: string): string | null {
   return match ? `github:pr:https://github.com/${match[1]}/${match[2]}/pull/${match[3]}` : null
 }
 
+/**
+ * What a note can be besides its text: a heading (`section`), or a task
+ * (`open`: true while unticked, false once ticked; absent for a plain note).
+ */
+export interface NoteValues {
+  section?: boolean
+  open?: boolean
+}
+
 /** What doing something produced: the owned events written, or why it failed. */
 export interface Outcome {
   events: AppEvent[]

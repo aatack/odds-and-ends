@@ -4,17 +4,41 @@ import { HeaderPill, PillContent } from './primitives.tsx'
 
 const text = (data: Record<string, unknown>): string => (typeof data.text === 'string' ? data.text : '')
 
-/** A note: text that means nothing more. */
+/** A note's box, when it is a task: open (unticked) or ticked. */
+export function Checkbox(props: { open: unknown }) {
+  if (typeof props.open !== 'boolean') return null
+  return <span className={`check${props.open ? '' : ' ticked'}`}>{props.open ? '☐' : '☑'}</span>
+}
+
+const noteClass = (data: Record<string, unknown>) => `note${data.section ? ' section' : ''}${data.open === false ? ' ticked' : ''}`
+
+/** A note: text that means nothing more, or a heading, or a task. */
 export function NoteOverview(props: OverviewProps) {
-  return <div className="note-overview">{text(props.entity.data)}</div>
+  const { data } = props.entity
+  return (
+    <div className={`note-overview ${noteClass(data)}`}>
+      <Checkbox open={data.open} /> {text(data)}
+    </div>
+  )
 }
 
 export const NoteRow = memo(function NoteRow(props: RowProps) {
-  return <span className="note">{text(props.entity.data)}</span>
+  const { data } = props.entity
+  return (
+    <span className={noteClass(data)}>
+      <Checkbox open={data.open} /> {text(data)}
+    </span>
+  )
 })
 
 export function NotePill(props: PillProps) {
-  return <span className="item-name">{text(props.entity.data) || props.fallback}</span>
+  const { data } = props.entity
+  return (
+    <>
+      <Checkbox open={data.open} />
+      <span className="item-name">{text(data) || props.fallback}</span>
+    </>
+  )
 }
 
 /** A task, from before notes: ticked with Space. */

@@ -20,7 +20,8 @@ async function headless() {
     unlink: async (parent, child) => a.unlink({ parent, child }),
     link: async (parent, child) => a.link({ parent, child }),
     move: async (child, from, to) => a.move({ child, from, to }),
-    create: async (parent, text) => a.create({ parent, text }),
+    create: async (parent, text, values) => a.create({ parent, text, values }),
+    setValue: async (id, key, value) => a.setValue({ id, key, value }),
     setText: async (id, text) => a.setText({ id, text }),
     undo: async () => a.undo(),
     redo: async (events) => a.redo({ events }),
@@ -132,6 +133,19 @@ test('a view is a tree to navigate and edit, from the keyboard, with nothing on 
   session.setFind('eg')
   assert.deepEqual(screen().map((line) => line.replace('>', '')), ['Tasks', '  breakfast', '    eggs'])
   session.clearFind()
+
+  // ? makes a checkbox note, Space ticks it; / makes a heading.
+  select('Tasks')
+  session.startCreate({ open: true })
+  await type('call the bank')
+  assert.equal(session.selected()?.entity.data.open, true)
+  session.toggle()
+  await settle()
+  assert.equal(session.selected()?.entity.data.open, false)
+  select('Tasks')
+  session.startCreate({ section: true })
+  await type('Later')
+  assert.equal(session.selected()?.entity.data.section, true)
 
   // Ctrl+Z takes my last action back off the store; Ctrl+Y puts it back as it was.
   select('Tasks')

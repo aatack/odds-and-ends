@@ -32,6 +32,9 @@ export function App(props: {
   /** A move or link waiting for its other end, and the item it started on. */
   picking: { pick: Pick; subject: Entity | null } | null
   onModule(root: string): void
+  /** The stack of views to here, oldest first; the last is the one on screen. */
+  crumbs: (Entity | null)[]
+  onCrumb(at: number): void
 }) {
   const { peek } = props
   return (
@@ -50,7 +53,18 @@ export function App(props: {
               </div>
             ))}
           </nav>
-          <main className="focus">{props.view && <ViewPane {...props.view} />}</main>
+          <main className="focus">
+            {props.crumbs.length > 1 && (
+              <div className="crumbs">
+                {props.crumbs.map((crumb, at) => (
+                  <span key={at} className="crumb" onMouseDown={() => props.onCrumb(at)}>
+                    {crumb ? <PillContent entity={crumb} /> : '…'}
+                  </span>
+                ))}
+              </div>
+            )}
+            {props.view && <ViewPane {...props.view} />}
+          </main>
           {props.picking && <PickBar {...props.picking} />}
           {peek.peeks.map((one) => (
             <PeekWindow
