@@ -53,8 +53,8 @@ interface Reaction {
 }
 
 /**
- * One line of chat: time in the gutter and name in colour where a speaker's
- * run starts, then the text, reactions and thread.
+ * One line of chat, from the left edge: the name in colour where a speaker's
+ * run starts, then the text, reactions and thread; its time on the right.
  */
 export function MessageBody(props: {
   entity: Entity
