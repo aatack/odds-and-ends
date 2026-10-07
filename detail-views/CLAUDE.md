@@ -3,6 +3,9 @@
 A local desktop app for managing my work. It will grow over time; these are the
 constraints every change must keep.
 
+How it is built, and why, is in `docs/` (start at `docs/README.md`). Read the
+doc for the area you change, and keep it up to date in the same commit.
+
 ## Invariants
 
 ### Product
