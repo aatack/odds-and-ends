@@ -338,7 +338,11 @@ test('slack: the watch brings in new messages by search, under their conversatio
     { ts: '1700000016.000100', user: 'U3', text: 'elsewhere', channel: { id: 'C7', name: 'not-mine' }, permalink: permalink('C7', '1700000016.000100') },
   ]
   await core.slack.poll()
+  // The status says what the last look found.
+  assert.deepEqual([core.item('slack:watch')!.data.found, core.focus('slack').entity!.data.found], [4, 4])
+  assert.equal(core.focus('slack').entity!.data.polledAt, time)
   await core.slack.poll()
+  assert.equal(core.focus('slack').entity!.data.found, 0)
   const general = core.focus('slack:conv:C1')
   assert.deepEqual(general.children.map((child) => child.data.text), ['hello'])
   assert.equal(general.children[0].data.replyCount, 1)

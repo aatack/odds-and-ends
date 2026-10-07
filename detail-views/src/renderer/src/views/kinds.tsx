@@ -10,6 +10,7 @@ import {
   SlackMessageRow,
   SlackThread,
   UserPill,
+  WatchPill,
 } from './Slack.tsx'
 import { Generic, GenericRow, TaskPill, TaskRow, Tasks, TasksHomePill } from './Tasks.tsx'
 
@@ -22,6 +23,7 @@ export const kinds: Kinds = {
   'slack.conversation': { Full: SlackConversation, Row: ConversationRow, Pill: ConversationPill },
   'slack.message': { Full: SlackThread, Row: SlackMessageRow, Pill: MessagePill },
   'slack.user': { Full: Generic, Row: GenericRow, Pill: UserPill },
+  'slack.watch': { Full: Generic, Row: GenericRow, Pill: WatchPill },
   'github.home': { Full: GitHubHome, Row: GenericRow, Pill: GitHubHomePill },
   'github.pr': { Full: GitHubPr, Row: PrRow, Pill: PrPill },
   'github.check': { Full: CheckFull, Row: CheckRow, Pill: CheckPill },

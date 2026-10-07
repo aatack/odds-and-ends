@@ -16,7 +16,7 @@ import './styles.css'
 const session = new Session(electronApi(), browserEnvironment())
 
 function Root() {
-  const { state, focus, modules, peekFoci, item, working } = useSnapshot(session)
+  const { state, focus, modules, peekFoci, item, working, now } = useSnapshot(session)
   useEffect(() => {
     const stopDispatch = installDispatch(session, tools)
     let stopSession: (() => void) | undefined
@@ -72,8 +72,9 @@ function Root() {
       onImage,
       onOlder,
       working: working[focused(state)],
+      now,
     }),
-    [state, focus, working, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder],
+    [state, focus, working, now, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder],
   )
 
   return <App items={items} peek={peek} viewing={state.viewing} onImage={onImage} modules={modules} module={focus?.module ?? null} focus={focus} view={view} onModule={onModule} />

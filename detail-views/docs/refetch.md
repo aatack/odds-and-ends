@@ -73,6 +73,7 @@ All cursors are values in the cache store, at timestamp 0. When the cache store 
   - links it under its conversation at its ts, or under its thread parent when it is a reply. The link moves the conversation to the top of the list. A reply does not move it;
   - adds a new DM, group DM or private channel to the list. Search also finds public channels that I am not in. Thus, a new public channel comes only with the next load of the list.
 - The watch ignores a message that the cache store has. Thus, two looks at the same message do not add it two times.
+- Each poll writes its time and the number of new messages to `slack:watch`, an entity of its own. Thus, a poll does not make the app read the workspace again. The workspace header shows these values.
 - Search indexes a message a short time after it is sent. Thus, each poll looks again at the 120 s before `watch.at`.
 - **Catch-up:** on start, the first poll gets all messages after `watch.at`, up to 100 pages (10000 messages). If there are more, the cached messages are not continuous. Then the workspace `history.oldest` moves to the oldest message of the catch-up, and the cursor of each conversation is cleared.
 

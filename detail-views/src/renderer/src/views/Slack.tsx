@@ -20,6 +20,7 @@ export function SlackHome(props: FocusProps) {
     <div className="pane">
       {props.headed !== false && (
         <div className="title">
+          <Polled data={focus.entity?.data} now={props.now} />
           <History {...props} />
         </div>
       )}
@@ -58,6 +59,22 @@ function History(props: FocusProps) {
       )}
     </span>
   )
+}
+
+/** How long ago the watch last looked, and how many new messages it found. */
+function Polled(props: { data: Record<string, unknown> | undefined; now: number | undefined }) {
+  const at = Number(props.data?.polledAt)
+  if (!at || !props.now) return null
+  const seconds = Math.max(0, Math.round((props.now - at) / 1000))
+  return (
+    <span className="history" title="Last check for new messages">
+      {seconds}s ago · {Number(props.data?.found ?? 0)} new
+    </span>
+  )
+}
+
+export function WatchPill(props: PillProps) {
+  return <span className="item-name">{Number(props.entity.data.found ?? 0)} new</span>
 }
 
 /** A thread in the workspace's list: where it is, who started it, and how far it has gone. */

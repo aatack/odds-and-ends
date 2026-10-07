@@ -208,7 +208,10 @@ export class Slack implements Module {
     const api = this.api
     if (!api) throw new Error('no Slack token')
     const type = this.view.typeOf(id)
-    if (type === 'slack.home') return this.serially(() => this.searchBack(api))
+    if (type === 'slack.home') {
+      await this.serially(() => this.searchBack(api))
+      return
+    }
     if (type === 'slack.conversation') return this.channelBack(api, id.slice('slack:conv:'.length))
     if (type === 'slack.message' && parseMessageId(id)) return this.loadThread(api, id)
   }
@@ -301,6 +304,18 @@ export class Slack implements Module {
    * One search, newest first, collecting what `keep` accepts until `enough`
    * says stop or the results run out. Says whether it got to the end.
    */
+  /**
+   * When the watch last looked and how much it found, on an entity of its own
+   * (`slack:watch`), so writing it every poll re-reads that and nothing else.
+   */
+  private watchEvents(added: number): AppEvent[] {
+    return [...values(ids.watch, { type: 'slack.watch', polledAt: this.context.now(), found: added }, 0, author)]
+  }
+
+  private noteWatch(added: number): void {
+    this.cache.write(this.watchEvents(added))
+  }
+
   private async search(
     api: SlackApi,
     query: string,
@@ -344,7 +359,7 @@ export class Slack implements Module {
     try {
       await this.serially(async () => {
         const cursor = this.cursor(ids.root, 'watch.at')
-        if (!cursor) return this.searchBack(api)
+        if (!cursor) return this.noteWatch(await this.searchBack(api))
         const since = Number(cursor) - overlap
         // `after:` takes a day and excludes it; two back covers any time zone.
         const after = new Date((since - 2 * 86_400) * 1000).toISOString().slice(0, 10)
@@ -354,7 +369,8 @@ export class Slack implements Module {
           (match) => (Number(match.ts) <= since ? 'stop' : 'keep'),
           () => false,
         )
-        const events = this.searchEvents(found)
+        const { events, added } = this.searchEvents(found)
+        events.push(...this.watchEvents(added))
         if (!ended && !stopped) {
           const oldest = found.reduce((least, match) => (Number(match.ts) < Number(least) ? match.ts : least), cursor)
           events.push(value(ids.root, 'history.oldest', oldest, 0, author), value(ids.root, 'history.query', null, 0, author))
@@ -377,7 +393,8 @@ export class Slack implements Module {
    * now is then cached, in every conversation, which is what lets a
    * conversation's own history start from it rather than from now.
    */
-  private async searchBack(api: SlackApi): Promise<void> {
+  /** Returns how many messages it brought in. */
+  private async searchBack(api: SlackApi): Promise<number> {
     const oldest = this.cursor(ids.root, 'history.oldest')
     const start = oldest ?? (this.context.now() / 1000).toFixed(6)
     // Carry on with the last batch's search from the page after it, while
@@ -397,7 +414,7 @@ export class Slack implements Module {
       fresh ? 1 : page,
     )
     const reached = found.reduce((least, match) => (Number(match.ts) < Number(least) ? match.ts : least), start)
-    const events = this.searchEvents(found)
+    const { events, added } = this.searchEvents(found)
     events.push(
       value(ids.root, 'history.oldest', reached, 0, author),
       value(ids.root, 'history.query', query, 0, author),
@@ -406,6 +423,7 @@ export class Slack implements Module {
     if (ended) events.push(value(ids.root, 'history.complete', true, 0, author))
     if (!this.cursor(ids.root, 'watch.at')) events.push(value(ids.root, 'watch.at', maxTs(start, ...found.map((match) => match.ts))!, 0, author))
     this.cache.write(events)
+    return added
   }
 
   /**
@@ -440,7 +458,7 @@ export class Slack implements Module {
    * alone, so a repeat counts nothing twice. A message's link is written at
    * its ts, which is what moves its conversation up the list.
    */
-  private searchEvents(matches: SearchMatch[]): AppEvent[] {
+  private searchEvents(matches: SearchMatch[]): { events: AppEvent[]; added: number } {
     const { lens } = this.context
     const now = this.context.now()
     const events: AppEvent[] = []
@@ -505,7 +523,7 @@ export class Slack implements Module {
         value(id, 'latestReply', thread.latestReply ?? null, thread.latestReply ? tsMillis(thread.latestReply) : 0, author),
       )
     }
-    return events
+    return { events, added: seen.size }
   }
 
   // --- Loads ---------------------------------------------------------------------
