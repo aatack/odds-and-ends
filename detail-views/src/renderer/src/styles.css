@@ -21,6 +21,12 @@
   --fill: light-dark(#f2f4f7, #202027);
   --fill-hover: light-dark(#eaecf0, #2a2a32);
   --fill-press: light-dark(#e1e4ea, #31313a);
+  /* A row under the pointer: lighter than the selection. */
+  --hover: light-dark(#f2f2f6, #18181c);
+  --accent-line: light-dark(#c7cbef, #3b3f66);
+  /* Inline code in messages, and what a find matched. */
+  --code: light-dark(#a03b32, #e0796f);
+  --found: light-dark(#f3e3b5, #5a4a1e);
   --radius: 6px;
   font-family: Lato, system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 15.5px;
@@ -66,7 +72,7 @@ body,
 
 .module:hover {
   color: var(--ink);
-  background: light-dark(#e6e6eb, #202026);
+  background: var(--fill-hover);
 }
 
 .module.active {
@@ -154,7 +160,7 @@ body,
 
 /* A row is clickable (it takes the cursor), so it lights a little on hover. */
 .row:hover {
-  background: light-dark(#f2f2f6, #18181c);
+  background: var(--hover);
 }
 
 .row.selected {
@@ -245,7 +251,7 @@ body,
 
 .reaction.mine {
   background: var(--accent-soft);
-  border-color: light-dark(#c7cbef, #3b3f66);
+  border-color: var(--accent-line);
 }
 
 .reaction-count {
@@ -360,15 +366,15 @@ body,
   font-size: 0.88em;
   padding: 1px 4px;
   border-radius: 4px;
-  background: light-dark(#f0f0f2, #232328);
-  color: light-dark(#a03b32, #e0796f);
+  background: var(--fill);
+  color: var(--code);
 }
 
 .text pre {
   margin: 4px 0;
   padding: 8px 10px;
   border-radius: var(--radius);
-  background: light-dark(#f4f4f6, #1c1c20);
+  background: var(--fill);
   border: 1px solid var(--line);
   white-space: pre-wrap;
 }
@@ -642,12 +648,12 @@ body,
   padding: 0 4px;
   border-radius: 4px;
   color: var(--muted);
-  background: light-dark(#e1e4ea, #31313a);
+  background: var(--fill-press);
 }
 
 .button.active .key {
   color: var(--accent);
-  background: light-dark(#e0e3f7, #2f3250);
+  background: var(--accent-line);
 }
 
 /* An in-app item named in text: its badge and its name. */
@@ -903,7 +909,7 @@ body,
 
 /* What a find matched. */
 mark {
-  background: light-dark(#fde68a, #6b5313);
+  background: var(--found);
   color: inherit;
   border-radius: 2px;
 }
