@@ -1,6 +1,6 @@
 import { EntityCache, type CacheState } from '../../core/graph/cache.ts'
 import { foreignOf, itemOf, moduleInfos, viewOf } from '../../core/present.ts'
-import type { Entity, ModuleInfo, Outcome, View, ViewRow } from '../../core/types.ts'
+import type { Entity, ModuleInfo, NoteValues, Outcome, View, ViewRow } from '../../core/types.ts'
 import type { Api } from './api.ts'
 import type { Environment } from './environment.ts'
 import * as S from './state.ts'
@@ -289,6 +289,11 @@ export class Session {
     this.update(S.forward(this.state))
   }
 
+  /** Pops back to the view at `at` in the stack. */
+  goTo(at: number): void {
+    this.update(S.goTo(this.state, at))
+  }
+
   move(delta: number): void {
     this.update(S.move(this.state, this.snapshot.shown, delta))
   }
@@ -330,12 +335,12 @@ export class Session {
     this.update(S.startEdit(this.state, row.path, typeof text === 'string' ? text : ''))
   }
 
-  /** Enter: a new note under the selected row, which opens so the note shows. */
-  startCreate(): void {
+  /** Enter: a new note under the selected row, which opens so the note shows. `/` makes it a heading, `?` a checkbox. */
+  startCreate(values?: NoteValues): void {
     const row = this.selected()
     if (!row) return
     const opened = row.depth > 0 ? S.fold(this.state, row.entity.id, true) : this.state
-    this.update(S.startCreate(opened, row.path))
+    this.update(S.startCreate(opened, row.path, values))
   }
 
   setEditDraft(draft: string): void {
@@ -357,7 +362,7 @@ export class Session {
       void this.api.setText(id, edit.draft).then((outcome) => this.settle(id, outcome))
       return
     }
-    void this.api.create(id, edit.draft).then((outcome) => {
+    void this.api.create(id, edit.draft, edit.values).then((outcome) => {
       this.settle(id, outcome)
       const made = outcome.events.find((event) => event.type === 'link')
       if (made?.type === 'link' && S.focused(this.state) === edit.root) this.select([...edit.path, made.destinationId])
@@ -534,10 +539,19 @@ export class Session {
     this.settle(id, await this.api.submit(id, text))
   }
 
-  /** Space on a task: done or not. */
+  /** Whether Space has a box to tick on the selected row. */
+  canToggle(): boolean {
+    const row = this.selected()
+    return row?.entity.type === 'task' || typeof row?.entity.data.open === 'boolean'
+  }
+
+  /** Space: ticks or unticks the selected row's box (a checkbox note, or a task from before notes). */
   toggle(): void {
     const row = this.selected()
-    if (row?.entity.type === 'task') void this.api.toggle(row.entity.id).then((outcome) => this.settle(row.entity.id, outcome))
+    if (!row) return
+    const id = row.entity.id
+    if (row.entity.type === 'task') void this.api.toggle(id).then((outcome) => this.settle(id, outcome))
+    else if (typeof row.entity.data.open === 'boolean') void this.api.setValue(id, 'open', !row.entity.data.open).then((outcome) => this.settle(id, outcome))
   }
 
   /**

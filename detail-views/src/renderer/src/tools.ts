@@ -77,6 +77,8 @@ export const tools: Tool[] = [
 
   // --- Whatever is selected ----------------------------------------------------------
   { id: 'note.create', scope: 'list', keys: ['Enter'], enabled: (s) => selected(s) !== null, run: (s) => s.startCreate() },
+  { id: 'note.section', scope: 'list', keys: ['/'], enabled: (s) => selected(s) !== null, run: (s) => s.startCreate({ section: true }) },
+  { id: 'note.checkbox', scope: 'list', keys: ['?'], enabled: (s) => selected(s) !== null, run: (s) => s.startCreate({ open: true }) },
   { id: 'edit.start', scope: 'list', keys: ['e'], enabled: (s) => selected(s) !== null, run: (s) => s.startEdit() },
   { id: 'unlink', scope: 'list', keys: ['Backspace', 'Delete'], enabled: notRoot, run: (s) => s.unlinkSelected() },
   // The second press of each finishes it on whatever is selected then, in any view.
@@ -89,7 +91,7 @@ export const tools: Tool[] = [
     enabled: (s) => picking(s, 'linkReverse') || selected(s) !== null,
     run: (s) => s.pick('linkReverse'),
   },
-  { id: 'task.toggle', scope: 'list', keys: [' '], enabled: (s) => selected(s)?.entity.type === 'task', run: (s) => s.toggle() },
+  { id: 'checkbox.toggle', scope: 'list', keys: [' '], enabled: (s) => s.canToggle(), run: (s) => s.toggle() },
   {
     id: 'chat.hide',
     scope: 'list',

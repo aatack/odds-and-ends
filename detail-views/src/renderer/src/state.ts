@@ -1,5 +1,5 @@
 import type { AppEvent } from '../../core/graph/events.ts'
-import type { View, ViewRow } from '../../core/types.ts'
+import type { NoteValues, View, ViewRow } from '../../core/types.ts'
 
 /**
  * Latent UI state: the minimum, and serialisable. Nothing derivable lives here
@@ -62,6 +62,8 @@ export interface Edit {
   path: string[]
   mode: 'edit' | 'create'
   draft: string
+  /** For a new note: a heading, or a checkbox. */
+  values?: NoteValues
 }
 
 export type PickTool = 'move' | 'link' | 'linkReverse'
@@ -178,7 +180,7 @@ export function focused(state: State): string {
 /** A row of a view as shown: an entity's row, or the box a new note is typed into. */
 export type ShownRow =
   | { kind: 'entity'; key: string; row: ViewRow; selected: boolean; editing: boolean }
-  | { kind: 'input'; key: string; depth: number; parent: string[] }
+  | { kind: 'input'; key: string; depth: number; parent: string[]; values?: NoteValues }
 
 export interface ShownView {
   rows: ShownRow[]
@@ -233,7 +235,7 @@ export function markRows(view: View, state: State, root: string): ShownView {
       const depth = view.rows[at].depth
       let insert = at + 1
       while (insert < rows.length && rows[insert].kind === 'entity' && (rows[insert] as { row: ViewRow }).row.depth > depth) insert++
-      rows.splice(insert, 0, { kind: 'input', key: `\0new\0${editKey}`, depth: depth + 1, parent: edit.path })
+      rows.splice(insert, 0, { kind: 'input', key: `\0new\0${editKey}`, depth: depth + 1, parent: edit.path, values: edit.values })
     }
   }
   return { rows, selectedPath, selectedIndex: rows.findIndex((row) => row.kind === 'entity' && row.selected) }
@@ -273,6 +275,11 @@ export function back(state: State): State {
   return state.at > 0 ? { ...state, at: state.at - 1, composing: false, acting: null, edit: null } : state
 }
 
+/** Back to a view further down the stack (a breadcrumb). */
+export function goTo(state: State, at: number): State {
+  return at >= 0 && at < state.at ? { ...state, at, composing: false, acting: null, edit: null } : state
+}
+
 export function forward(state: State): State {
   return state.at < state.trail.length - 1 ? { ...state, at: state.at + 1, composing: false, acting: null, edit: null } : state
 }
@@ -298,8 +305,8 @@ export function startEdit(state: State, path: string[], text: string): State {
   return { ...state, edit: { root: focused(state), path, mode: 'edit', draft: text } }
 }
 
-export function startCreate(state: State, path: string[]): State {
-  return { ...state, edit: { root: focused(state), path, mode: 'create', draft: '' } }
+export function startCreate(state: State, path: string[], values?: NoteValues): State {
+  return { ...state, edit: { root: focused(state), path, mode: 'create', draft: '', values } }
 }
 
 export function setEditDraft(state: State, draft: string): State {

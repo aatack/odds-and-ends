@@ -1,5 +1,5 @@
 import type { AppEvent, Changed, Scan } from '../../core/graph/events.ts'
-import type { LoadRequest, LoadResult, Outcome } from '../../core/types.ts'
+import type { LoadRequest, LoadResult, NoteValues, Outcome } from '../../core/types.ts'
 
 /** The seam between the UI and the core. Nothing else reaches the core. */
 export interface Api {
@@ -18,7 +18,8 @@ export interface Api {
   link(parent: string, child: string): Promise<Outcome>
   move(child: string, from: string, to: string): Promise<Outcome>
   /** A note (no type, just text) under `parent`. */
-  create(parent: string, text: string): Promise<Outcome>
+  create(parent: string, text: string, values?: NoteValues): Promise<Outcome>
+  setValue(id: string, key: string, value: unknown): Promise<Outcome>
   /** My text for an item, over whatever its service says. */
   setText(id: string, text: string): Promise<Outcome>
   /** Takes my last action off the owned log; returns what came off. */
@@ -51,7 +52,8 @@ export function electronApi(): Api {
     unlink: (parent, child) => call('unlink', { parent, child }),
     link: (parent, child) => call('link', { parent, child }),
     move: (child, from, to) => call('move', { child, from, to }),
-    create: (parent, text) => call('create', { parent, text }),
+    create: (parent, text, values) => call('create', { parent, text, values }),
+    setValue: (id, key, value) => call('setValue', { id, key, value }),
     setText: (id, text) => call('setText', { id, text }),
     undo: () => call('undo'),
     redo: (events) => call('redo', { events }),

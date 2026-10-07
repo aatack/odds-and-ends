@@ -98,8 +98,13 @@ function Root() {
     return pick && { pick, subject: item(pick.path[pick.path.length - 1]) }
   }, [state.picking, item])
 
+  const crumbs = useMemo(() => state.trail.slice(0, state.at + 1).map((id) => item(id)), [state.trail, state.at, item])
+  const onCrumb = useCallback((at: number) => session.goTo(at), [])
+
   return (
     <App
+      crumbs={crumbs}
+      onCrumb={onCrumb}
       items={items}
       peek={peek}
       viewing={state.viewing}

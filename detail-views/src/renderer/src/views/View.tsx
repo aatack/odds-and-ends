@@ -1,5 +1,6 @@
 import { memo, useContext, useEffect, useRef } from 'react'
-import type { ViewRow } from '../../../core/types.ts'
+import type { NoteValues, ViewRow } from '../../../core/types.ts'
+import { Checkbox } from './Notes.tsx'
 import type { ShownRow } from '../state.ts'
 import { KindsContext, Status } from './primitives.tsx'
 import { Composer } from './primitives.tsx'
@@ -31,7 +32,7 @@ export function ViewPane(props: ViewProps) {
       <div className="list">
         {props.shown.rows.map((shown) =>
           shown.kind === 'input' ? (
-            <EditRow key={shown.key} depth={shown.depth} props={props} />
+            <EditRow key={shown.key} depth={shown.depth} values={shown.values} props={props} />
           ) : shown.row.depth === 0 ? (
             <Selectable key={shown.key} shown={shown} className="overview" onSelect={props.interactive ? props.onSelect : undefined}>
               {shown.editing ? <EditBox props={props} /> : <Overview {...props} entity={root} />}
@@ -129,11 +130,12 @@ function rowClass(row: ViewRow): string {
 }
 
 /** The box a new note is typed into, where it will appear. */
-function EditRow(props: { depth: number; props: ViewProps }) {
+function EditRow(props: { depth: number; values?: NoteValues; props: ViewProps }) {
   return (
-    <div className="row tree selected" style={indent(props.depth)}>
+    <div className={`row tree selected${props.values?.section ? ' section' : ''}`} style={indent(props.depth)}>
       <span className="fold" />
-      <div className="cell">
+      <div className="cell edit-cell">
+        <Checkbox open={props.values?.open} />
         <EditBox props={props.props} />
       </div>
     </div>
