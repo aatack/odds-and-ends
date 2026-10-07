@@ -219,3 +219,15 @@ export function Button(props: {
     </button>
   )
 }
+
+/** A box over everything, closed by a click outside it (or Escape, through the tools). */
+export function Modal(props: { title: ReactNode; wide?: boolean; onClose(): void; children: ReactNode }) {
+  return (
+    <div className="dialog-backdrop" onMouseDown={props.onClose}>
+      <div className={`dialog${props.wide ? ' wide' : ''}`} onMouseDown={(event) => event.stopPropagation()}>
+        <div className="dialog-title">{props.title}</div>
+        {props.children}
+      </div>
+    </div>
+  )
+}

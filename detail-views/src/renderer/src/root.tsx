@@ -161,6 +161,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
 
   return (
     <App
+      inspect={state.inspecting ? { ...session.inspected()!, onClose: () => session.closeInspector() } : null}
       now={now}
       dialog={dialog}
       toast={toast}

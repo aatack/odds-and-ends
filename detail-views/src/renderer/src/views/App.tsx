@@ -7,7 +7,7 @@ import { kinds } from './kinds.tsx'
 import { ItemContext, KindsContext, PeekContext } from './primitives.tsx'
 import type { ItemGestures, PeekGestures } from './primitives.tsx'
 import type { ViewProps } from './types.ts'
-import { Button, ClockContext, PillContent } from './primitives.tsx'
+import { Button, ClockContext, Modal, PillContent } from './primitives.tsx'
 
 export interface PeekProps {
   peeks: Peek[]
@@ -41,6 +41,8 @@ export function App(props: {
   crumbs: (Entity | null)[]
   /** A form being filled in, and what it can offer. */
   dialog: DialogProps | null
+  /** The entity being inspected, as JSON. */
+  inspect: { id: string; json: string; onClose(): void } | null
   /** A passing message. */
   toast: string | null
   /** The time, ticking each second. */
@@ -80,6 +82,7 @@ export function App(props: {
           </main>
           {props.picking && <PickBar {...props.picking} />}
           {props.dialog && <SessionForm {...props.dialog} />}
+          {props.inspect && <Inspector {...props.inspect} />}
           {props.toast && <div className="toast">{props.toast}</div>}
           {peek.peeks.map((one) => (
             <PeekWindow
@@ -190,9 +193,7 @@ function SessionForm(props: DialogProps) {
   const { dialog } = props
   const hasCwd = Boolean(dialog.cwd.trim())
   return (
-    <div className="dialog-backdrop" onMouseDown={props.onCancel}>
-      <div className="dialog" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="dialog-title">New Claude session</div>
+    <Modal title="New Claude session" onClose={props.onCancel}>
         <input
           className="find"
           data-field="dialog-name"
@@ -229,7 +230,15 @@ function SessionForm(props: DialogProps) {
           <Button label="Cancel" hotkey="Esc" onClick={props.onCancel} />
           <Button label="Start" hotkey="↵" busy={props.busy} busyLabel="Starting…" onClick={props.onSubmit} />
         </div>
-      </div>
-    </div>
+    </Modal>
+  )
+}
+
+/** The selected entity as it stands in the cache, as JSON: its values and its links. */
+function Inspector(props: { id: string; json: string; onClose(): void }) {
+  return (
+    <Modal title={<code>{props.id}</code>} wide onClose={props.onClose}>
+      <pre className="inspect">{props.json}</pre>
+    </Modal>
   )
 }
