@@ -254,7 +254,7 @@ test('chat keeps its newest end when its walk is cut short', async () => {
 })
 
 test('Shift+K starts a Claude session from the selected row; k prompts it in the note box, the answer under the prompt', async () => {
-  const run = async (command: string, args: string[]) => (command === 'claude' ? JSON.stringify({ result: `you said ${args[1]}` }) : '')
+  const run = async (command: string, args: string[]) => (command.endsWith('claude') ? JSON.stringify({ result: `you said ${args[1]}` }) : '')
   const { session, stop, settle, screen, select, type } = await headless({ run, gh: async () => '{}' })
   session.navigate('tasks')
   await settle()

@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import type { Source } from './graph/cache.ts'
 import { bucketEvents, rollupEntity, type GraphEntity } from './graph/entity.ts'
@@ -41,11 +42,27 @@ export interface CoreOptions {
   now?: () => number
 }
 
-function runCommand(command: string, args: string[], cwd: string): Promise<string> {
+/**
+ * Runs a program and returns what it printed; a failure says everything it
+ * can: which program, where, its exit code, and all it printed. Node reports a
+ * missing working directory as the program being missing (`spawn x ENOENT`),
+ * so the two are told apart here.
+ */
+export function runCommand(command: string, args: string[], cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(command, args, { cwd, maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => {
-      if (error) reject(new Error(stderr.trim() || error.message))
-      else resolve(stdout)
+      if (!error) return resolve(stdout)
+      const code = (error as NodeJS.ErrnoException).code
+      let reason: string
+      if (code === 'ENOENT') {
+        reason = existsSync(cwd) ? `${command} isn't installed, or isn't on the PATH (${process.env.PATH ?? ''})` : `the directory doesn't exist: ${cwd}`
+      } else {
+        reason = typeof code === 'number' || typeof (error as { code?: unknown }).code === 'number' ? `exit code ${(error as { code?: unknown }).code}` : error.message
+      }
+      const printed = [stderr.trim(), stdout.trim()].filter(Boolean).join('\n')
+      const failure = new Error([`${command} failed in ${cwd}: ${reason}`, printed].filter(Boolean).join('\n\n')) as Error & { stdout?: string }
+      failure.stdout = stdout
+      reject(failure)
     })
   })
 }

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdtempSync, statSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { link, value, values, type AppEvent } from '../../graph/events.ts'
 import { prEntityId } from '../../types.ts'
@@ -25,6 +25,25 @@ export interface NewSession {
   worktree: boolean
   /** The item it is started from: it goes under it, and the item points at it (`claudeSessionId`). */
   attachTo: string
+}
+
+/** `~` and `~/x` as the home directory: what a shell would make of them, which a spawned program never does. */
+export function expandHome(path: string): string {
+  return path === '~' ? homedir() : path.startsWith('~/') ? join(homedir(), path.slice(2)) : path
+}
+
+/**
+ * The claude program: on the PATH, or where its installer puts it. An app
+ * started from a launcher may not have the shell's PATH, so look there too.
+ */
+function claudeProgram(): string {
+  for (const dir of (process.env.PATH ?? '').split(':')) {
+    if (dir && existsSync(join(dir, 'claude'))) return 'claude'
+  }
+  for (const candidate of [join(homedir(), '.local', 'bin', 'claude'), join(homedir(), '.claude', 'local', 'claude')]) {
+    if (existsSync(candidate)) return candidate
+  }
+  return 'claude'
 }
 
 function slug(text: string): string {
@@ -65,7 +84,10 @@ export class Claude implements Module {
     const id = randomUUID()
     const short = id.slice(0, 8)
     const name = input.name.trim() || 'Session'
-    const requested = input.cwd.trim()
+    const requested = expandHome(input.cwd.trim())
+    if (requested && !(existsSync(requested) && statSync(requested).isDirectory())) {
+      throw new Error(`No such directory: ${requested}`)
+    }
     let cwd: string
     let worktree: string | null = null
     let branch: string | null = null
@@ -124,7 +146,7 @@ export class Claude implements Module {
 
   private async answer(session: string, responseId: string, text: string): Promise<void> {
     const data = this.context.data.get(session)
-    const cwd = String(data.cwd)
+    const cwd = expandHome(String(data.cwd))
     const mode = String(data.permissionMode ?? defaultPermissionMode)
     const started = Boolean(data.started)
     const args = [
@@ -139,7 +161,7 @@ export class Claude implements Module {
       ...(started ? ['--resume', session] : ['--session-id', session]),
     ]
     try {
-      const out = JSON.parse(await this.context.run('claude', args, cwd)) as { result?: string; is_error?: boolean; total_cost_usd?: number }
+      const out = JSON.parse(await this.context.run(claudeProgram(), args, cwd)) as { result?: string; is_error?: boolean; total_cost_usd?: number }
       // A failure is said in place of the answer: Claude's own words for it, if it gave any.
       const failed = out.is_error ? (out.result || 'Claude reported an error') : null
       this.context.owned.write([
@@ -147,7 +169,16 @@ export class Claude implements Module {
         ...(started ? [] : [value(session, 'started', true, this.context.now(), author)]),
       ])
     } catch (error) {
-      const failed = error instanceof Error ? error.message : String(error)
+      // Claude may still have said why, as JSON, on its way out.
+      const said = (() => {
+        try {
+          return (JSON.parse(String((error as { stdout?: string }).stdout ?? '')) as { result?: string }).result
+        } catch {
+          return undefined
+        }
+      })()
+      const message = error instanceof Error ? error.message : String(error)
+      const failed = said ? `${said}\n\n${message}` : message
       this.context.owned.write(values(responseId, { text: failed, running: false, error: failed }, this.context.now(), author))
     }
     await this.linkPullRequest(session, cwd).catch(() => {})

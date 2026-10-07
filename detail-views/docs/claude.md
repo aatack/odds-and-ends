@@ -41,7 +41,10 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 - **Command.** `claude -p <prompt> --output-format json --model claude-opus-5-5 --permission-mode <mode> (--session-id | --resume) <ID>`, in the session directory. The answer is `result`. The cost is kept as `cost`.
 - **Permission mode is per session** (`permissionMode`). New sessions get `auto`.
 - **PR look-up is a read.** `git rev-parse --abbrev-ref HEAD` and `git remote get-url origin` give the branch and the repo. A GraphQL query through `gh` finds the PR. The app does not write to GitHub for this.
-- **Errors.** A failure of `claude` (a non-zero exit, or `is_error` in its JSON) sets the response item: `text` and `error` are the message, `running` is false.
+- **Errors.** A failure of `claude` (a non-zero exit, or `is_error` in its JSON) sets the response item: `text` and `error` are the full message, `running` is false. The message gives the program, the directory, the exit code, and all that the program wrote. The view shows all of it.
+- **Paths.** `~` is the home directory. The app expands it, because a program that the app starts does not. The form refuses a directory that does not exist.
+- **The `claude` program.** The app looks for it on the `PATH`, then in `~/.local/bin` and `~/.claude/local`. An app that starts from a launcher can have a short `PATH`.
+- **ENOENT.** Node gives `spawn <program> ENOENT` both when the program is missing and when the working directory is missing. The app finds which one it is and says so.
 - **Phone.** Shift+K and k are tools with labels. Thus, they are also buttons on the phone.
 - **Look.** Sessions and responses start with the Claude mark (`src/renderer/src/assets/claude.svg`, from Simple Icons, CC0-1.0), in the `--claude` colour (terracotta). A response has the `claude` tint (a terracotta rail and a faint fill; `error` if it failed). A prompt has the `accent` tint. Thus, my words and Claude's words are different at a glance.
 
