@@ -13,6 +13,8 @@ export interface Api {
   markRead(id: string): Promise<Outcome>
   /** Loads further back than anything loads on its own. */
   older(id: string): Promise<Outcome>
+  /** Takes a child out from under its parent, as an owned event. */
+  unlink(parent: string, child: string): Promise<Outcome>
   /** Which entities changed in the stores; null for anything. */
   onChange(listener: (changed: Changed) => void): () => void
   /** Opens a link in my browser. */
@@ -36,6 +38,7 @@ export function electronApi(): Api {
     toggle: (id) => call('toggle', { id }),
     markRead: (id) => call('markRead', { id }),
     older: (id) => call('older', { id }),
+    unlink: (parent, child) => call('unlink', { parent, child }),
     onChange: (listener) => bridge.onChange(listener),
     openExternal: (url) => void bridge.openExternal(url),
   }

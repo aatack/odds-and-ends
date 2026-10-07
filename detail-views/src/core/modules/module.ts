@@ -34,6 +34,8 @@ export interface Module {
   load?(id: string, part: LoadPart, type: ItemType): Promise<void>
   /** Does one of `view.actions`, confirmed, with whatever was typed. Returns the owned events written. */
   perform?(entity: Entity, action: string, text: string): Promise<AppEvent[]>
+  /** The owned events that unlink `child` from `parent`, when unlinking means more than one event; null for the plain one. */
+  unlink?(parent: string, child: string): AppEvent[] | null
   /** Loads further back, on demand (only where `view.older` says it can). */
   older?(id: string): Promise<void>
   /** What the composer does. Returns the owned events written. */

@@ -23,6 +23,15 @@
   A thread parent's children are its replies, linked at their ts.
 - A reply never touches its conversation; it bumps its thread, which is listed
   in the workspace.
+- **A thread is linked under the workspace iff its conversation is**, as the
+  workspace rolls up now (my own unlinks included). So threads in public
+  channels I'm not in, or in conversations I've hidden, are never listed.
+- **Hiding a chat is unlinking it** from the workspace: Backspace (or Delete)
+  on its row writes owned unlink events (`Slack.unlink`, via
+  `Core.actions.unlink`). A conversation takes its listed threads with it. The
+  unlink is later than any cached link (those are at 0 or at the thread's
+  start), so neither the hourly list reload nor a new reply brings it back.
+  There is no way to relink from the UI yet.
 - `slack:watch` (`slack.watch`) holds the last poll's `polledAt` and `found`,
   on its own entity so a poll every 15 s re-reads only that.
 
@@ -35,7 +44,10 @@
    replaces only `slack:conv:` links.
 2. **The first batch**: on a cache with no `watch.at`, the first poll searches
    back from now for 1000 messages (about 10 calls).
-3. **The watch**: `Slack.poll` every 15 s (started by `Core.start`).
+3. **The watch**: `Slack.poll` every 15 s (started by `Core.start`). Each poll
+   first makes sure the lists are loaded (`load(slack, children)`, a no-op
+   while fresh), so the lists always land before the first batch and before
+   any thread is checked against them.
 4. Rare single loads: a message seen only by id (`self`, once), a user
    `users.list` didn't have (`users.info`, 7 days).
 

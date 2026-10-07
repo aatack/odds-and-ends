@@ -52,3 +52,10 @@ Newest last. Each says what was chosen, why, and what was turned down.
     one tiny entity rather than the workspace.
 18. **Clocks and in-flight state live in the session**, not in view timers.
 19. **GitHub: reload PRs on freshness.** A few minutes is fine; no watch yet.
+20. **Hide a chat by unlinking it from the workspace** (owned event), not by a
+    mute flag. *Why:* it is the event model's own way to say "not under this
+    for me"; it outlasts every reload. *Turned down:* `interest` values with
+    auto-rules (more machinery; would also have bumped the chat's sort time).
+21. **A thread is listed iff its conversation is listed.** *Why:* hiding a
+    conversation should hide its threads, and threads from channels I'm not in
+    should never appear. Hence lists load before polling starts.

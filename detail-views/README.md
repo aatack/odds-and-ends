@@ -20,6 +20,7 @@ npm run dev
 | `Enter` | write; `Enter` again sends (or closes when empty), `Shift+Enter` new line, `Esc` closes |
 | `r` | refresh |
 | `o` | load further back: all of Slack, this conversation, or this thread |
+| `Backspace` `Delete` | on the Slack list: hide the selected chat (a conversation hides its threads too) |
 | `x` `Space` | tick a task |
 | `a` | approve a PR |
 | `X` | close my PR and delete its branch |
