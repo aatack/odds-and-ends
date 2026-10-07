@@ -84,6 +84,8 @@ export interface Action {
   id: string
   label: string
   prompt: string
+  /** Why it can't be done now (already done, say). Shown, but not offered. */
+  disabled?: string
 }
 
 /**

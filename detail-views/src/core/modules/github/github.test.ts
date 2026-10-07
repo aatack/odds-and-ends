@@ -5,7 +5,7 @@ import { badge, prName } from './view.ts'
 
 const url = 'https://github.com/o/r/pull/7'
 
-function fakeGh(calls: string[][], options: { author?: string } = {}) {
+function fakeGh(calls: string[][], options: { author?: string; approvers?: string[] } = {}) {
   return async (args: string[]) => {
     calls.push(args)
     if (args[0] === 'pr') return ''
@@ -29,7 +29,7 @@ function fakeGh(calls: string[][], options: { author?: string } = {}) {
         viewer: { login: 'me' },
         resource: {
           url, number: 7, title: 'Fix it', body: '<!-- bot -->Does the thing', state: 'OPEN', isDraft: false, mergeable: 'MERGEABLE',
-          reviewDecision: 'APPROVED', latestReviews: { nodes: [{ author: { login: 'ann' }, state: 'APPROVED' }] }, additions: 3, deletions: 1, changedFiles: 1, headRefName: 'fix', baseRefName: 'main',
+          reviewDecision: 'APPROVED', latestReviews: { nodes: (options.approvers ?? ['ann']).map((login) => ({ author: { login }, state: 'APPROVED' })) }, additions: 3, deletions: 1, changedFiles: 1, headRefName: 'fix', baseRefName: 'main',
           createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-02T00:00:00Z', author: { login: options.author ?? 'me' },
           repository: { nameWithOwner: 'o/r', viewerDefaultMergeMethod: 'SQUASH' }, autoMergeRequest: null,
           comments: { nodes: [{ id: 'C1', url: `${url}#c1`, author: { login: 'bot' }, body: '<!-- only bookkeeping -->', createdAt: '2026-10-01T01:00:00Z' }] },
@@ -102,9 +102,9 @@ test('github: only queries, never mutations', async () => {
   assert.ok(calls.every((args) => args[0] === 'api' && args[1] === 'graphql' && !/^\s*mutation/.test(args[3].slice('query='.length))))
 })
 
-async function loaded(author: string) {
+async function loaded(author: string, approvers?: string[]) {
   const calls: string[][] = []
-  const core = memoryCore({ gh: fakeGh(calls, { author }) })
+  const core = memoryCore({ gh: fakeGh(calls, { author, approvers }) })
   const id = `github:pr:${url}`
   core.focus(id)
   await core.refresh(id)
@@ -188,4 +188,20 @@ test('github: a PR seen only as a link is an item, and carries its badge once lo
   const loaded = core.focus(id).entity!
   // Mine, one failing check: CI failure outranks the approval.
   assert.deepEqual(loaded.data.badge, { shape: 'cross', tone: 'red', reason: 'CI failing' })
+})
+
+test('github: an approve already done is shown but cannot be done again', async () => {
+  const theirs = await loaded('ann', ['ann', 'me'])
+  const [approve] = theirs.core.focus(theirs.id).actions
+  assert.equal(approve.disabled, 'Already approved by me')
+  const outcome = await theirs.core.actions.perform({ id: theirs.id, action: 'approve', text: '' })
+  assert.equal(outcome.error, 'Already approved by me')
+  assert.equal(theirs.calls.filter((args) => args[0] === 'pr').length, 0)
+
+  // Mine: once approved here and set to auto-merge, approving again is off too.
+  const mine = await loaded('me')
+  await mine.core.actions.perform({ id: mine.id, action: 'approve', text: '' })
+  assert.equal(mine.core.focus(mine.id).actions.find((action) => action.id === 'approve')!.disabled, undefined)
+  mine.core.cache.write([{ type: 'value', entityId: mine.id, key: 'autoMerge', value: true, timestamp: 0, author: 'github' }])
+  assert.equal(mine.core.focus(mine.id).actions.find((action) => action.id === 'approve')!.disabled, 'Approved, and auto-merge is on')
 })

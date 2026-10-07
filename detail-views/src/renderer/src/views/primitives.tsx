@@ -185,15 +185,33 @@ function PageLink(props: { href: string; children: ReactNode }) {
   )
 }
 
-/** A button that does something slow: while it is under way it says so and can't be pressed again. */
-export function Working(props: { label: string; busyLabel?: string; busy?: boolean; active?: boolean; onClick(): void }) {
+/**
+ * Every button in the app. Hover and press show it can be pressed; `busy`
+ * says its action is under way (and blocks pressing again); `disabled` is the
+ * reason it can't be pressed now, shown as its tooltip.
+ */
+export function Button(props: {
+  label: ReactNode
+  onClick(): void
+  busy?: boolean
+  busyLabel?: string
+  active?: boolean
+  disabled?: string | false | null
+  title?: string
+  quiet?: boolean
+}) {
+  const blocked = Boolean(props.busy || props.disabled)
   return (
     <button
-      className={`action${props.active ? ' active' : ''}${props.busy ? ' busy' : ''}`}
-      disabled={props.busy}
+      className={`button${props.active ? ' active' : ''}${props.busy ? ' busy' : ''}${props.quiet ? ' quiet' : ''}`}
+      disabled={blocked}
+      aria-busy={props.busy || undefined}
+      title={props.disabled || props.title}
+      // Pressing a button never starts a drag or raises what it sits in.
+      onPointerDown={(event) => event.stopPropagation()}
       onClick={props.onClick}
     >
-      {props.busy ? (props.busyLabel ?? `${props.label}…`) : props.label}
+      {props.busy ? (props.busyLabel ?? (typeof props.label === 'string' ? `${props.label}…` : props.label)) : props.label}
     </button>
   )
 }

@@ -3,7 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { Focus as FocusData } from '../../../core/types.ts'
 import type { Peek, PeekTarget, Rect } from '../state.ts'
 import { Focus } from './Focus.tsx'
-import { HeaderPill, PeekContext } from './primitives.tsx'
+import { Button, HeaderPill, PeekContext } from './primitives.tsx'
 
 const size = { width: 720, height: 480 }
 const gap = 6
@@ -99,18 +99,8 @@ export function PeekWindow(props: {
         <span className="grow">
           {peek.target.kind === 'entity' ? <HeaderPill entity={props.focus?.entity} /> : peek.target.url}
         </span>
-        <button onPointerDown={(event) => event.stopPropagation()} onClick={() => props.onOpen(peek.target)}>
-          Open
-        </button>
-        {peek.pinned && (
-          <button
-            className="peek-close"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={() => props.onClose(peek.key)}
-          >
-            ×
-          </button>
-        )}
+        <Button label="Open" onClick={() => props.onOpen(peek.target)} />
+        {peek.pinned && <Button quiet label="×" title="Close" onClick={() => props.onClose(peek.key)} />}
       </div>
       <PeekContext.Provider value={gestures}>
         <div className="peek-body">

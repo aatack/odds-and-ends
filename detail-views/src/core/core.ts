@@ -316,9 +316,9 @@ export class Core {
     const entity = this.item(id)
     const module = entity && this.moduleFor(id, { type: entity.type })
     if (!entity || !module?.perform) return { events: [], error: null }
-    if (!module.view.actions?.(entity, lens).some((offered) => offered.id === action)) {
-      return this.attempt(id, () => Promise.reject(new Error(`${action} is not available here`)))
-    }
+    const offered = module.view.actions?.(entity, lens).find((candidate) => candidate.id === action)
+    if (!offered) return this.attempt(id, () => Promise.reject(new Error(`${action} is not available here`)))
+    if (offered.disabled) return this.attempt(id, () => Promise.reject(new Error(offered.disabled)))
     const outcome = await this.attempt(id, () => module.perform!(entity, action, text.trim()))
     await this.load({ id, part: 'children', force: true })
     return outcome

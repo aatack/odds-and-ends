@@ -59,3 +59,7 @@ Newest last. Each says what was chosen, why, and what was turned down.
 21. **A thread is listed iff its conversation is listed.** *Why:* hiding a
     conversation should hide its threads, and threads from channels I'm not in
     should never appear. Hence lists load before polling starts.
+22. **One `Button`, hover on everything interactable.** No UI library: the
+    states are a few CSS rules, and a library would bring its own look and
+    motion. Disabled actions carry their reason (`Action.disabled`) and are
+    refused by the core as well as the view.

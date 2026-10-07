@@ -87,11 +87,19 @@ export const githubView: ModuleView = {
     if (entity.type !== 'github.pr' || entity.data.state !== 'OPEN') return []
     const actions: Action[] = []
     if (!entity.data.mine) {
-      actions.push({ id: 'approve', label: 'Approve', prompt: 'Approve: comment (optional), Enter to approve' })
+      actions.push({
+        id: 'approve',
+        label: 'Approve',
+        prompt: 'Approve: comment (optional), Enter to approve',
+        disabled: entity.data.approvedByMe ? 'Already approved by me' : undefined,
+      })
     } else {
-      if (!localApproval(lens, entity.id) || !entity.data.autoMerge) {
-        actions.push({ id: 'approve', label: 'Approve', prompt: 'Approve locally and turn on auto-merge: Enter to confirm' })
-      }
+      actions.push({
+        id: 'approve',
+        label: 'Approve',
+        prompt: 'Approve locally and turn on auto-merge: Enter to confirm',
+        disabled: localApproval(lens, entity.id) && entity.data.autoMerge ? 'Approved, and auto-merge is on' : undefined,
+      })
       actions.push({ id: 'close', label: 'Close', prompt: 'Close and delete the branch: comment (optional), Enter to close' })
     }
     return actions
