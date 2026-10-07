@@ -198,10 +198,19 @@ test('github: an approve already done is shown but cannot be done again', async 
   assert.equal(outcome.error, 'Already approved by me')
   assert.equal(theirs.calls.filter((args) => args[0] === 'pr').length, 0)
 
-  // Mine: once approved here and set to auto-merge, approving again is off too.
+  // Mine: approved on GitHub (the fake's review decision) and set to
+  // auto-merge, approving again is off, with no approval of my own.
+  const approvedThere = await loaded('me')
+  approvedThere.core.cache.write([{ type: 'value', entityId: approvedThere.id, key: 'autoMerge', value: true, timestamp: 0, author: 'github' }])
+  assert.equal(approvedThere.core.focus(approvedThere.id).actions.find((action) => action.id === 'approve')!.disabled, 'Approved, and auto-merge is on')
+
+  // Not approved on GitHub: my approval here counts, once auto-merge is on.
   const mine = await loaded('me')
   await mine.core.actions.perform({ id: mine.id, action: 'approve', text: '' })
   assert.equal(mine.core.focus(mine.id).actions.find((action) => action.id === 'approve')!.disabled, undefined)
-  mine.core.cache.write([{ type: 'value', entityId: mine.id, key: 'autoMerge', value: true, timestamp: 0, author: 'github' }])
+  mine.core.cache.write([
+    { type: 'value', entityId: mine.id, key: 'review', value: 'REVIEW_REQUIRED', timestamp: 0, author: 'github' },
+    { type: 'value', entityId: mine.id, key: 'autoMerge', value: true, timestamp: 0, author: 'github' },
+  ])
   assert.equal(mine.core.focus(mine.id).actions.find((action) => action.id === 'approve')!.disabled, 'Approved, and auto-merge is on')
 })

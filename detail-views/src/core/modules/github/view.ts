@@ -94,11 +94,17 @@ export const githubView: ModuleView = {
         disabled: entity.data.approvedByMe ? 'Already approved by me' : undefined,
       })
     } else {
+      // GitHub won't let me approve my own PR, so "approved" is GitHub's
+      // review decision, or my own approval here. Approving turns on
+      // auto-merge, so once both are true there is nothing left to do.
+      const approved = entity.data.review === 'APPROVED' || Boolean(localApproval(lens, entity.id))
       actions.push({
         id: 'approve',
         label: 'Approve',
-        prompt: 'Approve locally and turn on auto-merge: Enter to confirm',
-        disabled: localApproval(lens, entity.id) && entity.data.autoMerge ? 'Approved, and auto-merge is on' : undefined,
+        prompt: approved
+          ? 'Already approved: Enter to turn on auto-merge'
+          : 'Approve locally and turn on auto-merge: Enter to confirm',
+        disabled: approved && entity.data.autoMerge ? 'Approved, and auto-merge is on' : undefined,
       })
       actions.push({ id: 'close', label: 'Close', prompt: 'Close and delete the branch: comment (optional), Enter to close' })
     }
