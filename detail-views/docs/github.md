@@ -35,6 +35,13 @@ From GitHub, per PR: `reviewDecision`, `latestReviews`, `reviewRequests`,
 `reviewThreads.isResolved`, `mergeable`, `mergeStateStatus`, the check rollup,
 `isDraft`, `autoMergeRequest`.
 
+## Previews
+
+PRs in repos listed in `previews` (`view.ts`) have a preview deployment per
+PR number (`theengineeringco/branch-demo`: `https://pr-<n>.preview.theeng.co/demo`).
+An open one's overview starts with a **Preview** link: hovering it peeks at
+the running branch.
+
 ## Writes
 
 **Approve is derived, not remembered.** On someone else's PR it is done when

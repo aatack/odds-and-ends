@@ -114,6 +114,21 @@ export function badge(data: Record<string, unknown>, locallyApproved: boolean): 
   return { shape, tone: first.tone, reason: first.label }
 }
 
+/**
+ * Repos whose PRs each get a preview deployment, by the PR's number: the
+ * frontend to try a branch in. Only these; anywhere else a PR has none.
+ */
+const previews: Record<string, (number: number) => string> = {
+  'theengineeringco/branch-demo': (number) => `https://pr-${number}.preview.theeng.co/demo`,
+}
+
+/** A PR's preview frontend, if its repo has them. */
+export function previewOf(data: Record<string, unknown>): string | null {
+  const preview = previews[String(data.repo ?? '')]
+  const number = Number(data.number)
+  return preview && number && data.state === 'OPEN' ? preview(number) : null
+}
+
 /** My own approval of my own PR: an owned child, so it outlives the cache. */
 export function localApproval(lens: Lens, prId: string): Entity | null {
   for (const child of lens.children(prId)) {
@@ -200,7 +215,7 @@ export const githubView: ModuleView = {
       const blocking = blockers(data, locallyApproved)
       return {
         ...entity,
-        data: { ...data, locallyApproved, blockers: blocking, badge: badge(data, locallyApproved), name, text: name ?? String(data.url), label: name ?? String(data.url) },
+        data: { ...data, preview: previewOf(data), locallyApproved, blockers: blocking, badge: badge(data, locallyApproved), name, text: name ?? String(data.url), label: name ?? String(data.url) },
       }
     }
     if (entity.type === 'github.item') {
