@@ -76,5 +76,13 @@ Newest last. Each says what was chosen, why, and what was turned down.
     whatever the item. Old `task` items still tick with Space; new ones are
     notes.
 25. **ArrowLeft/Right fold and open rows** (as in entity-graph), so back is
-    `Shift+A` or `Alt+←` only, and refresh moved to F5 / Ctrl+R since `r`
-    links. Posting to Slack (already off) lost its composer.
+    `Shift+A` or `Alt+←` only, and refresh moved to F5 since `r` links
+    (Ctrl+R is the window's reload). Posting to Slack (already off) lost its composer.
+26. **Undo is destructive at the owned store, as in entity-graph.** Ctrl+Z
+    pops the last action (events within 100 ms of the newest) off the owned
+    log, never past five minutes; the popped events are the redo stack, latent
+    and persisted, since nothing else has them. Any other write clears it.
+    Only my own edits undo: fetched data isn't mine to take back. The app
+    menu has no undo/redo, so the keys reach the page.
+27. **Find filters the rows a view walked** (Ctrl+F), keeping ancestors, per
+    view and latent; it doesn't search inside folded rows.

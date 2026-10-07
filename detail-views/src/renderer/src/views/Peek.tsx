@@ -121,6 +121,9 @@ export function PeekWindow(props: {
               onImage={props.onImage}
               onDraft={noop}
               onCompose={noop}
+              find={null}
+              findFocus={0}
+              onFind={noop}
               onEditDraft={noop}
               onCommitEdit={noop}
               onCancelEdit={noop}

@@ -16,7 +16,7 @@ import './styles.css'
 const session = new Session(electronApi(), browserEnvironment())
 
 function Root() {
-  const { state, view: tree, shown, modules, peekViews, item, working, now } = useSnapshot(session)
+  const { state, view: tree, shown, modules, peekViews, item, working, now, findFocus } = useSnapshot(session)
   useEffect(() => {
     const stopDispatch = installDispatch(session, tools)
     let stopSession: (() => void) | undefined
@@ -31,6 +31,7 @@ function Root() {
   const onEditDraft = useCallback((text: string) => session.setEditDraft(text), [])
   const onCommitEdit = useCallback(() => session.commitEdit(), [])
   const onCancelEdit = useCallback(() => session.cancelEdit(), [])
+  const onFind = useCallback((text: string) => session.setFind(text), [])
   const onOpen = useCallback((id: string) => session.navigate(id), [])
   const onDraft = useCallback((text: string) => session.setDraft(text), [])
   const onCompose = useCallback((composing: boolean) => session.compose(composing), [])
@@ -86,8 +87,11 @@ function Root() {
         onEditDraft,
         onCommitEdit,
         onCancelEdit,
+        find: state.finds[focused(state)] ?? null,
+        findFocus,
+        onFind,
       },
-    [tree, shown, state, working, now, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onHideChat, onEditDraft, onCommitEdit, onCancelEdit],
+    [tree, shown, state, working, now, findFocus, onFind, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onHideChat, onEditDraft, onCommitEdit, onCancelEdit],
   )
   const picking = useMemo(() => {
     const pick = state.picking

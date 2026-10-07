@@ -366,6 +366,13 @@ export class Core {
     older: ({ id }: { id: string }): Promise<Outcome> => this.older(id),
     /** Bytes of an image a message presented, by the ref it gave. */
     slackImage: ({ ref }: { ref: string }) => this.slack.image(ref),
+    /**
+     * Takes my last action back off the owned log (within five minutes) and
+     * returns its events, so they can come out of a cache and be redone.
+     */
+    undo: (): Outcome => ({ events: this.owned.pop(this.now()), error: null }),
+    /** Writes undone events back verbatim, times and all. */
+    redo: ({ events }: { events: AppEvent[] }): Outcome => this.write(events),
     /** What a view shows, as a tree, for a caller with no cache of its own. */
     view: ({ id, folds }: { id: string; folds?: Folds }): View => viewOf(id, this.source(), { folds }),
     /** A note under `parent`: an owned entity with no type, just text. */

@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, ipcMain, nativeTheme, protocol, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, nativeTheme, protocol, shell, type MenuItemConstructorOptions } from 'electron'
 import { Core } from '../core/core.ts'
 
 let core: Core | null = null
@@ -46,7 +46,28 @@ function createWindow(): BrowserWindow {
   return window
 }
 
+/**
+ * The menu, without the default Edit menu's undo and redo: those accelerators
+ * would take Ctrl+Z and Ctrl+Y before the page sees them, and the app's own
+ * undo is in its tool registry. A focused text field still undoes its typing
+ * by itself. macOS needs clipboard roles in a menu for the shortcuts to work.
+ */
+function installMenu(): void {
+  const isMac = process.platform === 'darwin'
+  const template: MenuItemConstructorOptions[] = [
+    ...(isMac ? [{ role: 'appMenu' } as MenuItemConstructorOptions] : []),
+    { role: 'fileMenu' },
+    ...(isMac
+      ? [{ label: 'Edit', submenu: [{ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] } as MenuItemConstructorOptions]
+      : []),
+    { role: 'viewMenu' },
+    { label: 'Window', submenu: [{ role: 'minimize' }, ...(isMac ? [{ role: 'zoom' as const }] : [])] },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
 void app.whenReady().then(() => {
+  installMenu()
   nativeTheme.themeSource = 'light'
   // What I make, and what was loaded from elsewhere (safe to delete). The
   // single file before them is only read, once, to bring what I owned over.

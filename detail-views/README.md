@@ -29,7 +29,9 @@ Every view is a tree: the item it is rooted at, then what is under it.
 | `Space` | tick a task |
 | `o` | load further back: all of Slack, this conversation, or this thread |
 | `Shift+Backspace` | on a Slack message: hide the whole chat it is in |
-| `F5` `Ctrl+R` | refresh |
+| `Ctrl+F` | find in this view (rows that say it, and the rows above them); `Enter` back to the tree, `Esc` clears |
+| `Ctrl+Z` / `Ctrl+Y` | undo / redo my own edits (up to five minutes back) |
+| `F5` | refresh |
 | `a` | approve a PR |
 | `X` | close my PR and delete its branch |
 
