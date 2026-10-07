@@ -30,6 +30,7 @@ export const itemTypes = [
   'github.localApproval',
   'tasks.home',
   'task',
+  'note',
 ] as const
 
 export type ItemType = (typeof itemTypes)[number]
@@ -73,8 +74,8 @@ export interface LoadResult {
  */
 export const loadedKey = (part: LoadPart): string => `loaded.${part}`
 
-/** What the composer under a focus view does, if there is one. */
-export type ComposeKind = 'slack' | 'slack-token' | 'task'
+/** What the composer under a view does, if there is one. */
+export type ComposeKind = 'slack' | 'slack-token'
 
 /**
  * Something a person can do to an entity. Starting it opens a prompt; Enter
@@ -108,6 +109,46 @@ export interface Focus {
   actions: Action[]
   /** Whether more can be loaded from further back, on demand. */
   older: boolean
+  loading: boolean
+  error: string | null
+}
+
+/**
+ * One line of a view's tree. A row is identified by its path from the view's
+ * root, not by its id: the graph isn't a tree, and an entity can show in more
+ * than one place at once.
+ */
+export interface ViewRow {
+  /** The path, as one string. */
+  key: string
+  path: string[]
+  /** 0 for the view's root. */
+  depth: number
+  /** Presented. */
+  entity: Entity
+  /** The row it hangs off in this view; null for the root. */
+  parent: Entity | null
+  /** The sibling before it, for rows that read on from the one above (chat). */
+  above: Entity | null
+  hasChildren: boolean
+  /** Whether its children are walked here. */
+  open: boolean
+  loading: boolean
+}
+
+/** A query rooted at one entity, as a tree of rows. */
+export interface View {
+  root: Entity | null
+  /** In reading order; the root first. */
+  rows: ViewRow[]
+  /** False when the walk stopped at its limit. */
+  complete: boolean
+  module: string | null
+  compose: ComposeKind | null
+  actions: Action[]
+  older: boolean
+  /** Reads bottom up (chat): the cursor starts at the end. */
+  startsAtEnd: boolean
   loading: boolean
   error: string | null
 }

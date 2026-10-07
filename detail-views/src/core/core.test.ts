@@ -54,18 +54,43 @@ test('a fetched link can be hidden for me only by an owned unlink after it', () 
   assert.deepEqual(core.entity('github:pr:https://github.com/o/r/pull/1').outboundLinks, [])
 })
 
-test('tasks: composing adds an owned child, undone first', async () => {
+test('notes: Enter makes an untyped owned note under anything; e overrides text for me only; x moves; r links', () => {
   const core = memoryCore()
-  const first = await core.actions.submit({ id: 'tasks', text: 'first' })
-  await core.actions.submit({ id: 'tasks', text: 'second' })
-  assert.equal(first.events.length, 4)
-  const id = core.focus('tasks').children[0].id
-  core.actions.toggle({ id })
-  const focus = core.focus('tasks')
-  assert.deepEqual(focus.children.map((child) => child.data.text), ['second', 'first'])
-  assert.equal(focus.compose, 'task')
-  assert.ok(core.owned.read([id]).length > 0)
-  assert.equal(core.cache.read([id]).length, 0)
+  core.cache.write([
+    ...values('slack:conv:C1', { type: 'slack.conversation', channel: 'C1', kind: 'channel', name: 'general' }, 0, 'slack'),
+    ...values('slack:msg:C1:1.0', { type: 'slack.message', channel: 'C1', ts: '1.0', text: 'from slack' }, 1000, 'slack'),
+    link('slack:conv:C1', 'slack:msg:C1:1.0', 1000, 'slack'),
+  ])
+  const made = core.actions.create({ parent: 'slack:msg:C1:1.0', text: 'remember this' })
+  const note = made.events.find((e) => e.type === 'link')!.type === 'link' ? (made.events.find((e) => e.type === 'link') as { destinationId: string }).destinationId : ''
+  assert.equal(core.item(note)!.type, 'note')
+  assert.equal(core.owned.read([note]).length, 2)
+  assert.equal(core.cache.read([note]).length, 0)
+
+  // A note under a message nests in the conversation's view once the message is open.
+  const shut = core.actions.view({ id: 'slack:conv:C1' })
+  assert.deepEqual(shut.rows.map((row) => [row.depth, row.entity.data.text]), [[0, '#general'], [1, 'from slack']])
+  assert.equal(shut.rows[1].hasChildren, true)
+  const open = core.actions.view({ id: 'slack:conv:C1', folds: { 'slack:msg:C1:1.0': true } })
+  assert.deepEqual(open.rows.map((row) => [row.depth, row.entity.data.text]), [[0, '#general'], [1, 'from slack'], [2, 'remember this']])
+
+  // e: my text wins over what Slack said, and a reload of Slack's doesn't undo it.
+  core.actions.setText({ id: 'slack:conv:C1', text: 'my name for it' })
+  core.actions.setText({ id: 'slack:msg:C1:1.0', text: 'edited for me' })
+  core.cache.write([value('slack:conv:C1', 'name', 'general', 0, 'slack'), value('slack:msg:C1:1.0', 'text', 'from slack', 1000, 'slack')])
+  assert.equal(core.focus('slack:conv:C1').entity!.data.text, 'my name for it')
+  assert.equal(core.focus('slack:conv:C1').children[0].data.text, 'edited for me')
+
+  // x: move the note to the conversation. r: link it back under the message too.
+  core.actions.move({ child: note, from: 'slack:msg:C1:1.0', to: 'slack:conv:C1' })
+  assert.deepEqual(core.entity('slack:msg:C1:1.0').outboundLinks, [])
+  assert.ok(core.entity('slack:conv:C1').outboundLinks.includes(note))
+  core.actions.link({ parent: 'slack:msg:C1:1.0', child: note })
+  assert.deepEqual(core.entity('slack:msg:C1:1.0').outboundLinks, [note])
+  // Backspace: out of one parent only.
+  core.actions.unlink({ parent: 'slack:msg:C1:1.0', child: note })
+  assert.deepEqual(core.entity('slack:msg:C1:1.0').outboundLinks, [])
+  assert.ok(core.entity('slack:conv:C1').outboundLinks.includes(note))
 })
 
 test('slack: read-only refuses writes before they reach the network', async () => {

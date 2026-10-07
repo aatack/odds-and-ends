@@ -13,13 +13,27 @@ doc for the area you change, and keep it up to date in the same commit.
 - **Modules are workflows.** Each one (Slack, tasks, later calendar, …) is a
   module with a root entity. The sidebar lists the modules and nothing else; it
   is how I enter the app.
-- **One entity is focused at a time.** Everything is an entity: a Slack
-  conversation, a message, a task. The bulk of the window is the focus view of
-  that one entity.
+- **One view at a time, and every view is a tree.** Everything is an entity:
+  a Slack conversation, a message, a PR, a note. The bulk of the window is a
+  view rooted at one of them: its overview, then what is under it as a tree I
+  navigate, open and fold.
+- **Modules are just roots.** Slack, GitHub and Tasks are root entities whose
+  types load in special ways and draw in special ways; the sidebar enters
+  them, and nothing else about them is special.
 - **Links are directional, parent → child.** Focusing an entity shows its
   children. Any entity may link to any other, across modules.
-- **Navigation is a trail.** Opening a child pushes it; back and forward walk
-  the trail, like a browser.
+- **Navigation is a stack of views.** `d` pushes a view rooted at the
+  selected row; `Shift+A` pops it.
+- **Any item can be worked on the same way**, whatever its type: Enter adds a
+  note under it (an owned entity with no type, just text), `e` edits its text,
+  Backspace takes it out from under its parent *in this view* (nothing at the
+  view's root), `x` moves it, `r` / `Shift+R` link it to or from another row.
+  `x`, `r` and `Shift+R` are finished by pressing the same key on the other
+  row, in any view; Escape gives up.
+- **`text` is an item's canonical value**: what it is called or says wherever
+  it is shown (a message's content, a PR's or channel's name). It may come
+  from a service; editing it writes an owned `text` that overrides it for me
+  only.
 - **Desktop app, not a web page.** Electron, run locally.
 
 ### Data
@@ -105,32 +119,31 @@ doc for the area you change, and keep it up to date in the same commit.
 - **Keyboard first.** Every key press goes through one listener
   (`renderer/src/dispatch.ts`) that runs a tool from the single registry
   (`renderer/src/tools.ts`). Never add a `keydown` listener anywhere else.
-- **Navigation keys are a fixed rule** across every focus view: `w` up, `s`
-  down, `d` focuses the selected item, `Shift+A` pops the focus (back). Other
-  bindings may be added beside them, never in their place.
-- **A click highlights, it never focuses.** Clicking an item moves the cursor
-  to it; only `d` focuses. The exceptions are deliberate shortcuts: a person
-  or mention pushes their conversation, and a thumbnail opens the image.
+- **Navigation keys are a fixed rule** in every view: `w` up, `s` down, `d`
+  pushes the selected row's view, `Shift+A` pops it; ArrowRight / ArrowLeft
+  open and fold a row. Other bindings may be added beside them, never in their
+  place.
+- **A click selects, it never pushes.** Clicking a row moves the cursor to it;
+  only `d` pushes. The exceptions are deliberate shortcuts: a person or mention
+  pushes their conversation, and a thumbnail opens the image.
 - **Peeks.** Anything that refers to something else is peekable: hovering it
   opens a floating window onto a URL (a locked-down `<webview>`) or an entity
-  (its normal focus view). Use `Link` for URLs and `usePeek` for anything else
+  (its normal view, without a cursor). Use `Link` for URLs and `usePeek` for anything else
   (`views/primitives.tsx`). Moving or resizing a peek pins it (with an `×`);
   pinned peeks persist. `Open` sends a URL to the browser or pushes an entity.
-- **Every item type has three views**, registered in `views/kinds.tsx`:
-  - **full**: the item focused, filling the view (or a peek);
-  - **row** ("normal"): the item as a child in another item's view, some detail
-    but not all;
-  - **pill**: the item in a small space: named in text, heading its own full
-    view, or in a peek's bar.
-  `itemTypes` in `core/types.ts` lists every type, `Store.put` only takes those,
-  and the registry is typed against the list, so `npm run type-check` fails if
-  any type lacks any of the three. Adding a type means adding it to
-  `itemTypes` and giving it all three views.
+- **Every item type has its views**, registered in `views/kinds.tsx`:
+  - **pill**: named inline, heading a view, or in a peek's bar;
+  - **overview**: at the root of a view, above its tree (more than a row);
+  - **row**: a child in a view's tree, some detail but not all (the tree draws
+    the indent, fold mark and selection around it);
+  - **detail** (optional): the whole view, in place of overview and tree.
+  `itemTypes` in `core/types.ts` lists every type and the registry is typed
+  against it, so `npm run type-check` fails if any type lacks a pill, overview
+  or row. Adding a type means adding it to `itemTypes` and giving it those.
 - **Pills are one component.** The same pill names an item everywhere: in
-  text (`ItemPill`: peek on hover, push on click), heading a full view and in a
-  peek's bar (`HeaderPill`: inert, and without the pill's frame). A full view inside a peek drops its own
-  header (`headed={false}`) because the bar already names it. Badges are worked
-  out by the module (`Badge` in `core/types.ts`).
+  text (`ItemPill`: peek on hover, push on click), heading a view and in a
+  peek's bar (`HeaderPill`: inert, and without the pill's frame). Badges are
+  worked out by the module (`Badge` in `core/types.ts`).
 - No animations. The cursor never becomes a pointer.
 - **Anything interactable shows it on hover** (rows, pills, links, sidebar
   entries, thumbnails, buttons), since the cursor never changes. Every button
@@ -151,13 +164,27 @@ doc for the area you change, and keep it up to date in the same commit.
     (stores, loaders, writes) is reached only through `Core.actions`.
   - Its pure half is shared with the renderer and must not import node:
     `graph/` (events, rollup, walk, the entity cache), `present.ts`
-    (`focusOf`, `itemOf`) and each module's `view.ts`. The renderer runs it
-    over its cache; `Core.focus` runs the same code over the stores, so a
-    headless caller sees what the UI sees (`npm test` drives an `EntityCache`
-    against a `Core` in plain node).
+    (`viewOf`, `focusOf`, `itemOf`) and each module's `view.ts`. The renderer
+    runs it over its cache; `Core.actions.view` runs the same code over the
+    stores, so a headless caller sees what the UI sees. `npm test` drives an
+    `EntityCache`, and the renderer's own `Session`, against a `Core` in plain
+    node.
   - `src/main/` only hosts the core and forwards IPC.
-  - `src/renderer/src/state.ts` is latent UI state (the trail, cursors,
-    drafts) plus *pure* derivations. Derived values are never written back.
+  - `src/renderer/src/state.ts` is latent UI state plus *pure* derivations.
+    Latent means the minimum and serialisable: the stack, each view's
+    selection *path*, folds, the in-place edit and its draft. Anything
+    derivable (the rows, the resolved selection) is a function of it and the
+    cache, and **derived values are never written back**: the selection is
+    resolved against the rows each time (`resolveSelection`), so a selection
+    inside a folded row comes back when it opens.
+  - A row is identified by its **path** from the view's root, never by its
+    id: the graph isn't a tree, and an entity can show in several places.
+  - A view's tree is **walked once per change of shape** (root, folds, cache)
+    and remembered (`Session.walk`); the selection and the edit are laid over
+    it by `markRows`. Moving the cursor never walks the tree again, and rows
+    that didn't change keep their identity so they don't redraw.
+  - Reads during render write nothing: asking the cache is a set membership
+    and a microtask.
   - `src/renderer/src/session.ts` holds state and the entity cache, and runs
     effects through the `Api` seam (`api.ts`); `environment.ts` is the only
     place touching `localStorage`.

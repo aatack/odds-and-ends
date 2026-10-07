@@ -1,32 +1,9 @@
-import { createContext, memo, useContext, useEffect, useRef } from 'react'
+import { createContext, useContext, useEffect, useRef } from 'react'
 import type { Badge as BadgeData, Entity } from '../../../core/types.ts'
-import type { Kinds, RowProps } from './kindTypes.ts'
+import type { Kinds } from './kindTypes.ts'
 import type { ReactNode } from 'react'
 import { prEntityId } from '../../../core/types.ts'
 import type { PeekTarget, Rect } from '../state.ts'
-
-/** A list row that keeps itself on screen while it holds the cursor. */
-export const Row = memo(function Row(props: {
-  id: string
-  selected: boolean
-  className?: string
-  onSelect(id: string): void
-  children: ReactNode
-}) {
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (props.selected) ref.current?.scrollIntoView({ block: 'nearest' })
-  }, [props.selected])
-  return (
-    <div
-      ref={ref}
-      className={`row${props.selected ? ' selected' : ''}${props.className ? ` ${props.className}` : ''}`}
-      onMouseDown={() => props.onSelect(props.id)}
-    >
-      {props.children}
-    </div>
-  )
-})
 
 export function Composer(props: {
   kind: 'slack' | 'slack-token' | 'task' | 'action'
@@ -111,13 +88,6 @@ export function PillContent(props: { entity: Entity; fallback?: ReactNode }) {
   const kinds = useContext(KindsContext)
   const Pill = kinds?.[props.entity.type]?.Pill
   return Pill ? <Pill entity={props.entity} fallback={props.fallback} /> : <span className="item-name">{props.entity.id}</span>
-}
-
-/** An item's row, through the registry. */
-export function RowFor(props: RowProps) {
-  const kinds = useContext(KindsContext)
-  const Row = kinds?.[props.entity.type]?.Row
-  return Row ? <Row {...props} /> : null
 }
 
 /** An item's pill heading a view or a window: nothing to do on it there. */

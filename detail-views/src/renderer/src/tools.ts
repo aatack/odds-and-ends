@@ -5,7 +5,10 @@ import * as S from './state.ts'
  * The single registry of what a person can do. Keys are matched by
  * `dispatch.ts`; nothing else listens for them.
  *
- * Scopes, innermost first: `input` while typing, then `list`, then `app`.
+ * Scopes, innermost first: `input` while typing, then `list` (the view on
+ * screen), then `app`. The first enabled tool bound to a key wins, which is how
+ * Escape means "stop editing", "give up this move" and "close the peek"
+ * without any of them knowing about the others.
  */
 export interface Tool {
   id: string
@@ -15,18 +18,30 @@ export interface Tool {
   run(session: Session): void
 }
 
-const hasChildren = (session: Session) => (session.get().focus?.children.length ?? 0) > 0
-const focusType = (session: Session) => session.get().focus?.entity?.type
+const selected = (s: Session) => s.selected()
+const notRoot = (s: Session) => (selected(s)?.depth ?? 0) > 0
+const picking = (s: Session, tool?: S.PickTool) => {
+  const pick = s.get().state.picking
+  return tool ? pick?.tool === tool : pick !== null
+}
+const rootType = (s: Session) => s.root()?.type
 
 export const tools: Tool[] = [
+  // --- Typing ---------------------------------------------------------------------
+  { id: 'edit.commit', scope: 'input', keys: ['Enter'], enabled: (s) => s.hasEdit(), run: (s) => s.commitEdit() },
+  { id: 'edit.cancel', scope: 'input', keys: ['Escape'], enabled: (s) => s.hasEdit(), run: (s) => s.cancelEdit() },
   {
     id: 'composer.send',
     scope: 'input',
     keys: ['Enter'],
-    run: (s) => (s.get().state.acting ? void s.perform() : s.hasDraft() ? void s.send() : s.compose(false)),
+    enabled: (s) => s.get().state.acting !== null,
+    run: (s) => void s.perform(),
   },
+  { id: 'composer.submit', scope: 'input', keys: ['Enter'], enabled: (s) => s.composerOpen(), run: (s) => void s.send() },
   { id: 'composer.leave', scope: 'input', keys: ['Escape'], run: (s) => s.compose(false) },
 
+  // --- Escape, innermost first ----------------------------------------------------
+  { id: 'pick.cancel', scope: 'list', keys: ['Escape'], enabled: (s) => picking(s), run: (s) => s.cancelPick() },
   {
     id: 'peek.close',
     scope: 'list',
@@ -41,44 +56,43 @@ export const tools: Tool[] = [
     enabled: (s) => s.get().state.viewing !== null,
     run: (s) => s.view(null),
   },
+
+  // --- Moving around the tree -------------------------------------------------------
+  { id: 'select.down', scope: 'list', keys: ['s', 'ArrowDown'], run: (s) => s.move(1) },
+  { id: 'select.up', scope: 'list', keys: ['w', 'ArrowUp'], run: (s) => s.move(-1) },
+  { id: 'select.start', scope: 'list', keys: ['g', 'Home'], run: (s) => s.move(-Infinity) },
+  { id: 'select.end', scope: 'list', keys: ['G', 'End'], run: (s) => s.move(Infinity) },
+  { id: 'select.pageDown', scope: 'list', keys: ['PageDown', 'Ctrl+d'], run: (s) => s.move(15) },
+  { id: 'select.pageUp', scope: 'list', keys: ['PageUp', 'Ctrl+u'], run: (s) => s.move(-15) },
+  { id: 'expand', scope: 'list', keys: ['ArrowRight'], enabled: notRoot, run: (s) => s.fold(true) },
+  { id: 'collapse', scope: 'list', keys: ['ArrowLeft'], enabled: notRoot, run: (s) => s.fold(false) },
+  { id: 'view.push', scope: 'list', keys: ['d'], enabled: notRoot, run: (s) => s.open() },
+
+  // --- Whatever is selected ----------------------------------------------------------
+  { id: 'note.create', scope: 'list', keys: ['Enter'], enabled: (s) => selected(s) !== null, run: (s) => s.startCreate() },
+  { id: 'edit.start', scope: 'list', keys: ['e'], enabled: (s) => selected(s) !== null, run: (s) => s.startEdit() },
+  { id: 'unlink', scope: 'list', keys: ['Backspace', 'Delete'], enabled: notRoot, run: (s) => s.unlinkSelected() },
+  // The second press of each finishes it on whatever is selected then, in any view.
+  { id: 'move', scope: 'list', keys: ['x'], enabled: (s) => picking(s, 'move') || notRoot(s), run: (s) => s.pick('move') },
+  { id: 'link', scope: 'list', keys: ['r'], enabled: (s) => picking(s, 'link') || selected(s) !== null, run: (s) => s.pick('link') },
   {
-    // Ahead of `focus.back`, which Backspace means everywhere else.
-    id: 'chat.unlink',
+    id: 'link.reverse',
     scope: 'list',
-    keys: ['Backspace', 'Delete'],
-    enabled: (s) => focusType(s) === 'slack.home' && s.selected() !== null,
-    run: (s) => s.unlinkSelected(),
+    keys: ['R'],
+    enabled: (s) => picking(s, 'linkReverse') || selected(s) !== null,
+    run: (s) => s.pick('linkReverse'),
   },
+  { id: 'task.toggle', scope: 'list', keys: [' '], enabled: (s) => selected(s)?.entity.type === 'task', run: (s) => s.toggle() },
   {
-    id: 'chat.hideOfMessage',
+    id: 'chat.hide',
     scope: 'list',
     keys: ['Shift+Backspace', 'Shift+Delete'],
-    enabled: (s) =>
-      (focusType(s) === 'slack.home' && s.selected()?.type === 'slack.message') || focusType(s) === 'slack.message',
+    enabled: (s) => selected(s)?.entity.type === 'slack.message' || rootType(s) === 'slack.message',
     run: (s) => s.hideChatOfMessage(),
   },
-  { id: 'cursor.down', scope: 'list', keys: ['s', 'ArrowDown'], run: (s) => s.move(1) },
-  { id: 'cursor.up', scope: 'list', keys: ['w', 'ArrowUp'], run: (s) => s.move(-1) },
-  { id: 'cursor.top', scope: 'list', keys: ['g', 'Home'], run: (s) => s.move(-Infinity) },
-  { id: 'cursor.bottom', scope: 'list', keys: ['G', 'End'], run: (s) => s.move(Infinity) },
-  { id: 'cursor.pageDown', scope: 'list', keys: ['PageDown', 'Ctrl+d'], run: (s) => s.move(15) },
-  { id: 'cursor.pageUp', scope: 'list', keys: ['PageUp', 'Ctrl+u'], run: (s) => s.move(-15) },
-  { id: 'focus.open', scope: 'list', keys: ['d', 'ArrowRight'], enabled: hasChildren, run: (s) => s.open() },
-  {
-    id: 'task.toggle',
-    scope: 'list',
-    keys: ['x', ' '],
-    enabled: (s) => s.selected()?.type === 'task',
-    run: (s) => s.toggle(),
-  },
-  {
-    id: 'slack.markRead',
-    scope: 'list',
-    keys: ['m'],
-    enabled: (s) => focusType(s) === 'slack.conversation',
-    run: (s) => s.markRead(),
-  },
+  { id: 'slack.markRead', scope: 'list', keys: ['m'], enabled: (s) => rootType(s) === 'slack.conversation', run: (s) => s.markRead() },
 
+  // --- The view's root ----------------------------------------------------------------
   ...(
     [
       ['approve', 'a'],
@@ -89,27 +103,14 @@ export const tools: Tool[] = [
       id: `action.${action}`,
       scope: 'app',
       keys: [key],
-      enabled: (s) => Boolean(s.get().focus?.actions.some((offered) => offered.id === action && !offered.disabled)),
+      enabled: (s) => Boolean(s.get().view?.actions.some((offered) => offered.id === action && !offered.disabled)),
       run: (s) => s.startAction(action),
     }),
   ),
-  { id: 'focus.back', scope: 'app', keys: ['A', 'ArrowLeft', 'Backspace', 'Alt+ArrowLeft'], run: (s) => s.back() },
-  { id: 'focus.forward', scope: 'app', keys: ['Alt+ArrowRight'], run: (s) => s.forward() },
-  { id: 'focus.refresh', scope: 'app', keys: ['r', 'F5'], run: (s) => s.refresh() },
-  {
-    id: 'focus.older',
-    scope: 'app',
-    keys: ['o'],
-    enabled: (s) => Boolean(s.get().focus?.older),
-    run: (s) => s.older(),
-  },
-  {
-    id: 'composer.enter',
-    scope: 'app',
-    keys: ['Enter'],
-    enabled: (s) => Boolean(s.get().focus?.compose),
-    run: (s) => s.compose(true),
-  },
+  { id: 'view.older', scope: 'app', keys: ['o'], enabled: (s) => Boolean(s.get().view?.older), run: (s) => s.older() },
+  { id: 'view.refresh', scope: 'app', keys: ['F5', 'Ctrl+r'], run: (s) => s.refresh() },
+  { id: 'view.back', scope: 'app', keys: ['A', 'Alt+ArrowLeft'], run: (s) => s.back() },
+  { id: 'view.forward', scope: 'app', keys: ['Alt+ArrowRight'], run: (s) => s.forward() },
   ...Array.from({ length: 9 }, (_, index): Tool => ({
     id: `module.${index + 1}`,
     scope: 'app',

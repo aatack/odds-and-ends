@@ -6,40 +6,35 @@ import remarkGfm from 'remark-gfm'
 import { mentionScheme } from '../../../core/types.ts'
 import type { Entity } from '../../../core/types.ts'
 import { authorColour, fullTime, shortTime } from '../format.ts'
-import { Link, Row, usePeek } from './primitives.tsx'
+import type { RowProps } from './kindTypes.ts'
+import { Link, usePeek } from './primitives.tsx'
 
 /** Chat-style messages, shared by every module that has a discussion. */
+
+/** A speaker's run starts where the speaker changes, or five minutes pass. */
+export function startsRun(above: Entity | null, current: Entity): boolean {
+  if (!above || above.type !== current.type) return true
+  return above.data.author !== current.data.author || Number(current.data.ts) - Number(above.data.ts) > 300
+}
+
 /** A time is shown unless the message above already shows the same one. */
-export function showsTime(messages: Entity[], index: number): boolean {
-  return index === 0 || shortTime(String(messages[index].data.ts)) !== shortTime(String(messages[index - 1].data.ts))
+export function newTime(above: Entity | null, current: Entity): boolean {
+  if (!above || above.type !== current.type) return true
+  return shortTime(String(current.data.ts)) !== shortTime(String(above.data.ts))
 }
 
-export function showsAuthor(messages: Entity[], index: number): boolean {
-  if (index === 0) return true
-  const previous = messages[index - 1].data
-  const current = messages[index].data
-  return previous.author !== current.author || Number(current.ts) - Number(previous.ts) > 300
-}
-
-export const MessageRow = memo(function MessageRow(props: {
-  entity: Entity
-  author: boolean
-  time: boolean
-  selected: boolean
-  onSelect(id: string): void
-  onOpen(id: string): void
-  onImage(ref: string): void
-}) {
+/** A message as a row: grouped with the one above it, like Slack, unless told to say who and when. */
+export const MessageRow = memo(function MessageRow(props: RowProps & { always?: boolean }) {
   return (
-    <Row
-      id={props.entity.id}
-      selected={props.selected}
-      className={`message${props.entity.data.quiet ? ' quiet' : ''}`}
-      onSelect={props.onSelect}
-     
-    >
-      <MessageBody entity={props.entity} author={props.author} time={props.time} onOpen={props.onOpen} onImage={props.onImage} />
-    </Row>
+    <div className="message">
+      <MessageBody
+        entity={props.entity}
+        author={props.always || startsRun(props.above, props.entity)}
+        time={props.always || newTime(props.above, props.entity)}
+        onOpen={props.onOpen}
+        onImage={props.onImage}
+      />
+    </div>
   )
 })
 
@@ -74,7 +69,7 @@ export function MessageBody(props: {
   time: boolean
   replies?: boolean
   onOpen(id: string): void
-  onImage(ref: string): void
+  onImage(ref: string | null): void
 }) {
   const data = props.entity.data
   const replies = props.replies === false ? 0 : Number(data.replyCount ?? 0)

@@ -125,13 +125,18 @@ export const githubView: ModuleView = {
     return [...checks, ...discussion]
   },
 
+  // `text` is what an item is called, everywhere: a PR's name, a check's. My
+  // edit (written now) wins over GitHub's (written at 0), for me only.
   present(entity, lens) {
+    const own = typeof entity.data.text === 'string' && entity.data.text ? entity.data.text : undefined
+    if (entity.type === 'github.home') return { ...entity, data: { ...entity.data, text: own ?? 'GitHub' } }
+    if (entity.type === 'github.check') return { ...entity, data: { ...entity.data, text: own ?? entity.data.name, name: own ?? entity.data.name } }
     if (entity.type === 'github.pr') {
       const data: Record<string, unknown> = { url: prUrl(entity.id), ...entity.data }
       // `label` names the PR where nothing else does, as in a peek's bar.
       const locallyApproved = Boolean(localApproval(lens, entity.id))
-      const name = data.title ? prName(String(data.title)) : undefined
-      return { ...entity, data: { ...data, locallyApproved, badge: badge(data, locallyApproved), name, label: name ?? String(data.url) } }
+      const name = own ?? (data.title ? prName(String(data.title)) : undefined)
+      return { ...entity, data: { ...data, locallyApproved, badge: badge(data, locallyApproved), name, text: name ?? String(data.url), label: name ?? String(data.url) } }
     }
     if (entity.type === 'github.item') {
       // Shaped like a Slack message, so the same views draw it.

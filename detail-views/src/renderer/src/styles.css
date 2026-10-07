@@ -163,7 +163,7 @@ body,
 }
 
 .message {
-  padding: 3px 10px;
+  min-width: 0;
 }
 
 .message.quiet {
@@ -756,3 +756,93 @@ body,
 .badge.dot.purple { background: #8250df; }
 .badge.tick.purple,
 .badge.cross.purple { color: #8250df; }
+
+/* --- The tree a view is drawn as --------------------------------------------- */
+
+/* The root's overview: selectable like any row, but laid out as a block. */
+.row.overview {
+  display: block;
+  padding: 6px 10px;
+}
+
+.row.tree {
+  gap: 4px;
+}
+
+/* The fold mark: ▸ folded, ▾ open, nothing for no children. */
+.fold {
+  flex: none;
+  width: 12px;
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.row.selected .fold {
+  color: var(--muted);
+}
+
+.cell {
+  flex: 1;
+  min-width: 0;
+}
+
+.line-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.line-row > .line {
+  flex: 1;
+}
+
+.line.done {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.note {
+  white-space: pre-wrap;
+}
+
+.note-overview {
+  font-size: 1.15em;
+  font-weight: 600;
+  white-space: pre-wrap;
+}
+
+/* Typing in place: the row's own text, or a new note. */
+.edit {
+  width: 100%;
+  font: inherit;
+  color: var(--ink);
+  background: var(--canvas);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 1px 6px;
+  outline: none;
+}
+
+.centred-box {
+  display: flex;
+  justify-content: center;
+  padding: 40px 0;
+}
+
+/* A move or link waiting for its other end. */
+.pick-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 8px light-dark(rgb(0 0 0 / 0.12), rgb(0 0 0 / 0.5));
+}

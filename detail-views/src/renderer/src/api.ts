@@ -15,6 +15,12 @@ export interface Api {
   older(id: string): Promise<Outcome>
   /** Takes a child out from under its parent, as an owned event. */
   unlink(parent: string, child: string): Promise<Outcome>
+  link(parent: string, child: string): Promise<Outcome>
+  move(child: string, from: string, to: string): Promise<Outcome>
+  /** A note (no type, just text) under `parent`. */
+  create(parent: string, text: string): Promise<Outcome>
+  /** My text for an item, over whatever its service says. */
+  setText(id: string, text: string): Promise<Outcome>
   /** Which entities changed in the stores; null for anything. */
   onChange(listener: (changed: Changed) => void): () => void
   /** Opens a link in my browser. */
@@ -39,6 +45,10 @@ export function electronApi(): Api {
     markRead: (id) => call('markRead', { id }),
     older: (id) => call('older', { id }),
     unlink: (parent, child) => call('unlink', { parent, child }),
+    link: (parent, child) => call('link', { parent, child }),
+    move: (child, from, to) => call('move', { child, from, to }),
+    create: (parent, text) => call('create', { parent, text }),
+    setText: (id, text) => call('setText', { id, text }),
     onChange: (listener) => bridge.onChange(listener),
     openExternal: (url) => void bridge.openExternal(url),
   }

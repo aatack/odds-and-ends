@@ -1,29 +1,63 @@
-import type { Entity, Focus } from '../../core/types.ts'
+import type { View, ViewRow } from '../../core/types.ts'
 
 /**
- * Latent UI state: the minimum. Everything else is derived below and never
- * written back.
+ * Latent UI state: the minimum, and serialisable. Nothing derivable lives here
+ * (no rows, no resolved selection, no entity text) and nothing cached (entities
+ * are the session's `EntityCache`). Everything shown is derived from this plus
+ * the cache by pure functions below, and **a derived value is never written
+ * back**: the resolved selection, for one, is worked out afresh each time, so a
+ * selection inside a row that is folded comes back when it is unfolded.
  */
 export interface State {
-  /** Entities focused, oldest first; `at` is the one on screen. */
+  /** Views pushed, oldest first: each is the id of the entity it is rooted at. `at` is the one on screen. */
   trail: string[]
   at: number
-  /** Selected child id, per focused entity. Ids survive reordering. */
-  cursors: Record<string, string>
-  /** Composer text, per focused entity. */
+  /**
+   * The selection in each view, by its root: a path from that root. It may
+   * name a row that isn't there (folded, not loaded yet); `resolveSelection`
+   * says which row is actually selected.
+   */
+  selections: Record<string, string[]>
+  /** Rows I have opened (true) or folded (false), by entity id, over their type's default. */
+  folds: Record<string, boolean>
+  /** Text being typed into a row, in place: editing its text, or a new note under it. Persisted, so a draft survives a reload. */
+  edit: Edit | null
+  /** Prompt text for an action, per view. */
   drafts: Record<string, string>
-  /** Whether the composer has the keyboard. Not persisted. */
+  /** Whether the action prompt has the keyboard. Not persisted. */
   composing: boolean
-  /** An action started on the focus and waiting for Enter. Not persisted. */
+  /** An action started on the view's root and waiting for Enter. Not persisted. */
   acting: string | null
   /** An image shown full size over everything, by its ref. Not persisted. */
   viewing: string | null
+  /**
+   * A move or link waiting for its other end: started on one row, finished by
+   * pressing the same key on another (in any view). Not persisted.
+   */
+  picking: Pick | null
   /**
    * Floating windows peeking at a link or an entity, bottom first. Transient
    * ones follow the hover and stack: one opened from inside another is its
    * child. Pinned ones stay, and are persisted.
    */
   peeks: Peek[]
+}
+
+export interface Edit {
+  /** The view it is in. */
+  root: string
+  /** The row: edited in `edit` mode; the parent of the new note in `create`. */
+  path: string[]
+  mode: 'edit' | 'create'
+  draft: string
+}
+
+export type PickTool = 'move' | 'link' | 'linkReverse'
+
+export interface Pick {
+  tool: PickTool
+  /** The row it started on, as a path in its view: for a move, its parent is where it leaves. */
+  path: string[]
 }
 
 export interface Rect {
@@ -106,53 +140,152 @@ export function raisePeek(state: State, key: string): State {
 const trailLimit = 200
 
 export function initialState(root: string): State {
-  return { trail: [root], at: 0, cursors: {}, drafts: {}, composing: false, acting: null, viewing: null, peeks: [] }
+  return {
+    trail: [root],
+    at: 0,
+    selections: {},
+    folds: {},
+    edit: null,
+    drafts: {},
+    composing: false,
+    acting: null,
+    viewing: null,
+    picking: null,
+    peeks: [],
+  }
 }
 
 export function focused(state: State): string {
   return state.trail[state.at]
 }
 
-/** Chat reads bottom up: its cursor starts at the newest message. */
-export function startsAtEnd(entity: Entity | null): boolean {
-  return entity?.type === 'slack.conversation' || entity?.type === 'slack.message'
+// --- Rows -------------------------------------------------------------------
+
+/** A row of a view as shown: an entity's row, or the box a new note is typed into. */
+export type ShownRow =
+  | { kind: 'entity'; key: string; row: ViewRow; selected: boolean; editing: boolean }
+  | { kind: 'input'; key: string; depth: number; parent: string[] }
+
+export interface ShownView {
+  rows: ShownRow[]
+  /** The selection in effect, resolved against the rows. Never stored. */
+  selectedPath: string[]
+  /** Its index in `rows`, or -1 when nothing is selected. */
+  selectedIndex: number
 }
 
-export function cursorIndex(state: State, focus: Focus | null): number {
-  if (!focus || focus.children.length === 0) return -1
-  const selected = state.cursors[focused(state)]
-  const index = selected ? focus.children.findIndex((child) => child.id === selected) : -1
-  if (index >= 0) return index
-  return startsAtEnd(focus.entity) ? focus.children.length - 1 : 0
+const keyOf = (path: readonly string[]): string => path.join('\0')
+
+/**
+ * The selection in effect. A stored path that is one of the rows is it; one
+ * that isn't is cut back until it is (its row folded or gone), which is never
+ * written back. With nothing stored, a view that reads bottom up starts at its
+ * last row, any other at its first child, or its root when it has none.
+ */
+export function resolveSelection(view: View, stored: string[] | undefined): string[] {
+  const keys = new Set(view.rows.map((row) => row.key))
+  if (stored?.length) {
+    let path = stored
+    while (path.length > 1 && !keys.has(keyOf(path))) path = path.slice(0, -1)
+    // A path still loading may name a row on its way: keep it rather than snap to the root.
+    if (keys.has(keyOf(path)) && (path.length === stored.length || !view.loading)) return path
+    if (view.loading) return stored
+  }
+  const fallback = view.startsAtEnd ? view.rows[view.rows.length - 1] : (view.rows[1] ?? view.rows[0])
+  return fallback?.path ?? []
 }
 
-export function selected(state: State, focus: Focus | null): Entity | null {
-  const index = cursorIndex(state, focus)
-  return index < 0 ? null : focus!.children[index]
+/**
+ * A view's rows with what the UI knows laid over them: which is selected,
+ * which is being typed into, and where the box for a new note goes (after its
+ * parent's subtree). The view itself is untouched: rows that didn't change keep
+ * their identity, so memoised rows don't redraw.
+ */
+export function markRows(view: View, state: State, root: string): ShownView {
+  const selectedPath = resolveSelection(view, state.selections[root])
+  const selectedKey = keyOf(selectedPath)
+  const edit = state.edit?.root === root ? state.edit : null
+  const editKey = edit ? keyOf(edit.path) : null
+  const rows: ShownRow[] = view.rows.map((row) => ({
+    kind: 'entity',
+    key: row.key,
+    row,
+    selected: row.key === selectedKey,
+    editing: edit?.mode === 'edit' && row.key === editKey,
+  }))
+  if (edit?.mode === 'create') {
+    const at = rows.findIndex((row) => row.key === editKey)
+    if (at >= 0) {
+      const depth = view.rows[at].depth
+      let insert = at + 1
+      while (insert < rows.length && rows[insert].kind === 'entity' && (rows[insert] as { row: ViewRow }).row.depth > depth) insert++
+      rows.splice(insert, 0, { kind: 'input', key: `\0new\0${editKey}`, depth: depth + 1, parent: edit.path })
+    }
+  }
+  return { rows, selectedPath, selectedIndex: rows.findIndex((row) => row.kind === 'entity' && row.selected) }
 }
+
+/** The entity row under the selection, if any. */
+export function selectedRow(shown: ShownView): ViewRow | null {
+  const at = shown.rows[shown.selectedIndex]
+  return at?.kind === 'entity' ? at.row : null
+}
+
+// --- Reducers ---------------------------------------------------------------
 
 export function navigate(state: State, id: string): State {
   if (focused(state) === id) return state
   const trail = [...state.trail.slice(0, state.at + 1), id].slice(-trailLimit)
-  return { ...state, trail, at: trail.length - 1, composing: false, acting: null, viewing: null, peeks: state.peeks.filter((peek) => peek.pinned) }
+  return { ...state, trail, at: trail.length - 1, composing: false, acting: null, viewing: null, edit: null, peeks: state.peeks.filter((peek) => peek.pinned) }
 }
 
 export function back(state: State): State {
-  return state.at > 0 ? { ...state, at: state.at - 1, composing: false, acting: null } : state
+  return state.at > 0 ? { ...state, at: state.at - 1, composing: false, acting: null, edit: null } : state
 }
 
 export function forward(state: State): State {
-  return state.at < state.trail.length - 1 ? { ...state, at: state.at + 1, composing: false, acting: null } : state
+  return state.at < state.trail.length - 1 ? { ...state, at: state.at + 1, composing: false, acting: null, edit: null } : state
 }
 
-export function select(state: State, id: string): State {
-  return { ...state, cursors: { ...state.cursors, [focused(state)]: id } }
+export function select(state: State, path: string[]): State {
+  return { ...state, selections: { ...state.selections, [focused(state)]: path } }
 }
 
-export function move(state: State, focus: Focus | null, delta: number): State {
-  if (!focus || focus.children.length === 0) return state
-  const index = Math.max(0, Math.min(focus.children.length - 1, cursorIndex(state, focus) + delta))
-  return select(state, focus.children[index].id)
+/** Steps the selection through the view's entity rows. */
+export function move(state: State, shown: ShownView, delta: number): State {
+  const entities = shown.rows.filter((row) => row.kind === 'entity')
+  if (!entities.length) return state
+  const at = entities.findIndex((row) => row.selected)
+  const index = Math.max(0, Math.min(entities.length - 1, (at < 0 ? 0 : at) + delta))
+  return select(state, (entities[index] as { row: ViewRow }).row.path)
+}
+
+export function fold(state: State, id: string, open: boolean): State {
+  return state.folds[id] === open ? state : { ...state, folds: { ...state.folds, [id]: open } }
+}
+
+export function startEdit(state: State, path: string[], text: string): State {
+  return { ...state, edit: { root: focused(state), path, mode: 'edit', draft: text } }
+}
+
+export function startCreate(state: State, path: string[]): State {
+  return { ...state, edit: { root: focused(state), path, mode: 'create', draft: '' } }
+}
+
+export function setEditDraft(state: State, draft: string): State {
+  return state.edit ? { ...state, edit: { ...state.edit, draft } } : state
+}
+
+export function endEdit(state: State): State {
+  return state.edit ? { ...state, edit: null } : state
+}
+
+export function startPick(state: State, tool: PickTool, path: string[]): State {
+  return { ...state, picking: { tool, path } }
+}
+
+export function endPick(state: State): State {
+  return state.picking ? { ...state, picking: null } : state
 }
 
 export function setDraft(state: State, text: string): State {
@@ -176,14 +309,14 @@ export function startAction(state: State, action: string): State {
   return { ...state, acting: action, composing: true }
 }
 
-/** Drafts for an action are kept apart from the focus's own composer. */
+/** Drafts for an action are kept apart per view and action. */
 export function draftKey(state: State): string {
   return state.acting ? `${focused(state)}#${state.acting}` : focused(state)
 }
 
 /** What is kept across reloads. */
-export function persisted(state: State): Omit<State, 'composing' | 'viewing' | 'acting'> {
-  const { composing: _, viewing: __, acting: ___, ...rest } = state
+export function persisted(state: State): Omit<State, 'composing' | 'viewing' | 'acting' | 'picking'> {
+  const { composing: _, viewing: __, acting: ___, picking: ____, ...rest } = state
   return { ...rest, peeks: rest.peeks.filter((peek) => peek.pinned) }
 }
 
@@ -191,13 +324,13 @@ export function restore(saved: unknown, root: string): State {
   const value = saved as Partial<State> | undefined
   if (!value || !Array.isArray(value.trail) || value.trail.length === 0) return initialState(root)
   return {
+    ...initialState(root),
     trail: value.trail,
     at: Math.min(Math.max(value.at ?? 0, 0), value.trail.length - 1),
-    cursors: value.cursors ?? {},
+    selections: value.selections ?? {},
+    folds: value.folds ?? {},
+    edit: value.edit ?? null,
     drafts: value.drafts ?? {},
-    composing: false,
-    acting: null,
-    viewing: null,
     peeks: Array.isArray(value.peeks) ? value.peeks.filter((peek) => peek.pinned).map((peek) => ({ ...peek, parent: peek.parent ?? null })) : [],
   }
 }

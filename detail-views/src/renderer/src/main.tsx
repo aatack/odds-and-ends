@@ -5,7 +5,7 @@ import { installDispatch } from './dispatch.ts'
 import { browserEnvironment } from './environment.ts'
 import { useSnapshot } from './hooks.ts'
 import { Session } from './session.ts'
-import { cursorIndex, draftKey, focused } from './state.ts'
+import { draftKey, focused } from './state.ts'
 import type { PeekTarget, Rect } from './state.ts'
 import { tools } from './tools.ts'
 import { App } from './views/App.tsx'
@@ -16,7 +16,7 @@ import './styles.css'
 const session = new Session(electronApi(), browserEnvironment())
 
 function Root() {
-  const { state, focus, modules, peekFoci, item, working, now } = useSnapshot(session)
+  const { state, view: tree, shown, modules, peekViews, item, working, now } = useSnapshot(session)
   useEffect(() => {
     const stopDispatch = installDispatch(session, tools)
     let stopSession: (() => void) | undefined
@@ -27,7 +27,10 @@ function Root() {
     }
   }, [])
 
-  const onSelect = useCallback((id: string) => session.select(id), [])
+  const onSelect = useCallback((path: string[]) => session.select(path), [])
+  const onEditDraft = useCallback((text: string) => session.setEditDraft(text), [])
+  const onCommitEdit = useCallback(() => session.commitEdit(), [])
+  const onCancelEdit = useCallback(() => session.cancelEdit(), [])
   const onOpen = useCallback((id: string) => session.navigate(id), [])
   const onDraft = useCallback((text: string) => session.setDraft(text), [])
   const onCompose = useCallback((composing: boolean) => session.compose(composing), [])
@@ -57,29 +60,53 @@ function Root() {
     [gestures],
   )
   const items = useMemo(() => ({ item, onOpen }), [item, onOpen])
-  const peek = useMemo(() => ({ ...peekHandlers, peeks: state.peeks, foci: peekFoci }), [peekHandlers, state.peeks, peekFoci])
+  const peek = useMemo(() => ({ ...peekHandlers, peeks: state.peeks, views: peekViews }), [peekHandlers, state.peeks, peekViews])
 
   const view = useMemo(
-    () => ({
-      cursor: cursorIndex(state, focus),
-      draft: state.drafts[draftKey(state)] ?? '',
-      acting: state.acting,
-      onAction,
-      composing: state.composing,
-      onSelect,
-      onOpen,
-      onDraft,
-      onCompose,
-      onImage,
-      onOlder,
-      onHideChat,
-      working: working[focused(state)],
-      now,
-    }),
-    [state, focus, working, now, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onHideChat],
+    () =>
+      tree && {
+        view: tree,
+        shown,
+        interactive: true,
+        edit: state.edit,
+        picking: state.picking,
+        draft: state.drafts[draftKey(state)] ?? '',
+        acting: state.acting,
+        composing: state.composing,
+        working: working[focused(state)],
+        now,
+        onAction,
+        onSelect,
+        onOpen,
+        onDraft,
+        onCompose,
+        onImage,
+        onOlder,
+        onHideChat,
+        onEditDraft,
+        onCommitEdit,
+        onCancelEdit,
+      },
+    [tree, shown, state, working, now, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onHideChat, onEditDraft, onCommitEdit, onCancelEdit],
   )
+  const picking = useMemo(() => {
+    const pick = state.picking
+    return pick && { pick, subject: item(pick.path[pick.path.length - 1]) }
+  }, [state.picking, item])
 
-  return <App items={items} peek={peek} viewing={state.viewing} onImage={onImage} modules={modules} module={focus?.module ?? null} focus={focus} view={view} onModule={onModule} />
+  return (
+    <App
+      items={items}
+      peek={peek}
+      viewing={state.viewing}
+      onImage={onImage}
+      modules={modules}
+      module={tree?.module ?? null}
+      view={view}
+      picking={picking}
+      onModule={onModule}
+    />
+  )
 }
 
 createRoot(document.getElementById('root')!).render(

@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import type { Source } from './graph/cache.ts'
 import { bucketEvents, rollupEntity, type GraphEntity } from './graph/entity.ts'
@@ -9,10 +10,10 @@ import { GitHub } from './modules/github/github.ts'
 import type { Module, ModuleContext } from './modules/module.ts'
 import { Slack } from './modules/slack/slack.ts'
 import { me, tasksModule } from './modules/tasks/tasks.ts'
-import { focusOf, lensOf, moduleInfos, toItem, typeOf, type Lens } from './present.ts'
+import { focusOf, lensOf, moduleInfos, toItem, typeOf, viewOf, type Folds, type Lens } from './present.ts'
 import { Blobs, EventStore, Settings } from './store.ts'
 import { loadedKey } from './types.ts'
-import type { Entity, Focus, LoadPart, LoadRequest, LoadResult, ModuleInfo, Outcome } from './types.ts'
+import type { Entity, Focus, LoadPart, LoadRequest, LoadResult, ModuleInfo, Outcome, View } from './types.ts'
 
 const changeEvery = 150
 const clearEvery = 7 * 24 * 60 * 60_000
@@ -111,7 +112,7 @@ export class Core {
     }
     this.slack = new Slack(context)
     this.github = new GitHub(context)
-    this.modules = [this.slack, this.github, tasksModule(context)]
+    this.modules = [this.slack, this.github, tasksModule()]
   }
 
   /**
@@ -334,6 +335,11 @@ export class Core {
     })
   }
 
+  /** A module's own way of unlinking, where it has one (a conversation takes its threads). */
+  private unlinkEvents(parent: string, child: string): AppEvent[] | null {
+    return this.moduleFor(parent, this.entity(parent).values)?.unlink?.(parent, child) ?? null
+  }
+
   private write(events: AppEvent[]): Outcome {
     this.owned.write(events)
     return { events, error: null }
@@ -360,11 +366,32 @@ export class Core {
     older: ({ id }: { id: string }): Promise<Outcome> => this.older(id),
     /** Bytes of an image a message presented, by the ref it gave. */
     slackImage: ({ ref }: { ref: string }) => this.slack.image(ref),
-    link: ({ parent, child }: { parent: string; child: string }): Outcome => this.write([link(parent, child, this.now(), me)]),
-    unlink: ({ parent, child }: { parent: string; child: string }): Outcome => {
-      const module = this.moduleFor(parent, this.entity(parent).values)
-      return this.write(module?.unlink?.(parent, child) ?? [link(parent, child, this.now(), me, 1)])
+    /** What a view shows, as a tree, for a caller with no cache of its own. */
+    view: ({ id, folds }: { id: string; folds?: Folds }): View => viewOf(id, this.source(), { folds }),
+    /** A note under `parent`: an owned entity with no type, just text. */
+    create: ({ parent, text }: { parent: string; text: string }): Outcome => {
+      if (!text.trim()) return { events: [], error: null }
+      const id = randomUUID()
+      const now = this.now()
+      return this.write([value(id, 'text', text, now, me), link(parent, id, now, me)])
     },
+    /**
+     * An item's text, for me: what it is called or says everywhere it is
+     * shown. Fetched text sits at its own time or at 0, so this, written now,
+     * overrides it without changing it for anyone else.
+     */
+    setText: ({ id, text }: { id: string; text: string }): Outcome => this.write([value(id, 'text', text, this.now(), me)]),
+    /** Moves `child` from under `from` to under `to`. */
+    move: ({ child, from, to }: { child: string; from: string; to: string }): Outcome => {
+      if (from === to) return { events: [], error: null }
+      if (to === child) return { events: [], error: 'An item cannot be its own parent' }
+      const now = this.now()
+      return this.write([...(this.unlinkEvents(from, child) ?? [link(from, child, now, me, 1)]), link(to, child, now, me)])
+    },
+    link: ({ parent, child }: { parent: string; child: string }): Outcome =>
+      parent === child ? { events: [], error: 'An item cannot be linked to itself' } : this.write([link(parent, child, this.now(), me)]),
+    unlink: ({ parent, child }: { parent: string; child: string }): Outcome =>
+      this.write(this.unlinkEvents(parent, child) ?? [link(parent, child, this.now(), me, 1)]),
   }
 }
 
