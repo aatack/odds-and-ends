@@ -38,6 +38,9 @@ const listQuery = `query { viewer { login }
   search(query: "is:pr is:open author:@me archived:false sort:updated-desc", type: ISSUE, first: 50) {
     nodes { ... on PullRequest {
       url number title state isDraft updatedAt reviewDecision mergeable
+      mergeStateStatus
+      reviewRequests(first: 20) { nodes { requestedReviewer { ... on User { login } ... on Team { name } } } }
+      reviewThreads(first: 100) { nodes { isResolved } }
       author { login } repository { nameWithOwner }
       latestReviews(first: 30) { nodes { author { login } state } }
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
@@ -47,6 +50,9 @@ const listQuery = `query { viewer { login }
 
 const prQuery = `query($url: URI!) { viewer { login } resource(url: $url) { ... on PullRequest {
   url number title body state isDraft mergeable reviewDecision additions deletions changedFiles
+      mergeStateStatus
+      reviewRequests(first: 20) { nodes { requestedReviewer { ... on User { login } ... on Team { name } } } }
+      reviewThreads(first: 100) { nodes { isResolved } }
   latestReviews(first: 30) { nodes { author { login } state } }
   headRefName baseRefName createdAt updatedAt
   author { login } repository { nameWithOwner viewerDefaultMergeMethod }
@@ -73,6 +79,9 @@ interface RawListPr {
   isDraft: boolean
   updatedAt: string
   reviewDecision: string | null
+  mergeStateStatus?: string
+  reviewRequests?: { nodes: { requestedReviewer: { login?: string; name?: string } | null }[] }
+  reviewThreads?: { nodes: { isResolved: boolean }[] }
   repository: { nameWithOwner: string }
   commits: { nodes: { commit: { statusCheckRollup: { state: string } | null } }[] }
 }
@@ -262,6 +271,10 @@ export class GitHub implements Module {
     const approvers = pr.latestReviews.nodes
       .filter((review) => review.state === 'APPROVED')
       .map((review) => review.author?.login)
+    const requested = (pr.reviewRequests?.nodes ?? [])
+      .map((request) => request.requestedReviewer?.login ?? request.requestedReviewer?.name)
+      .filter((who): who is string => Boolean(who))
+    const changesRequestedByMe = pr.latestReviews.nodes.some((review) => review.state === 'CHANGES_REQUESTED' && review.author?.login === viewer)
     return values(
       ids.pr(pr.url),
       {
@@ -279,6 +292,13 @@ export class GitHub implements Module {
         review: pr.reviewDecision,
         checks: rollup(pr.commits.nodes[0]?.commit.statusCheckRollup?.state),
         updatedAt: pr.updatedAt,
+        // What GitHub says stands between it and merging: BEHIND, BLOCKED, CLEAN, DIRTY, DRAFT, UNSTABLE…
+        mergeState: pr.mergeStateStatus ?? null,
+        // Who has been asked to review and hasn't yet; whether that includes me.
+        reviewers: requested.filter((who) => who !== viewer),
+        reviewRequestedOfMe: requested.includes(viewer),
+        changesRequestedByMe,
+        unresolved: (pr.reviewThreads?.nodes ?? []).filter((thread) => !thread.isResolved).length,
       },
       0,
       author,

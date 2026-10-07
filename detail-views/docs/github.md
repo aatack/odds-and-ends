@@ -16,6 +16,26 @@
 - Reloading every PR every few minutes is acceptable; GitHub has no watch here.
   The plan for a notifications poll is in `refetch.md`.
 
+## What stands in the way (`blockers` in `view.ts`)
+
+A PR's views lead with what is between it and being merged, most pressing
+first, each with whose move it is (`me`, `them`, `none`). The first one is the
+badge, the pill's coloured word and the row's chip; the overview lists them
+all, mine filled.
+
+In order: merged / closed (and nothing else); draft; my review (mine:
+approving it here; theirs: reviewing it, "requested of you" when asked);
+changes requested (mine: mine to answer; theirs: on them, "you requested
+changes" if it was me); unresolved review threads; others' reviews awaited
+(with who was asked); CI failing; merge conflicts (`mergeable` or
+`mergeStateStatus: DIRTY`); behind its base (`BEHIND`); CI running; and once
+clear: "will auto-merge", "ready: merge it" (mine), "approved by you" or
+"ready" (theirs).
+
+From GitHub, per PR: `reviewDecision`, `latestReviews`, `reviewRequests`,
+`reviewThreads.isResolved`, `mergeable`, `mergeStateStatus`, the check rollup,
+`isDraft`, `autoMergeRequest`.
+
 ## Writes
 
 **Approve is derived, not remembered.** On someone else's PR it is done when

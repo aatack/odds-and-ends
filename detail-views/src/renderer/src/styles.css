@@ -939,3 +939,78 @@ mark {
   pointer-events: auto;
   background: var(--canvas);
 }
+
+/* What stands in a PR's way. Mine to do is filled; someone else's is its colour; nobody's is quiet. */
+.blockers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 0 4px;
+}
+
+.blocker {
+  flex: none;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  padding: 1px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 9%, transparent);
+}
+
+.blocker.turn-me {
+  color: var(--canvas);
+  background: var(--tone);
+}
+
+.blocker.turn-none {
+  font-weight: 500;
+}
+
+.blocker.lead {
+  font-size: 14px;
+  padding: 2px 10px;
+}
+
+.blocker.red,
+.pill-status.red { --tone: var(--error); }
+.blocker.yellow,
+.pill-status.yellow { --tone: var(--warning); }
+.blocker.green,
+.pill-status.green { --tone: var(--success); }
+.blocker.purple,
+.pill-status.purple { --tone: var(--merged); }
+.blocker.gray,
+.pill-status.gray { --tone: var(--muted); }
+
+.pill-status {
+  flex: none;
+  font-size: 0.85em;
+  font-weight: 600;
+  color: var(--tone);
+}
+
+.badge.dot.gray { background: var(--muted); }
+.badge.tick.gray { color: var(--muted); }
+
+/*
+ * The text inside items can be selected and copied: rows, overviews and the
+ * facts under them. Chrome around it can't, so a drag over a row picks up
+ * what it says rather than its buttons and marks.
+ */
+.cell,
+.row.overview,
+.facts,
+.blockers {
+  user-select: text;
+}
+
+.fold,
+.button,
+.key,
+.badge,
+.check {
+  user-select: none;
+}
