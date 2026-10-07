@@ -96,7 +96,7 @@ export const tools: Tool[] = [
   {
     id: 'chat.hide',
     scope: 'list',
-    keys: ['Shift+Backspace', 'Shift+Delete'],
+    keys: ['Shift+Backspace'],
     enabled: (s) => selected(s)?.entity.type === 'slack.message' || rootType(s) === 'slack.message',
     run: (s) => s.hideChatOfMessage(),
   },
@@ -123,7 +123,7 @@ export const tools: Tool[] = [
   // In a text field these keys are the field's own (its typing's undo), so
   // they only reach the store from the tree.
   { id: 'undo', scope: 'app', keys: ['Ctrl+z'], enabled: (_, field) => field === null, run: (s) => void s.undo() },
-  { id: 'redo', scope: 'app', keys: ['Ctrl+y', 'Ctrl+Z'], enabled: (_, field) => field === null, run: (s) => void s.redo() },
+  { id: 'redo', scope: 'app', keys: ['Ctrl+y'], enabled: (_, field) => field === null, run: (s) => void s.redo() },
   { id: 'view.back', scope: 'app', keys: ['A', 'Alt+ArrowLeft'], run: (s) => s.back() },
   { id: 'view.forward', scope: 'app', keys: ['Alt+ArrowRight'], run: (s) => s.forward() },
   ...Array.from({ length: 9 }, (_, index): Tool => ({

@@ -370,15 +370,10 @@ export class Session {
     if (row && row.depth > 0) this.navigate(row.entity.id)
   }
 
-  /** Opens or folds the selected row (its children walked or not). */
+  /** Opens or folds the selected row (its children walked or not). Nothing else. */
   fold(open: boolean): void {
     const row = this.selected()
     if (!row || row.depth === 0) return
-    if (!open && !row.open && row.path.length > 2) {
-      // Folding a row already shut goes to its parent, as in an outliner.
-      this.select(row.path.slice(0, -1))
-      return
-    }
     this.update(S.fold(this.state, row.entity.id, open))
   }
 
