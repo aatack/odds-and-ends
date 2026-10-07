@@ -361,8 +361,10 @@ export class Core {
     /** Bytes of an image a message presented, by the ref it gave. */
     slackImage: ({ ref }: { ref: string }) => this.slack.image(ref),
     link: ({ parent, child }: { parent: string; child: string }): Outcome => this.write([link(parent, child, this.now(), me)]),
-    unlink: ({ parent, child }: { parent: string; child: string }): Outcome =>
-      this.write([link(parent, child, this.now(), me, 1)]),
+    unlink: ({ parent, child }: { parent: string; child: string }): Outcome => {
+      const module = this.moduleFor(parent, this.entity(parent).values)
+      return this.write(module?.unlink?.(parent, child) ?? [link(parent, child, this.now(), me, 1)])
+    },
   }
 }
 

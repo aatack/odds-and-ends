@@ -393,3 +393,52 @@ test('slack: threads stay in the workspace through a list reload, and each heade
   assert.equal(core.focus(thread).older, false)
   assert.equal(core.focus(thread).entity!.data.text, 'old question')
 })
+
+test('slack: a thread is listed only while its conversation is, and Backspace-style unlinks stick', async () => {
+  const calls: string[] = []
+  let matches: unknown[] = []
+  let time = 1_700_000_000_000
+  const core = memoryCore({
+    now: () => time,
+    fetch: fakeSlack(
+      {
+        ...auth,
+        'users.conversations': () => ({ channels: [{ id: 'C1', name: 'mine' }, { id: 'C2', name: 'noisy' }] }),
+        'search.messages': () => ({ messages: { matches, paging: { pages: 1 } } }),
+      },
+      calls,
+    ),
+  })
+  await core.slack.setToken('xoxp-1')
+  calls.length = 0
+  // The lists load before the first search, even when nothing loaded them yet.
+  core.clearCache()
+  await core.slack.poll()
+  assert.ok(calls.indexOf('users.conversations') < calls.indexOf('search.messages'))
+
+  const reply = (channel: string, ts: string, thread: string) => ({ ts, user: 'U1', text: 'r', channel: { id: channel }, permalink: permalink(channel, ts, thread) })
+  time += 30_000
+  matches = [reply('C1', '1700000010.000000', '1690000000.000000'), reply('C2', '1700000011.000000', '1690000001.000000'), reply('C9', '1700000012.000000', '1690000002.000000')]
+  await core.slack.poll()
+  const listed = () => core.entity('slack').outboundLinks
+  // C9 is a public channel I'm not in: its thread is not listed.
+  assert.ok(listed().includes('slack:msg:C1:1690000000.000000'))
+  assert.ok(listed().includes('slack:msg:C2:1690000001.000000'))
+  assert.ok(!listed().includes('slack:msg:C9:1690000002.000000'))
+
+  // Unlinking a conversation takes its threads with it, and they stay gone.
+  const outcome = core.actions.unlink({ parent: 'slack', child: 'slack:conv:C2' })
+  assert.equal(outcome.events.length, 2)
+  time += 30_000
+  matches = [reply('C2', '1700000040.000000', '1690000001.000000'), reply('C2', '1700000041.000000', '1690000003.000000')]
+  await core.slack.poll()
+  await core.load({ id: 'slack', part: 'children', force: true })
+  assert.ok(!listed().some((id) => id.includes(':C2')))
+  // A thread unlinks on its own, and a new reply does not bring it back.
+  core.actions.unlink({ parent: 'slack', child: 'slack:msg:C1:1690000000.000000' })
+  time += 30_000
+  matches = [reply('C1', '1700000070.000000', '1690000000.000000')]
+  await core.slack.poll()
+  assert.ok(!listed().includes('slack:msg:C1:1690000000.000000'))
+  assert.ok(listed().includes('slack:conv:C1'))
+})

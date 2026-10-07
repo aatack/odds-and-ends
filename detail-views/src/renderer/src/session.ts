@@ -337,6 +337,21 @@ export class Session {
     if (child) void this.api.toggle(child.id).then((outcome) => this.settle(child.id, outcome))
   }
 
+  /**
+   * Takes the selected child out of the focus (a chat out of the Slack
+   * workspace). The cursor moves to the row after it, or before it at the end.
+   */
+  unlinkSelected(): void {
+    const focus = this.focus
+    const child = this.selected()
+    if (!focus || !child) return
+    const at = focus.children.findIndex((other) => other.id === child.id)
+    const next = focus.children[at + 1] ?? focus.children[at - 1]
+    if (next) this.select(next.id)
+    const parent = S.focused(this.state)
+    void this.api.unlink(parent, child.id).then((outcome) => this.settle(parent, outcome))
+  }
+
   /** Loads the focus further back: a conversation's history, a thread, or all of Slack. */
   older(): void {
     const id = S.focused(this.state)
