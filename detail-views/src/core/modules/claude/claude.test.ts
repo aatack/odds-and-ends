@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import { memoryCore } from '../../testing.ts'
 
@@ -10,7 +13,7 @@ function fakeRun(calls: { command: string; args: string[]; cwd: string }[]) {
     if (command === 'git' && args[0] === 'worktree') return ''
     if (command === 'git' && args[0] === 'rev-parse') return 'claude/fix-it-abc\n'
     if (command === 'git' && args[0] === 'remote') return 'git@github.com:o/app.git\n'
-    if (command === 'claude') return JSON.stringify({ result: `answer to ${args[1]}`, is_error: false, total_cost_usd: 0.01 })
+    if (command.endsWith('claude')) return JSON.stringify({ result: `answer to ${args[1]}`, is_error: false, total_cost_usd: 0.01 })
     throw new Error(`unexpected ${command} ${args.join(' ')}`)
   }
 }
@@ -24,7 +27,8 @@ test('claude: a session in a new worktree, prompted twice, links its PR; each an
   core.actions.create({ parent: 'tasks', text: 'fix the thing' })
   const note = core.entity('tasks').outboundLinks[0]
 
-  const made = await core.actions.claudeCreate({ name: 'Fix it!', cwd: '/home/me/repos/app/src', worktree: true, attachTo: note })
+  const src = mkdtempSync(join(tmpdir(), 'repo-src-'))
+  const made = await core.actions.claudeCreate({ name: 'Fix it!', cwd: src, worktree: true, attachTo: note })
   assert.equal(made.error, null)
   const session = core.entity(note).values.claudeSessionId as string
   const data = core.item(session)!.data
@@ -36,7 +40,7 @@ test('claude: a session in a new worktree, prompted twice, links its PR; each an
   assert.ok(core.entity(note).outboundLinks.includes(session))
   assert.ok(core.entity('claude').outboundLinks.includes(session))
   // The directory is remembered for next time.
-  assert.deepEqual(core.item('claude')!.data.cwds, ['/home/me/repos/app/src'])
+  assert.deepEqual(core.item('claude')!.data.cwds, [src])
 
   // k: the prompt goes under the item it was asked from and under the session; the answer under the prompt.
   const first = core.actions.claudePrompt({ session, parent: note, text: 'hello' })
@@ -48,7 +52,7 @@ test('claude: a session in a new worktree, prompted twice, links its PR; each an
   const [response] = core.entity(promptId).outboundLinks
   assert.equal(core.item(response)!.data.text, 'answer to hello')
   assert.equal(core.item(response)!.data.running, false)
-  const claudeCall = calls.find((call) => call.command === 'claude')!
+  const claudeCall = calls.find((call) => call.command.endsWith('claude'))!
   assert.equal(claudeCall.cwd, data.worktree)
   // Opus 5.5, in auto mode.
   assert.deepEqual(claudeCall.args.slice(4, 8), ['--model', 'claude-opus-5-5', '--permission-mode', 'auto'])
@@ -57,7 +61,7 @@ test('claude: a session in a new worktree, prompted twice, links its PR; each an
   // The second prompt resumes the same session.
   core.actions.claudePrompt({ session, parent: note, text: 'again' })
   await settle()
-  assert.deepEqual(calls.filter((call) => call.command === 'claude')[1].args.slice(-2), ['--resume', session])
+  assert.deepEqual(calls.filter((call) => call.command.endsWith('claude'))[1].args.slice(-2), ['--resume', session])
 
   // The worktree's branch has a PR: it is linked under the session, once.
   assert.equal(core.entity(session).outboundLinks.filter((id) => id === 'github:pr:https://github.com/o/app/pull/9').length, 1)
@@ -74,9 +78,12 @@ test('claude: no directory is a new temporary one; a plain directory is used as 
   assert.match(String(core.item(session)!.data.cwd), /claude-/)
   assert.equal(core.item(session)!.data.worktree, null)
   assert.equal(core.item('claude')!.data.claudeSessionId, undefined)
-  await core.actions.claudeCreate({ name: 'here', cwd: '/somewhere', worktree: false, attachTo: 'claude' })
+  await core.actions.claudeCreate({ name: 'here', cwd: '/tmp', worktree: false, attachTo: 'claude' })
   const here = core.entity('claude').outboundLinks.find((id) => core.item(id)!.data.text === 'here')!
-  assert.equal(core.item(here)!.data.cwd, '/somewhere')
+  assert.equal(core.item(here)!.data.cwd, '/tmp')
+  // A directory that isn't there is refused, saying which; ~ is the home directory.
+  const missing = await core.actions.claudeCreate({ name: 'typo', cwd: '~/repos/no-such-thing', worktree: false, attachTo: 'claude' })
+  assert.match(missing.error ?? '', /^No such directory: \/.+\/repos\/no-such-thing$/)
   assert.equal(calls.length, 0)
 })
 
@@ -85,7 +92,7 @@ test('claude: a failure is said in place of the answer', async () => {
     throw new Error('claude: not logged in')
   }
   const core = memoryCore({ run })
-  await core.actions.claudeCreate({ name: 'x', cwd: '/somewhere', worktree: false, attachTo: 'claude' })
+  await core.actions.claudeCreate({ name: 'x', cwd: '/tmp', worktree: false, attachTo: 'claude' })
   const [session] = core.entity('claude').outboundLinks
   const made = core.actions.claudePrompt({ session, parent: session, text: 'hello' })
   await settle()
@@ -96,4 +103,11 @@ test('claude: a failure is said in place of the answer', async () => {
     'claude: not logged in',
     false,
   ])
+})
+
+test('claude: running a program says where it failed and why, and tells a missing directory from a missing program', async () => {
+  const { runCommand } = await import('../../core.ts')
+  await assert.rejects(runCommand('ls', [], '/no/such/dir'), /ls failed in \/no\/such\/dir: the directory doesn't exist: \/no\/such\/dir/)
+  await assert.rejects(runCommand('no-such-program-x', [], '/tmp'), /no-such-program-x failed in \/tmp: no-such-program-x isn't installed/)
+  await assert.rejects(runCommand('sh', ['-c', 'echo oops >&2; exit 3'], '/tmp'), /sh failed in \/tmp: exit code 3\n\noops/)
 })

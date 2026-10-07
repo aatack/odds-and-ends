@@ -1224,6 +1224,8 @@ mark {
 
 .error-text {
   color: var(--error);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* A form over everything (a new Claude session). */
