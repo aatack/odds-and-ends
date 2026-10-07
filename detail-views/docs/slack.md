@@ -1,0 +1,117 @@
+# Slack
+
+`modules/slack/` — `view.ts` (pure), `slack.ts` (loads, watch), `api.ts`
+(transport, read allowlist, rate limiter).
+
+## Constraints
+
+- **Read-only.** `api.ts` refuses any method not on its read list
+  (`slackWrites` is off). Adding a read method needs my say-so; it is how
+  `search.messages`, `users.list` and `conversations.list` got there.
+- **No unread counts.** Nothing tracks read state. Lists are ordered by
+  recency instead.
+- **No per-conversation loading on its own.** Slack has no public call for
+  every channel's latest message; one call per conversation (~600) took
+  minutes. Everything automatic is a list call or a search.
+
+## Shape
+
+- `slack` (`slack.home`) is the workspace. Its children are conversations
+  (channels, DMs, group DMs) **and threads** (parent messages), ordered by
+  `updatedAt`: a conversation's newest message link, a thread's newest reply.
+- A conversation's children are its top-level messages, linked at their ts.
+  A thread parent's children are its replies, linked at their ts.
+- A reply never touches its conversation; it bumps its thread, which is listed
+  in the workspace.
+- **A thread is linked under the workspace iff its conversation is**, as the
+  workspace rolls up now (my own unlinks included). So threads in public
+  channels I'm not in, or in conversations I've hidden, are never listed.
+- **Hiding a chat is unlinking it** from the workspace: Backspace (or Delete)
+  on its row writes owned unlink events (`Slack.unlink`, via
+  `Core.actions.unlink`). A conversation takes its listed threads with it. The
+  unlink is later than any cached link (those are at 0 or at the thread's
+  start), so neither the hourly list reload nor a new reply brings it back.
+  There is no way to relink from the UI yet.
+- **Hiding a chat from a message**: Shift+Backspace on a thread row or a
+  focused message (or **Hide chat** in its header) unlinks the message's
+  conversation, worked out from the message id, so it works for a channel
+  that was never listed (search returns channels I'm not in). An owned unlink
+  of an unlisted conversation still stops it, and its threads, ever listing.
+- Each poll prunes cached thread links whose conversation is not listed
+  (`pruneThreads`): left by older rules, or by a conversation hidden since.
+- `slack:watch` (`slack.watch`) holds the last poll's `polledAt` and `found`,
+  on its own entity so a poll every 15 s re-reads only that.
+
+## What loads on its own
+
+1. **The lists** (workspace `children`, fresh for 60 min), in parallel, a few
+   calls each: `users.conversations` (mine, linked under the workspace),
+   `conversations.list` (every public channel, named but not linked, so
+   mentions resolve) and `users.list` (every user, marked loaded). The reload
+   replaces only `slack:conv:` links.
+2. **The first batch**: on a cache with no `watch.at`, the first poll searches
+   back from now for 1000 messages (about 10 calls).
+3. **The watch**: `Slack.poll` every 15 s (started by `Core.start`). Each poll
+   first makes sure the lists are loaded (`load(slack, children)`, a no-op
+   while fresh), so the lists always land before the first batch and before
+   any thread is checked against them.
+4. Rare single loads: a message seen only by id (`self`, once), a user
+   `users.list` didn't have (`users.info`, 7 days).
+
+## The watch (`poll`)
+
+- One `search.messages` query `after:<cursor day − 2>`, sorted newest first,
+  reading pages until a match is at or before `watch.at − 120 s` (search
+  indexes a few seconds late). Up to 100 pages.
+- Each new match becomes message events (`partial`: search has no reactions or
+  reply counts, so those keys are not written), linked under its conversation
+  or, for a reply (`thread_ts` from the permalink ≠ ts), under its parent, with
+  the parent linked under the workspace. Already-cached and repeated matches
+  are skipped.
+- New DMs, group DMs and private channels join the workspace. Public channels
+  don't (search also returns channels I'm not in).
+- **Catch-up** is the same poll on start. If it runs out of pages before
+  reaching `watch.at`, the cache has a hole: the global `history.oldest` moves
+  up to the catch-up's oldest message and every conversation's cursor is
+  dropped.
+
+## Cursors (cache store, timestamp 0)
+
+| Value | On | Meaning |
+|-|-|-|
+| `watch.at` | workspace | Newest message the watch has seen |
+| `history.oldest` | workspace | Every conversation is cached from here to now |
+| `history.query`, `history.page` | workspace | The last batch's search and its next page |
+| `history.oldest` | conversation | This conversation is cached from here to now |
+| `history.complete` | workspace, conversation, thread | Nothing older exists |
+
+Presented as `from` (where cached history starts) and `complete`. A
+conversation's `from` is the older of its own cursor and the workspace's.
+
+## Going further back (only when asked: `o` or **Older**)
+
+- **Workspace**: the next 1000 messages before `history.oldest`, by search.
+  It resumes the last batch's query from its next page, so no page is fetched
+  twice (10 calls per batch); after page 100 it starts a new `before:` query
+  from the cursor. Search dates are whole days, so a new query starts two days
+  past the cursor and skips matches at or after it.
+- **Conversation**: `conversations.history` with `latest` = its `from`, 100
+  messages. Full messages, overwriting thinner search ones.
+- **Thread**: `conversations.replies`, the whole thread; then `complete`.
+
+## Rate limiting
+
+`RateLimiter`: one token bucket for all methods, 90/min with a burst of 10,
+honouring `Retry-After`. Callers using `api.urgent` (opened things, searches,
+user lookups) queue ahead of the rest.
+
+## Known gaps
+
+- Edits, deletions and new reactions on cached messages are never seen.
+- Reading elsewhere changes nothing here (no read state at all).
+- Join/leave messages aren't in search.
+- Messages made only of blocks or attachments show empty text.
+- Messages from public channels I'm not in are cached (not shown) and counted
+  in the poll's `found`.
+- Socket Mode would make the watch instant and see edits, but needs an
+  app-level token and Slack app settings; the catch-up would stay as is.

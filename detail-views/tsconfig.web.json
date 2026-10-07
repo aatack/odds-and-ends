@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "types": [
+      "vite/client"
+    ],
+    "composite": true
+  },
+  "include": [
+    "src/renderer/src/**/*.ts",
+    "src/renderer/src/**/*.tsx",
+    "src/core/types.ts",
+    "src/core/present.ts",
+    "src/core/graph/*.ts",
+    "src/core/modules/*/view.ts",
+    "src/core/modules/slack/api.ts",
+    "src/core/modules/slack/emoji.ts",
+    "src/core/modules/slack/markdown.ts"
+  ],
+  "exclude": [
+    "src/core/**/*.test.ts",
+    "src/renderer/src/**/*.test.ts"
+  ]
+}

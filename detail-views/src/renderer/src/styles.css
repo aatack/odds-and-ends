@@ -1,0 +1,1314 @@
+:root {
+  color-scheme: light;
+  --canvas: light-dark(#fafafa, #111113);
+  --panel: light-dark(#f1f1f3, #18181b);
+  /* Muted, after entity-graph: gray first, one quiet indigo, desaturated status hues. */
+  --ink: light-dark(#292929, #e6e6e9);
+  --ink-soft: light-dark(#344054, #c9ccd4);
+  --muted: light-dark(#667085, #8b8f9b);
+  --faint: light-dark(#98a2b3, #4f525c);
+  --line: light-dark(#eaecf0, #26262b);
+  --select: light-dark(#e9eaf3, #232329);
+  --accent: light-dark(#5b63d3, #8b90e6);
+  --accent-soft: light-dark(#eef0fb, #24263a);
+  --danger: light-dark(#c0473c, #e0796f);
+  --success: light-dark(#3a875f, #6fbf93);
+  --warning: light-dark(#b8862f, #d9aa55);
+  --error: light-dark(#c0473c, #e0796f);
+  --merged: light-dark(#7a6cc4, #a99de8);
+  --link: light-dark(#3a5f9e, #8fb0e6);
+  /* Claude's own terracotta, for what Claude says and the sessions it runs. */
+  --claude: light-dark(#c96442, #e08a6b);
+  /* Fills for buttons and chips: a soft gray, a step darker on hover, another pressed. */
+  --fill: light-dark(#f2f4f7, #202027);
+  --fill-hover: light-dark(#eaecf0, #2a2a32);
+  --fill-press: light-dark(#e1e4ea, #31313a);
+  /* A row under the pointer: lighter than the selection. */
+  --hover: light-dark(#f2f2f6, #18181c);
+  --accent-line: light-dark(#c7cbef, #3b3f66);
+  /* Inline code in messages, and what a find matched. */
+  --code: light-dark(#a03b32, #e0796f);
+  --found: light-dark(#f3e3b5, #5a4a1e);
+  --radius: 6px;
+  font-family: Lato, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 15.5px;
+  line-height: 1.45;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  transition: none !important;
+  animation: none !important;
+  cursor: default;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--canvas);
+  color: var(--ink);
+  user-select: none;
+}
+
+.app {
+  display: flex;
+  height: 100%;
+}
+
+.modules {
+  width: 148px;
+  flex: none;
+  padding: 12px 8px;
+  background: var(--panel);
+}
+
+.module {
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  color: var(--muted);
+}
+
+.module:hover {
+  color: var(--ink);
+  background: var(--fill-hover);
+}
+
+.module.active {
+  color: var(--ink);
+  background: var(--select);
+}
+
+.focus {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px;
+  gap: 8px;
+}
+
+.pane.centred {
+  justify-content: center;
+  align-items: center;
+}
+
+.pane.centred .composer {
+  width: min(420px, 100%);
+}
+
+.title {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  font-weight: 600;
+  padding: 2px 10px;
+}
+
+/* Where cached history starts, and the button to load further back. */
+.history {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* Two side by side share the right edge rather than the space between them. */
+.history + .history {
+  margin-left: 0;
+}
+
+.line {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.list.chat {
+  justify-content: flex-start;
+}
+
+.list.chat > :first-child {
+  margin-top: auto;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 10px;
+  border-radius: var(--radius);
+}
+
+/* A row is clickable (it takes the cursor), so it lights a little on hover. */
+.row:hover {
+  background: var(--hover);
+}
+
+.row.selected {
+  background: var(--select);
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.count {
+  font-size: 13px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.message {
+  min-width: 0;
+}
+
+.message.quiet {
+  color: var(--muted);
+}
+
+.body {
+  min-width: 0;
+  flex: none;
+  display: flex;
+  align-items: baseline;
+}
+
+.row > .body {
+  flex: 1;
+}
+
+.body.head {
+  margin-top: 4px;
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A message's time: at the right, shown while its row is hovered. */
+.stamp {
+  flex: none;
+  margin-left: 12px;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  visibility: hidden;
+}
+
+.row:hover .stamp {
+  visibility: visible;
+}
+
+.text {
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+/* Reactions run on at the end of the last line of text. */
+.reactions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: 8px;
+  vertical-align: 1px;
+}
+
+.reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 7px;
+  border-radius: 999px;
+  line-height: 1.5;
+  background: var(--fill);
+  border: 1px solid transparent;
+  font-size: 13px;
+}
+
+.reaction.mine {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+
+.reaction-count {
+  color: var(--muted);
+}
+
+.reaction.mine .reaction-count {
+  color: var(--accent);
+}
+
+.replies {
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.replies > span:hover {
+  text-decoration: underline;
+}
+
+.divider {
+  height: 1px;
+  background: var(--line);
+  margin: 8px 10px;
+  flex: none;
+}
+
+.check {
+  width: 14px;
+  color: var(--muted);
+}
+
+.row.done {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+
+.status {
+  font-size: 13px;
+  color: var(--danger);
+  padding: 0 10px;
+}
+
+.composer {
+  font: inherit;
+  color: inherit;
+  background: var(--panel);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px 12px;
+  resize: none;
+  outline: none;
+  user-select: text;
+}
+
+.composer:focus {
+  border-color: var(--line);
+}
+
+.data {
+  margin: 0;
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.list > .body {
+  padding: 0 10px;
+}
+
+.person {
+  border-radius: 4px;
+  padding: 0 2px;
+  margin: 0 -2px;
+  font-weight: 600;
+  color: var(--accent);
+  user-select: none;
+}
+
+.person.strong {
+  font-weight: 700;
+  margin-right: 2px;
+}
+
+.person.live:hover {
+  background: light-dark(rgb(0 0 0 / 0.07), rgb(255 255 255 / 0.1));
+}
+
+/* Markdown inside a message. The first paragraph runs on from the name. */
+.text p {
+  margin: 0;
+}
+
+.text > p:first-of-type,
+.text > p:last-of-type {
+  display: inline;
+}
+
+/* An inline last paragraph still starts its own line. */
+.text > p:last-of-type:not(:first-of-type)::before {
+  content: '';
+  display: block;
+  margin-top: 4px;
+}
+
+.text > p + *,
+.text > * + p {
+  margin-top: 4px;
+}
+
+.text code {
+  font-family: ui-monospace, 'JetBrains Mono', Menlo, monospace;
+  font-size: 0.88em;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--fill);
+  color: var(--code);
+}
+
+.text pre {
+  margin: 4px 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--fill);
+  border: 1px solid var(--line);
+  white-space: pre-wrap;
+}
+
+.text pre code {
+  padding: 0;
+  background: none;
+  color: inherit;
+}
+
+.text blockquote {
+  margin: 4px 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}
+
+.text ul,
+.text ol {
+  margin: 4px 0;
+  padding-left: 22px;
+}
+
+.link {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 2px;
+}
+
+.thumb:hover {
+  outline: 2px solid var(--line);
+}
+
+.thumb {
+  display: block;
+  max-width: 360px;
+  max-height: 240px;
+  border-radius: var(--radius);
+  background: var(--select);
+  object-fit: cover;
+}
+
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgb(0 0 0 / 0.8);
+}
+
+.viewer img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--radius);
+}
+
+.loading {
+  flex: none;
+  padding: 6px 10px 6px 62px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.peek {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.18);
+}
+
+.peek-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  font-size: 13px;
+  color: var(--muted);
+  background: var(--panel);
+  user-select: none;
+}
+
+.peek-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.peek-page {
+  flex: 1;
+  border: none;
+  background: white;
+}
+
+.peek-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+}
+
+/* While dragging, catches the pointer even over a page in a webview. */
+.peek-capture {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+}
+
+.peek-resize {
+  cursor: nwse-resize;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.row.draft {
+  color: var(--muted);
+}
+
+.dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+  vertical-align: 1px;
+}
+
+.dot.passing {
+  background: var(--success);
+}
+
+.dot.failing {
+  background: var(--error);
+}
+
+.dot.pending {
+  background: var(--warning);
+}
+
+.verdict {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.verdict.approved {
+  color: var(--success);
+}
+
+.verdict.changes_requested {
+  color: var(--error);
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+/* Headings in a message read as emphasis, not as page titles. */
+.text h1,
+.text h2,
+.text h3,
+.text h4,
+.text h5,
+.text h6 {
+  font-size: 1em;
+  font-weight: 700;
+  margin: 8px 0 2px;
+}
+
+/*
+ * Every button (`Button` in views/primitives.tsx), after entity-graph's: no
+ * border, a soft gray fill, a step darker on hover and another while pressed.
+ * No motion, and the cursor stays an arrow, so the fill is what says it can be
+ * pressed. A hotkey, where it has one, leads it in a small key cap.
+ */
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink-soft);
+  background: var(--fill);
+  border: none;
+  border-radius: var(--radius);
+  padding: 4px 9px;
+  white-space: nowrap;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--fill-hover);
+  color: var(--ink);
+}
+
+.button:active:not(:disabled) {
+  background: var(--fill-press);
+}
+
+.button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  outline-offset: 1px;
+}
+
+/* Its action waiting on the prompt. */
+.button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Under way: says so in its label, and can't be pressed again. */
+.button.busy {
+  color: var(--muted);
+  background: var(--fill-hover);
+}
+
+/* Can't be pressed now; its tooltip says why. */
+.button:disabled:not(.busy) {
+  opacity: 0.5;
+}
+
+/* A button that is only a glyph (a peek's ×). */
+.button.quiet {
+  background: none;
+  padding: 0 6px;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.button.quiet:hover {
+  color: var(--ink);
+  background: var(--fill);
+}
+
+/* A hotkey, in a key cap. */
+.key {
+  font-family: ui-monospace, 'JetBrains Mono', Menlo, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  padding: 0 4px;
+  border-radius: 4px;
+  color: var(--muted);
+  background: var(--fill-press);
+}
+
+.button.active .key {
+  color: var(--accent);
+  background: var(--accent-line);
+}
+
+/* An in-app item named in text: its badge and its name. */
+.item-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 28em;
+  padding: 0 7px 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--fill);
+  vertical-align: bottom;
+  font-size: 0.92em;
+  user-select: none;
+}
+
+.item-pill:hover {
+  background: var(--fill-hover);
+}
+
+.item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.badge.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.badge.tick,
+.badge.cross {
+  width: 10px;
+}
+
+.badge.dot.green { background: var(--success); }
+.badge.dot.yellow { background: var(--warning); }
+.badge.dot.red { background: var(--error); }
+.badge.tick.green { color: var(--success); }
+.badge.cross.red { color: var(--error); }
+
+/* A pill heading a view or window: the same content, without the frame. */
+.item-pill.header {
+  font-size: 1em;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  vertical-align: baseline;
+}
+
+.item-pill.header:hover {
+  background: none;
+}
+
+.item-pill .count {
+  margin-left: 2px;
+}
+
+.pill-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge.dot.purple { background: var(--merged); }
+.badge.tick.purple,
+.badge.cross.purple { color: var(--merged); }
+
+/* --- The tree a view is drawn as --------------------------------------------- */
+
+/* The root's overview: selectable like any row, but laid out as a block. */
+.row.overview {
+  display: block;
+  padding: 6px 10px;
+}
+
+.row.tree {
+  gap: 4px;
+}
+
+/* What leads a row: its box, its fold mark (▸ folded, ▾ open), or a bullet. */
+.marker {
+  flex: none;
+  width: 14px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.row.selected .marker {
+  color: var(--muted);
+}
+
+.cell {
+  flex: 1;
+  min-width: 0;
+}
+
+/* An item's own `pills`, after its content: the content as wide as it needs, then each pill. */
+.with-pills {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+
+.with-pills-content {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.line-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.line-row > .line {
+  flex: 1;
+}
+
+.line.done {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.note {
+  min-width: 0;
+}
+
+.note-overview {
+  font-size: 1.15em;
+  font-weight: 600;
+}
+
+/* Typing in place: the row's own text, or a new note. */
+.edit {
+  width: 100%;
+  font: inherit;
+  color: var(--ink);
+  background: var(--canvas);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 1px 6px;
+  outline: none;
+}
+
+.centred-box {
+  display: flex;
+  justify-content: center;
+  padding: 40px 0;
+}
+
+/* A move or link waiting for its other end. */
+.pick-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 8px light-dark(rgb(0 0 0 / 0.12), rgb(0 0 0 / 0.5));
+}
+
+/* The view's find field. */
+.find {
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+  outline: none;
+}
+
+.find:focus {
+  border-color: var(--accent);
+}
+
+/* Notes: a heading, or a task's box. */
+.note.section,
+.row.section .edit,
+.note-overview.section {
+  font-weight: 700;
+}
+
+.note.ticked,
+.note-overview.ticked {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.check {
+  color: var(--muted);
+}
+
+.check.ticked {
+  color: var(--accent);
+}
+
+.edit-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+/* The stack of views to here; a crumb pops back to its view. */
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 10px 16px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.crumb + .crumb::before {
+  content: '›';
+  padding: 0 6px;
+  color: var(--faint);
+}
+
+.crumb {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  max-width: 24em;
+  border-radius: var(--radius);
+  padding: 0 4px;
+}
+
+.crumb:last-child {
+  color: var(--ink);
+}
+
+.crumb:hover {
+  background: var(--select);
+}
+
+.focus > .pane {
+  min-height: 0;
+}
+
+/* What a find matched. */
+mark {
+  background: var(--found);
+  color: inherit;
+  border-radius: 2px;
+}
+
+/* The windowed tree: rows are laid out in a box as tall as all of them. */
+.rows {
+  position: relative;
+  flex: none;
+}
+
+/*
+ * The row being typed into, mounted wherever it is: a track as tall as all
+ * the rows, with the row at its own place in it, sticky to the scroll area's
+ * edges, so it stays in sight however far its place is scrolled away.
+ */
+.pin-track {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.edit-pin {
+  position: sticky;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  pointer-events: auto;
+  background: var(--canvas);
+}
+
+/*
+ * What's in a PR's way first, where its dot would be: a quiet chip after
+ * entity-graph's, the colour's own tint behind its own darker text. Mine to
+ * do is the same chip, a touch heavier.
+ */
+.status-chip {
+  flex: none;
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  padding: 0 6px;
+  border-radius: 5px;
+  white-space: nowrap;
+  vertical-align: 1px;
+  color: color-mix(in srgb, var(--tone) 80%, var(--ink));
+  background: color-mix(in srgb, var(--tone) 10%, var(--canvas));
+}
+
+.status-chip.mine {
+  font-weight: 650;
+}
+
+.status-chip.red { --tone: var(--error); }
+.status-chip.yellow { --tone: var(--warning); }
+.status-chip.green { --tone: var(--success); }
+.status-chip.purple { --tone: var(--merged); }
+.status-chip.gray { --tone: var(--muted); }
+
+.badge.dot.gray { background: var(--muted); }
+.badge.tick.gray { color: var(--muted); }
+
+/*
+ * The text inside items can be selected and copied: rows, overviews and the
+ * facts under them. Chrome around it can't, so a drag over a row picks up
+ * what it says rather than its buttons and marks.
+ */
+.cell,
+.row.overview,
+.facts,
+.blockers {
+  user-select: text;
+}
+
+.marker,
+.button,
+.key,
+.badge,
+.check {
+  user-select: none;
+}
+
+/* --- The phone (docs/phone.md) ---------------------------------------------------
+ * The same app on a narrow touch screen: the sidebar becomes a row of tabs,
+ * a bar of buttons stands in for keys, everything tappable is at least 44px,
+ * text fields are 16px (smaller and the browser zooms in on focus), and the
+ * screen's insets are respected.
+ */
+.app.phone {
+  flex-direction: column;
+  height: 100dvh;
+  padding-top: env(safe-area-inset-top);
+}
+
+.app.phone .modules {
+  width: auto;
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  overflow-x: auto;
+}
+
+.app.phone .module {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+}
+
+.app.phone .focus {
+  min-height: 0;
+}
+
+.app.phone .pane {
+  padding: 8px 10px;
+}
+
+.app.phone .row {
+  min-height: 44px;
+  align-items: center;
+}
+
+.app.phone .row:hover {
+  background: none;
+}
+
+.app.phone .row.selected {
+  background: var(--select);
+}
+
+.app.phone .row.selected .stamp {
+  visibility: visible;
+}
+
+.app.phone .edit,
+.app.phone .find,
+.app.phone .composer {
+  font-size: 16px;
+}
+
+.app.phone .crumbs {
+  padding: 8px 10px 0;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
+
+.phone-bar {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+  background: var(--panel);
+}
+
+.phone-bar .button {
+  flex: 1;
+  justify-content: center;
+  min-height: 44px;
+  font-size: 15px;
+}
+
+/* Floating windows are the desktop's: no hover on a phone to open or move them. */
+.app.phone .peek {
+  display: none;
+}
+
+/* Everything else the keys can do, over the view, closed by a tap outside it. */
+.phone-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  background: color-mix(in srgb, var(--ink) 18%, transparent);
+}
+
+.phone-menu-list {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 10px 8px calc(70px + env(safe-area-inset-bottom));
+  background: var(--panel);
+  border-radius: 12px 12px 0 0;
+}
+
+.phone-menu-list .button {
+  justify-content: center;
+  min-height: 44px;
+  font-size: 15px;
+}
+
+/* An item's text as markdown (Text). Inline: one line's worth. */
+.md p {
+  margin: 0;
+}
+
+.md > * + * {
+  margin-top: 4px;
+}
+
+.md ul,
+.md ol {
+  margin: 2px 0;
+  padding-left: 20px;
+}
+
+.md code {
+  font-family: ui-monospace, 'JetBrains Mono', Menlo, monospace;
+  font-size: 0.88em;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--fill);
+  color: var(--code);
+}
+
+.md pre {
+  margin: 4px 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--fill);
+  white-space: pre-wrap;
+}
+
+.md pre code {
+  padding: 0;
+  background: none;
+  color: inherit;
+}
+
+.md.inline {
+  display: inline;
+}
+
+.marker .check {
+  font-size: 13px;
+}
+
+.bullet {
+  font-size: 9px;
+  vertical-align: 2px;
+}
+
+/* A note heading its view: its box and its text on one line. */
+.note-overview {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.note-overview > .md {
+  flex: 1;
+  min-width: 0;
+}
+
+/* --- Claude --------------------------------------------------------------------- */
+
+/*
+ * A tint (views/kindTypes.ts `Tint`): a rail of its colour down the left, a
+ * faint fill of the same. Drawn by the tree around a row or an overview.
+ */
+.tinted {
+  padding: 2px 8px;
+  border-left: 3px solid var(--tint);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: color-mix(in srgb, var(--tint) 7%, var(--canvas));
+}
+
+.tint-accent { --tint: var(--accent); }
+.tint-claude { --tint: var(--claude); }
+.tint-success { --tint: var(--success); }
+.tint-warning { --tint: var(--warning); }
+.tint-error { --tint: var(--error); }
+.tint-merged { --tint: var(--merged); }
+.tint-muted { --tint: var(--muted); }
+
+/* Claude's answer: its mark, then the answer. */
+.response {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.response-body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The Claude mark, drawn in Claude's colour from the downloaded icon. */
+.claude-mark {
+  flex: none;
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  vertical-align: -0.08em;
+  background: var(--claude);
+  mask: url('./assets/claude.svg') center / contain no-repeat;
+}
+
+.claude-mark.large {
+  width: 1.1em;
+  height: 1.1em;
+}
+
+/* A session's name, in Claude's colour where it heads its view or a row. */
+.line.session,
+.title.session .item-name {
+  font-weight: 600;
+}
+
+.error-text {
+  color: var(--error);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* A form over everything (a new Claude session). */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 18vh;
+  background: color-mix(in srgb, var(--ink) 14%, transparent);
+}
+
+.dialog {
+  width: min(520px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 10px;
+  background: var(--canvas);
+  box-shadow: 0 16px 40px -12px rgb(16 24 40 / 0.25), 0 4px 10px -4px rgb(16 24 40 / 0.1);
+}
+
+.dialog-title {
+  font-weight: 600;
+}
+
+.dialog-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* A passing message. */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 70;
+  padding: 8px 14px;
+  font-size: 13px;
+  border-radius: var(--radius);
+  color: var(--canvas);
+  background: var(--ink);
+}
+
+.dialog.wide {
+  width: min(760px, calc(100vw - 32px));
+}
+
+/* An entity as JSON (the inspector). */
+.inspect {
+  margin: 0;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--fill);
+  font-family: ui-monospace, 'JetBrains Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  user-select: text;
+}
