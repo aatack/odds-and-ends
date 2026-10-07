@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { memoryCore } from '../../testing.ts'
-import { badge, blockers, prName } from './view.ts'
+import { badge, blockers, previewOf, prName } from './view.ts'
 
 const url = 'https://github.com/o/r/pull/7'
 
@@ -228,4 +228,10 @@ test('github: an approve already done is shown but cannot be done again', async 
     { type: 'value', entityId: mine.id, key: 'autoMerge', value: true, timestamp: 0, author: 'github' },
   ])
   assert.equal(mine.core.focus(mine.id).actions.find((action) => action.id === 'approve')!.disabled, 'Approved, and auto-merge is on')
+})
+
+test('github: a PR in a repo with previews links to its own', () => {
+  assert.equal(previewOf({ repo: 'theengineeringco/branch-demo', number: 5308, state: 'OPEN' }), 'https://pr-5308.preview.theeng.co/demo')
+  assert.equal(previewOf({ repo: 'theengineeringco/branch-demo', number: 5308, state: 'MERGED' }), null)
+  assert.equal(previewOf({ repo: 'aatack/odds-and-ends', number: 13, state: 'OPEN' }), null)
 })

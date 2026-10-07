@@ -86,6 +86,10 @@ export function PrOverview(props: OverviewProps) {
   return (
     <>
       <div className="title">
+        {typeof data.preview === 'string' && (
+          // First, so hovering it is the quickest way to try the branch.
+          <Link href={data.preview}>Preview</Link>
+        )}
         <HeaderPill entity={entity} />
       </div>
       {props.interactive && view.actions.length > 0 && (
