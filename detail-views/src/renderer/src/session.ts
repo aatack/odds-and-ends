@@ -414,7 +414,9 @@ export class Session {
     if (!row) return
     const cwds = this.snapshot.item('claude')?.data.cwds
     const last = Array.isArray(cwds) && typeof cwds[0] === 'string' ? cwds[0] : ''
-    this.update(S.setDialog(this.state, { kind: 'claude', path: row.path, name: '', cwd: last, worktree: false }))
+    // Named after the row it starts from (its first line); the field starts selected, so typing replaces it.
+    const name = String(row.entity.data.text ?? '').split('\n')[0].slice(0, 80)
+    this.update(S.setDialog(this.state, { kind: 'claude', path: row.path, name, cwd: last, worktree: false }))
   }
 
   setDialog(fields: Partial<S.SessionDialog>): void {

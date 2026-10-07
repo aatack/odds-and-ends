@@ -198,6 +198,7 @@ function SessionForm(props: DialogProps) {
           className="find"
           data-field="dialog-name"
           autoFocus
+          onFocus={(event) => event.currentTarget.select()}
           placeholder="Name"
           value={dialog.name}
           onChange={(event) => props.onChange({ name: event.target.value })}

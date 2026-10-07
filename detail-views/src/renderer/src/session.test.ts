@@ -267,6 +267,8 @@ test('Shift+K starts a Claude session from the selected row; k prompts it in the
   assert.equal(session.get().state.edit, null)
 
   session.openClaudeDialog()
+  // Named after the selected row to begin with.
+  assert.equal(session.get().state.dialog?.name, 'plan')
   session.setDialog({ name: 'helper', cwd: '' })
   session.submitDialog()
   await settle()
