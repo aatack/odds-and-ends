@@ -15,6 +15,8 @@ export interface Snapshot {
   item(id: string): Entity | null
   /** What is under way for each entity: `older`, or an action's id. */
   working: Record<string, string[]>
+  /** The time, to the second, for anything that says how long ago. */
+  now: number
 }
 
 const storageKey = 'detail-views.state'
@@ -48,7 +50,7 @@ export class Session {
     this.env = env
     this.cache = new EntityCache({ scan: (ids) => api.scan(ids), load: (request) => api.load(request), foreign: foreignOf })
     const state = S.restore(env.load(storageKey), 'slack')
-    this.snapshot = { state, modules: moduleInfos, focus: null, peekFoci: {}, item: () => null, working: {} }
+    this.snapshot = { state, modules: moduleInfos, focus: null, peekFoci: {}, item: () => null, working: {}, now: Date.now() }
     this.snapshot = this.derive(state, this.cache.get())
   }
 
@@ -56,10 +58,12 @@ export class Session {
     const stopCache = this.cache.subscribe(() => this.scheduleDerive())
     const stopChanges = this.api.onChange((changed) => this.cache.invalidate(changed))
     const revisit = setInterval(() => this.cache.revisit(), revisitEvery)
+    const clock = setInterval(() => this.publish({ ...this.snapshot, now: Date.now() }), 1000)
     return () => {
       stopCache()
       stopChanges()
       clearInterval(revisit)
+      clearInterval(clock)
     }
   }
 
@@ -135,7 +139,7 @@ export class Session {
       peekFoci[id] ??= focusFor(id, previous.peekFoci[id])
     }
     if (same) {
-      return { state, modules: moduleInfos, focus, peekFoci, item: previous.item, working: previous.working }
+      return { state, modules: moduleInfos, focus, peekFoci, item: previous.item, working: previous.working, now: previous.now }
     }
     const items = new Map<string, Entity | null>()
     const item = (id: string): Entity | null => {
@@ -145,7 +149,7 @@ export class Session {
       }
       return items.get(id)!
     }
-    return { state, modules: moduleInfos, focus, peekFoci, item, working: previous.working }
+    return { state, modules: moduleInfos, focus, peekFoci, item, working: previous.working, now: previous.now }
   }
 
   private isWorking(id: string, what: string): boolean {

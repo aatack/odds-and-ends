@@ -22,6 +22,7 @@ export const itemTypes = [
   'slack.conversation',
   'slack.message',
   'slack.user',
+  'slack.watch',
   'github.home',
   'github.pr',
   'github.check',

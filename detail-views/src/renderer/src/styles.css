@@ -100,6 +100,11 @@ body,
   color: var(--muted);
 }
 
+/* Two side by side share the right edge rather than the space between them. */
+.history + .history {
+  margin-left: 0;
+}
+
 .line {
   overflow: hidden;
   white-space: nowrap;

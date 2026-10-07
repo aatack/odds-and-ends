@@ -12,6 +12,8 @@ export const slackIds = {
   conversation: (channel: string) => `slack:conv:${channel}`,
   message: (channel: string, ts: string) => `slack:msg:${channel}:${ts}`,
   user: (user: string) => `slack:user:${user}`,
+  /** When the watch last looked, and how much it found. */
+  watch: 'slack:watch',
 }
 
 /** The channel and ts in a message id. */
@@ -121,6 +123,7 @@ export const slackView: ModuleView = {
 
   typeOf(id) {
     if (id === slackIds.root) return 'slack.home'
+    if (id === slackIds.watch) return 'slack.watch'
     for (const [prefix, type] of Object.entries(types)) if (id.startsWith(prefix)) return type
     return null
   },
@@ -174,7 +177,17 @@ export const slackView: ModuleView = {
     const cursor = (data: Record<string, unknown> | undefined) =>
       typeof data?.['history.oldest'] === 'string' ? (data['history.oldest'] as string) : undefined
     if (entity.type === 'slack.home') {
-      return { ...entity, data: { ...entity.data, from: cursor(entity.data) ?? null, complete: Boolean(entity.data['history.complete']) } }
+      const watch = lens.read(slackIds.watch)?.data
+      return {
+        ...entity,
+        data: {
+          ...entity.data,
+          from: cursor(entity.data) ?? null,
+          complete: Boolean(entity.data['history.complete']),
+          polledAt: watch?.polledAt ?? null,
+          found: watch?.found ?? null,
+        },
+      }
     }
     if (entity.type === 'slack.conversation') {
       const data = { channel: entity.id.slice('slack:conv:'.length), ...entity.data } as unknown as ConversationData

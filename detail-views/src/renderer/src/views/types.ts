@@ -20,4 +20,6 @@ export interface FocusProps {
   onOlder?(): void
   /** What is under way on the focus: `older`, or an action's id. */
   working?: string[]
+  /** The time, ticking each second, for anything that says how long ago. */
+  now?: number
 }
