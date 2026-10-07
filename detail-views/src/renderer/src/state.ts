@@ -44,6 +44,8 @@ export interface State {
   viewing: string | null
   /** Whether the phone's list of every action is open. Not persisted. */
   phoneMenu: boolean
+  /** A form being filled in (a new Claude session's). Not persisted. */
+  dialog: SessionDialog | null
   /**
    * A move or link waiting for its other end: started on one row, finished by
    * pressing the same key on another (in any view). Not persisted.
@@ -66,6 +68,18 @@ export interface Edit {
   draft: string
   /** For a new note: a heading, or a checkbox. */
   values?: NoteValues
+  /** What the box is for: a note (the default), or a prompt to a Claude session. */
+  prompt?: { session: string }
+}
+
+/** A new Claude session, being described: started from the item at `path`. */
+export interface SessionDialog {
+  kind: 'claude'
+  path: string[]
+  name: string
+  /** Blank for a new temporary directory. */
+  cwd: string
+  worktree: boolean
 }
 
 export type PickTool = 'move' | 'link' | 'linkReverse'
@@ -169,6 +183,7 @@ export function initialState(root: string): State {
     acting: null,
     viewing: null,
     phoneMenu: false,
+    dialog: null,
     picking: null,
     peeks: [],
   }
@@ -334,8 +349,12 @@ export function startEdit(state: State, path: string[], text: string): State {
   return { ...state, edit: { root: focused(state), path, mode: 'edit', draft: text } }
 }
 
-export function startCreate(state: State, path: string[], values?: NoteValues): State {
-  return { ...state, edit: { root: focused(state), path, mode: 'create', draft: '', values } }
+export function startCreate(state: State, path: string[], values?: NoteValues, prompt?: { session: string }): State {
+  return { ...state, edit: { root: focused(state), path, mode: 'create', draft: '', values, prompt } }
+}
+
+export function setDialog(state: State, dialog: SessionDialog | null): State {
+  return state.dialog === dialog ? state : { ...state, dialog }
 }
 
 export function setEditDraft(state: State, draft: string): State {
@@ -401,8 +420,8 @@ export function draftKey(state: State): string {
 }
 
 /** What is kept across reloads. */
-export function persisted(state: State): Omit<State, 'composing' | 'viewing' | 'acting' | 'picking' | 'phoneMenu'> {
-  const { composing: _, viewing: __, acting: ___, picking: ____, phoneMenu: _____, ...rest } = state
+export function persisted(state: State): Omit<State, 'composing' | 'viewing' | 'acting' | 'picking' | 'phoneMenu' | 'dialog'> {
+  const { composing: _, viewing: __, acting: ___, picking: ____, phoneMenu: _____, dialog: ______, ...rest } = state
   return { ...rest, peeks: rest.peeks.filter((peek) => peek.pinned) }
 }
 

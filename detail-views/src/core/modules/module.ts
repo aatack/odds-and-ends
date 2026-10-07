@@ -23,6 +23,10 @@ export interface ModuleContext {
   fetch: typeof fetch
   /** Runs the GitHub CLI and returns what it printed. */
   gh(args: string[]): Promise<string>
+  /** Runs a program in a directory and returns what it printed (git, claude). */
+  run(command: string, args: string[], cwd: string): Promise<string>
+  /** Where the app keeps its files: somewhere no repo is, for worktrees. */
+  dataDir: string
   /** Loads part of an entity through the core, as the UI would ask. */
   load(id: string, part: LoadPart, force?: boolean): Promise<void>
   now(): number

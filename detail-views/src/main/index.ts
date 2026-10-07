@@ -95,6 +95,7 @@ void app.whenReady().then(() => {
     owned: join(dir, 'detail-views.owned.sqlite'),
     cache: join(dir, 'detail-views.cache.sqlite'),
     legacy: join(dir, 'detail-views.sqlite'),
+    dataDir: dir,
   })
   core.start()
   const actions = core.actions as Record<string, (args: unknown) => unknown>

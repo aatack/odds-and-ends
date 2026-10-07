@@ -1,5 +1,6 @@
 import type { Source } from './graph/cache.ts'
 import type { GraphEntity } from './graph/entity.ts'
+import { claudeView } from './modules/claude/view.ts'
 import { githubView } from './modules/github/view.ts'
 import { slackView } from './modules/slack/view.ts'
 import { tasksView } from './modules/tasks/view.ts'
@@ -46,7 +47,7 @@ export interface ModuleView {
 }
 
 /** The sidebar, in order. */
-export const moduleViews: ModuleView[] = [slackView, githubView, tasksView]
+export const moduleViews: ModuleView[] = [slackView, githubView, tasksView, claudeView]
 
 export const moduleInfos: ModuleInfo[] = moduleViews.map(({ id, name, root }) => ({ id, name, root }))
 

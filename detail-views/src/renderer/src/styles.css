@@ -1164,3 +1164,69 @@ mark {
   flex: 1;
   min-width: 0;
 }
+
+/* --- Claude --------------------------------------------------------------------- */
+
+.prompt {
+  display: block;
+  padding-left: 8px;
+  border-left: 2px solid var(--accent-line);
+}
+
+.error-text {
+  color: var(--error);
+}
+
+/* A form over everything (a new Claude session). */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 18vh;
+  background: color-mix(in srgb, var(--ink) 14%, transparent);
+}
+
+.dialog {
+  width: min(520px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 10px;
+  background: var(--canvas);
+  box-shadow: 0 16px 40px -12px rgb(16 24 40 / 0.25), 0 4px 10px -4px rgb(16 24 40 / 0.1);
+}
+
+.dialog-title {
+  font-weight: 600;
+}
+
+.dialog-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* A passing message. */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 70;
+  padding: 8px 14px;
+  font-size: 13px;
+  border-radius: var(--radius);
+  color: var(--canvas);
+  background: var(--ink);
+}

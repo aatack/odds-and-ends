@@ -4,7 +4,7 @@ import { installDispatch } from './dispatch.ts'
 import { useSnapshot } from './hooks.ts'
 import type { Session } from './session.ts'
 import { draftKey, focused } from './state.ts'
-import type { PeekTarget, Rect } from './state.ts'
+import type { PeekTarget, Rect, SessionDialog } from './state.ts'
 import { actionsNow, labelOf, runTool, tools } from './tools.ts'
 import { App } from './views/App.tsx'
 import '@fontsource/lato/400.css'
@@ -17,7 +17,7 @@ import './styles.css'
  * swaps hover for taps and keys for a bar of buttons.
  */
 function Root({ session, phone }: { session: Session; phone: boolean }) {
-  const { state, view: tree, shown, modules, peekViews, item, working, now, findFocus } = useSnapshot(session)
+  const { state, view: tree, shown, modules, peekViews, item, working, now, findFocus, toast } = useSnapshot(session)
   useEffect(() => {
     const stopDispatch = installDispatch(session, tools)
     let stopSession: (() => void) | undefined
@@ -146,8 +146,23 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
     // Re-read whenever anything shown changes.
   }, [phone, session, state, shown, tree, working])
 
+  const dialog = useMemo(() => {
+    if (!state.dialog) return null
+    const cwds = item('claude')?.data.cwds
+    return {
+      dialog: state.dialog,
+      cwds: Array.isArray(cwds) ? (cwds as string[]) : [],
+      busy: working[focused(state)]?.includes('claude') ?? false,
+      onChange: (fields: Partial<SessionDialog>) => session.setDialog(fields),
+      onSubmit: () => session.submitDialog(),
+      onCancel: () => session.cancelDialog(),
+    }
+  }, [state, item, working, session])
+
   return (
     <App
+      dialog={dialog}
+      toast={toast}
       phone={phoneBar}
       crumbs={crumbs}
       onCrumb={onCrumb}

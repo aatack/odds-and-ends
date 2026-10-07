@@ -11,6 +11,7 @@ area you are changing before changing it, and update it in the same commit.
 | [frontend-cache.md](frontend-cache.md) | The entity cache: reading, invalidating, loading from services |
 | [presentation.md](presentation.md) | Module views, `focusOf`, the bounded walk, ordering |
 | [slack.md](slack.md) | Slack: lists, the history batch, the watch, cursors, threads |
+| [claude.md](claude.md) | Claude: sessions, prompts, worktrees, `claude -p` |
 | [github.md](github.md) | GitHub: what loads, and the PR writes |
 | [mobile.md](mobile.md) | **The phone**: setting it up, using it, how it works, security |
 | [decisions.md](decisions.md) | Decisions made, with the alternatives turned down |

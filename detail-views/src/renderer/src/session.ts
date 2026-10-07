@@ -19,6 +19,8 @@ export interface Snapshot {
   working: Record<string, string[]>
   /** The time, to the second, for anything that says how long ago. */
   now: number
+  /** A passing message (what went wrong, say), until it times out. */
+  toast: string | null
   /**
    * A request to put the keyboard in the find field: a nonce, made by Ctrl+F
    * and cleared once the field takes it. A signal, not state: a view that opens
@@ -99,7 +101,7 @@ export class Session {
     this.env = env
     this.cache = new EntityCache({ scan: (ids) => api.scan(ids), load: (request) => api.load(request), foreign: foreignOf })
     const state = S.restore(env.load(storageKey), 'slack')
-    this.snapshot = { state, modules: moduleInfos, view: null, shown: noRows, peekViews: {}, item: () => null, working: {}, now: Date.now(), findFocus: 0 }
+    this.snapshot = { state, modules: moduleInfos, view: null, shown: noRows, peekViews: {}, item: () => null, working: {}, now: Date.now(), findFocus: 0, toast: null }
     this.snapshot = this.derive(state)
   }
 
@@ -377,6 +379,80 @@ export class Session {
     this.update(S.fold(this.state, row.entity.id, open))
   }
 
+  // --- Claude ----------------------------------------------------------------------
+
+  /** Shows a passing message for a few seconds. */
+  showToast(text: string): void {
+    this.publish({ ...this.snapshot, toast: text })
+    if (this.toastTimer) clearTimeout(this.toastTimer)
+    this.toastTimer = setTimeout(() => this.publish({ ...this.snapshot, toast: null }), 4000)
+  }
+
+  private toastTimer: ReturnType<typeof setTimeout> | null = null
+
+  /** Shift+K: the form for a new Claude session, started from the selected row. The last directory used is filled in. */
+  openClaudeDialog(): void {
+    const row = this.selected()
+    if (!row) return
+    const cwds = this.snapshot.item('claude')?.data.cwds
+    const last = Array.isArray(cwds) && typeof cwds[0] === 'string' ? cwds[0] : ''
+    this.update(S.setDialog(this.state, { kind: 'claude', path: row.path, name: '', cwd: last, worktree: false }))
+  }
+
+  setDialog(fields: Partial<S.SessionDialog>): void {
+    const dialog = this.state.dialog
+    if (dialog) this.update(S.setDialog(this.state, { ...dialog, ...fields }))
+  }
+
+  hasDialog(): boolean {
+    return this.state.dialog !== null
+  }
+
+  cancelDialog(): void {
+    this.update(S.setDialog(this.state, null))
+  }
+
+  /** Makes the session the form describes, under the row it was started from. */
+  submitDialog(): void {
+    const dialog = this.state.dialog
+    if (!dialog) return
+    this.update(S.setDialog(this.state, null))
+    const attachTo = dialog.path[dialog.path.length - 1]
+    const root = S.focused(this.state)
+    void this.working(root, 'claude', () =>
+      this.api.claudeCreate({ name: dialog.name, cwd: dialog.cwd, worktree: Boolean(dialog.cwd.trim()) && dialog.worktree, attachTo }),
+    ).then((outcome) => {
+      this.settle(attachTo, outcome)
+      if (outcome.error) this.showToast(outcome.error)
+    })
+  }
+
+  /**
+   * `k`: a prompt to the Claude session nearest the selection, typed in the
+   * same box as a note. The session is the first item on the path from the
+   * view's root to the selection, nearest first, that is one or points at one
+   * (`claudeSessionId`).
+   */
+  startPrompt(): void {
+    const row = this.selected()
+    if (!row) return
+    const session = this.sessionAlong(row.path)
+    if (!session) {
+      this.showToast('No Claude session here: start one with Shift+K')
+      return
+    }
+    this.update(S.startCreate(this.state, row.path, undefined, { session }))
+  }
+
+  private sessionAlong(path: string[]): string | null {
+    for (const id of [...path].reverse()) {
+      const entity = this.snapshot.item(id)
+      if (entity?.type === 'claude.session') return id
+      if (typeof entity?.data.claudeSessionId === 'string') return entity.data.claudeSessionId
+    }
+    return null
+  }
+
   /** Opens or closes the phone's list of every action. */
   setPhoneMenu(open: boolean): void {
     this.update(S.setPhoneMenu(this.state, open))
@@ -428,6 +504,16 @@ export class Session {
     this.update(S.endEdit(this.state))
     const id = edit.path[edit.path.length - 1]
     if (!edit.draft.trim()) return
+    if (edit.prompt) {
+      // The same box as a note's, asked of Claude: the prompt goes under the row, the answer under it.
+      void this.api.claudePrompt(edit.prompt.session, id, edit.draft).then((outcome) => {
+        this.settle(id, outcome)
+        if (outcome.error) this.showToast(outcome.error)
+        const made = outcome.events.find((event) => event.type === 'link' && event.sourceId === id)
+        if (made?.type === 'link' && S.focused(this.state) === edit.root) this.select([...edit.path, made.destinationId])
+      })
+      return
+    }
     if (edit.mode === 'edit') {
       void this.api.setText(id, edit.draft).then((outcome) => this.settle(id, outcome))
       return

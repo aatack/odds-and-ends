@@ -31,6 +31,10 @@ export const itemTypes = [
   'tasks.home',
   'task',
   'note',
+  'claude.home',
+  'claude.session',
+  'claude.prompt',
+  'claude.response',
 ] as const
 
 export type ItemType = (typeof itemTypes)[number]

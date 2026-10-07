@@ -1,4 +1,16 @@
 import { CheckOverview, CheckPill, CheckRow, GhItemOverview, GhItemPill, GhItemRow, GitHubHomePill, LocalApprovalPill, PrOverview, PrPill, PrRow } from './GitHub.tsx'
+import {
+  ClaudeHomePill,
+  PromptOverview,
+  PromptPill,
+  PromptRow,
+  ResponseOverview,
+  ResponsePill,
+  ResponseRow,
+  SessionOverview,
+  SessionPill,
+  SessionRow,
+} from './Claude.tsx'
 import type { Kinds } from './kindTypes.ts'
 import { HomePill, NoteOverview, NotePill, NoteRow, PillOverview, PillRow, TaskOverview, TaskPill, TaskRow } from './Notes.tsx'
 import {
@@ -33,4 +45,8 @@ export const kinds: Kinds = {
   'tasks.home': { Pill: HomePill, Overview: PillOverview, Row: PillRow },
   task: { Pill: TaskPill, Overview: TaskOverview, Row: TaskRow },
   note: { Pill: NotePill, Overview: NoteOverview, Row: NoteRow },
+  'claude.home': { Pill: ClaudeHomePill, Overview: PillOverview, Row: PillRow },
+  'claude.session': { Pill: SessionPill, Overview: SessionOverview, Row: SessionRow },
+  'claude.prompt': { Pill: PromptPill, Overview: PromptOverview, Row: PromptRow },
+  'claude.response': { Pill: ResponsePill, Overview: ResponseOverview, Row: ResponseRow },
 }

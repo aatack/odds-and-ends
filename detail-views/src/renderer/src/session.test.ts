@@ -8,8 +8,8 @@ import { Session } from './session.ts'
 import { actionsNow, runTool } from './tools.ts'
 
 /** The app with no screen: a Session over a Core, through the same Api the window uses. */
-async function headless() {
-  const core = memoryCore()
+async function headless(options: Parameters<typeof memoryCore>[0] = {}) {
+  const core = memoryCore(options)
   const a = core.actions
   const api: Api = {
     scan: async (ids) => a.scan({ ids }),
@@ -27,6 +27,8 @@ async function headless() {
     setText: async (id, text) => a.setText({ id, text }),
     undo: async () => a.undo(),
     redo: async (events) => a.redo({ events }),
+    claudeCreate: (input) => a.claudeCreate(input),
+    claudePrompt: async (session, parent, text) => a.claudePrompt({ session, parent, text }),
     onChange: (listener) => core.onChange(listener),
     openExternal: () => {},
   }
@@ -242,5 +244,33 @@ test('chat keeps its newest end when its walk is cut short', async () => {
   assert.equal(session.selected()?.entity.data.text, 'm299')
   session.loadMore()
   assert.equal(session.get().view!.rows.slice(1)[0].entity.data.text, 'm0')
+  stop()
+})
+
+test('Shift+K starts a Claude session from the selected row; k prompts it in the note box, the answer under the prompt', async () => {
+  const run = async (command: string, args: string[]) => (command === 'claude' ? JSON.stringify({ result: `you said ${args[1]}` }) : '')
+  const { session, stop, settle, screen, select, type } = await headless({ run, gh: async () => '{}' })
+  session.navigate('tasks')
+  await settle()
+  session.startCreate()
+  await type('plan')
+
+  // No session anywhere above: k says so, and opens nothing.
+  session.startPrompt()
+  assert.match(session.get().toast ?? '', /No Claude session/)
+  assert.equal(session.get().state.edit, null)
+
+  session.openClaudeDialog()
+  session.setDialog({ name: 'helper', cwd: '' })
+  session.submitDialog()
+  await settle()
+  select('plan')
+  session.startPrompt()
+  assert.equal(session.get().state.edit?.prompt?.session !== undefined, true)
+  await type('hi')
+  await settle()
+  const lines = screen().map((line) => line.replace('>', ''))
+  assert.ok(lines.includes('    hi'), lines.join('\n'))
+  assert.ok(lines.includes('      you said hi'), lines.join('\n'))
   stop()
 })

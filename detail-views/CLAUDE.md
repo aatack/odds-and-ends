@@ -90,6 +90,10 @@ doc for the area you change, and keep it up to date in the same commit.
   token) never leave the core: scans strip them and items never carry them.
   The `settings` table is only for what belongs to no module (the phone's
   token).
+- **Claude runs through `claude -p`** in the session's own directory (a temp
+  one, mine, or a worktree under the app's data directory, never inside a
+  repo), `acceptEdits` unless the session says otherwise. Sessions, prompts
+  and answers are owned; answers are authored `claude` (`docs/claude.md`).
 - **Slack is read-only during development.** `slackWrites` in
   `modules/slack/api.ts` gates an allowlist of read methods; do not turn it on
   or widen the list unless I ask.
