@@ -181,6 +181,8 @@ function PageLink(props: { href: string; children: ReactNode }) {
  */
 export function Button(props: {
   label: ReactNode
+  /** Its key, as a key cap shows it (`hotkeyOf`). */
+  hotkey?: string
   onClick(): void
   busy?: boolean
   busyLabel?: string
@@ -200,6 +202,7 @@ export function Button(props: {
       onPointerDown={(event) => event.stopPropagation()}
       onClick={props.onClick}
     >
+      {props.hotkey && <code className="key">{props.hotkey}</code>}
       {props.busy ? (props.busyLabel ?? (typeof props.label === 'string' ? `${props.label}…` : props.label)) : props.label}
     </button>
   )

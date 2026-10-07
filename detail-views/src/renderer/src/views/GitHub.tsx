@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import type { Badge as BadgeData } from '../../../core/types.ts'
 import { authorColour } from '../format.ts'
+import { hotkeyOf } from '../tools.ts'
 import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
 import { MessageBody, MessageRow } from './messages.tsx'
 import { Badge, Button, HeaderPill, Highlight, Link } from './primitives.tsx'
@@ -97,6 +98,7 @@ export function PrOverview(props: OverviewProps) {
                 active={props.acting === action.id}
                 disabled={action.disabled}
                 label={action.label}
+                hotkey={hotkeyOf(`action.${action.id}`)}
                 onClick={() => props.onAction?.(action.id)}
               />
             ))}
