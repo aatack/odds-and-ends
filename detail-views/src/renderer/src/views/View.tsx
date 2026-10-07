@@ -360,7 +360,7 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
           // browser keeps it there as the list scrolls, so it never lags.
           <div className="pin-track">
             <div style={{ height: offsets[editIndex] }} />
-            <div className="pinned">{render(editIndex)}</div>
+            <div className="edit-pin">{render(editIndex)}</div>
           </div>
         )}
       </div>

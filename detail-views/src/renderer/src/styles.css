@@ -931,7 +931,7 @@ mark {
   pointer-events: none;
 }
 
-.pinned {
+.edit-pin {
   position: sticky;
   top: 0;
   bottom: 0;
