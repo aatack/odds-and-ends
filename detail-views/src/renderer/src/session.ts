@@ -149,7 +149,7 @@ export class Session {
     const previous = this.snapshot
     const root = S.focused(state)
     const view = this.filtered(this.walk(root, state), state.finds[root] ?? null)
-    const shown = S.markRows(view, state, root)
+    const shown = S.markRows(view, state, root, root === S.focused(previous.state) ? previous.shown : undefined)
     const peekViews: Record<string, View> = {}
     for (const peek of state.peeks) if (peek.target.kind === 'entity') peekViews[peek.target.id] ??= this.walk(peek.target.id, state)
     // Walks for views no longer anywhere are dropped.

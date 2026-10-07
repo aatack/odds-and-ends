@@ -21,12 +21,13 @@ Every view is a tree: the item it is rooted at, then what is under it.
 | `Shift+A` / `Alt+←` | pop it |
 | `Alt+→` | forward |
 | `Enter` | add a note under the selected row; `Enter` writes it, `Esc` gives up |
+| `/` / `?` | add a heading / a checkbox note under it |
 | `e` | edit the selected row's text (for me only, over whatever the service says) |
 | `Backspace` `Delete` | take the selected row out from under its parent here |
 | `x` | move: press on the row, then on its new parent |
 | `r` / `Shift+R` | link: press on the row, then on what goes under it / what it goes under |
 | `Esc` | give up a move or link |
-| `Space` | tick a task |
+| `Space` | tick or untick a checkbox |
 | `o` | load further back: all of Slack, this conversation, or this thread |
 | `Shift+Backspace` | on a Slack message: hide the whole chat it is in |
 | `Ctrl+F` | find in this view (rows that say it, and the rows above them); `Enter` back to the tree, `Esc` clears |
