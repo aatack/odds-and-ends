@@ -1169,28 +1169,30 @@ mark {
 
 /* --- Claude --------------------------------------------------------------------- */
 
-/* What I asked Claude: on my rail (the accent), a faint fill. */
-.prompt {
-  display: block;
+/*
+ * A tint (views/kindTypes.ts `Tint`): a rail of its colour down the left, a
+ * faint fill of the same. Drawn by the tree around a row or an overview.
+ */
+.tinted {
   padding: 2px 8px;
-  border-left: 3px solid var(--accent);
+  border-left: 3px solid var(--tint);
   border-radius: 0 var(--radius) var(--radius) 0;
-  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--tint) 7%, var(--canvas));
 }
 
-/* What Claude answered: its mark, on its own rail (terracotta), a faint fill. */
+.tint-accent { --tint: var(--accent); }
+.tint-claude { --tint: var(--claude); }
+.tint-success { --tint: var(--success); }
+.tint-warning { --tint: var(--warning); }
+.tint-error { --tint: var(--error); }
+.tint-merged { --tint: var(--merged); }
+.tint-muted { --tint: var(--muted); }
+
+/* Claude's answer: its mark, then the answer. */
 .response {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 2px 8px;
-  border-left: 3px solid var(--claude);
-  border-radius: 0 var(--radius) var(--radius) 0;
-  background: color-mix(in srgb, var(--claude) 6%, var(--canvas));
-}
-
-.response.failed {
-  border-left-color: var(--error);
 }
 
 .response-body {

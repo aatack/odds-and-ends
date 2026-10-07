@@ -170,6 +170,12 @@ doc for the area you change, and keep it up to date in the same commit.
 - **Every renderer takes `findText`** (rows, pills, overviews) and draws its
   text through `Highlight` (or markdown's highlight plugin), so a find shows
   where it matched.
+- **Tints** mark a row (or an overview) with a rail of a colour down its
+  left and a faint fill of the same: `accent`, `claude`, `success`,
+  `warning`, `error`, `merged`, `muted` (the palette's colours). A type gives
+  its items one with `tint(entity)` in `views/kinds.tsx`; any item's own
+  `tint` value overrides it. The tree draws it (`tintOf`, `tintClass` in
+  `views/primitives.tsx`); renderers never draw their own.
 - **Every row starts at its left edge**, whatever its type, so a tree's
   indentation reads. Anything secondary (a message's time, a check's
   duration, a count) goes on the right, and may show only on hover.
