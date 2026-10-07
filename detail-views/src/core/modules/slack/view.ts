@@ -220,7 +220,8 @@ export const slackView: ModuleView = {
           height: image.height,
         })),
         quiet: Boolean(data.subtype && quiet.has(data.subtype)),
-        // Where the thread is, for when it is listed away from its conversation.
+        // Where the message is, for when it is shown away from its conversation.
+        conversation: data.channel ? slackIds.conversation(data.channel) : null,
         where: data.channel ? conversationTitle(lens, { channel: data.channel, ...lens.read(slackIds.conversation(data.channel))?.data } as ConversationData) : null,
         complete: Boolean(entity.data['history.complete']),
         reactions: (data.reactions ?? []).map((reaction) => ({
