@@ -74,7 +74,11 @@ test('a view is a tree to navigate and edit, from the keyboard, with nothing on 
 
   // w and s move through rows; moving the cursor walks nothing again.
   const walked = session.get().view
+  const before = session.get().shown.rows
   session.move(-1)
+  // Only the two rows the cursor left and reached are new objects; the rest redraw nothing.
+  const after = session.get().shown.rows
+  assert.equal(after.filter((row, i) => row !== before[i]).length, 2)
   assert.deepEqual(screen(), ['Tasks', '  groceries', '    >milk', '    eggs'])
   assert.equal(session.get().view, walked)
 

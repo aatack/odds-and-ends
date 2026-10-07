@@ -1,7 +1,7 @@
 import { memo, useContext, useEffect, useRef } from 'react'
 import type { NoteValues, ViewRow } from '../../../core/types.ts'
 import { Checkbox } from './Notes.tsx'
-import type { ShownRow } from '../state.ts'
+import type { Edit, ShownRow } from '../state.ts'
 import { KindsContext, Status } from './primitives.tsx'
 import { Composer } from './primitives.tsx'
 import type { ViewProps } from './types.ts'
@@ -38,7 +38,17 @@ export function ViewPane(props: ViewProps) {
               {shown.editing ? <EditBox props={props} /> : <Overview {...props} entity={root} />}
             </Selectable>
           ) : (
-            <TreeRow key={shown.key} shown={shown} props={props} />
+            <TreeRow
+              key={shown.key}
+              shown={shown}
+              interactive={props.interactive}
+              edit={shown.editing ? props.edit : null}
+              onSelect={props.onSelect}
+              onOpen={props.onOpen}
+              onImage={props.onImage}
+              onEditDraft={props.onEditDraft}
+              onCommitEdit={props.onCommitEdit}
+            />
           ),
         )}
         {view.loading && view.rows.length <= 1 && <div className="loading">Loading…</div>}
@@ -100,25 +110,38 @@ function Selectable(props: { shown: Extract<ShownRow, { kind: 'entity' }>; class
 
 const indent = (depth: number): React.CSSProperties => ({ paddingLeft: 10 + (depth - 1) * 20 })
 
-/** A child row: indented by depth, marked when it has children (open or folded), then its type's `Row`. */
-const TreeRow = memo(function TreeRow(props: { shown: Extract<ShownRow, { kind: 'entity' }>; props: ViewProps }) {
+/**
+ * A child row: indented by depth, marked when it has children (open or
+ * folded), then its type's `Row`. Given only what it uses, all of it stable,
+ * so a row redraws only when it changes.
+ */
+const TreeRow = memo(function TreeRow(props: {
+  shown: Extract<ShownRow, { kind: 'entity' }>
+  interactive: boolean
+  /** Only while this row is being edited. */
+  edit: Edit | null
+  onSelect(path: string[]): void
+  onOpen(id: string): void
+  onImage(ref: string | null): void
+  onEditDraft(text: string): void
+  onCommitEdit(): void
+}) {
   const kinds = useContext(KindsContext)!
   const { row } = props.shown
-  const view = props.props
   const Row = kinds[row.entity.type].Row
   return (
     <Selectable
       shown={props.shown}
       className={`tree${rowClass(row)}`}
       style={indent(row.depth)}
-      onSelect={view.interactive ? view.onSelect : undefined}
+      onSelect={props.interactive ? props.onSelect : undefined}
     >
       <span className="fold">{row.hasChildren ? (row.open ? '▾' : '▸') : ''}</span>
       <div className="cell">
         {props.shown.editing ? (
-          <EditBox props={view} />
+          <TextBox edit={props.edit} onEditDraft={props.onEditDraft} onCommitEdit={props.onCommitEdit} />
         ) : (
-          <Row entity={row.entity} parent={row.parent} above={row.above} onOpen={view.onOpen} onImage={view.onImage} />
+          <Row entity={row.entity} parent={row.parent} above={row.above} onOpen={props.onOpen} onImage={props.onImage} />
         )}
       </div>
     </Selectable>
@@ -144,7 +167,11 @@ function EditRow(props: { depth: number; values?: NoteValues; props: ViewProps }
 
 /** Typing in place: Enter (or leaving it) writes, Escape gives up. */
 function EditBox(props: { props: ViewProps }) {
-  const { edit, onEditDraft, onCommitEdit } = props.props
+  return <TextBox edit={props.props.edit} onEditDraft={props.props.onEditDraft} onCommitEdit={props.props.onCommitEdit} />
+}
+
+function TextBox(props: { edit: Edit | null; onEditDraft(text: string): void; onCommitEdit(): void }) {
+  const { edit, onEditDraft, onCommitEdit } = props
   return (
     <input
       className="edit"

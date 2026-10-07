@@ -214,21 +214,23 @@ export function resolveSelection(view: View, stored: string[] | undefined): stri
 /**
  * A view's rows with what the UI knows laid over them: which is selected,
  * which is being typed into, and where the box for a new note goes (after its
- * parent's subtree). The view itself is untouched: rows that didn't change keep
- * their identity, so memoised rows don't redraw.
+ * parent's subtree). Rows the same as in `previous` are handed back as they
+ * were, so a cursor move changes two rows and memoised rows don't redraw.
  */
-export function markRows(view: View, state: State, root: string): ShownView {
+export function markRows(view: View, state: State, root: string, previous?: ShownView): ShownView {
   const selectedPath = resolveSelection(view, state.selections[root])
   const selectedKey = keyOf(selectedPath)
   const edit = state.edit?.root === root ? state.edit : null
   const editKey = edit ? keyOf(edit.path) : null
-  const rows: ShownRow[] = view.rows.map((row) => ({
-    kind: 'entity',
-    key: row.key,
-    row,
-    selected: row.key === selectedKey,
-    editing: edit?.mode === 'edit' && row.key === editKey,
-  }))
+  const before = new Map<string, ShownRow>()
+  for (const row of previous?.rows ?? []) before.set(row.key, row)
+  const rows: ShownRow[] = view.rows.map((row) => {
+    const selected = row.key === selectedKey
+    const editing = edit?.mode === 'edit' && row.key === editKey
+    const known = before.get(row.key)
+    if (known?.kind === 'entity' && known.row === row && known.selected === selected && known.editing === editing) return known
+    return { kind: 'entity', key: row.key, row, selected, editing }
+  })
   if (edit?.mode === 'create') {
     const at = rows.findIndex((row) => row.key === editKey)
     if (at >= 0) {
