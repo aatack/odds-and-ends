@@ -50,6 +50,8 @@ test('claude: a session in a new worktree, prompted twice, links its PR; each an
   assert.equal(core.item(response)!.data.running, false)
   const claudeCall = calls.find((call) => call.command === 'claude')!
   assert.equal(claudeCall.cwd, data.worktree)
+  // Opus 5.5, in auto mode.
+  assert.deepEqual(claudeCall.args.slice(4, 8), ['--model', 'claude-opus-5-5', '--permission-mode', 'auto'])
   assert.deepEqual(claudeCall.args.slice(-2), ['--session-id', session])
 
   // The second prompt resumes the same session.
@@ -76,4 +78,22 @@ test('claude: no directory is a new temporary one; a plain directory is used as 
   const here = core.entity('claude').outboundLinks.find((id) => core.item(id)!.data.text === 'here')!
   assert.equal(core.item(here)!.data.cwd, '/somewhere')
   assert.equal(calls.length, 0)
+})
+
+test('claude: a failure is said in place of the answer', async () => {
+  const run = async () => {
+    throw new Error('claude: not logged in')
+  }
+  const core = memoryCore({ run })
+  await core.actions.claudeCreate({ name: 'x', cwd: '/somewhere', worktree: false, attachTo: 'claude' })
+  const [session] = core.entity('claude').outboundLinks
+  const made = core.actions.claudePrompt({ session, parent: session, text: 'hello' })
+  await settle()
+  const prompt = made.events.find((e) => e.type === 'value' && e.key === 'type' && e.value === 'claude.prompt')!
+  const [response] = core.entity(prompt.type === 'value' ? prompt.entityId : '').outboundLinks
+  assert.deepEqual([core.item(response)!.data.text, core.item(response)!.data.error, core.item(response)!.data.running], [
+    'claude: not logged in',
+    'claude: not logged in',
+    false,
+  ])
 })

@@ -82,6 +82,12 @@ export function Badge(props: { badge: BadgeData | null | undefined }) {
   )
 }
 
+/**
+ * The time, ticking each second (the session's clock), for anything deep in
+ * a view that says how long ago or how long for. Provided by App.
+ */
+export const ClockContext = createContext<number>(Date.now())
+
 /** The item views, by type; provided by App so any view can draw any item. */
 export const KindsContext = createContext<Kinds | null>(null)
 

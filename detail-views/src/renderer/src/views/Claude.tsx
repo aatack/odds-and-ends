@@ -1,7 +1,8 @@
-import { memo } from 'react'
+import { memo, useContext } from 'react'
+import type { Entity } from '../../../core/types.ts'
 import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
 import { Text } from './messages.tsx'
-import { HeaderPill, Highlight } from './primitives.tsx'
+import { ClockContext, HeaderPill, Highlight } from './primitives.tsx'
 
 const text = (data: Record<string, unknown>, fallback = ''): string =>
   typeof data.text === 'string' && data.text ? data.text : fallback
@@ -47,7 +48,7 @@ export function SessionOverview(props: OverviewProps) {
         <span>{String(data.cwd ?? '')}</span>
         {data.branch ? <span>{String(data.branch)}</span> : null}
         {data.worktree ? <span>worktree</span> : null}
-        <span>{String(data.permissionMode ?? '')}</span>
+        <span>{String(data.permissionMode ?? '')} mode</span>
       </div>
     </>
   )
@@ -80,20 +81,28 @@ export function PromptOverview(props: OverviewProps) {
   )
 }
 
-/** Claude's answer: working on it, what went wrong, or the answer in full. */
-function Response(props: { data: Record<string, unknown>; findText?: string }) {
-  const { data } = props
-  if (data.running) return <span className="muted">Claude is working…</span>
+/** `1m 05s`: how long a prompt has been running. */
+function elapsed(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000))
+  const minutes = Math.floor(seconds / 60)
+  return minutes ? `${minutes}m ${String(seconds % 60).padStart(2, '0')}s` : `${seconds}s`
+}
+
+/** Claude's answer: how long it has been working, the error in its place, or the answer in full. */
+function Response(props: { entity: Entity; findText?: string }) {
+  const { data } = props.entity
+  const now = useContext(ClockContext)
+  if (data.running) return <span className="muted">Claude is working… {elapsed(now - props.entity.createdAt)}</span>
   if (typeof data.error === 'string' && data.error) return <span className="error-text">{data.error}</span>
   return <Text text={text(data)} find={props.findText} />
 }
 
 export const ResponseRow = memo(function ResponseRow(props: RowProps) {
-  return <Response data={props.entity.data} findText={props.findText} />
+  return <Response entity={props.entity} findText={props.findText} />
 })
 
 export function ResponseOverview(props: OverviewProps) {
-  return <Response data={props.entity.data} findText={props.findText} />
+  return <Response entity={props.entity} findText={props.findText} />
 }
 
 export function ResponsePill(props: PillProps) {

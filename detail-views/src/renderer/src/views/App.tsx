@@ -7,7 +7,7 @@ import { kinds } from './kinds.tsx'
 import { ItemContext, KindsContext, PeekContext } from './primitives.tsx'
 import type { ItemGestures, PeekGestures } from './primitives.tsx'
 import type { ViewProps } from './types.ts'
-import { Button, PillContent } from './primitives.tsx'
+import { Button, ClockContext, PillContent } from './primitives.tsx'
 
 export interface PeekProps {
   peeks: Peek[]
@@ -43,10 +43,13 @@ export function App(props: {
   dialog: DialogProps | null
   /** A passing message. */
   toast: string | null
+  /** The time, ticking each second. */
+  now: number
   onCrumb(at: number): void
 }) {
   const { peek } = props
   return (
+    <ClockContext.Provider value={props.now}>
     <KindsContext.Provider value={kinds}>
     <ItemContext.Provider value={props.items}>
       <PeekContext.Provider value={peek.gestures}>
@@ -104,6 +107,7 @@ export function App(props: {
       </PeekContext.Provider>
     </ItemContext.Provider>
     </KindsContext.Provider>
+    </ClockContext.Provider>
   )
 }
 
