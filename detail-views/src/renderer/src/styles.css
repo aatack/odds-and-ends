@@ -1070,3 +1070,8 @@ mark {
   min-height: 44px;
   font-size: 15px;
 }
+
+/* Floating windows are the desktop's: no hover on a phone to open or move them. */
+.app.phone .peek {
+  display: none;
+}
