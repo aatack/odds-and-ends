@@ -74,7 +74,7 @@ ones are counted), then its description, comments and reviews in order, with
 inline review comments and the diff lines they point at. Any link to a PR, in
 Slack or elsewhere, peeks at the PR itself.
 
-Inside a PR, `a` approves (someone else's: an approving review, with an
+Inside a PR, `p` approves (someone else's: an approving review, with an
 optional comment; mine: marked approved here and auto-merge turned on) and `X`
 closes mine and deletes the branch, with an optional comment. Both open a
 prompt; Enter confirms, Esc cancels.
