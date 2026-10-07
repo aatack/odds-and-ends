@@ -5,7 +5,7 @@ import { useSnapshot } from './hooks.ts'
 import type { Session } from './session.ts'
 import { draftKey, focused } from './state.ts'
 import type { PeekTarget, Rect } from './state.ts'
-import { tools } from './tools.ts'
+import { actionsNow, labelOf, runTool, tools } from './tools.ts'
 import { App } from './views/App.tsx'
 import '@fontsource/lato/400.css'
 import '@fontsource/lato/700.css'
@@ -119,24 +119,30 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
   const crumbs = useMemo(() => state.trail.slice(0, state.at + 1).map((id) => item(id)), [state.trail, state.at, item])
   const onCrumb = useCallback((at: number) => session.goTo(at), [])
 
-  const selectedRow = shown.rows[shown.selectedIndex]
-  const phoneBar = useMemo(
-    () =>
-      phone
-        ? {
-            canBack: state.at > 0,
-            canOpen: selectedRow?.kind === 'entity' && selectedRow.row.depth > 0,
-            canOlder: Boolean(tree?.older),
-            olderBusy: working[focused(state)]?.includes('older') ?? false,
-            onBack: () => session.back(),
-            onOpen: () => session.open(),
-            onNote: () => session.startCreate(),
-            onEdit: () => session.startEdit(),
-            onOlder: () => session.older(),
-          }
-        : null,
-    [phone, session, state, selectedRow, tree, working],
-  )
+  // The phone's buttons are the tool registry's actions, as they stand now:
+  // the same things the keys do, so the two can't drift.
+  const phoneBar = useMemo(() => {
+    if (!phone) return null
+    const now = actionsNow(session)
+    const can = new Set(now.map((action) => action.id))
+    const primary = ['view.back', 'view.push', 'note.create', 'edit.start'].map((id) => ({
+      id,
+      label: labelOf(tools.find((tool) => tool.id === id)!, session) ?? id,
+      enabled: can.has(id),
+    }))
+    return {
+      primary,
+      more: now.filter((action) => !primary.some((one) => one.id === action.id)),
+      busy: working[focused(state)] ?? [],
+      menuOpen: state.phoneMenu,
+      onRun: (id: string) => {
+        session.setPhoneMenu(false)
+        runTool(session, id)
+      },
+      onMenu: (open: boolean) => session.setPhoneMenu(open),
+    }
+    // Re-read whenever anything shown changes.
+  }, [phone, session, state, shown, tree, working])
 
   return (
     <App

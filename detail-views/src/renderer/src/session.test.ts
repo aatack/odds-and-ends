@@ -5,6 +5,7 @@ import { memoryCore } from '../../core/testing.ts'
 import type { Api } from './api.ts'
 import { memoryEnvironment } from './environment.ts'
 import { Session } from './session.ts'
+import { actionsNow, runTool } from './tools.ts'
 
 /** The app with no screen: a Session over a Core, through the same Api the window uses. */
 async function headless() {
@@ -85,6 +86,14 @@ test('a view is a tree to navigate and edit, from the keyboard, with nothing on 
 
   // a: up to the parent row.
   session.selectParent()
+  assert.equal(session.selected()?.entity.data.text, 'groceries')
+  select('milk')
+
+  // The phone's buttons are the registry's actions as they stand: on a note, the same as the keys.
+  const labels = actionsNow(session).map((action) => action.label)
+  for (const label of ['Back', 'Open', 'Parent', 'Note', 'Edit', 'Remove', 'Move', 'Link to…', 'Undo', 'Find']) assert.ok(labels.includes(label), label)
+  assert.ok(!labels.includes('Tick'))
+  runTool(session, 'select.parent')
   assert.equal(session.selected()?.entity.data.text, 'groceries')
   select('milk')
 

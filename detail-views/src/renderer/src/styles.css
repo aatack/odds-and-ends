@@ -1075,3 +1075,29 @@ mark {
 .app.phone .peek {
   display: none;
 }
+
+/* Everything else the keys can do, over the view, closed by a tap outside it. */
+.phone-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  background: color-mix(in srgb, var(--ink) 18%, transparent);
+}
+
+.phone-menu-list {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 10px 8px calc(70px + env(safe-area-inset-bottom));
+  background: var(--panel);
+  border-radius: 12px 12px 0 0;
+}
+
+.phone-menu-list .button {
+  justify-content: center;
+  min-height: 44px;
+  font-size: 15px;
+}
