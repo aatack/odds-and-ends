@@ -176,6 +176,13 @@ export function SlackThread(props: FocusProps) {
           {typeof focus.entity?.data.conversation === 'string' && (
             <ItemPill id={focus.entity.data.conversation} fallback={String(focus.entity.data.where ?? '')} />
           )}
+          {props.onHideChat && typeof focus.entity?.data.conversation === 'string' && (
+            <span className="history">
+              <button className="action" title="Hide this chat and its threads (Shift+Backspace)" onClick={props.onHideChat}>
+                Hide chat
+              </button>
+            </span>
+          )}
           <History {...props} />
         </div>
       )}

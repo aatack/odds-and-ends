@@ -318,6 +318,20 @@ export class Slack implements Module {
   }
 
   /**
+   * Drops cached thread links whose conversation is not listed: ones written
+   * before that rule, or under a conversation hidden since. Writes nothing
+   * when there are none.
+   */
+  private pruneThreads(): void {
+    const listed = this.listed()
+    const stray = this.context.lens.children(ids.root).filter((id) => {
+      const message = parseMessageId(id)
+      return message && !listed.has(ids.conversation(message.channel))
+    })
+    if (stray.length) this.cache.write(stray.map((id) => link(ids.root, id, 0, author, 1)))
+  }
+
+  /**
    * Hiding a chat is unlinking it from the workspace, as an owned event. A
    * conversation takes its threads with it, and no thread of it is listed
    * again (`listed`).
@@ -388,6 +402,7 @@ export class Slack implements Module {
         // The lists come first, so a thread knows whether its conversation is listed.
         // A no-op while they are fresh.
         await this.context.load(ids.root, 'children')
+        this.pruneThreads()
         const cursor = this.cursor(ids.root, 'watch.at')
         if (!cursor) return this.noteWatch(await this.searchBack(api))
         const since = Number(cursor) - overlap

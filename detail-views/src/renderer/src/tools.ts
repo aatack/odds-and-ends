@@ -49,6 +49,14 @@ export const tools: Tool[] = [
     enabled: (s) => focusType(s) === 'slack.home' && s.selected() !== null,
     run: (s) => s.unlinkSelected(),
   },
+  {
+    id: 'chat.hideOfMessage',
+    scope: 'list',
+    keys: ['Shift+Backspace', 'Shift+Delete'],
+    enabled: (s) =>
+      (focusType(s) === 'slack.home' && s.selected()?.type === 'slack.message') || focusType(s) === 'slack.message',
+    run: (s) => s.hideChatOfMessage(),
+  },
   { id: 'cursor.down', scope: 'list', keys: ['s', 'ArrowDown'], run: (s) => s.move(1) },
   { id: 'cursor.up', scope: 'list', keys: ['w', 'ArrowUp'], run: (s) => s.move(-1) },
   { id: 'cursor.top', scope: 'list', keys: ['g', 'Home'], run: (s) => s.move(-Infinity) },

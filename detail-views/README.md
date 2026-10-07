@@ -21,6 +21,7 @@ npm run dev
 | `r` | refresh |
 | `o` | load further back: all of Slack, this conversation, or this thread |
 | `Backspace` `Delete` | on the Slack list: hide the selected chat (a conversation hides its threads too) |
+| `Shift+Backspace` | on a message, or a thread on the Slack list: hide the whole chat it is in (also **Hide chat** in its header) |
 | `x` `Space` | tick a task |
 | `a` | approve a PR |
 | `X` | close my PR and delete its branch |

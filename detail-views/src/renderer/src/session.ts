@@ -352,6 +352,24 @@ export class Session {
     void this.api.unlink(parent, child.id).then((outcome) => this.settle(parent, outcome))
   }
 
+  /**
+   * Hides the whole chat a message is in: the selected row on the Slack list,
+   * or the focused message. Works for a chat that isn't listed too (a public
+   * channel I'm not in), so none of its threads is listed again.
+   */
+  hideChatOfMessage(): void {
+    const focus = this.focus
+    const message = focus?.entity?.type === 'slack.message' ? focus.entity : this.selected()
+    const chat = message?.type === 'slack.message' ? message.data.conversation : null
+    if (typeof chat !== 'string') return
+    if (message && message === this.selected()) {
+      const at = focus!.children.findIndex((other) => other.id === message.id)
+      const next = focus!.children.slice(at + 1).find((other) => other.data.conversation !== chat && other.id !== chat)
+      if (next) this.select(next.id)
+    }
+    void this.api.unlink('slack', chat).then((outcome) => this.settle('slack', outcome))
+  }
+
   /** Loads the focus further back: a conversation's history, a thread, or all of Slack. */
   older(): void {
     const id = S.focused(this.state)

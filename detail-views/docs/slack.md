@@ -32,6 +32,13 @@
   unlink is later than any cached link (those are at 0 or at the thread's
   start), so neither the hourly list reload nor a new reply brings it back.
   There is no way to relink from the UI yet.
+- **Hiding a chat from a message**: Shift+Backspace on a thread row or a
+  focused message (or **Hide chat** in its header) unlinks the message's
+  conversation, worked out from the message id, so it works for a channel
+  that was never listed (search returns channels I'm not in). An owned unlink
+  of an unlisted conversation still stops it, and its threads, ever listing.
+- Each poll prunes cached thread links whose conversation is not listed
+  (`pruneThreads`): left by older rules, or by a conversation hidden since.
 - `slack:watch` (`slack.watch`) holds the last poll's `polledAt` and `found`,
   on its own entity so a poll every 15 s re-reads only that.
 
