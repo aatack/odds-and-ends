@@ -19,7 +19,11 @@ export interface Snapshot {
   working: Record<string, string[]>
   /** The time, to the second, for anything that says how long ago. */
   now: number
-  /** Bumped to put the keyboard in the find field. */
+  /**
+   * A request to put the keyboard in the find field: a nonce, made by Ctrl+F
+   * and cleared once the field takes it. A signal, not state: a view that opens
+   * with its find already set doesn't take the keyboard.
+   */
   findFocus: number
 }
 
@@ -241,7 +245,14 @@ export class Session {
   openFind(): void {
     const root = S.focused(this.state)
     const next = this.state.finds[root] == null ? S.setFind(this.state, '') : this.state
-    this.publish({ ...this.derive(next), findFocus: this.snapshot.findFocus + 1 })
+    this.publish({ ...this.derive(next), findFocus: this.findRequests += 1 })
+  }
+
+  private findRequests = 0
+
+  /** The find field took the keyboard: the request is spent. */
+  findFocused(): void {
+    if (this.snapshot.findFocus) this.publish({ ...this.snapshot, findFocus: 0 })
   }
 
   setFind(text: string): void {

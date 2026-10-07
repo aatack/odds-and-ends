@@ -147,6 +147,9 @@ doc for the area you change, and keep it up to date in the same commit.
   text (`ItemPill`: peek on hover, push on click), heading a view and in a
   peek's bar (`HeaderPill`: inert, and without the pill's frame). Badges are
   worked out by the module (`Badge` in `core/types.ts`).
+- **Every renderer takes `findText`** (rows, pills, overviews) and draws its
+  text through `Highlight` (or markdown's highlight plugin), so a find shows
+  where it matched.
 - **Every row starts at its left edge**, whatever its type, so a tree's
   indentation reads. Anything secondary (a message's time, a check's
   duration, a count) goes on the right, and may show only on hover.

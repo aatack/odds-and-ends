@@ -138,8 +138,18 @@ test('a view is a tree to navigate and edit, from the keyboard, with nothing on 
 
   // Ctrl+F: the tree keeps rows that say it, and the rows above them.
   session.openFind()
+  // Ctrl+F asks for the keyboard once; the field spends the request.
+  assert.ok(session.get().findFocus > 0)
+  session.findFocused()
+  assert.equal(session.get().findFocus, 0)
   session.setFind('eg')
   assert.deepEqual(screen().map((line) => line.replace('>', '')), ['Tasks', '  breakfast', '    eggs'])
+  // Leaving and coming back to a view with a find keeps it, without asking for the keyboard.
+  select('breakfast')
+  session.open()
+  session.back()
+  assert.equal(session.get().state.finds.tasks, 'eg')
+  assert.equal(session.get().findFocus, 0)
   session.clearFind()
 
   // ? makes a checkbox note, Space ticks it; / makes a heading.

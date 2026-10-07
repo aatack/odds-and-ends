@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { authorColour, cursorTime } from '../format.ts'
 import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
 import { MessageBody, MessageRow } from './messages.tsx'
-import { Button, Composer, HeaderPill, ItemPill, Status } from './primitives.tsx'
+import { Button, Composer, HeaderPill, Highlight, ItemPill, Status } from './primitives.tsx'
 
 const text = (data: Record<string, unknown>, fallback = ''): string =>
   typeof data.text === 'string' && data.text ? data.text : fallback
@@ -39,7 +39,11 @@ export function SlackHomeOverview(props: OverviewProps) {
 }
 
 export function SlackHomePill(props: PillProps) {
-  return <span className="item-name">{text(props.entity.data, 'Slack')}</span>
+  return (
+    <span className="item-name">
+      <Highlight text={text(props.entity.data, 'Slack')} find={props.findText} />
+    </span>
+  )
 }
 
 /**
@@ -87,11 +91,19 @@ export function ConversationOverview(props: OverviewProps) {
 }
 
 export const ConversationRow = memo(function ConversationRow(props: RowProps) {
-  return <span className="line">{text(props.entity.data, props.entity.id)}</span>
+  return (
+    <span className="line">
+      <Highlight text={text(props.entity.data, props.entity.id)} find={props.findText} />
+    </span>
+  )
 })
 
 export function ConversationPill(props: PillProps) {
-  return <span className="item-name">{text(props.entity.data, props.entity.id)}</span>
+  return (
+    <span className="item-name">
+      <Highlight text={text(props.entity.data, props.entity.id)} find={props.findText} />
+    </span>
+  )
 }
 
 // --- Messages --------------------------------------------------------------------------
@@ -116,7 +128,7 @@ export function MessageOverview(props: OverviewProps) {
         )}
         <History {...props} />
       </div>
-      <MessageBody entity={entity} author replies={false} onOpen={props.onOpen} onImage={props.onImage} />
+      <MessageBody entity={entity} author replies={false} onOpen={props.onOpen} onImage={props.onImage} findText={props.findText} />
     </>
   )
 }
@@ -139,7 +151,7 @@ function ThreadLine(props: RowProps) {
       <span className="line">
         <span className="muted">{String(data.where ?? '')}</span>{' '}
         <span style={{ color: authorColour(String(data.authorKey)), fontWeight: 700 }}>{String(data.author ?? '')}</span>{' '}
-        {String(data.text ?? '').split('\n')[0]}
+        <Highlight text={String(data.text ?? '').split('\n')[0]} find={props.findText} />
       </span>
       {replies > 0 && <span className="muted">{replies}</span>}
     </span>
@@ -152,7 +164,7 @@ export function MessagePill(props: PillProps) {
   return (
     <span className="item-name">
       <span style={{ color: authorColour(String(data.authorKey)), fontWeight: 700 }}>{String(data.author ?? '')}</span>{' '}
-      {firstLine}
+      <Highlight text={firstLine} find={props.findText} />
     </span>
   )
 }
@@ -160,5 +172,9 @@ export function MessagePill(props: PillProps) {
 // --- Users -----------------------------------------------------------------------------
 
 export function UserPill(props: PillProps) {
-  return <span className="item-name">{text(props.entity.data, props.entity.id)}</span>
+  return (
+    <span className="item-name">
+      <Highlight text={text(props.entity.data, props.entity.id)} find={props.findText} />
+    </span>
+  )
 }

@@ -28,14 +28,16 @@ export function ViewPane(props: ViewProps) {
   const action = view.actions.find((offered) => offered.id === props.acting)
   return (
     <div className="pane">
-      {props.interactive && props.find !== null && <FindField find={props.find} focus={props.findFocus} onFind={props.onFind} />}
+      {props.interactive && props.find !== null && (
+        <FindField find={props.find} focus={props.findFocus} onFind={props.onFind} onFocused={props.onFindFocused} />
+      )}
       <div className="list">
         {props.shown.rows.map((shown) =>
           shown.kind === 'input' ? (
             <EditRow key={shown.key} depth={shown.depth} values={shown.values} props={props} />
           ) : shown.row.depth === 0 ? (
             <Selectable key={shown.key} shown={shown} className="overview" onSelect={props.interactive ? props.onSelect : undefined}>
-              {shown.editing ? <EditBox props={props} /> : <Overview {...props} entity={root} />}
+              {shown.editing ? <EditBox props={props} /> : <Overview {...props} entity={root} findText={props.find ?? undefined} />}
             </Selectable>
           ) : (
             <TreeRow
@@ -48,6 +50,7 @@ export function ViewPane(props: ViewProps) {
               onImage={props.onImage}
               onEditDraft={props.onEditDraft}
               onCommitEdit={props.onCommitEdit}
+              findText={props.find ?? undefined}
             />
           ),
         )}
@@ -69,11 +72,15 @@ export function ViewPane(props: ViewProps) {
 }
 
 /** The view's find: rows whose text says it, and the rows above them. Enter goes back to the tree, Escape clears it. */
-function FindField(props: { find: string; focus: number; onFind(text: string): void }) {
+function FindField(props: { find: string; focus: number; onFind(text: string): void; onFocused(): void }) {
   const ref = useRef<HTMLInputElement>(null)
+  // Only when asked (Ctrl+F), never just for being on screen.
+  const { focus, onFocused } = props
   useEffect(() => {
+    if (!focus) return
     ref.current?.focus()
-  }, [props.focus])
+    onFocused()
+  }, [focus, onFocused])
   return (
     <input
       ref={ref}
@@ -125,6 +132,7 @@ const TreeRow = memo(function TreeRow(props: {
   onImage(ref: string | null): void
   onEditDraft(text: string): void
   onCommitEdit(): void
+  findText?: string
 }) {
   const kinds = useContext(KindsContext)!
   const { row } = props.shown
@@ -141,7 +149,14 @@ const TreeRow = memo(function TreeRow(props: {
         {props.shown.editing ? (
           <TextBox edit={props.edit} onEditDraft={props.onEditDraft} onCommitEdit={props.onCommitEdit} />
         ) : (
-          <Row entity={row.entity} parent={row.parent} above={row.above} onOpen={props.onOpen} onImage={props.onImage} />
+          <Row
+            entity={row.entity}
+            parent={row.parent}
+            above={row.above}
+            onOpen={props.onOpen}
+            onImage={props.onImage}
+            findText={props.findText}
+          />
         )}
       </div>
     </Selectable>
