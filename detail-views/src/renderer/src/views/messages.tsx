@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm'
 import { mentionScheme } from '../../../core/types.ts'
 import type { Entity } from '../../../core/types.ts'
 import { authorColour, fullTime, shortTime } from '../format.ts'
+import { imageSrc } from '../images.ts'
 import type { RowProps } from './kindTypes.ts'
 import { Link, usePeek } from './primitives.tsx'
 
@@ -102,7 +103,7 @@ export function MessageBody(props: {
               <img
                 key={image.thumb}
                 className="thumb"
-                src={`slack-image://${image.thumb}`}
+                src={imageSrc(image.thumb)}
                 alt={image.name}
                 {...thumbSize(image)}
                 onClick={() => props.onImage(image.full)}

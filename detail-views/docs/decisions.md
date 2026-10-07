@@ -90,3 +90,10 @@ Newest last. Each says what was chosen, why, and what was turned down.
     does: a doubling walk budget per query, and only rows near the viewport
     mounted, measured, with the edited row pinned. *Why:* the Slack workspace
     and long chats are thousands of rows.
+29. **The phone is the renderer again, over HTTP.** A PWA built from the same
+    code (a second Vite entry), talking to the desktop's core through a
+    second `Api` (`httpApi`: POST per action, SSE for changes), served by the
+    desktop app on 127.0.0.1 behind a token and published by `tailscale
+    serve`. *Why:* loading, caching and presentation stay one code path.
+    *Turned down:* a separate mobile app with copied models (entity-graph
+    learnt that the fold must be shared); exposing the port on the LAN.

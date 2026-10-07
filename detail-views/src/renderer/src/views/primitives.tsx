@@ -43,6 +43,8 @@ export function Status(props: { error: string | null }) {
 export interface PeekGestures {
   onPeekEnter(target: PeekTarget, anchor: Rect): void
   onPeekLeave(): void
+  /** Where a tap on a link goes, where there is no hover to peek with (the phone). */
+  onLinkTap?(url: string): void
 }
 
 export const PeekContext = createContext<PeekGestures>({ onPeekEnter: () => {}, onPeekLeave: () => {} })
@@ -161,13 +163,17 @@ export function Link(props: { href: string; children: ReactNode; page?: boolean 
 
 function PageLink(props: { href: string; children: ReactNode }) {
   const peek = usePeek({ kind: 'url', url: props.href })
+  const { onLinkTap } = useContext(PeekContext)
   return (
     <a
       className="link"
       href={props.href}
       {...peek}
       onMouseDown={(event) => event.stopPropagation()}
-      onClick={(event) => event.preventDefault()}
+      onClick={(event) => {
+        event.preventDefault()
+        onLinkTap?.(props.href)
+      }}
     >
       {props.children}
     </a>

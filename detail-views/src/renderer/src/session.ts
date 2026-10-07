@@ -377,6 +377,11 @@ export class Session {
     this.update(S.fold(this.state, row.entity.id, open))
   }
 
+  /** Sends a URL to the browser (the phone's way of following a link). */
+  openExternal(url: string): void {
+    this.api.openExternal(url)
+  }
+
   /** Loads the view's root again from its service, fresh or not. */
   refresh(): void {
     this.cache.refresh(S.focused(this.state))

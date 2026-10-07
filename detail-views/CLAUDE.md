@@ -182,7 +182,14 @@ doc for the area you change, and keep it up to date in the same commit.
     stores, so a headless caller sees what the UI sees. `npm test` drives an
     `EntityCache`, and the renderer's own `Session`, against a `Core` in plain
     node.
-  - `src/main/` only hosts the core and forwards IPC.
+  - `src/main/` only hosts the core: IPC to the window, and HTTP to the
+    phone (`phone.ts`: `Core.actions` as POSTs, changes as Server-Sent Events,
+    a token on every call, bound to 127.0.0.1 for Tailscale to publish).
+  - **The phone is a second entry, not a second app** (`phone.tsx`,
+    `docs/phone.md`): the same `Session`, cache, views and loading, over
+    `httpApi` instead of `electronApi`. Anything added to the `Api` seam gets
+    both implementations; anything platform-specific goes behind it (or, for
+    images, `images.ts`), never into the views.
   - `src/renderer/src/state.ts` is latent UI state plus *pure* derivations.
     Latent means the minimum and serialisable: the stack, each view's
     selection *path*, folds, the in-place edit and its draft. Anything

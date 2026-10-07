@@ -1,12 +1,13 @@
 import type { Entity, ModuleInfo, View } from '../../../core/types.ts'
 import type { Peek, PeekTarget, Pick, Rect } from '../state.ts'
+import { imageSrc } from '../images.ts'
 import { PeekWindow } from './Peek.tsx'
 import { ViewPane } from './View.tsx'
 import { kinds } from './kinds.tsx'
 import { ItemContext, KindsContext, PeekContext } from './primitives.tsx'
 import type { ItemGestures, PeekGestures } from './primitives.tsx'
 import type { ViewProps } from './types.ts'
-import { PillContent } from './primitives.tsx'
+import { Button, PillContent } from './primitives.tsx'
 
 export interface PeekProps {
   peeks: Peek[]
@@ -34,6 +35,8 @@ export function App(props: {
   /** A move or link waiting for its other end, and the item it started on. */
   picking: { pick: Pick; subject: Entity | null } | null
   onModule(root: string): void
+  /** On a phone: the bar of buttons standing in for keys. */
+  phone: PhoneBarProps | null
   /** The stack of views to here, oldest first; the last is the one on screen. */
   crumbs: (Entity | null)[]
   onCrumb(at: number): void
@@ -43,7 +46,7 @@ export function App(props: {
     <KindsContext.Provider value={kinds}>
     <ItemContext.Provider value={props.items}>
       <PeekContext.Provider value={peek.gestures}>
-        <div className="app">
+        <div className={`app${props.phone ? ' phone' : ''}`}>
           <nav className="modules">
             {props.modules.map((module) => (
               <div
@@ -66,6 +69,7 @@ export function App(props: {
               </div>
             )}
             {props.view && <ViewPane {...props.view} />}
+            {props.phone && <PhoneBar {...props.phone} />}
           </main>
           {props.picking && <PickBar {...props.picking} />}
           {peek.peeks.map((one) => (
@@ -87,7 +91,7 @@ export function App(props: {
           ))}
           {props.viewing && (
             <div className="viewer" onMouseDown={() => props.onImage(null)}>
-              <img src={`slack-image://${props.viewing}`} />
+              <img src={imageSrc(props.viewing)} />
             </div>
           )}
         </div>
@@ -110,5 +114,30 @@ function PickBar(props: { pick: Pick; subject: Entity | null }) {
     <div className="pick-bar">
       {verb} {props.subject ? <span className="item-pill header"><PillContent entity={props.subject} /></span> : null} · {how} · Esc to cancel
     </div>
+  )
+}
+
+export interface PhoneBarProps {
+  canBack: boolean
+  canOpen: boolean
+  canOlder: boolean
+  olderBusy: boolean
+  onBack(): void
+  onOpen(): void
+  onNote(): void
+  onEdit(): void
+  onOlder(): void
+}
+
+/** The phone's keys, as buttons along the bottom: back, open, a note, edit, older. */
+function PhoneBar(props: PhoneBarProps) {
+  return (
+    <nav className="phone-bar">
+      <Button label="Back" disabled={!props.canBack && 'Nothing to go back to'} onClick={props.onBack} />
+      <Button label="Open" disabled={!props.canOpen && 'Select a row to open'} onClick={props.onOpen} />
+      <Button label="Note" onClick={props.onNote} />
+      <Button label="Edit" onClick={props.onEdit} />
+      {props.canOlder && <Button label="Older" busyLabel="Loading…" busy={props.olderBusy} onClick={props.onOlder} />}
+    </nav>
   )
 }
