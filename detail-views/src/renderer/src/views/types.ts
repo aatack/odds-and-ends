@@ -30,6 +30,11 @@ export interface ViewProps {
   onHideChat?(): void
   onDraft(text: string): void
   onCompose(composing: boolean): void
+  /** The view's find: null while it has none, the text while the field is open. */
+  find: string | null
+  /** Bumped to put the keyboard in the find field. */
+  findFocus: number
+  onFind(text: string): void
   onEditDraft(text: string): void
   onCommitEdit(): void
   onCancelEdit(): void

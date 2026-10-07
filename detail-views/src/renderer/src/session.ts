@@ -19,6 +19,8 @@ export interface Snapshot {
   working: Record<string, string[]>
   /** The time, to the second, for anything that says how long ago. */
   now: number
+  /** Bumped to put the keyboard in the find field. */
+  findFocus: number
 }
 
 const storageKey = 'detail-views.state'
@@ -58,7 +60,7 @@ export class Session {
     this.env = env
     this.cache = new EntityCache({ scan: (ids) => api.scan(ids), load: (request) => api.load(request), foreign: foreignOf })
     const state = S.restore(env.load(storageKey), 'slack')
-    this.snapshot = { state, modules: moduleInfos, view: null, shown: noRows, peekViews: {}, item: () => null, working: {}, now: Date.now() }
+    this.snapshot = { state, modules: moduleInfos, view: null, shown: noRows, peekViews: {}, item: () => null, working: {}, now: Date.now(), findFocus: 0 }
     this.snapshot = this.derive(state)
   }
 
@@ -146,7 +148,7 @@ export class Session {
   private derive(state: S.State): Snapshot {
     const previous = this.snapshot
     const root = S.focused(state)
-    const view = this.walk(root, state)
+    const view = this.filtered(this.walk(root, state), state.finds[root] ?? null)
     const shown = S.markRows(view, state, root)
     const peekViews: Record<string, View> = {}
     for (const peek of state.peeks) if (peek.target.kind === 'entity') peekViews[peek.target.id] ??= this.walk(peek.target.id, state)
@@ -173,6 +175,16 @@ export class Session {
   }
 
   private itemsFrom: CacheState | null = null
+  private lastFilter: { view: View; find: string | null; filtered: View } | null = null
+
+  /** A view under its find, remembered, so a cursor move doesn't filter it again. */
+  private filtered(view: View, find: string | null): View {
+    const last = this.lastFilter
+    if (last && last.view === view && last.find === find) return last.filtered
+    const filtered = S.filterView(view, find)
+    this.lastFilter = { view, find, filtered }
+    return filtered
+  }
 
   private isWorking(id: string, what: string): boolean {
     return this.snapshot.working[id]?.includes(what) ?? false
@@ -194,10 +206,54 @@ export class Session {
     }
   }
 
-  /** Shows what a write did straight away, and any failure on the entity it was for. */
+  /**
+   * Shows what a write did straight away, and any failure on the entity it
+   * was for. A write clears what was undone: redoing it would land it after.
+   */
   private settle(id: string, outcome: Outcome): void {
     this.cache.apply(outcome.events)
     this.cache.setError(id, outcome.error)
+    if (outcome.events.length) this.update(S.clearUndone(this.state))
+  }
+
+  // --- Undo -------------------------------------------------------------------------
+
+  /** Ctrl+Z: takes my last action off the store (within five minutes), and out of the cache. */
+  async undo(): Promise<void> {
+    const { events } = await this.api.undo()
+    if (!events.length) return
+    this.cache.remove(events)
+    this.update(S.pushUndone(this.state, events))
+  }
+
+  /** Ctrl+Y: writes the last undone action back, exactly as it was. */
+  async redo(): Promise<void> {
+    const step = this.state.undone[this.state.undone.length - 1]
+    if (!step) return
+    this.update(S.popUndone(this.state))
+    const outcome = await this.api.redo(step)
+    this.cache.apply(outcome.events)
+  }
+
+  // --- Find -------------------------------------------------------------------------
+
+  /** Ctrl+F: opens the view's find field, or puts the keyboard back in it. */
+  openFind(): void {
+    const root = S.focused(this.state)
+    const next = this.state.finds[root] == null ? S.setFind(this.state, '') : this.state
+    this.publish({ ...this.derive(next), findFocus: this.snapshot.findFocus + 1 })
+  }
+
+  setFind(text: string): void {
+    this.update(S.setFind(this.state, text))
+  }
+
+  hasFind(): boolean {
+    return this.state.finds[S.focused(this.state)] != null
+  }
+
+  clearFind(): void {
+    this.update(S.setFind(this.state, null))
   }
 
   private get state(): S.State {

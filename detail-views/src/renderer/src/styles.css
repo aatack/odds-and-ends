@@ -846,3 +846,19 @@ body,
   border-radius: var(--radius);
   box-shadow: 0 2px 8px light-dark(rgb(0 0 0 / 0.12), rgb(0 0 0 / 0.5));
 }
+
+/* The view's find field. */
+.find {
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+  outline: none;
+}
+
+.find:focus {
+  border-color: var(--accent);
+}

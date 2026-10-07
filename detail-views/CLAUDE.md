@@ -30,6 +30,8 @@ doc for the area you change, and keep it up to date in the same commit.
   view's root), `x` moves it, `r` / `Shift+R` link it to or from another row.
   `x`, `r` and `Shift+R` are finished by pressing the same key on the other
   row, in any view; Escape gives up.
+  Ctrl+Z / Ctrl+Y undo and redo my own edits (the owned log, five minutes
+  back); Ctrl+F filters a view.
 - **`text` is an item's canonical value**: what it is called or says wherever
   it is shown (a message's content, a PR's or channel's name). It may come
   from a service; editing it writes an owned `text` that overrides it for me

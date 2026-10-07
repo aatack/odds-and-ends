@@ -16,6 +16,12 @@ function typing(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA'].includes(target.tagName))
 }
 
+/** Which text field a key was pressed in: its `data-field`, `text` for one without, null outside any. */
+function fieldOf(target: EventTarget | null): string | null {
+  if (!typing(target)) return null
+  return (target as HTMLElement).dataset.field ?? 'text'
+}
+
 /**
  * The only key listener. Walks the scopes innermost first and runs the first
  * enabled tool bound to the key. While typing, only the input scope and
@@ -26,14 +32,15 @@ export function installDispatch(session: Session, tools: Tool[]): () => void {
     if (event.isComposing) return
     const key = keyName(event)
     const inInput = typing(event.target)
+    const field = fieldOf(event.target)
     const scopes: Tool['scope'][] = inInput ? ['input', 'list', 'app'] : ['list', 'app']
     const modified = event.ctrlKey || event.altKey || event.metaKey
     for (const scope of scopes) {
       if (inInput && scope !== 'input' && !modified) continue
-      const tool = tools.find((t) => t.scope === scope && t.keys.includes(key) && (t.enabled?.(session) ?? true))
+      const tool = tools.find((t) => t.scope === scope && t.keys.includes(key) && (t.enabled?.(session, field) ?? true))
       if (tool) {
         event.preventDefault()
-        tool.run(session)
+        tool.run(session, field)
         return
       }
     }

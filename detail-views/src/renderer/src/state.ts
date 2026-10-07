@@ -1,3 +1,4 @@
+import type { AppEvent } from '../../core/graph/events.ts'
 import type { View, ViewRow } from '../../core/types.ts'
 
 /**
@@ -22,6 +23,17 @@ export interface State {
   folds: Record<string, boolean>
   /** Text being typed into a row, in place: editing its text, or a new note under it. Persisted, so a draft survives a reload. */
   edit: Edit | null
+  /**
+   * What each view is filtered to, by its root: null while it isn't, a string
+   * (empty included) while the find field is open.
+   */
+  finds: Record<string, string | null>
+  /**
+   * Actions undone, newest last: the only copy of their events (undo takes
+   * them off the store), so this is latent and persisted, not history.
+   * Any other write clears it, since redoing these would land them after it.
+   */
+  undone: AppEvent[][]
   /** Prompt text for an action, per view. */
   drafts: Record<string, string>
   /** Whether the action prompt has the keyboard. Not persisted. */
@@ -146,6 +158,8 @@ export function initialState(root: string): State {
     selections: {},
     folds: {},
     edit: null,
+    finds: {},
+    undone: [],
     drafts: {},
     composing: false,
     acting: null,
@@ -231,6 +245,22 @@ export function selectedRow(shown: ShownView): ViewRow | null {
   return at?.kind === 'entity' ? at.row : null
 }
 
+/**
+ * A view's rows kept by its find: rows whose text says it, and the rows above
+ * them, so the tree still reads. The root always stays. Applied after the
+ * walk, to what the walk reached: a folded row's children aren't searched.
+ */
+export function filterView(view: View, find: string | null | undefined): View {
+  const needle = find?.trim().toLowerCase()
+  if (!needle) return view
+  const keep = new Set<string>()
+  for (const row of view.rows) {
+    if (!String(row.entity.data.text ?? '').toLowerCase().includes(needle)) continue
+    for (let i = 1; i <= row.path.length; i++) keep.add(keyOf(row.path.slice(0, i)))
+  }
+  return { ...view, rows: view.rows.filter((row) => row.depth === 0 || keep.has(row.key)) }
+}
+
 // --- Reducers ---------------------------------------------------------------
 
 export function navigate(state: State, id: string): State {
@@ -278,6 +308,22 @@ export function setEditDraft(state: State, draft: string): State {
 
 export function endEdit(state: State): State {
   return state.edit ? { ...state, edit: null } : state
+}
+
+export function setFind(state: State, find: string | null): State {
+  return { ...state, finds: { ...state.finds, [focused(state)]: find } }
+}
+
+export function pushUndone(state: State, events: AppEvent[]): State {
+  return { ...state, undone: [...state.undone, events].slice(-50) }
+}
+
+export function popUndone(state: State): State {
+  return { ...state, undone: state.undone.slice(0, -1) }
+}
+
+export function clearUndone(state: State): State {
+  return state.undone.length ? { ...state, undone: [] } : state
 }
 
 export function startPick(state: State, tool: PickTool, path: string[]): State {
@@ -330,6 +376,8 @@ export function restore(saved: unknown, root: string): State {
     selections: value.selections ?? {},
     folds: value.folds ?? {},
     edit: value.edit ?? null,
+    finds: value.finds ?? {},
+    undone: Array.isArray(value.undone) ? value.undone : [],
     drafts: value.drafts ?? {},
     peeks: Array.isArray(value.peeks) ? value.peeks.filter((peek) => peek.pinned).map((peek) => ({ ...peek, parent: peek.parent ?? null })) : [],
   }

@@ -22,6 +22,8 @@ async function headless() {
     move: async (child, from, to) => a.move({ child, from, to }),
     create: async (parent, text) => a.create({ parent, text }),
     setText: async (id, text) => a.setText({ id, text }),
+    undo: async () => a.undo(),
+    redo: async (events) => a.redo({ events }),
     onChange: (listener) => core.onChange(listener),
     openExternal: () => {},
   }
@@ -124,5 +126,30 @@ test('a view is a tree to navigate and edit, from the keyboard, with nothing on 
   assert.deepEqual(screen(), ['breakfast', '  >eggs'])
   session.back()
   assert.equal(session.get().view?.root?.data.text, 'Tasks')
+
+  // Ctrl+F: the tree keeps rows that say it, and the rows above them.
+  session.openFind()
+  session.setFind('eg')
+  assert.deepEqual(screen().map((line) => line.replace('>', '')), ['Tasks', '  breakfast', '    eggs'])
+  session.clearFind()
+
+  // Ctrl+Z takes my last action back off the store; Ctrl+Y puts it back as it was.
+  select('Tasks')
+  session.startCreate()
+  await type('mistake')
+  assert.ok(screen().some((line) => line.includes('mistake')))
+  await session.undo()
+  await settle()
+  assert.ok(!screen().some((line) => line.includes('mistake')))
+  await session.redo()
+  await settle()
+  assert.ok(screen().some((line) => line.includes('mistake')))
+  // Any other write clears what could be redone.
+  await session.undo()
+  assert.equal(session.get().state.undone.length, 1)
+  select('Tasks')
+  session.startCreate()
+  await type('something else')
+  assert.equal(session.get().state.undone.length, 0)
   stop()
 })

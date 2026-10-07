@@ -1,4 +1,4 @@
-import type { Changed, Scan } from '../../core/graph/events.ts'
+import type { AppEvent, Changed, Scan } from '../../core/graph/events.ts'
 import type { LoadRequest, LoadResult, Outcome } from '../../core/types.ts'
 
 /** The seam between the UI and the core. Nothing else reaches the core. */
@@ -21,6 +21,10 @@ export interface Api {
   create(parent: string, text: string): Promise<Outcome>
   /** My text for an item, over whatever its service says. */
   setText(id: string, text: string): Promise<Outcome>
+  /** Takes my last action off the owned log; returns what came off. */
+  undo(): Promise<Outcome>
+  /** Writes undone events back, as they were. */
+  redo(events: AppEvent[]): Promise<Outcome>
   /** Which entities changed in the stores; null for anything. */
   onChange(listener: (changed: Changed) => void): () => void
   /** Opens a link in my browser. */
@@ -49,6 +53,8 @@ export function electronApi(): Api {
     move: (child, from, to) => call('move', { child, from, to }),
     create: (parent, text) => call('create', { parent, text }),
     setText: (id, text) => call('setText', { id, text }),
+    undo: () => call('undo'),
+    redo: (events) => call('redo', { events }),
     onChange: (listener) => bridge.onChange(listener),
     openExternal: (url) => void bridge.openExternal(url),
   }

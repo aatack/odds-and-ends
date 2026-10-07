@@ -27,6 +27,7 @@ export function ViewPane(props: ViewProps) {
   const action = view.actions.find((offered) => offered.id === props.acting)
   return (
     <div className="pane">
+      {props.interactive && props.find !== null && <FindField find={props.find} focus={props.findFocus} onFind={props.onFind} />}
       <div className="list">
         {props.shown.rows.map((shown) =>
           shown.kind === 'input' ? (
@@ -53,6 +54,25 @@ export function ViewPane(props: ViewProps) {
         />
       )}
     </div>
+  )
+}
+
+/** The view's find: rows whose text says it, and the rows above them. Enter goes back to the tree, Escape clears it. */
+function FindField(props: { find: string; focus: number; onFind(text: string): void }) {
+  const ref = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    ref.current?.focus()
+  }, [props.focus])
+  return (
+    <input
+      ref={ref}
+      className="find"
+      data-field="find"
+      placeholder="Find"
+      spellCheck={false}
+      value={props.find}
+      onChange={(event) => props.onFind(event.target.value)}
+    />
   )
 }
 
