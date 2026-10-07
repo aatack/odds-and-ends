@@ -66,8 +66,11 @@ it also runs in node tests against a `Core`.
   `views/View.tsx`). Each row measures itself; unmeasured rows are guessed;
   offsets are worked out from the keys, which stay the same array while the
   tree's shape does (`ShownView.keys`), so a cursor move lays out nothing.
-  - The selected row is kept on screen, 30% in from the edge, and followed as
-    rows around it are measured until the list is scrolled by hand.
+  - The selected row is kept on screen. The view doesn't move while it is;
+    once it goes past an edge, the view jumps to put it 40% in from that edge,
+    so holding a movement key moves the cursor smoothly and the page catches
+    up now and then. It is followed as rows around it are measured until the
+    list is scrolled by hand.
   - The row being typed into is pinned: mounted wherever it is, so the caret
     survives scrolling away, and CSS-sticky to the view's bottom (or top)
     while its place is out of sight, so the browser moves it, with no lag.

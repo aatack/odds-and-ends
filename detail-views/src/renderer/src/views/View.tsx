@@ -12,8 +12,8 @@ import type { ViewProps } from './types.ts'
 const overscan = 8
 /** The height assumed for a row not yet measured, in px. */
 const estimate = 30
-/** How far in from the edge a row the cursor moves to lands, as a share of the viewport. */
-const margin = 0.3
+/** How far in from the edge a row the view jumps to lands, as a share of the viewport. */
+const margin = 0.4
 
 /**
  * Every view: its root's overview and its tree, or its type's `Detail` in
@@ -219,7 +219,8 @@ function TextBox(props: { edit: Edit | null; onEditDraft(text: string): void; on
  * unmeasured ones are guessed, and offsets are worked out from the keys, which
  * stay the same while the tree does, so a cursor move lays out nothing.
  *
- * - The selected row is kept on screen, landing `margin` in from the edge.
+ * - The selected row is kept on screen: the view stays put while it is, and
+ *   jumps to put it `margin` (40%) in from the edge once it goes past one.
  * - The row being typed into is pinned: mounted wherever it is, so scrolling
  *   away doesn't take the caret with it, and stuck to the view's bottom (or
  *   top) while its own place is out of sight.
@@ -294,9 +295,12 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
     const bottom = o[index + 1]
     const height = el.clientHeight
     if (!height) return
-    const room = Math.max(0, Math.min(height * margin, (height - (bottom - top)) / 2))
-    if (top < el.scrollTop + room) el.scrollTop = Math.max(0, top - room)
-    else if (bottom > el.scrollTop + height - room) el.scrollTop = bottom - height + room
+    // Nothing moves while the row is on screen. Once it isn't, the view jumps
+    // so it lands `margin` in from the edge it went past: the cursor runs on
+    // smoothly, and the page catches up now and then.
+    const room = Math.max(0, Math.min(height * margin, height - (bottom - top)))
+    if (top < el.scrollTop) el.scrollTop = Math.max(0, top - room)
+    else if (bottom > el.scrollTop + height) el.scrollTop = bottom - height + room
     setScrollTop(el.scrollTop)
   }, [])
   // The cursor is followed as rows around it are measured, until the list is
