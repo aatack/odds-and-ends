@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { MessageBody, MessageRow, showsAuthor, showsTime } from './messages.tsx'
 import { authorColour, cursorTime } from '../format.ts'
 import type { PillProps, RowProps } from './kindTypes.ts'
-import { Composer, HeaderPill, ItemPill, Row, Status, Working } from './primitives.tsx'
+import { Button, Composer, HeaderPill, ItemPill, Row, Status } from './primitives.tsx'
 import type { FocusProps } from './types.ts'
 
 /** Every conversation I am in, most recent first. */
@@ -55,7 +55,7 @@ function History(props: FocusProps) {
     <span className="history">
       {typeof data.from === 'string' && <span title="Everything since is loaded">{cursorTime(data.from)}</span>}
       {props.onOlder && (
-        <Working busy={props.working?.includes('older')} label="Older" busyLabel="Loading…" onClick={props.onOlder} />
+        <Button busy={props.working?.includes('older')} label="Older" busyLabel="Loading…" onClick={props.onOlder} />
       )}
     </span>
   )
@@ -178,9 +178,13 @@ export function SlackThread(props: FocusProps) {
           )}
           {props.onHideChat && typeof focus.entity?.data.conversation === 'string' && (
             <span className="history">
-              <button className="action" title="Hide this chat and its threads (Shift+Backspace)" onClick={props.onHideChat}>
-                Hide chat
-              </button>
+              <Button
+                label="Hide chat"
+                busyLabel="Hiding…"
+                busy={props.working?.includes('hide')}
+                title="Hide this chat and its threads (Shift+Backspace)"
+                onClick={props.onHideChat}
+              />
             </span>
           )}
           <History {...props} />

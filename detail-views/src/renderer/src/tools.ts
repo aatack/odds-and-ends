@@ -89,7 +89,7 @@ export const tools: Tool[] = [
       id: `action.${action}`,
       scope: 'app',
       keys: [key],
-      enabled: (s) => Boolean(s.get().focus?.actions.some((offered) => offered.id === action)),
+      enabled: (s) => Boolean(s.get().focus?.actions.some((offered) => offered.id === action && !offered.disabled)),
       run: (s) => s.startAction(action),
     }),
   ),

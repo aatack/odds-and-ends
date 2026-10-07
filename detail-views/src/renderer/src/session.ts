@@ -311,7 +311,9 @@ export class Session {
   }
 
   startAction(action: string): void {
-    if (this.focus?.actions.some((offered) => offered.id === action)) this.update(S.startAction(this.state, action))
+    if (this.focus?.actions.some((offered) => offered.id === action && !offered.disabled)) {
+      this.update(S.startAction(this.state, action))
+    }
   }
 
   /** Confirms the action waiting on the prompt, with whatever was typed. */
@@ -367,7 +369,8 @@ export class Session {
       const next = focus!.children.slice(at + 1).find((other) => other.data.conversation !== chat && other.id !== chat)
       if (next) this.select(next.id)
     }
-    void this.api.unlink('slack', chat).then((outcome) => this.settle('slack', outcome))
+    const id = S.focused(this.state)
+    void this.working(id, 'hide', () => this.api.unlink('slack', chat)).then((outcome) => this.settle('slack', outcome))
   }
 
   /** Loads the focus further back: a conversation's history, a thread, or all of Slack. */

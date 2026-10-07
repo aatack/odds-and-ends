@@ -132,6 +132,16 @@ doc for the area you change, and keep it up to date in the same commit.
   header (`headed={false}`) because the bar already names it. Badges are worked
   out by the module (`Badge` in `core/types.ts`).
 - No animations. The cursor never becomes a pointer.
+- **Anything interactable shows it on hover** (rows, pills, links, sidebar
+  entries, thumbnails, buttons), since the cursor never changes. Every button
+  is `Button` (`views/primitives.tsx`): raised at rest, darker on hover,
+  pressed in on click.
+- **A slow action says it is under way**: its button shows `busy` (a
+  `…` label, pressed in, not pressable) from `Session.working` until it
+  settles.
+- **What can't be done now is shown disabled with the reason as its tooltip**
+  (`Action.disabled`), never just offered and refused. The core refuses it
+  too, so a keypress or a headless caller can't get round it.
 
 ### Code
 
