@@ -55,3 +55,8 @@ Only the allowlist in `checkWrite`: approve someone else's PR; on mine,
 approve locally (an owned `github.localApproval` child) and turn on
 auto-merge; close mine and delete the branch. Each is started by me and
 confirmed with Enter.
+
+The buttons are on a PR's overview wherever it is drawn, a peek included: a
+button there opens the prompt in the peek (`acting.peek`), which stays open
+until the action is confirmed or given up. The keys (`p`, `X`) act on the
+view's root only.

@@ -43,7 +43,7 @@ export function ViewPane(props: ViewProps) {
       <TreeList props={props} root={root} Overview={Overview} />
       {view.loading && view.rows.length <= 1 && <div className="loading">Loading…</div>}
       <Status error={view.error} />
-      {props.interactive && action && props.composing && (
+      {action && props.composing && (
         <Composer
           kind="action"
           placeholder={action.prompt}

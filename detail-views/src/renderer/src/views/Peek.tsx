@@ -38,6 +38,12 @@ export function PeekWindow(props: {
   /** Its view is scrolled near its end: walk further. */
   onNearEnd(): void
   onImage(ref: string | null): void
+  working: string[] | undefined
+  /** The action waiting in this peek, and its prompt. */
+  acting: { action: string; draft: string; composing: boolean } | null
+  onAction(action: string): void
+  onDraft(text: string): void
+  onCompose(composing: boolean): void
 }) {
   const { peek } = props
   const placed = peek.rect ?? place(peek.anchor)
@@ -116,14 +122,16 @@ export function PeekWindow(props: {
               interactive={false}
               edit={null}
               picking={null}
-              acting={null}
-              draft=""
-              composing={false}
+              working={props.working}
+              acting={props.acting?.action ?? null}
+              draft={props.acting?.draft ?? ''}
+              composing={props.acting?.composing ?? false}
+              onAction={props.onAction}
               onSelect={noop}
               onOpen={props.onOpenEntity}
               onImage={props.onImage}
-              onDraft={noop}
-              onCompose={noop}
+              onDraft={props.onDraft}
+              onCompose={props.onCompose}
               find={null}
               findFocus={0}
               onFind={noop}

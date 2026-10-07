@@ -92,7 +92,7 @@ export function PrOverview(props: OverviewProps) {
         )}
         <HeaderPill entity={entity} />
       </div>
-      {props.interactive && view.actions.length > 0 && (
+      {props.onAction && view.actions.length > 0 && (
         <div className="facts">
           {view.actions.map((action) => (
             <Button

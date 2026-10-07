@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { installDispatch } from './dispatch.ts'
 import { useSnapshot } from './hooks.ts'
 import type { Session } from './session.ts'
-import { draftKey, focused } from './state.ts'
+import { actingIn, draftKey, focused } from './state.ts'
 import type { PeekTarget, Rect, SessionDialog } from './state.ts'
 import { actionsNow, labelOf, runTool, tools } from './tools.ts'
 import { App } from './views/App.tsx'
@@ -74,11 +74,23 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
       onClose: (key: string) => session.closePeek(key),
       onOpen: (target: PeekTarget) => session.openPeek(target),
       loadMore: (root: string) => session.loadMore(root),
+      onAction: (key: string, action: string) => session.startAction(action, key),
+      onDraft,
+      onCompose,
     }),
     [gestures],
   )
   const items = useMemo(() => ({ item, onOpen }), [item, onOpen])
-  const peek = useMemo(() => ({ ...peekHandlers, peeks: state.peeks, views: peekViews }), [peekHandlers, state.peeks, peekViews])
+  const peek = useMemo(
+    () => ({
+      ...peekHandlers,
+      peeks: state.peeks,
+      views: peekViews,
+      working,
+      acting: state.acting?.peek ? { ...state.acting, peek: state.acting.peek, draft: state.drafts[draftKey(state)] ?? '', composing: state.composing } : null,
+    }),
+    [peekHandlers, state, peekViews, working],
+  )
 
   const view = useMemo(
     () =>
@@ -89,7 +101,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
         edit: state.edit,
         picking: state.picking,
         draft: state.drafts[draftKey(state)] ?? '',
-        acting: state.acting,
+        acting: actingIn(state, null),
         composing: state.composing,
         working: working[focused(state)],
         now,

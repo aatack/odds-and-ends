@@ -683,26 +683,34 @@ export class Session {
   // --- Actions on the root, and Slack's own -----------------------------------------
 
   compose(composing: boolean): void {
+    const peek = this.state.acting?.peek
     this.update(S.setComposing(this.state, composing))
+    // A peek held open for its action closes, if the pointer has left it.
+    if (peek && !this.state.acting) this.leavePeek(null)
   }
 
   setDraft(text: string): void {
     this.update(S.setDraft(this.state, text))
   }
 
-  startAction(action: string): void {
-    if (this.snapshot.view?.actions.some((offered) => offered.id === action && !offered.disabled)) {
-      this.update(S.startAction(this.state, action))
+  /** Starts an action on the view's root, or on a peek's (by its key). */
+  startAction(action: string, peek: string | null = null): void {
+    const target = peek === null ? null : this.state.peeks.find((one) => one.key === peek)?.target
+    if (peek !== null && target?.kind !== 'entity') return
+    const on = target?.kind === 'entity' ? target.id : S.focused(this.state)
+    const view = peek === null ? this.snapshot.view : this.snapshot.peekViews[on]
+    if (view?.actions.some((offered) => offered.id === action && !offered.disabled)) {
+      this.update(S.startAction(this.state, { action, on, peek }))
     }
   }
 
   /** Confirms the action waiting on the prompt, with whatever was typed. */
   async perform(): Promise<void> {
-    const action = this.state.acting
-    if (!action) return
-    const id = S.focused(this.state)
+    if (!this.state.acting) return
+    const { action, on: id, peek } = this.state.acting
     const text = this.state.drafts[S.draftKey(this.state)] ?? ''
     this.update(S.setComposing(S.setDraft(this.state, ''), false))
+    if (peek) this.leavePeek(null)
     this.settle(id, await this.working(id, action, () => this.api.perform(id, action, text)))
   }
 
