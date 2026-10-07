@@ -216,16 +216,18 @@ function SessionForm(props: DialogProps) {
             <option key={cwd} value={cwd} />
           ))}
         </datalist>
-        <label className={`dialog-check${hasCwd ? '' : ' muted'}`}>
-          <input
-            type="checkbox"
-            data-field="dialog-worktree"
-            disabled={!hasCwd}
-            checked={hasCwd && dialog.worktree}
-            onChange={(event) => props.onChange({ worktree: event.target.checked })}
-          />
-          In a new worktree, on a branch of its own
-        </label>
+        {/* Only with a directory: a worktree is of the repo it is in. */}
+        {hasCwd && (
+          <label className="dialog-check">
+            <input
+              type="checkbox"
+              data-field="dialog-worktree"
+              checked={dialog.worktree}
+              onChange={(event) => props.onChange({ worktree: event.target.checked })}
+            />
+            In a new worktree, on a branch of its own
+          </label>
+        )}
         <div className="dialog-buttons">
           <Button label="Cancel" hotkey="Esc" onClick={props.onCancel} />
           <Button label="Start" hotkey="↵" busy={props.busy} busyLabel="Starting…" onClick={props.onSubmit} />
