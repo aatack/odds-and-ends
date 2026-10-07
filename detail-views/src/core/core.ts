@@ -8,6 +8,7 @@ import { eventKey, link, value, values, type AppEvent, type Changed, type Scan }
 import { cacheMigrations, openDatabase, ownedMigrations } from './db.ts'
 import { importLegacy } from './legacy.ts'
 import { Claude, type NewSession } from './modules/claude/claude.ts'
+import { Recents } from './modules/recents/recents.ts'
 import { GitHub } from './modules/github/github.ts'
 import type { Module, ModuleContext } from './modules/module.ts'
 import { Slack } from './modules/slack/slack.ts'
@@ -97,6 +98,7 @@ export class Core {
   readonly slack: Slack
   readonly github: GitHub
   readonly claude: Claude
+  readonly recents: Recents
 
   private readonly listeners = new Set<(changed: Changed) => void>()
   private readonly errors = new Map<string, string>()
@@ -153,7 +155,8 @@ export class Core {
     this.slack = new Slack(context)
     this.github = new GitHub(context)
     this.claude = new Claude(context)
-    this.modules = [this.slack, this.github, tasksModule(), this.claude]
+    this.recents = new Recents(context)
+    this.modules = [this.slack, this.github, tasksModule(), this.claude, this.recents]
   }
 
   /**
@@ -444,6 +447,8 @@ export class Core {
     /** A prompt to a session, under `parent`; the answer arrives as a change. */
     claudePrompt: ({ session, parent, text }: { session: string; parent: string; text: string }): Outcome =>
       text.trim() ? { events: this.claude.prompt(session, parent, text), error: null } : { events: [], error: null },
+    /** A view of `id` was pushed: it goes to the front of Recents (unless it is a plain note). */
+    visit: ({ id }: { id: string }): void => this.recents.visit(id, this.entity(id).values),
     /** What a view shows, as a tree, for a caller with no cache of its own. */
     view: ({ id, folds }: { id: string; folds?: Folds }): View => viewOf(id, this.source(), { folds }),
     /** A note under `parent`: an owned entity with no type, just text. */

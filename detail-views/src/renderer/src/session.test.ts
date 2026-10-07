@@ -29,6 +29,7 @@ async function headless(options: Parameters<typeof memoryCore>[0] = {}) {
     redo: async (events) => a.redo({ events }),
     claudeCreate: (input) => a.claudeCreate(input),
     claudePrompt: async (session, parent, text) => a.claudePrompt({ session, parent, text }),
+    visit: async (id) => a.visit({ id }),
     onChange: (listener) => core.onChange(listener),
     openExternal: () => {},
   }

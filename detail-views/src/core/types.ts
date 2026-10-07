@@ -35,6 +35,7 @@ export const itemTypes = [
   'claude.session',
   'claude.prompt',
   'claude.response',
+  'recents.home',
 ] as const
 
 export type ItemType = (typeof itemTypes)[number]

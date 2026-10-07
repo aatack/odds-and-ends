@@ -26,6 +26,8 @@ export interface Api {
   claudeCreate(input: { name: string; cwd: string; worktree: boolean; attachTo: string }): Promise<Outcome>
   /** A prompt to a Claude session, under `parent`; the answer arrives as a change. */
   claudePrompt(session: string, parent: string, text: string): Promise<Outcome>
+  /** A view of `id` was pushed: Recents moves it to the front. */
+  visit(id: string): Promise<void>
   /** Takes my last action off the owned log; returns what came off. */
   undo(): Promise<Outcome>
   /** Writes undone events back, as they were. */
@@ -75,6 +77,7 @@ export function httpApi(base: string, token: string): Api {
     redo: (events) => call('redo', { events }),
     claudeCreate: (input) => call('claudeCreate', input),
     claudePrompt: (session, parent, text) => call('claudePrompt', { session, parent, text }),
+    visit: (id) => call('visit', { id }),
     onChange: (listener) => {
       // EventSource reconnects by itself; a reconnect may have missed changes, so it re-reads everything.
       const events = new EventSource(`${base}/api/changes?token=${encodeURIComponent(token)}`)
@@ -111,6 +114,7 @@ export function electronApi(): Api {
     redo: (events) => call('redo', { events }),
     claudeCreate: (input) => call('claudeCreate', input),
     claudePrompt: (session, parent, text) => call('claudePrompt', { session, parent, text }),
+    visit: (id) => call('visit', { id }),
     onChange: (listener) => bridge.onChange(listener),
     openExternal: (url) => void bridge.openExternal(url),
   }
