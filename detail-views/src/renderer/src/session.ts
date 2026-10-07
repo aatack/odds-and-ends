@@ -611,6 +611,12 @@ export class Session {
     this.settle(id, await this.api.submit(id, text))
   }
 
+  /** A click on a row's box: selects the row and ticks it. */
+  toggleAt(path: string[]): void {
+    this.select(path)
+    this.toggle()
+  }
+
   /** Whether Space has a box to tick on the selected row. */
   canToggle(): boolean {
     const row = this.selected()
