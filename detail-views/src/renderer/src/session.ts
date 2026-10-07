@@ -30,7 +30,13 @@ export interface Snapshot {
 const storageKey = 'detail-views.state'
 /** How often everything in the cache is looked at again, to load whatever has gone stale. */
 const revisitEvery = 20_000
-const noRows: S.ShownView = { rows: [], selectedPath: [], selectedIndex: -1 }
+const noRows: S.ShownView = { rows: [], keys: [], selectedPath: [], selectedIndex: -1 }
+
+/**
+ * Rows a view's walk may reach at first. Raised, doubling, as the view scrolls
+ * near its end (or doesn't fill the screen): see `loadMore`.
+ */
+export const pageSize = 200
 
 /**
  * The app without a screen: latent state, the entity cache, every effect.
@@ -53,7 +59,36 @@ export class Session {
   private peekClosing: ReturnType<typeof setTimeout> | null = null
   private deriving = false
   /** The last walk of each view, and what it was walked against. */
-  private readonly walks = new Map<string, { root: string; folds: S.State['folds']; cache: CacheState; view: View }>()
+  private readonly walks = new Map<string, { root: string; folds: S.State['folds']; cache: CacheState; limit: number; view: View }>()
+  /**
+   * How far each view's walk may go, and the query it was raised for. Runtime
+   * only. A budget belongs to its query, not its view: one raised a long way
+   * to fill a screen off a narrow find isn't inherited once the find clears.
+   */
+  private readonly budgets = new Map<string, { shape: string; limit: number }>()
+
+  private shapeOf(root: string, state: S.State): string {
+    return JSON.stringify([root, state.folds, state.finds[root] ?? null])
+  }
+
+  private limitOf(root: string, state: S.State): number {
+    const held = this.budgets.get(root)
+    return held && held.shape === this.shapeOf(root, state) ? held.limit : pageSize
+  }
+
+  /**
+   * Walks a view further: when it is scrolled near its end, or its rows don't
+   * fill the screen. The ceiling doubles rather than growing by a page: the
+   * limit is on the walk, not on the rows a find keeps, so a narrow find over a
+   * wide tree would otherwise re-walk once per page until it found anything.
+   */
+  loadMore(root: string = S.focused(this.state)): void {
+    const view = this.walks.get(root)?.view
+    if (!view || view.complete) return
+    const at = this.limitOf(root, this.state)
+    this.budgets.set(root, { shape: this.shapeOf(root, this.state), limit: at + Math.max(pageSize, at) })
+    this.publish(this.derive(this.state))
+  }
   /** The last thing shown for each item, so an item that hasn't changed keeps its identity and its row doesn't redraw. */
   private readonly items = new Map<string, { json: string; entity: Entity }>()
   /** Likewise for rows, by key. */
@@ -137,14 +172,18 @@ export class Session {
     return next
   }
 
-  /** A view's walk: remembered while its root, the folds and the cache are the same. */
+  /**
+   * A view's walk: remembered while its root, the folds, the cache and its
+   * budget are the same. Pointedly not the selection: that is laid over it.
+   */
   private walk(root: string, state: S.State): View {
     const cache = this.cache.get()
+    const limit = this.limitOf(root, state)
     const known = this.walks.get(root)
-    if (known && known.folds === state.folds && known.cache === cache) return known.view
-    const walked = viewOf(root, this.cache.source(cache), { folds: state.folds })
+    if (known && known.folds === state.folds && known.cache === cache && known.limit === limit) return known.view
+    const walked = viewOf(root, this.cache.source(cache), { folds: state.folds, limit })
     const view = { ...walked, root: walked.root && this.stable(walked.root), rows: walked.rows.map((row) => this.stableRow(row)) }
-    this.walks.set(root, { root, folds: state.folds, cache, view })
+    this.walks.set(root, { root, folds: state.folds, cache, limit, view })
     return view
   }
 
@@ -159,6 +198,7 @@ export class Session {
     // Walks for views no longer anywhere are dropped.
     const live = new Set([root, ...Object.keys(peekViews)])
     for (const key of this.walks.keys()) if (!live.has(key)) this.walks.delete(key)
+    for (const key of this.budgets.keys()) if (!live.has(key)) this.budgets.delete(key)
     const cache = this.cache.get()
     const item =
       previous.view && this.itemsFrom === cache

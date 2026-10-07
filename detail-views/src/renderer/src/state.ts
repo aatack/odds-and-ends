@@ -184,6 +184,11 @@ export type ShownRow =
 
 export interface ShownView {
   rows: ShownRow[]
+  /**
+   * Each row's key, in order: the same array while the tree's shape is, so a
+   * view can measure and lay out against it without the cursor disturbing it.
+   */
+  keys: string[]
   /** The selection in effect, resolved against the rows. Never stored. */
   selectedPath: string[]
   /** Its index in `rows`, or -1 when nothing is selected. */
@@ -240,7 +245,20 @@ export function markRows(view: View, state: State, root: string, previous?: Show
       rows.splice(insert, 0, { kind: 'input', key: `\0new\0${editKey}`, depth: depth + 1, parent: edit.path, values: edit.values })
     }
   }
-  return { rows, selectedPath, selectedIndex: rows.findIndex((row) => row.kind === 'entity' && row.selected) }
+  const keys = rows.map((row) => row.key)
+  const same = previous && previous.keys.length === keys.length && previous.keys.every((key, i) => key === keys[i])
+  return {
+    rows,
+    keys: same ? previous.keys : keys,
+    selectedPath,
+    selectedIndex: rows.findIndex((row) => row.kind === 'entity' && row.selected),
+  }
+}
+
+/** A view's rows with nothing selected or edited: a peek's. */
+export function inertRows(view: View): ShownView {
+  const rows: ShownRow[] = view.rows.map((row) => ({ kind: 'entity', key: row.key, row, selected: false, editing: false }))
+  return { rows, keys: rows.map((row) => row.key), selectedPath: [], selectedIndex: -1 }
 }
 
 /** The entity row under the selection, if any. */

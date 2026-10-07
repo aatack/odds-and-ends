@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { View } from '../../../core/types.ts'
-import type { Peek, PeekTarget, Rect } from '../state.ts'
+import { inertRows, type Peek, type PeekTarget, type Rect } from '../state.ts'
 import { ViewPane } from './View.tsx'
 import { Button, HeaderPill, PeekContext } from './primitives.tsx'
 
@@ -35,10 +35,13 @@ export function PeekWindow(props: {
   onClose(key: string): void
   onOpen(target: PeekTarget): void
   onOpenEntity(id: string): void
+  /** Its view is scrolled near its end: walk further. */
+  onNearEnd(): void
   onImage(ref: string | null): void
 }) {
   const { peek } = props
   const placed = peek.rect ?? place(peek.anchor)
+  const shown = useMemo(() => props.view && inertRows(props.view), [props.view])
   const [live, setLive] = useState<Rect | null>(null)
   const grab = useRef<Grab | null>(null)
   const rect = live ?? placed
@@ -109,7 +112,7 @@ export function PeekWindow(props: {
           ) : props.view ? (
             <ViewPane
               view={props.view}
-              shown={{ rows: props.view.rows.map((row) => ({ kind: 'entity', key: row.key, row, selected: false, editing: false })), selectedPath: [], selectedIndex: -1 }}
+              shown={shown!}
               interactive={false}
               edit={null}
               picking={null}
@@ -125,6 +128,7 @@ export function PeekWindow(props: {
               findFocus={0}
               onFind={noop}
               onFindFocused={noop}
+              onNearEnd={props.onNearEnd}
               onEditDraft={noop}
               onCommitEdit={noop}
               onCancelEdit={noop}

@@ -37,6 +37,8 @@ export interface ViewProps {
   onFind(text: string): void
   /** The find field took the keyboard. */
   onFindFocused(): void
+  /** The view is scrolled near its end, or doesn't fill the screen: walk further. */
+  onNearEnd?(): void
   onEditDraft(text: string): void
   onCommitEdit(): void
   onCancelEdit(): void
