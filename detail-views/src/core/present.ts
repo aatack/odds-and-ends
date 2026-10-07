@@ -193,8 +193,10 @@ export function viewOf(rootId: string, source: Source, options: ViewOptions = {}
     })
     let children = moduleOf(entity.type)?.order?.(entity, presented, lens) ?? presented
     // Chat keeps its newest end when the bound bites.
-    if (depth === 0 && module?.newestFirst?.(entity.type) && children.length > limit) {
-      children = children.slice(children.length - limit)
+    // (The root is a row of the walk too, so `limit - 1` of them.)
+    if (depth === 0 && module?.newestFirst?.(entity.type) && children.length > limit - 1) {
+      children = children.slice(children.length - (limit - 1))
+      complete = false
     }
     let previous: Entity | null = null
     for (const child of children) {

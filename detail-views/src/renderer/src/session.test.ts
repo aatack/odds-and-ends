@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import type { AppEvent } from '../../core/graph/events.ts'
 import { memoryCore } from '../../core/testing.ts'
 import type { Api } from './api.ts'
 import { memoryEnvironment } from './environment.ts'
@@ -183,5 +184,49 @@ test('a view is a tree to navigate and edit, from the keyboard, with nothing on 
   session.startCreate()
   await type('something else')
   assert.equal(session.get().state.undone.length, 0)
+  stop()
+})
+
+test('a view walks a page at first and doubles as it nears its end; a new query starts again', async () => {
+  const { core, session, stop, settle } = await headless()
+  for (let i = 0; i < 450; i++) core.actions.create({ parent: 'tasks', text: `note ${i}` })
+  session.navigate('tasks')
+  await settle()
+  const rows = () => session.get().view!.rows.length
+  assert.equal(rows(), 200)
+  assert.equal(session.get().view!.complete, false)
+  session.loadMore()
+  assert.equal(rows(), 400)
+  session.loadMore()
+  assert.equal(rows(), 451)
+  assert.equal(session.get().view!.complete, true)
+  // A find is a new query: its budget starts at a page again. Clearing it is
+  // the first query again, with the budget it had.
+  session.openFind()
+  session.setFind('note 1')
+  assert.equal(session.get().view!.rows.length < 200, true)
+  session.clearFind()
+  assert.equal(rows(), 451)
+  stop()
+})
+
+test('chat keeps its newest end when its walk is cut short', async () => {
+  const { core, session, stop, settle } = await headless()
+  const { link, values } = await import('../../core/graph/events.ts')
+  const events: AppEvent[] = [...values('slack:conv:C1', { type: 'slack.conversation', channel: 'C1', kind: 'channel', name: 'busy' }, 0, 'slack')]
+  for (let i = 0; i < 300; i++) {
+    const ts = `${1700000000 + i}.000000`
+    events.push(...values(`slack:msg:C1:${ts}`, { type: 'slack.message', channel: 'C1', ts, text: `m${i}` }, (1700000000 + i) * 1000, 'slack'))
+    events.push(link('slack:conv:C1', `slack:msg:C1:${ts}`, (1700000000 + i) * 1000, 'slack'))
+  }
+  core.cache.write(events)
+  session.navigate('slack:conv:C1')
+  await settle()
+  const texts = session.get().view!.rows.slice(1).map((row) => row.entity.data.text)
+  assert.equal(texts.length, 199)
+  assert.equal(texts.at(-1), 'm299')
+  assert.equal(session.selected()?.entity.data.text, 'm299')
+  session.loadMore()
+  assert.equal(session.get().view!.rows.slice(1)[0].entity.data.text, 'm0')
   stop()
 })

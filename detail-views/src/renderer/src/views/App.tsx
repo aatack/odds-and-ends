@@ -19,6 +19,8 @@ export interface PeekProps {
   onRaise(key: string): void
   onClose(key: string): void
   onOpen(target: PeekTarget): void
+  /** A peek's view is scrolled near its end: walk further. */
+  loadMore(root: string): void
 }
 
 export function App(props: {
@@ -80,6 +82,7 @@ export function App(props: {
               onOpen={peek.onOpen}
               onOpenEntity={(id) => props.view?.onOpen(id)}
               onImage={props.onImage}
+              onNearEnd={() => one.target.kind === 'entity' && peek.loadMore(one.target.id)}
             />
           ))}
           {props.viewing && (

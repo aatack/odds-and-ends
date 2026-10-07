@@ -880,3 +880,16 @@ mark {
   color: inherit;
   border-radius: 2px;
 }
+
+/* The windowed tree: rows are laid out in a box as tall as all of them. */
+.rows {
+  position: relative;
+  flex: none;
+}
+
+/* The row being typed into, mounted wherever it is. */
+.pinned {
+  position: absolute;
+  left: 0;
+  right: 0;
+}

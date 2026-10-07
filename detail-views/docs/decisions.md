@@ -86,3 +86,7 @@ Newest last. Each says what was chosen, why, and what was turned down.
     menu has no undo/redo, so the keys reach the page.
 27. **Find filters the rows a view walked** (Ctrl+F), keeping ancestors, per
     view and latent; it doesn't search inside folded rows.
+28. **Large views page their walk and window their rows**, as entity-graph
+    does: a doubling walk budget per query, and only rows near the viewport
+    mounted, measured, with the edited row pinned. *Why:* the Slack workspace
+    and long chats are thousands of rows.

@@ -33,6 +33,7 @@ function Root() {
   const onCancelEdit = useCallback(() => session.cancelEdit(), [])
   const onFind = useCallback((text: string) => session.setFind(text), [])
   const onFindFocused = useCallback(() => session.findFocused(), [])
+  const onNearEnd = useCallback(() => session.loadMore(), [])
   const onOpen = useCallback((id: string) => session.navigate(id), [])
   const onDraft = useCallback((text: string) => session.setDraft(text), [])
   const onCompose = useCallback((composing: boolean) => session.compose(composing), [])
@@ -58,6 +59,7 @@ function Root() {
       onRaise: (key: string) => session.raisePeek(key),
       onClose: (key: string) => session.closePeek(key),
       onOpen: (target: PeekTarget) => session.openPeek(target),
+      loadMore: (root: string) => session.loadMore(root),
     }),
     [gestures],
   )
@@ -92,8 +94,9 @@ function Root() {
         findFocus,
         onFind,
         onFindFocused,
+        onNearEnd,
       },
-    [tree, shown, state, working, now, findFocus, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onHideChat, onEditDraft, onCommitEdit, onCancelEdit],
+    [tree, shown, onNearEnd, state, working, now, findFocus, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onHideChat, onEditDraft, onCommitEdit, onCancelEdit],
   )
   const picking = useMemo(() => {
     const pick = state.picking
