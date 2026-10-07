@@ -50,5 +50,6 @@ export const kinds: Kinds = {
   'claude.home': { Pill: ClaudeHomePill, Overview: PillOverview, Row: PillRow },
   'claude.session': { Pill: SessionPill, Overview: SessionOverview, Row: SessionRow },
   'claude.prompt': { Pill: PromptPill, Overview: PromptOverview, Row: PromptRow, tint: promptTint },
+  'recents.home': { Pill: HomePill, Overview: PillOverview, Row: PillRow },
   'claude.response': { Pill: ResponsePill, Overview: ResponseOverview, Row: ResponseRow, tint: responseTint },
 }

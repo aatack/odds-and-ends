@@ -325,8 +325,11 @@ export class Session {
 
   // --- The stack and the cursor -------------------------------------------------
 
+  /** Pushes a view of `id`, and tells Recents. */
   navigate(id: string): void {
+    if (S.focused(this.state) === id) return
     this.update(S.navigate(this.state, id))
+    void this.api.visit(id)
   }
 
   /** Enters a module: the stack starts again at its root. */

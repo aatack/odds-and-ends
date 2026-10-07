@@ -101,3 +101,8 @@ Newest last. Each says what was chosen, why, and what was turned down.
     settings table: Slack's token is `secret.token` on `slack`. Secrets never
     leave the core (stripped from scans and items); module data is written
     under its own author so undo can't remove it. Old settings move over once.
+31. **Recents live in the cache store**, as links under `recents`: a visit
+    re-writes the link at its time (the snapshot store keeps one row per
+    link, so that is unlink-and-add), the view reverses them. Pushes only
+    (not back, forward or the sidebar); plain notes aren't kept; 200 at most,
+    the oldest written removed.

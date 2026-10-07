@@ -94,6 +94,10 @@ doc for the area you change, and keep it up to date in the same commit.
   one, mine, or a worktree under the app's data directory, never inside a
   repo), Opus 5.5 in auto mode. Sessions, prompts
   and answers are owned; answers are authored `claude` (`docs/claude.md`).
+- **Recents are temporary.** Pushing a view of an item that has a type (not a
+  plain note) re-writes its link under `recents` in the cache store at that
+  time, which moves it to the front; the Recents module lists them newest
+  first, as an ordinary tree, capped at 200.
 - **Slack is read-only during development.** `slackWrites` in
   `modules/slack/api.ts` gates an allowlist of read methods; do not turn it on
   or widen the list unless I ask.
