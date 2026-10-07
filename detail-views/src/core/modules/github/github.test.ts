@@ -155,40 +155,37 @@ test('github: PR names drop the number and conventional prefix', () => {
   assert.equal(prName('Note: capitalised words stay'), 'Note: capitalised words stay')
 })
 
-test('github: what stands in the way, most pressing first, and whose move it is', () => {
+test('github: what stands in the way, in my order, and whose move it is', () => {
   const first = (data: Record<string, unknown>, local = false) => {
     const [found] = blockers(data, local)
     return found && `${found.label} (${found.turn})`
   }
   const all = (data: Record<string, unknown>, local = false) => blockers(data, local).map((blocker) => blocker.id)
+  const open = { state: 'OPEN' }
   // Not loaded yet.
   assert.deepEqual(blockers({}, false), [])
   // Merged or closed: nothing more, whatever else is true.
   assert.equal(first({ mine: true, state: 'MERGED', checks: 'failing' }), 'Merged (none)')
   assert.equal(first({ mine: false, state: 'CLOSED' }), 'Closed (none)')
-  // Mine: my own review here comes first, then others', then CI, conflicts, base, running CI.
-  assert.deepEqual(all({ mine: true, state: 'OPEN', checks: 'failing', conflicts: true, mergeState: 'BEHIND' }), [
-    'self-review',
-    'awaiting',
-    'ci',
-    'conflicts',
-    'behind',
-  ])
-  assert.equal(first({ mine: true, state: 'OPEN', draft: true }), 'Draft: mark it ready (me)')
-  assert.equal(first({ mine: true, state: 'OPEN', reviewers: ['ann'] }, true), 'Awaiting review: ann (them)')
-  assert.equal(first({ mine: true, state: 'OPEN', review: 'CHANGES_REQUESTED', unresolved: 2 }, true), 'Changes requested (me)')
-  assert.equal(first({ mine: true, state: 'OPEN', approvedByOthers: true, review: 'APPROVED', checks: 'pending' }, true), 'CI running (none)')
-  assert.equal(first({ mine: true, state: 'OPEN', approvedByOthers: true, review: 'APPROVED', checks: 'passing' }, true), 'Ready: merge it (me)')
-  assert.equal(first({ mine: true, state: 'OPEN', approvedByOthers: true, review: 'APPROVED', autoMerge: true }, true), 'Will auto-merge (none)')
+  // Mine, in order: not reviewed by me, awaiting others, CI failing, conflicts, (behind), CI running.
+  assert.deepEqual(all({ mine: true, ...open, checks: 'failing', conflicts: true, mergeState: 'BEHIND' }), ['self-review', 'awaiting', 'ci', 'conflicts', 'behind'])
+  assert.deepEqual(all({ mine: true, ...open, checks: 'pending' }, true), ['awaiting', 'pending'])
+  // Approved on GitHub counts as reviewed, as it does for the Approve button.
+  assert.equal(first({ mine: true, ...open, review: 'APPROVED', approvedByOthers: true, checks: 'failing' }), 'CI failing (me)')
+  assert.equal(first({ mine: true, ...open, draft: true }), 'Draft (me)')
+  assert.equal(first({ mine: true, ...open, reviewers: ['ann'] }, true), 'Awaiting ann (them)')
+  assert.equal(first({ mine: true, ...open, review: 'CHANGES_REQUESTED', unresolved: 2 }, true), 'Changes requested (me)')
+  assert.equal(first({ mine: true, ...open, approvedByOthers: true, review: 'APPROVED', checks: 'passing' }, true), 'Ready to merge (me)')
+  assert.equal(first({ mine: true, ...open, approvedByOthers: true, review: 'APPROVED', autoMerge: true }, true), 'Auto-merging (none)')
   // Theirs: my review first (asked for, or not), then what's on them.
-  assert.equal(first({ mine: false, state: 'OPEN', reviewRequestedOfMe: true }), 'Review requested of you (me)')
-  assert.equal(first({ mine: false, state: 'OPEN' }), 'Not reviewed by you (me)')
-  assert.equal(first({ mine: false, state: 'OPEN', changesRequestedByMe: true, review: 'CHANGES_REQUESTED' }), 'You requested changes (them)')
-  assert.equal(first({ mine: false, state: 'OPEN', approvedByMe: true, review: 'REVIEW_REQUIRED', reviewers: ['bo'] }), 'Awaiting review: bo (them)')
-  assert.equal(first({ mine: false, state: 'OPEN', approvedByMe: true, review: 'APPROVED', checks: 'failing' }), 'CI failing (them)')
-  assert.equal(first({ mine: false, state: 'OPEN', approvedByMe: true, review: 'APPROVED' }), 'Approved by you (none)')
+  assert.equal(first({ mine: false, ...open, reviewRequestedOfMe: true }), 'Review requested (me)')
+  assert.equal(first({ mine: false, ...open }), 'Not reviewed (me)')
+  assert.equal(first({ mine: false, ...open, changesRequestedByMe: true, review: 'CHANGES_REQUESTED' }), 'You requested changes (them)')
+  assert.equal(first({ mine: false, ...open, approvedByMe: true, review: 'REVIEW_REQUIRED', reviewers: ['bo'] }), 'Awaiting bo (them)')
+  assert.equal(first({ mine: false, ...open, approvedByMe: true, review: 'APPROVED', checks: 'failing' }), 'CI failing (them)')
+  assert.equal(first({ mine: false, ...open, approvedByMe: true, review: 'APPROVED' }), 'Approved (none)')
   // The badge is the first blocker.
-  assert.deepEqual(badge({ mine: true, state: 'OPEN', approvedByOthers: true, review: 'APPROVED', checks: 'failing' }, true), {
+  assert.deepEqual(badge({ mine: true, ...open, approvedByOthers: true, review: 'APPROVED', checks: 'failing' }, true), {
     shape: 'cross',
     tone: 'red',
     reason: 'CI failing',
@@ -203,9 +200,9 @@ test('github: a PR seen only as a link is an item, and carries its badge once lo
   assert.equal(first.data.label, url)
   await core.load({ id, part: 'self' })
   const loaded = core.focus(id).entity!
-  // Mine, not yet approved here: that comes first; the failing check after.
-  assert.deepEqual(loaded.data.badge, { shape: 'dot', tone: 'yellow', reason: 'Review it' })
-  assert.deepEqual((loaded.data.blockers as { id: string }[]).map((blocker) => blocker.id), ['self-review', 'ci'])
+  // Mine, approved on GitHub (so reviewed, as Approve also sees it): the failing check is what's in the way.
+  assert.deepEqual(loaded.data.badge, { shape: 'cross', tone: 'red', reason: 'CI failing' })
+  assert.deepEqual((loaded.data.blockers as { id: string }[]).map((blocker) => blocker.id), ['ci'])
 })
 
 test('github: an approve already done is shown but cannot be done again', async () => {

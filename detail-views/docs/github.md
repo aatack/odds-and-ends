@@ -18,19 +18,18 @@
 
 ## What stands in the way (`blockers` in `view.ts`)
 
-A PR's views lead with what is between it and being merged, most pressing
-first, each with whose move it is (`me`, `them`, `none`). The first one is the
-badge, the pill's coloured word and the row's chip; the overview lists them
-all, mine filled.
+Every view of a PR leads with **one** thing: the first of its blockers, as a
+quiet chip where a dot would be (row, pill, and so the overview's heading).
+Once it's done, the next one shows. Each has whose move it is (`me`, `them`,
+`none`); mine is the same chip, a touch heavier.
 
-In order: merged / closed (and nothing else); draft; my review (mine:
-approving it here; theirs: reviewing it, "requested of you" when asked);
-changes requested (mine: mine to answer; theirs: on them, "you requested
-changes" if it was me); unresolved review threads; others' reviews awaited
-(with who was asked); CI failing; merge conflicts (`mergeable` or
-`mergeStateStatus: DIRTY`); behind its base (`BEHIND`); CI running; and once
-clear: "will auto-merge", "ready: merge it" (mine), "approved by you" or
-"ready" (theirs).
+The order is the one I asked for: merged / closed; not reviewed by me (mine:
+not approved, on GitHub *or* here, the same rule as the Approve button,
+`approvedMine`; theirs: not approved by me, "review requested" when asked);
+waiting on someone else's review (and who); CI failing; conflicts; CI
+running; then clear ("auto-merging", "ready to merge", "approved", "ready").
+Slotted in: a draft first; changes requested and unresolved threads after
+awaited reviews; behind its base after conflicts.
 
 From GitHub, per PR: `reviewDecision`, `latestReviews`, `reviewRequests`,
 `reviewThreads.isResolved`, `mergeable`, `mergeStateStatus`, the check rollup,
