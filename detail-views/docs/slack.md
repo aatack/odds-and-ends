@@ -23,11 +23,14 @@ I mark them read.
 
 ### What Slack's API allows (checked October 2026)
 
+Public column: checked against the [method reference](https://docs.slack.dev/reference/methods).
+Undocumented column: from memory, unverified; none of it is in the reference.
+
 | Need | Public API | Undocumented (the web client's) |
 |-|-|-|
-| Unread conversations | `conversations.info` gives `last_read` (my read point) for one conversation; `unread_count` for DMs only. Unread = newest message ts > `last_read`. No batch call. | `client.counts`: unread flags and mention counts for every channel, DM, group DM and threads, in one call |
-| Unread threads (the Threads / Activity view) | None | `subscriptions.thread.getView` |
-| Mark read | `conversations.mark` (channel, ts), with `*:write` scopes on a user token | `subscriptions.thread.mark` for threads |
+| Unread conversations | `conversations.info` gives `last_read` (my read point) for one conversation. Unread = newest message ts > `last_read`. `conversations.list` and `users.conversations` say they include `unread_count` for DMs only (untested). No call lists every conversation's read state: `rtm.start` did, but has behaved like `rtm.connect` (no unreads) since September 2022. | `client.counts`: unread flags and mention counts for every channel, DM, group DM and threads, in one call |
+| Unread threads (the Threads / Activity view) | None: no thread, subscription or activity method in the reference | `subscriptions.thread.getView`, `activity.feed` |
+| Mark read | `conversations.mark` (`channel`, `ts`): "sets the read cursor in a channel". User scopes `channels:write`, `groups:write`, `im:write`, `mpim:write`; tier 3 (50+/min). No thread equivalent. | `subscriptions.thread.mark` for threads |
 
 - The undocumented methods need a browser session token (`xoxc` and its `d`
   cookie), not an app's token; they can change or break without notice, and a
