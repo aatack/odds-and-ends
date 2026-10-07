@@ -3,7 +3,7 @@ import type { ComponentType, CSSProperties, ReactNode } from 'react'
 import type { Entity, NoteValues, ViewRow } from '../../../core/types.ts'
 import { Checkbox } from './Notes.tsx'
 import type { Edit, ShownRow } from '../state.ts'
-import { KindsContext, Status, tintClass, tintOf } from './primitives.tsx'
+import { KindsContext, Status, tintClass, tintOf, WithPills } from './primitives.tsx'
 import { Composer } from './primitives.tsx'
 import type { OverviewProps } from './kindTypes.ts'
 import type { ViewProps } from './types.ts'
@@ -131,14 +131,16 @@ const TreeRow = memo(function TreeRow(props: {
         {props.shown.editing ? (
           <TextBox edit={props.edit} onEditDraft={props.onEditDraft} onCommitEdit={props.onCommitEdit} />
         ) : (
-          <Row
-            entity={row.entity}
-            parent={row.parent}
-            above={row.above}
-            onOpen={props.onOpen}
-            onImage={props.onImage}
-            findText={props.findText}
-          />
+          <WithPills entity={row.entity}>
+            <Row
+              entity={row.entity}
+              parent={row.parent}
+              above={row.above}
+              onOpen={props.onOpen}
+              onImage={props.onImage}
+              findText={props.findText}
+            />
+          </WithPills>
         )}
       </div>
     </Selectable>
@@ -349,7 +351,13 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
         ) : shown.row.depth === 0 ? (
           <Selectable shown={shown} className="overview" onSelect={view.interactive ? view.onSelect : undefined}>
             <div className={tintClass(tintOf(kinds, props.root)).trim()}>
-              {shown.editing ? <EditBox props={view} /> : <props.Overview {...view} entity={props.root} findText={view.find ?? undefined} />}
+              {shown.editing ? (
+                <EditBox props={view} />
+              ) : (
+                <WithPills entity={props.root}>
+                  <props.Overview {...view} entity={props.root} findText={view.find ?? undefined} />
+                </WithPills>
+              )}
             </div>
           </Selectable>
         ) : (

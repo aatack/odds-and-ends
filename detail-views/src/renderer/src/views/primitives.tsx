@@ -243,3 +243,25 @@ export function tintOf(kinds: Kinds, entity: Entity): Tint | null {
 export function tintClass(tint: Tint | null): string {
   return tint ? ` tinted tint-${tint}` : ''
 }
+
+/** The ids an item's own `pills` value names, unless its type doesn't draw them. */
+export function pillsOf(kinds: Kinds, entity: Entity): string[] {
+  const own = entity.data.pills
+  if (kinds[entity.type]?.pills === false || !Array.isArray(own)) return []
+  return own.filter((id): id is string => typeof id === 'string' && id !== '')
+}
+
+/** An item's content with the pill of each item its `pills` names after it. */
+export function WithPills(props: { entity: Entity; children: ReactNode }) {
+  const kinds = useContext(KindsContext)!
+  const ids = pillsOf(kinds, props.entity)
+  if (ids.length === 0) return <>{props.children}</>
+  return (
+    <div className="with-pills">
+      <div className="with-pills-content">{props.children}</div>
+      {ids.map((id, index) => (
+        <ItemPill key={`${index}:${id}`} id={id} fallback={id} />
+      ))}
+    </div>
+  )
+}

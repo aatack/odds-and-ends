@@ -769,6 +769,19 @@ body,
   min-width: 0;
 }
 
+/* An item's own `pills`, after its content: the content as wide as it needs, then each pill. */
+.with-pills {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+
+.with-pills-content {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
 .line-row {
   display: flex;
   align-items: baseline;

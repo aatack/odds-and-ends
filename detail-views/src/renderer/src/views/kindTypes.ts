@@ -44,6 +44,11 @@ export interface ItemViews {
   Detail?: ComponentType<OverviewProps>
   /** The item's tint, if its type gives it one (see `Tint`). An item's own `tint` value wins. */
   tint?(entity: Entity): Tint | null
+  /**
+   * False for a type that doesn't draw an item's `pills` beside it. By default
+   * the tree draws them after the row (and the overview).
+   */
+  pills?: false
 }
 
 /**

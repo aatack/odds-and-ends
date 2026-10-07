@@ -176,6 +176,10 @@ doc for the area you change, and keep it up to date in the same commit.
   its items one with `tint(entity)` in `views/kinds.tsx`; any item's own
   `tint` value overrides it. The tree draws it (`tintOf`, `tintClass` in
   `views/primitives.tsx`); renderers never draw their own.
+- **An item's `pills`** (a list of ids) are drawn after its row and its
+  overview, one `ItemPill` each, by the tree (`WithPills` in
+  `views/primitives.tsx`). Every type has them unless its views say
+  `pills: false` (Slack messages, whose rows lay out their own line).
 - **Every row starts at its left edge**, whatever its type, so a tree's
   indentation reads. Anything secondary (a message's time, a check's
   duration, a count) goes on the right, and may show only on hover.
