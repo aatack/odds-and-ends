@@ -22,6 +22,7 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 16. To find the session for **k**, look along the selection path, from the selected item to the root of the view. Use the first item that is a session, or that has `claudeSessionId`. If there is no such item, show an error toast.
 17. When I write the prompt, put a prompt item under the selected item. Also link the prompt item under the session item.
 18. When Claude answers, put the answer in an item under the prompt item. The structure is: `[item + session] → [prompt] → [response]`.
+18a. Make the answer into notes under the response item. A heading is a section note. A bullet is a note; nested bullets are notes under it. A task bullet (`- [ ]`) is a checkbox note. A paragraph, a code block or a table is one note. The text before the first heading or bullet is the text of the response item.
 19. If Claude fails, put an error message in the response item instead of the answer.
 20. While Claude works, the response item shows how long it has run.
 21. After each prompt, if the branch in the session directory has a GitHub PR, link the PR item under the session item. (A "branch" here is a PR. The app has no branch items.)
@@ -41,6 +42,7 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 - **Command.** `claude -p <prompt> --output-format json --model claude-opus-5-5 --permission-mode <mode> (--session-id | --resume) <ID>`, in the session directory. The answer is `result`. The cost is kept as `cost`.
 - **Permission mode is per session** (`permissionMode`). New sessions get `auto`.
 - **PR look-up is a read.** `git rev-parse --abbrev-ref HEAD` and `git remote get-url origin` give the branch and the repo. A GraphQL query through `gh` finds the PR. The app does not write to GitHub for this.
+- **Answer outline.** `outline.ts` (pure) parses the markdown. A heading holds all that follows it, until the next heading of the same or a higher level. A bullet holds the bullets and blocks that are indented below it. A rule (`---`) is ignored. The notes are owned, by the author `claude`, all at the same time, so they stay in order. An error is not parsed.
 - **Errors.** A failure of `claude` (a non-zero exit, or `is_error` in its JSON) sets the response item: `text` and `error` are the full message, `running` is false. The message gives the program, the directory, the exit code, and all that the program wrote. The view shows all of it.
 - **Paths.** `~` is the home directory. The app expands it, because a program that the app starts does not. The form refuses a directory that does not exist.
 - **The `claude` program.** The app looks for it on the `PATH`, then in `~/.local/bin` and `~/.claude/local`. An app that starts from a launcher can have a short `PATH`.

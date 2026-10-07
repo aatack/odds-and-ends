@@ -6,6 +6,7 @@ import { link, value, values, type AppEvent } from '../../graph/events.ts'
 import { prEntityId } from '../../types.ts'
 import type { Module, ModuleContext } from '../module.ts'
 import { me } from '../tasks/tasks.ts'
+import { outline, type OutlineItem } from './outline.ts'
 import { claudeIds as ids, claudeView } from './view.ts'
 
 /** The author of what Claude writes back: not mine to undo. */
@@ -60,6 +61,18 @@ function slug(text: string): string {
 function repoOf(remote: string): { owner: string; name: string } | null {
   const match = /github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?\s*$/.exec(remote)
   return match ? { owner: match[1], name: match[2] } : null
+}
+
+/** An outline's items as owned notes under `parent`, Claude's, in order (links at one time keep the order they're written in). */
+function notes(parent: string, items: OutlineItem[], at: number): AppEvent[] {
+  return items.flatMap((item) => {
+    const id = randomUUID()
+    return [
+      ...values(id, { text: item.text, section: item.section, open: item.open }, at, author),
+      link(parent, id, at, author),
+      ...notes(id, item.children, at),
+    ]
+  })
 }
 
 /**
@@ -164,8 +177,12 @@ export class Claude implements Module {
       const out = JSON.parse(await this.context.run(claudeProgram(), args, cwd)) as { result?: string; is_error?: boolean; total_cost_usd?: number }
       // A failure is said in place of the answer: Claude's own words for it, if it gave any.
       const failed = out.is_error ? (out.result || 'Claude reported an error') : null
+      const at = this.context.now()
+      // An answer is its lead, with its headings, bullets and blocks as notes under it.
+      const { lead, items } = failed ? { lead: failed, items: [] } : outline(out.result ?? '')
       this.context.owned.write([
-        ...values(responseId, { text: failed ?? out.result ?? '', running: false, error: failed, cost: out.total_cost_usd ?? null }, this.context.now(), author),
+        ...values(responseId, { text: lead, running: false, error: failed, cost: out.total_cost_usd ?? null }, at, author),
+        ...notes(responseId, items, at),
         ...(started ? [] : [value(session, 'started', true, this.context.now(), author)]),
       ])
     } catch (error) {

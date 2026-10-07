@@ -111,3 +111,26 @@ test('claude: running a program says where it failed and why, and tells a missin
   await assert.rejects(runCommand('no-such-program-x', [], '/tmp'), /no-such-program-x failed in \/tmp: no-such-program-x isn't installed/)
   await assert.rejects(runCommand('sh', ['-c', 'echo oops >&2; exit 3'], '/tmp'), /sh failed in \/tmp: exit code 3\n\noops/)
 })
+
+test('claude: an answer with headings and bullets is written as notes under the response', async () => {
+  const answer = 'Done.\n\n## Changes\n\n- one\n  - detail\n- two'
+  const run = async (command: string) => {
+    if (command.endsWith('claude')) return JSON.stringify({ result: answer, is_error: false })
+    return ''
+  }
+  const core = memoryCore({ run, gh: async () => '{}', dataDir: '/data' })
+  await core.actions.claudeCreate({ name: 'S', cwd: '', worktree: false, attachTo: 'claude' })
+  const session = core.entity('claude').outboundLinks[0]
+  const { events } = core.actions.claudePrompt({ session, parent: session, text: 'go' })
+  const prompt = events.find((e) => e.type === 'value' && e.key === 'type' && e.value === 'claude.prompt')!
+  await settle()
+  const [response] = core.entity(prompt.type === 'value' ? prompt.entityId : '').outboundLinks
+  assert.equal(core.item(response)!.data.text, 'Done.')
+  const tree = (id: string): unknown[] =>
+    core.entity(id).outboundLinks.map((child) => {
+      const data = core.entity(child).values
+      const text = `${data.section ? '# ' : ''}${String(data.text)}`
+      return core.entity(child).outboundLinks.length ? [text, tree(child)] : text
+    })
+  assert.deepEqual(tree(response), [['# Changes', [['one', ['detail']], 'two']]])
+})
