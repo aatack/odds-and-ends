@@ -1,9 +1,28 @@
+import { execFileSync } from 'node:child_process'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, ipcMain, Menu, nativeTheme, protocol, shell, type MenuItemConstructorOptions } from 'electron'
 import { Core } from '../core/core.ts'
+import { phonePort, phoneToken, startPhoneServer } from './phone.ts'
 
 let core: Core | null = null
+let stopPhone: (() => void) | null = null
+
+/** The phone's link: this machine's Tailscale name if it has one, the token in the hash. */
+function phoneLink(core: Core): string {
+  let host = `http://127.0.0.1:${phonePort}`
+  try {
+    const status = JSON.parse(execFileSync('tailscale', ['status', '--json'], { encoding: 'utf8', timeout: 5000 })) as {
+      Self?: { DNSName?: string }
+    }
+    const name = status.Self?.DNSName?.replace(/\.$/, '')
+    if (name) host = `https://${name}`
+  } catch {
+    // No Tailscale: the local address still works on this machine.
+  }
+  return `${host}/#token=${phoneToken(core)}`
+}
 
 /** `slack-image://<size>/<message id>/<file id>`: Slack images, through the core's cache. */
 protocol.registerSchemesAsPrivileged([{ scheme: 'slack-image', privileges: { standard: false, secure: true } }])
@@ -103,6 +122,11 @@ void app.whenReady().then(() => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('changed', changed)
   })
 
+  // The phone: the core over HTTP on 127.0.0.1, for Tailscale to publish
+  // (docs/phone.md). Its link, token in the hash, is written where I can find it.
+  stopPhone = startPhoneServer(core, { dist: join(app.getAppPath(), 'out', 'phone') })
+  writeFileSync(join(dir, 'phone-link.txt'), `${phoneLink(core)}\n`, { mode: 0o600 })
+
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -110,6 +134,7 @@ void app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
+  stopPhone?.()
   core?.stop()
   if (process.platform !== 'darwin') app.quit()
 })

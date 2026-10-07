@@ -10,7 +10,8 @@
     "build": "electron-vite build",
     "start": "electron-vite preview -- --no-sandbox",
     "type-check": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.test.json",
-    "test": "node --test 'src/**/*.test.ts'"
+    "test": "node --test 'src/**/*.test.ts'",
+    "build:phone": "vite build --config vite.phone.config.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.1",

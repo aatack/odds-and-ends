@@ -38,6 +38,52 @@ interface Bridge {
   openExternal(url: string): Promise<void>
 }
 
+/**
+ * The core over HTTP (`src/main/phone.ts`): the phone's way in. The same
+ * actions as over IPC, a POST each; changes come as Server-Sent Events.
+ */
+export function httpApi(base: string, token: string): Api {
+  const call = async <T,>(name: string, args?: unknown): Promise<T> => {
+    const response = await fetch(`${base}/api/${name}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(args ?? null),
+    })
+    const answer = (await response.json()) as T & { error?: string }
+    if (!response.ok) throw new Error(answer?.error ?? `${name}: ${response.status}`)
+    return answer
+  }
+  return {
+    scan: (ids) => call('scan', { ids }),
+    load: (request) => call('load', request),
+    submit: (id, text) => call('submit', { id, text }),
+    perform: (id, action, text) => call('perform', { id, action, text }),
+    toggle: (id) => call('toggle', { id }),
+    markRead: (id) => call('markRead', { id }),
+    older: (id) => call('older', { id }),
+    unlink: (parent, child) => call('unlink', { parent, child }),
+    link: (parent, child) => call('link', { parent, child }),
+    move: (child, from, to) => call('move', { child, from, to }),
+    create: (parent, text, values) => call('create', { parent, text, values }),
+    setValue: (id, key, value) => call('setValue', { id, key, value }),
+    setText: (id, text) => call('setText', { id, text }),
+    undo: () => call('undo'),
+    redo: (events) => call('redo', { events }),
+    onChange: (listener) => {
+      // EventSource reconnects by itself; a reconnect may have missed changes, so it re-reads everything.
+      const events = new EventSource(`${base}/api/changes?token=${encodeURIComponent(token)}`)
+      let opened = false
+      events.onopen = () => {
+        if (opened) listener(null)
+        opened = true
+      }
+      events.onmessage = (event) => listener(JSON.parse(event.data) as Changed)
+      return () => events.close()
+    },
+    openExternal: (url) => void window.open(url, '_blank', 'noopener'),
+  }
+}
+
 export function electronApi(): Api {
   const bridge = (window as unknown as { core: Bridge }).core
   const call = <T,>(name: string, args?: unknown) => bridge.invoke(name, args) as Promise<T>

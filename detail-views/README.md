@@ -79,6 +79,19 @@ optional comment; mine: marked approved here and auto-merge turned on) and `X`
 closes mine and deletes the branch, with an optional comment. Both open a
 prompt; Enter confirms, Esc cancels.
 
+## Phone
+
+The same app as a PWA over Tailscale; `docs/phone.md` has the whole of it.
+
+```bash
+npm run build:phone          # once, and after changes
+tailscale serve --bg 47821   # once (may need: sudo tailscale set --operator=$USER)
+```
+
+Start the desktop app, open the link in `~/.config/detail-views/phone-link.txt`
+on the phone once, then *Add to home screen*. Tap a row to select it, tap it
+again to open it; the bar at the bottom has back, open, note, edit and older.
+
 ## Data
 
 Two files in `~/.config/detail-views/` (or `DETAIL_VIEWS_DIR`):

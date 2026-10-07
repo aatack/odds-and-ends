@@ -991,3 +991,82 @@ mark {
 .check {
   user-select: none;
 }
+
+/* --- The phone (docs/phone.md) ---------------------------------------------------
+ * The same app on a narrow touch screen: the sidebar becomes a row of tabs,
+ * a bar of buttons stands in for keys, everything tappable is at least 44px,
+ * text fields are 16px (smaller and the browser zooms in on focus), and the
+ * screen's insets are respected.
+ */
+.app.phone {
+  flex-direction: column;
+  height: 100dvh;
+  padding-top: env(safe-area-inset-top);
+}
+
+.app.phone .modules {
+  width: auto;
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  overflow-x: auto;
+}
+
+.app.phone .module {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+}
+
+.app.phone .focus {
+  min-height: 0;
+}
+
+.app.phone .pane {
+  padding: 8px 10px;
+}
+
+.app.phone .row {
+  min-height: 44px;
+  align-items: center;
+}
+
+.app.phone .row:hover {
+  background: none;
+}
+
+.app.phone .row.selected {
+  background: var(--select);
+}
+
+.app.phone .row.selected .stamp {
+  visibility: visible;
+}
+
+.app.phone .edit,
+.app.phone .find,
+.app.phone .composer {
+  font-size: 16px;
+}
+
+.app.phone .crumbs {
+  padding: 8px 10px 0;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
+
+.phone-bar {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+  background: var(--panel);
+}
+
+.phone-bar .button {
+  flex: 1;
+  justify-content: center;
+  min-height: 44px;
+  font-size: 15px;
+}
