@@ -377,6 +377,11 @@ export class Session {
     this.update(S.fold(this.state, row.entity.id, open))
   }
 
+  /** Opens or closes the phone's list of every action. */
+  setPhoneMenu(open: boolean): void {
+    this.update(S.setPhoneMenu(this.state, open))
+  }
+
   /** Sends a URL to the browser (the phone's way of following a link). */
   openExternal(url: string): void {
     this.api.openExternal(url)

@@ -32,7 +32,10 @@ desktop app over Tailscale. Everything below is what exists today.
 - The desktop app must be running: the phone has no data of its own.
 - **Tap** a row to select it; **tap it again** to open its view.
 - The bar along the bottom stands in for keys: **Back** (Shift+A), **Open**
-  (d), **Note** (Enter), **Edit** (e), **Older** (o, where there is more).
+  (d), **Note** (Enter), **Edit** (e), and **More**: every other action that
+  can be done right now (remove, move, link, tick, fold, find, undo, older,
+  hide chat, approve…). These come from the same tool registry as the keys,
+  so the phone can always do what the desktop can.
 - The tabs along the top are the modules (the desktop's sidebar).
 - Links open in the phone's browser (there is no hover, so no peeks).
 - Edits, notes, PR actions: everything does what it does on the desktop, to
@@ -47,6 +50,15 @@ desktop app over Tailscale. Everything below is what exists today.
 | "The phone app is not built" | Run `npm run build:phone`. |
 | Everything says "not signed in" | The token changed (see Security). Open the new link. |
 | Old version of the app | Close and reopen it; the service worker fetches the new one first. |
+
+## The rule
+
+The content and the actions are the same on both; only how views are
+organised differs (tabs for the sidebar, a bottom bar, no floating windows).
+Every action is a tool (`src/renderer/src/tools.ts`); a tool with a `label`
+is an action everywhere, and the phone's buttons are `actionsNow`: the
+labelled tools enabled right now. A new key gets a label, and so a phone
+button, unless it is only cursor movement or typing.
 
 ## How it works
 
@@ -113,7 +125,8 @@ phone (PWA in its browser)                       desktop (Electron main)
 | `src/renderer/src/api.ts` | `httpApi` beside `electronApi` |
 | `src/renderer/src/phone.tsx` | The phone's entry: token, images, service worker |
 | `src/renderer/src/root.tsx` | The app's root, for both entries |
-| `src/renderer/src/views/App.tsx` | `PhoneBar` |
+| `src/renderer/src/views/App.tsx` | `PhoneBar`, its More list |
+| `src/renderer/src/tools.ts` | Every action, with its key and its label (`actionsNow`, `runTool`) |
 | `src/renderer/src/styles.css` | `.app.phone` rules, at the end |
 | `src/renderer/phone.html`, `phone-public/` | The PWA's page, manifest, icon, service worker |
 | `vite.phone.config.ts` | Its build (`npm run build:phone`) |

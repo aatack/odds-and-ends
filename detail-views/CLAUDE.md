@@ -185,6 +185,12 @@ doc for the area you change, and keep it up to date in the same commit.
   - `src/main/` only hosts the core: IPC to the window, and HTTP to the
     phone (`phone.ts`: `Core.actions` as POSTs, changes as Server-Sent Events,
     a token on every call, bound to 127.0.0.1 for Tailscale to publish).
+  - **Desktop and phone have the same content and actions; only how views
+    are organised differs.** Every action is a tool in the registry, and a
+    tool with a `label` is an action on every platform: the phone's buttons
+    are `actionsNow` (what is enabled now), so anything a key does, the phone
+    can do. Layout, gestures and chrome (peeks, tabs, the bottom bar) may
+    differ; what can be seen and done may not.
   - **The phone is a second entry, not a second app** (`phone.tsx`,
     `docs/mobile.md`): the same `Session`, cache, views and loading, over
     `httpApi` instead of `electronApi`. Anything added to the `Api` seam gets

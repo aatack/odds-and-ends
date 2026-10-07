@@ -42,6 +42,8 @@ export interface State {
   acting: string | null
   /** An image shown full size over everything, by its ref. Not persisted. */
   viewing: string | null
+  /** Whether the phone's list of every action is open. Not persisted. */
+  phoneMenu: boolean
   /**
    * A move or link waiting for its other end: started on one row, finished by
    * pressing the same key on another (in any view). Not persisted.
@@ -166,6 +168,7 @@ export function initialState(root: string): State {
     composing: false,
     acting: null,
     viewing: null,
+    phoneMenu: false,
     picking: null,
     peeks: [],
   }
@@ -343,6 +346,10 @@ export function endEdit(state: State): State {
   return state.edit ? { ...state, edit: null } : state
 }
 
+export function setPhoneMenu(state: State, open: boolean): State {
+  return state.phoneMenu === open ? state : { ...state, phoneMenu: open }
+}
+
 export function setFind(state: State, find: string | null): State {
   return { ...state, finds: { ...state.finds, [focused(state)]: find } }
 }
@@ -394,8 +401,8 @@ export function draftKey(state: State): string {
 }
 
 /** What is kept across reloads. */
-export function persisted(state: State): Omit<State, 'composing' | 'viewing' | 'acting' | 'picking'> {
-  const { composing: _, viewing: __, acting: ___, picking: ____, ...rest } = state
+export function persisted(state: State): Omit<State, 'composing' | 'viewing' | 'acting' | 'picking' | 'phoneMenu'> {
+  const { composing: _, viewing: __, acting: ___, picking: ____, phoneMenu: _____, ...rest } = state
   return { ...rest, peeks: rest.peeks.filter((peek) => peek.pinned) }
 }
 

@@ -14,6 +14,12 @@ export interface Tool {
   id: string
   keys: string[]
   scope: 'input' | 'list' | 'app'
+  /**
+   * What it is called where there is no key to press: the phone's buttons. A
+   * tool with a label is one of the app's actions, on every platform; one
+   * without is a key's own business (moving the cursor, typing).
+   */
+  label?: string | ((session: Session) => string)
   /** `field` is the text field the key was pressed in (its `data-field`), if any. */
   enabled?(session: Session, field: string | null): boolean
   run(session: Session, field: string | null): void
@@ -46,7 +52,7 @@ export const tools: Tool[] = [
   { id: 'composer.leave', scope: 'input', keys: ['Escape'], run: (s) => s.compose(false) },
 
   // --- Escape, innermost first; the find last ------------------------------------
-  { id: 'pick.cancel', scope: 'list', keys: ['Escape'], enabled: (s) => picking(s), run: (s) => s.cancelPick() },
+  { id: 'pick.cancel', label: 'Cancel', scope: 'list', keys: ['Escape'], enabled: (s) => picking(s), run: (s) => s.cancelPick() },
   {
     id: 'peek.close',
     scope: 'list',
@@ -62,7 +68,7 @@ export const tools: Tool[] = [
     run: (s) => s.view(null),
   },
 
-  { id: 'find.close', scope: 'list', keys: ['Escape'], enabled: (s) => s.hasFind(), run: (s) => s.clearFind() },
+  { id: 'find.close', label: 'Clear find', scope: 'list', keys: ['Escape'], enabled: (s) => s.hasFind(), run: (s) => s.clearFind() },
 
   // --- Moving around the tree -------------------------------------------------------
   { id: 'select.down', scope: 'list', keys: ['s', 'ArrowDown'], run: (s) => s.move(1) },
@@ -71,36 +77,36 @@ export const tools: Tool[] = [
   { id: 'select.end', scope: 'list', keys: ['G', 'End'], run: (s) => s.move(Infinity) },
   { id: 'select.pageDown', scope: 'list', keys: ['PageDown', 'Ctrl+d'], run: (s) => s.move(15) },
   { id: 'select.pageUp', scope: 'list', keys: ['PageUp', 'Ctrl+u'], run: (s) => s.move(-15) },
-  { id: 'expand', scope: 'list', keys: ['ArrowRight'], enabled: notRoot, run: (s) => s.fold(true) },
-  { id: 'collapse', scope: 'list', keys: ['ArrowLeft'], enabled: notRoot, run: (s) => s.fold(false) },
-  { id: 'view.push', scope: 'list', keys: ['d'], enabled: notRoot, run: (s) => s.open() },
-  { id: 'select.parent', scope: 'list', keys: ['a'], enabled: notRoot, run: (s) => s.selectParent() },
+  { id: 'expand', label: 'Unfold', scope: 'list', keys: ['ArrowRight'], enabled: notRoot, run: (s) => s.fold(true) },
+  { id: 'collapse', label: 'Fold', scope: 'list', keys: ['ArrowLeft'], enabled: notRoot, run: (s) => s.fold(false) },
+  { id: 'view.push', label: 'Open', scope: 'list', keys: ['d'], enabled: notRoot, run: (s) => s.open() },
+  { id: 'select.parent', label: 'Parent', scope: 'list', keys: ['a'], enabled: notRoot, run: (s) => s.selectParent() },
 
   // --- Whatever is selected ----------------------------------------------------------
-  { id: 'note.create', scope: 'list', keys: ['Enter'], enabled: (s) => selected(s) !== null, run: (s) => s.startCreate() },
-  { id: 'note.section', scope: 'list', keys: ['/'], enabled: (s) => selected(s) !== null, run: (s) => s.startCreate({ section: true }) },
-  { id: 'note.checkbox', scope: 'list', keys: ['?'], enabled: (s) => selected(s) !== null, run: (s) => s.startCreate({ open: true }) },
-  { id: 'edit.start', scope: 'list', keys: ['e'], enabled: (s) => selected(s) !== null, run: (s) => s.startEdit() },
-  { id: 'unlink', scope: 'list', keys: ['Backspace', 'Delete'], enabled: notRoot, run: (s) => s.unlinkSelected() },
+  { id: 'note.create', label: 'Note', scope: 'list', keys: ['Enter'], enabled: (s) => selected(s) !== null, run: (s) => s.startCreate() },
+  { id: 'note.section', label: 'Heading', scope: 'list', keys: ['/'], enabled: (s) => selected(s) !== null, run: (s) => s.startCreate({ section: true }) },
+  { id: 'note.checkbox', label: 'Checkbox', scope: 'list', keys: ['?'], enabled: (s) => selected(s) !== null, run: (s) => s.startCreate({ open: true }) },
+  { id: 'edit.start', label: 'Edit', scope: 'list', keys: ['e'], enabled: (s) => selected(s) !== null, run: (s) => s.startEdit() },
+  { id: 'unlink', label: 'Remove', scope: 'list', keys: ['Backspace', 'Delete'], enabled: notRoot, run: (s) => s.unlinkSelected() },
   // The second press of each finishes it on whatever is selected then, in any view.
-  { id: 'move', scope: 'list', keys: ['x'], enabled: (s) => picking(s, 'move') || notRoot(s), run: (s) => s.pick('move') },
-  { id: 'link', scope: 'list', keys: ['r'], enabled: (s) => picking(s, 'link') || selected(s) !== null, run: (s) => s.pick('link') },
+  { id: 'move', label: (s) => (picking(s, 'move') ? 'Move here' : 'Move'), scope: 'list', keys: ['x'], enabled: (s) => picking(s, 'move') || notRoot(s), run: (s) => s.pick('move') },
+  { id: 'link', label: (s) => (picking(s, 'link') ? 'Link here' : 'Link to…'), scope: 'list', keys: ['r'], enabled: (s) => picking(s, 'link') || selected(s) !== null, run: (s) => s.pick('link') },
   {
-    id: 'link.reverse',
+    id: 'link.reverse', label: (s) => (picking(s, 'linkReverse') ? 'Link here' : 'Link from…'),
     scope: 'list',
     keys: ['R'],
     enabled: (s) => picking(s, 'linkReverse') || selected(s) !== null,
     run: (s) => s.pick('linkReverse'),
   },
-  { id: 'checkbox.toggle', scope: 'list', keys: [' '], enabled: (s) => s.canToggle(), run: (s) => s.toggle() },
+  { id: 'checkbox.toggle', label: 'Tick', scope: 'list', keys: [' '], enabled: (s) => s.canToggle(), run: (s) => s.toggle() },
   {
-    id: 'chat.hide',
+    id: 'chat.hide', label: 'Hide chat',
     scope: 'list',
     keys: ['Shift+Backspace'],
     enabled: (s) => selected(s)?.entity.type === 'slack.message' || rootType(s) === 'slack.message',
     run: (s) => s.hideChatOfMessage(),
   },
-  { id: 'slack.markRead', scope: 'list', keys: ['m'], enabled: (s) => rootType(s) === 'slack.conversation', run: (s) => s.markRead() },
+  { id: 'slack.markRead', label: 'Mark read', scope: 'list', keys: ['m'], enabled: (s) => rootType(s) === 'slack.conversation', run: (s) => s.markRead() },
 
   // --- The view's root ----------------------------------------------------------------
   ...(
@@ -111,20 +117,21 @@ export const tools: Tool[] = [
   ).map(
     ([action, key]): Tool => ({
       id: `action.${action}`,
+      label: (s) => s.get().view?.actions.find((offered) => offered.id === action)?.label ?? action,
       scope: 'app',
       keys: [key],
       enabled: (s) => Boolean(s.get().view?.actions.some((offered) => offered.id === action && !offered.disabled)),
       run: (s) => s.startAction(action),
     }),
   ),
-  { id: 'view.older', scope: 'app', keys: ['o'], enabled: (s) => Boolean(s.get().view?.older), run: (s) => s.older() },
-  { id: 'view.refresh', scope: 'app', keys: ['F5'], run: (s) => s.refresh() },
-  { id: 'view.find', scope: 'app', keys: ['Ctrl+f'], run: (s) => s.openFind() },
+  { id: 'view.older', label: 'Older', scope: 'app', keys: ['o'], enabled: (s) => Boolean(s.get().view?.older), run: (s) => s.older() },
+  { id: 'view.refresh', label: 'Refresh', scope: 'app', keys: ['F5'], run: (s) => s.refresh() },
+  { id: 'view.find', label: 'Find', scope: 'app', keys: ['Ctrl+f'], run: (s) => s.openFind() },
   // In a text field these keys are the field's own (its typing's undo), so
   // they only reach the store from the tree.
-  { id: 'undo', scope: 'app', keys: ['Ctrl+z'], enabled: (_, field) => field === null, run: (s) => void s.undo() },
-  { id: 'redo', scope: 'app', keys: ['Ctrl+y'], enabled: (_, field) => field === null, run: (s) => void s.redo() },
-  { id: 'view.back', scope: 'app', keys: ['A', 'Alt+ArrowLeft'], run: (s) => s.back() },
+  { id: 'undo', label: 'Undo', scope: 'app', keys: ['Ctrl+z'], enabled: (_, field) => field === null, run: (s) => void s.undo() },
+  { id: 'redo', label: 'Redo', scope: 'app', keys: ['Ctrl+y'], enabled: (_, field) => field === null, run: (s) => void s.redo() },
+  { id: 'view.back', label: 'Back', scope: 'app', keys: ['A', 'Alt+ArrowLeft'], run: (s) => s.back() },
   { id: 'view.forward', scope: 'app', keys: ['Alt+ArrowRight'], run: (s) => s.forward() },
   ...Array.from({ length: 9 }, (_, index): Tool => ({
     id: `module.${index + 1}`,
@@ -169,4 +176,28 @@ export function keyLabel(key: string): string {
 export function hotkeyOf(toolId: string): string | undefined {
   const key = tools.find((tool) => tool.id === toolId)?.keys[0]
   return key === undefined ? undefined : keyLabel(key)
+}
+
+/** A tool's label, for a session as it stands. */
+export function labelOf(tool: Tool, session: Session): string | null {
+  if (!tool.label) return null
+  return typeof tool.label === 'string' ? tool.label : tool.label(session)
+}
+
+/**
+ * The app's actions that can be done right now, in the registry's order: what
+ * the phone shows as buttons, so it can do what the keys do, and no more.
+ */
+export function actionsNow(session: Session): { id: string; label: string }[] {
+  return tools.flatMap((tool) => {
+    const label = labelOf(tool, session)
+    if (!label || !(tool.enabled?.(session, null) ?? true)) return []
+    return [{ id: tool.id, label }]
+  })
+}
+
+/** Runs a tool by id, as if its key were pressed outside any text field. */
+export function runTool(session: Session, id: string): void {
+  const tool = tools.find((candidate) => candidate.id === id)
+  if (tool && (tool.enabled?.(session, null) ?? true)) tool.run(session, null)
 }

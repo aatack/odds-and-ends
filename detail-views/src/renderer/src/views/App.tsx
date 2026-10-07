@@ -117,27 +117,46 @@ function PickBar(props: { pick: Pick; subject: Entity | null }) {
   )
 }
 
-export interface PhoneBarProps {
-  canBack: boolean
-  canOpen: boolean
-  canOlder: boolean
-  olderBusy: boolean
-  onBack(): void
-  onOpen(): void
-  onNote(): void
-  onEdit(): void
-  onOlder(): void
+export interface PhoneAction {
+  id: string
+  label: string
 }
 
-/** The phone's keys, as buttons along the bottom: back, open, a note, edit, older. */
+export interface PhoneBarProps {
+  /** Always there, greyed when they can't be done: back, open, note, edit. */
+  primary: (PhoneAction & { enabled: boolean })[]
+  /** Every other action that can be done now. */
+  more: PhoneAction[]
+  /** Actions under way on the view, by id or by what they are (`older`). */
+  busy: string[]
+  menuOpen: boolean
+  onRun(id: string): void
+  onMenu(open: boolean): void
+}
+
+/**
+ * The phone's keys, as buttons: the four used most along the bottom, and
+ * everything else the keys can do, right now, under More. Both lists come
+ * from the tool registry, so the phone can do what the desktop can.
+ */
 function PhoneBar(props: PhoneBarProps) {
   return (
-    <nav className="phone-bar">
-      <Button label="Back" disabled={!props.canBack && 'Nothing to go back to'} onClick={props.onBack} />
-      <Button label="Open" disabled={!props.canOpen && 'Select a row to open'} onClick={props.onOpen} />
-      <Button label="Note" onClick={props.onNote} />
-      <Button label="Edit" onClick={props.onEdit} />
-      {props.canOlder && <Button label="Older" busyLabel="Loading…" busy={props.olderBusy} onClick={props.onOlder} />}
-    </nav>
+    <>
+      {props.menuOpen && (
+        <div className="phone-menu" onMouseDown={() => props.onMenu(false)}>
+          <div className="phone-menu-list" onMouseDown={(event) => event.stopPropagation()}>
+            {props.more.map((action) => (
+              <Button key={action.id} label={action.label} onClick={() => props.onRun(action.id)} />
+            ))}
+          </div>
+        </div>
+      )}
+      <nav className="phone-bar">
+        {props.primary.map((action) => (
+          <Button key={action.id} label={action.label} disabled={!action.enabled && 'Not here'} onClick={() => props.onRun(action.id)} />
+        ))}
+        <Button label="More" active={props.menuOpen} disabled={!props.more.length && 'Nothing more here'} onClick={() => props.onMenu(!props.menuOpen)} />
+      </nav>
+    </>
   )
 }
