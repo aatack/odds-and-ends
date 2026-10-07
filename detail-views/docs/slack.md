@@ -29,8 +29,9 @@ Undocumented column: from memory, unverified; none of it is in the reference.
 | Need | Public API | Undocumented (the web client's) |
 |-|-|-|
 | Unread conversations | `conversations.info` gives `last_read` (my read point) for one conversation. Unread = newest message ts > `last_read`. `conversations.list` and `users.conversations` say they include `unread_count` for DMs only (untested). No call lists every conversation's read state: `rtm.start` did, but has behaved like `rtm.connect` (no unreads) since September 2022. | `client.counts`: unread flags and mention counts for every channel, DM, group DM and threads, in one call |
-| Unread threads (the Threads / Activity view) | None: no thread, subscription or activity method in the reference | `subscriptions.thread.getView`, `activity.feed` |
+| Unread threads (the Threads / Activity view) | Per thread only: `conversations.replies` documents the parent as carrying `subscribed` (I follow it), `last_read` and `unread_count` (untested). Nothing lists the threads I follow; `conversations.history` and `search.messages` don't carry these fields. | `subscriptions.thread.getView`, `activity.feed` |
 | Mark read | `conversations.mark` (`channel`, `ts`): "sets the read cursor in a channel". User scopes `channels:write`, `groups:write`, `im:write`, `mpim:write`; tier 3 (50+/min). No thread equivalent. | `subscriptions.thread.mark` for threads |
+| Hear read markers move (read elsewhere) | `channel_marked`, `im_marked`, `group_marked` events, but only over the legacy RTM API, which new apps can't use |  |
 
 - The undocumented methods need a browser session token (`xoxc` and its `d`
   cookie), not an app's token; they can change or break without notice, and a
