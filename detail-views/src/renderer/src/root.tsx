@@ -161,6 +161,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
 
   return (
     <App
+      now={now}
       dialog={dialog}
       toast={toast}
       phone={phoneBar}

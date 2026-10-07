@@ -10,8 +10,10 @@ import { claudeIds as ids, claudeView } from './view.ts'
 
 /** The author of what Claude writes back: not mine to undo. */
 const author = 'claude'
-/** What a session may do without asking: edit files; anything else that would ask is refused (`-p` has nobody to ask). */
-export const defaultPermissionMode = 'acceptEdits'
+/** How a session decides what it may do without asking: Claude Code's auto mode. */
+export const defaultPermissionMode = 'auto'
+/** The model every session runs on, for now. */
+export const model = 'claude-opus-5-5'
 /** How many working directories the new-session dialog remembers. */
 const rememberedCwds = 10
 
@@ -125,17 +127,28 @@ export class Claude implements Module {
     const cwd = String(data.cwd)
     const mode = String(data.permissionMode ?? defaultPermissionMode)
     const started = Boolean(data.started)
-    const args = ['-p', text, '--output-format', 'json', '--permission-mode', mode, ...(started ? ['--resume', session] : ['--session-id', session])]
+    const args = [
+      '-p',
+      text,
+      '--output-format',
+      'json',
+      '--model',
+      model,
+      '--permission-mode',
+      mode,
+      ...(started ? ['--resume', session] : ['--session-id', session]),
+    ]
     try {
       const out = JSON.parse(await this.context.run('claude', args, cwd)) as { result?: string; is_error?: boolean; total_cost_usd?: number }
+      // A failure is said in place of the answer: Claude's own words for it, if it gave any.
+      const failed = out.is_error ? (out.result || 'Claude reported an error') : null
       this.context.owned.write([
-        ...values(responseId, { text: out.result ?? '', running: false, error: out.is_error ? 'Claude reported an error' : null, cost: out.total_cost_usd ?? null }, this.context.now(), author),
+        ...values(responseId, { text: failed ?? out.result ?? '', running: false, error: failed, cost: out.total_cost_usd ?? null }, this.context.now(), author),
         ...(started ? [] : [value(session, 'started', true, this.context.now(), author)]),
       ])
     } catch (error) {
-      this.context.owned.write(
-        values(responseId, { running: false, error: error instanceof Error ? error.message : String(error) }, this.context.now(), author),
-      )
+      const failed = error instanceof Error ? error.message : String(error)
+      this.context.owned.write(values(responseId, { text: failed, running: false, error: failed }, this.context.now(), author))
     }
     await this.linkPullRequest(session, cwd).catch(() => {})
   }
