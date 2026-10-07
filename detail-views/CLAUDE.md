@@ -161,6 +161,8 @@ doc for the area you change, and keep it up to date in the same commit.
   message's own markdown): `inline` for one line (a pill, a row: formatting,
   code and links, blocks unwrapped), in full otherwise. Names that aren't
   prose (people, channels, checks, repos) are drawn plain with `Highlight`.
+  Markdown includes maths (KaTeX, as in entity-graph): `$x$` and `$$x$$`,
+  except in Slack messages, where `$` is money and only `$$x$$` is maths.
 - **Every renderer takes `findText`** (rows, pills, overviews) and draws its
   text through `Highlight` (or markdown's highlight plugin), so a find shows
   where it matched.

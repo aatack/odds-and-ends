@@ -4,6 +4,10 @@ import ReactMarkdown from 'react-markdown'
 import type { Components, Options } from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+// KaTeX's stylesheet, and the fonts it references, bundled: nothing here reaches the network.
+import 'katex/dist/katex.min.css'
 import { mentionScheme } from '../../../core/types.ts'
 import type { Entity } from '../../../core/types.ts'
 import { authorColour, fullTime, shortTime } from '../format.ts'
@@ -90,7 +94,12 @@ export function MessageBody(props: {
           {props.author && data.verdict ? (
             <span className={`verdict ${String(data.state ?? '').toLowerCase()}`}>{String(data.verdict)} </span>
           ) : null}
-          <Markdown text={String(data.markdown ?? data.text)} onOpen={props.onOpen} findText={props.findText} />
+          <Markdown
+            text={String(data.markdown ?? data.text)}
+            onOpen={props.onOpen}
+            findText={props.findText}
+            math={props.entity.type === 'slack.message' ? 'double' : 'all'}
+          />
           {reactions.length > 0 && (
             <span className="reactions">
               {reactions.map((reaction) => (
@@ -154,7 +163,11 @@ export function Person(props: {
   )
 }
 
-const plugins = [remarkGfm, remarkBreaks]
+// `$x$` inline and `$$x$$` on its own, typeset by KaTeX, as in entity-graph.
+// Where `$` is money as often as maths (Slack), only `$$x$$` is.
+const plugins = [remarkGfm, remarkBreaks, remarkMath]
+const dollarsOnlyDouble = [remarkGfm, remarkBreaks, [remarkMath, { singleDollarTextMath: false }]] as NonNullable<Options['remarkPlugins']>
+const rehypePlugins: NonNullable<Options['rehypePlugins']> = [[rehypeKatex, { throwOnError: false, output: 'html' }]]
 
 interface MdNode {
   type: string
@@ -200,8 +213,8 @@ function keepUrl(url: string): string {
   return /^(mention:|https?:|mailto:)/.test(url) ? url : ''
 }
 
-/** What an inline rendering keeps: formatting within a line. Anything else is unwrapped to its text. */
-const inlineElements = ['p', 'strong', 'em', 'del', 'code', 'a', 'mark', 'br']
+/** What an inline rendering drops (keeping their text): anything that makes a block. Maths stays. */
+const blockElements = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'blockquote', 'pre', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'hr', 'img']
 
 export const Markdown = memo(function Markdown(props: {
   text: string
@@ -209,9 +222,14 @@ export const Markdown = memo(function Markdown(props: {
   findText?: string
   /** One line's worth (a pill, a row): inline formatting only, no blocks. */
   inline?: boolean
+  /** `$x$` is maths (default), or only `$$x$$` (where `$` is money: Slack). */
+  math?: 'all' | 'double'
 }) {
-  const { onOpen, findText, inline } = props
-  const withFind = useMemo<NonNullable<Options['remarkPlugins']>>(() => (findText?.trim() ? [...plugins, [remarkHighlight, { find: findText }]] : plugins), [findText])
+  const { onOpen, findText, inline, math = 'all' } = props
+  const withFind = useMemo<NonNullable<Options['remarkPlugins']>>(() => {
+    const base = math === 'double' ? dollarsOnlyDouble : plugins
+    return findText?.trim() ? [...base, [remarkHighlight, { find: findText }]] : base
+  }, [findText, math])
   const components = useMemo<Components>(
     () => ({
       a: ({ href, children }) => {
@@ -244,9 +262,10 @@ export const Markdown = memo(function Markdown(props: {
   return (
     <ReactMarkdown
       remarkPlugins={withFind}
+      rehypePlugins={rehypePlugins}
       urlTransform={keepUrl}
       components={components}
-      {...(inline ? { allowedElements: inlineElements, unwrapDisallowed: true } : {})}
+      {...(inline ? { disallowedElements: blockElements, unwrapDisallowed: true } : {})}
     >
       {props.text}
     </ReactMarkdown>
