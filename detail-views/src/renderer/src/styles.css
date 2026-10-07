@@ -1230,3 +1230,21 @@ mark {
   color: var(--canvas);
   background: var(--ink);
 }
+
+.dialog.wide {
+  width: min(760px, calc(100vw - 32px));
+}
+
+/* An entity as JSON (the inspector). */
+.inspect {
+  margin: 0;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--fill);
+  font-family: ui-monospace, 'JetBrains Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  user-select: text;
+}

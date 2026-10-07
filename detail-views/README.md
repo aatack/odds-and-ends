@@ -14,7 +14,8 @@ Every view is a tree: the item it is rooted at, then what is under it.
 
 | | |
 |-|-|
-| `1`–`9` | module |
+| `1`–`9` | module (the third is `Alt+3`) |
+| `3` | the selected item as JSON |
 | `w` `s` / arrows | up, down |
 | `a` | to the selected row's parent |
 | `→` `←` | open, fold a row |

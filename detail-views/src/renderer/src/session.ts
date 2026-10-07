@@ -379,6 +379,24 @@ export class Session {
     this.update(S.fold(this.state, row.entity.id, open))
   }
 
+  /** `3`: the selected entity, as JSON, over everything. */
+  inspect(): void {
+    const row = this.selected()
+    if (row) this.update(S.inspect(this.state, row.entity.id))
+  }
+
+  closeInspector(): void {
+    this.update(S.inspect(this.state, null))
+  }
+
+  /** What the inspector shows: the entity as the cache rolls it up (values, links, times). */
+  inspected(): { id: string; json: string } | null {
+    const id = this.state.inspecting
+    if (!id) return null
+    const entity = this.cache.get().entries[id]?.entity
+    return { id, json: JSON.stringify(entity ?? { id, unknown: true }, null, 2) }
+  }
+
   // --- Claude ----------------------------------------------------------------------
 
   /** Shows a passing message for a few seconds. */

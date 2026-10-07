@@ -99,6 +99,12 @@ test('a view is a tree to navigate and edit, from the keyboard, with nothing on 
   assert.equal(session.selected()?.entity.data.text, 'groceries')
   select('milk')
 
+  // 3: the selected entity as JSON, from the cache; Escape (or 3) closes it.
+  session.inspect()
+  assert.equal(JSON.parse(session.inspected()!.json).values.text, 'milk')
+  session.closeInspector()
+  assert.equal(session.get().state.inspecting, null)
+
   // e: edit the text in place.
   session.startEdit()
   await type('oat milk')

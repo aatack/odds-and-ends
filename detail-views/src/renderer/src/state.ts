@@ -46,6 +46,8 @@ export interface State {
   phoneMenu: boolean
   /** A form being filled in (a new Claude session's). Not persisted. */
   dialog: SessionDialog | null
+  /** The entity shown as JSON over everything (`3`). Not persisted. */
+  inspecting: string | null
   /**
    * A move or link waiting for its other end: started on one row, finished by
    * pressing the same key on another (in any view). Not persisted.
@@ -184,6 +186,7 @@ export function initialState(root: string): State {
     viewing: null,
     phoneMenu: false,
     dialog: null,
+    inspecting: null,
     picking: null,
     peeks: [],
   }
@@ -353,6 +356,10 @@ export function startCreate(state: State, path: string[], values?: NoteValues, p
   return { ...state, edit: { root: focused(state), path, mode: 'create', draft: '', values, prompt } }
 }
 
+export function inspect(state: State, id: string | null): State {
+  return state.inspecting === id ? state : { ...state, inspecting: id }
+}
+
 export function setDialog(state: State, dialog: SessionDialog | null): State {
   return state.dialog === dialog ? state : { ...state, dialog }
 }
@@ -420,8 +427,8 @@ export function draftKey(state: State): string {
 }
 
 /** What is kept across reloads. */
-export function persisted(state: State): Omit<State, 'composing' | 'viewing' | 'acting' | 'picking' | 'phoneMenu' | 'dialog'> {
-  const { composing: _, viewing: __, acting: ___, picking: ____, phoneMenu: _____, dialog: ______, ...rest } = state
+export function persisted(state: State): Omit<State, 'composing' | 'viewing' | 'acting' | 'picking' | 'phoneMenu' | 'dialog' | 'inspecting'> {
+  const { composing: _, viewing: __, acting: ___, picking: ____, phoneMenu: _____, dialog: ______, inspecting: _______, ...rest } = state
   return { ...rest, peeks: rest.peeks.filter((peek) => peek.pinned) }
 }
 

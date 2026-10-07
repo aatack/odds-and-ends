@@ -55,6 +55,7 @@ export const tools: Tool[] = [
   { id: 'composer.leave', scope: 'input', keys: ['Escape'], run: (s) => s.compose(false) },
 
   // --- Escape, innermost first; the find last ------------------------------------
+  { id: 'inspect.close', scope: 'list', keys: ['Escape', '3'], enabled: (s) => s.get().state.inspecting !== null, run: (s) => s.closeInspector() },
   { id: 'pick.cancel', label: 'Cancel', scope: 'list', keys: ['Escape'], enabled: (s) => picking(s), run: (s) => s.cancelPick() },
   {
     id: 'peek.close',
@@ -101,6 +102,7 @@ export const tools: Tool[] = [
     enabled: (s) => picking(s, 'linkReverse') || selected(s) !== null,
     run: (s) => s.pick('linkReverse'),
   },
+  { id: 'inspect', label: 'Inspect', scope: 'list', keys: ['3'], enabled: (s) => selected(s) !== null, run: (s) => s.inspect() },
   { id: 'claude.new', label: 'Claude session', scope: 'list', keys: ['K'], enabled: (s) => selected(s) !== null, run: (s) => s.openClaudeDialog() },
   { id: 'claude.prompt', label: 'Prompt Claude', scope: 'list', keys: ['k'], enabled: (s) => selected(s) !== null, run: (s) => s.startPrompt() },
   { id: 'checkbox.toggle', label: 'Tick', scope: 'list', keys: [' '], enabled: (s) => s.canToggle(), run: (s) => s.toggle() },
@@ -141,7 +143,8 @@ export const tools: Tool[] = [
   ...Array.from({ length: 9 }, (_, index): Tool => ({
     id: `module.${index + 1}`,
     scope: 'app',
-    keys: [String(index + 1), `Alt+${index + 1}`],
+    // `3` is the inspector's; the third module is Alt+3.
+    keys: index === 2 ? [`Alt+${index + 1}`] : [String(index + 1), `Alt+${index + 1}`],
     run: (s) => s.openModule(index),
   })),
 ]
