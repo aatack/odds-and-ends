@@ -4,12 +4,12 @@ Written in ASD-STE100.
 
 ## What the app does now
 
-- Each module gives a freshness time for each part of an entity (`ModuleView.foreign`).
-- The cache loads a part when it is on screen and older than its freshness time.
+- Each module gives a freshness time for each part of an entity (`ModuleView.foreign`). The freshness can be `Infinity`: then the part loads one time.
+- The cache loads a part when it was read and its `loaded.<part>` value is missing or older than its freshness time.
 - Each 20 s, the session examines all entities that the frontend cache has read in this session (`revisit`). Thus, an entity stays current after it goes off screen.
 - `children` loads only for an entity that was opened.
-- Each load gets all of the data again. No load uses a cursor.
-- All entities use the same freshness time, on screen or not.
+- Slack does not use freshness for messages. It uses the lists, one search batch and the watch. See [slack.md](slack.md).
+- GitHub loads each part again after its freshness time. No GitHub load uses a cursor.
 
 ## Strategies
 
@@ -136,7 +136,7 @@ An event or a catch-up does not write data to the screen. It marks entities as s
 
 ### Slack
 
-- The watch is a poll of `search.messages`. See "Slack: load once, then watch".
+- The watch is a poll of `search.messages`. See "Slack: lists, one batch, then the watch".
 - Socket Mode can replace the poll later. It sends events at once, but it needs an app-level token (`xapp-`) and changes to the Slack app settings. The catch-up stays the same.
 
 ### GitHub
@@ -152,8 +152,8 @@ An event or a catch-up does not write data to the screen. It marks entities as s
 
 1. Add `ModuleView.watch(entity)` for GitHub. It gives an interval, or null. The core keeps a timer for each watched entity while the app is open.
 2. Let the freshness time come from the entity, not only from its type. Then a merged PR is final, and a PR with pending checks is fast.
-3. Give each loader the entity that it loads. Then the loader can read its cursor (`latestTs`, the newest reply) and send `oldest`.
+3. (Not necessary now. Slack uses search and cursors on the entities, and GitHub loads a PR in one call.)
 4. Add a change signal to the cache: a load of a list compares `updatedAt` and `latestReply`, and marks only the changed items as stale.
-5. Each 10 min, do a full load of the newest window of an open conversation, to get edits and reactions.
+5. Get edits, deletions and new reactions on cached Slack messages. The watch does not see them. Possible: load the newest 100 messages of an open conversation each 10 min, or use Socket Mode.
 6. Add a GitHub notifications poll. It keeps its last event time and does a catch-up on start. (The Slack watch is done.)
 7. While a watch is open, make the freshness times of the items that it covers long. The watch then does the work, and the polls are only a fallback.
