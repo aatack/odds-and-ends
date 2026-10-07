@@ -3,6 +3,46 @@
 `modules/slack/` — `view.ts` (pure), `slack.ts` (loads, watch), `api.ts`
 (transport, read allowlist, rate limiter).
 
+## The problem (a possible rethink)
+
+Keeping track of Slack, and not missing anything, is hard:
+
+- What I need to track is spread across DMs, group DMs, channels and threads.
+  No one place in Slack's UI shows all of them; threads never show beside
+  channels and chats.
+- I often action a message and come back to it later.
+- I sometimes want to look at something without marking it read.
+- Slack can't put only unread things at the top and hide read channels.
+- I work across two workspaces.
+
+**Proposal.** Accumulate the channels, DMs, group DMs and threads I haven't
+read into one list, as a tree. Treat them all alike: each is a *topic* that
+holds *messages*. Topics and messages are items like any other: I can link
+them to other things, write notes on them and make them tasks. When I'm ready,
+I mark them read.
+
+### What Slack's API allows (checked October 2026)
+
+| Need | Public API | Undocumented (the web client's) |
+|-|-|-|
+| Unread conversations | `conversations.info` gives `last_read` (my read point) for one conversation; `unread_count` for DMs only. Unread = newest message ts > `last_read`. No batch call. | `client.counts`: unread flags and mention counts for every channel, DM, group DM and threads, in one call |
+| Unread threads (the Threads / Activity view) | None | `subscriptions.thread.getView` |
+| Mark read | `conversations.mark` (channel, ts), with `*:write` scopes on a user token | `subscriptions.thread.mark` for threads |
+
+- The undocumented methods need a browser session token (`xoxc` and its `d`
+  cookie), not an app's token; they can change or break without notice, and a
+  workspace may not allow them.
+- `conversations.info` per conversation is the ~600 calls ruled out above,
+  but it need only run for a conversation the watch has just seen a message
+  in, which keeps it to a few calls a minute.
+- Threads have no public read state at all, so for threads the app would have
+  to keep its own.
+- `conversations.mark` is a write: it needs `slackWrites` and my say-so.
+- A second workspace needs its own token. From May 2025 Slack limits
+  `conversations.history` and `conversations.replies` to 1 call a minute
+  (15 messages) for non-Marketplace apps that aren't internal; an internal
+  app installed in its own workspace is exempt.
+
 ## Constraints
 
 - **Read-only.** `api.ts` refuses any method not on its read list
