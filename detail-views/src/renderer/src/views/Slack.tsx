@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { MessageBody, MessageRow, showsAuthor, showsTime } from './messages.tsx'
 import { authorColour, cursorTime } from '../format.ts'
 import type { PillProps, RowProps } from './kindTypes.ts'
-import { Composer, HeaderPill, Row, Status, Working } from './primitives.tsx'
+import { Composer, HeaderPill, ItemPill, Row, Status, Working } from './primitives.tsx'
 import type { FocusProps } from './types.ts'
 
 /** Every conversation I am in, most recent first. */
@@ -171,8 +171,11 @@ export function SlackThread(props: FocusProps) {
   const all = focus.entity ? [focus.entity, ...focus.children] : focus.children
   return (
     <div className="pane">
-      {props.headed !== false && focus.older && (
+      {props.headed !== false && (
         <div className="title">
+          {typeof focus.entity?.data.conversation === 'string' && (
+            <ItemPill id={focus.entity.data.conversation} fallback={String(focus.entity.data.where ?? '')} />
+          )}
           <History {...props} />
         </div>
       )}
