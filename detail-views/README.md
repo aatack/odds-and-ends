@@ -16,6 +16,7 @@ Every view is a tree: the item it is rooted at, then what is under it.
 |-|-|
 | `1`–`9` | module |
 | `w` `s` / arrows | up, down |
+| `a` | to the selected row's parent |
 | `→` `←` | open, fold a row |
 | `d` | push a view of the selected row |
 | `Shift+A` / `Alt+←` | pop it |
@@ -33,7 +34,7 @@ Every view is a tree: the item it is rooted at, then what is under it.
 | `Ctrl+F` | find in this view: rows that say it (highlighted), and the rows above them; `Enter` back to the tree, `Esc` clears |
 | `Ctrl+Z` / `Ctrl+Y` | undo / redo my own edits (up to five minutes back) |
 | `F5` | refresh |
-| `a` | approve a PR |
+| `p` | approve a PR |
 | `X` | close my PR and delete its branch |
 
 ## Slack

@@ -74,6 +74,7 @@ export const tools: Tool[] = [
   { id: 'expand', scope: 'list', keys: ['ArrowRight'], enabled: notRoot, run: (s) => s.fold(true) },
   { id: 'collapse', scope: 'list', keys: ['ArrowLeft'], enabled: notRoot, run: (s) => s.fold(false) },
   { id: 'view.push', scope: 'list', keys: ['d'], enabled: notRoot, run: (s) => s.open() },
+  { id: 'select.parent', scope: 'list', keys: ['a'], enabled: notRoot, run: (s) => s.selectParent() },
 
   // --- Whatever is selected ----------------------------------------------------------
   { id: 'note.create', scope: 'list', keys: ['Enter'], enabled: (s) => selected(s) !== null, run: (s) => s.startCreate() },
@@ -104,7 +105,7 @@ export const tools: Tool[] = [
   // --- The view's root ----------------------------------------------------------------
   ...(
     [
-      ['approve', 'a'],
+      ['approve', 'p'],
       ['close', 'X'],
     ] as const
   ).map(
