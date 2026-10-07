@@ -10,19 +10,26 @@ npm run dev
 
 ## Keys
 
+Every view is a tree: the item it is rooted at, then what is under it.
+
 | | |
 |-|-|
 | `1`–`9` | module |
 | `w` `s` / arrows | up, down |
-| `d` | focus the selected item |
-| `Shift+A` / `Backspace` / `Alt+←` | back: pop the focus off the trail |
+| `→` `←` | open, fold a row |
+| `d` | push a view of the selected row |
+| `Shift+A` / `Alt+←` | pop it |
 | `Alt+→` | forward |
-| `Enter` | write; `Enter` again sends (or closes when empty), `Shift+Enter` new line, `Esc` closes |
-| `r` | refresh |
+| `Enter` | add a note under the selected row; `Enter` writes it, `Esc` gives up |
+| `e` | edit the selected row's text (for me only, over whatever the service says) |
+| `Backspace` `Delete` | take the selected row out from under its parent here |
+| `x` | move: press on the row, then on its new parent |
+| `r` / `Shift+R` | link: press on the row, then on what goes under it / what it goes under |
+| `Esc` | give up a move or link |
+| `Space` | tick a task |
 | `o` | load further back: all of Slack, this conversation, or this thread |
-| `Backspace` `Delete` | on the Slack list: hide the selected chat (a conversation hides its threads too) |
-| `Shift+Backspace` | on a message, or a thread on the Slack list: hide the whole chat it is in (also **Hide chat** in its header) |
-| `x` `Space` | tick a task |
+| `Shift+Backspace` | on a Slack message: hide the whole chat it is in |
+| `F5` `Ctrl+R` | refresh |
 | `a` | approve a PR |
 | `X` | close my PR and delete its branch |
 

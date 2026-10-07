@@ -1,15 +1,16 @@
-import type { Focus as FocusData, ModuleInfo } from '../../../core/types.ts'
-import type { Peek, PeekTarget, Rect } from '../state.ts'
-import { Focus } from './Focus.tsx'
+import type { Entity, ModuleInfo, View } from '../../../core/types.ts'
+import type { Peek, PeekTarget, Pick, Rect } from '../state.ts'
 import { PeekWindow } from './Peek.tsx'
+import { ViewPane } from './View.tsx'
 import { kinds } from './kinds.tsx'
 import { ItemContext, KindsContext, PeekContext } from './primitives.tsx'
 import type { ItemGestures, PeekGestures } from './primitives.tsx'
-import type { FocusProps } from './types.ts'
+import type { ViewProps } from './types.ts'
+import { PillContent } from './primitives.tsx'
 
 export interface PeekProps {
   peeks: Peek[]
-  foci: Record<string, FocusData>
+  views: Record<string, View>
   gestures: PeekGestures
   hover(target: PeekTarget, anchor: Rect, origin: string | null): void
   enter(key: string): void
@@ -27,8 +28,9 @@ export function App(props: {
   items: ItemGestures
   modules: ModuleInfo[]
   module: string | null
-  focus: FocusData | null
-  view: Omit<FocusProps, 'focus'>
+  view: ViewProps | null
+  /** A move or link waiting for its other end, and the item it started on. */
+  picking: { pick: Pick; subject: Entity | null } | null
   onModule(root: string): void
 }) {
   const { peek } = props
@@ -48,12 +50,13 @@ export function App(props: {
               </div>
             ))}
           </nav>
-          <main className="focus">{props.focus && <Focus focus={props.focus} {...props.view} />}</main>
+          <main className="focus">{props.view && <ViewPane {...props.view} />}</main>
+          {props.picking && <PickBar {...props.picking} />}
           {peek.peeks.map((one) => (
             <PeekWindow
               key={one.key}
               peek={one}
-              focus={one.target.kind === 'entity' ? peek.foci[one.target.id] : undefined}
+              view={one.target.kind === 'entity' ? peek.views[one.target.id] : undefined}
               hover={peek.hover}
               onEnter={peek.enter}
               onLeave={peek.leave}
@@ -61,7 +64,7 @@ export function App(props: {
               onRaise={peek.onRaise}
               onClose={peek.onClose}
               onOpen={peek.onOpen}
-              onOpenEntity={props.view.onOpen}
+              onOpenEntity={(id) => props.view?.onOpen(id)}
               onImage={props.onImage}
             />
           ))}
@@ -74,5 +77,21 @@ export function App(props: {
       </PeekContext.Provider>
     </ItemContext.Provider>
     </KindsContext.Provider>
+  )
+}
+
+const pickWords = {
+  move: ['Moving', 'Select its new parent and press x'],
+  link: ['Linking', 'Select what goes under it and press r'],
+  linkReverse: ['Linking', 'Select what it goes under and press Shift+R'],
+} as const
+
+/** Says a move or link is waiting for its other end, and how to give it one. */
+function PickBar(props: { pick: Pick; subject: Entity | null }) {
+  const [verb, how] = pickWords[props.pick.tool]
+  return (
+    <div className="pick-bar">
+      {verb} {props.subject ? <span className="item-pill header"><PillContent entity={props.subject} /></span> : null} · {how} · Esc to cancel
+    </div>
   )
 }

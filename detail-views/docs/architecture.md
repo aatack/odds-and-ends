@@ -26,8 +26,9 @@ src/renderer/src/
 
 ## From a service to the screen
 
-1. A view needs an entity. `Session.derive` calls `focusOf(id, cache.source())`,
-   which reads through the `EntityCache`. Reading is asking: anything missing is
+1. A view needs an entity. `Session.derive` calls `viewOf(id, cache.source(),
+   { folds })` (remembered per view until its root, the folds or the cache
+   change), which reads through the `EntityCache`. Reading is asking: anything missing is
    scanned (`Core.actions.scan`) in a microtask batch.
 2. When an asked-for entity arrives, its module's `ModuleView.foreign` says
    which parts of it come from a service and how long they stay fresh. A part
@@ -53,3 +54,18 @@ fetched straight to the screen, and no view asks the core what to show.
 `working` (calls under way per entity, for button loading states) and `now` (a
 one-second clock for "how long ago" text). Both live in the snapshot and are
 never persisted. Views do not run their own timers.
+
+## The renderer, after entity-graph
+
+- **Latent state** (`state.ts`): the stack of view roots, each view's
+  selection path, folds, the in-place edit (persisted with its draft), a
+  pending move/link (`picking`, not persisted), peeks.
+- **Derived** (pure, never written back): the view (`viewOf`), the rows with
+  the selection and edit laid over them (`markRows`), the selection in effect
+  (`resolveSelection`).
+- **Tools** (`tools.ts`): every key is one, scoped `input` → `list` → `app`;
+  the first enabled tool bound to a key wins, which is how Escape means
+  "stop typing", "give up the move" or "close the peek" by what is going on.
+- **Views** (`views/View.tsx`): one tree view for everything. It draws the
+  root's `Overview`, then each row's indent and fold mark around its type's
+  `Row`, or the type's `Detail` instead of both.

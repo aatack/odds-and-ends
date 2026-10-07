@@ -69,7 +69,8 @@ export function tsMillis(ts: string): number {
 
 /** The user's name, or their id until it has loaded. */
 function userName(lens: Lens, user: string): string {
-  const name = lens.read(slackIds.user(user))?.data.name
+  const data = lens.read(slackIds.user(user))?.data
+  const name = data?.text || data?.name
   return typeof name === 'string' && name ? name : user
 }
 
@@ -176,12 +177,18 @@ export const slackView: ModuleView = {
   present(entity, lens) {
     const cursor = (data: Record<string, unknown> | undefined) =>
       typeof data?.['history.oldest'] === 'string' ? (data['history.oldest'] as string) : undefined
+    // `text` is what an item is called or says, everywhere it is shown. What
+    // Slack says is written at its own time or at 0; my edit is written now,
+    // so it wins, for me only.
+    const own = typeof entity.data.text === 'string' && entity.data.text ? entity.data.text : undefined
+    if (entity.type === 'slack.user') return { ...entity, data: { ...entity.data, text: own ?? entity.data.name ?? entity.id } }
     if (entity.type === 'slack.home') {
       const watch = lens.read(slackIds.watch)?.data
       return {
         ...entity,
         data: {
           ...entity.data,
+          text: own ?? 'Slack',
           from: cursor(entity.data) ?? null,
           complete: Boolean(entity.data['history.complete']),
           polledAt: watch?.polledAt ?? null,
@@ -192,11 +199,12 @@ export const slackView: ModuleView = {
     if (entity.type === 'slack.conversation') {
       const data = { channel: entity.id.slice('slack:conv:'.length), ...entity.data } as unknown as ConversationData
       const global = cursor(lens.read(slackIds.root)?.data)
-      const own = cursor(entity.data)
-      const from = own && global ? (Number(own) < Number(global) ? own : global) : (own ?? global ?? null)
+      const mine = cursor(entity.data)
+      const from = mine && global ? (Number(mine) < Number(global) ? mine : global) : (mine ?? global ?? null)
+      const title = own ?? conversationTitle(lens, data)
       return {
         ...entity,
-        data: { ...entity.data, title: conversationTitle(lens, data), from, complete: Boolean(entity.data['history.complete']) },
+        data: { ...entity.data, title, text: title, from, complete: Boolean(entity.data['history.complete']) },
       }
     }
     if (entity.type !== 'slack.message') return entity

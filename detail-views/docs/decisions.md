@@ -63,3 +63,18 @@ Newest last. Each says what was chosen, why, and what was turned down.
     states are a few CSS rules, and a library would bring its own look and
     motion. Disabled actions carry their reason (`Action.disabled`) and are
     refused by the core as well as the view.
+23. **Every view is a tree, after entity-graph.** A view is a query walked
+    into rows (`viewOf`), rows are identified by path, the selection is a
+    latent path resolved each time, folds are latent, and the walk is
+    remembered apart from the selection so cursor moves cost nothing. *Why:*
+    one way to navigate and edit everything, nested. Types still render their
+    own way, through pill / overview / row / optional detail.
+24. **Generic editing on any item**: notes (untyped owned entities) with
+    Enter, `e` writes an owned `text` over the service's, Backspace unlinks in
+    context, `x` / `r` / `Shift+R` pick their other end by a second press.
+    *Why:* the event model makes all of these one or two owned events,
+    whatever the item. Old `task` items still tick with Space; new ones are
+    notes.
+25. **ArrowLeft/Right fold and open rows** (as in entity-graph), so back is
+    `Shift+A` or `Alt+←` only, and refresh moved to F5 / Ctrl+R since `r`
+    links. Posting to Slack (already off) lost its composer.

@@ -1,6 +1,6 @@
 import { EntityCache, type CacheState } from '../../core/graph/cache.ts'
-import { focusOf, foreignOf, itemOf, moduleInfos } from '../../core/present.ts'
-import type { Entity, Focus, ModuleInfo, Outcome } from '../../core/types.ts'
+import { foreignOf, itemOf, moduleInfos, viewOf } from '../../core/present.ts'
+import type { Entity, ModuleInfo, Outcome, View, ViewRow } from '../../core/types.ts'
 import type { Api } from './api.ts'
 import type { Environment } from './environment.ts'
 import * as S from './state.ts'
@@ -8,12 +8,14 @@ import * as S from './state.ts'
 export interface Snapshot {
   state: S.State
   modules: ModuleInfo[]
-  focus: Focus | null
+  /** The view on screen, as a tree, with the selection and any edit laid over it. */
+  view: View | null
+  shown: S.ShownView
   /** What each open entity peek shows, by entity id. */
-  peekFoci: Record<string, Focus>
+  peekViews: Record<string, View>
   /** An item named on screen (a pill), presented. Reading one asks for it. */
   item(id: string): Entity | null
-  /** What is under way for each entity: `older`, or an action's id. */
+  /** What is under way for each entity: `older`, an action's id, `hide`. */
   working: Record<string, string[]>
   /** The time, to the second, for anything that says how long ago. */
   now: number
@@ -22,13 +24,16 @@ export interface Snapshot {
 const storageKey = 'detail-views.state'
 /** How often everything in the cache is looked at again, to load whatever has gone stale. */
 const revisitEvery = 20_000
+const noRows: S.ShownView = { rows: [], selectedPath: [], selectedIndex: -1 }
 
 /**
  * The app without a screen: latent state, the entity cache, every effect.
  *
- * Everything shown is worked out from the cache (`focusOf`, `itemOf`), which
- * answers at once with whatever it has and fetches the rest behind. Nothing
- * here asks the core what to show.
+ * Everything shown is derived: `viewOf` walks a view's tree over the cache,
+ * and `markRows` lays the selection and any edit over it. The walk is
+ * remembered per view against what can change its shape (its root, the folds,
+ * the cache), and pointedly not the selection: moving the cursor re-marks the
+ * rows and never walks the tree again. Nothing here asks the core what to show.
  */
 export class Session {
   readonly cache: EntityCache
@@ -41,17 +46,20 @@ export class Session {
   private peekOpening: ReturnType<typeof setTimeout> | null = null
   private peekClosing: ReturnType<typeof setTimeout> | null = null
   private deriving = false
-  private derivedFrom: CacheState | null = null
+  /** The last walk of each view, and what it was walked against. */
+  private readonly walks = new Map<string, { root: string; folds: S.State['folds']; cache: CacheState; view: View }>()
   /** The last thing shown for each item, so an item that hasn't changed keeps its identity and its row doesn't redraw. */
-  private readonly shown = new Map<string, { json: string; entity: Entity }>()
+  private readonly items = new Map<string, { json: string; entity: Entity }>()
+  /** Likewise for rows, by key. */
+  private readonly rowsShown = new Map<string, ViewRow>()
 
   constructor(api: Api, env: Environment) {
     this.api = api
     this.env = env
     this.cache = new EntityCache({ scan: (ids) => api.scan(ids), load: (request) => api.load(request), foreign: foreignOf })
     const state = S.restore(env.load(storageKey), 'slack')
-    this.snapshot = { state, modules: moduleInfos, focus: null, peekFoci: {}, item: () => null, working: {}, now: Date.now() }
-    this.snapshot = this.derive(state, this.cache.get())
+    this.snapshot = { state, modules: moduleInfos, view: null, shown: noRows, peekViews: {}, item: () => null, working: {}, now: Date.now() }
+    this.snapshot = this.derive(state)
   }
 
   async start(): Promise<() => void> {
@@ -82,7 +90,7 @@ export class Session {
 
   private update(state: S.State): void {
     if (state === this.snapshot.state) return
-    this.publish(this.derive(state, this.cache.get()))
+    this.publish(this.derive(state))
   }
 
   /** One derivation per burst of cache changes, however many there were. */
@@ -91,66 +99,80 @@ export class Session {
     this.deriving = true
     queueMicrotask(() => {
       this.deriving = false
-      this.publish(this.derive(this.snapshot.state, this.cache.get()))
+      this.publish(this.derive(this.snapshot.state))
     })
   }
 
   /** An item as last shown, if nothing about it has changed. */
   private stable = (entity: Entity): Entity => {
     const json = JSON.stringify(entity)
-    const known = this.shown.get(entity.id)
+    const known = this.items.get(entity.id)
     if (known?.json === json) return known.entity
-    this.shown.set(entity.id, { json, entity })
+    this.items.set(entity.id, { json, entity })
     return entity
   }
 
-  private stableFocus(focus: Focus, previous: Focus | null | undefined): Focus {
-    const next = { ...focus, entity: focus.entity && this.stable(focus.entity), children: focus.children.map(this.stable) }
+  private stableRow(row: ViewRow): ViewRow {
+    const next = { ...row, entity: this.stable(row.entity), parent: row.parent && this.stable(row.parent), above: row.above && this.stable(row.above) }
+    const known = this.rowsShown.get(row.key)
     if (
-      previous &&
-      previous.entity === next.entity &&
-      previous.loading === next.loading &&
-      previous.error === next.error &&
-      previous.compose === next.compose &&
-      JSON.stringify(previous.actions) === JSON.stringify(next.actions) &&
-      previous.children.length === next.children.length &&
-      previous.children.every((child, index) => child === next.children[index])
+      known &&
+      known.entity === next.entity &&
+      known.parent === next.parent &&
+      known.above === next.above &&
+      known.depth === next.depth &&
+      known.open === next.open &&
+      known.hasChildren === next.hasChildren &&
+      known.loading === next.loading
     ) {
-      return previous
+      return known
     }
+    this.rowsShown.set(row.key, next)
     return next
   }
 
-  /** Everything shown, from latent state and the cache. Reading is what asks for what is missing. */
-  private derive(state: S.State, cache: CacheState): Snapshot {
-    const source = this.cache.source(cache)
-    const previous = this.snapshot
-    // A cursor move changes neither the focus nor the cache: nothing to work out again.
-    const same = cache === this.derivedFrom
-    this.derivedFrom = cache
-    const focusFor = (id: string, before: Focus | null | undefined) =>
-      same && before ? before : this.stableFocus(focusOf(id, source), before)
-    const focused = S.focused(state)
-    const focus = focusFor(focused, focused === S.focused(previous.state) ? previous.focus : null)
-    const peekFoci: Record<string, Focus> = {}
-    for (const peek of state.peeks) {
-      if (peek.target.kind !== 'entity') continue
-      const id = peek.target.id
-      peekFoci[id] ??= focusFor(id, previous.peekFoci[id])
-    }
-    if (same) {
-      return { state, modules: moduleInfos, focus, peekFoci, item: previous.item, working: previous.working, now: previous.now }
-    }
-    const items = new Map<string, Entity | null>()
-    const item = (id: string): Entity | null => {
-      if (!items.has(id)) {
-        const found = itemOf(id, source)
-        items.set(id, found && this.stable(found))
-      }
-      return items.get(id)!
-    }
-    return { state, modules: moduleInfos, focus, peekFoci, item, working: previous.working, now: previous.now }
+  /** A view's walk: remembered while its root, the folds and the cache are the same. */
+  private walk(root: string, state: S.State): View {
+    const cache = this.cache.get()
+    const known = this.walks.get(root)
+    if (known && known.folds === state.folds && known.cache === cache) return known.view
+    const walked = viewOf(root, this.cache.source(cache), { folds: state.folds })
+    const view = { ...walked, root: walked.root && this.stable(walked.root), rows: walked.rows.map((row) => this.stableRow(row)) }
+    this.walks.set(root, { root, folds: state.folds, cache, view })
+    return view
   }
+
+  /** Everything shown, from latent state and the cache. Reading is what asks for what is missing. */
+  private derive(state: S.State): Snapshot {
+    const previous = this.snapshot
+    const root = S.focused(state)
+    const view = this.walk(root, state)
+    const shown = S.markRows(view, state, root)
+    const peekViews: Record<string, View> = {}
+    for (const peek of state.peeks) if (peek.target.kind === 'entity') peekViews[peek.target.id] ??= this.walk(peek.target.id, state)
+    // Walks for views no longer anywhere are dropped.
+    const live = new Set([root, ...Object.keys(peekViews)])
+    for (const key of this.walks.keys()) if (!live.has(key)) this.walks.delete(key)
+    const cache = this.cache.get()
+    const item =
+      previous.view && this.itemsFrom === cache
+        ? previous.item
+        : (() => {
+            const source = this.cache.source(cache)
+            const found = new Map<string, Entity | null>()
+            return (id: string): Entity | null => {
+              if (!found.has(id)) {
+                const entity = itemOf(id, source)
+                found.set(id, entity && this.stable(entity))
+              }
+              return found.get(id)!
+            }
+          })()
+    this.itemsFrom = cache
+    return { ...previous, state, view, shown, peekViews, item }
+  }
+
+  private itemsFrom: CacheState | null = null
 
   private isWorking(id: string, what: string): boolean {
     return this.snapshot.working[id]?.includes(what) ?? false
@@ -182,13 +204,17 @@ export class Session {
     return this.snapshot.state
   }
 
-  private get focus(): Focus | null {
-    return this.snapshot.focus
+  /** The selected row, or null. */
+  selected(): ViewRow | null {
+    return S.selectedRow(this.snapshot.shown)
   }
 
-  selected() {
-    return S.selected(this.state, this.focus)
+  /** The view's root, presented. */
+  root(): Entity | null {
+    return this.snapshot.view?.root ?? null
   }
+
+  // --- The stack and the cursor -------------------------------------------------
 
   navigate(id: string): void {
     this.update(S.navigate(this.state, id))
@@ -208,21 +234,134 @@ export class Session {
   }
 
   move(delta: number): void {
-    this.update(S.move(this.state, this.focus, delta))
+    this.update(S.move(this.state, this.snapshot.shown, delta))
   }
 
-  select(id: string): void {
-    this.update(S.select(this.state, id))
+  select(path: string[]): void {
+    this.update(S.select(this.state, path))
   }
 
+  /** `d`: a new view rooted at the selected row. */
   open(): void {
-    const child = this.selected()
-    if (child) this.navigate(child.id)
+    const row = this.selected()
+    if (row && row.depth > 0) this.navigate(row.entity.id)
   }
 
-  /** Loads the focus again from its service, fresh or not. */
+  /** Opens or folds the selected row (its children walked or not). */
+  fold(open: boolean): void {
+    const row = this.selected()
+    if (!row || row.depth === 0) return
+    if (!open && !row.open && row.path.length > 2) {
+      // Folding a row already shut goes to its parent, as in an outliner.
+      this.select(row.path.slice(0, -1))
+      return
+    }
+    this.update(S.fold(this.state, row.entity.id, open))
+  }
+
+  /** Loads the view's root again from its service, fresh or not. */
   refresh(): void {
     this.cache.refresh(S.focused(this.state))
+  }
+
+  // --- Editing in place ------------------------------------------------------------
+
+  /** `e`: edit the selected row's text, starting from what it shows. */
+  startEdit(): void {
+    const row = this.selected()
+    if (!row) return
+    const text = row.entity.data.text
+    this.update(S.startEdit(this.state, row.path, typeof text === 'string' ? text : ''))
+  }
+
+  /** Enter: a new note under the selected row, which opens so the note shows. */
+  startCreate(): void {
+    const row = this.selected()
+    if (!row) return
+    const opened = row.depth > 0 ? S.fold(this.state, row.entity.id, true) : this.state
+    this.update(S.startCreate(opened, row.path))
+  }
+
+  setEditDraft(draft: string): void {
+    this.update(S.setEditDraft(this.state, draft))
+  }
+
+  hasEdit(): boolean {
+    return this.state.edit !== null && this.state.edit.root === S.focused(this.state)
+  }
+
+  /** Writes the edit: the row's text, or a new note. An empty box changes nothing. */
+  commitEdit(): void {
+    const edit = this.state.edit
+    if (!edit) return
+    this.update(S.endEdit(this.state))
+    const id = edit.path[edit.path.length - 1]
+    if (!edit.draft.trim()) return
+    if (edit.mode === 'edit') {
+      void this.api.setText(id, edit.draft).then((outcome) => this.settle(id, outcome))
+      return
+    }
+    void this.api.create(id, edit.draft).then((outcome) => {
+      this.settle(id, outcome)
+      const made = outcome.events.find((event) => event.type === 'link')
+      if (made?.type === 'link' && S.focused(this.state) === edit.root) this.select([...edit.path, made.destinationId])
+    })
+  }
+
+  cancelEdit(): void {
+    this.update(S.endEdit(this.state))
+  }
+
+  // --- Links ---------------------------------------------------------------------
+
+  /**
+   * Backspace: takes the selected row out from under its parent in this view;
+   * at the view's root there is no parent here, so nothing happens. The cursor
+   * moves to the row above.
+   */
+  unlinkSelected(): void {
+    const row = this.selected()
+    if (!row || row.path.length < 2) return
+    const parent = row.path[row.path.length - 2]
+    const rows = this.snapshot.shown.rows
+    const above = rows.slice(0, this.snapshot.shown.selectedIndex).reverse().find((other) => other.kind === 'entity')
+    if (above?.kind === 'entity') this.select(above.row.path)
+    void this.api.unlink(parent, row.entity.id).then((outcome) => this.settle(parent, outcome))
+  }
+
+  /**
+   * `x` (move), `r` (link to), `Shift+R` (link from): the first press marks
+   * the selected row; moving to another row, in any view, and pressing the
+   * same key again finishes it there. Escape gives up.
+   */
+  pick(tool: S.PickTool): void {
+    const picking = this.state.picking
+    const row = this.selected()
+    if (picking?.tool === tool) {
+      this.update(S.endPick(this.state))
+      if (row) this.finishPick(picking, row.entity.id)
+      return
+    }
+    if (!row) return
+    if (tool === 'move' && row.path.length < 2) return
+    this.update(S.startPick(this.state, tool, row.path))
+  }
+
+  cancelPick(): void {
+    this.update(S.endPick(this.state))
+  }
+
+  private finishPick(picking: S.Pick, target: string): void {
+    const subject = picking.path[picking.path.length - 1]
+    const done = (id: string) => (outcome: Outcome) => this.settle(id, outcome)
+    if (picking.tool === 'move') {
+      const from = picking.path[picking.path.length - 2]
+      void this.api.move(subject, from, target).then(done(target))
+    } else if (picking.tool === 'link') {
+      void this.api.link(subject, target).then(done(subject))
+    } else {
+      void this.api.link(target, subject).then(done(target))
+    }
   }
 
   /**
@@ -298,6 +437,9 @@ export class Session {
     this.update(S.view(this.state, ref))
   }
 
+
+  // --- Actions on the root, and Slack's own -----------------------------------------
+
   compose(composing: boolean): void {
     this.update(S.setComposing(this.state, composing))
   }
@@ -306,12 +448,8 @@ export class Session {
     this.update(S.setDraft(this.state, text))
   }
 
-  hasDraft(): boolean {
-    return Boolean(this.state.drafts[S.draftKey(this.state)]?.trim())
-  }
-
   startAction(action: string): void {
-    if (this.focus?.actions.some((offered) => offered.id === action && !offered.disabled)) {
+    if (this.snapshot.view?.actions.some((offered) => offered.id === action && !offered.disabled)) {
       this.update(S.startAction(this.state, action))
     }
   }
@@ -326,54 +464,41 @@ export class Session {
     this.settle(id, await this.working(id, action, () => this.api.perform(id, action, text)))
   }
 
+  /** Whether the view's composer is waiting (a Slack token, say). */
+  composerOpen(): boolean {
+    return this.snapshot.view?.compose != null && this.state.acting === null
+  }
+
+  /** Sends what is in the view's composer, and empties it. */
   async send(): Promise<void> {
     const id = S.focused(this.state)
-    const text = this.state.drafts[id] ?? ''
+    const text = this.state.drafts[S.draftKey(this.state)] ?? ''
     if (!text.trim()) return
     this.update(S.setDraft(this.state, ''))
     this.settle(id, await this.api.submit(id, text))
   }
 
+  /** Space on a task: done or not. */
   toggle(): void {
-    const child = this.selected()
-    if (child) void this.api.toggle(child.id).then((outcome) => this.settle(child.id, outcome))
+    const row = this.selected()
+    if (row?.entity.type === 'task') void this.api.toggle(row.entity.id).then((outcome) => this.settle(row.entity.id, outcome))
   }
 
   /**
-   * Takes the selected child out of the focus (a chat out of the Slack
-   * workspace). The cursor moves to the row after it, or before it at the end.
-   */
-  unlinkSelected(): void {
-    const focus = this.focus
-    const child = this.selected()
-    if (!focus || !child) return
-    const at = focus.children.findIndex((other) => other.id === child.id)
-    const next = focus.children[at + 1] ?? focus.children[at - 1]
-    if (next) this.select(next.id)
-    const parent = S.focused(this.state)
-    void this.api.unlink(parent, child.id).then((outcome) => this.settle(parent, outcome))
-  }
-
-  /**
-   * Hides the whole chat a message is in: the selected row on the Slack list,
-   * or the focused message. Works for a chat that isn't listed too (a public
+   * Hides the whole chat a message is in: the selected message, or the view's
+   * root when that is one. Works for a chat that isn't listed too (a public
    * channel I'm not in), so none of its threads is listed again.
    */
   hideChatOfMessage(): void {
-    const focus = this.focus
-    const message = focus?.entity?.type === 'slack.message' ? focus.entity : this.selected()
+    const row = this.selected()
+    const message = row?.entity.type === 'slack.message' ? row.entity : this.root()
     const chat = message?.type === 'slack.message' ? message.data.conversation : null
     if (typeof chat !== 'string') return
-    if (message && message === this.selected()) {
-      const at = focus!.children.findIndex((other) => other.id === message.id)
-      const next = focus!.children.slice(at + 1).find((other) => other.data.conversation !== chat && other.id !== chat)
-      if (next) this.select(next.id)
-    }
     const id = S.focused(this.state)
     void this.working(id, 'hide', () => this.api.unlink('slack', chat)).then((outcome) => this.settle('slack', outcome))
   }
 
-  /** Loads the focus further back: a conversation's history, a thread, or all of Slack. */
+  /** Loads the view's root further back: a conversation's history, a thread, or all of Slack. */
   older(): void {
     const id = S.focused(this.state)
     if (this.isWorking(id, 'older')) return

@@ -1,8 +1,8 @@
 import { useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import type { Focus as FocusData } from '../../../core/types.ts'
+import type { View } from '../../../core/types.ts'
 import type { Peek, PeekTarget, Rect } from '../state.ts'
-import { Focus } from './Focus.tsx'
+import { ViewPane } from './View.tsx'
 import { Button, HeaderPill, PeekContext } from './primitives.tsx'
 
 const size = { width: 720, height: 480 }
@@ -25,7 +25,7 @@ type Grab = { mode: 'move' | 'resize'; start: Rect; x: number; y: number; moved:
  */
 export function PeekWindow(props: {
   peek: Peek
-  focus: FocusData | undefined
+  view: View | undefined
   /** Hovering something inside opens a peek stacked on this one. */
   hover(target: PeekTarget, anchor: Rect, origin: string | null): void
   onEnter(key: string): void
@@ -97,7 +97,7 @@ export function PeekWindow(props: {
     >
       <div className="peek-bar" onPointerDown={begin('move')}>
         <span className="grow">
-          {peek.target.kind === 'entity' ? <HeaderPill entity={props.focus?.entity} /> : peek.target.url}
+          {peek.target.kind === 'entity' ? <HeaderPill entity={props.view?.root} /> : peek.target.url}
         </span>
         <Button label="Open" onClick={() => props.onOpen(peek.target)} />
         {peek.pinned && <Button quiet label="×" title="Close" onClick={() => props.onClose(peek.key)} />}
@@ -106,18 +106,24 @@ export function PeekWindow(props: {
         <div className="peek-body">
           {peek.target.kind === 'url' ? (
             <webview key={peek.target.url} src={peek.target.url} partition="persist:preview" className="peek-page" />
-          ) : props.focus ? (
-            <Focus
-              focus={props.focus}
-              cursor={-1}
+          ) : props.view ? (
+            <ViewPane
+              view={props.view}
+              shown={{ rows: props.view.rows.map((row) => ({ kind: 'entity', key: row.key, row, selected: false, editing: false })), selectedPath: [], selectedIndex: -1 }}
+              interactive={false}
+              edit={null}
+              picking={null}
+              acting={null}
               draft=""
               composing={false}
-              headed={false}
               onSelect={noop}
               onOpen={props.onOpenEntity}
+              onImage={props.onImage}
               onDraft={noop}
               onCompose={noop}
-              onImage={props.onImage}
+              onEditDraft={noop}
+              onCommitEdit={noop}
+              onCancelEdit={noop}
             />
           ) : null}
         </div>

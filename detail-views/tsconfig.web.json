@@ -31,6 +31,7 @@
     "src/core/modules/slack/markdown.ts"
   ],
   "exclude": [
-    "src/core/**/*.test.ts"
+    "src/core/**/*.test.ts",
+    "src/renderer/src/**/*.test.ts"
   ]
 }
