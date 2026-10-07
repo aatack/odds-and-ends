@@ -42,6 +42,16 @@ export interface ItemViews {
   Overview: ComponentType<OverviewProps>
   Row: ComponentType<RowProps>
   Detail?: ComponentType<OverviewProps>
+  /** The item's tint, if its type gives it one (see `Tint`). An item's own `tint` value wins. */
+  tint?(entity: Entity): Tint | null
 }
+
+/**
+ * A row's tint: a rail of a colour down its left edge and a faint fill of the
+ * same, drawn by the tree around the row (and around an overview), so any
+ * row can have one. The colours are the palette's.
+ */
+export const tints = ['accent', 'claude', 'success', 'warning', 'error', 'merged', 'muted'] as const
+export type Tint = (typeof tints)[number]
 
 export type Kinds = Record<ItemType, ItemViews>

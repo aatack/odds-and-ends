@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef } from 'react'
 import type { Badge as BadgeData, Entity } from '../../../core/types.ts'
-import type { Kinds } from './kindTypes.ts'
+import { tints, type Kinds, type Tint } from './kindTypes.ts'
 import type { ReactNode } from 'react'
 import { prEntityId } from '../../../core/types.ts'
 import type { PeekTarget, Rect } from '../state.ts'
@@ -230,4 +230,16 @@ export function Modal(props: { title: ReactNode; wide?: boolean; onClose(): void
       </div>
     </div>
   )
+}
+
+/** An item's tint: its own `tint` value if it has a valid one, else its type's, else none. */
+export function tintOf(kinds: Kinds, entity: Entity): Tint | null {
+  const own = entity.data.tint
+  if (typeof own === 'string' && (tints as readonly string[]).includes(own)) return own as Tint
+  return kinds[entity.type]?.tint?.(entity) ?? null
+}
+
+/** The class a tint draws with (`.tinted .tint-<name>`), or none. */
+export function tintClass(tint: Tint | null): string {
+  return tint ? ` tinted tint-${tint}` : ''
 }

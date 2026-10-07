@@ -43,7 +43,7 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 - **PR look-up is a read.** `git rev-parse --abbrev-ref HEAD` and `git remote get-url origin` give the branch and the repo. A GraphQL query through `gh` finds the PR. The app does not write to GitHub for this.
 - **Errors.** A failure of `claude` (a non-zero exit, or `is_error` in its JSON) sets the response item: `text` and `error` are the message, `running` is false.
 - **Phone.** Shift+K and k are tools with labels. Thus, they are also buttons on the phone.
-- **Look.** Sessions and responses start with the Claude mark (`src/renderer/src/assets/claude.svg`, from Simple Icons, CC0-1.0), in the `--claude` colour (terracotta). A response has a terracotta rail and a faint fill. A prompt has an accent (indigo) rail and a faint fill. Thus, my words and Claude's words are different at a glance.
+- **Look.** Sessions and responses start with the Claude mark (`src/renderer/src/assets/claude.svg`, from Simple Icons, CC0-1.0), in the `--claude` colour (terracotta). A response has the `claude` tint (a terracotta rail and a faint fill; `error` if it failed). A prompt has the `accent` tint. Thus, my words and Claude's words are different at a glance.
 
 ## Items
 

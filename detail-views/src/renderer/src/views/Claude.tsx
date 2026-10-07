@@ -1,6 +1,6 @@
 import { memo, useContext } from 'react'
 import type { Entity } from '../../../core/types.ts'
-import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
+import type { OverviewProps, PillProps, RowProps, Tint } from './kindTypes.ts'
 import { Text } from './messages.tsx'
 import { ClockContext, HeaderPill, Highlight } from './primitives.tsx'
 
@@ -70,22 +70,18 @@ export function PromptPill(props: PillProps) {
   )
 }
 
-/** What I asked. */
+/** What I asked (tinted `accent` by its type: my voice). */
 export const PromptRow = memo(function PromptRow(props: RowProps) {
-  return (
-    <span className="prompt">
-      <Text text={text(props.entity.data)} find={props.findText} />
-    </span>
-  )
+  return <Text text={text(props.entity.data)} find={props.findText} />
 })
 
 export function PromptOverview(props: OverviewProps) {
-  return (
-    <div className="prompt">
-      <Text text={text(props.entity.data)} find={props.findText} />
-    </div>
-  )
+  return <Text text={text(props.entity.data)} find={props.findText} />
 }
+
+/** A prompt's tint: mine. A response's: Claude's, or an error's when it failed. */
+export const promptTint = (): Tint => 'accent'
+export const responseTint = (entity: Entity): Tint => (typeof entity.data.error === 'string' && entity.data.error ? 'error' : 'claude')
 
 /** `1m 05s`: how long a prompt has been running. */
 function elapsed(ms: number): string {
@@ -94,13 +90,13 @@ function elapsed(ms: number): string {
   return minutes ? `${minutes}m ${String(seconds % 60).padStart(2, '0')}s` : `${seconds}s`
 }
 
-/** Claude's answer, on Claude's rail: how long it has been working, the error in its place, or the answer in full. */
+/** Claude's answer (tinted by its type): how long it has been working, the error in its place, or the answer in full. */
 function Response(props: { entity: Entity; findText?: string }) {
   const { data } = props.entity
   const now = useContext(ClockContext)
   const failed = typeof data.error === 'string' && data.error
   return (
-    <div className={`response${failed ? ' failed' : ''}`}>
+    <div className="response">
       <ClaudeMark />
       <div className="response-body">
         {data.running ? (
