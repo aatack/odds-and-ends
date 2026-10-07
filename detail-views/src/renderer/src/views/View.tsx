@@ -415,7 +415,9 @@ function Measured(props: { measureKey: string; onMeasure(key: string, height: nu
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
-    const report = () => onMeasure(measureKey, el.offsetHeight)
+    // Fractional: rows are ~30.5px, and whole pixels would add up to a row's
+    // drift between where the list lays a row and where the offsets say it is.
+    const report = () => onMeasure(measureKey, el.getBoundingClientRect().height)
     report()
     const observer = new ResizeObserver(report)
     observer.observe(el)
