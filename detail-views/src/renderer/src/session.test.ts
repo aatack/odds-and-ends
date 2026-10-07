@@ -131,6 +131,10 @@ test('a view is a tree to navigate and edit, from the keyboard, with nothing on 
   assert.deepEqual(screen(), ['breakfast', '  >eggs'])
   session.back()
   assert.equal(session.get().view?.root?.data.text, 'Tasks')
+  // Entering a module starts the stack again at its root.
+  session.open()
+  session.enterModule('tasks')
+  assert.deepEqual([session.get().state.trail, session.get().state.at], [['tasks'], 0])
 
   // Ctrl+F: the tree keeps rows that say it, and the rows above them.
   session.openFind()
