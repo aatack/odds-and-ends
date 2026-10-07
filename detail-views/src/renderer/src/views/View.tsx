@@ -314,7 +314,7 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
 
   const { onNearEnd } = view
   const near = (el: HTMLDivElement) =>
-    atTop ? el.scrollTop <= estimate * overscan : el.scrollTop + el.clientHeight >= el.scrollHeight - estimate * overscan
+    atTop ? el.scrollTop <= estimate * overscan : el.scrollTop + el.clientHeight >= total - estimate * overscan
   // Rows that don't fill the screen have no scroll to ask for more for them.
   useEffect(() => {
     if (!viewport || view.view.complete || total >= viewport) return
@@ -383,7 +383,8 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
         if (near(el)) onNearEnd?.()
       }}
     >
-      <div className="rows" style={{ height: total }}>
+      {/* Room to scroll on past the last row, 40% of the view, once the rows overflow it. */}
+      <div className="rows" style={{ height: total, marginBottom: total > viewport ? Math.round(viewport * 0.4) : 0 }}>
         <div style={{ height: offsets[first] }} />
         {slice}
         {editIndex >= 0 && (
