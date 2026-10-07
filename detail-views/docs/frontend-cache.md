@@ -68,8 +68,10 @@ it also runs in node tests against a `Core`.
   tree's shape does (`ShownView.keys`), so a cursor move lays out nothing.
   - The selected row is kept on screen, 30% in from the edge, and followed as
     rows around it are measured until the list is scrolled by hand.
-  - The row being typed into is pinned (mounted wherever it is), so the caret
-    survives scrolling away.
+  - The row being typed into is pinned: mounted wherever it is, so the caret
+    survives scrolling away, and CSS-sticky to the view's bottom (or top)
+    while its place is out of sight, so the browser moves it, with no lag.
+  - Starting a note doesn't open the row it goes under; writing it does.
   - When rows above change (chat growing upwards, guesses becoming heights),
     the first visible row stays where it was.
 - Together with the walk memo and `markRows` keeping untouched rows, a cursor

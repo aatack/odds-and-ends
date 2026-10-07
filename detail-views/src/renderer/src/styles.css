@@ -920,9 +920,22 @@ mark {
   flex: none;
 }
 
-/* The row being typed into, mounted wherever it is. */
-.pinned {
+/*
+ * The row being typed into, mounted wherever it is: a track as tall as all
+ * the rows, with the row at its own place in it, sticky to the scroll area's
+ * edges, so it stays in sight however far its place is scrolled away.
+ */
+.pin-track {
   position: absolute;
-  left: 0;
-  right: 0;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pinned {
+  position: sticky;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  pointer-events: auto;
+  background: var(--canvas);
 }

@@ -189,8 +189,9 @@ function TextBox(props: { edit: Edit | null; onEditDraft(text: string): void; on
  * stay the same while the tree does, so a cursor move lays out nothing.
  *
  * - The selected row is kept on screen, landing `margin` in from the edge.
- * - The row being typed into is pinned (mounted wherever it is), so scrolling
- *   away doesn't take the caret with it.
+ * - The row being typed into is pinned: mounted wherever it is, so scrolling
+ *   away doesn't take the caret with it, and stuck to the view's bottom (or
+ *   top) while its own place is out of sight.
  * - Scrolling near the end, or rows that don't fill the screen, walk further
  *   (`onNearEnd`). Chat reads bottom up, so its end is the top.
  * - Rows arriving above (chat growing upwards, guesses becoming heights) don't
@@ -279,10 +280,6 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
   }, [selectedIndex, selectedTop, viewport, reveal])
 
   const editIndex = rows.findIndex((row) => row.kind === 'input' || row.editing)
-  const editTop = editIndex < 0 ? -1 : offsets[editIndex]
-  useEffect(() => {
-    if (editIndex >= 0) reveal(editIndex)
-  }, [editIndex, editTop, reveal])
 
   const { onNearEnd } = view
   const near = (el: HTMLDivElement) =>
@@ -358,8 +355,12 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
         <div style={{ height: offsets[first] }} />
         {slice}
         {editIndex >= 0 && (
-          <div className="pinned" style={{ top: offsets[editIndex] }}>
-            {render(editIndex)}
+          // The box being typed into sits at its own place, sticking to the
+          // bottom (or top) of the view while that place is out of sight. The
+          // browser keeps it there as the list scrolls, so it never lags.
+          <div className="pin-track">
+            <div style={{ height: offsets[editIndex] }} />
+            <div className="pinned">{render(editIndex)}</div>
           </div>
         )}
       </div>
