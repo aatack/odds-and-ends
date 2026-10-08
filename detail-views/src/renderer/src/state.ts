@@ -89,7 +89,7 @@ export interface SessionDialog {
   worktree: boolean
 }
 
-export type PickTool = 'move' | 'link' | 'linkReverse'
+export type PickTool = 'move' | 'link' | 'linkReverse' | 'context'
 
 export interface Pick {
   tool: PickTool

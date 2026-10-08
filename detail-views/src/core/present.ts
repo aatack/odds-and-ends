@@ -104,8 +104,37 @@ export function lensOf(source: Source): Lens {
   }
 }
 
+/**
+ * An item, presented: what its module works out, and, for one with a
+ * `context` (the id of an item collecting things related to it), the other
+ * items in that context (`contextPeers`), for the views to name beside it.
+ */
 export function present(entity: Entity, lens: Lens): Entity {
-  return moduleOf(entity.type)?.present?.(entity, lens) ?? entity
+  const shown = moduleOf(entity.type)?.present?.(entity, lens) ?? entity
+  const context = shown.data.context
+  if (typeof context !== 'string' || !context) return shown
+  const peers = lens.children(context).filter((id) => id !== entity.id)
+  return { ...shown, data: { ...shown.data, contextPeers: peers } }
+}
+
+/**
+ * The nearest item of `type` in a context along `path` (the stack, root
+ * first): from the end of the path up, each item that has a `context` has
+ * that context's children (only those, not theirs) looked through for one of
+ * the type. Null when the path runs out, or comes to an item it has already
+ * looked at (a loop).
+ */
+export function findInContext(path: readonly string[], type: ItemType, lens: Lens): string | null {
+  const seen = new Set<string>()
+  for (const id of [...path].reverse()) {
+    if (seen.has(id)) return null
+    seen.add(id)
+    const context = lens.read(id)?.data.context
+    if (typeof context !== 'string' || !context) continue
+    const found = lens.children(context).find((child) => lens.read(child)?.type === type)
+    if (found) return found
+  }
+  return null
 }
 
 /** An item named somewhere (a pill), presented. */

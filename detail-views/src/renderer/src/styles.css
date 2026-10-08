@@ -774,6 +774,20 @@ body,
   min-width: 0;
 }
 
+.context-pills {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 50%;
+}
+
+.overview .context-pills {
+  max-width: 100%;
+  margin-top: 4px;
+}
+
 .line-row {
   display: flex;
   align-items: baseline;

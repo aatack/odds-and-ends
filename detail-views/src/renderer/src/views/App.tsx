@@ -137,6 +137,7 @@ const pickWords = {
   move: ['Moving', 'Select its new parent and press x'],
   link: ['Linking', 'Select what goes under it and press r'],
   linkReverse: ['Linking', 'Select what it goes under and press Shift+R'],
+  context: ['Sharing a context', 'Select the other item and press c'],
 } as const
 
 /** Says a move or link is waiting for its other end, and how to give it one. */

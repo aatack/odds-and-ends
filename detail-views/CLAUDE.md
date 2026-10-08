@@ -30,15 +30,21 @@ doc for the area you change, and keep it up to date in the same commit.
   `b` splits its text into its first part and notes under it (headings,
   bullets, blocks: `core/outline.ts`),
   Backspace takes it out from under its parent *in this view* (nothing at the
-  view's root), `x` moves it, `r` / `Shift+R` link it to or from another row.
-  `x`, `r` and `Shift+R` are finished by pressing the same key on the other
-  row, in any view; Escape gives up.
+  view's root), `x` moves it, `r` / `Shift+R` link it to or from another row,
+  `c` puts it in one context with another row (`docs/context.md`).
+  `x`, `r`, `Shift+R` and `c` are finished by pressing the same key on the
+  other row, in any view; Escape gives up.
   Ctrl+Z / Ctrl+Y undo and redo my own edits (the owned log, five minutes
   back); Ctrl+F filters a view.
 - **`text` is an item's canonical value**: what it is called or says wherever
   it is shown (a message's content, a PR's or channel's name). It may come
   from a service; editing it writes an owned `text` that overrides it for me
   only.
+- **Context collects related items.** An item's `context` is the id of a
+  `context` item whose children are the things related to it; rows and
+  overviews show the others as pills beside it. To find something related
+  to where I am, `findInContext` looks through the contexts along the path,
+  one level deep (`docs/context.md`).
 - **Desktop app, not a web page.** Electron, run locally.
 
 ### Data

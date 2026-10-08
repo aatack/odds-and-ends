@@ -12,6 +12,7 @@ area you are changing before changing it, and update it in the same commit.
 | [presentation.md](presentation.md) | Module views, `focusOf`, the bounded walk, ordering |
 | [slack.md](slack.md) | Slack: the problem it solves, lists, the history batch, the watch, cursors, threads |
 | [claude.md](claude.md) | **Claude**: requirements and key decisions (ASD-STE100) |
+| [context.md](context.md) | Contexts: `c`, the pills beside related items, `findInContext` |
 | [mcp.md](mcp.md) | The MCP server every Claude session is given: read-only tools, walk, security |
 | [github.md](github.md) | GitHub: what loads, and the PR writes |
 | [mobile.md](mobile.md) | **The phone**: setting it up, using it, how it works, security |

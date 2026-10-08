@@ -74,6 +74,15 @@ export function TaskPill(props: PillProps) {
   )
 }
 
+/** A context: what collects related items (`c`). Named by its text, if I gave it one. */
+export function ContextPill(props: PillProps) {
+  return (
+    <span className="item-name">
+      <Text text={text(props.entity.data) || 'Context'} find={props.findText} inline />
+    </span>
+  )
+}
+
 export function HomePill(props: PillProps) {
   return (
     <span className="item-name">

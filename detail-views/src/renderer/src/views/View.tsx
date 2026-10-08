@@ -3,7 +3,7 @@ import type { ComponentType, CSSProperties, ReactNode } from 'react'
 import type { Entity, NoteValues, ViewRow } from '../../../core/types.ts'
 import { Checkbox } from './Notes.tsx'
 import type { Edit, ShownRow } from '../state.ts'
-import { KindsContext, Status, tintClass, tintOf } from './primitives.tsx'
+import { ItemPill, KindsContext, Status, tintClass, tintOf } from './primitives.tsx'
 import { Composer } from './primitives.tsx'
 import type { OverviewProps } from './kindTypes.ts'
 import type { ViewProps } from './types.ts'
@@ -141,9 +141,32 @@ const TreeRow = memo(function TreeRow(props: {
           />
         )}
       </div>
+      <ContextPills entity={row.entity} />
     </Selectable>
   )
 })
+
+/** How many of a context's other items are named beside one; the rest are counted. */
+const contextShown = 6
+
+/**
+ * The other items in an item's context (`contextPeers`, from `present`), as
+ * pills beside it: hover to peek, click to go. Rows and overviews draw them;
+ * pills don't, so they never nest.
+ */
+function ContextPills(props: { entity: Entity }) {
+  const peers = props.entity.data.contextPeers
+  if (!Array.isArray(peers) || !peers.length) return null
+  const ids = peers as string[]
+  return (
+    <span className="context-pills">
+      {ids.slice(0, contextShown).map((id) => (
+        <ItemPill key={id} id={id} fallback="…" />
+      ))}
+      {ids.length > contextShown && <span className="muted">+{ids.length - contextShown}</span>}
+    </span>
+  )
+}
 
 function rowClass(row: ViewRow): string {
   return row.entity.type === 'slack.message' && row.entity.data.quiet ? ' quiet' : ''
@@ -350,6 +373,7 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
           <Selectable shown={shown} className="overview" onSelect={view.interactive ? view.onSelect : undefined}>
             <div className={tintClass(tintOf(kinds, props.root)).trim()}>
               {shown.editing ? <EditBox props={view} /> : <props.Overview {...view} entity={props.root} findText={view.find ?? undefined} />}
+              <ContextPills entity={props.root} />
             </div>
           </Selectable>
         ) : (
