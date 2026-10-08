@@ -66,7 +66,6 @@ interface Reaction {
 export function MessageBody(props: {
   entity: Entity
   author: boolean
-  replies?: boolean
   onOpen(id: string): void
   onImage(ref: string | null): void
   findText?: string
@@ -74,7 +73,6 @@ export function MessageBody(props: {
   lead?: ReactNode
 }) {
   const data = props.entity.data
-  const replies = props.replies === false ? 0 : Number(data.replyCount ?? 0)
   const reactions = (data.reactions as Reaction[] | undefined) ?? []
   const images = (data.images as Image[] | undefined) ?? []
   return (
@@ -124,7 +122,6 @@ export function MessageBody(props: {
             ))}
           </div>
         )}
-        {replies > 0 && <Replies id={props.entity.id} count={replies} latest={data.latestReply as string | undefined} />}
       </div>
       {/* On the right, and only while the row is hovered, so every message starts at the left edge. */}
       <span className="stamp" title={fullTime(String(data.ts))}>
@@ -287,14 +284,3 @@ export function Text(props: { text: string; find?: string; inline?: boolean }) {
   )
 }
 
-/** The thread under a message; hovering peeks at it. */
-function Replies(props: { id: string; count: number; latest: string | undefined }) {
-  const peek = usePeek({ kind: 'entity', id: props.id })
-  return (
-    <div className="replies">
-      <span {...peek}>
-        {props.count} {props.count === 1 ? 'reply' : 'replies'} · {shortTime(props.latest)}
-      </span>
-    </div>
-  )
-}

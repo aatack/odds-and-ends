@@ -75,6 +75,9 @@ Undocumented column: from memory, unverified; none of it is in the reference.
   is no way to relink from the UI yet.
 - Each poll prunes cached message links from the workspace (`pruneThreads`),
   left from when threads were listed there.
+- **Every row starts open** (`openByDefault`), so a view reads to its full
+  depth: conversations, messages, threads' replies. A thread has no "N
+  replies" line; its replies are the rows under it.
 - `slack:watch` (`slack.watch`) holds the last poll's `polledAt` and `found`,
   on its own entity so a poll every 15 s re-reads only that.
 
