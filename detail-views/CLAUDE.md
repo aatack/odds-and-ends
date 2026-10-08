@@ -77,8 +77,9 @@ doc for the area you change, and keep it up to date in the same commit.
   linked under the workspace; replies nest under their thread's first
   message, and a reply moves that message to the end of its conversation.
   Loads raise `lastMessageReceived` (the newest message from someone else) on
-  the thread, the conversation and whatever they sit under; `m` sets an owned
-  `lastRead` to it (never to now). The workspace shows, at every depth, only
+  the thread, the conversation and whatever they sit under. `m` on a row sets
+  an owned `lastRead` on every item on its path (not a module's root) to the
+  row's newest message, or when it was made (never to now). The workspace shows, at every depth, only
   items newer than their own `lastRead` and every `lastRead` above them
   (`ModuleView.shows`), conversations newest first. Never ordered by when it
   was loaded. Slack's own read state is not read.

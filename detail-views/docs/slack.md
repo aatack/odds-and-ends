@@ -91,17 +91,23 @@ Undocumented column: from memory, unverified; none of it is in the reference.
   messages never raise it.
 - **`activity`** of an item is its `lastMessageReceived`, or for a message
   its own ts if that is later.
-- **`m`** (`Slack.markRead`) on any item with an `activity` writes an owned
-  `lastRead` equal to it, authored `me`, so Ctrl+Z takes it back. Not the
-  time now: a message sent before I pressed `m` but not yet found by the
-  watch would then be taken as read and never shown.
+- **`readTime`** of an item is its `activity`, or, when nothing has come
+  into it (a note of mine), when it was made. Never now: a message sent
+  before I pressed `m` but not yet found by the watch would then be taken as
+  read and never shown.
+- **`m`** (`Slack.markRead`) takes the path to the selected row (or the
+  view's root) and writes an owned `lastRead` equal to that row's
+  `readTime` on **every item on the path**, the row included, except a
+  module's root (so `m` on a conversation in the workspace reads only that
+  conversation). Authored `me`, so Ctrl+Z takes it back. Pressing it on a
+  reply reads the thread up to that reply and the conversation up to then:
+  older messages around it go, newer ones (in the conversation or the
+  thread) stay. Pressing it on an old row in a conversation's own view moves
+  its marks back.
 - **The workspace shows, at every level, only what is new** (`shows`, which
   `viewOf` asks of the root's module for every row): an item shows if its
-  `activity` is later than its own `lastRead` and every `lastRead` above it
-  in the view. So marking a conversation hides it and everything in it up to
-  then; marking a thread hides the thread but leaves the conversation until
-  it is marked too. A conversation nothing has come into isn't shown;
-  anything without a date of its own (a note of mine) always is. There is no
+  `readTime` is later than its own `lastRead` and every `lastRead` above it
+  in the view. A conversation nothing has come into isn't shown. There is no
   default `lastRead`: everything starts unread.
 - The workspace lists conversations by `activity`, newest first.
 - A conversation's own view (`d`), or anything else not rooted at the

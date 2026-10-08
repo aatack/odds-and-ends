@@ -430,7 +430,8 @@ export class Core {
       this.clearCache()
       return { events: [], error: null }
     },
-    markRead: ({ id }: { id: string }): Promise<Outcome> => this.attempt(id, () => this.slack.markRead(id)),
+    /** `m` on a row, by its path from the view's root: everything on it is read up to the row's time. */
+    markRead: ({ path }: { path: string[] }): Promise<Outcome> => this.attempt(path[path.length - 1] ?? '', () => this.slack.markRead(path)),
     /** Loads further back than anything loads on its own. */
     older: ({ id }: { id: string }): Promise<Outcome> => this.older(id),
     /** Bytes of an image a message presented, by the ref it gave. */

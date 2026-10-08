@@ -40,7 +40,9 @@ Newest last. Each says what was chosen, why, and what was turned down.
     follow than flat, tried and dropped), and a reply moves its thread to the
     end of its conversation. Each item has its own `lastRead`; a row shows if
     newer than its own and every one above it, so threads I organise under my
-    own notes still surface. *Why:* one list of what I haven't read; Slack
+    own notes still surface. `m` writes the row's time on its whole path (not
+    each child's newest on its parent, which would hide a thread's unread
+    replies when one older reply is marked). *Why:* one list of what I haven't read; Slack
     can't show that.
 12. **Slack: lists + one search batch + a search poll; no per-conversation
     loading.** *Why:* ~600 calls took minutes; search covers every
