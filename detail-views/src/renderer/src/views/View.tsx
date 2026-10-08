@@ -35,8 +35,10 @@ export function ViewPane(props: ViewProps) {
   if (Detail) return <Detail {...props} entity={root} />
   const Overview = kinds[root.type].Overview
   const action = view.actions.find((offered) => offered.id === props.acting)
+  // Typing the next prompt, the chat doesn't mark a row: the box is where I am.
+  const prompting = view.startsAtEnd && props.composing && !action
   return (
-    <div className="pane">
+    <div className={`pane${prompting ? ' prompting' : ''}`}>
       {props.interactive && props.find !== null && (
         <FindField find={props.find} focus={props.findFocus} onFind={props.onFind} onFocused={props.onFindFocused} />
       )}
@@ -128,6 +130,8 @@ const TreeRow = memo(function TreeRow(props: {
   onCommitEdit(): void
   onToggle?(path: string[]): void
   findText?: string
+  /** Chat leads a row with nothing in place of a bullet. */
+  bullets: boolean
 }) {
   const kinds = useContext(KindsContext)!
   const { row } = props.shown
@@ -139,7 +143,7 @@ const TreeRow = memo(function TreeRow(props: {
       style={indent(row.depth)}
       onSelect={props.interactive ? props.onSelect : undefined}
     >
-      <Marker row={row} onToggle={props.interactive ? props.onToggle : undefined} />
+      <Marker row={row} bullets={props.bullets} onToggle={props.interactive ? props.onToggle : undefined} />
       <div className={`cell${tintClass(tintOf(kinds, row.entity))}${hasPeers(row.entity) ? ' has-context' : ''}`}>
         {props.shown.editing ? (
           <TextBox edit={props.edit} onEditDraft={props.onEditDraft} />
@@ -200,9 +204,9 @@ function EditRow(props: { depth: number; values?: NoteValues; props: ViewProps }
 
 /**
  * What leads a row: its box if it has one (ticked with a click, or Space),
- * else its fold mark if it has children, else a bullet.
+ * else its fold mark if it has children, else a bullet (or nothing, in chat).
  */
-function Marker(props: { row: ViewRow; onToggle?(path: string[]): void }) {
+function Marker(props: { row: ViewRow; bullets: boolean; onToggle?(path: string[]): void }) {
   const { row, onToggle } = props
   const box = boxOf(row)
   if (box !== null) {
@@ -219,6 +223,7 @@ function Marker(props: { row: ViewRow; onToggle?(path: string[]): void }) {
       </span>
     )
   }
+  if (!row.hasChildren && !props.bullets) return null
   return <span className="marker">{row.hasChildren ? (row.open ? '▾' : '▸') : <span className="bullet">•</span>}</span>
 }
 
@@ -265,12 +270,17 @@ function TextBox(props: { edit: Edit | null; onEditDraft(text: string): void }) 
  *   (`onNearEnd`). Chat reads bottom up, so its end is the top.
  * - Rows arriving above (chat growing upwards, guesses becoming heights) don't
  *   move what is on screen: the first visible row is kept where it was.
+ * - Chat (`startsAtEnd`) keeps its overview above the list, out of the scroll;
+ *   its rows sit at the bottom, a gap apart, and stay at the bottom as they
+ *   grow while the list is scrolled to there.
  */
 function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentType<OverviewProps> }) {
   const kinds = useContext(KindsContext)!
   const view = props.props
   const { rows, keys, selectedIndex } = view.shown
-  const atTop = view.view.startsAtEnd
+  const chat = view.view.startsAtEnd
+  // The rows the list lays out: in chat, all but the overview, which sits above it.
+  const body = chat ? 1 : 0
   const ref = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewport, setViewport] = useState(0)
@@ -300,20 +310,25 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
     let total = 0
     for (let i = 0; i < keys.length; i++) {
       out[i] = total
-      total += heights.get(keys[i]) ?? estimate
+      if (i >= body) total += heights.get(keys[i]) ?? estimate
     }
     out[keys.length] = total
     return out
-  }, [keys, heights])
+  }, [keys, heights, body])
   const total = offsets[keys.length]
 
   // Keep the first visible row where it was when rows above it change: the
   // anchor is recorded after each render and restored when the layout moves.
-  const anchor = useRef<{ key: string; delta: number } | null>(null)
+  const anchor = useRef<{ key: string; delta: number; atEnd: boolean } | null>(null)
   useLayoutEffect(() => {
     const el = ref.current
     const held = anchor.current
     if (!el || !held) return
+    if (chat && held.atEnd) {
+      el.scrollTop = el.scrollHeight
+      setScrollTop(el.scrollTop)
+      return
+    }
     const at = keys.indexOf(held.key)
     if (at < 0) return
     const want = offsets[at] + held.delta
@@ -321,13 +336,13 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
       el.scrollTop = want
       setScrollTop(el.scrollTop)
     }
-  }, [keys, offsets])
+  }, [keys, offsets, chat])
 
   const offsetsRef = useRef(offsets)
   offsetsRef.current = offsets
   const reveal = useCallback((index: number) => {
     const el = ref.current
-    if (!el || index < 0) return
+    if (!el || index < body) return
     const o = offsetsRef.current
     const top = o[index]
     const bottom = o[index + 1]
@@ -340,7 +355,7 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
     if (top < el.scrollTop) el.scrollTop = Math.max(0, top - room)
     else if (bottom > el.scrollTop + height) el.scrollTop = bottom - height + room
     setScrollTop(el.scrollTop)
-  }, [])
+  }, [body])
   // The cursor is followed as rows around it are measured, until the list is
   // scrolled by hand; moving the cursor follows it again.
   const following = useRef(true)
@@ -353,10 +368,12 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
   }, [selectedIndex, selectedTop, viewport, reveal])
 
   const editIndex = rows.findIndex((row) => row.kind === 'input' || row.editing)
+  // In the list, not the overview above it.
+  const pinned = editIndex >= body
 
   const { onNearEnd } = view
   const near = (el: HTMLDivElement) =>
-    atTop ? el.scrollTop <= estimate * overscan : el.scrollTop + el.clientHeight >= total - estimate * overscan
+    chat ? el.scrollTop <= estimate * overscan : el.scrollTop + el.clientHeight >= total - estimate * overscan
   // Rows that don't fill the screen have no scroll to ask for more for them.
   useEffect(() => {
     if (!viewport || view.view.complete || total >= viewport) return
@@ -368,28 +385,35 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
   let first = 0
   while (first < rows.length && offsets[first + 1] <= scrollTop) first++
   const firstVisible = first
-  first = Math.max(0, first - overscan)
+  first = Math.max(body, first - overscan)
   let last = first
   while (last < rows.length && offsets[last] < bottomEdge) last++
   last = Math.min(rows.length, last + overscan)
   useLayoutEffect(() => {
     const el = ref.current
-    anchor.current = el && keys[firstVisible] !== undefined ? { key: keys[firstVisible], delta: el.scrollTop - offsets[firstVisible] } : null
+    anchor.current =
+      el && keys[firstVisible] !== undefined
+        ? { key: keys[firstVisible], delta: el.scrollTop - offsets[firstVisible], atEnd: el.scrollTop + el.clientHeight >= el.scrollHeight - 2 }
+        : null
   })
+
+  const overview = (shown: Extract<ShownRow, { kind: 'entity' }>) => (
+    <Selectable shown={shown} className="overview" onSelect={view.interactive ? view.onSelect : undefined}>
+      <div className={tintClass(tintOf(kinds, props.root)).trim()}>
+        {shown.editing ? <EditBox props={view} /> : <props.Overview {...view} entity={props.root} findText={view.find ?? undefined} />}
+        <ContextPills entity={props.root} />
+      </div>
+    </Selectable>
+  )
 
   const render = (index: number) => {
     const shown = rows[index]
     return (
-      <Measured key={shown.key} measureKey={shown.key} onMeasure={onMeasure}>
+      <Measured key={shown.key} measureKey={shown.key} onMeasure={onMeasure} gap={chat && shown.kind === 'entity' && shown.row.depth === 1}>
         {shown.kind === 'input' ? (
           <EditRow depth={shown.depth} values={shown.values} props={view} />
         ) : shown.row.depth === 0 ? (
-          <Selectable shown={shown} className="overview" onSelect={view.interactive ? view.onSelect : undefined}>
-            <div className={tintClass(tintOf(kinds, props.root)).trim()}>
-              {shown.editing ? <EditBox props={view} /> : <props.Overview {...view} entity={props.root} findText={view.find ?? undefined} />}
-              <ContextPills entity={props.root} />
-            </div>
-          </Selectable>
+          overview(shown)
         ) : (
           <TreeRow
             shown={shown}
@@ -402,6 +426,7 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
             onCommitEdit={view.onCommitEdit}
             onToggle={view.onToggle}
             findText={view.find ?? undefined}
+            bullets={!chat}
           />
         )}
       </Measured>
@@ -410,13 +435,16 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
 
   const slice: ReactNode[] = []
   for (let i = first; i < last; i++) {
-    slice.push(i === editIndex ? <div key="\0edit-slot" style={{ height: offsets[i + 1] - offsets[i] }} /> : render(i))
+    slice.push(i === editIndex && pinned ? <div key="\0edit-slot" style={{ height: offsets[i + 1] - offsets[i] }} /> : render(i))
   }
 
+  const top = chat ? rows[0] : undefined
   return (
+    <>
+      {top?.kind === 'entity' && top.row.depth === 0 && overview(top)}
     <div
       ref={ref}
-      className="list"
+      className={`list${chat ? ' chat' : ''}`}
       onWheel={() => (following.current = false)}
       onMouseDown={(event) => {
         // On the scrollbar, not a row.
@@ -428,11 +456,11 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
         if (near(el)) onNearEnd?.()
       }}
     >
-      {/* Room to scroll on past the last row, 40% of the view, once the rows overflow it. */}
-      <div className="rows" style={{ height: total, marginBottom: total > viewport ? Math.round(viewport * 0.4) : 0 }}>
+      {/* Room to scroll on past the last row, 40% of the view, once the rows overflow it. Chat ends at its last row. */}
+      <div className="rows" style={{ height: total, marginBottom: !chat && total > viewport ? Math.round(viewport * 0.4) : 0 }}>
         <div style={{ height: offsets[first] }} />
         {slice}
-        {editIndex >= 0 && (
+        {pinned && (
           // The box being typed into sits at its own place, sticking to the
           // bottom (or top) of the view while that place is out of sight. The
           // browser keeps it there as the list scrolls, so it never lags.
@@ -443,11 +471,12 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
         )}
       </div>
     </div>
+    </>
   )
 }
 
 /** Reports its height while mounted, so the list can lay out the rows around it. */
-function Measured(props: { measureKey: string; onMeasure(key: string, height: number): void; children: ReactNode }) {
+function Measured(props: { measureKey: string; onMeasure(key: string, height: number): void; gap?: boolean; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
   const { measureKey, onMeasure } = props
   useLayoutEffect(() => {
@@ -461,5 +490,9 @@ function Measured(props: { measureKey: string; onMeasure(key: string, height: nu
     observer.observe(el)
     return () => observer.disconnect()
   }, [measureKey, onMeasure])
-  return <div ref={ref}>{props.children}</div>
+  return (
+    <div ref={ref} className={props.gap ? 'gapped' : undefined}>
+      {props.children}
+    </div>
+  )
 }

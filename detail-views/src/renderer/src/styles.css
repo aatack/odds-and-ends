@@ -166,6 +166,16 @@ body,
   margin-top: auto;
 }
 
+/* Chat's messages, two thirds of a line apart. */
+.list.chat .gapped {
+  padding-top: 20px;
+}
+
+/* Typing the next prompt, the chat marks no row. */
+.pane.prompting .row.selected:not(:hover) {
+  background: none;
+}
+
 .row {
   display: flex;
   align-items: baseline;
