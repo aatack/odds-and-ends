@@ -380,8 +380,8 @@ test('slack: the watch brings in new messages by search, under their conversatio
   await core.slack.poll()
   assert.equal(core.focus('slack').entity!.data.found, 0)
   const general = core.focus('slack:conv:C1')
-  // The reply reads flat in its conversation, and in its thread.
-  assert.deepEqual(general.children.map((child) => child.data.text), ['hello', 'reply'])
+  // The reply is in its thread, not its conversation.
+  assert.deepEqual(general.children.map((child) => child.data.text), ['hello'])
   assert.equal(general.children[0].data.replyCount, 1)
   assert.deepEqual(core.focus('slack:msg:C1:1700000010.000100').children.map((child) => child.data.text), ['reply'])
   // Only conversations with something new are listed, by their newest message: a reply counts.
@@ -390,7 +390,7 @@ test('slack: the watch brings in new messages by search, under their conversatio
   assert.equal(core.item('slack')!.data['watch.at'], '1700000020.000100')
 })
 
-test('slack: threads read flat; the workspace lists only unread conversations, and in them only what came after m', async () => {
+test('slack: a reply moves its thread to the end; the workspace shows, at every level, only what came after m', async () => {
   let time = 1_700_000_000_000
   let matches: unknown[] = []
   const core = memoryCore({
@@ -405,45 +405,63 @@ test('slack: threads read flat; the workspace lists only unread conversations, a
     ]),
   ])
   await core.slack.poll()
-  time += 30_000
   const at = (channel: string, ts: string, user: string, thread?: string) => ({
     ts, user, text: ts, channel: { id: channel, name: channel }, permalink: permalink(channel, ts, thread),
   })
-  matches = [
+  const poll = async (more: unknown[]) => {
+    time += 30_000
+    matches = [...more, ...matches]
+    await core.slack.poll()
+  }
+  await poll([
     at('C1', '1700000010.000000', 'U2'),
-    at('C1', '1700000020.000000', 'U2', '1700000010.000000'),
+    at('C1', '1700000012.000000', 'U2'),
     at('C2', '1700000015.000000', 'U2'),
     // Only my own message in C3: nothing there for me to read.
     at('C3', '1700000025.000000', 'UME'),
-  ]
-  await core.slack.poll()
-  const listed = () => core.focus('slack').children.map((child) => child.id)
-  // Nothing but conversations in the workspace, the most recent first.
-  assert.deepEqual(listed(), ['slack:conv:C1', 'slack:conv:C2'])
-  // The reply is in its conversation and its thread, and names its thread.
-  const c1 = core.focus('slack:conv:C1').children
-  assert.deepEqual(c1.map((child) => child.data.ts), ['1700000010.000000', '1700000020.000000'])
-  assert.equal(c1[1].data.thread, 'slack:msg:C1:1700000010.000000')
-  assert.deepEqual(core.focus('slack:msg:C1:1700000010.000000').children.map((child) => child.data.ts), ['1700000020.000000'])
+  ])
+  const shown = (folds: Record<string, boolean> = {}) =>
+    viewOf('slack', core.source(), { folds }).rows.slice(1).map((row) => `${'  '.repeat(row.depth - 1)}${row.entity.id.split(':').pop()}`)
+  assert.deepEqual(shown(), ['C2', 'C1'])
 
-  // m reads to the newest message received, wherever I press it.
+  // A reply nests in its thread, moves the thread to the end of its conversation, and brings the conversation up.
+  await poll([at('C1', '1700000030.000000', 'U3', '1700000010.000000')])
+  const thread = 'slack:msg:C1:1700000010.000000'
+  assert.deepEqual(core.focus('slack:conv:C1').children.map((child) => child.id), ['slack:msg:C1:1700000012.000000', thread])
+  assert.deepEqual(core.focus(thread).children.map((child) => child.data.ts), ['1700000030.000000'])
+  assert.equal(core.item(thread)!.data.lastMessageReceived, '1700000030.000000')
+  const open = { 'slack:conv:C1': true, [thread]: true }
+  assert.deepEqual(shown(open), ['C1', '  1700000012.000000', '  1700000010.000000', '    1700000030.000000', 'C2'])
+
+  // m on the conversation hides it and everything in it.
   await core.actions.markRead({ id: 'slack:conv:C1' })
-  assert.equal(core.item('slack:conv:C1')!.data.lastRead, '1700000020.000000')
-  assert.deepEqual(listed(), ['slack:conv:C2'])
-  time += 30_000
-  matches = [at('C1', '1700000040.000000', 'U3', '1700000010.000000'), ...matches]
-  await core.slack.poll()
-  assert.deepEqual(listed(), ['slack:conv:C1', 'slack:conv:C2'])
-  // In the workspace, C1 shows only what came since; its own view shows it all.
-  const view = viewOf('slack', core.source(), { folds: { 'slack:conv:C1': true } })
-  assert.deepEqual(
-    view.rows.filter((row) => row.parent?.id === 'slack:conv:C1').map((row) => row.entity.data.ts),
-    ['1700000040.000000'],
-  )
-  assert.equal(core.focus('slack:conv:C1').children.length, 3)
+  assert.equal(core.item('slack:conv:C1')!.data.lastRead, '1700000030.000000')
+  assert.deepEqual(shown(open), ['C2'])
+  // Another reply: the conversation is back, with only the thread, and in it only the new reply.
+  await poll([at('C1', '1700000040.000000', 'U3', '1700000010.000000')])
+  assert.deepEqual(shown(open), ['C1', '  1700000010.000000', '    1700000040.000000', 'C2'])
+  // m on the thread: read, so it goes; the conversation stays until it is marked too.
+  await core.actions.markRead({ id: thread })
+  assert.deepEqual(shown(open), ['C1', 'C2'])
+  // Its own view shows everything.
+  assert.equal(core.focus('slack:conv:C1').children.length, 2)
+
+  // A thread I put under a note of mine still brings that note up when a reply comes.
+  core.owned.write([
+    value('n1', 'text', 'follow up', time, 'me'),
+    link('slack:conv:C2', 'n1', time, 'me'),
+    link('n1', thread, time, 'me'),
+    link('slack:conv:C1', thread, time, 'me', 1),
+  ])
+  await core.actions.markRead({ id: 'slack:conv:C2' })
+  await poll([at('C1', '1700000050.000000', 'U3', '1700000010.000000')])
+  assert.equal(core.item('n1')!.data.lastMessageReceived, '1700000050.000000')
+  // And it stays where I put it.
+  assert.ok(!core.entity('slack:conv:C1').outboundLinks.includes(thread))
+  assert.deepEqual(shown({ ...open, 'slack:conv:C2': true, n1: true }), ['C2', '  n1', '    1700000010.000000', '      1700000050.000000', 'C1'])
 })
 
-test('slack: a reply to an old thread reads flat in its conversation, and each header knows where its history starts', async () => {
+test('slack: a reply to an old thread brings it into its conversation, and each header knows where its history starts', async () => {
   const core = memoryCore({
     now: () => 1_700_000_100_000,
     fetch: fakeSlack({
@@ -460,11 +478,11 @@ test('slack: a reply to an old thread reads flat in its conversation, and each h
   await core.slack.poll()
   const thread = 'slack:msg:C1:1690000000.000000'
   const listed = () => core.focus('slack').children.map((child) => child.id)
-  // A reply on a message older than anything cached is in its conversation, naming its thread.
+  // A reply on a message older than anything cached brings its thread into the conversation, at the end.
   assert.deepEqual(listed(), ['slack:conv:C1'])
   await core.load({ id: 'slack', part: 'children', force: true })
   assert.deepEqual(listed(), ['slack:conv:C1'])
-  assert.deepEqual(core.focus('slack:conv:C1').children.map((child) => child.data.thread ?? null), [null, thread])
+  assert.deepEqual(core.focus('slack:conv:C1').children.map((child) => child.id), ['slack:msg:C1:1700000040.000000', thread])
 
   const home = core.focus('slack')
   assert.equal(home.entity!.data.from, '1700000040.000000')

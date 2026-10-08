@@ -24,13 +24,12 @@ export function startsRun(above: Entity | null, current: Entity): boolean {
 }
 
 /** A message as a row: grouped with the one above it, like Slack, unless told to say who and when. */
-export const MessageRow = memo(function MessageRow(props: RowProps & { always?: boolean; lead?: ReactNode }) {
+export const MessageRow = memo(function MessageRow(props: RowProps & { always?: boolean }) {
   return (
     <div className="message">
       <MessageBody
         entity={props.entity}
         author={props.always || startsRun(props.above, props.entity)}
-        lead={props.lead}
         onOpen={props.onOpen}
         onImage={props.onImage}
         findText={props.findText}

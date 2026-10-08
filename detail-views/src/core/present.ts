@@ -20,6 +20,8 @@ export interface Lens {
   read(id: string): Entity | null
   /** The ids under an entity, in link order. */
   children(id: string): string[]
+  /** The ids an entity is under. */
+  parents(id: string): string[]
 }
 
 /** The half of a module that only works things out: no network, no store. */
@@ -38,8 +40,14 @@ export interface ModuleView {
   openByDefault?(type: ItemType): boolean
   /** Fills in what is worked out rather than stored (names, say). */
   present?(entity: Entity, lens: Lens): Entity
-  /** Children in the focus view, given the view's root: they may be shaped by where they are shown. Default is link order. */
-  order?(entity: Entity, children: Entity[], lens: Lens, root: string): Entity[]
+  /** Children in the focus view. Default is link order. */
+  order?(entity: Entity, children: Entity[], lens: Lens): Entity[]
+  /**
+   * In a view rooted in this module, whether a row shows where it is, given
+   * the rows above it from the root down (`line`), at any depth and whatever
+   * their types. Default: everything shows.
+   */
+  shows?(child: Entity, line: readonly Entity[], root: string): boolean
   compose?(entity: Entity, lens: Lens): ComposeKind | null
   /** What can be done to an entity right now. */
   actions?(entity: Entity, lens: Lens): Action[]
@@ -92,6 +100,7 @@ export function lensOf(source: Source): Lens {
   return {
     read: (id) => toItem(source.get([id])[id]),
     children: (id) => source.get([id])[id].outboundLinks,
+    parents: (id) => source.get([id])[id].inboundLinks,
   }
 }
 
@@ -167,7 +176,7 @@ export function viewOf(rootId: string, source: Source, options: ViewOptions = {}
   const rows: ViewRow[] = []
   let complete = true
 
-  const walkFrom = (path: string[], entity: Entity, parent: Entity | null, above: Entity | null, depth: number): void => {
+  const walkFrom = (path: string[], line: Entity[], entity: Entity, parent: Entity | null, above: Entity | null, depth: number): void => {
     if (rows.length >= limit) {
       complete = false
       return
@@ -193,7 +202,9 @@ export function viewOf(rootId: string, source: Source, options: ViewOptions = {}
       const item = lens.read(child)
       return item ? [present(item, lens)] : []
     })
-    let children = moduleOf(entity.type)?.order?.(entity, presented, lens, rootId) ?? presented
+    const down = [...line, entity]
+    const shown = module?.shows ? presented.filter((child) => module.shows!(child, down, rootId)) : presented
+    let children = moduleOf(entity.type)?.order?.(entity, shown, lens) ?? shown
     // Chat keeps its newest end when the bound bites.
     // (The root is a row of the walk too, so `limit - 1` of them.)
     if (depth === 0 && module?.newestFirst?.(entity.type) && children.length > limit - 1) {
@@ -202,11 +213,11 @@ export function viewOf(rootId: string, source: Source, options: ViewOptions = {}
     }
     let previous: Entity | null = null
     for (const child of children) {
-      walkFrom([...path, child.id], child, entity, previous, depth + 1)
+      walkFrom([...path, child.id], down, child, entity, previous, depth + 1)
       previous = child
     }
   }
-  walkFrom([rootId], root, null, null, 0)
+  walkFrom([rootId], [], root, null, null, 0)
 
   return {
     root,

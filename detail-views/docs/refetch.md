@@ -41,15 +41,15 @@ Use these strategies. One item type can use more than one.
 
 ### Slack: lists, one batch, then the watch (done)
 
-- The app keeps its own read state: `lastRead` on a conversation. Slack does not supply it.
+- The app keeps its own read state: `lastRead` on a conversation, a thread or any item. Slack does not supply it.
 - On its own, the app loads only these:
   - The lists of the workspace, each in a few calls: my conversations (`users.conversations`), all public channels (`conversations.list`) and all users (`users.list`). Load them again after 60 min.
   - The first batch of history: the newest 1000 messages in all conversations, by one search (about 10 calls).
   - The watch (`Slack.poll`), each 15 s.
 - The app does not load a conversation or a thread alone, unless I ask for it (`o`).
 - The workspace lists the conversations (channels, DMs, group DMs) only.
-- Each message links under its conversation. A reply also links under the first message of its thread.
-- The list shows only unread conversations, with the newest message from someone else first (`lastMessageReceived`). A load writes at timestamp 0. Thus, a load does not move an item. A conversation with no message in the batch stays at the bottom.
+- A top-level message links under its conversation. A reply links under the first message of its thread, and moves that message to the end of the conversation.
+- The list shows only what is new, at each level. It shows the conversation with the newest message from someone else first (`lastMessageReceived`). A load writes at timestamp 0. Thus, a load does not move an item. A conversation with no message in the batch stays at the bottom.
 - The load of the lists (each 60 min) replaces the conversation links of the workspace. The watch removes old thread links from the workspace.
 - The header of the workspace, of a conversation and of a thread shows where the cached history starts (`from`), and a button (**Older**) that loads further back. The button goes when nothing is older (`history.complete`).
 

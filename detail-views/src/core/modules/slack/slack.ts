@@ -2,9 +2,11 @@ import { link, value, values, type AppEvent } from '../../graph/events.ts'
 import { loadedKey } from '../../types.ts'
 import type { Entity, ItemType, LoadPart } from '../../types.ts'
 import type { Module, ModuleContext } from '../module.ts'
+import { moduleInfos } from '../../present.ts'
 import { me } from '../tasks/tasks.ts'
 import { SlackApi, slackWrites } from './api.ts'
 import {
+  activity,
   maxTs,
   parseMessageId,
   slackIds as ids,
@@ -271,39 +273,69 @@ export class Slack implements Module {
   }
 
   /**
-   * Marks a conversation read up to the newest message received in it
-   * (`lastMessageReceived`): an owned `lastRead`. Not to now, so a message
-   * still on its way, sent before now, is never taken as read. Marked in Slack
-   * too, while Slack may be written to.
+   * Marks an item read up to the newest thing in it (`activity`: a
+   * conversation's `lastMessageReceived`; a message's, or its own ts): an
+   * owned `lastRead`. Not to now, so a message still on its way, sent before
+   * now, is never taken as read. A conversation is marked in Slack too, while
+   * Slack may be written to.
    */
   async markRead(id: string): Promise<AppEvent[]> {
-    const conversation = this.context.lens.read(id)
-    if (conversation?.type !== 'slack.conversation') return []
-    const ts = conversation.data.lastMessageReceived
-    if (typeof ts !== 'string') return []
+    const entity = this.context.lens.read(id)
+    const ts = entity && activity(entity)
+    if (!entity || !ts) return []
     const events = [value(id, 'lastRead', ts, this.context.now(), me)]
     this.context.owned.write(events)
-    if (slackWrites && this.api) await this.api.call('conversations.mark', { channel: id.slice('slack:conv:'.length), ts })
+    if (slackWrites && this.api && entity.type === 'slack.conversation') {
+      await this.api.call('conversations.mark', { channel: id.slice('slack:conv:'.length), ts })
+    }
     return events
   }
 
   /**
-   * The newest message from someone else in each conversation, as
-   * `lastMessageReceived` where it is newer than what is there: what makes a
-   * conversation unread. My own messages never do. Undated, so at 0.
+   * Raises `lastMessageReceived` (cache, at 0) for each message from someone
+   * else: on its thread's first message, or on its conversation, and on
+   * everything those sit under, however I have organised them (not a
+   * module's root). My own messages never raise it.
    */
-  private receivedEvents(messages: { channel: string; ts: string; user?: string }[]): AppEvent[] {
+  private receivedEvents(messages: { channel: string; ts: string; user?: string; thread?: string }[]): AppEvent[] {
+    const { lens } = this.context
     const self = this.data<Record<string, unknown>>(ids.root).self
+    const roots = new Set(moduleInfos.map((module) => module.root))
     const newest = new Map<string, string>()
-    for (const { channel, ts, user } of messages) {
-      if (user && user === self) continue
-      newest.set(channel, maxTs(newest.get(channel), ts)!)
+    const raise = (id: string, ts: string, depth: number): void => {
+      if (roots.has(id) || depth > 4) return
+      const known = newest.get(id)
+      if (known && Number(known) >= Number(ts)) return
+      newest.set(id, ts)
+      for (const parent of lens.parents(id)) raise(parent, ts, depth + 1)
     }
-    return [...newest].flatMap(([channel, ts]) => {
-      const id = ids.conversation(channel)
+    for (const { channel, ts, user, thread } of messages) {
+      if (user && user === self) continue
+      if (thread) raise(ids.message(channel, thread), ts, 0)
+      // A thread I have moved elsewhere no longer brings its conversation up.
+      if (!thread || this.threadStays(channel, thread)) raise(ids.conversation(channel), ts, 0)
+    }
+    return [...newest].flatMap(([id, ts]) => {
       const known = this.cursor(id, 'lastMessageReceived')
       return known && Number(known) >= Number(ts) ? [] : [value(id, 'lastMessageReceived', ts, 0, author)]
     })
+  }
+
+  /**
+   * A thread's first message, moved to the end of its conversation when a
+   * reply comes (`at`, the reply's ts): re-linking it there replaces the
+   * cached link. Not if I have taken it out of the conversation and put it
+   * somewhere else myself; that stands.
+   */
+  private relinkThread(channel: string, thread: string, at: string): AppEvent[] {
+    return this.threadStays(channel, thread) ? [link(ids.conversation(channel), ids.message(channel, thread), tsMillis(at), author)] : []
+  }
+
+  /** Whether a thread belongs in its conversation: it is there, or not yet anywhere else. */
+  private threadStays(channel: string, thread: string): boolean {
+    const { lens } = this.context
+    const parent = ids.message(channel, thread)
+    return lens.children(ids.conversation(channel)).includes(parent) || lens.parents(parent).every((id) => id === ids.root)
   }
 
   // --- The watch and the history behind it ----------------------------------------
@@ -493,9 +525,17 @@ export class Slack implements Module {
     this.cache.write([
       ...messages.flatMap((message) => [
         ...messageEvents(channel, message, now),
-        link(id, ids.message(channel, message.ts), tsMillis(message.ts), author),
+        ...(message.latest_reply
+          ? this.relinkThread(channel, message.ts, message.latest_reply)
+          : [link(id, ids.message(channel, message.ts), tsMillis(message.ts), author)]),
       ]),
-      ...this.receivedEvents(messages.map((message) => ({ channel, ts: message.ts, user: message.user }))),
+      ...this.receivedEvents(
+        messages.flatMap((message) => [
+          { channel, ts: message.ts, user: message.user },
+          // Who wrote the newest reply isn't said: taken as someone else.
+          ...(message.latest_reply ? [{ channel, ts: message.latest_reply, thread: message.ts }] : []),
+        ]),
+      ),
       value(id, 'history.oldest', reached, 0, author),
       ...(more ? [] : [value(id, 'history.complete', true, 0, author)]),
     ])
@@ -503,8 +543,9 @@ export class Slack implements Module {
 
   /**
    * New messages from a search, as events. Ones already cached are left
-   * alone, so a repeat counts nothing twice. Every message is linked under
-   * its conversation at its ts, a reply under its thread as well.
+   * alone, so a repeat counts nothing twice. A message is linked under its
+   * conversation at its ts; a reply under its thread, whose first message
+   * moves to the end of the conversation (`relinkThread`).
    */
   private searchEvents(matches: SearchMatch[]): { events: AppEvent[]; added: number } {
     const { lens } = this.context
@@ -514,7 +555,7 @@ export class Slack implements Module {
     const threads = new Map<string, { replyCount: number; latestReply?: string }>()
 
     const seen = new Set<string>()
-    const received: { channel: string; ts: string; user?: string }[] = []
+    const received: { channel: string; ts: string; user?: string; thread?: string }[] = []
     for (const match of [...matches].sort((a, b) => Number(a.ts) - Number(b.ts))) {
       const channel = match.channel.id
       const id = ids.message(channel, match.ts)
@@ -559,10 +600,12 @@ export class Slack implements Module {
         const known = this.data<MessageData>(parent)
         const thread = threads.get(parent) ?? { replyCount: known.replyCount ?? 0, latestReply: known.latestReply ?? undefined }
         threads.set(parent, { replyCount: thread.replyCount + 1, latestReply: maxTs(thread.latestReply, match.ts) })
-        events.push(link(parent, id, tsMillis(match.ts), author))
+        events.push(link(parent, id, tsMillis(match.ts), author), ...this.relinkThread(channel, threadTs!, match.ts))
+        received.push({ channel, ts: match.ts, user: match.user, thread: threadTs })
+      } else {
+        events.push(link(conversationId, id, tsMillis(match.ts), author))
+        received.push({ channel, ts: match.ts, user: match.user })
       }
-      events.push(link(conversationId, id, tsMillis(match.ts), author))
-      received.push({ channel, ts: match.ts, user: match.user })
     }
     events.push(...this.receivedEvents(received))
 
@@ -625,16 +668,16 @@ export class Slack implements Module {
     const now = this.context.now()
     const replies = messages.filter((message) => message.ts !== root)
     const parent = messages.find((message) => message.ts === root && root === ts)
-    const conversation = ids.conversation(channel)
+    const newest = maxTs(...replies.map((message) => message.ts))
     this.cache.write(
       [
         ...(parent ? messageEvents(channel, parent, now) : []),
         ...replies.flatMap((message) => [
           ...messageEvents(channel, message, now),
           link(id, ids.message(channel, message.ts), tsMillis(message.ts), author),
-          link(conversation, ids.message(channel, message.ts), tsMillis(message.ts), author),
         ]),
-        ...this.receivedEvents(replies.map((message) => ({ channel, ts: message.ts, user: message.user }))),
+        ...(newest ? this.relinkThread(channel, root, newest) : []),
+        ...this.receivedEvents(replies.map((message) => ({ channel, ts: message.ts, user: message.user, thread: root }))),
         value(id, 'history.complete', true, 0, author),
       ],
       { replaceLinksFrom: [id] },

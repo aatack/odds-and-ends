@@ -112,15 +112,17 @@ function markdown(lens: Lens, text: string): string {
 }
 
 /**
- * Whether a conversation has a message from someone else (`lastMessageReceived`)
- * after where I last read it (`lastRead`, set with `m`). One I never marked is
- * unread once anyone has written in it.
+ * The newest thing in an item, as a ts: the newest message from someone else
+ * under it (`lastMessageReceived`), or, for a message, its own ts if later.
+ * Null for an item nothing has come into.
  */
-function isUnread(entity: Entity): boolean {
-  const received = entity.data.lastMessageReceived
-  if (typeof received !== 'string') return false
-  return typeof entity.data.lastRead !== 'string' || Number(received) > Number(entity.data.lastRead)
+export function activity(entity: Entity): string | null {
+  const received = typeof entity.data.lastMessageReceived === 'string' ? entity.data.lastMessageReceived : undefined
+  const own = entity.type === 'slack.message' && typeof entity.data.ts === 'string' ? entity.data.ts : undefined
+  return maxTs(received, own) ?? null
 }
+
+const readTo = (entity: Entity): number => (typeof entity.data.lastRead === 'string' ? Number(entity.data.lastRead) : -Infinity)
 
 const types: Record<string, ItemType> = {
   'slack:conv:': 'slack.conversation',
@@ -173,18 +175,22 @@ export const slackView: ModuleView = {
     return entity.type === 'slack.conversation' || entity.type === 'slack.message' ? 'slack' : null
   },
 
-  // The workspace lists only unread conversations, the most recent first; in
-  // it, a conversation shows only what came after I last read it. Anywhere
-  // else (a conversation's own view) shows everything.
-  order(entity, children, _lens, root) {
-    if (entity.type === 'slack.home') {
-      return children.filter((child) => child.data.unread).sort((a, b) => Number(b.data.lastMessageReceived) - Number(a.data.lastMessageReceived))
-    }
-    if (entity.type === 'slack.conversation' && root === slackIds.root && typeof entity.data.lastRead === 'string') {
-      const lastRead = Number(entity.data.lastRead)
-      return children.filter((child) => child.type !== 'slack.message' || Number(child.data.ts) > lastRead)
-    }
-    return children
+  // Most recent first: the newest message from someone else.
+  order(entity, children) {
+    if (entity.type !== 'slack.home') return children
+    return [...children].sort((a, b) => Number(activity(b) ?? 0) - Number(activity(a) ?? 0))
+  },
+
+  // In the workspace, at every level, only what is new: an item whose newest
+  // thing (`activity`) is after where I last read it and everything it is
+  // under here (reading a conversation reads its threads to then). A
+  // conversation nothing has come into isn't shown; anything else without a
+  // date of its own (a note) is. Anywhere else shows everything.
+  shows(child, line, root) {
+    if (root !== slackIds.root) return true
+    const newest = activity(child)
+    if (newest === null) return child.type !== 'slack.conversation'
+    return Number(newest) > Math.max(readTo(child), ...line.map(readTo))
   },
 
   // `from` is where what is cached starts: everything after it is here. For a
@@ -221,7 +227,7 @@ export const slackView: ModuleView = {
       const title = own ?? conversationTitle(lens, data)
       return {
         ...entity,
-        data: { ...entity.data, title, text: title, from, complete: Boolean(entity.data['history.complete']), unread: isUnread(entity) },
+        data: { ...entity.data, title, text: title, from, complete: Boolean(entity.data['history.complete']) },
       }
     }
     if (entity.type !== 'slack.message') return entity
@@ -247,8 +253,6 @@ export const slackView: ModuleView = {
           height: image.height,
         })),
         quiet: Boolean(data.subtype && quiet.has(data.subtype)),
-        // The thread a reply is in, so a conversation reading flat can name it.
-        thread: data.threadTs && data.threadTs !== data.ts ? slackIds.message(channel, data.threadTs) : null,
         // Where the message is, for when it is shown away from its conversation.
         conversation: slackIds.conversation(channel),
         where: conversationTitle(lens, { channel, ...lens.read(slackIds.conversation(channel))?.data } as ConversationData),
