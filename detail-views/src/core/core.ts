@@ -14,6 +14,7 @@ import { GitHub } from './modules/github/github.ts'
 import type { Module, ModuleContext } from './modules/module.ts'
 import { Slack } from './modules/slack/slack.ts'
 import { me, tasksModule } from './modules/tasks/tasks.ts'
+import type { McpAddress } from './mcp.ts'
 import { focusOf, lensOf, moduleInfos, toItem, typeOf, viewOf, type Folds, type Lens } from './present.ts'
 import { Blobs, EventStore, Settings } from './store.ts'
 import { loadedKey } from './types.ts'
@@ -152,6 +153,7 @@ export class Core {
         if (error) throw new Error(error)
       },
       now: this.now,
+      mcp: () => this.mcpAddress,
     }
     this.slack = new Slack(context)
     this.github = new GitHub(context)
@@ -199,6 +201,14 @@ export class Core {
 
   private clearCacheIfOld(): void {
     if (this.now() - (this.cacheMeta.get() ?? 0) > clearEvery) this.clearCache()
+  }
+
+  /** Where the app's MCP server listens, once the host has started it (`src/main/mcp.ts`). */
+  private mcpAddress: McpAddress | null = null
+
+  /** Says where the MCP server is, so every Claude session started from now on is given it. */
+  setMcp(address: McpAddress | null): void {
+    this.mcpAddress = address
   }
 
   /** Empties the cache store. Everything in it loads again as it is next looked at. */

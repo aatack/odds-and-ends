@@ -56,12 +56,14 @@ test('claude: a session in a new worktree, prompted twice, links its PR; each an
   assert.equal(claudeCall.cwd, data.worktree)
   // Opus 5.5, in auto mode.
   assert.deepEqual(claudeCall.args.slice(4, 8), ['--model', 'claude-opus-5-5', '--permission-mode', 'auto'])
-  assert.deepEqual(claudeCall.args.slice(-2), ['--session-id', session])
+  assert.deepEqual(claudeCall.args.slice(8, 10), ['--session-id', session])
+  // No MCP server in a headless core: no flags for one.
+  assert.ok(!claudeCall.args.includes('--mcp-config'))
 
   // The second prompt resumes the same session.
   core.actions.claudePrompt({ session, parent: note, text: 'again' })
   await settle()
-  assert.deepEqual(calls.filter((call) => call.command.endsWith('claude'))[1].args.slice(-2), ['--resume', session])
+  assert.deepEqual(calls.filter((call) => call.command.endsWith('claude'))[1].args.slice(8, 10), ['--resume', session])
 
   // The worktree's branch has a PR: it is linked under the session, once.
   assert.equal(core.entity(session).outboundLinks.filter((id) => id === 'github:pr:https://github.com/o/app/pull/9').length, 1)
@@ -134,4 +136,19 @@ test('claude: an answer with headings and bullets is written as notes under the 
     })
   assert.deepEqual(tree(response), [['# Changes', [['one', ['detail']], 'two']]])
   assert.equal(core.item(core.entity(response).outboundLinks[0])!.type, 'claude.response')
+})
+
+test('claude: every session is given the app MCP server, its tools allowed', async () => {
+  const calls: { command: string; args: string[]; cwd: string }[] = []
+  const core = memoryCore({ run: fakeRun(calls), gh: async () => JSON.stringify({ data: { repository: { pullRequests: { nodes: [] } } } }), dataDir: '/data' })
+  core.setMcp({ url: 'http://127.0.0.1:1/mcp', token: 't0k' })
+  await core.actions.claudeCreate({ name: 'x', cwd: '', worktree: false, attachTo: 'tasks' })
+  const session = core.entity('tasks').values.claudeSessionId as string
+  core.actions.claudePrompt({ session, parent: 'tasks', text: 'hi' })
+  await settle()
+  const args = calls.find((call) => call.command.endsWith('claude'))!.args
+  assert.deepEqual(args.slice(-4, -1), ['--allowedTools', 'mcp__detail-views', '--mcp-config'])
+  assert.deepEqual(JSON.parse(args[args.length - 1]), {
+    mcpServers: { 'detail-views': { type: 'http', url: 'http://127.0.0.1:1/mcp', headers: { Authorization: 'Bearer t0k' } } },
+  })
 })

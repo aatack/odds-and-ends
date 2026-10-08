@@ -4,6 +4,7 @@ import { homedir, tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { link, value, values, type AppEvent } from '../../graph/events.ts'
 import { prEntityId } from '../../types.ts'
+import { mcpConfig, mcpName, type McpAddress } from '../../mcp.ts'
 import type { Module, ModuleContext } from '../module.ts'
 import { me } from '../tasks/tasks.ts'
 import { outline, outlineEvents } from '../../outline.ts'
@@ -68,6 +69,11 @@ function repoOf(remote: string): { owner: string; name: string } | null {
  * own: a temporary one, the one I gave, or a new git worktree of its repo.
  * Everything is owned: sessions, prompts and responses are mine to keep.
  */
+/** The app's MCP server for a session, and its tools allowed without asking (they only read). */
+function mcpArgs(address: McpAddress | null): string[] {
+  return address ? ['--allowedTools', `mcp__${mcpName}`, '--mcp-config', mcpConfig(address)] : []
+}
+
 export class Claude implements Module {
   readonly view = claudeView
 
@@ -160,6 +166,8 @@ export class Claude implements Module {
       '--permission-mode',
       mode,
       ...(started ? ['--resume', session] : ['--session-id', session]),
+      // The app's own MCP server (read-only), its tools allowed. Last: both flags take lists.
+      ...mcpArgs(this.context.mcp()),
     ]
     try {
       const out = JSON.parse(await this.context.run(claudeProgram(), args, cwd)) as { result?: string; is_error?: boolean; total_cost_usd?: number }
