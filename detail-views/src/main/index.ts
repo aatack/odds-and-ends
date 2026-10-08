@@ -29,6 +29,25 @@ function phoneLink(core: Core): string {
 /** `slack-image://<size>/<message id>/<file id>`: Slack images, through the core's cache. */
 protocol.registerSchemesAsPrivileged([{ scheme: 'slack-image', privileges: { standard: false, secure: true } }])
 
+/** The app's own size: what Actual Size goes back to. */
+const defaultZoom = 1.25
+
+/**
+ * Zooms the app's page, whatever has focus. The View menu's own zoom roles
+ * act on the focused page, which is a peek's <webview> while one has the
+ * caret, so zooming there changed the peek and not the app.
+ */
+function zoomItem(label: string, accelerator: string, zoom: (page: Electron.WebContents) => void): MenuItemConstructorOptions {
+  return {
+    label,
+    accelerator,
+    click: (_, window) => {
+      const page = (window instanceof BrowserWindow ? window : (BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]))?.webContents
+      if (page) zoom(page)
+    },
+  }
+}
+
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1440,
@@ -44,7 +63,7 @@ function createWindow(): BrowserWindow {
       sandbox: false,
       contextIsolation: true,
       // Scales text and spacing together.
-      zoomFactor: 1.25,
+      zoomFactor: defaultZoom,
       // Link previews. Every guest is locked down in will-attach-webview.
       webviewTag: true,
     },
@@ -81,7 +100,22 @@ function installMenu(): void {
     ...(isMac
       ? [{ label: 'Edit', submenu: [{ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] } as MenuItemConstructorOptions]
       : []),
-    { role: 'viewMenu' },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        zoomItem('Actual Size', 'CmdOrCtrl+0', (page) => page.setZoomFactor(defaultZoom)),
+        zoomItem('Zoom In', 'CmdOrCtrl+Plus', (page) => page.setZoomLevel(page.getZoomLevel() + 0.5)),
+        // Ctrl+= too, without Shift, as browsers take it. Shown: a hidden item's key works only on macOS.
+        zoomItem('Zoom In', 'CmdOrCtrl+=', (page) => page.setZoomLevel(page.getZoomLevel() + 0.5)),
+        zoomItem('Zoom Out', 'CmdOrCtrl+-', (page) => page.setZoomLevel(page.getZoomLevel() - 0.5)),
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
     { label: 'Window', submenu: [{ role: 'minimize' }, ...(isMac ? [{ role: 'zoom' as const }] : [])] },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
