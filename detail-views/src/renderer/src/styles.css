@@ -64,6 +64,20 @@ body,
   flex: none;
   padding: 12px 8px;
   background: var(--panel);
+  display: flex;
+  flex-direction: column;
+}
+
+/* At the foot of the sidebar: wiping the cache store. */
+.sidebar-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.app.phone .sidebar-foot {
+  display: none;
 }
 
 .module {
@@ -1009,6 +1023,7 @@ mark {
 .app.phone .modules {
   width: auto;
   display: flex;
+  flex-direction: row;
   gap: 4px;
   padding: 6px 8px;
   overflow-x: auto;

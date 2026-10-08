@@ -10,7 +10,9 @@ export interface Api {
   submit(id: string, text: string): Promise<Outcome>
   perform(id: string, action: string, text: string): Promise<Outcome>
   toggle(id: string): Promise<Outcome>
-  markRead(id: string, at?: string): Promise<Outcome>
+  markRead(id: string): Promise<Outcome>
+  /** Empties the cache store (never the owned one). */
+  clearCache(): Promise<Outcome>
   /** Loads further back than anything loads on its own. */
   older(id: string): Promise<Outcome>
   /** Takes a child out from under its parent, as an owned event. */
@@ -67,7 +69,8 @@ export function httpApi(base: string, token: string): Api {
     submit: (id, text) => call('submit', { id, text }),
     perform: (id, action, text) => call('perform', { id, action, text }),
     toggle: (id) => call('toggle', { id }),
-    markRead: (id, at) => call('markRead', { id, at }),
+    markRead: (id) => call('markRead', { id }),
+    clearCache: () => call('clearCache', {}),
     older: (id) => call('older', { id }),
     unlink: (parent, child) => call('unlink', { parent, child }),
     link: (parent, child) => call('link', { parent, child }),
@@ -105,7 +108,8 @@ export function electronApi(): Api {
     submit: (id, text) => call('submit', { id, text }),
     perform: (id, action, text) => call('perform', { id, action, text }),
     toggle: (id) => call('toggle', { id }),
-    markRead: (id, at) => call('markRead', { id, at }),
+    markRead: (id) => call('markRead', { id }),
+    clearCache: () => call('clearCache', {}),
     older: (id) => call('older', { id }),
     unlink: (parent, child) => call('unlink', { parent, child }),
     link: (parent, child) => call('link', { parent, child }),

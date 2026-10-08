@@ -6,7 +6,7 @@ import type { OverviewProps, PillProps, RowProps, Tint } from './kindTypes.ts'
 import { MessageBody, MessageRow, Text } from './messages.tsx'
 import { Button, Composer, HeaderPill, Highlight, ItemPill, Status } from './primitives.tsx'
 
-/** A conversation's or a thread's tint: unread (`unread`, from the Slack view). */
+/** A conversation's tint: unread (`unread`, from the Slack view). */
 export const slackTint = (entity: Entity): Tint | null => (entity.data.unread ? 'accent' : null)
 
 const text = (data: Record<string, unknown>, fallback = ''): string =>
@@ -144,26 +144,24 @@ export function MessageOverview(props: OverviewProps) {
  * started it, and how far it has gone. Anywhere else it is chat, grouped with
  * the message above.
  */
+/**
+ * A message in a chat. A reply, shown in its conversation (which reads flat),
+ * starts with its thread's pill: hover to see the thread, click to go to it.
+ */
 export const SlackMessageRow = memo(function SlackMessageRow(props: RowProps) {
-  if (props.parent?.type === 'slack.home') return <ThreadLine {...props} />
-  return <MessageRow {...props} always={props.parent?.type !== 'slack.conversation' && props.parent?.type !== 'slack.message'} />
-})
-
-/** A thread in the workspace: its chat, then the whole message (mentions, images, its replies line), as in the chat itself. */
-function ThreadLine(props: RowProps) {
+  const thread = props.parent?.type === 'slack.conversation' && typeof props.entity.data.thread === 'string' ? props.entity.data.thread : null
   return (
-    <div className="message">
-      <MessageBody
-        entity={props.entity}
-        author
-        lead={<span className="muted">{String(props.entity.data.where ?? '')} </span>}
-        onOpen={props.onOpen}
-        onImage={props.onImage}
-        findText={props.findText}
-      />
-    </div>
+    <MessageRow
+      {...props}
+      always={props.parent?.type !== 'slack.conversation' && props.parent?.type !== 'slack.message'}
+      lead={thread && (
+        <>
+          <ItemPill id={thread} fallback="thread" />{' '}
+        </>
+      )}
+    />
   )
-}
+})
 
 export function MessagePill(props: PillProps) {
   const { data } = props.entity

@@ -56,6 +56,8 @@ export function App(props: {
   /** The time, ticking each second. */
   now: number
   onCrumb(at: number): void
+  /** Wiping the cache store, at the foot of the sidebar: each press a step closer, until the last wipes. */
+  wipe: { label: string; stage: number; onWipe(): void; onCancel(): void; cancelLabel: string }
 }) {
   const { peek } = props
   return (
@@ -74,6 +76,10 @@ export function App(props: {
                 {module.name}
               </div>
             ))}
+            <div className="sidebar-foot">
+              <Button label={props.wipe.label} active={props.wipe.stage > 0} onClick={props.wipe.onWipe} quiet={props.wipe.stage === 0} />
+              {props.wipe.stage > 0 && <Button label={props.wipe.cancelLabel} onClick={props.wipe.onCancel} />}
+            </div>
           </nav>
           <main className="focus">
             {props.crumbs.length > 1 && (

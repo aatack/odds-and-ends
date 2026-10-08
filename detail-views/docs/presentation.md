@@ -62,7 +62,7 @@ whether it is open.
 ## Ordering by recency
 
 Lists ordered by recency sort on `updatedAt`, the rollup's newest event,
-computed in the frontend from the cache (Slack's workspace sorts on its
-topics' newest message instead: `docs/slack.md`). They never sort on a stored "latest"
+computed in the frontend from the cache (Slack's workspace sorts on
+`lastMessageReceived` instead: `docs/slack.md`). They never sort on a stored "latest"
 field or on when something was loaded. This only works because of the
 timestamp rules in `events.md`.

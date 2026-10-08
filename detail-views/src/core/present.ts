@@ -38,8 +38,8 @@ export interface ModuleView {
   openByDefault?(type: ItemType): boolean
   /** Fills in what is worked out rather than stored (names, say). */
   present?(entity: Entity, lens: Lens): Entity
-  /** Children in the focus view. Default is link order. */
-  order?(entity: Entity, children: Entity[], lens: Lens): Entity[]
+  /** Children in the focus view, given the view's root: they may be shaped by where they are shown. Default is link order. */
+  order?(entity: Entity, children: Entity[], lens: Lens, root: string): Entity[]
   compose?(entity: Entity, lens: Lens): ComposeKind | null
   /** What can be done to an entity right now. */
   actions?(entity: Entity, lens: Lens): Action[]
@@ -193,7 +193,7 @@ export function viewOf(rootId: string, source: Source, options: ViewOptions = {}
       const item = lens.read(child)
       return item ? [present(item, lens)] : []
     })
-    let children = moduleOf(entity.type)?.order?.(entity, presented, lens) ?? presented
+    let children = moduleOf(entity.type)?.order?.(entity, presented, lens, rootId) ?? presented
     // Chat keeps its newest end when the bound bites.
     // (The root is a row of the walk too, so `limit - 1` of them.)
     if (depth === 0 && module?.newestFirst?.(entity.type) && children.length > limit - 1) {
