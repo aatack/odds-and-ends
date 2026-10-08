@@ -16,13 +16,14 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 10. A worktree session has a new branch. Make its name from the session name and the session ID. Keep the branch name on the session item.
 11. Keep these on the session item: the directory where it runs (`cwd`), the worktree directory (`worktree`), the branch (`branch`), the repo (`repo`).
 12. **Shift+K** opens a form: name, directory, worktree. Enter starts the session. Escape cancels.
-13. The new session item goes under the selected item. The selected item gets `claudeSessionId: <session ID>`.
+13. The new session item goes under the selected item. The selected item gets `claudeSessionId: <session ID>`. The session keeps the ID of that item (`openedOn`).
 14. Keep each directory that I enter on the Claude root (`cwds`). Give these as options in the next form. Put the last one in the field.
 15. **k** opens a text box under the selected item. This is the same box as a new note, with a different action when I write it.
 16. To find the session for **k**, look along the selection path, from the selected item to the root of the view. Use the first item that is a session, or that has `claudeSessionId`. If there is no such item, show an error toast.
 17. When I write the prompt, put a prompt item under the selected item. Also link the prompt item under the session item.
+17a. Send Claude the prompt after one line that gives two IDs: the item that the prompt is under, and the item that the session was opened on (`openedOn`). When the app's MCP server runs, the line also tells Claude to read them with its tools (`docs/mcp.md`). The prompt item keeps only my text.
 18. When Claude answers, put the answer in an item under the prompt item. The structure is: `[item + session] → [prompt] → [response]`.
-18a. Make the answer into notes under the response item. A heading is a section note. A bullet is a note; nested bullets are notes under it. A task bullet (`- [ ]`) is a checkbox note. A paragraph, a code block or a table is one note. The text before the first heading or bullet is the text of the response item.
+18a. Keep all of the answer in the response item, as one text. Do not split it into notes. (`b` splits it, if I want.)
 19. If Claude fails, put an error message in the response item instead of the answer.
 20. While Claude works, the response item shows how long it has run.
 21. After each prompt, if the branch in the session directory has a GitHub PR, link the PR item under the session item. (A "branch" here is a PR. The app has no branch items.)
@@ -42,7 +43,8 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 - **Command.** `claude -p <prompt> --output-format json --model claude-opus-5-5 --permission-mode <mode> (--session-id | --resume) <ID> --allowedTools mcp__detail-views --mcp-config <the app's MCP server>`, in the session directory. The last two are there only while the app's MCP server runs (`docs/mcp.md`). The answer is `result`. The cost is kept as `cost`.
 - **Permission mode is per session** (`permissionMode`). New sessions get `auto`.
 - **PR look-up is a read.** `git rev-parse --abbrev-ref HEAD` and `git remote get-url origin` give the branch and the repo. A GraphQL query through `gh` finds the PR. The app does not write to GitHub for this.
-- **Answer outline.** `src/core/outline.ts` (pure, shared with `b`, which splits any item's text the same way) parses the markdown. A heading holds all that follows it, until the next heading of the same or a higher level. A bullet holds the bullets and blocks that are indented below it. A rule (`---`) is ignored. The notes are owned, by the author `claude`, all at the same time, so they stay in order. Each note has the type `claude.response`, so it has the Claude mark and tint. A heading is bold and a ticked box is struck through, as in a note. An error is not parsed.
+- **Answer is one item.** The response item keeps all of the answer as its `text`. The app does not split it. `b` can split it into notes (`src/core/outline.ts`); those notes keep the type `claude.response`.
+- **Context line.** `[detail-views: this prompt was added to the item `<ID>`; this session was opened on `<ID>`. Read them with the `detail-views` MCP tools (`read`, `walk`).]`, then an empty line, then the prompt. A session from before `openedOn` uses the first item that it is under, other than `claude`.
 - **Errors.** A failure of `claude` (a non-zero exit, or `is_error` in its JSON) sets the response item: `text` and `error` are the full message, `running` is false. The message gives the program, the directory, the exit code, and all that the program wrote. The view shows all of it.
 - **Paths.** `~` is the home directory. The app expands it, because a program that the app starts does not. The form refuses a directory that does not exist.
 - **The `claude` program.** The app looks for it on the `PATH`, then in `~/.local/bin` and `~/.claude/local`. An app that starts from a launcher can have a short `PATH`.
