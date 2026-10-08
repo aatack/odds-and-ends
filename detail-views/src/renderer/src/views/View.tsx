@@ -129,7 +129,7 @@ const TreeRow = memo(function TreeRow(props: {
       <Marker row={row} onToggle={props.interactive ? props.onToggle : undefined} />
       <div className={`cell${tintClass(tintOf(kinds, row.entity))}`}>
         {props.shown.editing ? (
-          <TextBox edit={props.edit} onEditDraft={props.onEditDraft} onCommitEdit={props.onCommitEdit} />
+          <TextBox edit={props.edit} onEditDraft={props.onEditDraft} />
         ) : (
           <Row
             entity={row.entity}
@@ -192,13 +192,13 @@ function boxOf(row: ViewRow): boolean | null {
   return typeof data.open === 'boolean' ? data.open : null
 }
 
-/** Typing in place: Enter (or leaving it) writes, Escape gives up. */
+/** Typing in place: Enter writes, Escape gives up. Clicking away leaves it as it is, to come back to. */
 function EditBox(props: { props: ViewProps }) {
-  return <TextBox edit={props.props.edit} onEditDraft={props.props.onEditDraft} onCommitEdit={props.props.onCommitEdit} />
+  return <TextBox edit={props.props.edit} onEditDraft={props.props.onEditDraft} />
 }
 
-function TextBox(props: { edit: Edit | null; onEditDraft(text: string): void; onCommitEdit(): void }) {
-  const { edit, onEditDraft, onCommitEdit } = props
+function TextBox(props: { edit: Edit | null; onEditDraft(text: string): void }) {
+  const { edit, onEditDraft } = props
   return (
     <input
       className="edit"
@@ -206,8 +206,8 @@ function TextBox(props: { edit: Edit | null; onEditDraft(text: string): void; on
       spellCheck
       value={edit?.draft ?? ''}
       placeholder={edit?.mode === 'create' ? (edit.prompt ? 'Prompt Claude' : 'Note') : ''}
+      data-field="edit"
       onChange={(event) => onEditDraft(event.target.value)}
-      onBlur={() => onCommitEdit()}
       onMouseDown={(event) => event.stopPropagation()}
     />
   )

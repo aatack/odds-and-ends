@@ -38,8 +38,9 @@ export const tools: Tool[] = [
   // filter; Escape clears it.
   { id: 'find.done', scope: 'input', keys: ['Enter'], enabled: (_, field) => field === 'find', run: () => blur() },
   { id: 'find.clear', scope: 'input', keys: ['Escape'], enabled: (_, field) => field === 'find', run: (s) => (blur(), s.clearFind()) },
-  { id: 'edit.commit', scope: 'input', keys: ['Enter'], enabled: (s) => s.hasEdit(), run: (s) => s.commitEdit() },
-  { id: 'edit.cancel', scope: 'input', keys: ['Escape'], enabled: (s) => s.hasEdit(), run: (s) => s.cancelEdit() },
+  // Only in the box itself: a draft left waiting while I type elsewhere is not touched.
+  { id: 'edit.commit', scope: 'input', keys: ['Enter'], enabled: (s, field) => field === 'edit' && s.hasEdit(), run: (s) => s.commitEdit() },
+  { id: 'edit.cancel', scope: 'input', keys: ['Escape'], enabled: (s, field) => field === 'edit' && s.hasEdit(), run: (s) => s.cancelEdit() },
   {
     id: 'composer.send',
     scope: 'input',
