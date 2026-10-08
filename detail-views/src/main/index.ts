@@ -4,10 +4,12 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, ipcMain, Menu, nativeTheme, protocol, shell, type MenuItemConstructorOptions } from 'electron'
 import { Core } from '../core/core.ts'
+import { startMcpServer } from './mcp.ts'
 import { phonePort, phoneToken, startPhoneServer } from './phone.ts'
 
 let core: Core | null = null
 let stopPhone: (() => void) | null = null
+let stopMcp: (() => void) | null = null
 
 /** The phone's link: this machine's Tailscale name if it has one, the token in the hash. */
 function phoneLink(core: Core): string {
@@ -126,6 +128,8 @@ void app.whenReady().then(() => {
   // The phone: the core over HTTP on 127.0.0.1, for Tailscale to publish
   // (docs/mobile.md). Its link, token in the hash, is written where I can find it.
   stopPhone = startPhoneServer(core, { dist: join(app.getAppPath(), 'out', 'phone') })
+  // The app's MCP server, given to every Claude session it starts (src/core/mcp.ts).
+  stopMcp = startMcpServer(core)
   writeFileSync(join(dir, 'phone-link.txt'), `${phoneLink(core)}\n`, { mode: 0o600 })
 
   createWindow()
@@ -136,6 +140,7 @@ void app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   stopPhone?.()
+  stopMcp?.()
   core?.stop()
   if (process.platform !== 'darwin') app.quit()
 })

@@ -1,3 +1,4 @@
+import type { McpAddress } from '../mcp.ts'
 import type { AppEvent } from '../graph/events.ts'
 import type { Lens, ModuleView } from '../present.ts'
 import type { Blobs, EventStore } from '../store.ts'
@@ -30,6 +31,8 @@ export interface ModuleContext {
   /** Loads part of an entity through the core, as the UI would ask. */
   load(id: string, part: LoadPart, force?: boolean): Promise<void>
   now(): number
+  /** Where the app's MCP server is, for the Claude sessions it starts; null when there is none (tests, a headless caller). */
+  mcp(): McpAddress | null
 }
 
 /**

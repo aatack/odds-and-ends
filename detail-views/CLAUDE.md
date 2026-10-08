@@ -103,6 +103,8 @@ doc for the area you change, and keep it up to date in the same commit.
   one, mine, or a worktree under the app's data directory, never inside a
   repo), Opus 5.5 in auto mode. Sessions, prompts
   and answers are owned; answers are authored `claude` (`docs/claude.md`).
+  Every session is given the app's MCP server (`docs/mcp.md`): read-only
+  (`modules`, `read`, `walk`), on 127.0.0.1 with a per-run token.
 - **Recents are temporary.** Pushing a view of an item that has a type (not a
   plain note) re-writes its link under `recents` in the cache store at that
   time, which moves it to the front; the Recents module lists them newest
@@ -223,7 +225,8 @@ doc for the area you change, and keep it up to date in the same commit.
     node.
   - `src/main/` only hosts the core: IPC to the window, and HTTP to the
     phone (`phone.ts`: `Core.actions` as POSTs, changes as Server-Sent Events,
-    a token on every call, bound to 127.0.0.1 for Tailscale to publish).
+    a token on every call, bound to 127.0.0.1 for Tailscale to publish), and
+    the MCP server for Claude sessions (`mcp.ts`, over `core/mcp.ts`).
   - **Desktop and phone have the same content and actions; only how views
     are organised differs.** Every action is a tool in the registry, and a
     tool with a `label` is an action on every platform: the phone's buttons
