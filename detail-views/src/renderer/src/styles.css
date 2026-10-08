@@ -808,9 +808,23 @@ body,
   gap: 4px;
 }
 
+/* An overview, and its context's pills to the right of it, level with its first line. */
+.overview-frame {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.overview-body {
+  flex: 1;
+  min-width: 0;
+}
+
 .overview .context-pills {
-  max-width: 100%;
-  margin-top: 4px;
+  flex: none;
+  max-width: 40%;
+  justify-content: flex-end;
+  padding-top: 2px;
 }
 
 .line-row {

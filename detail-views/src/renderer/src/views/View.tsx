@@ -399,8 +399,11 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
 
   const overview = (shown: Extract<ShownRow, { kind: 'entity' }>) => (
     <Selectable shown={shown} className="overview" onSelect={view.interactive ? view.onSelect : undefined}>
-      <div className={tintClass(tintOf(kinds, props.root)).trim()}>
-        {shown.editing ? <EditBox props={view} /> : <props.Overview {...view} entity={props.root} findText={view.find ?? undefined} />}
+      {/* Its context's pills to the right, level with its first line. */}
+      <div className={`overview-frame${tintClass(tintOf(kinds, props.root))}`}>
+        <div className="overview-body">
+          {shown.editing ? <EditBox props={view} /> : <props.Overview {...view} entity={props.root} findText={view.find ?? undefined} />}
+        </div>
         <ContextPills entity={props.root} />
       </div>
     </Selectable>

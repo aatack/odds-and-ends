@@ -47,6 +47,8 @@ test('claude: a session in a new worktree, under the Claude root only; each prom
   await settle()
   assert.deepEqual(chat(core, session), [['claude.prompt', 'hello'], ['claude.response', 'answer to hello']])
   assert.equal(core.item(core.entity(session).outboundLinks[1])!.data.running, false)
+  // The session said it was running while it answered, and no longer does.
+  assert.equal(core.item(session)!.data.runningSince, null)
   const claudeCall = calls.find((call) => call.command.endsWith('claude'))!
   assert.equal(claudeCall.cwd, data.worktree)
   // The prompt is sent as I wrote it; Opus 5.5, in auto mode.

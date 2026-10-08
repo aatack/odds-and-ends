@@ -26,6 +26,7 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 18a. Keep all of the answer in the response item, as one text. Do not split it into notes. (`b` splits it, if I want.)
 19. If Claude fails, put an error message in the response item instead of the answer.
 20. While Claude works, the response item shows how long it has run.
+20a. While Claude works, the session pill also shows how long the answer has run. The session keeps `runningSince` (when the answer started; `null` when it is done).
 21. The view of a session is the chat: the session at the top, then the prompts and responses, the newest at the bottom. A prompt has a faint blue fill (the `accent` tint). A response has no fill.
 21b. The session stays at the top of the view. It does not scroll. The prompts and responses start at the bottom and go up. When the chat is at the bottom, it stays at the bottom when items come.
 21c. There is a space between messages: two thirds of a line. Messages have no bullet.
