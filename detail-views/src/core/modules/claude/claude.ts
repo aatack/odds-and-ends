@@ -149,6 +149,9 @@ export class Claude implements Module {
     const cwd = expandHome(String(data.cwd))
     const mode = String(data.permissionMode ?? defaultPermissionMode)
     const started = Boolean(data.started)
+    // The session says it is running, and since when, while an answer is under way.
+    const since = this.context.now()
+    this.context.owned.write([value(session, 'runningSince', since, since, author)])
     const args = [
       '-p',
       text,
@@ -171,6 +174,7 @@ export class Claude implements Module {
       this.context.owned.write([
         ...values(responseId, { text: failed ?? out.result ?? '', running: false, error: failed, cost: out.total_cost_usd ?? null }, at, author),
         ...(started ? [] : [value(session, 'started', true, this.context.now(), author)]),
+        value(session, 'runningSince', null, at, author),
       ])
     } catch (error) {
       // Claude may still have said why, as JSON, on its way out.
@@ -183,7 +187,11 @@ export class Claude implements Module {
       })()
       const message = error instanceof Error ? error.message : String(error)
       const failed = said ? `${said}\n\n${message}` : message
-      this.context.owned.write(values(responseId, { text: failed, running: false, error: failed }, this.context.now(), author))
+      const at = this.context.now()
+      this.context.owned.write([
+        ...values(responseId, { text: failed, running: false, error: failed }, at, author),
+        value(session, 'runningSince', null, at, author),
+      ])
     }
   }
 }

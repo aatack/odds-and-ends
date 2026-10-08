@@ -24,10 +24,14 @@ export function ClaudeHomePill(props: PillProps) {
 
 // --- Sessions ------------------------------------------------------------------------
 
+/** A session's name, then how long it has been answering, while it is. */
 export function SessionPill(props: PillProps) {
+  const { data } = props.entity
+  const now = useContext(ClockContext)
   return (
     <span className="item-name">
-      <ClaudeMark /> <Highlight text={text(props.entity.data, 'Session')} find={props.findText} />
+      <ClaudeMark /> <Highlight text={text(data, 'Session')} find={props.findText} />
+      {typeof data.runningSince === 'number' && <span className="muted"> {elapsed(now - data.runningSince)}</span>}
     </span>
   )
 }
