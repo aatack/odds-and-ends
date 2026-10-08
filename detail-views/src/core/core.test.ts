@@ -7,7 +7,7 @@ import { test } from 'node:test'
 import { Core } from './core.ts'
 import { EntityCache } from './graph/cache.ts'
 import { link, value, values } from './graph/events.ts'
-import { focusOf, foreignOf, viewOf } from './present.ts'
+import { findInContext, focusOf, foreignOf, viewOf } from './present.ts'
 import { tsMillis } from './modules/slack/view.ts'
 import { fakeSlack, memoryCore } from './testing.ts'
 
@@ -647,4 +647,58 @@ test('split: a note becomes its first part, the rest notes under it, all at one 
   core.actions.redo({ events: [...values(typed, { type: 'claude.response', text: 'Done.\n\n- one' }, then, 'claude'), link('tasks', typed, then, 'me')] })
   core.actions.split({ id: typed })
   assert.equal(core.item(core.entity(typed).outboundLinks[0])!.type, 'claude.response')
+})
+
+test('context: c puts two items in one context, joins one to the other\'s, or merges the first into the second\'s', () => {
+  const core = memoryCore()
+  for (const id of ['a', 'b', 'c', 'd', 'e']) core.owned.write(values(id, { text: id }, 1, 'me'))
+  const contextOf = (id: string) => core.entity(id).values.context as string | undefined
+
+  // Neither has one: a new context, both under it.
+  core.actions.context({ first: 'a', second: 'b' })
+  const ab = contextOf('a')!
+  assert.equal(contextOf('b'), ab)
+  assert.equal(core.item(ab)!.type, 'context')
+  assert.deepEqual(core.entity(ab).outboundLinks, ['a', 'b'])
+  // Each names the others in its context.
+  assert.deepEqual(core.focus('a').entity!.data.contextPeers, ['b'])
+
+  // One has: the other joins it, whichever comes first.
+  core.actions.context({ first: 'c', second: 'a' })
+  assert.equal(contextOf('c'), ab)
+  core.actions.context({ first: 'b', second: 'd' })
+  assert.equal(contextOf('d'), ab)
+  assert.deepEqual(core.entity(ab).outboundLinks, ['a', 'b', 'c', 'd'])
+
+  // Both have: the first joins the second's, and stays under its old one too.
+  core.owned.write(values('e2', { text: 'e2' }, 1, 'me'))
+  core.actions.context({ first: 'e', second: 'e2' })
+  const e = contextOf('e')!
+  core.actions.context({ first: 'a', second: 'e' })
+  assert.equal(contextOf('a'), e)
+  assert.ok(core.entity(ab).outboundLinks.includes('a'))
+  assert.ok(core.entity(e).outboundLinks.includes('a'))
+  assert.equal(core.actions.context({ first: 'a', second: 'a' }).error, 'An item cannot share a context with itself')
+})
+
+test('context: the nearest item of a type in a context along a path; only a context\'s own children; null at a loop', () => {
+  const core = memoryCore()
+  core.owned.write([
+    ...values('ctx', { type: 'context' }, 1, 'me'),
+    ...values('s', { type: 'claude.session', text: 'session' }, 1, 'me'),
+    ...values('deep', { type: 'claude.session', text: 'under a note' }, 1, 'me'),
+    ...values('n', { text: 'note', context: 'ctx' }, 1, 'me'),
+    ...values('m', { text: 'other' }, 1, 'me'),
+    link('ctx', 'n', 1, 'me'),
+    link('ctx', 'm', 1, 'me'),
+    link('m', 'deep', 1, 'me'),
+  ])
+  const lens = core.lens()
+  // Only the context's own children are looked through: not the session under one of them.
+  assert.equal(findInContext(['tasks', 'n', 'x'], 'claude.session', lens), null)
+  core.owned.write([link('ctx', 's', 2, 'me')])
+  assert.equal(findInContext(['tasks', 'n', 'x'], 'claude.session', core.lens()), 's')
+  assert.equal(findInContext(['tasks'], 'claude.session', core.lens()), null)
+  // A path that comes back to an item stops there.
+  assert.equal(findInContext(['n', 'y', 'y'], 'claude.session', core.lens()), null)
 })

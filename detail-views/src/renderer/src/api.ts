@@ -11,6 +11,8 @@ export interface Api {
   perform(id: string, action: string, text: string): Promise<Outcome>
   toggle(id: string): Promise<Outcome>
   markRead(path: string[]): Promise<Outcome>
+  /** `c`: puts two items in one context (the first joins the second's, if both have one). */
+  context(first: string, second: string): Promise<Outcome>
   /** Pauses Slack's watch, or resumes it. */
   pauseSlack(paused: boolean): Promise<Outcome>
   /** Empties the cache store (never the owned one). */
@@ -72,6 +74,7 @@ export function httpApi(base: string, token: string): Api {
     perform: (id, action, text) => call('perform', { id, action, text }),
     toggle: (id) => call('toggle', { id }),
     markRead: (path) => call('markRead', { path }),
+    context: (first, second) => call('context', { first, second }),
     pauseSlack: (paused) => call('pauseSlack', { paused }),
     clearCache: () => call('clearCache', {}),
     older: (id) => call('older', { id }),
@@ -112,6 +115,7 @@ export function electronApi(): Api {
     perform: (id, action, text) => call('perform', { id, action, text }),
     toggle: (id) => call('toggle', { id }),
     markRead: (path) => call('markRead', { path }),
+    context: (first, second) => call('context', { first, second }),
     pauseSlack: (paused) => call('pauseSlack', { paused }),
     clearCache: () => call('clearCache', {}),
     older: (id) => call('older', { id }),

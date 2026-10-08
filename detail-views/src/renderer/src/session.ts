@@ -1,5 +1,5 @@
 import { EntityCache, type CacheState } from '../../core/graph/cache.ts'
-import { foreignOf, itemOf, moduleInfos, viewOf } from '../../core/present.ts'
+import { findInContext, foreignOf, itemOf, lensOf, moduleInfos, viewOf } from '../../core/present.ts'
 import { activity } from '../../core/modules/slack/view.ts'
 import type { Entity, ModuleInfo, NoteValues, Outcome, View, ViewRow } from '../../core/types.ts'
 import type { Api } from './api.ts'
@@ -456,7 +456,7 @@ export class Session {
    * `k`: a prompt to the Claude session nearest the selection, typed in the
    * same box as a note. The session is the first item on the path from the
    * view's root to the selection, nearest first, that is one or points at one
-   * (`claudeSessionId`).
+   * (`claudeSessionId`); else one in a context along the path (`findInContext`).
    */
   startPrompt(): void {
     const row = this.selected()
@@ -475,7 +475,8 @@ export class Session {
       if (entity?.type === 'claude.session') return id
       if (typeof entity?.data.claudeSessionId === 'string') return entity.data.claudeSessionId
     }
-    return null
+    // Else a session sharing a context with something on the path.
+    return findInContext(path, 'claude.session', lensOf(this.cache.source(this.cache.get())))
   }
 
   /** Opens or closes the phone's list of every action. */
@@ -574,7 +575,7 @@ export class Session {
   }
 
   /**
-   * `x` (move), `r` (link to), `Shift+R` (link from): the first press marks
+   * `x` (move), `r` (link to), `Shift+R` (link from), `c` (share a context): the first press marks
    * the selected row; moving to another row, in any view, and pressing the
    * same key again finishes it there. Escape gives up.
    */
@@ -603,6 +604,8 @@ export class Session {
       void this.api.move(subject, from, target).then(done(target))
     } else if (picking.tool === 'link') {
       void this.api.link(subject, target).then(done(subject))
+    } else if (picking.tool === 'context') {
+      void this.api.context(subject, target).then(done(target))
     } else {
       void this.api.link(target, subject).then(done(target))
     }

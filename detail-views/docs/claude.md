@@ -19,7 +19,7 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 13. The new session item goes under the selected item. The selected item gets `claudeSessionId: <session ID>`. The session keeps the ID of that item (`openedOn`).
 14. Keep each directory that I enter on the Claude root (`cwds`). Give these as options in the next form. Put the last one in the field.
 15. **k** opens a text box under the selected item. This is the same box as a new note, with a different action when I write it.
-16. To find the session for **k**, look along the selection path, from the selected item to the root of the view. Use the first item that is a session, or that has `claudeSessionId`. If there is no such item, show an error toast.
+16. To find the session for **k**, look along the selection path, from the selected item to the root of the view. Use the first item that is a session, or that has `claudeSessionId`. If there is no such item, look for a session in the contexts along the path (`docs/context.md`). If there is none, show an error toast.
 17. When I write the prompt, put a prompt item under the selected item. Also link the prompt item under the session item.
 17a. Send Claude the prompt after one line that gives two IDs: the item that the prompt is under, and the item that the session was opened on (`openedOn`). When the app's MCP server runs, the line also tells Claude to read them with its tools (`docs/mcp.md`). The prompt item keeps only my text.
 18. When Claude answers, put the answer in an item under the prompt item. The structure is: `[item + session] → [prompt] → [response]`.

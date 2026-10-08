@@ -506,6 +506,30 @@ export class Core {
       const now = this.now()
       return this.write([link(from, child, now, me, 1), link(to, child, now, me)])
     },
+    /**
+     * `c`: puts two items in one context (an item collecting related things,
+     * named in each one's `context`). Neither has one: a new context, both
+     * under it. One has: the other joins it. Both have: the first joins the
+     * second's, and stays under its old one too.
+     */
+    context: ({ first, second }: { first: string; second: string }): Outcome => {
+      if (first === second) return { events: [], error: 'An item cannot share a context with itself' }
+      const contextOf = (id: string) => {
+        const value = this.entity(id).values.context
+        return typeof value === 'string' && value ? value : null
+      }
+      const [mine, theirs] = [contextOf(first), contextOf(second)]
+      const now = this.now()
+      const join = (id: string, context: string) => [value(id, 'context', context, now, me), link(context, id, now, me)]
+      if (!mine && !theirs) {
+        const context = randomUUID()
+        return this.write([value(context, 'type', 'context', now, me), ...join(first, context), ...join(second, context)])
+      }
+      if (!mine) return this.write(join(first, theirs!))
+      if (!theirs) return this.write(join(second, mine))
+      if (mine === theirs) return { events: [], error: null }
+      return this.write(join(first, theirs))
+    },
     link: ({ parent, child }: { parent: string; child: string }): Outcome =>
       parent === child ? { events: [], error: 'An item cannot be linked to itself' } : this.write([link(parent, child, this.now(), me)]),
     unlink: ({ parent, child }: { parent: string; child: string }): Outcome =>

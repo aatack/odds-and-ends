@@ -102,6 +102,13 @@ export const tools: Tool[] = [
     enabled: (s) => picking(s, 'linkReverse') || selected(s) !== null,
     run: (s) => s.pick('linkReverse'),
   },
+  {
+    id: 'context', label: (s) => (picking(s, 'context') ? 'Share context here' : 'Context with…'),
+    scope: 'list',
+    keys: ['c'],
+    enabled: (s) => picking(s, 'context') || selected(s) !== null,
+    run: (s) => s.pick('context'),
+  },
   { id: 'split', label: 'Split', scope: 'list', keys: ['b'], enabled: (s) => s.canSplit(), run: (s) => s.split() },
   { id: 'inspect', label: 'Inspect', scope: 'list', keys: ['3'], enabled: (s) => selected(s) !== null, run: (s) => s.inspect() },
   { id: 'claude.new', label: 'Claude session', scope: 'list', keys: ['K'], enabled: (s) => selected(s) !== null, run: (s) => s.openClaudeDialog() },
