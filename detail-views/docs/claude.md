@@ -27,6 +27,9 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 19. If Claude fails, put an error message in the response item instead of the answer.
 20. While Claude works, the response item shows how long it has run.
 21. The view of a session is the chat: the session at the top, then the prompts and responses, the newest at the bottom. A prompt has a faint blue fill (the `accent` tint). A response has no fill.
+21b. The session stays at the top of the view. It does not scroll. The prompts and responses start at the bottom and go up. When the chat is at the bottom, it stays at the bottom when items come.
+21c. There is a space between messages: two thirds of a line. Messages have no bullet.
+21d. While the prompt box has the keyboard, the chat does not show the selected row.
 21a. Below the chat is a text box for the next prompt. When the view opens, the box has the keyboard. Enter sends the prompt. Shift+Enter makes a new line. Escape gives the keyboard back to the chat.
 22. Do not stream the answer. Show it when Claude is done.
 23. Use the model Opus 5.5 (`claude-opus-5-5`).
