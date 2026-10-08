@@ -278,15 +278,6 @@ body,
   color: var(--accent);
 }
 
-.replies {
-  font-size: 13px;
-  color: var(--accent);
-}
-
-.replies > span:hover {
-  text-decoration: underline;
-}
-
 .divider {
   height: 1px;
   background: var(--line);

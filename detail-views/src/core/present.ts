@@ -124,8 +124,9 @@ export const viewLimit = 3000
 
 /**
  * Whether an item's children are walked when it is a row (a view's root
- * always is). Notes and tasks open; anything from a service, whose children
- * are many or loaded on demand, stays shut until opened.
+ * always is). Notes, tasks and Slack (filtered to what is new) open; anything
+ * else from a service, whose children are many or loaded on demand, stays
+ * shut until opened.
  */
 export function openByDefault(type: ItemType): boolean {
   return moduleOf(type)?.openByDefault?.(type) ?? type === 'note'

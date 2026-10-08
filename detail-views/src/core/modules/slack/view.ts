@@ -163,6 +163,9 @@ export const slackView: ModuleView = {
 
   newestFirst: (type) => type === 'slack.conversation',
 
+  // Everything open to its natural depth: a conversation's messages, a thread's replies.
+  openByDefault: () => true,
+
   // Further back is always possible until a load reached the start. A message
   // goes further back only as a thread: its whole thread.
   older: (entity) =>

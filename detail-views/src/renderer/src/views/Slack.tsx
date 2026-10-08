@@ -118,7 +118,7 @@ export function MessageOverview(props: OverviewProps) {
         {typeof entity.data.conversation === 'string' && <ItemPill id={entity.data.conversation} fallback={String(entity.data.where ?? '')} />}
         <History {...props} />
       </div>
-      <MessageBody entity={entity} author replies={false} onOpen={props.onOpen} onImage={props.onImage} findText={props.findText} />
+      <MessageBody entity={entity} author onOpen={props.onOpen} onImage={props.onImage} findText={props.findText} />
     </>
   )
 }

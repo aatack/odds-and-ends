@@ -44,8 +44,8 @@ the same thing every view shows.
 1. Read the root; null while nothing is known (loading, or "not found").
 2. For each row: its children are walked only while it is **open**: the root
    always, any other by `Folds` (my opens and folds, by entity id) or else its
-   type's default (`openByDefault`: notes and tasks open, anything from a
-   service shut). Walking into a row calls `source.expand`, so opening a row
+   type's default (`openByDefault`: notes, tasks and Slack open, anything
+   else from a service shut). Walking into a row calls `source.expand`, so opening a row
    is what loads its `children` part.
 3. A row's children are presented, kept if **the root's** module `shows`
    them (at any depth, whatever their type), and ordered by **their
