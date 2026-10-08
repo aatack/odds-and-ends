@@ -1,5 +1,5 @@
 import type { Entity, ModuleInfo, View } from '../../../core/types.ts'
-import type { Peek, PeekTarget, Pick, Rect, SessionDialog } from '../state.ts'
+import { inertRows, type Peek, type PeekTarget, type Pick, type Rect, type SessionDialog } from '../state.ts'
 import { imageSrc } from '../images.ts'
 import { PeekWindow } from './Peek.tsx'
 import { ViewPane } from './View.tsx'
@@ -7,7 +7,8 @@ import { kinds } from './kinds.tsx'
 import { ItemContext, KindsContext, PeekContext } from './primitives.tsx'
 import type { ItemGestures, PeekGestures } from './primitives.tsx'
 import type { ViewProps } from './types.ts'
-import { Button, ClockContext, Modal, PillContent } from './primitives.tsx'
+import { Button, ClockContext, HeaderPill, Modal, PillContent } from './primitives.tsx'
+import { useMemo } from 'react'
 
 export interface PeekProps {
   peeks: Peek[]
@@ -43,6 +44,8 @@ export function App(props: {
   /** A move or link waiting for its other end, and the item it started on. */
   picking: { pick: Pick; subject: Entity | null } | null
   onModule(root: string): void
+  /** The panel on the right: an item in context with where I am. */
+  side: SideProps | null
   /** On a phone: the bar of buttons standing in for keys. */
   phone: PhoneBarProps | null
   /** The stack of views to here, oldest first; the last is the one on screen. */
@@ -94,6 +97,7 @@ export function App(props: {
             {props.view && <ViewPane {...props.view} />}
             {props.phone && <PhoneBar {...props.phone} />}
           </main>
+          {props.side && <SidePanel {...props.side} onImage={props.onImage} />}
           {props.picking && <PickBar {...props.picking} />}
           {props.dialog && <SessionForm {...props.dialog} />}
           {props.inspect && <Inspector {...props.inspect} />}
@@ -132,6 +136,76 @@ export function App(props: {
     </ClockContext.Provider>
   )
 }
+
+export interface SideProps {
+  id: string
+  view: View | null
+  working: string[] | undefined
+  draft: string
+  composing: boolean
+  onDraft(text: string): void
+  onCompose(composing: boolean): void
+  onOpen(id: string): void
+  onNearEnd(): void
+  onClose(): void
+}
+
+/**
+ * The panel on the right (Ctrl+Enter): an item in context with where I am,
+ * mostly a Claude session. Its view takes no cursor, as in a peek; a chat's
+ * prompt box works. The × closes it.
+ */
+function SidePanel(props: SideProps & { onImage(ref: string | null): void }) {
+  const { view } = props
+  const shown = useMemo(() => view && inertRows(view), [view])
+  const prompt = useMemo(
+    () => ({ draft: props.draft, composing: props.composing, onDraft: props.onDraft, onCompose: props.onCompose }),
+    [props.draft, props.composing, props.onDraft, props.onCompose],
+  )
+  return (
+    <aside className="side">
+      <div className="peek-bar">
+        <span className="grow">
+          <HeaderPill entity={view?.root} />
+        </span>
+        <Button label="Open" onClick={() => props.onOpen(props.id)} />
+        <Button quiet label="×" title="Close" onClick={props.onClose} />
+      </div>
+      <div className="peek-body">
+        {view && shown ? (
+          <ViewPane
+            view={view}
+            shown={shown}
+            interactive={false}
+            prompt={prompt}
+            edit={null}
+            picking={null}
+            working={props.working}
+            acting={null}
+            draft=""
+            composing={false}
+            onSelect={noop}
+            onOpen={props.onOpen}
+            onImage={props.onImage}
+            onDraft={noop}
+            onCompose={noop}
+            find={null}
+            findFocus={0}
+            onFind={noop}
+            onFindFocused={noop}
+            onNearEnd={props.onNearEnd}
+            onEditDraft={noop}
+            onCommitEdit={noop}
+            onCancelEdit={noop}
+            onClose={props.onClose}
+          />
+        ) : null}
+      </div>
+    </aside>
+  )
+}
+
+function noop(): void {}
 
 const pickWords = {
   move: ['Moving', 'Select its new parent and press x'],

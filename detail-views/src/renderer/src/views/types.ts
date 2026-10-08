@@ -8,8 +8,18 @@ import type { Edit, Pick, ShownView } from '../state.ts'
 export interface ViewProps {
   view: View
   shown: ShownView
-  /** False in a peek: it shows, but takes no cursor and no typing. */
+  /** False in a peek or the side panel: it shows, but takes no cursor and no typing. */
   interactive: boolean
+  /**
+   * The view's prompt box, where it has one and isn't `interactive` (the side
+   * panel's chat): its draft, whether it has the keyboard, and its gestures.
+   */
+  prompt?: { draft: string; composing: boolean; onDraft(text: string): void; onCompose(composing: boolean): void }
+  /**
+   * Closes the window the view is in, however that window closes: the main
+   * view pops the stack, a peek closes, the side panel closes.
+   */
+  onClose?(): void
   edit: Edit | null
   picking: Pick | null
   /** What is under way on the view's root: `older`, `hide`, or an action's id. */

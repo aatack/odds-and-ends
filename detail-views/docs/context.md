@@ -37,12 +37,28 @@ so Ctrl+Z takes them back.
 
 Given a path (the stack, root first) and a type: from the end of the path up,
 each item with a `context` has that context's children (only those) looked
-through for one of the type. The first found wins. Null when the path runs
+through for one of the type (or, with no type, for any item but the one on
+the path). The first found wins. Null when the path runs
 out, or comes back to an item already looked at (a loop).
 
 The MCP server offers it as `find_context`, and `c` as `merge_context`
 (written as `claude`), so a Claude session can find and collect related items
 too (`docs/mcp.md`).
 
-Nothing in the UI uses it now; `k` did, before Claude sessions were chats of
-their own (`docs/claude.md`).
+## The side panel (Ctrl+Enter)
+
+Ctrl+Enter looks up the path to the selected row (the stack below the view,
+then the view's rows to the selection) with no type, and opens what it finds
+in a panel on the right: mostly the Claude session attached to something.
+With nothing found, a toast says so.
+
+- The panel is a view without a cursor, as in a peek. A chat's prompt box
+  works in it: its own draft (by the item), its own focus (`sideComposing`),
+  its own Enter and Escape (`data-field="side"`).
+- It stays across navigation, and across reloads (`side` is persisted).
+- Its bar has the item's pill, Open (pushes it) and × (closes it). On a phone
+  it covers the view.
+
+Every view is given `onClose`, which closes the window it is in, however that
+window closes: the main view pops the stack, a peek closes, the side panel
+closes. The ×s of peeks and the side panel call it.

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { AppEvent } from '../../core/graph/events.ts'
-import { values } from '../../core/graph/events.ts'
+import { link, values } from '../../core/graph/events.ts'
 import { memoryCore } from '../../core/testing.ts'
 import type { Api } from './api.ts'
 import { memoryEnvironment } from './environment.ts'
@@ -278,6 +278,47 @@ test('Shift+K starts a Claude session and pushes its chat; the box under it prom
   assert.deepEqual(lines.slice(1), ['  hi', '  you said hi'], lines.join('\n'))
   // The cursor starts at the newest end, as in chat.
   assert.equal(session.selected()?.entity.data.text, 'you said hi')
+  stop()
+})
+
+test('Ctrl+Enter opens what is in context with the path in the side panel; its box prompts it, and its close closes only it', async () => {
+  const run = async (command: string, args: string[]) => (command.endsWith('claude') ? JSON.stringify({ result: `you said ${args[1]}` }) : '')
+  const { core, session, stop, settle } = await headless({ run })
+  core.owned.write([
+    ...values('n', { text: 'parent', context: 'ctx' }, 1, 'me'),
+    ...values('x', { text: 'child' }, 1, 'me'),
+    ...values('ctx', { type: 'context' }, 1, 'me'),
+    ...values('s', { type: 'claude.session', text: 'helper', cwd: '/tmp' }, 1, 'me'),
+    link('tasks', 'n', 1, 'me'),
+    link('n', 'x', 1, 'me'),
+    link('ctx', 'n', 1, 'me'),
+    link('ctx', 's', 2, 'me'),
+  ])
+  session.navigate('tasks')
+  await settle()
+  session.navigate('n')
+  await settle()
+  session.select(['n', 'x'])
+  // Up from the child to its parent, whose context holds the session.
+  runTool(session, 'side.open')
+  await settle()
+  assert.equal(session.get().state.side, 's')
+  assert.equal(session.get().sideView?.compose, 'claude')
+  assert.equal(session.get().state.sideComposing, true)
+  session.setSideDraft('hi')
+  await session.sendSide()
+  await settle()
+  assert.deepEqual(core.entity('s').outboundLinks.map((id) => core.item(id)!.data.text), ['hi', 'you said hi'])
+  assert.equal(session.get().state.drafts.s, undefined)
+  // Each window closes its own way: the side panel closes, the view stays.
+  session.closeSide()
+  assert.equal(session.get().state.side, null)
+  assert.equal(session.root()?.id, 'n')
+  // Nothing in context: nothing opens.
+  session.enterModule('tasks')
+  session.select(['tasks'])
+  runTool(session, 'side.open')
+  assert.equal(session.get().state.side, null)
   stop()
 })
 

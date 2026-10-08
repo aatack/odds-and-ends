@@ -64,6 +64,10 @@ export interface State {
    * child. Pinned ones stay, and are persisted.
    */
   peeks: Peek[]
+  /** The item open in the panel on the right (Ctrl+Enter: something in context with where I am), or null. */
+  side: string | null
+  /** Whether the side panel's prompt box has the keyboard. Not persisted. */
+  sideComposing: boolean
 }
 
 export interface Edit {
@@ -205,6 +209,8 @@ export function initialState(root: string): State {
     inspecting: null,
     picking: null,
     peeks: [],
+    side: null,
+    sideComposing: false,
   }
 }
 
@@ -417,10 +423,7 @@ export function endPick(state: State): State {
 }
 
 export function setDraft(state: State, text: string): State {
-  const drafts = { ...state.drafts }
-  if (text) drafts[draftKey(state)] = text
-  else delete drafts[draftKey(state)]
-  return { ...state, drafts }
+  return setDraftFor(state, draftKey(state), text)
 }
 
 export function view(state: State, ref: string | null): State {
@@ -447,13 +450,30 @@ export function actingIn(state: State, peek: string | null): string | null {
   return state.acting && state.acting.peek === peek ? state.acting.action : null
 }
 
+/** Opens an item in the side panel, its prompt box taking the keyboard; null closes it. */
+export function setSide(state: State, id: string | null): State {
+  return { ...state, side: id, sideComposing: id !== null }
+}
+
+export function setSideComposing(state: State, composing: boolean): State {
+  return state.sideComposing === composing ? state : { ...state, sideComposing: composing }
+}
+
+/** The side panel's prompt is drafted apart from the main view's, by its item. */
+export function setDraftFor(state: State, key: string, text: string): State {
+  const drafts = { ...state.drafts }
+  if (text) drafts[key] = text
+  else delete drafts[key]
+  return { ...state, drafts }
+}
+
 /** What is kept across reloads. */
 export function setWiping(state: State, wiping: State['wiping']): State {
   return state.wiping === wiping ? state : { ...state, wiping }
 }
 
-export function persisted(state: State): Omit<State, 'composing' | 'viewing' | 'acting' | 'picking' | 'phoneMenu' | 'wiping' | 'dialog' | 'inspecting'> {
-  const { composing: _, viewing: __, acting: ___, picking: ____, phoneMenu: _____, wiping: ________, dialog: ______, inspecting: _______, ...rest } = state
+export function persisted(state: State): Omit<State, 'composing' | 'viewing' | 'acting' | 'picking' | 'phoneMenu' | 'wiping' | 'dialog' | 'inspecting' | 'sideComposing'> {
+  const { composing: _, viewing: __, acting: ___, picking: ____, phoneMenu: _____, wiping: ________, dialog: ______, inspecting: _______, sideComposing: _________, ...rest } = state
   return { ...rest, peeks: rest.peeks.filter((peek) => peek.pinned) }
 }
 
@@ -471,5 +491,6 @@ export function restore(saved: unknown, root: string): State {
     undone: Array.isArray(value.undone) ? value.undone : [],
     drafts: value.drafts ?? {},
     peeks: Array.isArray(value.peeks) ? value.peeks.filter((peek) => peek.pinned).map((peek) => ({ ...peek, parent: peek.parent ?? null })) : [],
+    side: typeof value.side === 'string' ? value.side : null,
   }
 }

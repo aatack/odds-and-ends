@@ -11,6 +11,8 @@ export function Composer(props: {
   composing: boolean
   /** Takes the keyboard when it appears, whether or not anything was composing. */
   autoFocus?: boolean
+  /** Its `data-field`, for keys meant for it alone. */
+  field?: string
   placeholder?: string
   onDraft(text: string): void
   onCompose(composing: boolean): void
@@ -30,6 +32,7 @@ export function Composer(props: {
   const shared = {
     ref,
     className: 'composer',
+    'data-field': props.field,
     value: props.draft,
     placeholder: props.placeholder,
     spellCheck: props.kind !== 'slack-token',

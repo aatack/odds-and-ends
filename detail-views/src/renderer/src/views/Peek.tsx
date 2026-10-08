@@ -60,6 +60,8 @@ export function PeekWindow(props: {
     [hover, onLeave, peek.key],
   )
 
+  const close = () => props.onClose(peek.key)
+
   const begin = (mode: Grab['mode']) => (event: ReactPointerEvent) => {
     if (event.button !== 0) return
     event.preventDefault()
@@ -109,7 +111,7 @@ export function PeekWindow(props: {
           {peek.target.kind === 'entity' ? <HeaderPill entity={props.view?.root} /> : peek.target.url}
         </span>
         <Button label="Open" onClick={() => props.onOpen(peek.target)} />
-        {peek.pinned && <Button quiet label="×" title="Close" onClick={() => props.onClose(peek.key)} />}
+        {peek.pinned && <Button quiet label="×" title="Close" onClick={close} />}
       </div>
       <PeekContext.Provider value={gestures}>
         <div className="peek-body">
@@ -140,6 +142,7 @@ export function PeekWindow(props: {
               onEditDraft={noop}
               onCommitEdit={noop}
               onCancelEdit={noop}
+              onClose={close}
             />
           ) : null}
         </div>
