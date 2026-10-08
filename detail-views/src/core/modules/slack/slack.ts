@@ -3,9 +3,10 @@ import { loadedKey } from '../../types.ts'
 import type { Entity, ItemType, LoadPart } from '../../types.ts'
 import type { Module, ModuleContext } from '../module.ts'
 import { me } from '../tasks/tasks.ts'
-import { SlackApi } from './api.ts'
+import { SlackApi, slackWrites } from './api.ts'
 import {
   maxTs,
+  newestMessage,
   parseMessageId,
   slackIds as ids,
   slackView,
@@ -272,15 +273,23 @@ export class Slack implements Module {
     return download
   }
 
-  /** Marks a conversation read up to its newest message, in Slack too. */
-  async markRead(id: string): Promise<AppEvent[]> {
-    const conversation = this.context.lens.read(id)
-    if (!this.api || conversation?.type !== 'slack.conversation') return []
-    const data = conversation.data as unknown as ConversationData
-    const newest = maxTs(...this.context.lens.children(id).map((child) => this.data<MessageData>(child).ts))
-    if (!newest) return []
-    await this.api.call('conversations.mark', { channel: data.channel, ts: newest })
-    return []
+  /**
+   * Marks a topic (a conversation, or a thread by its parent message) read up
+   * to a message, or to its newest: an owned `lastRead`, the message's ts. A
+   * conversation is marked in Slack too, while Slack may be written to;
+   * threads have no way to be.
+   */
+  async markRead(topic: string, at?: string): Promise<AppEvent[]> {
+    const type = this.context.lens.read(topic)?.type
+    if (type !== 'slack.conversation' && type !== 'slack.message') return []
+    const ts = at ?? newestMessage(this.context.lens, topic)?.ts
+    if (!ts) return []
+    const events = [value(topic, 'lastRead', ts, this.context.now(), me)]
+    this.context.owned.write(events)
+    if (slackWrites && this.api && type === 'slack.conversation') {
+      await this.api.call('conversations.mark', { channel: topic.slice('slack:conv:'.length), ts })
+    }
+    return events
   }
 
   // --- The watch and the history behind it ----------------------------------------

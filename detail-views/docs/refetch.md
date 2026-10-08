@@ -41,7 +41,7 @@ Use these strategies. One item type can use more than one.
 
 ### Slack: lists, one batch, then the watch (done)
 
-- The app does not keep unread counts.
+- The app keeps its own read state: `lastRead` on a conversation or a thread. Slack does not supply it.
 - On its own, the app loads only these:
   - The lists of the workspace, each in a few calls: my conversations (`users.conversations`), all public channels (`conversations.list`) and all users (`users.list`). Load them again after 60 min.
   - The first batch of history: the newest 1000 messages in all conversations, by one search (about 10 calls).
@@ -49,7 +49,7 @@ Use these strategies. One item type can use more than one.
 - The app does not load a conversation or a thread alone, unless I ask for it (`o`).
 - The workspace lists the conversations (channels, DMs, group DMs) and the threads in them.
 - A reply adds its thread to the workspace. A message from history that has replies also adds its thread.
-- The list shows the item with the newest event first (`updatedAt`). For a conversation, this is the link to its newest message. For a thread, this is the link to its newest reply. A load writes at timestamp 0. Thus, a load does not move an item. A conversation with no message in the batch stays at the bottom.
+- The list shows unread items first. In each group, the list shows the item with the newest message first. For a conversation, this is its newest message. For a thread, this is its newest reply. A load writes at timestamp 0. Thus, a load does not move an item. A conversation with no message in the batch stays at the bottom.
 - The load of the lists (each 60 min) replaces only the conversation links of the workspace. It keeps the thread links.
 - The header of the workspace, of a conversation and of a thread shows where the cached history starts (`from`), and a button (**Older**) that loads further back. The button goes when nothing is older (`history.complete`).
 

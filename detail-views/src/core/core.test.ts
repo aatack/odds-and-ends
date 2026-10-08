@@ -8,6 +8,7 @@ import { Core } from './core.ts'
 import { EntityCache } from './graph/cache.ts'
 import { link, value, values } from './graph/events.ts'
 import { focusOf, foreignOf } from './present.ts'
+import { tsMillis } from './modules/slack/view.ts'
 import { fakeSlack, memoryCore } from './testing.ts'
 
 const auth = {
@@ -108,11 +109,13 @@ test('slack: read-only refuses writes before they reach the network', async () =
     link('slack:conv:C1', 'slack:msg:C1:1.0', 1000, 'slack'),
   ])
   assert.equal(core.focus('slack:conv:C1').compose, null)
-  await core.actions.submit({ id: 'slack:conv:C1', text: 'oops' })
   const marked = await core.actions.markRead({ id: 'slack:conv:C1' })
+  await core.actions.submit({ id: 'slack:conv:C1', text: 'oops' })
   assert.ok(!called.includes('chat.postMessage'))
+  // Marked read here only: Slack is never asked.
   assert.ok(!called.includes('conversations.mark'))
-  assert.match(marked.error ?? '', /read-only/)
+  assert.equal(marked.error, null)
+  assert.equal(core.item('slack:conv:C1')!.data.lastRead, '1.0')
   assert.match(core.focus('slack:conv:C1').error ?? '', /read-only/)
 })
 
@@ -389,6 +392,52 @@ test('slack: the watch brings in new messages by search, under their conversatio
   ])
   assert.ok(!core.entity('slack').outboundLinks.includes('slack:conv:C7'))
   assert.equal(core.item('slack')!.data['watch.at'], '1700000020.000100')
+})
+
+test('slack: unread topics come first, newest first in each group; m marks one read to its newest message or to a message', async () => {
+  let time = 1_700_000_000_000
+  const core = memoryCore({ now: () => time })
+  const message = (channel: string, ts: string, user: string, parent = `slack:conv:${channel}`) => [
+    ...values(`slack:msg:${channel}:${ts}`, { channel, ts, user, text: ts }, tsMillis(ts), 'slack'),
+    link(parent, `slack:msg:${channel}:${ts}`, tsMillis(ts), 'slack'),
+  ]
+  core.cache.write([
+    ...values('slack', { self: 'UME' }, 0, 'slack'),
+    ...['C1', 'C2', 'C3'].flatMap((channel) => [
+      ...values(`slack:conv:${channel}`, { type: 'slack.conversation', channel, kind: 'channel', name: channel }, 0, 'slack'),
+      link('slack', `slack:conv:${channel}`, 0, 'slack'),
+    ]),
+    ...message('C1', '100.0', 'U2'),
+    ...message('C2', '200.0', 'U2'),
+    // My own message is the newest in C3: nothing there for me to read.
+    ...message('C3', '300.0', 'UME'),
+    // A thread in C1, listed in the workspace, with a newer reply.
+    link('slack', 'slack:msg:C1:100.0', 100_000, 'slack'),
+    ...message('C1', '150.0', 'U2', 'slack:msg:C1:100.0'),
+  ])
+  const order = () => core.focus('slack').children.map((child) => [child.id, child.data.unread])
+  assert.deepEqual(order(), [
+    ['slack:conv:C2', true],
+    ['slack:msg:C1:100.0', true],
+    ['slack:conv:C1', true],
+    ['slack:conv:C3', false],
+  ])
+
+  time += 1000
+  await core.actions.markRead({ id: 'slack:conv:C2' })
+  // The thread read up to its first reply only: still unread once another comes.
+  await core.actions.markRead({ id: 'slack:msg:C1:100.0', at: '150.0' })
+  // A note of mine under C1 neither moves it nor reads it.
+  core.owned.write([value('note1', 'text', 'later', time, 'me'), link('slack:conv:C1', 'note1', time, 'me')])
+  assert.deepEqual(order(), [
+    ['slack:conv:C1', true],
+    ['slack:conv:C3', false],
+    ['slack:conv:C2', false],
+    ['slack:msg:C1:100.0', false],
+  ])
+  core.cache.write(message('C1', '160.0', 'U2', 'slack:msg:C1:100.0'))
+  assert.equal(core.item('slack:msg:C1:100.0') && core.focus('slack').children[0].id, 'slack:msg:C1:100.0')
+  assert.equal(core.item('slack:conv:C2')!.data.lastRead, '200.0')
 })
 
 test('slack: threads stay in the workspace through a list reload, and each header knows where its history starts', async () => {

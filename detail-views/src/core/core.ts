@@ -430,7 +430,7 @@ export class Core {
       if (entity?.type !== 'task') return { events: [], error: null }
       return this.write([value(id, 'done', !entity.data.done, this.now(), me)])
     },
-    markRead: ({ id }: { id: string }): Promise<Outcome> => this.attempt(id, () => this.slack.markRead(id)),
+    markRead: ({ id, at }: { id: string; at?: string }): Promise<Outcome> => this.attempt(id, () => this.slack.markRead(id, at)),
     /** Loads further back than anything loads on its own. */
     older: ({ id }: { id: string }): Promise<Outcome> => this.older(id),
     /** Bytes of an image a message presented, by the ref it gave. */

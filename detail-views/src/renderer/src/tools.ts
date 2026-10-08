@@ -114,7 +114,7 @@ export const tools: Tool[] = [
     enabled: (s) => selected(s)?.entity.type === 'slack.message' || rootType(s) === 'slack.message',
     run: (s) => s.hideChatOfMessage(),
   },
-  { id: 'slack.markRead', label: 'Mark read', scope: 'list', keys: ['m'], enabled: (s) => rootType(s) === 'slack.conversation', run: (s) => s.markRead() },
+  { id: 'slack.markRead', label: 'Mark read', scope: 'list', keys: ['m'], enabled: (s) => s.readTarget() !== null, run: (s) => s.markRead() },
 
   // --- The view's root ----------------------------------------------------------------
   ...(

@@ -1,9 +1,13 @@
 import { memo } from 'react'
 import { authorColour, cursorTime } from '../format.ts'
 import { hotkeyOf } from '../tools.ts'
-import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
+import type { Entity } from '../../../core/types.ts'
+import type { OverviewProps, PillProps, RowProps, Tint } from './kindTypes.ts'
 import { MessageBody, MessageRow, Text } from './messages.tsx'
 import { Button, Composer, HeaderPill, Highlight, ItemPill, Status } from './primitives.tsx'
+
+/** A conversation's or a thread's tint: unread (`unread`, from the Slack view). */
+export const slackTint = (entity: Entity): Tint | null => (entity.data.unread ? 'accent' : null)
 
 const text = (data: Record<string, unknown>, fallback = ''): string =>
   typeof data.text === 'string' && data.text ? data.text : fallback
