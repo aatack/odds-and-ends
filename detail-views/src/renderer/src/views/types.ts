@@ -26,8 +26,6 @@ export interface ViewProps {
   onAction?(action: string): void
   /** Loads further back than what is cached. */
   onOlder?(): void
-  /** Hides the chat the selected (or root) message is in. */
-  onHideChat?(): void
   onDraft(text: string): void
   onCompose(composing: boolean): void
   /** The view's find: null while it has none, the text while the field is open. */

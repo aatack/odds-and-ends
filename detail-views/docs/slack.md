@@ -69,14 +69,10 @@ Undocumented column: from memory, unverified; none of it is in the reference.
   ts, which replaces the cached link. Not if I have taken the thread out of
   the conversation and put it somewhere else (`threadStays`); an owned unlink
   with nowhere else to go is undone by the next reply, so nothing new is lost.
-- **Hiding a chat is unlinking it** from the workspace: Backspace (or Delete)
-  on its row writes an owned unlink (`Slack.unlink`, via
-  `Core.actions.unlink`). The unlink is later than the cached link (at 0), so
-  the hourly list reload never brings it back. There is no way to relink from
-  the UI yet.
-- **Hiding a chat from a message**: Shift+Backspace on a message (or **Hide
-  chat** in its header) unlinks the message's conversation, worked out from
-  the message id, so it works for a channel that was never listed.
+- **Removing a chat is an ordinary unlink**: Backspace on its row writes an
+  owned unlink from the workspace, later than the cached link (at 0), so the
+  hourly list reload never brings it back. Nothing special to Slack. There
+  is no way to relink from the UI yet.
 - Each poll prunes cached message links from the workspace (`pruneThreads`),
   left from when threads were listed there.
 - `slack:watch` (`slack.watch`) holds the last poll's `polledAt` and `found`,

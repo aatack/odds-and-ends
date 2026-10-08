@@ -498,7 +498,7 @@ test('slack: a reply to an old thread brings it into its conversation, and each 
   assert.equal(core.focus(thread).entity!.data.text, 'old question')
 })
 
-test('slack: no message is linked under the workspace, and Backspace-style unlinks of a chat stick', async () => {
+test('slack: no message is linked under the workspace, and unlinking a chat sticks', async () => {
   const calls: string[] = []
   let matches: unknown[] = []
   let time = 1_700_000_000_000
@@ -528,7 +528,7 @@ test('slack: no message is linked under the workspace, and Backspace-style unlin
   assert.ok(!listed().some((id) => id.startsWith('slack:msg:')))
   assert.deepEqual(core.focus('slack').children.map((child) => child.id), ['slack:conv:C2', 'slack:conv:C1'])
 
-  // Unlinking a conversation hides it, and it stays gone.
+  // Unlinking a conversation removes it, and it stays gone.
   const outcome = core.actions.unlink({ parent: 'slack', child: 'slack:conv:C2' })
   assert.equal(outcome.events.length, 1)
   time += 30_000
@@ -539,7 +539,7 @@ test('slack: no message is linked under the workspace, and Backspace-style unlin
   assert.ok(listed().includes('slack:conv:C1'))
 })
 
-test('slack: hiding a chat from one of its messages; thread links from before are pruned', async () => {
+test('slack: removing a chat is a plain unlink; thread links from before are pruned', async () => {
   let matches: unknown[] = []
   let time = 1_700_000_000_000
   const core = memoryCore({
@@ -561,7 +561,7 @@ test('slack: hiding a chat from one of its messages; thread links from before ar
   await core.slack.poll()
   assert.ok(!core.entity('slack').outboundLinks.some((id) => id.startsWith('slack:msg:')))
 
-  // Hiding a listed chat from its message: the message knows its chat.
+  // A message knows its chat, and unlinking that chat removes it.
   matches = [{ ts: '1700000040.000000', user: 'U1', text: 'r', channel: { id: 'C1' }, permalink: permalink('C1', '1700000040.000000', '1690000005.000000') }]
   time += 30_000
   await core.slack.poll()

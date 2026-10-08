@@ -116,18 +116,6 @@ export function MessageOverview(props: OverviewProps) {
     <>
       <div className="title">
         {typeof entity.data.conversation === 'string' && <ItemPill id={entity.data.conversation} fallback={String(entity.data.where ?? '')} />}
-        {props.interactive && props.onHideChat && typeof entity.data.conversation === 'string' && (
-          <span className="history">
-            <Button
-              label="Hide chat"
-              busyLabel="Hiding…"
-              busy={props.working?.includes('hide')}
-              hotkey={hotkeyOf('chat.hide')}
-              title="Hide this chat and its threads"
-              onClick={props.onHideChat}
-            />
-          </span>
-        )}
         <History {...props} />
       </div>
       <MessageBody entity={entity} author replies={false} onOpen={props.onOpen} onImage={props.onImage} findText={props.findText} />

@@ -374,12 +374,6 @@ export class Slack implements Module {
     if (stray.length) this.cache.write(stray.map((id) => link(ids.root, id, 0, author, 1)))
   }
 
-  /** Hiding a chat is unlinking it from the workspace, as an owned event. */
-  unlink(parent: string, child: string): AppEvent[] | null {
-    if (parent !== ids.root) return null
-    return [link(ids.root, child, this.context.now(), me, 1)]
-  }
-
   /**
    * When the watch last looked and how much it found, on an entity of its own
    * (`slack:watch`), so writing it every poll re-reads that and nothing else.
