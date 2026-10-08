@@ -769,6 +769,17 @@ export class Session {
     else if (typeof row.entity.data.open === 'boolean') void this.api.setValue(id, 'open', !row.entity.data.open).then((outcome) => this.settle(id, outcome))
   }
 
+  /** Whether Slack's watch is paused. */
+  slackPaused(): boolean {
+    return this.snapshot.item('slack')?.data['watch.paused'] === true
+  }
+
+  /** Pauses Slack's watch, or resumes it. */
+  pauseSlack(): void {
+    const paused = !this.slackPaused()
+    void this.working('slack', 'pause', () => this.api.pauseSlack(paused)).then((outcome) => this.settle('slack', outcome))
+  }
+
   /** Loads the view's root further back: a conversation's history, a thread, or all of Slack. */
   older(): void {
     const id = S.focused(this.state)

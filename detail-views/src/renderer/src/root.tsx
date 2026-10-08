@@ -51,6 +51,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
   const onImage = useCallback((ref: string | null) => session.view(ref), [])
   const onAction = useCallback((action: string) => session.startAction(action), [])
   const onOlder = useCallback(() => session.older(), [])
+  const onPause = useCallback(() => runTool(session, 'slack.pause'), [])
   // No hover on a phone, so no peeks: a link opens in the browser instead.
   const gestures = useMemo(
     () =>
@@ -111,6 +112,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
         onCompose,
         onImage,
         onOlder,
+        onPause,
         onEditDraft,
         onCommitEdit,
         onCancelEdit,
@@ -121,7 +123,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
         onNearEnd,
         onToggle,
       },
-    [tree, shown, onNearEnd, onToggle, state, working, now, findFocus, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onEditDraft, onCommitEdit, onCancelEdit],
+    [tree, shown, onNearEnd, onToggle, state, working, now, findFocus, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onPause, onEditDraft, onCommitEdit, onCancelEdit],
   )
   const picking = useMemo(() => {
     const pick = state.picking

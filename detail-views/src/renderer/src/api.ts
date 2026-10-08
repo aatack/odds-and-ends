@@ -11,6 +11,8 @@ export interface Api {
   perform(id: string, action: string, text: string): Promise<Outcome>
   toggle(id: string): Promise<Outcome>
   markRead(path: string[]): Promise<Outcome>
+  /** Pauses Slack's watch, or resumes it. */
+  pauseSlack(paused: boolean): Promise<Outcome>
   /** Empties the cache store (never the owned one). */
   clearCache(): Promise<Outcome>
   /** Loads further back than anything loads on its own. */
@@ -70,6 +72,7 @@ export function httpApi(base: string, token: string): Api {
     perform: (id, action, text) => call('perform', { id, action, text }),
     toggle: (id) => call('toggle', { id }),
     markRead: (path) => call('markRead', { path }),
+    pauseSlack: (paused) => call('pauseSlack', { paused }),
     clearCache: () => call('clearCache', {}),
     older: (id) => call('older', { id }),
     unlink: (parent, child) => call('unlink', { parent, child }),
@@ -109,6 +112,7 @@ export function electronApi(): Api {
     perform: (id, action, text) => call('perform', { id, action, text }),
     toggle: (id) => call('toggle', { id }),
     markRead: (path) => call('markRead', { path }),
+    pauseSlack: (paused) => call('pauseSlack', { paused }),
     clearCache: () => call('clearCache', {}),
     older: (id) => call('older', { id }),
     unlink: (parent, child) => call('unlink', { parent, child }),

@@ -239,6 +239,21 @@ export class Slack implements Module {
     return []
   }
 
+  /** Whether I have paused the watch (`watch.paused`, module data on the workspace). */
+  get paused(): boolean {
+    return this.context.data.get(ids.root)['watch.paused'] === true
+  }
+
+  /**
+   * Pauses the watch, or resumes it. Kept as module data, so it lasts across
+   * restarts and undo never touches it. Resuming looks at once, catching up
+   * from where it stopped as on start.
+   */
+  async setPaused(paused: boolean): Promise<void> {
+    this.context.data.set(ids.root, { 'watch.paused': paused })
+    if (!paused) await this.poll()
+  }
+
   /** Checks the token before keeping it, so a typo is caught at once. */
   async setToken(token: string): Promise<void> {
     const api = new SlackApi(token, this.context.fetch)
@@ -432,7 +447,7 @@ export class Slack implements Module {
    */
   async poll(): Promise<void> {
     const api = this.api
-    if (!api || this.polling) return
+    if (!api || this.polling || this.paused) return
     this.polling = true
     try {
       await this.serially(async () => {
