@@ -7,7 +7,6 @@ import { prEntityId } from '../../types.ts'
 import { mcpConfig, mcpName, type McpAddress } from '../../mcp.ts'
 import type { Module, ModuleContext } from '../module.ts'
 import { me } from '../tasks/tasks.ts'
-import { outline, outlineEvents } from '../../outline.ts'
 import { claudeIds as ids, claudeView } from './view.ts'
 
 /** The author of what Claude writes back: not mine to undo. */
@@ -113,7 +112,8 @@ export class Claude implements Module {
     }
     const at = now()
     const events: AppEvent[] = [
-      ...values(id, { type: 'claude.session', text: name, cwd, worktree, branch, repo, permissionMode: defaultPermissionMode }, at, me),
+      // `openedOn`: the item it was started from, told to Claude with every prompt.
+      ...values(id, { type: 'claude.session', text: name, cwd, worktree, branch, repo, permissionMode: defaultPermissionMode, openedOn: input.attachTo }, at, me),
       link(ids.root, id, at, me),
     ]
     if (input.attachTo !== ids.root) {
@@ -146,19 +146,36 @@ export class Claude implements Module {
     ]
     this.context.owned.write(events)
     const before = this.queues.get(session) ?? Promise.resolve()
-    const next = before.then(() => this.answer(session, responseId, text))
+    const next = before.then(() => this.answer(session, responseId, parent, text))
     this.queues.set(session, next.catch(() => {}))
     return events
   }
 
-  private async answer(session: string, responseId: string, text: string): Promise<void> {
+  /**
+   * What Claude is sent: the prompt, after where it was asked from and what
+   * the session was opened on, by id, so it knows where to look. The prompt
+   * item keeps only what I wrote.
+   */
+  private message(session: string, parent: string, text: string): string {
+    const data = this.context.data.get(session)
+    // A session from before `openedOn`: the item it hangs under, if not just the Claude root.
+    const openedOn = typeof data.openedOn === 'string' ? data.openedOn : (this.context.lens.parents(session).find((id) => id !== ids.root) ?? ids.root)
+    const tools = this.context.mcp() ? ` Read them with the \`${mcpName}\` MCP tools (\`read\`, \`walk\`).` : ''
+    return [
+      `[detail-views: this prompt was added to the item \`${parent}\`; this session was opened on \`${openedOn}\`.${tools}]`,
+      '',
+      text,
+    ].join('\n')
+  }
+
+  private async answer(session: string, responseId: string, parent: string, text: string): Promise<void> {
     const data = this.context.data.get(session)
     const cwd = expandHome(String(data.cwd))
     const mode = String(data.permissionMode ?? defaultPermissionMode)
     const started = Boolean(data.started)
     const args = [
       '-p',
-      text,
+      this.message(session, parent, text),
       '--output-format',
       'json',
       '--model',
@@ -174,11 +191,9 @@ export class Claude implements Module {
       // A failure is said in place of the answer: Claude's own words for it, if it gave any.
       const failed = out.is_error ? (out.result || 'Claude reported an error') : null
       const at = this.context.now()
-      // An answer is its lead, with its headings, bullets and blocks as notes under it.
-      const { lead, items } = failed ? { lead: failed, items: [] } : outline(out.result ?? '')
+      // The answer whole, in the one response item (`b` splits it if I want).
       this.context.owned.write([
-        ...values(responseId, { text: lead, running: false, error: failed, cost: out.total_cost_usd ?? null }, at, author),
-        ...outlineEvents(responseId, items, at, author, 'claude.response'),
+        ...values(responseId, { text: failed ?? out.result ?? '', running: false, error: failed, cost: out.total_cost_usd ?? null }, at, author),
         ...(started ? [] : [value(session, 'started', true, this.context.now(), author)]),
       ])
     } catch (error) {

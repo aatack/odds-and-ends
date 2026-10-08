@@ -28,7 +28,7 @@ doc for the area you change, and keep it up to date in the same commit.
 - **Any item can be worked on the same way**, whatever its type: Enter adds a
   note under it (an owned entity with no type, just text), `e` edits its text,
   `b` splits its text into its first part and notes under it (headings,
-  bullets, blocks: `core/outline.ts`, as Claude's answers are),
+  bullets, blocks: `core/outline.ts`),
   Backspace takes it out from under its parent *in this view* (nothing at the
   view's root), `x` moves it, `r` / `Shift+R` link it to or from another row.
   `x`, `r` and `Shift+R` are finished by pressing the same key on the other
@@ -104,7 +104,9 @@ doc for the area you change, and keep it up to date in the same commit.
   repo), Opus 5.5 in auto mode. Sessions, prompts
   and answers are owned; answers are authored `claude` (`docs/claude.md`).
   Every session is given the app's MCP server (`docs/mcp.md`): read-only
-  (`modules`, `read`, `walk`), on 127.0.0.1 with a per-run token.
+  (`modules`, `read`, `walk`), on 127.0.0.1 with a per-run token. Each prompt
+  is sent with the ids of the item it was asked from and of what the session
+  was opened on; an answer is kept whole in one response item.
 - **Recents are temporary.** Pushing a view of an item that has a type (not a
   plain note) re-writes its link under `recents` in the cache store at that
   time, which moves it to the front; the Recents module lists them newest

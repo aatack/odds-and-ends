@@ -13,7 +13,7 @@ function fakeRun(calls: { command: string; args: string[]; cwd: string }[]) {
     if (command === 'git' && args[0] === 'worktree') return ''
     if (command === 'git' && args[0] === 'rev-parse') return 'claude/fix-it-abc\n'
     if (command === 'git' && args[0] === 'remote') return 'git@github.com:o/app.git\n'
-    if (command.endsWith('claude')) return JSON.stringify({ result: `answer to ${args[1]}`, is_error: false, total_cost_usd: 0.01 })
+    if (command.endsWith('claude')) return JSON.stringify({ result: `answer to ${args[1].split('\n').pop()}`, is_error: false, total_cost_usd: 0.01 })
     throw new Error(`unexpected ${command} ${args.join(' ')}`)
   }
 }
@@ -114,28 +114,32 @@ test('claude: running a program says where it failed and why, and tells a missin
   await assert.rejects(runCommand('sh', ['-c', 'echo oops >&2; exit 3'], '/tmp'), /sh failed in \/tmp: exit code 3\n\noops/)
 })
 
-test('claude: an answer with headings and bullets is written as notes under the response', async () => {
+test('claude: an answer is kept whole in its response; the prompt sent says where it was asked and what the session was opened on', async () => {
   const answer = 'Done.\n\n## Changes\n\n- one\n  - detail\n- two'
-  const run = async (command: string) => {
-    if (command.endsWith('claude')) return JSON.stringify({ result: answer, is_error: false })
-    return ''
+  const sent: string[] = []
+  const run = async (command: string, args: string[]) => {
+    if (!command.endsWith('claude')) return ''
+    sent.push(args[1])
+    return JSON.stringify({ result: answer, is_error: false })
   }
   const core = memoryCore({ run, gh: async () => '{}', dataDir: '/data' })
-  await core.actions.claudeCreate({ name: 'S', cwd: '', worktree: false, attachTo: 'claude' })
-  const session = core.entity('claude').outboundLinks[0]
-  const { events } = core.actions.claudePrompt({ session, parent: session, text: 'go' })
+  core.actions.create({ parent: 'tasks', text: 'plan' })
+  const plan = core.entity('tasks').outboundLinks[0]
+  await core.actions.claudeCreate({ name: 'S', cwd: '', worktree: false, attachTo: plan })
+  const session = core.entity(plan).values.claudeSessionId as string
+  assert.equal(core.item(session)!.data.openedOn, plan)
+  core.actions.create({ parent: plan, text: 'step' })
+  const step = core.entity(plan).outboundLinks.find((id) => id !== session)!
+  const { events } = core.actions.claudePrompt({ session, parent: step, text: 'go' })
   const prompt = events.find((e) => e.type === 'value' && e.key === 'type' && e.value === 'claude.prompt')!
   await settle()
-  const [response] = core.entity(prompt.type === 'value' ? prompt.entityId : '').outboundLinks
-  assert.equal(core.item(response)!.data.text, 'Done.')
-  const tree = (id: string): unknown[] =>
-    core.entity(id).outboundLinks.map((child) => {
-      const data = core.entity(child).values
-      const text = `${data.section ? '# ' : ''}${String(data.text)}`
-      return core.entity(child).outboundLinks.length ? [text, tree(child)] : text
-    })
-  assert.deepEqual(tree(response), [['# Changes', [['one', ['detail']], 'two']]])
-  assert.equal(core.item(core.entity(response).outboundLinks[0])!.type, 'claude.response')
+  const promptId = prompt.type === 'value' ? prompt.entityId : ''
+  const [response] = core.entity(promptId).outboundLinks
+  assert.equal(core.item(response)!.data.text, answer)
+  assert.deepEqual(core.entity(response).outboundLinks, [])
+  // Claude is told both ids; the prompt item keeps only what I wrote.
+  assert.equal(sent[0], `[detail-views: this prompt was added to the item \`${step}\`; this session was opened on \`${plan}\`.]\n\ngo`)
+  assert.equal(core.item(promptId)!.data.text, 'go')
 })
 
 test('claude: every session is given the app MCP server, its tools allowed', async () => {
