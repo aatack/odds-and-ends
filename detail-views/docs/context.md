@@ -11,7 +11,7 @@ How related items are collected (`c`), shown, and searched.
 - A context has no text until I give it one (`e`); its pill says "Context".
   It is linked under nothing else, so it is reached through its members.
 
-## `c` (`Core.actions.context`)
+## `c` (`Core.actions.context`, over `Core.shareContext`)
 
 Like `r`: press `c` on one row, then on another (in any view); Escape gives up.
 The first row is `first`, the second `second`. All writes are owned, by `me`,
@@ -38,6 +38,10 @@ Given a path (the stack, root first) and a type: from the end of the path up,
 each item with a `context` has that context's children (only those) looked
 through for one of the type. The first found wins. Null when the path runs
 out, or comes back to an item already looked at (a loop).
+
+The MCP server offers it as `find_context`, and `c` as `merge_context`
+(written as `claude`), so a Claude session can find and collect related items
+too (`docs/mcp.md`).
 
 `k` uses it: when no session is on the selection's path (or named by
 `claudeSessionId`), a session sharing a context with something on the path is

@@ -68,7 +68,7 @@ function repoOf(remote: string): { owner: string; name: string } | null {
  * own: a temporary one, the one I gave, or a new git worktree of its repo.
  * Everything is owned: sessions, prompts and responses are mine to keep.
  */
-/** The app's MCP server for a session, and its tools allowed without asking (they only read). */
+/** The app's MCP server for a session, and its tools allowed without asking (they read, and `merge_context` only links). */
 function mcpArgs(address: McpAddress | null): string[] {
   return address ? ['--allowedTools', `mcp__${mcpName}`, '--mcp-config', mcpConfig(address)] : []
 }

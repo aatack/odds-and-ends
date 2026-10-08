@@ -109,8 +109,9 @@ doc for the area you change, and keep it up to date in the same commit.
   one, mine, or a worktree under the app's data directory, never inside a
   repo), Opus 5.5 in auto mode. Sessions, prompts
   and answers are owned; answers are authored `claude` (`docs/claude.md`).
-  Every session is given the app's MCP server (`docs/mcp.md`): read-only
-  (`modules`, `read`, `walk`), on 127.0.0.1 with a per-run token. Each prompt
+  Every session is given the app's MCP server (`docs/mcp.md`): `modules`,
+  `read`, `walk`, `find_context` and `merge_context` (the only write, as
+  `claude`), on 127.0.0.1 with a per-run token. Each prompt
   is sent with the ids of the item it was asked from and of what the session
   was opened on; an answer is kept whole in one response item.
 - **Recents are temporary.** Pushing a view of an item that has a type (not a

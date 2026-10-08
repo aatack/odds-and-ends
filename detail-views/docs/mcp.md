@@ -5,18 +5,21 @@
 
 ## What it is for
 
-Every Claude session the app starts (`docs/claude.md`) can read the app: its
-modules, any entity, and an outline walked down from one. It is given to each
-`claude -p` as `--mcp-config` (the name `detail-views`) with
-`--allowedTools mcp__detail-views`, since nothing in it writes. A session's own
+Every Claude session the app starts (`docs/claude.md`) can read the app (its
+modules, any entity, an outline walked down from one, what is related to a
+path) and put two items in one context. It is given to each `claude -p` as
+`--mcp-config` (the name `detail-views`) with `--allowedTools
+mcp__detail-views`: everything but `merge_context` reads, and that only links. A session's own
 MCP servers are kept (no `--strict-mcp-config`).
 
-## Tools (read-only)
+## Tools
 
 | Tool | Takes | Gives |
 |-|-|-|
 | `modules` | nothing | Each module's root id and name, the id in a column |
 | `read` | `ids` | JSON per id: `type`, every value (no `secret.` keys), `createdAt`, `updatedAt`, `children`, `parents` |
+| `find_context` | `path` (an id, or ids root first), `type` | The id of the nearest item of that type in a context along the path, or "none" (`findInContext`) |
+| `merge_context` | `first`, `second` | Puts them in one context, as `c` does (`Core.shareContext`), written as `claude`; gives the context's id. The only tool that writes |
 | `walk` | `path` (an id, or a path to carry on from), `maxDepth?`, `limit?` (200) | An outline: one line per entity, its id in a left column padded to one width, its text as a bullet (`[ ]`/`[x]` a task, `#` a heading); then either "that is everything" or the path to pass back for the next page |
 
 - **Walk** is entity-graph's query: depth first in link order, never into an
@@ -29,6 +32,15 @@ MCP servers are kept (no `--strict-mcp-config`).
   `walk` walks again after, up to three passes, as loading children can add
   rows.
 - Instructions and descriptions stay under the 2KB a client keeps of each.
+
+## Context
+
+The server's instructions explain the convention (`docs/context.md`): an
+item's `context` names a `context` item whose children are the things related
+to it. A session finds what is related to the item its prompt was asked from
+with `find_context` (that item's id is in the prompt, `docs/claude.md`), and
+collects things it makes or finds with `merge_context`. Its writes are
+authored `claude`, so my Ctrl+Z doesn't take them back.
 
 ## Transport and security
 

@@ -6,7 +6,7 @@ import { handleMcpRequest } from '../core/mcp.ts'
 /**
  * The app's MCP server (`src/core/mcp.ts`), for the Claude sessions it starts:
  * on 127.0.0.1 only, never published, with a token made fresh each run and
- * handed to each session in its `--mcp-config`. Read-only.
+ * handed to each session in its `--mcp-config`. It reads, and links (`merge_context`).
  */
 
 export const mcpPort = 47822
