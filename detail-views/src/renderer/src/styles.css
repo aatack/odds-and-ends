@@ -774,13 +774,28 @@ body,
   min-width: 0;
 }
 
+/* A row in a context: its text, then the pills straight after it, not pushed to the right. */
+.cell.has-context {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cell.has-context > :first-child {
+  min-width: 0;
+}
+
+/* Editing it, the box still takes the width. */
+.cell.has-context > .edit {
+  flex: 1;
+}
+
 .context-pills {
-  flex: none;
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 4px;
-  max-width: 50%;
 }
 
 .overview .context-pills {
