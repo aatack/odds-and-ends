@@ -17,7 +17,7 @@ import './styles.css'
  * swaps hover for taps and keys for a bar of buttons.
  */
 function Root({ session, phone }: { session: Session; phone: boolean }) {
-  const { state, view: tree, shown, modules, peekViews, item, working, now, findFocus, toast } = useSnapshot(session)
+  const { state, view: tree, shown, modules, peekViews, sideView, item, working, now, findFocus, toast } = useSnapshot(session)
   useEffect(() => {
     const stopDispatch = installDispatch(session, tools)
     let stopSession: (() => void) | undefined
@@ -52,6 +52,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
   const onAction = useCallback((action: string) => session.startAction(action), [])
   const onOlder = useCallback(() => session.older(), [])
   const onPause = useCallback(() => runTool(session, 'slack.pause'), [])
+  const onBack = useCallback(() => session.back(), [])
   // No hover on a phone, so no peeks: a link opens in the browser instead.
   const gestures = useMemo(
     () =>
@@ -122,13 +123,39 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
         onFindFocused,
         onNearEnd,
         onToggle,
+        onClose: onBack,
       },
-    [tree, shown, onNearEnd, onToggle, state, working, now, findFocus, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onPause, onEditDraft, onCommitEdit, onCancelEdit],
+    [tree, shown, onNearEnd, onToggle, onBack, state, working, now, findFocus, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onPause, onEditDraft, onCommitEdit, onCancelEdit],
   )
   const picking = useMemo(() => {
     const pick = state.picking
     return pick && { pick, subject: item(pick.path[pick.path.length - 1]) }
   }, [state.picking, item])
+
+  const sideHandlers = useMemo(
+    () => ({
+      onDraft: (text: string) => session.setSideDraft(text),
+      onCompose: (composing: boolean) => session.composeSide(composing),
+      onOpen,
+      onClose: () => session.closeSide(),
+    }),
+    [session, onOpen],
+  )
+  const side = useMemo(
+    () =>
+      state.side
+        ? {
+            ...sideHandlers,
+            id: state.side,
+            view: sideView,
+            working: working[state.side],
+            draft: state.drafts[state.side] ?? '',
+            composing: state.sideComposing,
+            onNearEnd: () => session.loadMore(state.side!),
+          }
+        : null,
+    [sideHandlers, state.side, state.drafts, state.sideComposing, sideView, working, session],
+  )
 
   const crumbs = useMemo(() => state.trail.slice(0, state.at + 1).map((id) => item(id)), [state.trail, state.at, item])
   const onCrumb = useCallback((at: number) => session.goTo(at), [])
@@ -178,6 +205,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
       dialog={dialog}
       toast={toast}
       phone={phoneBar}
+      side={side}
       crumbs={crumbs}
       onCrumb={onCrumb}
       items={items}

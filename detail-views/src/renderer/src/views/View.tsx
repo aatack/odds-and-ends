@@ -68,6 +68,19 @@ export function ViewPane(props: ViewProps) {
           onCompose={props.onCompose}
         />
       )}
+      {/* The side panel's chat: its own box, apart from the main view's. */}
+      {view.compose === 'claude' && !props.interactive && props.prompt && (
+        <Composer
+          key={root.id}
+          kind="claude"
+          field="side"
+          placeholder="Prompt"
+          draft={props.prompt.draft}
+          composing={props.prompt.composing}
+          onDraft={props.prompt.onDraft}
+          onCompose={props.prompt.onCompose}
+        />
+      )}
     </div>
   )
 }

@@ -24,7 +24,10 @@ doc for the area you change, and keep it up to date in the same commit.
   children. Any entity may link to any other, across modules.
 - **Navigation is a stack of views.** `d` pushes a view rooted at the
   selected row; `Shift+A` pops it. Entering a module (sidebar or `1`–`9`)
-  starts the stack again at its root.
+  starts the stack again at its root. Ctrl+Enter opens what is in context
+  with the path in a side panel on the right (`docs/context.md`). Every
+  view's `onClose` closes its own window: pop, close the peek, or close the
+  panel.
 - **Any item can be worked on the same way**, whatever its type: Enter adds a
   note under it (an owned entity with no type, just text), `e` edits its text,
   `b` splits its text into its first part and notes under it (headings,

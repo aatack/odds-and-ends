@@ -1,5 +1,5 @@
 import { EntityCache, type CacheState } from '../../core/graph/cache.ts'
-import { foreignOf, itemOf, moduleInfos, viewOf } from '../../core/present.ts'
+import { findInContext, foreignOf, itemOf, lensOf, moduleInfos, viewOf } from '../../core/present.ts'
 import { activity } from '../../core/modules/slack/view.ts'
 import type { Entity, ModuleInfo, NoteValues, Outcome, View, ViewRow } from '../../core/types.ts'
 import type { Api } from './api.ts'
@@ -15,6 +15,8 @@ export interface Snapshot {
   shown: S.ShownView
   /** What each open entity peek shows, by entity id. */
   peekViews: Record<string, View>
+  /** What the side panel shows, if it is open. */
+  sideView: View | null
   /** An item named on screen (a pill), presented. Reading one asks for it. */
   item(id: string): Entity | null
   /** What is under way for each entity: `older`, an action's id, `hide`. */
@@ -103,7 +105,7 @@ export class Session {
     this.env = env
     this.cache = new EntityCache({ scan: (ids) => api.scan(ids), load: (request) => api.load(request), foreign: foreignOf })
     const state = S.restore(env.load(storageKey), 'slack')
-    this.snapshot = { state, modules: moduleInfos, view: null, shown: noRows, peekViews: {}, item: () => null, working: {}, now: Date.now(), findFocus: 0, toast: null }
+    this.snapshot = { state, modules: moduleInfos, view: null, shown: noRows, peekViews: {}, sideView: null, item: () => null, working: {}, now: Date.now(), findFocus: 0, toast: null }
     this.snapshot = this.derive(state)
   }
 
@@ -199,8 +201,9 @@ export class Session {
     const shown = S.markRows(view, state, root, root === S.focused(previous.state) ? previous.shown : undefined)
     const peekViews: Record<string, View> = {}
     for (const peek of state.peeks) if (peek.target.kind === 'entity') peekViews[peek.target.id] ??= this.walk(peek.target.id, state)
+    const sideView = state.side ? this.walk(state.side, state) : null
     // Walks for views no longer anywhere are dropped.
-    const live = new Set([root, ...Object.keys(peekViews)])
+    const live = new Set([root, ...Object.keys(peekViews), ...(state.side ? [state.side] : [])])
     for (const key of this.walks.keys()) if (!live.has(key)) this.walks.delete(key)
     for (const key of this.budgets.keys()) if (!live.has(key)) this.budgets.delete(key)
     const cache = this.cache.get()
@@ -219,7 +222,7 @@ export class Session {
             }
           })()
     this.itemsFrom = cache
-    return { ...previous, state, view, shown, peekViews, item }
+    return { ...previous, state, view, shown, peekViews, sideView, item }
   }
 
   private itemsFrom: CacheState | null = null
@@ -642,6 +645,43 @@ export class Session {
 
   view(ref: string | null): void {
     this.update(S.view(this.state, ref))
+  }
+
+  // --- The side panel ----------------------------------------------------------------
+
+  /**
+   * Ctrl+Enter: up the path to the selected row (the stack, then the view's
+   * rows), the first item with a context opens the first other item in that
+   * context in the panel on the right: mostly, the Claude session attached to
+   * it. Says so when there is none.
+   */
+  openSide(): void {
+    const path = [...this.state.trail.slice(0, this.state.at), ...(this.snapshot.shown.selectedPath.length ? this.snapshot.shown.selectedPath : [S.focused(this.state)])]
+    const found = findInContext(path, null, lensOf(this.cache.source(this.cache.get())))
+    if (found) this.update(S.setSide(this.state, found))
+    else this.showToast('Nothing in context here')
+  }
+
+  closeSide(): void {
+    this.update(S.setSide(this.state, null))
+  }
+
+  composeSide(composing: boolean): void {
+    this.update(S.setSideComposing(this.state, composing))
+  }
+
+  setSideDraft(text: string): void {
+    const id = this.state.side
+    if (id) this.update(S.setDraftFor(this.state, id, text))
+  }
+
+  /** Sends what is in the side panel's prompt box to its item (a Claude session's next prompt), and empties it. */
+  async sendSide(): Promise<void> {
+    const id = this.state.side
+    const text = id ? (this.state.drafts[id] ?? '') : ''
+    if (!id || !text.trim() || this.snapshot.sideView?.compose == null) return
+    this.update(S.setDraftFor(this.state, id, ''))
+    this.settle(id, await this.api.submit(id, text))
   }
 
 

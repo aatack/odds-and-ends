@@ -121,17 +121,17 @@ export function present(entity: Entity, lens: Lens): Entity {
  * The nearest item of `type` in a context along `path` (the stack, root
  * first): from the end of the path up, each item that has a `context` has
  * that context's children (only those, not theirs) looked through for one of
- * the type. Null when the path runs out, or comes to an item it has already
- * looked at (a loop).
+ * the type (`null`: any item but the one on the path). Null when the path
+ * runs out, or comes to an item it has already looked at (a loop).
  */
-export function findInContext(path: readonly string[], type: ItemType, lens: Lens): string | null {
+export function findInContext(path: readonly string[], type: ItemType | null, lens: Lens): string | null {
   const seen = new Set<string>()
   for (const id of [...path].reverse()) {
     if (seen.has(id)) return null
     seen.add(id)
     const context = lens.read(id)?.data.context
     if (typeof context !== 'string' || !context) continue
-    const found = lens.children(context).find((child) => lens.read(child)?.type === type)
+    const found = lens.children(context).find((child) => (type === null ? child !== id : lens.read(child)?.type === type))
     if (found) return found
   }
   return null

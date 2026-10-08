@@ -103,6 +103,18 @@ body,
   flex-direction: column;
 }
 
+/* The panel on the right (Ctrl+Enter): an item in context with where I am. */
+.side {
+  flex: none;
+  width: min(42%, 640px);
+  min-width: 320px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  background: var(--canvas);
+}
+
+
 .pane {
   flex: 1;
   min-width: 0;
@@ -1130,6 +1142,15 @@ mark {
   justify-content: center;
   min-height: 44px;
   font-size: 15px;
+}
+
+/* The side panel, on a phone: over the view, closed by its ×. */
+.app.phone .side {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  width: auto;
+  border-left: none;
 }
 
 /* Floating windows are the desktop's: no hover on a phone to open or move them. */

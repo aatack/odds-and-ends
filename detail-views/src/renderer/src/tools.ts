@@ -34,6 +34,9 @@ const picking = (s: Session, tool?: S.PickTool) => {
 
 export const tools: Tool[] = [
   // --- Typing ---------------------------------------------------------------------
+  // The side panel's prompt box: its own, whatever else is waiting.
+  { id: 'side.submit', scope: 'input', keys: ['Enter'], enabled: (_, field) => field === 'side', run: (s) => void s.sendSide() },
+  { id: 'side.leave', scope: 'input', keys: ['Escape'], enabled: (_, field) => field === 'side', run: (s) => s.composeSide(false) },
   // The find field: Enter hands the keyboard back to the tree, keeping the
   // filter; Escape clears it.
   { id: 'find.done', scope: 'input', keys: ['Enter'], enabled: (_, field) => field === 'find', run: () => blur() },
@@ -112,6 +115,8 @@ export const tools: Tool[] = [
   { id: 'split', label: 'Split', scope: 'list', keys: ['b'], enabled: (s) => s.canSplit(), run: (s) => s.split() },
   { id: 'inspect', label: 'Inspect', scope: 'list', keys: ['3'], enabled: (s) => selected(s) !== null, run: (s) => s.inspect() },
   { id: 'claude.new', label: 'Claude session', scope: 'list', keys: ['K'], run: (s) => s.openClaudeDialog() },
+  { id: 'side.open', label: 'In context', scope: 'app', keys: ['Ctrl+Enter'], run: (s) => s.openSide() },
+  { id: 'side.close', label: 'Close side', scope: 'app', keys: [], enabled: (s) => s.get().state.side !== null, run: (s) => s.closeSide() },
   { id: 'checkbox.toggle', label: 'Tick', scope: 'list', keys: [' '], enabled: (s) => s.canToggle(), run: (s) => s.toggle() },
   {
     id: 'cache.wipe',
