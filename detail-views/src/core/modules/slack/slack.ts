@@ -6,7 +6,6 @@ import { me } from '../tasks/tasks.ts'
 import { SlackApi, slackWrites } from './api.ts'
 import {
   maxTs,
-  newestMessage,
   parseMessageId,
   slackIds as ids,
   slackView,
@@ -117,18 +116,17 @@ function conversationEvents(conversation: RawConversation): AppEvent[] {
  * A message from search is `partial`: search leaves out reactions and replies,
  * so those are not written, rather than written as nothing.
  *
- * A message with replies is a thread. Its newest reply is written at that
- * reply's time, so the thread's own newest event, which orders it in the
- * workspace, is that reply. It is listed in the workspace only when its
- * conversation is (`listed`): unlinking a conversation drops its threads too.
+ * A message with replies is a thread: its replies are linked under it, and
+ * under its conversation as well (by whoever links them), so a conversation
+ * reads flat. Nothing about a message is linked under the workspace.
  */
 function messageEvents(
   channel: string,
   raw: RawMessage,
   now: number,
-  options: { partial?: boolean; listed?: boolean } = {},
+  options: { partial?: boolean } = {},
 ): AppEvent[] {
-  const { partial = false, listed = false } = options
+  const { partial = false } = options
   const id = ids.message(channel, raw.ts)
   const isImage = (file: RawFile) => Boolean(file.mimetype?.startsWith('image/') && file.url_private)
   const files = (raw.files ?? []).filter((file) => !isImage(file)).map((file) => file.name).filter(Boolean)
@@ -169,7 +167,6 @@ function messageEvents(
             author,
           ),
           value(id, 'latestReply', raw.latest_reply ?? null, raw.latest_reply ? tsMillis(raw.latest_reply) : 0, author),
-          ...(raw.reply_count && listed ? [link(ids.root, id, tsMillis(raw.ts), author)] : []),
         ]),
     value(id, loadedKey('self'), now, 0, author),
   ]
@@ -274,22 +271,39 @@ export class Slack implements Module {
   }
 
   /**
-   * Marks a topic (a conversation, or a thread by its parent message) read up
-   * to a message, or to its newest: an owned `lastRead`, the message's ts. A
-   * conversation is marked in Slack too, while Slack may be written to;
-   * threads have no way to be.
+   * Marks a conversation read up to the newest message received in it
+   * (`lastMessageReceived`): an owned `lastRead`. Not to now, so a message
+   * still on its way, sent before now, is never taken as read. Marked in Slack
+   * too, while Slack may be written to.
    */
-  async markRead(topic: string, at?: string): Promise<AppEvent[]> {
-    const type = this.context.lens.read(topic)?.type
-    if (type !== 'slack.conversation' && type !== 'slack.message') return []
-    const ts = at ?? newestMessage(this.context.lens, topic)?.ts
-    if (!ts) return []
-    const events = [value(topic, 'lastRead', ts, this.context.now(), me)]
+  async markRead(id: string): Promise<AppEvent[]> {
+    const conversation = this.context.lens.read(id)
+    if (conversation?.type !== 'slack.conversation') return []
+    const ts = conversation.data.lastMessageReceived
+    if (typeof ts !== 'string') return []
+    const events = [value(id, 'lastRead', ts, this.context.now(), me)]
     this.context.owned.write(events)
-    if (slackWrites && this.api && type === 'slack.conversation') {
-      await this.api.call('conversations.mark', { channel: topic.slice('slack:conv:'.length), ts })
-    }
+    if (slackWrites && this.api) await this.api.call('conversations.mark', { channel: id.slice('slack:conv:'.length), ts })
     return events
+  }
+
+  /**
+   * The newest message from someone else in each conversation, as
+   * `lastMessageReceived` where it is newer than what is there: what makes a
+   * conversation unread. My own messages never do. Undated, so at 0.
+   */
+  private receivedEvents(messages: { channel: string; ts: string; user?: string }[]): AppEvent[] {
+    const self = this.data<Record<string, unknown>>(ids.root).self
+    const newest = new Map<string, string>()
+    for (const { channel, ts, user } of messages) {
+      if (user && user === self) continue
+      newest.set(channel, maxTs(newest.get(channel), ts)!)
+    }
+    return [...newest].flatMap(([channel, ts]) => {
+      const id = ids.conversation(channel)
+      const known = this.cursor(id, 'lastMessageReceived')
+      return known && Number(known) >= Number(ts) ? [] : [value(id, 'lastMessageReceived', ts, 0, author)]
+    })
   }
 
   // --- The watch and the history behind it ----------------------------------------
@@ -319,37 +333,19 @@ export class Slack implements Module {
    * One search, newest first, collecting what `keep` accepts until `enough`
    * says stop or the results run out. Says whether it got to the end.
    */
-  /** The conversations in the workspace now, as I see it (my own unlinks included). */
-  private listed(): Set<string> {
-    return new Set(this.context.lens.children(ids.root).filter((id) => id.startsWith('slack:conv:')))
-  }
-
   /**
-   * Drops cached thread links whose conversation is not listed: ones written
-   * before that rule, or under a conversation hidden since. Writes nothing
-   * when there are none.
+   * Drops cached thread links from the workspace, written before threads read
+   * flat in their conversations. Writes nothing when there are none.
    */
   private pruneThreads(): void {
-    const listed = this.listed()
-    const stray = this.context.lens.children(ids.root).filter((id) => {
-      const message = parseMessageId(id)
-      return message && !listed.has(ids.conversation(message.channel))
-    })
+    const stray = this.context.lens.children(ids.root).filter((id) => parseMessageId(id))
     if (stray.length) this.cache.write(stray.map((id) => link(ids.root, id, 0, author, 1)))
   }
 
-  /**
-   * Hiding a chat is unlinking it from the workspace, as an owned event. A
-   * conversation takes its threads with it, and no thread of it is listed
-   * again (`listed`).
-   */
+  /** Hiding a chat is unlinking it from the workspace, as an owned event. */
   unlink(parent: string, child: string): AppEvent[] | null {
     if (parent !== ids.root) return null
-    const now = this.context.now()
-    const threads = child.startsWith('slack:conv:')
-      ? this.context.lens.children(ids.root).filter((id) => id.startsWith(`slack:msg:${child.slice('slack:conv:'.length)}:`))
-      : []
-    return [child, ...threads].map((id) => link(ids.root, id, now, me, 1))
+    return [link(ids.root, child, this.context.now(), me, 1)]
   }
 
   /**
@@ -406,8 +402,7 @@ export class Slack implements Module {
     this.polling = true
     try {
       await this.serially(async () => {
-        // The lists come first, so a thread knows whether its conversation is listed.
-        // A no-op while they are fresh.
+        // The lists come first, so a new conversation's name is known. A no-op while they are fresh.
         await this.context.load(ids.root, 'children')
         this.pruneThreads()
         const cursor = this.cursor(ids.root, 'watch.at')
@@ -497,9 +492,10 @@ export class Slack implements Module {
     const reached = messages.reduce((least, message) => (Number(message.ts) < Number(least) ? message.ts : least), start ?? (now / 1000).toFixed(6))
     this.cache.write([
       ...messages.flatMap((message) => [
-        ...messageEvents(channel, message, now, { listed: this.listed().has(id) }),
+        ...messageEvents(channel, message, now),
         link(id, ids.message(channel, message.ts), tsMillis(message.ts), author),
       ]),
+      ...this.receivedEvents(messages.map((message) => ({ channel, ts: message.ts, user: message.user }))),
       value(id, 'history.oldest', reached, 0, author),
       ...(more ? [] : [value(id, 'history.complete', true, 0, author)]),
     ])
@@ -507,8 +503,8 @@ export class Slack implements Module {
 
   /**
    * New messages from a search, as events. Ones already cached are left
-   * alone, so a repeat counts nothing twice. A message's link is written at
-   * its ts, which is what moves its conversation up the list.
+   * alone, so a repeat counts nothing twice. Every message is linked under
+   * its conversation at its ts, a reply under its thread as well.
    */
   private searchEvents(matches: SearchMatch[]): { events: AppEvent[]; added: number } {
     const { lens } = this.context
@@ -518,8 +514,7 @@ export class Slack implements Module {
     const threads = new Map<string, { replyCount: number; latestReply?: string }>()
 
     const seen = new Set<string>()
-    // Read once: the workspace's rollup is large. Conversations this batch adds join it.
-    const listed = this.listed()
+    const received: { channel: string; ts: string; user?: string }[] = []
     for (const match of [...matches].sort((a, b) => Number(a.ts) - Number(b.ts))) {
       const channel = match.channel.id
       const id = ids.message(channel, match.ts)
@@ -545,10 +540,7 @@ export class Slack implements Module {
           // DM or a private channel is surely mine, so only those join the list
           // here; a public one I join comes with the list's next load.
           const mine = match.channel.is_im || match.channel.is_mpim || match.channel.is_private
-          if (mine) {
-            events.push(link(ids.root, conversationId, 0, author))
-            listed.add(conversationId)
-          }
+          if (mine) events.push(link(ids.root, conversationId, 0, author))
         }
       }
 
@@ -568,13 +560,11 @@ export class Slack implements Module {
         const thread = threads.get(parent) ?? { replyCount: known.replyCount ?? 0, latestReply: known.latestReply ?? undefined }
         threads.set(parent, { replyCount: thread.replyCount + 1, latestReply: maxTs(thread.latestReply, match.ts) })
         events.push(link(parent, id, tsMillis(match.ts), author))
-        // The thread joins the workspace's list only if its conversation is there.
-        // A parent not cached loads itself, once, when shown.
-        if (listed.has(conversationId)) events.push(link(ids.root, parent, tsMillis(threadTs!), author))
-      } else {
-        events.push(link(conversationId, id, tsMillis(match.ts), author))
       }
+      events.push(link(conversationId, id, tsMillis(match.ts), author))
+      received.push({ channel, ts: match.ts, user: match.user })
     }
+    events.push(...this.receivedEvents(received))
 
     for (const [id, thread] of threads) {
       events.push(
@@ -621,7 +611,7 @@ export class Slack implements Module {
         ...live.flatMap(conversationEvents),
         ...live.map((conversation) => link(ids.root, ids.conversation(conversation.id), 0, author)),
       ],
-      // Only the conversations: the threads listed here come from messages, not from this list.
+      // Only the conversations: anything else linked here (old thread links) is pruned by the watch.
       { replaceLinksFrom: [{ source: ids.root, within: 'slack:conv:' }] },
     )
   }
@@ -635,13 +625,16 @@ export class Slack implements Module {
     const now = this.context.now()
     const replies = messages.filter((message) => message.ts !== root)
     const parent = messages.find((message) => message.ts === root && root === ts)
+    const conversation = ids.conversation(channel)
     this.cache.write(
       [
-        ...(parent ? messageEvents(channel, parent, now, { listed: this.listed().has(ids.conversation(channel)) }) : []),
+        ...(parent ? messageEvents(channel, parent, now) : []),
         ...replies.flatMap((message) => [
           ...messageEvents(channel, message, now),
           link(id, ids.message(channel, message.ts), tsMillis(message.ts), author),
+          link(conversation, ids.message(channel, message.ts), tsMillis(message.ts), author),
         ]),
+        ...this.receivedEvents(replies.map((message) => ({ channel, ts: message.ts, user: message.user }))),
         value(id, 'history.complete', true, 0, author),
       ],
       { replaceLinksFrom: [id] },
@@ -662,7 +655,7 @@ export class Slack implements Module {
       found = thread.messages.find((message) => message.ts === ts)
     }
     if (!found) throw new Error('message not found')
-    this.cache.write(messageEvents(channel, found, this.context.now(), { listed: this.listed().has(ids.conversation(channel)) }))
+    this.cache.write(messageEvents(channel, found, this.context.now()))
   }
 
   private async loadUser(api: SlackApi, user: string): Promise<void> {

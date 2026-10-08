@@ -47,6 +47,8 @@ export interface State {
   viewing: string | null
   /** Whether the phone's list of every action is open. Not persisted. */
   phoneMenu: boolean
+  /** How far through confirming a wipe of the cache store: 0 not started, then each confirmation. Not persisted. */
+  wiping: 0 | 1 | 2
   /** A form being filled in (a new Claude session's). Not persisted. */
   dialog: SessionDialog | null
   /** The entity shown as JSON over everything (`3`). Not persisted. */
@@ -201,6 +203,7 @@ export function initialState(root: string): State {
     acting: null,
     viewing: null,
     phoneMenu: false,
+    wiping: 0,
     dialog: null,
     inspecting: null,
     picking: null,
@@ -448,8 +451,12 @@ export function actingIn(state: State, peek: string | null): string | null {
 }
 
 /** What is kept across reloads. */
-export function persisted(state: State): Omit<State, 'composing' | 'viewing' | 'acting' | 'picking' | 'phoneMenu' | 'dialog' | 'inspecting'> {
-  const { composing: _, viewing: __, acting: ___, picking: ____, phoneMenu: _____, dialog: ______, inspecting: _______, ...rest } = state
+export function setWiping(state: State, wiping: State['wiping']): State {
+  return state.wiping === wiping ? state : { ...state, wiping }
+}
+
+export function persisted(state: State): Omit<State, 'composing' | 'viewing' | 'acting' | 'picking' | 'phoneMenu' | 'wiping' | 'dialog' | 'inspecting'> {
+  const { composing: _, viewing: __, acting: ___, picking: ____, phoneMenu: _____, wiping: ________, dialog: ______, inspecting: _______, ...rest } = state
   return { ...rest, peeks: rest.peeks.filter((peek) => peek.pinned) }
 }
 

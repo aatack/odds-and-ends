@@ -114,6 +114,14 @@ export const tools: Tool[] = [
     enabled: (s) => selected(s)?.entity.type === 'slack.message' || rootType(s) === 'slack.message',
     run: (s) => s.hideChatOfMessage(),
   },
+  {
+    id: 'cache.wipe',
+    label: (s) => ['Wipe cache', 'Wipe the cache? Press again', 'Really wipe it? Press to wipe'][s.get().state.wiping],
+    scope: 'app',
+    keys: [],
+    run: (s) => s.wipeCache(),
+  },
+  { id: 'cache.wipeCancel', label: 'Keep cache', scope: 'app', keys: [], enabled: (s) => s.get().state.wiping > 0, run: (s) => s.cancelWipe() },
   { id: 'slack.markRead', label: 'Mark read', scope: 'list', keys: ['m'], enabled: (s) => s.readTarget() !== null, run: (s) => s.markRead() },
 
   // --- The view's root ----------------------------------------------------------------

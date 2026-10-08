@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { AppEvent } from '../../core/graph/events.ts'
+import { values } from '../../core/graph/events.ts'
 import { memoryCore } from '../../core/testing.ts'
 import type { Api } from './api.ts'
 import { memoryEnvironment } from './environment.ts'
@@ -17,7 +18,8 @@ async function headless(options: Parameters<typeof memoryCore>[0] = {}) {
     submit: (id, text) => a.submit({ id, text }),
     perform: (id, action, text) => a.perform({ id, action, text }),
     toggle: async (id) => a.toggle({ id }),
-    markRead: (id, at) => a.markRead({ id, at }),
+    markRead: (id) => a.markRead({ id }),
+    clearCache: async () => a.clearCache(),
     older: (id) => a.older({ id }),
     unlink: async (parent, child) => a.unlink({ parent, child }),
     link: async (parent, child) => a.link({ parent, child }),
@@ -282,5 +284,25 @@ test('Shift+K starts a Claude session from the selected row; k prompts it in the
   const lines = screen().map((line) => line.replace('>', ''))
   assert.ok(lines.includes('    hi'), lines.join('\n'))
   assert.ok(lines.includes('      you said hi'), lines.join('\n'))
+  stop()
+})
+
+test('wiping the cache takes three presses, wipes only the cache, and can be called off', async () => {
+  const { core, session, stop, settle } = await headless()
+  core.cache.write(values('slack:conv:C1', { type: 'slack.conversation', channel: 'C1', kind: 'channel' }, 0, 'slack'))
+  core.owned.write(values('n1', { text: 'mine' }, 1, 'me'))
+  const label = () => actionsNow(session).find((action) => action.id === 'cache.wipe')!.label
+  runTool(session, 'cache.wipe')
+  runTool(session, 'cache.wipeCancel')
+  assert.equal(session.get().state.wiping, 0)
+  runTool(session, 'cache.wipe')
+  runTool(session, 'cache.wipe')
+  assert.match(label(), /Really/)
+  assert.equal(core.item('slack:conv:C1')!.data.channel, 'C1')
+  runTool(session, 'cache.wipe')
+  await settle()
+  assert.equal(session.get().state.wiping, 0)
+  assert.equal(core.item('slack:conv:C1')!.data.channel, undefined)
+  assert.equal(core.item('n1')!.data.text, 'mine')
   stop()
 })

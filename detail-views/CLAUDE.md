@@ -53,7 +53,8 @@ doc for the area you change, and keep it up to date in the same commit.
     for what belongs to no module.
   - **cache** (`detail-views.cache.sqlite`): what was loaded from other
     services. One event per value and per link, replaced by the next load; it
-    is emptied weekly (`Core.clearCache`) and may be deleted any time, since
+    is emptied weekly (`Core.clearCache`, or the sidebar's **Wipe cache**, three
+    presses) and may be deleted any time, since
     everything in it loads again on demand.
   - The file before these (`detail-views.sqlite`) is read once, read-only, to
     import what I owned (`legacy.ts`). Never write to it.
@@ -72,12 +73,16 @@ doc for the area you change, and keep it up to date in the same commit.
   collide with owned ids (uuids) or with each other, and an id's shape alone
   gives its type (`ModuleView.typeOf`): a PR seen only as a link is that item
   and loads itself.
-- **Slack read state is mine.** The workspace lists conversations (channels,
-  DMs, group DMs) and every thread in them, unread first, then each group by
-  its newest message (a conversation's newest message, a thread's newest
-  reply). Never by when it was loaded. `m` writes an owned `lastRead` (a ts)
-  on a conversation or thread; it is unread while its newest message is later
-  and not mine. Unread rows are tinted. Slack's own read state is not read.
+- **Slack is two levels: conversations, then messages.** Every message is
+  linked under its conversation (channel, DM, group DM), a reply too, and a
+  reply under its thread's first message as well, shown in the conversation
+  with that message's pill. Nothing but conversations is linked under the
+  workspace. Loads raise a conversation's `lastMessageReceived` (the newest
+  message from someone else); `m` sets an owned `lastRead` to it (never to
+  now). The workspace lists only conversations where it is later than
+  `lastRead` (or with none), newest first, each showing only what came after
+  `lastRead`. Never ordered by when it was loaded. Slack's own read state is
+  not read.
 - **Slack loads lists, one batch of history, then watches.** On its own the
   app loads only the workspace's lists (`users.conversations`,
   `conversations.list`, `users.list`), a first batch of 1000 messages across

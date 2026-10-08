@@ -189,6 +189,13 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
       view={view}
       picking={picking}
       onModule={onModule}
+      wipe={{
+        label: labelOf(tools.find((tool) => tool.id === 'cache.wipe')!, session) ?? '',
+        stage: state.wiping,
+        onWipe: () => runTool(session, 'cache.wipe'),
+        onCancel: () => runTool(session, 'cache.wipeCancel'),
+        cancelLabel: labelOf(tools.find((tool) => tool.id === 'cache.wipeCancel')!, session) ?? '',
+      }}
     />
   )
 }

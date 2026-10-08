@@ -29,13 +29,16 @@ Newest last. Each says what was chosen, why, and what was turned down.
    *Why:* never render unbounded data. Currently 3000 because Slack's workspace
    is sorted after the walk.
 10. **Slack: read state is mine, not Slack's.** An owned `lastRead` per
-    topic, set with `m`; unread is worked out from the cache. *Why:* Slack's
+    conversation, set with `m` to its `lastMessageReceived`; unread is worked
+    out from the cache. *Why:* Slack's
     needed a call per conversation, has no list of followed threads, and can't
     mark a thread read; mine also lets me look without marking read. Not
     defaulted: I go through the list myself.
-11. **Slack: unread first, then by the newest message, in the frontend.** Not
-    by a stored `latestTs`, not by load time, and no longer by `updatedAt`,
-    which my own writes (`lastRead`, a note) bump.
+11. **Slack: only unread conversations, by `lastMessageReceived`.** Not by
+    load time, and not by `updatedAt`, which my own writes (`lastRead`, a
+    note) bump. Threads read flat in their conversations, each reply with its
+    thread's pill. *Why:* one list of what I haven't read, in two levels, not
+    three; Slack can't show that.
 12. **Slack: lists + one search batch + a search poll; no per-conversation
     loading.** *Why:* ~600 calls took minutes; search covers every
     conversation in ~10 calls. *Turned down:* `client.counts`/`client.boot`
@@ -115,3 +118,7 @@ Newest last. Each says what was chosen, why, and what was turned down.
     link, so that is unlink-and-add), the view reverses them. Pushes only
     (not back, forward or the sidebar); plain notes aren't kept; 200 at most,
     the oldest written removed.
+32. **Wiping the cache from the UI takes three presses** (the sidebar's
+    **Wipe cache**, then two confirmations on the same button; **Keep cache**
+    calls it off). Only the cache store, never the owned one. *Why:* it is
+    safe (everything reloads) but slow to recover from, so no mistaken click.
