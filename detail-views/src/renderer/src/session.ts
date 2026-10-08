@@ -769,20 +769,6 @@ export class Session {
     else if (typeof row.entity.data.open === 'boolean') void this.api.setValue(id, 'open', !row.entity.data.open).then((outcome) => this.settle(id, outcome))
   }
 
-  /**
-   * Hides the whole chat a message is in: the selected message, or the view's
-   * root when that is one. Works for a chat that isn't listed too (a public
-   * channel I'm not in), so none of its threads is listed again.
-   */
-  hideChatOfMessage(): void {
-    const row = this.selected()
-    const message = row?.entity.type === 'slack.message' ? row.entity : this.root()
-    const chat = message?.type === 'slack.message' ? message.data.conversation : null
-    if (typeof chat !== 'string') return
-    const id = S.focused(this.state)
-    void this.working(id, 'hide', () => this.api.unlink('slack', chat)).then((outcome) => this.settle('slack', outcome))
-  }
-
   /** Loads the view's root further back: a conversation's history, a thread, or all of Slack. */
   older(): void {
     const id = S.focused(this.state)

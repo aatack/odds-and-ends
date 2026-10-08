@@ -404,11 +404,6 @@ export class Core {
     })
   }
 
-  /** A module's own way of unlinking, where it has one (a conversation takes its threads). */
-  private unlinkEvents(parent: string, child: string): AppEvent[] | null {
-    return this.moduleFor(parent, this.entity(parent).values)?.unlink?.(parent, child) ?? null
-  }
-
   private write(events: AppEvent[]): Outcome {
     this.owned.write(events)
     return { events, error: null }
@@ -493,12 +488,12 @@ export class Core {
       if (from === to) return { events: [], error: null }
       if (to === child) return { events: [], error: 'An item cannot be its own parent' }
       const now = this.now()
-      return this.write([...(this.unlinkEvents(from, child) ?? [link(from, child, now, me, 1)]), link(to, child, now, me)])
+      return this.write([link(from, child, now, me, 1), link(to, child, now, me)])
     },
     link: ({ parent, child }: { parent: string; child: string }): Outcome =>
       parent === child ? { events: [], error: 'An item cannot be linked to itself' } : this.write([link(parent, child, this.now(), me)]),
     unlink: ({ parent, child }: { parent: string; child: string }): Outcome =>
-      this.write(this.unlinkEvents(parent, child) ?? [link(parent, child, this.now(), me, 1)]),
+      this.write([link(parent, child, this.now(), me, 1)]),
   }
 }
 

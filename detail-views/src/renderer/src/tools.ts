@@ -31,7 +31,6 @@ const picking = (s: Session, tool?: S.PickTool) => {
   const pick = s.get().state.picking
   return tool ? pick?.tool === tool : pick !== null
 }
-const rootType = (s: Session) => s.root()?.type
 
 export const tools: Tool[] = [
   // --- Typing ---------------------------------------------------------------------
@@ -107,13 +106,6 @@ export const tools: Tool[] = [
   { id: 'claude.new', label: 'Claude session', scope: 'list', keys: ['K'], enabled: (s) => selected(s) !== null, run: (s) => s.openClaudeDialog() },
   { id: 'claude.prompt', label: 'Prompt Claude', scope: 'list', keys: ['k'], enabled: (s) => selected(s) !== null, run: (s) => s.startPrompt() },
   { id: 'checkbox.toggle', label: 'Tick', scope: 'list', keys: [' '], enabled: (s) => s.canToggle(), run: (s) => s.toggle() },
-  {
-    id: 'chat.hide', label: 'Hide chat',
-    scope: 'list',
-    keys: ['Shift+Backspace'],
-    enabled: (s) => selected(s)?.entity.type === 'slack.message' || rootType(s) === 'slack.message',
-    run: (s) => s.hideChatOfMessage(),
-  },
   {
     id: 'cache.wipe',
     label: (s) => ['Wipe cache', 'Wipe the cache? Press again', 'Really wipe it? Press to wipe'][s.get().state.wiping],
