@@ -28,7 +28,8 @@ so Ctrl+Z takes them back.
 
 - `present` adds `contextPeers` (the context's other children) to any item
   with a `context`.
-- Rows and overviews (so peeks too) draw them as pills to the right of the
+- Rows draw them as pills straight after the item's text (wrapping with it,
+  not pushed to the right); overviews (so peeks too) on a line under the
   item: hover peeks, click goes there. Six at most, then `+N`. Pills don't, so
   they never nest.
 

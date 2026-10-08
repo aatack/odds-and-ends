@@ -127,7 +127,7 @@ const TreeRow = memo(function TreeRow(props: {
       onSelect={props.interactive ? props.onSelect : undefined}
     >
       <Marker row={row} onToggle={props.interactive ? props.onToggle : undefined} />
-      <div className={`cell${tintClass(tintOf(kinds, row.entity))}`}>
+      <div className={`cell${tintClass(tintOf(kinds, row.entity))}${hasPeers(row.entity) ? ' has-context' : ''}`}>
         {props.shown.editing ? (
           <TextBox edit={props.edit} onEditDraft={props.onEditDraft} />
         ) : (
@@ -140,24 +140,25 @@ const TreeRow = memo(function TreeRow(props: {
             findText={props.findText}
           />
         )}
+        <ContextPills entity={row.entity} />
       </div>
-      <ContextPills entity={row.entity} />
     </Selectable>
   )
 })
+
+const hasPeers = (entity: Entity): boolean => Array.isArray(entity.data.contextPeers) && entity.data.contextPeers.length > 0
 
 /** How many of a context's other items are named beside one; the rest are counted. */
 const contextShown = 6
 
 /**
  * The other items in an item's context (`contextPeers`, from `present`), as
- * pills beside it: hover to peek, click to go. Rows and overviews draw them;
+ * pills straight after its text: hover to peek, click to go. Rows and overviews draw them;
  * pills don't, so they never nest.
  */
 function ContextPills(props: { entity: Entity }) {
-  const peers = props.entity.data.contextPeers
-  if (!Array.isArray(peers) || !peers.length) return null
-  const ids = peers as string[]
+  if (!hasPeers(props.entity)) return null
+  const ids = props.entity.data.contextPeers as string[]
   return (
     <span className="context-pills">
       {ids.slice(0, contextShown).map((id) => (
