@@ -1,13 +1,9 @@
 import { memo } from 'react'
 import { authorColour, cursorTime } from '../format.ts'
 import { hotkeyOf } from '../tools.ts'
-import type { Entity } from '../../../core/types.ts'
-import type { OverviewProps, PillProps, RowProps, Tint } from './kindTypes.ts'
+import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
 import { MessageBody, MessageRow, Text } from './messages.tsx'
 import { Button, Composer, HeaderPill, Highlight, ItemPill, Status } from './primitives.tsx'
-
-/** A conversation's tint: unread (`unread`, from the Slack view). */
-export const slackTint = (entity: Entity): Tint | null => (entity.data.unread ? 'accent' : null)
 
 const text = (data: Record<string, unknown>, fallback = ''): string =>
   typeof data.text === 'string' && data.text ? data.text : fallback
@@ -144,23 +140,8 @@ export function MessageOverview(props: OverviewProps) {
  * started it, and how far it has gone. Anywhere else it is chat, grouped with
  * the message above.
  */
-/**
- * A message in a chat. A reply, shown in its conversation (which reads flat),
- * starts with its thread's pill: hover to see the thread, click to go to it.
- */
 export const SlackMessageRow = memo(function SlackMessageRow(props: RowProps) {
-  const thread = props.parent?.type === 'slack.conversation' && typeof props.entity.data.thread === 'string' ? props.entity.data.thread : null
-  return (
-    <MessageRow
-      {...props}
-      always={props.parent?.type !== 'slack.conversation' && props.parent?.type !== 'slack.message'}
-      lead={thread && (
-        <>
-          <ItemPill id={thread} fallback="thread" />{' '}
-        </>
-      )}
-    />
-  )
+  return <MessageRow {...props} always={props.parent?.type !== 'slack.conversation' && props.parent?.type !== 'slack.message'} />
 })
 
 export function MessagePill(props: PillProps) {

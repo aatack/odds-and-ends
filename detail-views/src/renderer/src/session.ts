@@ -1,5 +1,6 @@
 import { EntityCache, type CacheState } from '../../core/graph/cache.ts'
 import { foreignOf, itemOf, moduleInfos, viewOf } from '../../core/present.ts'
+import { activity } from '../../core/modules/slack/view.ts'
 import type { Entity, ModuleInfo, NoteValues, Outcome, View, ViewRow } from '../../core/types.ts'
 import type { Api } from './api.ts'
 import type { Environment } from './environment.ts'
@@ -808,12 +809,10 @@ export class Session {
     this.update(S.setWiping(this.state, 0))
   }
 
-  /** What `m` marks read: the selected row's conversation, or the view root's. */
+  /** What `m` marks read: the selected row, or the view's root, if anything has come into it. */
   readTarget(): string | null {
     const entity = this.selected()?.entity ?? this.root()
-    if (entity?.type === 'slack.conversation') return entity.id
-    if (entity?.type === 'slack.message' && typeof entity.data.conversation === 'string') return entity.data.conversation
-    return null
+    return entity && activity(entity) ? entity.id : null
   }
 
   markRead(): void {

@@ -28,17 +28,20 @@ Newest last. Each says what was chosen, why, and what was turned down.
 9. **Bounded walks.** Focus views walk at most `focusLimit` children.
    *Why:* never render unbounded data. Currently 3000 because Slack's workspace
    is sorted after the walk.
-10. **Slack: read state is mine, not Slack's.** An owned `lastRead` per
-    conversation, set with `m` to its `lastMessageReceived`; unread is worked
-    out from the cache. *Why:* Slack's
+10. **Slack: read state is mine, not Slack's.** An owned `lastRead` per item,
+    set with `m` to its `lastMessageReceived`; unread is worked out from the
+    cache. *Why:* Slack's
     needed a call per conversation, has no list of followed threads, and can't
     mark a thread read; mine also lets me look without marking read. Not
     defaulted: I go through the list myself.
-11. **Slack: only unread conversations, by `lastMessageReceived`.** Not by
-    load time, and not by `updatedAt`, which my own writes (`lastRead`, a
-    note) bump. Threads read flat in their conversations, each reply with its
-    thread's pill. *Why:* one list of what I haven't read, in two levels, not
-    three; Slack can't show that.
+11. **Slack: only what is new, at every level.** Conversations by
+    `lastMessageReceived`, not by load time, and not by `updatedAt`, which my
+    own writes (`lastRead`, a note) bump. Threads stay nested (easier to
+    follow than flat, tried and dropped), and a reply moves its thread to the
+    end of its conversation. Each item has its own `lastRead`; a row shows if
+    newer than its own and every one above it, so threads I organise under my
+    own notes still surface. *Why:* one list of what I haven't read; Slack
+    can't show that.
 12. **Slack: lists + one search batch + a search poll; no per-conversation
     loading.** *Why:* ~600 calls took minutes; search covers every
     conversation in ~10 calls. *Turned down:* `client.counts`/`client.boot`

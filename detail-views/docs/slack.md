@@ -52,24 +52,23 @@ Undocumented column: from memory, unverified; none of it is in the reference.
 - **Read-only.** `api.ts` refuses any method not on its read list
   (`slackWrites` is off). Adding a read method needs my say-so; it is how
   `search.messages`, `users.list` and `conversations.list` got there.
-- **Read state is mine** (below): an owned `lastRead` per conversation, set
-  with `m`. Slack's own read state is never read.
+- **Read state is mine** (below): an owned `lastRead` per item, set with
+  `m`. Slack's own read state is never read.
 - **No per-conversation loading on its own.** Slack has no public call for
   every channel's latest message; one call per conversation (~600) took
   minutes. Everything automatic is a list call or a search.
 
 ## Shape
 
-Two levels, not three: threads read flat in their conversations.
-
 - `slack` (`slack.home`) is the workspace. Its children are conversations
   (channels, DMs, group DMs) only; no message is ever linked under it.
-- **Every message is linked under its conversation**, at its ts, a reply too.
-  A reply is also linked under its thread's parent message, so `d` on a
-  parent still shows the thread alone.
-- A reply carries `thread` (its parent's id, from `present`); shown under a
-  conversation, its row starts with that parent's pill: hover to peek at the
-  thread, click to go to it.
+- A conversation's children are its top-level messages, linked at their ts.
+  A thread's first message has its replies under it, linked at their ts.
+- **A reply moves its thread to the end of its conversation**
+  (`relinkThread`): the first message is linked there again at the reply's
+  ts, which replaces the cached link. Not if I have taken the thread out of
+  the conversation and put it somewhere else (`threadStays`); an owned unlink
+  with nowhere else to go is undone by the next reply, so nothing new is lost.
 - **Hiding a chat is unlinking it** from the workspace: Backspace (or Delete)
   on its row writes an owned unlink (`Slack.unlink`, via
   `Core.actions.unlink`). The unlink is later than the cached link (at 0), so
@@ -85,23 +84,29 @@ Two levels, not three: threads read flat in their conversations.
 
 ## Read state
 
-- **`lastMessageReceived`** (cache, at 0) on a conversation: the newest
-  message in it from someone else, a reply included, raised by every load
-  that brings messages in (`receivedEvents`). My own messages never raise it.
-- **`m`** (`Slack.markRead`) on a conversation, or on a message (its
-  conversation), writes an owned `lastRead` equal to `lastMessageReceived`,
-  authored `me`, so Ctrl+Z takes it back. Not the time now: a message sent
-  before I pressed `m` but not yet found by the watch would then be taken as
-  read and never shown.
-- A conversation is **unread** when `lastMessageReceived` is later than
-  `lastRead`, or it has no `lastRead`. There is no default: everything anyone
-  has written in starts unread, and I go through it.
-- **The workspace lists only unread conversations**, by `lastMessageReceived`,
-  newest first (`order`). Read ones aren't shown there.
-- **In the workspace, a conversation shows only messages after its
-  `lastRead`** (`order` is given the view's root for this). Its own view
-  (`d`) shows all of it.
-- Unread conversations are tinted `accent` (`slackTint`).
+- **`lastMessageReceived`** (cache, at 0): the newest message from someone
+  else under an item. Every load that brings messages in raises it
+  (`receivedEvents`) on a reply's thread, on the conversation (unless the
+  thread has been moved out of it), and on everything those sit under,
+  however I organised them (up to 4 levels, never a module's root). My own
+  messages never raise it.
+- **`activity`** of an item is its `lastMessageReceived`, or for a message
+  its own ts if that is later.
+- **`m`** (`Slack.markRead`) on any item with an `activity` writes an owned
+  `lastRead` equal to it, authored `me`, so Ctrl+Z takes it back. Not the
+  time now: a message sent before I pressed `m` but not yet found by the
+  watch would then be taken as read and never shown.
+- **The workspace shows, at every level, only what is new** (`shows`, which
+  `viewOf` asks of the root's module for every row): an item shows if its
+  `activity` is later than its own `lastRead` and every `lastRead` above it
+  in the view. So marking a conversation hides it and everything in it up to
+  then; marking a thread hides the thread but leaves the conversation until
+  it is marked too. A conversation nothing has come into isn't shown;
+  anything without a date of its own (a note of mine) always is. There is no
+  default `lastRead`: everything starts unread.
+- The workspace lists conversations by `activity`, newest first.
+- A conversation's own view (`d`), or anything else not rooted at the
+  workspace, shows everything.
 - A conversation is marked in Slack too (`conversations.mark`) only while
   `slackWrites` is on.
 
@@ -177,7 +182,8 @@ user lookups) queue ahead of the rest.
   link to it (a mention, a pill, Recents).
 - A conversation's own backlog (`o`) is `conversations.history`: top-level
   messages and their reply counts, not the replies themselves (`o` on a
-  thread loads those).
+  thread loads those). A thread's newest reply there is taken as someone
+  else's (history doesn't say whose).
 - Join/leave messages aren't in search.
 - Messages made only of blocks or attachments show empty text.
 - Messages from public channels I'm not in are cached (not shown) and counted

@@ -73,16 +73,15 @@ doc for the area you change, and keep it up to date in the same commit.
   collide with owned ids (uuids) or with each other, and an id's shape alone
   gives its type (`ModuleView.typeOf`): a PR seen only as a link is that item
   and loads itself.
-- **Slack is two levels: conversations, then messages.** Every message is
-  linked under its conversation (channel, DM, group DM), a reply too, and a
-  reply under its thread's first message as well, shown in the conversation
-  with that message's pill. Nothing but conversations is linked under the
-  workspace. Loads raise a conversation's `lastMessageReceived` (the newest
-  message from someone else); `m` sets an owned `lastRead` to it (never to
-  now). The workspace lists only conversations where it is later than
-  `lastRead` (or with none), newest first, each showing only what came after
-  `lastRead`. Never ordered by when it was loaded. Slack's own read state is
-  not read.
+- **Slack read state is mine, at every level.** Only conversations are
+  linked under the workspace; replies nest under their thread's first
+  message, and a reply moves that message to the end of its conversation.
+  Loads raise `lastMessageReceived` (the newest message from someone else) on
+  the thread, the conversation and whatever they sit under; `m` sets an owned
+  `lastRead` to it (never to now). The workspace shows, at every depth, only
+  items newer than their own `lastRead` and every `lastRead` above them
+  (`ModuleView.shows`), conversations newest first. Never ordered by when it
+  was loaded. Slack's own read state is not read.
 - **Slack loads lists, one batch of history, then watches.** On its own the
   app loads only the workspace's lists (`users.conversations`,
   `conversations.list`, `users.list`), a first batch of 1000 messages across
