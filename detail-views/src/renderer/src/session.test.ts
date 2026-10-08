@@ -19,6 +19,7 @@ async function headless(options: Parameters<typeof memoryCore>[0] = {}) {
     perform: (id, action, text) => a.perform({ id, action, text }),
     toggle: async (id) => a.toggle({ id }),
     markRead: (path) => a.markRead({ path }),
+    pauseSlack: (paused) => a.pauseSlack({ paused }),
     clearCache: async () => a.clearCache(),
     older: (id) => a.older({ id }),
     unlink: async (parent, child) => a.unlink({ parent, child }),

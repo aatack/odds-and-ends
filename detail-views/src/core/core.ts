@@ -430,6 +430,11 @@ export class Core {
       this.clearCache()
       return { events: [], error: null }
     },
+    /** Pauses Slack's watch, or resumes it (catching up at once). */
+    pauseSlack: async ({ paused }: { paused: boolean }): Promise<Outcome> => this.attempt('slack', async () => {
+      await this.slack.setPaused(paused)
+      return []
+    }),
     /** `m` on a row, by its path from the view's root: everything on it is read up to the row's time. */
     markRead: ({ path }: { path: string[] }): Promise<Outcome> => this.attempt(path[path.length - 1] ?? '', () => this.slack.markRead(path)),
     /** Loads further back than anything loads on its own. */

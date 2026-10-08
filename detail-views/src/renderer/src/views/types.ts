@@ -26,6 +26,8 @@ export interface ViewProps {
   onAction?(action: string): void
   /** Loads further back than what is cached. */
   onOlder?(): void
+  /** Pauses Slack's watch, or resumes it. */
+  onPause?(): void
   onDraft(text: string): void
   onCompose(composing: boolean): void
   /** The view's find: null while it has none, the text while the field is open. */

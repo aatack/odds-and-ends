@@ -88,7 +88,7 @@ doc for the area you change, and keep it up to date in the same commit.
   `conversations.list`, `users.list`), a first batch of 1000 messages across
   every conversation by search, and then `Slack.poll` (one `search.messages`
   call every 15 s, started by `Core.start`, catching up on start from
-  `watch.at`). Anything older, for all of Slack, one conversation or one
+  `watch.at`; I can pause it from the workspace). Anything older, for all of Slack, one conversation or one
   thread, loads only when I ask (`o`, `Module.older`). Never poll or load
   conversations one by one on their own.
 - **A module's data lives on its root entity.** Each module in the sidebar

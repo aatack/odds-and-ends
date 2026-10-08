@@ -133,6 +133,11 @@ Undocumented column: from memory, unverified; none of it is in the reference.
 
 ## The watch (`poll`)
 
+- **Pause / Resume** (a button on the workspace's header, and a tool with no
+  key): `watch.paused`, module data on the workspace, so it lasts across
+  restarts and undo never touches it. While paused, `poll` does nothing.
+  Resuming polls at once, which catches up from `watch.at` as on start.
+
 - One `search.messages` query `after:<cursor day − 2>`, sorted newest first,
   reading pages until a match is at or before `watch.at − 120 s` (search
   indexes a few seconds late). Up to 100 pages.

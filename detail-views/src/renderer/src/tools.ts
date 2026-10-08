@@ -114,6 +114,14 @@ export const tools: Tool[] = [
     run: (s) => s.wipeCache(),
   },
   { id: 'cache.wipeCancel', label: 'Keep cache', scope: 'app', keys: [], enabled: (s) => s.get().state.wiping > 0, run: (s) => s.cancelWipe() },
+  {
+    id: 'slack.pause',
+    label: (s) => (s.slackPaused() ? 'Resume' : 'Pause'),
+    scope: 'app',
+    keys: [],
+    enabled: (s) => s.root()?.type === 'slack.home',
+    run: (s) => s.pauseSlack(),
+  },
   { id: 'slack.markRead', label: 'Mark read', scope: 'list', keys: ['m'], enabled: (s) => s.readTarget() !== null, run: (s) => s.markRead() },
 
   // --- The view's root ----------------------------------------------------------------

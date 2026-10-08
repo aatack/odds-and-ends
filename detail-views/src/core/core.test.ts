@@ -463,6 +463,22 @@ test('slack: a reply moves its thread to the end; the workspace shows, at every 
   assert.deepEqual(shown(), ['C2', '  n1', '    1700000010.000000', '      1700000050.000000'])
 })
 
+test('slack: the watch can be paused, and resuming catches up at once', async () => {
+  const calls: string[] = []
+  let time = 1_700_000_000_000
+  const core = memoryCore({ now: () => time, fetch: fakeSlack(auth, calls) })
+  await core.slack.setToken('xoxp-1')
+  await core.slack.poll()
+  await core.actions.pauseSlack({ paused: true })
+  assert.equal(core.item('slack')!.data['watch.paused'], true)
+  calls.length = 0
+  time += 30_000
+  await core.slack.poll()
+  assert.ok(!calls.includes('search.messages'))
+  await core.actions.pauseSlack({ paused: false })
+  assert.ok(calls.includes('search.messages'))
+})
+
 test('slack: m on a reply reads everything on its path up to that reply, leaving anything newer', async () => {
   const core = memoryCore()
   const message = (ts: string, parent: string, user = 'U2') => [

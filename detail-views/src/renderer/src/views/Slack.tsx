@@ -32,6 +32,17 @@ export function SlackHomeOverview(props: OverviewProps) {
       <div className="title">
         <HeaderPill entity={entity} />
         <Polled data={entity.data} now={props.now} />
+        {props.interactive && props.onPause && (
+          <span className="history">
+            <Button
+              label={entity.data['watch.paused'] === true ? 'Resume' : 'Pause'}
+              busy={props.working?.includes('pause')}
+              busyLabel="…"
+              title={entity.data['watch.paused'] === true ? 'Look for new messages again' : 'Stop looking for new messages'}
+              onClick={props.onPause}
+            />
+          </span>
+        )}
         <History {...props} />
       </div>
       <Status error={(entity.data['watch.error'] as string | null | undefined) ?? null} />
@@ -67,6 +78,8 @@ function History(props: OverviewProps) {
 /** How long ago the watch last looked, and how many new messages it found. */
 function Polled(props: { data: Record<string, unknown>; now: number | undefined }) {
   const at = Number(props.data.polledAt)
+  // Paused, the Resume button says so; a time since the last look would only go stale.
+  if (props.data['watch.paused'] === true) return null
   if (!at || !props.now) return null
   const seconds = Math.max(0, Math.round((props.now - at) / 1000))
   return (
