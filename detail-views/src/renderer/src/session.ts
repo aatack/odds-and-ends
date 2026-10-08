@@ -795,14 +795,26 @@ export class Session {
     this.update(S.setWiping(this.state, 0))
   }
 
-  /** What `m` marks read: the selected row, or the view's root, if anything has come into it. */
-  readTarget(): string | null {
-    const entity = this.selected()?.entity ?? this.root()
-    return entity && activity(entity) ? entity.id : null
+  /**
+   * What `m` marks read: the path to the selected row (or the view's root),
+   * when something on it has had something come into it.
+   */
+  readTarget(): string[] | null {
+    const row = this.selected()
+    const path = row?.path ?? [S.focused(this.state)]
+    const item = this.snapshot.item
+    return path.some((id) => {
+      const entity = item(id)
+      return entity !== null && activity(entity) !== null
+    })
+      ? path
+      : null
   }
 
   markRead(): void {
-    const id = this.readTarget()
-    if (id) void this.api.markRead(id).then((outcome) => this.settle(id, outcome))
+    const path = this.readTarget()
+    const id = path?.[path.length - 1]
+    if (path && id) void this.api.markRead(path).then((outcome) => this.settle(id, outcome))
   }
+
 }

@@ -6,8 +6,8 @@ import { moduleInfos } from '../../present.ts'
 import { me } from '../tasks/tasks.ts'
 import { SlackApi, slackWrites } from './api.ts'
 import {
-  activity,
   maxTs,
+  readTime,
   parseMessageId,
   slackIds as ids,
   slackView,
@@ -273,20 +273,28 @@ export class Slack implements Module {
   }
 
   /**
-   * Marks an item read up to the newest thing in it (`activity`: a
-   * conversation's `lastMessageReceived`; a message's, or its own ts): an
-   * owned `lastRead`. Not to now, so a message still on its way, sent before
-   * now, is never taken as read. A conversation is marked in Slack too, while
-   * Slack may be written to.
+   * `m` on a row, by its path from the view's root: every item on the path
+   * is read up to the row's time (`readTime`), as an owned `lastRead`. So
+   * pressing it on a reply reads the thread to that reply, and the
+   * conversation to then too, leaving anything newer in either. A module's
+   * root is never marked: marking a conversation in the workspace reads only
+   * that conversation. Conversations are marked in Slack too, while Slack may
+   * be written to.
    */
-  async markRead(id: string): Promise<AppEvent[]> {
-    const entity = this.context.lens.read(id)
-    const ts = entity && activity(entity)
-    if (!entity || !ts) return []
-    const events = [value(id, 'lastRead', ts, this.context.now(), me)]
+  async markRead(path: string[]): Promise<AppEvent[]> {
+    const { lens } = this.context
+    const leaf = path.length ? lens.read(path[path.length - 1]) : null
+    if (!leaf) return []
+    const ts = readTime(leaf)
+    const roots = new Set(moduleInfos.map((module) => module.root))
+    const now = this.context.now()
+    const marked = path.filter((id) => !roots.has(id))
+    const events = marked.map((id) => value(id, 'lastRead', ts, now, me))
     this.context.owned.write(events)
-    if (slackWrites && this.api && entity.type === 'slack.conversation') {
-      await this.api.call('conversations.mark', { channel: id.slice('slack:conv:'.length), ts })
+    if (slackWrites && this.api) {
+      for (const id of marked) {
+        if (lens.read(id)?.type === 'slack.conversation') await this.api.call('conversations.mark', { channel: id.slice('slack:conv:'.length), ts })
+      }
     }
     return events
   }

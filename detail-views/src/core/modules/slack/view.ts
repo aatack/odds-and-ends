@@ -122,6 +122,15 @@ export function activity(entity: Entity): string | null {
   return maxTs(received, own) ?? null
 }
 
+/**
+ * What `m` on an item reads up to, as a ts: its `activity`, or when nothing
+ * has come into it (a note of mine), when it was made. Never now, so a message
+ * still on its way, sent before now, is never taken as read.
+ */
+export function readTime(entity: Entity): string {
+  return activity(entity) ?? (entity.createdAt / 1000).toFixed(6)
+}
+
 const readTo = (entity: Entity): number => (typeof entity.data.lastRead === 'string' ? Number(entity.data.lastRead) : -Infinity)
 
 const types: Record<string, ItemType> = {
@@ -185,15 +194,14 @@ export const slackView: ModuleView = {
   },
 
   // In the workspace, at every level, only what is new: an item whose newest
-  // thing (`activity`) is after where I last read it and everything it is
-  // under here (reading a conversation reads its threads to then). A
-  // conversation nothing has come into isn't shown; anything else without a
-  // date of its own (a note) is. Anywhere else shows everything.
+  // thing (`readTime`: what came into it, or when a note of mine was made) is
+  // after where I last read it and everything it is under here (reading a
+  // conversation reads its threads to then). A conversation nothing has come
+  // into isn't shown. Anywhere else shows everything.
   shows(child, line, root) {
     if (root !== slackIds.root) return true
-    const newest = activity(child)
-    if (newest === null) return child.type !== 'slack.conversation'
-    return Number(newest) > Math.max(readTo(child), ...line.map(readTo))
+    if (child.type === 'slack.conversation' && activity(child) === null) return false
+    return Number(readTime(child)) > Math.max(readTo(child), ...line.map(readTo))
   },
 
   // `from` is where what is cached starts: everything after it is here. For a
