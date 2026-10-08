@@ -40,7 +40,10 @@ test('mcp: a Claude session reads the app over HTTP: modules, read, and a paged 
   const client = new Client({ name: 'test', version: '0' })
   t.after(() => client.close())
   await client.connect(new StreamableHTTPClientTransport(new URL(address.url), { requestInit: { headers: { Authorization: `Bearer ${address.token}` } } }))
-  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name), ['modules', 'read', 'walk'])
+  const tools = (await client.listTools()).tools
+  assert.deepEqual(tools.map((tool) => tool.name), ['modules', 'read', 'walk', 'find_context', 'merge_context'])
+  assert.equal(tools.find((tool) => tool.name === 'merge_context')!.annotations?.readOnlyHint, false)
+  assert.ok((client.getInstructions() ?? '').length < 2000)
   assert.match(client.getInstructions() ?? '', /graph of entities/)
 
   const modules = text(await client.callTool({ name: 'modules', arguments: {} }))
@@ -79,6 +82,16 @@ test('mcp: a Claude session reads the app over HTTP: modules, read, and a paged 
   // Secrets never leave the core.
   assert.equal(read.slack.values['secret.token'], undefined)
   assert.equal(read.slack.values.self, 'UME')
+
+  // Context: Claude puts two items in one; then a session in it is found from a path through one of them.
+  core.owned.write(values('s1', { type: 'claude.session', text: 'session' }, 6, 'me'))
+  const merged = text(await client.callTool({ name: 'merge_context', arguments: { first: 'ab', second: 's1' } }))
+  const context = core.entity('ab').values.context as string
+  assert.match(merged, new RegExp(`share the context ${context}`))
+  assert.equal(core.entity(context).values.type, 'context')
+  assert.equal(text(await client.callTool({ name: 'find_context', arguments: { path: ['tasks', 'a', 'ab'], type: 'claude.session' } })), 's1')
+  assert.match(text(await client.callTool({ name: 'find_context', arguments: { path: 'b', type: 'claude.session' } })), /No claude.session/)
+  assert.ok((await client.callTool({ name: 'find_context', arguments: { path: 'b', type: 'nope' } })).isError)
 
   // Without the token, nothing.
   const refused = await fetch(address.url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })

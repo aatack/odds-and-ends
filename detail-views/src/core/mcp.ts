@@ -4,11 +4,12 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import type { Core } from './core.ts'
 import type { GraphEntity } from './graph/entity.ts'
-import { lensOf, moduleInfos, present, toItem } from './present.ts'
-import type { LoadPart } from './types.ts'
+import { findInContext, lensOf, moduleInfos, present, toItem } from './present.ts'
+import { itemTypes, type ItemType, type LoadPart } from './types.ts'
 
 // What a Claude session sees of the app (after entity-graph's
-// `src/main/pensive/mcpServer.ts`): read-only, three tools, each a whole job.
+// `src/main/pensive/mcpServer.ts`): a few tools, each a whole job. All read
+// but `merge_context`, which writes as Claude.
 // The instructions and each description are cut at 2KB by a client, so the
 // instructions route and a tool's mechanics live on the tool.
 
@@ -40,11 +41,21 @@ a graph rather than a tree. An id's shape often gives its type (\`slack:conv:C12
 Each module (Slack, GitHub, Tasks, Claude, Recents) has a root entity: \`modules\` lists
 them, and they are where to start. \`walk\` reads down from an id as an outline, one line
 per entity with its id in a column on the left; \`read\` gives everything about entities
-by id. Nothing here writes.`
+by id.
+
+## Context
+
+Related things (notes, a PR, a Claude session, a Slack thread) are collected in a
+*context*: an entity of type \`context\` whose children are the related items, each of
+which names it in its \`context\` value. To find something related to where you are,
+\`find_context\` looks through the contexts along a path. \`merge_context\` puts two items
+in one context; it is the only tool here that writes.`
 
 export interface McpTool {
   name: string
   description: string
+  /** False for the one tool that writes. */
+  readOnly?: boolean
   inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: string[] }
   run(core: Core, args: Record<string, unknown>): Promise<string>
 }
@@ -222,6 +233,57 @@ export const mcpTools: McpTool[] = [
   },
 ]
 
+mcpTools.push(
+  {
+    name: 'find_context',
+    description:
+      'The nearest item of `type` related to `path`: from the end of the path up, each ' +
+      'item with a `context` has that context\'s children (only those, not theirs) looked ' +
+      'through for one of the type. Gives its id, or says there is none (the path ran out, ' +
+      'or came back on itself). The path is ids from a root down to where you are; one id ' +
+      `is a path too. Types: ${itemTypes.join(', ')}.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }], description: 'Ids from a root down to where you are.' },
+        type: { type: 'string', description: 'The type wanted, e.g. `claude.session` or `github.pr`.' },
+      },
+      required: ['path', 'type'],
+    },
+    run: async (core, args) => {
+      const path = pathOf(args.path)
+      if (!path) throw new Error('`path` must be an id or a list of ids')
+      if (!(itemTypes as readonly string[]).includes(String(args.type))) throw new Error(`No type "${String(args.type)}"`)
+      const found = findInContext(path, args.type as ItemType, core.lens())
+      return found ?? `No ${String(args.type)} in a context along this path.`
+    },
+  },
+  {
+    name: 'merge_context',
+    description:
+      'Put two items in one context, as the user does with `c`. Neither has a context: a ' +
+      'new one is made and both go under it. One has: the other joins it. Both have: ' +
+      '`first` joins `second`\'s (its `context` changes) and stays under its old one too. ' +
+      'Written as Claude. Gives the context\'s id.',
+    readOnly: false,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        first: { type: 'string', description: 'The item that joins, when both have a context.' },
+        second: { type: 'string', description: 'The item whose context wins, when both have one.' },
+      },
+      required: ['first', 'second'],
+    },
+    run: async (core, args) => {
+      const [first, second] = [String(args.first ?? ''), String(args.second ?? '')]
+      if (!first || !second) throw new Error('`first` and `second` are both needed')
+      const { error } = core.shareContext(first, second, 'claude')
+      if (error) throw new Error(error)
+      return `${first} and ${second} share the context ${String(core.entity(first).values.context)}.`
+    },
+  },
+)
+
 function mcpServer(core: Core): Server {
   const server = new Server({ name: mcpName, version: '0.1.0' }, { capabilities: { tools: {} }, instructions })
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -229,7 +291,7 @@ function mcpServer(core: Core): Server {
       name: tool.name,
       description: tool.description,
       inputSchema: tool.inputSchema,
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+      annotations: { readOnlyHint: tool.readOnly ?? true, destructiveHint: false, idempotentHint: true },
     })),
   }))
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
