@@ -53,6 +53,19 @@ export function ViewPane(props: ViewProps) {
           onCompose={props.onCompose}
         />
       )}
+      {/* A Claude session's chat: the next prompt, typed below it. It has the keyboard as the view opens. */}
+      {view.compose === 'claude' && props.interactive && !action && (
+        <Composer
+          key={root.id}
+          kind="claude"
+          autoFocus
+          placeholder="Prompt"
+          draft={props.draft}
+          composing={props.composing}
+          onDraft={props.onDraft}
+          onCompose={props.onCompose}
+        />
+      )}
     </div>
   )
 }
@@ -229,7 +242,7 @@ function TextBox(props: { edit: Edit | null; onEditDraft(text: string): void }) 
       autoFocus
       spellCheck
       value={edit?.draft ?? ''}
-      placeholder={edit?.mode === 'create' ? (edit.prompt ? 'Prompt Claude' : 'Note') : ''}
+      placeholder={edit?.mode === 'create' ? 'Note' : ''}
       data-field="edit"
       onChange={(event) => onEditDraft(event.target.value)}
       onMouseDown={(event) => event.stopPropagation()}

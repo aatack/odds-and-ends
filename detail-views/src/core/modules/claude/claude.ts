@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, statSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { link, value, values, type AppEvent } from '../../graph/events.ts'
-import { prEntityId } from '../../types.ts'
+import type { Entity } from '../../types.ts'
 import { mcpConfig, mcpName, type McpAddress } from '../../mcp.ts'
 import type { Module, ModuleContext } from '../module.ts'
 import { me } from '../tasks/tasks.ts'
@@ -24,8 +24,6 @@ export interface NewSession {
   cwd: string
   /** Run in a new git worktree of `cwd`'s repo, on a branch of its own. */
   worktree: boolean
-  /** The item it is started from: it goes under it, and the item points at it (`claudeSessionId`). */
-  attachTo: string
 }
 
 /** `~` and `~/x` as the home directory: what a shell would make of them, which a spawned program never does. */
@@ -57,10 +55,9 @@ function slug(text: string): string {
   )
 }
 
-/** Owner and name from a GitHub remote URL, ssh or https. */
-function repoOf(remote: string): { owner: string; name: string } | null {
-  const match = /github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?\s*$/.exec(remote)
-  return match ? { owner: match[1], name: match[2] } : null
+/** The app's MCP server for a session, and its tools allowed without asking (they read, and `merge_context` only links). */
+function mcpArgs(address: McpAddress | null): string[] {
+  return address ? ['--allowedTools', `mcp__${mcpName}`, '--mcp-config', mcpConfig(address)] : []
 }
 
 /**
@@ -68,11 +65,6 @@ function repoOf(remote: string): { owner: string; name: string } | null {
  * own: a temporary one, the one I gave, or a new git worktree of its repo.
  * Everything is owned: sessions, prompts and responses are mine to keep.
  */
-/** The app's MCP server for a session, and its tools allowed without asking (they read, and `merge_context` only links). */
-function mcpArgs(address: McpAddress | null): string[] {
-  return address ? ['--allowedTools', `mcp__${mcpName}`, '--mcp-config', mcpConfig(address)] : []
-}
-
 export class Claude implements Module {
   readonly view = claudeView
 
@@ -84,7 +76,7 @@ export class Claude implements Module {
     this.context = context
   }
 
-  /** A new session: its directory made, its item written, linked under the item it came from. */
+  /** A new session: its directory made, its item written, linked under the Claude root and nowhere else. */
   async createSession(input: NewSession): Promise<AppEvent[]> {
     const { run, now } = this.context
     const id = randomUUID()
@@ -112,13 +104,9 @@ export class Claude implements Module {
     }
     const at = now()
     const events: AppEvent[] = [
-      // `openedOn`: the item it was started from, told to Claude with every prompt.
-      ...values(id, { type: 'claude.session', text: name, cwd, worktree, branch, repo, permissionMode: defaultPermissionMode, openedOn: input.attachTo }, at, me),
+      ...values(id, { type: 'claude.session', text: name, cwd, worktree, branch, repo, permissionMode: defaultPermissionMode }, at, me),
       link(ids.root, id, at, me),
     ]
-    if (input.attachTo !== ids.root) {
-      events.push(link(input.attachTo, id, at, me), value(input.attachTo, 'claudeSessionId', id, at, me))
-    }
     this.context.owned.write(events)
     if (requested) {
       const known = this.context.data.get(ids.root).cwds
@@ -129,53 +117,41 @@ export class Claude implements Module {
   }
 
   /**
-   * A prompt to a session: the prompt item under `parent` (and under the
-   * session), and an empty response under it, now; Claude's answer fills the
-   * response when it comes. Returns what was written now.
+   * A prompt to a session: the prompt item under the session, and an empty
+   * response after it, now; Claude's answer fills the response when it comes.
+   * The session's children are its chat, in order. Returns what was written now.
    */
-  prompt(session: string, parent: string, text: string): AppEvent[] {
+  prompt(session: string, text: string): AppEvent[] {
     const at = this.context.now()
     const promptId = randomUUID()
     const responseId = randomUUID()
     const events: AppEvent[] = [
       ...values(promptId, { type: 'claude.prompt', text, session }, at, me),
-      link(parent, promptId, at, me),
-      ...(parent === session ? [] : [link(session, promptId, at, me)]),
+      link(session, promptId, at, me),
       ...values(responseId, { type: 'claude.response', text: '', running: true }, at, author),
-      link(promptId, responseId, at, author),
+      // A moment later, so it sorts after the prompt.
+      link(session, responseId, at + 1, author),
     ]
     this.context.owned.write(events)
     const before = this.queues.get(session) ?? Promise.resolve()
-    const next = before.then(() => this.answer(session, responseId, parent, text))
+    const next = before.then(() => this.answer(session, responseId, text))
     this.queues.set(session, next.catch(() => {}))
     return events
   }
 
-  /**
-   * What Claude is sent: the prompt, after where it was asked from and what
-   * the session was opened on, by id, so it knows where to look. The prompt
-   * item keeps only what I wrote.
-   */
-  private message(session: string, parent: string, text: string): string {
-    const data = this.context.data.get(session)
-    // A session from before `openedOn`: the item it hangs under, if not just the Claude root.
-    const openedOn = typeof data.openedOn === 'string' ? data.openedOn : (this.context.lens.parents(session).find((id) => id !== ids.root) ?? ids.root)
-    const tools = this.context.mcp() ? ` Read them with the \`${mcpName}\` MCP tools (\`read\`, \`walk\`).` : ''
-    return [
-      `[detail-views: this prompt was added to the item \`${parent}\`; this session was opened on \`${openedOn}\`.${tools}]`,
-      '',
-      text,
-    ].join('\n')
+  /** The box under a session's chat: a prompt to it. */
+  async submit(entity: Entity, text: string): Promise<AppEvent[]> {
+    return entity.type === 'claude.session' ? this.prompt(entity.id, text) : []
   }
 
-  private async answer(session: string, responseId: string, parent: string, text: string): Promise<void> {
+  private async answer(session: string, responseId: string, text: string): Promise<void> {
     const data = this.context.data.get(session)
     const cwd = expandHome(String(data.cwd))
     const mode = String(data.permissionMode ?? defaultPermissionMode)
     const started = Boolean(data.started)
     const args = [
       '-p',
-      this.message(session, parent, text),
+      text,
       '--output-format',
       'json',
       '--model',
@@ -209,22 +185,5 @@ export class Claude implements Module {
       const failed = said ? `${said}\n\n${message}` : message
       this.context.owned.write(values(responseId, { text: failed, running: false, error: failed }, this.context.now(), author))
     }
-    await this.linkPullRequest(session, cwd).catch(() => {})
-  }
-
-  /** The branch checked out where the session runs, if it has a PR: linked under the session. */
-  private async linkPullRequest(session: string, cwd: string): Promise<void> {
-    const { run } = this.context
-    const branch = (await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], cwd)).trim()
-    const repo = repoOf(await run('git', ['remote', 'get-url', 'origin'], cwd))
-    if (!branch || branch === 'HEAD' || !repo) return
-    const query = `query($owner: String!, $name: String!, $branch: String!) { repository(owner: $owner, name: $name) {
-      pullRequests(headRefName: $branch, first: 1, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { url } } } }`
-    const raw = await this.context.gh(['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${repo.owner}`, '-F', `name=${repo.name}`, '-F', `branch=${branch}`])
-    const url = (JSON.parse(raw) as { data?: { repository?: { pullRequests?: { nodes?: { url: string }[] } } } }).data?.repository?.pullRequests
-      ?.nodes?.[0]?.url
-    const pr = url && prEntityId(url)
-    if (!pr || this.context.lens.children(session).includes(pr)) return
-    this.context.owned.write([link(session, pr, this.context.now(), author)])
   }
 }

@@ -111,8 +111,7 @@ export const tools: Tool[] = [
   },
   { id: 'split', label: 'Split', scope: 'list', keys: ['b'], enabled: (s) => s.canSplit(), run: (s) => s.split() },
   { id: 'inspect', label: 'Inspect', scope: 'list', keys: ['3'], enabled: (s) => selected(s) !== null, run: (s) => s.inspect() },
-  { id: 'claude.new', label: 'Claude session', scope: 'list', keys: ['K'], enabled: (s) => selected(s) !== null, run: (s) => s.openClaudeDialog() },
-  { id: 'claude.prompt', label: 'Prompt Claude', scope: 'list', keys: ['k'], enabled: (s) => selected(s) !== null, run: (s) => s.startPrompt() },
+  { id: 'claude.new', label: 'Claude session', scope: 'list', keys: ['K'], run: (s) => s.openClaudeDialog() },
   { id: 'checkbox.toggle', label: 'Tick', scope: 'list', keys: [' '], enabled: (s) => s.canToggle(), run: (s) => s.toggle() },
   {
     id: 'cache.wipe',

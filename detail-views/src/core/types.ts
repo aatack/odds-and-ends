@@ -81,7 +81,7 @@ export interface LoadResult {
 export const loadedKey = (part: LoadPart): string => `loaded.${part}`
 
 /** What the composer under a view does, if there is one. */
-export type ComposeKind = 'slack' | 'slack-token'
+export type ComposeKind = 'slack' | 'slack-token' | 'claude'
 
 /**
  * Something a person can do to an entity. Starting it opens a prompt; Enter

@@ -30,10 +30,8 @@ export interface Api {
   setText(id: string, text: string): Promise<Outcome>
   /** Splits an item's text into its first part and notes under it. */
   split(id: string): Promise<Outcome>
-  /** A new Claude session under `attachTo`, in a temporary directory, `cwd`, or a new worktree of it. */
-  claudeCreate(input: { name: string; cwd: string; worktree: boolean; attachTo: string }): Promise<Outcome>
-  /** A prompt to a Claude session, under `parent`; the answer arrives as a change. */
-  claudePrompt(session: string, parent: string, text: string): Promise<Outcome>
+  /** A new Claude session under the Claude root, in a temporary directory, `cwd`, or a new worktree of it. */
+  claudeCreate(input: { name: string; cwd: string; worktree: boolean }): Promise<Outcome>
   /** A view of `id` was pushed: Recents moves it to the front. */
   visit(id: string): Promise<void>
   /** Takes my last action off the owned log; returns what came off. */
@@ -88,7 +86,6 @@ export function httpApi(base: string, token: string): Api {
     undo: () => call('undo'),
     redo: (events) => call('redo', { events }),
     claudeCreate: (input) => call('claudeCreate', input),
-    claudePrompt: (session, parent, text) => call('claudePrompt', { session, parent, text }),
     visit: (id) => call('visit', { id }),
     onChange: (listener) => {
       // EventSource reconnects by itself; a reconnect may have missed changes, so it re-reads everything.
@@ -129,7 +126,6 @@ export function electronApi(): Api {
     undo: () => call('undo'),
     redo: (events) => call('redo', { events }),
     claudeCreate: (input) => call('claudeCreate', input),
-    claudePrompt: (session, parent, text) => call('claudePrompt', { session, parent, text }),
     visit: (id) => call('visit', { id }),
     onChange: (listener) => bridge.onChange(listener),
     openExternal: (url) => void bridge.openExternal(url),

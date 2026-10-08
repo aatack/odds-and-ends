@@ -1,5 +1,5 @@
 import { EntityCache, type CacheState } from '../../core/graph/cache.ts'
-import { findInContext, foreignOf, itemOf, lensOf, moduleInfos, viewOf } from '../../core/present.ts'
+import { foreignOf, itemOf, moduleInfos, viewOf } from '../../core/present.ts'
 import { activity } from '../../core/modules/slack/view.ts'
 import type { Entity, ModuleInfo, NoteValues, Outcome, View, ViewRow } from '../../core/types.ts'
 import type { Api } from './api.ts'
@@ -413,15 +413,11 @@ export class Session {
 
   private toastTimer: ReturnType<typeof setTimeout> | null = null
 
-  /** Shift+K: the form for a new Claude session, started from the selected row. The last directory used is filled in. */
+  /** Shift+K: the form for a new Claude session. The last directory used is filled in. */
   openClaudeDialog(): void {
-    const row = this.selected()
-    if (!row) return
     const cwds = this.snapshot.item('claude')?.data.cwds
     const last = Array.isArray(cwds) && typeof cwds[0] === 'string' ? cwds[0] : ''
-    // Named after the row it starts from (its first line); the field starts selected, so typing replaces it.
-    const name = String(row.entity.data.text ?? '').split('\n')[0].slice(0, 80)
-    this.update(S.setDialog(this.state, { kind: 'claude', path: row.path, name, cwd: last, worktree: false }))
+    this.update(S.setDialog(this.state, { kind: 'claude', name: '', cwd: last, worktree: false }))
   }
 
   setDialog(fields: Partial<S.SessionDialog>): void {
@@ -437,46 +433,20 @@ export class Session {
     this.update(S.setDialog(this.state, null))
   }
 
-  /** Makes the session the form describes, under the row it was started from. */
+  /** Makes the session the form describes, under the Claude root, and pushes its view: its chat, ready for a prompt. */
   submitDialog(): void {
     const dialog = this.state.dialog
     if (!dialog) return
     this.update(S.setDialog(this.state, null))
-    const attachTo = dialog.path[dialog.path.length - 1]
     const root = S.focused(this.state)
     void this.working(root, 'claude', () =>
-      this.api.claudeCreate({ name: dialog.name, cwd: dialog.cwd, worktree: Boolean(dialog.cwd.trim()) && dialog.worktree, attachTo }),
+      this.api.claudeCreate({ name: dialog.name, cwd: dialog.cwd, worktree: Boolean(dialog.cwd.trim()) && dialog.worktree }),
     ).then((outcome) => {
-      this.settle(attachTo, outcome)
+      this.settle('claude', outcome)
       if (outcome.error) this.showToast(outcome.error)
+      const made = outcome.events.find((event) => event.type === 'link' && event.sourceId === 'claude')
+      if (made?.type === 'link') this.navigate(made.destinationId)
     })
-  }
-
-  /**
-   * `k`: a prompt to the Claude session nearest the selection, typed in the
-   * same box as a note. The session is the first item on the path from the
-   * view's root to the selection, nearest first, that is one or points at one
-   * (`claudeSessionId`); else one in a context along the path (`findInContext`).
-   */
-  startPrompt(): void {
-    const row = this.selected()
-    if (!row) return
-    const session = this.sessionAlong(row.path)
-    if (!session) {
-      this.showToast('No Claude session here: start one with Shift+K')
-      return
-    }
-    this.update(S.startCreate(this.state, row.path, undefined, { session }))
-  }
-
-  private sessionAlong(path: string[]): string | null {
-    for (const id of [...path].reverse()) {
-      const entity = this.snapshot.item(id)
-      if (entity?.type === 'claude.session') return id
-      if (typeof entity?.data.claudeSessionId === 'string') return entity.data.claudeSessionId
-    }
-    // Else a session sharing a context with something on the path.
-    return findInContext(path, 'claude.session', lensOf(this.cache.source(this.cache.get())))
   }
 
   /** Opens or closes the phone's list of every action. */
@@ -530,16 +500,6 @@ export class Session {
     this.update(S.endEdit(this.state))
     const id = edit.path[edit.path.length - 1]
     if (!edit.draft.trim()) return
-    if (edit.prompt) {
-      // The same box as a note's, asked of Claude: the prompt goes under the row, the answer under it.
-      void this.api.claudePrompt(edit.prompt.session, id, edit.draft).then((outcome) => {
-        this.settle(id, outcome)
-        if (outcome.error) this.showToast(outcome.error)
-        const made = outcome.events.find((event) => event.type === 'link' && event.sourceId === id)
-        if (made?.type === 'link' && S.focused(this.state) === edit.root) this.select([...edit.path, made.destinationId])
-      })
-      return
-    }
     if (edit.mode === 'edit') {
       void this.api.setText(id, edit.draft).then((outcome) => this.settle(id, outcome))
       return

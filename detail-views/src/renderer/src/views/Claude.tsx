@@ -43,7 +43,7 @@ export const SessionRow = memo(function SessionRow(props: RowProps) {
   )
 })
 
-/** A session heading its view: where it runs; its prompts (and their answers) are the tree. */
+/** A session heading its view: where it runs; its chat (each prompt, then its answer) is the tree. */
 export function SessionOverview(props: OverviewProps) {
   const { data } = props.entity
   return (
@@ -80,9 +80,9 @@ export function PromptOverview(props: OverviewProps) {
   return <Text text={text(props.entity.data)} find={props.findText} />
 }
 
-/** A prompt's tint: mine. A response's: Claude's, or an error's when it failed. */
+/** A prompt's tint: mine, a faint blue, as in a chat. A response has none, unless it failed. */
 export const promptTint = (): Tint => 'accent'
-export const responseTint = (entity: Entity): Tint => (typeof entity.data.error === 'string' && entity.data.error ? 'error' : 'claude')
+export const responseTint = (entity: Entity): Tint | null => (typeof entity.data.error === 'string' && entity.data.error ? 'error' : null)
 
 /** `1m 05s`: how long a prompt has been running. */
 function elapsed(ms: number): string {

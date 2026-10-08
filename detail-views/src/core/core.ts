@@ -484,12 +484,11 @@ export class Core {
     undo: (): Outcome => ({ events: this.owned.pop(this.now(), me), error: null }),
     /** Writes undone events back verbatim, times and all. */
     redo: ({ events }: { events: AppEvent[] }): Outcome => this.write(events),
-    /** A new Claude session, under the item it is started from. Its directory may take a moment (a worktree). */
-    claudeCreate: (input: NewSession): Promise<Outcome> =>
-      this.attempt(input.attachTo, () => this.claude.createSession(input)),
-    /** A prompt to a session, under `parent`; the answer arrives as a change. */
-    claudePrompt: ({ session, parent, text }: { session: string; parent: string; text: string }): Outcome =>
-      text.trim() ? { events: this.claude.prompt(session, parent, text), error: null } : { events: [], error: null },
+    /** A new Claude session, under the Claude root. Its directory may take a moment (a worktree). */
+    claudeCreate: (input: NewSession): Promise<Outcome> => this.attempt('claude', () => this.claude.createSession(input)),
+    /** A prompt to a Claude session: it and the response go under the session, the answer filling the response when it comes. */
+    claudePrompt: ({ session, text }: { session: string; text: string }): Outcome =>
+      text.trim() ? { events: this.claude.prompt(session, text), error: null } : { events: [], error: null },
     /** A view of `id` was pushed: it goes to the front of Recents (unless it is a plain note). */
     visit: ({ id }: { id: string }): void => this.recents.visit(id, this.entity(id).values),
     /** What a view shows, as a tree, for a caller with no cache of its own. */
