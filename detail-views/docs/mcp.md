@@ -37,8 +37,7 @@ MCP servers are kept (no `--strict-mcp-config`).
 
 The server's instructions explain the convention (`docs/context.md`): an
 item's `context` names a `context` item whose children are the things related
-to it. A session finds what is related to the item its prompt was asked from
-with `find_context` (that item's id is in the prompt, `docs/claude.md`), and
+to it. A session finds what is related to an item with `find_context`, and
 collects things it makes or finds with `merge_context`. Its writes are
 authored `claude`, so my Ctrl+Z doesn't take them back.
 

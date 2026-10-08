@@ -111,9 +111,11 @@ doc for the area you change, and keep it up to date in the same commit.
   and answers are owned; answers are authored `claude` (`docs/claude.md`).
   Every session is given the app's MCP server (`docs/mcp.md`): `modules`,
   `read`, `walk`, `find_context` and `merge_context` (the only write, as
-  `claude`), on 127.0.0.1 with a per-run token. Each prompt
-  is sent with the ids of the item it was asked from and of what the session
-  was opened on; an answer is kept whole in one response item.
+  `claude`), on 127.0.0.1 with a per-run token. A session is a chat, apart
+  from the notes: it sits only under `claude`, and each prompt and then its
+  response go under it, in order (`claudeCreate`, `claudePrompt`). Its view
+  is that chat, with the box for the next prompt below it, focused; an answer
+  is kept whole in one response item.
 - **Recents are temporary.** Pushing a view of an item that has a type (not a
   plain note) re-writes its link under `recents` in the cache store at that
   time, which moves it to the front; the Recents module lists them newest

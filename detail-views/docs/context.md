@@ -44,6 +44,5 @@ The MCP server offers it as `find_context`, and `c` as `merge_context`
 (written as `claude`), so a Claude session can find and collect related items
 too (`docs/mcp.md`).
 
-`k` uses it: when no session is on the selection's path (or named by
-`claudeSessionId`), a session sharing a context with something on the path is
-prompted.
+Nothing in the UI uses it now; `k` did, before Claude sessions were chats of
+their own (`docs/claude.md`).

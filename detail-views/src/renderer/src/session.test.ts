@@ -33,7 +33,6 @@ async function headless(options: Parameters<typeof memoryCore>[0] = {}) {
     undo: async () => a.undo(),
     redo: async (events) => a.redo({ events }),
     claudeCreate: (input) => a.claudeCreate(input),
-    claudePrompt: async (session, parent, text) => a.claudePrompt({ session, parent, text }),
     visit: async (id) => a.visit({ id }),
     onChange: (listener) => core.onChange(listener),
     openExternal: () => {},
@@ -259,33 +258,26 @@ test('chat keeps its newest end when its walk is cut short', async () => {
   stop()
 })
 
-test('Shift+K starts a Claude session from the selected row; k prompts it in the note box, the answer under the prompt', async () => {
-  const run = async (command: string, args: string[]) => (command.endsWith('claude') ? JSON.stringify({ result: `you said ${args[1].split('\n').pop()}` }) : '')
-  const { session, stop, settle, screen, select, type } = await headless({ run, gh: async () => '{}' })
+test('Shift+K starts a Claude session and pushes its chat; the box under it prompts it, each prompt and answer in order', async () => {
+  const run = async (command: string, args: string[]) => (command.endsWith('claude') ? JSON.stringify({ result: `you said ${args[1]}` }) : '')
+  const { session, stop, settle, screen } = await headless({ run })
   session.navigate('tasks')
   await settle()
-  session.startCreate()
-  await type('plan')
-
-  // No session anywhere above: k says so, and opens nothing.
-  session.startPrompt()
-  assert.match(session.get().toast ?? '', /No Claude session/)
-  assert.equal(session.get().state.edit, null)
-
   session.openClaudeDialog()
-  // Named after the selected row to begin with.
-  assert.equal(session.get().state.dialog?.name, 'plan')
   session.setDialog({ name: 'helper', cwd: '' })
   session.submitDialog()
   await settle()
-  select('plan')
-  session.startPrompt()
-  assert.equal(session.get().state.edit?.prompt?.session !== undefined, true)
-  await type('hi')
+  const root = session.root()!
+  assert.equal(root.type, 'claude.session')
+  assert.equal(session.get().view!.compose, 'claude')
+  session.setDraft('hi')
+  await session.send()
   await settle()
+  assert.equal(session.get().state.drafts[root.id], undefined)
   const lines = screen().map((line) => line.replace('>', ''))
-  assert.ok(lines.includes('    hi'), lines.join('\n'))
-  assert.ok(lines.includes('      you said hi'), lines.join('\n'))
+  assert.deepEqual(lines.slice(1), ['  hi', '  you said hi'], lines.join('\n'))
+  // The cursor starts at the newest end, as in chat.
+  assert.equal(session.selected()?.entity.data.text, 'you said hi')
   stop()
 })
 

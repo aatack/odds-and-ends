@@ -6,17 +6,24 @@ import { prEntityId } from '../../../core/types.ts'
 import type { PeekTarget, Rect } from '../state.ts'
 
 export function Composer(props: {
-  kind: 'slack' | 'slack-token' | 'task' | 'action'
+  kind: 'slack' | 'slack-token' | 'task' | 'action' | 'claude'
   draft: string
   composing: boolean
+  /** Takes the keyboard when it appears, whether or not anything was composing. */
+  autoFocus?: boolean
   placeholder?: string
   onDraft(text: string): void
   onCompose(composing: boolean): void
 }) {
   const ref = useRef<HTMLTextAreaElement & HTMLInputElement>(null)
+  const mounted = useRef(false)
   useEffect(() => {
     const element = ref.current
     if (!element) return
+    const first = !mounted.current
+    mounted.current = true
+    // Focusing says it is composing (`onFocus`), so the next run doesn't take it away.
+    if (first && props.autoFocus) return element.focus()
     if (props.composing && document.activeElement !== element) element.focus()
     if (!props.composing && document.activeElement === element) element.blur()
   }, [props.composing])
