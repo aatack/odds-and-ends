@@ -52,8 +52,8 @@ Undocumented column: from memory, unverified; none of it is in the reference.
 - **Read-only.** `api.ts` refuses any method not on its read list
   (`slackWrites` is off). Adding a read method needs my say-so; it is how
   `search.messages`, `users.list` and `conversations.list` got there.
-- **No unread counts.** Nothing tracks read state. Lists are ordered by
-  recency instead.
+- **Read state is mine** (below): an owned `lastRead` per topic, set with
+  `m`. Slack's own read state is never read.
 - **No per-conversation loading on its own.** Slack has no public call for
   every channel's latest message; one call per conversation (~600) took
   minutes. Everything automatic is a list call or a search.
@@ -61,8 +61,9 @@ Undocumented column: from memory, unverified; none of it is in the reference.
 ## Shape
 
 - `slack` (`slack.home`) is the workspace. Its children are conversations
-  (channels, DMs, group DMs) **and threads** (parent messages), ordered by
-  `updatedAt`: a conversation's newest message link, a thread's newest reply.
+  (channels, DMs, group DMs) **and threads** (parent messages): unread first,
+  then each group by `active`, its newest message's ts (a conversation's
+  newest message, a thread's newest reply; `updatedAt` if it has none).
 - A conversation's children are its top-level messages, linked at their ts.
   A thread parent's children are its replies, linked at their ts.
 - A reply never touches its conversation; it bumps its thread, which is listed
@@ -85,6 +86,24 @@ Undocumented column: from memory, unverified; none of it is in the reference.
   (`pruneThreads`): left by older rules, or by a conversation hidden since.
 - `slack:watch` (`slack.watch`) holds the last poll's `polledAt` and `found`,
   on its own entity so a poll every 15 s re-reads only that.
+
+## Read state
+
+- A **topic** is a conversation or a thread (its parent message). Its newest
+  message (`newestMessage`) is the last message id among its children:
+  messages are linked at their ts, and anything of mine linked later (a note)
+  is passed over, so it neither reads nor moves the topic.
+- `m` (`Slack.markRead`) writes an owned `lastRead`, a ts, authored `me`, so
+  Ctrl+Z takes it back. On a conversation, a listed thread, or a view's root:
+  up to its newest message. On a message: up to that message, in the topic
+  it is shown under (or, shown elsewhere, the one it is in), so it can also
+  move the mark back.
+- `present` adds `unread` (its newest message is after `lastRead`, or there
+  is no `lastRead`, and that message is not mine) and `active`. There is no
+  default `lastRead`: everything with a message starts unread.
+- Unread conversations and threads are tinted `accent` (`slackTint`).
+- A conversation is marked in Slack too (`conversations.mark`) only while
+  `slackWrites` is on. Threads can't be.
 
 ## What loads on its own
 
@@ -152,7 +171,8 @@ user lookups) queue ahead of the rest.
 ## Known gaps
 
 - Edits, deletions and new reactions on cached messages are never seen.
-- Reading elsewhere changes nothing here (no read state at all).
+- Reading in Slack changes nothing here; marking here changes nothing in
+  Slack while it is read-only.
 - Join/leave messages aren't in search.
 - Messages made only of blocks or attachments show empty text.
 - Messages from public channels I'm not in are cached (not shown) and counted

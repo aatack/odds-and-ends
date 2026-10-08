@@ -24,6 +24,7 @@ import {
   SlackHomeOverview,
   SlackHomePill,
   SlackMessageRow,
+  slackTint,
   UserPill,
   WatchPill,
 } from './Slack.tsx'
@@ -35,8 +36,8 @@ import {
  */
 export const kinds: Kinds = {
   'slack.home': { Pill: SlackHomePill, Overview: SlackHomeOverview, Row: PillRow },
-  'slack.conversation': { Pill: ConversationPill, Overview: ConversationOverview, Row: ConversationRow },
-  'slack.message': { Pill: MessagePill, Overview: MessageOverview, Row: SlackMessageRow },
+  'slack.conversation': { Pill: ConversationPill, Overview: ConversationOverview, Row: ConversationRow, tint: slackTint },
+  'slack.message': { Pill: MessagePill, Overview: MessageOverview, Row: SlackMessageRow, tint: slackTint },
   'slack.user': { Pill: UserPill, Overview: PillOverview, Row: PillRow },
   'slack.watch': { Pill: WatchPill, Overview: PillOverview, Row: PillRow },
   'github.home': { Pill: GitHubHomePill, Overview: PillOverview, Row: PillRow },

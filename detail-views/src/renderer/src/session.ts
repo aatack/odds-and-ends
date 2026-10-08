@@ -789,8 +789,29 @@ export class Session {
     void this.working(id, 'older', () => this.api.older(id)).then((outcome) => this.settle(id, outcome))
   }
 
+  /**
+   * What `m` marks read: the selected row's topic, or the view's root. A
+   * conversation, or a thread listed in the workspace, is read to its newest
+   * message; a message is read to, in the conversation or thread it is shown
+   * under (or, shown elsewhere, the one it is in).
+   */
+  readTarget(): { topic: string; at?: string } | null {
+    const row = this.selected()
+    const entity = row?.entity ?? this.root()
+    if (entity?.type === 'slack.conversation') return { topic: entity.id }
+    if (entity?.type !== 'slack.message') return null
+    const parent = row?.parent ?? null
+    if (!parent || parent.type === 'slack.home') return { topic: entity.id }
+    const at = String(entity.data.ts)
+    if (parent.type === 'slack.conversation' || parent.type === 'slack.message') return { topic: parent.id, at }
+    const thread = typeof entity.data.threadTs === 'string' && entity.data.threadTs !== at ? entity.data.threadTs : null
+    const conversation = String(entity.data.conversation)
+    return { topic: thread ? `slack:msg:${conversation.slice('slack:conv:'.length)}:${thread}` : conversation, at }
+  }
+
   markRead(): void {
-    const id = S.focused(this.state)
-    void this.api.markRead(id).then((outcome) => this.settle(id, outcome))
+    const target = this.readTarget()
+    if (!target) return
+    void this.api.markRead(target.topic, target.at).then((outcome) => this.settle(target.topic, outcome))
   }
 }

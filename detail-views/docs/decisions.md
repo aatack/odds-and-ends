@@ -28,10 +28,14 @@ Newest last. Each says what was chosen, why, and what was turned down.
 9. **Bounded walks.** Focus views walk at most `focusLimit` children.
    *Why:* never render unbounded data. Currently 3000 because Slack's workspace
    is sorted after the walk.
-10. **Slack: no unread counts.** *Why:* tracking them needed a call per
-    conversation and was wrong as soon as I read elsewhere.
-11. **Slack: order by the rollup's newest event, in the frontend.** Not by a
-    stored `latestTs`, not by load time.
+10. **Slack: read state is mine, not Slack's.** An owned `lastRead` per
+    topic, set with `m`; unread is worked out from the cache. *Why:* Slack's
+    needed a call per conversation, has no list of followed threads, and can't
+    mark a thread read; mine also lets me look without marking read. Not
+    defaulted: I go through the list myself.
+11. **Slack: unread first, then by the newest message, in the frontend.** Not
+    by a stored `latestTs`, not by load time, and no longer by `updatedAt`,
+    which my own writes (`lastRead`, a note) bump.
 12. **Slack: lists + one search batch + a search poll; no per-conversation
     loading.** *Why:* ~600 calls took minutes; search covers every
     conversation in ~10 calls. *Turned down:* `client.counts`/`client.boot`
