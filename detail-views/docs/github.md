@@ -56,6 +56,12 @@ approve locally (an owned `github.localApproval` child) and turn on
 auto-merge; close mine and delete the branch. Each is started by me and
 confirmed with Enter.
 
+Once approving mine has worked, a line naming the PR goes on the clipboard,
+to pass on: `[#1234](<PR url>) Name - [preview](<preview url>)`, the preview
+only for a repo with previews (`prLine`). Any action can do this: its
+`Action.copy` is copied when it succeeds, through `Api.copy` (Electron's
+clipboard on the desktop, the browser's on the phone).
+
 The buttons are on a PR's overview wherever it is drawn, a peek included: a
 button there opens the prompt in the peek (`acting.peek`), which stays open
 until the action is confirmed or given up. The keys (`p`, `X`) act on the

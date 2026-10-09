@@ -95,6 +95,8 @@ export interface Action {
   prompt: string
   /** Why it can't be done now (already done, say). Shown, but not offered. */
   disabled?: string
+  /** Put on the clipboard once it is done. */
+  copy?: string
 }
 
 /**

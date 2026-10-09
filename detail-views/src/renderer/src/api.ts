@@ -42,12 +42,15 @@ export interface Api {
   onChange(listener: (changed: Changed) => void): () => void
   /** Opens a link in my browser. */
   openExternal(url: string): void
+  /** Puts text on the clipboard. */
+  copy(text: string): Promise<void>
 }
 
 interface Bridge {
   invoke(name: string, args?: unknown): Promise<unknown>
   onChange(listener: (changed: Changed) => void): () => void
   openExternal(url: string): Promise<void>
+  copy(text: string): Promise<void>
 }
 
 /**
@@ -99,6 +102,8 @@ export function httpApi(base: string, token: string): Api {
       return () => events.close()
     },
     openExternal: (url) => void window.open(url, '_blank', 'noopener'),
+    // The browser's own clipboard, which it gives a page served over HTTPS (Tailscale's).
+    copy: async (text) => navigator.clipboard.writeText(text),
   }
 }
 
@@ -129,5 +134,6 @@ export function electronApi(): Api {
     visit: (id) => call('visit', { id }),
     onChange: (listener) => bridge.onChange(listener),
     openExternal: (url) => void bridge.openExternal(url),
+    copy: (text) => bridge.copy(text),
   }
 }

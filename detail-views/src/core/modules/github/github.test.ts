@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { memoryCore } from '../../testing.ts'
-import { badge, blockers, previewOf, prName } from './view.ts'
+import { badge, blockers, previewOf, prLine, prName } from './view.ts'
 
 const url = 'https://github.com/o/r/pull/7'
 
@@ -122,6 +122,8 @@ test("github: approving someone else's PR leaves an approving review", async () 
 test('github: approving my own PR is kept locally and turns on auto-merge', async () => {
   const { core, id, calls } = await loaded('me')
   assert.deepEqual(core.focus(id).actions.map((action) => action.id), ['approve', 'close'])
+  // Once done, it puts a line naming the PR on the clipboard.
+  assert.match(core.focus(id).actions[0].copy ?? '', /^\[#\d+\]\(https:\/\/github\.com\/.+\) \S/)
   await core.actions.perform({ id, action: 'approve', text: '' })
   assert.deepEqual(calls[0], ['pr', 'merge', url, '--auto', '--squash'])
   const focus = core.focus(id)
@@ -234,4 +236,7 @@ test('github: a PR in a repo with previews links to its own', () => {
   assert.equal(previewOf({ repo: 'theengineeringco/branch-demo', number: 5308, state: 'OPEN' }), 'https://pr-5308.preview.theeng.co/demo')
   assert.equal(previewOf({ repo: 'theengineeringco/branch-demo', number: 5308, state: 'MERGED' }), null)
   assert.equal(previewOf({ repo: 'aatack/odds-and-ends', number: 13, state: 'OPEN' }), null)
+  const pr = { repo: 'theengineeringco/branch-demo', number: 5308, state: 'OPEN', url: 'https://github.com/theengineeringco/branch-demo/pull/5308', title: 'feat: Faster loads' }
+  assert.equal(prLine(pr), '[#5308](https://github.com/theengineeringco/branch-demo/pull/5308) Faster loads - [preview](https://pr-5308.preview.theeng.co/demo)')
+  assert.equal(prLine({ ...pr, repo: 'aatack/odds-and-ends' }), '[#5308](https://github.com/theengineeringco/branch-demo/pull/5308) Faster loads')
 })

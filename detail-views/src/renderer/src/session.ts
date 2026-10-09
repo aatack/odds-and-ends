@@ -814,9 +814,18 @@ export class Session {
     if (!this.state.acting) return
     const { action, on: id, peek } = this.state.acting
     const text = this.state.drafts[S.draftKey(this.state)] ?? ''
+    const view = peek === null ? this.snapshot.view : this.snapshot.peekViews[id]
+    const copy = view?.actions.find((offered) => offered.id === action)?.copy
     this.update(S.setComposing(S.setDraft(this.state, ''), false))
     if (peek) this.leavePeek(null)
-    this.settle(id, await this.working(id, action, () => this.api.perform(id, action, text)))
+    const outcome = await this.working(id, action, () => this.api.perform(id, action, text))
+    this.settle(id, outcome)
+    if (copy && !outcome.error) {
+      await this.api.copy(copy).then(
+        () => this.showToast('Copied'),
+        () => this.showToast("Couldn't copy"),
+      )
+    }
   }
 
   /** Whether the view's composer is waiting (a Slack token, say). */
