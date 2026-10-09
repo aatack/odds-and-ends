@@ -25,6 +25,9 @@
   --fill-press: light-dark(#e1e4ea, #31313a);
   /* A row under the pointer: lighter than the selection. */
   --hover: light-dark(#f2f2f6, #18181c);
+  /* Scroll bars: a thin thumb, barely there until it is wanted. */
+  --scroll: light-dark(#dcdfe5, #2c2c33);
+  --scroll-hover: light-dark(#c4c8d0, #3d3d46);
   --accent-line: light-dark(#c7cbef, #3b3f66);
   /* Inline code in messages, and what a find matched. */
   --code: light-dark(#a03b32, #e0796f);
@@ -57,6 +60,29 @@ body,
 .app {
   display: flex;
   height: 100%;
+}
+
+/* Scroll bars everywhere: thin, no track, a soft thumb that darkens under the pointer. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scroll);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-hover);
+  background-clip: padding-box;
 }
 
 .modules {
@@ -120,7 +146,7 @@ body,
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: 12px 16px;
+  padding: 16px 22px;
   gap: 8px;
 }
 
