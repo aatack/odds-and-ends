@@ -332,16 +332,20 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
 
   // Keep the first visible row where it was when rows above it change: the
   // anchor is recorded after each render and restored when the layout moves.
-  const anchor = useRef<{ key: string; delta: number; atEnd: boolean } | null>(null)
+  // Chat sticks to its bottom instead while it is there, and starts there: a
+  // view it hasn't been recorded for yet (just opened) counts as at the end.
+  const anchor = useRef<{ root: string; key: string; delta: number; atEnd: boolean } | null>(null)
+  const rootId = props.root.id
   useLayoutEffect(() => {
     const el = ref.current
-    const held = anchor.current
-    if (!el || !held) return
-    if (chat && held.atEnd) {
+    const held = anchor.current?.root === rootId ? anchor.current : null
+    if (!el) return
+    if (chat && (held?.atEnd ?? true)) {
       el.scrollTop = el.scrollHeight
       setScrollTop(el.scrollTop)
       return
     }
+    if (!held) return
     const at = keys.indexOf(held.key)
     if (at < 0) return
     const want = offsets[at] + held.delta
@@ -349,7 +353,7 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
       el.scrollTop = want
       setScrollTop(el.scrollTop)
     }
-  }, [keys, offsets, chat])
+  }, [keys, offsets, chat, viewport, rootId])
 
   const offsetsRef = useRef(offsets)
   offsetsRef.current = offsets
@@ -427,7 +431,7 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
     const el = ref.current
     anchor.current =
       el && keys[firstVisible] !== undefined
-        ? { key: keys[firstVisible], delta: el.scrollTop - offsets[firstVisible], atEnd: el.scrollTop + el.clientHeight >= el.scrollHeight - 2 }
+        ? { root: rootId, key: keys[firstVisible], delta: el.scrollTop - offsets[firstVisible], atEnd: el.scrollTop + el.clientHeight >= el.scrollHeight - 2 }
         : null
   })
 
@@ -478,7 +482,8 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
   const top = chat ? rows[0] : undefined
   return (
     <>
-      {top?.kind === 'entity' && top.row.depth === 0 && overview(top)}
+      {/* Over the chat, ruled off from it, so it reads as staying put while the chat scrolls. */}
+      {top?.kind === 'entity' && top.row.depth === 0 && <div className="chat-head">{overview(top)}</div>}
     <div
       ref={ref}
       className={`list${chat ? ' chat' : ''}`}
@@ -494,7 +499,7 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
       }}
     >
       {/* Room to scroll on past the last row, 40% of the view, once the rows overflow it. Chat ends at its last row. */}
-      <div className="rows" style={{ height: total, marginBottom: !chat && total > viewport ? Math.round(viewport * 0.4) : 0 }}>
+      <div className="rows" style={{ height: total, marginBottom: chat ? 'var(--chat-gap)' : total > viewport ? Math.round(viewport * 0.4) : 0 }}>
         <div style={{ height: offsets[first] }} />
         {slice}
         {pinned && (

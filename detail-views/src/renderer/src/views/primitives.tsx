@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useRef } from 'react'
 import type { Badge as BadgeData, Entity } from '../../../core/types.ts'
 import { tints, type Kinds, type Tint } from './kindTypes.ts'
 import type { ReactNode } from 'react'
@@ -29,6 +29,13 @@ export function Composer(props: {
     if (props.composing && document.activeElement !== element) element.focus()
     if (!props.composing && document.activeElement === element) element.blur()
   }, [props.composing])
+  // A textarea grows with what is typed (to its CSS max-height), rather than scrolling inside a fixed few lines.
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (!element || element.tagName !== 'TEXTAREA') return
+    element.style.height = 'auto'
+    element.style.height = `${element.scrollHeight + element.offsetHeight - element.clientHeight}px`
+  }, [props.draft])
   const shared = {
     ref,
     className: 'composer',
@@ -41,8 +48,7 @@ export function Composer(props: {
     onBlur: () => props.onCompose(false),
   }
   if (props.kind === 'slack-token') return <input {...shared} type="password" autoFocus />
-  const rows = Math.min(8, props.draft.split('\n').length)
-  return <textarea {...shared} rows={rows} />
+  return <textarea {...shared} rows={1} />
 }
 
 export function Status(props: { error: string | null }) {
