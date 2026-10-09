@@ -66,6 +66,8 @@ export interface State {
   peeks: Peek[]
   /** The item open in the panel on the right (Ctrl+Enter: something in context with where I am), or null. */
   side: string | null
+  /** The side panel's width in px, once I have dragged it; null for its default. */
+  sideWidth: number | null
   /** Whether the side panel's prompt box has the keyboard. Not persisted. */
   sideComposing: boolean
 }
@@ -210,6 +212,7 @@ export function initialState(root: string): State {
     picking: null,
     peeks: [],
     side: null,
+    sideWidth: null,
     sideComposing: false,
   }
 }
@@ -455,6 +458,10 @@ export function setSide(state: State, id: string | null): State {
   return { ...state, side: id, sideComposing: id !== null }
 }
 
+export function setSideWidth(state: State, width: number): State {
+  return state.sideWidth === width ? state : { ...state, sideWidth: width }
+}
+
 export function setSideComposing(state: State, composing: boolean): State {
   return state.sideComposing === composing ? state : { ...state, sideComposing: composing }
 }
@@ -492,5 +499,6 @@ export function restore(saved: unknown, root: string): State {
     drafts: value.drafts ?? {},
     peeks: Array.isArray(value.peeks) ? value.peeks.filter((peek) => peek.pinned).map((peek) => ({ ...peek, parent: peek.parent ?? null })) : [],
     side: typeof value.side === 'string' ? value.side : null,
+    sideWidth: typeof value.sideWidth === 'number' ? value.sideWidth : null,
   }
 }

@@ -6,7 +6,7 @@ import { memoryCore } from '../../core/testing.ts'
 import type { Api } from './api.ts'
 import { memoryEnvironment } from './environment.ts'
 import { Session } from './session.ts'
-import { actionsNow, runTool } from './tools.ts'
+import { actionsNow, runTool, tools } from './tools.ts'
 
 /** The app with no screen: a Session over a Core, through the same Api the window uses. */
 async function headless(options: Parameters<typeof memoryCore>[0] = {}) {
@@ -305,11 +305,21 @@ test('Ctrl+Enter opens what is in context with the path in the side panel; its b
   assert.equal(session.get().state.side, 's')
   assert.equal(session.get().sideView?.compose, 'claude')
   assert.equal(session.get().state.sideComposing, true)
+  // Opening it asks the view it squeezes to bring the selected row to the middle.
+  assert.ok(session.get().centre > 0)
+  session.resizeSide(500.4)
+  assert.equal(session.get().state.sideWidth, 500)
   session.setSideDraft('hi')
   await session.sendSide()
   await settle()
   assert.deepEqual(core.entity('s').outboundLinks.map((id) => core.item(id)!.data.text), ['hi', 'you said hi'])
   assert.equal(session.get().state.drafts.s, undefined)
+  // Ctrl+Enter in its box closes it again.
+  const ctrlEnter = tools.find((tool) => tool.scope === 'input' && tool.keys.includes('Ctrl+Enter') && (tool.enabled?.(session, 'side') ?? true))!
+  ctrlEnter.run(session, 'side')
+  assert.equal(session.get().state.side, null)
+  runTool(session, 'side.open')
+  assert.equal(session.get().state.side, 's')
   // Each window closes its own way: the side panel closes, the view stays.
   session.closeSide()
   assert.equal(session.get().state.side, null)

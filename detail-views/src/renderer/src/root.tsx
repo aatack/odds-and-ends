@@ -17,7 +17,7 @@ import './styles.css'
  * swaps hover for taps and keys for a bar of buttons.
  */
 function Root({ session, phone }: { session: Session; phone: boolean }) {
-  const { state, view: tree, shown, modules, peekViews, sideView, item, working, now, findFocus, toast } = useSnapshot(session)
+  const { state, view: tree, shown, modules, peekViews, sideView, item, working, now, findFocus, centre, toast } = useSnapshot(session)
   useEffect(() => {
     const stopDispatch = installDispatch(session, tools)
     let stopSession: (() => void) | undefined
@@ -119,13 +119,14 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
         onCancelEdit,
         find: state.finds[focused(state)] ?? null,
         findFocus,
+        centre,
         onFind,
         onFindFocused,
         onNearEnd,
         onToggle,
         onClose: onBack,
       },
-    [tree, shown, onNearEnd, onToggle, onBack, state, working, now, findFocus, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onPause, onEditDraft, onCommitEdit, onCancelEdit],
+    [tree, shown, onNearEnd, onToggle, onBack, state, working, now, findFocus, centre, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onPause, onEditDraft, onCommitEdit, onCancelEdit],
   )
   const picking = useMemo(() => {
     const pick = state.picking
@@ -138,6 +139,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
       onCompose: (composing: boolean) => session.composeSide(composing),
       onOpen,
       onClose: () => session.closeSide(),
+      onResize: (width: number) => session.resizeSide(width),
     }),
     [session, onOpen],
   )
@@ -151,10 +153,11 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
             working: working[state.side],
             draft: state.drafts[state.side] ?? '',
             composing: state.sideComposing,
+            width: state.sideWidth,
             onNearEnd: () => session.loadMore(state.side!),
           }
         : null,
-    [sideHandlers, state.side, state.drafts, state.sideComposing, sideView, working, session],
+    [sideHandlers, state.side, state.sideWidth, state.drafts, state.sideComposing, sideView, working, session],
   )
 
   const crumbs = useMemo(() => state.trail.slice(0, state.at + 1).map((id) => item(id)), [state.trail, state.at, item])
