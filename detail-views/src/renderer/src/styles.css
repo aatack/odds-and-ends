@@ -218,15 +218,23 @@ body,
 
 .list.chat {
   justify-content: flex-start;
+  /* Between chat's messages, and after the last: two thirds of a line. */
+  --chat-gap: 20px;
+}
+
+/* Chat's overview, ruled off from the messages scrolling under it. */
+.chat-head {
+  flex: none;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
 }
 
 .list.chat > :first-child {
   margin-top: auto;
 }
 
-/* Chat's messages, two thirds of a line apart. */
 .list.chat .gapped {
-  padding-top: 20px;
+  padding-top: var(--chat-gap);
 }
 
 /* Typing the next prompt, the chat marks no row. */
@@ -370,6 +378,9 @@ body,
 }
 
 .composer {
+  flex: none;
+  max-height: 40vh;
+  overflow-y: auto;
   font: inherit;
   color: inherit;
   background: var(--panel);
