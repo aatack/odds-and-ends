@@ -531,15 +531,23 @@ export class Session {
   /**
    * Backspace: takes the selected row out from under its parent in this view;
    * at the view's root there is no parent here, so nothing happens. The cursor
-   * moves to the row above.
+   * moves to the next sibling, or to the parent if it was the last.
    */
   unlinkSelected(): void {
     const row = this.selected()
     if (!row || row.path.length < 2) return
     const parent = row.path[row.path.length - 2]
-    const rows = this.snapshot.shown.rows
-    const above = rows.slice(0, this.snapshot.shown.selectedIndex).reverse().find((other) => other.kind === 'entity')
-    if (above?.kind === 'entity') this.select(above.row.path)
+    const depth = row.path.length
+    let next: string[] = row.path.slice(0, -1)
+    for (const other of this.snapshot.shown.rows.slice(this.snapshot.shown.selectedIndex + 1)) {
+      if (other.kind !== 'entity') continue
+      if (other.row.path.length < depth) break
+      if (other.row.path.length === depth) {
+        next = other.row.path
+        break
+      }
+    }
+    this.select(next)
     void this.api.unlink(parent, row.entity.id).then((outcome) => this.settle(parent, outcome))
   }
 
