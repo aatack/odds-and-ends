@@ -144,13 +144,13 @@ test('a view is a tree to navigate and edit, from the keyboard, with nothing on 
     ['Tasks', '  groceries', '    oat milk', '  breakfast', '    eggs', '    oat milk'],
   )
 
-  // Backspace: out of this parent only; the cursor goes to the row above.
+  // Backspace: out of this parent only; the cursor goes to the next sibling, or the parent after the last.
   const second = session.get().shown.rows.filter((row) => row.kind === 'entity' && row.row.entity.data.text === 'oat milk')[1]
   assert.ok(second.kind === 'entity')
   session.select(second.row.path)
   session.unlinkSelected()
   await settle()
-  assert.deepEqual(screen(), ['Tasks', '  groceries', '    oat milk', '  breakfast', '    >eggs'])
+  assert.deepEqual(screen(), ['Tasks', '  groceries', '    oat milk', '  >breakfast', '    eggs'])
 
   // d pushes a view of the selection; Shift+A pops it.
   select('breakfast')
