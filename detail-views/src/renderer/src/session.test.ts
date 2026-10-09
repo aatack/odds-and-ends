@@ -12,6 +12,7 @@ import { actionsNow, runTool, tools } from './tools.ts'
 async function headless(options: Parameters<typeof memoryCore>[0] = {}) {
   const core = memoryCore(options)
   const a = core.actions
+  const copied: string[] = []
   const api: Api = {
     scan: async (ids) => a.scan({ ids }),
     load: (request) => a.load(request),
@@ -36,6 +37,7 @@ async function headless(options: Parameters<typeof memoryCore>[0] = {}) {
     visit: async (id) => a.visit({ id }),
     onChange: (listener) => core.onChange(listener),
     openExternal: () => {},
+    copy: async (text) => void copied.push(text),
   }
   const session = new Session(api, memoryEnvironment())
   const stop = await session.start()
@@ -60,7 +62,7 @@ async function headless(options: Parameters<typeof memoryCore>[0] = {}) {
     session.commitEdit()
     await settle()
   }
-  return { core, session, stop, settle, screen, select, type }
+  return { core, session, stop, settle, screen, select, type, copied }
 }
 
 test('a view is a tree to navigate and edit, from the keyboard, with nothing on screen', async () => {

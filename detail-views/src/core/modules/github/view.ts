@@ -122,6 +122,13 @@ const previews: Partial<Record<string, (number: number) => string>> = {
   'theengineeringco/branch-demo': (number) => `https://pr-${number}.preview.theeng.co/demo`,
 }
 
+/** A PR as one line of markdown, to paste: `[#12](url) Name - [preview](url)`, the preview only where it has one. */
+export function prLine(data: Record<string, unknown>): string {
+  const name = typeof data.name === 'string' ? data.name : prName(String(data.title ?? ''))
+  const preview = previewOf(data)
+  return `[#${String(data.number)}](${String(data.url)}) ${name}${preview ? ` - [preview](${preview})` : ''}`
+}
+
 /** A PR's preview frontend, if its repo has them. */
 export function previewOf(data: Record<string, unknown>): string | null {
   const preview = previews[String(data.repo ?? '')]
@@ -181,6 +188,8 @@ export const githubView: ModuleView = {
           ? 'Already approved: Enter to turn on auto-merge'
           : 'Approve locally and turn on auto-merge: Enter to confirm',
         disabled: approved && entity.data.autoMerge ? 'Approved, and auto-merge is on' : undefined,
+        // To pass on once it is set to merge.
+        copy: prLine(entity.data),
       })
       actions.push({ id: 'close', label: 'Close', prompt: 'Close and delete the branch: comment (optional), Enter to close' })
     }

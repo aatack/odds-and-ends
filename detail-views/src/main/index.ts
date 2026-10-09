@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, ipcMain, Menu, nativeTheme, protocol, shell, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeTheme, protocol, shell, type MenuItemConstructorOptions } from 'electron'
 import { Core } from '../core/core.ts'
 import { startMcpServer } from './mcp.ts'
 import { phonePort, phoneToken, startPhoneServer } from './phone.ts'
@@ -149,6 +149,8 @@ void app.whenReady().then(() => {
   ipcMain.handle('openExternal', (_event, url: string) => {
     if (/^(https?|mailto):/.test(url)) void shell.openExternal(url)
   })
+
+  ipcMain.handle('copy', (_event, text: string) => clipboard.writeText(String(text)))
 
   ipcMain.handle('invoke', (_event, name: string, args: unknown) => {
     const action = actions[name]
