@@ -670,11 +670,20 @@ export class Session {
    * it. Says so when there is none.
    */
   openSide(): void {
-    const path = [...this.state.trail.slice(0, this.state.at), ...(this.snapshot.shown.selectedPath.length ? this.snapshot.shown.selectedPath : [S.focused(this.state)])]
-    const found = findInContext(path, null, lensOf(this.cache.source(this.cache.get())))
+    const found = this.findInContext(null)
     if (!found) return this.showToast('Nothing in context here')
+    this.showSide(found)
+  }
+
+  /** The nearest item of `type` in a context up the path to the selected row: the stack, then the view's rows. */
+  private findInContext(type: 'claude.session' | null): string | null {
+    const path = [...this.state.trail.slice(0, this.state.at), ...(this.snapshot.shown.selectedPath.length ? this.snapshot.shown.selectedPath : [S.focused(this.state)])]
+    return findInContext(path, type, lensOf(this.cache.source(this.cache.get())))
+  }
+
+  private showSide(id: string): void {
     const opening = this.state.side === null
-    this.update(S.setSide(this.state, found))
+    this.update(S.setSide(this.state, id))
     // The view narrows as the panel opens: where I was goes to its middle.
     if (opening) this.publish({ ...this.snapshot, centre: (this.centreRequests += 1) })
   }
@@ -699,22 +708,30 @@ export class Session {
     if (id) this.update(S.setDraftFor(this.state, id, text))
   }
 
-  /** Whether `k` has a session to send to: one open in the side panel. */
+  /** The session `k` sends to: the one open in the side panel, else the nearest in context. */
+  private sessionToSend(): string | null {
+    if (this.snapshot.sideView?.root?.type === 'claude.session') return this.state.side
+    return this.findInContext('claude.session')
+  }
+
+  /** Whether `k` has a session to send to. */
   canSendToSession(): boolean {
-    return this.selected() !== null && this.snapshot.sideView?.root?.type === 'claude.session'
+    return this.selected() !== null && this.sessionToSend() !== null
   }
 
   /**
-   * `k`: the selected item goes into the side panel's session's next prompt,
-   * as a reference (`[](entity:<id>)`, drawn as its pill) after what is there.
+   * `k`: the selected item goes into a session's next prompt, as a reference
+   * (`[](entity:<id>)`, drawn as its pill) after what is there. The session
+   * opens in the side panel if it isn't already, and its box takes the keyboard.
    */
   sendToSession(): void {
     const row = this.selected()
-    const id = this.state.side
-    if (!row || !id || !this.canSendToSession()) return
+    const id = this.sessionToSend()
+    if (!row || !id) return
+    if (this.state.side !== id) this.showSide(id)
     const draft = this.state.drafts[id] ?? ''
     const reference = `[](${entityScheme}${row.entity.id})`
-    this.update(S.setDraftFor(this.state, id, draft && !/\s$/.test(draft) ? `${draft} ${reference}` : `${draft}${reference}`))
+    this.update(S.setSideComposing(S.setDraftFor(this.state, id, draft && !/\s$/.test(draft) ? `${draft} ${reference}` : `${draft}${reference}`), true))
   }
 
   /** Sends what is in the side panel's prompt box to its item (a Claude session's next prompt), and empties it. */
