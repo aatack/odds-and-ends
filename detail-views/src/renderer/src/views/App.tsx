@@ -8,7 +8,8 @@ import { ItemContext, KindsContext, PeekContext } from './primitives.tsx'
 import type { ItemGestures, PeekGestures } from './primitives.tsx'
 import type { ViewProps } from './types.ts'
 import { Button, ClockContext, HeaderPill, Modal, PillContent } from './primitives.tsx'
-import { useMemo } from 'react'
+import { useMemo, useRef, useState } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 
 export interface PeekProps {
   peeks: Peek[]
@@ -148,22 +149,52 @@ export interface SideProps {
   onOpen(id: string): void
   onNearEnd(): void
   onClose(): void
+  /** Its width once dragged, or null for the default. */
+  width: number | null
+  onResize(width: number): void
 }
+
+/** The narrowest the side panel goes, and the least it leaves the rest of the window. */
+const sideMin = 320
+const mainMin = 400
 
 /**
  * The panel on the right (Ctrl+Enter): an item in context with where I am,
  * mostly a Claude session. Its view takes no cursor, as in a peek; a chat's
- * prompt box works. The × closes it.
+ * prompt box works. Its left edge drags to resize it; the × closes it.
  */
 function SidePanel(props: SideProps & { onImage(ref: string | null): void }) {
   const { view } = props
   const shown = useMemo(() => view && inertRows(view), [view])
+  // While dragging, the width follows the pointer here; it is kept when let go.
+  const [live, setLive] = useState<number | null>(null)
+  const grab = useRef<{ x: number; start: number } | null>(null)
+  const panel = useRef<HTMLElement>(null)
+  const clamp = (width: number) => Math.max(sideMin, Math.min(width, window.innerWidth - mainMin))
+  const begin = (event: ReactPointerEvent) => {
+    if (event.button !== 0 || !panel.current) return
+    event.preventDefault()
+    const start = panel.current.getBoundingClientRect().width
+    grab.current = { x: event.clientX, start }
+    setLive(start)
+  }
+  const drag = (event: ReactPointerEvent) => {
+    if (grab.current) setLive(clamp(grab.current.start + grab.current.x - event.clientX))
+  }
+  const end = () => {
+    if (grab.current && live !== null) props.onResize(live)
+    grab.current = null
+    setLive(null)
+  }
+  const width = live ?? props.width
   const prompt = useMemo(
     () => ({ draft: props.draft, composing: props.composing, onDraft: props.onDraft, onCompose: props.onCompose }),
     [props.draft, props.composing, props.onDraft, props.onCompose],
   )
   return (
-    <aside className="side">
+    <aside ref={panel} className="side" style={width !== null ? { width: clamp(width) } : undefined}>
+      <div className="side-resize" onPointerDown={begin} />
+      {live !== null && <div className="peek-capture" onPointerMove={drag} onPointerUp={end} onPointerCancel={end} />}
       <div className="peek-bar">
         <span className="grow">
           <HeaderPill entity={view?.root} />

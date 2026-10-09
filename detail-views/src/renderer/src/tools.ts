@@ -36,6 +36,8 @@ export const tools: Tool[] = [
   // --- Typing ---------------------------------------------------------------------
   // The side panel's prompt box: its own, whatever else is waiting.
   { id: 'side.submit', scope: 'input', keys: ['Enter'], enabled: (_, field) => field === 'side', run: (s) => void s.sendSide() },
+  // Ctrl+Enter opened it; in its box, Ctrl+Enter closes it again.
+  { id: 'side.closeFromPrompt', scope: 'input', keys: ['Ctrl+Enter'], enabled: (_, field) => field === 'side', run: (s) => s.closeSide() },
   { id: 'side.leave', scope: 'input', keys: ['Escape'], enabled: (_, field) => field === 'side', run: (s) => s.composeSide(false) },
   // The find field: Enter hands the keyboard back to the tree, keeping the
   // filter; Escape clears it.

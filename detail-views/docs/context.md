@@ -55,6 +55,12 @@ With nothing found, a toast says so.
 - The panel is a view without a cursor, as in a peek. A chat's prompt box
   works in it: its own draft (by the item), its own focus (`sideComposing`),
   its own Enter and Escape (`data-field="side"`).
+- Ctrl+Enter in its prompt box closes it again.
+- Its left edge drags to resize it (`sideWidth`, persisted); it never goes
+  below 320px, nor leaves the rest of the window less than 400px.
+- When it opens, the main view's selected row is brought to the middle of
+  the screen, again each time the layout moves, until it has settled for a
+  quarter of a second (`centre`, a request like `findFocus`, not state).
 - It stays across navigation, and across reloads (`side` is persisted).
 - Its bar has the item's pill, Open (pushes it) and × (closes it). On a phone
   it covers the view.

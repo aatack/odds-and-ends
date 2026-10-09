@@ -138,6 +138,26 @@ body,
   flex-direction: column;
   border-left: 1px solid var(--line);
   background: var(--canvas);
+  position: relative;
+}
+
+/* The side panel's left edge, dragged to resize it: a line that darkens under the pointer. */
+.side-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+  z-index: 3;
+  cursor: ew-resize;
+}
+
+.side-resize:hover {
+  background: var(--scroll);
+}
+
+.app.phone .side-resize {
+  display: none;
 }
 
 

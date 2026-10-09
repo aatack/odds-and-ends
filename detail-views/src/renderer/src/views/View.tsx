@@ -380,6 +380,27 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
     if (following.current) reveal(selectedIndex)
   }, [selectedIndex, selectedTop, viewport, reveal])
 
+  // Asked to (the side panel opening): the selected row goes to the middle,
+  // again each time the layout moves, until it has settled for a moment.
+  const centring = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const settled = 250
+  useLayoutEffect(() => {
+    if (!view.centre) return
+    if (centring.current) clearTimeout(centring.current)
+    centring.current = setTimeout(() => (centring.current = null), settled)
+  }, [view.centre])
+  useEffect(() => () => void (centring.current && clearTimeout(centring.current)), [])
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || !centring.current || selectedIndex < body) return
+    const middle = (offsets[selectedIndex] + offsets[selectedIndex + 1]) / 2
+    el.scrollTop = Math.max(0, middle - el.clientHeight / 2)
+    setScrollTop(el.scrollTop)
+    // Each move restarts the wait.
+    clearTimeout(centring.current)
+    centring.current = setTimeout(() => (centring.current = null), settled)
+  }, [view.centre, offsets, viewport, selectedIndex, body])
+
   const editIndex = rows.findIndex((row) => row.kind === 'input' || row.editing)
   // In the list, not the overview above it.
   const pinned = editIndex >= body

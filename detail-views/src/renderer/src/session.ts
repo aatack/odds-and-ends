@@ -31,6 +31,12 @@ export interface Snapshot {
    * with its find already set doesn't take the keyboard.
    */
   findFocus: number
+  /**
+   * A request (a nonce, 0 for none) to bring the main view's selected row to
+   * the middle of the screen once its layout settles: made when the side
+   * panel opens and squeezes the view.
+   */
+  centre: number
 }
 
 const storageKey = 'detail-views.state'
@@ -105,7 +111,7 @@ export class Session {
     this.env = env
     this.cache = new EntityCache({ scan: (ids) => api.scan(ids), load: (request) => api.load(request), foreign: foreignOf })
     const state = S.restore(env.load(storageKey), 'slack')
-    this.snapshot = { state, modules: moduleInfos, view: null, shown: noRows, peekViews: {}, sideView: null, item: () => null, working: {}, now: Date.now(), findFocus: 0, toast: null }
+    this.snapshot = { state, modules: moduleInfos, view: null, shown: noRows, peekViews: {}, sideView: null, item: () => null, working: {}, now: Date.now(), findFocus: 0, centre: 0, toast: null }
     this.snapshot = this.derive(state)
   }
 
@@ -658,8 +664,18 @@ export class Session {
   openSide(): void {
     const path = [...this.state.trail.slice(0, this.state.at), ...(this.snapshot.shown.selectedPath.length ? this.snapshot.shown.selectedPath : [S.focused(this.state)])]
     const found = findInContext(path, null, lensOf(this.cache.source(this.cache.get())))
-    if (found) this.update(S.setSide(this.state, found))
-    else this.showToast('Nothing in context here')
+    if (!found) return this.showToast('Nothing in context here')
+    const opening = this.state.side === null
+    this.update(S.setSide(this.state, found))
+    // The view narrows as the panel opens: where I was goes to its middle.
+    if (opening) this.publish({ ...this.snapshot, centre: (this.centreRequests += 1) })
+  }
+
+  private centreRequests = 0
+
+  /** Dragging the side panel's edge. */
+  resizeSide(width: number): void {
+    this.update(S.setSideWidth(this.state, Math.round(width)))
   }
 
   closeSide(): void {

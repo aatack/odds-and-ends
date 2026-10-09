@@ -42,6 +42,8 @@ export interface ViewProps {
   onCompose(composing: boolean): void
   /** The view's find: null while it has none, the text while the field is open. */
   find: string | null
+  /** A request (a nonce, 0 for none) to bring the selected row to the middle once the layout settles. */
+  centre?: number
   /** A request (a nonce, 0 for none) to put the keyboard in the find field. */
   findFocus: number
   onFind(text: string): void
