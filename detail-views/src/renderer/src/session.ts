@@ -1,7 +1,7 @@
 import { EntityCache, type CacheState } from '../../core/graph/cache.ts'
 import { findInContext, foreignOf, itemOf, lensOf, moduleInfos, viewOf } from '../../core/present.ts'
 import { activity } from '../../core/modules/slack/view.ts'
-import type { Entity, ModuleInfo, NoteValues, Outcome, View, ViewRow } from '../../core/types.ts'
+import { entityScheme, type Entity, type ModuleInfo, type NoteValues, type Outcome, type View, type ViewRow } from '../../core/types.ts'
 import type { Api } from './api.ts'
 import type { Environment } from './environment.ts'
 import * as S from './state.ts'
@@ -689,6 +689,24 @@ export class Session {
   setSideDraft(text: string): void {
     const id = this.state.side
     if (id) this.update(S.setDraftFor(this.state, id, text))
+  }
+
+  /** Whether `k` has a session to send to: one open in the side panel. */
+  canSendToSession(): boolean {
+    return this.selected() !== null && this.snapshot.sideView?.root?.type === 'claude.session'
+  }
+
+  /**
+   * `k`: the selected item goes into the side panel's session's next prompt,
+   * as a reference (`[](entity:<id>)`, drawn as its pill) after what is there.
+   */
+  sendToSession(): void {
+    const row = this.selected()
+    const id = this.state.side
+    if (!row || !id || !this.canSendToSession()) return
+    const draft = this.state.drafts[id] ?? ''
+    const reference = `[](${entityScheme}${row.entity.id})`
+    this.update(S.setDraftFor(this.state, id, draft && !/\s$/.test(draft) ? `${draft} ${reference}` : `${draft}${reference}`))
   }
 
   /** Sends what is in the side panel's prompt box to its item (a Claude session's next prompt), and empties it. */

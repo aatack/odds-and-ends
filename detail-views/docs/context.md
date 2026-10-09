@@ -56,6 +56,7 @@ With nothing found, a toast says so.
   works in it: its own draft (by the item), its own focus (`sideComposing`),
   its own Enter and Escape (`data-field="side"`).
 - Ctrl+Enter in its prompt box closes it again.
+- `k` on a row puts a reference to it (`[](entity:<id>)`) in the next prompt of the session in the panel (`docs/claude.md`).
 - Its left edge drags to resize it (`sideWidth`, persisted); it never goes
   below 320px, nor leaves the rest of the window less than 400px.
 - When it opens, the main view's selected row is brought to the middle of

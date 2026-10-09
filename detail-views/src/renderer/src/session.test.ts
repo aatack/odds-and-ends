@@ -282,13 +282,18 @@ test('Shift+K starts a Claude session and pushes its chat; the box under it prom
 })
 
 test('Ctrl+Enter opens what is in context with the path in the side panel; its box prompts it, and its close closes only it', async () => {
-  const run = async (command: string, args: string[]) => (command.endsWith('claude') ? JSON.stringify({ result: `you said ${args[1]}` }) : '')
+  const sent: string[] = []
+  const run = async (command: string, args: string[]) => {
+    if (!command.endsWith('claude')) return ''
+    sent.push(args[1])
+    return JSON.stringify({ result: `you said ${args[1].split('\n').at(-1)}` })
+  }
   const { core, session, stop, settle } = await headless({ run })
   core.owned.write([
     ...values('n', { text: 'parent', context: 'ctx' }, 1, 'me'),
     ...values('x', { text: 'child' }, 1, 'me'),
     ...values('ctx', { type: 'context' }, 1, 'me'),
-    ...values('s', { type: 'claude.session', text: 'helper', cwd: '/tmp' }, 1, 'me'),
+    ...values('s', { type: 'claude.session', text: 'helper', cwd: '/tmp', context: 'ctx' }, 1, 'me'),
     link('tasks', 'n', 1, 'me'),
     link('n', 'x', 1, 'me'),
     link('ctx', 'n', 1, 'me'),
@@ -313,6 +318,14 @@ test('Ctrl+Enter opens what is in context with the path in the side panel; its b
   await session.sendSide()
   await settle()
   assert.deepEqual(core.entity('s').outboundLinks.map((id) => core.item(id)!.data.text), ['hi', 'you said hi'])
+  // The first prompt tells Claude what else is in the session's context; the prompt item is only what I wrote.
+  assert.deepEqual(sent, ['[Session context: n]\n\nhi'])
+  // `k` puts the selected item in the session's next prompt, as a reference after what is there.
+  runTool(session, 'session.send')
+  session.setSideDraft(`${session.get().state.drafts.s} and`)
+  runTool(session, 'session.send')
+  assert.equal(session.get().state.drafts.s, '[](entity:x) and [](entity:x)')
+  session.setSideDraft('')
   assert.equal(session.get().state.drafts.s, undefined)
   // Ctrl+Enter in its box closes it again.
   const ctrlEnter = tools.find((tool) => tool.scope === 'input' && tool.keys.includes('Ctrl+Enter') && (tool.enabled?.(session, 'side') ?? true))!

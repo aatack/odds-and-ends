@@ -21,7 +21,8 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 15. The core has two functions: create a session (`claudeCreate`), and prompt a session (`claudePrompt`: a session ID and a text).
 16. A session is a chat. Its children are its prompts and responses, in sequence. The session is apart from the notes. (Later, a session can refer to items in the notes.)
 17. When I prompt a session, put a prompt item under the session. Then put an empty response item under the session, after the prompt.
-17a. Send Claude only my text.
+17a. Send Claude only my text. One exception: if the session has a context, the first prompt starts with the IDs of the other items in it: `[Session context: abc123, xyz456]`, then a blank line (`contextLine`). The prompt item keeps only my text. The MCP server's instructions tell Claude what the line means, and that it can read the items.
+17b. **k** on an item puts a reference to it in the next prompt of the session in the side panel: `[](entity:<ID>)`, after the text that is there. k works only when the side panel shows a session. Markdown shows `[](entity:<ID>)` as the pill of the item, everywhere (also in answers).
 18. When Claude answers, put the answer in the response item.
 18a. Keep all of the answer in the response item, as one text. Do not split it into notes. (`b` splits it, if I want.)
 19. If Claude fails, put an error message in the response item instead of the answer.

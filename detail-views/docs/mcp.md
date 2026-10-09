@@ -41,6 +41,11 @@ to it. A session finds what is related to an item with `find_context`, and
 collects things it makes or finds with `merge_context`. Its writes are
 authored `claude`, so my Ctrl+Z doesn't take them back.
 
+They also say what prompts carry: a session's first prompt may start with
+`[Session context: <id>, …]` (the other items in its context, to `read`), and
+`[](entity:<id>)` names an entity, in a prompt or an answer (drawn as its
+pill).
+
 ## Transport and security
 
 - Streamable HTTP, stateless (a server and transport per request), at
