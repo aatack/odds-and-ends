@@ -10,7 +10,8 @@ function fakeRun(calls: { command: string; args: string[]; cwd: string }[]) {
   return async (command: string, args: string[], cwd: string) => {
     calls.push({ command, args, cwd })
     if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--show-toplevel') return '/home/me/repos/app\n'
-    if (command === 'git' && args[0] === 'worktree') return ''
+    if (command === 'git' && args[0] === 'symbolic-ref') return 'origin/master\n'
+    if (command === 'git' && (args[0] === 'fetch' || args[0] === 'worktree')) return ''
     if (command.endsWith('claude')) return JSON.stringify({ result: `answer to ${args[1].split('\n').pop()}`, is_error: false, total_cost_usd: 0.01 })
     throw new Error(`unexpected ${command} ${args.join(' ')}`)
   }
@@ -35,7 +36,9 @@ test('claude: a session in a new worktree, under the Claude root only; each prom
   assert.match(String(data.branch), /^claude\/fix-it-[0-9a-f]{8}$/)
   assert.match(String(data.worktree), /^\/data\/worktrees\/app-[0-9a-f]{8}$/)
   assert.equal(data.cwd, data.worktree)
-  assert.deepEqual(calls[1].args, ['worktree', 'add', '-b', data.branch, data.worktree])
+  // Branched from the remote's master, fetched first.
+  assert.deepEqual(calls[2].args, ['fetch', 'origin', 'master'])
+  assert.deepEqual(calls[3].args, ['worktree', 'add', '--no-track', '-b', data.branch, data.worktree, 'origin/master'])
   // Linked nowhere but the Claude root.
   assert.deepEqual(made.events.filter((e) => e.type === 'link').map((e) => e.type === 'link' && e.sourceId), ['claude'])
   // The directory is remembered for next time.

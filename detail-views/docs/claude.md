@@ -45,7 +45,7 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 - **One prompt at a time for each session.** Prompts wait in sequence, in the order that I write them.
 - **First prompt, then resume.** The first prompt uses `--session-id <ID>`. Each prompt after it uses `--resume <ID>`. The session item keeps `started: true` after the first answer.
 - **Worktree location.** `<app data directory>/worktrees/<repo>-<first 8 characters of ID>`. The app data directory is `~/.config/detail-views`. It is not in a repo.
-- **Branch name.** `claude/<name as a slug>-<first 8 characters of ID>`, made from the current commit of the repo.
+- **Branch name.** `claude/<name as a slug>-<first 8 characters of ID>`, made from the remote's default branch (`origin/HEAD`, else `master`), fetched just before. The local checkout is not changed. If the fetch fails, the session is not made.
 - **Temporary directory.** `mkdtemp(<system temp>/claude-…)`.
 - **Command.** `claude -p <prompt> --output-format json --model claude-opus-5-5 --permission-mode <mode> (--session-id | --resume) <ID> --allowedTools mcp__detail-views --mcp-config <the app's MCP server>`, in the session directory. The last two are there only while the app's MCP server runs (`docs/mcp.md`). The answer is `result`. The cost is kept as `cost`.
 - **Permission mode is per session** (`permissionMode`). New sessions get `auto`.

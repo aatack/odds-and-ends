@@ -111,7 +111,12 @@ export class Claude implements Module {
       repo = (await run('git', ['rev-parse', '--show-toplevel'], requested)).trim()
       branch = `claude/${slug(name)}-${short}`
       worktree = join(this.context.dataDir, 'worktrees', `${basename(repo)}-${short}`)
-      await run('git', ['worktree', 'add', '-b', branch, worktree], repo)
+      // From the remote's newest default branch, fetched now; my checkout is left as it is.
+      const main = await run('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], repo)
+        .then((ref) => ref.trim().replace(/^origin\//, ''))
+        .catch(() => 'master')
+      await run('git', ['fetch', 'origin', main], repo)
+      await run('git', ['worktree', 'add', '--no-track', '-b', branch, worktree, `origin/${main}`], repo)
       cwd = worktree
     }
     const at = now()
