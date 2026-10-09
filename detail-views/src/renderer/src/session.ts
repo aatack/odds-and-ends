@@ -721,7 +721,7 @@ export class Session {
 
   /**
    * `k`: the selected item goes into a session's next prompt, as a reference
-   * (`[](entity:<id>)`, drawn as its pill) after what is there. The session
+   * (`[](entity:<id>)`, drawn as its pill, and a space) after what is there. The session
    * opens in the side panel if it isn't already, and its box takes the keyboard.
    */
   sendToSession(): void {
@@ -730,7 +730,8 @@ export class Session {
     if (!row || !id) return
     if (this.state.side !== id) this.showSide(id)
     const draft = this.state.drafts[id] ?? ''
-    const reference = `[](${entityScheme}${row.entity.id})`
+    // A space after it, so I can type straight on.
+    const reference = `[](${entityScheme}${row.entity.id}) `
     this.update(S.setSideComposing(S.setDraftFor(this.state, id, draft && !/\s$/.test(draft) ? `${draft} ${reference}` : `${draft}${reference}`), true))
   }
 

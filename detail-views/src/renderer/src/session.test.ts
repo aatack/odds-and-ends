@@ -322,9 +322,9 @@ test('Ctrl+Enter opens what is in context with the path in the side panel; its b
   assert.deepEqual(sent, ['[Session context: n]\n\nhi'])
   // `k` puts the selected item in the session's next prompt, as a reference after what is there.
   runTool(session, 'session.send')
-  session.setSideDraft(`${session.get().state.drafts.s} and`)
+  session.setSideDraft(`${session.get().state.drafts.s}and`)
   runTool(session, 'session.send')
-  assert.equal(session.get().state.drafts.s, '[](entity:x) and [](entity:x)')
+  assert.equal(session.get().state.drafts.s, '[](entity:x) and [](entity:x) ')
   session.setSideDraft('')
   assert.equal(session.get().state.drafts.s, undefined)
   // `k` with the panel closed opens the session in context first, and focuses its box.
@@ -332,7 +332,7 @@ test('Ctrl+Enter opens what is in context with the path in the side panel; its b
   runTool(session, 'session.send')
   assert.equal(session.get().state.side, 's')
   assert.equal(session.get().state.sideComposing, true)
-  assert.equal(session.get().state.drafts.s, '[](entity:x)')
+  assert.equal(session.get().state.drafts.s, '[](entity:x) ')
   session.setSideDraft('')
   // Ctrl+Enter in its box closes it again.
   const ctrlEnter = tools.find((tool) => tool.scope === 'input' && tool.keys.includes('Ctrl+Enter') && (tool.enabled?.(session, 'side') ?? true))!
