@@ -17,6 +17,8 @@ export interface Snapshot {
   peekViews: Record<string, View>
   /** What the side panel shows, if it is open. */
   sideView: View | null
+  /** The rows of each window but the main view (`side`, or a peek's key), with its selection and any edit laid over them. */
+  windowShown: Record<string, S.ShownView>
   /** An item named on screen (a pill), presented. Reading one asks for it. */
   item(id: string): Entity | null
   /** What is under way for each entity: `older`, an action's id, `hide`. */
@@ -111,7 +113,7 @@ export class Session {
     this.env = env
     this.cache = new EntityCache({ scan: (ids) => api.scan(ids), load: (request) => api.load(request), foreign: foreignOf })
     const state = S.restore(env.load(storageKey), 'slack')
-    this.snapshot = { state, modules: moduleInfos, view: null, shown: noRows, peekViews: {}, sideView: null, item: () => null, working: {}, now: Date.now(), findFocus: 0, centre: 0, toast: null }
+    this.snapshot = { state, modules: moduleInfos, view: null, shown: noRows, peekViews: {}, sideView: null, windowShown: {}, item: () => null, working: {}, now: Date.now(), findFocus: 0, centre: 0, toast: null }
     this.snapshot = this.derive(state)
   }
 
@@ -141,7 +143,8 @@ export class Session {
     for (const listener of this.listeners) listener()
   }
 
-  private update(state: S.State): void {
+  private update(next: S.State): void {
+    const state = S.settleWindow(next)
     if (state === this.snapshot.state) return
     this.publish(this.derive(state))
   }
@@ -208,6 +211,10 @@ export class Session {
     const peekViews: Record<string, View> = {}
     for (const peek of state.peeks) if (peek.target.kind === 'entity') peekViews[peek.target.id] ??= this.walk(peek.target.id, state)
     const sideView = state.side ? this.walk(state.side, state) : null
+    const windowShown: Record<string, S.ShownView> = {}
+    const mark = (window: string, root: string, view: View) => (windowShown[window] = S.markRows(view, state, root, previous.windowShown[window]))
+    for (const peek of state.peeks) if (peek.target.kind === 'entity') mark(peek.key, peek.target.id, peekViews[peek.target.id])
+    if (state.side && sideView) mark('side', state.side, sideView)
     // Walks for views no longer anywhere are dropped.
     const live = new Set([root, ...Object.keys(peekViews), ...(state.side ? [state.side] : [])])
     for (const key of this.walks.keys()) if (!live.has(key)) this.walks.delete(key)
@@ -228,7 +235,7 @@ export class Session {
             }
           })()
     this.itemsFrom = cache
-    return { ...previous, state, view, shown, peekViews, sideView, item }
+    return { ...previous, state, view, shown, peekViews, sideView, windowShown, item }
   }
 
   private itemsFrom: CacheState | null = null
@@ -324,9 +331,21 @@ export class Session {
     return this.snapshot.state
   }
 
-  /** The selected row, or null. */
+  /** The rows of the window the keys act in. */
+  private activeShown(): S.ShownView {
+    const window = this.state.window
+    return window === null ? this.snapshot.shown : (this.snapshot.windowShown[window] ?? noRows)
+  }
+
+  /** The selected row of the window the keys act in, or null. */
   selected(): ViewRow | null {
-    return S.selectedRow(this.snapshot.shown)
+    return S.selectedRow(this.activeShown())
+  }
+
+  /** The keys go to a window: the main view (null), `side`, or a peek, by its key. A transient peek they leave closes, unless the pointer is in it. */
+  focusWindow(window: string | null): void {
+    if (this.state.window === window) return
+    this.update(S.keepHovered(S.focusWindow(this.state, window), this.hovering))
   }
 
   /** The view's root, presented. */
@@ -353,8 +372,12 @@ export class Session {
     if (module) this.enterModule(module.root)
   }
 
+  /** Shift+A: pops the stack, or closes the side panel or peek the keys are in. */
   back(): void {
-    this.update(S.back(this.state))
+    const window = this.state.window
+    if (window === 'side') this.closeSide()
+    else if (window !== null) this.closePeek(window)
+    else this.update(S.back(this.state))
   }
 
   forward(): void {
@@ -367,7 +390,7 @@ export class Session {
   }
 
   move(delta: number): void {
-    this.update(S.move(this.state, this.snapshot.shown, delta))
+    this.update(S.move(this.state, this.activeShown(), delta))
   }
 
   select(path: string[]): void {
@@ -499,7 +522,7 @@ export class Session {
   }
 
   hasEdit(): boolean {
-    return this.state.edit !== null && this.state.edit.root === S.focused(this.state)
+    return this.state.edit !== null && this.state.edit.root === S.activeRoot(this.state)
   }
 
   /** Writes the edit: the row's text, or a new note. An empty box changes nothing. */
@@ -518,7 +541,7 @@ export class Session {
     void this.api.create(id, edit.draft, edit.values).then((outcome) => {
       this.settle(id, outcome)
       const made = outcome.events.find((event) => event.type === 'link')
-      if (made?.type === 'link' && S.focused(this.state) === edit.root) this.select([...edit.path, made.destinationId])
+      if (made?.type === 'link' && S.activeRoot(this.state) === edit.root) this.select([...edit.path, made.destinationId])
     })
   }
 
@@ -539,7 +562,8 @@ export class Session {
     const parent = row.path[row.path.length - 2]
     const depth = row.path.length
     let next: string[] = row.path.slice(0, -1)
-    for (const other of this.snapshot.shown.rows.slice(this.snapshot.shown.selectedIndex + 1)) {
+    const shown = this.activeShown()
+    for (const other of shown.rows.slice(shown.selectedIndex + 1)) {
       if (other.kind !== 'entity') continue
       if (other.row.path.length < depth) break
       if (other.row.path.length === depth) {
@@ -699,13 +723,27 @@ export class Session {
     this.update(S.setSide(this.state, null))
   }
 
-  composeSide(composing: boolean): void {
-    this.update(S.setSideComposing(this.state, composing))
+  /** A window's prompt box (`side`, or a peek's key) took the keyboard, or gave it up. */
+  composeWindow(window: string, composing: boolean): void {
+    this.update(S.setPrompting(this.state, window, composing))
   }
 
-  setSideDraft(text: string): void {
-    const id = this.state.side
+  /** Escape in a window's prompt box: the keys go back to the main view. */
+  leavePrompt(): void {
+    this.focusWindow(null)
+  }
+
+  /** Typing in a window's prompt box: drafted by the window's item. */
+  setWindowDraft(window: string, text: string): void {
+    const id = S.rootOf(this.state, window)
     if (id) this.update(S.setDraftFor(this.state, id, text))
+  }
+
+  /** Ctrl+Enter in a window's prompt box: closes that window. */
+  closeWindow(): void {
+    const window = this.state.window
+    if (window === 'side') this.closeSide()
+    else if (window !== null) this.closePeek(window)
   }
 
   /** The session `k` sends to: the one open in the side panel, else the nearest in context. */
@@ -732,14 +770,16 @@ export class Session {
     const draft = this.state.drafts[id] ?? ''
     // A space after it, so I can type straight on.
     const reference = `[](${entityScheme}${row.entity.id}) `
-    this.update(S.setSideComposing(S.setDraftFor(this.state, id, draft && !/\s$/.test(draft) ? `${draft} ${reference}` : `${draft}${reference}`), true))
+    this.update(S.setPrompting(S.setDraftFor(this.state, id, draft && !/\s$/.test(draft) ? `${draft} ${reference}` : `${draft}${reference}`), 'side', true))
   }
 
-  /** Sends what is in the side panel's prompt box to its item (a Claude session's next prompt), and empties it. */
-  async sendSide(): Promise<void> {
-    const id = this.state.side
+  /** Sends what is in the prompt box of the window the keys are in to its item (a Claude session's next prompt), and empties it. */
+  async sendWindow(): Promise<void> {
+    const window = this.state.window
+    const id = window === null ? null : S.rootOf(this.state, window)
     const text = id ? (this.state.drafts[id] ?? '') : ''
-    if (!id || !text.trim() || this.snapshot.sideView?.compose == null) return
+    const view = window === 'side' ? this.snapshot.sideView : id ? this.snapshot.peekViews[id] : null
+    if (!id || !text.trim() || view?.compose == null) return
     this.update(S.setDraftFor(this.state, id, ''))
     this.settle(id, await this.api.submit(id, text))
   }

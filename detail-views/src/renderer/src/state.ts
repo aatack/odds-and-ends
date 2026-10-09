@@ -68,8 +68,14 @@ export interface State {
   side: string | null
   /** The side panel's width in px, once I have dragged it; null for its default. */
   sideWidth: number | null
-  /** Whether the side panel's prompt box has the keyboard. Not persisted. */
-  sideComposing: boolean
+  /**
+   * The window the keys act in: null for the main view, `side` for the side
+   * panel, or a peek's key. Each has its own selection (by its root, in
+   * `selections`). Not persisted.
+   */
+  window: string | null
+  /** Whether that window's prompt box (the side panel's or a peek's) has the keyboard. Not persisted. */
+  prompting: boolean
 }
 
 export interface Edit {
@@ -155,14 +161,16 @@ export function peekChain(state: State, key: string | null): Set<string> {
 export function showPeek(state: State, peek: Peek): State {
   const keep = peekChain(state, peek.parent)
   for (const key of peekChain(state, state.acting?.peek ?? null)) keep.add(key)
+  for (const key of peekChain(state, state.window)) keep.add(key)
   return { ...state, peeks: [...state.peeks.filter((other) => other.pinned || keep.has(other.key)), peek] }
 }
 
 /** Closes transient peeks the pointer is no longer in or under. */
 export function keepHovered(state: State, hovering: string | null): State {
   const keep = peekChain(state, hovering)
-  // A peek with an action waiting in it stays until the action is done or given up.
+  // A peek with an action waiting in it stays until the action is done or given up; one with the keys, until they leave it.
   for (const key of peekChain(state, state.acting?.peek ?? null)) keep.add(key)
+  for (const key of peekChain(state, state.window)) keep.add(key)
   const peeks = state.peeks.filter((peek) => peek.pinned || keep.has(peek.key))
   return peeks.length === state.peeks.length ? state : { ...state, peeks }
 }
@@ -175,6 +183,32 @@ export function closePeek(state: State, key: string | null): State {
   if (peeks.length === state.peeks.length) return state
   const acting = state.acting?.peek && !peeks.some((peek) => peek.key === state.acting?.peek) ? null : state.acting
   return { ...state, peeks, acting, composing: acting ? state.composing : false }
+}
+
+/** The entity a window is rooted at: the main view's, the side panel's, or a peek's (null for a page). */
+export function rootOf(state: State, window: string | null): string | null {
+  if (window === null) return focused(state)
+  if (window === 'side') return state.side
+  const target = state.peeks.find((peek) => peek.key === window)?.target
+  return target?.kind === 'entity' ? target.id : null
+}
+
+/** The root of the window the keys act in. */
+export function activeRoot(state: State): string {
+  return rootOf(state, state.window) ?? focused(state)
+}
+
+/** The keys go to a window (null: the main view). Its prompt box keeps the keyboard only if it is the one that had it. */
+export function focusWindow(state: State, window: string | null): State {
+  if (state.window === window) return state
+  return { ...state, window, prompting: false }
+}
+
+/** A window that has closed (or shows a page) hands the keys back to the main view. */
+export function settleWindow(state: State): State {
+  if (state.window === null) return state
+  const root = rootOf(state, state.window)
+  return root === null ? { ...state, window: null, prompting: false } : state
 }
 
 /** Moving or resizing pins a peek and brings it to the front. */
@@ -213,7 +247,8 @@ export function initialState(root: string): State {
     peeks: [],
     side: null,
     sideWidth: null,
-    sideComposing: false,
+    window: null,
+    prompting: false,
   }
 }
 
@@ -301,12 +336,6 @@ export function markRows(view: View, state: State, root: string, previous?: Show
   }
 }
 
-/** A view's rows with nothing selected or edited: a peek's. */
-export function inertRows(view: View): ShownView {
-  const rows: ShownRow[] = view.rows.map((row) => ({ kind: 'entity', key: row.key, row, selected: false, editing: false }))
-  return { rows, keys: rows.map((row) => row.key), selectedPath: [], selectedIndex: -1 }
-}
-
 /** The entity row under the selection, if any. */
 export function selectedRow(shown: ShownView): ViewRow | null {
   const at = shown.rows[shown.selectedIndex]
@@ -334,13 +363,13 @@ export function filterView(view: View, find: string | null | undefined): View {
 export function navigate(state: State, id: string): State {
   if (focused(state) === id) return state
   const trail = [...state.trail.slice(0, state.at + 1), id].slice(-trailLimit)
-  return { ...state, trail, at: trail.length - 1, composing: false, acting: null, viewing: null, edit: null, peeks: state.peeks.filter((peek) => peek.pinned) }
+  return { ...state, trail, at: trail.length - 1, composing: false, acting: null, viewing: null, edit: null, peeks: state.peeks.filter((peek) => peek.pinned), window: null, prompting: false }
 }
 
 /** Entering a module: its root becomes the whole stack, rather than one more view on it. */
 export function enter(state: State, root: string): State {
   if (state.trail.length === 1 && focused(state) === root) return state
-  return { ...state, trail: [root], at: 0, composing: false, acting: null, viewing: null, edit: null, peeks: state.peeks.filter((peek) => peek.pinned) }
+  return { ...state, trail: [root], at: 0, composing: false, acting: null, viewing: null, edit: null, peeks: state.peeks.filter((peek) => peek.pinned), window: null, prompting: false }
 }
 
 export function back(state: State): State {
@@ -356,8 +385,9 @@ export function forward(state: State): State {
   return state.at < state.trail.length - 1 ? { ...state, at: state.at + 1, composing: false, acting: null, edit: null } : state
 }
 
+/** Selects a row of the window the keys act in. */
 export function select(state: State, path: string[]): State {
-  return { ...state, selections: { ...state.selections, [focused(state)]: path } }
+  return { ...state, selections: { ...state.selections, [activeRoot(state)]: path } }
 }
 
 /** Steps the selection through the view's entity rows. */
@@ -374,11 +404,11 @@ export function fold(state: State, id: string, open: boolean): State {
 }
 
 export function startEdit(state: State, path: string[], text: string): State {
-  return { ...state, edit: { root: focused(state), path, mode: 'edit', draft: text } }
+  return { ...state, edit: { root: activeRoot(state), path, mode: 'edit', draft: text } }
 }
 
 export function startCreate(state: State, path: string[], values?: NoteValues): State {
-  return { ...state, edit: { root: focused(state), path, mode: 'create', draft: '', values } }
+  return { ...state, edit: { root: activeRoot(state), path, mode: 'create', draft: '', values } }
 }
 
 export function inspect(state: State, id: string | null): State {
@@ -453,20 +483,23 @@ export function actingIn(state: State, peek: string | null): string | null {
   return state.acting && state.acting.peek === peek ? state.acting.action : null
 }
 
-/** Opens an item in the side panel, its prompt box taking the keyboard; null closes it. */
+/** Opens an item in the side panel, the keys and its prompt box going to it; null closes it. */
 export function setSide(state: State, id: string | null): State {
-  return { ...state, side: id, sideComposing: id !== null }
+  if (id === null) return settleWindow({ ...state, side: null })
+  return { ...state, side: id, window: 'side', prompting: true }
 }
 
 export function setSideWidth(state: State, width: number): State {
   return state.sideWidth === width ? state : { ...state, sideWidth: width }
 }
 
-export function setSideComposing(state: State, composing: boolean): State {
-  return state.sideComposing === composing ? state : { ...state, sideComposing: composing }
+/** A window's prompt box takes the keyboard (and the window the keys), or gives it up. */
+export function setPrompting(state: State, window: string, composing: boolean): State {
+  if (composing) return state.window === window && state.prompting ? state : { ...state, window, prompting: true }
+  return state.window === window && state.prompting ? { ...state, prompting: false } : state
 }
 
-/** The side panel's prompt is drafted apart from the main view's, by its item. */
+/** A window's prompt is drafted apart from the main view's, by its item. */
 export function setDraftFor(state: State, key: string, text: string): State {
   const drafts = { ...state.drafts }
   if (text) drafts[key] = text
@@ -479,8 +512,8 @@ export function setWiping(state: State, wiping: State['wiping']): State {
   return state.wiping === wiping ? state : { ...state, wiping }
 }
 
-export function persisted(state: State): Omit<State, 'composing' | 'viewing' | 'acting' | 'picking' | 'phoneMenu' | 'wiping' | 'dialog' | 'inspecting' | 'sideComposing'> {
-  const { composing: _, viewing: __, acting: ___, picking: ____, phoneMenu: _____, wiping: ________, dialog: ______, inspecting: _______, sideComposing: _________, ...rest } = state
+export function persisted(state: State): Omit<State, 'composing' | 'viewing' | 'acting' | 'picking' | 'phoneMenu' | 'wiping' | 'dialog' | 'inspecting' | 'window' | 'prompting'> {
+  const { composing: _, viewing: __, acting: ___, picking: ____, phoneMenu: _____, wiping: ________, dialog: ______, inspecting: _______, window: _________, prompting: __________, ...rest } = state
   return { ...rest, peeks: rest.peeks.filter((peek) => peek.pinned) }
 }
 

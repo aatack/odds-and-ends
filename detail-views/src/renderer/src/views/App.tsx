@@ -1,5 +1,5 @@
 import type { Entity, ModuleInfo, View } from '../../../core/types.ts'
-import { inertRows, type Peek, type PeekTarget, type Pick, type Rect, type SessionDialog } from '../state.ts'
+import type { Edit, Peek, PeekTarget, Pick, Rect, SessionDialog, ShownView } from '../state.ts'
 import { imageSrc } from '../images.ts'
 import { PeekWindow } from './Peek.tsx'
 import { ViewPane } from './View.tsx'
@@ -34,7 +34,34 @@ export interface PeekProps {
   onCompose(composing: boolean): void
 }
 
+/** What the side panel and peeks need to take the keys: their rows, any edit, their prompt boxes, and the gestures for them. */
+export interface WindowsProps {
+  /** The window the keys are in: null for the main view, `side`, or a peek's key. */
+  focus: string | null
+  /** Whether that window's prompt box has the keyboard. */
+  prompting: boolean
+  /** Each window's rows, by `side` or a peek's key. */
+  shown: Record<string, ShownView>
+  edit: Edit | null
+  /** Prompt drafts, by item. */
+  drafts: Record<string, string>
+  handlers: WindowProps
+}
+
+export interface WindowProps {
+  /** A press in a window gives it the keys. */
+  onFocus(window: string | null): void
+  onSelect(path: string[]): void
+  onToggle(path: string[]): void
+  onEditDraft(text: string): void
+  onCommitEdit(): void
+  onCancelEdit(): void
+  onDraft(window: string, text: string): void
+  onCompose(window: string, composing: boolean): void
+}
+
 export function App(props: {
+  windows: WindowsProps
   viewing: string | null
   onImage(ref: string | null): void
   peek: PeekProps
@@ -63,7 +90,7 @@ export function App(props: {
   /** Wiping the cache store, at the foot of the sidebar: each press a step closer, until the last wipes. */
   wipe: { label: string; stage: number; onWipe(): void; onCancel(): void; cancelLabel: string }
 }) {
-  const { peek } = props
+  const { peek, windows } = props
   return (
     <ClockContext.Provider value={props.now}>
     <KindsContext.Provider value={kinds}>
@@ -85,7 +112,7 @@ export function App(props: {
               {props.wipe.stage > 0 && <Button label={props.wipe.cancelLabel} onClick={props.wipe.onCancel} />}
             </div>
           </nav>
-          <main className="focus">
+          <main className="focus" onPointerDown={() => windows.handlers.onFocus(null)}>
             {props.crumbs.length > 1 && (
               <div className="crumbs">
                 {props.crumbs.map((crumb, at) => (
@@ -98,7 +125,7 @@ export function App(props: {
             {props.view && <ViewPane {...props.view} />}
             {props.phone && <PhoneBar {...props.phone} />}
           </main>
-          {props.side && <SidePanel {...props.side} onImage={props.onImage} />}
+          {props.side && <SidePanel {...props.side} windows={windows} onImage={props.onImage} />}
           {props.picking && <PickBar {...props.picking} />}
           {props.dialog && <SessionForm {...props.dialog} />}
           {props.inspect && <Inspector {...props.inspect} />}
@@ -108,6 +135,12 @@ export function App(props: {
               key={one.key}
               peek={one}
               view={one.target.kind === 'entity' ? peek.views[one.target.id] : undefined}
+              shown={windows.shown[one.key]}
+              edit={windows.edit}
+              focused={windows.focus === one.key}
+              draft={one.target.kind === 'entity' ? (windows.drafts[one.target.id] ?? '') : ''}
+              prompting={windows.focus === one.key && windows.prompting}
+              window={windows.handlers}
               hover={peek.hover}
               onEnter={peek.enter}
               onLeave={peek.leave}
@@ -142,10 +175,6 @@ export interface SideProps {
   id: string
   view: View | null
   working: string[] | undefined
-  draft: string
-  composing: boolean
-  onDraft(text: string): void
-  onCompose(composing: boolean): void
   onOpen(id: string): void
   onNearEnd(): void
   onClose(): void
@@ -160,12 +189,13 @@ const mainMin = 400
 
 /**
  * The panel on the right (Ctrl+Enter): an item in context with where I am,
- * mostly a Claude session. Its view takes no cursor, as in a peek; a chat's
- * prompt box works. Its left edge drags to resize it; the × closes it.
+ * mostly a Claude session. Pressing in it gives it the keys, as in a peek:
+ * its rows take the cursor, and a chat's prompt box works. Its left edge
+ * drags to resize it; the × closes it.
  */
-function SidePanel(props: SideProps & { onImage(ref: string | null): void }) {
-  const { view } = props
-  const shown = useMemo(() => view && inertRows(view), [view])
+function SidePanel(props: SideProps & { windows: WindowsProps; onImage(ref: string | null): void }) {
+  const { view, windows } = props
+  const shown = windows.shown.side
   // While dragging, the width follows the pointer here; it is kept when let go.
   const [live, setLive] = useState<number | null>(null)
   const grab = useRef<{ x: number; start: number } | null>(null)
@@ -187,12 +217,25 @@ function SidePanel(props: SideProps & { onImage(ref: string | null): void }) {
     setLive(null)
   }
   const width = live ?? props.width
+  const { handlers } = windows
+  const draft = windows.drafts[props.id] ?? ''
+  const composing = windows.focus === 'side' && windows.prompting
   const prompt = useMemo(
-    () => ({ draft: props.draft, composing: props.composing, onDraft: props.onDraft, onCompose: props.onCompose }),
-    [props.draft, props.composing, props.onDraft, props.onCompose],
+    () => ({
+      draft,
+      composing,
+      onDraft: (text: string) => handlers.onDraft('side', text),
+      onCompose: (on: boolean) => handlers.onCompose('side', on),
+    }),
+    [draft, composing, handlers],
   )
   return (
-    <aside ref={panel} className="side" style={width !== null ? { width: clamp(width) } : undefined}>
+    <aside
+      ref={panel}
+      className="side"
+      style={width !== null ? { width: clamp(width) } : undefined}
+      onPointerDown={() => handlers.onFocus('side')}
+    >
       <div className="side-resize" onPointerDown={begin} />
       {live !== null && <div className="peek-capture" onPointerMove={drag} onPointerUp={end} onPointerCancel={end} />}
       <div className="peek-bar">
@@ -208,14 +251,16 @@ function SidePanel(props: SideProps & { onImage(ref: string | null): void }) {
             view={view}
             shown={shown}
             interactive={false}
+            focused={windows.focus === 'side'}
             prompt={prompt}
-            edit={null}
+            edit={windows.edit}
             picking={null}
             working={props.working}
             acting={null}
             draft=""
             composing={false}
-            onSelect={noop}
+            onSelect={handlers.onSelect}
+            onToggle={handlers.onToggle}
             onOpen={props.onOpen}
             onImage={props.onImage}
             onDraft={noop}
@@ -225,9 +270,9 @@ function SidePanel(props: SideProps & { onImage(ref: string | null): void }) {
             onFind={noop}
             onFindFocused={noop}
             onNearEnd={props.onNearEnd}
-            onEditDraft={noop}
-            onCommitEdit={noop}
-            onCancelEdit={noop}
+            onEditDraft={handlers.onEditDraft}
+            onCommitEdit={handlers.onCommitEdit}
+            onCancelEdit={handlers.onCancelEdit}
             onClose={props.onClose}
           />
         ) : null}

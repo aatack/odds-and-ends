@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { View } from '../../../core/types.ts'
-import { inertRows, type Peek, type PeekTarget, type Rect } from '../state.ts'
+import type { Edit, Peek, PeekTarget, Rect, ShownView } from '../state.ts'
+import type { WindowProps } from './App.tsx'
 import { ViewPane } from './View.tsx'
 import { Button, HeaderPill, PeekContext } from './primitives.tsx'
 
@@ -21,11 +22,21 @@ type Grab = { mode: 'move' | 'resize'; start: Rect; x: number; y: number; moved:
 
 /**
  * A floating window onto a link or an entity. Dragging the bar or the corner
- * pins it, after which it stays until its × is pressed.
+ * pins it, after which it stays until its × is pressed. Pressing in it gives
+ * it the keys: its rows take the cursor, and a chat's prompt box works.
  */
 export function PeekWindow(props: {
   peek: Peek
   view: View | undefined
+  /** Its rows, with its selection and any edit in it. */
+  shown: ShownView | undefined
+  edit: Edit | null
+  /** Whether the keys are in it. */
+  focused: boolean
+  /** Its prompt box's draft, and whether it has the keyboard. */
+  draft: string
+  prompting: boolean
+  window: WindowProps
   /** Hovering something inside opens a peek stacked on this one. */
   hover(target: PeekTarget, anchor: Rect, origin: string | null): void
   onEnter(key: string): void
@@ -47,7 +58,6 @@ export function PeekWindow(props: {
 }) {
   const { peek } = props
   const placed = peek.rect ?? place(peek.anchor)
-  const shown = useMemo(() => props.view && inertRows(props.view), [props.view])
   const [live, setLive] = useState<Rect | null>(null)
   const grab = useRef<Grab | null>(null)
   const rect = live ?? placed
@@ -61,6 +71,16 @@ export function PeekWindow(props: {
   )
 
   const close = () => props.onClose(peek.key)
+  const handlers = props.window
+  const prompt = useMemo(
+    () => ({
+      draft: props.draft,
+      composing: props.prompting,
+      onDraft: (text: string) => handlers.onDraft(peek.key, text),
+      onCompose: (composing: boolean) => handlers.onCompose(peek.key, composing),
+    }),
+    [props.draft, props.prompting, handlers, peek.key],
+  )
 
   const begin = (mode: Grab['mode']) => (event: ReactPointerEvent) => {
     if (event.button !== 0) return
@@ -104,7 +124,10 @@ export function PeekWindow(props: {
       style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
       onMouseEnter={() => props.onEnter(peek.key)}
       onMouseLeave={() => props.onLeave(peek.key)}
-      onPointerDown={() => props.onRaise(peek.key)}
+      onPointerDown={() => {
+        props.onRaise(peek.key)
+        handlers.onFocus(peek.key)
+      }}
     >
       <div className="peek-bar" onPointerDown={begin('move')}>
         <span className="grow">
@@ -117,19 +140,22 @@ export function PeekWindow(props: {
         <div className="peek-body">
           {peek.target.kind === 'url' ? (
             <webview key={peek.target.url} src={peek.target.url} partition="persist:preview" className="peek-page" />
-          ) : props.view ? (
+          ) : props.view && props.shown ? (
             <ViewPane
               view={props.view}
-              shown={shown!}
+              shown={props.shown}
               interactive={false}
-              edit={null}
+              focused={props.focused}
+              prompt={prompt}
+              edit={props.edit}
               picking={null}
               working={props.working}
               acting={props.acting?.action ?? null}
               draft={props.acting?.draft ?? ''}
               composing={props.acting?.composing ?? false}
               onAction={props.onAction}
-              onSelect={noop}
+              onSelect={handlers.onSelect}
+              onToggle={handlers.onToggle}
               onOpen={props.onOpenEntity}
               onImage={props.onImage}
               onDraft={props.onDraft}
@@ -139,9 +165,9 @@ export function PeekWindow(props: {
               onFind={noop}
               onFindFocused={noop}
               onNearEnd={props.onNearEnd}
-              onEditDraft={noop}
-              onCommitEdit={noop}
-              onCancelEdit={noop}
+              onEditDraft={handlers.onEditDraft}
+              onCommitEdit={handlers.onCommitEdit}
+              onCancelEdit={handlers.onCancelEdit}
               onClose={close}
             />
           ) : null}

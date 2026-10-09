@@ -309,34 +309,36 @@ test('Ctrl+Enter opens what is in context with the path in the side panel; its b
   await settle()
   assert.equal(session.get().state.side, 's')
   assert.equal(session.get().sideView?.compose, 'claude')
-  assert.equal(session.get().state.sideComposing, true)
+  assert.equal(session.get().state.prompting, true)
   // Opening it asks the view it squeezes to bring the selected row to the middle.
   assert.ok(session.get().centre > 0)
   session.resizeSide(500.4)
   assert.equal(session.get().state.sideWidth, 500)
-  session.setSideDraft('hi')
-  await session.sendSide()
+  session.setWindowDraft('side', 'hi')
+  await session.sendWindow()
   await settle()
   assert.deepEqual(core.entity('s').outboundLinks.map((id) => core.item(id)!.data.text), ['hi', 'you said hi'])
   // The first prompt tells Claude what else is in the session's context; the prompt item is only what I wrote.
   assert.deepEqual(sent, ['[Session context: n]\n\nhi'])
-  // `k` puts the selected item in the session's next prompt, as a reference after what is there.
+  // Escape in its box hands the keys back to the view; `k` puts the selected item in the session's next prompt, as a reference after what is there.
+  session.leavePrompt()
   runTool(session, 'session.send')
-  session.setSideDraft(`${session.get().state.drafts.s}and`)
+  session.setWindowDraft('side', `${session.get().state.drafts.s}and`)
+  session.leavePrompt()
   runTool(session, 'session.send')
   assert.equal(session.get().state.drafts.s, '[](entity:x) and [](entity:x) ')
-  session.setSideDraft('')
+  session.setWindowDraft('side', '')
   assert.equal(session.get().state.drafts.s, undefined)
   // `k` with the panel closed opens the session in context first, and focuses its box.
   session.closeSide()
   runTool(session, 'session.send')
   assert.equal(session.get().state.side, 's')
-  assert.equal(session.get().state.sideComposing, true)
+  assert.equal(session.get().state.prompting, true)
   assert.equal(session.get().state.drafts.s, '[](entity:x) ')
-  session.setSideDraft('')
+  session.setWindowDraft('side', '')
   // Ctrl+Enter in its box closes it again.
-  const ctrlEnter = tools.find((tool) => tool.scope === 'input' && tool.keys.includes('Ctrl+Enter') && (tool.enabled?.(session, 'side') ?? true))!
-  ctrlEnter.run(session, 'side')
+  const ctrlEnter = tools.find((tool) => tool.scope === 'input' && tool.keys.includes('Ctrl+Enter') && (tool.enabled?.(session, 'window') ?? true))!
+  ctrlEnter.run(session, 'window')
   assert.equal(session.get().state.side, null)
   runTool(session, 'side.open')
   assert.equal(session.get().state.side, 's')
@@ -349,6 +351,65 @@ test('Ctrl+Enter opens what is in context with the path in the side panel; its b
   session.select(['tasks'])
   runTool(session, 'side.open')
   assert.equal(session.get().state.side, null)
+  stop()
+})
+
+test('a peek pressed in takes the keys: its own cursor, notes and prompt box, and Shift+A closes it', async () => {
+  const sent: string[] = []
+  const run = async (command: string, args: string[]) => {
+    if (!command.endsWith('claude')) return ''
+    sent.push(args[1])
+    return JSON.stringify({ result: 'ok' })
+  }
+  const { core, session, stop, settle } = await headless({ run })
+  core.owned.write([
+    ...values('n', { text: 'parent' }, 1, 'me'),
+    ...values('a', { text: 'first' }, 1, 'me'),
+    ...values('b', { text: 'second' }, 1, 'me'),
+    ...values('s', { type: 'claude.session', text: 'helper', cwd: '/tmp' }, 1, 'me'),
+    link('tasks', 'n', 1, 'me'),
+    link('n', 'a', 1, 'me'),
+    link('n', 'b', 2, 'me'),
+  ])
+  session.navigate('tasks')
+  await settle()
+  const anchor = { x: 0, y: 0, width: 0, height: 0 }
+  const peekOf = async (id: string) => {
+    session.hoverPeek({ kind: 'entity', id }, anchor, null)
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    await settle()
+    return session.get().state.peeks.at(-1)!.key
+  }
+  const mainSelection = session.get().shown.selectedPath
+  const key = await peekOf('n')
+  session.focusWindow(key)
+  // The cursor moves in the peek; the main view's stays where it was.
+  assert.deepEqual(session.selected()?.path, ['n', 'a'])
+  runTool(session, 'select.down')
+  assert.deepEqual(session.selected()?.path, ['n', 'b'])
+  assert.deepEqual(session.get().shown.selectedPath, mainSelection)
+  // Enter adds a note under the peek's selected row.
+  runTool(session, 'note.create')
+  session.setEditDraft('under second')
+  session.commitEdit()
+  await settle()
+  assert.deepEqual(core.entity('b').outboundLinks.map((id) => core.item(id)!.data.text), ['under second'])
+  assert.equal(session.selected()?.entity.data.text, 'under second')
+  // Leaving it for the main view (the pointer elsewhere) closes it.
+  session.focusWindow(null)
+  assert.equal(session.get().state.peeks.length, 0)
+  // A session's peek has its prompt box; Shift+A closes the peek, not the view.
+  const chat = await peekOf('s')
+  session.composeWindow(chat, true)
+  assert.equal(session.get().state.window, chat)
+  session.setWindowDraft(chat, 'hello')
+  await session.sendWindow()
+  await settle()
+  assert.deepEqual(sent, ['hello'])
+  runTool(session, 'view.back')
+  assert.equal(session.get().state.peeks.length, 0)
+  assert.equal(session.get().state.window, null)
+  assert.equal(session.root()?.id, 'tasks')
   stop()
 })
 

@@ -36,9 +36,9 @@ export function ViewPane(props: ViewProps) {
   const Overview = kinds[root.type].Overview
   const action = view.actions.find((offered) => offered.id === props.acting)
   // Typing the next prompt, the chat doesn't mark a row: the box is where I am.
-  const prompting = view.startsAtEnd && props.composing && !action
+  const prompting = view.startsAtEnd && (props.prompt?.composing ?? props.composing) && !action
   return (
-    <div className={`pane${prompting ? ' prompting' : ''}`}>
+    <div className={`pane${prompting ? ' prompting' : ''}${props.focused ? '' : ' unfocused'}`}>
       {props.interactive && props.find !== null && (
         <FindField find={props.find} focus={props.findFocus} onFind={props.onFind} onFocused={props.onFindFocused} />
       )}
@@ -68,12 +68,12 @@ export function ViewPane(props: ViewProps) {
           onCompose={props.onCompose}
         />
       )}
-      {/* The side panel's chat: its own box, apart from the main view's. */}
+      {/* A chat in the side panel or a peek: its own box, apart from the main view's. */}
       {view.compose === 'claude' && !props.interactive && props.prompt && (
         <Composer
           key={root.id}
           kind="claude"
-          field="side"
+          field="window"
           placeholder="Prompt"
           draft={props.prompt.draft}
           composing={props.prompt.composing}
@@ -133,7 +133,6 @@ const indent = (depth: number): CSSProperties => ({ paddingLeft: 10 + (depth - 1
  */
 const TreeRow = memo(function TreeRow(props: {
   shown: Extract<ShownRow, { kind: 'entity' }>
-  interactive: boolean
   /** Only while this row is being edited. */
   edit: Edit | null
   onSelect(path: string[]): void
@@ -154,9 +153,9 @@ const TreeRow = memo(function TreeRow(props: {
       shown={props.shown}
       className={`tree${rowClass(row)}`}
       style={indent(row.depth)}
-      onSelect={props.interactive ? props.onSelect : undefined}
+      onSelect={props.onSelect}
     >
-      <Marker row={row} bullets={props.bullets} onToggle={props.interactive ? props.onToggle : undefined} />
+      <Marker row={row} bullets={props.bullets} onToggle={props.onToggle} />
       <div className={`cell${tintClass(tintOf(kinds, row.entity))}${hasPeers(row.entity) ? ' has-context' : ''}`}>
         {props.shown.editing ? (
           <TextBox edit={props.edit} onEditDraft={props.onEditDraft} />
@@ -436,7 +435,7 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
   })
 
   const overview = (shown: Extract<ShownRow, { kind: 'entity' }>) => (
-    <Selectable shown={shown} className="overview" onSelect={view.interactive ? view.onSelect : undefined}>
+    <Selectable shown={shown} className="overview" onSelect={view.onSelect}>
       {/* Its context's pills to the right, level with its first line. */}
       <div className={`overview-frame${tintClass(tintOf(kinds, props.root))}`}>
         <div className="overview-body">
@@ -458,7 +457,6 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
         ) : (
           <TreeRow
             shown={shown}
-            interactive={view.interactive}
             edit={shown.editing ? view.edit : null}
             onSelect={view.onSelect}
             onOpen={view.onOpen}

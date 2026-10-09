@@ -63,6 +63,15 @@ never persisted. Views do not run their own timers.
 - **Derived** (pure, never written back): the view (`viewOf`), the rows with
   the selection and edit laid over them (`markRows`), the selection in effect
   (`resolveSelection`).
+- **Windows**: the main view, the side panel (`side`) and each peek (by its
+  key). `window` says which has the keys (a press in one gives it them);
+  `selected()`, the cursor keys and everything done to the selected row act
+  in it. Each window's selection is kept by its root in `selections`, and
+  `markRows` lays it over that window's rows (`windowShown`). A chat in the
+  side panel or a peek has its own prompt box (`prompting`). Shift+A closes
+  the side panel or peek with the keys; `d` pushes onto the main stack and
+  hands the keys back. A transient peek with the keys stays open until they
+  leave it.
 - **Tools** (`tools.ts`): every key is one, scoped `input` → `list` → `app`;
   the first enabled tool bound to a key wins, which is how Escape means
   "stop typing", "give up the move" or "close the peek" by what is going on.

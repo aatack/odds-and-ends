@@ -259,6 +259,11 @@ body,
   background: var(--select);
 }
 
+/* The keys are in another window: where this one's cursor is shows faintly. */
+.pane.unfocused .row.selected:not(:hover) {
+  background: var(--hover);
+}
+
 .grow {
   flex: 1;
   min-width: 0;
@@ -1168,6 +1173,11 @@ mark {
 
 .app.phone .row.selected {
   background: var(--select);
+}
+
+/* The keys are in another window: where this one's cursor is shows faintly. */
+.pane.unfocused .row.selected:not(:hover) {
+  background: var(--hover);
 }
 
 .app.phone .row.selected .stamp {

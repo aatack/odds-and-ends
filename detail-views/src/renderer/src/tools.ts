@@ -34,11 +34,11 @@ const picking = (s: Session, tool?: S.PickTool) => {
 
 export const tools: Tool[] = [
   // --- Typing ---------------------------------------------------------------------
-  // The side panel's prompt box: its own, whatever else is waiting.
-  { id: 'side.submit', scope: 'input', keys: ['Enter'], enabled: (_, field) => field === 'side', run: (s) => void s.sendSide() },
-  // Ctrl+Enter opened it; in its box, Ctrl+Enter closes it again.
-  { id: 'side.closeFromPrompt', scope: 'input', keys: ['Ctrl+Enter'], enabled: (_, field) => field === 'side', run: (s) => s.closeSide() },
-  { id: 'side.leave', scope: 'input', keys: ['Escape'], enabled: (_, field) => field === 'side', run: (s) => s.composeSide(false) },
+  // A window's prompt box (the side panel's, a peek's): its own, whatever else is waiting.
+  { id: 'window.submit', scope: 'input', keys: ['Enter'], enabled: (_, field) => field === 'window', run: (s) => void s.sendWindow() },
+  // Ctrl+Enter opened the side panel; in a window's box, Ctrl+Enter closes the window again.
+  { id: 'window.closeFromPrompt', scope: 'input', keys: ['Ctrl+Enter'], enabled: (_, field) => field === 'window', run: (s) => s.closeWindow() },
+  { id: 'window.leave', scope: 'input', keys: ['Escape'], enabled: (_, field) => field === 'window', run: (s) => s.leavePrompt() },
   // The find field: Enter hands the keyboard back to the tree, keeping the
   // filter; Escape clears it.
   { id: 'find.done', scope: 'input', keys: ['Enter'], enabled: (_, field) => field === 'find', run: () => blur() },
