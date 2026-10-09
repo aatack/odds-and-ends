@@ -25,8 +25,12 @@ export function Composer(props: {
     const first = !mounted.current
     mounted.current = true
     // Focusing says it is composing (`onFocus`), so the next run doesn't take it away.
-    if (first && props.autoFocus) return element.focus()
-    if (props.composing && document.activeElement !== element) element.focus()
+    if ((first && props.autoFocus) || (props.composing && document.activeElement !== element)) {
+      element.focus()
+      // The caret goes after what is there (as after `k`), not wherever it was last.
+      element.setSelectionRange(element.value.length, element.value.length)
+      return
+    }
     if (!props.composing && document.activeElement === element) element.blur()
   }, [props.composing])
   // A textarea grows with what is typed (to its CSS max-height), rather than scrolling inside a fixed few lines.
