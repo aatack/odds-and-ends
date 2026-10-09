@@ -55,6 +55,18 @@ function slug(text: string): string {
   )
 }
 
+/**
+ * What a session's first prompt starts with when the session has a context:
+ * the other items in it, by id, for Claude to read through the app's MCP
+ * server (whose instructions say what the line means). Null when there are none.
+ */
+export function contextLine(session: string, lens: ModuleContext['lens']): string | null {
+  const context = lens.read(session)?.data.context
+  if (typeof context !== 'string' || !context) return null
+  const others = lens.children(context).filter((id) => id !== session)
+  return others.length ? `[Session context: ${others.join(', ')}]` : null
+}
+
 /** The app's MCP server for a session, and its tools allowed without asking (they read, and `merge_context` only links). */
 function mcpArgs(address: McpAddress | null): string[] {
   return address ? ['--allowedTools', `mcp__${mcpName}`, '--mcp-config', mcpConfig(address)] : []
@@ -152,9 +164,11 @@ export class Claude implements Module {
     // The session says it is running, and since when, while an answer is under way.
     const since = this.context.now()
     this.context.owned.write([value(session, 'runningSince', since, since, author)])
+    // The first prompt says what the session is in context with; later ones resume it, so it knows.
+    const line = started ? null : contextLine(session, this.context.lens)
     const args = [
       '-p',
-      text,
+      line ? `${line}\n\n${text}` : text,
       '--output-format',
       'json',
       '--model',

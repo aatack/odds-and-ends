@@ -49,7 +49,14 @@ Related things (notes, a PR, a Claude session, a Slack thread) are collected in 
 *context*: an entity of type \`context\` whose children are the related items, each of
 which names it in its \`context\` value. To find something related to where you are,
 \`find_context\` looks through the contexts along a path. \`merge_context\` puts two items
-in one context; it is the only tool here that writes.`
+in one context; it is the only tool here that writes.
+
+## In prompts
+
+A session's first prompt may start with \`[Session context: <id>, …]\`: the items in
+the session's context, which is what the session is about. \`read\` them (and \`walk\`
+under them) with these tools. \`[](entity:<id>)\` in a prompt names an entity by id;
+write the same in an answer and the user sees it as that item's pill.`
 
 export interface McpTool {
   name: string

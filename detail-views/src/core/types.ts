@@ -11,6 +11,8 @@ import type { AppEvent } from './graph/events.ts'
  * to open>`, the entity left empty when there is nothing to open.
  */
 export const mentionScheme = 'mention:'
+/** A reference to an entity in markdown, `[](entity:<id>)`: drawn as its pill (a prompt naming an item, say). */
+export const entityScheme = 'entity:'
 
 
 /**

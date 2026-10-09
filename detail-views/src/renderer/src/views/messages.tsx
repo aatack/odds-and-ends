@@ -8,12 +8,12 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 // KaTeX's stylesheet, and the fonts it references, bundled: nothing here reaches the network.
 import 'katex/dist/katex.min.css'
-import { mentionScheme } from '../../../core/types.ts'
+import { entityScheme, mentionScheme } from '../../../core/types.ts'
 import type { Entity } from '../../../core/types.ts'
 import { authorColour, fullTime, shortTime } from '../format.ts'
 import { imageSrc } from '../images.ts'
 import type { RowProps } from './kindTypes.ts'
-import { ItemContext, Link, usePeek } from './primitives.tsx'
+import { ItemContext, ItemPill, Link, usePeek } from './primitives.tsx'
 
 /** Chat-style messages, shared by every module that has a discussion. */
 
@@ -205,9 +205,11 @@ function remarkHighlight(options: { find: string }) {
   }
 }
 
-/** Mentions keep their scheme; other links only if they are web or mail. */
+const hasText = (children: ReactNode): boolean => (Array.isArray(children) ? children.length > 0 : children != null && children !== '')
+
+/** Mentions and entity references keep their scheme; other links only if they are web or mail. */
 function keepUrl(url: string): string {
-  return /^(mention:|https?:|mailto:)/.test(url) ? url : ''
+  return /^(mention:|entity:|https?:|mailto:)/.test(url) ? url : ''
 }
 
 /** What an inline rendering drops (keeping their text): anything that makes a block. Maths stays. */
@@ -244,6 +246,8 @@ export const Markdown = memo(function Markdown(props: {
             />
           )
         }
+        // `[](entity:<id>)`: the item, as its pill.
+        if (href?.startsWith(entityScheme)) return <ItemPill id={href.slice(entityScheme.length)} fallback={hasText(children) ? children : '…'} />
         return href ? <Link href={href}>{children}</Link> : <>{children}</>
       },
       // Remote images aren't loaded; they peek like any link.
