@@ -17,7 +17,7 @@ import './styles.css'
  * swaps hover for taps and keys for a bar of buttons.
  */
 function Root({ session, phone }: { session: Session; phone: boolean }) {
-  const { state, view: tree, shown, modules, peekViews, sideView, item, working, now, findFocus, centre, toast } = useSnapshot(session)
+  const { state, view: tree, shown, modules, peekViews, sideView, windowShown, item, working, now, findFocus, centre, toast } = useSnapshot(session)
   useEffect(() => {
     const stopDispatch = installDispatch(session, tools)
     let stopSession: (() => void) | undefined
@@ -99,6 +99,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
         view: tree,
         shown,
         interactive: true,
+        focused: state.window === null,
         edit: state.edit,
         picking: state.picking,
         draft: state.drafts[draftKey(state)] ?? '',
@@ -133,10 +134,26 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
     return pick && { pick, subject: item(pick.path[pick.path.length - 1]) }
   }, [state.picking, item])
 
+  const windowHandlers = useMemo(
+    () => ({
+      onFocus: (window: string | null) => session.focusWindow(window),
+      onSelect: (path: string[]) => session.select(path),
+      onToggle,
+      onEditDraft,
+      onCommitEdit,
+      onCancelEdit,
+      onDraft: (window: string, text: string) => session.setWindowDraft(window, text),
+      onCompose: (window: string, composing: boolean) => session.composeWindow(window, composing),
+    }),
+    [session, onToggle, onEditDraft, onCommitEdit, onCancelEdit],
+  )
+  const windows = useMemo(
+    () => ({ focus: state.window, prompting: state.prompting, shown: windowShown, edit: state.edit, drafts: state.drafts, handlers: windowHandlers }),
+    [state.window, state.prompting, windowShown, state.edit, state.drafts, windowHandlers],
+  )
+
   const sideHandlers = useMemo(
     () => ({
-      onDraft: (text: string) => session.setSideDraft(text),
-      onCompose: (composing: boolean) => session.composeSide(composing),
       onOpen,
       onClose: () => session.closeSide(),
       onResize: (width: number) => session.resizeSide(width),
@@ -151,13 +168,11 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
             id: state.side,
             view: sideView,
             working: working[state.side],
-            draft: state.drafts[state.side] ?? '',
-            composing: state.sideComposing,
             width: state.sideWidth,
             onNearEnd: () => session.loadMore(state.side!),
           }
         : null,
-    [sideHandlers, state.side, state.sideWidth, state.drafts, state.sideComposing, sideView, working, session],
+    [sideHandlers, state.side, state.sideWidth, sideView, working, session],
   )
 
   const crumbs = useMemo(() => state.trail.slice(0, state.at + 1).map((id) => item(id)), [state.trail, state.at, item])
@@ -203,6 +218,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
 
   return (
     <App
+      windows={windows}
       inspect={state.inspecting ? { ...session.inspected()!, onClose: () => session.closeInspector() } : null}
       now={now}
       dialog={dialog}

@@ -173,7 +173,9 @@ doc for the area you change, and keep it up to date in the same commit.
   pushes their conversation, and a thumbnail opens the image.
 - **Peeks.** Anything that refers to something else is peekable: hovering it
   opens a floating window onto a URL (a locked-down `<webview>`) or an entity
-  (its normal view, without a cursor). Use `Link` for URLs and `usePeek` for anything else
+  (its normal view). Pressing in a peek or the side panel gives it the keys:
+  it keeps its own selection, and the keys work in it as in the main view
+  (Shift+A closes it). Use `Link` for URLs and `usePeek` for anything else
   (`views/primitives.tsx`). Moving or resizing a peek pins it (with an `×`);
   pinned peeks persist. `Open` sends a URL to the browser or pushes an entity.
 - **Every item type has its views**, registered in `views/kinds.tsx`:

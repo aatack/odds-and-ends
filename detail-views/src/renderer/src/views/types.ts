@@ -8,11 +8,14 @@ import type { Edit, Pick, ShownView } from '../state.ts'
 export interface ViewProps {
   view: View
   shown: ShownView
-  /** False in a peek or the side panel: it shows, but takes no cursor and no typing. */
+  /** False in a peek or the side panel: the main view's own controls (find, its composer, Slack's buttons) aren't there. */
   interactive: boolean
+  /** Whether the keys act in this view's window; its selection shows faintly while they don't. */
+  focused: boolean
   /**
-   * The view's prompt box, where it has one and isn't `interactive` (the side
-   * panel's chat): its draft, whether it has the keyboard, and its gestures.
+   * The view's prompt box, where it has one and isn't `interactive` (a chat
+   * in the side panel or a peek): its draft, whether it has the keyboard, and
+   * its gestures.
    */
   prompt?: { draft: string; composing: boolean; onDraft(text: string): void; onCompose(composing: boolean): void }
   /**

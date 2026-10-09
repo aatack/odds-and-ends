@@ -52,9 +52,11 @@ then the view's rows to the selection) with no type, and opens what it finds
 in a panel on the right: mostly the Claude session attached to something.
 With nothing found, a toast says so.
 
-- The panel is a view without a cursor, as in a peek. A chat's prompt box
-  works in it: its own draft (by the item), its own focus (`sideComposing`),
-  its own Enter and Escape (`data-field="side"`).
+- The panel is a window, as a peek is (`docs/architecture.md`): pressing in
+  it gives it the keys, with its own cursor. A chat's prompt box works in
+  it: its own draft (by the item), its own Enter and Escape
+  (`data-field="window"`). Opening it gives its box the keyboard; Escape
+  there hands the keys back to the main view.
 - Ctrl+Enter in its prompt box closes it again.
 - `k` on a row puts a reference to it (`[](entity:<id>)`) in the next prompt of the session in the panel, opening the nearest session in context there first if the panel shows none, and focuses its box (`docs/claude.md`).
 - Its left edge drags to resize it (`sideWidth`, persisted); it never goes
