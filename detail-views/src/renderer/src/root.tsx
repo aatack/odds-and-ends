@@ -3,8 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { installDispatch } from './dispatch.ts'
 import { useSnapshot } from './hooks.ts'
 import type { Session } from './session.ts'
-import { actingIn, draftKey, focused } from './state.ts'
-import type { PeekTarget, Rect, SessionDialog } from './state.ts'
+import { actingIn, chatModeOf, draftKey, focused } from './state.ts'
+import type { ChatMode, PeekTarget, Rect, SessionDialog } from './state.ts'
 import { actionsNow, labelOf, runTool, tools } from './tools.ts'
 import { App } from './views/App.tsx'
 import '@fontsource/lato/400.css'
@@ -55,6 +55,8 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
   const onNewChat = useCallback(() => runTool(session, 'claude.new'), [])
   const onContextToggle = useCallback((id: string) => session.toggleChatContext(id), [])
   const onSideResize = useCallback((width: number) => session.resizeSide(width), [])
+  const onChatMode = useCallback((mode: ChatMode) => session.setChatMode(mode), [])
+  const onOpenNote = useCallback((id: string) => session.openNote(id), [])
   const onBack = useCallback(() => session.back(), [])
   // No hover on a phone, so no peeks: a link opens in the browser instead.
   const gestures = useMemo(
@@ -123,6 +125,9 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
         onContextToggle,
         sideWidth: state.sideWidth,
         onSideResize,
+        chatMode: chatModeOf(state, focused(state)),
+        onChatMode,
+        onOpenNote,
         onEditDraft,
         onCommitEdit,
         onCancelEdit,
@@ -135,7 +140,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
         onToggle,
         onClose: onBack,
       },
-    [tree, shown, onNearEnd, onToggle, onBack, state, working, now, findFocus, centre, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onPause, onNewChat, contextViews, onContextToggle, onSideResize, onEditDraft, onCommitEdit, onCancelEdit],
+    [tree, shown, onNearEnd, onToggle, onBack, state, working, now, findFocus, centre, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onPause, onNewChat, contextViews, onContextToggle, onSideResize, onChatMode, onOpenNote, onEditDraft, onCommitEdit, onCancelEdit],
   )
   const picking = useMemo(() => {
     const pick = state.picking

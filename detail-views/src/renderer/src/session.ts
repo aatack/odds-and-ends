@@ -882,7 +882,40 @@ export class Session {
     const text = this.state.drafts[S.draftKey(this.state)] ?? ''
     if (!text.trim()) return
     this.update(S.setDraft(this.state, ''))
+    // A chat's box in note mode writes a note in the chat, for the next prompt to bring in.
+    if (this.root()?.type === 'claude.session' && S.chatModeOf(this.state, id) === 'note') {
+      this.settle(id, await this.api.create(id, text))
+      return
+    }
     this.settle(id, await this.api.submit(id, text))
+  }
+
+  /** What the chat on screen's box writes: a prompt, or a note. */
+  chatMode(): S.ChatMode {
+    return S.chatModeOf(this.state, S.focused(this.state))
+  }
+
+  setChatMode(mode: S.ChatMode): void {
+    this.update(S.setChatMode(this.state, S.focused(this.state), mode))
+  }
+
+  /** ←/→ go through the modes of a chat's box while nothing is typed in it (else they move the caret). */
+  canCycleChatMode(): boolean {
+    return this.root()?.type === 'claude.session' && !(this.state.drafts[S.draftKey(this.state)] ?? '')
+  }
+
+  cycleChatMode(delta: 1 | -1): void {
+    const at = S.chatModes.indexOf(this.chatMode())
+    this.setChatMode(S.chatModes[(at + delta + S.chatModes.length) % S.chatModes.length])
+  }
+
+  /** A click on a note in a chat: it opens out in the chat's panel, with the keys, so I can add to it. */
+  openNote(id: string): void {
+    const chat = S.focused(this.state)
+    let state = this.state
+    if (!(state.chatContext[chat] ?? []).includes(id)) state = S.toggleChatContext(state, chat, id)
+    state = S.focusWindow(state, S.contextWindow(id))
+    this.update(S.select(state, [id]))
   }
 
   /** A click on a row's box: selects the row and ticks it. */

@@ -54,7 +54,9 @@ in one context; it is the only tool here that writes.
 ## In prompts
 
 A session's first prompt may start with \`[Session context: <id>, …]\`: the items in
-the session's context, which is what the session is about. \`read\` them (and \`walk\`
+the session's context, which is what the session is about. A prompt may also start
+with \`[Notes since the last prompt: <id>, …]\`: notes the user added to the chat since
+their last prompt, for you to take into account. \`read\` them (and \`walk\`
 under them) with these tools. \`[](entity:<id>)\` in a prompt names an entity by id;
 write the same in an answer and the user sees it as that item's pill.`
 
