@@ -32,6 +32,8 @@
   /* Inline code in messages, and what a find matched. */
   --code: light-dark(#a03b32, #e0796f);
   --found: light-dark(#f3e3b5, #5a4a1e);
+  /* A text box under the pointer: a faint shadow inside its edge, so it reads as a place to type. */
+  --well: light-dark(rgba(16, 24, 40, 0.12), rgba(0, 0, 0, 0.55));
   --radius: 6px;
   font-family: Lato, system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 15.5px;
@@ -1445,4 +1447,173 @@ mark {
   font-size: 12px;
   line-height: 1.5;
   user-select: text;
+}
+
+/* --- Claude's chat pages: an experiment, after chat apps -------------------------- */
+
+.chat-list .title {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chat-cards {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-card {
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.chat-card:hover {
+  background: var(--hover);
+}
+
+.chat-card.selected {
+  background: var(--select);
+}
+
+.chat-card-top {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.chat-card-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-card-time {
+  font-size: 13px;
+}
+
+.chat-card-last {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.chat-page {
+  flex-direction: row;
+  gap: 20px;
+}
+
+.chat-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-title {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.bubbles {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Messages gather at the bottom, as in chat. */
+.bubbles-inner {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 10px 4px;
+}
+
+.bubble-line {
+  display: flex;
+}
+
+.bubble-line.right {
+  justify-content: flex-end;
+}
+
+.bubble {
+  max-width: 80%;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 14px;
+  user-select: text;
+  overflow-wrap: anywhere;
+}
+
+.bubble.mine {
+  background: var(--accent-soft);
+  border-bottom-right-radius: 4px;
+}
+
+.bubble.theirs,
+.bubble.note {
+  background: var(--panel);
+  border-bottom-left-radius: 4px;
+}
+
+.bubble.failed {
+  box-shadow: inset 3px 0 0 var(--error);
+}
+
+.bubble:hover {
+  outline: 1px solid var(--line);
+}
+
+.bubble.selected {
+  outline: 2px solid var(--accent-line);
+}
+
+.bubble .edit {
+  width: 100%;
+}
+
+.chat-context {
+  flex: 0 0 38%;
+  min-width: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.context-card {
+  flex: none;
+  max-height: 45vh;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--canvas);
+}
+
+.context-card:hover {
+  border-color: var(--accent-line);
+}
+
+/* A phone has no room beside the chat. */
+@media (max-width: 700px) {
+  .chat-context {
+    display: none;
+  }
+}
+
+/* Any text box shows it can be clicked into: a faint shadow inside its edge on hover. */
+input:not([type='checkbox']):hover,
+textarea:hover {
+  box-shadow: inset 0 1px 4px var(--well);
 }

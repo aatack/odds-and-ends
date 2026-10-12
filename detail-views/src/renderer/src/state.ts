@@ -366,6 +366,13 @@ export function navigate(state: State, id: string): State {
   return { ...state, trail, at: trail.length - 1, composing: false, acting: null, viewing: null, edit: null, peeks: state.peeks.filter((peek) => peek.pinned), window: null, prompting: false }
 }
 
+/** The view on screen swapped for one of `id`, in its place on the stack: one chat for another. */
+export function replace(state: State, id: string): State {
+  if (focused(state) === id) return state
+  const trail = state.trail.map((root, index) => (index === state.at ? id : root))
+  return { ...state, trail, composing: false, acting: null, viewing: null, edit: null }
+}
+
 /** Entering a module: its root becomes the whole stack, rather than one more view on it. */
 export function enter(state: State, root: string): State {
   if (state.trail.length === 1 && focused(state) === root) return state

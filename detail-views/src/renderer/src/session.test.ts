@@ -415,6 +415,36 @@ test('a peek pressed in takes the keys: its own cursor, notes and prompt box, an
   stop()
 })
 
+test('Tab in a chat goes on to the next chat waiting for me, in its place on the stack; Shift+Tab goes back', async () => {
+  const { core, session, stop, settle } = await headless()
+  core.owned.write([
+    ...values('a', { type: 'claude.session', text: 'a' }, 3, 'me'),
+    ...values('b', { type: 'claude.session', text: 'b', runningSince: 2 }, 2, 'me'),
+    ...values('c', { type: 'claude.session', text: 'c' }, 1, 'me'),
+    link('claude', 'a', 3, 'me'),
+    link('claude', 'b', 2, 'me'),
+    link('claude', 'c', 1, 'me'),
+  ])
+  session.enterModule('claude')
+  await settle()
+  // Most recently active first.
+  assert.deepEqual(session.get().view!.rows.slice(1).map((row) => row.entity.id), ['a', 'b', 'c'])
+  session.navigate('a')
+  await settle()
+  const depth = session.get().state.trail.length
+  // b is still answering: skipped.
+  session.nextChat(1)
+  assert.equal(focusedOf(session), 'c')
+  session.nextChat(1)
+  assert.equal(focusedOf(session), 'a')
+  session.nextChat(-1)
+  assert.equal(focusedOf(session), 'c')
+  assert.equal(session.get().state.trail.length, depth)
+  stop()
+})
+
+const focusedOf = (session: { get(): { state: { trail: string[]; at: number } } }) => session.get().state.trail[session.get().state.at]
+
 test('wiping the cache takes three presses, wipes only the cache, and can be called off', async () => {
   const { core, session, stop, settle } = await headless()
   core.cache.write(values('slack:conv:C1', { type: 'slack.conversation', channel: 'C1', kind: 'channel' }, 0, 'slack'))

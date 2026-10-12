@@ -41,6 +41,8 @@ export interface ViewProps {
   onOlder?(): void
   /** Pauses Slack's watch, or resumes it. */
   onPause?(): void
+  /** Opens the form for a new Claude session. */
+  onNewChat?(): void
   onDraft(text: string): void
   onCompose(composing: boolean): void
   /** The view's find: null while it has none, the text while the field is open. */

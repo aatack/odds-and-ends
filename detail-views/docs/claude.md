@@ -28,6 +28,11 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 19. If Claude fails, put an error message in the response item instead of the answer.
 20. While Claude works, the response item shows how long it has run.
 20a. While Claude works, the session pill also shows how long the answer has run. The session keeps `runningSince` (when the answer started; `null` when it is done).
+21f. **Chat pages (an experiment, after chat apps).** These replace 21–21e in the main view. A peek and the side panel still show 21–21e.
+    - The Claude module is a list of chats. Each chat is a session. The most recently active chat is first (`updatedAt`, `byRecent`). A chat shows its name, when it was last active (or how long Claude has worked), and its newest message. A click opens the chat. **New chat** is Shift+K.
+    - A chat shows its messages as bubbles. My prompts are on the right, in the `accent` fill. Claude's answers are on the left, in the panel fill. A bubble is 80% of the width at most. A click selects a bubble, for the keys. The prompt box is below, with the keyboard.
+    - To the right of the chat is the context of the session: the overview of each other item in it, each in its own frame. A click opens the item. With no context, the chat uses all the width. On a narrow screen (a phone), the context is not shown.
+    - **Tab** in the prompt box opens the next chat that waits for me, in the order of the list. **Shift+Tab** opens the one before. A chat waits for me when Claude does not answer in it (`awaitingMe`; more conditions later). The new chat replaces the current one on the stack. If no other chat waits, a toast says so.
 21. The view of a session is the chat: the session at the top, then the prompts and responses, the newest at the bottom. A prompt has a faint blue fill (the `accent` tint). A response has no fill.
 21b. The session stays at the top of the view. It does not scroll. A thin line is below it. The prompts and responses start at the bottom and go up. When the view opens, it is at the bottom. When the chat is at the bottom, it stays at the bottom when items come.
 21c. There is a space between messages: two thirds of a line. The same space is after the last message. Messages have no bullet.
@@ -52,7 +57,7 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 - **Answer is one item.** The response item keeps all of the answer as its `text`. The app does not split it. `b` can split it into notes (`src/core/outline.ts`); those notes keep the type `claude.response`.
 - **Order.** The link to the response is 1 ms after the link to the prompt. Thus, the response is always after its prompt.
 - **The prompt box is the view's composer.** The session's module view gives `compose: 'claude'`, and the module's `submit` prompts the session. Thus, the box uses the same path as other composers (`Core.submit`), on the desktop and on the phone. The draft is kept for each session.
-- **The chat is a tree.** It is the usual tree, not a `Detail` view. Thus, the keys work on prompts and responses as on all items (`e`, Enter, `b`, `c`…).
+- **The chat pages are `Detail` views** (`ChatListDetail`, `ChatDetail` in `views/Claude.tsx`), only in the main view. They draw the same rows as the tree (the walk and the selection), so the keys still work on chats and messages (`e`, Enter, `b`, `c`…). A context item's overview is drawn with an empty view of its own: no tree and no actions.
 - **Errors.** A failure of `claude` (a non-zero exit, or `is_error` in its JSON) sets the response item: `text` and `error` are the full message, `running` is false. The message gives the program, the directory, the exit code, and all that the program wrote. The view shows all of it.
 - **Paths.** `~` is the home directory. The app expands it, because a program that the app starts does not. The form refuses a directory that does not exist.
 - **The `claude` program.** The app looks for it on the `PATH`, then in `~/.local/bin` and `~/.claude/local`. An app that starts from a launcher can have a short `PATH`.

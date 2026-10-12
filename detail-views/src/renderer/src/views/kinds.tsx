@@ -1,5 +1,7 @@
 import { CheckOverview, CheckPill, CheckRow, GhItemOverview, GhItemPill, GhItemRow, GitHubHomePill, LocalApprovalPill, PrOverview, PrPill, PrRow } from './GitHub.tsx'
 import {
+  ChatDetail,
+  ChatListDetail,
   ClaudeHomePill,
   PromptOverview,
   PromptPill,
@@ -47,8 +49,8 @@ export const kinds: Kinds = {
   'tasks.home': { Pill: HomePill, Overview: PillOverview, Row: PillRow },
   task: { Pill: TaskPill, Overview: TaskOverview, Row: TaskRow },
   note: { Pill: NotePill, Overview: NoteOverview, Row: NoteRow },
-  'claude.home': { Pill: ClaudeHomePill, Overview: PillOverview, Row: PillRow },
-  'claude.session': { Pill: SessionPill, Overview: SessionOverview, Row: SessionRow },
+  'claude.home': { Pill: ClaudeHomePill, Overview: PillOverview, Row: PillRow, Detail: ChatListDetail },
+  'claude.session': { Pill: SessionPill, Overview: SessionOverview, Row: SessionRow, Detail: ChatDetail },
   'claude.prompt': { Pill: PromptPill, Overview: PromptOverview, Row: PromptRow, tint: promptTint },
   'recents.home': { Pill: HomePill, Overview: PillOverview, Row: PillRow },
   context: { Pill: ContextPill, Overview: PillOverview, Row: PillRow },

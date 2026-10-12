@@ -53,7 +53,11 @@ export const tools: Tool[] = [
     enabled: (s) => s.get().state.acting !== null,
     run: (s) => void s.perform(),
   },
-  { id: 'composer.submit', scope: 'input', keys: ['Enter'], enabled: (s) => s.composerOpen(), run: (s) => void s.send() },
+  // A chat's prompt box: on to the next (or back to the previous) chat waiting for me.
+  { id: 'chat.next', scope: 'input', keys: ['Tab'], enabled: (_, field) => field === 'prompt', run: (s) => s.nextChat(1) },
+  { id: 'chat.previous', scope: 'input', keys: ['Shift+Tab'], enabled: (_, field) => field === 'prompt', run: (s) => s.nextChat(-1) },
+  // Not while the new-session form is over it: Enter there is the form's.
+  { id: 'composer.submit', scope: 'input', keys: ['Enter'], enabled: (s) => s.composerOpen() && !s.hasDialog(), run: (s) => void s.send() },
   // The new-session form: Enter makes it, Escape gives up.
   { id: 'dialog.submit', scope: 'input', keys: ['Enter'], enabled: (s, field) => s.hasDialog() && field?.startsWith('dialog') === true, run: (s) => s.submitDialog() },
   { id: 'dialog.cancel', scope: 'input', keys: ['Escape'], enabled: (s) => s.hasDialog(), run: (s) => s.cancelDialog() },
