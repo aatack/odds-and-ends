@@ -32,8 +32,10 @@
   /* Inline code in messages, and what a find matched. */
   --code: light-dark(#a03b32, #e0796f);
   --found: light-dark(#f3e3b5, #5a4a1e);
-  /* A text box under the pointer: a faint shadow inside its edge, so it reads as a place to type. */
-  --well: light-dark(rgba(16, 24, 40, 0.12), rgba(0, 0, 0, 0.55));
+  /* Text boxes and buttons sit a little into the page: a faint shadow inside their edge, deeper under the pointer and deeper still pressed. */
+  --well: light-dark(rgba(16, 24, 40, 0.07), rgba(0, 0, 0, 0.35));
+  --well-hover: light-dark(rgba(16, 24, 40, 0.16), rgba(0, 0, 0, 0.6));
+  --well-press: light-dark(rgba(16, 24, 40, 0.24), rgba(0, 0, 0, 0.75));
   --radius: 6px;
   font-family: Lato, system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 15.5px;
@@ -1637,8 +1639,24 @@ mark {
   display: none;
 }
 
-/* Any text box shows it can be clicked into: a faint shadow inside its edge on hover. */
+/*
+ * Text boxes and buttons sit a little into the page: a faint shadow inside
+ * their edge, always, so they read as places to type or press; under the
+ * pointer it deepens, and a pressed button's deepens again. A glyph button
+ * (a peek's ×) has it only under the pointer.
+ */
+input:not([type='checkbox']),
+textarea,
+.button:not(.quiet) {
+  box-shadow: inset 0 1px 2px var(--well);
+}
+
 input:not([type='checkbox']):hover,
-textarea:hover {
-  box-shadow: inset 0 1px 4px var(--well);
+textarea:hover,
+.button:hover:not(:disabled) {
+  box-shadow: inset 0 1px 4px var(--well-hover);
+}
+
+.button:active:not(:disabled) {
+  box-shadow: inset 0 2px 5px var(--well-press);
 }

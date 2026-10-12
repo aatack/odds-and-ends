@@ -215,10 +215,12 @@ doc for the area you change, and keep it up to date in the same commit.
   duration, a count) goes on the right, and may show only on hover.
 - No animations. The cursor never becomes a pointer.
 - **Anything interactable shows it on hover** (rows, pills, links, sidebar
-  entries, thumbnails, buttons; a text box gets a faint shadow inside its edge), since the cursor never changes. Every button
+  entries, thumbnails, buttons), since the cursor never changes. Every button
   is `Button` (`views/primitives.tsx`): a soft gray fill, darker on hover and
   pressed, no border (after entity-graph). A button whose action has a key
   shows it first, in a key cap, read from the tool registry (`hotkeyOf`).
+  Buttons and text boxes sit a little into the page: a faint shadow inside
+  their edge (`--well`), deeper on hover, deeper still pressed.
 - **Muted colours**: gray first, one quiet indigo accent, desaturated status
   hues, all as tokens on `:root` in `styles.css`. No colour is written
   anywhere else.
