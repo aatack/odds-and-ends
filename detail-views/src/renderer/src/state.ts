@@ -70,6 +70,8 @@ export interface State {
   sideWidth: number | null
   /** The items in a chat's context pane opened out to their whole view, by the chat's id. */
   chatContext: Record<string, string[]>
+  /** What a chat's box writes, by the chat's id: a prompt to Claude (the default), or a note in the chat. */
+  chatModes: Record<string, ChatMode>
   /**
    * The window the keys act in: null for the main view, `side` for the side
    * panel, a peek's key, or an item opened out in a chat's panel (`contextWindow`). Each has its own selection (by its root, in
@@ -262,6 +264,7 @@ export function initialState(root: string): State {
     side: null,
     sideWidth: null,
     chatContext: {},
+    chatModes: {},
     window: null,
     prompting: false,
   }
@@ -559,7 +562,24 @@ export function restore(saved: unknown, root: string): State {
       value.chatContext && typeof value.chatContext === 'object'
         ? Object.fromEntries(Object.entries(value.chatContext).filter(([, ids]) => Array.isArray(ids)))
         : {},
+    chatModes: value.chatModes && typeof value.chatModes === 'object' ? value.chatModes : {},
   }
+}
+
+/** What a chat's box can write, in the order ←/→ go through them. */
+export const chatModes = ['prompt', 'note'] as const
+export type ChatMode = (typeof chatModes)[number]
+
+export function chatModeOf(state: State, chat: string): ChatMode {
+  return state.chatModes[chat] ?? 'prompt'
+}
+
+export function setChatMode(state: State, chat: string, mode: ChatMode): State {
+  if (chatModeOf(state, chat) === mode) return state
+  const next = { ...state.chatModes }
+  if (mode === 'prompt') delete next[chat]
+  else next[chat] = mode
+  return { ...state, chatModes: next }
 }
 
 /** Opens an item in a chat's context pane out to its whole view, or folds it back to its overview. */

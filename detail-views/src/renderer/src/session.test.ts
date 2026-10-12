@@ -480,6 +480,33 @@ test('an item opened out in a chat\'s panel is a window: a press gives it the ke
   stop()
 })
 
+test('a chat\'s box switches to notes with ← and → while empty: a note goes in the chat, and a click on it opens it in the panel with the keys', async () => {
+  const { core, session, stop, settle } = await headless()
+  core.owned.write([...values('chat', { type: 'claude.session', text: 'chat' }, 1, 'me'), link('claude', 'chat', 1, 'me')])
+  session.enterModule('claude')
+  session.navigate('chat')
+  await settle()
+  assert.equal(session.chatMode(), 'prompt')
+  session.setDraft('typed')
+  assert.equal(session.canCycleChatMode(), false)
+  session.setDraft('')
+  session.cycleChatMode(1)
+  assert.equal(session.chatMode(), 'note')
+  session.setDraft('remember this')
+  await session.send()
+  await settle()
+  const [note] = core.entity('chat').outboundLinks
+  assert.equal(core.item(note)!.type, 'note')
+  assert.equal(core.item(note)!.data.text, 'remember this')
+  session.openNote(note)
+  await settle()
+  assert.equal(session.get().state.window, contextWindow(note))
+  assert.equal(session.selected()?.entity.id, note)
+  session.cycleChatMode(-1)
+  assert.equal(session.chatMode(), 'prompt')
+  stop()
+})
+
 const focusedOf = (session: { get(): { state: { trail: string[]; at: number } } }) => session.get().state.trail[session.get().state.at]
 
 test('wiping the cache takes three presses, wipes only the cache, and can be called off', async () => {

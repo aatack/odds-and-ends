@@ -67,6 +67,18 @@ export function contextLine(session: string, lens: ModuleContext['lens']): strin
   return others.length ? `[Session context: ${others.join(', ')}]` : null
 }
 
+/**
+ * The notes I added to a session's chat since its last prompt (its children
+ * with no type, after the newest prompt), by id: told to Claude with the next
+ * prompt, so it can read them. Null when there are none.
+ */
+export function notesLine(session: string, lens: ModuleContext['lens']): string | null {
+  const chat = lens.children(session)
+  const lastPrompt = chat.findLastIndex((id) => lens.read(id)?.type === 'claude.prompt')
+  const notes = chat.slice(lastPrompt + 1).filter((id) => lens.read(id)?.type === 'note')
+  return notes.length ? `[Notes since the last prompt: ${notes.join(', ')}]` : null
+}
+
 /** The app's MCP server for a session, and its tools allowed without asking (they read, and `merge_context` only links). */
 function mcpArgs(address: McpAddress | null): string[] {
   return address ? ['--allowedTools', `mcp__${mcpName}`, '--mcp-config', mcpConfig(address)] : []
@@ -140,6 +152,8 @@ export class Claude implements Module {
    */
   prompt(session: string, text: string): AppEvent[] {
     const at = this.context.now()
+    // Before this prompt is written, so the notes are those since the one before.
+    const notes = notesLine(session, this.context.lens)
     const promptId = randomUUID()
     const responseId = randomUUID()
     const events: AppEvent[] = [
@@ -151,7 +165,7 @@ export class Claude implements Module {
     ]
     this.context.owned.write(events)
     const before = this.queues.get(session) ?? Promise.resolve()
-    const next = before.then(() => this.answer(session, responseId, text))
+    const next = before.then(() => this.answer(session, responseId, text, notes))
     this.queues.set(session, next.catch(() => {}))
     return events
   }
@@ -161,7 +175,7 @@ export class Claude implements Module {
     return entity.type === 'claude.session' ? this.prompt(entity.id, text) : []
   }
 
-  private async answer(session: string, responseId: string, text: string): Promise<void> {
+  private async answer(session: string, responseId: string, text: string, notes: string | null): Promise<void> {
     const data = this.context.data.get(session)
     const cwd = expandHome(String(data.cwd))
     const mode = String(data.permissionMode ?? defaultPermissionMode)
@@ -170,10 +184,10 @@ export class Claude implements Module {
     const since = this.context.now()
     this.context.owned.write([value(session, 'runningSince', since, since, author)])
     // The first prompt says what the session is in context with; later ones resume it, so it knows.
-    const line = started ? null : contextLine(session, this.context.lens)
+    const lines = [started ? null : contextLine(session, this.context.lens), notes].filter((line) => line !== null)
     const args = [
       '-p',
-      line ? `${line}\n\n${text}` : text,
+      lines.length ? `${lines.join('\n')}\n\n${text}` : text,
       '--output-format',
       'json',
       '--model',

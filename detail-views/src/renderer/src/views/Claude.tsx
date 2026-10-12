@@ -2,7 +2,7 @@ import { memo, useContext, useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { Entity } from '../../../core/types.ts'
 import { shortTime } from '../format.ts'
-import { contextWindow, type ShownRow } from '../state.ts'
+import { chatModes, contextWindow, type ChatMode, type ShownRow } from '../state.ts'
 import { hotkeyOf } from '../tools.ts'
 import type { OverviewProps, PillProps, RowProps, Tint } from './kindTypes.ts'
 import { Text } from './messages.tsx'
@@ -245,12 +245,28 @@ export function ChatDetail(props: OverviewProps) {
           </div>
         </div>
         <Status error={view.error} />
+        {/* What the box writes: ←/→ in it while it is empty, or a click here. */}
+        <div className="chat-modes">
+          {chatModes.map((mode) => (
+            <Button
+              key={mode}
+              label={modeNames[mode]}
+              active={props.chatMode === mode}
+              quiet={props.chatMode !== mode}
+              onClick={() => {
+                props.onChatMode?.(mode)
+                // Back to the box, to type.
+                props.onCompose(true)
+              }}
+            />
+          ))}
+        </div>
         <Composer
           key={entity.id}
           kind="claude"
           field="prompt"
           autoFocus
-          placeholder="Prompt"
+          placeholder={modeNames[props.chatMode ?? 'prompt']}
           draft={props.draft}
           composing={props.composing}
           onDraft={props.onDraft}
@@ -262,10 +278,24 @@ export function ChatDetail(props: OverviewProps) {
   )
 }
 
-/** A message as a bubble: a prompt on the right, an answer on the left. */
+const modeNames: Record<ChatMode, string> = { prompt: 'Prompt', note: 'Note' }
+
+/** The note mark (src/renderer/src/assets/note.svg). */
+function NoteMark() {
+  return <span className="note-mark" role="img" aria-label="Note" />
+}
+
+/** A message as a bubble: a prompt on the right, an answer on the left; a note of mine as a line between them. */
 function Bubble(props: { shown: EntityRow; props: OverviewProps }) {
   const { shown } = props
   const { entity } = shown.row
+  if (entity.type === 'note' && !shown.editing) {
+    return (
+      <div className="note-line" onClick={() => props.props.onOpenNote?.(entity.id)}>
+        <NoteMark /> <Text text={text(entity.data)} inline />
+      </div>
+    )
+  }
   const mine = entity.type === 'claude.prompt'
   const failed = typeof entity.data.error === 'string' && entity.data.error
   const kind = mine ? 'mine' : entity.type === 'claude.response' ? (failed ? 'theirs failed' : 'theirs') : 'note'
@@ -307,6 +337,8 @@ function ChatPanel(props: { props: OverviewProps }) {
   const resize = useEdgeResize(chat.sideWidth ?? null, chat.onSideResize)
   if (!slot) return null
   const peers = Array.isArray(chat.entity.data.contextPeers) ? (chat.entity.data.contextPeers as string[]) : []
+  // Opened out here but not in its context (a note of the chat's): first, above the context.
+  const others = Object.keys(chat.contextViews ?? {}).filter((id) => !peers.includes(id))
   return createPortal(
     <aside ref={resize.ref} className={`side chat-side${resize.dragging ? ' resizing' : ''}`} style={resize.style}>
       <div className="side-resize" {...resize.edge} />
@@ -314,7 +346,7 @@ function ChatPanel(props: { props: OverviewProps }) {
         <div className="chat-own">
           <SessionOverview {...chat} />
         </div>
-        {peers.map((id) => (
+        {[...others, ...peers].map((id) => (
           <ContextItem key={id} id={id} props={chat} />
         ))}
       </div>

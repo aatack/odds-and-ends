@@ -53,6 +53,9 @@ export const tools: Tool[] = [
     enabled: (s) => s.get().state.acting !== null,
     run: (s) => void s.perform(),
   },
+  // A chat's box, while nothing is typed in it: ←/→ switch what it writes (a prompt, a note).
+  { id: 'chat.modeNext', scope: 'input', keys: ['ArrowRight'], enabled: (s, field) => field === 'prompt' && s.canCycleChatMode(), run: (s) => s.cycleChatMode(1) },
+  { id: 'chat.modePrevious', scope: 'input', keys: ['ArrowLeft'], enabled: (s, field) => field === 'prompt' && s.canCycleChatMode(), run: (s) => s.cycleChatMode(-1) },
   // A chat's prompt box: on to the next (or back to the previous) chat waiting for me.
   { id: 'chat.next', scope: 'input', keys: ['Tab'], enabled: (_, field) => field === 'prompt', run: (s) => s.nextChat(1) },
   { id: 'chat.previous', scope: 'input', keys: ['Shift+Tab'], enabled: (_, field) => field === 'prompt', run: (s) => s.nextChat(-1) },

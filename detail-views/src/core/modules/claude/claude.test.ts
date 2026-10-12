@@ -143,3 +143,27 @@ test('claude: every session is given the app MCP server, its tools allowed', asy
     mcpServers: { 'detail-views': { type: 'http', url: 'http://127.0.0.1:1/mcp', headers: { Authorization: 'Bearer t0k' } } },
   })
 })
+
+test('claude: a prompt brings in the notes I added to the chat since the last prompt, by id', async () => {
+  const sent: string[] = []
+  const run = async (command: string, args: string[]) => {
+    if (!command.endsWith('claude')) return ''
+    sent.push(args[1])
+    return JSON.stringify({ result: 'ok', is_error: false })
+  }
+  const core = memoryCore({ run, dataDir: '/data' })
+  await core.actions.claudeCreate({ name: 'S', cwd: '', worktree: false })
+  const [session] = core.entity('claude').outboundLinks
+  core.actions.create({ parent: session, text: 'first note' })
+  core.actions.create({ parent: session, text: 'second note' })
+  const [a, b] = core.entity(session).outboundLinks
+  core.actions.claudePrompt({ session, text: 'go' })
+  await settle()
+  core.actions.claudePrompt({ session, text: 'again' })
+  await settle()
+  core.actions.create({ parent: session, text: 'third note' })
+  const c = core.entity(session).outboundLinks.at(-1)
+  core.actions.claudePrompt({ session, text: 'once more' })
+  await settle()
+  assert.deepEqual(sent, [`[Notes since the last prompt: ${a}, ${b}]\n\ngo`, 'again', `[Notes since the last prompt: ${c}]\n\nonce more`])
+})
