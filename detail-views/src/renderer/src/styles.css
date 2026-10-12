@@ -1517,11 +1517,6 @@ mark {
   gap: 8px;
 }
 
-.chat-title {
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--line);
-}
-
 .bubbles {
   flex: 1;
   min-height: 0;
@@ -1570,14 +1565,6 @@ mark {
   box-shadow: inset 3px 0 0 var(--error);
 }
 
-.bubble:hover {
-  outline: 1px solid var(--line);
-}
-
-.bubble.selected {
-  outline: 2px solid var(--accent-line);
-}
-
 .bubble .edit {
   width: 100%;
 }
@@ -1601,8 +1588,33 @@ mark {
   background: var(--canvas);
 }
 
-.context-card:hover {
+.context-card:hover:not(.chat-own) {
   border-color: var(--accent-line);
+}
+
+/* An item opened in the pane: its whole view, under a bar with the way back. */
+.context-open {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.context-open-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+}
+
+.context-open .pane {
+  min-height: 0;
+  padding: 8px 10px;
 }
 
 /* A phone has no room beside the chat. */

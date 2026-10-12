@@ -1,7 +1,7 @@
 import { EntityCache, type CacheState } from '../../core/graph/cache.ts'
 import { findInContext, foreignOf, itemOf, lensOf, moduleInfos, viewOf } from '../../core/present.ts'
 import { activity } from '../../core/modules/slack/view.ts'
-import { awaitingMe, byRecent, claudeIds } from '../../core/modules/claude/view.ts'
+import { byMade, claudeIds } from '../../core/modules/claude/view.ts'
 import { entityScheme, type Entity, type ModuleInfo, type NoteValues, type Outcome, type View, type ViewRow } from '../../core/types.ts'
 import type { Api } from './api.ts'
 import type { Environment } from './environment.ts'
@@ -18,6 +18,8 @@ export interface Snapshot {
   peekViews: Record<string, View>
   /** What the side panel shows, if it is open. */
   sideView: View | null
+  /** What the chat on screen has open in its context pane, if anything. */
+  contextView: View | null
   /** The rows of each window but the main view (`side`, or a peek's key), with its selection and any edit laid over them. */
   windowShown: Record<string, S.ShownView>
   /** An item named on screen (a pill), presented. Reading one asks for it. */
@@ -114,12 +116,14 @@ export class Session {
     this.env = env
     this.cache = new EntityCache({ scan: (ids) => api.scan(ids), load: (request) => api.load(request), foreign: foreignOf })
     const state = S.restore(env.load(storageKey), 'slack')
-    this.snapshot = { state, modules: moduleInfos, view: null, shown: noRows, peekViews: {}, sideView: null, windowShown: {}, item: () => null, working: {}, now: Date.now(), findFocus: 0, centre: 0, toast: null }
+    this.snapshot = { state, modules: moduleInfos, view: null, shown: noRows, peekViews: {}, sideView: null, contextView: null, windowShown: {}, item: () => null, working: {}, now: Date.now(), findFocus: 0, centre: 0, toast: null }
     this.snapshot = this.derive(state)
   }
 
   async start(): Promise<() => void> {
     const stopCache = this.cache.subscribe(() => this.scheduleDerive())
+    // Whatever arrived before this listened (the first loads can beat it at start) is shown now.
+    this.scheduleDerive()
     const stopChanges = this.api.onChange((changed) => this.cache.invalidate(changed))
     const revisit = setInterval(() => this.cache.revisit(), revisitEvery)
     const clock = setInterval(() => this.publish({ ...this.snapshot, now: Date.now() }), 1000)
@@ -212,12 +216,14 @@ export class Session {
     const peekViews: Record<string, View> = {}
     for (const peek of state.peeks) if (peek.target.kind === 'entity') peekViews[peek.target.id] ??= this.walk(peek.target.id, state)
     const sideView = state.side ? this.walk(state.side, state) : null
+    const opened = state.chatContext[root] ?? null
+    const contextView = opened ? this.walk(opened, state) : null
     const windowShown: Record<string, S.ShownView> = {}
     const mark = (window: string, root: string, view: View) => (windowShown[window] = S.markRows(view, state, root, previous.windowShown[window]))
     for (const peek of state.peeks) if (peek.target.kind === 'entity') mark(peek.key, peek.target.id, peekViews[peek.target.id])
     if (state.side && sideView) mark('side', state.side, sideView)
     // Walks for views no longer anywhere are dropped.
-    const live = new Set([root, ...Object.keys(peekViews), ...(state.side ? [state.side] : [])])
+    const live = new Set([root, ...Object.keys(peekViews), ...(state.side ? [state.side] : []), ...(opened ? [opened] : [])])
     for (const key of this.walks.keys()) if (!live.has(key)) this.walks.delete(key)
     for (const key of this.budgets.keys()) if (!live.has(key)) this.budgets.delete(key)
     const cache = this.cache.get()
@@ -236,7 +242,7 @@ export class Session {
             }
           })()
     this.itemsFrom = cache
-    return { ...previous, state, view, shown, peekViews, sideView, windowShown, item }
+    return { ...previous, state, view, shown, peekViews, sideView, contextView, windowShown, item }
   }
 
   private itemsFrom: CacheState | null = null
@@ -363,15 +369,20 @@ export class Session {
     void this.api.visit(id)
   }
 
+  /** Opens an item in the context pane of the chat on screen, or (null) goes back to its overviews. */
+  openInChatContext(id: string | null): void {
+    this.update(S.openInChatContext(this.state, S.focused(this.state), id))
+  }
+
   /**
-   * Tab (Shift+Tab) in a chat's prompt box: the next (previous) chat waiting
-   * for me, in the list's order, round from this one. It takes this chat's
-   * place on the stack, so going through them doesn't pile them up.
+   * Tab (Shift+Tab) in a chat's prompt box: the next (previous) chat, newest
+   * made first, round from this one. It takes this chat's place on the
+   * stack, so going through them doesn't pile them up.
    */
   nextChat(delta: 1 | -1): void {
     const here = S.focused(this.state)
     const source = this.cache.source(this.cache.get())
-    const chats = byRecent(
+    const chats = byMade(
       lensOf(source)
         .children(claudeIds.root)
         .flatMap((id) => {
@@ -382,15 +393,10 @@ export class Session {
     const n = chats.length
     const at = chats.findIndex((chat) => chat.id === here)
     const start = at >= 0 ? at : delta > 0 ? -1 : n
-    for (let step = 1; step <= n; step++) {
-      const chat = chats[(((start + delta * step) % n) + n) % n]
-      if (chat.id !== here && awaitingMe(chat)) {
-        this.update(S.replace(this.state, chat.id))
-        void this.api.visit(chat.id)
-        return
-      }
-    }
-    this.showToast('No other chat is waiting')
+    const chat = n ? chats[(((start + delta) % n) + n) % n] : null
+    if (!chat || chat.id === here) return
+    this.update(S.replace(this.state, chat.id))
+    void this.api.visit(chat.id)
   }
 
   /** Enters a module: the stack starts again at its root. */

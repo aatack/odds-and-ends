@@ -98,6 +98,10 @@ export function startPhoneServer(core: Core, options: { dist: string; port?: num
       send(response, 500, { error: error instanceof Error ? error.message : String(error) })
     }
   })
+  server.on('error', (error) => {
+    // Another copy of the app has the port: this one goes without the phone, rather than failing to start.
+    console.error('Phone server:', error)
+  })
   server.listen(options.port ?? phonePort, '127.0.0.1')
   return () => server.close()
 }

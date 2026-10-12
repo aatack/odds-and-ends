@@ -43,6 +43,10 @@ export interface ViewProps {
   onPause?(): void
   /** Opens the form for a new Claude session. */
   onNewChat?(): void
+  /** What a chat's context pane has open, walked as a view of its own; null for its overviews. */
+  contextView?: View | null
+  /** Opens an item in a chat's context pane, or (null) goes back to its overviews. */
+  onContextOpen?(id: string | null): void
   onDraft(text: string): void
   onCompose(composing: boolean): void
   /** The view's find: null while it has none, the text while the field is open. */

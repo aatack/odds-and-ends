@@ -1,13 +1,13 @@
-import { memo, useContext, useEffect, useLayoutEffect, useRef } from 'react'
+import { memo, useContext, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import type { Entity } from '../../../core/types.ts'
 import { shortTime } from '../format.ts'
-import type { ShownRow } from '../state.ts'
+import { inertRows, type ShownRow } from '../state.ts'
 import { hotkeyOf } from '../tools.ts'
 import type { OverviewProps, PillProps, RowProps, Tint } from './kindTypes.ts'
 import { Text } from './messages.tsx'
 import { noteClass } from './Notes.tsx'
 import { Button, ClockContext, Composer, HeaderPill, Highlight, ItemContext, KindsContext, Status } from './primitives.tsx'
-import { TextBox } from './View.tsx'
+import { TextBox, ViewPane } from './View.tsx'
 
 /** The Claude mark (src/renderer/src/assets/claude.svg), in Claude's colour. */
 export function ClaudeMark(props: { large?: boolean }) {
@@ -191,16 +191,14 @@ const ChatCard = memo(function ChatCard(props: { shown: EntityRow; onOpen(id: st
 })
 
 /**
- * A chat: its name above, its prompts and answers as bubbles (mine on the
- * right), the prompt box below with the keyboard, and the overview of each
- * item in its context to the right. Tab in the box goes on to the next chat
- * waiting for me.
+ * A chat: its prompts and answers as bubbles (mine on the right), the prompt
+ * box below with the keyboard; to the right, the chat's own overview and the
+ * overview of each item in its context, or one of them opened there. Tab in
+ * the box goes on to the next chat waiting for me.
  */
 export function ChatDetail(props: OverviewProps) {
   const { entity, view } = props
   const messages = childRows(props)
-  const peers = Array.isArray(entity.data.contextPeers) ? (entity.data.contextPeers as string[]) : []
-  const prompting = props.composing && !props.acting
   // Opens at the bottom, and stays there as messages come, while it is there.
   const ref = useRef<HTMLDivElement>(null)
   const inner = useRef<HTMLDivElement>(null)
@@ -221,11 +219,8 @@ export function ChatDetail(props: OverviewProps) {
   }, [])
   const input = props.shown.rows.find((row) => row.kind === 'input')
   return (
-    <div className={`pane chat-page${prompting ? ' prompting' : ''}`}>
+    <div className="pane chat-page">
       <div className="chat-main">
-        <div className="chat-title" onMouseDown={() => props.onSelect([entity.id])}>
-          <SessionOverview {...props} />
-        </div>
         <div
           ref={ref}
           className="bubbles"
@@ -237,7 +232,7 @@ export function ChatDetail(props: OverviewProps) {
         >
           <div ref={inner} className="bubbles-inner">
             {messages.map((shown) => (
-              <Bubble key={shown.key} shown={shown} props={props} prompting={prompting} />
+              <Bubble key={shown.key} shown={shown} props={props} />
             ))}
             {input && (
               <div className="bubble-line">
@@ -261,32 +256,23 @@ export function ChatDetail(props: OverviewProps) {
           onCompose={props.onCompose}
         />
       </div>
-      {peers.length > 0 && (
-        <aside className="chat-context">
-          {peers.map((id) => (
-            <ContextCard key={id} id={id} props={props} />
-          ))}
-        </aside>
-      )}
+      <aside className="chat-context">
+        <ChatContext props={props} />
+      </aside>
     </div>
   )
 }
 
-/** A message as a bubble: a prompt on the right, an answer on the left. A click selects it, for the keys. */
-function Bubble(props: { shown: EntityRow; props: OverviewProps; prompting: boolean }) {
+/** A message as a bubble: a prompt on the right, an answer on the left. */
+function Bubble(props: { shown: EntityRow; props: OverviewProps }) {
   const { shown } = props
   const { entity } = shown.row
-  const ref = useRef<HTMLDivElement>(null)
-  const marked = shown.selected && !props.prompting
-  useEffect(() => {
-    if (marked) ref.current?.scrollIntoView({ block: 'nearest' })
-  }, [marked])
   const mine = entity.type === 'claude.prompt'
   const failed = typeof entity.data.error === 'string' && entity.data.error
   const kind = mine ? 'mine' : entity.type === 'claude.response' ? (failed ? 'theirs failed' : 'theirs') : 'note'
   return (
-    <div ref={ref} className={`bubble-line ${mine ? 'right' : 'left'}`}>
-      <div className={`bubble ${kind}${marked ? ' selected' : ''}`} onMouseDown={() => props.props.onSelect(shown.row.path)}>
+    <div className={`bubble-line ${mine ? 'right' : 'left'}`}>
+      <div className={`bubble ${kind}`}>
         {shown.editing ? (
           <TextBox edit={props.props.edit} onEditDraft={props.props.onEditDraft} />
         ) : entity.type === 'claude.response' ? (
@@ -309,7 +295,57 @@ function Answer(props: { entity: Entity }) {
   return <Text text={text(data)} />
 }
 
-/** An item in the chat's context, as its overview, framed apart from the others. A click opens it. */
+/**
+ * The chat's right pane: its own overview, then each item in its context as
+ * an overview, framed apart. A click on one opens it here, as its whole view,
+ * with an arrow back.
+ */
+function ChatContext(props: { props: OverviewProps }) {
+  const chat = props.props
+  const opened = chat.contextView ?? null
+  const shown = useMemo(() => (opened ? inertRows(opened) : null), [opened])
+  if (opened && shown) {
+    const back = () => chat.onContextOpen?.(null)
+    return (
+      <div className="context-open">
+        <div className="context-open-bar">
+          <Button quiet label="←" title="Back to the context" onClick={back} />
+          <HeaderPill entity={opened.root} />
+        </div>
+        <ViewPane
+          {...chat}
+          view={opened}
+          shown={shown}
+          interactive={false}
+          focused={false}
+          prompt={undefined}
+          acting={null}
+          edit={null}
+          picking={null}
+          find={null}
+          working={undefined}
+          onSelect={() => {}}
+          onAction={undefined}
+          onClose={back}
+          onNearEnd={undefined}
+        />
+      </div>
+    )
+  }
+  const peers = Array.isArray(chat.entity.data.contextPeers) ? (chat.entity.data.contextPeers as string[]) : []
+  return (
+    <>
+      <div className="context-card chat-own">
+        <SessionOverview {...chat} />
+      </div>
+      {peers.map((id) => (
+        <ContextCard key={id} id={id} props={chat} />
+      ))}
+    </>
+  )
+}
+
+/** An item in the chat's context, as its overview, framed apart from the others. A click opens it in the pane. */
 function ContextCard(props: { id: string; props: OverviewProps }) {
   const kinds = useContext(KindsContext)!
   const { item } = useContext(ItemContext)
@@ -319,7 +355,7 @@ function ContextCard(props: { id: string; props: OverviewProps }) {
   // Its overview alone: no tree, no actions, nothing of the chat's own.
   const view = { ...props.props.view, root: entity, rows: [], actions: [], older: false, compose: null, error: null, loading: false }
   return (
-    <div className="context-card" onClick={() => props.props.onOpen(entity.id)}>
+    <div className="context-card" onClick={() => props.props.onContextOpen?.(entity.id)}>
       <Overview
         {...props.props}
         view={view}

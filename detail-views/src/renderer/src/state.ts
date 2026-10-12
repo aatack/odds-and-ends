@@ -68,6 +68,8 @@ export interface State {
   side: string | null
   /** The side panel's width in px, once I have dragged it; null for its default. */
   sideWidth: number | null
+  /** What a chat's context pane has open in place of its overviews, by the chat's id. */
+  chatContext: Record<string, string>
   /**
    * The window the keys act in: null for the main view, `side` for the side
    * panel, or a peek's key. Each has its own selection (by its root, in
@@ -247,6 +249,7 @@ export function initialState(root: string): State {
     peeks: [],
     side: null,
     sideWidth: null,
+    chatContext: {},
     window: null,
     prompting: false,
   }
@@ -334,6 +337,12 @@ export function markRows(view: View, state: State, root: string, previous?: Show
     selectedPath,
     selectedIndex: rows.findIndex((row) => row.kind === 'entity' && row.selected),
   }
+}
+
+/** A view's rows with nothing selected or edited: an item opened in a chat's context pane. */
+export function inertRows(view: View): ShownView {
+  const rows: ShownRow[] = view.rows.map((row) => ({ kind: 'entity', key: row.key, row, selected: false, editing: false }))
+  return { rows, keys: rows.map((row) => row.key), selectedPath: [], selectedIndex: -1 }
 }
 
 /** The entity row under the selection, if any. */
@@ -540,5 +549,15 @@ export function restore(saved: unknown, root: string): State {
     peeks: Array.isArray(value.peeks) ? value.peeks.filter((peek) => peek.pinned).map((peek) => ({ ...peek, parent: peek.parent ?? null })) : [],
     side: typeof value.side === 'string' ? value.side : null,
     sideWidth: typeof value.sideWidth === 'number' ? value.sideWidth : null,
+    chatContext: value.chatContext && typeof value.chatContext === 'object' ? value.chatContext : {},
   }
+}
+
+/** Opens an item in a chat's context pane, or (null) goes back to the overviews there. */
+export function openInChatContext(state: State, chat: string, id: string | null): State {
+  if ((state.chatContext[chat] ?? null) === id) return state
+  const chatContext = { ...state.chatContext }
+  if (id === null) delete chatContext[chat]
+  else chatContext[chat] = id
+  return { ...state, chatContext }
 }
