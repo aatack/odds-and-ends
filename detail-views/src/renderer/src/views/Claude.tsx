@@ -86,17 +86,17 @@ function DirectoryInput(props: InputProps<DirectoryOption, false>) {
 
 /**
  * Where a session runs, as a dropdown: each directory I have used (a new
- * one typed in), and, for one in a git repo, a new worktree of it too. Picking
- * one moves the session there, its conversation with it. Not while Claude is
- * answering.
+ * one typed in), and, for one in a git repo, a new worktree of it too (unless
+ * `worktrees` is false: a button beside it makes one). Picking one moves the
+ * session there, its conversation with it. Not while Claude is answering.
  */
-function DirectorySelect(props: OverviewProps) {
+export function DirectorySelect(props: OverviewProps & { worktrees?: boolean }) {
   const { data } = props.entity
   const { item } = useContext(ItemContext)
   const root = item('claude')?.data ?? {}
   const cwds = Array.isArray(root.cwds) ? (root.cwds as string[]) : []
   const repos = new Set(Array.isArray(root.repos) ? (root.repos as string[]) : [])
-  const options: DirectoryOption[] = cwds.flatMap((cwd) => [{ cwd, worktree: false }, ...(repos.has(cwd) ? [{ cwd, worktree: true }] : [])])
+  const options: DirectoryOption[] = cwds.flatMap((cwd) => [{ cwd, worktree: false }, ...(props.worktrees !== false && repos.has(cwd) ? [{ cwd, worktree: true }] : [])])
   const current: DirectoryOption = { cwd: String(data.cwd ?? ''), worktree: false }
   const running = typeof data.runningSince === 'number'
   const busy = props.working?.includes('directory') ?? false
@@ -285,13 +285,26 @@ export type BubbleOf = (row: EntityRow['row']) => 'mine' | 'theirs' | null
 /**
  * A chat page: every row under its root as bubbles and lines, selectable as
  * in a tree, newest at the bottom, and its box below with the keyboard
- * (`field` names it for the keys); `side` beside it, if anything.
+ * (`field` names it for the keys); `side` beside it, if anything. A `flat`
+ * one shows only the rows directly under its root, and none is selectable.
+ * A box `onDemand` is there only while it has the keyboard (Enter opens
+ * it). `corner` sits at its top right. A flat chat's rows sit closer
+ * together while the same voice goes on (`joined`): mine, then Claude's.
  */
-export function ChatPage(page: { props: OverviewProps; field: string; placeholder: string; bubble: BubbleOf; side?: ReactNode }) {
+export function ChatPage(page: {
+  props: OverviewProps
+  field: string
+  placeholder: string
+  bubble: BubbleOf
+  side?: ReactNode
+  flat?: boolean
+  onDemand?: boolean
+  corner?: ReactNode
+}) {
   const { props } = page
   const { entity, view } = props
-  // Everything under the chat, as the tree walks it (notes under notes too), the root apart.
-  const rows = props.shown.rows.filter((row) => row.kind === 'input' || row.row.depth > 0)
+  // Everything under the chat, as the tree walks it (notes under notes too), the root apart; flat, only what is directly under it.
+  const rows = props.shown.rows.filter((row) => (page.flat ? row.kind === 'entity' && row.row.depth === 1 : row.kind === 'input' || row.row.depth > 0))
   // Typing in the box, the chat marks no row; picking rows, the box is dimmed.
   const prompting = props.composing && !props.acting
   // Opens at the bottom, and stays there as messages come, while it is there.
@@ -313,8 +326,9 @@ export function ChatPage(page: { props: OverviewProps; field: string; placeholde
     return () => observer.disconnect()
   }, [])
   return (
-    <div className={`pane chat-page${prompting ? ' prompting' : ''}`}>
+    <div className={`pane chat-page${prompting ? ' prompting' : ''}${page.flat ? ' flat' : ''}`}>
       <div className="chat-main">
+        {page.corner && <div className="chat-corner">{page.corner}</div>}
         <div
           ref={ref}
           className="bubbles"
@@ -325,7 +339,7 @@ export function ChatPage(page: { props: OverviewProps; field: string; placeholde
           }}
         >
           <div ref={inner} className="bubbles-inner">
-            {rows.map((shown) =>
+            {rows.map((shown, at) =>
               shown.kind === 'input' ? (
                 <div key={shown.key} className="chat-row selected" style={chatIndent(shown.depth)}>
                   <div className="note-line">
@@ -336,28 +350,41 @@ export function ChatPage(page: { props: OverviewProps; field: string; placeholde
                   </div>
                 </div>
               ) : (
-                <ChatRow key={shown.key} shown={shown} props={props} prompting={prompting} bubble={page.bubble} />
+                <ChatRow
+                  key={shown.key}
+                  shown={shown}
+                  props={props}
+                  prompting={prompting}
+                  bubble={page.bubble}
+                  flat={page.flat}
+                  joined={page.flat === true && at > 0 && voiceOf(rows[at - 1], page.bubble) === voiceOf(shown, page.bubble)}
+                />
               ),
             )}
           </div>
         </div>
         <Status error={view.error} />
-        <Composer
-          key={entity.id}
-          kind={view.compose ?? 'claude'}
-          field={page.field}
-          autoFocus
-          placeholder={page.placeholder}
-          draft={props.draft}
-          composing={props.composing}
-          onDraft={props.onDraft}
-          onCompose={props.onCompose}
-        />
+        {!(page.onDemand && !props.composing) && (
+          <Composer
+            key={entity.id}
+            kind={view.compose ?? 'claude'}
+            field={page.field}
+            autoFocus
+            placeholder={page.placeholder}
+            draft={props.draft}
+            composing={props.composing}
+            onDraft={props.onDraft}
+            onCompose={props.onCompose}
+          />
+        )}
       </div>
       {page.side}
     </div>
   )
 }
+
+/** Whose a row of a chat is: Claude's (its bubbles) or mine (everything else). */
+const voiceOf = (shown: ShownRow, bubble: BubbleOf): 'theirs' | 'mine' => (shown.kind === 'entity' && bubble(shown.row) === 'theirs' ? 'theirs' : 'mine')
 
 const modeNames: Record<ChatMode, string> = { prompt: 'Prompt', note: 'Note' }
 
@@ -376,22 +403,22 @@ function NoteMark() {
  * left, a note (or anything else) across the width, in full, with its mark
  * and its fold mark when it has rows under it.
  */
-function ChatRow(props: { shown: EntityRow; props: OverviewProps; prompting: boolean; bubble: BubbleOf }) {
+function ChatRow(props: { shown: EntityRow; props: OverviewProps; prompting: boolean; bubble: BubbleOf; flat?: boolean; joined?: boolean }) {
   const { shown } = props
   const { entity, depth } = shown.row
   const kinds = useContext(KindsContext)!
   const ref = useRef<HTMLDivElement>(null)
-  const marked = shown.selected && !props.prompting
+  const marked = shown.selected && !props.prompting && !props.flat
   useEffect(() => {
     if (marked) ref.current?.scrollIntoView({ block: 'nearest' })
   }, [marked])
   const editing = shown.editing ? <TextBox edit={props.props.edit} onEditDraft={props.props.onEditDraft} /> : null
   const frame = (content: ReactNode) => (
-    <div ref={ref} className={`chat-row${marked ? ' selected' : ''}`} style={chatIndent(depth)} onMouseDown={() => props.props.onSelect(shown.row.path)}>
+    <div ref={ref} className={`chat-row${marked ? ' selected' : ''}${props.joined ? ' joined' : ''}`} style={chatIndent(depth)} onMouseDown={props.flat ? undefined : () => props.props.onSelect(shown.row.path)}>
       {content}
     </div>
   )
-  const fold = shown.row.hasChildren ? <span className="chat-fold">{shown.row.open ? '▾' : '▸'}</span> : null
+  const fold = shown.row.hasChildren && !props.flat ? <span className="chat-fold">{shown.row.open ? '▾' : '▸'}</span> : null
   const bubble = props.bubble(shown.row)
   if (bubble) {
     const mine = bubble === 'mine'
@@ -399,6 +426,7 @@ function ChatRow(props: { shown: EntityRow; props: OverviewProps; prompting: boo
     return frame(
       <div className={`bubble-line ${mine ? 'right' : 'left'}`}>
         {!mine && fold}
+        {!mine && <ClaudeMark />}
         <div className={`bubble ${mine ? 'mine' : failed ? 'theirs failed' : 'theirs'}`}>
           {editing ?? (entity.type === 'claude.response' ? <Answer entity={entity} /> : <Text text={text(entity.data)} />)}
         </div>
@@ -409,7 +437,8 @@ function ChatRow(props: { shown: EntityRow; props: OverviewProps; prompting: boo
   const Row = kinds[entity.type].Row
   return frame(
     <div className="note-line">
-      {fold ?? (entity.type === 'note' ? <NoteMark /> : <span className="chat-fold" />)}
+      {/* A flat chat's lines are all mine: no mark says so. */}
+      {props.flat ? null : (fold ?? (entity.type === 'note' ? <NoteMark /> : <span className="chat-fold" />))}
       <div className="note-line-text">
         {editing ??
           (entity.type === 'note' ? (

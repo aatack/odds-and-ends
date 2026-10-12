@@ -61,6 +61,8 @@ export const tools: Tool[] = [
   { id: 'chat.previous', scope: 'input', keys: ['Shift+Tab'], enabled: (_, field) => field === 'prompt', run: (s) => s.nextChat(-1) },
   // The box at the head of the list of topics: Enter makes the topic named in it (before the composer's Enter, which is the chat's).
   { id: 'topic.create', scope: 'input', keys: ['Enter'], enabled: (_, field) => field === 'topic-name', run: (s) => s.createTopic() },
+  // A topic's box with nothing in it: Enter closes it (before the composer's Enter, which adds the message and closes it too).
+  { id: 'topic.leave', scope: 'input', keys: ['Enter'], enabled: (s, field) => field === 'topic' && s.canLeaveTopicBox(), run: (s) => s.compose(false) },
   // Not while the new-session form is over it: Enter there is the form's.
   { id: 'composer.submit', scope: 'input', keys: ['Enter'], enabled: (s) => s.composerOpen() && !s.hasDialog(), run: (s) => void s.send() },
   // The new-session form: Enter makes it, Escape gives up.
@@ -69,6 +71,8 @@ export const tools: Tool[] = [
   { id: 'composer.leave', scope: 'input', keys: ['Escape'], run: (s) => s.compose(false) },
 
   // A chat while its rows have the keys: Tab hands them back to its box.
+  // A topic's chat, its box closed: Enter opens it (its rows are not selectable, so Enter adds nothing).
+  { id: 'topic.prompt', scope: 'list', keys: ['Enter'], enabled: (s) => s.canReturnToTopicBox(), run: (s) => s.returnToPrompt() },
   { id: 'chat.prompt', scope: 'list', keys: ['Tab'], enabled: (s) => s.canReturnToPrompt(), run: (s) => s.returnToPrompt() },
 
   // --- Escape, innermost first; the find last ------------------------------------
@@ -131,7 +135,8 @@ export const tools: Tool[] = [
   { id: 'claude.new', label: 'Claude session', scope: 'list', keys: ['K'], run: (s) => s.openClaudeDialog() },
   { id: 'session.send', label: 'To session', scope: 'list', keys: ['k'], enabled: (s) => s.canSendToSession(), run: (s) => s.sendToSession() },
   // On a topic, from its box or its rows: every message since the last dispatch, to Claude at once (before the side panel's Ctrl+Enter).
-  { id: 'topic.dispatch', label: 'Send to Claude', scope: 'list', keys: ['Ctrl+Enter'], enabled: (s) => s.canDispatch(), run: (s) => void s.dispatch() },
+  // Not while Claude is still answering: then only what is typed goes in, to wait for the next.
+  { id: 'topic.dispatch', label: 'Send to Claude', scope: 'list', keys: ['Ctrl+Enter'], enabled: (s) => s.canSubmitAndDispatch(), run: (s) => void s.dispatch() },
   { id: 'side.open', label: 'In context', scope: 'app', keys: ['Ctrl+Enter'], run: (s) => s.openSide() },
   { id: 'side.close', label: 'Close side', scope: 'app', keys: [], enabled: (s) => s.get().state.side !== null, run: (s) => s.closeSide() },
   { id: 'checkbox.toggle', label: 'Tick', scope: 'list', keys: [' '], enabled: (s) => s.canToggle(), run: (s) => s.toggle() },

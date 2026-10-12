@@ -30,6 +30,7 @@ export const itemTypes = [
   'github.check',
   'github.item',
   'github.localApproval',
+  'github.branch',
   'tasks.home',
   'task',
   'note',
@@ -41,6 +42,7 @@ export const itemTypes = [
   'context',
   'topics.home',
   'topic',
+  'file',
 ] as const
 
 export type ItemType = (typeof itemTypes)[number]

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { values } from '../../graph/events.ts'
 import { memoryCore } from '../../testing.ts'
+import { githubRepo } from './claude.ts'
 
 /** git and claude, answering from a script; every call recorded. */
 function fakeRun(calls: { command: string; args: string[]; cwd: string }[]) {
@@ -13,6 +14,7 @@ function fakeRun(calls: { command: string; args: string[]; cwd: string }[]) {
     if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--show-toplevel') return '/home/me/repos/app\n'
     if (command === 'git' && args[0] === 'symbolic-ref') return 'origin/master\n'
     if (command === 'git' && (args[0] === 'fetch' || args[0] === 'worktree')) return ''
+    if (command === 'git' && args[0] === 'remote') return 'git@github.com:me/app.git\n'
     // No branch of that name yet.
     if (command === 'git' && args[1] === '--verify') throw new Error('no such branch')
     if (command.endsWith('claude')) return JSON.stringify({ result: `answer to ${args[1].split('\n').pop()}`, is_error: false, total_cost_usd: 0.01 })
@@ -39,6 +41,8 @@ test('claude: a session in a new worktree, under the Claude root only; each prom
   assert.match(String(data.branch), /^claude\/fix-it-[0-9a-f]{8}$/)
   assert.match(String(data.worktree), /^\/data\/worktrees\/app-[0-9a-f]{8}$/)
   assert.equal(data.cwd, data.worktree)
+  // Its repo on GitHub, where the branch is.
+  assert.equal(data.github, 'me/app')
   // Branched from the remote's master, fetched first.
   const git = (verb: string) => calls.find((call) => call.command === 'git' && call.args[0] === verb)?.args
   assert.deepEqual(git('fetch'), ['fetch', 'origin', 'master'])
@@ -219,4 +223,11 @@ test('claude: a session moves to another directory, or a new worktree of its rep
   } finally {
     delete process.env.CLAUDE_CONFIG_DIR
   }
+})
+
+test('claude: the GitHub repo of a remote, whichever way its URL is written', () => {
+  assert.equal(githubRepo('git@github.com:me/app.git'), 'me/app')
+  assert.equal(githubRepo('https://github.com/me/app.git'), 'me/app')
+  assert.equal(githubRepo('https://github.com/me/app\n'), 'me/app')
+  assert.equal(githubRepo('git@gitlab.com:me/app.git'), null)
 })

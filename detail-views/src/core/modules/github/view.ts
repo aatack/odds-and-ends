@@ -145,6 +145,21 @@ export function localApproval(lens: Lens, prId: string): Entity | null {
   return null
 }
 
+/** A branch on GitHub, as an item: its repo (`owner/name`) and its name, in its id. */
+export const branchEntityId = (repo: string, branch: string): string => `github:branch:${repo}:${branch}`
+
+/** The repo and branch in a branch's id. */
+export function parseBranchId(id: string): { repo: string; branch: string } | null {
+  const match = /^github:branch:([^/:]+\/[^/:]+):(.+)$/.exec(id)
+  return match ? { repo: match[1], branch: match[2] } : null
+}
+
+/** The branch item for a link to a branch on GitHub (`…/tree/<branch>`); null for anything else. */
+export function branchOfUrl(url: string): string | null {
+  const match = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/tree\/([^?#]+?)\/?(?:[?#].*)?$/.exec(url)
+  return match ? branchEntityId(`${match[1]}/${match[2]}`, decodeURIComponent(match[3])) : null
+}
+
 export const githubView: ModuleView = {
   id: 'github',
   name: 'GitHub',
@@ -152,6 +167,7 @@ export const githubView: ModuleView = {
 
   typeOf(id): ItemType | null {
     if (id === githubIds.root) return 'github.home'
+    if (parseBranchId(id)) return 'github.branch'
     if (!id.startsWith('github:pr:')) return null
     if (id.includes('#check:')) return 'github.check'
     if (id.includes('#item:')) return 'github.item'
@@ -226,6 +242,11 @@ export const githubView: ModuleView = {
         ...entity,
         data: { ...data, preview: previewOf(data), locallyApproved, blockers: blocking, badge: badge(data, locallyApproved), name, text: name ?? String(data.url), label: name ?? String(data.url) },
       }
+    }
+    if (entity.type === 'github.branch') {
+      // All it is is in its id: nothing is loaded for it.
+      const { repo, branch } = parseBranchId(entity.id)!
+      return { ...entity, data: { ...entity.data, repo, branch, url: `https://github.com/${repo}/tree/${branch}`, text: own ?? branch } }
     }
     if (entity.type === 'github.item') {
       // Shaped like a Slack message, so the same views draw it.

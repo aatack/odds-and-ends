@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import { memoryCore } from '../../testing.ts'
 
@@ -78,4 +80,76 @@ test('topics: a dispatch runs in the topic’s own directory when it has one; th
   await settle()
   assert.equal(calls[0].cwd, '/tmp')
   assert.deepEqual(core.focus('topics').children.map((topic) => topic.data.text), ['old', 'new'])
+})
+
+test('topics: no second dispatch while Claude is answering; what is written meanwhile waits for the next', async () => {
+  let answer: (() => void) | null = null
+  const calls: string[] = []
+  const run = (command: string, args: string[]) => {
+    if (!command.endsWith('claude')) throw new Error(`unexpected ${command}`)
+    calls.push(args[1])
+    return new Promise<string>((resolve) => (answer = () => resolve(JSON.stringify({ result: 'done', is_error: false }))))
+  }
+  const core = memoryCore({ run })
+  await core.actions.topicCreate({ name: 'Slow' })
+  const [topic] = core.entity('topics').outboundLinks
+  await core.actions.submit({ id: topic, text: 'first' })
+  assert.equal((await core.actions.topicDispatch({ topic })).error, null)
+  await settle()
+  await core.actions.submit({ id: topic, text: 'second' })
+  assert.equal((await core.actions.topicDispatch({ topic })).error, 'Claude is still answering')
+  assert.deepEqual(chat(core, topic).map(([type]) => type), ['note', 'claude.response', 'note'])
+  answer!()
+  await settle()
+  assert.equal((await core.actions.topicDispatch({ topic })).error, null)
+  await settle()
+  assert.deepEqual(calls, ['first', 'second'])
+})
+
+test('topics: a paste is what it is: a PR, Slack message or branch link is that item; other text a message; a file kept, as an item; all go with the next dispatch', async () => {
+  const calls: { args: string[]; cwd: string }[] = []
+  const dataDir = mkdtempSync(join(tmpdir(), 'topics-data-'))
+  const core = memoryCore({ run: fakeClaude(calls), dataDir })
+  await core.actions.topicCreate({ name: 'Pasting' })
+  const [topic] = core.entity('topics').outboundLinks
+  const paste = async (text: string) => assert.equal((await core.actions.topicPaste({ topic, text })).error, null)
+  await paste(' https://github.com/me/app/pull/12/files ')
+  await paste('https://acme.slack.com/archives/C0123ABC/p1712345678000100?thread_ts=1712345600.000200&cid=C0123ABC')
+  await paste('https://github.com/me/app/tree/claude/fix-it')
+  await paste('https://example.com/docs')
+  await paste('just some text')
+  const attached = await core.actions.topicAttach({ topic, file: { name: '../notes.txt', mime: 'text/plain', data: Buffer.from('hello').toString('base64') } })
+  assert.equal(attached.error, null)
+
+  const children = core.entity(topic).outboundLinks
+  assert.deepEqual(children.slice(0, 3), ['github:pr:https://github.com/me/app/pull/12', 'slack:msg:C0123ABC:1712345678.000100', 'github:branch:me/app:claude/fix-it'])
+  assert.deepEqual(children.slice(0, 3).map((id) => core.item(id)?.type), ['github.pr', 'slack.message', 'github.branch'])
+  assert.deepEqual(children.slice(3, 5).map((id) => [core.item(id)!.type, core.item(id)!.data.text]), [
+    ['note', 'https://example.com/docs'],
+    ['note', 'just some text'],
+  ])
+  const file = core.item(children[5])!
+  assert.equal(file.type, 'file')
+  assert.equal(file.data.text, 'notes.txt')
+  assert.equal(file.data.size, 5)
+  assert.ok(String(file.data.path).startsWith(dataDir))
+  assert.equal(readFileSync(String(file.data.path), 'utf8'), 'hello')
+  // Presented, as the views see it: all from its id.
+  const branch = core.focus('github:branch:me/app:claude/fix-it').entity!
+  assert.equal(branch.data.text, 'claude/fix-it')
+  assert.equal(branch.data.url, 'https://github.com/me/app/tree/claude/fix-it')
+
+  await core.actions.topicDispatch({ topic })
+  await settle()
+  assert.equal(
+    calls[0].args[1],
+    [
+      '[Item: github:pr:https://github.com/me/app/pull/12]',
+      '[Item: slack:msg:C0123ABC:1712345678.000100]',
+      '[Item: github:branch:me/app:claude/fix-it]',
+      'https://example.com/docs',
+      'just some text',
+      `[File: ${String(file.data.path)}]`,
+    ].join('\n\n'),
+  )
 })

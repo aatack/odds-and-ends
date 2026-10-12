@@ -14,7 +14,7 @@ import { GitHub } from './modules/github/github.ts'
 import type { Module, ModuleContext } from './modules/module.ts'
 import { Slack } from './modules/slack/slack.ts'
 import { me, tasksModule } from './modules/tasks/tasks.ts'
-import { Topics } from './modules/topics/topics.ts'
+import { Topics, type PastedFile } from './modules/topics/topics.ts'
 import type { McpAddress } from './mcp.ts'
 import { focusOf, lensOf, moduleInfos, toItem, typeOf, viewOf, type Folds, type Lens } from './present.ts'
 import { Blobs, EventStore, Settings } from './store.ts'
@@ -500,6 +500,10 @@ export class Core {
     topicCreate: ({ name }: { name: string }): Promise<Outcome> => this.attempt('topics', async () => this.topics.create(name)),
     /** Sends a topic's messages since its last dispatch to Claude as one prompt; the answer fills the response put after them. */
     topicDispatch: ({ topic }: { topic: string }): Promise<Outcome> => this.attempt(topic, async () => this.topics.dispatch(topic)),
+    /** Text pasted into a topic: a PR, Slack message or branch link as that item, anything else as a message. */
+    topicPaste: ({ topic, text }: { topic: string; text: string }): Promise<Outcome> => this.attempt(topic, async () => this.topics.paste(topic, text)),
+    /** A file pasted into a topic, kept, as an item under it. */
+    topicAttach: ({ topic, file }: { topic: string; file: PastedFile }): Promise<Outcome> => this.attempt(topic, async () => this.topics.attach(topic, file)),
     /** A view of `id` was pushed: it goes to the front of Recents (unless it is a plain note). */
     visit: ({ id }: { id: string }): void => this.recents.visit(id, this.entity(id).values),
     /** What a view shows, as a tree, for a caller with no cache of its own. */

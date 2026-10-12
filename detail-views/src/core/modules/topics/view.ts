@@ -4,15 +4,34 @@ import { byRecent } from '../claude/view.ts'
 export const topicsIds = { root: 'topics' }
 
 /**
- * The messages of a topic not yet sent to Claude: the notes under it after
- * its newest response (each dispatch puts one there), in order, by id.
+ * What of a topic is not yet sent to Claude: everything under it after its
+ * newest response (each dispatch puts one there), in order, by id: my
+ * messages (notes, empty ones apart), and whatever was pasted in (a file, a
+ * PR, a Slack message, …).
  */
 export function unsent(topic: string, lens: Lens): string[] {
   const chat = lens.children(topic)
   const last = chat.findLastIndex((id) => lens.read(id)?.type === 'claude.response')
   return chat.slice(last + 1).filter((id) => {
     const item = lens.read(id)
-    return item?.type === 'note' && typeof item.data.text === 'string' && item.data.text.trim() !== ''
+    if (!item) return false
+    return item.type === 'note' ? typeof item.data.text === 'string' && item.data.text.trim() !== '' : item.type !== 'claude.response'
+  })
+}
+
+/** How an unsent item goes into the prompt: a message as its text, a file by its path, anything else by its id (Claude reads it through the app's MCP server). */
+export function promptPart(id: string, lens: Lens): string {
+  const item = lens.read(id)
+  if (item?.type === 'note') return String(item.data.text)
+  if (item?.type === 'file') return `[File: ${String(item.data.path)}]`
+  return `[Item: ${id}]`
+}
+
+/** Whether Claude is answering in a topic: a response under it is still running. */
+export function answering(topic: string, lens: Lens): boolean {
+  return lens.children(topic).some((id) => {
+    const item = lens.read(id)
+    return item?.type === 'claude.response' && item.data.running === true
   })
 }
 
@@ -28,7 +47,8 @@ export const topicsView: ModuleView = {
   name: 'Topics',
   root: topicsIds.root,
   typeOf: (id) => (id === topicsIds.root ? 'topics.home' : null),
-  owns: (type) => type === 'topics.home' || type === 'topic',
+  // A file is only ever pasted into a topic, for now.
+  owns: (type) => type === 'topics.home' || type === 'topic' || type === 'file',
   // A topic reads like chat: the newest at the bottom, where the cursor starts.
   newestFirst: (type) => type === 'topic',
   compose: (entity) => (entity.type === 'topic' ? 'topic' : null),

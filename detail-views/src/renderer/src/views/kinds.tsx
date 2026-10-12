@@ -1,4 +1,4 @@
-import { CheckOverview, CheckPill, CheckRow, GhItemOverview, GhItemPill, GhItemRow, GitHubHomePill, LocalApprovalPill, PrOverview, PrPill, PrRow } from './GitHub.tsx'
+import { BranchOverview, BranchPill, BranchRow, CheckOverview, CheckPill, CheckRow, GhItemOverview, GhItemPill, GhItemRow, GitHubHomePill, LocalApprovalPill, PrOverview, PrPill, PrRow } from './GitHub.tsx'
 import {
   ChatDetail,
   ChatListDetail,
@@ -15,6 +15,7 @@ import {
   SessionPill,
   SessionRow,
 } from './Claude.tsx'
+import { FileOverview, FilePill, FileRow } from './Files.tsx'
 import type { Kinds } from './kindTypes.ts'
 import { TopicDetail, TopicPill, TopicRow } from './Topics.tsx'
 import { ContextPill, HomePill, NoteOverview, NotePill, NoteRow, PillOverview, PillRow, TaskOverview, TaskPill, TaskRow } from './Notes.tsx'
@@ -47,6 +48,7 @@ export const kinds: Kinds = {
   'github.check': { Pill: CheckPill, Overview: CheckOverview, Row: CheckRow },
   'github.item': { Pill: GhItemPill, Overview: GhItemOverview, Row: GhItemRow },
   'github.localApproval': { Pill: LocalApprovalPill, Overview: PillOverview, Row: PillRow },
+  'github.branch': { Pill: BranchPill, Overview: BranchOverview, Row: BranchRow },
   'tasks.home': { Pill: HomePill, Overview: PillOverview, Row: PillRow },
   task: { Pill: TaskPill, Overview: TaskOverview, Row: TaskRow },
   note: { Pill: NotePill, Overview: NoteOverview, Row: NoteRow },
@@ -58,4 +60,5 @@ export const kinds: Kinds = {
   'claude.response': { Pill: ResponsePill, Overview: ResponseOverview, Row: ResponseRow, tint: responseTint },
   'topics.home': { Pill: HomePill, Overview: PillOverview, Row: PillRow },
   topic: { Pill: TopicPill, Overview: PillOverview, Row: TopicRow, Detail: TopicDetail },
+  file: { Pill: FilePill, Overview: FileOverview, Row: FileRow },
 }

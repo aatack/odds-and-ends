@@ -2,7 +2,7 @@ import { EntityCache, type CacheState } from '../../core/graph/cache.ts'
 import { findInContext, foreignOf, itemOf, lensOf, moduleInfos, viewOf } from '../../core/present.ts'
 import { activity } from '../../core/modules/slack/view.ts'
 import { byMade, claudeIds } from '../../core/modules/claude/view.ts'
-import { topicsIds, unsent } from '../../core/modules/topics/view.ts'
+import { answering, topicsIds, unsent } from '../../core/modules/topics/view.ts'
 import { entityScheme, type Entity, type ModuleInfo, type NoteValues, type Outcome, type View, type ViewRow } from '../../core/types.ts'
 import type { Api } from './api.ts'
 import type { Environment } from './environment.ts'
@@ -361,9 +361,15 @@ export class Session {
     return window === null ? this.snapshot.shown : (this.snapshot.windowShown[window] ?? noRows)
   }
 
-  /** The selected row of the window the keys act in, or null. */
+  /** The selected row of the window the keys act in, or null. A topic's chat has none: it is a flat list, nothing in it selectable. */
   selected(): ViewRow | null {
+    if (this.onTopic()) return null
     return S.selectedRow(this.activeShown())
+  }
+
+  /** Whether the keys act in a topic's chat. */
+  private onTopic(): boolean {
+    return this.state.window === null && this.root()?.type === 'topic'
   }
 
   /** The keys go to a window: the main view (null), `side`, or a peek, by its key. A transient peek they leave closes, unless the pointer is in it. */
@@ -446,6 +452,7 @@ export class Session {
   }
 
   move(delta: number): void {
+    if (this.onTopic()) return
     this.update(S.move(this.state, this.activeShown(), delta))
   }
 
@@ -539,9 +546,9 @@ export class Session {
 
   // --- Topics ----------------------------------------------------------------------
 
-  /** A topic in the list was clicked: its chat fills the screen, its box with the keyboard. */
+  /** A topic in the list was clicked: its chat fills the screen, its box hidden until Enter. */
   openTopic(id: string): void {
-    this.update(S.setComposing(S.enter(this.state, id), true))
+    this.update(S.setComposing(S.enter(this.state, id), false))
   }
 
   /** Typing the name of a new topic, at the head of the list. */
@@ -562,25 +569,69 @@ export class Session {
     })
   }
 
-  /** Whether Ctrl+Enter has anything to send: the topic on screen has messages since its last dispatch, or one typed in its box. */
-  canDispatch(): boolean {
-    if (this.state.window !== null || this.root()?.type !== 'topic') return false
+  /** Whether a paste outside any text box goes into a topic: one is on screen, its box closed. */
+  canPaste(): boolean {
+    return this.onTopic() && !this.state.composing
+  }
+
+  /** Text pasted into the topic on screen: a link to something the app knows as that item, anything else as a message. */
+  async paste(text: string): Promise<void> {
+    if (!this.canPaste()) return
     const id = S.focused(this.state)
-    return Boolean((this.state.drafts[id] ?? '').trim()) || unsent(id, lensOf(this.cache.source(this.cache.get()))).length > 0
+    const outcome = await this.api.topicPaste(id, text)
+    this.settle(id, outcome)
+    if (outcome.error) this.showToast(outcome.error)
+  }
+
+  /** A file pasted into the topic on screen: kept, as an item in its chat. */
+  async attach(file: { name: string; mime: string; data: string }): Promise<void> {
+    if (!this.onTopic()) return
+    const id = S.focused(this.state)
+    const outcome = await this.api.topicAttach(id, file)
+    this.settle(id, outcome)
+    if (outcome.error) this.showToast(outcome.error)
+  }
+
+  /** What is typed in the box of the topic on screen. */
+  private topicDraft(): string {
+    return this.onTopic() ? (this.state.drafts[S.focused(this.state)] ?? '') : ''
   }
 
   /**
-   * Ctrl+Enter on a topic: what is in its box goes in as a message first,
-   * then every message since the last dispatch goes to Claude at once, and
-   * its answer's bubble comes after them.
+   * Whether Ctrl+Enter sends to Claude: the topic on screen has messages
+   * since its last dispatch, or one typed in its box, and Claude isn't still
+   * answering the one before (never two prompts at once).
+   */
+  canDispatch(): boolean {
+    if (!this.onTopic()) return false
+    const id = S.focused(this.state)
+    const lens = lensOf(this.cache.source(this.cache.get()))
+    return !answering(id, lens) && (Boolean(this.topicDraft().trim()) || unsent(id, lens).length > 0)
+  }
+
+  /** Ctrl+Enter with something typed in a topic's box: it goes in as a message, even while Claude answers (to go with the next dispatch). */
+  canSubmitAndDispatch(): boolean {
+    return this.canDispatch() || Boolean(this.topicDraft().trim())
+  }
+
+  /**
+   * Ctrl+Enter on a topic: what is in its box goes in as a message first
+   * (the box closing, as Enter closes it), then every message since the last
+   * dispatch goes to Claude at once, and its answer's bubble comes after
+   * them; unless Claude is still answering, when the message waits.
    */
   async dispatch(): Promise<void> {
-    if (!this.canDispatch()) return
+    if (!this.canSubmitAndDispatch()) return
     const id = S.focused(this.state)
-    const text = this.state.drafts[id] ?? ''
+    const text = this.topicDraft()
+    const ready = this.canDispatch()
     if (text.trim()) {
-      this.update(S.setDraftFor(this.state, id, ''))
+      this.update(S.setComposing(S.setDraftFor(this.state, id, ''), false))
       this.settle(id, await this.api.submit(id, text))
+    }
+    if (!ready) {
+      this.showToast('Claude is still answering: the message goes with the next Ctrl+Enter')
+      return
     }
     const outcome = await this.working(id, 'dispatch', () => this.api.topicDispatch(id))
     this.settle(id, outcome)
@@ -947,6 +998,8 @@ export class Session {
     const text = this.state.drafts[S.draftKey(this.state)] ?? ''
     if (!text.trim()) return
     this.update(S.setDraft(this.state, ''))
+    // A topic's box closes once its message is in: Enter opens it again.
+    if (this.onTopic()) this.update(S.setComposing(this.state, false))
     // A chat's box in note mode writes a note in the chat, for the next prompt to bring in.
     if (this.root()?.type === 'claude.session' && S.chatModeOf(this.state, id) === 'note') {
       this.settle(id, await this.api.create(id, text))
@@ -972,6 +1025,16 @@ export class Session {
 
   returnToPrompt(): void {
     this.update(S.setComposing(this.state, true))
+  }
+
+  /** Enter in a topic's box with nothing typed in it: the box lets the keyboard go (Enter again takes it back). */
+  canLeaveTopicBox(): boolean {
+    return this.onTopic() && this.state.composing && !(this.state.drafts[S.draftKey(this.state)] ?? '').trim()
+  }
+
+  /** Enter in a topic's chat while its box doesn't have the keyboard: the box takes it again. */
+  canReturnToTopicBox(): boolean {
+    return this.onTopic() && this.canReturnToPrompt()
   }
 
   /** What the chat on screen's box writes: a prompt, or a note. */

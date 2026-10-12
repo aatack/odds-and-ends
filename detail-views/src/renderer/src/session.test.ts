@@ -38,6 +38,8 @@ async function headless(options: Parameters<typeof memoryCore>[0] = {}, ui: { to
     claudeSetDirectory: (session, cwd, worktree) => a.claudeSetDirectory({ session, cwd, worktree }),
     topicCreate: (name) => a.topicCreate({ name }),
     topicDispatch: (topic) => a.topicDispatch({ topic }),
+    topicPaste: (topic, text) => a.topicPaste({ topic, text }),
+    topicAttach: (topic, file) => a.topicAttach({ topic, file }),
     visit: async (id) => a.visit({ id }),
     onChange: (listener) => core.onChange(listener),
     openExternal: () => {},
@@ -560,13 +562,18 @@ test('topics mode: a topic is made from the list and opened; the box adds messag
   const [topic] = session.get().topics
   assert.equal(topic.data.text, 'Billing')
   assert.equal(session.get().view?.root?.id, topic.id)
-  assert.equal(session.get().state.composing, true)
+  // The box is closed until Enter opens it.
+  assert.equal(session.get().state.composing, false)
   assert.equal(session.get().state.drafts.topics, undefined)
   assert.equal(dispatch.enabled!(session, 'topic'), false)
 
+  session.returnToPrompt()
   session.setDraft('first')
   await session.send()
   await settle()
+  // Enter closed it again once the message was in.
+  assert.equal(session.get().state.composing, false)
+  session.returnToPrompt()
   session.setDraft('second')
   assert.equal(dispatch.enabled!(session, 'topic'), true)
   dispatch.run(session, 'topic')
@@ -574,8 +581,89 @@ test('topics mode: a topic is made from the list and opened; the box adds messag
   assert.deepEqual(sent, ['first\n\nsecond'])
   assert.deepEqual(screen(), ['Billing', '  first', '  second', '  >on it'])
   assert.equal(session.get().state.drafts[topic.id], undefined)
+  assert.equal(session.get().state.composing, false)
   assert.equal(dispatch.enabled!(session, 'topic'), false)
   assert.ok(core.item(topic.id)!.data.cwd)
+
+  // Nothing in the chat is selectable, so Enter adds no note under anything.
+  const key = (name: string, field: string | null) =>
+    tools.find((tool) => tool.keys.includes(name) && (field === null ? tool.scope !== 'input' : tool.scope === 'input') && (tool.enabled?.(session, field) ?? true))?.id
+  assert.equal(session.selected(), null)
+  session.move(1)
+  assert.equal(session.selected(), null)
+  // Enter opens the box; Enter in it empty closes it. With text in it, Enter adds it.
+  assert.equal(key('Enter', null), 'topic.prompt')
+  session.returnToPrompt()
+  assert.equal(session.get().state.composing, true)
+  assert.equal(key('Enter', 'topic'), 'topic.leave')
+  session.setDraft('third')
+  assert.equal(key('Enter', 'topic'), 'composer.submit')
+  } finally {
+    stop()
+  }
+})
+
+test('topics mode: Ctrl+Enter while Claude is answering sends nothing more; what is typed goes in, for the next', async () => {
+  const sent: string[] = []
+  let answer: (() => void) | null = null
+  const run = (command: string, args: string[]) => {
+    if (!command.endsWith('claude')) throw new Error(`unexpected ${command}`)
+    sent.push(args[1])
+    return new Promise<string>((resolve) => (answer = () => resolve(JSON.stringify({ result: 'done', is_error: false }))))
+  }
+  const { session, stop, settle, screen } = await headless({ run }, { topics: true })
+  const dispatch = tools.find((tool) => tool.id === 'topic.dispatch')!
+  try {
+  await settle()
+  session.setTopicName('Slow')
+  session.createTopic()
+  await settle()
+  session.returnToPrompt()
+  session.setDraft('first')
+  dispatch.run(session, 'topic')
+  await settle()
+  assert.deepEqual(sent, ['first'])
+  // Answering: nothing to send, so Ctrl+Enter is off, until something is typed.
+  assert.equal(session.canDispatch(), false)
+  assert.equal(dispatch.enabled!(session, null), false)
+  session.returnToPrompt()
+  session.setDraft('second')
+  assert.equal(dispatch.enabled!(session, 'topic'), true)
+  dispatch.run(session, 'topic')
+  await settle()
+  assert.deepEqual(sent, ['first'])
+  assert.equal(session.get().state.composing, false)
+  assert.match(session.get().toast ?? '', /still answering/)
+  answer!()
+  await settle()
+  assert.equal(dispatch.enabled!(session, null), true)
+  dispatch.run(session, null)
+  await settle()
+  assert.deepEqual(sent, ['first', 'second'])
+  assert.equal(screen().length, 5)
+  answer!()
+  await settle()
+  } finally {
+    stop()
+  }
+})
+
+test('topics mode: a paste goes into the topic only while its box is closed (open, the box takes it as text)', async () => {
+  const { session, stop, settle, screen } = await headless({}, { topics: true })
+  try {
+  await settle()
+  session.setTopicName('Links')
+  session.createTopic()
+  await settle()
+  assert.equal(session.canPaste(), true)
+  await session.paste('https://github.com/me/app/tree/main')
+  await settle()
+  assert.equal(screen().length, 2)
+  session.returnToPrompt()
+  assert.equal(session.canPaste(), false)
+  await session.paste('ignored')
+  await settle()
+  assert.equal(screen().length, 2)
   } finally {
     stop()
   }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo } from 'react'
 import { createRoot } from 'react-dom/client'
 import { installDispatch } from './dispatch.ts'
+import { installPaste } from './paste.ts'
 import { useSnapshot } from './hooks.ts'
 import type { Session } from './session.ts'
 import { actingIn, chatModeOf, draftKey, focused } from './state.ts'
@@ -20,10 +21,12 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
   const { state, view: tree, shown, modules, peekViews, sideView, topics, contextViews, windowShown, item, working, now, findFocus, centre, toast } = useSnapshot(session)
   useEffect(() => {
     const stopDispatch = installDispatch(session, tools)
+    const stopPaste = installPaste(session)
     let stopSession: (() => void) | undefined
     void session.start().then((stop) => (stopSession = stop))
     return () => {
       stopDispatch()
+      stopPaste()
       stopSession?.()
     }
   }, [])
