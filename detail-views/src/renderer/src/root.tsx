@@ -55,6 +55,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
   const onNewChat = useCallback(() => runTool(session, 'claude.new'), [])
   const onContextToggle = useCallback((id: string) => session.toggleChatContext(id), [])
   const onSideResize = useCallback((width: number) => session.resizeSide(width), [])
+  const onSetDirectory = useCallback((cwd: string, worktree: boolean) => session.setDirectory(cwd, worktree), [])
   const onBack = useCallback(() => session.back(), [])
   // No hover on a phone, so no peeks: a link opens in the browser instead.
   const gestures = useMemo(
@@ -123,6 +124,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
         onContextToggle,
         sideWidth: state.sideWidth,
         onSideResize,
+        onSetDirectory,
         chatMode: chatModeOf(state, focused(state)),
         onEditDraft,
         onCommitEdit,
@@ -136,7 +138,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
         onToggle,
         onClose: onBack,
       },
-    [tree, shown, onNearEnd, onToggle, onBack, state, working, now, findFocus, centre, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onPause, onNewChat, contextViews, onContextToggle, onSideResize, onEditDraft, onCommitEdit, onCancelEdit],
+    [tree, shown, onNearEnd, onToggle, onBack, state, working, now, findFocus, centre, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onPause, onNewChat, contextViews, onContextToggle, onSideResize, onSetDirectory, onEditDraft, onCommitEdit, onCancelEdit],
   )
   const picking = useMemo(() => {
     const pick = state.picking

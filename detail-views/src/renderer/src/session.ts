@@ -890,6 +890,15 @@ export class Session {
     this.settle(id, await this.api.submit(id, text))
   }
 
+  /** Moves the chat on screen to another directory, or a new worktree of its repo; its conversation goes with it. */
+  setDirectory(cwd: string, worktree: boolean): void {
+    const id = S.focused(this.state)
+    void this.working(id, 'directory', () => this.api.claudeSetDirectory(id, cwd, worktree)).then((outcome) => {
+      this.settle(id, outcome)
+      if (outcome.error) this.showToast(outcome.error)
+    })
+  }
+
   /** Tab while a chat's box doesn't have the keyboard: it takes it again, and the chat hides its selection. */
   canReturnToPrompt(): boolean {
     return this.state.window === null && !this.state.composing && this.root()?.type === 'claude.session' && this.state.edit === null

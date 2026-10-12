@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdtempSync, statSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, statSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { link, value, values, type AppEvent } from '../../graph/events.ts'
@@ -24,6 +24,44 @@ export interface NewSession {
   cwd: string
   /** Run in a new git worktree of `cwd`'s repo, on a branch of its own. */
   worktree: boolean
+}
+
+/** A session's directory, made or chosen: where it runs, and what it is a worktree of. */
+interface Place {
+  cwd: string
+  /** The worktree it runs in, or null. */
+  worktree: string | null
+  branch: string | null
+  repo: string | null
+  /** The directory I chose, when it runs in a worktree made from it. */
+  origin: string | null
+}
+
+/** Where Claude Code keeps its files (its sessions' transcripts, under `projects/`). */
+function claudeHome(): string {
+  return process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
+}
+
+/** The folder Claude Code keeps a directory's sessions in: the path with everything but letters and digits as `-`. */
+function projectDir(cwd: string): string {
+  return join(claudeHome(), 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'))
+}
+
+/**
+ * Takes a session's transcript to where Claude Code looks for it from `cwd`
+ * (it resumes only sessions of the directory it runs in). False when there is
+ * no transcript to take: the session then starts afresh there.
+ */
+function carryTranscript(session: string, cwd: string): boolean {
+  const projects = join(claudeHome(), 'projects')
+  const file = `${session}.jsonl`
+  const from = existsSync(projects) ? readdirSync(projects).map((dir) => join(projects, dir, file)).find((path) => existsSync(path)) : undefined
+  if (!from) return false
+  const to = projectDir(cwd)
+  if (join(to, file) === from) return true
+  mkdirSync(to, { recursive: true })
+  copyFileSync(from, join(to, file))
+  return true
 }
 
 /** `~` and `~/x` as the home directory: what a shell would make of them, which a spawned program never does. */
@@ -102,47 +140,95 @@ export class Claude implements Module {
 
   /** A new session: its directory made, its item written, linked under the Claude root and nowhere else. */
   async createSession(input: NewSession): Promise<AppEvent[]> {
-    const { run, now } = this.context
     const id = randomUUID()
-    const short = id.slice(0, 8)
     const name = input.name.trim() || 'Session'
-    const requested = expandHome(input.cwd.trim())
-    if (requested && !(existsSync(requested) && statSync(requested).isDirectory())) {
-      throw new Error(`No such directory: ${requested}`)
-    }
-    let cwd: string
-    let worktree: string | null = null
-    let branch: string | null = null
-    let repo: string | null = null
-    if (!requested) {
-      cwd = mkdtempSync(join(tmpdir(), 'claude-'))
-    } else if (!input.worktree) {
-      cwd = requested
-    } else {
-      // Outside every repo (the app's own data directory), so no repo ever commits it.
-      repo = (await run('git', ['rev-parse', '--show-toplevel'], requested)).trim()
-      branch = `claude/${slug(name)}-${short}`
-      worktree = join(this.context.dataDir, 'worktrees', `${basename(repo)}-${short}`)
-      // From the remote's newest default branch, fetched now; my checkout is left as it is.
-      const main = await run('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], repo)
-        .then((ref) => ref.trim().replace(/^origin\//, ''))
-        .catch(() => 'master')
-      await run('git', ['fetch', 'origin', main], repo)
-      await run('git', ['worktree', 'add', '--no-track', '-b', branch, worktree, `origin/${main}`], repo)
-      cwd = worktree
-    }
-    const at = now()
+    const requested = this.directory(input.cwd)
+    const place = requested ? await this.place(requested, input.worktree, name, id) : { cwd: mkdtempSync(join(tmpdir(), 'claude-')), worktree: null, branch: null, repo: null, origin: null }
+    const at = this.context.now()
     const events: AppEvent[] = [
-      ...values(id, { type: 'claude.session', text: name, cwd, worktree, branch, repo, permissionMode: defaultPermissionMode }, at, me),
+      ...values(id, { type: 'claude.session', text: name, ...place, permissionMode: defaultPermissionMode }, at, me),
       link(ids.root, id, at, me),
     ]
     this.context.owned.write(events)
-    if (requested) {
-      const known = this.context.data.get(ids.root).cwds
-      const cwds = [requested, ...(Array.isArray(known) ? (known as string[]) : []).filter((one) => one !== requested)]
-      this.context.data.set(ids.root, { cwds: cwds.slice(0, rememberedCwds) })
-    }
+    if (requested) await this.remember(requested)
     return events
+  }
+
+  /**
+   * A session's directory changed: to `cwd` as it is, or to a new worktree of
+   * its repo (the directory chosen kept as `origin`). Its conversation goes
+   * with it, so the next prompt resumes it there. Not while Claude answers.
+   */
+  async setDirectory(session: string, cwd: string, worktree: boolean): Promise<AppEvent[]> {
+    const data = this.context.data.get(session)
+    if (typeof data.runningSince === 'number') throw new Error('Claude is answering in this session: wait for it to finish')
+    const requested = this.directory(cwd)
+    if (!requested) throw new Error('No directory given')
+    const place = await this.place(requested, worktree, String(data.text ?? 'session'), session)
+    // Claude Code resumes a session only from its own directory: its transcript goes too.
+    const started = Boolean(data.started) && carryTranscript(session, place.cwd)
+    const events = values(session, { ...place, started }, this.context.now(), me)
+    this.context.owned.write(events)
+    await this.remember(requested)
+    return events
+  }
+
+  /** A directory I typed, `~` expanded; refused if it isn't one. Empty for none. */
+  private directory(input: string): string {
+    const requested = expandHome(input.trim())
+    if (requested && !(existsSync(requested) && statSync(requested).isDirectory())) throw new Error(`No such directory: ${requested}`)
+    return requested
+  }
+
+  /** `requested` as it is, or a new worktree of its repo, on a branch of its own named after the session. */
+  private async place(requested: string, worktree: boolean, name: string, id: string): Promise<Place> {
+    if (!worktree) return { cwd: requested, worktree: null, branch: null, repo: null, origin: null }
+    const { run } = this.context
+    const short = id.slice(0, 8)
+    // Outside every repo (the app's own data directory), so no repo ever commits it.
+    const repo = (await run('git', ['rev-parse', '--show-toplevel'], requested)).trim()
+    const branch = `claude/${slug(name)}-${short}`
+    // A second worktree for the same session gets a name of its own.
+    let path = join(this.context.dataDir, 'worktrees', `${basename(repo)}-${short}`)
+    for (let n = 2; existsSync(path); n++) path = join(this.context.dataDir, 'worktrees', `${basename(repo)}-${short}-${n}`)
+    // From the remote's newest default branch, fetched now; my checkout is left as it is.
+    const main = await run('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], repo)
+      .then((ref) => ref.trim().replace(/^origin\//, ''))
+      .catch(() => 'master')
+    await run('git', ['fetch', 'origin', main], repo)
+    const branchName = await run('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], repo).then(
+      () => `${branch}-${Date.now().toString(36)}`,
+      () => branch,
+    )
+    await run('git', ['worktree', 'add', '--no-track', '-b', branchName, path, `origin/${main}`], repo)
+    return { cwd: path, worktree: path, branch: branchName, repo, origin: requested }
+  }
+
+  /** A directory I chose, remembered first for next time, and whether it is in a git repo (so a worktree can be offered). */
+  private async remember(dir: string): Promise<void> {
+    const root = this.context.data.get(ids.root)
+    const cwds = [dir, ...(Array.isArray(root.cwds) ? (root.cwds as string[]) : []).filter((one) => one !== dir)].slice(0, rememberedCwds)
+    const known = Array.isArray(root.repos) ? (root.repos as string[]) : []
+    const isRepo = await this.isRepo(dir)
+    const repos = [...known.filter((one) => one !== dir && cwds.includes(one)), ...(isRepo ? [dir] : [])]
+    this.context.data.set(ids.root, { cwds, repos })
+  }
+
+  /** Looks again at which remembered directories are in a git repo (at start: some were remembered before this was kept). */
+  async refreshRepos(): Promise<void> {
+    const root = this.context.data.get(ids.root)
+    const cwds = Array.isArray(root.cwds) ? (root.cwds as string[]) : []
+    const repos: string[] = []
+    for (const dir of cwds) if (await this.isRepo(dir)) repos.push(dir)
+    const known = Array.isArray(root.repos) ? (root.repos as string[]) : null
+    if (!known || known.join('\0') !== repos.join('\0')) this.context.data.set(ids.root, { repos })
+  }
+
+  private isRepo(dir: string): Promise<boolean> {
+    return this.context.run('git', ['rev-parse', '--show-toplevel'], expandHome(dir)).then(
+      () => true,
+      () => false,
+    )
   }
 
   /**

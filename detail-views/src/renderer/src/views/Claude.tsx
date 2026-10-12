@@ -1,5 +1,7 @@
 import { memo, useContext, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { components, type InputProps } from 'react-select'
+import CreatableSelect from 'react-select/creatable'
 import type { Entity } from '../../../core/types.ts'
 import { shortTime } from '../format.ts'
 import { contextWindow, type ChatMode, type ShownRow } from '../state.ts'
@@ -61,12 +63,80 @@ export function SessionOverview(props: OverviewProps) {
         <HeaderPill entity={props.entity} />
       </div>
       <div className="facts muted">
-        <span>{String(data.cwd ?? '')}</span>
+        {props.interactive && props.onSetDirectory ? <DirectorySelect {...props} /> : <span>{String(data.cwd ?? '')}</span>}
         {data.branch ? <span>{String(data.branch)}</span> : null}
-        {data.worktree ? <span>worktree</span> : null}
+        {data.worktree ? <span>worktree{data.origin ? ` of ${String(data.origin)}` : ''}</span> : null}
         <span>{String(data.permissionMode ?? '')} mode</span>
       </div>
     </>
+  )
+}
+
+interface DirectoryOption {
+  cwd: string
+  worktree: boolean
+  /** The option for a path typed in, not yet one of the remembered ones. */
+  __isNew__?: boolean
+}
+
+/** The data-field of the dropdown's text box, so keys meant for other boxes leave it alone. */
+function DirectoryInput(props: InputProps<DirectoryOption, false>) {
+  return <components.Input {...props} {...{ 'data-field': 'directory' }} />
+}
+
+/**
+ * Where a session runs, as a dropdown: each directory I have used (a new
+ * one typed in), and, for one in a git repo, a new worktree of it too. Picking
+ * one moves the session there, its conversation with it. Not while Claude is
+ * answering.
+ */
+function DirectorySelect(props: OverviewProps) {
+  const { data } = props.entity
+  const { item } = useContext(ItemContext)
+  const root = item('claude')?.data ?? {}
+  const cwds = Array.isArray(root.cwds) ? (root.cwds as string[]) : []
+  const repos = new Set(Array.isArray(root.repos) ? (root.repos as string[]) : [])
+  const options: DirectoryOption[] = cwds.flatMap((cwd) => [{ cwd, worktree: false }, ...(repos.has(cwd) ? [{ cwd, worktree: true }] : [])])
+  const current: DirectoryOption = { cwd: String(data.cwd ?? ''), worktree: false }
+  const running = typeof data.runningSince === 'number'
+  const busy = props.working?.includes('directory') ?? false
+  const choose = (option: DirectoryOption | null) => {
+    if (option && !(option.cwd === data.cwd && !option.worktree)) props.onSetDirectory?.(option.cwd, option.worktree)
+  }
+  return (
+    <span className="dir-select-wrap" title={running ? 'Claude is answering: wait for it to finish' : undefined}>
+      <CreatableSelect<DirectoryOption, false>
+        unstyled
+        classNamePrefix="dir-select"
+        className="dir-select"
+        value={current}
+        options={options}
+        isDisabled={running || busy}
+        isLoading={busy}
+        placeholder="Directory"
+        menuPortalTarget={document.body}
+        components={{ Input: DirectoryInput }}
+        getOptionValue={(option) => `${option.cwd}#${option.worktree}`}
+        getOptionLabel={(option) => option.cwd}
+        formatOptionLabel={(option, meta) =>
+          meta.context === 'value' ? (
+            option.cwd
+          ) : option.__isNew__ ? (
+            <>Use {option.cwd}</>
+          ) : option.worktree ? (
+            <span className="dir-option">
+              <span className="dir-option-tag">new worktree</span> {option.cwd}
+            </span>
+          ) : (
+            option.cwd
+          )
+        }
+        getNewOptionData={(input) => ({ cwd: input, worktree: false, __isNew__: true })}
+        isValidNewOption={(input) => Boolean(input.trim()) && !cwds.includes(input.trim())}
+        onChange={choose}
+        onCreateOption={(input) => choose({ cwd: input.trim(), worktree: false })}
+      />
+    </span>
   )
 }
 

@@ -14,7 +14,7 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 8. If there is a working directory and a worktree, make a git worktree of the repo of that directory. Run the agent in the worktree.
 9. Do not put a worktree in a repo. No repo must commit it.
 10. A worktree session has a new branch. Make its name from the session name and the session ID. Keep the branch name on the session item.
-11. Keep these on the session item: the directory where it runs (`cwd`), the worktree directory (`worktree`), the branch (`branch`), the repo (`repo`).
+11. Keep these on the session item: the directory where it runs (`cwd`), the worktree directory (`worktree`), the branch (`branch`), the repo (`repo`), and, for a worktree, the directory I chose (`origin`).
 12. **Shift+K** opens a form: name, directory, worktree. Enter starts the session. Escape cancels. Shift+K works in all views.
 13. Link the new session item only under the Claude root. Do not link it to other items (for now). When it starts, push the view of the session.
 14. Keep each directory that I enter on the Claude root (`cwds`). Give these as options in the next form. Put the last one in the field.
@@ -36,6 +36,7 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
     - At the top of the panel is the overview of the session, on a different fill. Below it is the overview of each other item in the context of the session, with a line between them (no frames). A click on an item (or its ▸) opens it out to its whole view, in place (`chatContext`: the items opened out, for each chat). ▾ folds it again. An item opened out is a window, as the side panel and a peek are (`contextWindow`): a press in it gives it the keys, and its rows have their own selection. Shift+A in it folds it. When the items are taller than the panel, the panel scrolls. On a narrow screen (a phone), the panel is not shown.
     - **Notes.** The box of a chat has modes: prompt (the default) and note (`chatModes`, kept for each chat). **←** and **→** in the box change the mode while the box is empty. The placeholder of the box says the mode. There are no buttons for it. In note mode, Enter puts a note (an item with no type) under the session, in sequence with the prompts and responses. The chat shows a note in full, across the whole width and as large as a message, with the note mark (`assets/note.svg`) before it and no bubble.
     - When I send a prompt, the prompt to Claude starts with the IDs of the notes that I added since the last prompt: `[Notes since the last prompt: abc123, xyz456]` (`notesLine`), after the context line if there is one. The MCP server's instructions tell Claude what the line means.
+    - **Directory.** The overview of the session at the top of the panel has a dropdown (react-select, `DirectorySelect`) for the directory of the session. It gives each directory that I used (`cwds`), and I can type a new one. For a directory in a git repo (`repos` on the Claude root), it also gives "new worktree": the app makes a worktree of that repo (as for a new session) and the session runs there; the session keeps the directory I chose as `origin`. When the directory changes, the transcript of the conversation goes to the folder where Claude Code looks for it from the new directory, so the next prompt resumes the same conversation (`carryTranscript`). If there is no transcript, the next prompt starts a new conversation. The dropdown is disabled while Claude answers (and the core refuses it).
     - **Tab** in the prompt box always opens the next chat. **Shift+Tab** always opens the one before. The order is fixed: the newest chat that I made is first (`byMade`), so Shift+Tab undoes Tab. After the last chat comes the first. The new chat replaces the current one on the stack.
 21. The view of a session is the chat: the session at the top, then the prompts and responses, the newest at the bottom. A prompt has a faint blue fill (the `accent` tint). A response has no fill.
 21b. The session stays at the top of the view. It does not scroll. A thin line is below it. The prompts and responses start at the bottom and go up. When the view opens, it is at the bottom. When the chat is at the bottom, it stays at the bottom when items come.
@@ -73,7 +74,7 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 
 | Type | Is | Under |
 |-|-|-|
-| `claude.home` | The module root. Keeps `cwds`. | The sidebar |
+| `claude.home` | The module root. Keeps `cwds`, and which of them are in a git repo (`repos`, checked again at start). | The sidebar |
 | `claude.session` | A session. `text` is its name. | `claude` |
 | `claude.prompt` | What I asked. `session` is its session. | The session |
 | `claude.response` | The answer, or the error. `running` while Claude works. | The session, after its prompt |

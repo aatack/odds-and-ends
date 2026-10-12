@@ -32,6 +32,8 @@ export interface Api {
   split(id: string): Promise<Outcome>
   /** A new Claude session under the Claude root, in a temporary directory, `cwd`, or a new worktree of it. */
   claudeCreate(input: { name: string; cwd: string; worktree: boolean }): Promise<Outcome>
+  /** A session's directory changed: to `cwd`, or a new worktree of its repo. */
+  claudeSetDirectory(session: string, cwd: string, worktree: boolean): Promise<Outcome>
   /** A view of `id` was pushed: Recents moves it to the front. */
   visit(id: string): Promise<void>
   /** Takes my last action off the owned log; returns what came off. */
@@ -89,6 +91,7 @@ export function httpApi(base: string, token: string): Api {
     undo: () => call('undo'),
     redo: (events) => call('redo', { events }),
     claudeCreate: (input) => call('claudeCreate', input),
+    claudeSetDirectory: (session, cwd, worktree) => call('claudeSetDirectory', { session, cwd, worktree }),
     visit: (id) => call('visit', { id }),
     onChange: (listener) => {
       // EventSource reconnects by itself; a reconnect may have missed changes, so it re-reads everything.
@@ -131,6 +134,7 @@ export function electronApi(): Api {
     undo: () => call('undo'),
     redo: (events) => call('redo', { events }),
     claudeCreate: (input) => call('claudeCreate', input),
+    claudeSetDirectory: (session, cwd, worktree) => call('claudeSetDirectory', { session, cwd, worktree }),
     visit: (id) => call('visit', { id }),
     onChange: (listener) => bridge.onChange(listener),
     openExternal: (url) => void bridge.openExternal(url),

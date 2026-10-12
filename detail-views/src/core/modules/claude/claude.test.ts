@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { values } from '../../graph/events.ts'
 import { memoryCore } from '../../testing.ts'
 
 /** git and claude, answering from a script; every call recorded. */
@@ -12,6 +13,8 @@ function fakeRun(calls: { command: string; args: string[]; cwd: string }[]) {
     if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--show-toplevel') return '/home/me/repos/app\n'
     if (command === 'git' && args[0] === 'symbolic-ref') return 'origin/master\n'
     if (command === 'git' && (args[0] === 'fetch' || args[0] === 'worktree')) return ''
+    // No branch of that name yet.
+    if (command === 'git' && args[1] === '--verify') throw new Error('no such branch')
     if (command.endsWith('claude')) return JSON.stringify({ result: `answer to ${args[1].split('\n').pop()}`, is_error: false, total_cost_usd: 0.01 })
     throw new Error(`unexpected ${command} ${args.join(' ')}`)
   }
@@ -37,8 +40,11 @@ test('claude: a session in a new worktree, under the Claude root only; each prom
   assert.match(String(data.worktree), /^\/data\/worktrees\/app-[0-9a-f]{8}$/)
   assert.equal(data.cwd, data.worktree)
   // Branched from the remote's master, fetched first.
-  assert.deepEqual(calls[2].args, ['fetch', 'origin', 'master'])
-  assert.deepEqual(calls[3].args, ['worktree', 'add', '--no-track', '-b', data.branch, data.worktree, 'origin/master'])
+  const git = (verb: string) => calls.find((call) => call.command === 'git' && call.args[0] === verb)?.args
+  assert.deepEqual(git('fetch'), ['fetch', 'origin', 'master'])
+  assert.deepEqual(git('worktree'), ['worktree', 'add', '--no-track', '-b', data.branch, data.worktree, 'origin/master'])
+  // The directory is remembered as a repo, so a worktree is offered for it next time.
+  assert.deepEqual(core.item('claude')!.data.repos, [src])
   // Linked nowhere but the Claude root.
   assert.deepEqual(made.events.filter((e) => e.type === 'link').map((e) => e.type === 'link' && e.sourceId), ['claude'])
   // The directory is remembered for next time.
@@ -89,7 +95,8 @@ test('claude: no directory is a new temporary one; a plain directory is used as 
   // A directory that isn't there is refused, saying which; ~ is the home directory.
   const missing = await core.actions.claudeCreate({ name: 'typo', cwd: '~/repos/no-such-thing', worktree: false })
   assert.match(missing.error ?? '', /^No such directory: \/.+\/repos\/no-such-thing$/)
-  assert.equal(calls.length, 0)
+  // Nothing but asking git whether the directories are repos.
+  assert.deepEqual(calls.filter((call) => !(call.command === 'git' && call.args[1] === '--show-toplevel')), [])
 })
 
 test('claude: a failure is said in place of the answer', async () => {
@@ -166,4 +173,50 @@ test('claude: a prompt brings in the notes I added to the chat since the last pr
   core.actions.claudePrompt({ session, text: 'once more' })
   await settle()
   assert.deepEqual(sent, [`[Notes since the last prompt: ${a}, ${b}]\n\ngo`, 'again', `[Notes since the last prompt: ${c}]\n\nonce more`])
+})
+
+test('claude: a session moves to another directory, or a new worktree of its repo, and its conversation goes with it', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'claude-home-'))
+  process.env.CLAUDE_CONFIG_DIR = home
+  try {
+    const calls: { command: string; args: string[]; cwd: string }[] = []
+    const core = memoryCore({ run: fakeRun(calls), dataDir: '/data' })
+    const first = mkdtempSync(join(tmpdir(), 'first-'))
+    const second = mkdtempSync(join(tmpdir(), 'second-'))
+    await core.actions.claudeCreate({ name: 'Move me', cwd: first, worktree: false })
+    const [session] = core.entity('claude').outboundLinks
+    core.actions.claudePrompt({ session, text: 'hello' })
+    await settle()
+    // Claude Code kept its transcript under the first directory.
+    const project = (dir: string) => join(home, 'projects', dir.replace(/[^a-zA-Z0-9]/g, '-'))
+    mkdirSync(project(first), { recursive: true })
+    writeFileSync(join(project(first), `${session}.jsonl`), '{}\n')
+
+    const moved = await core.actions.claudeSetDirectory({ session, cwd: second, worktree: false })
+    assert.equal(moved.error, null)
+    assert.equal(core.item(session)!.data.cwd, second)
+    assert.equal(core.item(session)!.data.started, true)
+    assert.ok(existsSync(join(project(second), `${session}.jsonl`)))
+    core.actions.claudePrompt({ session, text: 'again' })
+    await settle()
+    const last = calls.filter((call) => call.command.endsWith('claude')).at(-1)!
+    assert.equal(last.cwd, second)
+    assert.deepEqual(last.args.slice(8, 10), ['--resume', session])
+
+    // A worktree of the directory's repo: where it runs is the worktree, and the directory chosen is kept.
+    await core.actions.claudeSetDirectory({ session, cwd: first, worktree: true })
+    const data = core.item(session)!.data
+    assert.match(String(data.worktree), /^\/data\/worktrees\/app-[0-9a-f]{8}$/)
+    assert.equal(data.cwd, data.worktree)
+    assert.equal(data.origin, first)
+    assert.equal(data.repo, '/home/me/repos/app')
+    assert.deepEqual(core.item('claude')!.data.cwds, [first, second])
+
+    // Not while Claude is answering.
+    core.owned.write(values(session, { runningSince: 1 }, Date.now(), 'claude'))
+    const refused = await core.actions.claudeSetDirectory({ session, cwd: second, worktree: false })
+    assert.match(refused.error ?? '', /answering/)
+  } finally {
+    delete process.env.CLAUDE_CONFIG_DIR
+  }
 })
