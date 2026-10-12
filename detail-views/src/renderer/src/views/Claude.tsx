@@ -269,14 +269,17 @@ function NoteMark() {
   return <span className="note-mark" role="img" aria-label="Note" />
 }
 
-/** A message as a bubble: a prompt on the right, an answer on the left; a note of mine as a line between them. */
+/** A message as a bubble: a prompt on the right, an answer on the left; a note of mine across the whole width, in full, without a bubble. */
 function Bubble(props: { shown: EntityRow; props: OverviewProps }) {
   const { shown } = props
   const { entity } = shown.row
   if (entity.type === 'note' && !shown.editing) {
     return (
       <div className="note-line" onClick={() => props.props.onOpenNote?.(entity.id)}>
-        <NoteMark /> <Text text={text(entity.data)} inline />
+        <NoteMark />
+        <div className="note-line-text">
+          <Text text={text(entity.data)} />
+        </div>
       </div>
     )
   }
