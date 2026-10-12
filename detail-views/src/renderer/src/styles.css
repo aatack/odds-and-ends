@@ -1532,11 +1532,13 @@ mark {
   flex-direction: column;
   justify-content: flex-end;
   gap: 10px;
-  padding: 10px 4px;
+  /* Room on the left for the selection's rail. */
+  padding: 10px 4px 10px 12px;
 }
 
 .bubble-line {
   display: flex;
+  gap: 6px;
 }
 
 .bubble-line.right {
@@ -1696,4 +1698,44 @@ textarea:hover,
   vertical-align: -0.08em;
   background: var(--muted);
   mask: url('./assets/note.svg') center / contain no-repeat;
+}
+
+/* A chat's rows: each selectable, the selection a thin rail at its left, clear of the bubbles' fills. */
+.chat-row {
+  position: relative;
+}
+
+.chat-row.selected::before {
+  content: '';
+  position: absolute;
+  left: -9px;
+  top: 2px;
+  bottom: 2px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent-line);
+}
+
+/* While the box has the keyboard, no row is marked. */
+.chat-page.prompting .chat-row.selected::before {
+  display: none;
+}
+
+/* While the rows have the keys, the box steps back. */
+.chat-page:not(.prompting) .chat-main > .composer {
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+.chat-fold {
+  flex: none;
+  width: 1em;
+  color: var(--faint);
+  text-align: center;
+  align-self: flex-start;
+  margin-top: 0.15em;
+}
+
+.bubble-line .chat-fold {
+  align-self: center;
 }

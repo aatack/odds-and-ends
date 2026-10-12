@@ -480,7 +480,7 @@ test('an item opened out in a chat\'s panel is a window: a press gives it the ke
   stop()
 })
 
-test('a chat\'s box switches to notes with ← and → while empty: a note goes in the chat, and a click on it opens it in the panel with the keys', async () => {
+test('a chat\'s box switches to notes with ← and → while empty: a note goes in the chat as a row, Enter adds under it, and Tab goes back to the box', async () => {
   const { core, session, stop, settle } = await headless()
   core.owned.write([...values('chat', { type: 'claude.session', text: 'chat' }, 1, 'me'), link('claude', 'chat', 1, 'me')])
   session.enterModule('claude')
@@ -498,10 +498,18 @@ test('a chat\'s box switches to notes with ← and → while empty: a note goes 
   const [note] = core.entity('chat').outboundLinks
   assert.equal(core.item(note)!.type, 'note')
   assert.equal(core.item(note)!.data.text, 'remember this')
-  session.openNote(note)
-  await settle()
-  assert.equal(session.get().state.window, contextWindow(note))
+  // Its rows are the tree's: the note is selected (the newest end), Enter adds a note under it.
   assert.equal(session.selected()?.entity.id, note)
+  session.startCreate()
+  session.setEditDraft('more on it')
+  session.commitEdit()
+  await settle()
+  assert.equal(core.item(core.entity(note).outboundLinks[0])!.data.text, 'more on it')
+  // Tab, while the rows have the keys, hands them back to the box.
+  assert.equal(session.canReturnToPrompt(), true)
+  session.returnToPrompt()
+  assert.equal(session.get().state.composing, true)
+  assert.equal(session.canReturnToPrompt(), false)
   session.cycleChatMode(-1)
   assert.equal(session.chatMode(), 'prompt')
   stop()

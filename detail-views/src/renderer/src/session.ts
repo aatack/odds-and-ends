@@ -890,6 +890,15 @@ export class Session {
     this.settle(id, await this.api.submit(id, text))
   }
 
+  /** Tab while a chat's box doesn't have the keyboard: it takes it again, and the chat hides its selection. */
+  canReturnToPrompt(): boolean {
+    return this.state.window === null && !this.state.composing && this.root()?.type === 'claude.session' && this.state.edit === null
+  }
+
+  returnToPrompt(): void {
+    this.update(S.setComposing(this.state, true))
+  }
+
   /** What the chat on screen's box writes: a prompt, or a note. */
   chatMode(): S.ChatMode {
     return S.chatModeOf(this.state, S.focused(this.state))
@@ -909,14 +918,6 @@ export class Session {
     this.setChatMode(S.chatModes[(at + delta + S.chatModes.length) % S.chatModes.length])
   }
 
-  /** A click on a note in a chat: it opens out in the chat's panel, with the keys, so I can add to it. */
-  openNote(id: string): void {
-    const chat = S.focused(this.state)
-    let state = this.state
-    if (!(state.chatContext[chat] ?? []).includes(id)) state = S.toggleChatContext(state, chat, id)
-    state = S.focusWindow(state, S.contextWindow(id))
-    this.update(S.select(state, [id]))
-  }
 
   /** A click on a row's box: selects the row and ticks it. */
   toggleAt(path: string[]): void {

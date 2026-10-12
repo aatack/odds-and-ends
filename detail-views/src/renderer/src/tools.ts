@@ -66,6 +66,9 @@ export const tools: Tool[] = [
   { id: 'dialog.cancel', scope: 'input', keys: ['Escape'], enabled: (s) => s.hasDialog(), run: (s) => s.cancelDialog() },
   { id: 'composer.leave', scope: 'input', keys: ['Escape'], run: (s) => s.compose(false) },
 
+  // A chat while its rows have the keys: Tab hands them back to its box.
+  { id: 'chat.prompt', scope: 'list', keys: ['Tab'], enabled: (s) => s.canReturnToPrompt(), run: (s) => s.returnToPrompt() },
+
   // --- Escape, innermost first; the find last ------------------------------------
   { id: 'inspect.close', scope: 'list', keys: ['Escape', '3'], enabled: (s) => s.get().state.inspecting !== null, run: (s) => s.closeInspector() },
   { id: 'pick.cancel', label: 'Cancel', scope: 'list', keys: ['Escape'], enabled: (s) => picking(s), run: (s) => s.cancelPick() },
