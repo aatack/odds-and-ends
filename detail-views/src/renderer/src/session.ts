@@ -515,9 +515,18 @@ export class Session {
     this.update(S.setDialog(this.state, { kind: 'claude', name: '', cwd: last, worktree: false }))
   }
 
-  setDialog(fields: Partial<S.SessionDialog>): void {
+  setDialog(fields: Partial<Omit<S.SessionDialog, 'kind'>>): void {
     const dialog = this.state.dialog
-    if (dialog) this.update(S.setDialog(this.state, { ...dialog, ...fields }))
+    if (dialog) this.update(S.setDialog(this.state, { ...dialog, ...fields } as S.Dialog))
+  }
+
+  /** Ctrl+.: the form naming a new topic, from anywhere in the topics mode. */
+  canOpenTopicDialog(): boolean {
+    return this.topicsMode && this.state.dialog === null
+  }
+
+  openTopicDialog(): void {
+    if (this.canOpenTopicDialog()) this.update(S.setDialog(this.state, { kind: 'topic', name: '' }))
   }
 
   hasDialog(): boolean {
@@ -528,10 +537,16 @@ export class Session {
     this.update(S.setDialog(this.state, null))
   }
 
-  /** Makes the session the form describes, under the Claude root, and pushes its view: its chat, ready for a prompt. */
+  /** Makes the session the form describes, under the Claude root, and pushes its view: its chat, ready for a prompt. A topic's form makes the topic, and opens it. */
   submitDialog(): void {
     const dialog = this.state.dialog
     if (!dialog) return
+    if (dialog.kind === 'topic') {
+      if (!dialog.name.trim()) return
+      this.update(S.setDialog(this.state, null))
+      this.makeTopic(dialog.name)
+      return
+    }
     this.update(S.setDialog(this.state, null))
     const root = S.focused(this.state)
     void this.working(root, 'claude', () =>
@@ -561,6 +576,11 @@ export class Session {
     const name = this.state.drafts[topicsIds.root] ?? ''
     if (!name.trim()) return
     this.update(S.setDraftFor(this.state, topicsIds.root, ''))
+    this.makeTopic(name)
+  }
+
+  /** A topic named `name` is made, and opened. */
+  private makeTopic(name: string): void {
     void this.working(topicsIds.root, 'create', () => this.api.topicCreate(name)).then((outcome) => {
       this.settle(topicsIds.root, outcome)
       if (outcome.error) this.showToast(outcome.error)

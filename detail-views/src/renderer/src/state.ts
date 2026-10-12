@@ -50,7 +50,7 @@ export interface State {
   /** How far through confirming a wipe of the cache store: 0 not started, then each confirmation. Not persisted. */
   wiping: 0 | 1 | 2
   /** A form being filled in (a new Claude session's). Not persisted. */
-  dialog: SessionDialog | null
+  dialog: Dialog | null
   /** The entity shown as JSON over everything (`3`). Not persisted. */
   inspecting: string | null
   /**
@@ -101,6 +101,15 @@ export interface SessionDialog {
   cwd: string
   worktree: boolean
 }
+
+/** A new topic, being named. */
+export interface TopicDialog {
+  kind: 'topic'
+  name: string
+}
+
+/** The form over everything, if one is open. */
+export type Dialog = SessionDialog | TopicDialog
 
 export type PickTool = 'move' | 'link' | 'linkReverse' | 'context'
 
@@ -440,7 +449,7 @@ export function inspect(state: State, id: string | null): State {
   return state.inspecting === id ? state : { ...state, inspecting: id }
 }
 
-export function setDialog(state: State, dialog: SessionDialog | null): State {
+export function setDialog(state: State, dialog: Dialog | null): State {
   return state.dialog === dialog ? state : { ...state, dialog }
 }
 

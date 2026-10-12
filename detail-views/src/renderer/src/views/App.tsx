@@ -1,5 +1,5 @@
 import type { Entity, ModuleInfo, View } from '../../../core/types.ts'
-import type { Edit, Peek, PeekTarget, Pick, Rect, SessionDialog, ShownView } from '../state.ts'
+import type { Dialog, Edit, Peek, PeekTarget, Pick, Rect, SessionDialog, ShownView } from '../state.ts'
 import { imageSrc } from '../images.ts'
 import { PeekWindow } from './Peek.tsx'
 import { ViewPane } from './View.tsx'
@@ -139,7 +139,7 @@ export function App(props: {
           <div className="side-slot" ref={setSlot} />
           {props.side && <SidePanel {...props.side} windows={windows} onImage={props.onImage} />}
           {props.picking && <PickBar {...props.picking} />}
-          {props.dialog && <SessionForm {...props.dialog} />}
+          {props.dialog && (props.dialog.dialog.kind === 'topic' ? <TopicForm {...props.dialog} /> : <SessionForm {...props.dialog} dialog={props.dialog.dialog} />)}
           {props.inspect && <Inspector {...props.inspect} />}
           {props.toast && <div className="toast">{props.toast}</div>}
           {peek.peeks.map((one) => (
@@ -332,8 +332,8 @@ function PhoneBar(props: PhoneBarProps) {
   )
 }
 
-export interface DialogProps {
-  dialog: SessionDialog
+export interface DialogProps<D extends Dialog = Dialog> {
+  dialog: D
   /** Directories used before, most recent first, to pick from. */
   cwds: string[]
   busy: boolean
@@ -347,7 +347,27 @@ export interface DialogProps {
  * directory), and whether in a new worktree there. Enter makes it, Escape
  * gives up.
  */
-function SessionForm(props: DialogProps) {
+/** A new topic: its name. Enter makes it and opens it, Escape gives up. */
+function TopicForm(props: DialogProps) {
+  return (
+    <Modal title="New topic" onClose={props.onCancel}>
+      <input
+        className="find"
+        data-field="dialog-topic-name"
+        autoFocus
+        placeholder="Name"
+        value={props.dialog.name}
+        onChange={(event) => props.onChange({ name: event.target.value })}
+      />
+      <div className="dialog-buttons">
+        <Button label="Cancel" hotkey="Esc" onClick={props.onCancel} />
+        <Button label="Make" hotkey="↵" busy={props.busy} busyLabel="Making…" disabled={!props.dialog.name.trim() && 'Name it first'} onClick={props.onSubmit} />
+      </div>
+    </Modal>
+  )
+}
+
+function SessionForm(props: DialogProps<SessionDialog>) {
   const { dialog } = props
   const hasCwd = Boolean(dialog.cwd.trim())
   return (

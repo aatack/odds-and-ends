@@ -133,6 +133,8 @@ export const tools: Tool[] = [
   { id: 'split', label: 'Split', scope: 'list', keys: ['b'], enabled: (s) => s.canSplit(), run: (s) => s.split() },
   { id: 'inspect', label: 'Inspect', scope: 'list', keys: ['3'], enabled: (s) => selected(s) !== null, run: (s) => s.inspect() },
   { id: 'claude.new', label: 'Claude session', scope: 'list', keys: ['K'], run: (s) => s.openClaudeDialog() },
+  // From anywhere, typing too: a form for the new topic's name.
+  { id: 'topic.new', label: 'New topic', scope: 'app', keys: ['Ctrl+.'], enabled: (s) => s.canOpenTopicDialog(), run: (s) => s.openTopicDialog() },
   { id: 'session.send', label: 'To session', scope: 'list', keys: ['k'], enabled: (s) => s.canSendToSession(), run: (s) => s.sendToSession() },
   // On a topic, from its box or its rows: every message since the last dispatch, to Claude at once (before the side panel's Ctrl+Enter).
   // Not while Claude is still answering: then only what is typed goes in, to wait for the next.

@@ -668,3 +668,30 @@ test('topics mode: a paste goes into the topic only while its box is closed (ope
     stop()
   }
 })
+
+test('topics mode: Ctrl+. opens a form for a new topic, from anywhere; Enter in it makes the topic and opens it', async () => {
+  const { session, stop, settle } = await headless({}, { topics: true })
+  const key = (name: string, field: string | null) =>
+    tools.find((tool) => tool.keys.includes(name) && (field === null || tool.scope === 'input' || name.startsWith('Ctrl+')) && (tool.enabled?.(session, field) ?? true))?.id
+  try {
+  await settle()
+  assert.equal(key('Ctrl+.', 'topic-name'), 'topic.new')
+  session.openTopicDialog()
+  assert.deepEqual(session.get().state.dialog, { kind: 'topic', name: '' })
+  // Not a second form over the first.
+  assert.equal(key('Ctrl+.', null), undefined)
+  // Nothing made without a name.
+  session.submitDialog()
+  assert.ok(session.hasDialog())
+  session.setDialog({ name: 'Flights' })
+  assert.equal(key('Enter', 'dialog-topic-name'), 'dialog.submit')
+  session.submitDialog()
+  await settle()
+  assert.equal(session.hasDialog(), false)
+  const [topic] = session.get().topics
+  assert.equal(topic.data.text, 'Flights')
+  assert.equal(session.get().view?.root?.id, topic.id)
+  } finally {
+    stop()
+  }
+})
