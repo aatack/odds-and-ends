@@ -2,7 +2,7 @@ import { memo, useContext, useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { Entity } from '../../../core/types.ts'
 import { shortTime } from '../format.ts'
-import { chatModes, contextWindow, type ChatMode, type ShownRow } from '../state.ts'
+import { contextWindow, type ChatMode, type ShownRow } from '../state.ts'
 import { hotkeyOf } from '../tools.ts'
 import type { OverviewProps, PillProps, RowProps, Tint } from './kindTypes.ts'
 import { Text } from './messages.tsx'
@@ -245,22 +245,6 @@ export function ChatDetail(props: OverviewProps) {
           </div>
         </div>
         <Status error={view.error} />
-        {/* What the box writes: ←/→ in it while it is empty, or a click here. */}
-        <div className="chat-modes">
-          {chatModes.map((mode) => (
-            <Button
-              key={mode}
-              label={modeNames[mode]}
-              active={props.chatMode === mode}
-              quiet={props.chatMode !== mode}
-              onClick={() => {
-                props.onChatMode?.(mode)
-                // Back to the box, to type.
-                props.onCompose(true)
-              }}
-            />
-          ))}
-        </div>
         <Composer
           key={entity.id}
           kind="claude"
