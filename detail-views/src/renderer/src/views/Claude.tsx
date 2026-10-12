@@ -1,8 +1,8 @@
-import { memo, useContext, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { memo, useContext, useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { Entity } from '../../../core/types.ts'
 import { shortTime } from '../format.ts'
-import { inertRows, type ShownRow } from '../state.ts'
+import { contextWindow, type ShownRow } from '../state.ts'
 import { hotkeyOf } from '../tools.ts'
 import type { OverviewProps, PillProps, RowProps, Tint } from './kindTypes.ts'
 import { Text } from './messages.tsx'
@@ -333,7 +333,10 @@ function ContextItem(props: { id: string; props: OverviewProps }) {
   const kinds = useContext(KindsContext)!
   const { item } = useContext(ItemContext)
   const opened = chat.contextViews?.[props.id] ?? null
-  const shown = useMemo(() => (opened ? inertRows(opened) : null), [opened])
+  // Opened out, it is a window of its own, as a peek is: a press gives it the keys, and its rows the cursor.
+  const key = contextWindow(props.id)
+  const windows = chat.windows
+  const shown = windows?.shown[key] ?? null
   const entity = item(props.id)
   const toggle = () => chat.onContextToggle?.(props.id)
   if (!entity) return <div className="context-item muted">…</div>
@@ -351,7 +354,14 @@ function ContextItem(props: { id: string; props: OverviewProps }) {
   )
   if (opened && shown) {
     return (
-      <div className="context-item open">
+      <div
+        className="context-item open"
+        onPointerDown={(event) => {
+          // Its own window, not the main view the panel is drawn from.
+          event.stopPropagation()
+          windows?.handlers.onFocus(key)
+        }}
+      >
         {mark}
         <div className="context-body">
           <ViewPane
@@ -359,14 +369,18 @@ function ContextItem(props: { id: string; props: OverviewProps }) {
             view={opened}
             shown={shown}
             interactive={false}
-            focused={false}
+            focused={windows?.focus === key}
             prompt={undefined}
             acting={null}
-            edit={null}
+            edit={windows?.edit ?? null}
             picking={null}
             find={null}
             working={undefined}
-            onSelect={() => {}}
+            onSelect={windows?.handlers.onSelect ?? (() => {})}
+            onToggle={windows?.handlers.onToggle}
+            onEditDraft={windows?.handlers.onEditDraft ?? chat.onEditDraft}
+            onCommitEdit={windows?.handlers.onCommitEdit ?? chat.onCommitEdit}
+            onCancelEdit={windows?.handlers.onCancelEdit ?? chat.onCancelEdit}
             onAction={undefined}
             onClose={toggle}
             onNearEnd={undefined}

@@ -6,6 +6,7 @@ import { memoryCore } from '../../core/testing.ts'
 import type { Api } from './api.ts'
 import { memoryEnvironment } from './environment.ts'
 import { Session } from './session.ts'
+import { contextWindow } from './state.ts'
 import { actionsNow, runTool, tools } from './tools.ts'
 
 /** The app with no screen: a Session over a Core, through the same Api the window uses. */
@@ -443,6 +444,39 @@ test('Tab in a chat goes to the next chat, newest made first, in its place on th
   session.nextChat(-1)
   assert.equal(focusedOf(session), 'c')
   assert.equal(session.get().state.trail.length, depth)
+  stop()
+})
+
+test('an item opened out in a chat\'s panel is a window: a press gives it the keys, and they move its own selection; Shift+A folds it', async () => {
+  const { core, session, stop, settle } = await headless()
+  core.owned.write([
+    ...values('chat', { type: 'claude.session', text: 'chat', context: 'ctx' }, 1, 'me'),
+    ...values('task', { text: 'task', context: 'ctx' }, 1, 'me'),
+    ...values('ctx', { type: 'context' }, 1, 'me'),
+    ...values('one', { text: 'one' }, 2, 'me'),
+    ...values('two', { text: 'two' }, 3, 'me'),
+    link('claude', 'chat', 1, 'me'),
+    link('ctx', 'chat', 1, 'me'),
+    link('ctx', 'task', 1, 'me'),
+    link('task', 'one', 2, 'me'),
+    link('task', 'two', 3, 'me'),
+  ])
+  session.enterModule('claude')
+  session.navigate('chat')
+  await settle()
+  session.toggleChatContext('task')
+  await settle()
+  assert.deepEqual(session.get().contextViews.task.rows.map((row) => row.entity.id), ['task', 'one', 'two'])
+  session.focusWindow(contextWindow('task'))
+  session.select(['task', 'one'])
+  session.move(1)
+  assert.equal(session.selected()?.entity.id, 'two')
+  // The chat's own selection is untouched.
+  assert.equal(session.get().shown.selectedPath.includes('two'), false)
+  session.back()
+  assert.equal(session.get().state.chatContext.chat, undefined)
+  assert.equal(session.get().state.window, null)
+  assert.equal(focusedOf(session), 'chat')
   stop()
 })
 
