@@ -7,9 +7,8 @@ import { kinds } from './kinds.tsx'
 import { ItemContext, KindsContext, PeekContext } from './primitives.tsx'
 import type { ItemGestures, PeekGestures } from './primitives.tsx'
 import type { ViewProps } from './types.ts'
-import { Button, ClockContext, HeaderPill, Modal, PillContent } from './primitives.tsx'
-import { useMemo, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent } from 'react'
+import { Button, ClockContext, HeaderPill, Modal, PillContent, SideSlotContext, useEdgeResize } from './primitives.tsx'
+import { useMemo, useState } from 'react'
 
 export interface PeekProps {
   peeks: Peek[]
@@ -91,11 +90,14 @@ export function App(props: {
   wipe: { label: string; stage: number; onWipe(): void; onCancel(): void; cancelLabel: string }
 }) {
   const { peek, windows } = props
+  // The element a page's own panel on the right is put into (a portal), once it is there.
+  const [slot, setSlot] = useState<HTMLElement | null>(null)
   return (
     <ClockContext.Provider value={props.now}>
     <KindsContext.Provider value={kinds}>
     <ItemContext.Provider value={props.items}>
       <PeekContext.Provider value={peek.gestures}>
+      <SideSlotContext.Provider value={slot}>
         <div className={`app${props.phone ? ' phone' : ''}`}>
           <nav className="modules">
             {props.modules.map((module) => (
@@ -125,6 +127,8 @@ export function App(props: {
             {props.view && <ViewPane {...props.view} />}
             {props.phone && <PhoneBar {...props.phone} />}
           </main>
+          {/* A page's own panel on the right (a chat's) goes here, beside the main view. */}
+          <div className="side-slot" ref={setSlot} />
           {props.side && <SidePanel {...props.side} windows={windows} onImage={props.onImage} />}
           {props.picking && <PickBar {...props.picking} />}
           {props.dialog && <SessionForm {...props.dialog} />}
@@ -164,6 +168,7 @@ export function App(props: {
             </div>
           )}
         </div>
+      </SideSlotContext.Provider>
       </PeekContext.Provider>
     </ItemContext.Provider>
     </KindsContext.Provider>
@@ -183,10 +188,6 @@ export interface SideProps {
   onResize(width: number): void
 }
 
-/** The narrowest the side panel goes, and the least it leaves the rest of the window. */
-const sideMin = 320
-const mainMin = 400
-
 /**
  * The panel on the right (Ctrl+Enter): an item in context with where I am,
  * mostly a Claude session. Pressing in it gives it the keys, as in a peek:
@@ -196,27 +197,7 @@ const mainMin = 400
 function SidePanel(props: SideProps & { windows: WindowsProps; onImage(ref: string | null): void }) {
   const { view, windows } = props
   const shown = windows.shown.side
-  // While dragging, the width follows the pointer here; it is kept when let go.
-  const [live, setLive] = useState<number | null>(null)
-  const grab = useRef<{ x: number; start: number } | null>(null)
-  const panel = useRef<HTMLElement>(null)
-  const clamp = (width: number) => Math.max(sideMin, Math.min(width, window.innerWidth - mainMin))
-  const begin = (event: ReactPointerEvent) => {
-    if (event.button !== 0 || !panel.current) return
-    event.preventDefault()
-    const start = panel.current.getBoundingClientRect().width
-    grab.current = { x: event.clientX, start }
-    setLive(start)
-  }
-  const drag = (event: ReactPointerEvent) => {
-    if (grab.current) setLive(clamp(grab.current.start + grab.current.x - event.clientX))
-  }
-  const end = () => {
-    if (grab.current && live !== null) props.onResize(live)
-    grab.current = null
-    setLive(null)
-  }
-  const width = live ?? props.width
+  const resize = useEdgeResize(props.width, props.onResize)
   const { handlers } = windows
   const draft = windows.drafts[props.id] ?? ''
   const composing = windows.focus === 'side' && windows.prompting
@@ -231,13 +212,12 @@ function SidePanel(props: SideProps & { windows: WindowsProps; onImage(ref: stri
   )
   return (
     <aside
-      ref={panel}
-      className="side"
-      style={width !== null ? { width: clamp(width) } : undefined}
+      ref={resize.ref}
+      className={`side${resize.dragging ? ' resizing' : ''}`}
+      style={resize.style}
       onPointerDown={() => handlers.onFocus('side')}
     >
-      <div className="side-resize" onPointerDown={begin} />
-      {live !== null && <div className="peek-capture" onPointerMove={drag} onPointerUp={end} onPointerCancel={end} />}
+      <div className="side-resize" {...resize.edge} />
       <div className="peek-bar">
         <span className="grow">
           <HeaderPill entity={view?.root} />

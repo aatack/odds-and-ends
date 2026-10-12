@@ -68,8 +68,8 @@ export interface State {
   side: string | null
   /** The side panel's width in px, once I have dragged it; null for its default. */
   sideWidth: number | null
-  /** What a chat's context pane has open in place of its overviews, by the chat's id. */
-  chatContext: Record<string, string>
+  /** The items in a chat's context pane opened out to their whole view, by the chat's id. */
+  chatContext: Record<string, string[]>
   /**
    * The window the keys act in: null for the main view, `side` for the side
    * panel, or a peek's key. Each has its own selection (by its root, in
@@ -549,15 +549,19 @@ export function restore(saved: unknown, root: string): State {
     peeks: Array.isArray(value.peeks) ? value.peeks.filter((peek) => peek.pinned).map((peek) => ({ ...peek, parent: peek.parent ?? null })) : [],
     side: typeof value.side === 'string' ? value.side : null,
     sideWidth: typeof value.sideWidth === 'number' ? value.sideWidth : null,
-    chatContext: value.chatContext && typeof value.chatContext === 'object' ? value.chatContext : {},
+    chatContext:
+      value.chatContext && typeof value.chatContext === 'object'
+        ? Object.fromEntries(Object.entries(value.chatContext).filter(([, ids]) => Array.isArray(ids)))
+        : {},
   }
 }
 
-/** Opens an item in a chat's context pane, or (null) goes back to the overviews there. */
-export function openInChatContext(state: State, chat: string, id: string | null): State {
-  if ((state.chatContext[chat] ?? null) === id) return state
+/** Opens an item in a chat's context pane out to its whole view, or folds it back to its overview. */
+export function toggleChatContext(state: State, chat: string, id: string): State {
+  const open = state.chatContext[chat] ?? []
+  const next = open.includes(id) ? open.filter((other) => other !== id) : [...open, id]
   const chatContext = { ...state.chatContext }
-  if (id === null) delete chatContext[chat]
-  else chatContext[chat] = id
+  if (next.length) chatContext[chat] = next
+  else delete chatContext[chat]
   return { ...state, chatContext }
 }

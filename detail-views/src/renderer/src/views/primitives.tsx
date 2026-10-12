@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useLayoutEffect, useRef } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import type { Badge as BadgeData, Entity } from '../../../core/types.ts'
 import { tints, type Kinds, type Tint } from './kindTypes.ts'
 import type { ReactNode } from 'react'
@@ -54,6 +55,55 @@ export function Composer(props: {
   if (props.kind === 'slack-token') return <input {...shared} type="password" autoFocus />
   return <textarea {...shared} rows={1} />
 }
+
+/** The narrowest a panel on the right goes, and the least it leaves the rest of the window. */
+const sideMin = 320
+const mainMin = 400
+
+/**
+ * A panel on the right whose left edge drags to resize it (the side panel,
+ * a chat's). The edge holds the pointer while it is dragged, so the drag
+ * follows it wherever it goes (over a webview too) and always ends; the width
+ * follows the pointer here, and is kept (`onResize`) when let go.
+ */
+export function useEdgeResize(stored: number | null, onResize: ((width: number) => void) | undefined) {
+  const ref = useRef<HTMLElement>(null)
+  const [live, setLive] = useState<number | null>(null)
+  const grab = useRef<{ x: number; start: number; width: number } | null>(null)
+  const clamp = (width: number) => Math.max(sideMin, Math.min(width, window.innerWidth - mainMin))
+  const end = () => {
+    const held = grab.current
+    grab.current = null
+    setLive(null)
+    if (held && held.width !== held.start) onResize?.(held.width)
+  }
+  const edge = {
+    onPointerDown: (event: ReactPointerEvent<HTMLElement>) => {
+      if (event.button !== 0 || !ref.current) return
+      event.preventDefault()
+      event.stopPropagation()
+      event.currentTarget.setPointerCapture(event.pointerId)
+      const start = ref.current.getBoundingClientRect().width
+      grab.current = { x: event.clientX, start, width: start }
+      setLive(start)
+    },
+    onPointerMove: (event: ReactPointerEvent<HTMLElement>) => {
+      const held = grab.current
+      if (!held) return
+      held.width = clamp(held.start + held.x - event.clientX)
+      setLive(held.width)
+    },
+    onPointerUp: end,
+    onPointerCancel: end,
+    onLostPointerCapture: end,
+  }
+  const width = live ?? stored
+  const style: CSSProperties | undefined = width !== null ? { width: clamp(width) } : undefined
+  return { ref, edge, style, dragging: live !== null }
+}
+
+/** Where a page puts its own panel on the right (a chat's): beside the main view, full height. Provided by App. */
+export const SideSlotContext = createContext<HTMLElement | null>(null)
 
 export function Status(props: { error: string | null }) {
   return props.error ? <div className="status">{props.error}</div> : null
