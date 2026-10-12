@@ -238,7 +238,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
     return {
       dialog: state.dialog,
       cwds: Array.isArray(cwds) ? (cwds as string[]) : [],
-      busy: working[focused(state)]?.includes('claude') ?? false,
+      busy: state.dialog.kind === 'topic' ? (working.topics?.includes('create') ?? false) : (working[focused(state)]?.includes('claude') ?? false),
       onChange: (fields: Partial<SessionDialog>) => session.setDialog(fields),
       onSubmit: () => session.submitDialog(),
       onCancel: () => session.cancelDialog(),

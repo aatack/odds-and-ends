@@ -15,7 +15,8 @@ doc for the area you change, and keep it up to date in the same commit.
   its box only adds a message, and Ctrl+Enter sends every message since the
   last dispatch to Claude at once. A topic's chat is a flat list with no
   selection; its box is closed until Enter opens it (Enter closes it again),
-  and never two dispatches at once. Its **Context** button (top right) shows
+  and never two dispatches at once. Ctrl+. makes a new topic (a form for
+  its name). Its **Context** button (top right) shows
   its directory and branch. A paste outside the box adds what it is: a
   file, a PR / Slack message / branch item, or a message. The classic UI below (modules, the
   sidebar) is behind a flag, `DETAIL_VIEWS_UI=classic`; the phone stays on
