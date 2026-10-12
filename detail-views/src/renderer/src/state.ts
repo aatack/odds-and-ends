@@ -72,7 +72,7 @@ export interface State {
   chatContext: Record<string, string[]>
   /**
    * The window the keys act in: null for the main view, `side` for the side
-   * panel, or a peek's key. Each has its own selection (by its root, in
+   * panel, a peek's key, or an item opened out in a chat's panel (`contextWindow`). Each has its own selection (by its root, in
    * `selections`). Not persisted.
    */
   window: string | null
@@ -187,10 +187,22 @@ export function closePeek(state: State, key: string | null): State {
   return { ...state, peeks, acting, composing: acting ? state.composing : false }
 }
 
-/** The entity a window is rooted at: the main view's, the side panel's, or a peek's (null for a page). */
+const contextPrefix = 'context:'
+
+/** The window of an item opened out in the panel of the chat on screen. */
+export const contextWindow = (id: string): string => `${contextPrefix}${id}`
+
+/** The item a window opened out in a chat's panel shows, or null for any other window. */
+export function contextItemOf(window: string | null): string | null {
+  return window?.startsWith(contextPrefix) ? window.slice(contextPrefix.length) : null
+}
+
+/** The entity a window is rooted at: the main view's, the side panel's, a peek's (null for a page), or an item opened out in the chat's panel (null once folded). */
 export function rootOf(state: State, window: string | null): string | null {
   if (window === null) return focused(state)
   if (window === 'side') return state.side
+  const opened = contextItemOf(window)
+  if (opened !== null) return (state.chatContext[focused(state)] ?? []).includes(opened) ? opened : null
   const target = state.peeks.find((peek) => peek.key === window)?.target
   return target?.kind === 'entity' ? target.id : null
 }
@@ -337,12 +349,6 @@ export function markRows(view: View, state: State, root: string, previous?: Show
     selectedPath,
     selectedIndex: rows.findIndex((row) => row.kind === 'entity' && row.selected),
   }
-}
-
-/** A view's rows with nothing selected or edited: an item opened in a chat's context pane. */
-export function inertRows(view: View): ShownView {
-  const rows: ShownRow[] = view.rows.map((row) => ({ kind: 'entity', key: row.key, row, selected: false, editing: false }))
-  return { rows, keys: rows.map((row) => row.key), selectedPath: [], selectedIndex: -1 }
 }
 
 /** The entity row under the selection, if any. */

@@ -124,7 +124,7 @@ export function App(props: {
                 ))}
               </div>
             )}
-            {props.view && <ViewPane {...props.view} />}
+            {props.view && <ViewPane {...props.view} windows={windows} />}
             {props.phone && <PhoneBar {...props.phone} />}
           </main>
           {/* A page's own panel on the right (a chat's) goes here, beside the main view. */}

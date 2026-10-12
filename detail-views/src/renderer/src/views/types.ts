@@ -1,5 +1,6 @@
 import type { View } from '../../../core/types.ts'
 import type { Edit, Pick, ShownView } from '../state.ts'
+import type { WindowsProps } from './App.tsx'
 
 /**
  * What a view is given: the tree, with the selection and any edit laid over
@@ -45,6 +46,8 @@ export interface ViewProps {
   onNewChat?(): void
   /** The items a chat's context pane has opened out, each walked as a view of its own, by id. */
   contextViews?: Record<string, View>
+  /** The windows the keys can be in (each opened-out item is one), for a page that has some of its own. */
+  windows?: WindowsProps
   /** Opens an item in a chat's context pane out to its whole view, or folds it back. */
   onContextToggle?(id: string): void
   /** The width of the panel on the right (a chat's, or the side panel), once dragged; and dragging it. */

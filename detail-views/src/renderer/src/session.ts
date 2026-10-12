@@ -223,6 +223,7 @@ export class Session {
     const mark = (window: string, root: string, view: View) => (windowShown[window] = S.markRows(view, state, root, previous.windowShown[window]))
     for (const peek of state.peeks) if (peek.target.kind === 'entity') mark(peek.key, peek.target.id, peekViews[peek.target.id])
     if (state.side && sideView) mark('side', state.side, sideView)
+    for (const id of opened) mark(S.contextWindow(id), id, contextViews[id])
     // Walks for views no longer anywhere are dropped.
     const live = new Set([root, ...Object.keys(peekViews), ...(state.side ? [state.side] : []), ...opened])
     for (const key of this.walks.keys()) if (!live.has(key)) this.walks.delete(key)
@@ -413,7 +414,9 @@ export class Session {
   /** Shift+A: pops the stack, or closes the side panel or peek the keys are in. */
   back(): void {
     const window = this.state.window
-    if (window === 'side') this.closeSide()
+    const opened = S.contextItemOf(window)
+    if (opened !== null) this.toggleChatContext(opened)
+    else if (window === 'side') this.closeSide()
     else if (window !== null) this.closePeek(window)
     else this.update(S.back(this.state))
   }
@@ -780,7 +783,9 @@ export class Session {
   /** Ctrl+Enter in a window's prompt box: closes that window. */
   closeWindow(): void {
     const window = this.state.window
-    if (window === 'side') this.closeSide()
+    const opened = S.contextItemOf(window)
+    if (opened !== null) this.toggleChatContext(opened)
+    else if (window === 'side') this.closeSide()
     else if (window !== null) this.closePeek(window)
   }
 
@@ -816,7 +821,7 @@ export class Session {
     const window = this.state.window
     const id = window === null ? null : S.rootOf(this.state, window)
     const text = id ? (this.state.drafts[id] ?? '') : ''
-    const view = window === 'side' ? this.snapshot.sideView : id ? this.snapshot.peekViews[id] : null
+    const view = window === 'side' ? this.snapshot.sideView : S.contextItemOf(window) !== null && id ? this.snapshot.contextViews[id] : id ? this.snapshot.peekViews[id] : null
     if (!id || !text.trim() || view?.compose == null) return
     this.update(S.setDraftFor(this.state, id, ''))
     this.settle(id, await this.api.submit(id, text))
