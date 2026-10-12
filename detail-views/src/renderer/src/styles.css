@@ -1661,18 +1661,6 @@ textarea:hover,
   box-shadow: inset 0 2px 5px var(--well-press);
 }
 
-/* What a chat's box writes, above it: the mode it is in marked, the other a click away. */
-.chat-modes {
-  display: flex;
-  gap: 4px;
-}
-
-.chat-modes .button.quiet {
-  font-size: 13px;
-  font-weight: 600;
-  padding: 3px 8px;
-}
-
 /* A note of mine in a chat: a line between the bubbles, not one of them. */
 .note-line {
   align-self: center;

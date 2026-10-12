@@ -46,9 +46,8 @@ export interface ViewProps {
   onNewChat?(): void
   /** The items a chat's context pane has opened out, each walked as a view of its own, by id. */
   contextViews?: Record<string, View>
-  /** What a chat's box writes (a prompt or a note), switching it, and opening a note of the chat in its panel. */
+  /** What a chat's box writes (a prompt or a note; ←/→ switch it), and opening a note of the chat in its panel. */
   chatMode?: ChatMode
-  onChatMode?(mode: ChatMode): void
   onOpenNote?(id: string): void
   /** The windows the keys can be in (each opened-out item is one), for a page that has some of its own. */
   windows?: WindowsProps
