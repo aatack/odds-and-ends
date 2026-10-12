@@ -1,4 +1,5 @@
 import { memo, useContext, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import type { Entity } from '../../../core/types.ts'
 import { shortTime } from '../format.ts'
 import { inertRows, type ShownRow } from '../state.ts'
@@ -6,7 +7,7 @@ import { hotkeyOf } from '../tools.ts'
 import type { OverviewProps, PillProps, RowProps, Tint } from './kindTypes.ts'
 import { Text } from './messages.tsx'
 import { noteClass } from './Notes.tsx'
-import { Button, ClockContext, Composer, HeaderPill, Highlight, ItemContext, KindsContext, Status } from './primitives.tsx'
+import { Button, ClockContext, Composer, HeaderPill, Highlight, ItemContext, KindsContext, SideSlotContext, Status, useEdgeResize } from './primitives.tsx'
 import { TextBox, ViewPane } from './View.tsx'
 
 /** The Claude mark (src/renderer/src/assets/claude.svg), in Claude's colour. */
@@ -256,9 +257,7 @@ export function ChatDetail(props: OverviewProps) {
           onCompose={props.onCompose}
         />
       </div>
-      <aside className="chat-context">
-        <ChatContext props={props} />
-      </aside>
+      <ChatPanel props={props} />
     </div>
   )
 }
@@ -296,77 +295,105 @@ function Answer(props: { entity: Entity }) {
 }
 
 /**
- * The chat's right pane: its own overview, then each item in its context as
- * an overview, framed apart. A click on one opens it here, as its whole view,
- * with an arrow back.
+ * The chat's panel on the right, beside the main view and as tall as it, as
+ * the side panel is (its left edge drags to resize it, the same width as
+ * that one): the chat's own overview at the top, then each item in its
+ * context, a rule between them, each opening out to its whole view in place.
+ * It scrolls when they are taller than it.
  */
-function ChatContext(props: { props: OverviewProps }) {
+function ChatPanel(props: { props: OverviewProps }) {
   const chat = props.props
-  const opened = chat.contextView ?? null
-  const shown = useMemo(() => (opened ? inertRows(opened) : null), [opened])
-  if (opened && shown) {
-    const back = () => chat.onContextOpen?.(null)
-    return (
-      <div className="context-open">
-        <div className="context-open-bar">
-          <Button quiet label="←" title="Back to the context" onClick={back} />
-          <HeaderPill entity={opened.root} />
-        </div>
-        <ViewPane
-          {...chat}
-          view={opened}
-          shown={shown}
-          interactive={false}
-          focused={false}
-          prompt={undefined}
-          acting={null}
-          edit={null}
-          picking={null}
-          find={null}
-          working={undefined}
-          onSelect={() => {}}
-          onAction={undefined}
-          onClose={back}
-          onNearEnd={undefined}
-        />
-      </div>
-    )
-  }
+  const slot = useContext(SideSlotContext)
+  const resize = useEdgeResize(chat.sideWidth ?? null, chat.onSideResize)
+  if (!slot) return null
   const peers = Array.isArray(chat.entity.data.contextPeers) ? (chat.entity.data.contextPeers as string[]) : []
-  return (
-    <>
-      <div className="context-card chat-own">
-        <SessionOverview {...chat} />
+  return createPortal(
+    <aside ref={resize.ref} className={`side chat-side${resize.dragging ? ' resizing' : ''}`} style={resize.style}>
+      <div className="side-resize" {...resize.edge} />
+      <div className="chat-side-body">
+        <div className="chat-own">
+          <SessionOverview {...chat} />
+        </div>
+        {peers.map((id) => (
+          <ContextItem key={id} id={id} props={chat} />
+        ))}
       </div>
-      {peers.map((id) => (
-        <ContextCard key={id} id={id} props={chat} />
-      ))}
-    </>
+    </aside>,
+    slot,
   )
 }
 
-/** An item in the chat's context, as its overview, framed apart from the others. A click opens it in the pane. */
-function ContextCard(props: { id: string; props: OverviewProps }) {
+/**
+ * An item in the chat's context: its overview, with a fold mark; opened out
+ * (the mark, or a click on it), its whole view in its place, as a peek shows
+ * it.
+ */
+function ContextItem(props: { id: string; props: OverviewProps }) {
+  const chat = props.props
   const kinds = useContext(KindsContext)!
   const { item } = useContext(ItemContext)
+  const opened = chat.contextViews?.[props.id] ?? null
+  const shown = useMemo(() => (opened ? inertRows(opened) : null), [opened])
   const entity = item(props.id)
-  if (!entity) return <div className="context-card muted">…</div>
+  const toggle = () => chat.onContextToggle?.(props.id)
+  if (!entity) return <div className="context-item muted">…</div>
+  const mark = (
+    <span
+      className="context-mark"
+      title={opened ? 'Fold' : 'Open out'}
+      onClick={(event) => {
+        event.stopPropagation()
+        toggle()
+      }}
+    >
+      {opened ? '▾' : '▸'}
+    </span>
+  )
+  if (opened && shown) {
+    return (
+      <div className="context-item open">
+        {mark}
+        <div className="context-body">
+          <ViewPane
+            {...chat}
+            view={opened}
+            shown={shown}
+            interactive={false}
+            focused={false}
+            prompt={undefined}
+            acting={null}
+            edit={null}
+            picking={null}
+            find={null}
+            working={undefined}
+            onSelect={() => {}}
+            onAction={undefined}
+            onClose={toggle}
+            onNearEnd={undefined}
+          />
+        </div>
+      </div>
+    )
+  }
   const Overview = kinds[entity.type].Overview
   // Its overview alone: no tree, no actions, nothing of the chat's own.
-  const view = { ...props.props.view, root: entity, rows: [], actions: [], older: false, compose: null, error: null, loading: false }
+  const view = { ...chat.view, root: entity, rows: [], actions: [], older: false, compose: null, error: null, loading: false }
   return (
-    <div className="context-card" onClick={() => props.props.onContextOpen?.(entity.id)}>
-      <Overview
-        {...props.props}
-        view={view}
-        shown={{ rows: [], keys: [], selectedPath: [], selectedIndex: -1 }}
-        interactive={false}
-        onAction={undefined}
-        onOlder={undefined}
-        onPause={undefined}
-        entity={entity}
-        findText={undefined}
-      />
+    <div className="context-item" onClick={toggle}>
+      {mark}
+      <div className="context-body">
+        <Overview
+          {...chat}
+          view={view}
+          shown={{ rows: [], keys: [], selectedPath: [], selectedIndex: -1 }}
+          interactive={false}
+          onAction={undefined}
+          onOlder={undefined}
+          onPause={undefined}
+          entity={entity}
+          findText={undefined}
+        />
+      </div>
     </div>
   )
 }

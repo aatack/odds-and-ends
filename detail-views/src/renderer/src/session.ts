@@ -18,8 +18,8 @@ export interface Snapshot {
   peekViews: Record<string, View>
   /** What the side panel shows, if it is open. */
   sideView: View | null
-  /** What the chat on screen has open in its context pane, if anything. */
-  contextView: View | null
+  /** The items the chat on screen has opened out in its context pane, walked, by id. */
+  contextViews: Record<string, View>
   /** The rows of each window but the main view (`side`, or a peek's key), with its selection and any edit laid over them. */
   windowShown: Record<string, S.ShownView>
   /** An item named on screen (a pill), presented. Reading one asks for it. */
@@ -116,7 +116,7 @@ export class Session {
     this.env = env
     this.cache = new EntityCache({ scan: (ids) => api.scan(ids), load: (request) => api.load(request), foreign: foreignOf })
     const state = S.restore(env.load(storageKey), 'slack')
-    this.snapshot = { state, modules: moduleInfos, view: null, shown: noRows, peekViews: {}, sideView: null, contextView: null, windowShown: {}, item: () => null, working: {}, now: Date.now(), findFocus: 0, centre: 0, toast: null }
+    this.snapshot = { state, modules: moduleInfos, view: null, shown: noRows, peekViews: {}, sideView: null, contextViews: {}, windowShown: {}, item: () => null, working: {}, now: Date.now(), findFocus: 0, centre: 0, toast: null }
     this.snapshot = this.derive(state)
   }
 
@@ -216,14 +216,15 @@ export class Session {
     const peekViews: Record<string, View> = {}
     for (const peek of state.peeks) if (peek.target.kind === 'entity') peekViews[peek.target.id] ??= this.walk(peek.target.id, state)
     const sideView = state.side ? this.walk(state.side, state) : null
-    const opened = state.chatContext[root] ?? null
-    const contextView = opened ? this.walk(opened, state) : null
+    const opened = state.chatContext[root] ?? []
+    const contextViews: Record<string, View> = {}
+    for (const id of opened) contextViews[id] = this.walk(id, state)
     const windowShown: Record<string, S.ShownView> = {}
     const mark = (window: string, root: string, view: View) => (windowShown[window] = S.markRows(view, state, root, previous.windowShown[window]))
     for (const peek of state.peeks) if (peek.target.kind === 'entity') mark(peek.key, peek.target.id, peekViews[peek.target.id])
     if (state.side && sideView) mark('side', state.side, sideView)
     // Walks for views no longer anywhere are dropped.
-    const live = new Set([root, ...Object.keys(peekViews), ...(state.side ? [state.side] : []), ...(opened ? [opened] : [])])
+    const live = new Set([root, ...Object.keys(peekViews), ...(state.side ? [state.side] : []), ...opened])
     for (const key of this.walks.keys()) if (!live.has(key)) this.walks.delete(key)
     for (const key of this.budgets.keys()) if (!live.has(key)) this.budgets.delete(key)
     const cache = this.cache.get()
@@ -242,7 +243,7 @@ export class Session {
             }
           })()
     this.itemsFrom = cache
-    return { ...previous, state, view, shown, peekViews, sideView, contextView, windowShown, item }
+    return { ...previous, state, view, shown, peekViews, sideView, contextViews, windowShown, item }
   }
 
   private itemsFrom: CacheState | null = null
@@ -369,9 +370,9 @@ export class Session {
     void this.api.visit(id)
   }
 
-  /** Opens an item in the context pane of the chat on screen, or (null) goes back to its overviews. */
-  openInChatContext(id: string | null): void {
-    this.update(S.openInChatContext(this.state, S.focused(this.state), id))
+  /** Opens an item in the context pane of the chat on screen out to its whole view, or folds it back. */
+  toggleChatContext(id: string): void {
+    this.update(S.toggleChatContext(this.state, S.focused(this.state), id))
   }
 
   /**

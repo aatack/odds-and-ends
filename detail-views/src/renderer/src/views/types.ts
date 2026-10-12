@@ -43,10 +43,13 @@ export interface ViewProps {
   onPause?(): void
   /** Opens the form for a new Claude session. */
   onNewChat?(): void
-  /** What a chat's context pane has open, walked as a view of its own; null for its overviews. */
-  contextView?: View | null
-  /** Opens an item in a chat's context pane, or (null) goes back to its overviews. */
-  onContextOpen?(id: string | null): void
+  /** The items a chat's context pane has opened out, each walked as a view of its own, by id. */
+  contextViews?: Record<string, View>
+  /** Opens an item in a chat's context pane out to its whole view, or folds it back. */
+  onContextToggle?(id: string): void
+  /** The width of the panel on the right (a chat's, or the side panel), once dragged; and dragging it. */
+  sideWidth?: number | null
+  onSideResize?(width: number): void
   onDraft(text: string): void
   onCompose(composing: boolean): void
   /** The view's find: null while it has none, the text while the field is open. */
