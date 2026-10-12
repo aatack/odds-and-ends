@@ -1,4 +1,4 @@
-import { memo, useContext, useEffect, useLayoutEffect, useRef } from 'react'
+import { memo, useContext, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { Entity } from '../../../core/types.ts'
 import { shortTime } from '../format.ts'
@@ -199,7 +199,10 @@ const ChatCard = memo(function ChatCard(props: { shown: EntityRow; onOpen(id: st
  */
 export function ChatDetail(props: OverviewProps) {
   const { entity, view } = props
-  const messages = childRows(props)
+  // Everything under the chat, as the tree walks it (notes under notes too), the root apart.
+  const rows = props.shown.rows.filter((row) => row.kind === 'input' || row.row.depth > 0)
+  // Typing in the box, the chat marks no row; picking rows, the box is dimmed.
+  const prompting = props.composing && !props.acting
   // Opens at the bottom, and stays there as messages come, while it is there.
   const ref = useRef<HTMLDivElement>(null)
   const inner = useRef<HTMLDivElement>(null)
@@ -218,9 +221,8 @@ export function ChatDetail(props: OverviewProps) {
     observer.observe(content)
     return () => observer.disconnect()
   }, [])
-  const input = props.shown.rows.find((row) => row.kind === 'input')
   return (
-    <div className="pane chat-page">
+    <div className={`pane chat-page${prompting ? ' prompting' : ''}`}>
       <div className="chat-main">
         <div
           ref={ref}
@@ -232,15 +234,19 @@ export function ChatDetail(props: OverviewProps) {
           }}
         >
           <div ref={inner} className="bubbles-inner">
-            {messages.map((shown) => (
-              <Bubble key={shown.key} shown={shown} props={props} />
-            ))}
-            {input && (
-              <div className="bubble-line">
-                <div className="bubble note">
-                  <TextBox edit={props.edit} onEditDraft={props.onEditDraft} />
+            {rows.map((shown) =>
+              shown.kind === 'input' ? (
+                <div key={shown.key} className="chat-row selected" style={chatIndent(shown.depth)}>
+                  <div className="note-line">
+                    <NoteMark />
+                    <div className="note-line-text">
+                      <TextBox edit={props.edit} onEditDraft={props.onEditDraft} />
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <ChatRow key={shown.key} shown={shown} props={props} prompting={prompting} />
+              ),
             )}
           </div>
         </div>
@@ -264,40 +270,63 @@ export function ChatDetail(props: OverviewProps) {
 
 const modeNames: Record<ChatMode, string> = { prompt: 'Prompt', note: 'Note' }
 
+/** Rows under a message or a note are indented under it, as in a tree. */
+const chatIndent = (depth: number) => ({ paddingLeft: (depth - 1) * 22 })
+
 /** The note mark (src/renderer/src/assets/note.svg). */
 function NoteMark() {
   return <span className="note-mark" role="img" aria-label="Note" />
 }
 
-/** A message as a bubble: a prompt on the right, an answer on the left; a note of mine across the whole width, in full, without a bubble. */
-function Bubble(props: { shown: EntityRow; props: OverviewProps }) {
+/**
+ * A row of the chat, selectable like any row (a click, or the keys while the
+ * box doesn't have them), marked by a rail at its left that keeps clear of
+ * the bubbles' fills: a prompt as a bubble on the right, an answer on the
+ * left, a note (or anything else) across the width, in full, with its mark
+ * and its fold mark when it has rows under it.
+ */
+function ChatRow(props: { shown: EntityRow; props: OverviewProps; prompting: boolean }) {
   const { shown } = props
-  const { entity } = shown.row
-  if (entity.type === 'note' && !shown.editing) {
-    return (
-      <div className="note-line" onClick={() => props.props.onOpenNote?.(entity.id)}>
-        <NoteMark />
-        <div className="note-line-text">
-          <Text text={text(entity.data)} />
+  const { entity, depth } = shown.row
+  const kinds = useContext(KindsContext)!
+  const ref = useRef<HTMLDivElement>(null)
+  const marked = shown.selected && !props.prompting
+  useEffect(() => {
+    if (marked) ref.current?.scrollIntoView({ block: 'nearest' })
+  }, [marked])
+  const editing = shown.editing ? <TextBox edit={props.props.edit} onEditDraft={props.props.onEditDraft} /> : null
+  const frame = (content: ReactNode) => (
+    <div ref={ref} className={`chat-row${marked ? ' selected' : ''}`} style={chatIndent(depth)} onMouseDown={() => props.props.onSelect(shown.row.path)}>
+      {content}
+    </div>
+  )
+  const fold = shown.row.hasChildren ? <span className="chat-fold">{shown.row.open ? '▾' : '▸'}</span> : null
+  if (entity.type === 'claude.prompt' || entity.type === 'claude.response') {
+    const mine = entity.type === 'claude.prompt'
+    const failed = typeof entity.data.error === 'string' && entity.data.error
+    return frame(
+      <div className={`bubble-line ${mine ? 'right' : 'left'}`}>
+        {!mine && fold}
+        <div className={`bubble ${mine ? 'mine' : failed ? 'theirs failed' : 'theirs'}`}>
+          {editing ?? (mine ? <Text text={text(entity.data)} /> : <Answer entity={entity} />)}
         </div>
-      </div>
+        {mine && fold}
+      </div>,
     )
   }
-  const mine = entity.type === 'claude.prompt'
-  const failed = typeof entity.data.error === 'string' && entity.data.error
-  const kind = mine ? 'mine' : entity.type === 'claude.response' ? (failed ? 'theirs failed' : 'theirs') : 'note'
-  return (
-    <div className={`bubble-line ${mine ? 'right' : 'left'}`}>
-      <div className={`bubble ${kind}`}>
-        {shown.editing ? (
-          <TextBox edit={props.props.edit} onEditDraft={props.props.onEditDraft} />
-        ) : entity.type === 'claude.response' ? (
-          <Answer entity={entity} />
-        ) : (
-          <Text text={text(entity.data)} />
-        )}
+  const Row = kinds[entity.type].Row
+  return frame(
+    <div className="note-line">
+      {fold ?? (entity.type === 'note' ? <NoteMark /> : <span className="chat-fold" />)}
+      <div className="note-line-text">
+        {editing ??
+          (entity.type === 'note' ? (
+            <Text text={text(entity.data)} />
+          ) : (
+            <Row entity={entity} parent={shown.row.parent} above={shown.row.above} onOpen={props.props.onOpen} onImage={props.props.onImage} />
+          ))}
       </div>
-    </div>
+    </div>,
   )
 }
 

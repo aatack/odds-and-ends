@@ -28,7 +28,8 @@ export const claudeView: ModuleView = {
   root: claudeIds.root,
   typeOf: (id) => (id === claudeIds.root ? 'claude.home' : null),
   owns: (type) => type.startsWith('claude.'),
-  openByDefault: (type) => type === 'claude.home',
+  // A chat's messages show the notes under them without opening them.
+  openByDefault: (type) => type === 'claude.home' || type === 'claude.prompt' || type === 'claude.response',
   // A session reads like chat: the newest at the bottom, where the cursor starts.
   newestFirst: (type) => type === 'claude.session',
   compose: (entity) => (entity.type === 'claude.session' ? 'claude' : null),
