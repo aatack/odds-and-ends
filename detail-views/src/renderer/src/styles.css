@@ -1724,7 +1724,6 @@ textarea:hover,
 /* While the rows have the keys, the box steps back. */
 .chat-page:not(.prompting) .chat-main > .composer {
   opacity: 0.55;
-  box-shadow: none;
 }
 
 .chat-fold {
