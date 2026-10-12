@@ -1,6 +1,7 @@
 import { EntityCache, type CacheState } from '../../core/graph/cache.ts'
 import { findInContext, foreignOf, itemOf, lensOf, moduleInfos, viewOf } from '../../core/present.ts'
 import { activity } from '../../core/modules/slack/view.ts'
+import { awaitingMe, byRecent, claudeIds } from '../../core/modules/claude/view.ts'
 import { entityScheme, type Entity, type ModuleInfo, type NoteValues, type Outcome, type View, type ViewRow } from '../../core/types.ts'
 import type { Api } from './api.ts'
 import type { Environment } from './environment.ts'
@@ -360,6 +361,36 @@ export class Session {
     if (S.focused(this.state) === id) return
     this.update(S.navigate(this.state, id))
     void this.api.visit(id)
+  }
+
+  /**
+   * Tab (Shift+Tab) in a chat's prompt box: the next (previous) chat waiting
+   * for me, in the list's order, round from this one. It takes this chat's
+   * place on the stack, so going through them doesn't pile them up.
+   */
+  nextChat(delta: 1 | -1): void {
+    const here = S.focused(this.state)
+    const source = this.cache.source(this.cache.get())
+    const chats = byRecent(
+      lensOf(source)
+        .children(claudeIds.root)
+        .flatMap((id) => {
+          const item = itemOf(id, source)
+          return item?.type === 'claude.session' ? [item] : []
+        }),
+    )
+    const n = chats.length
+    const at = chats.findIndex((chat) => chat.id === here)
+    const start = at >= 0 ? at : delta > 0 ? -1 : n
+    for (let step = 1; step <= n; step++) {
+      const chat = chats[(((start + delta * step) % n) + n) % n]
+      if (chat.id !== here && awaitingMe(chat)) {
+        this.update(S.replace(this.state, chat.id))
+        void this.api.visit(chat.id)
+        return
+      }
+    }
+    this.showToast('No other chat is waiting')
   }
 
   /** Enters a module: the stack starts again at its root. */

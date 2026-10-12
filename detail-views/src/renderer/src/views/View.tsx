@@ -31,8 +31,9 @@ export function ViewPane(props: ViewProps) {
     )
   }
   const root = view.root
+  // A whole page of its own only in the main view; a peek or the side panel shows the tree.
   const Detail = kinds[root.type].Detail
-  if (Detail) return <Detail {...props} entity={root} />
+  if (Detail && props.interactive) return <Detail {...props} entity={root} />
   const Overview = kinds[root.type].Overview
   const action = view.actions.find((offered) => offered.id === props.acting)
   // Typing the next prompt, the chat doesn't mark a row: the box is where I am.
@@ -251,7 +252,7 @@ function EditBox(props: { props: ViewProps }) {
   return <TextBox edit={props.props.edit} onEditDraft={props.props.onEditDraft} />
 }
 
-function TextBox(props: { edit: Edit | null; onEditDraft(text: string): void }) {
+export function TextBox(props: { edit: Edit | null; onEditDraft(text: string): void }) {
   const { edit, onEditDraft } = props
   return (
     <input

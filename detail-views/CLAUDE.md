@@ -118,7 +118,10 @@ doc for the area you change, and keep it up to date in the same commit.
   from the notes: it sits only under `claude`, and each prompt and then its
   response go under it, in order (`claudeCreate`, `claudePrompt`). Its view
   is that chat, with the box for the next prompt below it, focused; an answer
-  is kept whole in one response item.
+  is kept whole in one response item. The Claude module's pages are an
+  experiment after chat apps (a list of chats, bubbles, the context beside
+  them, Tab to the next chat waiting for me; `docs/claude.md` 21f): there,
+  a click opens a chat or a context item.
 - **Recents are temporary.** Pushing a view of an item that has a type (not a
   plain note) re-writes its link under `recents` in the cache store at that
   time, which moves it to the front; the Recents module lists them newest
@@ -212,7 +215,7 @@ doc for the area you change, and keep it up to date in the same commit.
   duration, a count) goes on the right, and may show only on hover.
 - No animations. The cursor never becomes a pointer.
 - **Anything interactable shows it on hover** (rows, pills, links, sidebar
-  entries, thumbnails, buttons), since the cursor never changes. Every button
+  entries, thumbnails, buttons; a text box gets a faint shadow inside its edge), since the cursor never changes. Every button
   is `Button` (`views/primitives.tsx`): a soft gray fill, darker on hover and
   pressed, no border (after entity-graph). A button whose action has a key
   shows it first, in a key cap, read from the tool registry (`hotkeyOf`).

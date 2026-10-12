@@ -1,9 +1,13 @@
-import { memo, useContext } from 'react'
+import { memo, useContext, useEffect, useLayoutEffect, useRef } from 'react'
 import type { Entity } from '../../../core/types.ts'
+import { shortTime } from '../format.ts'
+import type { ShownRow } from '../state.ts'
+import { hotkeyOf } from '../tools.ts'
 import type { OverviewProps, PillProps, RowProps, Tint } from './kindTypes.ts'
 import { Text } from './messages.tsx'
 import { noteClass } from './Notes.tsx'
-import { ClockContext, HeaderPill, Highlight } from './primitives.tsx'
+import { Button, ClockContext, Composer, HeaderPill, Highlight, ItemContext, KindsContext, Status } from './primitives.tsx'
+import { TextBox } from './View.tsx'
 
 /** The Claude mark (src/renderer/src/assets/claude.svg), in Claude's colour. */
 export function ClaudeMark(props: { large?: boolean }) {
@@ -130,5 +134,203 @@ export function ResponsePill(props: PillProps) {
     <span className="item-name">
       <ClaudeMark /> {data.running ? 'Working…' : <Text text={text(data).split('\n')[0]} find={props.findText} inline />}
     </span>
+  )
+}
+
+// --- The chat pages ----------------------------------------------------------------
+//
+// An experiment, after chat apps: the module is a list of chats, and a chat is
+// bubbles, mine on the right, with what is in its context beside it. Only in
+// the main view; a peek or the side panel shows the usual tree.
+
+type EntityRow = Extract<ShownRow, { kind: 'entity' }>
+
+const childRows = (props: OverviewProps): EntityRow[] =>
+  props.shown.rows.filter((row): row is EntityRow => row.kind === 'entity' && row.row.depth === 1)
+
+/** The Claude module: every chat, the most recently active first. A click opens one. */
+export function ChatListDetail(props: OverviewProps) {
+  const chats = childRows(props)
+  return (
+    <div className="pane chat-list">
+      <div className="title">
+        <HeaderPill entity={props.entity} />
+        {props.onNewChat && <Button label="New chat" hotkey={hotkeyOf('claude.new')} onClick={props.onNewChat} />}
+      </div>
+      <div className="chat-cards">
+        {chats.map((shown) => (
+          <ChatCard key={shown.key} shown={shown} onOpen={props.onOpen} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** A chat in the list: its name and when it was last active, then its newest message (or how long Claude has been on it). */
+const ChatCard = memo(function ChatCard(props: { shown: EntityRow; onOpen(id: string): void }) {
+  const { entity } = props.shown.row
+  const { data } = entity
+  const now = useContext(ClockContext)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (props.shown.selected) ref.current?.scrollIntoView({ block: 'nearest' })
+  }, [props.shown.selected])
+  const running = typeof data.runningSince === 'number'
+  const last = typeof data.lastText === 'string' ? data.lastText.split('\n').find((line) => line.trim()) ?? '' : ''
+  return (
+    <div ref={ref} className={`chat-card${props.shown.selected ? ' selected' : ''}`} onClick={() => props.onOpen(entity.id)}>
+      <div className="chat-card-top">
+        <ClaudeMark /> <span className="chat-card-name">{text(data, 'Session')}</span>
+        <span className="chat-card-time muted">{running ? `${elapsed(now - (data.runningSince as number))}` : shortTime(String(entity.updatedAt / 1000))}</span>
+      </div>
+      <div className="chat-card-last muted">
+        {running ? 'Working…' : last ? <>{data.lastMine ? 'You: ' : ''}<Text text={last} inline /></> : String(data.cwd ?? '')}
+      </div>
+    </div>
+  )
+})
+
+/**
+ * A chat: its name above, its prompts and answers as bubbles (mine on the
+ * right), the prompt box below with the keyboard, and the overview of each
+ * item in its context to the right. Tab in the box goes on to the next chat
+ * waiting for me.
+ */
+export function ChatDetail(props: OverviewProps) {
+  const { entity, view } = props
+  const messages = childRows(props)
+  const peers = Array.isArray(entity.data.contextPeers) ? (entity.data.contextPeers as string[]) : []
+  const prompting = props.composing && !props.acting
+  // Opens at the bottom, and stays there as messages come, while it is there.
+  const ref = useRef<HTMLDivElement>(null)
+  const inner = useRef<HTMLDivElement>(null)
+  const atEnd = useRef(true)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (el && atEnd.current) el.scrollTop = el.scrollHeight
+  })
+  useEffect(() => {
+    const el = ref.current
+    const content = inner.current
+    if (!el || !content) return
+    const observer = new ResizeObserver(() => {
+      if (atEnd.current) el.scrollTop = el.scrollHeight
+    })
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [])
+  const input = props.shown.rows.find((row) => row.kind === 'input')
+  return (
+    <div className={`pane chat-page${prompting ? ' prompting' : ''}`}>
+      <div className="chat-main">
+        <div className="chat-title" onMouseDown={() => props.onSelect([entity.id])}>
+          <SessionOverview {...props} />
+        </div>
+        <div
+          ref={ref}
+          className="bubbles"
+          onScroll={(event) => {
+            const el = event.currentTarget
+            atEnd.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 4
+            if (el.scrollTop < 200) props.onNearEnd?.()
+          }}
+        >
+          <div ref={inner} className="bubbles-inner">
+            {messages.map((shown) => (
+              <Bubble key={shown.key} shown={shown} props={props} prompting={prompting} />
+            ))}
+            {input && (
+              <div className="bubble-line">
+                <div className="bubble note">
+                  <TextBox edit={props.edit} onEditDraft={props.onEditDraft} />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        <Status error={view.error} />
+        <Composer
+          key={entity.id}
+          kind="claude"
+          field="prompt"
+          autoFocus
+          placeholder="Prompt"
+          draft={props.draft}
+          composing={props.composing}
+          onDraft={props.onDraft}
+          onCompose={props.onCompose}
+        />
+      </div>
+      {peers.length > 0 && (
+        <aside className="chat-context">
+          {peers.map((id) => (
+            <ContextCard key={id} id={id} props={props} />
+          ))}
+        </aside>
+      )}
+    </div>
+  )
+}
+
+/** A message as a bubble: a prompt on the right, an answer on the left. A click selects it, for the keys. */
+function Bubble(props: { shown: EntityRow; props: OverviewProps; prompting: boolean }) {
+  const { shown } = props
+  const { entity } = shown.row
+  const ref = useRef<HTMLDivElement>(null)
+  const marked = shown.selected && !props.prompting
+  useEffect(() => {
+    if (marked) ref.current?.scrollIntoView({ block: 'nearest' })
+  }, [marked])
+  const mine = entity.type === 'claude.prompt'
+  const failed = typeof entity.data.error === 'string' && entity.data.error
+  const kind = mine ? 'mine' : entity.type === 'claude.response' ? (failed ? 'theirs failed' : 'theirs') : 'note'
+  return (
+    <div ref={ref} className={`bubble-line ${mine ? 'right' : 'left'}`}>
+      <div className={`bubble ${kind}${marked ? ' selected' : ''}`} onMouseDown={() => props.props.onSelect(shown.row.path)}>
+        {shown.editing ? (
+          <TextBox edit={props.props.edit} onEditDraft={props.props.onEditDraft} />
+        ) : entity.type === 'claude.response' ? (
+          <Answer entity={entity} />
+        ) : (
+          <Text text={text(entity.data)} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Claude's answer in a bubble: how long it has been working, the error in its place, or the answer in full. */
+function Answer(props: { entity: Entity }) {
+  const { data } = props.entity
+  const now = useContext(ClockContext)
+  const failed = typeof data.error === 'string' && data.error
+  if (data.running) return <span className="muted">Working… {elapsed(now - props.entity.createdAt)}</span>
+  if (failed) return <span className="error-text">{failed}</span>
+  return <Text text={text(data)} />
+}
+
+/** An item in the chat's context, as its overview, framed apart from the others. A click opens it. */
+function ContextCard(props: { id: string; props: OverviewProps }) {
+  const kinds = useContext(KindsContext)!
+  const { item } = useContext(ItemContext)
+  const entity = item(props.id)
+  if (!entity) return <div className="context-card muted">…</div>
+  const Overview = kinds[entity.type].Overview
+  // Its overview alone: no tree, no actions, nothing of the chat's own.
+  const view = { ...props.props.view, root: entity, rows: [], actions: [], older: false, compose: null, error: null, loading: false }
+  return (
+    <div className="context-card" onClick={() => props.props.onOpen(entity.id)}>
+      <Overview
+        {...props.props}
+        view={view}
+        shown={{ rows: [], keys: [], selectedPath: [], selectedIndex: -1 }}
+        interactive={false}
+        onAction={undefined}
+        onOlder={undefined}
+        onPause={undefined}
+        entity={entity}
+        findText={undefined}
+      />
+    </div>
   )
 }
