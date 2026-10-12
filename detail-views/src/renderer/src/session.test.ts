@@ -415,24 +415,27 @@ test('a peek pressed in takes the keys: its own cursor, notes and prompt box, an
   stop()
 })
 
-test('Tab in a chat goes on to the next chat waiting for me, in its place on the stack; Shift+Tab goes back', async () => {
+test('Tab in a chat goes to the next chat, newest made first, in its place on the stack; Shift+Tab goes back', async () => {
   const { core, session, stop, settle } = await headless()
   core.owned.write([
     ...values('a', { type: 'claude.session', text: 'a' }, 3, 'me'),
     ...values('b', { type: 'claude.session', text: 'b', runningSince: 2 }, 2, 'me'),
     ...values('c', { type: 'claude.session', text: 'c' }, 1, 'me'),
+    // c was active last: first in the list, but not in Tab's order.
+    ...values('c', { lastRead: 0 }, 9, 'me'),
     link('claude', 'a', 3, 'me'),
     link('claude', 'b', 2, 'me'),
     link('claude', 'c', 1, 'me'),
   ])
   session.enterModule('claude')
   await settle()
-  // Most recently active first.
-  assert.deepEqual(session.get().view!.rows.slice(1).map((row) => row.entity.id), ['a', 'b', 'c'])
+  assert.deepEqual(session.get().view!.rows.slice(1).map((row) => row.entity.id), ['c', 'a', 'b'])
   session.navigate('a')
   await settle()
   const depth = session.get().state.trail.length
-  // b is still answering: skipped.
+  // b too, though Claude is answering in it; round from the last to the first.
+  session.nextChat(1)
+  assert.equal(focusedOf(session), 'b')
   session.nextChat(1)
   assert.equal(focusedOf(session), 'c')
   session.nextChat(1)

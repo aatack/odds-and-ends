@@ -120,8 +120,8 @@ doc for the area you change, and keep it up to date in the same commit.
   is that chat, with the box for the next prompt below it, focused; an answer
   is kept whole in one response item. The Claude module's pages are an
   experiment after chat apps (a list of chats, bubbles, the context beside
-  them, Tab to the next chat waiting for me; `docs/claude.md` 21f): there,
-  a click opens a chat or a context item.
+  them, Tab to the next chat; `docs/claude.md` 21f): there, a click opens a
+  chat, or a context item in the pane beside it.
 - **Recents are temporary.** Pushing a view of an item that has a type (not a
   plain note) re-writes its link under `recents` in the cache store at that
   time, which moves it to the front; the Recents module lists them newest

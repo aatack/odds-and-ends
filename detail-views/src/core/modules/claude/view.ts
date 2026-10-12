@@ -8,9 +8,12 @@ export function byRecent(sessions: Entity[]): Entity[] {
   return [...sessions].sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
-/** Whether a chat is waiting for me: Claude isn't answering in it. (More conditions to come.) */
-export function awaitingMe(session: Entity): boolean {
-  return typeof session.data.runningSince !== 'number'
+/**
+ * Chats in the order Tab goes through them: newest made first. Fixed, unlike
+ * the list's (a prompt would move this chat), so Shift+Tab undoes Tab.
+ */
+export function byMade(sessions: Entity[]): Entity[] {
+  return [...sessions].sort((a, b) => b.createdAt - a.createdAt)
 }
 
 /**
