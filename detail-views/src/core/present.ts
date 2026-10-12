@@ -5,6 +5,7 @@ import { githubView } from './modules/github/view.ts'
 import { recentsView } from './modules/recents/view.ts'
 import { slackView } from './modules/slack/view.ts'
 import { tasksView } from './modules/tasks/view.ts'
+import { topicsView } from './modules/topics/view.ts'
 import { itemTypes } from './types.ts'
 import type { Action, ComposeKind, Entity, Focus, Freshness, ItemType, ModuleInfo, View, ViewRow } from './types.ts'
 
@@ -56,7 +57,7 @@ export interface ModuleView {
 }
 
 /** The sidebar, in order. */
-export const moduleViews: ModuleView[] = [slackView, githubView, tasksView, claudeView, recentsView]
+export const moduleViews: ModuleView[] = [slackView, githubView, tasksView, claudeView, recentsView, topicsView]
 
 export const moduleInfos: ModuleInfo[] = moduleViews.map(({ id, name, root }) => ({ id, name, root }))
 

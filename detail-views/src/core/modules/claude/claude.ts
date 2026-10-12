@@ -10,7 +10,7 @@ import { me } from '../tasks/tasks.ts'
 import { claudeIds as ids, claudeView } from './view.ts'
 
 /** The author of what Claude writes back: not mine to undo. */
-const author = 'claude'
+export const author = 'claude'
 /** How a session decides what it may do without asking: Claude Code's auto mode. */
 export const defaultPermissionMode = 'auto'
 /** The model every session runs on, for now. */
@@ -262,55 +262,65 @@ export class Claude implements Module {
   }
 
   private async answer(session: string, responseId: string, text: string, notes: string | null): Promise<void> {
-    const data = this.context.data.get(session)
-    const cwd = expandHome(String(data.cwd))
-    const mode = String(data.permissionMode ?? defaultPermissionMode)
-    const started = Boolean(data.started)
-    // The session says it is running, and since when, while an answer is under way.
-    const since = this.context.now()
-    this.context.owned.write([value(session, 'runningSince', since, since, author)])
     // The first prompt says what the session is in context with; later ones resume it, so it knows.
+    const started = Boolean(this.context.data.get(session).started)
     const lines = [started ? null : contextLine(session, this.context.lens), notes].filter((line) => line !== null)
-    const args = [
-      '-p',
-      lines.length ? `${lines.join('\n')}\n\n${text}` : text,
-      '--output-format',
-      'json',
-      '--model',
-      model,
-      '--permission-mode',
-      mode,
-      ...(started ? ['--resume', session] : ['--session-id', session]),
-      // The app's own MCP server (read-only), its tools allowed. Last: both flags take lists.
-      ...mcpArgs(this.context.mcp()),
-    ]
-    try {
-      const out = JSON.parse(await this.context.run(claudeProgram(), args, cwd)) as { result?: string; is_error?: boolean; total_cost_usd?: number }
-      // A failure is said in place of the answer: Claude's own words for it, if it gave any.
-      const failed = out.is_error ? (out.result || 'Claude reported an error') : null
-      const at = this.context.now()
-      // The answer whole, in the one response item (`b` splits it if I want).
-      this.context.owned.write([
-        ...values(responseId, { text: failed ?? out.result ?? '', running: false, error: failed, cost: out.total_cost_usd ?? null }, at, author),
-        ...(started ? [] : [value(session, 'started', true, this.context.now(), author)]),
-        value(session, 'runningSince', null, at, author),
-      ])
-    } catch (error) {
-      // Claude may still have said why, as JSON, on its way out.
-      const said = (() => {
-        try {
-          return (JSON.parse(String((error as { stdout?: string }).stdout ?? '')) as { result?: string }).result
-        } catch {
-          return undefined
-        }
-      })()
-      const message = error instanceof Error ? error.message : String(error)
-      const failed = said ? `${said}\n\n${message}` : message
-      const at = this.context.now()
-      this.context.owned.write([
-        ...values(responseId, { text: failed, running: false, error: failed }, at, author),
-        value(session, 'runningSince', null, at, author),
-      ])
-    }
+    await ask(this.context, session, responseId, lines.length ? `${lines.join('\n')}\n\n${text}` : text)
+  }
+}
+
+/**
+ * Runs one prompt of a session (any item standing as one: its id is Claude's
+ * session id, its `cwd`, `permissionMode` and `started` say how) with
+ * `claude -p`, and puts the answer, or what went wrong, in `responseId`. The
+ * session says it is running, and since when, while it does.
+ */
+export async function ask(context: ModuleContext, session: string, responseId: string, prompt: string): Promise<void> {
+  const data = context.data.get(session)
+  const cwd = expandHome(String(data.cwd))
+  const mode = String(data.permissionMode ?? defaultPermissionMode)
+  const started = Boolean(data.started)
+  const since = context.now()
+  context.owned.write([value(session, 'runningSince', since, since, author)])
+  const args = [
+    '-p',
+    prompt,
+    '--output-format',
+    'json',
+    '--model',
+    model,
+    '--permission-mode',
+    mode,
+    ...(started ? ['--resume', session] : ['--session-id', session]),
+    // The app's own MCP server (read-only), its tools allowed. Last: both flags take lists.
+    ...mcpArgs(context.mcp()),
+  ]
+  try {
+    const out = JSON.parse(await context.run(claudeProgram(), args, cwd)) as { result?: string; is_error?: boolean; total_cost_usd?: number }
+    // A failure is said in place of the answer: Claude's own words for it, if it gave any.
+    const failed = out.is_error ? (out.result || 'Claude reported an error') : null
+    const at = context.now()
+    // The answer whole, in the one response item (`b` splits it if I want).
+    context.owned.write([
+      ...values(responseId, { text: failed ?? out.result ?? '', running: false, error: failed, cost: out.total_cost_usd ?? null }, at, author),
+      ...(started ? [] : [value(session, 'started', true, context.now(), author)]),
+      value(session, 'runningSince', null, at, author),
+    ])
+  } catch (error) {
+    // Claude may still have said why, as JSON, on its way out.
+    const said = (() => {
+      try {
+        return (JSON.parse(String((error as { stdout?: string }).stdout ?? '')) as { result?: string }).result
+      } catch {
+        return undefined
+      }
+    })()
+    const message = error instanceof Error ? error.message : String(error)
+    const failed = said ? `${said}\n\n${message}` : message
+    const at = context.now()
+    context.owned.write([
+      ...values(responseId, { text: failed, running: false, error: failed }, at, author),
+      value(session, 'runningSince', null, at, author),
+    ])
   }
 }

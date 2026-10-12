@@ -16,6 +16,7 @@ import {
   SessionRow,
 } from './Claude.tsx'
 import type { Kinds } from './kindTypes.ts'
+import { TopicDetail, TopicPill, TopicRow } from './Topics.tsx'
 import { ContextPill, HomePill, NoteOverview, NotePill, NoteRow, PillOverview, PillRow, TaskOverview, TaskPill, TaskRow } from './Notes.tsx'
 import {
   ConversationOverview,
@@ -55,4 +56,6 @@ export const kinds: Kinds = {
   'recents.home': { Pill: HomePill, Overview: PillOverview, Row: PillRow },
   context: { Pill: ContextPill, Overview: PillOverview, Row: PillRow },
   'claude.response': { Pill: ResponsePill, Overview: ResponseOverview, Row: ResponseRow, tint: responseTint },
+  'topics.home': { Pill: HomePill, Overview: PillOverview, Row: PillRow },
+  topic: { Pill: TopicPill, Overview: PillOverview, Row: TopicRow, Detail: TopicDetail },
 }

@@ -164,7 +164,7 @@ export const promptTint = (): Tint => 'accent'
 export const responseTint = (entity: Entity): Tint | null => (typeof entity.data.error === 'string' && entity.data.error ? 'error' : null)
 
 /** `1m 05s`: how long a prompt has been running. */
-function elapsed(ms: number): string {
+export function elapsed(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000))
   const minutes = Math.floor(seconds / 60)
   return minutes ? `${minutes}m ${String(seconds % 60).padStart(2, '0')}s` : `${seconds}s`
@@ -268,6 +268,27 @@ const ChatCard = memo(function ChatCard(props: { shown: EntityRow; onOpen(id: st
  * the box goes on to the next chat waiting for me.
  */
 export function ChatDetail(props: OverviewProps) {
+  return (
+    <ChatPage
+      props={props}
+      field="prompt"
+      placeholder={modeNames[props.chatMode ?? 'prompt']}
+      bubble={(row) => (row.entity.type === 'claude.prompt' ? 'mine' : row.entity.type === 'claude.response' ? 'theirs' : null)}
+      side={<ChatPanel props={props} />}
+    />
+  )
+}
+
+/** Which rows of a chat are bubbles: mine on the right, theirs on the left; the rest are lines across it. */
+export type BubbleOf = (row: EntityRow['row']) => 'mine' | 'theirs' | null
+
+/**
+ * A chat page: every row under its root as bubbles and lines, selectable as
+ * in a tree, newest at the bottom, and its box below with the keyboard
+ * (`field` names it for the keys); `side` beside it, if anything.
+ */
+export function ChatPage(page: { props: OverviewProps; field: string; placeholder: string; bubble: BubbleOf; side?: ReactNode }) {
+  const { props } = page
   const { entity, view } = props
   // Everything under the chat, as the tree walks it (notes under notes too), the root apart.
   const rows = props.shown.rows.filter((row) => row.kind === 'input' || row.row.depth > 0)
@@ -315,7 +336,7 @@ export function ChatDetail(props: OverviewProps) {
                   </div>
                 </div>
               ) : (
-                <ChatRow key={shown.key} shown={shown} props={props} prompting={prompting} />
+                <ChatRow key={shown.key} shown={shown} props={props} prompting={prompting} bubble={page.bubble} />
               ),
             )}
           </div>
@@ -323,17 +344,17 @@ export function ChatDetail(props: OverviewProps) {
         <Status error={view.error} />
         <Composer
           key={entity.id}
-          kind="claude"
-          field="prompt"
+          kind={view.compose ?? 'claude'}
+          field={page.field}
           autoFocus
-          placeholder={modeNames[props.chatMode ?? 'prompt']}
+          placeholder={page.placeholder}
           draft={props.draft}
           composing={props.composing}
           onDraft={props.onDraft}
           onCompose={props.onCompose}
         />
       </div>
-      <ChatPanel props={props} />
+      {page.side}
     </div>
   )
 }
@@ -355,7 +376,7 @@ function NoteMark() {
  * left, a note (or anything else) across the width, in full, with its mark
  * and its fold mark when it has rows under it.
  */
-function ChatRow(props: { shown: EntityRow; props: OverviewProps; prompting: boolean }) {
+function ChatRow(props: { shown: EntityRow; props: OverviewProps; prompting: boolean; bubble: BubbleOf }) {
   const { shown } = props
   const { entity, depth } = shown.row
   const kinds = useContext(KindsContext)!
@@ -371,14 +392,15 @@ function ChatRow(props: { shown: EntityRow; props: OverviewProps; prompting: boo
     </div>
   )
   const fold = shown.row.hasChildren ? <span className="chat-fold">{shown.row.open ? '▾' : '▸'}</span> : null
-  if (entity.type === 'claude.prompt' || entity.type === 'claude.response') {
-    const mine = entity.type === 'claude.prompt'
+  const bubble = props.bubble(shown.row)
+  if (bubble) {
+    const mine = bubble === 'mine'
     const failed = typeof entity.data.error === 'string' && entity.data.error
     return frame(
       <div className={`bubble-line ${mine ? 'right' : 'left'}`}>
         {!mine && fold}
         <div className={`bubble ${mine ? 'mine' : failed ? 'theirs failed' : 'theirs'}`}>
-          {editing ?? (mine ? <Text text={text(entity.data)} /> : <Answer entity={entity} />)}
+          {editing ?? (entity.type === 'claude.response' ? <Answer entity={entity} /> : <Text text={text(entity.data)} />)}
         </div>
         {mine && fold}
       </div>,

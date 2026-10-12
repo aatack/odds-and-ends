@@ -9,6 +9,7 @@ import type { ItemGestures, PeekGestures } from './primitives.tsx'
 import type { ViewProps } from './types.ts'
 import { Button, ClockContext, HeaderPill, Modal, PillContent, SideSlotContext, useEdgeResize } from './primitives.tsx'
 import { useMemo, useState } from 'react'
+import { TopicList, type TopicListProps } from './Topics.tsx'
 
 export interface PeekProps {
   peeks: Peek[]
@@ -86,6 +87,8 @@ export function App(props: {
   /** The time, ticking each second. */
   now: number
   onCrumb(at: number): void
+  /** The topics mode: its list of topics in place of the modules, and only a topic's chat in the main view. Null for the classic UI. */
+  topics: TopicListProps | null
   /** Wiping the cache store, at the foot of the sidebar: each press a step closer, until the last wipes. */
   wipe: { label: string; stage: number; onWipe(): void; onCancel(): void; cancelLabel: string }
 }) {
@@ -99,6 +102,9 @@ export function App(props: {
       <PeekContext.Provider value={peek.gestures}>
       <SideSlotContext.Provider value={slot}>
         <div className={`app${props.phone ? ' phone' : ''}`}>
+          {props.topics ? (
+            <TopicList {...props.topics} />
+          ) : (
           <nav className="modules">
             {props.modules.map((module) => (
               <div
@@ -114,6 +120,7 @@ export function App(props: {
               {props.wipe.stage > 0 && <Button label={props.wipe.cancelLabel} onClick={props.wipe.onCancel} />}
             </div>
           </nav>
+          )}
           <main className="focus" onPointerDown={() => windows.handlers.onFocus(null)}>
             {props.crumbs.length > 1 && (
               <div className="crumbs">
@@ -124,7 +131,8 @@ export function App(props: {
                 ))}
               </div>
             )}
-            {props.view && <ViewPane {...props.view} windows={windows} />}
+            {/* The topics mode shows a topic's chat, or nothing until one is chosen. */}
+            {props.view && !(props.topics && props.view.view.root?.type === 'topics.home') && <ViewPane {...props.view} windows={windows} />}
             {props.phone && <PhoneBar {...props.phone} />}
           </main>
           {/* A page's own panel on the right (a chat's) goes here, beside the main view. */}

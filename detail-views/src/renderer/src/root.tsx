@@ -17,7 +17,7 @@ import './styles.css'
  * swaps hover for taps and keys for a bar of buttons.
  */
 function Root({ session, phone }: { session: Session; phone: boolean }) {
-  const { state, view: tree, shown, modules, peekViews, sideView, contextViews, windowShown, item, working, now, findFocus, centre, toast } = useSnapshot(session)
+  const { state, view: tree, shown, modules, peekViews, sideView, topics, contextViews, windowShown, item, working, now, findFocus, centre, toast } = useSnapshot(session)
   useEffect(() => {
     const stopDispatch = installDispatch(session, tools)
     let stopSession: (() => void) | undefined
@@ -186,6 +186,21 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
     [sideHandlers, state.side, state.sideWidth, sideView, working, session],
   )
 
+  const topicList = useMemo(
+    () =>
+      session.topicsMode
+        ? {
+            topics,
+            open: focused(state),
+            draft: state.drafts.topics ?? '',
+            busy: working.topics?.includes('create') ?? false,
+            onDraft: (text: string) => session.setTopicName(text),
+            onOpen: (id: string) => session.openTopic(id),
+          }
+        : null,
+    [session, topics, state, working],
+  )
+
   const crumbs = useMemo(() => state.trail.slice(0, state.at + 1).map((id) => item(id)), [state.trail, state.at, item])
   const onCrumb = useCallback((at: number) => session.goTo(at), [])
 
@@ -230,6 +245,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
   return (
     <App
       windows={windows}
+      topics={topicList}
       inspect={state.inspecting ? { ...session.inspected()!, onClose: () => session.closeInspector() } : null}
       now={now}
       dialog={dialog}

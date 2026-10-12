@@ -14,6 +14,7 @@ import { GitHub } from './modules/github/github.ts'
 import type { Module, ModuleContext } from './modules/module.ts'
 import { Slack } from './modules/slack/slack.ts'
 import { me, tasksModule } from './modules/tasks/tasks.ts'
+import { Topics } from './modules/topics/topics.ts'
 import type { McpAddress } from './mcp.ts'
 import { focusOf, lensOf, moduleInfos, toItem, typeOf, viewOf, type Folds, type Lens } from './present.ts'
 import { Blobs, EventStore, Settings } from './store.ts'
@@ -101,6 +102,7 @@ export class Core {
   readonly github: GitHub
   readonly claude: Claude
   readonly recents: Recents
+  readonly topics: Topics
 
   private readonly listeners = new Set<(changed: Changed) => void>()
   private readonly errors = new Map<string, string>()
@@ -159,7 +161,8 @@ export class Core {
     this.github = new GitHub(context)
     this.claude = new Claude(context)
     this.recents = new Recents(context)
-    this.modules = [this.slack, this.github, tasksModule(), this.claude, this.recents]
+    this.topics = new Topics(context)
+    this.modules = [this.slack, this.github, tasksModule(), this.claude, this.recents, this.topics]
   }
 
   /**
@@ -493,6 +496,10 @@ export class Core {
     /** A prompt to a Claude session: it and the response go under the session, the answer filling the response when it comes. */
     claudePrompt: ({ session, text }: { session: string; text: string }): Outcome =>
       text.trim() ? { events: this.claude.prompt(session, text), error: null } : { events: [], error: null },
+    /** A new topic, named, in the one list of them. */
+    topicCreate: ({ name }: { name: string }): Promise<Outcome> => this.attempt('topics', async () => this.topics.create(name)),
+    /** Sends a topic's messages since its last dispatch to Claude as one prompt; the answer fills the response put after them. */
+    topicDispatch: ({ topic }: { topic: string }): Promise<Outcome> => this.attempt(topic, async () => this.topics.dispatch(topic)),
     /** A view of `id` was pushed: it goes to the front of Recents (unless it is a plain note). */
     visit: ({ id }: { id: string }): void => this.recents.visit(id, this.entity(id).values),
     /** What a view shows, as a tree, for a caller with no cache of its own. */

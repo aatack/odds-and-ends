@@ -10,7 +10,7 @@ import { contextWindow } from './state.ts'
 import { actionsNow, runTool, tools } from './tools.ts'
 
 /** The app with no screen: a Session over a Core, through the same Api the window uses. */
-async function headless(options: Parameters<typeof memoryCore>[0] = {}) {
+async function headless(options: Parameters<typeof memoryCore>[0] = {}, ui: { topics?: boolean } = {}) {
   const core = memoryCore(options)
   const a = core.actions
   const copied: string[] = []
@@ -36,12 +36,14 @@ async function headless(options: Parameters<typeof memoryCore>[0] = {}) {
     redo: async (events) => a.redo({ events }),
     claudeCreate: (input) => a.claudeCreate(input),
     claudeSetDirectory: (session, cwd, worktree) => a.claudeSetDirectory({ session, cwd, worktree }),
+    topicCreate: (name) => a.topicCreate({ name }),
+    topicDispatch: (topic) => a.topicDispatch({ topic }),
     visit: async (id) => a.visit({ id }),
     onChange: (listener) => core.onChange(listener),
     openExternal: () => {},
     copy: async (text) => void copied.push(text),
   }
-  const session = new Session(api, memoryEnvironment())
+  const session = new Session(api, memoryEnvironment(), ui)
   const stop = await session.start()
   const settle = async () => {
     for (let i = 0; i < 3; i++) {
@@ -536,4 +538,45 @@ test('wiping the cache takes three presses, wipes only the cache, and can be cal
   assert.equal(core.item('slack:conv:C1')!.data.channel, undefined)
   assert.equal(core.item('n1')!.data.text, 'mine')
   stop()
+})
+
+test('topics mode: a topic is made from the list and opened; the box adds messages; Ctrl+Enter sends them all, with what is typed', async () => {
+  const sent: string[] = []
+  const run = async (command: string, args: string[]) => {
+    if (!command.endsWith('claude')) throw new Error(`unexpected ${command}`)
+    sent.push(args[1])
+    return JSON.stringify({ result: 'on it', is_error: false })
+  }
+  const { core, session, stop, settle, screen } = await headless({ run }, { topics: true })
+  const dispatch = tools.find((tool) => tool.id === 'topic.dispatch')!
+  try {
+  await settle()
+  assert.equal(session.get().view?.root?.type, 'topics.home')
+  assert.deepEqual(session.get().topics, [])
+
+  session.setTopicName('Billing')
+  session.createTopic()
+  await settle()
+  const [topic] = session.get().topics
+  assert.equal(topic.data.text, 'Billing')
+  assert.equal(session.get().view?.root?.id, topic.id)
+  assert.equal(session.get().state.composing, true)
+  assert.equal(session.get().state.drafts.topics, undefined)
+  assert.equal(dispatch.enabled!(session, 'topic'), false)
+
+  session.setDraft('first')
+  await session.send()
+  await settle()
+  session.setDraft('second')
+  assert.equal(dispatch.enabled!(session, 'topic'), true)
+  dispatch.run(session, 'topic')
+  await settle()
+  assert.deepEqual(sent, ['first\n\nsecond'])
+  assert.deepEqual(screen(), ['Billing', '  first', '  second', '  >on it'])
+  assert.equal(session.get().state.drafts[topic.id], undefined)
+  assert.equal(dispatch.enabled!(session, 'topic'), false)
+  assert.ok(core.item(topic.id)!.data.cwd)
+  } finally {
+    stop()
+  }
 })
