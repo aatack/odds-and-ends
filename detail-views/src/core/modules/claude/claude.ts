@@ -35,6 +35,14 @@ interface Place {
   repo: string | null
   /** The directory I chose, when it runs in a worktree made from it. */
   origin: string | null
+  /** The worktree's repo on GitHub (`owner/name`), when its `origin` remote is there: where its branch is. */
+  github: string | null
+}
+
+/** `owner/name` of a remote's URL on GitHub (`git@github.com:o/n.git`, `https://github.com/o/n`), or null. */
+export function githubRepo(url: string): string | null {
+  const match = /github\.com[:/]([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/.exec(url.trim())
+  return match ? match[1] : null
 }
 
 /** Where Claude Code keeps its files (its sessions' transcripts, under `projects/`). */
@@ -143,7 +151,7 @@ export class Claude implements Module {
     const id = randomUUID()
     const name = input.name.trim() || 'Session'
     const requested = this.directory(input.cwd)
-    const place = requested ? await this.place(requested, input.worktree, name, id) : { cwd: mkdtempSync(join(tmpdir(), 'claude-')), worktree: null, branch: null, repo: null, origin: null }
+    const place = requested ? await this.place(requested, input.worktree, name, id) : { cwd: mkdtempSync(join(tmpdir(), 'claude-')), worktree: null, branch: null, repo: null, origin: null, github: null }
     const at = this.context.now()
     const events: AppEvent[] = [
       ...values(id, { type: 'claude.session', text: name, ...place, permissionMode: defaultPermissionMode }, at, me),
@@ -182,7 +190,7 @@ export class Claude implements Module {
 
   /** `requested` as it is, or a new worktree of its repo, on a branch of its own named after the session. */
   private async place(requested: string, worktree: boolean, name: string, id: string): Promise<Place> {
-    if (!worktree) return { cwd: requested, worktree: null, branch: null, repo: null, origin: null }
+    if (!worktree) return { cwd: requested, worktree: null, branch: null, repo: null, origin: null, github: null }
     const { run } = this.context
     const short = id.slice(0, 8)
     // Outside every repo (the app's own data directory), so no repo ever commits it.
@@ -201,7 +209,8 @@ export class Claude implements Module {
       () => branch,
     )
     await run('git', ['worktree', 'add', '--no-track', '-b', branchName, path, `origin/${main}`], repo)
-    return { cwd: path, worktree: path, branch: branchName, repo, origin: requested }
+    const github = await run('git', ['remote', 'get-url', 'origin'], repo).then(githubRepo, () => null)
+    return { cwd: path, worktree: path, branch: branchName, repo, origin: requested, github }
   }
 
   /** A directory I chose, remembered first for next time, and whether it is in a git repo (so a worktree can be offered). */

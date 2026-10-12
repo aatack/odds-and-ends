@@ -38,6 +38,10 @@ export interface Api {
   topicCreate(name: string): Promise<Outcome>
   /** Sends a topic's messages since its last dispatch to Claude at once. */
   topicDispatch(topic: string): Promise<Outcome>
+  /** Text pasted into a topic: a PR, Slack message or branch link as that item, anything else as a message. */
+  topicPaste(topic: string, text: string): Promise<Outcome>
+  /** A file pasted into a topic, kept, as an item under it (its content base64). */
+  topicAttach(topic: string, file: { name: string; mime: string; data: string }): Promise<Outcome>
   /** A view of `id` was pushed: Recents moves it to the front. */
   visit(id: string): Promise<void>
   /** Takes my last action off the owned log; returns what came off. */
@@ -98,6 +102,8 @@ export function httpApi(base: string, token: string): Api {
     claudeSetDirectory: (session, cwd, worktree) => call('claudeSetDirectory', { session, cwd, worktree }),
     topicCreate: (name) => call('topicCreate', { name }),
     topicDispatch: (topic) => call('topicDispatch', { topic }),
+    topicPaste: (topic, text) => call('topicPaste', { topic, text }),
+    topicAttach: (topic, file) => call('topicAttach', { topic, file }),
     visit: (id) => call('visit', { id }),
     onChange: (listener) => {
       // EventSource reconnects by itself; a reconnect may have missed changes, so it re-reads everything.
@@ -143,6 +149,8 @@ export function electronApi(): Api {
     claudeSetDirectory: (session, cwd, worktree) => call('claudeSetDirectory', { session, cwd, worktree }),
     topicCreate: (name) => call('topicCreate', { name }),
     topicDispatch: (topic) => call('topicDispatch', { topic }),
+    topicPaste: (topic, text) => call('topicPaste', { topic, text }),
+    topicAttach: (topic, file) => call('topicAttach', { topic, file }),
     visit: (id) => call('visit', { id }),
     onChange: (listener) => bridge.onChange(listener),
     openExternal: (url) => void bridge.openExternal(url),

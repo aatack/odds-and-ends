@@ -19,6 +19,10 @@
   --link: light-dark(#3a5f9e, #8fb0e6);
   /* Claude's own terracotta, for what Claude says and the sessions it runs. */
   --claude: light-dark(#c96442, #e08a6b);
+  /* Claude's bubbles: the faintest wash of its colour. */
+  --claude-soft: light-dark(#fbf4f1, #221b19);
+  /* A bubble lifted a little off the page. */
+  --lift: light-dark(rgba(16, 24, 40, 0.08), rgba(0, 0, 0, 0.4));
   /* Fills for buttons and chips: a soft gray, a step darker on hover, another pressed. */
   --fill: light-dark(#f2f4f7, #202027);
   --fill-hover: light-dark(#eaecf0, #2a2a32);
@@ -120,6 +124,22 @@ body,
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* On the list's panel the usual row hover barely shows: a topic under the pointer takes a fill a step darker than a button's, its name the ink; the open one has the accent's rail. */
+.topic-list .chat-card {
+  color: var(--ink-soft);
+}
+
+.topic-list .chat-card:hover {
+  color: var(--ink);
+  background: var(--fill-press);
+}
+
+.topic-list .chat-card.selected {
+  color: var(--ink);
+  background: var(--select);
+  box-shadow: inset 3px 0 var(--accent);
 }
 
 /* At the foot of the sidebar: wiping the cache store. */
@@ -1536,11 +1556,92 @@ mark {
 }
 
 .chat-main {
+  position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* A topic's corner: a small button over the chat's top right, and under it, while it is hovered or pressed, what the topic runs in. */
+.chat-corner {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 5;
+}
+
+.topic-context {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.topic-context-card {
+  margin-top: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 320px;
+  max-width: 560px;
+  border-radius: 10px;
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.18);
+}
+
+.topic-context-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topic-context-line .dir-select-wrap {
+  min-width: 0;
+  width: 100%;
+}
+
+.topic-context-line > span:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A flat chat selects nothing, so nothing in it shows a hover. */
+.chat-page.flat .note-line:hover {
+  background: none;
+}
+
+/* A flat chat's scroll bar sits near the window's edge, with room between it and the messages; the rest keeps the page's margin. */
+.pane.chat-page.flat {
+  padding-right: 4px;
+}
+
+.chat-page.flat .bubbles-inner {
+  gap: 0;
+  padding-right: 18px;
+}
+
+.chat-page.flat .chat-main > :not(.bubbles):not(.chat-corner) {
+  margin-right: 18px;
+}
+
+.chat-page.flat .chat-corner {
+  right: 18px;
+}
+
+/* Rows of one voice (mine, or Claude's) sit close, a little more than a line apart; a change of voice, further. */
+.chat-page.flat .chat-row + .chat-row {
+  margin-top: 16px;
+}
+
+.chat-page.flat .chat-row.joined {
+  margin-top: 4px;
+}
+
+.chat-page.flat .note-line {
+  padding: 2px 12px;
 }
 
 .bubbles {
@@ -1583,14 +1684,26 @@ mark {
   border-bottom-right-radius: 4px;
 }
 
-.bubble.theirs,
 .bubble.note {
   background: var(--panel);
   border-bottom-left-radius: 4px;
 }
 
+/* Claude's: its mark beside it, a wash of its colour, lifted a little. */
+.bubble.theirs {
+  background: var(--claude-soft);
+  border-top-left-radius: 4px;
+  box-shadow: 0 1px 3px var(--lift);
+}
+
+.bubble-line > .claude-mark {
+  width: 1.1em;
+  height: 1.1em;
+  margin-top: 9px;
+}
+
 .bubble.failed {
-  box-shadow: inset 3px 0 0 var(--error);
+  box-shadow: inset 3px 0 0 var(--error), 0 1px 3px var(--lift);
 }
 
 .bubble .edit {

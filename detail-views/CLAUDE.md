@@ -13,7 +13,11 @@ doc for the area you change, and keep it up to date in the same commit.
 - **Two modes, for now.** The app starts in the topics mode
   (`docs/topics.md`): one list of topics on the left, each a chat; Enter in
   its box only adds a message, and Ctrl+Enter sends every message since the
-  last dispatch to Claude at once. The classic UI below (modules, the
+  last dispatch to Claude at once. A topic's chat is a flat list with no
+  selection; its box is closed until Enter opens it (Enter closes it again),
+  and never two dispatches at once. Its **Context** button (top right) shows
+  its directory and branch. A paste outside the box adds what it is: a
+  file, a PR / Slack message / branch item, or a message. The classic UI below (modules, the
   sidebar) is behind a flag, `DETAIL_VIEWS_UI=classic`; the phone stays on
   it. Each mode keeps its own stack.
 - **Modules are workflows.** Each one (Slack, tasks, later calendar, …) is a
@@ -173,6 +177,7 @@ doc for the area you change, and keep it up to date in the same commit.
 - **Keyboard first.** Every key press goes through one listener
   (`renderer/src/dispatch.ts`) that runs a tool from the single registry
   (`renderer/src/tools.ts`). Never add a `keydown` listener anywhere else.
+  Pastes likewise go through one listener (`renderer/src/paste.ts`).
 - **Navigation keys are a fixed rule** in every view: `w` up, `s` down, `d`
   pushes the selected row's view, `Shift+A` pops it; ArrowRight / ArrowLeft
   open and fold a row. Other bindings may be added beside them, never in their

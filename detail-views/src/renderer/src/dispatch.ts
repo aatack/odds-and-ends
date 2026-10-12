@@ -12,7 +12,8 @@ export function keyName(event: KeyboardEvent): string {
   return parts.join('+')
 }
 
-function typing(target: EventTarget | null): boolean {
+/** Whether an event is in a text box (or anything editable). */
+export function typing(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA'].includes(target.tagName))
 }
 

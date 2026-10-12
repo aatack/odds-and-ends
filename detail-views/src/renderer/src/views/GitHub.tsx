@@ -219,3 +219,47 @@ export function LocalApprovalPill() {
     </>
   )
 }
+
+// --- Branches ------------------------------------------------------------------------
+//
+// A branch is all in its id (its repo and name): nothing loads for it. It
+// links to its page on GitHub.
+
+const branchOf = (data: Record<string, unknown>): string => String(data.text ?? data.branch ?? '')
+
+export function BranchPill(props: PillProps) {
+  return (
+    <span className="item-name">
+      <span className="muted">⎇</span> <Highlight text={branchOf(props.entity.data)} find={props.findText} />
+    </span>
+  )
+}
+
+export function BranchOverview(props: OverviewProps) {
+  const { data } = props.entity
+  return (
+    <>
+      <div className="title">
+        <HeaderPill entity={props.entity} />
+      </div>
+      <div className="facts muted">
+        <span>{String(data.repo ?? '')}</span>
+        <Link href={String(data.url)} page>
+          On GitHub
+        </Link>
+      </div>
+    </>
+  )
+}
+
+export const BranchRow = memo(function BranchRow(props: RowProps) {
+  const { data } = props.entity
+  return (
+    <span className="line">
+      <BranchPill entity={props.entity} findText={props.findText} /> <span className="muted">{String(data.repo ?? '')}</span>{' '}
+      <Link href={String(data.url)} page>
+        On GitHub
+      </Link>
+    </span>
+  )
+})
