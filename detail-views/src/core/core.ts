@@ -190,6 +190,7 @@ export class Core {
     this.clearCacheIfOld()
     this.clearer ??= setInterval(() => this.clearCacheIfOld(), checkEvery)
     this.stopWatches ??= this.slack.watch()
+    void this.claude.refreshRepos()
   }
 
   stop(): void {
@@ -486,6 +487,9 @@ export class Core {
     redo: ({ events }: { events: AppEvent[] }): Outcome => this.write(events),
     /** A new Claude session, under the Claude root. Its directory may take a moment (a worktree). */
     claudeCreate: (input: NewSession): Promise<Outcome> => this.attempt('claude', () => this.claude.createSession(input)),
+    /** A session's directory changed: to `cwd`, or a new worktree of its repo. Its conversation goes with it. */
+    claudeSetDirectory: ({ session, cwd, worktree }: { session: string; cwd: string; worktree: boolean }): Promise<Outcome> =>
+      this.attempt(session, () => this.claude.setDirectory(session, cwd, worktree)),
     /** A prompt to a Claude session: it and the response go under the session, the answer filling the response when it comes. */
     claudePrompt: ({ session, text }: { session: string; text: string }): Outcome =>
       text.trim() ? { events: this.claude.prompt(session, text), error: null } : { events: [], error: null },

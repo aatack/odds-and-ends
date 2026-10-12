@@ -31,6 +31,7 @@
     "gemoji": "^8.1.0",
     "katex": "^0.18.10",
     "react-markdown": "^10.1.0",
+    "react-select": "^5.10.2",
     "rehype-katex": "^7.0.1",
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",

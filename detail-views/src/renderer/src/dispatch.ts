@@ -29,7 +29,8 @@ function fieldOf(target: EventTarget | null): string | null {
  */
 export function installDispatch(session: Session, tools: Tool[]): () => void {
   const listener = (event: KeyboardEvent) => {
-    if (event.isComposing) return
+    // A widget that handled the key itself (a dropdown's Enter, say) keeps it.
+    if (event.isComposing || event.defaultPrevented) return
     const key = keyName(event)
     const inInput = typing(event.target)
     const field = fieldOf(event.target)
