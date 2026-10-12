@@ -10,6 +10,12 @@ doc for the area you change, and keep it up to date in the same commit.
 
 ### Product
 
+- **Two modes, for now.** The app starts in the topics mode
+  (`docs/topics.md`): one list of topics on the left, each a chat; Enter in
+  its box only adds a message, and Ctrl+Enter sends every message since the
+  last dispatch to Claude at once. The classic UI below (modules, the
+  sidebar) is behind a flag, `DETAIL_VIEWS_UI=classic`; the phone stays on
+  it. Each mode keeps its own stack.
 - **Modules are workflows.** Each one (Slack, tasks, later calendar, …) is a
   module with a root entity. The sidebar lists the modules and nothing else; it
   is how I enter the app.

@@ -39,6 +39,8 @@ export const itemTypes = [
   'claude.response',
   'recents.home',
   'context',
+  'topics.home',
+  'topic',
 ] as const
 
 export type ItemType = (typeof itemTypes)[number]
@@ -83,7 +85,7 @@ export interface LoadResult {
 export const loadedKey = (part: LoadPart): string => `loaded.${part}`
 
 /** What the composer under a view does, if there is one. */
-export type ComposeKind = 'slack' | 'slack-token' | 'claude'
+export type ComposeKind = 'slack' | 'slack-token' | 'claude' | 'topic'
 
 /**
  * Something a person can do to an entity. Starting it opens a prompt; Enter

@@ -7,7 +7,7 @@ import { prEntityId } from '../../../core/types.ts'
 import type { PeekTarget, Rect } from '../state.ts'
 
 export function Composer(props: {
-  kind: 'slack' | 'slack-token' | 'task' | 'action' | 'claude'
+  kind: 'slack' | 'slack-token' | 'task' | 'action' | 'claude' | 'topic'
   draft: string
   composing: boolean
   /** Takes the keyboard when it appears, whether or not anything was composing. */

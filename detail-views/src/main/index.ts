@@ -81,8 +81,10 @@ function createWindow(): BrowserWindow {
     return { action: 'deny' }
   })
   const devServer = process.env.ELECTRON_RENDERER_URL
-  if (devServer) void window.loadURL(devServer)
-  else void window.loadFile(fileURLToPath(new URL('../renderer/index.html', import.meta.url)))
+  // The classic UI (the modules) is behind a flag; the topics mode is the default.
+  const ui = process.env.DETAIL_VIEWS_UI === 'classic' ? 'classic' : 'topics'
+  if (devServer) void window.loadURL(`${devServer}?ui=${ui}`)
+  else void window.loadFile(fileURLToPath(new URL('../renderer/index.html', import.meta.url)), { query: { ui } })
   return window
 }
 

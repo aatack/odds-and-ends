@@ -98,6 +98,30 @@ body,
   flex-direction: column;
 }
 
+/* The topics mode's list, in the sidebar's place: wider, as a chat app's list of chats. */
+.topic-list {
+  width: 280px;
+  flex: none;
+  padding: 12px 8px;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.topic-new {
+  margin: 0 4px;
+}
+
+.topic-cards {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 /* At the foot of the sidebar: wiping the cache store. */
 .sidebar-foot {
   margin-top: auto;

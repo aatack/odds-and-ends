@@ -59,6 +59,8 @@ export const tools: Tool[] = [
   // A chat's prompt box: on to the next (or back to the previous) chat waiting for me.
   { id: 'chat.next', scope: 'input', keys: ['Tab'], enabled: (_, field) => field === 'prompt', run: (s) => s.nextChat(1) },
   { id: 'chat.previous', scope: 'input', keys: ['Shift+Tab'], enabled: (_, field) => field === 'prompt', run: (s) => s.nextChat(-1) },
+  // The box at the head of the list of topics: Enter makes the topic named in it (before the composer's Enter, which is the chat's).
+  { id: 'topic.create', scope: 'input', keys: ['Enter'], enabled: (_, field) => field === 'topic-name', run: (s) => s.createTopic() },
   // Not while the new-session form is over it: Enter there is the form's.
   { id: 'composer.submit', scope: 'input', keys: ['Enter'], enabled: (s) => s.composerOpen() && !s.hasDialog(), run: (s) => void s.send() },
   // The new-session form: Enter makes it, Escape gives up.
@@ -128,6 +130,8 @@ export const tools: Tool[] = [
   { id: 'inspect', label: 'Inspect', scope: 'list', keys: ['3'], enabled: (s) => selected(s) !== null, run: (s) => s.inspect() },
   { id: 'claude.new', label: 'Claude session', scope: 'list', keys: ['K'], run: (s) => s.openClaudeDialog() },
   { id: 'session.send', label: 'To session', scope: 'list', keys: ['k'], enabled: (s) => s.canSendToSession(), run: (s) => s.sendToSession() },
+  // On a topic, from its box or its rows: every message since the last dispatch, to Claude at once (before the side panel's Ctrl+Enter).
+  { id: 'topic.dispatch', label: 'Send to Claude', scope: 'list', keys: ['Ctrl+Enter'], enabled: (s) => s.canDispatch(), run: (s) => void s.dispatch() },
   { id: 'side.open', label: 'In context', scope: 'app', keys: ['Ctrl+Enter'], run: (s) => s.openSide() },
   { id: 'side.close', label: 'Close side', scope: 'app', keys: [], enabled: (s) => s.get().state.side !== null, run: (s) => s.closeSide() },
   { id: 'checkbox.toggle', label: 'Tick', scope: 'list', keys: [' '], enabled: (s) => s.canToggle(), run: (s) => s.toggle() },

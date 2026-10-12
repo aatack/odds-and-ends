@@ -34,6 +34,10 @@ export interface Api {
   claudeCreate(input: { name: string; cwd: string; worktree: boolean }): Promise<Outcome>
   /** A session's directory changed: to `cwd`, or a new worktree of its repo. */
   claudeSetDirectory(session: string, cwd: string, worktree: boolean): Promise<Outcome>
+  /** A new topic, named, in the one list of them. */
+  topicCreate(name: string): Promise<Outcome>
+  /** Sends a topic's messages since its last dispatch to Claude at once. */
+  topicDispatch(topic: string): Promise<Outcome>
   /** A view of `id` was pushed: Recents moves it to the front. */
   visit(id: string): Promise<void>
   /** Takes my last action off the owned log; returns what came off. */
@@ -92,6 +96,8 @@ export function httpApi(base: string, token: string): Api {
     redo: (events) => call('redo', { events }),
     claudeCreate: (input) => call('claudeCreate', input),
     claudeSetDirectory: (session, cwd, worktree) => call('claudeSetDirectory', { session, cwd, worktree }),
+    topicCreate: (name) => call('topicCreate', { name }),
+    topicDispatch: (topic) => call('topicDispatch', { topic }),
     visit: (id) => call('visit', { id }),
     onChange: (listener) => {
       // EventSource reconnects by itself; a reconnect may have missed changes, so it re-reads everything.
@@ -135,6 +141,8 @@ export function electronApi(): Api {
     redo: (events) => call('redo', { events }),
     claudeCreate: (input) => call('claudeCreate', input),
     claudeSetDirectory: (session, cwd, worktree) => call('claudeSetDirectory', { session, cwd, worktree }),
+    topicCreate: (name) => call('topicCreate', { name }),
+    topicDispatch: (topic) => call('topicDispatch', { topic }),
     visit: (id) => call('visit', { id }),
     onChange: (listener) => bridge.onChange(listener),
     openExternal: (url) => void bridge.openExternal(url),

@@ -2,6 +2,7 @@ import { EntityCache, type CacheState } from '../../core/graph/cache.ts'
 import { findInContext, foreignOf, itemOf, lensOf, moduleInfos, viewOf } from '../../core/present.ts'
 import { activity } from '../../core/modules/slack/view.ts'
 import { byMade, claudeIds } from '../../core/modules/claude/view.ts'
+import { topicsIds, unsent } from '../../core/modules/topics/view.ts'
 import { entityScheme, type Entity, type ModuleInfo, type NoteValues, type Outcome, type View, type ViewRow } from '../../core/types.ts'
 import type { Api } from './api.ts'
 import type { Environment } from './environment.ts'
@@ -18,6 +19,8 @@ export interface Snapshot {
   peekViews: Record<string, View>
   /** What the side panel shows, if it is open. */
   sideView: View | null
+  /** Every topic, the most recently active first: the topics mode's list (empty in the classic one). */
+  topics: Entity[]
   /** The items the chat on screen has opened out in its context pane, walked, by id. */
   contextViews: Record<string, View>
   /** The rows of each window but the main view (`side`, or a peek's key), with its selection and any edit laid over them. */
@@ -45,6 +48,8 @@ export interface Snapshot {
 }
 
 const storageKey = 'detail-views.state'
+/** The topics mode keeps its own stack, apart from the classic one's. */
+const topicsStorageKey = 'detail-views.topics.state'
 /** How often everything in the cache is looked at again, to load whatever has gone stale. */
 const revisitEvery = 20_000
 const noRows: S.ShownView = { rows: [], keys: [], selectedPath: [], selectedIndex: -1 }
@@ -111,12 +116,18 @@ export class Session {
   /** Likewise for rows, by key. */
   private readonly rowsShown = new Map<string, ViewRow>()
 
-  constructor(api: Api, env: Environment) {
+  /** Which UI this drives: the topics mode, or the classic one (the modules) behind its flag. */
+  readonly topicsMode: boolean
+  private readonly storageKey: string
+
+  constructor(api: Api, env: Environment, options: { topics?: boolean } = {}) {
     this.api = api
     this.env = env
+    this.topicsMode = options.topics ?? false
+    this.storageKey = this.topicsMode ? topicsStorageKey : storageKey
     this.cache = new EntityCache({ scan: (ids) => api.scan(ids), load: (request) => api.load(request), foreign: foreignOf })
-    const state = S.restore(env.load(storageKey), 'slack')
-    this.snapshot = { state, modules: moduleInfos, view: null, shown: noRows, peekViews: {}, sideView: null, contextViews: {}, windowShown: {}, item: () => null, working: {}, now: Date.now(), findFocus: 0, centre: 0, toast: null }
+    const state = S.restore(env.load(this.storageKey), this.topicsMode ? topicsIds.root : 'slack')
+    this.snapshot = { state, modules: moduleInfos, view: null, shown: noRows, peekViews: {}, sideView: null, topics: [], contextViews: {}, windowShown: {}, item: () => null, working: {}, now: Date.now(), findFocus: 0, centre: 0, toast: null }
     this.snapshot = this.derive(state)
   }
 
@@ -143,7 +154,7 @@ export class Session {
   get = (): Snapshot => this.snapshot
 
   private publish(next: Snapshot): void {
-    if (next.state !== this.snapshot.state) this.env.save(storageKey, S.persisted(next.state))
+    if (next.state !== this.snapshot.state) this.env.save(this.storageKey, S.persisted(next.state))
     this.snapshot = next
     for (const listener of this.listeners) listener()
   }
@@ -224,8 +235,12 @@ export class Session {
     for (const peek of state.peeks) if (peek.target.kind === 'entity') mark(peek.key, peek.target.id, peekViews[peek.target.id])
     if (state.side && sideView) mark('side', state.side, sideView)
     for (const id of opened) mark(S.contextWindow(id), id, contextViews[id])
+    // The list of topics is the walk of their root, one level down.
+    const topicsView = this.topicsMode ? this.walk(topicsIds.root, state) : null
+    const topics = topicsView ? topicsView.rows.filter((row) => row.depth === 1).map((row) => row.entity) : []
+    const sameTopics = topics.length === previous.topics.length && topics.every((topic, at) => topic === previous.topics[at])
     // Walks for views no longer anywhere are dropped.
-    const live = new Set([root, ...Object.keys(peekViews), ...(state.side ? [state.side] : []), ...opened])
+    const live = new Set([root, ...Object.keys(peekViews), ...(state.side ? [state.side] : []), ...opened, ...(this.topicsMode ? [topicsIds.root] : [])])
     for (const key of this.walks.keys()) if (!live.has(key)) this.walks.delete(key)
     for (const key of this.budgets.keys()) if (!live.has(key)) this.budgets.delete(key)
     const cache = this.cache.get()
@@ -244,7 +259,7 @@ export class Session {
             }
           })()
     this.itemsFrom = cache
-    return { ...previous, state, view, shown, peekViews, sideView, contextViews, windowShown, item }
+    return { ...previous, state, view, shown, peekViews, sideView, topics: sameTopics ? previous.topics : topics, contextViews, windowShown, item }
   }
 
   private itemsFrom: CacheState | null = null
@@ -520,6 +535,56 @@ export class Session {
       const made = outcome.events.find((event) => event.type === 'link' && event.sourceId === 'claude')
       if (made?.type === 'link') this.navigate(made.destinationId)
     })
+  }
+
+  // --- Topics ----------------------------------------------------------------------
+
+  /** A topic in the list was clicked: its chat fills the screen, its box with the keyboard. */
+  openTopic(id: string): void {
+    this.update(S.setComposing(S.enter(this.state, id), true))
+  }
+
+  /** Typing the name of a new topic, at the head of the list. */
+  setTopicName(text: string): void {
+    this.update(S.setDraftFor(this.state, topicsIds.root, text))
+  }
+
+  /** Enter in that box: the topic is made, and opened. */
+  createTopic(): void {
+    const name = this.state.drafts[topicsIds.root] ?? ''
+    if (!name.trim()) return
+    this.update(S.setDraftFor(this.state, topicsIds.root, ''))
+    void this.working(topicsIds.root, 'create', () => this.api.topicCreate(name)).then((outcome) => {
+      this.settle(topicsIds.root, outcome)
+      if (outcome.error) this.showToast(outcome.error)
+      const made = outcome.events.find((event) => event.type === 'link' && event.sourceId === topicsIds.root)
+      if (made?.type === 'link') this.openTopic(made.destinationId)
+    })
+  }
+
+  /** Whether Ctrl+Enter has anything to send: the topic on screen has messages since its last dispatch, or one typed in its box. */
+  canDispatch(): boolean {
+    if (this.state.window !== null || this.root()?.type !== 'topic') return false
+    const id = S.focused(this.state)
+    return Boolean((this.state.drafts[id] ?? '').trim()) || unsent(id, lensOf(this.cache.source(this.cache.get()))).length > 0
+  }
+
+  /**
+   * Ctrl+Enter on a topic: what is in its box goes in as a message first,
+   * then every message since the last dispatch goes to Claude at once, and
+   * its answer's bubble comes after them.
+   */
+  async dispatch(): Promise<void> {
+    if (!this.canDispatch()) return
+    const id = S.focused(this.state)
+    const text = this.state.drafts[id] ?? ''
+    if (text.trim()) {
+      this.update(S.setDraftFor(this.state, id, ''))
+      this.settle(id, await this.api.submit(id, text))
+    }
+    const outcome = await this.working(id, 'dispatch', () => this.api.topicDispatch(id))
+    this.settle(id, outcome)
+    if (outcome.error) this.showToast(outcome.error)
   }
 
   /** Opens or closes the phone's list of every action. */
@@ -901,7 +966,8 @@ export class Session {
 
   /** Tab while a chat's box doesn't have the keyboard: it takes it again, and the chat hides its selection. */
   canReturnToPrompt(): boolean {
-    return this.state.window === null && !this.state.composing && this.root()?.type === 'claude.session' && this.state.edit === null
+    const type = this.root()?.type
+    return this.state.window === null && !this.state.composing && (type === 'claude.session' || type === 'topic') && this.state.edit === null
   }
 
   returnToPrompt(): void {
