@@ -150,20 +150,19 @@ export function TopicList(props: TopicListProps) {
   )
 }
 
+/** A topic in the list: a line, as a module is in the classic sidebar, the open one on the selection's fill. */
 const TopicCard = memo(function TopicCard(props: { entity: Entity; open: boolean; onOpen(id: string): void }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (props.open) ref.current?.scrollIntoView({ block: 'nearest' })
   }, [props.open])
   return (
-    <div ref={ref} className={`chat-card${props.open ? ' selected' : ''}`} onClick={() => props.onOpen(props.entity.id)}>
-      <div className="chat-card-top">
-        {running(props.entity) !== null && <ClaudeMark />}
-        <span className="chat-card-name">{nameOf(props.entity)}</span>
-        <span className="chat-card-time">
-          <When entity={props.entity} />
-        </span>
-      </div>
+    <div ref={ref} className={`topic${props.open ? ' open' : ''}`} onClick={() => props.onOpen(props.entity.id)}>
+      {running(props.entity) !== null && <ClaudeMark />}
+      <span className="topic-name">{nameOf(props.entity)}</span>
+      <span className="topic-time">
+        <When entity={props.entity} />
+      </span>
     </div>
   )
 })
