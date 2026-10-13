@@ -8,3 +8,5 @@
 - `file.svg`: a blank page with its corner folded, drawn for this app (the
   note's page without its lines), for a file item. Drawn as a CSS mask, so its
   colour is a token (`--muted`).
+- `slack.svg`: the Slack mark, simplified, drawn for this app (four bars, each
+  with its dot). Drawn as a CSS mask, so its colour is a token (`--ink-soft`).

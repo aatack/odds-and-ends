@@ -4,7 +4,7 @@ import type { Entity, ItemType, LoadPart } from '../../types.ts'
 import type { Module, ModuleContext } from '../module.ts'
 import { moduleInfos } from '../../present.ts'
 import { me } from '../tasks/tasks.ts'
-import { SlackApi, slackWrites } from './api.ts'
+import { byMe, SlackApi, slackWrites } from './api.ts'
 import {
   maxTs,
   readTime,
@@ -237,6 +237,27 @@ export class Slack implements Module {
       await this.api.call('chat.postMessage', { channel, text, thread_ts: threadTs ?? ts })
     } else return []
     return []
+  }
+
+  /**
+   * Sends a message as me, to a conversation or in a thread: the one write
+   * Slack is open to (`byMe`), only ever from my own key press in a topic's
+   * box. It goes into the cache as the watch would put it, so it shows at
+   * once. Its id.
+   */
+  async send(channel: string, text: string, threadTs?: string): Promise<string> {
+    if (!this.api) throw new Error('no Slack token')
+    if (!text.trim()) throw new Error('Nothing to send')
+    const { ts, message } = await this.api.urgent.call<{ ts: string; message?: RawMessage }>('chat.postMessage', { channel, text, thread_ts: threadTs }, byMe)
+    const id = ids.message(channel, ts)
+    const raw: RawMessage = { ...message, ts, thread_ts: threadTs, user: message?.user ?? String(this.context.data.get(ids.root).self ?? ''), text: message?.text ?? text }
+    this.cache.write([
+      ...messageEvents(channel, raw, this.context.now(), { partial: true }),
+      ...(threadTs
+        ? [link(ids.message(channel, threadTs), id, tsMillis(ts), author), ...this.relinkThread(channel, threadTs, ts)]
+        : [link(ids.conversation(channel), id, tsMillis(ts), author)]),
+    ])
+    return id
   }
 
   /** Whether I have paused the watch (`watch.paused`, module data on the workspace). */

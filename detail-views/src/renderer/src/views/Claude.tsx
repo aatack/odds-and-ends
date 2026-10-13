@@ -300,6 +300,12 @@ export function ChatPage(page: {
   flat?: boolean
   onDemand?: boolean
   corner?: ReactNode
+  /** Just above the box (a topic's waits). */
+  above?: ReactNode
+  /** The box sends somewhere outside the app: tinted as a warning, with where on its right. */
+  outward?: ReactNode
+  /** Beside a row, on its right, shown while it is hovered (a Slack message's waits). */
+  aside?: (row: EntityRow['row']) => ReactNode
 }) {
   const { props } = page
   const { entity, view } = props
@@ -358,23 +364,28 @@ export function ChatPage(page: {
                   bubble={page.bubble}
                   flat={page.flat}
                   joined={page.flat === true && at > 0 && voiceOf(rows[at - 1], page.bubble) === voiceOf(shown, page.bubble)}
+                  aside={page.aside?.(shown.row)}
                 />
               ),
             )}
           </div>
         </div>
         <Status error={view.error} />
-        <Composer
-          key={entity.id}
-          kind={view.compose ?? 'claude'}
-          field={page.field}
-          autoFocus={!page.onDemand}
-          placeholder={page.placeholder}
-          draft={props.draft}
-          composing={props.composing}
-          onDraft={props.onDraft}
-          onCompose={props.onCompose}
-        />
+        {page.above}
+        <div className={`chat-box${page.outward ? ' outward' : ''}`}>
+          <Composer
+            key={entity.id}
+            kind={view.compose ?? 'claude'}
+            field={page.field}
+            autoFocus={!page.onDemand}
+            placeholder={page.placeholder}
+            draft={props.draft}
+            composing={props.composing}
+            onDraft={props.onDraft}
+            onCompose={props.onCompose}
+          />
+          {page.outward && <div className="chat-box-where">{page.outward}</div>}
+        </div>
       </div>
       {page.side}
     </div>
@@ -401,7 +412,7 @@ function NoteMark() {
  * left, a note (or anything else) across the width, in full, with its mark
  * and its fold mark when it has rows under it.
  */
-function ChatRow(props: { shown: EntityRow; props: OverviewProps; prompting: boolean; bubble: BubbleOf; flat?: boolean; joined?: boolean }) {
+function ChatRow(props: { shown: EntityRow; props: OverviewProps; prompting: boolean; bubble: BubbleOf; flat?: boolean; joined?: boolean; aside?: ReactNode }) {
   const { shown } = props
   const { entity, depth } = shown.row
   const kinds = useContext(KindsContext)!
@@ -414,6 +425,7 @@ function ChatRow(props: { shown: EntityRow; props: OverviewProps; prompting: boo
   const frame = (content: ReactNode) => (
     <div ref={ref} className={`chat-row${marked ? ' selected' : ''}${props.joined ? ' joined' : ''}`} style={chatIndent(depth)} onMouseDown={props.flat ? undefined : () => props.props.onSelect(shown.row.path)}>
       {content}
+      {props.aside && <div className="chat-aside">{props.aside}</div>}
     </div>
   )
   const fold = shown.row.hasChildren && !props.flat ? <span className="chat-fold">{shown.row.open ? '▾' : '▸'}</span> : null

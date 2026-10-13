@@ -1,3 +1,4 @@
+import type { SendTarget, Wait } from '../../../core/modules/topics/view.ts'
 import type { View } from '../../../core/types.ts'
 import type { ChatMode, Edit, Pick, ShownView } from '../state.ts'
 import type { WindowsProps } from './App.tsx'
@@ -50,6 +51,8 @@ export interface ViewProps {
   onSetDirectory?(cwd: string, worktree: boolean): void
   /** Resolves the topic on screen: out of the list, its worktree removed. */
   onResolveTopic?(): void
+  /** The topic on screen's waits and where its box sends, and their gestures. */
+  topic?: TopicProps
   /** What a chat's box writes: a prompt or a note (←/→ switch it). */
   chatMode?: ChatMode
   /** The windows the keys can be in (each opened-out item is one), for a page that has some of its own. */
@@ -77,4 +80,20 @@ export interface ViewProps {
   onEditDraft(text: string): void
   onCommitEdit(): void
   onCancelEdit(): void
+}
+
+/** A topic's waits, each with what has come into it since, and where its box sends. */
+export interface TopicProps {
+  waits: { wait: Wait; candidates: string[] }[]
+  /** Where the box can send besides a note, in Tab's order. */
+  targets: SendTarget[]
+  /** Where it sends now (`SendTarget.on`), or null for a note. */
+  target: string | null
+  /** Waits on a Slack message's thread, its conversation, or both (a conversation: only itself). */
+  onWait(id: string, scope: 'thread' | 'channel' | 'both'): void
+  onUnwait(on: string): void
+  /** A message that came into a wait goes into the topic. */
+  onAccept(message: string): void
+  /** It is passed over. */
+  onDismiss(on: string, message: string): void
 }

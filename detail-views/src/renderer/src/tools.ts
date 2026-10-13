@@ -59,6 +59,8 @@ export const tools: Tool[] = [
   // A chat's prompt box: on to the next (or back to the previous) chat waiting for me.
   { id: 'chat.next', scope: 'input', keys: ['Tab'], enabled: (_, field) => field === 'prompt', run: (s) => s.nextChat(1) },
   { id: 'chat.previous', scope: 'input', keys: ['Shift+Tab'], enabled: (_, field) => field === 'prompt', run: (s) => s.nextChat(-1) },
+  // A topic's box: on to the next place it sends (a note, then each Slack conversation or thread in the chat).
+  { id: 'topic.target', scope: 'input', keys: ['Tab'], enabled: (s, field) => field === 'topic' && s.canCycleTopicTarget(), run: (s) => s.cycleTopicTarget() },
   // The box at the head of the list of topics: Enter makes the topic named in it (before the composer's Enter, which is the chat's).
   { id: 'topic.create', scope: 'input', keys: ['Enter'], enabled: (_, field) => field === 'topic-name', run: (s) => s.createTopic() },
   // A topic's box with nothing in it: Enter closes it (before the composer's Enter, which adds the message and closes it too).

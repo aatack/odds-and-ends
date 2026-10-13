@@ -8,8 +8,8 @@ import { ask, author as claudeAuthor, expandHome, githubRepo } from '../claude/c
 import type { Module, ModuleContext } from '../module.ts'
 import { me } from '../tasks/tasks.ts'
 import { branchEntityId, branchOfUrl } from '../github/view.ts'
-import { messageOfUrl } from '../slack/view.ts'
-import { answering, promptPart, topicsIds as ids, topicsView, unsent } from './view.ts'
+import { conversationOfUrl, messageOfUrl } from '../slack/view.ts'
+import { answering, promptPart, sendTargets, topicsIds as ids, topicsView, unsent, waitsOf, type SendTarget, type Wait } from './view.ts'
 
 /** The author of what the app writes in a topic on its own (the prompt to commit): not mine to undo. */
 export const appAuthor = 'module'
@@ -71,7 +71,7 @@ export class Topics implements Module {
     const trimmed = text.trim()
     if (!trimmed) return []
     const at = this.context.now()
-    const item = /^https?:\/\/\S+$/.test(trimmed) ? (prEntityId(trimmed) ?? messageOfUrl(trimmed) ?? branchOfUrl(trimmed)) : null
+    const item = /^https?:\/\/\S+$/.test(trimmed) ? (prEntityId(trimmed) ?? messageOfUrl(trimmed) ?? conversationOfUrl(trimmed) ?? branchOfUrl(trimmed)) : null
     const events = item ? [link(topic, item, at, me)] : this.message(topic, trimmed, at)
     this.context.owned.write(events)
     return events
@@ -89,6 +89,53 @@ export class Topics implements Module {
     writeFileSync(path, bytes)
     const at = this.context.now()
     const events = [...values(id, { type: 'file', text: name, path, mime: file.mime, size: bytes.length }, at, me), link(topic, id, at, me)]
+    this.context.owned.write(events)
+    return events
+  }
+
+  // --- Waits, and Slack sent from the box -------------------------------------------
+
+  /**
+   * Puts a topic down until something comes into each of `on` (Slack
+   * conversations, or threads by their first message), from now. One
+   * already waited for is waited for from now again.
+   */
+  wait(topic: string, on: string[]): AppEvent[] {
+    if (on.some((id) => !/^slack:(conv:[A-Z0-9]+|msg:[A-Z0-9]+:\d+\.\d+)$/.test(id))) throw new Error('Only a Slack conversation or thread can be waited on')
+    const since = this.context.now()
+    return this.setWaits(topic, (waits) => [...waits.filter((wait) => !on.includes(wait.slack)), ...on.map((slack) => ({ slack, since }))])
+  }
+
+  /** Takes a wait away. */
+  unwait(topic: string, on: string): AppEvent[] {
+    return this.setWaits(topic, (waits) => waits.filter((wait) => wait.slack !== on))
+  }
+
+  /** Passes over a message that came into a wait: it is no longer offered. */
+  dismiss(topic: string, on: string, message: string): AppEvent[] {
+    return this.setWaits(topic, (waits) => waits.map((wait) => (wait.slack === on ? { ...wait, dismissed: [...(wait.dismissed ?? []), message] } : wait)))
+  }
+
+  private setWaits(topic: string, change: (waits: Wait[]) => Wait[]): AppEvent[] {
+    const item = this.context.lens.read(topic)
+    if (item?.type !== 'topic') throw new Error('Not a topic')
+    const waits = change(waitsOf(item.data))
+    const events = [value(topic, 'wait', waits.length ? waits : null, this.context.now(), me)]
+    this.context.owned.write(events)
+    return events
+  }
+
+  /** Where a topic's box may send `on`: only somewhere a Slack item in its chat offers. */
+  sendTarget(topic: string, on: string): SendTarget {
+    if (this.context.lens.read(topic)?.type !== 'topic') throw new Error('Not a topic')
+    const target = sendTargets(topic, this.context.lens).find((offered) => offered.on === on)
+    if (!target) throw new Error('Nothing in this topic to send that to')
+    return target
+  }
+
+  /** A Slack message sent from a topic's box goes into its chat. */
+  sent(topic: string, id: string): AppEvent[] {
+    const events = [link(topic, id, this.context.now(), me)]
     this.context.owned.write(events)
     return events
   }

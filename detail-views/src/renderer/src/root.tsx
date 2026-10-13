@@ -4,7 +4,7 @@ import { installDispatch } from './dispatch.ts'
 import { installPaste } from './paste.ts'
 import { useSnapshot } from './hooks.ts'
 import type { Session } from './session.ts'
-import { actingIn, chatModeOf, draftKey, focused } from './state.ts'
+import { actingIn, chatModeOf, draftKey, focused, topicTargetOf } from './state.ts'
 import type { PeekTarget, Rect, SessionDialog } from './state.ts'
 import { actionsNow, labelOf, runTool, tools } from './tools.ts'
 import { App } from './views/App.tsx'
@@ -18,7 +18,7 @@ import './styles.css'
  * swaps hover for taps and keys for a bar of buttons.
  */
 function Root({ session, phone }: { session: Session; phone: boolean }) {
-  const { state, view: tree, shown, modules, peekViews, sideView, topics, contextViews, windowShown, item, working, now, findFocus, centre, toast } = useSnapshot(session)
+  const { state, view: tree, shown, modules, peekViews, sideView, topics, waiting, topicWaits, topicTargets, contextViews, windowShown, item, working, now, findFocus, centre, toast } = useSnapshot(session)
   useEffect(() => {
     const stopDispatch = installDispatch(session, tools)
     const stopPaste = installPaste(session)
@@ -61,6 +61,14 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
   const onSetDirectory = useCallback((cwd: string, worktree: boolean) => session.setDirectory(cwd, worktree), [])
   const onResolveTopic = useCallback(() => runTool(session, 'topic.resolve'), [])
   const onBack = useCallback(() => session.back(), [])
+  const onWait = useCallback((id: string, scope: 'thread' | 'channel' | 'both') => session.waitOn(id, scope), [])
+  const onUnwait = useCallback((on: string) => session.unwait(on), [])
+  const onAccept = useCallback((message: string) => session.acceptCandidate(message), [])
+  const onDismiss = useCallback((on: string, message: string) => session.dismissCandidate(on, message), [])
+  const topic = useMemo(
+    () => ({ waits: topicWaits, targets: topicTargets, target: topicTargetOf(state, focused(state)), onWait, onUnwait, onAccept, onDismiss }),
+    [topicWaits, topicTargets, state.topicTargets, state.trail, state.at],
+  )
   // No hover on a phone, so no peeks: a link opens in the browser instead.
   const gestures = useMemo(
     () =>
@@ -130,6 +138,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
         onSideResize,
         onSetDirectory,
         onResolveTopic,
+        topic,
         chatMode: chatModeOf(state, focused(state)),
         onEditDraft,
         onCommitEdit,
@@ -143,7 +152,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
         onToggle,
         onClose: onBack,
       },
-    [tree, shown, onNearEnd, onToggle, onBack, state, working, now, findFocus, centre, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onPause, onNewChat, contextViews, onContextToggle, onSideResize, onSetDirectory, onResolveTopic, onEditDraft, onCommitEdit, onCancelEdit],
+    [tree, shown, onNearEnd, onToggle, onBack, state, working, now, findFocus, centre, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onPause, onNewChat, contextViews, onContextToggle, onSideResize, onSetDirectory, onResolveTopic, topic, onEditDraft, onCommitEdit, onCancelEdit],
   )
   const picking = useMemo(() => {
     const pick = state.picking
@@ -196,6 +205,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
       session.topicsMode
         ? {
             topics,
+            waiting,
             open: focused(state),
             draft: state.drafts.topics ?? '',
             busy: working.topics?.includes('create') ?? false,
@@ -203,7 +213,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
             onOpen: (id: string) => session.openTopic(id),
           }
         : null,
-    [session, topics, state, working],
+    [session, topics, waiting, state, working],
   )
 
   const crumbs = useMemo(() => state.trail.slice(0, state.at + 1).map((id) => item(id)), [state.trail, state.at, item])

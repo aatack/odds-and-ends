@@ -159,6 +159,10 @@ void app.whenReady().then(() => {
     if (!action) throw new Error(`no action ${name}`)
     return action(args)
   })
+  // The one write to Slack, on a channel of its own: never through `invoke`, so nothing but the window's box reaches it.
+  ipcMain.handle('slackSend', (_event, args: { topic: string; on: string; text: string }) =>
+    core!.topicSlackSend({ topic: String(args?.topic), on: String(args?.on), text: String(args?.text) }),
+  )
   core.onChange((changed) => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('changed', changed)
   })

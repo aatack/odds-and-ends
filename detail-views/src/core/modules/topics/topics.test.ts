@@ -4,9 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { Core } from '../../core.ts'
-import { memoryCore } from '../../testing.ts'
+import { link, values } from '../../graph/events.ts'
+import { fakeSlack, memoryCore } from '../../testing.ts'
 import { interrupted } from '../claude/claude.ts'
 import { commitPrompt } from './topics.ts'
+import { sendTargets, waitCandidates, waiting, waitsOf } from './view.ts'
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
 
@@ -344,4 +346,112 @@ test('topics: after a restart, an answer cut off is waited for while its claude 
     if (home === undefined) delete process.env.CLAUDE_CONFIG_DIR
     else process.env.CLAUDE_CONFIG_DIR = home
   }
+})
+
+/** Slack's answers for a token to be kept, and nothing in the lists. */
+const slackAuth = {
+  'auth.test': () => ({ user_id: 'UME', url: 'https://x.slack.com/' }),
+  'users.conversations': () => ({ channels: [] }),
+  'conversations.list': () => ({ channels: [] }),
+  'users.list': () => ({ members: [] }),
+}
+
+/** A Slack message in the cache, linked where the watch would put it. */
+function cacheMessage(core: Core, channel: string, ts: string, user: string, thread?: string): string {
+  const id = `slack:msg:${channel}:${ts}`
+  const at = Number(ts) * 1000
+  core.cache.write([
+    ...values(id, { type: 'slack.message', channel, ts, user, text: `said at ${ts}`, threadTs: thread ?? null }, at, 'slack'),
+    link(thread ? `slack:msg:${channel}:${thread}` : `slack:conv:${channel}`, id, at, 'slack'),
+  ])
+  return id
+}
+
+test('topics: the box sends to Slack only where a Slack item in the chat offers, and only through the one way in', async () => {
+  const posted: URLSearchParams[] = []
+  const core = memoryCore({
+    now: () => 250_000,
+    fetch: fakeSlack({
+      ...slackAuth,
+      'chat.postMessage': (params) => {
+        posted.push(params)
+        return { ts: '260.000000', message: { ts: '260.000000', user: 'UME', text: params.get('text'), thread_ts: params.get('thread_ts') ?? undefined } }
+      },
+    }),
+  })
+  await core.slack.setToken('xoxp-1')
+  await core.actions.topicCreate({ name: 'Ask about the outage' })
+  const [topic] = core.entity('topics').outboundLinks
+  const message = cacheMessage(core, 'C1', '100.000000', 'UOTHER')
+  const reply = cacheMessage(core, 'C1', '120.000000', 'UOTHER', '100.000000')
+  await core.actions.topicPaste({ topic, text: 'https://x.slack.com/archives/C1/p100000000' })
+  assert.deepEqual(core.entity(topic).outboundLinks, [message])
+  // A message in a conversation: a reply in its thread, or a message to the conversation.
+  assert.deepEqual(sendTargets(topic, core.lens()), [
+    { on: message, channel: 'C1', threadTs: '100.000000' },
+    { on: 'slack:conv:C1', channel: 'C1' },
+  ])
+  // A reply in a thread: only its thread, once.
+  await core.actions.link({ parent: topic, child: reply })
+  assert.equal(sendTargets(topic, core.lens()).length, 2)
+
+  // Not an action: the phone, the MCP server and Claude reach only `actions`.
+  assert.ok(!Object.keys(core.actions).some((name) => /slack.*send|send.*slack/i.test(name)))
+  // Anything else that writes to Slack is still refused.
+  assert.match(String((await core.actions.submit({ id: 'slack:conv:C1', text: 'hi' })).error), /read-only/)
+  assert.equal(posted.length, 0)
+
+  assert.equal((await core.topicSlackSend({ topic, on: 'slack:conv:C9', text: 'hi' })).error, 'Nothing in this topic to send that to')
+  const sent = await core.topicSlackSend({ topic, on: message, text: 'Any news?' })
+  assert.equal(sent.error, null)
+  assert.equal(posted.length, 1)
+  assert.equal(posted[0].get('channel'), 'C1')
+  assert.equal(posted[0].get('thread_ts'), '100.000000')
+  // Into the chat, and into the thread as the watch would put it.
+  assert.equal(core.entity(topic).outboundLinks.at(-1), 'slack:msg:C1:260.000000')
+  assert.ok(core.entity(message).outboundLinks.includes('slack:msg:C1:260.000000'))
+  assert.equal(core.item('slack:msg:C1:260.000000')?.data.text, 'Any news?')
+})
+
+test('topics: a wait puts a topic down until someone else says something where it waits', async () => {
+  const core = memoryCore({ now: () => 250_000, fetch: fakeSlack(slackAuth) })
+  await core.slack.setToken('xoxp-1')
+  await core.actions.topicCreate({ name: 'Waiting on ops' })
+  const [topic] = core.entity('topics').outboundLinks
+  const message = cacheMessage(core, 'C1', '100.000000', 'UOTHER')
+  await core.actions.link({ parent: topic, child: message })
+  assert.equal(waiting(topic, core.lens()), false)
+
+  assert.match(String((await core.actions.topicWait({ topic, on: ['https://example.com'] })).error), /Only a Slack/)
+  await core.actions.topicWait({ topic, on: [message, 'slack:conv:C1'] })
+  assert.deepEqual(waitsOf(core.item(topic)!.data), [
+    { slack: message, since: 250_000 },
+    { slack: 'slack:conv:C1', since: 250_000 },
+  ])
+  assert.equal(waiting(topic, core.lens()), true)
+
+  // Before the wait, mine, and a thread's reply in the conversation's wait: none of them count.
+  cacheMessage(core, 'C1', '200.000000', 'UOTHER', '100.000000')
+  cacheMessage(core, 'C1', '260.000000', 'UME', '100.000000')
+  cacheMessage(core, 'C1', '270.000000', 'UOTHER', '150.000000')
+  assert.equal(waiting(topic, core.lens()), true)
+
+  const reply = cacheMessage(core, 'C1', '280.000000', 'UOTHER', '100.000000')
+  assert.equal(waiting(topic, core.lens()), false)
+  const [thread, channel] = waitsOf(core.item(topic)!.data)
+  assert.deepEqual(waitCandidates(topic, thread, core.lens()), [reply])
+  assert.deepEqual(waitCandidates(topic, channel, core.lens()), [])
+
+  // Passed over, it waits again; added to the topic, it is no longer offered.
+  await core.actions.topicDismiss({ topic, on: message, message: reply })
+  assert.equal(waiting(topic, core.lens()), true)
+  const later = cacheMessage(core, 'C1', '290.000000', 'UOTHER')
+  assert.equal(waiting(topic, core.lens()), false)
+  await core.actions.link({ parent: topic, child: later })
+  assert.equal(waiting(topic, core.lens()), true)
+
+  await core.actions.topicUnwait({ topic, on: message })
+  await core.actions.topicUnwait({ topic, on: 'slack:conv:C1' })
+  assert.equal(core.item(topic)!.data.wait ?? null, null)
+  assert.equal(waiting(topic, core.lens()), false)
 })

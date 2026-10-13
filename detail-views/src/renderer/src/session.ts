@@ -2,7 +2,7 @@ import { EntityCache, type CacheState } from '../../core/graph/cache.ts'
 import { findInContext, foreignOf, itemOf, lensOf, moduleInfos, viewOf } from '../../core/present.ts'
 import { activity } from '../../core/modules/slack/view.ts'
 import { byMade, claudeIds } from '../../core/modules/claude/view.ts'
-import { answering, topicsIds, unsent } from '../../core/modules/topics/view.ts'
+import { answering, sendTargets, topicsIds, unsent, waitCandidates, waiting, waitsOf, type SendTarget, type Wait } from '../../core/modules/topics/view.ts'
 import { entityScheme, type Entity, type ModuleInfo, type NoteValues, type Outcome, type View, type ViewRow } from '../../core/types.ts'
 import type { Api } from './api.ts'
 import type { Environment } from './environment.ts'
@@ -21,6 +21,12 @@ export interface Snapshot {
   sideView: View | null
   /** Every topic, the most recently active first: the topics mode's list (empty in the classic one). */
   topics: Entity[]
+  /** The topics put down until something comes into what they wait on (`waiting`), by id. */
+  waiting: string[]
+  /** The topic on screen's waits, each with what has come into it since. */
+  topicWaits: { wait: Wait; candidates: string[] }[]
+  /** Where the topic on screen's box can send besides a note, in the order Tab goes through them. */
+  topicTargets: SendTarget[]
   /** The items the chat on screen has opened out in its context pane, walked, by id. */
   contextViews: Record<string, View>
   /** The rows of each window but the main view (`side`, or a peek's key), with its selection and any edit laid over them. */
@@ -48,6 +54,9 @@ export interface Snapshot {
 }
 
 const storageKey = 'detail-views.state'
+/** Whether two small derived values say the same, so one that didn't change keeps its identity. */
+const sameJson = (a: unknown, b: unknown): boolean => a === b || JSON.stringify(a) === JSON.stringify(b)
+
 /** The topics mode keeps its own stack, apart from the classic one's. */
 const topicsStorageKey = 'detail-views.topics.state'
 /** How often everything in the cache is looked at again, to load whatever has gone stale. */
@@ -127,7 +136,7 @@ export class Session {
     this.storageKey = this.topicsMode ? topicsStorageKey : storageKey
     this.cache = new EntityCache({ scan: (ids) => api.scan(ids), load: (request) => api.load(request), foreign: foreignOf })
     const state = S.restore(env.load(this.storageKey), this.topicsMode ? topicsIds.root : 'slack')
-    this.snapshot = { state, modules: moduleInfos, view: null, shown: noRows, peekViews: {}, sideView: null, topics: [], contextViews: {}, windowShown: {}, item: () => null, working: {}, now: Date.now(), findFocus: 0, centre: 0, toast: null }
+    this.snapshot = { state, modules: moduleInfos, view: null, shown: noRows, peekViews: {}, sideView: null, topics: [], waiting: [], topicWaits: [], topicTargets: [], contextViews: {}, windowShown: {}, item: () => null, working: {}, now: Date.now(), findFocus: 0, centre: 0, toast: null }
     this.snapshot = this.derive(state)
   }
 
@@ -258,8 +267,31 @@ export class Session {
               return found.get(id)!
             }
           })()
+    // Waits and where a topic's box sends are read off the cache: only worked out again when it, or the list, changed.
+    const sameCache = this.itemsFrom === cache && sameTopics
+    const lens = sameCache ? null : lensOf(this.cache.source(cache))
+    const waitingNow = lens ? topics.filter((topic) => waiting(topic.id, lens)).map((topic) => topic.id) : previous.waiting
+    const sameWaiting = waitingNow.length === previous.waiting.length && waitingNow.every((id, at) => id === previous.waiting[at])
+    const onTopic = this.topicsMode && view.root?.type === 'topic'
+    const sameTopic = sameCache && root === S.focused(previous.state)
+    const topicWaits = !onTopic ? [] : sameTopic ? previous.topicWaits : waitsOf(view.root!.data).map((wait) => ({ wait, candidates: waitCandidates(root, wait, lens ?? lensOf(this.cache.source(cache))) }))
+    const topicTargets = !onTopic ? [] : sameTopic ? previous.topicTargets : sendTargets(root, lens ?? lensOf(this.cache.source(cache)))
     this.itemsFrom = cache
-    return { ...previous, state, view, shown, peekViews, sideView, topics: sameTopics ? previous.topics : topics, contextViews, windowShown, item }
+    return {
+      ...previous,
+      state,
+      view,
+      shown,
+      peekViews,
+      sideView,
+      topics: sameTopics ? previous.topics : topics,
+      waiting: sameWaiting ? previous.waiting : waitingNow,
+      topicWaits: sameJson(topicWaits, previous.topicWaits) ? previous.topicWaits : topicWaits,
+      topicTargets: sameJson(topicTargets, previous.topicTargets) ? previous.topicTargets : topicTargets,
+      contextViews,
+      windowShown,
+      item,
+    }
   }
 
   private itemsFrom: CacheState | null = null
@@ -596,7 +628,8 @@ export class Session {
 
   /**
    * `.`: the next topic down the list (round from the open one, or from the
-   * top) where Claude isn't working, opened. Null when there is none.
+   * top) where Claude isn't working and that isn't waiting on anything still
+   * to come (`waiting`), opened. Null when there is none.
    */
   private nextIdleTopic(): string | null {
     const lens = lensOf(this.cache.source(this.cache.get()))
@@ -604,7 +637,7 @@ export class Session {
     const at = topics.findIndex((topic) => topic.id === S.focused(this.state))
     for (let step = 1; step <= topics.length; step++) {
       const topic = topics[(at + step) % topics.length]
-      if (topic.id !== S.focused(this.state) && !answering(topic.id, lens)) return topic.id
+      if (topic.id !== S.focused(this.state) && !answering(topic.id, lens) && !waiting(topic.id, lens)) return topic.id
     }
     return null
   }
@@ -694,12 +727,15 @@ export class Session {
 
   /** Ctrl+Enter with something typed in a topic's box: it goes in as a message, even while Claude answers (to go with the next dispatch). */
   canSubmitAndDispatch(): boolean {
+    if (this.topicTarget() && this.topicDraft().trim()) return false
     return this.canDispatch() || Boolean(this.topicDraft().trim())
   }
 
   /** Why Ctrl+Enter on a topic sends nothing, when it can't: said, rather than the key falling through to the side panel's Ctrl+Enter. */
   dispatchRefusal(): string | null {
     if (!this.onTopic() || this.canSubmitAndDispatch()) return null
+    // What is typed is for Slack: Ctrl+Enter never sends it to Claude instead.
+    if (this.topicTarget() && this.topicDraft().trim()) return 'The box is set to Slack: Enter sends it there, Tab goes back to a note'
     return answering(S.focused(this.state), lensOf(this.cache.source(this.cache.get()))) ? 'Claude is still answering' : 'Nothing new to send'
   }
 
@@ -725,6 +761,82 @@ export class Session {
     const outcome = await this.working(id, 'dispatch', () => this.api.topicDispatch(id))
     this.settle(id, outcome)
     if (outcome.error) this.showToast(outcome.error)
+  }
+
+  // --- Where a topic's box sends, and what a topic waits on ---------------------------
+
+  /** Where the box of the topic on screen sends: a Slack conversation or thread it offers, or null for a note. */
+  topicTarget(): SendTarget | null {
+    if (!this.onTopic()) return null
+    const on = S.topicTargetOf(this.state, S.focused(this.state))
+    return this.snapshot.topicTargets.find((target) => target.on === on) ?? null
+  }
+
+  /** Tab in a topic's box: it goes on to the next place it can send (a note, then each Slack one), when there is more than a note. */
+  canCycleTopicTarget(): boolean {
+    return this.onTopic() && this.snapshot.topicTargets.length > 0
+  }
+
+  cycleTopicTarget(): void {
+    if (!this.canCycleTopicTarget()) return
+    const targets = this.snapshot.topicTargets
+    const at = targets.findIndex((target) => target.on === this.topicTarget()?.on)
+    this.update(S.setTopicTarget(this.state, S.focused(this.state), at + 1 < targets.length ? targets[at + 1].on : null))
+  }
+
+  /**
+   * Enter in a topic's box pointed at Slack: the text goes to Slack as me,
+   * and into the chat as that message. The box goes back to a note, so a
+   * second Enter can't send again by mistake.
+   */
+  private async sendToSlack(target: SendTarget, text: string): Promise<void> {
+    const id = S.focused(this.state)
+    this.update(S.setTopicTarget(S.setComposing(S.setDraftFor(this.state, id, ''), false), id, null))
+    const outcome = await this.working(id, 'slack', () => this.api.topicSlackSend(id, target.on, text))
+    this.settle(id, outcome)
+    // Nothing went: what was typed comes back, to send again or change.
+    if (outcome.error) {
+      this.showToast(outcome.error)
+      if (!(this.state.drafts[id] ?? '').trim()) this.update(S.setTopicTarget(S.setDraftFor(this.state, id, text), id, target.on))
+    }
+  }
+
+  /**
+   * Waits on a Slack message's thread, its conversation, or both, from now:
+   * the topic on screen is put down until something comes into one.
+   */
+  waitOn(message: string, scope: 'thread' | 'channel' | 'both'): void {
+    if (!this.onTopic()) return
+    const data = this.snapshot.item(message)?.data ?? {}
+    const channel = typeof data.channel === 'string' ? data.channel : message.startsWith('slack:conv:') ? message.slice('slack:conv:'.length) : null
+    if (!channel) return
+    const ts = typeof data.ts === 'string' ? data.ts : null
+    const thread = ts ? `slack:msg:${channel}:${typeof data.threadTs === 'string' ? data.threadTs : ts}` : null
+    const conversation = `slack:conv:${channel}`
+    const on = scope === 'thread' ? [thread] : scope === 'channel' ? [conversation] : [thread, conversation]
+    const id = S.focused(this.state)
+    void this.working(id, 'wait', () => this.api.topicWait(id, on.filter((one): one is string => one !== null))).then((outcome) => {
+      this.settle(id, outcome)
+      if (outcome.error) this.showToast(outcome.error)
+    })
+  }
+
+  /** The × on a wait: the topic stops waiting on it. */
+  unwait(on: string): void {
+    const id = S.focused(this.state)
+    void this.api.topicUnwait(id, on).then((outcome) => this.settle(id, outcome))
+  }
+
+  /** A message that came into a wait goes into the topic. */
+  acceptCandidate(message: string): void {
+    const id = S.focused(this.state)
+    void this.api.link(id, message).then((outcome) => this.settle(id, outcome))
+  }
+
+  /** A message that came into a wait is passed over: no longer offered. */
+  dismissCandidate(on: string, message: string): void {
+    const id = S.focused(this.state)
+    void this.api.topicDismiss(id, on, message).then((outcome) => this.settle(id, outcome))
   }
 
   /** Opens or closes the phone's list of every action. */
@@ -1087,6 +1199,11 @@ export class Session {
     const text = this.state.drafts[S.draftKey(this.state)] ?? ''
     if (!text.trim()) return
     this.update(S.setDraft(this.state, ''))
+    const target = this.topicTarget()
+    if (target) {
+      await this.sendToSlack(target, text)
+      return
+    }
     // A topic's box lets the keyboard go once its message is in: Enter gives it back.
     if (this.onTopic()) this.update(S.setComposing(this.state, false))
     // A chat's box in note mode writes a note in the chat, for the next prompt to bring in.

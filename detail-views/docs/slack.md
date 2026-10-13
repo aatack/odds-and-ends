@@ -49,9 +49,16 @@ Undocumented column: from memory, unverified; none of it is in the reference.
 
 ## Constraints
 
-- **Read-only.** `api.ts` refuses any method not on its read list
+- **Read-only, but for one write.** `api.ts` refuses any method not on its read list
   (`slackWrites` is off). Adding a read method needs my say-so; it is how
   `search.messages`, `users.list` and `conversations.list` got there.
+- **The one write: a message I send from a topic's box** (`docs/topics.md`
+  19–21). `chat.postMessage` goes through only with `byMe`, which only
+  `Slack.send` gives, which only `Core.topicSlackSend` calls. That is not in
+  `Core.actions`, so the phone, the MCP server and Claude cannot reach it; only
+  the window's own IPC channel (`slackSend`) does, straight after a key press or
+  click of mine. Never call `Slack.send` from anything a script, an
+  automation or an agent can start.
 - **Read state is mine** (below): an owned `lastRead` per item, set with
   `m`. Slack's own read state is never read.
 - **No per-conversation loading on its own.** Slack has no public call for
