@@ -1912,6 +1912,17 @@ textarea:hover,
   opacity: 0.55;
 }
 
+/* A flat chat's box, at a glance: without the keyboard, faded and flat; with it, full strength, its edge in the accent and sunk deeper. */
+.chat-page.flat:not(.prompting) .chat-main > .composer {
+  opacity: 0.4;
+  box-shadow: none;
+}
+
+.chat-page.flat.prompting .chat-main > .composer {
+  border-color: var(--accent-line);
+  box-shadow: inset 0 1px 4px var(--well-hover);
+}
+
 .chat-fold {
   flex: none;
   width: 1em;

@@ -75,7 +75,7 @@ export const tools: Tool[] = [
   { id: 'confirm.cancel', scope: 'list', keys: ['Escape'], enabled: (s) => s.hasConfirmDialog(), run: (s) => s.cancelDialog() },
 
   // A chat while its rows have the keys: Tab hands them back to its box.
-  // A topic's chat, its box closed: Enter opens it (its rows are not selectable, so Enter adds nothing).
+  // A topic's chat, its box without the keyboard: Enter gives it the keyboard (its rows are not selectable, so Enter adds nothing).
   { id: 'topic.prompt', scope: 'list', keys: ['Enter'], enabled: (s) => s.canReturnToTopicBox(), run: (s) => s.returnToPrompt() },
   { id: 'chat.prompt', scope: 'list', keys: ['Tab'], enabled: (s) => s.canReturnToPrompt(), run: (s) => s.returnToPrompt() },
 

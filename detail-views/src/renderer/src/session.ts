@@ -652,7 +652,7 @@ export class Session {
     })
   }
 
-  /** Whether a paste outside any text box goes into a topic: one is on screen, its box closed. */
+  /** Whether a paste outside any text box goes into a topic: one is on screen, its box without the keyboard. */
   canPaste(): boolean {
     return this.onTopic() && !this.state.composing
   }
@@ -1081,7 +1081,7 @@ export class Session {
     const text = this.state.drafts[S.draftKey(this.state)] ?? ''
     if (!text.trim()) return
     this.update(S.setDraft(this.state, ''))
-    // A topic's box closes once its message is in: Enter opens it again.
+    // A topic's box lets the keyboard go once its message is in: Enter gives it back.
     if (this.onTopic()) this.update(S.setComposing(this.state, false))
     // A chat's box in note mode writes a note in the chat, for the next prompt to bring in.
     if (this.root()?.type === 'claude.session' && S.chatModeOf(this.state, id) === 'note') {

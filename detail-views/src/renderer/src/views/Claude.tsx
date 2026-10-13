@@ -287,8 +287,8 @@ export type BubbleOf = (row: EntityRow['row']) => 'mine' | 'theirs' | null
  * in a tree, newest at the bottom, and its box below with the keyboard
  * (`field` names it for the keys); `side` beside it, if anything. A `flat`
  * one shows only the rows directly under its root, and none is selectable.
- * A box `onDemand` is there only while it has the keyboard (Enter opens
- * it). `corner` sits at its top right. A flat chat's rows sit closer
+ * A box `onDemand` takes the keyboard only when asked (Enter), not when
+ * the page opens. `corner` sits at its top right. A flat chat's rows sit closer
  * together while the same voice goes on (`joined`): mine, then Claude's.
  */
 export function ChatPage(page: {
@@ -364,19 +364,17 @@ export function ChatPage(page: {
           </div>
         </div>
         <Status error={view.error} />
-        {!(page.onDemand && !props.composing) && (
-          <Composer
-            key={entity.id}
-            kind={view.compose ?? 'claude'}
-            field={page.field}
-            autoFocus
-            placeholder={page.placeholder}
-            draft={props.draft}
-            composing={props.composing}
-            onDraft={props.onDraft}
-            onCompose={props.onCompose}
-          />
-        )}
+        <Composer
+          key={entity.id}
+          kind={view.compose ?? 'claude'}
+          field={page.field}
+          autoFocus={!page.onDemand}
+          placeholder={page.placeholder}
+          draft={props.draft}
+          composing={props.composing}
+          onDraft={props.onDraft}
+          onCompose={props.onCompose}
+        />
       </div>
       {page.side}
     </div>
