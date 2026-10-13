@@ -65,11 +65,12 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
   const onAddPath = useCallback((cwd: string, worktree: boolean) => session.addPath(cwd, worktree), [])
   const onBack = useCallback(() => session.back(), [])
   const onWait = useCallback((id: string, scope: 'thread' | 'channel' | 'both') => session.waitOn(id, scope), [])
+  const onWaitTopic = useCallback((id: string) => session.waitOnTopic(id), [])
   const onUnwait = useCallback((on: string) => session.unwait(on), [])
   const onAccept = useCallback((message: string) => session.acceptCandidate(message), [])
   const onDismiss = useCallback((on: string, message: string) => session.dismissCandidate(on, message), [])
   const topic = useMemo(
-    () => ({ waits: topicWaits, targets: topicTargets, target: topicTargetOf(state, focused(state)), onWait, onUnwait, onAccept, onDismiss }),
+    () => ({ waits: topicWaits, targets: topicTargets, target: topicTargetOf(state, focused(state)), onWait, onWaitTopic, onUnwait, onAccept, onDismiss }),
     [topicWaits, topicTargets, state.topicTargets, state.trail, state.at],
   )
   // No hover on a phone, so no peeks: a link opens in the browser instead.

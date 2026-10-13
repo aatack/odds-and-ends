@@ -616,3 +616,27 @@ test('topics: a wait puts a topic down until someone else says something where i
   assert.equal(core.item(topic)!.data.wait ?? null, null)
   assert.equal(waiting(topic, core.lens()), false)
 })
+
+test('topics: a topic made from another goes into its chat; a topic can wait on another until it is resolved', async () => {
+  const core = memoryCore({ now: () => 250_000 })
+  await core.actions.topicCreate({ name: 'Release' })
+  const [release] = core.entity('topics').outboundLinks
+  const made = await core.actions.topicCreate({ name: 'Fix the build', parent: release })
+  assert.equal(made.error, null)
+  const fix = core.entity('topics').outboundLinks.find((id) => id !== release)!
+  // In the list, and in the other topic's chat.
+  assert.deepEqual(core.entity(release).outboundLinks, [fix])
+  assert.match(String((await core.actions.topicCreate({ name: 'x', parent: 'nope' })).error), /Not a topic/)
+
+  // Waits on it: down until it is resolved.
+  assert.match(String((await core.actions.topicWait({ topic: release, on: [release] })).error), /can be waited on/)
+  assert.equal((await core.actions.topicWait({ topic: release, on: [fix] })).error, null)
+  assert.deepEqual(waitsOf(core.item(release)!.data), [{ topic: fix, since: 250_000 }])
+  assert.equal(waiting(release, core.lens()), true)
+  assert.equal((await core.actions.topicResolve({ topic: fix, force: false })).error, null)
+  assert.equal(waiting(release, core.lens()), false)
+  // Nothing to add from a topic's wait; × takes it away.
+  assert.deepEqual(waitCandidates(release, waitsOf(core.item(release)!.data)[0], core.lens()), [])
+  await core.actions.topicUnwait({ topic: release, on: fix })
+  assert.equal(core.item(release)!.data.wait ?? null, null)
+})

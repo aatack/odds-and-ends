@@ -97,6 +97,8 @@ export interface TopicProps {
   target: string | null
   /** Waits on a Slack message's thread, its conversation, or both (a conversation: only itself). */
   onWait(id: string, scope: 'thread' | 'channel' | 'both'): void
+  /** Waits on another topic in the chat, until it is resolved. */
+  onWaitTopic(id: string): void
   onUnwait(on: string): void
   /** A message that came into a wait goes into the topic. */
   onAccept(message: string): void

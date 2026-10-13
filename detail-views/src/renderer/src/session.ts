@@ -564,6 +564,15 @@ export class Session {
     if (this.canOpenTopicDialog()) this.update(S.setDialog(this.state, { kind: 'topic', name: '', path: '', worktree: false }))
   }
 
+  /** `?` on a topic: the same form, for a topic that also goes into this one's chat. */
+  canOpenChildTopicDialog(): boolean {
+    return this.canOpenTopicDialog() && this.onTopic()
+  }
+
+  openChildTopicDialog(): void {
+    if (this.canOpenChildTopicDialog()) this.update(S.setDialog(this.state, { kind: 'topic', name: '', path: '', worktree: false, parent: S.focused(this.state) }))
+  }
+
   hasDialog(): boolean {
     return this.state.dialog !== null
   }
@@ -584,7 +593,7 @@ export class Session {
     if (dialog.kind === 'topic') {
       if (!dialog.name.trim()) return
       this.update(S.setDialog(this.state, null))
-      this.makeTopic(dialog.name, dialog.path.trim() ? { cwd: dialog.path, worktree: dialog.worktree } : undefined)
+      this.makeTopic(dialog.name, dialog.path.trim() ? { cwd: dialog.path, worktree: dialog.worktree } : undefined, dialog.parent)
       return
     }
     this.update(S.setDialog(this.state, null))
@@ -619,9 +628,10 @@ export class Session {
     this.makeTopic(name)
   }
 
-  /** A topic named `name` is made (with its first path, if given), and opened. */
-  private makeTopic(name: string, path?: { cwd: string; worktree: boolean }): void {
-    void this.working(topicsIds.root, 'create', () => this.api.topicCreate(name, path)).then((outcome) => {
+  /** A topic named `name` is made (with its first path, and in another's chat, if given), and opened. */
+  private makeTopic(name: string, path?: { cwd: string; worktree: boolean }, parent?: string): void {
+    void this.working(topicsIds.root, 'create', () => this.api.topicCreate(name, path, parent)).then((outcome) => {
+      if (parent) this.settle(parent, outcome)
       this.settle(topicsIds.root, outcome)
       if (outcome.error) this.showToast(outcome.error)
       const made = outcome.events.find((event) => event.type === 'link' && event.sourceId === topicsIds.root)
@@ -861,6 +871,16 @@ export class Session {
     const on = scope === 'thread' ? [thread] : scope === 'channel' ? [conversation] : [thread, conversation]
     const id = S.focused(this.state)
     void this.working(id, 'wait', () => this.api.topicWait(id, on.filter((one): one is string => one !== null))).then((outcome) => {
+      this.settle(id, outcome)
+      if (outcome.error) this.showToast(outcome.error)
+    })
+  }
+
+  /** Waits on another topic in the chat: the topic on screen is put down until that one is resolved. */
+  waitOnTopic(other: string): void {
+    if (!this.onTopic()) return
+    const id = S.focused(this.state)
+    void this.working(id, 'wait', () => this.api.topicWait(id, [other])).then((outcome) => {
       this.settle(id, outcome)
       if (outcome.error) this.showToast(outcome.error)
     })

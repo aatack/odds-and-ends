@@ -10,7 +10,7 @@ import { me } from '../tasks/tasks.ts'
 import { prOfBranch } from '../github/github.ts'
 import { branchOfUrl } from '../github/view.ts'
 import { conversationOfUrl, messageOfUrl } from '../slack/view.ts'
-import { answering, latestPath, promptPart, sendTargets, topicsIds as ids, topicsView, unsent, waitsOf, type SendTarget, type Wait } from './view.ts'
+import { answering, latestPath, promptPart, sendTargets, topicsIds as ids, topicsView, unsent, waitOn, waitsOf, type SendTarget, type Wait } from './view.ts'
 
 /** The author of what the app writes in a topic on its own (the prompt to commit): not mine to undo. */
 export const appAuthor = 'module'
@@ -117,23 +117,29 @@ export class Topics implements Module {
 
   /**
    * Puts a topic down until something comes into each of `on` (Slack
-   * conversations, or threads by their first message), from now. One
-   * already waited for is waited for from now again.
+   * conversations, or threads by their first message), or each other topic
+   * in `on` is resolved, from now. One already waited for is waited for from
+   * now again.
    */
   wait(topic: string, on: string[]): AppEvent[] {
-    if (on.some((id) => !/^slack:(conv:[A-Z0-9]+|msg:[A-Z0-9]+:\d+\.\d+)$/.test(id))) throw new Error('Only a Slack conversation or thread can be waited on')
     const since = this.context.now()
-    return this.setWaits(topic, (waits) => [...waits.filter((wait) => !on.includes(wait.slack)), ...on.map((slack) => ({ slack, since }))])
+    const added = on.map((id): Wait => {
+      if (/^slack:(conv:[A-Z0-9]+|msg:[A-Z0-9]+:\d+\.\d+)$/.test(id)) return { slack: id, since }
+      // Another topic: back once it is resolved.
+      if (id !== topic && this.context.lens.read(id)?.type === 'topic') return { topic: id, since }
+      throw new Error('Only a Slack conversation or thread, or another topic, can be waited on')
+    })
+    return this.setWaits(topic, (waits) => [...waits.filter((wait) => !on.includes(waitOn(wait))), ...added])
   }
 
   /** Takes a wait away. */
   unwait(topic: string, on: string): AppEvent[] {
-    return this.setWaits(topic, (waits) => waits.filter((wait) => wait.slack !== on))
+    return this.setWaits(topic, (waits) => waits.filter((wait) => waitOn(wait) !== on))
   }
 
   /** Passes over a message that came into a wait: it is no longer offered. */
   dismiss(topic: string, on: string, message: string): AppEvent[] {
-    return this.setWaits(topic, (waits) => waits.map((wait) => (wait.slack === on ? { ...wait, dismissed: [...(wait.dismissed ?? []), message] } : wait)))
+    return this.setWaits(topic, (waits) => waits.map((wait) => (waitOn(wait) === on ? { ...wait, dismissed: [...(wait.dismissed ?? []), message] } : wait)))
   }
 
   private setWaits(topic: string, change: (waits: Wait[]) => Wait[]): AppEvent[] {

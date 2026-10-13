@@ -364,7 +364,7 @@ export interface DialogProps<D extends Dialog = Dialog> {
 function TopicForm(props: DialogProps<TopicDialog>) {
   const { dialog } = props
   return (
-    <Modal title="New topic" onClose={props.onCancel}>
+    <Modal title={dialog.parent ? 'New topic, in this one' : 'New topic'} onClose={props.onCancel}>
       <input
         className="find"
         data-field="dialog-topic-name"

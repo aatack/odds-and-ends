@@ -114,6 +114,8 @@ export interface TopicDialog {
   name: string
   path: string
   worktree: boolean
+  /** Made from another topic (`?`): it goes into that one's chat too. */
+  parent?: string
 }
 
 /** What a form's fields can change (`kind` apart). */

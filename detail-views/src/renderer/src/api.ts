@@ -35,7 +35,8 @@ export interface Api {
   /** A session's directory changed: to `cwd`, or a new worktree of its repo. */
   claudeSetDirectory(session: string, cwd: string, worktree: boolean): Promise<Outcome>
   /** A new topic, named, in the one list of them. */
-  topicCreate(name: string, path?: { cwd: string; worktree: boolean }): Promise<Outcome>
+  /** A new topic, named; with its first path, and in another topic's chat (`parent`), if given. */
+  topicCreate(name: string, path?: { cwd: string; worktree: boolean }, parent?: string): Promise<Outcome>
   /** A path for a topic: `cwd`, or a new worktree of it; where its next dispatch runs. */
   topicAddPath(topic: string, cwd: string, worktree: boolean): Promise<Outcome>
   /** Sends a topic's messages since its last dispatch to Claude at once. */
@@ -122,7 +123,7 @@ export function httpApi(base: string, token: string): Api {
     redo: (events) => call('redo', { events }),
     claudeCreate: (input) => call('claudeCreate', input),
     claudeSetDirectory: (session, cwd, worktree) => call('claudeSetDirectory', { session, cwd, worktree }),
-    topicCreate: (name, path) => call('topicCreate', { name, ...path }),
+    topicCreate: (name, path, parent) => call('topicCreate', { name, ...path, parent }),
     topicAddPath: (topic, cwd, worktree) => call('topicAddPath', { topic, cwd, worktree }),
     topicDispatch: (topic) => call('topicDispatch', { topic }),
     topicPaste: (topic, text) => call('topicPaste', { topic, text }),
@@ -180,7 +181,7 @@ export function electronApi(): Api {
     redo: (events) => call('redo', { events }),
     claudeCreate: (input) => call('claudeCreate', input),
     claudeSetDirectory: (session, cwd, worktree) => call('claudeSetDirectory', { session, cwd, worktree }),
-    topicCreate: (name, path) => call('topicCreate', { name, ...path }),
+    topicCreate: (name, path, parent) => call('topicCreate', { name, ...path, parent }),
     topicAddPath: (topic, cwd, worktree) => call('topicAddPath', { topic, cwd, worktree }),
     topicDispatch: (topic) => call('topicDispatch', { topic }),
     topicPaste: (topic, text) => call('topicPaste', { topic, text }),

@@ -79,15 +79,27 @@ export const topicsView: ModuleView = {
  * `dismissed`. Later kinds of wait go beside `slack`.
  */
 export interface Wait {
-  slack: string
+  /** A Slack conversation or thread: back when someone else says something there. */
+  slack?: string
+  /** Another topic: back once it is resolved. */
+  topic?: string
   since: number
   dismissed?: string[]
 }
 
+/** What a wait is on: its Slack conversation or thread, or its topic. */
+export const waitOn = (wait: Wait): string => wait.slack ?? wait.topic ?? ''
+
 /** A topic's waits, as kept on it (anything malformed dropped). */
 export function waitsOf(data: Record<string, unknown>): Wait[] {
   if (!Array.isArray(data.wait)) return []
-  return data.wait.filter((wait): wait is Wait => typeof wait?.slack === 'string' && typeof wait.since === 'number')
+  return data.wait.filter((wait): wait is Wait => (typeof wait?.slack === 'string' || typeof wait?.topic === 'string') && typeof wait.since === 'number')
+}
+
+/** Whether a wait is back: a Slack one when something came into it (`waitCandidates`), a topic one once that topic is resolved. */
+export function waitReturned(topic: string, wait: Wait, lens: Lens): boolean {
+  if (wait.topic) return Boolean(lens.read(wait.topic)?.data.resolved)
+  return waitCandidates(topic, wait, lens).length > 0
 }
 
 /** The ts in a Slack message id, as Unix ms; NaN for anything else. */
@@ -103,6 +115,8 @@ const messageMillis = (id: string): number => {
  * dismissed, and not a join or leave.
  */
 export function waitCandidates(topic: string, wait: Wait, lens: Lens): string[] {
+  // A topic's wait brings nothing in: it is only back, or not.
+  if (!wait.slack) return []
   const self = lens.read('slack')?.data.self
   const inTopic = new Set(lens.children(topic))
   const dismissed = new Set(wait.dismissed ?? [])
@@ -123,7 +137,7 @@ export function waitCandidates(topic: string, wait: Wait, lens: Lens): string[] 
  */
 export function waiting(topic: string, lens: Lens): boolean {
   const waits = waitsOf(lens.read(topic)?.data ?? {})
-  return waits.length > 0 && waits.every((wait) => waitCandidates(topic, wait, lens).length === 0)
+  return waits.length > 0 && waits.every((wait) => !waitReturned(topic, wait, lens))
 }
 
 /**

@@ -149,6 +149,8 @@ export const tools: Tool[] = [
   { id: 'topic.push', label: 'Push', scope: 'list', keys: [], enabled: (s) => s.canResolveTopic(), run: (s) => s.topicGit('push') },
   { id: 'topic.resolve', label: 'Resolve', scope: 'list', keys: [], enabled: (s) => s.canResolveTopic(), run: (s) => s.resolveTopic() },
   // From anywhere, typing too: a form for the new topic's name.
+  // On a topic, not while typing: the same form, for a topic that goes into this one's chat too.
+  { id: 'topic.child', label: 'New topic here', scope: 'list', keys: ['?'], enabled: (s) => s.canOpenChildTopicDialog(), run: (s) => s.openChildTopicDialog() },
   { id: 'topic.new', label: 'New topic', scope: 'app', keys: ['Ctrl+.'], enabled: (s) => s.canOpenTopicDialog(), run: (s) => s.openTopicDialog() },
   { id: 'session.send', label: 'To session', scope: 'list', keys: ['k'], enabled: (s) => s.canSendToSession(), run: (s) => s.sendToSession() },
   // On a topic, from its box or its rows: every message since the last dispatch, to Claude at once (before the side panel's Ctrl+Enter).

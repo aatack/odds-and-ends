@@ -4,6 +4,7 @@ import { shortTime } from '../format.ts'
 import { ChatPage, ClaudeMark, elapsed, type BubbleOf } from './Claude.tsx'
 import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
 import { PathPicker } from './Paths.tsx'
+import { waitOn } from '../../../core/modules/topics/view.ts'
 import type { TopicProps } from './types.ts'
 import { Button, ClockContext, Highlight, ItemContext, ItemPill } from './primitives.tsx'
 
@@ -111,6 +112,8 @@ function SlackWhere(props: { on: string; thread: boolean }) {
 function WaitButtons(props: { entity: Entity; topic: TopicProps }) {
   const { entity, topic } = props
   if (entity.type === 'slack.conversation') return <Button quiet label="Wait" onClick={() => topic.onWait(entity.id, 'channel')} />
+  // Another topic: wait until it is resolved.
+  if (entity.type === 'topic') return <Button quiet label="Wait" onClick={() => topic.onWaitTopic(entity.id)} />
   // Not until it has loaded: only then is it known whether it is in a thread.
   if (entity.type !== 'slack.message' || typeof entity.data.ts !== 'string') return null
   return (
@@ -131,17 +134,28 @@ function WaitButtons(props: { entity: Entity; topic: TopicProps }) {
 function TopicWaits(props: { topic: TopicProps }) {
   const { topic } = props
   const now = useContext(ClockContext)
+  const { item } = useContext(ItemContext)
   return (
     <div className="topic-waits">
-      {topic.waits.map(({ wait, candidates }) => (
-        <div key={wait.slack}>
+      {topic.waits.map(({ wait, candidates }) => {
+        const on = waitOn(wait)
+        // A topic's wait is back once that topic is resolved; a Slack one, when something new came in.
+        const status = wait.topic
+          ? item(wait.topic)?.data.resolved
+            ? 'resolved'
+            : `waiting ${elapsed(now - wait.since)}`
+          : candidates.length
+            ? `${candidates.length} new`
+            : `waiting ${elapsed(now - wait.since)}`
+        return (
+        <div key={on}>
           <div className="topic-wait">
-            <SlackMark />
+            {wait.slack && <SlackMark />}
             <span className="wait-on">
-              <ItemPill id={wait.slack} fallback={<WaitName on={wait.slack} />} />
+              <ItemPill id={on} fallback={wait.slack ? <WaitName on={on} /> : '…'} />
             </span>
-            <span className="muted">{candidates.length ? `${candidates.length} new` : `waiting ${elapsed(now - wait.since)}`}</span>
-            <Button quiet label="×" title="Stop waiting" onClick={() => topic.onUnwait(wait.slack)} />
+            <span className="muted">{status}</span>
+            <Button quiet label="×" title="Stop waiting" onClick={() => topic.onUnwait(on)} />
           </div>
           {candidates.map((message) => (
             <div key={message} className="topic-candidate">
@@ -149,11 +163,12 @@ function TopicWaits(props: { topic: TopicProps }) {
                 <ItemPill id={message} fallback="…" />
               </span>
               <Button quiet label="Add" onClick={() => topic.onAccept(message)} />
-              <Button quiet label="Dismiss" onClick={() => topic.onDismiss(wait.slack, message)} />
+              <Button quiet label="Dismiss" onClick={() => topic.onDismiss(on, message)} />
             </div>
           ))}
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

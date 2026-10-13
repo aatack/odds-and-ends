@@ -39,7 +39,7 @@ async function headless(options: Parameters<typeof memoryCore>[0] = {}, ui: { to
     redo: async (events) => a.redo({ events }),
     claudeCreate: (input) => a.claudeCreate(input),
     claudeSetDirectory: (session, cwd, worktree) => a.claudeSetDirectory({ session, cwd, worktree }),
-    topicCreate: (name, path) => a.topicCreate({ name, ...path }),
+    topicCreate: (name, path, parent) => a.topicCreate({ name, ...path, parent }),
     topicAddPath: (topic, cwd, worktree) => a.topicAddPath({ topic, cwd, worktree }),
     topicDispatch: (topic) => a.topicDispatch({ topic }),
     topicPaste: (topic, text) => a.topicPaste({ topic, text }),
@@ -899,6 +899,32 @@ test('topics mode: Tab points the box at each Slack thread or conversation in th
     session.unwait(message)
     await settle()
     assert.deepEqual(session.get().topicWaits, [])
+  } finally {
+    stop()
+  }
+})
+
+test('topics mode: `?` on a topic opens the new-topic form for one that goes into this one\'s chat too, then opens it', async () => {
+  const { session, stop, settle, core } = await headless({}, { topics: true })
+  const key = (field: string | null) => tools.find((tool) => tool.keys.includes('?') && tool.scope !== 'input' && (tool.enabled?.(session, field) ?? true))?.id
+  try {
+  await settle()
+  // Not before a topic is open.
+  assert.notEqual(key(null), 'topic.child')
+  session.setTopicName('Release')
+  session.createTopic()
+  await settle()
+  const release = session.get().view!.root!.id
+  assert.equal(key(null), 'topic.child')
+  session.openChildTopicDialog()
+  assert.equal((session.get().state.dialog as { parent?: string }).parent, release)
+  session.setDialog({ name: 'Fix the build' })
+  session.submitDialog()
+  await settle()
+  const fix = session.get().view!.root!
+  assert.equal(fix.data.text, 'Fix the build')
+  assert.deepEqual(core.entity(release).outboundLinks, [fix.id])
+  assert.equal(session.get().topics.length, 2)
   } finally {
     stop()
   }

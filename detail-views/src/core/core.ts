@@ -536,12 +536,17 @@ export class Core {
       text.trim() ? { events: this.claude.prompt(session, text), error: null } : { events: [], error: null },
     /** A new topic, named, in the one list of them. */
     /** A new topic, named; with a path, if one is given (`cwd`, or a new worktree of it). */
-    topicCreate: ({ name, cwd, worktree }: { name: string; cwd?: string; worktree?: boolean }): Promise<Outcome> =>
+    topicCreate: ({ name, cwd, worktree, parent }: { name: string; cwd?: string; worktree?: boolean; parent?: string }): Promise<Outcome> =>
       this.attempt('topics', async () => {
+        if (parent && this.item(parent)?.type !== 'topic') throw new Error('Not a topic')
         const made = this.topics.create(name)
-        const link = made.find((event) => event.type === 'link')
-        if (!cwd?.trim() || link?.type !== 'link') return made
-        return [...made, ...(await this.addPath(link.destinationId, cwd, worktree ?? false))]
+        const listed = made.find((event) => event.type === 'link')
+        if (listed?.type !== 'link') return made
+        const id = listed.destinationId
+        // Made from another topic (`?`): in its chat too, as a pill.
+        const under = parent ? [link(parent, id, this.now(), me)] : []
+        this.owned.write(under)
+        return [...made, ...under, ...(cwd?.trim() ? await this.addPath(id, cwd, worktree ?? false) : [])]
       }),
     /** A path for a topic: `cwd` as it is, or a new worktree of its repo; a `path` item under the topic, where the next dispatch runs. */
     topicAddPath: ({ topic, cwd, worktree }: { topic: string; cwd: string; worktree: boolean }): Promise<Outcome> =>
