@@ -34,6 +34,25 @@ async function query<T>(gh: ModuleContext['gh'], text: string, variables: Record
   return parsed.data!
 }
 
+const branchPrQuery = `query($owner: String!, $name: String!, $branch: String!) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(headRefName: $branch, first: 1, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { url } }
+  }
+}`
+
+/**
+ * The newest PR on GitHub from `branch` of `repo` (`owner/name`), by its
+ * URL, or null when it has none. A query, never a mutation; its variables
+ * passed as strings (`-f`), so a branch named like a number stays a name.
+ */
+export async function prOfBranch(gh: ModuleContext['gh'], repo: string, branch: string): Promise<string | null> {
+  const [owner, name] = repo.split('/')
+  const args = ['api', 'graphql', '-f', `query=${branchPrQuery}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-f', `branch=${branch}`]
+  const parsed = JSON.parse(await gh(args)) as { data?: { repository: { pullRequests: { nodes: { url: string }[] } } | null }; errors?: { message: string }[] }
+  if (parsed.errors?.length) throw new Error(parsed.errors.map((error) => error.message).join('; '))
+  return parsed.data?.repository?.pullRequests.nodes[0]?.url ?? null
+}
+
 const listQuery = `query { viewer { login }
   search(query: "is:pr is:open author:@me archived:false sort:updated-desc", type: ISSUE, first: 50) {
     nodes { ... on PullRequest {

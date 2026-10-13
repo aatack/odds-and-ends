@@ -163,13 +163,16 @@ test('topics: a paste is what it is: a PR, Slack message or branch link is that 
 })
 
 /** claude, and a git answering from `state`; every call recorded. */
-function fakeRepo(state: { dirty: string[]; branch: string; top?: string; listed?: string[]; unpushed?: string; unmerged?: string }, calls: { command: string; args: string[]; cwd: string }[]) {
+function fakeRepo(state: { dirty: string[]; branch: string; worktree?: boolean; top?: string; listed?: string[]; unpushed?: string; unmerged?: string }, calls: { command: string; args: string[]; cwd: string }[]) {
   return async (command: string, args: string[], cwd: string) => {
     calls.push({ command, args, cwd })
     if (command.endsWith('claude')) return JSON.stringify({ result: 'ok', is_error: false })
     const verb = args.join(' ')
     if (verb === 'status --porcelain') return state.dirty.shift() ?? ''
     if (verb === 'rev-parse --abbrev-ref HEAD') return `${state.branch}\n`
+    // A worktree's git directory is its own; a plain checkout's is the repo's.
+    if (verb === 'rev-parse --absolute-git-dir') return state.worktree ? '/repo/.git/worktrees/x\n' : '/repo/.git\n'
+    if (verb === 'rev-parse --path-format=absolute --git-common-dir') return '/repo/.git\n'
     if (verb === 'rev-parse --show-toplevel') return `${state.top ?? cwd}\n`
     if (verb === 'symbolic-ref --short refs/remotes/origin/HEAD') return 'origin/main\n'
     if (verb === 'remote get-url origin') return 'git@github.com:me/app.git\n'
@@ -181,50 +184,71 @@ function fakeRepo(state: { dirty: string[]; branch: string; top?: string; listed
   }
 }
 
-test('topics: an answer that leaves changes uncommitted is followed once by a prompt to commit them; the branch checked out goes into the chat, once', async () => {
+test('topics: an answer that leaves changes uncommitted is followed once by a prompt to commit them; in a worktree, the branch\'s PR goes into the chat and the topic\'s context, once', async () => {
   const calls: { command: string; args: string[]; cwd: string }[] = []
-  const state = { dirty: [' M app.ts\n', ''], branch: 'feature/x' }
-  const core = memoryCore({ run: fakeRepo(state, calls) })
+  const state = { dirty: [' M app.ts\n', ''], branch: 'feature/x', worktree: true }
+  const asked: string[][] = []
+  const prs: Record<string, string> = { 'feature/x': 'https://github.com/me/app/pull/7' }
+  const gh = async (args: string[]) => {
+    asked.push(args)
+    const branch = args.find((arg) => arg.startsWith('branch='))!.slice('branch='.length)
+    return JSON.stringify({ data: { repository: { pullRequests: { nodes: prs[branch] ? [{ url: prs[branch] }] : [] } } } })
+  }
+  const core = memoryCore({ run: fakeRepo(state, calls), gh })
+  const pr = 'github:pr:https://github.com/me/app/pull/7'
   await core.actions.topicCreate({ name: 'Work' })
   const [topic] = core.entity('topics').outboundLinks
   await core.actions.submit({ id: topic, text: 'change it' })
   await core.actions.topicDispatch({ topic })
-  await until(() => core.entity(topic).outboundLinks.includes('github:branch:me/app:feature/x'))
-  // The branch is the last write, a moment before the dispatch is over (and the next one allowed).
+  await until(() => Boolean(core.item(topic)!.data.context))
+  // The PR is the last write, a moment before the dispatch is over (and the next one allowed).
   await settle()
   const prompts = calls.filter((call) => call.command.endsWith('claude')).map((call) => call.args[1])
   assert.deepEqual(prompts, ['change it', commitPrompt])
-  assert.deepEqual(chat(core, topic), [
-    ['note', 'change it'],
-    ['claude.response', 'ok'],
-    ['note', commitPrompt],
-    ['claude.response', 'ok'],
-    ['github.branch', 'undefined'],
-  ])
-  assert.equal(core.entity(topic).outboundLinks.at(-1), 'github:branch:me/app:feature/x')
-  assert.equal(core.item(topic)!.data.branch, 'feature/x')
-  assert.equal(core.item(topic)!.data.github, 'me/app')
+  assert.deepEqual(core.entity(topic).outboundLinks.slice(2, 4).map((id) => core.item(id)!.data.text), [commitPrompt, 'ok'])
+  assert.equal(core.entity(topic).outboundLinks.at(-1), pr)
+  // Read-only: a query, its variables as strings.
+  assert.ok(asked[0].includes('-f') && !asked[0].includes('-F') && !/mutation/.test(asked[0].join(' ')))
+  assert.ok(asked[0].includes('owner=me') && asked[0].includes('name=app') && asked[0].includes('branch=feature/x'))
+  // In one context with the topic.
+  const context = String(core.item(topic)!.data.context)
+  assert.equal(core.item(pr)!.data.context, context)
+  assert.deepEqual(core.entity(context).outboundLinks.sort(), [topic, pr].sort())
 
-  // Clean now: no follow-up; the branch is there already.
+  // Clean now: no follow-up; the PR is there already, not added again.
+  const looked = () => asked.length
   await core.actions.submit({ id: topic, text: 'more' })
   assert.equal((await core.actions.topicDispatch({ topic })).error, null)
-  // Over once the default branch has been asked for (after the status and the answer).
-  const asked = () => calls.filter((call) => call.args[0] === 'symbolic-ref').length
-  const before = asked()
-  await until(() => asked() > before)
+  const before = looked()
+  await until(() => looked() > before)
   await settle()
-  assert.deepEqual(chat(core, topic).slice(5).map(([type]) => type), ['note', 'claude.response'])
+  assert.equal(core.entity(topic).outboundLinks.filter((id) => id === pr).length, 1)
+  assert.deepEqual(core.entity(topic).outboundLinks.slice(5).map((id) => core.item(id)!.type), ['note', 'claude.response'])
 
-  // The default branch is not added.
-  state.branch = 'main'
-  const other = (await core.actions.topicCreate({ name: 'Main' })).events.find((event) => event.type === 'link')!
-  const id = other.type === 'link' ? other.destinationId : ''
-  await core.actions.submit({ id, text: 'hi' })
-  const seen = asked()
-  await core.actions.topicDispatch({ topic: id })
-  await until(() => asked() > seen)
+  // A branch with no PR (only here, or not pushed), and a checkout that isn't a worktree: nothing.
+  const fresh = async (name: string) => {
+    const made = (await core.actions.topicCreate({ name })).events.find((event) => event.type === 'link')!
+    return made.type === 'link' ? made.destinationId : ''
+  }
+  state.branch = 'local-only'
+  const local = await fresh('Local')
+  await core.actions.submit({ id: local, text: 'hi' })
+  const seen = looked()
+  await core.actions.topicDispatch({ topic: local })
+  await until(() => looked() > seen)
   await settle()
-  assert.deepEqual(chat(core, id).map(([type]) => type), ['note', 'claude.response'])
+  assert.deepEqual(core.entity(local).outboundLinks.map((id) => core.item(id)!.type), ['note', 'claude.response'])
+  assert.equal(core.item(local)!.data.context, undefined)
+
+  state.branch = 'feature/x'
+  state.worktree = false
+  const plain = await fresh('Plain')
+  await core.actions.submit({ id: plain, text: 'hi' })
+  await core.actions.topicDispatch({ topic: plain })
+  await until(() => calls.filter((call) => call.args.includes('--git-common-dir')).length >= 4)
+  await settle()
+  assert.equal(looked(), seen + 1)
+  assert.deepEqual(core.entity(plain).outboundLinks.map((id) => core.item(id)!.type), ['note', 'claude.response'])
 })
 
 test('topics: resolving takes a topic out of the list, and removes its worktree only when it is provably one, warning first of work that would be lost', async () => {

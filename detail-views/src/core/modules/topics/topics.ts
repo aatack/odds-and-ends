@@ -7,7 +7,8 @@ import { prEntityId, type Entity } from '../../types.ts'
 import { ask, author as claudeAuthor, carryTranscript, expandHome, githubRepo, type Place } from '../claude/claude.ts'
 import type { Module, ModuleContext } from '../module.ts'
 import { me } from '../tasks/tasks.ts'
-import { branchEntityId, branchOfUrl } from '../github/view.ts'
+import { prOfBranch } from '../github/github.ts'
+import { branchOfUrl } from '../github/view.ts'
 import { messageOfUrl } from '../slack/view.ts'
 import { answering, latestPath, promptPart, topicsIds as ids, topicsView, unsent } from './view.ts'
 
@@ -44,8 +45,12 @@ export class Topics implements Module {
   /** Topics whose dispatch isn't over: answered, but the follow-ups (commit, branch) still to come. */
   private readonly busy = new Set<string>()
 
-  constructor(context: ModuleContext) {
+  /** Puts two items in one context (`Core.shareContext`), as Claude's. */
+  private readonly share: (first: string, second: string) => void
+
+  constructor(context: ModuleContext, share: (first: string, second: string) => void = () => {}) {
     this.context = context
+    this.share = share
   }
 
   /** A new topic, named, under the topics root. */
@@ -158,8 +163,8 @@ export class Topics implements Module {
   /**
    * Claude answers a dispatch. Then, if that left changes in its directory
    * uncommitted, it is asked once to commit them (a message of the app's
-   * own, and its answer); and the branch checked out there, unless it is
-   * the default one, goes into the chat as its item.
+   * own, and its answer); and, in a worktree, the PR of the branch checked
+   * out there goes into the chat and the topic's context (`notePr`).
    */
   private async answer(topic: string, responseId: string, prompt: string): Promise<void> {
     await ask(this.context, topic, responseId, prompt)
@@ -177,25 +182,33 @@ export class Topics implements Module {
       ])
       await ask(this.context, topic, followUp, commitPrompt)
     }
-    if (cwd) await this.noteBranch(topic, cwd)
+    if (cwd) await this.notePr(topic, cwd)
   }
 
-  /** The branch checked out in `cwd`, unless detached or the default one, as a branch item in the topic (once), and on it as `branch`. */
-  private async noteBranch(topic: string, cwd: string): Promise<void> {
+  /**
+   * When `cwd` is a git worktree whose branch (not detached, not the
+   * default one) has a PR on GitHub: the PR's item into the chat, unless it
+   * is there already, and into the topic's context. Nothing for a branch
+   * that only exists here, or has no PR.
+   */
+  private async notePr(topic: string, cwd: string): Promise<void> {
+    const gitDir = await this.git(cwd, ['rev-parse', '--absolute-git-dir'])
+    const commonDir = await this.git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+    // A worktree of a repo has a git directory of its own, apart from the repo's.
+    if (!gitDir?.trim() || !commonDir?.trim() || gitDir.trim() === commonDir.trim()) return
     const branch = (await this.git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']))?.trim()
     if (!branch || branch === 'HEAD' || branch === (await this.defaultBranch(cwd))) return
     const remote = await this.git(cwd, ['remote', 'get-url', 'origin'])
     const github = remote ? githubRepo(remote) : null
     if (!github) return
-    const id = branchEntityId(github, branch)
-    const data = this.context.data.get(topic)
-    const at = this.context.now()
-    const events: AppEvent[] = [
-      ...(data.branch === branch && data.github === github ? [] : values(topic, { branch, github }, at, claudeAuthor)),
+    const url = await prOfBranch(this.context.gh, github, branch).catch(() => null)
+    const id = url ? prEntityId(url) : null
+    if (!id) return
+    if (!this.context.lens.children(topic).includes(id)) {
       // Two moments later, so it sorts after the answer even when written the same instant (an answer is linked a moment after its message).
-      ...(this.context.lens.children(topic).includes(id) ? [] : [link(topic, id, at + 2, claudeAuthor)]),
-    ]
-    if (events.length) this.context.owned.write(events)
+      this.context.owned.write([link(topic, id, this.context.now() + 2, claudeAuthor)])
+    }
+    this.share(topic, id)
   }
 
   /**

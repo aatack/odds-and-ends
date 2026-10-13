@@ -17,8 +17,8 @@ doc for the area you change, and keep it up to date in the same commit.
   selection; its box has the keyboard only after Enter (Enter in it empty lets it go),
   and never two dispatches at once. Ctrl+. makes a new topic (a form for
   its name). `.` opens the next topic Claude isn't working in. After an answer that leaves changes
-  uncommitted, Claude is asked once to commit them; the branch checked out
-  goes into the chat as its item. **Resolve** takes a topic out of the list
+  uncommitted, Claude is asked once to commit them; in a worktree, the PR of
+  its branch goes into the chat and the topic's context. **Resolve** takes a topic out of the list
   and removes its worktree, only one provably the app's, warning first of
   work that would be lost. A **path** item (a directory, or a new
   worktree of one) chosen for a topic (its **Path** button, top right, or

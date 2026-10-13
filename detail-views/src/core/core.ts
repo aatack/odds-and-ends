@@ -8,7 +8,7 @@ import { bucketEvents, rollupEntity, type GraphEntity } from './graph/entity.ts'
 import { eventKey, link, value, values, type AppEvent, type Changed, type Scan } from './graph/events.ts'
 import { cacheMigrations, openDatabase, ownedMigrations } from './db.ts'
 import { importLegacy } from './legacy.ts'
-import { Claude, type NewSession } from './modules/claude/claude.ts'
+import { Claude, author as claudeAuthor, type NewSession } from './modules/claude/claude.ts'
 import { claudeIds } from './modules/claude/view.ts'
 import { Recents } from './modules/recents/recents.ts'
 import { GitHub } from './modules/github/github.ts'
@@ -163,7 +163,7 @@ export class Core {
     this.github = new GitHub(context)
     this.claude = new Claude(context)
     this.recents = new Recents(context)
-    this.topics = new Topics(context)
+    this.topics = new Topics(context, (first, second) => this.shareContext(first, second, claudeAuthor))
     this.modules = [this.slack, this.github, tasksModule(), this.claude, this.recents, this.topics]
   }
 
