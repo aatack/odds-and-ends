@@ -9,12 +9,14 @@ import { eventKey, link, value, values, type AppEvent, type Changed, type Scan }
 import { cacheMigrations, openDatabase, ownedMigrations } from './db.ts'
 import { importLegacy } from './legacy.ts'
 import { Claude, type NewSession } from './modules/claude/claude.ts'
+import { claudeIds } from './modules/claude/view.ts'
 import { Recents } from './modules/recents/recents.ts'
 import { GitHub } from './modules/github/github.ts'
 import type { Module, ModuleContext } from './modules/module.ts'
 import { Slack } from './modules/slack/slack.ts'
 import { me, tasksModule } from './modules/tasks/tasks.ts'
 import { Topics, type PastedFile } from './modules/topics/topics.ts'
+import { topicsIds } from './modules/topics/view.ts'
 import type { McpAddress } from './mcp.ts'
 import { focusOf, lensOf, moduleInfos, toItem, typeOf, viewOf, type Folds, type Lens } from './present.ts'
 import { Blobs, EventStore, Settings } from './store.ts'
@@ -194,6 +196,16 @@ export class Core {
     this.clearer ??= setInterval(() => this.clearCacheIfOld(), checkEvery)
     this.stopWatches ??= this.slack.watch()
     void this.claude.refreshRepos()
+    void this.recoverAnswers()
+  }
+
+  /**
+   * Answers cut off when the app last stopped, in the Claude module's
+   * sessions and in topics: waited for while their claude still runs, then
+   * read from its transcript (`recover` in `claude.ts`). Run by `start`.
+   */
+  recoverAnswers(every?: number): Promise<void> {
+    return this.claude.recover([claudeIds.root, topicsIds.root].flatMap((root) => this.lens().children(root)), every)
   }
 
   stop(): void {

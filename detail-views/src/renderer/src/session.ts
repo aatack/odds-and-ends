@@ -697,6 +697,12 @@ export class Session {
     return this.canDispatch() || Boolean(this.topicDraft().trim())
   }
 
+  /** Why Ctrl+Enter on a topic sends nothing, when it can't: said, rather than the key falling through to the side panel's Ctrl+Enter. */
+  dispatchRefusal(): string | null {
+    if (!this.onTopic() || this.canSubmitAndDispatch()) return null
+    return answering(S.focused(this.state), lensOf(this.cache.source(this.cache.get()))) ? 'Claude is still answering' : 'Nothing new to send'
+  }
+
   /**
    * Ctrl+Enter on a topic: what is in its box goes in as a message first
    * (the box closing, as Enter closes it), then every message since the last

@@ -628,6 +628,11 @@ test('topics mode: Ctrl+Enter while Claude is answering sends nothing more; what
   // Answering: nothing to send, so Ctrl+Enter is off, until something is typed.
   assert.equal(session.canDispatch(), false)
   assert.equal(dispatch.enabled!(session, null), false)
+  // It says so, rather than falling through to the side panel's Ctrl+Enter.
+  const ctrlEnter = tools.find((tool) => tool.scope !== 'input' && tool.keys.includes('Ctrl+Enter') && (tool.enabled?.(session, null) ?? true))!
+  assert.equal(ctrlEnter.id, 'topic.dispatchRefused')
+  ctrlEnter.run(session, null)
+  assert.equal(session.get().toast, 'Claude is still answering')
   session.returnToPrompt()
   session.setDraft('second')
   assert.equal(dispatch.enabled!(session, 'topic'), true)
