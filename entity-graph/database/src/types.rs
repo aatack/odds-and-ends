@@ -264,8 +264,8 @@ pub struct Link {
     pub event: EventRef,
 }
 
-/// Which links of an entity to read.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Which side of a link the asked-for entity is on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Direction {
     /// Links where the entity is the source: its children.
     Outbound,

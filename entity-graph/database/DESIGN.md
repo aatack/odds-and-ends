@@ -92,6 +92,7 @@ Later rules (2026-10-12). These rules replace parts of the rules above and of dr
 28. **R28 [RULE]. Flattening effects are accepted.** Alexander accepted both effects of R26 (2026-10-13):
     - A branch that the list reaches low and high stays at its first (low) position.
     - The greatest range spans the gaps between appearances.
+29. **R29 [RULE]. Batch reads.** Every low-level read takes a batch of entity IDs. It returns the results by ID. `values` returns all values of each entity.
 
 ---
 
@@ -475,7 +476,7 @@ The choice of source is the only difference between the two paths.
 
 ### 8.4 Children and parents (R15, R16) [CHOSEN, I8, I9]
 
-`links(branch, entity, direction, link_type)` does these steps:
+`links(branch, entities, groups)` does these steps for each entity of the batch. `groups` is a list of `(link type, direction)` pairs:
 
 1. **Find the rows.** Read the current rows where the entity is the source (`Outbound`) or the destination (`Inbound`). If a type is given, read only that type.
 2. **Remove duplicates.** Resolve each `(source, destination, type)` with section 8.3. One event is left for each.
@@ -507,11 +508,20 @@ Shortcuts:
 
 ### 8.5 Other reads
 
-- `values(branch, entity)`: all keys of the entity. Null values are not returned.
-- `value(branch, entity, key)`: one key. Null and "never set" both give `None`.
-- `exists(branch, entity)`: true when the view has an event for the entity. The event can be a value event, or a link event at either end, in any state.
-- `is_archived(branch, entity)`: true when the winning `type` event of the entity is null. An entity that never had a type is not archived.
+- `values(branch, entities)`: all keys of each entity. Null values are not returned.
+- `value(branch, entity, key)`: one key of one entity. It is a thin helper. Null and "never set" both give `None`.
+- `exists(branch, entities)`: true when the view has an event for the entity. The event can be a value event, or a link event at either end, in any state.
+- `is_archived(branch, entities)`: true when the winning `type` event of the entity is null. An entity that never had a type is not archived.
 - `archive_entity(branch, author, entity)` writes `type = null`. `restore_entity(branch, author, entity, type)` writes the type again. The caller supplies the type, because the store does not read history to find it (R21).
+
+### 8.6 Batch reads (R29)
+
+1. A read resolves the flat view once for the call.
+2. The store sends the IDs to SQLite as one JSON array (`json_each`). It does not send one query for each ID.
+3. Each layer interval is one query for the whole batch. The query plans stay on the same indexes (section 8.3). `json_each` gives the `IN` list.
+4. The roll-up key includes the entity. Thus one roll-up serves the whole batch.
+5. The type filter reads the `type` of all other entities in one batch.
+6. Each asked-for ID is a key of the result. An ID that the store does not know gives an empty result.
 
 ---
 
@@ -638,19 +648,31 @@ Results:
 
 ## 11. Read API [PROVISIONAL, TBD: Alexander]
 
-Implemented (stable shape):
+Implemented. All low-level reads take a batch (R29):
 
-- `values`
-- `value`
-- `links`
-- `children`
-- `parents`
-- `exists`
-- `is_archived`
-- `branch`
-- `branches`
+```rust
+pub type LinkGroups = BTreeMap<(String, Direction), Vec<Link>>;
 
-Placeholders (they return `Error::NotImplemented`):
+fn values(&self, branch: BranchId, entities: &[&str]) -> Result<HashMap<String, BTreeMap<String, Value>>>;
+fn links(&self, branch: BranchId, entities: &[&str], groups: &[(&str, Direction)]) -> Result<HashMap<String, LinkGroups>>;
+fn links_including_archived(&self, branch: BranchId, entities: &[&str], groups: &[(&str, Direction)]) -> Result<HashMap<String, LinkGroups>>;
+fn exists(&self, branch: BranchId, entities: &[&str]) -> Result<HashMap<String, bool>>;
+fn is_archived(&self, branch: BranchId, entities: &[&str]) -> Result<HashMap<String, bool>>;
+```
+
+Thin helpers for one entity [CHOSEN]. We keep them, because callers often read one entity. They call the batch reads:
+
+```rust
+fn value(&self, branch: BranchId, entity: &str, key: &str) -> Result<Option<Value>>;
+fn children(&self, branch: BranchId, entity: &str, link_type: &str) -> Result<Vec<Link>>; // (type, Outbound)
+fn parents(&self, branch: BranchId, entity: &str, link_type: &str) -> Result<Vec<Link>>;  // (type, Inbound)
+```
+
+Other reads: `branch`, `branches`.
+
+`links` no longer has an "all types" mode. The caller names the `(type, direction)` pairs.
+
+Placeholders (they return `Error::NotImplemented`). Alexander will give the signatures:
 
 ```rust
 /// TODO(Alexander): order, depth, filters, cycles, paging.
@@ -729,7 +751,7 @@ Proposals for later (not built):
 | I5 | R8, R19: undo | User = the `author` string. Unit = a write batch. Window = the batch's store-clock time, 5 min. Undo removes the batch's events and moves the replaced rows back from history. It refuses when a later event replaced a target, or when another branch froze the batch. Seqs are not used again. Repeated undo steps back. |
 | I6 | R12, R21: archiving an entity | **Replaced by R21.** Archive = `type = null`. Restore = write the type again; the caller supplies it. A partial index on live text types serves "entities of type X". `children` and `values` do not hide archived entities. |
 | I7 | R6, R10: archived branches | Archiving is a flag. An archived branch refuses writes and undo. Users can read it and can restore it. |
-| I8 | R15: "defaults inbound/outbound" | The direction defaults: `children` reads outbound links (entity = source), and `parents` reads inbound links (entity = destination). `links(.., None)` groups all types. |
+| I8 | R15: "defaults inbound/outbound" | The direction defaults: `children` reads outbound links (entity = source), and `parents` reads inbound links (entity = destination). `links` takes explicit `(type, direction)` pairs. |
 | I9 | R14, R16, R22: "timestamp-at-add" and mixed sorting | The store writes the default as the event's timestamp in ms, in the one `sort` column. If you write `Timestamp` again, the link gets the new time. Explicit floats and default timestamps are on one numeric axis, ascending. Ties sort by the other entity's ID. |
 | I10 | R16: re-add | A `Removed` link becomes live again when a later event sets `Timestamp` or `Explicit`. |
 | I11 | R12: "has any events" | Any visible value event, or link event at either end, in any state. It is per branch view. |

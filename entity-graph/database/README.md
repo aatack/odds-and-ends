@@ -15,7 +15,7 @@ The design is in [`DESIGN.md`](DESIGN.md).
     - `Explicit(f64)`: stored as is.
     - `Removed`: stored as NULL.
   - The tables keep one nullable `sort REAL` column. Reads sort live links by it.
-- **Entities.** There are no create or delete events. An entity exists when it has events. To archive an entity, set its `type` value to null (`archive_entity`). To restore it, pass the type to `restore_entity`. A partial index serves "entities of type X". `children`, `parents` and `links` show only entities whose `type` is not null. Entities that never had a type are hidden too. `links_including_archived` skips this filter.
+- **Entities.** There are no create or delete events. An entity exists when it has events. To archive an entity, set its `type` value to null (`archive_entity`). To restore it, pass the type to `restore_entity`. An index on `(key, value)` serves "entities of type X". `children`, `parents` and `links` show only entities whose `type` is not null. Entities that never had a type are hidden too. `links_including_archived` skips this filter.
 - **Sequence IDs.** Every event has a per-branch sequence ID, and `(branch, seq)` is unique.
 - **Current and history tables.**
   - `value_current` and `link_current` hold only the last event per target.
@@ -28,6 +28,7 @@ The design is in [`DESIGN.md`](DESIGN.md).
   - `pull` adds one raw range.
   - `set_parents` is rebase.
   - Branches are archived, never deleted.
+- **Batch reads.** `values`, `links`, `links_including_archived`, `exists` and `is_archived` take a batch of entity IDs and return results keyed by ID (one SQL query per view layer, IDs passed with `json_each`). `value`, `children` and `parents` are thin one-entity helpers.
 - **Merged views.** The parent list is a stack. Per target, the winner is ordered by `(layer, seq)`: a later entry wins, and the branch's own events are on top. Timestamps do not order events. Every read flattens the parent graph first (depth-first expansion; each branch kept once, at its first place, with its greatest range; open ranges chain, frozen ranges do not), loads each layer from the current table (open) or current + history (bounded), and rolls up with one shared function.
 - **Undo.** Undo works on one branch, for one author, on batches from the last five minutes. It removes the newest batch and moves the rows it replaced back from history. It refuses when a later event changed a target, or when another branch has a frozen range over the batch. Sequence IDs are never reused.
 

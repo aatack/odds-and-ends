@@ -21,6 +21,7 @@ mod view;
 mod write;
 
 pub use error::{Error, Result};
+pub use read::LinkGroups;
 pub use schema::SCHEMA_VERSION;
 pub use store::Store;
 pub use types::*;

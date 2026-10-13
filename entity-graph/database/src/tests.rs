@@ -55,10 +55,28 @@ impl Fixture {
 
     fn all_links(&self, b: BranchId, entity: &str, d: Direction, ty: &str) -> Vec<Link> {
         self.store
-            .links_including_archived(b, entity, d, Some(ty))
+            .links_including_archived(b, &[entity], &[(ty, d)])
             .unwrap()
-            .remove(ty)
-            .unwrap_or_default()
+            .remove(entity)
+            .unwrap()
+            .remove(&(ty.to_owned(), d))
+            .unwrap()
+    }
+
+    fn exists(&self, b: BranchId, entity: &str) -> bool {
+        self.store.exists(b, &[entity]).unwrap()[entity]
+    }
+
+    fn is_archived(&self, b: BranchId, entity: &str) -> bool {
+        self.store.is_archived(b, &[entity]).unwrap()[entity]
+    }
+
+    fn values(&self, b: BranchId, entity: &str) -> std::collections::BTreeMap<String, Value> {
+        self.store
+            .values(b, &[entity])
+            .unwrap()
+            .remove(entity)
+            .unwrap()
     }
 
     fn child_ids(&self, branch: BranchId, entity: &str, link_type: &str) -> Vec<String> {
@@ -153,7 +171,7 @@ fn null_clears_a_value() {
         vec![Op::set("n", "text", "hi"), Op::set("n", "x", 2)],
     );
     f.write(f.main, "alex", vec![Op::clear("n", "text")]);
-    let values = f.store.values(f.main, "n").unwrap();
+    let values = f.values(f.main, "n");
     assert_eq!(values.len(), 1);
     assert_eq!(values["x"], Value::Int(2));
     assert_eq!(f.store.value(f.main, "n", "text").unwrap(), None);
@@ -174,7 +192,7 @@ fn typed_values_round_trip() {
             Op::set("n", "j", Value::Json(json.clone())),
         ],
     );
-    let v = f.store.values(f.main, "n").unwrap();
+    let v = f.values(f.main, "n");
     assert_eq!(v["b"], Value::Bool(true));
     assert_eq!(v["i"], Value::Int(-7));
     assert_eq!(v["f"], Value::Float(1.5));
@@ -317,9 +335,15 @@ fn links_group_by_type_and_read_both_ways() {
     );
     let out = f
         .store
-        .links_including_archived(f.main, "p", Direction::Outbound, None)
+        .links_including_archived(
+            f.main,
+            &["p", "q"],
+            &[("child", Direction::Outbound), ("ref", Direction::Outbound)],
+        )
         .unwrap();
-    assert_eq!(out.keys().collect::<Vec<_>>(), ["child", "ref"]);
+    let sizes = |e: &str| out[e].values().map(Vec::len).collect::<Vec<_>>();
+    assert_eq!(sizes("p"), [1, 1]);
+    assert_eq!(sizes("q"), [1, 0]);
     assert_eq!(f.child_ids(f.main, "p", "ref"), ["b"]);
     let parents: Vec<String> = f
         .all_links(f.main, "a", Direction::Inbound, "child")
@@ -335,27 +359,27 @@ fn links_group_by_type_and_read_both_ways() {
 #[test]
 fn an_entity_exists_when_it_has_events_and_archiving_clears_its_type() {
     let mut f = Fixture::new();
-    assert!(!f.store.exists(f.main, "n").unwrap());
+    assert!(!f.exists(f.main, "n"));
     f.write(
         f.main,
         "alex",
         vec![Op::link("p", "n", "child", SortOrder::Timestamp)],
     );
-    assert!(f.store.exists(f.main, "n").unwrap());
-    assert!(f.store.exists(f.main, "p").unwrap());
+    assert!(f.exists(f.main, "n"));
+    assert!(f.exists(f.main, "p"));
 
     // No type yet: not archived.
-    assert!(!f.store.is_archived(f.main, "n").unwrap());
+    assert!(!f.is_archived(f.main, "n"));
     f.write(f.main, "alex", vec![Op::set("n", TYPE_KEY, "task")]);
     f.tick(1);
     f.store.archive_entity(f.main, "alex", "n").unwrap();
-    assert!(f.store.is_archived(f.main, "n").unwrap());
+    assert!(f.is_archived(f.main, "n"));
     assert_eq!(f.store.value(f.main, "n", TYPE_KEY).unwrap(), None);
-    assert!(f.store.exists(f.main, "n").unwrap());
+    assert!(f.exists(f.main, "n"));
     // The caller supplies the type to restore.
     f.tick(1);
     f.store.restore_entity(f.main, "alex", "n", "task").unwrap();
-    assert!(!f.store.is_archived(f.main, "n").unwrap());
+    assert!(!f.is_archived(f.main, "n"));
     assert_eq!(f.text(f.main, "n", TYPE_KEY).as_deref(), Some("task"));
 }
 
@@ -440,11 +464,11 @@ fn a_fork_does_not_see_later_parent_events() {
     );
     // The child reads the frozen parent through history.
     assert_eq!(f.text(agent, "n", "text").as_deref(), Some("before"));
-    assert!(!f.store.exists(agent, "m").unwrap());
+    assert!(!f.exists(agent, "m"));
     // The child's own writes do not reach the parent.
     f.write(agent, "bot", vec![Op::set("k", "text", "mine")]);
     assert_eq!(f.store.branch(agent).unwrap().head, 1);
-    assert!(!f.store.exists(f.main, "k").unwrap());
+    assert!(!f.exists(f.main, "k"));
 }
 
 #[test]
@@ -526,13 +550,13 @@ fn pull_reads_a_range_and_open_ranges_follow_growth() {
     f.store
         .pull(f.main, feed, SeqRange::new(2, Some(2)))
         .unwrap();
-    assert!(!f.store.exists(f.main, "m1").unwrap());
-    assert!(f.store.exists(f.main, "m2").unwrap());
-    assert!(!f.store.exists(f.main, "m3").unwrap());
+    assert!(!f.exists(f.main, "m1"));
+    assert!(f.exists(f.main, "m2"));
+    assert!(!f.exists(f.main, "m3"));
 
     f.store.pull(f.main, feed, SeqRange::from(3)).unwrap();
     f.write(feed, "slack", vec![Op::set("m4", "text", "four")]);
-    assert!(f.store.exists(f.main, "m4").unwrap());
+    assert!(f.exists(f.main, "m4"));
     assert_eq!(
         f.store.branch(f.main).unwrap().parents,
         vec![ParentRef::new(feed, SeqRange::from(2))]
@@ -677,7 +701,7 @@ fn undo_steps_back_one_batch_at_a_time() {
     assert_eq!(f.text(f.main, "n", "text").as_deref(), Some("one"));
     f.store.undo(f.main, "alex").unwrap().unwrap();
     assert_eq!(f.store.value(f.main, "n", "text").unwrap(), None);
-    assert!(!f.store.exists(f.main, "n").unwrap());
+    assert!(!f.exists(f.main, "n"));
     assert_eq!(f.store.undo(f.main, "alex").unwrap(), None);
     assert_eq!(f.count("batches"), 0);
 }
@@ -689,7 +713,7 @@ fn undo_is_one_author() {
     f.write(f.main, "sam", vec![Op::set("b", "text", "sam")]);
     // Alex's undo reaches past Sam's newer batch to Alex's own.
     f.store.undo(f.main, "alex").unwrap().unwrap();
-    assert!(!f.store.exists(f.main, "a").unwrap());
+    assert!(!f.exists(f.main, "a"));
     assert_eq!(f.text(f.main, "b", "text").as_deref(), Some("sam"));
 }
 
@@ -713,7 +737,7 @@ fn undo_is_refused_when_a_later_event_replaced_one_of_its_events() {
     // The same rule holds for the author's own later batch: undo that first.
     f.store.undo(f.main, "sam").unwrap().unwrap();
     f.store.undo(f.main, "alex").unwrap().unwrap();
-    assert!(!f.store.exists(f.main, "n").unwrap());
+    assert!(!f.exists(f.main, "n"));
 }
 
 #[test]
@@ -762,9 +786,9 @@ fn undo_is_allowed_under_an_open_pull_and_the_follower_sees_it() {
     let feed = f.store.create_branch("feed", &[]).unwrap();
     f.store.pull(f.main, feed, SeqRange::ALL).unwrap();
     f.write(feed, "slack", vec![Op::set("m", "text", "oops")]);
-    assert!(f.store.exists(f.main, "m").unwrap());
+    assert!(f.exists(f.main, "m"));
     f.store.undo(feed, "slack").unwrap().unwrap();
-    assert!(!f.store.exists(f.main, "m").unwrap());
+    assert!(!f.exists(f.main, "m"));
 }
 
 #[test]
@@ -817,13 +841,14 @@ fn reads_of_own_and_open_ranges_do_not_use_history() {
         );
     }
     let before = (
-        f.store.values(f.main, "n").unwrap(),
-        f.store.values(f.main, "m").unwrap(),
+        f.values(f.main, "n"),
+        f.values(f.main, "m"),
         f.store
-            .links_including_archived(f.main, "n", Direction::Outbound, None)
-            .unwrap(),
-        f.store
-            .links_including_archived(f.main, "n", Direction::Inbound, None)
+            .links_including_archived(
+                f.main,
+                &["n", "m"],
+                &[("ref", Direction::Outbound), ("ref", Direction::Inbound)],
+            )
             .unwrap(),
     );
     // Remove all history. If a read used it, its answer would change.
@@ -832,17 +857,18 @@ fn reads_of_own_and_open_ranges_do_not_use_history() {
         .execute_batch("DELETE FROM value_history; DELETE FROM link_history;")
         .unwrap();
     let after = (
-        f.store.values(f.main, "n").unwrap(),
-        f.store.values(f.main, "m").unwrap(),
+        f.values(f.main, "n"),
+        f.values(f.main, "m"),
         f.store
-            .links_including_archived(f.main, "n", Direction::Outbound, None)
-            .unwrap(),
-        f.store
-            .links_including_archived(f.main, "n", Direction::Inbound, None)
+            .links_including_archived(
+                f.main,
+                &["n", "m"],
+                &[("ref", Direction::Outbound), ("ref", Direction::Inbound)],
+            )
             .unwrap(),
     );
     assert_eq!(before, after);
-    assert!(f.store.exists(f.main, "m").unwrap());
+    assert!(f.exists(f.main, "m"));
 }
 
 // --- Stubs ----------------------------------------------------------------
@@ -878,14 +904,14 @@ fn plan(f: &Fixture, sql: &str) -> String {
 
 fn snapshot(f: &Fixture, b: BranchId) -> impl PartialEq + std::fmt::Debug {
     (
-        f.store.values(b, "n").unwrap(),
+        f.values(b, "n"),
         f.store
             .children(b, "n", "child")
             .unwrap()
             .into_iter()
             .map(|l| (l.destination, l.sort, l.event.seq))
             .collect::<Vec<_>>(),
-        f.store.exists(b, "c1").unwrap(),
+        f.exists(b, "c1"),
     )
 }
 
@@ -977,8 +1003,8 @@ fn a_frozen_range_gives_only_that_branchs_own_events() {
     f.write(m, "x", vec![Op::set("n", "text", "m")]);
     f.write(a, "x", vec![Op::set("k", "text", "a")]);
     f.store.pull(f.main, a, SeqRange::up_to(1)).unwrap();
-    assert!(f.store.exists(f.main, "k").unwrap());
-    assert!(!f.store.exists(f.main, "n").unwrap());
+    assert!(f.exists(f.main, "k"));
+    assert!(!f.exists(f.main, "n"));
 }
 
 #[test]
@@ -1032,47 +1058,46 @@ fn a_cached_view_sees_parent_changes_from_another_connection() {
 
 #[test]
 fn roll_up_queries_use_indexes() {
-    use crate::read::with_source;
+    use crate::read::{links_sql, with_source, VALUES_SQL};
     use crate::view::EventSource;
     let f = Fixture::new();
-    let value = "SELECT key, seq, ts, author, vtype, value FROM value_current
-         WHERE bid = ?1 AND eid = ?2 AND key = ?3 AND +seq BETWEEN ?4 AND ?5";
     let head = plan(
         &f,
-        &with_source(value, EventSource::Current, "value_history_target"),
+        &with_source(VALUES_SQL, EventSource::Current, "value_history_target"),
     );
     assert!(!head.contains("history"), "{head}");
-    assert!(head.contains("PRIMARY KEY"), "{head}");
+    assert!(head.contains("PRIMARY KEY (bid=? AND eid=?"), "{head}");
     let frozen = plan(
         &f,
         &with_source(
-            value,
+            VALUES_SQL,
             EventSource::CurrentAndHistory,
             "value_history_target",
         ),
     );
-    assert!(frozen.contains("value_history_target"), "{frozen}");
-    for (me, other, hint, index) in [
-        ("source", "destination", "", "link_history_target"),
+    assert!(
+        frozen.contains("value_history_target (bid=? AND eid=?"),
+        "{frozen}"
+    );
+    for (direction, current, history) in [
         (
-            "destination",
-            "source",
-            " INDEXED BY link_current_in",
-            "link_history_in",
+            Direction::Outbound,
+            "PRIMARY KEY (bid=? AND source=? AND link_type=?)",
+            "link_history_target (bid=? AND source=? AND link_type=?)",
+        ),
+        (
+            Direction::Inbound,
+            "link_current_in (bid=? AND destination=? AND link_type=?)",
+            "link_history_in (bid=? AND destination=? AND link_type=?",
         ),
     ] {
-        let link = format!(
-            "SELECT l.link_type, l.{other}, e.ext_id, l.seq, l.ts, l.author, l.sort
-             FROM link_current l{hint} JOIN entities e ON e.eid = l.{other}
-             WHERE l.bid = ?1 AND l.{me} = ?2 AND l.link_type = ?3 AND +l.seq BETWEEN ?4 AND ?5"
-        );
+        let (sql, index) = links_sql(direction);
         let frozen = plan(
             &f,
-            &with_source(&link, EventSource::CurrentAndHistory, index),
+            &with_source(&sql, EventSource::CurrentAndHistory, index),
         );
-        assert!(frozen.contains(index), "{frozen}");
-        assert!(!frozen.contains("SCAN l"), "{frozen}");
-        assert!(!frozen.contains("(bid=?)"), "{frozen}");
+        assert!(frozen.contains(current), "{frozen}");
+        assert!(frozen.contains(history), "{frozen}");
     }
 }
 
@@ -1162,4 +1187,52 @@ fn open_cycles_are_cut_by_the_dedupe() {
     f.write(b, "x", vec![Op::set("n", "text", "b")]);
     assert_eq!(f.text(a, "n", "text").as_deref(), Some("a"));
     assert_eq!(f.text(b, "n", "text").as_deref(), Some("b"));
+}
+
+#[test]
+fn batch_reads_key_results_by_id_and_match_single_reads() {
+    let mut f = Fixture::new();
+    f.write(
+        f.main,
+        "alex",
+        vec![
+            Op::set("a", TYPE_KEY, "task"),
+            Op::set("b", TYPE_KEY, "task"),
+            Op::set("a", "text", "A"),
+            Op::link("a", "b", "child", SortOrder::Timestamp),
+            Op::link("b", "a", "ref", SortOrder::Timestamp),
+        ],
+    );
+    f.store.archive_entity(f.main, "alex", "b").unwrap();
+    // A frozen view, so the batch also reads through history.
+    let fork = f.store.fork(f.main, "fork").unwrap();
+    for b in [f.main, fork] {
+        let ids = ["a", "b", "never"];
+        let values = f.store.values(b, &ids).unwrap();
+        assert_eq!(values.len(), 3);
+        assert_eq!(values["a"], f.values(b, "a"));
+        assert!(values["never"].is_empty());
+        let exists = f.store.exists(b, &ids).unwrap();
+        assert_eq!(
+            (exists["a"], exists["b"], exists["never"]),
+            (true, true, false)
+        );
+        let archived = f.store.is_archived(b, &ids).unwrap();
+        assert_eq!((archived["a"], archived["b"]), (false, true));
+        let pairs = [("child", Direction::Outbound), ("ref", Direction::Inbound)];
+        let links = f.store.links(b, &ids, &pairs).unwrap();
+        // b is archived, so a's child and a's inbound ref are both hidden.
+        assert!(links["a"].values().all(Vec::is_empty));
+        let all = f.store.links_including_archived(b, &ids, &pairs).unwrap();
+        assert_eq!(
+            all["a"][&("child".to_owned(), Direction::Outbound)][0].destination,
+            "b"
+        );
+        assert_eq!(
+            all["a"][&("ref".to_owned(), Direction::Inbound)][0].source,
+            "b"
+        );
+        assert!(all["b"].values().all(Vec::is_empty));
+        assert!(all["never"].values().all(Vec::is_empty));
+    }
 }
