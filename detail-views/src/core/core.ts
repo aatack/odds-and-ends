@@ -296,6 +296,17 @@ export class Core {
     return lensOf(this.source())
   }
 
+  /** A path for a topic: checked, made a worktree if asked, remembered for next time, then the item under the topic. */
+  private async addPath(topic: string, cwd: string, worktree: boolean): Promise<AppEvent[]> {
+    const requested = this.claude.directory(cwd)
+    if (!requested) throw new Error('No directory given')
+    const id = randomUUID()
+    const place = await this.claude.place(requested, worktree, String(this.item(topic)?.data.text ?? 'topic'), id)
+    const events = this.topics.addPath(topic, place, id)
+    await this.claude.remember(requested)
+    return events
+  }
+
   item(id: string): Entity | null {
     return toItem(this.entity(id))
   }
@@ -509,7 +520,17 @@ export class Core {
     claudePrompt: ({ session, text }: { session: string; text: string }): Outcome =>
       text.trim() ? { events: this.claude.prompt(session, text), error: null } : { events: [], error: null },
     /** A new topic, named, in the one list of them. */
-    topicCreate: ({ name }: { name: string }): Promise<Outcome> => this.attempt('topics', async () => this.topics.create(name)),
+    /** A new topic, named; with a path, if one is given (`cwd`, or a new worktree of it). */
+    topicCreate: ({ name, cwd, worktree }: { name: string; cwd?: string; worktree?: boolean }): Promise<Outcome> =>
+      this.attempt('topics', async () => {
+        const made = this.topics.create(name)
+        const link = made.find((event) => event.type === 'link')
+        if (!cwd?.trim() || link?.type !== 'link') return made
+        return [...made, ...(await this.addPath(link.destinationId, cwd, worktree ?? false))]
+      }),
+    /** A path for a topic: `cwd` as it is, or a new worktree of its repo; a `path` item under the topic, where the next dispatch runs. */
+    topicAddPath: ({ topic, cwd, worktree }: { topic: string; cwd: string; worktree: boolean }): Promise<Outcome> =>
+      this.attempt(topic, () => this.addPath(topic, cwd, worktree)),
     /** Sends a topic's messages since its last dispatch to Claude as one prompt; the answer fills the response put after them. */
     topicDispatch: ({ topic }: { topic: string }): Promise<Outcome> => this.attempt(topic, async () => this.topics.dispatch(topic)),
     /** Text pasted into a topic: a PR, Slack message or branch link as that item, anything else as a message. */

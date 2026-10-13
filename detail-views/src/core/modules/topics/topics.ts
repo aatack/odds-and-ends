@@ -4,18 +4,24 @@ import { tmpdir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
 import { link, value, values, type AppEvent } from '../../graph/events.ts'
 import { prEntityId, type Entity } from '../../types.ts'
-import { ask, author as claudeAuthor, expandHome, githubRepo } from '../claude/claude.ts'
+import { ask, author as claudeAuthor, carryTranscript, expandHome, githubRepo, type Place } from '../claude/claude.ts'
 import type { Module, ModuleContext } from '../module.ts'
 import { me } from '../tasks/tasks.ts'
 import { branchEntityId, branchOfUrl } from '../github/view.ts'
 import { messageOfUrl } from '../slack/view.ts'
-import { answering, promptPart, topicsIds as ids, topicsView, unsent } from './view.ts'
+import { answering, latestPath, promptPart, topicsIds as ids, topicsView, unsent } from './view.ts'
 
 /** The author of what the app writes in a topic on its own (the prompt to commit): not mine to undo. */
 export const appAuthor = 'module'
 
 /** What the app asks Claude after an answer that left changes uncommitted. */
 export const commitPrompt = 'There are uncommitted changes in your working directory. Commit them.'
+
+/** Where a path item says a topic runs: its directory, and the worktree it is, if one. */
+function placeOf(data: Record<string, unknown>): Place {
+  const text = (key: string) => (typeof data[key] === 'string' && data[key] ? (data[key] as string) : null)
+  return { cwd: String(data.cwd), worktree: text('worktree'), branch: text('branch'), repo: text('repo'), origin: text('origin'), github: text('github') }
+}
 
 /** A file pasted into a topic: its name, its type, and what is in it, base64. */
 export interface PastedFile {
@@ -93,6 +99,15 @@ export class Topics implements Module {
     return events
   }
 
+  /** A path chosen for a topic (a directory, or a new worktree made from one): a `path` item under it. The next dispatch runs there. */
+  addPath(topic: string, place: Place, id: string): AppEvent[] {
+    if (this.context.lens.read(topic)?.type !== 'topic') throw new Error('Not a topic')
+    const at = this.context.now()
+    const events = [...values(id, { type: 'path', text: place.cwd, ...place }, at, me), link(topic, id, at, me)]
+    this.context.owned.write(events)
+    return events
+  }
+
   private message(topic: string, text: string, at: number): AppEvent[] {
     const id = randomUUID()
     return [value(id, 'text', text, at, me), link(topic, id, at, me)]
@@ -115,10 +130,19 @@ export class Topics implements Module {
     const prompt = messages.map((id) => promptPart(id, lens)).join('\n\n')
     const at = this.context.now()
     const responseId = randomUUID()
-    const cwd = this.context.data.get(topic).cwd
+    const data = this.context.data.get(topic)
+    const cwd = data.cwd
+    const path = latestPath(topic, lens)
     const events: AppEvent[] = [
       // Claude's, like `started`: undoing my last edit doesn't take the conversation's directory away.
-      ...(typeof cwd === 'string' && cwd ? [] : [value(topic, 'cwd', mkdtempSync(join(tmpdir(), 'claude-')), at, claudeAuthor)]),
+      ...(path
+        ? path.data.cwd === cwd
+          ? []
+          : // The newest path: the topic moves there, its conversation (if started) with it, so the next prompt resumes it.
+            values(topic, { ...placeOf(path.data), started: Boolean(data.started) && carryTranscript(topic, String(path.data.cwd)) }, at, claudeAuthor)
+        : typeof cwd === 'string' && cwd
+          ? []
+          : [value(topic, 'cwd', mkdtempSync(join(tmpdir(), 'claude-')), at, claudeAuthor)]),
       ...values(responseId, { type: 'claude.response', text: '', running: true }, at, claudeAuthor),
       // A moment later, so it sorts after the last message even when made the same instant.
       link(topic, responseId, at + 1, claudeAuthor),
@@ -175,60 +199,79 @@ export class Topics implements Module {
   }
 
   /**
-   * What would be lost resolving a topic: in its worktree (only one proved
-   * to be one), changes not committed, commits not pushed, or not merged
-   * into the default branch. Empty when there is nothing, or no worktree.
+   * What would be lost resolving a topic: in each of its worktrees (only
+   * ones proved to be), changes not committed, commits not pushed, or not
+   * merged into the default branch. Empty when there is nothing, or no
+   * worktree.
    */
   async resolveWarnings(topic: string): Promise<string[]> {
-    const worktree = await this.provenWorktree(topic)
-    if (!worktree) return []
-    const { path } = worktree
+    const warnings: string[] = []
+    for (const { path } of await this.provenWorktrees(topic)) warnings.push(...(await this.worktreeWarnings(path)))
+    return warnings
+  }
+
+  private async worktreeWarnings(path: string): Promise<string[]> {
     const warnings: string[] = []
     const status = await this.git(path, ['status', '--porcelain'])
     if (status === null) return [`Could not read the state of ${path}`]
     if (status.trim()) warnings.push(`Uncommitted changes in ${path}`)
     const count = (out: string | null) => (out ?? '').split('\n').filter((line) => line.trim()).length
     const unpushed = await this.git(path, ['log', '--oneline', 'HEAD', '--not', '--remotes'])
-    if (unpushed === null) warnings.push('Could not tell which commits are pushed')
-    else if (count(unpushed)) warnings.push(`${count(unpushed)} commit${count(unpushed) === 1 ? '' : 's'} not pushed`)
+    if (unpushed === null) warnings.push(`Could not tell which commits are pushed in ${path}`)
+    else if (count(unpushed)) warnings.push(`${count(unpushed)} commit${count(unpushed) === 1 ? '' : 's'} not pushed in ${path}`)
     const main = await this.defaultBranch(path)
     const unmerged = main ? await this.git(path, ['log', '--oneline', `origin/${main}..HEAD`]) : null
-    if (unmerged === null) warnings.push('Could not tell which commits are merged')
-    else if (count(unmerged) && !count(unpushed)) warnings.push(`${count(unmerged)} commit${count(unmerged) === 1 ? '' : 's'} not merged into ${main}`)
+    if (unmerged === null) warnings.push(`Could not tell which commits are merged in ${path}`)
+    else if (count(unmerged) && !count(unpushed)) warnings.push(`${count(unmerged)} commit${count(unmerged) === 1 ? '' : 's'} not merged into ${main} in ${path}`)
     return warnings
   }
 
   /**
    * Resolves a topic: it leaves the list (its link from the root undone, so
-   * it is kept), and its worktree is removed, if it has one proved to be
-   * one; any other directory is left alone. While there is work that would
+   * it is kept), and its worktrees (its own and its paths') are removed,
+   * each only if proved to be one; any other directory is left alone. While there is work that would
    * be lost (`resolveWarnings`) it is refused, unless `force`. Its branch is
    * kept. Not while Claude answers.
    */
   async resolve(topic: string, force: boolean): Promise<AppEvent[]> {
     if (this.context.lens.read(topic)?.type !== 'topic') throw new Error('Not a topic')
     if (answering(topic, this.context.lens) || this.busy.has(topic)) throw new Error('Claude is still answering')
-    const worktree = await this.provenWorktree(topic)
-    if (worktree) {
-      if (!force) {
-        const warnings = await this.resolveWarnings(topic)
-        if (warnings.length) throw new Error(warnings.join('; '))
-      }
-      await this.context.run('git', ['worktree', 'remove', ...(force ? ['--force'] : []), worktree.path], worktree.repo)
+    const worktrees = await this.provenWorktrees(topic)
+    if (!force) {
+      const warnings = await this.resolveWarnings(topic)
+      if (warnings.length) throw new Error(warnings.join('; '))
     }
+    for (const worktree of worktrees) await this.context.run('git', ['worktree', 'remove', ...(force ? ['--force'] : []), worktree.path], worktree.repo)
     const at = this.context.now()
-    const events: AppEvent[] = [link(ids.root, topic, at, me, 1), value(topic, 'resolved', at, at, me), ...(worktree ? [value(topic, 'worktree', null, at, me)] : [])]
+    // What named a removed worktree no longer does.
+    const removed = new Set(worktrees.map((worktree) => worktree.path))
+    const holders = [topic, ...this.context.lens.children(topic)].filter((id) => {
+      const worktree = this.context.lens.read(id)?.data.worktree
+      return typeof worktree === 'string' && removed.has(resolve(worktree))
+    })
+    const events: AppEvent[] = [link(ids.root, topic, at, me, 1), value(topic, 'resolved', at, at, me), ...holders.map((id) => value(id, 'worktree', null, at, me))]
     this.context.owned.write(events)
     return events
   }
 
+  /** The worktrees of a topic (its own, and its paths'), once each, only those provably ones the app made (`provenWorktree`). */
+  private async provenWorktrees(topic: string): Promise<{ path: string; repo: string }[]> {
+    const lens = this.context.lens
+    const named = [this.context.data.get(topic), ...lens.children(topic).flatMap((id) => (lens.read(id)?.type === 'path' ? [lens.read(id)!.data] : []))]
+    const proven: { path: string; repo: string }[] = []
+    for (const data of named) {
+      const worktree = await this.provenWorktree(data)
+      if (worktree && !proven.some((one) => one.path === worktree.path)) proven.push(worktree)
+    }
+    return proven
+  }
+
   /**
-   * The topic's worktree, only if it is provably one the app made: its
-   * `worktree` is under the app's own worktrees directory, exists, is the top
-   * of a checkout, and its repo lists it as a worktree. Null otherwise.
+   * The worktree named in `data`, only if it is provably one the app made:
+   * its `worktree` is under the app's own worktrees directory, exists, is the
+   * top of a checkout, and its repo lists it as a worktree. Null otherwise.
    */
-  private async provenWorktree(topic: string): Promise<{ path: string; repo: string } | null> {
-    const data = this.context.data.get(topic)
+  private async provenWorktree(data: Record<string, unknown>): Promise<{ path: string; repo: string } | null> {
     if (typeof data.worktree !== 'string' || !data.worktree || typeof data.repo !== 'string' || !data.repo) return null
     const path = resolve(data.worktree)
     const root = resolve(this.context.dataDir, 'worktrees')

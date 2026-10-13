@@ -1586,7 +1586,7 @@ mark {
   gap: 8px;
 }
 
-/* A topic's corner: a small button over the chat's top right, and under it, while it is hovered or pressed, what the topic runs in. */
+/* A topic's corner: small buttons over the chat's top right (Path, Resolve); under Path, while it is hovered or pressed, the picker. */
 .chat-corner {
   position: absolute;
   top: 0;
@@ -1624,21 +1624,6 @@ mark {
   box-shadow: 0 12px 40px rgb(0 0 0 / 0.18);
 }
 
-.topic-context-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.topic-context-line .dir-select-wrap {
-  min-width: 0;
-  width: 100%;
-}
-
-.topic-context-line > span:first-child {
-  flex: 1;
-  min-width: 0;
-}
 
 /* A flat chat selects nothing, so nothing in it shows a hover. */
 .chat-page.flat .note-line:hover {
@@ -1884,6 +1869,47 @@ textarea:hover,
   vertical-align: -0.1em;
   background: var(--muted);
   mask: url('./assets/file.svg') center / contain no-repeat;
+}
+
+.folder-mark {
+  flex: none;
+  display: inline-block;
+  width: 0.95em;
+  height: 0.95em;
+  vertical-align: -0.1em;
+  background: var(--muted);
+  mask: url('./assets/folder.svg') center / contain no-repeat;
+}
+
+/* A path in a topic: its directory, then what it is (a worktree, its branch). */
+.path-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The directories I have used, to pick a path from: each a button, with a worktree button beside one in a repo. */
+.path-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.path-option {
+  display: flex;
+  gap: 6px;
+}
+
+.path-option > .button:first-child {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .note-mark {

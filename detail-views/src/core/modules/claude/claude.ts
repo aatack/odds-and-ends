@@ -27,7 +27,7 @@ export interface NewSession {
 }
 
 /** A session's directory, made or chosen: where it runs, and what it is a worktree of. */
-interface Place {
+export interface Place {
   cwd: string
   /** The worktree it runs in, or null. */
   worktree: string | null
@@ -60,7 +60,7 @@ function projectDir(cwd: string): string {
  * (it resumes only sessions of the directory it runs in). False when there is
  * no transcript to take: the session then starts afresh there.
  */
-function carryTranscript(session: string, cwd: string): boolean {
+export function carryTranscript(session: string, cwd: string): boolean {
   const projects = join(claudeHome(), 'projects')
   const file = `${session}.jsonl`
   const from = existsSync(projects) ? readdirSync(projects).map((dir) => join(projects, dir, file)).find((path) => existsSync(path)) : undefined
@@ -182,14 +182,14 @@ export class Claude implements Module {
   }
 
   /** A directory I typed, `~` expanded; refused if it isn't one. Empty for none. */
-  private directory(input: string): string {
+  directory(input: string): string {
     const requested = expandHome(input.trim())
     if (requested && !(existsSync(requested) && statSync(requested).isDirectory())) throw new Error(`No such directory: ${requested}`)
     return requested
   }
 
   /** `requested` as it is, or a new worktree of its repo, on a branch of its own named after the session. */
-  private async place(requested: string, worktree: boolean, name: string, id: string): Promise<Place> {
+  async place(requested: string, worktree: boolean, name: string, id: string): Promise<Place> {
     if (!worktree) return { cwd: requested, worktree: null, branch: null, repo: null, origin: null, github: null }
     const { run } = this.context
     const short = id.slice(0, 8)
@@ -214,7 +214,7 @@ export class Claude implements Module {
   }
 
   /** A directory I chose, remembered first for next time, and whether it is in a git repo (so a worktree can be offered). */
-  private async remember(dir: string): Promise<void> {
+  async remember(dir: string): Promise<void> {
     const root = this.context.data.get(ids.root)
     const cwds = [dir, ...(Array.isArray(root.cwds) ? (root.cwds as string[]) : []).filter((one) => one !== dir)].slice(0, rememberedCwds)
     const known = Array.isArray(root.repos) ? (root.repos as string[]) : []

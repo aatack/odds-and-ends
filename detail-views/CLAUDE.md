@@ -20,8 +20,9 @@ doc for the area you change, and keep it up to date in the same commit.
   uncommitted, Claude is asked once to commit them; the branch checked out
   goes into the chat as its item. **Resolve** takes a topic out of the list
   and removes its worktree, only one provably the app's, warning first of
-  work that would be lost. Its **Context** button (top right) shows
-  its directory and branch. A paste outside the box adds what it is: a
+  work that would be lost. A **path** item (a directory, or a new
+  worktree of one) chosen for a topic (its **Path** button, top right, or
+  the new-topic form) goes into its chat; each dispatch runs in the newest. A paste outside the box adds what it is: a
   file, a PR / Slack message / branch item, or a message. The classic UI below (modules, the
   sidebar) is behind a flag, `DETAIL_VIEWS_UI=classic`; the phone stays on
   it. Each mode keeps its own stack.

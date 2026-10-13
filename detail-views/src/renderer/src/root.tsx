@@ -4,8 +4,8 @@ import { installDispatch } from './dispatch.ts'
 import { installPaste } from './paste.ts'
 import { useSnapshot } from './hooks.ts'
 import type { Session } from './session.ts'
-import { actingIn, chatModeOf, draftKey, focused } from './state.ts'
-import type { PeekTarget, Rect, SessionDialog } from './state.ts'
+import { actingIn, chatModeOf, draftKey, focused, pathDraftKey } from './state.ts'
+import type { DialogFields, PeekTarget, Rect } from './state.ts'
 import { actionsNow, labelOf, runTool, tools } from './tools.ts'
 import { App } from './views/App.tsx'
 import '@fontsource/lato/400.css'
@@ -60,6 +60,8 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
   const onSideResize = useCallback((width: number) => session.resizeSide(width), [])
   const onSetDirectory = useCallback((cwd: string, worktree: boolean) => session.setDirectory(cwd, worktree), [])
   const onResolveTopic = useCallback(() => runTool(session, 'topic.resolve'), [])
+  const onPathDraft = useCallback((text: string) => session.setPathDraft(text), [])
+  const onAddPath = useCallback((cwd: string, worktree: boolean) => session.addPath(cwd, worktree), [])
   const onBack = useCallback(() => session.back(), [])
   // No hover on a phone, so no peeks: a link opens in the browser instead.
   const gestures = useMemo(
@@ -130,6 +132,9 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
         onSideResize,
         onSetDirectory,
         onResolveTopic,
+        pathDraft: state.drafts[pathDraftKey(focused(state))] ?? '',
+        onPathDraft,
+        onAddPath,
         chatMode: chatModeOf(state, focused(state)),
         onEditDraft,
         onCommitEdit,
@@ -143,7 +148,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
         onToggle,
         onClose: onBack,
       },
-    [tree, shown, onNearEnd, onToggle, onBack, state, working, now, findFocus, centre, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onPause, onNewChat, contextViews, onContextToggle, onSideResize, onSetDirectory, onResolveTopic, onEditDraft, onCommitEdit, onCancelEdit],
+    [tree, shown, onNearEnd, onToggle, onBack, state, working, now, findFocus, centre, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onPause, onNewChat, contextViews, onContextToggle, onSideResize, onSetDirectory, onResolveTopic, onPathDraft, onAddPath, onEditDraft, onCommitEdit, onCancelEdit],
   )
   const picking = useMemo(() => {
     const pick = state.picking
@@ -237,16 +242,18 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
   const dialog = useMemo(() => {
     if (!state.dialog) return null
     const cwds = item('claude')?.data.cwds
+    const repos = item('claude')?.data.repos
     return {
       dialog: state.dialog,
       cwds: Array.isArray(cwds) ? (cwds as string[]) : [],
+      repos: Array.isArray(repos) ? (repos as string[]) : [],
       busy:
         state.dialog.kind === 'topic'
           ? (working.topics?.includes('create') ?? false)
           : state.dialog.kind === 'resolve'
             ? (working[state.dialog.topic]?.includes('resolve') ?? false)
             : (working[focused(state)]?.includes('claude') ?? false),
-      onChange: (fields: Partial<SessionDialog>) => session.setDialog(fields),
+      onChange: (fields: DialogFields) => session.setDialog(fields),
       onSubmit: () => session.submitDialog(),
       onCancel: () => session.cancelDialog(),
     }

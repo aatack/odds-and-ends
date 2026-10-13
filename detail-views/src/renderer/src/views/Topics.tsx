@@ -1,10 +1,10 @@
-import { memo, useContext, useEffect, useRef, useState } from 'react'
-import { branchEntityId } from '../../../core/modules/github/view.ts'
+import { memo, useContext, useEffect, useRef } from 'react'
 import type { Entity } from '../../../core/types.ts'
 import { shortTime } from '../format.ts'
-import { ChatPage, ClaudeMark, DirectorySelect, elapsed, type BubbleOf } from './Claude.tsx'
+import { ChatPage, ClaudeMark, elapsed, type BubbleOf } from './Claude.tsx'
 import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
-import { Button, ClockContext, Highlight, ItemContext, ItemPill } from './primitives.tsx'
+import { PathPicker } from './Paths.tsx'
+import { Button, ClockContext, Highlight } from './primitives.tsx'
 
 // The topics mode: one list of topics on the left, the chat of the one open
 // filling the rest. A message is only written into the chat; Ctrl+Enter sends
@@ -41,8 +41,8 @@ const topicBubble: BubbleOf = (row) => (row.entity.type === 'claude.response' ? 
 
 /**
  * A topic: its chat, a flat list with nothing selectable; the box for the
- * next message below it only once Enter opens it; and, at its top right,
- * what the topic runs in.
+ * next message below it (Enter gives it the keyboard); and, at its top
+ * right, a picker for the path it runs in, and Resolve.
  */
 export function TopicDetail(props: OverviewProps) {
   return (
@@ -56,7 +56,7 @@ export function TopicDetail(props: OverviewProps) {
       corner={
         props.interactive ? (
           <>
-            <TopicContext props={props} />
+            <PathPicker props={props} />
             {props.onResolveTopic && (
               <Button
                 label="Resolve"
@@ -70,66 +70,6 @@ export function TopicDetail(props: OverviewProps) {
         ) : null
       }
     />
-  )
-}
-
-/**
- * A small button at the top right of a topic, showing what the topic runs
- * in while it is hovered, or until it is pressed again: its directory, to
- * change, a new worktree of it when it is in a git repo, and the worktree's
- * branch. (Later, any items pinned to the topic.)
- */
-function TopicContext(props: { props: OverviewProps }) {
-  const chat = props.props
-  const { data } = chat.entity
-  const { item } = useContext(ItemContext)
-  const [hovered, setHovered] = useState(false)
-  const [pinned, setPinned] = useState(false)
-  // While the directory's box has the keyboard (its menu is drawn outside the card), the card stays.
-  const [choosing, setChoosing] = useState(false)
-  const repos = Array.isArray(item('claude')?.data.repos) ? (item('claude')!.data.repos as string[]) : []
-  const worktree = typeof data.worktree === 'string' && data.worktree ? data.worktree : null
-  // A worktree's own worktree is made from the directory it was made from.
-  const repo = worktree ? (typeof data.origin === 'string' && data.origin ? data.origin : null) : typeof data.cwd === 'string' && repos.includes(data.cwd) ? data.cwd : null
-  const branch = typeof data.branch === 'string' && data.branch ? data.branch : null
-  const github = typeof data.github === 'string' && data.github ? data.github : null
-  const running = typeof data.runningSince === 'number'
-  return (
-    <div className="topic-context" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
-      <Button label="Context" active={pinned} onClick={() => setPinned(!pinned)} />
-      {(hovered || pinned || choosing) && (
-        <div className="topic-context-card">
-          <div className="topic-context-line">
-            {chat.onSetDirectory ? (
-              <span onFocus={() => setChoosing(true)} onBlur={() => setChoosing(false)}>
-                <DirectorySelect {...chat} worktrees={false} />
-              </span>
-            ) : (
-              <span>{String(data.cwd ?? '')}</span>
-            )}
-            {repo && chat.onSetDirectory && (
-              <Button
-                label="New worktree"
-                busy={chat.working?.includes('directory')}
-                disabled={running && 'Claude is answering: wait for it to finish'}
-                onClick={() => chat.onSetDirectory?.(repo, true)}
-              />
-            )}
-          </div>
-          {branch && (
-            <div className="topic-context-line">
-              {github ? (
-                <ItemPill id={branchEntityId(github, branch)} fallback={branch} />
-              ) : (
-                <span className="item-pill">
-                  <span className="item-name">{branch}</span>
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
   )
 }
 

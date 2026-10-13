@@ -102,11 +102,19 @@ export interface SessionDialog {
   worktree: boolean
 }
 
-/** A new topic, being named. */
+/** A new topic, being named, and the path it starts in, if any (`path` blank for none). */
 export interface TopicDialog {
   kind: 'topic'
   name: string
+  path: string
+  worktree: boolean
 }
+
+/** What a form's fields can change (`kind` apart). */
+export type DialogFields = Partial<Omit<SessionDialog, 'kind'> & Omit<TopicDialog, 'kind'>>
+
+/** The key of the draft in a topic's path picker. */
+export const pathDraftKey = (topic: string): string => `${topic}#path`
 
 /** Resolving a topic would lose work: what, for me to confirm. */
 export interface ResolveDialog {

@@ -1,5 +1,6 @@
 import type { Entity, ModuleInfo, View } from '../../../core/types.ts'
-import type { Dialog, Edit, Peek, PeekTarget, Pick, Rect, ResolveDialog, SessionDialog, ShownView, TopicDialog } from '../state.ts'
+import type { Dialog, DialogFields, Edit, Peek, PeekTarget, Pick, Rect, ResolveDialog, SessionDialog, ShownView, TopicDialog } from '../state.ts'
+import { PathOptions } from './Paths.tsx'
 import { imageSrc } from '../images.ts'
 import { PeekWindow } from './Peek.tsx'
 import { ViewPane } from './View.tsx'
@@ -341,10 +342,11 @@ function PhoneBar(props: PhoneBarProps) {
 
 export interface DialogProps<D extends Dialog = Dialog> {
   dialog: D
-  /** Directories used before, most recent first, to pick from. */
+  /** Directories used before, most recent first, to pick from; and which are in a git repo. */
   cwds: string[]
+  repos: string[]
   busy: boolean
-  onChange(fields: Partial<SessionDialog>): void
+  onChange(fields: DialogFields): void
   onSubmit(): void
   onCancel(): void
 }
@@ -354,8 +356,13 @@ export interface DialogProps<D extends Dialog = Dialog> {
  * directory), and whether in a new worktree there. Enter makes it, Escape
  * gives up.
  */
-/** A new topic: its name. Enter makes it and opens it, Escape gives up. */
+/**
+ * A new topic: its name, and the path it starts in, if any: one typed, or
+ * one of the directories I have used (as it is, or a new worktree of it).
+ * Enter makes it and opens it, Escape gives up.
+ */
 function TopicForm(props: DialogProps<TopicDialog>) {
+  const { dialog } = props
   return (
     <Modal title="New topic" onClose={props.onCancel}>
       <input
@@ -363,8 +370,23 @@ function TopicForm(props: DialogProps<TopicDialog>) {
         data-field="dialog-topic-name"
         autoFocus
         placeholder="Name"
-        value={props.dialog.name}
+        value={dialog.name}
         onChange={(event) => props.onChange({ name: event.target.value })}
+      />
+      <input
+        className="find"
+        data-field="dialog-topic-path"
+        placeholder="Path (optional)"
+        spellCheck={false}
+        value={dialog.path}
+        onChange={(event) => props.onChange({ path: event.target.value, worktree: false })}
+      />
+      <PathOptions
+        cwds={props.cwds}
+        repos={props.repos}
+        chosen={dialog.path ? { cwd: dialog.path, worktree: dialog.worktree } : null}
+        // Pressing the choice again takes it back.
+        onPick={(cwd, worktree) => props.onChange(dialog.path === cwd && dialog.worktree === worktree ? { path: '', worktree: false } : { path: cwd, worktree })}
       />
       <div className="dialog-buttons">
         <Button label="Cancel" hotkey="Esc" onClick={props.onCancel} />

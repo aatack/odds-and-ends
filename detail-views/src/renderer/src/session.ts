@@ -515,7 +515,7 @@ export class Session {
     this.update(S.setDialog(this.state, { kind: 'claude', name: '', cwd: last, worktree: false }))
   }
 
-  setDialog(fields: Partial<Omit<S.SessionDialog, 'kind'>>): void {
+  setDialog(fields: S.DialogFields): void {
     const dialog = this.state.dialog
     if (dialog) this.update(S.setDialog(this.state, { ...dialog, ...fields } as S.Dialog))
   }
@@ -526,7 +526,7 @@ export class Session {
   }
 
   openTopicDialog(): void {
-    if (this.canOpenTopicDialog()) this.update(S.setDialog(this.state, { kind: 'topic', name: '' }))
+    if (this.canOpenTopicDialog()) this.update(S.setDialog(this.state, { kind: 'topic', name: '', path: '', worktree: false }))
   }
 
   hasDialog(): boolean {
@@ -549,7 +549,7 @@ export class Session {
     if (dialog.kind === 'topic') {
       if (!dialog.name.trim()) return
       this.update(S.setDialog(this.state, null))
-      this.makeTopic(dialog.name)
+      this.makeTopic(dialog.name, dialog.path.trim() ? { cwd: dialog.path, worktree: dialog.worktree } : undefined)
       return
     }
     this.update(S.setDialog(this.state, null))
@@ -584,9 +584,9 @@ export class Session {
     this.makeTopic(name)
   }
 
-  /** A topic named `name` is made, and opened. */
-  private makeTopic(name: string): void {
-    void this.working(topicsIds.root, 'create', () => this.api.topicCreate(name)).then((outcome) => {
+  /** A topic named `name` is made (with its first path, if given), and opened. */
+  private makeTopic(name: string, path?: { cwd: string; worktree: boolean }): void {
+    void this.working(topicsIds.root, 'create', () => this.api.topicCreate(name, path)).then((outcome) => {
       this.settle(topicsIds.root, outcome)
       if (outcome.error) this.showToast(outcome.error)
       const made = outcome.events.find((event) => event.type === 'link' && event.sourceId === topicsIds.root)
@@ -649,6 +649,28 @@ export class Session {
       if (outcome.error) this.showToast(outcome.error)
       // Gone from the list: the window is left empty, as before a topic is chosen.
       else if (S.focused(this.state) === id) this.update(S.enter(this.state, topicsIds.root))
+    })
+  }
+
+  /** Typing a directory in the open topic's path picker. */
+  setPathDraft(text: string): void {
+    if (this.onTopic()) this.update(S.setDraftFor(this.state, S.pathDraftKey(S.focused(this.state)), text))
+  }
+
+  /** Enter in the path picker's box: the directory typed, as a path. */
+  addTypedPath(): void {
+    const draft = this.onTopic() ? (this.state.drafts[S.pathDraftKey(S.focused(this.state))] ?? '') : ''
+    if (draft.trim()) this.addPath(draft, false)
+  }
+
+  /** A path for the open topic (`cwd`, or a new worktree of it): an item in its chat; its next dispatch runs there. */
+  addPath(cwd: string, worktree: boolean): void {
+    if (!this.onTopic()) return
+    const id = S.focused(this.state)
+    void this.working(id, 'path', () => this.api.topicAddPath(id, cwd, worktree)).then((outcome) => {
+      this.settle(id, outcome)
+      if (outcome.error) this.showToast(outcome.error)
+      else this.update(S.setDraftFor(this.state, S.pathDraftKey(id), ''))
     })
   }
 

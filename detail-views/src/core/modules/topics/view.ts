@@ -1,4 +1,5 @@
 import type { Lens, ModuleView } from '../../present.ts'
+import type { Entity } from '../../types.ts'
 import { byRecent } from '../claude/view.ts'
 
 export const topicsIds = { root: 'topics' }
@@ -14,9 +15,20 @@ export function unsent(topic: string, lens: Lens): string[] {
   const last = chat.findLastIndex((id) => lens.read(id)?.type === 'claude.response')
   return chat.slice(last + 1).filter((id) => {
     const item = lens.read(id)
-    if (!item) return false
+    // A path says where the next dispatch runs; it is not something to send.
+    if (!item || item.type === 'path') return false
     return item.type === 'note' ? typeof item.data.text === 'string' && item.data.text.trim() !== '' : item.type !== 'claude.response'
   })
+}
+
+/** The newest path under a topic: where its next dispatch runs. Null when it has none. */
+export function latestPath(topic: string, lens: Lens): Entity | null {
+  const chat = lens.children(topic)
+  for (let at = chat.length - 1; at >= 0; at--) {
+    const item = lens.read(chat[at])
+    if (item?.type === 'path') return item
+  }
+  return null
 }
 
 /** How an unsent item goes into the prompt: a message as its text, a file by its path, anything else by its id (Claude reads it through the app's MCP server). */
@@ -47,8 +59,8 @@ export const topicsView: ModuleView = {
   name: 'Topics',
   root: topicsIds.root,
   typeOf: (id) => (id === topicsIds.root ? 'topics.home' : null),
-  // A file is only ever pasted into a topic, for now.
-  owns: (type) => type === 'topics.home' || type === 'topic' || type === 'file',
+  // A file is only ever pasted into a topic, and a path only ever chosen for one, for now.
+  owns: (type) => type === 'topics.home' || type === 'topic' || type === 'file' || type === 'path',
   // A topic reads like chat: the newest at the bottom, where the cursor starts.
   newestFirst: (type) => type === 'topic',
   compose: (entity) => (entity.type === 'topic' ? 'topic' : null),

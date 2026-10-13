@@ -48,6 +48,10 @@ export interface ViewProps {
   contextViews?: Record<string, View>
   /** Moves a Claude session to another directory, or a new worktree of its repo. */
   onSetDirectory?(cwd: string, worktree: boolean): void
+  /** A topic's path picker: what is typed in its box, typing, and adding a path (`cwd`, or a new worktree of it). */
+  pathDraft?: string
+  onPathDraft?(text: string): void
+  onAddPath?(cwd: string, worktree: boolean): void
   /** Resolves the topic on screen: out of the list, its worktree removed. */
   onResolveTopic?(): void
   /** What a chat's box writes: a prompt or a note (←/→ switch it). */

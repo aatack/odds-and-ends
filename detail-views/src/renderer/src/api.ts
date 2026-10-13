@@ -35,7 +35,9 @@ export interface Api {
   /** A session's directory changed: to `cwd`, or a new worktree of its repo. */
   claudeSetDirectory(session: string, cwd: string, worktree: boolean): Promise<Outcome>
   /** A new topic, named, in the one list of them. */
-  topicCreate(name: string): Promise<Outcome>
+  topicCreate(name: string, path?: { cwd: string; worktree: boolean }): Promise<Outcome>
+  /** A path for a topic: `cwd`, or a new worktree of it; where its next dispatch runs. */
+  topicAddPath(topic: string, cwd: string, worktree: boolean): Promise<Outcome>
   /** Sends a topic's messages since its last dispatch to Claude at once. */
   topicDispatch(topic: string): Promise<Outcome>
   /** Text pasted into a topic: a PR, Slack message or branch link as that item, anything else as a message. */
@@ -104,7 +106,8 @@ export function httpApi(base: string, token: string): Api {
     redo: (events) => call('redo', { events }),
     claudeCreate: (input) => call('claudeCreate', input),
     claudeSetDirectory: (session, cwd, worktree) => call('claudeSetDirectory', { session, cwd, worktree }),
-    topicCreate: (name) => call('topicCreate', { name }),
+    topicCreate: (name, path) => call('topicCreate', { name, ...path }),
+    topicAddPath: (topic, cwd, worktree) => call('topicAddPath', { topic, cwd, worktree }),
     topicDispatch: (topic) => call('topicDispatch', { topic }),
     topicPaste: (topic, text) => call('topicPaste', { topic, text }),
     topicAttach: (topic, file) => call('topicAttach', { topic, file }),
@@ -153,7 +156,8 @@ export function electronApi(): Api {
     redo: (events) => call('redo', { events }),
     claudeCreate: (input) => call('claudeCreate', input),
     claudeSetDirectory: (session, cwd, worktree) => call('claudeSetDirectory', { session, cwd, worktree }),
-    topicCreate: (name) => call('topicCreate', { name }),
+    topicCreate: (name, path) => call('topicCreate', { name, ...path }),
+    topicAddPath: (topic, cwd, worktree) => call('topicAddPath', { topic, cwd, worktree }),
     topicDispatch: (topic) => call('topicDispatch', { topic }),
     topicPaste: (topic, text) => call('topicPaste', { topic, text }),
     topicAttach: (topic, file) => call('topicAttach', { topic, file }),

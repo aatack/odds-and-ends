@@ -8,3 +8,5 @@
 - `file.svg`: a blank page with its corner folded, drawn for this app (the
   note's page without its lines), for a file item. Drawn as a CSS mask, so its
   colour is a token (`--muted`).
+- `folder.svg`: a folder, drawn for this app, for a path item. Drawn as a CSS
+  mask, so its colour is a token (`--muted`).

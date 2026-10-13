@@ -61,6 +61,8 @@ export const tools: Tool[] = [
   { id: 'chat.previous', scope: 'input', keys: ['Shift+Tab'], enabled: (_, field) => field === 'prompt', run: (s) => s.nextChat(-1) },
   // The box at the head of the list of topics: Enter makes the topic named in it (before the composer's Enter, which is the chat's).
   { id: 'topic.create', scope: 'input', keys: ['Enter'], enabled: (_, field) => field === 'topic-name', run: (s) => s.createTopic() },
+  // A topic's path picker: Enter adds the directory typed in its box.
+  { id: 'path.add', scope: 'input', keys: ['Enter'], enabled: (_, field) => field === 'path', run: (s) => s.addTypedPath() },
   // A topic's box with nothing in it: Enter closes it (before the composer's Enter, which adds the message and closes it too).
   { id: 'topic.leave', scope: 'input', keys: ['Enter'], enabled: (s, field) => field === 'topic' && s.canLeaveTopicBox(), run: (s) => s.compose(false) },
   // Not while the new-session form is over it: Enter there is the form's.

@@ -86,17 +86,17 @@ function DirectoryInput(props: InputProps<DirectoryOption, false>) {
 
 /**
  * Where a session runs, as a dropdown: each directory I have used (a new
- * one typed in), and, for one in a git repo, a new worktree of it too (unless
- * `worktrees` is false: a button beside it makes one). Picking one moves the
- * session there, its conversation with it. Not while Claude is answering.
+ * one typed in), and, for one in a git repo, a new worktree of it too.
+ * Picking one moves the session there, its conversation with it. Not while
+ * Claude is answering.
  */
-export function DirectorySelect(props: OverviewProps & { worktrees?: boolean }) {
+function DirectorySelect(props: OverviewProps) {
   const { data } = props.entity
   const { item } = useContext(ItemContext)
   const root = item('claude')?.data ?? {}
   const cwds = Array.isArray(root.cwds) ? (root.cwds as string[]) : []
   const repos = new Set(Array.isArray(root.repos) ? (root.repos as string[]) : [])
-  const options: DirectoryOption[] = cwds.flatMap((cwd) => [{ cwd, worktree: false }, ...(props.worktrees !== false && repos.has(cwd) ? [{ cwd, worktree: true }] : [])])
+  const options: DirectoryOption[] = cwds.flatMap((cwd) => [{ cwd, worktree: false }, ...(repos.has(cwd) ? [{ cwd, worktree: true }] : [])])
   const current: DirectoryOption = { cwd: String(data.cwd ?? ''), worktree: false }
   const running = typeof data.runningSince === 'number'
   const busy = props.working?.includes('directory') ?? false

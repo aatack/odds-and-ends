@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { AppEvent } from '../../core/graph/events.ts'
 import { link, values } from '../../core/graph/events.ts'
 import { memoryCore } from '../../core/testing.ts'
@@ -36,7 +39,8 @@ async function headless(options: Parameters<typeof memoryCore>[0] = {}, ui: { to
     redo: async (events) => a.redo({ events }),
     claudeCreate: (input) => a.claudeCreate(input),
     claudeSetDirectory: (session, cwd, worktree) => a.claudeSetDirectory({ session, cwd, worktree }),
-    topicCreate: (name) => a.topicCreate({ name }),
+    topicCreate: (name, path) => a.topicCreate({ name, ...path }),
+    topicAddPath: (topic, cwd, worktree) => a.topicAddPath({ topic, cwd, worktree }),
     topicDispatch: (topic) => a.topicDispatch({ topic }),
     topicPaste: (topic, text) => a.topicPaste({ topic, text }),
     topicAttach: (topic, file) => a.topicAttach({ topic, file }),
@@ -684,7 +688,7 @@ test('topics mode: Ctrl+. opens a form for a new topic, from anywhere; Enter in 
   await settle()
   assert.equal(key('Ctrl+.', 'topic-name'), 'topic.new')
   session.openTopicDialog()
-  assert.deepEqual(session.get().state.dialog, { kind: 'topic', name: '' })
+  assert.deepEqual(session.get().state.dialog, { kind: 'topic', name: '', path: '', worktree: false })
   // Not a second form over the first.
   assert.equal(key('Ctrl+.', null), undefined)
   // Nothing made without a name.
@@ -781,6 +785,34 @@ test('topics mode: Resolve takes the open topic out of the list and leaves the w
   assert.deepEqual(session.get().topics, [])
   api.topicResolveCheck = check
   assert.ok(topic)
+  } finally {
+    stop()
+  }
+})
+
+test('topics mode: the new-topic form takes a path; the path picker adds one typed, with Enter; each is an item in the chat', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'topic-path-'))
+  const other = mkdtempSync(join(tmpdir(), 'topic-path-'))
+  const { session, stop, settle, screen } = await headless({}, { topics: true })
+  try {
+  await settle()
+  session.openTopicDialog()
+  session.setDialog({ name: 'With a path', path: dir, worktree: false })
+  session.submitDialog()
+  await settle()
+  assert.equal(session.get().view?.root?.data.text, 'With a path')
+  // (The tree's own selection mark aside: a topic's chat shows none.)
+  const lines = () => screen().slice(1).map((line) => line.replace('>', ''))
+  assert.deepEqual(lines(), [`  ${dir}`])
+
+  const add = tools.find((tool) => tool.keys.includes('Enter') && tool.scope === 'input' && (tool.enabled?.(session, 'path') ?? true))!
+  assert.equal(add.id, 'path.add')
+  session.setPathDraft(other)
+  add.run(session, 'path')
+  await settle()
+  assert.deepEqual(lines(), [`  ${dir}`, `  ${other}`])
+  // The box empties once it is in.
+  assert.equal(session.get().state.drafts[`${session.get().view!.root!.id}#path`] ?? '', '')
   } finally {
     stop()
   }

@@ -16,6 +16,7 @@ import {
   SessionRow,
 } from './Claude.tsx'
 import { FileOverview, FilePill, FileRow } from './Files.tsx'
+import { PathOverview, PathPill, PathRow } from './Paths.tsx'
 import type { Kinds } from './kindTypes.ts'
 import { TopicDetail, TopicPill, TopicRow } from './Topics.tsx'
 import { ContextPill, HomePill, NoteOverview, NotePill, NoteRow, PillOverview, PillRow, TaskOverview, TaskPill, TaskRow } from './Notes.tsx'
@@ -61,4 +62,5 @@ export const kinds: Kinds = {
   'topics.home': { Pill: HomePill, Overview: PillOverview, Row: PillRow },
   topic: { Pill: TopicPill, Overview: PillOverview, Row: TopicRow, Detail: TopicDetail },
   file: { Pill: FilePill, Overview: FileOverview, Row: FileRow },
+  path: { Pill: PathPill, Overview: PathOverview, Row: PathRow },
 }

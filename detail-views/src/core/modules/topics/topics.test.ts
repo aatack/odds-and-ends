@@ -265,7 +265,7 @@ test('topics: resolving takes a topic out of the list, and removes its worktree 
   state.listed = [tree]
   const proven = await make('Proven', { cwd: tree, worktree: tree, repo: '/repo' })
   state.dirty = [' M a.ts\n']
-  assert.deepEqual((await core.actions.topicResolveCheck({ topic: proven })).warnings, [`Uncommitted changes in ${tree}`, '1 commit not pushed'])
+  assert.deepEqual((await core.actions.topicResolveCheck({ topic: proven })).warnings, [`Uncommitted changes in ${tree}`, `1 commit not pushed in ${tree}`])
   state.dirty = [' M a.ts\n']
   assert.match(String((await core.actions.topicResolve({ topic: proven, force: false })).error), /not pushed/)
   assert.ok(core.entity('topics').outboundLinks.includes(proven))
@@ -344,4 +344,80 @@ test('topics: after a restart, an answer cut off is waited for while its claude 
     if (home === undefined) delete process.env.CLAUDE_CONFIG_DIR
     else process.env.CLAUDE_CONFIG_DIR = home
   }
+})
+
+test('topics: a path is an item under the topic; each dispatch runs in the newest one, the conversation moving with it; Resolve removes every proven worktree among them', async () => {
+  const calls: { command: string; args: string[]; cwd: string }[] = []
+  const dataDir = mkdtempSync(join(tmpdir(), 'topics-data-'))
+  const first = mkdtempSync(join(tmpdir(), 'path-a-'))
+  const second = mkdtempSync(join(tmpdir(), 'path-b-'))
+  const state = { dirty: [] as string[], branch: 'main', listed: [] as string[] }
+  const run = fakeRepo(state, calls)
+  const core = memoryCore({
+    dataDir,
+    run: async (command, args, cwd) => {
+      // A worktree is made on disk, as git would.
+      if (args[0] === 'worktree' && args[1] === 'add') {
+        mkdirSync(args[5], { recursive: true })
+        state.listed.push(args[5])
+        return ''
+      }
+      if (args[0] === 'fetch') return ''
+      if (args[1] === '--verify') throw new Error('no such branch')
+      return run(command, args, cwd)
+    },
+  })
+  // Made with its first path.
+  const made = await core.actions.topicCreate({ name: 'Paths', cwd: first, worktree: false })
+  assert.equal(made.error, null)
+  const [topic] = core.entity('topics').outboundLinks
+  const pathItems = () => core.entity(topic).outboundLinks.filter((id) => core.item(id)?.type === 'path')
+  assert.equal(pathItems().length, 1)
+  assert.equal(core.item(pathItems()[0])!.data.text, first)
+  assert.deepEqual(core.item('claude')!.data.cwds, [first])
+  // A path alone is nothing to send.
+  assert.equal((await core.actions.topicDispatch({ topic })).error, 'Nothing new to send')
+
+  await core.actions.submit({ id: topic, text: 'one' })
+  await core.actions.topicDispatch({ topic })
+  await until(() => calls.some((call) => call.command.endsWith('claude')))
+  await settle()
+  assert.equal(calls.find((call) => call.command.endsWith('claude'))!.cwd, first)
+
+  // Claude Code kept the conversation's transcript where it ran (in a config directory of the test's own).
+  const config = mkdtempSync(join(tmpdir(), 'claude-config-'))
+  const previous = process.env.CLAUDE_CONFIG_DIR
+  process.env.CLAUDE_CONFIG_DIR = config
+  mkdirSync(join(config, 'projects', 'somewhere'), { recursive: true })
+  writeFileSync(join(config, 'projects', 'somewhere', `${topic}.jsonl`), '{}\n')
+
+  // A second path, then a worktree of it: the newest wins.
+  assert.equal((await core.actions.topicAddPath({ topic, cwd: second, worktree: false })).error, null)
+  assert.equal((await core.actions.topicAddPath({ topic, cwd: second, worktree: true })).error, null)
+  const tree = core.item(pathItems()[2])!.data
+  assert.ok(String(tree.cwd).startsWith(join(dataDir, 'worktrees')))
+  assert.equal(tree.origin, second)
+  await core.actions.submit({ id: topic, text: 'two' })
+  await core.actions.topicDispatch({ topic })
+  await until(() => calls.filter((call) => call.command.endsWith('claude')).length === 2)
+  await settle()
+  const claude = calls.filter((call) => call.command.endsWith('claude'))
+  assert.equal(claude[1].cwd, tree.cwd)
+  assert.ok(claude[1].args.includes('--resume'))
+  // The transcript went with it, to where Claude Code looks from there.
+  assert.ok(existsSync(join(config, 'projects', String(tree.cwd).replace(/[^a-zA-Z0-9]/g, '-'), `${topic}.jsonl`)))
+  if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR
+  else process.env.CLAUDE_CONFIG_DIR = previous
+  assert.equal(core.item(topic)!.data.cwd, tree.cwd)
+  assert.equal(core.item(topic)!.data.worktree, tree.cwd)
+
+  // No such directory: refused, nothing added.
+  assert.match(String((await core.actions.topicAddPath({ topic, cwd: join(first, 'nope'), worktree: false })).error), /No such directory/)
+  assert.equal(pathItems().length, 3)
+
+  // Resolve removes the worktree (proven), and leaves the plain directories alone.
+  assert.equal((await core.actions.topicResolve({ topic, force: false })).error, null)
+  const removed = calls.filter((call) => call.args[0] === 'worktree' && call.args[1] === 'remove').map((call) => call.args.at(-1))
+  assert.deepEqual(removed, [tree.cwd])
+  assert.equal(core.item(pathItems()[2])!.data.worktree, null)
 })

@@ -43,6 +43,7 @@ export const itemTypes = [
   'topics.home',
   'topic',
   'file',
+  'path',
 ] as const
 
 export type ItemType = (typeof itemTypes)[number]
