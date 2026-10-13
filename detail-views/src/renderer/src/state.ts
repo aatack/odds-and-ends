@@ -73,6 +73,12 @@ export interface State {
   /** What a chat's box writes, by the chat's id: a prompt to Claude (the default), or a note in the chat. */
   chatModes: Record<string, ChatMode>
   /**
+   * Where a topic's box sends, by the topic's id, when not a note: the Slack
+   * conversation or thread (`SendTarget.on`) Tab chose. Not persisted, so the
+   * box never opens already pointed at Slack.
+   */
+  topicTargets: Record<string, string>
+  /**
    * The window the keys act in: null for the main view, `side` for the side
    * panel, a peek's key, or an item opened out in a chat's panel (`contextWindow`). Each has its own selection (by its root, in
    * `selections`). Not persisted.
@@ -289,6 +295,7 @@ export function initialState(root: string): State {
     sideWidth: null,
     chatContext: {},
     chatModes: {},
+    topicTargets: {},
     window: null,
     prompting: false,
   }
@@ -604,6 +611,19 @@ export function setChatMode(state: State, chat: string, mode: ChatMode): State {
   if (mode === 'prompt') delete next[chat]
   else next[chat] = mode
   return { ...state, chatModes: next }
+}
+
+/** Where a topic's box sends: a Slack conversation or thread (`SendTarget.on`), or null for a note. */
+export function topicTargetOf(state: State, topic: string): string | null {
+  return state.topicTargets[topic] ?? null
+}
+
+export function setTopicTarget(state: State, topic: string, on: string | null): State {
+  if (topicTargetOf(state, topic) === on) return state
+  const next = { ...state.topicTargets }
+  if (on === null) delete next[topic]
+  else next[topic] = on
+  return { ...state, topicTargets: next }
 }
 
 /** Opens an item in a chat's context pane out to its whole view, or folds it back to its overview. */

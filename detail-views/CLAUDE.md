@@ -23,7 +23,10 @@ doc for the area you change, and keep it up to date in the same commit.
   work that would be lost. A **path** item (a directory, or a new
   worktree of one) chosen for a topic (its **Path** button, top right, or
   the new-topic form) goes into its chat; each dispatch runs in the newest. A paste outside the box adds what it is: a
-  file, a PR / Slack message / branch item, or a message. The classic UI below (modules, the
+  file, a PR / Slack message / branch item, or a message. Tab in the box
+  points it at a Slack thread or conversation in the chat (the box turns the
+  warning's colour). A topic can wait on Slack threads and conversations
+  (`wait`): `.` passes it by until someone else says something there. The classic UI below (modules, the
   sidebar) is behind a flag, `DETAIL_VIEWS_UI=classic`; the phone stays on
   it. Each mode keeps its own stack.
 - **Modules are workflows.** Each one (Slack, tasks, later calendar, …) is a
@@ -144,7 +147,11 @@ doc for the area you change, and keep it up to date in the same commit.
   first, as an ordinary tree, capped at 200.
 - **Slack is read-only during development.** `slackWrites` in
   `modules/slack/api.ts` gates an allowlist of read methods; do not turn it on
-  or widen the list unless I ask.
+  or widen the list unless I ask. The one exception: a message I send from a
+  topic's box (Tab points it at a Slack thread or conversation in the chat),
+  through `Core.topicSlackSend` only. It is deliberately not in
+  `Core.actions`, so only my own key press in the window can send; never let a
+  script, automation, the phone, the MCP server or Claude reach it.
 - **git writes only from a topic's buttons**, each started by me: **Check
   out** (its worktree's commit, detached, in the base repo), **Master** (the
   default branch there), both refused over uncommitted changes; **Push**

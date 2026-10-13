@@ -49,6 +49,10 @@ async function headless(options: Parameters<typeof memoryCore>[0] = {}, ui: { to
     topicCheckOut: (topic) => a.topicCheckOut({ topic }),
     topicCheckOutDefault: (topic) => a.topicCheckOutDefault({ topic }),
     topicPush: (topic) => a.topicPush({ topic }),
+    topicWait: (topic, on) => a.topicWait({ topic, on }),
+    topicUnwait: (topic, on) => a.topicUnwait({ topic, on }),
+    topicDismiss: (topic, on, message) => a.topicDismiss({ topic, on, message }),
+    topicSlackSend: (topic, on, text) => core.topicSlackSend({ topic, on, text }),
     visit: async (id) => a.visit({ id }),
     onChange: (listener) => core.onChange(listener),
     openExternal: () => {},
@@ -816,6 +820,85 @@ test('topics mode: the new-topic form takes a path; the path picker adds one typ
   assert.deepEqual(lines(), [`  ${dir}`, `  ${other}`])
   // The box empties once it is in.
   assert.equal(session.get().state.drafts[`${session.get().view!.root!.id}#path`] ?? '', '')
+  } finally {
+    stop()
+  }
+})
+
+test('topics mode: Tab points the box at each Slack thread or conversation in the chat; Enter then sends there, once; a wait keeps `.` away until someone answers', async () => {
+  const posted: string[] = []
+  const slack = (async (input: string | URL | Request, init?: RequestInit) => {
+    const method = String(input).split('/').pop()!
+    const params = init!.body as URLSearchParams
+    const answers: Record<string, unknown> = {
+      'auth.test': { user_id: 'UME', url: 'https://x.slack.com/' },
+      'users.conversations': { channels: [] },
+      'conversations.list': { channels: [] },
+      'users.list': { members: [] },
+      'search.messages': { messages: { matches: [], paging: { pages: 1 } } },
+      'chat.postMessage': { ts: '300.000000', message: { ts: '300.000000', user: 'UME', text: params.get('text'), thread_ts: params.get('thread_ts') } },
+    }
+    if (method === 'chat.postMessage') posted.push(`${params.get('channel')} ${params.get('thread_ts')} ${params.get('text')}`)
+    return new Response(JSON.stringify({ ok: true, ...(answers[method] as object) }))
+  }) as typeof fetch
+  const { core, session, stop, settle } = await headless({ fetch: slack, now: () => 250_000 }, { topics: true })
+  const tab = tools.find((tool) => tool.id === 'topic.target')!
+  const next = tools.find((tool) => tool.id === 'topic.nextIdle')!
+  try {
+    await core.slack.setToken('xoxp-1')
+    const message = 'slack:msg:C1:100.000000'
+    core.cache.write([...values(message, { type: 'slack.message', channel: 'C1', ts: '100.000000', user: 'UOTHER', text: 'is it down?' }, 100_000, 'slack'), link('slack:conv:C1', message, 100_000, 'slack')])
+    for (const name of ['other', 'outage']) {
+      session.setTopicName(name)
+      session.createTopic()
+      await settle()
+    }
+    const topic = session.get().view!.root!.id
+    await core.actions.topicPaste({ topic, text: 'https://x.slack.com/archives/C1/p100000000' })
+    await settle()
+
+    // A note, then the thread, then the conversation, then a note again.
+    session.returnToPrompt()
+    assert.equal(tab.enabled!(session, 'topic'), true)
+    assert.equal(session.topicTarget(), null)
+    tab.run(session, 'topic')
+    assert.equal(session.topicTarget()?.on, message)
+    tab.run(session, 'topic')
+    assert.equal(session.topicTarget()?.on, 'slack:conv:C1')
+    tab.run(session, 'topic')
+    assert.equal(session.topicTarget(), null)
+    tab.run(session, 'topic')
+
+    // Ctrl+Enter never takes what is meant for Slack to Claude.
+    session.setDraft('Looking into it')
+    assert.match(String(session.dispatchRefusal()), /Slack/)
+    await session.send()
+    await settle()
+    assert.deepEqual(posted, ['C1 100.000000 Looking into it'])
+    assert.equal(session.topicTarget(), null)
+    assert.equal(session.get().view!.root!.id, topic)
+    assert.ok(core.entity(topic).outboundLinks.includes('slack:msg:C1:300.000000'))
+
+    // Waiting on the thread: `.` passes the topic by until someone else answers in it.
+    session.waitOn(message, 'thread')
+    await settle()
+    assert.deepEqual(session.get().waiting, [topic])
+    assert.deepEqual(session.get().topicWaits.map(({ wait, candidates }) => [wait.slack, candidates]), [[message, []]])
+    next.run(session, null)
+    assert.equal(session.get().view?.root?.data.text, 'other')
+    assert.equal(next.enabled!(session, null), false)
+    core.cache.write([...values('slack:msg:C1:310.000000', { type: 'slack.message', channel: 'C1', ts: '310.000000', threadTs: '100.000000', user: 'UOTHER', text: 'fixed' }, 310_000, 'slack'), link(message, 'slack:msg:C1:310.000000', 310_000, 'slack')])
+    await settle()
+    assert.deepEqual(session.get().waiting, [])
+    next.run(session, null)
+    assert.equal(session.get().view?.root?.data.text, 'outage')
+    assert.deepEqual(session.get().topicWaits.map(({ candidates }) => candidates), [['slack:msg:C1:310.000000']])
+    session.acceptCandidate('slack:msg:C1:310.000000')
+    await settle()
+    assert.deepEqual(session.get().topicWaits.map(({ candidates }) => candidates), [[]])
+    session.unwait(message)
+    await settle()
+    assert.deepEqual(session.get().topicWaits, [])
   } finally {
     stop()
   }

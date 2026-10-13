@@ -208,6 +208,21 @@ export class Core {
     return this.claude.recover([claudeIds.root, topicsIds.root].flatMap((root) => this.lens().children(root)), every)
   }
 
+  /**
+   * Sends a message to Slack as me from a topic's box, to a conversation or
+   * thread a Slack item in the topic offers (`sendTargets`), and puts it in
+   * the chat. The only write to Slack, so it is deliberately not one of
+   * `actions`: only the window's own IPC handler calls it, for a key I
+   * pressed; the phone, the MCP server and Claude can't reach it.
+   */
+  topicSlackSend({ topic, on, text }: { topic: string; on: string; text: string }): Promise<Outcome> {
+    return this.attempt(topic, async () => {
+      const target = this.topics.sendTarget(topic, on)
+      const id = await this.slack.send(target.channel, text, target.threadTs)
+      return this.topics.sent(topic, id)
+    })
+  }
+
   stop(): void {
     if (this.clearer) clearInterval(this.clearer)
     this.clearer = null
@@ -551,6 +566,13 @@ export class Core {
     topicCheckOutDefault: ({ topic }: { topic: string }): Promise<Outcome> => this.attempt(topic, () => this.topics.checkOutDefault(topic)),
     /** A topic's branch pushed to GitHub, from its worktree or path. */
     topicPush: ({ topic }: { topic: string }): Promise<Outcome> => this.attempt(topic, () => this.topics.push(topic)),
+    /** Puts a topic down until something comes into each of `on` (Slack conversations or threads), from now. */
+    topicWait: ({ topic, on }: { topic: string; on: string[] }): Promise<Outcome> => this.attempt(topic, async () => this.topics.wait(topic, on)),
+    /** Takes a topic's wait on `on` away. */
+    topicUnwait: ({ topic, on }: { topic: string; on: string }): Promise<Outcome> => this.attempt(topic, async () => this.topics.unwait(topic, on)),
+    /** Passes over a message that came into a topic's wait on `on`. */
+    topicDismiss: ({ topic, on, message }: { topic: string; on: string; message: string }): Promise<Outcome> =>
+      this.attempt(topic, async () => this.topics.dismiss(topic, on, message)),
     /** A file pasted into a topic, kept, as an item under it. */
     topicAttach: ({ topic, file }: { topic: string; file: PastedFile }): Promise<Outcome> => this.attempt(topic, async () => this.topics.attach(topic, file)),
     /** A view of `id` was pushed: it goes to the front of Recents (unless it is a plain note). */

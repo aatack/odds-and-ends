@@ -36,10 +36,26 @@ Written in ASD-STE100. An experiment, after chat apps. Code: `src/core/modules/t
     - Both are refused while the base repo's checkout has changes not committed.
     - **Push**: `git push -u origin <branch>` from the worktree (or the directory): the branch, made on GitHub if new; never forced. Refused on a detached HEAD, on the default branch, to an `origin` not on GitHub, and while Claude answers. Then the branch's PR, if it has one, joins the topic (17).
 
+20. **Where the box sends.** By default, Enter in the box adds a note. **Tab** in the box goes to the next place it can send, then back to a note (`topic.target`, `sendTargets`). The places come from the Slack items in the chat, each once, in the chat's order:
+    - A message in a thread: a reply in that thread.
+    - A message in a conversation: a reply in its thread, or a message to the conversation.
+    - A conversation (a pasted `…slack.com/archives/<channel>` link): a message to it.
+    - A message that has not loaded yet gives no place, because the app cannot tell if it is in a thread.
+21. While the box sends to Slack, it has the warning's colours (`--warning-soft`, `--warning-line`), and the Slack mark and the conversation's name (with "thread" for a thread) are on its right. Enter sends the text to Slack as me, and links the message into the chat (`Core.topicSlackSend`). Then the box goes back to a note, so a second Enter cannot send again. If the send fails, the text comes back. Ctrl+Enter with text in the box does not send it to Claude: it says why (`dispatchRefusal`). The choice is not persisted: after a restart, the box adds a note.
+22. **Only I send to Slack** (`docs/slack.md`). `chat.postMessage` is the only write. Only a call with `byMe` (`api.ts`) can make it, and only `Core.topicSlackSend` gives `byMe`. That method is not in `Core.actions`, so the phone, the MCP server and Claude cannot call it. Only the window's own IPC channel (`slackSend`) calls it, and the window sends only immediately after a key press or click of mine (`navigator.userActivation`). The core sends only to a place that a Slack item in the topic gives.
+23. **Waits.** A topic's `wait` is a list of what it waits on: `{ slack, since, dismissed? }`. `slack` is a conversation (`slack:conv:…`) or a thread (its first message). `since` is when the wait started (Unix ms). Later kinds of wait go beside `slack`.
+    - On a hover over a Slack message in the chat, buttons show: wait on its **Thread**, its **Channel**, or **Both** (`topicWait`). A conversation in the chat shows **Wait**.
+    - What came into a wait (`waitCandidates`): in a conversation, its top-level messages; in a thread, its replies. Only the ones after `since`. Not mine, not one already in the topic, not one I dismissed, not a join or a leave.
+    - A topic is **waiting** (`waiting`) when it has waits and nothing came into any of them. `.` does not go to a waiting topic. In the list, a waiting topic shows `⧗`.
+    - It is worked out from the cache, so it needs no polling of its own: the Slack watch (every 15 s) puts every new message there.
+24. Above the box of a topic with waits is a box of them (`TopicWaits`): for each wait, the Slack mark, the conversation or thread, and how long it has waited (or how many new messages there are), and a × that stops it (`topicUnwait`). Under each wait are the messages that came in: **Add** links one into the topic; **Dismiss** keeps it out (`topicDismiss`). When I add or dismiss all of them, the topic waits again, until I remove the wait.
+
 ## Key decisions
 
 - **A message is a note, not a new type.** The MCP server reads it as any note. The chat does not select it, so the item tools do not work on it there.
 - **The chat is flat.** No notes under messages, so Enter needs no meaning on the rows: it moves the keyboard between the box and the chat.
 - **The response marks the dispatch.** The messages to send are the notes after the newest response. No other marker is necessary.
 - **Topics is also a module.** Its root is in `moduleViews`, so the classic UI shows it in the sidebar, and a headless caller can use it. The classic UI shows a topic as its chat too (`Detail`).
+- **A wait is read off the cache, not polled.** The watch already finds every new message across Slack; a poll per conversation would break the rule that the app never polls conversations one by one.
+- **A wait is up while something new is not handled.** When I add or dismiss what came in, it waits again; it stops only with ×.
 - **The phone stays on the classic UI.** It can open a topic and dispatch (the tool has a label), but it cannot make a topic.

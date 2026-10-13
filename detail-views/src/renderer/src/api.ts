@@ -52,6 +52,17 @@ export interface Api {
   topicCheckOut(topic: string): Promise<Outcome>
   topicCheckOutDefault(topic: string): Promise<Outcome>
   topicPush(topic: string): Promise<Outcome>
+  /** Puts a topic down until something comes into each of `on` (Slack conversations or threads), from now. */
+  topicWait(topic: string, on: string[]): Promise<Outcome>
+  topicUnwait(topic: string, on: string): Promise<Outcome>
+  /** Passes over a message that came into a topic's wait on `on`. */
+  topicDismiss(topic: string, on: string, message: string): Promise<Outcome>
+  /**
+   * Sends to Slack as me from a topic's box (`on`: a conversation or thread
+   * the topic offers). Only the desktop window can, and only straight after
+   * a key I pressed: never a script, the phone or Claude.
+   */
+  topicSlackSend(topic: string, on: string, text: string): Promise<Outcome>
   /** A view of `id` was pushed: Recents moves it to the front. */
   visit(id: string): Promise<void>
   /** Takes my last action off the owned log; returns what came off. */
@@ -68,6 +79,7 @@ export interface Api {
 
 interface Bridge {
   invoke(name: string, args?: unknown): Promise<unknown>
+  slackSend(args: { topic: string; on: string; text: string }): Promise<Outcome>
   onChange(listener: (changed: Changed) => void): () => void
   openExternal(url: string): Promise<void>
   copy(text: string): Promise<void>
@@ -120,6 +132,11 @@ export function httpApi(base: string, token: string): Api {
     topicCheckOut: (topic) => call('topicCheckOut', { topic }),
     topicCheckOutDefault: (topic) => call('topicCheckOutDefault', { topic }),
     topicPush: (topic) => call('topicPush', { topic }),
+    topicWait: (topic, on) => call('topicWait', { topic, on }),
+    topicUnwait: (topic, on) => call('topicUnwait', { topic, on }),
+    topicDismiss: (topic, on, message) => call('topicDismiss', { topic, on, message }),
+    // Slack is written to only from the desktop window.
+    topicSlackSend: async () => ({ events: [], error: 'Slack can only be written to from the desktop app' }),
     visit: (id) => call('visit', { id }),
     onChange: (listener) => {
       // EventSource reconnects by itself; a reconnect may have missed changes, so it re-reads everything.
@@ -173,6 +190,12 @@ export function electronApi(): Api {
     topicCheckOut: (topic) => call('topicCheckOut', { topic }),
     topicCheckOutDefault: (topic) => call('topicCheckOutDefault', { topic }),
     topicPush: (topic) => call('topicPush', { topic }),
+    topicWait: (topic, on) => call('topicWait', { topic, on }),
+    topicUnwait: (topic, on) => call('topicUnwait', { topic, on }),
+    topicDismiss: (topic, on, message) => call('topicDismiss', { topic, on, message }),
+    // Only straight after a real key press or click (a script's events give no activation), and on its own IPC channel.
+    topicSlackSend: async (topic, on, text) =>
+      navigator.userActivation?.isActive ? bridge.slackSend({ topic, on, text }) : { events: [], error: 'Slack is only written to by a key I press' },
     visit: (id) => call('visit', { id }),
     onChange: (listener) => bridge.onChange(listener),
     openExternal: (url) => void bridge.openExternal(url),

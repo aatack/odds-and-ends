@@ -4,7 +4,8 @@ import { shortTime } from '../format.ts'
 import { ChatPage, ClaudeMark, elapsed, type BubbleOf } from './Claude.tsx'
 import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
 import { PathPicker } from './Paths.tsx'
-import { Button, ClockContext, Highlight } from './primitives.tsx'
+import type { TopicProps } from './types.ts'
+import { Button, ClockContext, Highlight, ItemContext, ItemPill } from './primitives.tsx'
 
 // The topics mode: one list of topics on the left, the chat of the one open
 // filling the rest. A message is only written into the chat; Ctrl+Enter sends
@@ -45,14 +46,19 @@ const topicBubble: BubbleOf = (row) => (row.entity.type === 'claude.response' ? 
  * right, a picker for the path it runs in, and Resolve.
  */
 export function TopicDetail(props: OverviewProps) {
+  const topic = props.interactive ? props.topic : undefined
+  const target = topic?.targets.find((one) => one.on === topic.target) ?? null
   return (
     <ChatPage
       props={props}
       field="topic"
-      placeholder="Message"
+      placeholder={target ? 'Message in Slack' : 'Message'}
       bubble={topicBubble}
       flat
       onDemand
+      above={topic && topic.waits.length > 0 ? <TopicWaits topic={topic} /> : null}
+      outward={target ? <SlackWhere on={target.on} thread={target.threadTs !== undefined} /> : null}
+      aside={topic ? (row) => <WaitButtons entity={row.entity} topic={topic} /> : undefined}
       corner={
         props.interactive ? (
           <>
@@ -74,8 +80,92 @@ export function TopicDetail(props: OverviewProps) {
   )
 }
 
+/** The Slack mark (src/renderer/src/assets/slack.svg). */
+export function SlackMark() {
+  return <span className="slack-mark" role="img" aria-label="Slack" />
+}
+
+/** A conversation's name, or a thread's (its conversation's, then "thread"). */
+function useWhere(on: string, thread: boolean): string {
+  const { item } = useContext(ItemContext)
+  const channel = /^slack:(?:conv|msg):([^:]+)/.exec(on)?.[1] ?? ''
+  const title = item(`slack:conv:${channel}`)?.data.title
+  const name = typeof title === 'string' && title ? title : channel
+  return thread ? `${name} · thread` : name
+}
+
+/** Where a topic's box sends while it sends to Slack, on the box's right. */
+function SlackWhere(props: { on: string; thread: boolean }) {
+  return (
+    <>
+      <SlackMark />
+      <span className="where-name">{useWhere(props.on, props.thread)}</span>
+    </>
+  )
+}
+
+/**
+ * Beside a Slack message in a topic, while it is hovered: wait on its
+ * thread, its conversation, or both. Beside a conversation, wait on it.
+ */
+function WaitButtons(props: { entity: Entity; topic: TopicProps }) {
+  const { entity, topic } = props
+  if (entity.type === 'slack.conversation') return <Button quiet label="Wait" onClick={() => topic.onWait(entity.id, 'channel')} />
+  // Not until it has loaded: only then is it known whether it is in a thread.
+  if (entity.type !== 'slack.message' || typeof entity.data.ts !== 'string') return null
+  return (
+    <>
+      <span className="muted">Wait on</span>
+      <Button quiet label="Thread" onClick={() => topic.onWait(entity.id, 'thread')} />
+      <Button quiet label="Channel" onClick={() => topic.onWait(entity.id, 'channel')} />
+      <Button quiet label="Both" onClick={() => topic.onWait(entity.id, 'both')} />
+    </>
+  )
+}
+
+/**
+ * Just above a topic's box: what it waits on, each with how long, and a ×
+ * to stop; under each, what has come in since, to add to the topic or pass
+ * over.
+ */
+function TopicWaits(props: { topic: TopicProps }) {
+  const { topic } = props
+  const now = useContext(ClockContext)
+  return (
+    <div className="topic-waits">
+      {topic.waits.map(({ wait, candidates }) => (
+        <div key={wait.slack}>
+          <div className="topic-wait">
+            <SlackMark />
+            <span className="wait-on">
+              <ItemPill id={wait.slack} fallback={<WaitName on={wait.slack} />} />
+            </span>
+            <span className="muted">{candidates.length ? `${candidates.length} new` : `waiting ${elapsed(now - wait.since)}`}</span>
+            <Button quiet label="×" title="Stop waiting" onClick={() => topic.onUnwait(wait.slack)} />
+          </div>
+          {candidates.map((message) => (
+            <div key={message} className="topic-candidate">
+              <span className="candidate-item">
+                <ItemPill id={message} fallback="…" />
+              </span>
+              <Button quiet label="Add" onClick={() => topic.onAccept(message)} />
+              <Button quiet label="Dismiss" onClick={() => topic.onDismiss(wait.slack, message)} />
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function WaitName(props: { on: string }) {
+  return <>{useWhere(props.on, props.on.startsWith('slack:msg:'))}</>
+}
+
 export interface TopicListProps {
   topics: Entity[]
+  /** Those put down until something comes into what they wait on. */
+  waiting: string[]
   /** The topic open, if one is. */
   open: string | null
   /** The name being typed for a new one. */
@@ -123,7 +213,7 @@ export function TopicList(props: TopicListProps) {
       />
       <div className="topic-cards">
         {props.topics.map((topic) => (
-          <TopicCard key={topic.id} entity={topic} open={topic.id === props.open} onOpen={props.onOpen} />
+          <TopicCard key={topic.id} entity={topic} open={topic.id === props.open} waiting={props.waiting.includes(topic.id)} onOpen={props.onOpen} />
         ))}
       </div>
     </nav>
@@ -131,7 +221,7 @@ export function TopicList(props: TopicListProps) {
 }
 
 /** A topic in the list: a line, as a module is in the classic sidebar, the open one on the selection's fill. */
-const TopicCard = memo(function TopicCard(props: { entity: Entity; open: boolean; onOpen(id: string): void }) {
+const TopicCard = memo(function TopicCard(props: { entity: Entity; open: boolean; waiting: boolean; onOpen(id: string): void }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (props.open) ref.current?.scrollIntoView({ block: 'nearest' })
@@ -140,6 +230,11 @@ const TopicCard = memo(function TopicCard(props: { entity: Entity; open: boolean
     <div ref={ref} className={`topic${props.open ? ' open' : ''}`} onClick={() => props.onOpen(props.entity.id)}>
       {running(props.entity) !== null && <ClaudeMark />}
       <span className="topic-name">{nameOf(props.entity)}</span>
+      {props.waiting && (
+        <span className="topic-waiting" title="Waiting: `.` passes it by until something comes">
+          ⧗
+        </span>
+      )}
       <span className="topic-time">
         <When entity={props.entity} />
       </span>

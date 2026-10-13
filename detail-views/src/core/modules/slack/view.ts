@@ -28,6 +28,12 @@ export function messageOfUrl(url: string): string | null {
   return match ? slackIds.message(match[1], `${match[2]}.${match[3]}`) : null
 }
 
+/** The conversation a Slack link points at (`https://x.slack.com/archives/C123`); null for anything else. */
+export function conversationOfUrl(url: string): string | null {
+  const match = /^https:\/\/[^/]+\.slack\.com\/archives\/([A-Z0-9]+)\/?(?:[?#].*)?$/.exec(url)
+  return match ? slackIds.conversation(match[1]) : null
+}
+
 /** Messages that are not somebody saying something. */
 export const quiet = new Set(['channel_join', 'channel_leave', 'group_join', 'group_leave', 'bot_add', 'bot_remove'])
 

@@ -10,3 +10,5 @@
   colour is a token (`--muted`).
 - `folder.svg`: a folder, drawn for this app, for a path item. Drawn as a CSS
   mask, so its colour is a token (`--muted`).
+- `slack.svg`: the Slack mark, simplified, drawn for this app (four bars, each
+  with its dot). Drawn as a CSS mask, so its colour is a token (`--ink-soft`).

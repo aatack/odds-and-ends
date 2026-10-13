@@ -14,6 +14,8 @@
   --danger: light-dark(#c0473c, #e0796f);
   --success: light-dark(#3a875f, #6fbf93);
   --warning: light-dark(#b8862f, #d9aa55);
+  --warning-soft: light-dark(#fbf4e4, #2a2417);
+  --warning-line: light-dark(#e6cf9f, #5c4a26);
   --error: light-dark(#c0473c, #e0796f);
   --merged: light-dark(#7a6cc4, #a99de8);
   --link: light-dark(#3a5f9e, #8fb0e6);
@@ -1944,17 +1946,17 @@ textarea:hover,
 }
 
 /* While the rows have the keys, the box steps back. */
-.chat-page:not(.prompting) .chat-main > .composer {
+.chat-page:not(.prompting) .chat-main > .chat-box > .composer {
   opacity: 0.55;
 }
 
 /* A flat chat's box, at a glance: without the keyboard, faded and flat; with it, full strength, its edge in the accent and sunk deeper. */
-.chat-page.flat:not(.prompting) .chat-main > .composer {
+.chat-page.flat:not(.prompting) .chat-main > .chat-box > .composer {
   opacity: 0.4;
   box-shadow: none;
 }
 
-.chat-page.flat.prompting .chat-main > .composer {
+.chat-page.flat.prompting .chat-main > .chat-box > .composer {
   border-color: var(--accent-line);
   box-shadow: inset 0 1px 4px var(--well-hover);
 }
@@ -2083,4 +2085,111 @@ textarea:hover,
 .md th {
   font-weight: 600;
   background: var(--fill-press);
+}
+
+/* The Slack mark, drawn from its icon in a token's colour. */
+.slack-mark {
+  flex: none;
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  vertical-align: -0.08em;
+  background: var(--ink-soft);
+  mask: url('./assets/slack.svg') center / contain no-repeat;
+}
+
+/* A chat's box, and, while it sends outside the app, where to on its right. */
+.chat-box {
+  flex: none;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Sending outside the app (to Slack): the box in the warning's colours, whatever has the keyboard. */
+.chat-box.outward > .composer,
+.chat-page.flat.prompting .chat-main > .chat-box.outward > .composer {
+  background: var(--warning-soft);
+  border-color: var(--warning-line);
+  padding-right: 15em;
+}
+
+.chat-page.flat.prompting .chat-main > .chat-box.outward > .composer {
+  border-color: var(--warning);
+}
+
+.chat-box-where {
+  position: absolute;
+  top: 0;
+  right: 12px;
+  bottom: 0;
+  max-width: 14em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  pointer-events: none;
+}
+
+.chat-box-where > .where-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Beside a row of a chat, on its right, only while the row is hovered. */
+.chat-row {
+  position: relative;
+}
+
+.chat-aside {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: none;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.chat-row:hover > .chat-aside {
+  display: flex;
+}
+
+/* What a topic waits on, just above its box: each wait, and under it what has come in since. */
+.topic-waits {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--panel);
+  font-size: 13px;
+}
+
+.topic-wait,
+.topic-candidate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.topic-wait > .wait-on,
+.topic-candidate > .candidate-item {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topic-candidate {
+  padding-left: 1.6em;
+}
+
+/* A topic in the list put down until something comes. */
+.topic > .topic-waiting {
+  color: var(--faint);
 }

@@ -83,6 +83,16 @@ const reads = new Set([
 /** Off while the app is being developed, so nothing is sent by accident. */
 export const slackWrites = false
 
+/**
+ * The one write let through while Slack is read-only: a message I send
+ * myself, from a topic's box (`Slack.send`). Only a call that carries
+ * `byMe` may make it, and only `Core.topicSlackSend` reaches that, which
+ * only the window's own IPC handler calls (never `Core.actions`, so never
+ * the phone, the MCP server or Claude).
+ */
+const sends = new Set(['chat.postMessage'])
+export const byMe = Symbol('a message I send myself')
+
 export class SlackError extends Error {
   readonly code: string
   constructor(method: string, code: string) {
@@ -107,8 +117,8 @@ export class SlackApi {
     this.urgent = shared ? this : new SlackApi(token, fetchImpl, { limiter: this.limiter, urgent: true })
   }
 
-  async call<T>(method: string, params: Params = {}): Promise<T> {
-    if (!slackWrites && !reads.has(method)) throw new SlackError(method, 'Slack is read-only')
+  async call<T>(method: string, params: Params = {}, by?: typeof byMe): Promise<T> {
+    if (!slackWrites && !reads.has(method) && !(by === byMe && sends.has(method))) throw new SlackError(method, 'Slack is read-only')
     const body = new URLSearchParams()
     for (const [key, value] of Object.entries(params)) if (value !== undefined) body.set(key, String(value))
     for (let attempt = 0; attempt < 4; attempt += 1) {
