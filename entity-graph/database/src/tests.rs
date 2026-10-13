@@ -1,0 +1,1165 @@
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
+
+use crate::*;
+
+const T0: Timestamp = 1_700_000_000_000;
+
+/// A store with a manual clock, and a `main` branch.
+struct Fixture {
+    store: Store,
+    clock: Arc<AtomicI64>,
+    main: BranchId,
+}
+
+impl Fixture {
+    fn new() -> Self {
+        let mut store = Store::open_in_memory().unwrap();
+        let clock = Arc::new(AtomicI64::new(T0));
+        let c = clock.clone();
+        store.set_clock(move || c.load(Ordering::SeqCst));
+        let main = store.create_branch("main", &[]).unwrap();
+        Self { store, clock, main }
+    }
+
+    fn tick(&self, ms: i64) {
+        self.clock.fetch_add(ms, Ordering::SeqCst);
+    }
+
+    fn write(&mut self, branch: BranchId, author: &str, ops: Vec<Op>) -> WriteResult {
+        self.tick(1);
+        self.store
+            .write(WriteBatch::new(branch, author, ops))
+            .unwrap()
+    }
+
+    fn count(&self, table: &str) -> i64 {
+        self.store
+            .conn
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+            .unwrap()
+    }
+
+    fn text(&self, branch: BranchId, entity: &str, key: &str) -> Option<String> {
+        match self.store.value(branch, entity, key).unwrap() {
+            Some(Value::Text(s)) => Some(s),
+            None => None,
+            other => panic!("not text: {other:?}"),
+        }
+    }
+
+    /// Children without the type filter, so tests need not write types.
+    fn all_children(&self, branch: BranchId, entity: &str, link_type: &str) -> Vec<Link> {
+        self.all_links(branch, entity, Direction::Outbound, link_type)
+    }
+
+    fn all_links(&self, b: BranchId, entity: &str, d: Direction, ty: &str) -> Vec<Link> {
+        self.store
+            .links_including_archived(b, entity, d, Some(ty))
+            .unwrap()
+            .remove(ty)
+            .unwrap_or_default()
+    }
+
+    fn child_ids(&self, branch: BranchId, entity: &str, link_type: &str) -> Vec<String> {
+        self.all_children(branch, entity, link_type)
+            .into_iter()
+            .map(|l| l.destination)
+            .collect()
+    }
+}
+
+// --- Schema ---------------------------------------------------------------
+
+#[test]
+fn migrates_a_new_file_and_refuses_a_newer_one() {
+    let dir = std::env::temp_dir().join(format!("egdb-{}", uuid::Uuid::now_v7()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("store.db");
+    {
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+    }
+    // Opening again applies nothing and keeps the version.
+    let store = Store::open(&path).unwrap();
+    assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+    store.conn.pragma_update(None, "user_version", 99).unwrap();
+    drop(store);
+    assert!(matches!(
+        Store::open(&path),
+        Err(Error::SchemaTooNew { found: 99, .. })
+    ));
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+// --- Writes ---------------------------------------------------------------
+
+#[test]
+fn sequence_ids_are_per_branch_and_count_events() {
+    let mut f = Fixture::new();
+    let other = f.store.create_branch("other", &[]).unwrap();
+    let a = f.write(
+        f.main,
+        "alex",
+        vec![Op::set("n", "text", "a"), Op::set("n", "x", 1)],
+    );
+    let b = f.write(other, "alex", vec![Op::set("n", "text", "b")]);
+    let c = f.write(f.main, "alex", vec![Op::set("n", "text", "c")]);
+    assert_eq!((a.first_seq, a.last_seq), (1, 2));
+    assert_eq!((b.first_seq, b.last_seq), (1, 1));
+    assert_eq!((c.first_seq, c.last_seq), (3, 3));
+    assert_eq!(f.store.branch(f.main).unwrap().head, 3);
+}
+
+#[test]
+fn superseded_events_move_to_history() {
+    let mut f = Fixture::new();
+    f.write(f.main, "alex", vec![Op::set("n", "text", "one")]);
+    f.write(
+        f.main,
+        "alex",
+        vec![Op::set("n", "text", "two"), Op::set("n", "text", "three")],
+    );
+    assert_eq!(f.count("value_current"), 1);
+    assert_eq!(f.count("value_history"), 2);
+    let superseded: Vec<(i64, i64)> = f
+        .store
+        .conn
+        .prepare("SELECT seq, superseded_by FROM value_history ORDER BY seq")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(superseded, vec![(1, 2), (2, 3)]);
+    assert_eq!(f.text(f.main, "n", "text").as_deref(), Some("three"));
+
+    f.write(
+        f.main,
+        "alex",
+        vec![Op::link("n", "c", "child", SortOrder::Timestamp)],
+    );
+    f.write(f.main, "alex", vec![Op::unlink("n", "c", "child")]);
+    assert_eq!(f.count("link_current"), 1);
+    assert_eq!(f.count("link_history"), 1);
+}
+
+#[test]
+fn null_clears_a_value() {
+    let mut f = Fixture::new();
+    f.write(
+        f.main,
+        "alex",
+        vec![Op::set("n", "text", "hi"), Op::set("n", "x", 2)],
+    );
+    f.write(f.main, "alex", vec![Op::clear("n", "text")]);
+    let values = f.store.values(f.main, "n").unwrap();
+    assert_eq!(values.len(), 1);
+    assert_eq!(values["x"], Value::Int(2));
+    assert_eq!(f.store.value(f.main, "n", "text").unwrap(), None);
+}
+
+#[test]
+fn typed_values_round_trip() {
+    let mut f = Fixture::new();
+    let json = serde_json::json!({"a": [1, 2]});
+    f.write(
+        f.main,
+        "alex",
+        vec![
+            Op::set("n", "b", true),
+            Op::set("n", "i", -7),
+            Op::set("n", "f", 1.5),
+            Op::set("n", "t", "text"),
+            Op::set("n", "j", Value::Json(json.clone())),
+        ],
+    );
+    let v = f.store.values(f.main, "n").unwrap();
+    assert_eq!(v["b"], Value::Bool(true));
+    assert_eq!(v["i"], Value::Int(-7));
+    assert_eq!(v["f"], Value::Float(1.5));
+    assert_eq!(v["t"], Value::Text("text".into()));
+    assert_eq!(v["j"], Value::Json(json));
+}
+
+#[test]
+fn rejects_bad_batches() {
+    let mut f = Fixture::new();
+    let empty = f.store.write(WriteBatch::new(f.main, "alex", vec![]));
+    assert!(matches!(empty, Err(Error::Invalid(_))));
+    let nan = f.store.write(WriteBatch::new(
+        f.main,
+        "alex",
+        vec![Op::link("a", "b", "child", SortOrder::Explicit(f64::NAN))],
+    ));
+    assert!(matches!(nan, Err(Error::Invalid(_))));
+    let no_type = f.store.write(WriteBatch::new(
+        f.main,
+        "alex",
+        vec![Op::link("a", "b", "", SortOrder::Timestamp)],
+    ));
+    assert!(matches!(no_type, Err(Error::Invalid(_))));
+    // Nothing was written.
+    assert_eq!(f.store.branch(f.main).unwrap().head, 0);
+}
+
+#[test]
+fn timestamps_never_go_down_within_a_branch() {
+    let mut f = Fixture::new();
+    let a = f.write(f.main, "alex", vec![Op::set("n", "x", 1)]);
+    let mut batch = WriteBatch::new(f.main, "alex", vec![Op::set("n", "x", 2)]);
+    batch.timestamp = Some(a.timestamp - 10_000);
+    let b = f.store.write(batch).unwrap();
+    assert_eq!(b.timestamp, a.timestamp);
+    assert_eq!(
+        f.store.value(f.main, "n", "x").unwrap(),
+        Some(Value::Int(2))
+    );
+}
+
+// --- Links ----------------------------------------------------------------
+
+#[test]
+fn children_sort_by_timestamp_by_default() {
+    let mut f = Fixture::new();
+    for child in ["c", "a", "b"] {
+        f.write(
+            f.main,
+            "alex",
+            vec![Op::link("p", child, "child", SortOrder::Timestamp)],
+        );
+    }
+    assert_eq!(f.child_ids(f.main, "p", "child"), ["c", "a", "b"]);
+    let links = f.all_children(f.main, "p", "child");
+    // The default is stored as the event's own timestamp.
+    assert_eq!(links[0].sort, links[0].event.timestamp as f64);
+}
+
+#[test]
+fn explicit_sort_orders_and_removed_links() {
+    let mut f = Fixture::new();
+    f.write(
+        f.main,
+        "alex",
+        vec![
+            Op::link("p", "a", "child", SortOrder::Explicit(2.0)),
+            Op::link("p", "b", "child", SortOrder::Explicit(1.0)),
+            Op::link("p", "c", "child", SortOrder::Explicit(3.0)),
+        ],
+    );
+    assert_eq!(f.child_ids(f.main, "p", "child"), ["b", "a", "c"]);
+    // The last event per (source, destination, type) wins.
+    f.write(
+        f.main,
+        "alex",
+        vec![Op::link("p", "b", "child", SortOrder::Explicit(9.0))],
+    );
+    f.write(f.main, "alex", vec![Op::unlink("p", "a", "child")]);
+    assert_eq!(f.child_ids(f.main, "p", "child"), ["c", "b"]);
+    // Re-adding a removed link brings it back.
+    f.write(
+        f.main,
+        "alex",
+        vec![Op::link("p", "a", "child", SortOrder::Explicit(0.5))],
+    );
+    assert_eq!(f.child_ids(f.main, "p", "child"), ["a", "c", "b"]);
+}
+
+#[test]
+fn links_store_one_nullable_sort_and_a_default_readd_moves_to_the_end() {
+    let mut f = Fixture::new();
+    f.write(
+        f.main,
+        "alex",
+        vec![Op::link("p", "a", "child", SortOrder::Timestamp)],
+    );
+    f.write(
+        f.main,
+        "alex",
+        vec![Op::link("p", "b", "child", SortOrder::Timestamp)],
+    );
+    f.write(f.main, "alex", vec![Op::unlink("p", "a", "child")]);
+    let stored: Option<f64> = f
+        .store
+        .conn
+        .query_row(
+            "SELECT l.sort FROM link_current l JOIN entities e ON e.eid = l.destination
+             WHERE e.ext_id = 'a'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stored, None);
+    // Re-adding with the default takes the time of the new event.
+    let readd = f.write(
+        f.main,
+        "alex",
+        vec![Op::link("p", "a", "child", SortOrder::Timestamp)],
+    );
+    assert_eq!(f.child_ids(f.main, "p", "child"), ["b", "a"]);
+    assert_eq!(
+        f.all_children(f.main, "p", "child")[1].sort,
+        readd.timestamp as f64
+    );
+}
+
+#[test]
+fn links_group_by_type_and_read_both_ways() {
+    let mut f = Fixture::new();
+    f.write(
+        f.main,
+        "alex",
+        vec![
+            Op::link("p", "a", "child", SortOrder::Timestamp),
+            Op::link("p", "b", "ref", SortOrder::Timestamp),
+            Op::link("q", "a", "child", SortOrder::Timestamp),
+        ],
+    );
+    let out = f
+        .store
+        .links_including_archived(f.main, "p", Direction::Outbound, None)
+        .unwrap();
+    assert_eq!(out.keys().collect::<Vec<_>>(), ["child", "ref"]);
+    assert_eq!(f.child_ids(f.main, "p", "ref"), ["b"]);
+    let parents: Vec<String> = f
+        .all_links(f.main, "a", Direction::Inbound, "child")
+        .into_iter()
+        .map(|l| l.source)
+        .collect();
+    assert_eq!(parents, ["p", "q"]);
+    assert!(f.all_children(f.main, "a", "child").is_empty());
+}
+
+// --- Entities -------------------------------------------------------------
+
+#[test]
+fn an_entity_exists_when_it_has_events_and_archiving_clears_its_type() {
+    let mut f = Fixture::new();
+    assert!(!f.store.exists(f.main, "n").unwrap());
+    f.write(
+        f.main,
+        "alex",
+        vec![Op::link("p", "n", "child", SortOrder::Timestamp)],
+    );
+    assert!(f.store.exists(f.main, "n").unwrap());
+    assert!(f.store.exists(f.main, "p").unwrap());
+
+    // No type yet: not archived.
+    assert!(!f.store.is_archived(f.main, "n").unwrap());
+    f.write(f.main, "alex", vec![Op::set("n", TYPE_KEY, "task")]);
+    f.tick(1);
+    f.store.archive_entity(f.main, "alex", "n").unwrap();
+    assert!(f.store.is_archived(f.main, "n").unwrap());
+    assert_eq!(f.store.value(f.main, "n", TYPE_KEY).unwrap(), None);
+    assert!(f.store.exists(f.main, "n").unwrap());
+    // The caller supplies the type to restore.
+    f.tick(1);
+    f.store.restore_entity(f.main, "alex", "n", "task").unwrap();
+    assert!(!f.store.is_archived(f.main, "n").unwrap());
+    assert_eq!(f.text(f.main, "n", TYPE_KEY).as_deref(), Some("task"));
+}
+
+#[test]
+fn link_reads_show_only_entities_with_a_type() {
+    let mut f = Fixture::new();
+    f.write(
+        f.main,
+        "alex",
+        vec![
+            Op::set("live", TYPE_KEY, "task"),
+            Op::set("gone", TYPE_KEY, "task"),
+            Op::link("p", "live", "child", SortOrder::Timestamp),
+            Op::link("p", "gone", "child", SortOrder::Timestamp),
+            Op::link("p", "untyped", "child", SortOrder::Timestamp),
+        ],
+    );
+    f.store.archive_entity(f.main, "alex", "gone").unwrap();
+    let ids = |links: Vec<Link>| links.into_iter().map(|l| l.destination).collect::<Vec<_>>();
+    assert_eq!(
+        ids(f.store.children(f.main, "p", "child").unwrap()),
+        ["live"]
+    );
+    assert_eq!(
+        f.child_ids(f.main, "p", "child"),
+        ["gone", "live", "untyped"]
+    );
+    // Parents: the source needs a type too.
+    assert!(f.store.parents(f.main, "live", "child").unwrap().is_empty());
+    f.write(f.main, "alex", vec![Op::set("p", TYPE_KEY, "list")]);
+    assert_eq!(f.store.parents(f.main, "live", "child").unwrap().len(), 1);
+    // A type from a parent branch counts; the winning event decides.
+    let agent = f.store.fork(f.main, "agent").unwrap();
+    assert_eq!(
+        ids(f.store.children(agent, "p", "child").unwrap()),
+        ["live"]
+    );
+    f.store
+        .restore_entity(agent, "bot", "gone", "task")
+        .unwrap();
+    assert_eq!(
+        ids(f.store.children(agent, "p", "child").unwrap()),
+        ["gone", "live"]
+    );
+    assert_eq!(
+        ids(f.store.children(f.main, "p", "child").unwrap()),
+        ["live"]
+    );
+}
+
+#[test]
+fn the_type_index_serves_a_search_by_type() {
+    let f = Fixture::new();
+    let plan: String = f
+        .store
+        .conn
+        .query_row(
+            "EXPLAIN QUERY PLAN SELECT eid FROM value_current
+             WHERE bid = 1 AND key = 'type' AND value = 'task'",
+            [],
+            |r| r.get(3),
+        )
+        .unwrap();
+    assert!(plan.contains("value_current_value"), "{plan}");
+}
+
+// --- Branches -------------------------------------------------------------
+
+#[test]
+fn a_fork_does_not_see_later_parent_events() {
+    let mut f = Fixture::new();
+    f.write(f.main, "alex", vec![Op::set("n", "text", "before")]);
+    let agent = f.store.fork(f.main, "agent").unwrap();
+    assert_eq!(
+        f.store.branch(agent).unwrap().parents,
+        vec![ParentRef::new(f.main, SeqRange::up_to(1))]
+    );
+    f.write(
+        f.main,
+        "alex",
+        vec![Op::set("n", "text", "after"), Op::set("m", "text", "new")],
+    );
+    // The child reads the frozen parent through history.
+    assert_eq!(f.text(agent, "n", "text").as_deref(), Some("before"));
+    assert!(!f.store.exists(agent, "m").unwrap());
+    // The child's own writes do not reach the parent.
+    f.write(agent, "bot", vec![Op::set("k", "text", "mine")]);
+    assert_eq!(f.store.branch(agent).unwrap().head, 1);
+    assert!(!f.store.exists(f.main, "k").unwrap());
+}
+
+#[test]
+fn a_fork_of_a_fork_copies_the_whole_view_frozen() {
+    let mut f = Fixture::new();
+    f.write(f.main, "alex", vec![Op::set("a", "text", "main")]);
+    let one = f.store.fork(f.main, "one").unwrap();
+    f.write(one, "bot", vec![Op::set("b", "text", "one")]);
+    let two = f.store.fork(one, "two").unwrap();
+    f.write(f.main, "alex", vec![Op::set("a", "text", "main later")]);
+    f.write(one, "bot", vec![Op::set("b", "text", "one later")]);
+    assert_eq!(f.text(two, "a", "text").as_deref(), Some("main"));
+    assert_eq!(f.text(two, "b", "text").as_deref(), Some("one"));
+}
+
+#[test]
+fn merge_puts_the_branch_on_top_of_what_main_had() {
+    let mut f = Fixture::new();
+    f.write(
+        f.main,
+        "alex",
+        vec![Op::set("n", "text", "v1"), Op::set("n", "x", 1)],
+    );
+    let agent = f.store.fork(f.main, "agent").unwrap();
+    f.write(
+        agent,
+        "bot",
+        vec![
+            Op::set("n", "text", "agent"),
+            Op::link("n", "c", "child", SortOrder::Timestamp),
+        ],
+    );
+    f.write(f.main, "alex", vec![Op::set("n", "x", 2)]);
+
+    f.store.merge(f.main, agent).unwrap();
+    assert_eq!(f.text(f.main, "n", "text").as_deref(), Some("agent"));
+    assert_eq!(
+        f.store.value(f.main, "n", "x").unwrap(),
+        Some(Value::Int(2))
+    );
+    assert_eq!(f.child_ids(f.main, "n", "child"), ["c"]);
+    // Main's events so far are frozen under the agent's; the agent's stale
+    // copy of main is left out, so main's concurrent `x = 2` survives.
+    assert_eq!(
+        f.store.branch(f.main).unwrap().parents,
+        vec![
+            ParentRef::new(f.main, SeqRange::up_to(3)),
+            ParentRef::new(agent, SeqRange::up_to(2)),
+        ]
+    );
+    // Main's writes after the merge sit on top again.
+    f.write(f.main, "alex", vec![Op::set("n", "text", "main again")]);
+    assert_eq!(f.text(f.main, "n", "text").as_deref(), Some("main again"));
+    f.write(f.main, "alex", vec![Op::set("n", "text", "agent")]);
+
+    // The merge is frozen: later agent work needs another merge.
+    f.write(agent, "bot", vec![Op::set("n", "text", "agent 2")]);
+    assert_eq!(f.text(f.main, "n", "text").as_deref(), Some("agent"));
+    f.store.merge(f.main, agent).unwrap();
+    assert_eq!(f.text(f.main, "n", "text").as_deref(), Some("agent 2"));
+    // The older agent entry is covered by the new one and is dropped.
+    assert_eq!(
+        f.store.branch(f.main).unwrap().parents,
+        vec![
+            ParentRef::new(f.main, SeqRange::up_to(5)),
+            ParentRef::new(agent, SeqRange::up_to(3)),
+        ]
+    );
+}
+
+#[test]
+fn pull_reads_a_range_and_open_ranges_follow_growth() {
+    let mut f = Fixture::new();
+    let feed = f.store.create_branch("feed", &[]).unwrap();
+    f.write(feed, "slack", vec![Op::set("m1", "text", "one")]);
+    f.write(feed, "slack", vec![Op::set("m2", "text", "two")]);
+    f.write(feed, "slack", vec![Op::set("m3", "text", "three")]);
+
+    f.store
+        .pull(f.main, feed, SeqRange::new(2, Some(2)))
+        .unwrap();
+    assert!(!f.store.exists(f.main, "m1").unwrap());
+    assert!(f.store.exists(f.main, "m2").unwrap());
+    assert!(!f.store.exists(f.main, "m3").unwrap());
+
+    f.store.pull(f.main, feed, SeqRange::from(3)).unwrap();
+    f.write(feed, "slack", vec![Op::set("m4", "text", "four")]);
+    assert!(f.store.exists(f.main, "m4").unwrap());
+    assert_eq!(
+        f.store.branch(f.main).unwrap().parents,
+        vec![ParentRef::new(feed, SeqRange::from(2))]
+    );
+}
+
+#[test]
+fn parent_list_order_decides_and_own_events_sit_on_top() {
+    let mut f = Fixture::new();
+    let a = f.store.create_branch("a", &[]).unwrap();
+    let b = f.store.create_branch("b", &[]).unwrap();
+    // B writes first in time; order across branches ignores time.
+    f.write(b, "bot", vec![Op::set("n", "text", "b")]);
+    f.write(a, "bot", vec![Op::set("n", "text", "a")]);
+
+    f.store
+        .set_parents(
+            f.main,
+            &[
+                ParentRef::new(a, SeqRange::ALL),
+                ParentRef::new(b, SeqRange::ALL),
+            ],
+        )
+        .unwrap();
+    assert_eq!(f.text(f.main, "n", "text").as_deref(), Some("b"));
+    f.store
+        .set_parents(
+            f.main,
+            &[
+                ParentRef::new(b, SeqRange::ALL),
+                ParentRef::new(a, SeqRange::ALL),
+            ],
+        )
+        .unwrap();
+    assert_eq!(f.text(f.main, "n", "text").as_deref(), Some("a"));
+
+    // The branch's own events win over every parent.
+    f.write(f.main, "alex", vec![Op::set("n", "text", "own")]);
+    assert_eq!(f.text(f.main, "n", "text").as_deref(), Some("own"));
+    // A self entry places own events inside the stack; later own events stay on top.
+    f.store
+        .set_parents(
+            f.main,
+            &[
+                ParentRef::new(f.main, SeqRange::up_to(1)),
+                ParentRef::new(a, SeqRange::ALL),
+            ],
+        )
+        .unwrap();
+    assert_eq!(f.text(f.main, "n", "text").as_deref(), Some("a"));
+    f.write(f.main, "alex", vec![Op::set("n", "text", "own 2")]);
+    assert_eq!(f.text(f.main, "n", "text").as_deref(), Some("own 2"));
+}
+
+#[test]
+fn rebase_retargets_the_parent_list() {
+    let mut f = Fixture::new();
+    f.write(f.main, "alex", vec![Op::set("n", "text", "v1")]);
+    let agent = f.store.fork(f.main, "agent").unwrap();
+    f.write(f.main, "alex", vec![Op::set("n", "text", "v2")]);
+    assert_eq!(f.text(agent, "n", "text").as_deref(), Some("v1"));
+    f.store
+        .set_parents(agent, &[ParentRef::new(f.main, SeqRange::up_to(2))])
+        .unwrap();
+    assert_eq!(f.text(agent, "n", "text").as_deref(), Some("v2"));
+    let bad = f
+        .store
+        .set_parents(agent, &[ParentRef::new(f.main, SeqRange::new(3, Some(2)))]);
+    assert!(matches!(bad, Err(Error::Invalid(_))));
+}
+
+#[test]
+fn frozen_and_merged_branches_accept_writes_but_archived_ones_do_not() {
+    let mut f = Fixture::new();
+    f.write(f.main, "alex", vec![Op::set("n", "x", 1)]);
+    let agent = f.store.fork(f.main, "agent").unwrap();
+    f.store.merge(f.main, agent).unwrap();
+    f.write(agent, "bot", vec![Op::set("n", "x", 2)]);
+
+    f.store.archive_branch(agent, true).unwrap();
+    assert!(f.store.branch(agent).unwrap().archived);
+    let refused = f
+        .store
+        .write(WriteBatch::new(agent, "bot", vec![Op::set("n", "x", 3)]));
+    assert!(matches!(refused, Err(Error::BranchArchived(_))));
+    // Archived branches can still be read.
+    assert_eq!(f.store.value(agent, "n", "x").unwrap(), Some(Value::Int(2)));
+    assert_eq!(f.store.branches().unwrap().len(), 2);
+}
+
+// --- Undo -----------------------------------------------------------------
+
+#[test]
+fn undo_removes_events_and_moves_the_prior_rows_back() {
+    let mut f = Fixture::new();
+    f.write(
+        f.main,
+        "alex",
+        vec![
+            Op::set("n", "text", "one"),
+            Op::link("n", "c", "child", SortOrder::Explicit(1.0)),
+        ],
+    );
+    f.write(
+        f.main,
+        "alex",
+        vec![
+            Op::set("n", "text", "two"),
+            Op::set("n", "text", "three"),
+            Op::set("n", "x", 1),
+            Op::unlink("n", "c", "child"),
+            Op::link("n", "d", "child", SortOrder::Timestamp),
+        ],
+    );
+    assert_eq!(f.count("value_history"), 2);
+
+    let out = f.store.undo(f.main, "alex").unwrap().unwrap();
+    assert_eq!(out.removed, (3, 7));
+    assert_eq!(out.events, 5);
+    assert_eq!(out.restored, 2);
+    // Back to the first batch, with nothing left in history.
+    assert_eq!(f.count("value_current"), 1);
+    assert_eq!(f.count("value_history"), 0);
+    assert_eq!(f.count("link_current"), 1);
+    assert_eq!(f.count("link_history"), 0);
+    assert_eq!(f.text(f.main, "n", "text").as_deref(), Some("one"));
+    assert_eq!(f.store.value(f.main, "n", "x").unwrap(), None);
+    assert_eq!(f.child_ids(f.main, "n", "child"), ["c"]);
+
+    // Sequence IDs are not reused: the next event leaves a gap.
+    assert_eq!(f.store.branch(f.main).unwrap().head, 7);
+    let next = f.write(f.main, "alex", vec![Op::set("n", "x", 2)]);
+    assert_eq!(next.first_seq, 8);
+}
+
+#[test]
+fn undo_steps_back_one_batch_at_a_time() {
+    let mut f = Fixture::new();
+    f.write(f.main, "alex", vec![Op::set("n", "text", "one")]);
+    f.write(f.main, "alex", vec![Op::set("n", "text", "two")]);
+    f.store.undo(f.main, "alex").unwrap().unwrap();
+    assert_eq!(f.text(f.main, "n", "text").as_deref(), Some("one"));
+    f.store.undo(f.main, "alex").unwrap().unwrap();
+    assert_eq!(f.store.value(f.main, "n", "text").unwrap(), None);
+    assert!(!f.store.exists(f.main, "n").unwrap());
+    assert_eq!(f.store.undo(f.main, "alex").unwrap(), None);
+    assert_eq!(f.count("batches"), 0);
+}
+
+#[test]
+fn undo_is_one_author() {
+    let mut f = Fixture::new();
+    f.write(f.main, "alex", vec![Op::set("a", "text", "alex")]);
+    f.write(f.main, "sam", vec![Op::set("b", "text", "sam")]);
+    // Alex's undo reaches past Sam's newer batch to Alex's own.
+    f.store.undo(f.main, "alex").unwrap().unwrap();
+    assert!(!f.store.exists(f.main, "a").unwrap());
+    assert_eq!(f.text(f.main, "b", "text").as_deref(), Some("sam"));
+}
+
+#[test]
+fn undo_is_refused_when_a_later_event_replaced_one_of_its_events() {
+    let mut f = Fixture::new();
+    f.write(
+        f.main,
+        "alex",
+        vec![Op::set("n", "text", "alex"), Op::set("n", "x", 1)],
+    );
+    f.write(f.main, "sam", vec![Op::set("n", "text", "sam")]);
+    let refused = f.store.undo(f.main, "alex");
+    assert!(matches!(refused, Err(Error::UndoRefused(_))));
+    // Nothing changed.
+    assert_eq!(f.text(f.main, "n", "text").as_deref(), Some("sam"));
+    assert_eq!(
+        f.store.value(f.main, "n", "x").unwrap(),
+        Some(Value::Int(1))
+    );
+    // The same rule holds for the author's own later batch: undo that first.
+    f.store.undo(f.main, "sam").unwrap().unwrap();
+    f.store.undo(f.main, "alex").unwrap().unwrap();
+    assert!(!f.store.exists(f.main, "n").unwrap());
+}
+
+#[test]
+fn undo_reaches_back_five_minutes_only() {
+    let mut f = Fixture::new();
+    f.write(f.main, "alex", vec![Op::set("n", "x", 1)]);
+    f.tick(UNDO_WINDOW_MS + 1);
+    assert_eq!(f.store.undo(f.main, "alex").unwrap(), None);
+    assert_eq!(
+        f.store.value(f.main, "n", "x").unwrap(),
+        Some(Value::Int(1))
+    );
+}
+
+#[test]
+fn undo_is_refused_inside_another_branchs_frozen_range() {
+    let mut f = Fixture::new();
+    f.write(f.main, "alex", vec![Op::set("n", "x", 1)]);
+    let agent = f.store.fork(f.main, "agent").unwrap();
+    // The fork froze main at seq 1, so seq 1 can no longer be removed.
+    assert!(matches!(
+        f.store.undo(f.main, "alex"),
+        Err(Error::UndoRefused(_))
+    ));
+    // A later batch is outside the frozen range.
+    f.write(f.main, "alex", vec![Op::set("n", "x", 2)]);
+    f.store.undo(f.main, "alex").unwrap().unwrap();
+    assert_eq!(
+        f.store.value(f.main, "n", "x").unwrap(),
+        Some(Value::Int(1))
+    );
+    assert_eq!(f.store.value(agent, "n", "x").unwrap(), Some(Value::Int(1)));
+
+    // Merged agent work is frozen into main, so the agent cannot remove it.
+    f.write(agent, "bot", vec![Op::set("n", "y", 1)]);
+    f.store.merge(f.main, agent).unwrap();
+    assert!(matches!(
+        f.store.undo(agent, "bot"),
+        Err(Error::UndoRefused(_))
+    ));
+}
+
+#[test]
+fn undo_is_allowed_under_an_open_pull_and_the_follower_sees_it() {
+    let mut f = Fixture::new();
+    let feed = f.store.create_branch("feed", &[]).unwrap();
+    f.store.pull(f.main, feed, SeqRange::ALL).unwrap();
+    f.write(feed, "slack", vec![Op::set("m", "text", "oops")]);
+    assert!(f.store.exists(f.main, "m").unwrap());
+    f.store.undo(feed, "slack").unwrap().unwrap();
+    assert!(!f.store.exists(f.main, "m").unwrap());
+}
+
+#[test]
+fn undo_on_a_fork_brings_back_what_it_saw_from_its_parent() {
+    let mut f = Fixture::new();
+    f.write(
+        f.main,
+        "alex",
+        vec![
+            Op::set("n", "text", "main"),
+            Op::link("n", "c", "child", SortOrder::Explicit(1.0)),
+        ],
+    );
+    let agent = f.store.fork(f.main, "agent").unwrap();
+    f.write(
+        agent,
+        "bot",
+        vec![Op::set("n", "text", "agent"), Op::unlink("n", "c", "child")],
+    );
+    assert!(f.child_ids(agent, "n", "child").is_empty());
+    let out = f.store.undo(agent, "bot").unwrap().unwrap();
+    assert_eq!(out.restored, 0);
+    assert_eq!(f.text(agent, "n", "text").as_deref(), Some("main"));
+    assert_eq!(f.child_ids(agent, "n", "child"), ["c"]);
+}
+
+// --- Reads never need history for the current state ------------------------
+
+#[test]
+fn reads_of_own_and_open_ranges_do_not_use_history() {
+    let mut f = Fixture::new();
+    let feed = f.store.create_branch("feed", &[]).unwrap();
+    f.store.pull(f.main, feed, SeqRange::ALL).unwrap();
+    for i in 0..3 {
+        f.write(
+            f.main,
+            "alex",
+            vec![
+                Op::set("n", "x", i),
+                Op::link("n", "c", "child", SortOrder::Explicit(i as f64)),
+            ],
+        );
+        f.write(
+            feed,
+            "slack",
+            vec![
+                Op::set("m", "x", i),
+                Op::link("m", "n", "ref", SortOrder::Timestamp),
+            ],
+        );
+    }
+    let before = (
+        f.store.values(f.main, "n").unwrap(),
+        f.store.values(f.main, "m").unwrap(),
+        f.store
+            .links_including_archived(f.main, "n", Direction::Outbound, None)
+            .unwrap(),
+        f.store
+            .links_including_archived(f.main, "n", Direction::Inbound, None)
+            .unwrap(),
+    );
+    // Remove all history. If a read used it, its answer would change.
+    f.store
+        .conn
+        .execute_batch("DELETE FROM value_history; DELETE FROM link_history;")
+        .unwrap();
+    let after = (
+        f.store.values(f.main, "n").unwrap(),
+        f.store.values(f.main, "m").unwrap(),
+        f.store
+            .links_including_archived(f.main, "n", Direction::Outbound, None)
+            .unwrap(),
+        f.store
+            .links_including_archived(f.main, "n", Direction::Inbound, None)
+            .unwrap(),
+    );
+    assert_eq!(before, after);
+    assert!(f.store.exists(f.main, "m").unwrap());
+}
+
+// --- Stubs ----------------------------------------------------------------
+
+#[test]
+fn walk_and_find_are_not_implemented_yet() {
+    let f = Fixture::new();
+    assert!(matches!(
+        f.store.walk(f.main, "n"),
+        Err(Error::NotImplemented("walk"))
+    ));
+    assert!(matches!(
+        f.store.find(f.main, "text", &Value::Null),
+        Err(Error::NotImplemented("find"))
+    ));
+}
+
+// --- Flattened views (MRO) and the shared roll-up --------------------------
+
+fn plan(f: &Fixture, sql: &str) -> String {
+    let mut stmt = f
+        .store
+        .conn
+        .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+        .unwrap();
+    let rows = stmt
+        .query_map(rusqlite::params![1, 1, "k", 1, 2], |r| {
+            r.get::<_, String>(3)
+        })
+        .unwrap();
+    rows.map(|r| r.unwrap()).collect::<Vec<_>>().join(" | ")
+}
+
+fn snapshot(f: &Fixture, b: BranchId) -> impl PartialEq + std::fmt::Debug {
+    (
+        f.store.values(b, "n").unwrap(),
+        f.store
+            .children(b, "n", "child")
+            .unwrap()
+            .into_iter()
+            .map(|l| (l.destination, l.sort, l.event.seq))
+            .collect::<Vec<_>>(),
+        f.store.exists(b, "c1").unwrap(),
+    )
+}
+
+#[test]
+fn frozen_and_head_reads_agree_through_the_shared_roll_up() {
+    let mut f = Fixture::new();
+    for i in 0..4 {
+        f.write(
+            f.main,
+            "alex",
+            vec![
+                Op::set("n", "text", format!("v{i}")),
+                Op::set("n", TYPE_KEY, "task"),
+                Op::set(format!("c{i}"), TYPE_KEY, "task"),
+                Op::link(
+                    "n",
+                    format!("c{i}"),
+                    "child",
+                    SortOrder::Explicit(f64::from(4 - i)),
+                ),
+            ],
+        );
+    }
+    f.write(
+        f.main,
+        "alex",
+        vec![Op::unlink("n", "c1", "child"), Op::clear("n", "text")],
+    );
+    // The fork reads main through a bounded range: current UNION ALL history.
+    let fork = f.store.fork(f.main, "fork").unwrap();
+    let head = snapshot(&f, f.main);
+    assert_eq!(snapshot(&f, fork), head);
+    // Main moves on; the fork still matches main's old state.
+    f.write(f.main, "alex", vec![Op::set("n", "text", "later")]);
+    assert_eq!(snapshot(&f, fork), head);
+}
+
+#[test]
+fn open_ranges_chain_through_the_expansion() {
+    let mut f = Fixture::new();
+    let m = f.store.create_branch("m", &[]).unwrap();
+    let a = f
+        .store
+        .create_branch("a", &[ParentRef::new(m, SeqRange::ALL)])
+        .unwrap();
+    let b = f
+        .store
+        .create_branch("b", &[ParentRef::new(m, SeqRange::ALL)])
+        .unwrap();
+    f.write(
+        m,
+        "x",
+        vec![Op::set("n", "text", "m"), Op::set("n", "y", 1)],
+    );
+    f.write(a, "x", vec![Op::set("n", "text", "a")]);
+    // A diamond: x -> [a, b] -> m. m first appears below a, so a's edit wins
+    // even though b (which never touched the key) is higher in the list.
+    let x = f
+        .store
+        .create_branch(
+            "x",
+            &[
+                ParentRef::new(a, SeqRange::ALL),
+                ParentRef::new(b, SeqRange::ALL),
+            ],
+        )
+        .unwrap();
+    assert_eq!(f.text(x, "n", "text").as_deref(), Some("a"));
+    // Live through the chain.
+    f.write(m, "x", vec![Op::set("n", "y", 2)]);
+    assert_eq!(f.store.value(x, "n", "y").unwrap(), Some(Value::Int(2)));
+    // B1: a fork of x is frozen along the whole chain.
+    let fork = f.store.fork(x, "fork").unwrap();
+    f.write(m, "x", vec![Op::set("n", "y", 3)]);
+    f.write(a, "x", vec![Op::set("n", "text", "a2")]);
+    assert_eq!(f.store.value(fork, "n", "y").unwrap(), Some(Value::Int(2)));
+    assert_eq!(f.text(fork, "n", "text").as_deref(), Some("a"));
+    assert_eq!(f.store.value(x, "n", "y").unwrap(), Some(Value::Int(3)));
+}
+
+#[test]
+fn a_frozen_range_gives_only_that_branchs_own_events() {
+    let mut f = Fixture::new();
+    let m = f.store.create_branch("m", &[]).unwrap();
+    let a = f
+        .store
+        .create_branch("a", &[ParentRef::new(m, SeqRange::ALL)])
+        .unwrap();
+    f.write(m, "x", vec![Op::set("n", "text", "m")]);
+    f.write(a, "x", vec![Op::set("k", "text", "a")]);
+    f.store.pull(f.main, a, SeqRange::up_to(1)).unwrap();
+    assert!(f.store.exists(f.main, "k").unwrap());
+    assert!(!f.store.exists(f.main, "n").unwrap());
+}
+
+#[test]
+fn an_open_range_wins_over_a_frozen_range_of_the_same_branch() {
+    let mut f = Fixture::new();
+    let m = f.store.create_branch("m", &[]).unwrap();
+    f.write(m, "x", vec![Op::set("n", "text", "m")]);
+    let a = f
+        .store
+        .create_branch("a", &[ParentRef::new(m, SeqRange::ALL)])
+        .unwrap();
+    f.write(a, "x", vec![Op::set("n", "text", "a")]);
+    // m comes in twice: open through a (below a), and frozen on top. After
+    // dedupe the open layer keeps m's events, so a's edit still wins.
+    f.store
+        .set_parents(
+            f.main,
+            &[
+                ParentRef::new(a, SeqRange::ALL),
+                ParentRef::new(m, SeqRange::up_to(1)),
+            ],
+        )
+        .unwrap();
+    assert_eq!(f.text(f.main, "n", "text").as_deref(), Some("a"));
+}
+
+#[test]
+fn a_cached_view_sees_parent_changes_from_another_connection() {
+    let path = std::env::temp_dir().join(format!("egdb-cache-{}.db", uuid::Uuid::now_v7()));
+    let mut one = Store::open(&path).unwrap();
+    let main = one.create_branch("main", &[]).unwrap();
+    let feed = one.create_branch("feed", &[]).unwrap();
+    one.write(WriteBatch::new(
+        feed,
+        "x",
+        vec![Op::set("n", "text", "feed")],
+    ))
+    .unwrap();
+    assert_eq!(one.value(main, "n", "text").unwrap(), None); // view now cached
+    let mut two = Store::open(&path).unwrap();
+    two.pull(main, feed, SeqRange::ALL).unwrap();
+    assert_eq!(
+        one.value(main, "n", "text").unwrap(),
+        Some(Value::from("feed"))
+    );
+    drop((one, two));
+    for ext in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+    }
+}
+
+#[test]
+fn roll_up_queries_use_indexes() {
+    use crate::read::with_source;
+    use crate::view::EventSource;
+    let f = Fixture::new();
+    let value = "SELECT key, seq, ts, author, vtype, value FROM value_current
+         WHERE bid = ?1 AND eid = ?2 AND key = ?3 AND +seq BETWEEN ?4 AND ?5";
+    let head = plan(
+        &f,
+        &with_source(value, EventSource::Current, "value_history_target"),
+    );
+    assert!(!head.contains("history"), "{head}");
+    assert!(head.contains("PRIMARY KEY"), "{head}");
+    let frozen = plan(
+        &f,
+        &with_source(
+            value,
+            EventSource::CurrentAndHistory,
+            "value_history_target",
+        ),
+    );
+    assert!(frozen.contains("value_history_target"), "{frozen}");
+    for (me, other, hint, index) in [
+        ("source", "destination", "", "link_history_target"),
+        (
+            "destination",
+            "source",
+            " INDEXED BY link_current_in",
+            "link_history_in",
+        ),
+    ] {
+        let link = format!(
+            "SELECT l.link_type, l.{other}, e.ext_id, l.seq, l.ts, l.author, l.sort
+             FROM link_current l{hint} JOIN entities e ON e.eid = l.{other}
+             WHERE l.bid = ?1 AND l.{me} = ?2 AND l.link_type = ?3 AND +l.seq BETWEEN ?4 AND ?5"
+        );
+        let frozen = plan(
+            &f,
+            &with_source(&link, EventSource::CurrentAndHistory, index),
+        );
+        assert!(frozen.contains(index), "{frozen}");
+        assert!(!frozen.contains("SCAN l"), "{frozen}");
+        assert!(!frozen.contains("(bid=?)"), "{frozen}");
+    }
+}
+
+#[test]
+fn a_parent_list_keeps_each_branch_at_its_first_place_with_the_greatest_range() {
+    let mut f = Fixture::new();
+    let a = f.store.create_branch("a", &[]).unwrap();
+    let b = f.store.create_branch("b", &[]).unwrap();
+    f.store
+        .set_parents(
+            f.main,
+            &[
+                ParentRef::new(a, SeqRange::new(4, Some(5))),
+                ParentRef::new(b, SeqRange::ALL),
+                ParentRef::new(a, SeqRange::up_to(3)),
+            ],
+        )
+        .unwrap();
+    // `a` stays first; its range spans both entries. No other order check.
+    assert_eq!(
+        f.store.branch(f.main).unwrap().parents,
+        vec![
+            ParentRef::new(a, SeqRange::up_to(5)),
+            ParentRef::new(b, SeqRange::ALL),
+        ]
+    );
+    // Open beats frozen in the greatest range.
+    f.store
+        .set_parents(
+            f.main,
+            &[
+                ParentRef::new(b, SeqRange::up_to(2)),
+                ParentRef::new(b, SeqRange::from(3)),
+            ],
+        )
+        .unwrap();
+    assert_eq!(
+        f.store.branch(f.main).unwrap().parents,
+        vec![ParentRef::new(b, SeqRange::ALL)]
+    );
+}
+
+#[test]
+fn a_branch_reached_twice_sits_where_it_first_appears() {
+    let mut f = Fixture::new();
+    let m = f.store.create_branch("m", &[]).unwrap();
+    let a = f.store.create_branch("a", &[]).unwrap();
+    let c = f
+        .store
+        .create_branch("c", &[ParentRef::new(m, SeqRange::ALL)])
+        .unwrap();
+    f.write(m, "x", vec![Op::set("n", "text", "m")]);
+    f.write(a, "x", vec![Op::set("n", "text", "a")]);
+    // Expansion of [m frozen, a, c open]: m, a, m (through c), c. The second
+    // m is deduped into the first place, so a still wins over m.
+    f.store
+        .set_parents(
+            f.main,
+            &[
+                ParentRef::new(m, SeqRange::up_to(1)),
+                ParentRef::new(a, SeqRange::ALL),
+                ParentRef::new(c, SeqRange::ALL),
+            ],
+        )
+        .unwrap();
+    assert_eq!(f.text(f.main, "n", "text").as_deref(), Some("a"));
+    // The greatest range: m's later events are visible through the open path.
+    f.write(m, "x", vec![Op::set("k", "text", "m2")]);
+    assert_eq!(f.text(f.main, "k", "text").as_deref(), Some("m2"));
+}
+
+#[test]
+fn open_cycles_are_cut_by_the_dedupe() {
+    let mut f = Fixture::new();
+    let a = f.store.create_branch("a", &[]).unwrap();
+    let b = f
+        .store
+        .create_branch("b", &[ParentRef::new(a, SeqRange::ALL)])
+        .unwrap();
+    f.store.pull(a, b, SeqRange::ALL).unwrap();
+    f.write(a, "x", vec![Op::set("from_a", "text", "a")]);
+    f.write(b, "x", vec![Op::set("from_b", "text", "b")]);
+    assert_eq!(f.text(a, "from_b", "text").as_deref(), Some("b"));
+    assert_eq!(f.text(b, "from_a", "text").as_deref(), Some("a"));
+    // Own events still win on both ends.
+    f.write(a, "x", vec![Op::set("n", "text", "a")]);
+    f.write(b, "x", vec![Op::set("n", "text", "b")]);
+    assert_eq!(f.text(a, "n", "text").as_deref(), Some("a"));
+    assert_eq!(f.text(b, "n", "text").as_deref(), Some("b"));
+}

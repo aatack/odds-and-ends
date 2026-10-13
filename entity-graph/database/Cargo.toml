@@ -1,0 +1,18 @@
+[package]
+name = "entity-graph-database"
+version = "0.1.0"
+edition = "2021"
+description = "Event-sourced node and link store with branches, on SQLite"
+publish = false
+
+[lib]
+name = "egdb"
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde_json = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["v7"] }
+
+[profile.release]
+lto = "thin"
