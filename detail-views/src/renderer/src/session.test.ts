@@ -695,3 +695,46 @@ test('topics mode: Ctrl+. opens a form for a new topic, from anywhere; Enter in 
     stop()
   }
 })
+
+test('topics mode: `.` opens the next topic down the list where Claude isn’t working, round from the open one', async () => {
+  let answer: (() => void) | null = null
+  const run = (command: string) => {
+    if (!command.endsWith('claude')) throw new Error(`unexpected ${command}`)
+    return new Promise<string>((resolve) => (answer = () => resolve(JSON.stringify({ result: 'done', is_error: false }))))
+  }
+  const { session, stop, settle } = await headless({ run }, { topics: true })
+  const next = tools.find((tool) => tool.id === 'topic.nextIdle')!
+  const open = () => session.get().view?.root?.data.text
+  try {
+  await settle()
+  for (const name of ['a', 'b', 'c']) {
+    session.setTopicName(name)
+    session.createTopic()
+    await settle()
+  }
+  // Newest first: c, b, a; c is open. Claude works in b.
+  const b = session.get().topics[1]
+  session.openTopic(b.id)
+  session.returnToPrompt()
+  session.setDraft('go')
+  await session.dispatch()
+  await settle()
+  assert.deepEqual(session.get().topics.map((topic) => topic.data.text), ['b', 'c', 'a'])
+  assert.equal(next.enabled!(session, null), true)
+  next.run(session, null)
+  assert.equal(open(), 'c')
+  next.run(session, null)
+  assert.equal(open(), 'a')
+  // Round past b, still working.
+  next.run(session, null)
+  assert.equal(open(), 'c')
+  answer!()
+  await settle()
+  next.run(session, null)
+  assert.equal(open(), 'a')
+  next.run(session, null)
+  assert.equal(open(), 'b')
+  } finally {
+    stop()
+  }
+})

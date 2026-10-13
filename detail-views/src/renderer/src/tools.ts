@@ -133,6 +133,8 @@ export const tools: Tool[] = [
   { id: 'split', label: 'Split', scope: 'list', keys: ['b'], enabled: (s) => s.canSplit(), run: (s) => s.split() },
   { id: 'inspect', label: 'Inspect', scope: 'list', keys: ['3'], enabled: (s) => selected(s) !== null, run: (s) => s.inspect() },
   { id: 'claude.new', label: 'Claude session', scope: 'list', keys: ['K'], run: (s) => s.openClaudeDialog() },
+  // Not while typing: the next topic Claude isn't working in.
+  { id: 'topic.nextIdle', label: 'Next idle topic', scope: 'list', keys: ['.'], enabled: (s) => s.canNextIdleTopic(), run: (s) => s.nextIdle() },
   // From anywhere, typing too: a form for the new topic's name.
   { id: 'topic.new', label: 'New topic', scope: 'app', keys: ['Ctrl+.'], enabled: (s) => s.canOpenTopicDialog(), run: (s) => s.openTopicDialog() },
   { id: 'session.send', label: 'To session', scope: 'list', keys: ['k'], enabled: (s) => s.canSendToSession(), run: (s) => s.sendToSession() },
