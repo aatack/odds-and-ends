@@ -5,3 +5,6 @@
   CSS mask, so its colour is the `--claude` token.
 - `note.svg`: a page with lines, drawn for this app. Drawn as a CSS mask, so
   its colour is a token (`--muted`).
+- `file.svg`: a blank page with its corner folded, drawn for this app (the
+  note's page without its lines), for a file item. Drawn as a CSS mask, so its
+  colour is a token (`--muted`).

@@ -19,8 +19,9 @@
   --link: light-dark(#3a5f9e, #8fb0e6);
   /* Claude's own terracotta, for what Claude says and the sessions it runs. */
   --claude: light-dark(#c96442, #e08a6b);
-  /* Claude's bubbles: the faintest wash of its colour. */
-  --claude-soft: light-dark(#fbf4f1, #221b19);
+  /* Claude's bubbles: a wash of its colour, and an edge a step deeper. */
+  --claude-soft: light-dark(#f9eee8, #2a201c);
+  --claude-line: light-dark(#ecd3c7, #4a3128);
   /* A bubble lifted a little off the page. */
   --lift: light-dark(rgba(16, 24, 40, 0.08), rgba(0, 0, 0, 0.4));
   /* Fills for buttons and chips: a soft gray, a step darker on hover, another pressed. */
@@ -126,20 +127,41 @@ body,
   gap: 2px;
 }
 
-/* On the list's panel the usual row hover barely shows: a topic under the pointer takes a fill a step darker than a button's, its name the ink; the open one has the accent's rail. */
-.topic-list .chat-card {
-  color: var(--ink-soft);
+/* A topic in the list: a light line, as a module is in the classic sidebar. Under the pointer its name darkens on a fill; the open one sits on the selection's fill. */
+.topic {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  color: var(--muted);
 }
 
-.topic-list .chat-card:hover {
+.topic:hover {
   color: var(--ink);
-  background: var(--fill-press);
+  background: var(--fill-hover);
 }
 
-.topic-list .chat-card.selected {
+.topic.open {
   color: var(--ink);
   background: var(--select);
-  box-shadow: inset 3px 0 var(--accent);
+}
+
+.topic-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topic-time {
+  flex: none;
+  font-size: 12.5px;
+}
+
+.topic-time .muted {
+  color: var(--faint);
 }
 
 /* At the foot of the sidebar: wiping the cache store. */
@@ -1689,11 +1711,18 @@ mark {
   border-bottom-left-radius: 4px;
 }
 
-/* Claude's: its mark beside it, a wash of its colour, lifted a little. */
+/* Claude's: its mark beside it, a wash of its colour inside an edge of it, lifted a little. */
 .bubble.theirs {
   background: var(--claude-soft);
+  border: 1px solid var(--claude-line);
   border-top-left-radius: 4px;
   box-shadow: 0 1px 3px var(--lift);
+}
+
+/* In a flat chat, Claude's mark lines up with the start of my messages, so its bubbles sit indented past it. */
+.chat-page.flat .bubble-line.left {
+  padding-left: 12px;
+  gap: 8px;
 }
 
 .bubble-line > .claude-mark {
@@ -1825,6 +1854,16 @@ textarea:hover,
 .note-line-text {
   flex: 1;
   min-width: 0;
+}
+
+.file-mark {
+  flex: none;
+  display: inline-block;
+  width: 0.95em;
+  height: 0.95em;
+  vertical-align: -0.1em;
+  background: var(--muted);
+  mask: url('./assets/file.svg') center / contain no-repeat;
 }
 
 .note-mark {

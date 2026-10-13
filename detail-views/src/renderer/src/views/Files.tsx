@@ -17,7 +17,7 @@ const sizeOf = (data: Record<string, unknown>): string => (typeof data.size === 
 export function FilePill(props: PillProps) {
   return (
     <span className="item-name">
-      <span className="muted">▤</span> <Highlight text={nameOf(props.entity.data)} find={props.findText} />
+      <span className="file-mark" role="img" aria-label="File" /> <Highlight text={nameOf(props.entity.data)} find={props.findText} />
     </span>
   )
 }
