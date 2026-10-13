@@ -1,0 +1,71 @@
+# entity-graph database (`egdb`)
+
+A standalone, event-sourced store of entities, values and links, with branches.
+It runs on SQLite (`rusqlite` with the `bundled` feature), so a store is one file and needs no server.
+The TypeScript app does not call it.
+
+The design is in [`../../graph-store/DESIGN.md`](../../graph-store/DESIGN.md).
+
+## Model in brief
+
+- **Events.** There are two kinds:
+  - A value event sets `(entity, key) = value`. Writing `Value::Null` clears a field.
+  - A link event writes the state of `(source, destination, link_type)`. The write API takes a `SortOrder`:
+    - `Timestamp`: stored as the event's timestamp in ms.
+    - `Explicit(f64)`: stored as is.
+    - `Removed`: stored as NULL.
+  - The tables keep one nullable `sort REAL` column. Reads sort live links by it.
+- **Entities.** There are no create or delete events. An entity exists when it has events. To archive an entity, set its `type` value to null (`archive_entity`). To restore it, pass the type to `restore_entity`. A partial index serves "entities of type X". `children`, `parents` and `links` show only entities whose `type` is not null. Entities that never had a type are hidden too. `links_including_archived` skips this filter.
+- **Sequence IDs.** Every event has a per-branch sequence ID, and `(branch, seq)` is unique.
+- **Current and history tables.**
+  - `value_current` and `link_current` hold only the last event per target.
+  - When an event is superseded, it moves to `value_history` or `link_history` in the same transaction.
+- **Branches.**
+  - Each branch has a fixed UUIDv7 id.
+  - Each branch has a parent list of `(branch, seq range)` entries. An upper bound freezes that parent.
+  - `fork` copies the source's whole stack, frozen.
+  - `merge` puts another branch's whole stack, frozen, on top of what the branch has now.
+  - `pull` adds one raw range.
+  - `set_parents` is rebase.
+  - Branches are archived, never deleted.
+- **Merged views.** The parent list is a stack. Per target, the winner is ordered by `(layer, seq)`: a later entry wins, and the branch's own events are on top. Timestamps do not order events. Every read flattens the parent graph first (depth-first expansion; each branch kept once, at its first place, with its greatest range; open ranges chain, frozen ranges do not), loads each layer from the current table (open) or current + history (bounded), and rolls up with one shared function.
+- **Undo.** Undo works on one branch, for one author, on batches from the last five minutes. It removes the newest batch and moves the rows it replaced back from history. It refuses when a later event changed a target, or when another branch has a frozen range over the batch. Sequence IDs are never reused.
+
+## Use
+
+```rust
+use egdb::{Op, SortOrder, Store, WriteBatch};
+
+let mut store = Store::open("notes.db")?;
+let main = store.create_branch("main", &[])?;
+store.write(WriteBatch::new(main, "alex", vec![
+    Op::set("@index", "text", "Index"),
+    Op::link("@index", "note-1", "child", SortOrder::Timestamp),
+]))?;
+let agent = store.fork(main, "agent sandbox")?;
+store.write(WriteBatch::new(agent, "agent", vec![Op::set("note-1", "text", "draft")]))?;
+store.merge(main, agent)?;                       // or skip it, or archive the branch
+let children = store.children(main, "@index", "child")?;
+store.undo(main, "alex")?;
+```
+
+## Status
+
+- **Implemented:**
+  - Schema with migrations (`PRAGMA user_version`)
+  - Writes
+  - Current/history split
+  - Values
+  - Links grouped by type, with sorting
+  - Entity existence and archiving
+  - Branches: create, fork, pull, merge, rebase, archive
+  - Undo
+- **Not yet:** `walk` and `find` return `Error::NotImplemented` until Alexander sends the semantics.
+
+## Develop
+
+```sh
+cargo test
+cargo clippy --all-targets -- -D warnings
+cargo fmt
+```
