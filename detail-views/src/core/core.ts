@@ -502,6 +502,16 @@ export class Core {
     topicDispatch: ({ topic }: { topic: string }): Promise<Outcome> => this.attempt(topic, async () => this.topics.dispatch(topic)),
     /** Text pasted into a topic: a PR, Slack message or branch link as that item, anything else as a message. */
     topicPaste: ({ topic, text }: { topic: string; text: string }): Promise<Outcome> => this.attempt(topic, async () => this.topics.paste(topic, text)),
+    /** What would be lost resolving a topic (its worktree's uncommitted, unpushed or unmerged work), for me to confirm first. */
+    topicResolveCheck: async ({ topic }: { topic: string }): Promise<{ warnings: string[]; error: string | null }> => {
+      try {
+        return { warnings: await this.topics.resolveWarnings(topic), error: null }
+      } catch (error) {
+        return { warnings: [], error: error instanceof Error ? error.message : String(error) }
+      }
+    },
+    /** Resolves a topic: out of the list, its worktree (only one proved to be) removed. Refused with work to lose, unless `force`. */
+    topicResolve: ({ topic, force }: { topic: string; force: boolean }): Promise<Outcome> => this.attempt(topic, () => this.topics.resolve(topic, force)),
     /** A file pasted into a topic, kept, as an item under it. */
     topicAttach: ({ topic, file }: { topic: string; file: PastedFile }): Promise<Outcome> => this.attempt(topic, async () => this.topics.attach(topic, file)),
     /** A view of `id` was pushed: it goes to the front of Recents (unless it is a plain note). */

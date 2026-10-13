@@ -541,6 +541,11 @@ export class Session {
   submitDialog(): void {
     const dialog = this.state.dialog
     if (!dialog) return
+    if (dialog.kind === 'resolve') {
+      this.update(S.setDialog(this.state, null))
+      this.resolve(dialog.topic, true)
+      return
+    }
     if (dialog.kind === 'topic') {
       if (!dialog.name.trim()) return
       this.update(S.setDialog(this.state, null))
@@ -611,6 +616,40 @@ export class Session {
   nextIdle(): void {
     const id = this.nextIdleTopic()
     if (id) this.openTopic(id)
+  }
+
+  /** Whether the topic on screen can be resolved now: not while Claude answers in it. */
+  canResolveTopic(): boolean {
+    return this.onTopic() && !answering(S.focused(this.state), lensOf(this.cache.source(this.cache.get())))
+  }
+
+  /**
+   * Resolves the topic on screen: out of the list, its worktree removed (only
+   * one proved to be). If that would lose work, a form says what, to confirm
+   * first.
+   */
+  resolveTopic(): void {
+    if (!this.canResolveTopic()) return
+    const id = S.focused(this.state)
+    void this.working(id, 'resolve', () => this.api.topicResolveCheck(id)).then(({ warnings, error }) => {
+      if (error) this.showToast(error)
+      else if (warnings.length) this.update(S.setDialog(this.state, { kind: 'resolve', topic: id, warnings }))
+      else this.resolve(id, false)
+    })
+  }
+
+  /** A form with nothing to type in (confirming a resolve): Enter confirms it and Escape gives up, from outside any text box. */
+  hasConfirmDialog(): boolean {
+    return this.state.dialog?.kind === 'resolve'
+  }
+
+  private resolve(id: string, force: boolean): void {
+    void this.working(id, 'resolve', () => this.api.topicResolve(id, force)).then((outcome) => {
+      this.settle(id, outcome)
+      if (outcome.error) this.showToast(outcome.error)
+      // Gone from the list: the window is left empty, as before a topic is chosen.
+      else if (S.focused(this.state) === id) this.update(S.enter(this.state, topicsIds.root))
+    })
   }
 
   /** Whether a paste outside any text box goes into a topic: one is on screen, its box closed. */

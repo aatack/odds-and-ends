@@ -1,5 +1,5 @@
 import type { Entity, ModuleInfo, View } from '../../../core/types.ts'
-import type { Dialog, Edit, Peek, PeekTarget, Pick, Rect, SessionDialog, ShownView } from '../state.ts'
+import type { Dialog, Edit, Peek, PeekTarget, Pick, Rect, ResolveDialog, SessionDialog, ShownView, TopicDialog } from '../state.ts'
 import { imageSrc } from '../images.ts'
 import { PeekWindow } from './Peek.tsx'
 import { ViewPane } from './View.tsx'
@@ -139,7 +139,14 @@ export function App(props: {
           <div className="side-slot" ref={setSlot} />
           {props.side && <SidePanel {...props.side} windows={windows} onImage={props.onImage} />}
           {props.picking && <PickBar {...props.picking} />}
-          {props.dialog && (props.dialog.dialog.kind === 'topic' ? <TopicForm {...props.dialog} /> : <SessionForm {...props.dialog} dialog={props.dialog.dialog} />)}
+          {props.dialog &&
+            (props.dialog.dialog.kind === 'topic' ? (
+              <TopicForm {...props.dialog} dialog={props.dialog.dialog} />
+            ) : props.dialog.dialog.kind === 'resolve' ? (
+              <ResolveForm {...props.dialog} dialog={props.dialog.dialog} />
+            ) : (
+              <SessionForm {...props.dialog} dialog={props.dialog.dialog} />
+            ))}
           {props.inspect && <Inspector {...props.inspect} />}
           {props.toast && <div className="toast">{props.toast}</div>}
           {peek.peeks.map((one) => (
@@ -348,7 +355,7 @@ export interface DialogProps<D extends Dialog = Dialog> {
  * gives up.
  */
 /** A new topic: its name. Enter makes it and opens it, Escape gives up. */
-function TopicForm(props: DialogProps) {
+function TopicForm(props: DialogProps<TopicDialog>) {
   return (
     <Modal title="New topic" onClose={props.onCancel}>
       <input
@@ -362,6 +369,23 @@ function TopicForm(props: DialogProps) {
       <div className="dialog-buttons">
         <Button label="Cancel" hotkey="Esc" onClick={props.onCancel} />
         <Button label="Make" hotkey="↵" busy={props.busy} busyLabel="Making…" disabled={!props.dialog.name.trim() && 'Name it first'} onClick={props.onSubmit} />
+      </div>
+    </Modal>
+  )
+}
+
+/** Resolving a topic would lose work: what, and Enter to resolve it anyway (its worktree removed), Escape to keep it. */
+function ResolveForm(props: DialogProps<ResolveDialog>) {
+  return (
+    <Modal title="Resolve anyway?" onClose={props.onCancel}>
+      <ul className="resolve-warnings">
+        {props.dialog.warnings.map((warning) => (
+          <li key={warning}>{warning}</li>
+        ))}
+      </ul>
+      <div className="dialog-buttons">
+        <Button label="Keep" hotkey="Esc" onClick={props.onCancel} />
+        <Button label="Resolve" hotkey="↵" busy={props.busy} busyLabel="Resolving…" onClick={props.onSubmit} />
       </div>
     </Modal>
   )

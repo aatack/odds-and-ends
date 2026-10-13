@@ -27,6 +27,11 @@ Written in ASD-STE100. An experiment, after chat apps. Code: `src/core/modules/t
     - A link to a PR, a Slack message (`…slack.com/archives/<channel>/p<ts>`) or a GitHub branch (`github.com/<owner>/<repo>/tree/<branch>`): that item, linked under the topic. A PR and a Slack message load themselves. A branch (`github.branch`, id `github:branch:<owner>/<repo>:<branch>`) is all in its id and links to its page.
     - Any other text (another link too): a message with that text.
     - What is pasted goes with the next dispatch, in its place among the messages: a file as `[File: <path>]`, an item as `[Item: <id>]` (Claude reads it through the app's MCP server) (`promptPart`).
+16. After each answer (not a failed one), when the topic's directory is a git checkout with changes not committed (`git status --porcelain`), the app asks Claude once to commit them (`commitPrompt`): a message of the app's own (authored `module`, so undo does not take it), and Claude's answer after it. It does not ask again after that answer. A dispatch is not over until this is done: Ctrl+Enter is refused until then.
+17. After each dispatch, the branch checked out in the topic's directory goes into the chat as its `github.branch` item, once, and on the topic as `branch` and `github` (so the Context card shows it). Not a detached HEAD, not the remote's default branch, and only when the `origin` remote is on GitHub.
+18. **Resolve** (a button beside Context; `topic.resolve`, no key) takes the topic out of the list: its link from the root is undone (the topic is kept, with `resolved`). The window is then empty. Not while Claude answers.
+    - It removes the topic's worktree only when it is provably one the app made (`provenWorktree`): `worktree` is under the app's own `worktrees` directory, exists, is the top of a checkout, and the repo (`repo`) lists it in `git worktree list`. Any other directory (a temporary one, one of mine) is never removed. The branch is kept.
+    - First it checks the worktree for work that would be lost (`topicResolveCheck`): changes not committed, commits not on any remote, commits not merged into the default branch. If there is any, a form lists it: Enter resolves anyway (`git worktree remove --force`), Escape keeps the topic. The core refuses without `force` too.
 
 ## Key decisions
 

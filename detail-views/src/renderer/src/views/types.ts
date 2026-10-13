@@ -48,6 +48,8 @@ export interface ViewProps {
   contextViews?: Record<string, View>
   /** Moves a Claude session to another directory, or a new worktree of its repo. */
   onSetDirectory?(cwd: string, worktree: boolean): void
+  /** Resolves the topic on screen: out of the list, its worktree removed. */
+  onResolveTopic?(): void
   /** What a chat's box writes: a prompt or a note (←/→ switch it). */
   chatMode?: ChatMode
   /** The windows the keys can be in (each opened-out item is one), for a page that has some of its own. */

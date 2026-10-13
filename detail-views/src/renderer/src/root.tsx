@@ -59,6 +59,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
   const onContextToggle = useCallback((id: string) => session.toggleChatContext(id), [])
   const onSideResize = useCallback((width: number) => session.resizeSide(width), [])
   const onSetDirectory = useCallback((cwd: string, worktree: boolean) => session.setDirectory(cwd, worktree), [])
+  const onResolveTopic = useCallback(() => runTool(session, 'topic.resolve'), [])
   const onBack = useCallback(() => session.back(), [])
   // No hover on a phone, so no peeks: a link opens in the browser instead.
   const gestures = useMemo(
@@ -128,6 +129,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
         sideWidth: state.sideWidth,
         onSideResize,
         onSetDirectory,
+        onResolveTopic,
         chatMode: chatModeOf(state, focused(state)),
         onEditDraft,
         onCommitEdit,
@@ -141,7 +143,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
         onToggle,
         onClose: onBack,
       },
-    [tree, shown, onNearEnd, onToggle, onBack, state, working, now, findFocus, centre, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onPause, onNewChat, contextViews, onContextToggle, onSideResize, onSetDirectory, onEditDraft, onCommitEdit, onCancelEdit],
+    [tree, shown, onNearEnd, onToggle, onBack, state, working, now, findFocus, centre, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onPause, onNewChat, contextViews, onContextToggle, onSideResize, onSetDirectory, onResolveTopic, onEditDraft, onCommitEdit, onCancelEdit],
   )
   const picking = useMemo(() => {
     const pick = state.picking
@@ -238,7 +240,12 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
     return {
       dialog: state.dialog,
       cwds: Array.isArray(cwds) ? (cwds as string[]) : [],
-      busy: state.dialog.kind === 'topic' ? (working.topics?.includes('create') ?? false) : (working[focused(state)]?.includes('claude') ?? false),
+      busy:
+        state.dialog.kind === 'topic'
+          ? (working.topics?.includes('create') ?? false)
+          : state.dialog.kind === 'resolve'
+            ? (working[state.dialog.topic]?.includes('resolve') ?? false)
+            : (working[focused(state)]?.includes('claude') ?? false),
       onChange: (fields: Partial<SessionDialog>) => session.setDialog(fields),
       onSubmit: () => session.submitDialog(),
       onCancel: () => session.cancelDialog(),
