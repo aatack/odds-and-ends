@@ -52,6 +52,8 @@ export interface ViewProps {
   pathDraft?: string
   onPathDraft?(text: string): void
   onAddPath?(cwd: string, worktree: boolean): void
+  /** A topic's git buttons: its worktree's commit checked out in its repo, the default branch there, its branch pushed. */
+  onTopicGit?(action: 'checkout' | 'master' | 'push'): void
   /** Resolves the topic on screen: out of the list, its worktree removed. */
   onResolveTopic?(): void
   /** What a chat's box writes: a prompt or a note (←/→ switch it). */

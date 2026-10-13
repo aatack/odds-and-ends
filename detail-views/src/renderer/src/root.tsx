@@ -60,6 +60,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
   const onSideResize = useCallback((width: number) => session.resizeSide(width), [])
   const onSetDirectory = useCallback((cwd: string, worktree: boolean) => session.setDirectory(cwd, worktree), [])
   const onResolveTopic = useCallback(() => runTool(session, 'topic.resolve'), [])
+  const onTopicGit = useCallback((action: 'checkout' | 'master' | 'push') => runTool(session, `topic.${action}`), [])
   const onPathDraft = useCallback((text: string) => session.setPathDraft(text), [])
   const onAddPath = useCallback((cwd: string, worktree: boolean) => session.addPath(cwd, worktree), [])
   const onBack = useCallback(() => session.back(), [])
@@ -132,6 +133,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
         onSideResize,
         onSetDirectory,
         onResolveTopic,
+        onTopicGit,
         pathDraft: state.drafts[pathDraftKey(focused(state))] ?? '',
         onPathDraft,
         onAddPath,
@@ -148,7 +150,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
         onToggle,
         onClose: onBack,
       },
-    [tree, shown, onNearEnd, onToggle, onBack, state, working, now, findFocus, centre, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onPause, onNewChat, contextViews, onContextToggle, onSideResize, onSetDirectory, onResolveTopic, onPathDraft, onAddPath, onEditDraft, onCommitEdit, onCancelEdit],
+    [tree, shown, onNearEnd, onToggle, onBack, state, working, now, findFocus, centre, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onPause, onNewChat, contextViews, onContextToggle, onSideResize, onSetDirectory, onResolveTopic, onTopicGit, onPathDraft, onAddPath, onEditDraft, onCommitEdit, onCancelEdit],
   )
   const picking = useMemo(() => {
     const pick = state.picking

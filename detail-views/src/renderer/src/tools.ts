@@ -141,7 +141,10 @@ export const tools: Tool[] = [
   { id: 'claude.new', label: 'Claude session', scope: 'list', keys: ['K'], run: (s) => s.openClaudeDialog() },
   // Not while typing: the next topic Claude isn't working in.
   { id: 'topic.nextIdle', label: 'Next idle topic', scope: 'list', keys: ['.'], enabled: (s) => s.canNextIdleTopic(), run: (s) => s.nextIdle() },
-  // A button at a topic's top right; no key.
+  // Buttons at a topic's top right; no keys.
+  { id: 'topic.checkout', label: 'Check out', scope: 'list', keys: [], enabled: (s) => s.onTopicNow(), run: (s) => s.topicGit('checkout') },
+  { id: 'topic.master', label: 'Master', scope: 'list', keys: [], enabled: (s) => s.onTopicNow(), run: (s) => s.topicGit('master') },
+  { id: 'topic.push', label: 'Push', scope: 'list', keys: [], enabled: (s) => s.canResolveTopic(), run: (s) => s.topicGit('push') },
   { id: 'topic.resolve', label: 'Resolve', scope: 'list', keys: [], enabled: (s) => s.canResolveTopic(), run: (s) => s.resolveTopic() },
   // From anywhere, typing too: a form for the new topic's name.
   { id: 'topic.new', label: 'New topic', scope: 'app', keys: ['Ctrl+.'], enabled: (s) => s.canOpenTopicDialog(), run: (s) => s.openTopicDialog() },

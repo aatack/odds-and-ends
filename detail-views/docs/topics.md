@@ -30,6 +30,11 @@ Written in ASD-STE100. An experiment, after chat apps. Code: `src/core/modules/t
 18. **Resolve** (a button beside Path; `topic.resolve`, no key) takes the topic out of the list: its link from the root is undone (the topic is kept, with `resolved`). The window is then empty. Not while Claude answers.
     - It removes the topic's worktrees (its own, and its paths'), each only when it is provably one the app made (`provenWorktree`): `worktree` is under the app's own `worktrees` directory, exists, is the top of a checkout, and the repo (`repo`) lists it in `git worktree list`. Any other directory (a temporary one, one of mine) is never removed. The branch is kept.
     - First it checks the worktree for work that would be lost (`topicResolveCheck`): changes not committed, commits not on any remote, commits not merged into the default branch. If there is any, a form lists it: Enter resolves anyway (`git worktree remove --force`), Escape keeps the topic. The core refuses without `force` too.
+19. Beside **Path** at the top right are three git buttons (`topic.checkout`, `topic.master`, `topic.push`; no keys). Each acts on where the topic works now: its newest path, or else where it last ran (`where`). The *base repo* is the repo its worktree is of (`repo`), or else the one its directory is in. Each says what it did, or why not, as a toast.
+    - **Check out**: the worktree's commit, checked out detached in the base repo (git will not check out a branch that another worktree has). Only with a worktree.
+    - **Master**: the default branch (the remote's, else `master`) checked out in the base repo.
+    - Both are refused while the base repo's checkout has changes not committed.
+    - **Push**: `git push -u origin <branch>` from the worktree (or the directory): the branch, made on GitHub if new; never forced. Refused on a detached HEAD, on the default branch, to an `origin` not on GitHub, and while Claude answers. Then the branch's PR, if it has one, joins the topic (17).
 
 ## Key decisions
 

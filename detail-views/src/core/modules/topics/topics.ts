@@ -312,4 +312,78 @@ export class Topics implements Module {
     const cwd = this.context.data.get(topic).cwd
     return typeof cwd === 'string' && cwd ? expandHome(cwd) : null
   }
+
+  // --- git, from the buttons at a topic's top right ---------------------------------
+
+  /** Where a topic works now: its newest path, or else where it last ran. Its worktree, if it is one, and the repo that is of. */
+  private where(topic: string): { dir: string; worktree: string | null; repo: string | null } {
+    if (this.context.lens.read(topic)?.type !== 'topic') throw new Error('Not a topic')
+    const data = latestPath(topic, this.context.lens)?.data ?? this.context.data.get(topic)
+    const text = (key: string) => (typeof data[key] === 'string' && data[key] ? expandHome(data[key] as string) : null)
+    const dir = text('cwd')
+    if (!dir) throw new Error('No path: choose one first')
+    const worktree = text('worktree')
+    return { dir, worktree, repo: worktree ? text('repo') : null }
+  }
+
+  /** The repo a topic's work is in: its worktree's, or else the one its directory is in. */
+  private async baseRepo(topic: string): Promise<string> {
+    const { dir, repo } = this.where(topic)
+    const base = repo ?? (await this.git(dir, ['rev-parse', '--show-toplevel']))?.trim()
+    if (!base) throw new Error(`Not in a git repo: ${dir}`)
+    return base
+  }
+
+  /** Refused when `repo`'s checkout has changes not committed: checking out over them could lose them. */
+  private async clean(repo: string): Promise<void> {
+    const status = await this.git(repo, ['status', '--porcelain'])
+    if (status === null) throw new Error(`Could not read the state of ${repo}`)
+    if (status.trim()) throw new Error(`Uncommitted changes in ${repo}: commit or stash them first`)
+  }
+
+  /**
+   * **Check out**: the commit the topic's worktree is on, in the repo it is
+   * a worktree of (detached: git won't check out a branch another worktree
+   * has). Only with a worktree, and a clean checkout there.
+   */
+  async checkOut(topic: string): Promise<AppEvent[]> {
+    const { worktree } = this.where(topic)
+    if (!worktree) throw new Error('No worktree to check out')
+    const base = await this.baseRepo(topic)
+    const commit = (await this.git(worktree, ['rev-parse', 'HEAD']))?.trim()
+    if (!commit) throw new Error(`Could not read the commit of ${worktree}`)
+    await this.clean(base)
+    await this.context.run('git', ['checkout', '--detach', commit], base)
+    return []
+  }
+
+  /** **Master**: the default branch (the remote's, else `master`) checked out in the topic's repo, if its checkout is clean. */
+  async checkOutDefault(topic: string): Promise<AppEvent[]> {
+    const base = await this.baseRepo(topic)
+    const main = (await this.defaultBranch(base)) ?? 'master'
+    await this.clean(base)
+    await this.context.run('git', ['checkout', main], base)
+    return []
+  }
+
+  /**
+   * **Push**: the branch checked out in the topic's worktree (or its path)
+   * to the same branch on GitHub, made if new. Not a detached HEAD, not the
+   * default branch, and only to an `origin` on GitHub; never forced. Not
+   * while Claude answers. Its PR, if it has one, then joins the topic.
+   */
+  async push(topic: string): Promise<AppEvent[]> {
+    if (answering(topic, this.context.lens) || this.busy.has(topic)) throw new Error('Claude is still answering')
+    const { dir, worktree } = this.where(topic)
+    const from = worktree ?? dir
+    const branch = (await this.git(from, ['rev-parse', '--abbrev-ref', 'HEAD']))?.trim()
+    if (!branch) throw new Error(`Not in a git repo: ${from}`)
+    if (branch === 'HEAD') throw new Error('Not on a branch: nothing to push to')
+    if (branch === (await this.defaultBranch(from))) throw new Error(`Won't push ${branch}: work on a branch`)
+    const remote = await this.git(from, ['remote', 'get-url', 'origin'])
+    if (!remote || !githubRepo(remote)) throw new Error('origin is not on GitHub')
+    await this.context.run('git', ['push', '-u', 'origin', branch], from)
+    await this.notePr(topic, from)
+    return []
+  }
 }

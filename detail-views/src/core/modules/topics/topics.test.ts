@@ -163,7 +163,7 @@ test('topics: a paste is what it is: a PR, Slack message or branch link is that 
 })
 
 /** claude, and a git answering from `state`; every call recorded. */
-function fakeRepo(state: { dirty: string[]; branch: string; worktree?: boolean; top?: string; listed?: string[]; unpushed?: string; unmerged?: string }, calls: { command: string; args: string[]; cwd: string }[]) {
+function fakeRepo(state: { dirty: string[]; branch: string; remote?: string; worktree?: boolean; top?: string; listed?: string[]; unpushed?: string; unmerged?: string }, calls: { command: string; args: string[]; cwd: string }[]) {
   return async (command: string, args: string[], cwd: string) => {
     calls.push({ command, args, cwd })
     if (command.endsWith('claude')) return JSON.stringify({ result: 'ok', is_error: false })
@@ -444,4 +444,65 @@ test('topics: a path is an item under the topic; each dispatch runs in the newes
   const removed = calls.filter((call) => call.args[0] === 'worktree' && call.args[1] === 'remove').map((call) => call.args.at(-1))
   assert.deepEqual(removed, [tree.cwd])
   assert.equal(core.item(pathItems()[2])!.data.worktree, null)
+})
+
+test('topics: Check out puts the worktree\'s commit in its repo, Master the default branch, Push the branch to GitHub; each refuses what could lose or misplace work', async () => {
+  const calls: { command: string; args: string[]; cwd: string }[] = []
+  const dataDir = mkdtempSync(join(tmpdir(), 'topics-data-'))
+  const state = { dirty: [] as string[], branch: 'claude/x', remote: 'git@github.com:me/app.git' }
+  const base = fakeRepo(state, calls)
+  const core = memoryCore({
+    dataDir,
+    gh: async () => JSON.stringify({ data: { repository: { pullRequests: { nodes: [] } } } }),
+    run: async (command, args, cwd) => {
+      const verb = args.join(' ')
+      if (verb === 'rev-parse HEAD') return 'abc123\n'
+      if (verb === 'remote get-url origin') {
+        calls.push({ command, args, cwd })
+        return `${state.remote}\n`
+      }
+      if (args[0] === 'checkout' || args[0] === 'push') {
+        calls.push({ command, args, cwd })
+        return ''
+      }
+      return base(command, args, cwd)
+    },
+  })
+  const made = (await core.actions.topicCreate({ name: 'Git' })).events.find((event) => event.type === 'link')!
+  const topic = made.type === 'link' ? made.destinationId : ''
+  const wrote = (verb: string) => calls.filter((call) => call.args[0] === verb).map((call) => [call.cwd, ...call.args])
+
+  // No path yet: nothing to act on.
+  assert.equal((await core.actions.topicPush({ topic })).error, 'No path: choose one first')
+
+  // A plain directory: no worktree to check out; Master in the repo it is in.
+  const plain = mkdtempSync(join(tmpdir(), 'plain-'))
+  core.actions.setValue({ id: topic, key: 'cwd', value: plain })
+  assert.equal((await core.actions.topicCheckOut({ topic })).error, 'No worktree to check out')
+  assert.equal((await core.actions.topicCheckOutDefault({ topic })).error, null)
+  assert.deepEqual(wrote('checkout'), [[plain, 'checkout', 'main']])
+
+  // A worktree path: its commit, detached, in its repo; Master there too; refused over uncommitted changes.
+  const tree = join(dataDir, 'worktrees', 'app-1')
+  mkdirSync(tree, { recursive: true })
+  for (const [key, v] of Object.entries({ type: 'path', text: tree, cwd: tree, worktree: tree, repo: '/repo', origin: '/repo' })) core.actions.setValue({ id: 'p1', key, value: v })
+  core.actions.link({ parent: topic, child: 'p1' })
+  assert.equal((await core.actions.topicCheckOut({ topic })).error, null)
+  assert.deepEqual(wrote('checkout').at(-1), ['/repo', 'checkout', '--detach', 'abc123'])
+  state.dirty = [' M x.ts\n']
+  assert.match(String((await core.actions.topicCheckOutDefault({ topic })).error), /Uncommitted changes in \/repo/)
+  assert.equal(wrote('checkout').length, 2)
+
+  // Push: from the worktree, the branch to origin, made if new.
+  assert.equal((await core.actions.topicPush({ topic })).error, null)
+  assert.deepEqual(wrote('push'), [[tree, 'push', '-u', 'origin', 'claude/x']])
+  // Never the default branch, a detached HEAD, or a remote not on GitHub.
+  state.branch = 'main'
+  assert.match(String((await core.actions.topicPush({ topic })).error), /Won't push main/)
+  state.branch = 'HEAD'
+  assert.match(String((await core.actions.topicPush({ topic })).error), /Not on a branch/)
+  state.branch = 'claude/x'
+  state.remote = 'git@gitlab.com:me/app.git'
+  assert.equal((await core.actions.topicPush({ topic })).error, 'origin is not on GitHub')
+  assert.equal(wrote('push').length, 1)
 })

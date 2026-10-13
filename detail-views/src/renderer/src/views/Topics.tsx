@@ -57,6 +57,7 @@ export function TopicDetail(props: OverviewProps) {
         props.interactive ? (
           <>
             <PathPicker props={props} />
+            <TopicGit props={props} />
             {props.onResolveTopic && (
               <Button
                 label="Resolve"
@@ -82,6 +83,30 @@ export interface TopicListProps {
   busy: boolean
   onDraft(text: string): void
   onOpen(id: string): void
+}
+
+/**
+ * A topic's git buttons, for where it works now (its newest path, or else
+ * where it last ran): **Check out** its worktree's commit in the repo (only
+ * with a worktree), **Master** there, **Push** its branch (not while Claude
+ * answers). What only git can tell, the core checks, and says why not.
+ */
+function TopicGit(props: { props: OverviewProps }) {
+  const chat = props.props
+  if (!chat.onTopicGit) return null
+  const paths = chat.shown.rows.flatMap((row) => (row.kind === 'entity' && row.row.depth === 1 && row.row.entity.type === 'path' ? [row.row.entity.data] : []))
+  const where = paths.at(-1) ?? chat.entity.data
+  const has = (key: string) => typeof where[key] === 'string' && Boolean(where[key])
+  const running = typeof chat.entity.data.runningSince === 'number'
+  const noPath = !has('cwd') && 'No path: choose one first'
+  const busy = (action: string) => chat.working?.includes(action)
+  return (
+    <>
+      <Button label="Check out" busy={busy('checkout')} disabled={noPath || (!has('worktree') && 'No worktree to check out')} onClick={() => chat.onTopicGit?.('checkout')} />
+      <Button label="Master" busy={busy('master')} disabled={noPath} onClick={() => chat.onTopicGit?.('master')} />
+      <Button label="Push" busy={busy('push')} disabled={noPath || (running && 'Claude is answering: wait for it to finish')} onClick={() => chat.onTopicGit?.('push')} />
+    </>
+  )
 }
 
 /** Every topic, the most recently active first, as a chat app lists its chats; the box at its head names a new one. */

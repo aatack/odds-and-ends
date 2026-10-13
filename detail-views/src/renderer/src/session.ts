@@ -9,6 +9,9 @@ import type { Environment } from './environment.ts'
 import * as S from './state.ts'
 import { splitText } from '../../core/outline.ts'
 
+/** What a topic's git buttons do. */
+export type TopicGit = 'checkout' | 'master' | 'push'
+
 export interface Snapshot {
   state: S.State
   modules: ModuleInfo[]
@@ -618,6 +621,11 @@ export class Session {
     if (id) this.openTopic(id)
   }
 
+  /** Whether a topic is open in the main view. */
+  onTopicNow(): boolean {
+    return this.onTopic()
+  }
+
   /** Whether the topic on screen can be resolved now: not while Claude answers in it. */
   canResolveTopic(): boolean {
     return this.onTopic() && !answering(S.focused(this.state), lensOf(this.cache.source(this.cache.get())))
@@ -635,6 +643,21 @@ export class Session {
       if (error) this.showToast(error)
       else if (warnings.length) this.update(S.setDialog(this.state, { kind: 'resolve', topic: id, warnings }))
       else this.resolve(id, false)
+    })
+  }
+
+  /**
+   * A topic's git buttons: `checkout` (its worktree's commit, in its repo),
+   * `master` (the default branch there), `push` (its branch, to GitHub). The
+   * core checks what it can only know from git, and says why it won't.
+   */
+  topicGit(action: TopicGit): void {
+    if (!this.onTopic()) return
+    const id = S.focused(this.state)
+    const call = { checkout: () => this.api.topicCheckOut(id), master: () => this.api.topicCheckOutDefault(id), push: () => this.api.topicPush(id) }[action]
+    void this.working(id, action, call).then((outcome) => {
+      this.settle(id, outcome)
+      this.showToast(outcome.error ?? { checkout: 'Checked out in the repo', master: 'Default branch checked out', push: 'Pushed' }[action])
     })
   }
 

@@ -48,6 +48,10 @@ export interface Api {
   topicResolveCheck(topic: string): Promise<{ warnings: string[]; error: string | null }>
   /** Resolves a topic: out of the list, its worktree (only one proved to be) removed; refused with work to lose, unless `force`. */
   topicResolve(topic: string, force: boolean): Promise<Outcome>
+  /** git, from a topic's buttons: its worktree's commit checked out in its repo; the default branch checked out there; its branch pushed to GitHub. */
+  topicCheckOut(topic: string): Promise<Outcome>
+  topicCheckOutDefault(topic: string): Promise<Outcome>
+  topicPush(topic: string): Promise<Outcome>
   /** A view of `id` was pushed: Recents moves it to the front. */
   visit(id: string): Promise<void>
   /** Takes my last action off the owned log; returns what came off. */
@@ -113,6 +117,9 @@ export function httpApi(base: string, token: string): Api {
     topicAttach: (topic, file) => call('topicAttach', { topic, file }),
     topicResolveCheck: (topic) => call('topicResolveCheck', { topic }),
     topicResolve: (topic, force) => call('topicResolve', { topic, force }),
+    topicCheckOut: (topic) => call('topicCheckOut', { topic }),
+    topicCheckOutDefault: (topic) => call('topicCheckOutDefault', { topic }),
+    topicPush: (topic) => call('topicPush', { topic }),
     visit: (id) => call('visit', { id }),
     onChange: (listener) => {
       // EventSource reconnects by itself; a reconnect may have missed changes, so it re-reads everything.
@@ -163,6 +170,9 @@ export function electronApi(): Api {
     topicAttach: (topic, file) => call('topicAttach', { topic, file }),
     topicResolveCheck: (topic) => call('topicResolveCheck', { topic }),
     topicResolve: (topic, force) => call('topicResolve', { topic, force }),
+    topicCheckOut: (topic) => call('topicCheckOut', { topic }),
+    topicCheckOutDefault: (topic) => call('topicCheckOutDefault', { topic }),
+    topicPush: (topic) => call('topicPush', { topic }),
     visit: (id) => call('visit', { id }),
     onChange: (listener) => bridge.onChange(listener),
     openExternal: (url) => void bridge.openExternal(url),

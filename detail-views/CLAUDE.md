@@ -145,6 +145,11 @@ doc for the area you change, and keep it up to date in the same commit.
 - **Slack is read-only during development.** `slackWrites` in
   `modules/slack/api.ts` gates an allowlist of read methods; do not turn it on
   or widen the list unless I ask.
+- **git writes only from a topic's buttons**, each started by me: **Check
+  out** (its worktree's commit, detached, in the base repo), **Master** (the
+  default branch there), both refused over uncommitted changes; **Push**
+  (its branch to GitHub, never forced, never the default branch). Resolve
+  removes a worktree only when proven the app's (`docs/topics.md`).
 - **GitHub goes through `gh`.** Reads are `gh api graphql` queries, never a
   mutation. The only writes are the PR actions I asked for, allowlisted in
   `checkWrite` (`modules/github/github.ts`): approve someone else's PR; on my

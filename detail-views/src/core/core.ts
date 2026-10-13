@@ -545,6 +545,12 @@ export class Core {
     },
     /** Resolves a topic: out of the list, its worktree (only one proved to be) removed. Refused with work to lose, unless `force`. */
     topicResolve: ({ topic, force }: { topic: string; force: boolean }): Promise<Outcome> => this.attempt(topic, () => this.topics.resolve(topic, force)),
+    /** A topic's worktree's commit, checked out (detached) in its repo. */
+    topicCheckOut: ({ topic }: { topic: string }): Promise<Outcome> => this.attempt(topic, () => this.topics.checkOut(topic)),
+    /** The default branch, checked out in a topic's repo. */
+    topicCheckOutDefault: ({ topic }: { topic: string }): Promise<Outcome> => this.attempt(topic, () => this.topics.checkOutDefault(topic)),
+    /** A topic's branch pushed to GitHub, from its worktree or path. */
+    topicPush: ({ topic }: { topic: string }): Promise<Outcome> => this.attempt(topic, () => this.topics.push(topic)),
     /** A file pasted into a topic, kept, as an item under it. */
     topicAttach: ({ topic, file }: { topic: string; file: PastedFile }): Promise<Outcome> => this.attempt(topic, async () => this.topics.attach(topic, file)),
     /** A view of `id` was pushed: it goes to the front of Recents (unless it is a plain note). */
