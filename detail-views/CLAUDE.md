@@ -14,7 +14,7 @@ doc for the area you change, and keep it up to date in the same commit.
   (`docs/topics.md`): one list of topics on the left, each a chat; Enter in
   its box only adds a message, and Ctrl+Enter sends every message since the
   last dispatch to Claude at once. A topic's chat is a flat list with no
-  selection; its box is closed until Enter opens it (Enter closes it again),
+  selection; its box has the keyboard only after Enter (Enter in it empty lets it go),
   and never two dispatches at once. Ctrl+. makes a new topic (a form for
   its name). `.` opens the next topic Claude isn't working in. After an answer that leaves changes
   uncommitted, Claude is asked once to commit them; the branch checked out

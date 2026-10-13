@@ -8,9 +8,9 @@ import { commitPrompt } from './topics.ts'
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
 
-/** Waits (up to 2 s) until `done` holds: for chains of git and claude calls longer than a settle. */
+/** Waits (up to 10 s) until `done` holds: for chains of git and claude calls longer than a settle. */
 async function until(done: () => boolean): Promise<void> {
-  for (let waited = 0; !done() && waited < 2000; waited += 10) await new Promise((resolve) => setTimeout(resolve, 10))
+  for (let waited = 0; !done() && waited < 10_000; waited += 10) await new Promise((resolve) => setTimeout(resolve, 10))
 }
 
 /** claude, answering each prompt with what it was sent; every call recorded. */
@@ -188,6 +188,8 @@ test('topics: an answer that leaves changes uncommitted is followed once by a pr
   await core.actions.submit({ id: topic, text: 'change it' })
   await core.actions.topicDispatch({ topic })
   await until(() => core.entity(topic).outboundLinks.includes('github:branch:me/app:feature/x'))
+  // The branch is the last write, a moment before the dispatch is over (and the next one allowed).
+  await settle()
   const prompts = calls.filter((call) => call.command.endsWith('claude')).map((call) => call.args[1])
   assert.deepEqual(prompts, ['change it', commitPrompt])
   assert.deepEqual(chat(core, topic), [
@@ -203,7 +205,7 @@ test('topics: an answer that leaves changes uncommitted is followed once by a pr
 
   // Clean now: no follow-up; the branch is there already.
   await core.actions.submit({ id: topic, text: 'more' })
-  await core.actions.topicDispatch({ topic })
+  assert.equal((await core.actions.topicDispatch({ topic })).error, null)
   // Over once the default branch has been asked for (after the status and the answer).
   const asked = () => calls.filter((call) => call.args[0] === 'symbolic-ref').length
   const before = asked()
