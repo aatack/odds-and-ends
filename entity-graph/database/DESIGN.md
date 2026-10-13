@@ -1,10 +1,10 @@
-# graph-store: design
+# egdb (entity-graph database): design
 
-Status: draft 2, for review.
-Draft 2 adds Alexander's decisions of 2026-10-12.
+Status: draft 3, for review.
+Drafts 2 and 3 add Alexander's decisions of 2026-10-12 and 2026-10-13.
 This document is the design.
-The first implementation is at `entity-graph/database/` (Rust crate `egdb`).
-Source analysis: `/workspace/entity-graph-db-analysis.md`.
+The implementation is in this folder (Rust crate `egdb`).
+Source analysis of the old store: not in the repository.
 
 Writing rule:
 
@@ -89,6 +89,9 @@ Later rules (2026-10-12). These rules replace parts of the rules above and of dr
 25. **R25 [RULE]. One roll-up for every read.** Every read can roll up historical events. A read points at the current table most of the time, so it rolls up few events. A read that is not at the head of a branch loads events from both tables. It rolls them up with the same logic. No other logic is necessary.
 26. **R26 [RULE]. Flatten the parent chain first.** Before a read loads events, the store resolves the branch's parent chain into one flat list. The store dedupes branches. Each branch takes the greatest sequence range that is covered. Each branch then appears where it first appeared in the list. (This replaces the earlier C3 rule.)
 27. **R27 [RULE]. Open wins over frozen.** If the flat list has an open range and a frozen range of the same branch, the open range keeps the events after the dedupe. Alexander accepted this.
+28. **R28 [RULE]. Flattening effects are accepted.** Alexander accepted both effects of R26 (2026-10-13):
+    - A branch that the list reaches low and high stays at its first (low) position.
+    - The greatest range spans the gaps between appearances.
 
 ---
 
@@ -228,7 +231,7 @@ Rules:
 
 ## 7. SQL schema (version 1)
 
-This is migration 1 in `egdb/src/schema.rs`.
+This is migration 1 in `src/schema.rs`.
 
 - All tables are `STRICT`.
 - The current and history tables are `WITHOUT ROWID`.
@@ -450,7 +453,7 @@ The choice of source is the only difference between the two paths.
 
 - **B1 still holds.** A frozen entry is a leaf, so it never chains. `fork` and `merge` record the flat list of the source, frozen at the current heads. They record sequence bounds only, not events. Later events on any branch of that chain are above the bounds. A later change to a parent list of that chain has no effect on the frozen list.
 - **Cycles are cut, not refused [CHOSEN].** The expansion does not expand a branch that is already on the current path. Thus a cycle through open entries ends there. Example: A and B pull each other with open ranges. Each one sees the other's events, and its own events win. Frozen entries cannot make a cycle, because they do not chain.
-- **A wide range.** The greatest range spans the gaps between appearances. Example: `2..=2` and `5..=5` give `2..=5`. This is the literal rule. Q16 asks if this is the intent.
+- **A wide range.** The greatest range spans the gaps between appearances. Example: `2..=2` and `5..=5` give `2..=5`. This is an accepted rule (R28).
 
 **View cache.** The store keeps the flat list for each branch in memory.
 
@@ -750,6 +753,7 @@ Resolved from draft 1:
 - **Q5 of draft 1** (link uniqueness): one link for each `(source, destination, type)` (R15).
 - **Q10** (undo scope): R8.
 - **Q12** (callers): standalone. The app does not call it.
+- **Q16** (first appearance and wide ranges): **resolved by R28.**
 - **Q14 of draft 3** (history in frozen reads): **resolved by R25.** All reads use one roll-up. A bounded interval reads current and history.
 - **Q14** (timestamps): yes. They give the default sort (R14). They no longer order events across branches (R20).
 - **Q1 of draft 2** (explicit default, R17): **resolved by R22.** The API keeps `SortOrder::Timestamp`. The store writes it as a float. The database thus has no "default" null: null means removed.
@@ -760,7 +764,6 @@ Resolved from draft 1:
 Still open:
 
 - **Q2. Walk and find** [TBD: Alexander]. Filters, order, depth, cycles and paging.
-- **Q16. First appearance and wide ranges.** "First appeared" is read in stack order, so a branch that appears low and high sits low. Its events then lose to the entries between. The greatest range also spans gaps (I18). Are both correct?
 - **Q3. Interpretations.** Do I2 to I18 match the intent? I2 (open entries chain, frozen entries do not) is the most important.
 - **Q13. Undo after a fork.** A fork or a merge freezes a range, so it blocks undo of earlier batches. Must undo be allowed and the frozen follower lose the events? Or must open forks be used?
 - **Q15. Archived type.** Must `restore_entity` find the old type itself? It would then read history, against R19.
