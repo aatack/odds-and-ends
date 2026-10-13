@@ -147,6 +147,8 @@ export const tools: Tool[] = [
   // On a topic, from its box or its rows: every message since the last dispatch, to Claude at once (before the side panel's Ctrl+Enter).
   // Not while Claude is still answering: then only what is typed goes in, to wait for the next.
   { id: 'topic.dispatch', label: 'Send to Claude', scope: 'list', keys: ['Ctrl+Enter'], enabled: (s) => s.canSubmitAndDispatch(), run: (s) => void s.dispatch() },
+  // Ctrl+Enter on a topic that can't dispatch says why, rather than falling through to the side panel (no label: not an action of its own).
+  { id: 'topic.dispatchRefused', scope: 'list', keys: ['Ctrl+Enter'], enabled: (s) => s.dispatchRefusal() !== null, run: (s) => s.showToast(s.dispatchRefusal()!) },
   { id: 'side.open', label: 'In context', scope: 'app', keys: ['Ctrl+Enter'], run: (s) => s.openSide() },
   { id: 'side.close', label: 'Close side', scope: 'app', keys: [], enabled: (s) => s.get().state.side !== null, run: (s) => s.closeSide() },
   { id: 'checkbox.toggle', label: 'Tick', scope: 'list', keys: [' '], enabled: (s) => s.canToggle(), run: (s) => s.toggle() },

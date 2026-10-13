@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, statSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { link, value, values, type AppEvent } from '../../graph/events.ts'
@@ -276,6 +276,88 @@ export class Claude implements Module {
     const lines = [started ? null : contextLine(session, this.context.lens), notes].filter((line) => line !== null)
     await ask(this.context, session, responseId, lines.length ? `${lines.join('\n')}\n\n${text}` : text)
   }
+
+  /** After a restart, the answers under `sessions` that were cut off (`recover`). */
+  recover(sessions: string[], every = recoverEvery): Promise<void> {
+    return recover(this.context, sessions, every)
+  }
+}
+
+/** How often a cut-off answer's claude, still running on its own, is looked for again. */
+const recoverEvery = 5_000
+/** What a response says when its claude stopped and left no answer. */
+export const interrupted = 'Interrupted: the app stopped before Claude answered'
+
+/**
+ * After a restart, every response under `sessions` still marked `running`
+ * lost the `ask` that would have finished it: its claude was started by the
+ * app before, and its output went nowhere. While that claude still runs (on
+ * its own), it is waited for. Then the answer is read from the session's
+ * transcript, which Claude Code keeps itself; without one, the response
+ * says it was interrupted.
+ */
+export async function recover(context: ModuleContext, sessions: string[], every = recoverEvery): Promise<void> {
+  const cut = sessions.flatMap((session) =>
+    context.lens
+      .children(session)
+      .filter((id) => {
+        const item = context.lens.read(id)
+        return item?.type === 'claude.response' && item.data.running === true
+      })
+      .map((id) => ({ session, id })),
+  )
+  await Promise.all(
+    cut.map(async ({ session, id }) => {
+      while (await claudeRunning(context, session)) await new Promise((resolve) => setTimeout(resolve, every))
+      // The response was made just before its claude started: the transcript's answer is after that.
+      const since = Math.min(...context.owned.read([id]).map((event) => event.timestamp))
+      const data = context.data.get(session)
+      const answer = transcriptAnswer(session, expandHome(String(data.cwd)), since)
+      const at = context.now()
+      context.owned.write([
+        ...values(id, { text: answer ?? interrupted, running: false, error: answer === null ? interrupted : null }, at, author),
+        ...(answer !== null && !data.started ? [value(session, 'started', true, at, author)] : []),
+        value(session, 'runningSince', null, at, author),
+      ])
+    }),
+  )
+}
+
+/** Whether a claude of `session` is running (one the app started before, say): `ps` lists it with the session's id. */
+async function claudeRunning(context: ModuleContext, session: string): Promise<boolean> {
+  const out = await context.run('ps', ['-eo', 'args='], tmpdir()).catch(() => '')
+  return out.split('\n').some((line) => /\bclaude\b/.test(line) && line.includes(session))
+}
+
+/**
+ * The answer a session's transcript ends with, after `since`: its last
+ * message, if that is Claude's and it finished (`end_turn`). Null if there
+ * is none: Claude stopped part way, or never started.
+ */
+function transcriptAnswer(session: string, cwd: string, since: number): string | null {
+  const path = join(projectDir(cwd), `${session}.jsonl`)
+  if (!existsSync(path)) return null
+  type Entry = { type?: string; timestamp?: string; message?: { id?: string; stop_reason?: string; content?: unknown } }
+  const entries = readFileSync(path, 'utf8')
+    .split('\n')
+    .flatMap((line): Entry[] => {
+      try {
+        return [JSON.parse(line) as Entry]
+      } catch {
+        return []
+      }
+    })
+    .filter((entry) => (entry.type === 'user' || entry.type === 'assistant') && Date.parse(entry.timestamp ?? '') >= since)
+  const last = entries.at(-1)
+  if (last?.type !== 'assistant' || last.message?.stop_reason !== 'end_turn') return null
+  // One message may be written as several entries, a block each.
+  const text = entries
+    .filter((entry) => entry.type === 'assistant' && entry.message?.id === last.message?.id)
+    .flatMap((entry) => (Array.isArray(entry.message?.content) ? (entry.message.content as { type?: string; text?: string }[]) : []))
+    .filter((block) => block.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text)
+    .join('')
+  return text || null
 }
 
 /**

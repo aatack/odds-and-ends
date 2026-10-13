@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { Core } from '../../core.ts'
 import { memoryCore } from '../../testing.ts'
+import { interrupted } from '../claude/claude.ts'
 import { commitPrompt } from './topics.ts'
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
@@ -279,4 +281,67 @@ test('topics: resolving takes a topic out of the list, and removes its worktree 
   assert.deepEqual((await core.actions.topicResolveCheck({ topic: clean })).warnings, [])
   assert.equal((await core.actions.topicResolve({ topic: clean, force: false })).error, null)
   assert.deepEqual(removes().at(-1), ['worktree', 'remove', tree])
+})
+
+test('topics: after a restart, an answer cut off is waited for while its claude runs, then read from its transcript; without one it says it was interrupted', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'recover-'))
+  const owned = join(dir, 'owned.sqlite')
+  const home = process.env.CLAUDE_CONFIG_DIR
+  process.env.CLAUDE_CONFIG_DIR = join(dir, 'claude-home')
+  try {
+    // The app stops while Claude answers: its claude never comes back to it.
+    const before = new Core({ owned, cache: ':memory:', run: () => new Promise<string>(() => {}) })
+    await before.actions.topicCreate({ name: 'Answered' })
+    await before.actions.topicCreate({ name: 'Lost' })
+    const named = (name: string) => before.entity('topics').outboundLinks.find((id) => before.item(id)!.data.text === name)!
+    const [answered, lost] = [named('Answered'), named('Lost')]
+    for (const topic of [answered, lost]) {
+      await before.actions.submit({ id: topic, text: 'go' })
+      assert.equal((await before.actions.topicDispatch({ topic })).error, null)
+    }
+    const responseOf = (core: Core, topic: string) => core.entity(topic).outboundLinks.find((id) => core.item(id)!.type === 'claude.response')!
+
+    // Claude Code wrote the answer to its transcript, in the topic's directory's project folder.
+    const cwd = String(before.item(answered)!.data.cwd)
+    const project = join(process.env.CLAUDE_CONFIG_DIR, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'))
+    mkdirSync(project, { recursive: true })
+    const at = (ms: number) => new Date(Date.now() + ms).toISOString()
+    const entries = [
+      { type: 'user', timestamp: at(1), message: { content: 'go' } },
+      { type: 'assistant', timestamp: at(2), message: { id: 'm1', stop_reason: 'tool_use', content: [{ type: 'tool_use' }] } },
+      { type: 'user', timestamp: at(3), message: { content: [{ type: 'tool_result' }] } },
+      { type: 'assistant', timestamp: at(4), message: { id: 'm2', stop_reason: 'end_turn', content: [{ type: 'text', text: 'All ' }] } },
+      { type: 'assistant', timestamp: at(4), message: { id: 'm2', stop_reason: 'end_turn', content: [{ type: 'text', text: 'done.' }] } },
+      { type: 'cost-state' },
+    ]
+    writeFileSync(join(project, `${answered}.jsonl`), entries.map((entry) => JSON.stringify(entry)).join('\n'))
+
+    // Started again: the first answer's claude is still running for a moment.
+    let looks = 0
+    const after = new Core({
+      owned,
+      cache: ':memory:',
+      run: async (command) => {
+        if (command !== 'ps') throw new Error(`unexpected ${command}`)
+        looks += 1
+        return looks <= 2 ? `/usr/bin/claude -p go --resume ${answered}\n` : 'bash\n'
+      },
+    })
+    await after.recoverAnswers(1)
+    assert.ok(looks > 2)
+    const done = after.item(responseOf(after, answered))!.data
+    assert.equal(done.text, 'All done.')
+    assert.equal(done.running, false)
+    assert.equal(done.error, null)
+    assert.equal(after.item(answered)!.data.runningSince, null)
+    const cut = after.item(responseOf(after, lost))!.data
+    assert.equal(cut.running, false)
+    assert.equal(cut.error, interrupted)
+    // Neither topic is answering now: it can be sent to again.
+    await after.actions.submit({ id: lost, text: 'again' })
+    assert.equal((await after.actions.topicDispatch({ topic: lost })).error, null)
+  } finally {
+    if (home === undefined) delete process.env.CLAUDE_CONFIG_DIR
+    else process.env.CLAUDE_CONFIG_DIR = home
+  }
 })
