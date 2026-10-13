@@ -4,7 +4,7 @@ A standalone, event-sourced store of entities, values and links, with branches.
 It runs on SQLite (`rusqlite` with the `bundled` feature), so a store is one file and needs no server.
 The TypeScript app does not call it.
 
-The design is in [`../../graph-store/DESIGN.md`](../../graph-store/DESIGN.md).
+The design is in [`DESIGN.md`](DESIGN.md).
 
 ## Model in brief
 
