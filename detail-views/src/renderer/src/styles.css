@@ -1650,13 +1650,23 @@ mark {
   padding-right: 4px;
 }
 
+/* A flat chat reads in a column no wider than is comfortable (840px), in the middle of a wider window; the box below keeps to it. */
 .chat-page.flat .bubbles-inner {
   gap: 0;
   padding-right: 18px;
+  width: 100%;
+  max-width: 840px;
+  margin: 0 auto;
 }
 
 .chat-page.flat .chat-main > :not(.bubbles):not(.chat-corner) {
-  margin-right: 18px;
+  margin-left: max(0px, (100% - 840px) / 2);
+  margin-right: max(18px, (100% - 840px) / 2);
+}
+
+/* Claude's bubbles take the column's whole width when they need it. */
+.chat-page.flat .bubble {
+  max-width: none;
 }
 
 .chat-page.flat .chat-corner {
