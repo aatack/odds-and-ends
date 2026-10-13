@@ -589,6 +589,30 @@ export class Session {
     })
   }
 
+  /**
+   * `.`: the next topic down the list (round from the open one, or from the
+   * top) where Claude isn't working, opened. Null when there is none.
+   */
+  private nextIdleTopic(): string | null {
+    const lens = lensOf(this.cache.source(this.cache.get()))
+    const topics = this.snapshot.topics
+    const at = topics.findIndex((topic) => topic.id === S.focused(this.state))
+    for (let step = 1; step <= topics.length; step++) {
+      const topic = topics[(at + step) % topics.length]
+      if (topic.id !== S.focused(this.state) && !answering(topic.id, lens)) return topic.id
+    }
+    return null
+  }
+
+  canNextIdleTopic(): boolean {
+    return this.topicsMode && this.state.window === null && this.nextIdleTopic() !== null
+  }
+
+  nextIdle(): void {
+    const id = this.nextIdleTopic()
+    if (id) this.openTopic(id)
+  }
+
   /** Whether a paste outside any text box goes into a topic: one is on screen, its box closed. */
   canPaste(): boolean {
     return this.onTopic() && !this.state.composing
