@@ -40,6 +40,8 @@ async function headless(options: Parameters<typeof memoryCore>[0] = {}, ui: { to
     topicDispatch: (topic) => a.topicDispatch({ topic }),
     topicPaste: (topic, text) => a.topicPaste({ topic, text }),
     topicAttach: (topic, file) => a.topicAttach({ topic, file }),
+    topicResolveCheck: (topic) => a.topicResolveCheck({ topic }),
+    topicResolve: (topic, force) => a.topicResolve({ topic, force }),
     visit: async (id) => a.visit({ id }),
     onChange: (listener) => core.onChange(listener),
     openExternal: () => {},
@@ -68,7 +70,7 @@ async function headless(options: Parameters<typeof memoryCore>[0] = {}, ui: { to
     session.commitEdit()
     await settle()
   }
-  return { core, session, stop, settle, screen, select, type, copied }
+  return { core, session, stop, settle, screen, select, type, copied, api }
 }
 
 test('a view is a tree to navigate and edit, from the keyboard, with nothing on screen', async () => {
@@ -734,6 +736,46 @@ test('topics mode: `.` opens the next topic down the list where Claude isn’t w
   assert.equal(open(), 'a')
   next.run(session, null)
   assert.equal(open(), 'b')
+  } finally {
+    stop()
+  }
+})
+
+test('topics mode: Resolve takes the open topic out of the list and leaves the window empty; with work to lose, a form asks first', async () => {
+  const { session, stop, settle, api } = await headless({}, { topics: true })
+  try {
+  await settle()
+  session.setTopicName('Done')
+  session.createTopic()
+  await settle()
+  const [topic] = session.get().topics
+  assert.equal(session.canResolveTopic(), true)
+  session.resolveTopic()
+  await settle()
+  assert.deepEqual(session.get().topics, [])
+  assert.equal(session.get().view?.root?.type, 'topics.home')
+
+  // With work to lose (a check that says so): the form, then Enter resolves anyway.
+  session.setTopicName('Busy')
+  session.createTopic()
+  await settle()
+  const [busy] = session.get().topics
+  const check = api.topicResolveCheck
+  const forced: boolean[] = []
+  const resolve = api.topicResolve
+  api.topicResolveCheck = async () => ({ warnings: ['1 commit not pushed'], error: null })
+  api.topicResolve = (id, force) => (forced.push(force), resolve(id, force))
+  session.resolveTopic()
+  await settle()
+  assert.deepEqual(session.get().state.dialog, { kind: 'resolve', topic: busy.id, warnings: ['1 commit not pushed'] })
+  const enter = tools.find((tool) => tool.keys.includes('Enter') && tool.scope !== 'input' && (tool.enabled?.(session, null) ?? true))!
+  assert.equal(enter.id, 'confirm.submit')
+  enter.run(session, null)
+  await settle()
+  assert.deepEqual(forced, [true])
+  assert.deepEqual(session.get().topics, [])
+  api.topicResolveCheck = check
+  assert.ok(topic)
   } finally {
     stop()
   }

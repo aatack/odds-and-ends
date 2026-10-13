@@ -70,6 +70,10 @@ export const tools: Tool[] = [
   { id: 'dialog.cancel', scope: 'input', keys: ['Escape'], enabled: (s) => s.hasDialog(), run: (s) => s.cancelDialog() },
   { id: 'composer.leave', scope: 'input', keys: ['Escape'], run: (s) => s.compose(false) },
 
+  // A form with nothing to type in (confirming a resolve): Enter confirms, Escape gives up.
+  { id: 'confirm.submit', scope: 'list', keys: ['Enter'], enabled: (s) => s.hasConfirmDialog(), run: (s) => s.submitDialog() },
+  { id: 'confirm.cancel', scope: 'list', keys: ['Escape'], enabled: (s) => s.hasConfirmDialog(), run: (s) => s.cancelDialog() },
+
   // A chat while its rows have the keys: Tab hands them back to its box.
   // A topic's chat, its box closed: Enter opens it (its rows are not selectable, so Enter adds nothing).
   { id: 'topic.prompt', scope: 'list', keys: ['Enter'], enabled: (s) => s.canReturnToTopicBox(), run: (s) => s.returnToPrompt() },
@@ -135,6 +139,8 @@ export const tools: Tool[] = [
   { id: 'claude.new', label: 'Claude session', scope: 'list', keys: ['K'], run: (s) => s.openClaudeDialog() },
   // Not while typing: the next topic Claude isn't working in.
   { id: 'topic.nextIdle', label: 'Next idle topic', scope: 'list', keys: ['.'], enabled: (s) => s.canNextIdleTopic(), run: (s) => s.nextIdle() },
+  // A button at a topic's top right; no key.
+  { id: 'topic.resolve', label: 'Resolve', scope: 'list', keys: [], enabled: (s) => s.canResolveTopic(), run: (s) => s.resolveTopic() },
   // From anywhere, typing too: a form for the new topic's name.
   { id: 'topic.new', label: 'New topic', scope: 'app', keys: ['Ctrl+.'], enabled: (s) => s.canOpenTopicDialog(), run: (s) => s.openTopicDialog() },
   { id: 'session.send', label: 'To session', scope: 'list', keys: ['k'], enabled: (s) => s.canSendToSession(), run: (s) => s.sendToSession() },

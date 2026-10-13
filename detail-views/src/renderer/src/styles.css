@@ -1592,6 +1592,16 @@ mark {
   top: 0;
   right: 0;
   z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* What resolving a topic would lose, listed for me to confirm. */
+.resolve-warnings {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink-soft);
 }
 
 .topic-context {

@@ -1,11 +1,17 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { memoryCore } from '../../testing.ts'
+import { commitPrompt } from './topics.ts'
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
+
+/** Waits (up to 2 s) until `done` holds: for chains of git and claude calls longer than a settle. */
+async function until(done: () => boolean): Promise<void> {
+  for (let waited = 0; !done() && waited < 2000; waited += 10) await new Promise((resolve) => setTimeout(resolve, 10))
+}
 
 /** claude, answering each prompt with what it was sent; every call recorded. */
 function fakeClaude(calls: { args: string[]; cwd: string }[]) {
@@ -152,4 +158,123 @@ test('topics: a paste is what it is: a PR, Slack message or branch link is that 
       `[File: ${String(file.data.path)}]`,
     ].join('\n\n'),
   )
+})
+
+/** claude, and a git answering from `state`; every call recorded. */
+function fakeRepo(state: { dirty: string[]; branch: string; top?: string; listed?: string[]; unpushed?: string; unmerged?: string }, calls: { command: string; args: string[]; cwd: string }[]) {
+  return async (command: string, args: string[], cwd: string) => {
+    calls.push({ command, args, cwd })
+    if (command.endsWith('claude')) return JSON.stringify({ result: 'ok', is_error: false })
+    const verb = args.join(' ')
+    if (verb === 'status --porcelain') return state.dirty.shift() ?? ''
+    if (verb === 'rev-parse --abbrev-ref HEAD') return `${state.branch}\n`
+    if (verb === 'rev-parse --show-toplevel') return `${state.top ?? cwd}\n`
+    if (verb === 'symbolic-ref --short refs/remotes/origin/HEAD') return 'origin/main\n'
+    if (verb === 'remote get-url origin') return 'git@github.com:me/app.git\n'
+    if (verb === 'worktree list --porcelain') return (state.listed ?? []).map((path) => `worktree ${path}\nHEAD abc\n`).join('\n')
+    if (verb === 'log --oneline HEAD --not --remotes') return state.unpushed ?? ''
+    if (verb === 'log --oneline origin/main..HEAD') return state.unmerged ?? ''
+    if (args[0] === 'worktree' && args[1] === 'remove') return ''
+    throw new Error(`unexpected ${command} ${verb}`)
+  }
+}
+
+test('topics: an answer that leaves changes uncommitted is followed once by a prompt to commit them; the branch checked out goes into the chat, once', async () => {
+  const calls: { command: string; args: string[]; cwd: string }[] = []
+  const state = { dirty: [' M app.ts\n', ''], branch: 'feature/x' }
+  const core = memoryCore({ run: fakeRepo(state, calls) })
+  await core.actions.topicCreate({ name: 'Work' })
+  const [topic] = core.entity('topics').outboundLinks
+  await core.actions.submit({ id: topic, text: 'change it' })
+  await core.actions.topicDispatch({ topic })
+  await until(() => core.entity(topic).outboundLinks.includes('github:branch:me/app:feature/x'))
+  const prompts = calls.filter((call) => call.command.endsWith('claude')).map((call) => call.args[1])
+  assert.deepEqual(prompts, ['change it', commitPrompt])
+  assert.deepEqual(chat(core, topic), [
+    ['note', 'change it'],
+    ['claude.response', 'ok'],
+    ['note', commitPrompt],
+    ['claude.response', 'ok'],
+    ['github.branch', 'undefined'],
+  ])
+  assert.equal(core.entity(topic).outboundLinks.at(-1), 'github:branch:me/app:feature/x')
+  assert.equal(core.item(topic)!.data.branch, 'feature/x')
+  assert.equal(core.item(topic)!.data.github, 'me/app')
+
+  // Clean now: no follow-up; the branch is there already.
+  await core.actions.submit({ id: topic, text: 'more' })
+  await core.actions.topicDispatch({ topic })
+  // Over once the default branch has been asked for (after the status and the answer).
+  const asked = () => calls.filter((call) => call.args[0] === 'symbolic-ref').length
+  const before = asked()
+  await until(() => asked() > before)
+  await settle()
+  assert.deepEqual(chat(core, topic).slice(5).map(([type]) => type), ['note', 'claude.response'])
+
+  // The default branch is not added.
+  state.branch = 'main'
+  const other = (await core.actions.topicCreate({ name: 'Main' })).events.find((event) => event.type === 'link')!
+  const id = other.type === 'link' ? other.destinationId : ''
+  await core.actions.submit({ id, text: 'hi' })
+  const seen = asked()
+  await core.actions.topicDispatch({ topic: id })
+  await until(() => asked() > seen)
+  await settle()
+  assert.deepEqual(chat(core, id).map(([type]) => type), ['note', 'claude.response'])
+})
+
+test('topics: resolving takes a topic out of the list, and removes its worktree only when it is provably one, warning first of work that would be lost', async () => {
+  const calls: { command: string; args: string[]; cwd: string }[] = []
+  const dataDir = mkdtempSync(join(tmpdir(), 'topics-data-'))
+  const tree = join(dataDir, 'worktrees', 'app-1234')
+  mkdirSync(tree, { recursive: true })
+  const state = { dirty: [] as string[], branch: 'claude/x', listed: [tree], unpushed: 'abc one\n' }
+  const core = memoryCore({ run: fakeRepo(state, calls), dataDir })
+  const make = async (name: string, fields: Record<string, unknown>) => {
+    const made = (await core.actions.topicCreate({ name })).events.find((event) => event.type === 'link')!
+    const id = made.type === 'link' ? made.destinationId : ''
+    for (const [key, v] of Object.entries(fields)) core.actions.setValue({ id, key, value: v })
+    return id
+  }
+  const removes = () => calls.filter((call) => call.args[0] === 'worktree' && call.args[1] === 'remove').map((call) => call.args)
+
+  // A plain directory: out of the list, the directory untouched.
+  const plain = await make('Plain', { cwd: dataDir })
+  assert.deepEqual((await core.actions.topicResolveCheck({ topic: plain })).warnings, [])
+  assert.equal((await core.actions.topicResolve({ topic: plain, force: false })).error, null)
+  assert.ok(!core.entity('topics').outboundLinks.includes(plain))
+  assert.ok(core.item(plain)!.data.resolved)
+  assert.deepEqual(removes(), [])
+
+  // A worktree outside the app's own worktrees: not provably one, so left alone.
+  const elsewhere = await make('Elsewhere', { cwd: dataDir, worktree: dataDir, repo: '/repo' })
+  assert.equal((await core.actions.topicResolve({ topic: elsewhere, force: true })).error, null)
+  assert.deepEqual(removes(), [])
+
+  // A worktree the repo doesn't list: left alone too.
+  const unlisted = await make('Unlisted', { cwd: tree, worktree: tree, repo: '/repo' })
+  state.listed = []
+  assert.equal((await core.actions.topicResolve({ topic: unlisted, force: true })).error, null)
+  assert.deepEqual(removes(), [])
+
+  // A proven worktree with an unpushed commit: a warning, refused, then forced.
+  state.listed = [tree]
+  const proven = await make('Proven', { cwd: tree, worktree: tree, repo: '/repo' })
+  state.dirty = [' M a.ts\n']
+  assert.deepEqual((await core.actions.topicResolveCheck({ topic: proven })).warnings, [`Uncommitted changes in ${tree}`, '1 commit not pushed'])
+  state.dirty = [' M a.ts\n']
+  assert.match(String((await core.actions.topicResolve({ topic: proven, force: false })).error), /not pushed/)
+  assert.ok(core.entity('topics').outboundLinks.includes(proven))
+  assert.deepEqual(removes(), [])
+  assert.equal((await core.actions.topicResolve({ topic: proven, force: true })).error, null)
+  assert.deepEqual(removes(), [['worktree', 'remove', '--force', tree]])
+  assert.equal(calls.find((call) => call.args[1] === 'remove')!.cwd, '/repo')
+  assert.ok(!core.entity('topics').outboundLinks.includes(proven))
+
+  // Nothing to lose: removed without being forced.
+  const clean = await make('Clean', { cwd: tree, worktree: tree, repo: '/repo' })
+  state.unpushed = ''
+  assert.deepEqual((await core.actions.topicResolveCheck({ topic: clean })).warnings, [])
+  assert.equal((await core.actions.topicResolve({ topic: clean, force: false })).error, null)
+  assert.deepEqual(removes().at(-1), ['worktree', 'remove', tree])
 })

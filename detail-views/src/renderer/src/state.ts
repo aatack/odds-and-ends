@@ -108,8 +108,15 @@ export interface TopicDialog {
   name: string
 }
 
+/** Resolving a topic would lose work: what, for me to confirm. */
+export interface ResolveDialog {
+  kind: 'resolve'
+  topic: string
+  warnings: string[]
+}
+
 /** The form over everything, if one is open. */
-export type Dialog = SessionDialog | TopicDialog
+export type Dialog = SessionDialog | TopicDialog | ResolveDialog
 
 export type PickTool = 'move' | 'link' | 'linkReverse' | 'context'
 

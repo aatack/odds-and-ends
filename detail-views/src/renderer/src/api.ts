@@ -42,6 +42,10 @@ export interface Api {
   topicPaste(topic: string, text: string): Promise<Outcome>
   /** A file pasted into a topic, kept, as an item under it (its content base64). */
   topicAttach(topic: string, file: { name: string; mime: string; data: string }): Promise<Outcome>
+  /** What would be lost resolving a topic, to confirm first. */
+  topicResolveCheck(topic: string): Promise<{ warnings: string[]; error: string | null }>
+  /** Resolves a topic: out of the list, its worktree (only one proved to be) removed; refused with work to lose, unless `force`. */
+  topicResolve(topic: string, force: boolean): Promise<Outcome>
   /** A view of `id` was pushed: Recents moves it to the front. */
   visit(id: string): Promise<void>
   /** Takes my last action off the owned log; returns what came off. */
@@ -104,6 +108,8 @@ export function httpApi(base: string, token: string): Api {
     topicDispatch: (topic) => call('topicDispatch', { topic }),
     topicPaste: (topic, text) => call('topicPaste', { topic, text }),
     topicAttach: (topic, file) => call('topicAttach', { topic, file }),
+    topicResolveCheck: (topic) => call('topicResolveCheck', { topic }),
+    topicResolve: (topic, force) => call('topicResolve', { topic, force }),
     visit: (id) => call('visit', { id }),
     onChange: (listener) => {
       // EventSource reconnects by itself; a reconnect may have missed changes, so it re-reads everything.
@@ -151,6 +157,8 @@ export function electronApi(): Api {
     topicDispatch: (topic) => call('topicDispatch', { topic }),
     topicPaste: (topic, text) => call('topicPaste', { topic, text }),
     topicAttach: (topic, file) => call('topicAttach', { topic, file }),
+    topicResolveCheck: (topic) => call('topicResolveCheck', { topic }),
+    topicResolve: (topic, force) => call('topicResolve', { topic, force }),
     visit: (id) => call('visit', { id }),
     onChange: (listener) => bridge.onChange(listener),
     openExternal: (url) => void bridge.openExternal(url),

@@ -53,7 +53,22 @@ export function TopicDetail(props: OverviewProps) {
       bubble={topicBubble}
       flat
       onDemand
-      corner={props.interactive ? <TopicContext props={props} /> : null}
+      corner={
+        props.interactive ? (
+          <>
+            <TopicContext props={props} />
+            {props.onResolveTopic && (
+              <Button
+                label="Resolve"
+                busy={props.working?.includes('resolve')}
+                busyLabel="Resolving…"
+                disabled={typeof props.entity.data.runningSince === 'number' && 'Claude is answering: wait for it to finish'}
+                onClick={props.onResolveTopic}
+              />
+            )}
+          </>
+        ) : null
+      }
     />
   )
 }
