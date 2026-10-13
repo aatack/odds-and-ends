@@ -9,7 +9,7 @@ import { hotkeyOf } from '../tools.ts'
 import type { OverviewProps, PillProps, RowProps, Tint } from './kindTypes.ts'
 import { Text } from './messages.tsx'
 import { noteClass } from './Notes.tsx'
-import { Button, ClockContext, Composer, HeaderPill, Highlight, ItemContext, KindsContext, SideSlotContext, Status, useEdgeResize } from './primitives.tsx'
+import { Button, ClockContext, Composer, HeaderPill, Highlight, ItemContext, ItemPill, KindsContext, SideSlotContext, Status, useEdgeResize } from './primitives.tsx'
 import { TextBox, ViewPane } from './View.tsx'
 
 /** The Claude mark (src/renderer/src/assets/claude.svg), in Claude's colour. */
@@ -445,6 +445,8 @@ function ChatRow(props: { shown: EntityRow; props: OverviewProps; prompting: boo
     )
   }
   const Row = kinds[entity.type].Row
+  // In a flat chat, anything linked in (a file, a path, a PR, …) is its pill, to peek at and open; messages stay as they read.
+  const asPill = props.flat && !linePlain.has(entity.type)
   return frame(
     <div className="note-line">
       {/* A flat chat's lines are all mine: no mark says so. */}
@@ -453,6 +455,8 @@ function ChatRow(props: { shown: EntityRow; props: OverviewProps; prompting: boo
         {editing ??
           (entity.type === 'note' ? (
             <Text text={text(entity.data)} />
+          ) : asPill ? (
+            <ItemPill id={entity.id} fallback={entity.id} />
           ) : (
             <Row entity={entity} parent={shown.row.parent} above={shown.row.above} onOpen={props.props.onOpen} onImage={props.props.onImage} />
           ))}
@@ -460,6 +464,9 @@ function ChatRow(props: { shown: EntityRow; props: OverviewProps; prompting: boo
     </div>,
   )
 }
+
+/** What a flat chat draws as itself, not as a pill: my messages, Claude's, and Slack's, which read as messages. */
+const linePlain = new Set<string>(['note', 'claude.response', 'slack.message'])
 
 /** Claude's answer in a bubble: how long it has been working, the error in its place, or the answer in full. */
 function Answer(props: { entity: Entity }) {
