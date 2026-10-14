@@ -688,7 +688,7 @@ pub type Follow = HashMap<String, Vec<(String, Direction)>>; // source entity's 
 pub struct WalkNode { pub id: String, pub values: BTreeMap<String, Value> }
 pub struct WalkRow { pub path: Vec<String>, pub node: WalkNode }
 pub struct ReadAhead { pub depth: usize, pub width: usize }             // default 2, 32
-pub struct WalkOptions { pub steps: usize,                              // default 100
+pub struct WalkOptions { pub steps: usize,                              // default 1000
                          pub read_ahead: ReadAhead,
                          pub return_cache: bool,                        // default false
                          pub visited: Option<HashSet<String>> }         // default None

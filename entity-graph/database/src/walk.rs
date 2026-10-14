@@ -52,7 +52,7 @@ pub struct WalkCache {
 /// Options of [`Store::walk`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WalkOptions {
-    /// Most nodes to visit on this page. Default 100.
+    /// Most nodes to visit on this page. Default 1000.
     pub steps: usize,
     pub read_ahead: ReadAhead,
     /// Return the walk's cache in [`Walk::cache`]. Default false.
@@ -66,7 +66,7 @@ pub struct WalkOptions {
 impl Default for WalkOptions {
     fn default() -> Self {
         Self {
-            steps: 100,
+            steps: 1000,
             read_ahead: ReadAhead::default(),
             return_cache: false,
             visited: None,
