@@ -95,6 +95,27 @@ impl Store {
             .pragma_query_value(None, "user_version", |r| r.get(0))?)
     }
 
+    /// Set the SQLite page cache size for this connection, in KiB.
+    /// SQLite's default is 2000 KiB. For benchmarks and memory-tight hosts.
+    pub fn set_cache_size_kib(&self, kib: i64) -> Result<()> {
+        self.conn.pragma_update(None, "cache_size", -kib.max(1))?;
+        Ok(())
+    }
+
+    /// Set `PRAGMA mmap_size` in bytes (0 turns memory-mapped I/O off).
+    pub fn set_mmap_size(&self, bytes: i64) -> Result<()> {
+        self.conn
+            .pragma_update_and_check(None, "mmap_size", bytes, |_| Ok(()))?;
+        Ok(())
+    }
+
+    /// Copy all WAL content into the main file and truncate the WAL.
+    pub fn checkpoint(&self) -> Result<()> {
+        self.conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
+        Ok(())
+    }
+
     // --- Branches -------------------------------------------------------
 
     /// Create a branch with an explicit parent list.
