@@ -199,7 +199,7 @@ export class Topics implements Module {
         ? path.data.cwd === cwd
           ? []
           : // The newest path: the topic moves there, its conversation (if started) with it, so the next prompt resumes it.
-            values(topic, { ...placeOf(path.data), started: Boolean(data.started) && carryTranscript(topic, String(path.data.cwd)) }, at, claudeAuthor)
+            values(topic, { ...placeOf(path.data), started: carryTranscript(topic, String(path.data.cwd)) }, at, claudeAuthor)
         : typeof cwd === 'string' && cwd
           ? []
           : [value(topic, 'cwd', mkdtempSync(join(tmpdir(), 'claude-')), at, claudeAuthor)]),

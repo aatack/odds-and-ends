@@ -60,6 +60,15 @@ function projectDir(cwd: string): string {
  * (it resumes only sessions of the directory it runs in). False when there is
  * no transcript to take: the session then starts afresh there.
  */
+/**
+ * Whether Claude Code has a transcript of `session` where it runs from `cwd`:
+ * then the session exists, and can only be resumed (`--resume`), even if no
+ * answer of it ever came back (Claude was stopped part way, say).
+ */
+export function hasTranscript(session: string, cwd: string): boolean {
+  return existsSync(join(projectDir(cwd), `${session}.jsonl`))
+}
+
 export function carryTranscript(session: string, cwd: string): boolean {
   const projects = join(claudeHome(), 'projects')
   const file = `${session}.jsonl`
@@ -173,8 +182,8 @@ export class Claude implements Module {
     const requested = this.directory(cwd)
     if (!requested) throw new Error('No directory given')
     const place = await this.place(requested, worktree, String(data.text ?? 'session'), session)
-    // Claude Code resumes a session only from its own directory: its transcript goes too.
-    const started = Boolean(data.started) && carryTranscript(session, place.cwd)
+    // Claude Code resumes a session only from its own directory: its transcript goes too, whenever there is one.
+    const started = carryTranscript(session, place.cwd)
     const events = values(session, { ...place, started }, this.context.now(), me)
     this.context.owned.write(events)
     await this.remember(requested)
@@ -370,7 +379,8 @@ export async function ask(context: ModuleContext, session: string, responseId: s
   const data = context.data.get(session)
   const cwd = expandHome(String(data.cwd))
   const mode = String(data.permissionMode ?? defaultPermissionMode)
-  const started = Boolean(data.started)
+  // Its transcript, not only an answer that came back, says it has started: a claude stopped part way leaves one, and it refuses a new session of the same id.
+  const started = Boolean(data.started) || hasTranscript(session, cwd)
   const since = context.now()
   context.owned.write([value(session, 'runningSince', since, since, author)])
   const args = [
@@ -411,6 +421,8 @@ export async function ask(context: ModuleContext, session: string, responseId: s
     const at = context.now()
     context.owned.write([
       ...values(responseId, { text: failed, running: false, error: failed }, at, author),
+      // Stopped part way, it may still have begun the session: the next prompt resumes it.
+      ...(!started && hasTranscript(session, cwd) ? [value(session, 'started', true, at, author)] : []),
       value(session, 'runningSince', null, at, author),
     ])
   }

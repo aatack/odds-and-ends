@@ -53,7 +53,7 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 - **Items are owned.** Sessions, prompts and responses go in the owned store. They do not go in the cache store, because the cache store is cleared each week.
 - **Claude writes as `claude`.** Undo (Ctrl+Z) removes only my own edits (author `me`). Thus, undo does not remove an answer.
 - **One prompt at a time for each session.** Prompts wait in sequence, in the order that I write them.
-- **First prompt, then resume.** The first prompt uses `--session-id <ID>`. Each prompt after it uses `--resume <ID>`. The session item keeps `started: true` after the first answer.
+- **First prompt, then resume.** The first prompt uses `--session-id <ID>`. Each prompt after it uses `--resume <ID>`. The session item keeps `started: true` after the first answer. A prompt also resumes when Claude Code already has a transcript of the session where it runs (`hasTranscript`), even with no answer back: a claude stopped part way leaves one, and Claude refuses a second session with the same ID ("Session ID … is already in use"). A failed prompt that left a transcript sets `started` too. Moving a session's directory carries its transcript whenever there is one.
 - **Worktree location.** `<app data directory>/worktrees/<repo>-<first 8 characters of ID>`. The app data directory is `~/.config/detail-views`. It is not in a repo.
 - **Branch name.** `claude/<name as a slug>-<first 8 characters of ID>`, made from the remote's default branch (`origin/HEAD`, else `master`), fetched just before. The local checkout is not changed. If the fetch fails, the session is not made.
 - **Temporary directory.** `mkdtemp(<system temp>/claude-…)`.

@@ -231,3 +231,48 @@ test('claude: the GitHub repo of a remote, whichever way its URL is written', ()
   assert.equal(githubRepo('https://github.com/me/app\n'), 'me/app')
   assert.equal(githubRepo('git@gitlab.com:me/app.git'), null)
 })
+
+test('claude: a session stopped part way (its transcript there, no answer back) is resumed, not started again with its id', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'claude-home-'))
+  const cwd = mkdtempSync(join(tmpdir(), 'claude-cwd-'))
+  const previous = process.env.CLAUDE_CONFIG_DIR
+  process.env.CLAUDE_CONFIG_DIR = home
+  try {
+    const calls: string[][] = []
+    let fail = true
+    const run = async (command: string, args: string[]) => {
+      // Not a git repo: only claude is answered.
+      if (!command.endsWith('claude')) throw new Error('not a repo')
+      calls.push(args)
+      if (fail) {
+        // Killed part way: Claude Code has written the session's transcript, and no answer comes back.
+        const project = join(home, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'))
+        mkdirSync(project, { recursive: true })
+        writeFileSync(join(project, `${String(args[args.indexOf('--session-id') + 1])}.jsonl`), '{}\n')
+        throw new Error('killed')
+      }
+      return JSON.stringify({ result: 'ok', is_error: false })
+    }
+    const core = memoryCore({ run })
+    await core.actions.claudeCreate({ name: 'long', cwd, worktree: false })
+    const [session] = core.entity('claude').outboundLinks
+    core.actions.claudePrompt({ session, text: 'go' })
+    await settle()
+    assert.ok(calls[0].includes('--session-id'))
+    // The failure saw the transcript: started.
+    assert.equal(core.item(session)!.data.started, true)
+    fail = false
+    core.actions.claudePrompt({ session, text: 'again' })
+    await settle()
+    assert.deepEqual(calls[1].slice(calls[1].indexOf('--resume'), calls[1].indexOf('--resume') + 2), ['--resume', session])
+
+    // Even with `started` unset (as before this was recorded), the transcript alone means resume.
+    core.actions.setValue({ id: session, key: 'started', value: false })
+    core.actions.claudePrompt({ session, text: 'once more' })
+    await settle()
+    assert.ok(calls[2].includes('--resume') && !calls[2].includes('--session-id'))
+  } finally {
+    if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR
+    else process.env.CLAUDE_CONFIG_DIR = previous
+  }
+})
