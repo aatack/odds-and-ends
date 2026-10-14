@@ -8,7 +8,7 @@ import { link, values } from '../../graph/events.ts'
 import { fakeGh, fakeSlack, memoryCore } from '../../testing.ts'
 import { interrupted } from '../claude/claude.ts'
 import { commitPrompt } from './topics.ts'
-import { prBackReasons, sendTargets, waitCandidates, waiting, waitPollEvery, waitsOf } from './view.ts'
+import { prBackReasons, sendTargets, snoozeLength, waitCandidates, waiting, waitPollEvery, waitsOf } from './view.ts'
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
 
@@ -639,6 +639,27 @@ test('topics: a topic made from another goes into its chat; a topic can wait on 
   assert.deepEqual(waitCandidates(release, waitsOf(core.item(release)!.data)[0], core.lens()), [])
   await core.actions.topicUnwait({ topic: release, on: fix })
   assert.equal(core.item(release)!.data.wait ?? null, null)
+})
+
+test('topics: a snooze puts a topic down until its time, beside its other waits, and one replaces another', async () => {
+  const core = memoryCore({ now: () => 250_000 })
+  await core.actions.topicCreate({ name: 'Later' })
+  const [topic] = core.entity('topics').outboundLinks
+  assert.equal(snoozeLength('6h'), 6 * 3_600_000)
+  assert.equal(snoozeLength(' 2D '), 2 * 86_400_000)
+  assert.equal(snoozeLength('30m'), 1_800_000)
+  for (const bad of ['', '6', 'h', '0h', 'soon', '6h2']) assert.equal(snoozeLength(bad), null)
+
+  assert.match(String((await core.actions.topicSnooze({ topic, until: 200_000 })).error), /future/)
+  assert.equal((await core.actions.topicSnooze({ topic, until: 400_000 })).error, null)
+  assert.equal((await core.actions.topicSnooze({ topic, until: 500_000 })).error, null)
+  assert.deepEqual(waitsOf(core.item(topic)!.data), [{ until: 500_000, since: 250_000 }])
+  assert.equal(waiting(topic, core.lens(), 499_999), true)
+  assert.equal(waiting(topic, core.lens(), 500_000), false)
+  // Nothing of its own to load.
+  assert.equal(waitPollEvery(waitsOf(core.item(topic)!.data)[0], 1000), null)
+  await core.actions.topicUnwait({ topic, on: 'snooze' })
+  assert.equal(core.item(topic)!.data.wait ?? null, null)
 })
 
 test('topics: a wait on someone else\'s PR is back only while it wants my review (not a draft), or once merged or closed; on mine, while I have something to do', () => {

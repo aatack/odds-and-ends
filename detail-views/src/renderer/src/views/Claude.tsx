@@ -304,6 +304,8 @@ export function ChatPage(page: {
   above?: ReactNode
   /** The box sends somewhere outside the app: tinted as a warning, with where on its right. */
   outward?: ReactNode
+  /** At the box's right, inside it (a topic's snooze). */
+  boxEnd?: ReactNode
   /** Beside a row, on its right, shown while it is hovered (a Slack message's waits). */
   aside?: (row: EntityRow['row']) => ReactNode
 }) {
@@ -385,6 +387,7 @@ export function ChatPage(page: {
             onCompose={props.onCompose}
           />
           {page.outward && <div className="chat-box-where">{page.outward}</div>}
+          {page.boxEnd && <div className="chat-box-end">{page.boxEnd}</div>}
         </div>
       </div>
       {page.side}

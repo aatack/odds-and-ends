@@ -86,25 +86,31 @@ export interface Wait {
   topic?: string
   /** A PR: back once it needs me (`prBack`), merged or closed. */
   pr?: string
+  /** A snooze: back at this time (Unix ms). A topic has one at most (`snooze`). */
+  until?: number
   since: number
   dismissed?: string[]
 }
 
-/** What a wait is on: its Slack conversation or thread, or its topic. */
-export const waitOn = (wait: Wait): string => wait.slack ?? wait.topic ?? wait.pr ?? ''
+/** What a snooze is on, as `waitOn` names it: a topic has one at most. */
+export const snooze = 'snooze'
+
+/** What a wait is on: its Slack conversation or thread, its topic, its PR, or `snooze`. */
+export const waitOn = (wait: Wait): string => wait.slack ?? wait.topic ?? wait.pr ?? (wait.until !== undefined ? snooze : '')
 
 /** A topic's waits, as kept on it (anything malformed dropped). */
 export function waitsOf(data: Record<string, unknown>): Wait[] {
   if (!Array.isArray(data.wait)) return []
-  return data.wait.filter((wait): wait is Wait => (typeof wait?.slack === 'string' || typeof wait?.topic === 'string' || typeof wait?.pr === 'string') && typeof wait.since === 'number')
+  return data.wait.filter((wait): wait is Wait => (typeof wait?.slack === 'string' || typeof wait?.topic === 'string' || typeof wait?.pr === 'string' || typeof wait?.until === 'number') && typeof wait.since === 'number')
 }
 
 /**
  * Whether a wait is back: a Slack one when something came into it
  * (`waitCandidates`), a topic one once that topic is resolved, a PR one
- * once it needs me (`prBack`).
+ * once it needs me (`prBack`), a snooze once its time has come.
  */
-export function waitReturned(topic: string, wait: Wait, lens: Lens): boolean {
+export function waitReturned(topic: string, wait: Wait, lens: Lens, now: number = Date.now()): boolean {
+  if (wait.until !== undefined) return now >= wait.until
   if (wait.topic) return Boolean(lens.read(wait.topic)?.data.resolved)
   if (wait.pr) return prBack(wait.pr, lens).length > 0
   return waitCandidates(topic, wait, lens).length > 0
@@ -190,9 +196,19 @@ export function waitCandidates(topic: string, wait: Wait, lens: Lens): string[] 
  * nothing has come into any of them. Once anything has, it is up again; it
  * stays waiting until I take the wait away.
  */
-export function waiting(topic: string, lens: Lens): boolean {
+export function waiting(topic: string, lens: Lens, now: number = Date.now()): boolean {
   const waits = waitsOf(lens.read(topic)?.data ?? {})
-  return waits.length > 0 && waits.every((wait) => !waitReturned(topic, wait, lens))
+  return waits.length > 0 && waits.every((wait) => !waitReturned(topic, wait, lens, now))
+}
+
+const snoozeUnits: Record<string, number> = { m: minute, h: hour, d: 24 * hour, w: 7 * 24 * hour }
+
+/** How long a snooze typed as `30m`, `6h`, `2d` or `1w` lasts, in ms; null for anything else. */
+export function snoozeLength(text: string): number | null {
+  const match = /^\s*(\d+(?:\.\d+)?)\s*([mhdw])\s*$/i.exec(text)
+  if (!match) return null
+  const length = Number(match[1]) * snoozeUnits[match[2].toLowerCase()]
+  return length > 0 ? length : null
 }
 
 /**

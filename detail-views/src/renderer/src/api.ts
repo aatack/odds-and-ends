@@ -56,6 +56,8 @@ export interface Api {
   /** Puts a topic down until something comes into each of `on` (Slack conversations or threads), from now. */
   topicWait(topic: string, on: string[]): Promise<Outcome>
   topicUnwait(topic: string, on: string): Promise<Outcome>
+  /** Puts a topic down until `until` (Unix ms). */
+  topicSnooze(topic: string, until: number): Promise<Outcome>
   /** Passes over a message that came into a topic's wait on `on`. */
   topicDismiss(topic: string, on: string, message: string): Promise<Outcome>
   /**
@@ -135,6 +137,7 @@ export function httpApi(base: string, token: string): Api {
     topicPush: (topic) => call('topicPush', { topic }),
     topicWait: (topic, on) => call('topicWait', { topic, on }),
     topicUnwait: (topic, on) => call('topicUnwait', { topic, on }),
+    topicSnooze: (topic, until) => call('topicSnooze', { topic, until }),
     topicDismiss: (topic, on, message) => call('topicDismiss', { topic, on, message }),
     // Slack is written to only from the desktop window.
     topicSlackSend: async () => ({ events: [], error: 'Slack can only be written to from the desktop app' }),
@@ -193,6 +196,7 @@ export function electronApi(): Api {
     topicPush: (topic) => call('topicPush', { topic }),
     topicWait: (topic, on) => call('topicWait', { topic, on }),
     topicUnwait: (topic, on) => call('topicUnwait', { topic, on }),
+    topicSnooze: (topic, until) => call('topicSnooze', { topic, until }),
     topicDismiss: (topic, on, message) => call('topicDismiss', { topic, on, message }),
     // Only straight after a real key press or click (a script's events give no activation), and on its own IPC channel.
     topicSlackSend: async (topic, on, text) =>

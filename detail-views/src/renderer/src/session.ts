@@ -2,7 +2,7 @@ import { EntityCache, type CacheState } from '../../core/graph/cache.ts'
 import { findInContext, foreignOf, itemOf, lensOf, moduleInfos, viewOf } from '../../core/present.ts'
 import { activity } from '../../core/modules/slack/view.ts'
 import { byMade, claudeIds } from '../../core/modules/claude/view.ts'
-import { answering, sendTargets, topicsIds, unsent, waitCandidates, waiting, waitsOf, type SendTarget, type Wait } from '../../core/modules/topics/view.ts'
+import { answering, sendTargets, snoozeLength, topicsIds, unsent, waitCandidates, waiting, waitsOf, type SendTarget, type Wait } from '../../core/modules/topics/view.ts'
 import { entityScheme, type Entity, type ModuleInfo, type NoteValues, type Outcome, type View, type ViewRow } from '../../core/types.ts'
 import type { Api } from './api.ts'
 import type { Environment } from './environment.ts'
@@ -149,7 +149,14 @@ export class Session {
     this.scheduleDerive()
     const stopChanges = this.api.onChange((changed) => this.cache.invalidate(changed))
     const revisit = setInterval(() => this.cache.revisit(), revisitEvery)
-    const clock = setInterval(() => this.publish({ ...this.snapshot, now: Date.now() }), 1000)
+    const clock = setInterval(() => {
+      // A snooze that has just ended brings its topic back: the waits are worked out again.
+      if (this.snoozeEnds !== null && Date.now() >= this.snoozeEnds) {
+        this.snoozeEnded = true
+        this.scheduleDerive()
+      }
+      this.publish({ ...this.snapshot, now: Date.now() })
+    }, 1000)
     return () => {
       stopCache()
       stopChanges()
@@ -271,9 +278,16 @@ export class Session {
             }
           })()
     // Waits and where a topic's box sends are read off the cache: only worked out again when it, or the list, changed.
-    const sameCache = this.itemsFrom === cache && sameTopics
+    // A snooze ending changes them too, with no change to the cache.
+    const sameCache = this.itemsFrom === cache && sameTopics && !this.snoozeEnded
+    this.snoozeEnded = false
     const lens = sameCache ? null : lensOf(this.cache.source(cache))
-    const waitingNow = lens ? topics.filter((topic) => waiting(topic.id, lens)).map((topic) => topic.id) : previous.waiting
+    const now = Date.now()
+    const waitingNow = lens ? topics.filter((topic) => waiting(topic.id, lens, now)).map((topic) => topic.id) : previous.waiting
+    if (lens) {
+      const ends = topics.flatMap((topic) => waitsOf(topic.data).flatMap((wait) => (wait.until !== undefined && wait.until > now ? [wait.until] : [])))
+      this.snoozeEnds = ends.length ? Math.min(...ends) : null
+    }
     const sameWaiting = waitingNow.length === previous.waiting.length && waitingNow.every((id, at) => id === previous.waiting[at])
     const onTopic = this.topicsMode && view.root?.type === 'topic'
     const sameTopic = sameCache && root === S.focused(previous.state)
@@ -298,6 +312,9 @@ export class Session {
   }
 
   private itemsFrom: CacheState | null = null
+  /** When the next snooze of a topic ends, if one will; and whether one has, since the waits were last worked out. */
+  private snoozeEnds: number | null = null
+  private snoozeEnded = false
   private lastFilter: { view: View; find: string | null; filtered: View } | null = null
 
   /** A view under its find, remembered, so a cursor move doesn't filter it again. */
@@ -588,6 +605,16 @@ export class Session {
     if (dialog.kind === 'resolve') {
       this.update(S.setDialog(this.state, null))
       this.resolve(dialog.topic, true)
+      return
+    }
+    if (dialog.kind === 'snooze') {
+      const length = snoozeLength(dialog.length)
+      if (length === null) return
+      this.update(S.setDialog(this.state, null))
+      void this.working(dialog.topic, 'snooze', () => this.api.topicSnooze(dialog.topic, Date.now() + length)).then((outcome) => {
+        this.settle(dialog.topic, outcome)
+        if (outcome.error) this.showToast(outcome.error)
+      })
       return
     }
     if (dialog.kind === 'topic') {
@@ -884,6 +911,16 @@ export class Session {
       this.settle(id, outcome)
       if (outcome.error) this.showToast(outcome.error)
     })
+  }
+
+  /** Whether the topic on screen can be snoozed from its box: the box empty, and set to a note (not Slack). */
+  canSnooze(): boolean {
+    return this.onTopic() && this.state.dialog === null && !this.topicTarget() && !this.topicDraft().trim()
+  }
+
+  /** A form for how long to snooze the topic on screen for. */
+  openSnoozeDialog(): void {
+    if (this.canSnooze()) this.update(S.setDialog(this.state, { kind: 'snooze', topic: S.focused(this.state), length: '' }))
   }
 
   /** The × on a wait: the topic stops waiting on it. */

@@ -2148,6 +2148,27 @@ textarea:hover,
   white-space: nowrap;
 }
 
+/* At the box's right, inside it: a topic's snooze, while the box is empty. */
+.chat-box-end {
+  position: absolute;
+  top: 0;
+  right: 8px;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* A snooze: in the box's button, by a snoozed topic's name, and in its waits. */
+.clock-mark {
+  flex: none;
+  display: inline-block;
+  width: 0.95em;
+  height: 0.95em;
+  vertical-align: -0.1em;
+  background: var(--muted);
+  mask: url('./assets/clock.svg') center / contain no-repeat;
+}
+
 /* Beside a row of a chat, on its right, only while the row is hovered. */
 .chat-row {
   position: relative;

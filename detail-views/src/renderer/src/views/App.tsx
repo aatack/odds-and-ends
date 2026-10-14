@@ -1,5 +1,6 @@
 import type { Entity, ModuleInfo, View } from '../../../core/types.ts'
-import type { Dialog, DialogFields, Edit, Peek, PeekTarget, Pick, Rect, ResolveDialog, SessionDialog, ShownView, TopicDialog } from '../state.ts'
+import { snoozeLength } from '../../../core/modules/topics/view.ts'
+import type { Dialog, DialogFields, Edit, Peek, PeekTarget, Pick, Rect, ResolveDialog, SessionDialog, ShownView, SnoozeDialog, TopicDialog } from '../state.ts'
 import { PathOptions } from './Paths.tsx'
 import { imageSrc } from '../images.ts'
 import { PeekWindow } from './Peek.tsx'
@@ -145,6 +146,8 @@ export function App(props: {
               <TopicForm {...props.dialog} dialog={props.dialog.dialog} />
             ) : props.dialog.dialog.kind === 'resolve' ? (
               <ResolveForm {...props.dialog} dialog={props.dialog.dialog} />
+            ) : props.dialog.dialog.kind === 'snooze' ? (
+              <SnoozeForm {...props.dialog} dialog={props.dialog.dialog} />
             ) : (
               <SessionForm {...props.dialog} dialog={props.dialog.dialog} />
             ))}
@@ -391,6 +394,28 @@ function TopicForm(props: DialogProps<TopicDialog>) {
       <div className="dialog-buttons">
         <Button label="Cancel" hotkey="Esc" onClick={props.onCancel} />
         <Button label="Make" hotkey="↵" busy={props.busy} busyLabel="Making…" disabled={!props.dialog.name.trim() && 'Name it first'} onClick={props.onSubmit} />
+      </div>
+    </Modal>
+  )
+}
+
+/** How long to put a topic down for (`30m`, `6h`, `2d`, `1w`): Enter snoozes it, Escape gives up. */
+function SnoozeForm(props: DialogProps<SnoozeDialog>) {
+  const valid = snoozeLength(props.dialog.length) !== null
+  return (
+    <Modal title="Snooze" onClose={props.onCancel}>
+      <input
+        className="find"
+        data-field="dialog-snooze"
+        autoFocus
+        placeholder="6h, 2d, …"
+        spellCheck={false}
+        value={props.dialog.length}
+        onChange={(event) => props.onChange({ length: event.target.value })}
+      />
+      <div className="dialog-buttons">
+        <Button label="Cancel" hotkey="Esc" onClick={props.onCancel} />
+        <Button label="Snooze" hotkey="↵" busy={props.busy} busyLabel="Snoozing…" disabled={!valid && 'Minutes, hours, days or weeks: 30m, 6h, 2d, 1w'} onClick={props.onSubmit} />
       </div>
     </Modal>
   )

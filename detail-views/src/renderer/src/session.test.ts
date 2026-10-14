@@ -51,6 +51,7 @@ async function headless(options: Parameters<typeof memoryCore>[0] = {}, ui: { to
     topicPush: (topic) => a.topicPush({ topic }),
     topicWait: (topic, on) => a.topicWait({ topic, on }),
     topicUnwait: (topic, on) => a.topicUnwait({ topic, on }),
+    topicSnooze: (topic, until) => a.topicSnooze({ topic, until }),
     topicDismiss: (topic, on, message) => a.topicDismiss({ topic, on, message }),
     topicSlackSend: (topic, on, text) => core.topicSlackSend({ topic, on, text }),
     visit: async (id) => a.visit({ id }),

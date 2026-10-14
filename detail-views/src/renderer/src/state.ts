@@ -118,8 +118,15 @@ export interface TopicDialog {
   parent?: string
 }
 
+/** How long to snooze a topic for, being typed (`30m`, `6h`, `2d`, `1w`). */
+export interface SnoozeDialog {
+  kind: 'snooze'
+  topic: string
+  length: string
+}
+
 /** What a form's fields can change (`kind` apart). */
-export type DialogFields = Partial<Omit<SessionDialog, 'kind'> & Omit<TopicDialog, 'kind'>>
+export type DialogFields = Partial<Omit<SessionDialog, 'kind'> & Omit<TopicDialog, 'kind'> & Omit<SnoozeDialog, 'kind' | 'topic'>>
 
 /** The key of the draft in a topic's path picker. */
 export const pathDraftKey = (topic: string): string => `${topic}#path`
@@ -132,7 +139,7 @@ export interface ResolveDialog {
 }
 
 /** The form over everything, if one is open. */
-export type Dialog = SessionDialog | TopicDialog | ResolveDialog
+export type Dialog = SessionDialog | TopicDialog | ResolveDialog | SnoozeDialog
 
 export type PickTool = 'move' | 'link' | 'linkReverse' | 'context'
 

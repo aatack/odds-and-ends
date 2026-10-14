@@ -104,4 +104,6 @@ export interface TopicProps {
   onAccept(message: string): void
   /** It is passed over. */
   onDismiss(on: string, message: string): void
+  /** The clock in the empty box: a form for how long to put the topic down for. */
+  onSnooze(): void
 }

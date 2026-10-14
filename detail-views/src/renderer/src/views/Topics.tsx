@@ -27,12 +27,22 @@ function GitHubMark() {
   return <span className="github-mark" role="img" aria-label="GitHub" />
 }
 
-/** What a waiting topic waits on, as their marks (Slack, a PR, another topic), each kind once; and since when it has waited (its oldest wait). */
+/** What a waiting topic waits on, as their marks (Slack, a PR, a snooze, another topic), each kind once; and since when it has waited (its oldest wait). */
 function waitingOn(entity: Entity): { marks: ReactNode[]; since: number | null } {
   const waits = waitsOf(entity.data)
-  const kinds = [...new Set(waits.map((wait) => (wait.slack ? 'slack' : wait.pr ? 'pr' : 'topic')))]
+  const kinds = [...new Set(waits.map((wait) => (wait.slack ? 'slack' : wait.pr ? 'pr' : wait.until !== undefined ? 'snooze' : 'topic')))]
   const marks = kinds.map((kind) =>
-    kind === 'slack' ? <SlackMark key={kind} /> : kind === 'pr' ? <GitHubMark key={kind} /> : <span key={kind} className="topic-waiting" title="Another topic">⧗</span>,
+    kind === 'slack' ? (
+      <SlackMark key={kind} />
+    ) : kind === 'pr' ? (
+      <GitHubMark key={kind} />
+    ) : kind === 'snooze' ? (
+      <span key={kind} className="clock-mark" role="img" aria-label="Snoozed" />
+    ) : (
+      <span key={kind} className="topic-waiting" title="Another topic">
+        ⧗
+      </span>
+    ),
   )
   return { marks, since: waits.length ? Math.min(...waits.map((wait) => wait.since)) : null }
 }
@@ -81,6 +91,8 @@ export function TopicDetail(props: OverviewProps) {
         ) : null
       }
       outward={target ? <SlackWhere on={target.on} thread={target.threadTs !== undefined} /> : null}
+      // Empty and set to a note: the clock, to put the topic down for a while.
+      boxEnd={topic && !target && !props.draft.trim() ? <Button quiet label={<span className="clock-mark" role="img" aria-label="Snooze" />} title="Snooze" onClick={topic.onSnooze} /> : null}
       aside={topic ? (row) => <WaitButtons entity={row.entity} topic={topic} /> : undefined}
       corner={
         props.interactive ? (
@@ -165,7 +177,12 @@ function TopicWaits(props: { topic: TopicProps }) {
         // A PR's: why it is back (`prBackReasons`), or nothing while it waits.
         const pr = wait.pr ? item(wait.pr)?.data : undefined
         const mine = pr ? prBackReasons(pr, pr.locallyApproved === true) : []
-        const status = wait.topic
+        // A snooze's: when it ends, or that it has.
+        const status = wait.until !== undefined
+          ? now >= wait.until
+            ? 'snooze over'
+            : `until ${until(wait.until, now)}`
+          : wait.topic
           ? item(wait.topic)?.data.resolved
             ? 'resolved'
             : `waiting ${elapsed(now - wait.since)}`
@@ -180,9 +197,8 @@ function TopicWaits(props: { topic: TopicProps }) {
         <div key={on}>
           <div className="topic-wait">
             {wait.slack && <SlackMark />}
-            <span className="wait-on">
-              <ItemPill id={on} fallback={wait.slack ? <WaitName on={on} /> : '…'} />
-            </span>
+            {wait.until !== undefined && <span className="clock-mark" role="img" aria-label="Snoozed" />}
+            <span className="wait-on">{wait.until !== undefined ? 'Snoozed' : <ItemPill id={on} fallback={wait.slack ? <WaitName on={on} /> : '…'} />}</span>
             <span className="muted">{status}</span>
             <Button quiet label="×" title="Stop waiting" onClick={() => topic.onUnwait(on)} />
           </div>
@@ -231,6 +247,13 @@ function TargetOverview(props: { id: string; chat: OverviewProps }) {
       />
     </div>
   )
+}
+
+/** When a snooze ends: its time today, or its day and time after. */
+function until(at: number, now: number): string {
+  const end = new Date(at)
+  const time = end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return end.toDateString() === new Date(now).toDateString() ? time : `${end.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })} ${time}`
 }
 
 function WaitName(props: { on: string }) {

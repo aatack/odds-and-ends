@@ -69,8 +69,9 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
   const onUnwait = useCallback((on: string) => session.unwait(on), [])
   const onAccept = useCallback((message: string) => session.acceptCandidate(message), [])
   const onDismiss = useCallback((on: string, message: string) => session.dismissCandidate(on, message), [])
+  const onSnooze = useCallback(() => runTool(session, 'topic.snooze'), [])
   const topic = useMemo(
-    () => ({ waits: topicWaits, targets: topicTargets, target: topicTargetOf(state, focused(state)), onWait, onWaitFor, onUnwait, onAccept, onDismiss }),
+    () => ({ waits: topicWaits, targets: topicTargets, target: topicTargetOf(state, focused(state)), onWait, onWaitFor, onUnwait, onAccept, onDismiss, onSnooze }),
     [topicWaits, topicTargets, state.topicTargets, state.trail, state.at],
   )
   // No hover on a phone, so no peeks: a link opens in the browser instead.
@@ -265,6 +266,8 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
           ? (working.topics?.includes('create') ?? false)
           : state.dialog.kind === 'resolve'
             ? (working[state.dialog.topic]?.includes('resolve') ?? false)
+            : state.dialog.kind === 'snooze'
+              ? (working[state.dialog.topic]?.includes('snooze') ?? false)
             : (working[focused(state)]?.includes('claude') ?? false),
       onChange: (fields: DialogFields) => session.setDialog(fields),
       onSubmit: () => session.submitDialog(),

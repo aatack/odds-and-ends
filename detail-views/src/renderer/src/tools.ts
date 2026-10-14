@@ -147,6 +147,8 @@ export const tools: Tool[] = [
   { id: 'topic.checkout', label: 'Check out', scope: 'list', keys: [], enabled: (s) => s.onTopicNow(), run: (s) => s.topicGit('checkout') },
   { id: 'topic.master', label: 'Master', scope: 'list', keys: [], enabled: (s) => s.onTopicNow(), run: (s) => s.topicGit('master') },
   { id: 'topic.push', label: 'Push', scope: 'list', keys: [], enabled: (s) => s.canResolveTopic(), run: (s) => s.topicGit('push') },
+  // The clock in a topic's empty box: a form for how long to put it down for.
+  { id: 'topic.snooze', label: 'Snooze', scope: 'list', keys: [], enabled: (s) => s.canSnooze(), run: (s) => s.openSnoozeDialog() },
   { id: 'topic.resolve', label: 'Resolve', scope: 'list', keys: [], enabled: (s) => s.canResolveTopic(), run: (s) => s.resolveTopic() },
   // From anywhere, typing too: a form for the new topic's name.
   // On a topic, not while typing: the same form, for a topic that goes into this one's chat too.

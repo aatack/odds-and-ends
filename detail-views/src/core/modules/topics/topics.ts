@@ -134,6 +134,12 @@ export class Topics implements Module {
     return this.setWaits(topic, (waits) => [...waits.filter((wait) => !on.includes(waitOn(wait))), ...added])
   }
 
+  /** Puts a topic down until `until` (Unix ms), in place of any snooze it had. */
+  snooze(topic: string, until: number): AppEvent[] {
+    if (!Number.isFinite(until) || until <= this.context.now()) throw new Error('A snooze must end in the future')
+    return this.setWaits(topic, (waits) => [...waits.filter((wait) => wait.until === undefined), { until, since: this.context.now() }])
+  }
+
   /** Takes a wait away. */
   unwait(topic: string, on: string): AppEvent[] {
     return this.setWaits(topic, (waits) => waits.filter((wait) => waitOn(wait) !== on))

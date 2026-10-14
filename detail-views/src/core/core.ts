@@ -608,7 +608,9 @@ export class Core {
     topicPush: ({ topic }: { topic: string }): Promise<Outcome> => this.attempt(topic, () => this.topics.push(topic)),
     /** Puts a topic down until something comes into each of `on` (Slack conversations or threads), from now. */
     topicWait: ({ topic, on }: { topic: string; on: string[] }): Promise<Outcome> => this.attempt(topic, async () => this.topics.wait(topic, on)),
-    /** Takes a topic's wait on `on` away. */
+    /** Puts a topic down until `until` (Unix ms). */
+    topicSnooze: ({ topic, until }: { topic: string; until: number }): Promise<Outcome> => this.attempt(topic, async () => this.topics.snooze(topic, until)),
+    /** Takes a topic's wait on `on` away (`snooze` for its snooze). */
     topicUnwait: ({ topic, on }: { topic: string; on: string }): Promise<Outcome> => this.attempt(topic, async () => this.topics.unwait(topic, on)),
     /** Passes over a message that came into a topic's wait on `on`. */
     topicDismiss: ({ topic, on, message }: { topic: string; on: string; message: string }): Promise<Outcome> =>
