@@ -156,3 +156,37 @@ MB read for each run (hashed IDs, page 1000): warm 0, cold 47, limited 12M 54, l
 - The file is approximately 5.5 GB. The walk tables are approximately 3 GB. The working set for one walk is a small part of this, but it increases with the graph.
 - If the page cache cannot hold the working set, each entity costs several random reads. On this VM (approximately 20 µs per read), a walk can go down to approximately 20k to 30k entities/s. On a local NVMe disk (approximately 80 to 100 µs per read), expect approximately 5k to 10k entities/s. On a network disk (approximately 0.5 to 1 ms per read), expect approximately 1k entities/s or less.
 - Recommendation: give the page cache enough memory for the walk tables, or keep the walk tables on local SSD.
+
+## External IDs only (branch `external-ids`, schema v2)
+
+Schema v2 drops the `entities` table. Event tables, history tables and all indexes key on the external TEXT ID (`entity`, `source`, `destination`) instead of the integer `eid`, and reads no longer do an ID lookup query. We compared master (9970dd3) with this branch on the same machine, back to back. Both used the same binary flags, the same seed and a fresh hashed-ID graph (`--random-ids`, 100k nodes, 16-hex-digit IDs). Each value is the median of 3 runs. The cold and limited methods are the same as in the section above.
+
+| metric (100k, hashed IDs) | master (int `eid`) | external IDs |
+| --- | ---: | ---: |
+| build: write s | 4.51 | 19.46 |
+| build: events/s | 111982 | 25952 |
+| file MB after build (with WAL) | 53.1 | 75.4 |
+| file MB after checkpoint | 53.1 | 75.4 |
+| queries per walk, page 1000 | 41105 | 21329 |
+| queries per walk, read-ahead off | 411888 | 211888 |
+| queries per walk, frozen fork | 62434 | 42658 |
+
+Entities/s. Warm values are the three warm runs (build run, then two `--reuse` runs).
+
+| scenario | master warm | ext warm | master cold | ext cold | master 12M | ext 12M | master 10M | ext 10M | master 8M | ext 8M |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| page 1000 | 63808 / 64171 / 67257 | 54200 / 55337 / 52517 | 51129 | 45359 | 45642 | 14670 | 41473 | 13316 | 29139 | 9760 |
+| one page | 51879 / 56809 / 58578 | 45165 / 53859 / 51101 | 51642 | 43961 | - | - | - | - | - | - |
+| read-ahead off | 36480 / 36204 / 33915 | 41305 / 44059 / 40109 | 27888 | 36664 | 26943 | 15931 | 26014 | 14747 | 21339 | 12533 |
+| frozen fork | 48641 / 53700 / 53331 | 41582 / 43924 / 39717 | 42471 | 34785 | 38621 | 13140 | 33022 | 11282 | 25123 | 6729 |
+
+MB read per run, page 1000: cold 47.0 vs 38.0; limited 12M 53 vs 955; 10M 121 vs 1136; 8M 393 vs 1793.
+
+### Observations
+
+- The query count halves, as expected: the two ID lookups per load go away. This helps only when a load is very small. With read-ahead off (about 1 ID per query), the branch is 10% to 30% faster.
+- With read-ahead on, the branch is about 15% to 20% slower when the file is warm, and about 10% to 20% slower when it is cold. The lookup queries were cheap. The extra cost of the wider TEXT keys is larger: each key and index entry repeats the 16-character ID, and the rows that a walk reads are larger.
+- Probable main cause (not measured directly): master gives `eid` values in write order, which is breadth-first tree order. So the rows of siblings sit together in the B-trees, even with hashed external IDs. With TEXT keys, the rows sort by the hash, and siblings are spread over the whole table.
+- The cause of the large slowdown under the memory limits is the same: the walk's working set no longer fits. At 12M the branch reads 955 MB per walk (master: 53 MB), and it is 3 to 4 times slower.
+- The build is 4.3 times slower and the file is 42% larger. Every insert writes the TEXT ID into the primary key and into each index, at random positions.
+- Conclusion: with random (UUID-like) IDs, external-ID keys are slower. The integer dictionary pays for itself in locality and key size, not in query count.
