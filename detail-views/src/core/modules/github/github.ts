@@ -19,6 +19,8 @@ function checkWrite(args: string[]): void {
   const allowed =
     noun === 'pr' &&
     ((verb === 'review' && args.includes('--approve')) ||
+      // A draft of mine, marked ready for review as I approve it (never back to a draft).
+      (verb === 'ready' && !args.includes('--undo')) ||
       (verb === 'merge' && args.includes('--auto')) ||
       (verb === 'close' && args.includes('--delete-branch')))
   if (!allowed) throw new Error(`refusing gh ${args.slice(0, 2).join(' ')}`)
@@ -238,8 +240,12 @@ export class GitHub implements Module {
         events.push(...values(id, { type: 'github.localApproval', at: now, note: text || undefined }, now, me), link(entity.id, id, now, me))
         this.context.owned.write(events)
       }
+      // A draft can't merge: out of draft first, then auto-merge.
+      if (entity.data.draft) await this.write(['pr', 'ready', url])
       const method = String(entity.data.mergeMethod ?? 'SQUASH').toLowerCase()
       await this.write(['pr', 'merge', url, '--auto', `--${method === 'merge' ? 'merge' : method}`])
+    } else if (action === 'bump') {
+      // Nothing to write: its line goes on the clipboard again (`Action.copy`), to pass on.
     } else if (action === 'close') {
       await this.write(['pr', 'close', url, '--delete-branch', ...(text ? ['--comment', text] : [])])
     }

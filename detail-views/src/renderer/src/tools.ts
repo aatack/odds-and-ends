@@ -183,6 +183,8 @@ export const tools: Tool[] = [
   ...(
     [
       ['approve', 'p'],
+      // Approve, once it is done on a PR of mine: never both offered, so one key.
+      ['bump', 'p'],
       ['close', 'X'],
     ] as const
   ).map(

@@ -162,8 +162,9 @@ doc for the area you change, and keep it up to date in the same commit.
 - **GitHub goes through `gh`.** Reads are `gh api graphql` queries, never a
   mutation. The only writes are the PR actions I asked for, allowlisted in
   `checkWrite` (`modules/github/github.ts`): approve someone else's PR; on my
-  own, approve locally (an owned entity) and turn on auto-merge; close mine and
-  delete the branch. Each is started by me and confirmed with Enter. `gh` runs
+  own, approve locally (an owned entity), mark a draft ready for review, and
+  turn on auto-merge (then Approve is Bump: its line copied again, no write);
+  close mine and delete the branch. Each is started by me and confirmed with Enter. `gh` runs
   from the temp dir so `--delete-branch` never touches a local checkout.
 - **Actions are generic.** A module offers `actions(entity)` (in its view) and
   does them in `perform`; the UI shows each as a button and a key (`tools.ts`),

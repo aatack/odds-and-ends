@@ -171,10 +171,10 @@ test('github: an approve already done is shown but cannot be done again', async 
   assert.equal(theirs.calls.filter((args) => args[0] === 'pr').length, 0)
 
   // Mine: approved on GitHub (the fake's review decision) and set to
-  // auto-merge, approving again is off, with no approval of my own.
+  // auto-merge, Approve becomes Bump, with no approval of my own.
   const approvedThere = await loaded('me')
   approvedThere.core.cache.write([{ type: 'value', entityId: approvedThere.id, key: 'autoMerge', value: true, timestamp: 0, author: 'github' }])
-  assert.equal(approvedThere.core.focus(approvedThere.id).actions.find((action) => action.id === 'approve')!.disabled, 'Approved, and auto-merge is on')
+  assert.deepEqual(approvedThere.core.focus(approvedThere.id).actions.map((action) => action.id), ['bump', 'close'])
 
   // Not approved on GitHub: my approval here counts, once auto-merge is on.
   const mine = await loaded('me')
@@ -184,7 +184,25 @@ test('github: an approve already done is shown but cannot be done again', async 
     { type: 'value', entityId: mine.id, key: 'review', value: 'REVIEW_REQUIRED', timestamp: 0, author: 'github' },
     { type: 'value', entityId: mine.id, key: 'autoMerge', value: true, timestamp: 0, author: 'github' },
   ])
-  assert.equal(mine.core.focus(mine.id).actions.find((action) => action.id === 'approve')!.disabled, 'Approved, and auto-merge is on')
+  const [bump] = mine.core.focus(mine.id).actions
+  assert.equal(bump.id, 'bump')
+  // Bump writes nothing to GitHub: its line goes on the clipboard again.
+  assert.match(bump.copy ?? '', /^\[#7\]\(https:\/\/github\.com\/o\/r\/pull\/7\) /)
+  const writes = () => mine.calls.filter((args) => args[0] === 'pr').length
+  const before = writes()
+  assert.equal((await mine.core.actions.perform({ id: mine.id, action: 'bump', text: '' })).error, null)
+  assert.equal(writes(), before)
+})
+
+test('github: approving my own draft marks it ready for review first, then turns on auto-merge', async () => {
+  const { core, id, calls } = await loaded('me')
+  core.cache.write([{ type: 'value', entityId: id, key: 'draft', value: true, timestamp: 0, author: 'github' }])
+  assert.match(core.focus(id).actions[0].prompt, /mark it ready for review/)
+  await core.actions.perform({ id, action: 'approve', text: '' })
+  assert.deepEqual(calls.filter((args) => args[0] === 'pr'), [
+    ['pr', 'ready', url],
+    ['pr', 'merge', url, '--auto', '--squash'],
+  ])
 })
 
 test('github: a PR in a repo with previews links to its own', () => {

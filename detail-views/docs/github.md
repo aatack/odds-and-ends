@@ -47,13 +47,16 @@ the running branch.
 **Approve is derived, not remembered.** On someone else's PR it is done when
 GitHub's latest reviews include mine (`approvedByMe`). On mine, GitHub won't
 let me approve, so "approved" is GitHub's review decision (`review ===
-'APPROVED'`) or my own approval here (`github.localApproval`); approving turns
-on auto-merge, so the button is off once approved and auto-merge is on. Both
-come from the latest PR load.
+'APPROVED'`) or my own approval here (`github.localApproval`); approving marks
+a draft ready for review (`gh pr ready`), then turns on auto-merge. Once it is
+approved and auto-merge is on, **Approve** becomes **Bump** (the same key,
+`p`): it writes nothing, and puts the PR's line (below) on the clipboard
+again, to pass on. Both come from the latest PR load.
 
 Only the allowlist in `checkWrite`: approve someone else's PR; on mine,
-approve locally (an owned `github.localApproval` child) and turn on
-auto-merge; close mine and delete the branch. Each is started by me and
+approve locally (an owned `github.localApproval` child), mark a draft ready
+for review (never back to a draft), and turn on auto-merge; close mine and
+delete the branch. Each is started by me and
 confirmed with Enter.
 
 Once approving mine has worked, a line naming the PR goes on the clipboard,

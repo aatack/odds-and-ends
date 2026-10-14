@@ -194,19 +194,22 @@ export const githubView: ModuleView = {
       })
     } else {
       // GitHub won't let me approve my own PR, so "approved" is GitHub's
-      // review decision, or my own approval here. Approving turns on
-      // auto-merge, so once both are true there is nothing left to do.
+      // review decision, or my own approval here. Approving marks a draft
+      // ready for review and turns on auto-merge; once it is approved and
+      // set to merge, Approve becomes Bump: its line copied again, to pass on.
       const approved = approvedMine(entity.data, Boolean(localApproval(lens, entity.id)))
-      actions.push({
-        id: 'approve',
-        label: 'Approve',
-        prompt: approved
-          ? 'Already approved: Enter to turn on auto-merge'
-          : 'Approve locally and turn on auto-merge: Enter to confirm',
-        disabled: approved && entity.data.autoMerge ? 'Approved, and auto-merge is on' : undefined,
-        // To pass on once it is set to merge.
-        copy: prLine(entity.data),
-      })
+      const ready = entity.data.draft ? 'mark it ready for review, ' : ''
+      if (approved && entity.data.autoMerge) {
+        actions.push({ id: 'bump', label: 'Bump', prompt: 'Copy its line again, to pass on: Enter', copy: prLine(entity.data) })
+      } else {
+        actions.push({
+          id: 'approve',
+          label: 'Approve',
+          prompt: approved ? `Already approved: Enter to ${ready}turn on auto-merge` : `Approve locally, ${ready}turn on auto-merge: Enter to confirm`,
+          // To pass on once it is set to merge.
+          copy: prLine(entity.data),
+        })
+      }
       actions.push({ id: 'close', label: 'Close', prompt: 'Close and delete the branch: comment (optional), Enter to close' })
     }
     return actions
