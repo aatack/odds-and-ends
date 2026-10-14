@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
@@ -874,12 +875,8 @@ fn reads_of_own_and_open_ranges_do_not_use_history() {
 // --- Stubs ----------------------------------------------------------------
 
 #[test]
-fn walk_and_find_are_not_implemented_yet() {
+fn find_is_not_implemented_yet() {
     let f = Fixture::new();
-    assert!(matches!(
-        f.store.walk(f.main, "n"),
-        Err(Error::NotImplemented("walk"))
-    ));
     assert!(matches!(
         f.store.find(f.main, "text", &Value::Null),
         Err(Error::NotImplemented("find"))
@@ -1234,5 +1231,437 @@ fn batch_reads_key_results_by_id_and_match_single_reads() {
         );
         assert!(all["b"].values().all(Vec::is_empty));
         assert!(all["never"].values().all(Vec::is_empty));
+    }
+}
+
+// --- Walk -------------------------------------------------------------------
+
+/// root(list) -> a(list) -> a1, a2 (task); root -> b(task) -> x (task, not
+/// followed: tasks follow nothing); root -> c(list) -> c1(list) -> c2(task).
+fn walk_tree(f: &mut Fixture) {
+    let mut ops = Vec::new();
+    for (id, ty) in [
+        ("root", "list"),
+        ("a", "list"),
+        ("a1", "task"),
+        ("a2", "task"),
+        ("b", "task"),
+        ("x", "task"),
+        ("c", "list"),
+        ("c1", "list"),
+        ("c2", "task"),
+    ] {
+        ops.push(Op::set(id, TYPE_KEY, ty));
+    }
+    for (i, (s, d)) in [
+        ("root", "a"),
+        ("root", "b"),
+        ("root", "c"),
+        ("a", "a1"),
+        ("a", "a2"),
+        ("b", "x"),
+        ("c", "c1"),
+        ("c1", "c2"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        ops.push(Op::link(s, d, "child", SortOrder::Explicit(i as f64)));
+    }
+    f.write(f.main, "alex", ops);
+}
+
+fn follow_children() -> Follow {
+    Follow::from([(
+        "list".to_owned(),
+        vec![("child".to_owned(), Direction::Outbound)],
+    )])
+}
+
+fn opts(steps: usize, read_ahead: ReadAhead) -> WalkOptions {
+    WalkOptions {
+        steps,
+        read_ahead,
+        ..WalkOptions::default()
+    }
+}
+
+fn walk_ids(walk: &Walk) -> Vec<String> {
+    walk.rows.iter().map(|r| r.path.join("/")).collect()
+}
+
+fn walk_all(f: &Fixture, b: BranchId, start: &[&str], steps: usize) -> Walk {
+    f.store
+        .walk(
+            b,
+            start,
+            &follow_children(),
+            |_, _| true,
+            |_, _| true,
+            opts(steps, ReadAhead::default()),
+        )
+        .unwrap()
+}
+
+#[test]
+fn walk_is_depth_first_in_sort_order_and_follows_by_type() {
+    let mut f = Fixture::new();
+    walk_tree(&mut f);
+    let w = walk_all(&f, f.main, &["root"], 100);
+    // x is not reached: b is a task, and tasks follow nothing.
+    assert_eq!(
+        walk_ids(&w),
+        [
+            "root",
+            "root/a",
+            "root/a/a1",
+            "root/a/a2",
+            "root/b",
+            "root/c",
+            "root/c/c1",
+            "root/c/c1/c2"
+        ]
+    );
+    assert_eq!((w.steps, w.next.clone()), (8, None));
+    assert_eq!(w.rows[1].node.values[TYPE_KEY], Value::from("list"));
+}
+
+#[test]
+fn walk_predicates_give_max_depth_collapse_and_filters() {
+    let mut f = Fixture::new();
+    walk_tree(&mut f);
+    let follow = follow_children();
+    let ra = ReadAhead::default();
+    let depth = f
+        .store
+        .walk(
+            f.main,
+            &["root"],
+            &follow,
+            |p, _| p.len() < 2,
+            |_, _| true,
+            opts(100, ra),
+        )
+        .unwrap();
+    assert_eq!(walk_ids(&depth), ["root", "root/a", "root/b", "root/c"]);
+    let collapsed = f
+        .store
+        .walk(
+            f.main,
+            &["root"],
+            &follow,
+            |_, n| n.id != "a",
+            |_, _| true,
+            opts(100, ra),
+        )
+        .unwrap();
+    assert_eq!(
+        walk_ids(&collapsed),
+        [
+            "root",
+            "root/a",
+            "root/b",
+            "root/c",
+            "root/c/c1",
+            "root/c/c1/c2"
+        ]
+    );
+    let is_task = |_: &[String], n: &WalkNode| n.values.get(TYPE_KEY) == Some(&Value::from("task"));
+    let tasks = f
+        .store
+        .walk(
+            f.main,
+            &["root"],
+            &follow,
+            |_, _| true,
+            is_task,
+            opts(100, ra),
+        )
+        .unwrap();
+    assert_eq!(
+        walk_ids(&tasks),
+        ["root/a/a1", "root/a/a2", "root/b", "root/c/c1/c2"]
+    );
+    assert_eq!(tasks.steps, 8);
+    // Filtered nodes still cost steps: 3 steps reach only a1 among tasks.
+    let short = f
+        .store
+        .walk(
+            f.main,
+            &["root"],
+            &follow,
+            |_, _| true,
+            is_task,
+            opts(3, ra),
+        )
+        .unwrap();
+    assert_eq!(walk_ids(&short), ["root/a/a1"]);
+    assert_eq!(
+        short.next,
+        Some(vec!["root".into(), "a".into(), "a2".into()])
+    );
+}
+
+#[test]
+fn walk_continuation_round_trip_equals_one_long_walk() {
+    let mut f = Fixture::new();
+    walk_tree(&mut f);
+    let full = walk_all(&f, f.main, &["root"], 100);
+    for page in 1..=4 {
+        let mut rows = Vec::new();
+        let mut start = vec!["root".to_owned()];
+        loop {
+            let refs: Vec<&str> = start.iter().map(String::as_str).collect();
+            let w = walk_all(&f, f.main, &refs, page);
+            assert!(w.steps <= page);
+            rows.extend(w.rows);
+            match w.next {
+                Some(next) => start = next,
+                None => break,
+            }
+        }
+        assert_eq!(rows, full.rows, "page size {page}");
+    }
+    let none = walk_all(&f, f.main, &["root"], 0);
+    assert_eq!(
+        (none.rows.len(), none.next),
+        (0, Some(vec!["root".to_owned()]))
+    );
+}
+
+#[test]
+fn walk_does_not_revisit_the_path_but_repeats_other_paths() {
+    let mut f = Fixture::new();
+    walk_tree(&mut f);
+    // c1 links back to root (a cycle) and to a (a second path to a).
+    f.write(
+        f.main,
+        "alex",
+        vec![
+            Op::link("c1", "root", "child", SortOrder::Explicit(100.0)),
+            Op::link("c1", "a", "child", SortOrder::Explicit(101.0)),
+        ],
+    );
+    let w = walk_all(&f, f.main, &["root"], 100);
+    let ids = walk_ids(&w);
+    assert!(!ids.iter().any(|p| p.starts_with("root/c/c1/root")));
+    assert!(ids.contains(&"root/c/c1/a/a1".to_owned()));
+    assert_eq!(ids.iter().filter(|p| p.ends_with("/a1")).count(), 2);
+}
+
+#[test]
+fn walk_applies_the_archived_filter_and_reads_frozen_views() {
+    let mut f = Fixture::new();
+    walk_tree(&mut f);
+    let fork = f.store.fork(f.main, "fork").unwrap();
+    let before = walk_all(&f, f.main, &["root"], 100);
+    f.store.archive_entity(f.main, "alex", "a").unwrap();
+    f.write(
+        f.main,
+        "alex",
+        vec![
+            Op::set("d", TYPE_KEY, "task"),
+            Op::link("root", "d", "child", SortOrder::Timestamp),
+        ],
+    );
+    let after = walk_all(&f, f.main, &["root"], 100);
+    assert_eq!(
+        walk_ids(&after),
+        [
+            "root",
+            "root/b",
+            "root/c",
+            "root/c/c1",
+            "root/c/c1/c2",
+            "root/d"
+        ]
+    );
+    // The fork reads main through a frozen range (current + history).
+    assert_eq!(walk_all(&f, fork, &["root"], 100), before);
+}
+
+#[test]
+fn walk_read_ahead_cuts_load_rounds() {
+    let mut f = Fixture::new();
+    // A tree of depth 4 and fan-out 3: 1 + 3 + 9 + 27 + 81 nodes.
+    let mut ops = vec![Op::set("n", TYPE_KEY, "list")];
+    let mut layer = vec!["n".to_owned()];
+    for _ in 0..4 {
+        let mut next = Vec::new();
+        for p in &layer {
+            for i in 0..3 {
+                let c = format!("{p}.{i}");
+                ops.push(Op::set(c.as_str(), TYPE_KEY, "list"));
+                ops.push(Op::link(
+                    p.as_str(),
+                    c.as_str(),
+                    "child",
+                    SortOrder::Explicit(i as f64),
+                ));
+                next.push(c);
+            }
+        }
+        layer = next;
+    }
+    f.write(f.main, "alex", ops);
+    let follow = follow_children();
+    let run = |ra: ReadAhead| {
+        f.store
+            .walk(
+                f.main,
+                &["n"],
+                &follow,
+                |_, _| true,
+                |_, _| true,
+                opts(1000, ra),
+            )
+            .unwrap()
+    };
+    let none = run(ReadAhead {
+        depth: 0,
+        width: 32,
+    });
+    let ahead = run(ReadAhead::default());
+    assert_eq!(none.rows, ahead.rows);
+    assert_eq!(none.steps, 121);
+    assert_eq!(none.loads, 121, "one round per node without read-ahead");
+    assert!(
+        ahead.loads * 3 < none.loads,
+        "{} vs {}",
+        ahead.loads,
+        none.loads
+    );
+    // Bounded by the page: a 5-step page does not load the whole tree.
+    let small = f
+        .store
+        .walk(
+            f.main,
+            &["n"],
+            &follow,
+            |_, _| true,
+            |_, _| true,
+            opts(5, ReadAhead::default()),
+        )
+        .unwrap();
+    assert!(
+        small.loads < ahead.loads,
+        "{} vs {}",
+        small.loads,
+        ahead.loads
+    );
+}
+
+#[test]
+fn walk_skips_nodes_on_the_current_path_entirely() {
+    let mut f = Fixture::new();
+    walk_tree(&mut f);
+    // c2 becomes a list that links back to c and root: both are on its path.
+    f.write(
+        f.main,
+        "alex",
+        vec![
+            Op::set("c2", TYPE_KEY, "list"),
+            Op::link("c2", "c", "child", SortOrder::Explicit(0.0)),
+            Op::link("c2", "root", "child", SortOrder::Explicit(1.0)),
+        ],
+    );
+    let w = walk_all(&f, f.main, &["root"], 100);
+    // Same rows and same step count as without the back links: the skipped
+    // nodes are not visited, emitted, expanded or counted.
+    assert_eq!(w.steps, 8);
+    assert_eq!(
+        walk_ids(&w).last().map(String::as_str),
+        Some("root/c/c1/c2")
+    );
+    assert_eq!(w.next, None);
+}
+
+#[test]
+fn walk_returns_its_cache_and_it_matches_separate_reads() {
+    let mut f = Fixture::new();
+    walk_tree(&mut f);
+    let w = f
+        .store
+        .walk(
+            f.main,
+            &["root"],
+            &follow_children(),
+            |_, _| true,
+            |_, _| true,
+            WalkOptions {
+                return_cache: true,
+                ..WalkOptions::default()
+            },
+        )
+        .unwrap();
+    let cache = w.cache.expect("asked for");
+    for row in &w.rows {
+        let id = row.node.id.as_str();
+        assert_eq!(cache.nodes[id].values, f.values(f.main, id));
+        if row.node.values[TYPE_KEY] == Value::from("list") {
+            let links = f
+                .store
+                .links(f.main, &[id], &[("child", Direction::Outbound)])
+                .unwrap()
+                .remove(id)
+                .unwrap();
+            assert_eq!(cache.links[id], links);
+        } else {
+            assert!(!cache.links.contains_key(id));
+        }
+    }
+    let plain = walk_all(&f, f.main, &["root"], 100);
+    assert_eq!(plain.cache, None);
+}
+
+#[test]
+fn walk_visited_set_dedupes_across_pages_like_one_long_walk() {
+    let mut f = Fixture::new();
+    walk_tree(&mut f);
+    // A second path to a (and its subtree) through c1.
+    f.write(
+        f.main,
+        "alex",
+        vec![Op::link("c1", "a", "child", SortOrder::Explicit(100.0))],
+    );
+    let run = |start: &[&str], steps: usize, visited: HashSet<String>| {
+        f.store
+            .walk(
+                f.main,
+                start,
+                &follow_children(),
+                |_, _| true,
+                |_, _| true,
+                WalkOptions {
+                    steps,
+                    visited: Some(visited),
+                    ..WalkOptions::default()
+                },
+            )
+            .unwrap()
+    };
+    let long = run(&["root"], 100, HashSet::new());
+    // a is visited once only; without the set it would appear twice.
+    assert_eq!(
+        walk_ids(&long).iter().filter(|p| p.ends_with("/a")).count(),
+        1
+    );
+    assert_eq!(long.steps, 8);
+    for page in 1..=3 {
+        let mut rows = Vec::new();
+        let mut start = vec!["root".to_owned()];
+        let mut visited = HashSet::new();
+        loop {
+            let refs: Vec<&str> = start.iter().map(String::as_str).collect();
+            let w = run(&refs, page, visited);
+            rows.extend(w.rows);
+            visited = w.visited.expect("asked for");
+            match w.next {
+                Some(next) => start = next,
+                None => break,
+            }
+        }
+        assert_eq!(rows, long.rows, "page size {page}");
+        assert_eq!(Some(visited), long.visited.clone());
     }
 }

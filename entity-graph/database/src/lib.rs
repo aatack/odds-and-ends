@@ -8,7 +8,7 @@
 //!   moves to its type's history table in the same transaction.
 //! - A branch reads its own events plus parent ranges from its parent list.
 //!
-//! See `DESIGN.md` in `graph-store/` for the design.
+//! See `DESIGN.md` and `ARCHITECTURE.md` in this crate for the design.
 
 mod codec;
 mod error;
@@ -18,6 +18,7 @@ mod store;
 mod types;
 mod undo;
 mod view;
+mod walk;
 mod write;
 
 pub use error::{Error, Result};
@@ -25,6 +26,7 @@ pub use read::LinkGroups;
 pub use schema::SCHEMA_VERSION;
 pub use store::Store;
 pub use types::*;
+pub use walk::{Follow, ReadAhead, Walk, WalkCache, WalkNode, WalkOptions, WalkRow};
 
 #[cfg(test)]
 mod tests;
