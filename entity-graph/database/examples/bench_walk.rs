@@ -3,7 +3,23 @@
 //! ```text
 //! cargo run --release --example bench_walk -- [sizes] [data dir]
 //! cargo run --release --example bench_walk -- 1000,10000,100000 /workspace/bench-data
+//! cargo run --release --example bench_walk -- 100000 /workspace/bench-data \
+//!     --reuse --cold --cache-size 256 --scenarios 1,2,3,7
 //! ```
+//!
+//! Flags:
+//! - `--reuse`: open the existing `walk-N.db` (no build, no write table).
+//! - `--cold`: before each run, checkpoint the WAL and evict the db and WAL
+//!   files from the OS page cache (`posix_fadvise(POSIX_FADV_DONTNEED)`).
+//!   Each run also opens a new connection, so the SQLite cache is empty.
+//! - `--cache-size KIB`: SQLite page cache size (default 2000 KiB).
+//!   `mmap_size` is always 0.
+//! - `--random-ids`: hashed entity IDs (file `walk-N-rand.db`), so key
+//!   order does not follow tree order. Closer to real UUID-keyed data.
+//! - `--scenarios I,J`: run only these scenario indexes (0-based).
+//!
+//! Per run it also records bytes read from storage (`/proc/self/io`
+//! `read_bytes`) and major page faults (`/proc/self/stat`).
 //!
 //! For each size it builds a file-backed store (WAL): mostly a tree (each
 //! node has 2..=15 children, filled breadth-first), a few typed values per
@@ -12,8 +28,44 @@
 //! keeps only O(N) small integers, so 1M and 10M nodes are possible.
 
 use std::collections::{HashMap, HashSet};
+use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
+
+extern "C" {
+    fn posix_fadvise(fd: i32, offset: i64, len: i64, advice: i32) -> i32;
+}
+const POSIX_FADV_DONTNEED: i32 = 4;
+
+/// Drop the file's clean pages from the OS page cache.
+fn evict(path: &Path) {
+    for ext in ["", "-wal"] {
+        if let Ok(f) = std::fs::File::open(format!("{}{ext}", path.display())) {
+            // SAFETY: valid fd for the duration of the call.
+            let rc = unsafe { posix_fadvise(f.as_raw_fd(), 0, 0, POSIX_FADV_DONTNEED) };
+            assert_eq!(rc, 0, "posix_fadvise");
+        }
+    }
+}
+
+/// (bytes read from storage, major faults) for this process so far.
+fn io_counters() -> (u64, u64) {
+    let io = std::fs::read_to_string("/proc/self/io").unwrap_or_default();
+    let rb = io
+        .lines()
+        .find_map(|l| l.strip_prefix("read_bytes: "))
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(0);
+    let stat = std::fs::read_to_string("/proc/self/stat").unwrap_or_default();
+    // Fields after the ")" of comm: state is field 3; majflt is field 12.
+    let after = stat.rsplit_once(')').map(|x| x.1).unwrap_or("");
+    let majflt = after
+        .split_whitespace()
+        .nth(9)
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    (rb, majflt)
+}
 
 use egdb::{
     BranchId, Direction, Follow, Op, ReadAhead, SortOrder, Store, Walk, WalkOptions, WriteBatch,
@@ -44,8 +96,24 @@ impl Rng {
     }
 }
 
+static RANDOM_IDS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Entity ID for node `n`. With `--random-ids` the IDs are a hash of `n`,
+/// so B-tree order has no relation to tree order (like UUIDs).
 fn id(n: u64) -> String {
-    format!("n{n}")
+    if RANDOM_IDS.load(std::sync::atomic::Ordering::Relaxed) {
+        let mut z = n.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        format!("{:016x}", z ^ (z >> 31))
+    } else {
+        format!("n{n}")
+    }
+}
+
+fn db_path(dir: &Path, n: u64) -> PathBuf {
+    let rand = RANDOM_IDS.load(std::sync::atomic::Ordering::Relaxed);
+    dir.join(format!("walk-{n}{}.db", if rand { "-rand" } else { "" }))
 }
 
 fn peak_rss_mb() -> f64 {
@@ -90,7 +158,7 @@ fn flush(store: &mut Store, branch: BranchId, ops: &mut Vec<Op>, events: &mut u6
 }
 
 fn build(n: u64, dir: &Path) -> Built {
-    let path = dir.join(format!("walk-{n}.db"));
+    let path = db_path(dir, n);
     for ext in ["", "-wal", "-shm"] {
         let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
     }
@@ -176,6 +244,43 @@ fn build(n: u64, dir: &Path) -> Built {
     }
 }
 
+fn open_existing(n: u64, dir: &Path, cache_kib: Option<i64>) -> Built {
+    let path = db_path(dir, n);
+    assert!(
+        path.exists(),
+        "{} not found; run without --reuse",
+        path.display()
+    );
+    let store = Store::open(&path).expect("open");
+    tune(&store, cache_kib);
+    let find = |name: &str| {
+        store
+            .branches()
+            .expect("branches")
+            .into_iter()
+            .find(|b| b.name == name)
+            .map(|b| b.id)
+            .expect("branch")
+    };
+    let (main, fork) = (find("main"), find("frozen"));
+    Built {
+        store,
+        main,
+        fork,
+        path,
+        events: 0,
+        write_secs: 0.0,
+        supersede_events: 0,
+    }
+}
+
+fn tune(store: &Store, cache_kib: Option<i64>) {
+    store.set_mmap_size(0).expect("mmap_size");
+    if let Some(k) = cache_kib {
+        store.set_cache_size_kib(k).expect("cache_size");
+    }
+}
+
 fn follow(cross: bool) -> Follow {
     let mut pairs = vec![("child".to_owned(), Direction::Outbound)];
     if cross {
@@ -234,7 +339,35 @@ fn run(b: &Built, s: &Scenario) -> (usize, usize) {
 }
 
 fn main() {
-    let mut args = std::env::args().skip(1);
+    let all: Vec<String> = std::env::args().skip(1).collect();
+    let flag = |f: &str| all.iter().any(|a| a == f);
+    let value = |f: &str| {
+        all.iter()
+            .position(|a| a == f)
+            .and_then(|i| all.get(i + 1).cloned())
+    };
+    let (reuse, cold) = (flag("--reuse"), flag("--cold"));
+    RANDOM_IDS.store(flag("--random-ids"), std::sync::atomic::Ordering::Relaxed);
+    let cache_kib: Option<i64> = value("--cache-size").map(|v| v.parse().expect("cache size"));
+    let only: Option<Vec<usize>> =
+        value("--scenarios").map(|v| v.split(',').map(|x| x.parse().expect("scenario")).collect());
+    let mut skip = false;
+    let positional: Vec<String> = all
+        .iter()
+        .filter(|a| {
+            if skip {
+                skip = false;
+                return false;
+            }
+            if *a == "--cache-size" || *a == "--scenarios" {
+                skip = true;
+                return false;
+            }
+            !a.starts_with("--")
+        })
+        .cloned()
+        .collect();
+    let mut args = positional.into_iter();
     let sizes: Vec<u64> = args
         .next()
         .unwrap_or_else(|| "1000,10000,100000".into())
@@ -330,36 +463,70 @@ fn main() {
         },
     ];
 
-    println!("| nodes | scenario | visited | median s | entities/s | loads per 1k |");
-    println!("| ---: | --- | ---: | ---: | ---: | ---: |");
+    println!(
+        "| nodes | scenario | visited | median s | entities/s | loads per 1k | MB read per run | major faults per run |"
+    );
+    println!("| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |");
     let mut builds = Vec::new();
     for &n in &sizes {
-        let b = build(n, &dir);
-        for s in &scenarios {
+        let mut b = if reuse {
+            open_existing(n, &dir, cache_kib)
+        } else {
+            let b = build(n, &dir);
+            tune(&b.store, cache_kib);
+            b
+        };
+        b.store.checkpoint().expect("checkpoint");
+        for (i, s) in scenarios.iter().enumerate() {
+            if only.as_ref().is_some_and(|o| !o.contains(&i)) {
+                continue;
+            }
             let mut times = Vec::new();
             let mut last = (0, 0);
+            let (mut read, mut faults) = (0u64, 0u64);
             for _ in 0..RUNS {
+                if cold {
+                    // New connection: empty SQLite cache. Then evict OS pages.
+                    let (main, fork) = (b.main, b.fork);
+                    drop(std::mem::replace(
+                        &mut b.store,
+                        Store::open_in_memory().expect("placeholder"),
+                    ));
+                    evict(&b.path);
+                    b.store = Store::open(&b.path).expect("reopen");
+                    tune(&b.store, cache_kib);
+                    (b.main, b.fork) = (main, fork);
+                    evict(&b.path);
+                }
+                let before = io_counters();
                 let t = Instant::now();
                 last = run(&b, s);
                 times.push(t.elapsed().as_secs_f64());
+                let after = io_counters();
+                read += after.0 - before.0;
+                faults += after.1 - before.1;
             }
             times.sort_by(f64::total_cmp);
             let median = times[RUNS / 2];
             println!(
-                "| {n} | {} | {} | {median:.3} | {:.0} | {:.1} |",
+                "| {n} | {} | {} | {median:.3} | {:.0} | {:.1} | {:.1} | {} |",
                 s.name,
                 last.0,
                 last.0 as f64 / median,
-                last.1 as f64 * 1000.0 / last.0 as f64
+                last.1 as f64 * 1000.0 / last.0 as f64,
+                read as f64 / RUNS as f64 / 1e6,
+                faults / RUNS as u64
             );
         }
-        builds.push((
-            n,
-            b.events,
-            b.write_secs,
-            b.supersede_events,
-            file_mb(&b.path),
-        ));
+        if !reuse {
+            builds.push((
+                n,
+                b.events,
+                b.write_secs,
+                b.supersede_events,
+                file_mb(&b.path),
+            ));
+        }
     }
     println!();
     println!("| nodes | events | write s | events/s | supersede events | file MB |");
