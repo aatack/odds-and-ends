@@ -365,21 +365,3 @@ fn frozen_tail(
         })
         .collect())
 }
-
-/// The interned key for an entity ID, if it has ever been written.
-pub(crate) fn lookup_entity(conn: &Connection, ext_id: &str) -> Result<Option<i64>> {
-    Ok(conn
-        .prepare_cached("SELECT eid FROM entities WHERE ext_id = ?1")?
-        .query_row([ext_id], |r| r.get(0))
-        .optional()?)
-}
-
-/// The interned key for an entity ID, created on first use.
-pub(crate) fn intern_entity(conn: &Connection, ext_id: &str) -> Result<i64> {
-    if let Some(eid) = lookup_entity(conn, ext_id)? {
-        return Ok(eid);
-    }
-    conn.prepare_cached("INSERT INTO entities (ext_id) VALUES (?1)")?
-        .execute([ext_id])?;
-    Ok(conn.last_insert_rowid())
-}

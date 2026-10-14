@@ -16,7 +16,7 @@ const TABLES: [(&str, &str, &str); 2] = [
     (
         "value_current",
         "value_history",
-        "bid, eid, key, seq, ts, author, vtype, value",
+        "bid, entity, key, seq, ts, author, vtype, value",
     ),
     (
         "link_current",

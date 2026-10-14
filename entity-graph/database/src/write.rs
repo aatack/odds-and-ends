@@ -6,7 +6,7 @@ use rusqlite::{params, Connection, TransactionBehavior};
 
 use crate::codec::{encode_sort, encode_value};
 use crate::error::{Error, Result};
-use crate::store::{branch_row, intern_entity, Store};
+use crate::store::{branch_row, Store};
 use crate::types::{
     BranchId, Op, Seq, SortOrder, Timestamp, Value, WriteBatch, WriteResult, TYPE_KEY,
 };
@@ -118,8 +118,7 @@ pub(crate) fn write_in(
         seq += 1;
         match op {
             Op::SetValue { entity, key, value } => {
-                let eid = intern_entity(conn, entity)?;
-                write_value(conn, row.bid, seq, ts, &batch.author, eid, key, value)?;
+                write_value(conn, row.bid, seq, ts, &batch.author, entity, key, value)?;
             }
             Op::Link {
                 source,
@@ -127,17 +126,15 @@ pub(crate) fn write_in(
                 link_type,
                 sort,
             } => {
-                let src = intern_entity(conn, source)?;
-                let dst = intern_entity(conn, destination)?;
                 write_link(
                     conn,
                     row.bid,
                     seq,
                     ts,
                     &batch.author,
-                    src,
+                    source,
                     link_type,
-                    dst,
+                    destination,
                     *sort,
                 )?;
             }
@@ -167,26 +164,26 @@ fn write_value(
     seq: Seq,
     ts: Timestamp,
     author: &str,
-    eid: i64,
+    entity: &str,
     key: &str,
     value: &Value,
 ) -> Result<()> {
     conn.prepare_cached(
-        "INSERT INTO value_history (bid, seq, eid, key, ts, author, vtype, value, superseded_by)
-         SELECT bid, seq, eid, key, ts, author, vtype, value, ?4
-         FROM value_current WHERE bid = ?1 AND eid = ?2 AND key = ?3",
+        "INSERT INTO value_history (bid, seq, entity, key, ts, author, vtype, value, superseded_by)
+         SELECT bid, seq, entity, key, ts, author, vtype, value, ?4
+         FROM value_current WHERE bid = ?1 AND entity = ?2 AND key = ?3",
     )?
-    .execute(params![bid, eid, key, seq])?;
+    .execute(params![bid, entity, key, seq])?;
 
     let (vtype, sql_value) = encode_value(value);
     conn.prepare_cached(
-        "INSERT INTO value_current (bid, eid, key, seq, ts, author, vtype, value)
+        "INSERT INTO value_current (bid, entity, key, seq, ts, author, vtype, value)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-         ON CONFLICT (bid, eid, key) DO UPDATE SET
+         ON CONFLICT (bid, entity, key) DO UPDATE SET
            seq = excluded.seq, ts = excluded.ts, author = excluded.author,
            vtype = excluded.vtype, value = excluded.value",
     )?
-    .execute(params![bid, eid, key, seq, ts, author, vtype, sql_value])?;
+    .execute(params![bid, entity, key, seq, ts, author, vtype, sql_value])?;
     Ok(())
 }
 
@@ -197,9 +194,9 @@ fn write_link(
     seq: Seq,
     ts: Timestamp,
     author: &str,
-    source: i64,
+    source: &str,
     link_type: &str,
-    destination: i64,
+    destination: &str,
     sort: SortOrder,
 ) -> Result<()> {
     conn.prepare_cached(

@@ -35,15 +35,13 @@ impl Store {
         view: &View,
         entities: &[&str],
     ) -> Result<HashMap<String, BTreeMap<String, Value>>> {
-        let eids = self.lookup(entities)?;
         let mut out: HashMap<String, BTreeMap<String, Value>> = entities
             .iter()
             .map(|e| ((*e).to_owned(), BTreeMap::new()))
             .collect();
-        let keys: Vec<i64> = eids.keys().copied().collect();
-        for ((eid, key), c) in resolve_values(&self.conn, view, &keys, None)? {
+        for ((entity, key), c) in resolve_values(&self.conn, view, entities, None)? {
             if !c.data.is_null() {
-                out.get_mut(&eids[&eid])
+                out.get_mut(&entity)
                     .expect("asked for")
                     .insert(key, c.data);
             }
@@ -54,9 +52,8 @@ impl Store {
     /// One value of one entity: a thin helper. `None` when the key was never
     /// set or was cleared with null.
     pub fn value(&self, branch: BranchId, entity: &str, key: &str) -> Result<Option<Value>> {
-        let (view, eids) = self.prepare(branch, &[entity])?;
-        let keys: Vec<i64> = eids.keys().copied().collect();
-        Ok(resolve_values(&self.conn, &view, &keys, Some(key))?
+        let view = self.branch_view(branch)?;
+        Ok(resolve_values(&self.conn, &view, &[entity], Some(key))?
             .into_values()
             .next()
             .map(|c| c.data)
@@ -111,7 +108,6 @@ impl Store {
         groups: &[(&str, Direction)],
         typed_only: bool,
     ) -> Result<HashMap<String, LinkGroups>> {
-        let eids = self.lookup(entities)?;
         let empty: LinkGroups = groups
             .iter()
             .map(|&(t, d)| ((t.to_owned(), d), Vec::new()))
@@ -120,7 +116,6 @@ impl Store {
             .iter()
             .map(|e| ((*e).to_owned(), empty.clone()))
             .collect();
-        let keys: Vec<i64> = eids.keys().copied().collect();
         let mut found = Vec::new();
         for direction in [Direction::Outbound, Direction::Inbound] {
             let types: Vec<&str> = groups
@@ -128,28 +123,27 @@ impl Store {
                 .filter(|g| g.1 == direction)
                 .map(|g| g.0)
                 .collect();
-            if types.is_empty() || keys.is_empty() {
+            if types.is_empty() || entities.is_empty() {
                 continue;
             }
-            for ((eid, ty, other_eid), c) in
-                resolve_links(&self.conn, view, &keys, direction, &types)?
+            for ((entity, ty, other), c) in
+                resolve_links(&self.conn, view, entities, direction, &types)?
             {
                 if c.data.1.is_some() {
-                    found.push((direction, eid, ty, other_eid, c));
+                    found.push((direction, entity, ty, other, c));
                 }
             }
         }
         let typed = if typed_only {
-            let others: Vec<i64> = found.iter().map(|f| f.3).collect();
+            let others: Vec<&str> = found.iter().map(|f: &(Direction, String, String, String, LinkCand)| f.3.as_str()).collect();
             Some(typed_entities(&self.conn, view, &others)?)
         } else {
             None
         };
-        for (direction, eid, link_type, other_eid, cand) in found {
-            if typed.as_ref().is_some_and(|t| !t.contains(&other_eid)) {
+        for (direction, me, link_type, other_id, cand) in found {
+            if typed.as_ref().is_some_and(|t| !t.contains(&other_id)) {
                 continue;
             }
-            let me = eids[&eid].clone();
             let (other, sort) = cand.data;
             let sort = sort.expect("removed links filtered above");
             let (source, destination) = match direction {
@@ -209,15 +203,11 @@ impl Store {
     /// Whether each entity exists on the branch: the view has any event that
     /// names it (a value, or a link at either end, in any state).
     pub fn exists(&self, branch: BranchId, entities: &[&str]) -> Result<HashMap<String, bool>> {
-        let (view, eids) = self.prepare(branch, entities)?;
-        let keys: Vec<i64> = eids.keys().copied().collect();
-        let found = any_event(&self.conn, &view, &keys)?;
+        let view = self.branch_view(branch)?;
+        let found = any_event(&self.conn, &view, entities)?;
         Ok(entities
             .iter()
-            .map(|e| {
-                let hit = eids.iter().any(|(k, v)| v == e && found.contains(k));
-                ((*e).to_owned(), hit)
-            })
+            .map(|e| ((*e).to_owned(), found.contains(*e)))
             .collect())
     }
 
@@ -228,19 +218,16 @@ impl Store {
         branch: BranchId,
         entities: &[&str],
     ) -> Result<HashMap<String, bool>> {
-        let (view, eids) = self.prepare(branch, entities)?;
-        let keys: Vec<i64> = eids.keys().copied().collect();
-        let archived: HashSet<i64> = resolve_values(&self.conn, &view, &keys, Some(TYPE_KEY))?
-            .into_iter()
-            .filter(|(_, c)| c.data.is_null())
-            .map(|((eid, _), _)| eid)
-            .collect();
+        let view = self.branch_view(branch)?;
+        let archived: HashSet<String> =
+            resolve_values(&self.conn, &view, entities, Some(TYPE_KEY))?
+                .into_iter()
+                .filter(|(_, c)| c.data.is_null())
+                .map(|((entity, _), _)| entity)
+                .collect();
         Ok(entities
             .iter()
-            .map(|e| {
-                let hit = eids.iter().any(|(k, v)| v == e && archived.contains(k));
-                ((*e).to_owned(), hit)
-            })
+            .map(|e| ((*e).to_owned(), archived.contains(*e)))
             .collect())
     }
 
@@ -252,33 +239,15 @@ impl Store {
         Err(Error::NotImplemented("find"))
     }
 
-    /// The view of a branch (resolved once per call) and the interned keys of
-    /// the asked-for IDs. IDs never written anywhere in the store are absent.
-    fn prepare(&self, branch: BranchId, entities: &[&str]) -> Result<(View, HashMap<i64, String>)> {
-        Ok((self.branch_view(branch)?, self.lookup(entities)?))
-    }
-
     /// The flattened view of a branch, resolved once (and cached).
     pub(crate) fn branch_view(&self, branch: BranchId) -> Result<View> {
         self.view(branch_row(&self.conn, branch)?.bid)
     }
-
-    /// The interned keys of the IDs that the store knows.
-    fn lookup(&self, entities: &[&str]) -> Result<HashMap<i64, String>> {
-        let json = serde_json::to_string(entities).expect("strings serialise");
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT eid, ext_id FROM entities WHERE ext_id IN (SELECT value FROM json_each(?1))",
-        )?;
-        let eids = stmt
-            .query_map([json], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .collect::<rusqlite::Result<_>>()?;
-        Ok(eids)
-    }
 }
 
-/// A JSON array of interned keys, bound as one parameter.
-fn json_keys(keys: &[i64]) -> String {
-    serde_json::to_string(keys).expect("integers serialise")
+/// A JSON array of entity IDs, bound as one parameter.
+fn json_keys(keys: &[&str]) -> String {
+    serde_json::to_string(keys).expect("strings serialise")
 }
 
 /// The SQL for one event source: the current-table query, plus a `UNION ALL`
@@ -316,7 +285,7 @@ pub(crate) fn with_source(current_sql: &str, src: EventSource, history_index: &s
 }
 
 /// The entities of `eids` whose winning `type` value in the view is not null.
-fn typed_entities(conn: &Connection, view: &View, eids: &[i64]) -> Result<HashSet<i64>> {
+fn typed_entities(conn: &Connection, view: &View, eids: &[&str]) -> Result<HashSet<String>> {
     let mut unique = eids.to_vec();
     unique.sort_unstable();
     unique.dedup();
@@ -326,7 +295,7 @@ fn typed_entities(conn: &Connection, view: &View, eids: &[i64]) -> Result<HashSe
     Ok(resolve_values(conn, view, &unique, Some(TYPE_KEY))?
         .into_iter()
         .filter(|(_, c)| !c.data.is_null())
-        .map(|((eid, _), _)| eid)
+        .map(|((entity, _), _)| entity)
         .collect())
 }
 
@@ -340,8 +309,8 @@ fn order(src: &Source, seq: Seq, ts: Timestamp) -> Order {
 }
 
 pub(crate) const VALUES_SQL: &str =
-    "SELECT eid, key, seq, ts, author, vtype, value FROM value_current
-     WHERE bid = ?1 AND eid IN (SELECT value FROM json_each(?2))
+    "SELECT entity, key, seq, ts, author, vtype, value FROM value_current
+     WHERE bid = ?1 AND entity IN (SELECT value FROM json_each(?2))
        AND (?3 IS NULL OR key = ?3) AND +seq BETWEEN ?4 AND ?5";
 
 /// The newest visible event per `(entity, key)` for a batch of entities (all
@@ -350,9 +319,9 @@ pub(crate) const VALUES_SQL: &str =
 pub(crate) fn resolve_values(
     conn: &Connection,
     view: &View,
-    eids: &[i64],
+    eids: &[&str],
     key: Option<&str>,
-) -> Result<HashMap<(i64, String), Cand<Value>>> {
+) -> Result<HashMap<(String, String), Cand<Value>>> {
     if eids.is_empty() {
         return Ok(HashMap::new());
     }
@@ -370,7 +339,7 @@ pub(crate) fn resolve_values(
             while let Some(r) = rows.next()? {
                 let value = decode_value(r.get(5)?, r.get_ref(6)?)?;
                 events.push((
-                    (r.get::<_, i64>(0)?, r.get::<_, String>(1)?),
+                    (r.get::<_, String>(0)?, r.get::<_, String>(1)?),
                     Cand {
                         order: order(src, r.get(2)?, r.get(3)?),
                         author: r.get(4)?,
@@ -384,7 +353,7 @@ pub(crate) fn resolve_values(
 }
 
 /// `(asked-for entity, link type, other entity)`.
-type LinkKey = (i64, String, i64);
+type LinkKey = (String, String, String);
 /// The other entity's ID and the stored sort key (`None` = removed).
 type LinkCand = Cand<(String, Option<f64>)>;
 
@@ -401,8 +370,8 @@ pub(crate) fn links_sql(direction: Direction) -> (String, &'static str) {
     };
     (
         format!(
-            "SELECT l.{me}, l.link_type, l.{other}, e.ext_id, l.seq, l.ts, l.author, l.sort
-             FROM link_current l{hint} JOIN entities e ON e.eid = l.{other}
+            "SELECT l.{me}, l.link_type, l.{other}, l.seq, l.ts, l.author, l.sort
+             FROM link_current l{hint}
              WHERE l.bid = ?1 AND l.{me} IN (SELECT value FROM json_each(?2))
                AND l.link_type IN (SELECT value FROM json_each(?3))
                AND +l.seq BETWEEN ?4 AND ?5"
@@ -416,7 +385,7 @@ pub(crate) fn links_sql(direction: Direction) -> (String, &'static str) {
 pub(crate) fn resolve_links(
     conn: &Connection,
     view: &View,
-    eids: &[i64],
+    eids: &[&str],
     direction: Direction,
     types: &[&str],
 ) -> Result<HashMap<LinkKey, LinkCand>> {
@@ -431,11 +400,11 @@ pub(crate) fn resolve_links(
             let mut rows = stmt.query(params![src.bid, batch, types, lo, hi])?;
             while let Some(r) = rows.next()? {
                 events.push((
-                    (r.get(0)?, r.get(1)?, r.get(2)?),
+                    (r.get(0)?, r.get(1)?, r.get::<_, String>(2)?),
                     Cand {
-                        order: order(src, r.get(4)?, r.get(5)?),
-                        author: r.get(6)?,
-                        data: (r.get(3)?, r.get(7)?),
+                        order: order(src, r.get(3)?, r.get(4)?),
+                        author: r.get(5)?,
+                        data: (r.get(2)?, r.get(6)?),
                     },
                 ));
             }
@@ -446,10 +415,10 @@ pub(crate) fn resolve_links(
 
 /// The entities of the batch that some event of the view names. Uses the
 /// same per-layer event sources as the roll-ups.
-fn any_event(conn: &Connection, view: &View, eids: &[i64]) -> Result<HashSet<i64>> {
+fn any_event(conn: &Connection, view: &View, eids: &[&str]) -> Result<HashSet<String>> {
     const PROBES: [(&str, &str); 3] = [
         (
-            "SELECT eid FROM value_current WHERE bid = ?1 AND eid IN (SELECT value FROM json_each(?2)) AND +seq BETWEEN ?3 AND ?4",
+            "SELECT entity FROM value_current WHERE bid = ?1 AND entity IN (SELECT value FROM json_each(?2)) AND +seq BETWEEN ?3 AND ?4",
             "value_history_target",
         ),
         (
@@ -472,9 +441,9 @@ fn any_event(conn: &Connection, view: &View, eids: &[i64]) -> Result<HashSet<i64
                 let sql = with_source(probe, EventSource::of((lo, hi)), index);
                 let mut stmt = conn.prepare_cached(&sql)?;
                 let rows =
-                    stmt.query_map(params![src.bid, batch, lo, hi], |r| r.get::<_, i64>(0))?;
-                for eid in rows {
-                    found.insert(eid?);
+                    stmt.query_map(params![src.bid, batch, lo, hi], |r| r.get::<_, String>(0))?;
+                for entity in rows {
+                    found.insert(entity?);
                 }
             }
             if found.len() == eids.len() {

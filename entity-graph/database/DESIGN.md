@@ -238,7 +238,7 @@ This is migration 1 in `src/schema.rs`.
 
 - All tables are `STRICT`.
 - The current and history tables are `WITHOUT ROWID`.
-- Branch IDs and entity IDs are interned to integers (`bid`, `eid`). This makes keys and indexes small.
+- Branch IDs are interned to integers (`bid`). Entity IDs are stored as their external TEXT ID (`entity`, `source`, `destination`) everywhere, with no dictionary table, so reads need no ID lookup (schema version 2).
 
 ```sql
 CREATE TABLE branches (
@@ -262,12 +262,6 @@ CREATE TABLE branch_parents (
   PRIMARY KEY (bid, pos)
 ) STRICT, WITHOUT ROWID;
 
--- Interned entity IDs. An entity exists when it has events; this is only a dictionary.
-CREATE TABLE entities (
-  eid    INTEGER PRIMARY KEY,
-  ext_id TEXT    NOT NULL UNIQUE
-) STRICT;
-
 -- One row per write batch: the unit of undo.
 CREATE TABLE batches (
   bid        INTEGER NOT NULL REFERENCES branches(bid),
@@ -282,21 +276,21 @@ CREATE INDEX batches_author ON batches(bid, author, first_seq);
 -- Values: one current row per (branch, entity, key). Superseded rows move to history.
 CREATE TABLE value_current (
   bid    INTEGER NOT NULL,
-  eid    INTEGER NOT NULL,
+  entity TEXT    NOT NULL,
   key    TEXT    NOT NULL,
   seq    INTEGER NOT NULL,
   ts     INTEGER NOT NULL,
   author TEXT    NOT NULL,
   vtype  INTEGER NOT NULL,                 -- 0 null, 1 bool, 2 int, 3 float, 4 text, 5 json
   value  ANY,
-  PRIMARY KEY (bid, eid, key),
+  PRIMARY KEY (bid, entity, key),
   UNIQUE (bid, seq)
 ) STRICT, WITHOUT ROWID;
 
 CREATE TABLE value_history (
   bid           INTEGER NOT NULL,
   seq           INTEGER NOT NULL,
-  eid           INTEGER NOT NULL,
+  entity        TEXT    NOT NULL,
   key           TEXT    NOT NULL,
   ts            INTEGER NOT NULL,
   author        TEXT    NOT NULL,
@@ -306,19 +300,19 @@ CREATE TABLE value_history (
   PRIMARY KEY (bid, seq)
 ) STRICT, WITHOUT ROWID;
 -- History has the same lookups as current, plus seq (R25).
-CREATE INDEX value_history_target     ON value_history(bid, eid, key, seq);
-CREATE INDEX value_history_value      ON value_history(bid, key, value, eid, seq);
+CREATE INDEX value_history_target     ON value_history(bid, entity, key, seq);
+CREATE INDEX value_history_value      ON value_history(bid, key, value, entity, seq);
 CREATE INDEX value_history_superseded ON value_history(bid, superseded_by);  -- undo
 
 -- Find by value, including "all entities of type X" (key = 'type').
-CREATE INDEX value_current_value ON value_current(bid, key, value, eid);
+CREATE INDEX value_current_value ON value_current(bid, key, value, entity);
 
 -- Links: one current row per (branch, source, type, destination).
 CREATE TABLE link_current (
   bid         INTEGER NOT NULL,
-  source      INTEGER NOT NULL,
+  source      TEXT    NOT NULL,
   link_type   TEXT    NOT NULL,
-  destination INTEGER NOT NULL,
+  destination TEXT    NOT NULL,
   seq         INTEGER NOT NULL,
   ts          INTEGER NOT NULL,
   author      TEXT    NOT NULL,
@@ -331,9 +325,9 @@ CREATE INDEX link_current_in ON link_current(bid, destination, link_type);
 CREATE TABLE link_history (
   bid           INTEGER NOT NULL,
   seq           INTEGER NOT NULL,
-  source        INTEGER NOT NULL,
+  source        TEXT    NOT NULL,
   link_type     TEXT    NOT NULL,
-  destination   INTEGER NOT NULL,
+  destination   TEXT    NOT NULL,
   ts            INTEGER NOT NULL,
   author        TEXT    NOT NULL,
   sort          REAL,
@@ -347,13 +341,13 @@ CREATE INDEX link_history_superseded ON link_history(bid, superseded_by);  -- un
 
 | Index | Used by |
 | --- | --- |
-| PK `value_current (bid, eid, key)` | All values of an entity (prefix). One value. Supersede. |
+| PK `value_current (bid, entity, key)` | All values of an entity (prefix). One value. Supersede. |
 | PK `link_current (bid, source, link_type, destination)` | Outbound links of one type (prefix). One link. Supersede. |
 | `link_current_in (bid, destination, link_type)` | Inbound links (parents). |
 | `UNIQUE (bid, seq)` on current tables, PK `(bid, seq)` on history | R1 uniqueness. The events of one batch (undo). |
-| `value_current_value (bid, key, value, eid)` | Find by value. "All entities of type X" (R21): a null type does not match, so archived entities drop out. |
-| `value_history_target (bid, eid, key, seq)` | Bounded roll-up of values (section 8.3). The same lookup as the current PK, plus seq. |
-| `value_history_value (bid, key, value, eid, seq)` | Find by value "as of" a bounded range (future `find`). |
+| `value_current_value (bid, key, value, entity)` | Find by value. "All entities of type X" (R21): a null type does not match, so archived entities drop out. |
+| `value_history_target (bid, entity, key, seq)` | Bounded roll-up of values (section 8.3). The same lookup as the current PK, plus seq. |
+| `value_history_value (bid, key, value, entity, seq)` | Find by value "as of" a bounded range (future `find`). |
 | `link_history_target (bid, source, link_type, destination, seq)` | Bounded roll-up of outbound links. |
 | `link_history_in (bid, destination, link_type, seq)` | Bounded roll-up of inbound links. Entity existence. |
 | `batches_author (bid, author, first_seq)` | Undo: the newest batch of one author. |
@@ -472,7 +466,7 @@ The choice of source is the only difference between the two paths.
 
 | Read | Current half | History half |
 | --- | --- | --- |
-| Value | PK `(bid, eid, key)` | `value_history_target (bid, eid, key, seq)` |
+| Value | PK `(bid, entity, key)` | `value_history_target (bid, entity, key, seq)` |
 | Outbound links | PK `(bid, source, link_type)` | `link_history_target (bid, source, link_type)` |
 | Inbound links | `link_current_in (bid, destination, link_type)` | `link_history_in (bid, destination, link_type, seq)` |
 
@@ -731,7 +725,7 @@ Proposals for later (not built):
 
 - History reads: `value_history(branch, entity, key)` and `link_history(branch, source, type, destination)`.
 - A per-branch event log `events(branch, range)`. This prepares for sync.
-- `find` can use `value_current_value (bid, key, value, eid)`, also for types (R21). A bounded range can use `value_history_value`.
+- `find` can use `value_current_value (bid, key, value, entity)`, also for types (R21). A bounded range can use `value_history_value`.
 
 ---
 
@@ -766,7 +760,7 @@ Proposals for later (not built):
 1. **Hot tables stay small.** They hold one row per target per branch. History does not slow normal reads. Undo removes events, so it does not add rows.
 2. **One B-tree search per point read.**
    - Primary keys are the natural keys, `WITHOUT ROWID`.
-   - Integer `bid` and `eid` make keys small.
+   - Integer `bid` keeps keys small; entity IDs are TEXT, so no lookup query is needed.
 3. **Prepared statements.** All statements use `prepare_cached`. The cache holds 64 statements.
 4. **Write cost.**
    - Each event costs one upsert. A current value row updates 3 B-trees: the PK, `UNIQUE (bid, seq)` and `value_current_value`. A current link row also updates 3: the PK, `UNIQUE (bid, seq)` and `link_current_in`.

@@ -6,7 +6,7 @@ use crate::error::{Error, Result};
 
 /// Migration `i` takes the file from version `i` to version `i + 1`.
 /// Append only: never edit a migration that has shipped.
-const MIGRATIONS: &[&str] = &[V1];
+const MIGRATIONS: &[&str] = &[V1, V2];
 
 /// The schema version this build writes.
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
@@ -114,6 +114,93 @@ CREATE TABLE link_history (
 CREATE INDEX link_history_target ON link_history(bid, source, link_type, destination, seq);
 CREATE INDEX link_history_in         ON link_history(bid, destination, link_type, seq);
 CREATE INDEX link_history_superseded ON link_history(bid, superseded_by);  -- undo
+"#;
+
+/// V2: entity IDs are stored as their external TEXT ID everywhere; the
+/// `entities` dictionary goes. Rebuilds the event tables and their indexes.
+const V2: &str = r#"
+CREATE TABLE value_current_v2 (
+  bid    INTEGER NOT NULL,
+  entity TEXT    NOT NULL,
+  key    TEXT    NOT NULL,
+  seq    INTEGER NOT NULL,
+  ts     INTEGER NOT NULL,
+  author TEXT    NOT NULL,
+  vtype  INTEGER NOT NULL,                 -- 0 null, 1 bool, 2 int, 3 float, 4 text, 5 json
+  value  ANY,
+  PRIMARY KEY (bid, entity, key),
+  UNIQUE (bid, seq)
+) STRICT, WITHOUT ROWID;
+INSERT INTO value_current_v2
+  SELECT v.bid, e.ext_id, v.key, v.seq, v.ts, v.author, v.vtype, v.value
+  FROM value_current v JOIN entities e ON e.eid = v.eid;
+
+CREATE TABLE value_history_v2 (
+  bid           INTEGER NOT NULL,
+  seq           INTEGER NOT NULL,
+  entity        TEXT    NOT NULL,
+  key           TEXT    NOT NULL,
+  ts            INTEGER NOT NULL,
+  author        TEXT    NOT NULL,
+  vtype         INTEGER NOT NULL,
+  value         ANY,
+  superseded_by INTEGER NOT NULL,
+  PRIMARY KEY (bid, seq)
+) STRICT, WITHOUT ROWID;
+INSERT INTO value_history_v2
+  SELECT v.bid, v.seq, e.ext_id, v.key, v.ts, v.author, v.vtype, v.value, v.superseded_by
+  FROM value_history v JOIN entities e ON e.eid = v.eid;
+
+CREATE TABLE link_current_v2 (
+  bid         INTEGER NOT NULL,
+  source      TEXT    NOT NULL,
+  link_type   TEXT    NOT NULL,
+  destination TEXT    NOT NULL,
+  seq         INTEGER NOT NULL,
+  ts          INTEGER NOT NULL,
+  author      TEXT    NOT NULL,
+  sort        REAL,                        -- sort key; NULL = removed
+  PRIMARY KEY (bid, source, link_type, destination),
+  UNIQUE (bid, seq)
+) STRICT, WITHOUT ROWID;
+INSERT INTO link_current_v2
+  SELECT l.bid, s.ext_id, l.link_type, d.ext_id, l.seq, l.ts, l.author, l.sort
+  FROM link_current l JOIN entities s ON s.eid = l.source JOIN entities d ON d.eid = l.destination;
+
+CREATE TABLE link_history_v2 (
+  bid           INTEGER NOT NULL,
+  seq           INTEGER NOT NULL,
+  source        TEXT    NOT NULL,
+  link_type     TEXT    NOT NULL,
+  destination   TEXT    NOT NULL,
+  ts            INTEGER NOT NULL,
+  author        TEXT    NOT NULL,
+  sort          REAL,
+  superseded_by INTEGER NOT NULL,
+  PRIMARY KEY (bid, seq)
+) STRICT, WITHOUT ROWID;
+INSERT INTO link_history_v2
+  SELECT l.bid, l.seq, s.ext_id, l.link_type, d.ext_id, l.ts, l.author, l.sort, l.superseded_by
+  FROM link_history l JOIN entities s ON s.eid = l.source JOIN entities d ON d.eid = l.destination;
+
+DROP TABLE value_current;
+DROP TABLE value_history;
+DROP TABLE link_current;
+DROP TABLE link_history;
+DROP TABLE entities;
+ALTER TABLE value_current_v2 RENAME TO value_current;
+ALTER TABLE value_history_v2 RENAME TO value_history;
+ALTER TABLE link_current_v2 RENAME TO link_current;
+ALTER TABLE link_history_v2 RENAME TO link_history;
+
+CREATE INDEX value_history_target     ON value_history(bid, entity, key, seq);
+CREATE INDEX value_history_value      ON value_history(bid, key, value, entity, seq);
+CREATE INDEX value_history_superseded ON value_history(bid, superseded_by);
+CREATE INDEX value_current_value      ON value_current(bid, key, value, entity);
+CREATE INDEX link_current_in          ON link_current(bid, destination, link_type);
+CREATE INDEX link_history_target      ON link_history(bid, source, link_type, destination, seq);
+CREATE INDEX link_history_in          ON link_history(bid, destination, link_type, seq);
+CREATE INDEX link_history_superseded  ON link_history(bid, superseded_by);
 "#;
 
 /// Bring the file up to [`SCHEMA_VERSION`]. Each migration runs in its own

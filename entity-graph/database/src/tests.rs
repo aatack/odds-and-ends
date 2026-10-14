@@ -302,8 +302,7 @@ fn links_store_one_nullable_sort_and_a_default_readd_moves_to_the_end() {
         .store
         .conn
         .query_row(
-            "SELECT l.sort FROM link_current l JOIN entities e ON e.eid = l.destination
-             WHERE e.ext_id = 'a'",
+            "SELECT sort FROM link_current WHERE destination = 'a'",
             [],
             |r| r.get(0),
         )
@@ -438,7 +437,7 @@ fn the_type_index_serves_a_search_by_type() {
         .store
         .conn
         .query_row(
-            "EXPLAIN QUERY PLAN SELECT eid FROM value_current
+            "EXPLAIN QUERY PLAN SELECT entity FROM value_current
              WHERE bid = 1 AND key = 'type' AND value = 'task'",
             [],
             |r| r.get(3),
@@ -1063,7 +1062,7 @@ fn roll_up_queries_use_indexes() {
         &with_source(VALUES_SQL, EventSource::Current, "value_history_target"),
     );
     assert!(!head.contains("history"), "{head}");
-    assert!(head.contains("PRIMARY KEY (bid=? AND eid=?"), "{head}");
+    assert!(head.contains("PRIMARY KEY (bid=? AND entity=?"), "{head}");
     let frozen = plan(
         &f,
         &with_source(
@@ -1073,7 +1072,7 @@ fn roll_up_queries_use_indexes() {
         ),
     );
     assert!(
-        frozen.contains("value_history_target (bid=? AND eid=?"),
+        frozen.contains("value_history_target (bid=? AND entity=?"),
         "{frozen}"
     );
     for (direction, current, history) in [
