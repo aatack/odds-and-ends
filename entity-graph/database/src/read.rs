@@ -26,13 +26,22 @@ impl Store {
         branch: BranchId,
         entities: &[&str],
     ) -> Result<HashMap<String, BTreeMap<String, Value>>> {
-        let (view, eids) = self.prepare(branch, entities)?;
+        self.values_in(&self.branch_view(branch)?, entities)
+    }
+
+    /// [`Store::values`] on a view that the caller resolved.
+    pub(crate) fn values_in(
+        &self,
+        view: &View,
+        entities: &[&str],
+    ) -> Result<HashMap<String, BTreeMap<String, Value>>> {
+        let eids = self.lookup(entities)?;
         let mut out: HashMap<String, BTreeMap<String, Value>> = entities
             .iter()
             .map(|e| ((*e).to_owned(), BTreeMap::new()))
             .collect();
         let keys: Vec<i64> = eids.keys().copied().collect();
-        for ((eid, key), c) in resolve_values(&self.conn, &view, &keys, None)? {
+        for ((eid, key), c) in resolve_values(&self.conn, view, &keys, None)? {
             if !c.data.is_null() {
                 out.get_mut(&eids[&eid])
                     .expect("asked for")
@@ -91,7 +100,18 @@ impl Store {
         groups: &[(&str, Direction)],
         typed_only: bool,
     ) -> Result<HashMap<String, LinkGroups>> {
-        let (view, eids) = self.prepare(branch, entities)?;
+        self.links_in(&self.branch_view(branch)?, entities, groups, typed_only)
+    }
+
+    /// [`Store::links`] on a view that the caller resolved.
+    pub(crate) fn links_in(
+        &self,
+        view: &View,
+        entities: &[&str],
+        groups: &[(&str, Direction)],
+        typed_only: bool,
+    ) -> Result<HashMap<String, LinkGroups>> {
+        let eids = self.lookup(entities)?;
         let empty: LinkGroups = groups
             .iter()
             .map(|&(t, d)| ((t.to_owned(), d), Vec::new()))
@@ -112,7 +132,7 @@ impl Store {
                 continue;
             }
             for ((eid, ty, other_eid), c) in
-                resolve_links(&self.conn, &view, &keys, direction, &types)?
+                resolve_links(&self.conn, view, &keys, direction, &types)?
             {
                 if c.data.1.is_some() {
                     found.push((direction, eid, ty, other_eid, c));
@@ -121,7 +141,7 @@ impl Store {
         }
         let typed = if typed_only {
             let others: Vec<i64> = found.iter().map(|f| f.3).collect();
-            Some(typed_entities(&self.conn, &view, &others)?)
+            Some(typed_entities(&self.conn, view, &others)?)
         } else {
             None
         };
@@ -224,14 +244,6 @@ impl Store {
             .collect())
     }
 
-    /// Walk the graph from a start entity.
-    ///
-    /// TODO(Alexander): signatures to come (order, depth, filters, cycles, paging).
-    /// Must apply the type filter of [`Store::links`] (R23).
-    pub fn walk(&self, _branch: BranchId, _start: &str) -> Result<Vec<Link>> {
-        Err(Error::NotImplemented("walk"))
-    }
-
     /// Find entities by their values.
     ///
     /// TODO(Alexander): signatures to come (predicates, indexes, paging).
@@ -243,8 +255,16 @@ impl Store {
     /// The view of a branch (resolved once per call) and the interned keys of
     /// the asked-for IDs. IDs never written anywhere in the store are absent.
     fn prepare(&self, branch: BranchId, entities: &[&str]) -> Result<(View, HashMap<i64, String>)> {
-        let bid = branch_row(&self.conn, branch)?.bid;
-        let view = self.view(bid)?;
+        Ok((self.branch_view(branch)?, self.lookup(entities)?))
+    }
+
+    /// The flattened view of a branch, resolved once (and cached).
+    pub(crate) fn branch_view(&self, branch: BranchId) -> Result<View> {
+        self.view(branch_row(&self.conn, branch)?.bid)
+    }
+
+    /// The interned keys of the IDs that the store knows.
+    fn lookup(&self, entities: &[&str]) -> Result<HashMap<i64, String>> {
         let json = serde_json::to_string(entities).expect("strings serialise");
         let mut stmt = self.conn.prepare_cached(
             "SELECT eid, ext_id FROM entities WHERE ext_id IN (SELECT value FROM json_each(?1))",
@@ -252,7 +272,7 @@ impl Store {
         let eids = stmt
             .query_map([json], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<rusqlite::Result<_>>()?;
-        Ok((view, eids))
+        Ok(eids)
     }
 }
 
