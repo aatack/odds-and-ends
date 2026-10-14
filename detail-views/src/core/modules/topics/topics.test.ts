@@ -5,10 +5,10 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { Core } from '../../core.ts'
 import { link, values } from '../../graph/events.ts'
-import { fakeSlack, memoryCore } from '../../testing.ts'
+import { fakeGh, fakeSlack, memoryCore } from '../../testing.ts'
 import { interrupted } from '../claude/claude.ts'
 import { commitPrompt } from './topics.ts'
-import { prMine, sendTargets, waitCandidates, waiting, waitPollEvery, waitsOf } from './view.ts'
+import { prBackReasons, sendTargets, waitCandidates, waiting, waitPollEvery, waitsOf } from './view.ts'
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
 
@@ -641,32 +641,60 @@ test('topics: a topic made from another goes into its chat; a topic can wait on 
   assert.equal(core.item(release)!.data.wait ?? null, null)
 })
 
-test('topics: a wait on a PR is back once it is blocked by me, merged or closed', async () => {
-  const core = memoryCore({ now: () => 250_000 })
-  await core.actions.topicCreate({ name: 'Ship it' })
-  const [topic] = core.entity('topics').outboundLinks
-  const pr = 'github:pr:https://github.com/me/app/pull/7'
-  // Someone else's, approved by me: waiting on them.
-  core.cache.write(values(pr, { state: 'OPEN', mine: false, approvedByMe: true, review: 'REVIEW_REQUIRED', reviewers: ['ann'] }, 0, 'github'))
-  await core.actions.link({ parent: topic, child: pr })
-  assert.equal((await core.actions.topicWait({ topic, on: [pr] })).error, null)
-  assert.deepEqual(waitsOf(core.item(topic)!.data), [{ pr, since: 250_000 }])
-  assert.equal(waiting(topic, core.lens()), true)
-  // Conflicts on someone else's are theirs: still waiting.
-  core.cache.write(values(pr, { conflicts: true }, 1, 'github'))
-  assert.equal(waiting(topic, core.lens()), true)
-  // Merged: back.
-  core.cache.write(values(pr, { state: 'MERGED' }, 2, 'github'))
-  assert.equal(waiting(topic, core.lens()), false)
-  assert.deepEqual(prMine(pr, core.lens()), ['Merged'])
+test('topics: a wait on someone else\'s PR is back only while it wants my review (not a draft), or once merged or closed; on mine, while I have something to do', () => {
+  const back = (data: Record<string, unknown>) => prBackReasons({ state: 'OPEN', ...data }, false)
+  // Someone else's.
+  assert.deepEqual(back({ mine: false, approvedByMe: false, reviewRequestedOfMe: true }), ['Review requested'])
+  assert.deepEqual(back({ mine: false, approvedByMe: false }), ['Not reviewed'])
+  assert.deepEqual(back({ mine: false, approvedByMe: false, reviewRequestedOfMe: true, draft: true }), [])
+  // Approved by me: waiting, whatever else is up with it (theirs to fix).
+  assert.deepEqual(back({ mine: false, approvedByMe: true, review: 'REVIEW_REQUIRED', reviewers: ['ann'] }), [])
+  assert.deepEqual(back({ mine: false, approvedByMe: true, conflicts: true, checks: 'failing' }), [])
+  assert.deepEqual(back({ mine: false, changesRequestedByMe: true, review: 'CHANGES_REQUESTED' }), [])
+  // …until they ask me again.
+  assert.deepEqual(back({ mine: false, changesRequestedByMe: true, reviewRequestedOfMe: true }), ['Review requested'])
+  assert.deepEqual(back({ mine: false, state: 'MERGED' }), ['Merged'])
+  assert.deepEqual(back({ mine: false, state: 'CLOSED' }), ['Closed'])
 
-  // Mine to review (someone else's, not approved by me): back at once.
-  const other = 'github:pr:https://github.com/me/app/pull/8'
-  core.cache.write(values(other, { state: 'OPEN', mine: false, approvedByMe: false, reviewRequestedOfMe: true }, 0, 'github'))
-  await core.actions.topicUnwait({ topic, on: pr })
-  await core.actions.topicWait({ topic, on: [other] })
-  assert.deepEqual(prMine(other, core.lens()), ['Review requested'])
+  // Mine (approved here, so my own review is done): waiting while CI runs or others review, or it merges itself.
+  const mine = (data: Record<string, unknown>) => prBackReasons({ state: 'OPEN', mine: true, ...data }, true)
+  assert.deepEqual(mine({ checks: 'pending', approvedByOthers: true, review: 'APPROVED' }), [])
+  assert.deepEqual(mine({ approvedByOthers: false, review: 'REVIEW_REQUIRED', reviewers: ['ann'] }), [])
+  assert.deepEqual(mine({ approvedByOthers: false, review: 'REVIEW_REQUIRED', checks: 'pending' }), [])
+  assert.deepEqual(mine({ review: 'APPROVED', autoMerge: true }), [])
+  // Back for anything of mine to do.
+  assert.deepEqual(mine({ approvedByOthers: false, review: 'REVIEW_REQUIRED', conflicts: true }), ['Conflicts'])
+  assert.deepEqual(mine({ review: 'APPROVED', checks: 'failing' }), ['CI failing'])
+  assert.deepEqual(mine({ review: 'CHANGES_REQUESTED' }), ['Changes requested'])
+  assert.deepEqual(mine({ review: 'APPROVED' }), ['Ready to merge'])
+  assert.deepEqual(prBackReasons({ state: 'OPEN', mine: true, review: 'REVIEW_REQUIRED' }, false)[0], 'Review it')
+  // Not loaded yet: waiting.
+  assert.deepEqual(prBackReasons({}, false), [])
+})
+
+test('topics: a PR wait is looked at again even while it is back, so approving it puts the topic down again', async () => {
+  let now = 1_000_000
+  const url = 'https://github.com/o/r/pull/7'
+  const id = `github:pr:${url}`
+  const calls: string[][] = []
+  // Ann's PR; at first only Ann has approved it.
+  const approvers = ['ann']
+  const core = memoryCore({ now: () => now, gh: fakeGh(calls, { author: 'ann', approvers }, url) })
+  await core.actions.topicCreate({ name: 'Review Ann' })
+  const [topic] = core.entity('topics').outboundLinks
+  await core.load({ id, part: 'self', force: true })
+  await core.actions.link({ parent: topic, child: id })
+  await core.actions.topicWait({ topic, on: [id] })
+  // Wants my review: back.
   assert.equal(waiting(topic, core.lens()), false)
+  // I approve it on GitHub; the next look (2 minutes on) sees it, and the topic is down again.
+  approvers.push('me')
+  const before = calls.length
+  now += 2 * 60_000
+  await core.pollWaits()
+  assert.ok(calls.length > before)
+  assert.equal(core.item(id)?.data.approvedByMe, true)
+  assert.equal(waiting(topic, core.lens()), true)
 })
 
 test('topics: waits are looked at again on a backoff: Slack every minute, then every 5, then hourly; PRs every 2, then 15, then hourly; topics never', async () => {

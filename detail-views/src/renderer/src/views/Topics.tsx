@@ -1,10 +1,10 @@
-import { memo, useContext, useEffect, useRef } from 'react'
+import { memo, useContext, useEffect, useRef, type ReactNode } from 'react'
 import type { Entity } from '../../../core/types.ts'
 import { shortTime } from '../format.ts'
 import { ChatPage, ClaudeMark, elapsed, type BubbleOf } from './Claude.tsx'
 import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
 import { PathPicker } from './Paths.tsx'
-import { waitOn } from '../../../core/modules/topics/view.ts'
+import { prBackReasons, waitOn, waitsOf } from '../../../core/modules/topics/view.ts'
 import type { TopicProps } from './types.ts'
 import { Button, ClockContext, Highlight, ItemContext, ItemPill, KindsContext } from './primitives.tsx'
 
@@ -15,11 +15,26 @@ import { Button, ClockContext, Highlight, ItemContext, ItemPill, KindsContext } 
 const nameOf = (entity: Entity): string => (typeof entity.data.text === 'string' && entity.data.text ? entity.data.text : 'Topic')
 const running = (entity: Entity): number | null => (typeof entity.data.runningSince === 'number' ? entity.data.runningSince : null)
 
-/** When a topic was last active, or, while Claude answers in it, how long it has been. */
-function When(props: { entity: Entity }) {
+/** When a topic was last active; or, while Claude answers in it or it waits, how long it has been. */
+function When(props: { entity: Entity; waitingSince?: number | null }) {
   const now = useContext(ClockContext)
-  const since = running(props.entity)
+  const since = running(props.entity) ?? props.waitingSince ?? null
   return <span className="muted">{since !== null ? elapsed(now - since) : shortTime(String(props.entity.updatedAt / 1000))}</span>
+}
+
+/** The GitHub mark (src/renderer/src/assets/github.svg). */
+function GitHubMark() {
+  return <span className="github-mark" role="img" aria-label="GitHub" />
+}
+
+/** What a waiting topic waits on, as their marks (Slack, a PR, another topic), each kind once; and since when it has waited (its oldest wait). */
+function waitingOn(entity: Entity): { marks: ReactNode[]; since: number | null } {
+  const waits = waitsOf(entity.data)
+  const kinds = [...new Set(waits.map((wait) => (wait.slack ? 'slack' : wait.pr ? 'pr' : 'topic')))]
+  const marks = kinds.map((kind) =>
+    kind === 'slack' ? <SlackMark key={kind} /> : kind === 'pr' ? <GitHubMark key={kind} /> : <span key={kind} className="topic-waiting" title="Another topic">⧗</span>,
+  )
+  return { marks, since: waits.length ? Math.min(...waits.map((wait) => wait.since)) : null }
 }
 
 export function TopicPill(props: PillProps) {
@@ -147,8 +162,9 @@ function TopicWaits(props: { topic: TopicProps }) {
       {topic.waits.map(({ wait, candidates }) => {
         const on = waitOn(wait)
         // A topic's wait is back once that topic is resolved; a Slack one, when something new came in.
-        // A PR's: what is mine to do on it (its blockers of my turn), merged or closed.
-        const mine = wait.pr ? prBlockers(item(wait.pr)?.data) : []
+        // A PR's: why it is back (`prBackReasons`), or nothing while it waits.
+        const pr = wait.pr ? item(wait.pr)?.data : undefined
+        const mine = pr ? prBackReasons(pr, pr.locallyApproved === true) : []
         const status = wait.topic
           ? item(wait.topic)?.data.resolved
             ? 'resolved'
@@ -184,12 +200,6 @@ function TopicWaits(props: { topic: TopicProps }) {
       })}
     </div>
   )
-}
-
-/** What on a PR (presented: its `blockers`) is mine to do, or that it is merged or closed. */
-function prBlockers(data: Record<string, unknown> | undefined): string[] {
-  const blockers = Array.isArray(data?.blockers) ? (data.blockers as { id: string; label: string; turn: string }[]) : []
-  return blockers.filter((blocker) => blocker.turn === 'me' || blocker.id === 'merged' || blocker.id === 'closed').map((blocker) => blocker.label)
 }
 
 /**
@@ -291,17 +301,15 @@ const TopicCard = memo(function TopicCard(props: { entity: Entity; open: boolean
   useEffect(() => {
     if (props.open) ref.current?.scrollIntoView({ block: 'nearest' })
   }, [props.open])
+  // As Claude's mark while it answers: what it waits on, left of its name, and how long it has waited on the right.
+  const waits = props.waiting ? waitingOn(props.entity) : null
   return (
     <div ref={ref} className={`topic${props.open ? ' open' : ''}`} onClick={() => props.onOpen(props.entity.id)}>
       {running(props.entity) !== null && <ClaudeMark />}
+      {waits?.marks}
       <span className="topic-name">{nameOf(props.entity)}</span>
-      {props.waiting && (
-        <span className="topic-waiting" title="Waiting: `.` passes it by until something comes">
-          ⧗
-        </span>
-      )}
       <span className="topic-time">
-        <When entity={props.entity} />
+        <When entity={props.entity} waitingSince={waits?.since} />
       </span>
     </div>
   )

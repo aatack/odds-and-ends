@@ -229,11 +229,12 @@ export class Topics implements Module {
       const at = this.context.now()
       const followUp = randomUUID()
       const message = randomUUID()
+      // After the answer even when written the same instant as its dispatch (the answer is linked a moment after that).
       this.context.owned.write([
         value(message, 'text', commitPrompt, at, appAuthor),
-        link(topic, message, at, appAuthor),
+        link(topic, message, at + 2, appAuthor),
         ...values(followUp, { type: 'claude.response', text: '', running: true }, at, claudeAuthor),
-        link(topic, followUp, at + 1, claudeAuthor),
+        link(topic, followUp, at + 3, claudeAuthor),
       ])
       await ask(this.context, topic, followUp, commitPrompt)
     }
@@ -260,8 +261,8 @@ export class Topics implements Module {
     const id = url ? prEntityId(url) : null
     if (!id) return
     if (!this.context.lens.children(topic).includes(id)) {
-      // Two moments later, so it sorts after the answer even when written the same instant (an answer is linked a moment after its message).
-      this.context.owned.write([link(topic, id, this.context.now() + 2, claudeAuthor)])
+      // Later than the answers before it, even when all are written the same instant (the last is linked three moments on).
+      this.context.owned.write([link(topic, id, this.context.now() + 4, claudeAuthor)])
     }
     this.share(topic, id)
   }

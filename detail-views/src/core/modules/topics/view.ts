@@ -84,7 +84,7 @@ export interface Wait {
   slack?: string
   /** Another topic: back once it is resolved. */
   topic?: string
-  /** A PR: back once it is blocked by me (mine to review, or conflicts on mine, …: `blockers` of turn `me`), merged or closed. */
+  /** A PR: back once it needs me (`prBack`), merged or closed. */
   pr?: string
   since: number
   dismissed?: string[]
@@ -102,21 +102,43 @@ export function waitsOf(data: Record<string, unknown>): Wait[] {
 /**
  * Whether a wait is back: a Slack one when something came into it
  * (`waitCandidates`), a topic one once that topic is resolved, a PR one
- * once it is merged or closed, or something on it is mine to do.
+ * once it needs me (`prBack`).
  */
 export function waitReturned(topic: string, wait: Wait, lens: Lens): boolean {
   if (wait.topic) return Boolean(lens.read(wait.topic)?.data.resolved)
-  if (wait.pr) return prMine(wait.pr, lens).length > 0
+  if (wait.pr) return prBack(wait.pr, lens).length > 0
   return waitCandidates(topic, wait, lens).length > 0
 }
 
-/** What makes a PR mine to act on now, as the GitHub view says it (`blockers` of turn `me`), or that it is merged or closed. Empty until it has loaded. */
-export function prMine(pr: string, lens: Lens): string[] {
+/** What brings a wait on a PR back (`prBackReasons`), from the cache. */
+export function prBack(pr: string, lens: Lens): string[] {
   const data = lens.read(pr)?.data
-  if (!data) return []
-  return blockers(data, Boolean(localApproval(lens, pr)))
-    .filter((blocker) => blocker.turn === 'me' || blocker.id === 'merged' || blocker.id === 'closed')
-    .map((blocker) => blocker.label)
+  return data ? prBackReasons(data, Boolean(localApproval(lens, pr))) : []
+}
+
+/** What keeps a PR of mine waiting: CI running, someone else's review, auto-merge under way. Anything else on it is mine to do. */
+const othersTurn = new Set(['pending', 'awaiting', 'auto'])
+
+/**
+ * Why a wait on a PR is back, as the GitHub view names it (`blockers`);
+ * empty while it waits, or until the PR has loaded. Merged or closed: back.
+ * Mine: waits while CI runs or someone else's review is all that is left
+ * (or it merges itself); back for anything I must do (conflicts, CI
+ * failing, changes asked for, threads, my own review, ready to merge).
+ * Someone else's: back only while it wants my review and is not a draft.
+ */
+export function prBackReasons(data: Record<string, unknown>, locallyApproved: boolean): string[] {
+  const all = blockers(data, locallyApproved)
+  if (!all.length) return []
+  const ended = all.filter((blocker) => blocker.id === 'merged' || blocker.id === 'closed')
+  if (ended.length) return ended.map((blocker) => blocker.label)
+  if (data.mine) {
+    const mineToDo = all.filter((blocker) => !othersTurn.has(blocker.id))
+    return mineToDo.map((blocker) => blocker.label)
+  }
+  if (data.draft) return []
+  const wantsMe = data.reviewRequestedOfMe === true || (!data.approvedByMe && !data.changesRequestedByMe)
+  return wantsMe ? [data.reviewRequestedOfMe ? 'Review requested' : 'Not reviewed'] : []
 }
 
 const minute = 60_000

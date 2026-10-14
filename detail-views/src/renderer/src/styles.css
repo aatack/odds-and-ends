@@ -2094,8 +2094,18 @@ textarea:hover,
   width: 0.9em;
   height: 0.9em;
   vertical-align: -0.08em;
+  /* Its own four colours: an image, not a mask. */
+  background: url('./assets/slack.svg') center / contain no-repeat;
+}
+
+.github-mark {
+  flex: none;
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  vertical-align: -0.08em;
   background: var(--ink-soft);
-  mask: url('./assets/slack.svg') center / contain no-repeat;
+  mask: url('./assets/github.svg') center / contain no-repeat;
 }
 
 /* A chat's box, and, while it sends outside the app, where to on its right. */

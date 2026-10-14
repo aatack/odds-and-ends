@@ -16,7 +16,7 @@ import type { Module, ModuleContext } from './modules/module.ts'
 import { Slack } from './modules/slack/slack.ts'
 import { me, tasksModule } from './modules/tasks/tasks.ts'
 import { Topics, type PastedFile } from './modules/topics/topics.ts'
-import { topicsIds, waitOn, waitPollEvery, waitReturned, waitsOf } from './modules/topics/view.ts'
+import { topicsIds, waitOn, waitPollEvery, waitsOf } from './modules/topics/view.ts'
 import type { McpAddress } from './mcp.ts'
 import { focusOf, lensOf, moduleInfos, toItem, typeOf, viewOf, type Folds, type Lens } from './present.ts'
 import { Blobs, EventStore, Settings } from './store.ts'
@@ -232,8 +232,9 @@ export class Core {
   /**
    * Looks again at what topics wait on, each when its backoff says
    * (`waitPollEvery`): a Slack conversation or thread loaded on its own, a
-   * PR loaded again. Waits that are back, or on a topic, are left alone. Run
-   * every `waitTick` by `start`; a test calls it directly.
+   * PR loaded again. Back or not: a PR can go back to waiting (once I
+   * approve it, say), and only a fresh load can tell. A topic's wait is left
+   * alone. Run every `waitTick` by `start`; a test calls it directly.
    */
   async pollWaits(): Promise<void> {
     const lens = this.lens()
@@ -241,7 +242,7 @@ export class Core {
     for (const topic of lens.children(topicsIds.root)) {
       for (const wait of waitsOf(lens.read(topic)?.data ?? {})) {
         const every = waitPollEvery(wait, now - wait.since)
-        if (every === null || waitReturned(topic, wait, lens)) continue
+        if (every === null) continue
         const key = `${topic}|${waitOn(wait)}`
         if (now - (this.waitPolled.get(key) ?? wait.since) < every) continue
         this.waitPolled.set(key, now)
