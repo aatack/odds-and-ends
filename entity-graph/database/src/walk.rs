@@ -125,8 +125,10 @@ struct Walker<'a, D, I> {
     visited: Option<HashSet<String>>,
     /// Followed link targets per entity, in order, before path filtering.
     targets: HashMap<String, Vec<String>>,
-    /// Children per path, so that each predicate runs once per path.
-    children: HashMap<Vec<String>, Vec<String>>,
+    /// Children of each prefix of the current path, so that each predicate
+    /// runs once per path. A stack, not a map: memory stays O(depth).
+    stack_ids: Vec<String>,
+    stack_kids: Vec<Option<Vec<String>>>,
     loads: usize,
 }
 
@@ -178,11 +180,16 @@ where
         self.loads += 1;
         let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
         let mut values = self.store.values_in(&self.view, &refs)?;
-        let mut by_type: HashMap<String, Vec<&str>> = HashMap::new();
+        // Group by the followed pairs, not by type: types that follow the
+        // same pairs share one batch read.
+        let mut by_pairs: HashMap<&[(String, Direction)], Vec<&str>> = HashMap::new();
         for id in &refs {
             let values = values.remove(*id).unwrap_or_default();
-            if let Some(Value::Text(t)) = values.get(TYPE_KEY) {
-                by_type.entry(t.clone()).or_default().push(id);
+            if let Some(pairs) = match values.get(TYPE_KEY) {
+                Some(Value::Text(t)) => self.follow.get(t),
+                _ => None,
+            } {
+                by_pairs.entry(pairs.as_slice()).or_default().push(id);
             }
             self.targets.insert((*id).to_owned(), Vec::new());
             self.nodes.insert(
@@ -193,10 +200,7 @@ where
                 },
             );
         }
-        for (ty, members) in by_type {
-            let Some(pairs) = self.follow.get(&ty) else {
-                continue;
-            };
+        for (pairs, members) in by_pairs {
             let groups: Vec<(&str, Direction)> =
                 pairs.iter().map(|(t, d)| (t.as_str(), *d)).collect();
             let links = self.store.links_in(&self.view, &members, &groups, true)?;
@@ -225,7 +229,17 @@ where
     /// The children of the node at the end of `path`: none when `descend`
     /// says no; never an entity already on the path (cycles).
     fn children_of(&mut self, path: &[String], remaining: usize) -> Result<Vec<String>> {
-        if let Some(c) = self.children.get(path) {
+        let common = self
+            .stack_ids
+            .iter()
+            .zip(path)
+            .take_while(|(a, b)| a == b)
+            .count();
+        self.stack_ids.truncate(common);
+        self.stack_kids.truncate(common);
+        self.stack_ids.extend_from_slice(&path[common..]);
+        self.stack_kids.resize(path.len(), None);
+        if let Some(c) = &self.stack_kids[path.len() - 1] {
             return Ok(c.clone());
         }
         let id = path.last().expect("paths are not empty").clone();
@@ -246,7 +260,7 @@ where
         if self.read_ahead.depth > 0 {
             self.ensure(&kids[..take], remaining)?;
         }
-        self.children.insert(path.to_vec(), kids.clone());
+        self.stack_kids[path.len() - 1] = Some(kids.clone());
         Ok(kids)
     }
 
@@ -330,7 +344,8 @@ impl Store {
             links: HashMap::new(),
             visited: options.visited,
             targets: HashMap::new(),
-            children: HashMap::new(),
+            stack_ids: Vec::new(),
+            stack_kids: Vec::new(),
             loads: 0,
         };
         let mut rows = Vec::new();
