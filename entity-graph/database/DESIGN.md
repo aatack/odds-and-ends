@@ -708,7 +708,7 @@ The rules [CHOSEN, I19]. They follow the TS query walk (`src/core/query.ts`):
 
 1. **Start path.** The last ID of `start` is the first node to visit. The earlier IDs are its ancestors. The walk never goes above `start[0]`.
 2. **Order.** The walk is depth-first. The next path is the first child. If there is no child, it is the next sibling of the deepest ancestor that has one.
-3. **Children.** The store reads the `type` of the node. It follows the pairs of that type in `follow`, in the listed order. Each link group keeps its sort order. A child that two pairs reach is kept once, at its first place. A type with no entry follows nothing. There is no wildcard key (see Q17).
+3. **Children.** The store reads the `type` of the node. It follows the pairs of that type in `follow`, in the listed order. Each link group keeps its sort order. A child that two pairs reach is kept once, at its first place. A type with no entry follows nothing. There is no wildcard key (Q17, resolved).
 4. **Filter.** Links use the archived filter of `links` (R23). The start node is visited even if it has no type.
 5. **Steps.** Each visited node is one step. The start node is a step too, and `include` can emit it. A node that `include` refuses still costs a step.
 6. **Predicates.** `include` decides if the node is emitted. `descend` decides if the walk goes below it. Both get the path and the node's values. They do not get links. Each runs once for each path. A resumed walk also runs `descend` on the ancestors of the start, to find their later children.
@@ -806,7 +806,7 @@ Proposals for later (not built):
 | I14 | R8: undo and archives | Undo on an archived branch is refused (I7). |
 | I17 | R26: order and cycles | Expansion is depth-first in stack order (parents before the branch, list order, lowest priority first). "First appeared" means the lowest position in that order. There is no order error. A cycle through open entries is cut where the branch repeats on the path. |
 | I18 | R26, R27: same branch twice | One entry per branch, at its first position. Range = lowest start to highest end. Open beats frozen. |
-| I19 | R30: walk details | See section 11.1: start counts as a step and can be emitted, predicates see values only, no wildcard follow key, skipped nodes cost no step. |
+| I19 | R30: walk details | See section 11.1: start counts as a step and can be emitted, predicates see values only, no wildcard follow key (Q17, resolved), skipped nodes cost no step. |
 | I16 | R23: entities with no type | Hidden, the same as archived entities. The filter checks the other end of each link. `links_including_archived` skips the filter. |
 | I15 | R4: live merges | `merge` is a frozen snapshot. To follow a branch live, use `pull` with an open range. |
 
@@ -823,6 +823,7 @@ Resolved from draft 1:
 - **Q10** (undo scope): R8.
 - **Q12** (callers): standalone. The app does not call it.
 - **Q16** (first appearance and wide ranges): **resolved by R28.**
+- **Q17** (follow wildcard): **resolved: no wildcard.** An entity whose type has no entry in the follow map follows nothing (Alexander, 2026-10-14).
 - **Q14 of draft 3** (history in frozen reads): **resolved by R25.** All reads use one roll-up. A bounded interval reads current and history.
 - **Q14** (timestamps): yes. They give the default sort (R14). They no longer order events across branches (R20).
 - **Q1 of draft 2** (explicit default, R17): **resolved by R22.** The API keeps `SortOrder::Timestamp`. The store writes it as a float. The database thus has no "default" null: null means removed.
@@ -833,7 +834,7 @@ Resolved from draft 1:
 Still open:
 
 - **Q2. Walk and find** [TBD: Alexander]. Filters, order, depth, cycles and paging.
-- **Q17. Follow wildcard.** Is a default key (for example `"*"`) useful in the follow map, for entities with no type or an unknown type? It is not built.
+
 - **Q3. Interpretations.** Do I2 to I18 match the intent? I2 (open entries chain, frozen entries do not) is the most important.
 - **Q13. Undo after a fork.** A fork or a merge freezes a range, so it blocks undo of earlier batches. Must undo be allowed and the frozen follower lose the events? Or must open forks be used?
 - **Q15. Archived type.** Must `restore_entity` find the old type itself? It would then read history, against R19.
