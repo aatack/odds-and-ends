@@ -18,7 +18,7 @@ import {
 import { FileOverview, FilePill, FileRow } from './Files.tsx'
 import { PathOverview, PathPill, PathRow } from './Paths.tsx'
 import type { Kinds } from './kindTypes.ts'
-import { TopicDetail, TopicPill, TopicRow } from './Topics.tsx'
+import { TopicDetail, TopicOverview, TopicPill, TopicRow } from './Topics.tsx'
 import { ContextPill, HomePill, NoteOverview, NotePill, NoteRow, PillOverview, PillRow, TaskOverview, TaskPill, TaskRow } from './Notes.tsx'
 import {
   ConversationOverview,
@@ -60,7 +60,7 @@ export const kinds: Kinds = {
   context: { Pill: ContextPill, Overview: PillOverview, Row: PillRow },
   'claude.response': { Pill: ResponsePill, Overview: ResponseOverview, Row: ResponseRow, tint: responseTint },
   'topics.home': { Pill: HomePill, Overview: PillOverview, Row: PillRow },
-  topic: { Pill: TopicPill, Overview: PillOverview, Row: TopicRow, Detail: TopicDetail },
+  topic: { Pill: TopicPill, Overview: TopicOverview, Row: TopicRow, Detail: TopicDetail },
   file: { Pill: FilePill, Overview: FileOverview, Row: FileRow },
   path: { Pill: PathPill, Overview: PathOverview, Row: PathRow },
 }

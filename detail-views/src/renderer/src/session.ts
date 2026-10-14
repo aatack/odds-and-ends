@@ -2,7 +2,7 @@ import { EntityCache, type CacheState } from '../../core/graph/cache.ts'
 import { findInContext, foreignOf, itemOf, lensOf, moduleInfos, viewOf } from '../../core/present.ts'
 import { activity } from '../../core/modules/slack/view.ts'
 import { byMade, claudeIds } from '../../core/modules/claude/view.ts'
-import { answering, sendTargets, snoozeLength, topicsIds, unsent, waitCandidates, waiting, waitsOf, type SendTarget, type Wait } from '../../core/modules/topics/view.ts'
+import { answering, isTaskTopic, sendTargets, snoozeLength, topicsIds, type TopicDisplay, unsent, waitCandidates, waiting, waitsOf, type SendTarget, type Wait } from '../../core/modules/topics/view.ts'
 import { entityScheme, type Entity, type ModuleInfo, type NoteValues, type Outcome, type View, type ViewRow } from '../../core/types.ts'
 import type { Api } from './api.ts'
 import type { Environment } from './environment.ts'
@@ -289,10 +289,11 @@ export class Session {
       this.snoozeEnds = ends.length ? Math.min(...ends) : null
     }
     const sameWaiting = waitingNow.length === previous.waiting.length && waitingNow.every((id, at) => id === previous.waiting[at])
+    // Waits show on any topic; where a box sends, only on a task's.
     const onTopic = this.topicsMode && view.root?.type === 'topic'
     const sameTopic = sameCache && root === S.focused(previous.state)
     const topicWaits = !onTopic ? [] : sameTopic ? previous.topicWaits : waitsOf(view.root!.data).map((wait) => ({ wait, candidates: waitCandidates(root, wait, lens ?? lensOf(this.cache.source(cache))) }))
-    const topicTargets = !onTopic ? [] : sameTopic ? previous.topicTargets : sendTargets(root, lens ?? lensOf(this.cache.source(cache)))
+    const topicTargets = !onTopic || !isTaskTopic(view.root) ? [] : sameTopic ? previous.topicTargets : sendTargets(root, lens ?? lensOf(this.cache.source(cache)))
     this.itemsFrom = cache
     return {
       ...previous,
@@ -413,14 +414,19 @@ export class Session {
     return window === null ? this.snapshot.shown : (this.snapshot.windowShown[window] ?? noRows)
   }
 
-  /** The selected row of the window the keys act in, or null. A topic's chat has none: it is a flat list, nothing in it selectable. */
+  /** The selected row of the window the keys act in, or null. A task topic's chat has none: it is a flat list, nothing in it selectable. Thoughts are a tree like any other. */
   selected(): ViewRow | null {
     if (this.onTopic()) return null
     return S.selectedRow(this.activeShown())
   }
 
-  /** Whether the keys act in a topic's chat. */
+  /** Whether the keys act in a task topic's chat (not thoughts: a tree, with nothing of Claude's). */
   private onTopic(): boolean {
+    return this.state.window === null && isTaskTopic(this.root())
+  }
+
+  /** Whether the keys act in any topic, task or thoughts. */
+  private onAnyTopic(): boolean {
     return this.state.window === null && this.root()?.type === 'topic'
   }
 
@@ -578,7 +584,7 @@ export class Session {
   }
 
   openTopicDialog(): void {
-    if (this.canOpenTopicDialog()) this.update(S.setDialog(this.state, { kind: 'topic', name: '', path: '', worktree: false }))
+    if (this.canOpenTopicDialog()) this.update(S.setDialog(this.state, { kind: 'topic', name: '', display: 'task', path: '', worktree: false }))
   }
 
   /** `?` on a topic: the same form, for a topic that also goes into this one's chat. */
@@ -587,7 +593,7 @@ export class Session {
   }
 
   openChildTopicDialog(): void {
-    if (this.canOpenChildTopicDialog()) this.update(S.setDialog(this.state, { kind: 'topic', name: '', path: '', worktree: false, parent: S.focused(this.state) }))
+    if (this.canOpenChildTopicDialog()) this.update(S.setDialog(this.state, { kind: 'topic', name: '', display: 'task', path: '', worktree: false, parent: S.focused(this.state) }))
   }
 
   hasDialog(): boolean {
@@ -620,7 +626,9 @@ export class Session {
     if (dialog.kind === 'topic') {
       if (!dialog.name.trim()) return
       this.update(S.setDialog(this.state, null))
-      this.makeTopic(dialog.name, dialog.path.trim() ? { cwd: dialog.path, worktree: dialog.worktree } : undefined, dialog.parent)
+      // Thoughts have no path, whatever was typed before switching to them.
+      const path = dialog.display === 'task' && dialog.path.trim() ? { cwd: dialog.path, worktree: dialog.worktree } : undefined
+      this.makeTopic(dialog.name, path, dialog.parent, dialog.display)
       return
     }
     this.update(S.setDialog(this.state, null))
@@ -656,8 +664,8 @@ export class Session {
   }
 
   /** A topic named `name` is made (with its first path, and in another's chat, if given), and opened. */
-  private makeTopic(name: string, path?: { cwd: string; worktree: boolean }, parent?: string): void {
-    void this.working(topicsIds.root, 'create', () => this.api.topicCreate(name, path, parent)).then((outcome) => {
+  private makeTopic(name: string, path?: { cwd: string; worktree: boolean }, parent?: string, display?: TopicDisplay): void {
+    void this.working(topicsIds.root, 'create', () => this.api.topicCreate(name, path, parent, display)).then((outcome) => {
       if (parent) this.settle(parent, outcome)
       this.settle(topicsIds.root, outcome)
       if (outcome.error) this.showToast(outcome.error)
@@ -698,7 +706,7 @@ export class Session {
 
   /** Whether the topic on screen can be resolved now: not while Claude answers in it. */
   canResolveTopic(): boolean {
-    return this.onTopic() && !answering(S.focused(this.state), lensOf(this.cache.source(this.cache.get())))
+    return this.onAnyTopic() && !answering(S.focused(this.state), lensOf(this.cache.source(this.cache.get())))
   }
 
   /**
@@ -915,7 +923,7 @@ export class Session {
 
   /** Whether the topic on screen can be snoozed from its box: the box empty, and set to a note (not Slack). */
   canSnooze(): boolean {
-    return this.onTopic() && this.state.dialog === null && !this.topicTarget() && !this.topicDraft().trim()
+    return this.onAnyTopic() && this.state.dialog === null && !this.topicTarget() && !this.topicDraft().trim()
   }
 
   /** A form for how long to snooze the topic on screen for. */
@@ -1328,7 +1336,7 @@ export class Session {
   /** Tab while a chat's box doesn't have the keyboard: it takes it again, and the chat hides its selection. */
   canReturnToPrompt(): boolean {
     const type = this.root()?.type
-    return this.state.window === null && !this.state.composing && (type === 'claude.session' || type === 'topic') && this.state.edit === null
+    return this.state.window === null && !this.state.composing && (type === 'claude.session' || isTaskTopic(this.root())) && this.state.edit === null
   }
 
   returnToPrompt(): void {

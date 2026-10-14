@@ -2234,3 +2234,79 @@ textarea:hover,
   border: 1px solid var(--warning-line);
   background: var(--warning-soft);
 }
+
+/* --- Thoughts: a topic as a tree of notes, drawn as entity-graph's editor draws one --- */
+
+.thoughts-page {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.thoughts-page > .topic-waits {
+  margin: 16px 22px 0;
+}
+
+/* Rows close together: 2px apart, 2px inside, the text on a 20px line. */
+.pane.thoughts .row.tree {
+  align-items: flex-start;
+  gap: 0;
+  margin: 1px 0;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+/* What leads a row sits in a 20px square: a small dot, a fold mark, or a box. */
+.pane.thoughts .marker {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.pane.thoughts .bullet {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--faint);
+  font-size: 0;
+  vertical-align: 0;
+}
+
+/* A heading is larger the nearer the root: 1.4× at the first level, down to 1.1×. */
+.pane.thoughts .row.tree.section .cell,
+.pane.thoughts .row.tree.section .edit {
+  font-size: calc(14px * max(1.1, 1.5 - var(--depth) * 0.1));
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+/* A row whose children are hidden says so only by its fainter text. */
+.pane.thoughts .row.tree.folded .cell {
+  color: var(--faint);
+}
+
+/* A ticked box is mark enough: the text stays as it was. */
+.pane.thoughts .note.ticked {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* The topic's name: the tree's first heading. */
+.thoughts-title {
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* The new-topic form's choice: a task, or thoughts. */
+.topic-displays {
+  display: flex;
+  gap: 6px;
+}

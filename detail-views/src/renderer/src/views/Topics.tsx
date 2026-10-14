@@ -4,7 +4,10 @@ import { shortTime } from '../format.ts'
 import { ChatPage, ClaudeMark, elapsed, type BubbleOf } from './Claude.tsx'
 import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
 import { PathPicker } from './Paths.tsx'
-import { prBackReasons, waitOn, waitsOf } from '../../../core/modules/topics/view.ts'
+import { displayOf, prBackReasons, waitOn, waitsOf } from '../../../core/modules/topics/view.ts'
+import { PillOverview } from './Notes.tsx'
+import { Text } from './messages.tsx'
+import { TreePane } from './View.tsx'
 import type { TopicProps } from './types.ts'
 import { Button, ClockContext, Highlight, ItemContext, ItemPill, KindsContext } from './primitives.tsx'
 
@@ -72,6 +75,7 @@ const topicBubble: BubbleOf = (row) => (row.entity.type === 'claude.response' ? 
  * right, a picker for the path it runs in, and Resolve.
  */
 export function TopicDetail(props: OverviewProps) {
+  if (displayOf(props.entity.data) === 'thoughts') return <ThoughtsDetail {...props} />
   const topic = props.interactive ? props.topic : undefined
   const target = topic?.targets.find((one) => one.on === topic.target) ?? null
   return (
@@ -92,7 +96,7 @@ export function TopicDetail(props: OverviewProps) {
       }
       outward={target ? <SlackWhere on={target.on} thread={target.threadTs !== undefined} /> : null}
       // Empty and set to a note: the clock, to put the topic down for a while.
-      boxEnd={topic && !target && !props.draft.trim() ? <Button quiet label={<span className="clock-mark" role="img" aria-label="Snooze" />} title="Snooze" onClick={topic.onSnooze} /> : null}
+      boxEnd={topic && !target && !props.draft.trim() ? <SnoozeButton onSnooze={topic.onSnooze} /> : null}
       aside={topic ? (row) => <WaitButtons entity={row.entity} topic={topic} /> : undefined}
       corner={
         props.interactive ? (
@@ -112,6 +116,43 @@ export function TopicDetail(props: OverviewProps) {
         ) : null
       }
     />
+  )
+}
+
+/**
+ * Thoughts: the topic as a tree of notes, drawn as entity-graph's editor
+ * draws one (`thoughts` in styles.css), and worked as any tree is (Enter, `e`,
+ * `b`, folds, …). At its top right, the snooze and Resolve; above the tree,
+ * its waits. Nothing of Claude's: no box, no path, no git.
+ */
+function ThoughtsDetail(props: OverviewProps) {
+  const topic = props.interactive ? props.topic : undefined
+  return (
+    <div className="thoughts-page">
+      {props.interactive && (
+        <div className="chat-corner">
+          {topic && <SnoozeButton onSnooze={topic.onSnooze} />}
+          {props.onResolveTopic && <Button label="Resolve" busy={props.working?.includes('resolve')} busyLabel="Resolving…" onClick={props.onResolveTopic} />}
+        </div>
+      )}
+      {topic && topic.waits.length > 0 && <TopicWaits topic={topic} />}
+      <TreePane {...props} root={props.entity} look="thoughts" />
+    </div>
+  )
+}
+
+/** The clock that snoozes a topic. */
+function SnoozeButton(props: { onSnooze(): void }) {
+  return <Button quiet label={<span className="clock-mark" role="img" aria-label="Snooze" />} title="Snooze" onClick={props.onSnooze} />
+}
+
+/** A topic heading its view: thoughts start with their name as the tree's first heading; a task, as its pill. */
+export function TopicOverview(props: OverviewProps) {
+  if (displayOf(props.entity.data) === 'task') return <PillOverview {...props} />
+  return (
+    <div className="thoughts-title">
+      <Text text={nameOf(props.entity)} find={props.findText} />
+    </div>
   )
 }
 

@@ -39,7 +39,7 @@ async function headless(options: Parameters<typeof memoryCore>[0] = {}, ui: { to
     redo: async (events) => a.redo({ events }),
     claudeCreate: (input) => a.claudeCreate(input),
     claudeSetDirectory: (session, cwd, worktree) => a.claudeSetDirectory({ session, cwd, worktree }),
-    topicCreate: (name, path, parent) => a.topicCreate({ name, ...path, parent }),
+    topicCreate: (name, path, parent, display) => a.topicCreate({ name, ...path, parent, display }),
     topicAddPath: (topic, cwd, worktree) => a.topicAddPath({ topic, cwd, worktree }),
     topicDispatch: (topic) => a.topicDispatch({ topic }),
     topicPaste: (topic, text) => a.topicPaste({ topic, text }),
@@ -696,7 +696,7 @@ test('topics mode: Ctrl+. opens a form for a new topic, from anywhere; Enter in 
   await settle()
   assert.equal(key('Ctrl+.', 'topic-name'), 'topic.new')
   session.openTopicDialog()
-  assert.deepEqual(session.get().state.dialog, { kind: 'topic', name: '', path: '', worktree: false })
+  assert.deepEqual(session.get().state.dialog, { kind: 'topic', name: '', display: 'task', path: '', worktree: false })
   // Not a second form over the first.
   assert.equal(key('Ctrl+.', null), undefined)
   // Nothing made without a name.
@@ -710,6 +710,39 @@ test('topics mode: Ctrl+. opens a form for a new topic, from anywhere; Enter in 
   const [topic] = session.get().topics
   assert.equal(topic.data.text, 'Flights')
   assert.equal(session.get().view?.root?.id, topic.id)
+  } finally {
+    stop()
+  }
+})
+
+test('topics mode: a thoughts topic is a tree of notes, worked as any tree is, with nothing of Claude\'s', async () => {
+  const { session, stop, settle } = await headless({}, { topics: true })
+  const key = (name: string) => tools.find((tool) => tool.keys.includes(name) && tool.scope !== 'input' && (tool.enabled?.(session, null) ?? true))?.id
+  try {
+  await settle()
+  session.openTopicDialog()
+  // A path typed for a task is dropped on switching to thoughts.
+  session.setDialog({ name: 'Ideas', path: '/tmp', display: 'thoughts' })
+  session.submitDialog()
+  await settle()
+  const view = () => session.get().view!
+  assert.equal(view().root?.data.display, 'thoughts')
+  assert.deepEqual(view().root && session.get().item(view().root!.id)?.data.text, 'Ideas')
+  assert.equal(view().rows.length, 1)
+  // A tree from the top, with no box: Enter adds a note under the selected row, as anywhere.
+  assert.equal(view().startsAtEnd, false)
+  assert.equal(view().compose, null)
+  assert.equal(key('Enter'), 'note.create')
+  session.startCreate()
+  session.setEditDraft('First thought')
+  await session.commitEdit()
+  await settle()
+  assert.deepEqual(view().rows.map((row) => [row.depth, row.entity.data.text]), [[0, 'Ideas'], [1, 'First thought']])
+  // Claude's things are not offered; snooze and Resolve are.
+  assert.equal(session.canDispatch(), false)
+  assert.equal(key('Ctrl+Enter') === 'topic.dispatch', false)
+  assert.equal(session.canSnooze(), true)
+  assert.equal(session.canResolveTopic(), true)
   } finally {
     stop()
   }

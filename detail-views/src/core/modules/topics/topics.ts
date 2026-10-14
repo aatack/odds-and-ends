@@ -10,7 +10,7 @@ import { me } from '../tasks/tasks.ts'
 import { prOfBranch } from '../github/github.ts'
 import { branchOfUrl } from '../github/view.ts'
 import { conversationOfUrl, messageOfUrl } from '../slack/view.ts'
-import { answering, latestPath, promptPart, sendTargets, topicsIds as ids, topicsView, unsent, waitOn, waitsOf, type SendTarget, type Wait } from './view.ts'
+import { answering, isTaskTopic, latestPath, promptPart, sendTargets, topicDisplays, topicsIds as ids, topicsView, unsent, waitOn, waitsOf, type SendTarget, type TopicDisplay, type Wait } from './view.ts'
 
 /** The author of what the app writes in a topic on its own (the prompt to commit): not mine to undo. */
 export const appAuthor = 'module'
@@ -53,13 +53,14 @@ export class Topics implements Module {
     this.share = share
   }
 
-  /** A new topic, named, under the topics root. */
-  create(name: string): AppEvent[] {
+  /** A new topic, named, under the topics root: a task (a chat with Claude), or thoughts (a tree of notes). */
+  create(name: string, display: TopicDisplay = 'task'): AppEvent[] {
     const text = name.trim()
     if (!text) throw new Error('A topic needs a name')
+    if (!topicDisplays.includes(display)) throw new Error(`No such kind of topic: ${display}`)
     const id = randomUUID()
     const at = this.context.now()
-    const events = [...values(id, { type: 'topic', text }, at, me), link(ids.root, id, at, me)]
+    const events = [...values(id, { type: 'topic', text, ...(display === 'thoughts' ? { display } : {}) }, at, me), link(ids.root, id, at, me)]
     this.context.owned.write(events)
     return events
   }
@@ -106,7 +107,7 @@ export class Topics implements Module {
 
   /** A path chosen for a topic (a directory, or a new worktree made from one): a `path` item under it. The next dispatch runs there. */
   addPath(topic: string, place: Place, id: string): AppEvent[] {
-    if (this.context.lens.read(topic)?.type !== 'topic') throw new Error('Not a topic')
+    this.task(topic)
     const at = this.context.now()
     const events = [...values(id, { type: 'path', text: place.cwd, ...place }, at, me), link(topic, id, at, me)]
     this.context.owned.write(events)
@@ -161,7 +162,7 @@ export class Topics implements Module {
 
   /** Where a topic's box may send `on`: only somewhere a Slack item in its chat offers. */
   sendTarget(topic: string, on: string): SendTarget {
-    if (this.context.lens.read(topic)?.type !== 'topic') throw new Error('Not a topic')
+    this.task(topic)
     const target = sendTargets(topic, this.context.lens).find((offered) => offered.on === on)
     if (!target) throw new Error('Nothing in this topic to send that to')
     return target
@@ -172,6 +173,13 @@ export class Topics implements Module {
     const events = [link(topic, id, this.context.now(), me)]
     this.context.owned.write(events)
     return events
+  }
+
+  /** Refused unless `topic` is a task: what is Claude's (a path, a dispatch, git, Slack from the box) is not for thoughts. */
+  task(topic: string): void {
+    const item = this.context.lens.read(topic)
+    if (item?.type !== 'topic') throw new Error('Not a topic')
+    if (!isTaskTopic(item)) throw new Error('Only a task topic works with Claude, paths and git')
   }
 
   private message(topic: string, text: string, at: number): AppEvent[] {
@@ -188,7 +196,7 @@ export class Topics implements Module {
    */
   dispatch(topic: string): AppEvent[] {
     const lens = this.context.lens
-    if (lens.read(topic)?.type !== 'topic') throw new Error('Not a topic')
+    this.task(topic)
     // Never two prompts at once: the messages wait for the next dispatch.
     if (answering(topic, lens) || this.busy.has(topic)) throw new Error('Claude is still answering')
     const messages = unsent(topic, lens)
@@ -409,6 +417,7 @@ export class Topics implements Module {
    * has). Only with a worktree, and a clean checkout there.
    */
   async checkOut(topic: string): Promise<AppEvent[]> {
+    this.task(topic)
     const { worktree } = this.where(topic)
     if (!worktree) throw new Error('No worktree to check out')
     const base = await this.baseRepo(topic)
@@ -421,6 +430,7 @@ export class Topics implements Module {
 
   /** **Master**: the default branch (the remote's, else `master`) checked out in the topic's repo, if its checkout is clean. */
   async checkOutDefault(topic: string): Promise<AppEvent[]> {
+    this.task(topic)
     const base = await this.baseRepo(topic)
     const main = (await this.defaultBranch(base)) ?? 'master'
     await this.clean(base)
@@ -435,6 +445,7 @@ export class Topics implements Module {
    * while Claude answers. Its PR, if it has one, then joins the topic.
    */
   async push(topic: string): Promise<AppEvent[]> {
+    this.task(topic)
     if (answering(topic, this.context.lens) || this.busy.has(topic)) throw new Error('Claude is still answering')
     const { dir, worktree } = this.where(topic)
     const from = worktree ?? dir

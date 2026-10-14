@@ -34,12 +34,23 @@ export function ViewPane(props: ViewProps) {
   // A whole page of its own only in the main view; a peek or the side panel shows the tree.
   const Detail = kinds[root.type].Detail
   if (Detail && props.interactive) return <Detail {...props} entity={root} />
+  return <TreePane {...props} root={root} />
+}
+
+/**
+ * A view as its root's overview and its tree, whatever its type: what a
+ * view is without a `Detail`, and what a `Detail` may show as part of its
+ * page (a topic's thoughts, with `look` for their look).
+ */
+export function TreePane(props: ViewProps & { root: Entity; look?: string }) {
+  const kinds = useContext(KindsContext)!
+  const { view, root } = props
   const Overview = kinds[root.type].Overview
   const action = view.actions.find((offered) => offered.id === props.acting)
   // Typing the next prompt, the chat doesn't mark a row: the box is where I am.
   const prompting = view.startsAtEnd && (props.prompt?.composing ?? props.composing) && !action
   return (
-    <div className={`pane${prompting ? ' prompting' : ''}${props.focused ? '' : ' unfocused'}`}>
+    <div className={`pane${props.look ? ` ${props.look}` : ''}${prompting ? ' prompting' : ''}${props.focused ? '' : ' unfocused'}`}>
       {props.interactive && props.find !== null && (
         <FindField find={props.find} focus={props.findFocus} onFind={props.onFind} onFocused={props.onFindFocused} />
       )}
@@ -125,7 +136,8 @@ function Selectable(props: { shown: Extract<ShownRow, { kind: 'entity' }>; class
   )
 }
 
-const indent = (depth: number): CSSProperties => ({ paddingLeft: 10 + (depth - 1) * 20 })
+// `--depth` too, for a look that sizes headings by it (thoughts).
+const indent = (depth: number): CSSProperties => ({ paddingLeft: 10 + (depth - 1) * 20, ['--depth' as string]: depth })
 
 /**
  * A child row: indented by depth, marked when it has children (open or
@@ -152,7 +164,7 @@ const TreeRow = memo(function TreeRow(props: {
   return (
     <Selectable
       shown={props.shown}
-      className={`tree${rowClass(row)}`}
+      className={`tree${rowClass(row)}${row.hasChildren && !row.open ? ' folded' : ''}${row.entity.data.section ? ' section' : ''}`}
       style={indent(row.depth)}
       onSelect={props.onSelect}
     >

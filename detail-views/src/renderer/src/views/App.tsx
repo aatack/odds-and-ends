@@ -376,21 +376,30 @@ function TopicForm(props: DialogProps<TopicDialog>) {
         value={dialog.name}
         onChange={(event) => props.onChange({ name: event.target.value })}
       />
-      <input
-        className="find"
-        data-field="dialog-topic-path"
-        placeholder="Path (optional)"
-        spellCheck={false}
-        value={dialog.path}
-        onChange={(event) => props.onChange({ path: event.target.value, worktree: false })}
-      />
-      <PathOptions
-        cwds={props.cwds}
-        repos={props.repos}
-        chosen={dialog.path ? { cwd: dialog.path, worktree: dialog.worktree } : null}
-        // Pressing the choice again takes it back.
-        onPick={(cwd, worktree) => props.onChange(dialog.path === cwd && dialog.worktree === worktree ? { path: '', worktree: false } : { path: cwd, worktree })}
-      />
+      {/* A task is a chat with Claude, run in a path; thoughts are a tree of notes, with no path. */}
+      <div className="topic-displays">
+        <Button label="Task" active={dialog.display === 'task'} onClick={() => props.onChange({ display: 'task' })} />
+        <Button label="Thoughts" active={dialog.display === 'thoughts'} onClick={() => props.onChange({ display: 'thoughts' })} />
+      </div>
+      {dialog.display === 'task' && (
+        <>
+          <input
+            className="find"
+            data-field="dialog-topic-path"
+            placeholder="Path (optional)"
+            spellCheck={false}
+            value={dialog.path}
+            onChange={(event) => props.onChange({ path: event.target.value, worktree: false })}
+          />
+          <PathOptions
+            cwds={props.cwds}
+            repos={props.repos}
+            chosen={dialog.path ? { cwd: dialog.path, worktree: dialog.worktree } : null}
+            // Pressing the choice again takes it back.
+            onPick={(cwd, worktree) => props.onChange(dialog.path === cwd && dialog.worktree === worktree ? { path: '', worktree: false } : { path: cwd, worktree })}
+          />
+        </>
+      )}
       <div className="dialog-buttons">
         <Button label="Cancel" hotkey="Esc" onClick={props.onCancel} />
         <Button label="Make" hotkey="↵" busy={props.busy} busyLabel="Making…" disabled={!props.dialog.name.trim() && 'Name it first'} onClick={props.onSubmit} />

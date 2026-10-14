@@ -1,5 +1,6 @@
 import type { AppEvent } from '../../core/graph/events.ts'
 import type { NoteValues, View, ViewRow } from '../../core/types.ts'
+import type { TopicDisplay } from '../../core/modules/topics/view.ts'
 
 /**
  * Latent UI state: the minimum, and serialisable. Nothing derivable lives here
@@ -112,6 +113,8 @@ export interface SessionDialog {
 export interface TopicDialog {
   kind: 'topic'
   name: string
+  /** A task (a chat with Claude, with a path) or thoughts (a tree of notes, no path). */
+  display: TopicDisplay
   path: string
   worktree: boolean
   /** Made from another topic (`?`): it goes into that one's chat too. */

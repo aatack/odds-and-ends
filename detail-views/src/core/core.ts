@@ -16,7 +16,7 @@ import type { Module, ModuleContext } from './modules/module.ts'
 import { Slack } from './modules/slack/slack.ts'
 import { me, tasksModule } from './modules/tasks/tasks.ts'
 import { Topics, type PastedFile } from './modules/topics/topics.ts'
-import { topicsIds, waitOn, waitPollEvery, waitsOf } from './modules/topics/view.ts'
+import { topicsIds, waitOn, waitPollEvery, waitsOf, type TopicDisplay } from './modules/topics/view.ts'
 import type { McpAddress } from './mcp.ts'
 import { focusOf, lensOf, moduleInfos, toItem, typeOf, viewOf, type Folds, type Lens } from './present.ts'
 import { Blobs, EventStore, Settings } from './store.ts'
@@ -403,6 +403,8 @@ export class Core {
 
   /** A path for a topic: checked, made a worktree if asked, remembered for next time, then the item under the topic. */
   private async addPath(topic: string, cwd: string, worktree: boolean): Promise<AppEvent[]> {
+    // Before a worktree is made for it.
+    this.topics.task(topic)
     const requested = this.claude.directory(cwd)
     if (!requested) throw new Error('No directory given')
     const id = randomUUID()
@@ -626,10 +628,12 @@ export class Core {
       text.trim() ? { events: this.claude.prompt(session, text), error: null } : { events: [], error: null },
     /** A new topic, named, in the one list of them. */
     /** A new topic, named; with a path, if one is given (`cwd`, or a new worktree of it). */
-    topicCreate: ({ name, cwd, worktree, parent }: { name: string; cwd?: string; worktree?: boolean; parent?: string }): Promise<Outcome> =>
+    /** Thoughts (`display`) are a tree of notes, with nothing of Claude's: no path. */
+    topicCreate: ({ name, cwd, worktree, parent, display }: { name: string; cwd?: string; worktree?: boolean; parent?: string; display?: TopicDisplay }): Promise<Outcome> =>
       this.attempt('topics', async () => {
         if (parent && this.item(parent)?.type !== 'topic') throw new Error('Not a topic')
-        const made = this.topics.create(name)
+        if (display === 'thoughts' && cwd?.trim()) throw new Error('Thoughts have no path: only a task topic runs somewhere')
+        const made = this.topics.create(name, display)
         const listed = made.find((event) => event.type === 'link')
         if (listed?.type !== 'link') return made
         const id = listed.destinationId

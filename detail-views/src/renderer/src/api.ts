@@ -1,5 +1,6 @@
 import type { AppEvent, Changed, Scan } from '../../core/graph/events.ts'
 import type { LoadRequest, LoadResult, NoteValues, Outcome } from '../../core/types.ts'
+import type { TopicDisplay } from '../../core/modules/topics/view.ts'
 
 /** The seam between the UI and the core. Nothing else reaches the core. */
 export interface Api {
@@ -36,7 +37,8 @@ export interface Api {
   claudeSetDirectory(session: string, cwd: string, worktree: boolean): Promise<Outcome>
   /** A new topic, named, in the one list of them. */
   /** A new topic, named; with its first path, and in another topic's chat (`parent`), if given. */
-  topicCreate(name: string, path?: { cwd: string; worktree: boolean }, parent?: string): Promise<Outcome>
+  /** A new topic: a task (with a first path, if given) or thoughts; in another's chat, if `parent`. */
+  topicCreate(name: string, path?: { cwd: string; worktree: boolean }, parent?: string, display?: TopicDisplay): Promise<Outcome>
   /** A path for a topic: `cwd`, or a new worktree of it; where its next dispatch runs. */
   topicAddPath(topic: string, cwd: string, worktree: boolean): Promise<Outcome>
   /** Sends a topic's messages since its last dispatch to Claude at once. */
@@ -125,7 +127,7 @@ export function httpApi(base: string, token: string): Api {
     redo: (events) => call('redo', { events }),
     claudeCreate: (input) => call('claudeCreate', input),
     claudeSetDirectory: (session, cwd, worktree) => call('claudeSetDirectory', { session, cwd, worktree }),
-    topicCreate: (name, path, parent) => call('topicCreate', { name, ...path, parent }),
+    topicCreate: (name, path, parent, display) => call('topicCreate', { name, ...path, parent, display }),
     topicAddPath: (topic, cwd, worktree) => call('topicAddPath', { topic, cwd, worktree }),
     topicDispatch: (topic) => call('topicDispatch', { topic }),
     topicPaste: (topic, text) => call('topicPaste', { topic, text }),
@@ -184,7 +186,7 @@ export function electronApi(): Api {
     redo: (events) => call('redo', { events }),
     claudeCreate: (input) => call('claudeCreate', input),
     claudeSetDirectory: (session, cwd, worktree) => call('claudeSetDirectory', { session, cwd, worktree }),
-    topicCreate: (name, path, parent) => call('topicCreate', { name, ...path, parent }),
+    topicCreate: (name, path, parent, display) => call('topicCreate', { name, ...path, parent, display }),
     topicAddPath: (topic, cwd, worktree) => call('topicAddPath', { topic, cwd, worktree }),
     topicDispatch: (topic) => call('topicDispatch', { topic }),
     topicPaste: (topic, text) => call('topicPaste', { topic, text }),

@@ -27,7 +27,7 @@ doc for the area you change, and keep it up to date in the same commit.
   points it at a Slack thread or conversation in the chat (the box turns the
   warning's colour). A topic can wait on Slack threads and conversations
   (`wait`): `.` passes it by until someone else says something there, or on
-  another topic, until it is resolved, or on a PR, until it needs me; a clock in its empty box snoozes it (`6h`, `2d`). `?` makes a topic in the open one's chat. The classic UI below (modules, the
+  another topic, until it is resolved, or on a PR, until it needs me; a clock in its empty box snoozes it (`6h`, `2d`). A topic is a **task** (the chat) or **thoughts** (a tree of notes, as entity-graph's editor; nothing of Claude's: no path, no dispatch), chosen in the new-topic form and kept as its `display`. `?` makes a topic in the open one's chat. The classic UI below (modules, the
   sidebar) is behind a flag, `DETAIL_VIEWS_UI=classic`; the phone stays on
   it. Each mode keeps its own stack.
 - **Modules are workflows.** Each one (Slack, tasks, later calendar, …) is a

@@ -6,6 +6,20 @@ import { byRecent } from '../claude/view.ts'
 export const topicsIds = { root: 'topics' }
 
 /**
+ * How a topic is shown and worked: a **task** (a chat with Claude, the
+ * default) or **thoughts** (a tree of notes, as in entity-graph's editor,
+ * with nothing of Claude's: no path, no dispatch). Kept as its `display`;
+ * none is a task.
+ */
+export const topicDisplays = ['task', 'thoughts'] as const
+export type TopicDisplay = (typeof topicDisplays)[number]
+
+export const displayOf = (data: Record<string, unknown>): TopicDisplay => (data.display === 'thoughts' ? 'thoughts' : 'task')
+
+/** Whether an item is a topic shown as a chat with Claude. */
+export const isTaskTopic = (entity: Pick<Entity, 'type' | 'data'> | null | undefined): boolean => entity?.type === 'topic' && displayOf(entity.data) === 'task'
+
+/**
  * What of a topic is not yet sent to Claude: everything under it after its
  * newest response (each dispatch puts one there), in order, by id: my
  * messages (notes, empty ones apart), and whatever was pasted in (a file, a
@@ -62,9 +76,9 @@ export const topicsView: ModuleView = {
   typeOf: (id) => (id === topicsIds.root ? 'topics.home' : null),
   // A file is only ever pasted into a topic, and a path only ever chosen for one, for now.
   owns: (type) => type === 'topics.home' || type === 'topic' || type === 'file' || type === 'path',
-  // A topic reads like chat: the newest at the bottom, where the cursor starts.
-  newestFirst: (type) => type === 'topic',
-  compose: (entity) => (entity.type === 'topic' ? 'topic' : null),
+  // A task reads like chat: the newest at the bottom, where the cursor starts. Thoughts read as a tree, from the top.
+  newestFirst: (type, entity) => type === 'topic' && (!entity || isTaskTopic(entity)),
+  compose: (entity) => (isTaskTopic(entity) ? 'topic' : null),
   // The most recently active first: a message, a dispatch or an answer moves one to the top.
   order: (entity, children) => (entity.type === 'topics.home' ? byRecent(children) : children),
   present: (entity) => (entity.type === 'topics.home' ? { ...entity, data: { ...entity.data, text: entity.data.text ?? 'Topics' } } : entity),

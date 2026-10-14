@@ -36,7 +36,7 @@ export interface ModuleView {
   /** What of an entity comes from another service, and how long each part stays fresh. */
   foreign?(id: string, type: ItemType): Freshness | null
   /** Reads bottom up, like chat: a bounded walk keeps the newest end, and the cursor starts there. */
-  newestFirst?(type: ItemType): boolean
+  newestFirst?(type: ItemType, entity?: Entity): boolean
   /** Whether a row of this type has its children walked until I fold it. Default: no. */
   openByDefault?(type: ItemType): boolean
   /** Fills in what is worked out rather than stored (names, say). */
@@ -238,7 +238,7 @@ export function viewOf(rootId: string, source: Source, options: ViewOptions = {}
     let children = moduleOf(entity.type)?.order?.(entity, shown, lens) ?? shown
     // Chat keeps its newest end when the bound bites.
     // (The root is a row of the walk too, so `limit - 1` of them.)
-    if (depth === 0 && module?.newestFirst?.(entity.type) && children.length > limit - 1) {
+    if (depth === 0 && module?.newestFirst?.(entity.type, entity) && children.length > limit - 1) {
       children = children.slice(children.length - (limit - 1))
       complete = false
     }
@@ -258,7 +258,7 @@ export function viewOf(rootId: string, source: Source, options: ViewOptions = {}
     compose: module?.compose?.(root, lens) ?? null,
     actions: module?.actions?.(root, lens) ?? [],
     older: module?.older?.(root) ?? false,
-    startsAtEnd: module?.newestFirst?.(root.type) ?? false,
+    startsAtEnd: module?.newestFirst?.(root.type, root) ?? false,
     loading,
     error,
   }

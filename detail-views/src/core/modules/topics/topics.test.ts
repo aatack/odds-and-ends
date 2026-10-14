@@ -641,6 +641,30 @@ test('topics: a topic made from another goes into its chat; a topic can wait on 
   assert.equal(core.item(release)!.data.wait ?? null, null)
 })
 
+test('topics: thoughts are a tree of notes, with nothing of Claude\'s: no path, no dispatch, no git', async () => {
+  const core = memoryCore({ now: () => 250_000 })
+  assert.match(String((await core.actions.topicCreate({ name: 'Ideas', display: 'thoughts', cwd: '/tmp' })).error), /no path/)
+  assert.equal((await core.actions.topicCreate({ name: 'Ideas', display: 'thoughts' })).error, null)
+  const [topic] = core.entity('topics').outboundLinks
+  assert.equal(core.item(topic)!.data.display, 'thoughts')
+  await core.actions.create({ parent: topic, text: 'A thought', values: {} })
+  for (const refused of [
+    core.actions.topicDispatch({ topic }),
+    core.actions.topicAddPath({ topic, cwd: '/tmp', worktree: false }),
+    core.actions.topicPush({ topic }),
+    core.actions.topicCheckOutDefault({ topic }),
+  ]) assert.match(String((await refused).error), /Only a task topic/)
+  // Read from the top, as a tree, with no box.
+  const view = core.actions.view({ id: topic })
+  assert.equal(view.startsAtEnd, false)
+  assert.equal(view.compose, null)
+  // A task is still a chat, and none is a task.
+  await core.actions.topicCreate({ name: 'Work' })
+  const task = core.entity('topics').outboundLinks.find((id) => id !== topic)!
+  assert.equal(core.item(task)!.data.display ?? null, null)
+  assert.equal(core.actions.view({ id: task }).startsAtEnd, true)
+})
+
 test('topics: a snooze puts a topic down until its time, beside its other waits, and one replaces another', async () => {
   const core = memoryCore({ now: () => 250_000 })
   await core.actions.topicCreate({ name: 'Later' })
