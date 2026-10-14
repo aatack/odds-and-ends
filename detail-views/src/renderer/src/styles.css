@@ -2245,25 +2245,52 @@ textarea:hover,
   flex-direction: column;
 }
 
-.thoughts-page > .topic-waits {
-  margin: 16px 22px 0;
+
+/*
+ * Read in the same column as a task's chat (840px at most, in the middle of a
+ * wider window, the scroll bar near the window's edge), and its text as a
+ * task's messages read: the page's size, wrapping anywhere.
+ */
+.pane.thoughts {
+  padding-right: 4px;
 }
 
-/* Rows close together: 2px apart, 2px inside, the text on a 20px line. */
+.pane.thoughts .rows {
+  max-width: 840px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-right: 18px;
+}
+
+.thoughts-page > .topic-waits {
+  margin: 16px max(18px, (100% - 840px) / 2) 0 max(22px, (100% - 840px) / 2);
+}
+
+.thoughts-page > .chat-corner {
+  right: 18px;
+}
+
+/* Rows close together: 2px apart, 2px inside. */
 .pane.thoughts .row.tree {
   align-items: flex-start;
   gap: 0;
   margin: 1px 0;
   padding-top: 2px;
   padding-bottom: 2px;
-  font-size: 14px;
-  line-height: 20px;
+  overflow-wrap: anywhere;
 }
 
-/* What leads a row sits in a 20px square: a small dot, a fold mark, or a box. */
+/* Typing in place: the task's box, at full strength, as it is with the keyboard. */
+.pane.thoughts .boxed-edit {
+  width: 100%;
+  border-color: var(--accent-line);
+  box-shadow: inset 0 1px 4px var(--well-hover);
+}
+
+/* What leads a row sits in a square a line high: a small dot, a fold mark, or a box. */
 .pane.thoughts .marker {
   width: 20px;
-  height: 20px;
+  height: 1.45em;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2281,7 +2308,7 @@ textarea:hover,
 
 /* A heading is larger the nearer the root: 1.4× at the first level, down to 1.1×. */
 .pane.thoughts .row.tree.section .cell,
-.pane.thoughts .row.tree.section .edit {
+.pane.thoughts .row.tree.section .boxed-edit {
   font-size: calc(14px * max(1.1, 1.5 - var(--depth) * 0.1));
   line-height: 1.3;
   font-weight: 600;

@@ -1,4 +1,4 @@
-import { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ComponentType, CSSProperties, ReactNode } from 'react'
 import type { Entity, NoteValues, ViewRow } from '../../../core/types.ts'
 import { Checkbox } from './Notes.tsx'
@@ -54,7 +54,9 @@ export function TreePane(props: ViewProps & { root: Entity; look?: string }) {
       {props.interactive && props.find !== null && (
         <FindField find={props.find} focus={props.findFocus} onFind={props.onFind} onFocused={props.onFindFocused} />
       )}
-      <TreeList props={props} root={root} Overview={Overview} />
+      <BoxedContext.Provider value={props.look === 'thoughts'}>
+        <TreeList props={props} root={root} Overview={Overview} />
+      </BoxedContext.Provider>
       {view.loading && view.rows.length <= 1 && <div className="loading">Loading…</div>}
       <Status error={view.error} />
       {action && props.composing && (
@@ -264,8 +266,12 @@ function EditBox(props: { props: ViewProps }) {
   return <TextBox edit={props.props.edit} onEditDraft={props.props.onEditDraft} />
 }
 
+/** Whether typing in place uses a task's box (thoughts): a textarea that grows, as the box a message is typed in. */
+const BoxedContext = createContext(false)
+
 export function TextBox(props: { edit: Edit | null; onEditDraft(text: string): void }) {
   const { edit, onEditDraft } = props
+  if (useContext(BoxedContext)) return <BoxedTextBox edit={edit} onEditDraft={onEditDraft} />
   return (
     <input
       className="edit"
@@ -273,6 +279,37 @@ export function TextBox(props: { edit: Edit | null; onEditDraft(text: string): v
       spellCheck
       value={edit?.draft ?? ''}
       placeholder={edit?.mode === 'create' ? 'Note' : ''}
+      data-field="edit"
+      onChange={(event) => onEditDraft(event.target.value)}
+      onMouseDown={(event) => event.stopPropagation()}
+    />
+  )
+}
+
+/** Typing in place in thoughts: the box a task's message is typed in, growing with what is typed. Enter writes, Shift+Enter breaks the line. */
+function BoxedTextBox(props: { edit: Edit | null; onEditDraft(text: string): void }) {
+  const { edit, onEditDraft } = props
+  const ref = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (!element) return
+    element.style.height = 'auto'
+    element.style.height = `${element.scrollHeight + element.offsetHeight - element.clientHeight}px`
+  }, [edit?.draft])
+  useEffect(() => {
+    const element = ref.current
+    // The caret goes after what is there, as in the task's box.
+    element?.setSelectionRange(element.value.length, element.value.length)
+  }, [])
+  return (
+    <textarea
+      ref={ref}
+      className="composer boxed-edit"
+      rows={1}
+      autoFocus
+      spellCheck
+      value={edit?.draft ?? ''}
+      placeholder={edit?.mode === 'create' ? 'Message' : ''}
       data-field="edit"
       onChange={(event) => onEditDraft(event.target.value)}
       onMouseDown={(event) => event.stopPropagation()}
