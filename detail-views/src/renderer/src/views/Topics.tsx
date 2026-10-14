@@ -6,7 +6,7 @@ import type { OverviewProps, PillProps, RowProps } from './kindTypes.ts'
 import { PathPicker } from './Paths.tsx'
 import { waitOn } from '../../../core/modules/topics/view.ts'
 import type { TopicProps } from './types.ts'
-import { Button, ClockContext, Highlight, ItemContext, ItemPill } from './primitives.tsx'
+import { Button, ClockContext, Highlight, ItemContext, ItemPill, KindsContext } from './primitives.tsx'
 
 // The topics mode: one list of topics on the left, the chat of the one open
 // filling the rest. A message is only written into the chat; Ctrl+Enter sends
@@ -57,7 +57,14 @@ export function TopicDetail(props: OverviewProps) {
       bubble={topicBubble}
       flat
       onDemand
-      above={topic && topic.waits.length > 0 ? <TopicWaits topic={topic} /> : null}
+      above={
+        topic && (topic.waits.length > 0 || target) ? (
+          <>
+            {topic.waits.length > 0 && <TopicWaits topic={topic} />}
+            {target && <TargetOverview id={target.on} chat={props} />}
+          </>
+        ) : null
+      }
       outward={target ? <SlackWhere on={target.on} thread={target.threadTs !== undefined} /> : null}
       aside={topic ? (row) => <WaitButtons entity={row.entity} topic={topic} /> : undefined}
       corner={
@@ -112,8 +119,8 @@ function SlackWhere(props: { on: string; thread: boolean }) {
 function WaitButtons(props: { entity: Entity; topic: TopicProps }) {
   const { entity, topic } = props
   if (entity.type === 'slack.conversation') return <Button quiet label="Wait" onClick={() => topic.onWait(entity.id, 'channel')} />
-  // Another topic: wait until it is resolved.
-  if (entity.type === 'topic') return <Button quiet label="Wait" onClick={() => topic.onWaitTopic(entity.id)} />
+  // Another topic: wait until it is resolved; a PR, until it is blocked by me, merged or closed.
+  if (entity.type === 'topic' || entity.type === 'github.pr') return <Button quiet label="Wait" onClick={() => topic.onWaitFor(entity.id)} />
   // Not until it has loaded: only then is it known whether it is in a thread.
   if (entity.type !== 'slack.message' || typeof entity.data.ts !== 'string') return null
   return (
@@ -127,9 +134,9 @@ function WaitButtons(props: { entity: Entity; topic: TopicProps }) {
 }
 
 /**
- * Just above a topic's box: what it waits on, each with how long, and a ×
- * to stop; under each, what has come in since, to add to the topic or pass
- * over.
+ * Just above a topic's box: what it waits on, each with how long (or, for
+ * a PR, what is mine to do on it), and a × to stop; under each, what has
+ * come in since, to add to the topic or pass over.
  */
 function TopicWaits(props: { topic: TopicProps }) {
   const { topic } = props
@@ -140,11 +147,17 @@ function TopicWaits(props: { topic: TopicProps }) {
       {topic.waits.map(({ wait, candidates }) => {
         const on = waitOn(wait)
         // A topic's wait is back once that topic is resolved; a Slack one, when something new came in.
+        // A PR's: what is mine to do on it (its blockers of my turn), merged or closed.
+        const mine = wait.pr ? prBlockers(item(wait.pr)?.data) : []
         const status = wait.topic
           ? item(wait.topic)?.data.resolved
             ? 'resolved'
             : `waiting ${elapsed(now - wait.since)}`
-          : candidates.length
+          : wait.pr
+            ? mine.length
+              ? mine.join(', ')
+              : `waiting ${elapsed(now - wait.since)}`
+            : candidates.length
             ? `${candidates.length} new`
             : `waiting ${elapsed(now - wait.since)}`
         return (
@@ -169,6 +182,43 @@ function TopicWaits(props: { topic: TopicProps }) {
         </div>
         )
       })}
+    </div>
+  )
+}
+
+/** What on a PR (presented: its `blockers`) is mine to do, or that it is merged or closed. */
+function prBlockers(data: Record<string, unknown> | undefined): string[] {
+  const blockers = Array.isArray(data?.blockers) ? (data.blockers as { id: string; label: string; turn: string }[]) : []
+  return blockers.filter((blocker) => blocker.turn === 'me' || blocker.id === 'merged' || blocker.id === 'closed').map((blocker) => blocker.label)
+}
+
+/**
+ * Just above a topic's box while it sends somewhere outside (Slack): that
+ * place's overview (the thread's first message, or the conversation), to
+ * see where it is going.
+ */
+function TargetOverview(props: { id: string; chat: OverviewProps }) {
+  const { chat } = props
+  const kinds = useContext(KindsContext)!
+  const { item } = useContext(ItemContext)
+  const entity = item(props.id)
+  if (!entity) return null
+  const Overview = kinds[entity.type].Overview
+  // Its overview alone: no tree, no actions, nothing of the topic's own.
+  const view = { ...chat.view, root: entity, rows: [], actions: [], older: false, compose: null, error: null, loading: false }
+  return (
+    <div className="target-overview">
+      <Overview
+        {...chat}
+        view={view}
+        shown={{ rows: [], keys: [], selectedPath: [], selectedIndex: -1 }}
+        interactive={false}
+        onAction={undefined}
+        onOlder={undefined}
+        onPause={undefined}
+        entity={entity}
+        findText={undefined}
+      />
     </div>
   )
 }

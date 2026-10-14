@@ -1,5 +1,6 @@
 import type { Lens, ModuleView } from '../../present.ts'
 import type { Entity } from '../../types.ts'
+import { blockers, localApproval } from '../github/view.ts'
 import { byRecent } from '../claude/view.ts'
 
 export const topicsIds = { root: 'topics' }
@@ -83,23 +84,55 @@ export interface Wait {
   slack?: string
   /** Another topic: back once it is resolved. */
   topic?: string
+  /** A PR: back once it is blocked by me (mine to review, or conflicts on mine, …: `blockers` of turn `me`), merged or closed. */
+  pr?: string
   since: number
   dismissed?: string[]
 }
 
 /** What a wait is on: its Slack conversation or thread, or its topic. */
-export const waitOn = (wait: Wait): string => wait.slack ?? wait.topic ?? ''
+export const waitOn = (wait: Wait): string => wait.slack ?? wait.topic ?? wait.pr ?? ''
 
 /** A topic's waits, as kept on it (anything malformed dropped). */
 export function waitsOf(data: Record<string, unknown>): Wait[] {
   if (!Array.isArray(data.wait)) return []
-  return data.wait.filter((wait): wait is Wait => (typeof wait?.slack === 'string' || typeof wait?.topic === 'string') && typeof wait.since === 'number')
+  return data.wait.filter((wait): wait is Wait => (typeof wait?.slack === 'string' || typeof wait?.topic === 'string' || typeof wait?.pr === 'string') && typeof wait.since === 'number')
 }
 
-/** Whether a wait is back: a Slack one when something came into it (`waitCandidates`), a topic one once that topic is resolved. */
+/**
+ * Whether a wait is back: a Slack one when something came into it
+ * (`waitCandidates`), a topic one once that topic is resolved, a PR one
+ * once it is merged or closed, or something on it is mine to do.
+ */
 export function waitReturned(topic: string, wait: Wait, lens: Lens): boolean {
   if (wait.topic) return Boolean(lens.read(wait.topic)?.data.resolved)
+  if (wait.pr) return prMine(wait.pr, lens).length > 0
   return waitCandidates(topic, wait, lens).length > 0
+}
+
+/** What makes a PR mine to act on now, as the GitHub view says it (`blockers` of turn `me`), or that it is merged or closed. Empty until it has loaded. */
+export function prMine(pr: string, lens: Lens): string[] {
+  const data = lens.read(pr)?.data
+  if (!data) return []
+  return blockers(data, Boolean(localApproval(lens, pr)))
+    .filter((blocker) => blocker.turn === 'me' || blocker.id === 'merged' || blocker.id === 'closed')
+    .map((blocker) => blocker.label)
+}
+
+const minute = 60_000
+const hour = 60 * minute
+
+/**
+ * How often a wait not yet back is looked at again (its own loads), by how
+ * long it has waited: backing off, as an answer gets less likely to come
+ * soon. Slack every minute for 5 minutes, every 5 for the first hour, then
+ * hourly; a PR every 2 minutes for the first hour, every 15 for the first
+ * day, then hourly. A topic's wait is local: null, nothing to load.
+ */
+export function waitPollEvery(wait: Wait, age: number): number | null {
+  if (wait.slack) return age < 5 * minute ? minute : age < hour ? 5 * minute : hour
+  if (wait.pr) return age < hour ? 2 * minute : age < 24 * hour ? 15 * minute : hour
+  return null
 }
 
 /** The ts in a Slack message id, as Unix ms; NaN for anything else. */

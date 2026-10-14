@@ -876,8 +876,8 @@ export class Session {
     })
   }
 
-  /** Waits on another topic in the chat: the topic on screen is put down until that one is resolved. */
-  waitOnTopic(other: string): void {
+  /** Waits on another topic in the chat (until it is resolved) or a PR (until it is blocked by me, merged or closed): the topic on screen is put down until then. */
+  waitFor(other: string): void {
     if (!this.onTopic()) return
     const id = S.focused(this.state)
     void this.working(id, 'wait', () => this.api.topicWait(id, [other])).then((outcome) => {

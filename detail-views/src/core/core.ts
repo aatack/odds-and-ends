@@ -16,7 +16,7 @@ import type { Module, ModuleContext } from './modules/module.ts'
 import { Slack } from './modules/slack/slack.ts'
 import { me, tasksModule } from './modules/tasks/tasks.ts'
 import { Topics, type PastedFile } from './modules/topics/topics.ts'
-import { topicsIds } from './modules/topics/view.ts'
+import { topicsIds, waitOn, waitPollEvery, waitReturned, waitsOf } from './modules/topics/view.ts'
 import type { McpAddress } from './mcp.ts'
 import { focusOf, lensOf, moduleInfos, toItem, typeOf, viewOf, type Folds, type Lens } from './present.ts'
 import { Blobs, EventStore, Settings } from './store.ts'
@@ -27,6 +27,8 @@ const changeEvery = 150
 /** The author of a module's own data on its root (a token): not mine to undo. */
 const moduleAuthor = 'module'
 const clearEvery = 7 * 24 * 60 * 60_000
+/** How often what topics wait on is checked against its backoff (`pollWaits`). */
+const waitTick = 30_000
 const checkEvery = 10 * 60_000
 /** How far a scan reads past what it was asked for, in layers and in entities per layer. */
 const scanDepth = 1
@@ -116,6 +118,9 @@ export class Core {
   private notifying = false
   private lastNotified = 0
   private clearer: ReturnType<typeof setInterval> | null = null
+  private waitPoller: ReturnType<typeof setInterval> | null = null
+  /** When each wait was last looked at (`topic|on`), for its backoff. In memory: after a restart, each is looked at again. */
+  private readonly waitPolled = new Map<string, number>()
   private stopWatches: (() => void) | null = null
 
   constructor(options: CoreOptions) {
@@ -195,6 +200,7 @@ export class Core {
     this.clearCacheIfOld()
     this.clearer ??= setInterval(() => this.clearCacheIfOld(), checkEvery)
     this.stopWatches ??= this.slack.watch()
+    this.waitPoller ??= setInterval(() => void this.pollWaits(), waitTick)
     void this.claude.refreshRepos()
     void this.recoverAnswers()
   }
@@ -223,9 +229,37 @@ export class Core {
     })
   }
 
+  /**
+   * Looks again at what topics wait on, each when its backoff says
+   * (`waitPollEvery`): a Slack conversation or thread loaded on its own, a
+   * PR loaded again. Waits that are back, or on a topic, are left alone. Run
+   * every `waitTick` by `start`; a test calls it directly.
+   */
+  async pollWaits(): Promise<void> {
+    const lens = this.lens()
+    const now = this.now()
+    for (const topic of lens.children(topicsIds.root)) {
+      for (const wait of waitsOf(lens.read(topic)?.data ?? {})) {
+        const every = waitPollEvery(wait, now - wait.since)
+        if (every === null || waitReturned(topic, wait, lens)) continue
+        const key = `${topic}|${waitOn(wait)}`
+        if (now - (this.waitPolled.get(key) ?? wait.since) < every) continue
+        this.waitPolled.set(key, now)
+        try {
+          if (wait.slack) await this.slack.waitedOn(wait.slack, wait.since)
+          else if (wait.pr) await this.load({ id: wait.pr, part: 'self', force: true })
+        } catch {
+          // Tried again at the next turn of its backoff.
+        }
+      }
+    }
+  }
+
   stop(): void {
     if (this.clearer) clearInterval(this.clearer)
     this.clearer = null
+    if (this.waitPoller) clearInterval(this.waitPoller)
+    this.waitPoller = null
     this.stopWatches?.()
     this.stopWatches = null
   }

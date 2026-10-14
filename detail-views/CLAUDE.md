@@ -27,7 +27,7 @@ doc for the area you change, and keep it up to date in the same commit.
   points it at a Slack thread or conversation in the chat (the box turns the
   warning's colour). A topic can wait on Slack threads and conversations
   (`wait`): `.` passes it by until someone else says something there, or on
-  another topic, until it is resolved. `?` makes a topic in the open one's chat. The classic UI below (modules, the
+  another topic, until it is resolved, or on a PR, until it is blocked by me. `?` makes a topic in the open one's chat. The classic UI below (modules, the
   sidebar) is behind a flag, `DETAIL_VIEWS_UI=classic`; the phone stays on
   it. Each mode keeps its own stack.
 - **Modules are workflows.** Each one (Slack, tasks, later calendar, …) is a
@@ -119,7 +119,8 @@ doc for the area you change, and keep it up to date in the same commit.
   call every 15 s, started by `Core.start`, catching up on start from
   `watch.at`; I can pause it from the workspace). Anything older, for all of Slack, one conversation or one
   thread, loads only when I ask (`o`, `Module.older`). Never poll or load
-  conversations one by one on their own.
+  conversations one by one on their own, except for a topic's wait I set:
+  its thread or conversation is loaded on a backoff (`waitPollEvery`).
 - **A module's data lives on its root entity.** Each module in the sidebar
   has a root entity (`slack`, `github`, `tasks`), and what belongs to the
   module (Slack's token, who I am there, its workspace URL) is owned values

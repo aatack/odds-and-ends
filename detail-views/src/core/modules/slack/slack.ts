@@ -260,6 +260,22 @@ export class Slack implements Module {
     return id
   }
 
+  /**
+   * What came into a conversation or thread a topic waits on (`waitPollEvery`
+   * says when): a thread whole, or a conversation's messages since `since`
+   * (Unix ms). The one load of a conversation or thread on its own, and only
+   * for a wait I set. Not while the watch is paused.
+   */
+  async waitedOn(id: string, since: number): Promise<void> {
+    const api = this.api
+    if (!api || this.paused) return
+    if (id.startsWith('slack:msg:') && parseMessageId(id)) return this.loadThread(api, id)
+    if (!id.startsWith('slack:conv:')) return
+    const channel = id.slice('slack:conv:'.length)
+    const { messages } = await api.call<{ messages: RawMessage[] }>('conversations.history', { channel, oldest: (since / 1000).toFixed(6), limit: 100 })
+    this.cache.write(this.historyEvents(channel, messages, this.context.now()))
+  }
+
   /** Whether I have paused the watch (`watch.paused`, module data on the workspace). */
   get paused(): boolean {
     return this.context.data.get(ids.root)['watch.paused'] === true
@@ -561,6 +577,16 @@ export class Slack implements Module {
     const now = this.context.now()
     const reached = messages.reduce((least, message) => (Number(message.ts) < Number(least) ? message.ts : least), start ?? (now / 1000).toFixed(6))
     this.cache.write([
+      ...this.historyEvents(channel, messages, now),
+      value(id, 'history.oldest', reached, 0, author),
+      ...(more ? [] : [value(id, 'history.complete', true, 0, author)]),
+    ])
+  }
+
+  /** A conversation's messages from its history, as events: each under it, or its thread moved to the end, and what came in raised. */
+  private historyEvents(channel: string, messages: RawMessage[], now: number): AppEvent[] {
+    const id = ids.conversation(channel)
+    return [
       ...messages.flatMap((message) => [
         ...messageEvents(channel, message, now),
         ...(message.latest_reply
@@ -574,9 +600,7 @@ export class Slack implements Module {
           ...(message.latest_reply ? [{ channel, ts: message.latest_reply, thread: message.ts }] : []),
         ]),
       ),
-      value(id, 'history.oldest', reached, 0, author),
-      ...(more ? [] : [value(id, 'history.complete', true, 0, author)]),
-    ])
+    ]
   }
 
   /**

@@ -2193,3 +2193,13 @@ textarea:hover,
 .topic > .topic-waiting {
   color: var(--faint);
 }
+
+/* Just above a topic's box while it sends outside: where to, as its overview, in the warning's colours like the box. */
+.target-overview {
+  max-height: 30vh;
+  overflow-y: auto;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--warning-line);
+  background: var(--warning-soft);
+}

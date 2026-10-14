@@ -8,7 +8,7 @@ import { link, values } from '../../graph/events.ts'
 import { fakeSlack, memoryCore } from '../../testing.ts'
 import { interrupted } from '../claude/claude.ts'
 import { commitPrompt } from './topics.ts'
-import { sendTargets, waitCandidates, waiting, waitsOf } from './view.ts'
+import { prMine, sendTargets, waitCandidates, waiting, waitPollEvery, waitsOf } from './view.ts'
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
 
@@ -639,4 +639,59 @@ test('topics: a topic made from another goes into its chat; a topic can wait on 
   assert.deepEqual(waitCandidates(release, waitsOf(core.item(release)!.data)[0], core.lens()), [])
   await core.actions.topicUnwait({ topic: release, on: fix })
   assert.equal(core.item(release)!.data.wait ?? null, null)
+})
+
+test('topics: a wait on a PR is back once it is blocked by me, merged or closed', async () => {
+  const core = memoryCore({ now: () => 250_000 })
+  await core.actions.topicCreate({ name: 'Ship it' })
+  const [topic] = core.entity('topics').outboundLinks
+  const pr = 'github:pr:https://github.com/me/app/pull/7'
+  // Someone else's, approved by me: waiting on them.
+  core.cache.write(values(pr, { state: 'OPEN', mine: false, approvedByMe: true, review: 'REVIEW_REQUIRED', reviewers: ['ann'] }, 0, 'github'))
+  await core.actions.link({ parent: topic, child: pr })
+  assert.equal((await core.actions.topicWait({ topic, on: [pr] })).error, null)
+  assert.deepEqual(waitsOf(core.item(topic)!.data), [{ pr, since: 250_000 }])
+  assert.equal(waiting(topic, core.lens()), true)
+  // Conflicts on someone else's are theirs: still waiting.
+  core.cache.write(values(pr, { conflicts: true }, 1, 'github'))
+  assert.equal(waiting(topic, core.lens()), true)
+  // Merged: back.
+  core.cache.write(values(pr, { state: 'MERGED' }, 2, 'github'))
+  assert.equal(waiting(topic, core.lens()), false)
+  assert.deepEqual(prMine(pr, core.lens()), ['Merged'])
+
+  // Mine to review (someone else's, not approved by me): back at once.
+  const other = 'github:pr:https://github.com/me/app/pull/8'
+  core.cache.write(values(other, { state: 'OPEN', mine: false, approvedByMe: false, reviewRequestedOfMe: true }, 0, 'github'))
+  await core.actions.topicUnwait({ topic, on: pr })
+  await core.actions.topicWait({ topic, on: [other] })
+  assert.deepEqual(prMine(other, core.lens()), ['Review requested'])
+  assert.equal(waiting(topic, core.lens()), false)
+})
+
+test('topics: waits are looked at again on a backoff: Slack every minute, then every 5, then hourly; PRs every 2, then 15, then hourly; topics never', async () => {
+  const minute = 60_000
+  const slack = (age: number) => waitPollEvery({ slack: 'slack:conv:C1', since: 0 }, age)
+  const pr = (age: number) => waitPollEvery({ pr: 'github:pr:https://github.com/me/app/pull/1', since: 0 }, age)
+  assert.deepEqual([slack(0), slack(4 * minute), slack(5 * minute), slack(59 * minute), slack(60 * minute), slack(3 * 24 * 60 * minute)], [minute, minute, 5 * minute, 5 * minute, 60 * minute, 60 * minute])
+  assert.deepEqual([pr(0), pr(59 * minute), pr(60 * minute), pr(24 * 60 * minute)], [2 * minute, 2 * minute, 15 * minute, 60 * minute])
+  assert.equal(waitPollEvery({ topic: 'x', since: 0 }, 0), null)
+
+  // The poller loads a waited-on conversation only when its backoff says.
+  let now = 1_000_000
+  const calls: string[] = []
+  const core = memoryCore({ now: () => now, fetch: fakeSlack({ ...slackAuth, 'conversations.history': () => ({ messages: [] }) }, calls) })
+  await core.slack.setToken('xoxp-1')
+  await core.actions.topicCreate({ name: 'Ops' })
+  const [topic] = core.entity('topics').outboundLinks
+  await core.actions.topicWait({ topic, on: ['slack:conv:C1'] })
+  const loads = () => calls.filter((call) => call === 'conversations.history').length
+  const at = async (offset: number) => {
+    now = 1_000_000 + offset
+    await core.pollWaits()
+    return loads()
+  }
+  assert.deepEqual([await at(30_000), await at(minute), await at(minute + 30_000), await at(2 * minute)], [0, 1, 1, 2])
+  // After five minutes, every five from the last look (at 2): next at 7, then 12.
+  assert.deepEqual([await at(6 * minute), await at(7 * minute), await at(11 * minute), await at(12 * minute)], [2, 3, 3, 4])
 })

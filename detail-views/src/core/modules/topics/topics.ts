@@ -127,7 +127,9 @@ export class Topics implements Module {
       if (/^slack:(conv:[A-Z0-9]+|msg:[A-Z0-9]+:\d+\.\d+)$/.test(id)) return { slack: id, since }
       // Another topic: back once it is resolved.
       if (id !== topic && this.context.lens.read(id)?.type === 'topic') return { topic: id, since }
-      throw new Error('Only a Slack conversation or thread, or another topic, can be waited on')
+      // A PR: back once it is blocked by me, merged or closed.
+      if (id.startsWith('github:pr:') && this.context.lens.read(id)?.type === 'github.pr') return { pr: id, since }
+      throw new Error('Only a Slack conversation or thread, another topic, or a PR can be waited on')
     })
     return this.setWaits(topic, (waits) => [...waits.filter((wait) => !on.includes(waitOn(wait))), ...added])
   }
