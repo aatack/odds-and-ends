@@ -174,7 +174,31 @@ flowchart LR
 - The store resolves the view once for the call. It sends all IDs in one query for each layer.
 - Why: callers often need many entities, for example to show a list. One query for each entity is slow.
 
-## 12. Undo
+## 12. Walk
+
+```mermaid
+flowchart TD
+    root --> a
+    root --> b
+    root --> c
+    a --> a1
+    a --> a2
+```
+
+The walk reads `root, a, a1, a2, b, c`, one node at a time.
+
+- **Depth-first, in link order.** Why: this is the reading order of an outline. It is the same order as the old TypeScript walk.
+- **The entity type decides which links to follow.** Why: a list and a task have different children. One map gives each kind its own links.
+- **Two questions for each node: "continue?" and "include?".** Why: "continue" stops the walk below a node (depth limits, closed nodes). "Include" only filters the output. A filter must not change where the walk goes.
+- **A step limit, and the path of the next node.** Why: a page has a fixed cost. The walk keeps no state between pages. The returned path is all that is necessary to go on from the same place.
+- **Every visited node is a step, also when it is not emitted.** Why: a narrow filter on a big tree must return quickly, with few rows and a path to go on.
+- **A row is a path and its node.** Why: one entity can be reached by many paths. The path is the identity of the row.
+- **No cycles.** A node that is already on the current path is skipped. Why: an entity cannot be its own ancestor. Without this rule, a walk could go on forever.
+- **Optional visited set.** It skips an entity that the walk already visited on any path. Why: in a graph with many links, the same subtree would be read many times. The set goes back to the caller with the next path, so pages stay stateless.
+- **Read-ahead in batches.** On a miss, the walk loads the needed entities and about two layers below them, in batches. Why: fewer round trips to the database. The read-ahead is limited by the steps left, so a small page does not load the whole graph.
+- **Optional cache in the result.** Why: a frontend can show the rows without a second read of the same data.
+
+## 13. Undo
 
 - Undo removes the newest batch of one user on one branch. The batch must be less than five minutes old.
 - Undo really removes the events. It then puts back the rows that they replaced, from history to current.
@@ -185,13 +209,13 @@ flowchart LR
 - Events older than five minutes can never be removed.
   - Why: the window keeps undo for quick corrections. Old events stay part of the permanent record.
 
-## 13. Storage
+## 14. Storage
 
 - The store is one SQLite file, embedded in the program.
 - Why: no server, simple setup, full transactions, and good indexes for many small reads and writes.
 
-## 14. Out of scope and pending
+## 15. Out of scope and pending
 
 - Diffs between branches are out of scope for now.
-- `walk` and `find` are pending. Alexander will give their signatures.
+- `find` is pending. Alexander will give its signature.
 - Sync between two stores is not built. Fixed branch IDs and per-branch sequence IDs prepare for it.

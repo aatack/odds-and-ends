@@ -61,7 +61,8 @@ store.undo(main, "alex")?;
   - Entity existence and archiving
   - Branches: create, fork, pull, merge, rebase, archive
   - Undo
-- **Not yet:** `walk` and `find` return `Error::NotImplemented` until Alexander sends the semantics.
+- **Walk:** `walk` is a paginated depth-first walk (type-based follow map, continue/include predicates, step limit, `next` path to resume, read-ahead, optional cache and visited set). See DESIGN.md section 11.1.
+- **Not yet:** `find` returns `Error::NotImplemented` until Alexander sends the semantics.
 
 ## Develop
 

@@ -93,6 +93,8 @@ Later rules (2026-10-12). These rules replace parts of the rules above and of dr
     - A branch that the list reaches low and high stays at its first (low) position.
     - The greatest range spans the gaps between appearances.
 29. **R29 [RULE]. Batch reads.** Every low-level read takes a batch of entity IDs. It returns the results by ID. `values` returns all values of each entity.
+30. **R30 [RULE]. Walk.** `walk` takes a starting path, a map from the source entity's type to the links to follow, a "continue" predicate, an "include" predicate and a step limit. It returns rows and the path of the next node to visit (`None` when exhausted). It never allows cycles: a node already on the current path is skipped completely. Options: return the cache, and a global visited set.
+31. **R31 [RULE]. Read-ahead.** On a cache miss, `walk` loads the needed entities plus about two layers of their followed links, in batches. The cache lives for one walk.
 
 ---
 
@@ -107,7 +109,7 @@ Later rules (2026-10-12). These rules replace parts of the rules above and of dr
 7. Support branches as agent sandboxes (R2 to R11).
 8. Make each write batch one transaction.
 9. Make undo remove the events of a recent batch (R19). Normal reads never use history.
-10. Supply dedicated reads such as `walk` and `find` later [TBD: Alexander].
+10. Supply dedicated reads: `walk` (done, R30) and `find` [TBD: Alexander].
 
 ## 3. Non-goals (for now)
 
@@ -672,14 +674,58 @@ Other reads: `branch`, `branches`.
 
 `links` no longer has an "all types" mode. The caller names the `(type, direction)` pairs.
 
-Placeholders (they return `Error::NotImplemented`). Alexander will give the signatures:
+Placeholder (it returns `Error::NotImplemented`). Alexander will give the signature:
 
 ```rust
-/// TODO(Alexander): order, depth, filters, cycles, paging.
-fn walk(&self, branch: BranchId, start: &str) -> Result<Vec<Link>>;
 /// TODO(Alexander): predicates, indexes, paging.
 fn find(&self, branch: BranchId, key: &str, value: &Value) -> Result<Vec<String>>;
 ```
+
+### 11.1 Walk (R30)
+
+```rust
+pub type Follow = HashMap<String, Vec<(String, Direction)>>; // source entity's `type` -> pairs
+pub struct WalkNode { pub id: String, pub values: BTreeMap<String, Value> }
+pub struct WalkRow { pub path: Vec<String>, pub node: WalkNode }
+pub struct ReadAhead { pub depth: usize, pub width: usize }             // default 2, 32
+pub struct WalkOptions { pub steps: usize,                              // default 100
+                         pub read_ahead: ReadAhead,
+                         pub return_cache: bool,                        // default false
+                         pub visited: Option<HashSet<String>> }         // default None
+pub struct WalkCache { pub nodes: HashMap<String, WalkNode>, pub links: HashMap<String, LinkGroups> }
+pub struct Walk { pub rows: Vec<WalkRow>,
+                  pub next: Option<Vec<String>>,   // path of the next node to visit; None = exhausted
+                  pub steps: usize, pub loads: usize,
+                  pub cache: Option<WalkCache>, pub visited: Option<HashSet<String>> }
+
+fn walk(&self, branch: BranchId, start: &[&str], follow: &Follow,
+        descend: impl FnMut(&[String], &WalkNode) -> bool,
+        include: impl FnMut(&[String], &WalkNode) -> bool,
+        options: WalkOptions) -> Result<Walk>;
+```
+
+The rules [CHOSEN, I19]. They follow the TS query walk (`src/core/query.ts`):
+
+1. **Start path.** The last ID of `start` is the first node to visit. The earlier IDs are its ancestors. The walk never goes above `start[0]`.
+2. **Order.** The walk is depth-first. The next path is the first child. If there is no child, it is the next sibling of the deepest ancestor that has one.
+3. **Children.** The store reads the `type` of the node. It follows the pairs of that type in `follow`, in the listed order. Each link group keeps its sort order. A child that two pairs reach is kept once, at its first place. A type with no entry follows nothing. There is no wildcard key (see Q17).
+4. **Filter.** Links use the archived filter of `links` (R23). The start node is visited even if it has no type.
+5. **Steps.** Each visited node is one step. The start node is a step too, and `include` can emit it. A node that `include` refuses still costs a step.
+6. **Predicates.** `include` decides if the node is emitted. `descend` decides if the walk goes below it. Both get the path and the node's values. They do not get links. Each runs once for each path. A resumed walk also runs `descend` on the ancestors of the start, to find their later children.
+7. **Rows.** A row is `(path, node)`. The same entity on two paths gives two rows.
+8. **Next.** When the page has used `steps` nodes, `next` is the path of the next node to visit. Pass it back as `start` to resume there. `next` is `None` when the walk is exhausted. With `steps = 0`, nothing is visited and `next` is `start`.
+9. **Cycles (always).** A node that is already on the current path is skipped completely. It is not visited, emitted, expanded or counted.
+10. **Visited set (option).** With `visited = Some(set)`, an entity in the set is skipped in the same way, on every path. "Visited" means visited (a step), not emitted. The walk adds each visited node to the set and returns it. Pass `next` and the set back together to resume. The start node is never skipped.
+11. **Cache (option).** With `return_cache`, the walk returns its cache: the values of each loaded entity, and its links for the followed pairs. Entities that read-ahead loaded are in it too.
+
+**Loading (R31).** This follows `scanEvents` in `src/core/pensive/tools.ts`:
+
+- The walk resolves the flat view once.
+- A cache miss loads the missing entities. Then it loads up to `read_ahead.depth` layers of their followed targets. Each layer has at most `min(read_ahead.width, steps left)` entities.
+- When the walk finds the children of a node, it loads them as one batch, with the same cap.
+- Each layer is one load round: one batch `values` read, and one batch `links` read for each type in the layer.
+- `Walk::loads` counts the rounds. In the test tree (121 nodes, depth 4, fan-out 3), the walk needs 121 rounds with no read-ahead and 21 with the defaults.
+- The cache lives for one call only.
 
 Proposals for later (not built):
 
@@ -760,6 +806,7 @@ Proposals for later (not built):
 | I14 | R8: undo and archives | Undo on an archived branch is refused (I7). |
 | I17 | R26: order and cycles | Expansion is depth-first in stack order (parents before the branch, list order, lowest priority first). "First appeared" means the lowest position in that order. There is no order error. A cycle through open entries is cut where the branch repeats on the path. |
 | I18 | R26, R27: same branch twice | One entry per branch, at its first position. Range = lowest start to highest end. Open beats frozen. |
+| I19 | R30: walk details | See section 11.1: start counts as a step and can be emitted, predicates see values only, no wildcard follow key, skipped nodes cost no step. |
 | I16 | R23: entities with no type | Hidden, the same as archived entities. The filter checks the other end of each link. `links_including_archived` skips the filter. |
 | I15 | R4: live merges | `merge` is a frozen snapshot. To follow a branch live, use `pull` with an open range. |
 
@@ -786,6 +833,7 @@ Resolved from draft 1:
 Still open:
 
 - **Q2. Walk and find** [TBD: Alexander]. Filters, order, depth, cycles and paging.
+- **Q17. Follow wildcard.** Is a default key (for example `"*"`) useful in the follow map, for entities with no type or an unknown type? It is not built.
 - **Q3. Interpretations.** Do I2 to I18 match the intent? I2 (open entries chain, frozen entries do not) is the most important.
 - **Q13. Undo after a fork.** A fork or a merge freezes a range, so it blocks undo of earlier batches. Must undo be allowed and the frozen follower lose the events? Or must open forks be used?
 - **Q15. Archived type.** Must `restore_entity` find the old type itself? It would then read history, against R19.
