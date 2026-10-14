@@ -120,7 +120,9 @@ doc for the area you change, and keep it up to date in the same commit.
   `watch.at`; I can pause it from the workspace). Anything older, for all of Slack, one conversation or one
   thread, loads only when I ask (`o`, `Module.older`). Never poll or load
   conversations one by one on their own, except for a topic's wait I set:
-  its thread or conversation is loaded on a backoff (`waitPollEvery`).
+  its thread or conversation is loaded with every poll (`pollSlackWaits`).
+  GitHub is watched too (`Core.pollGitHub`, every minute): my PR list and
+  the PRs in open topics, each once it is no longer fresh.
 - **A module's data lives on its root entity.** Each module in the sidebar
   has a root entity (`slack`, `github`, `tasks`), and what belongs to the
   module (Slack's token, who I am there, its workspace URL) is owned values

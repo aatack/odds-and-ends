@@ -402,11 +402,13 @@ export class Slack implements Module {
 
   /**
    * Keeps Slack current while the app runs, so no conversation is polled.
-   * Returns the stop.
+   * `after` runs after each poll (a topic's waits, loaded with it). Returns
+   * the stop.
    */
-  watch(): () => void {
-    void this.poll()
-    const timer = setInterval(() => void this.poll(), pollEvery)
+  watch(after?: () => Promise<void>): () => void {
+    const tick = () => void this.poll().then(() => after?.())
+    tick()
+    const timer = setInterval(tick, pollEvery)
     return () => clearInterval(timer)
   }
 

@@ -13,8 +13,12 @@
   both parts ask at once, writes both flags. Description, comments and reviews
   are written at `createdAt` (and so are their links from the PR); state,
   title, checks at 0. Only failing and pending checks get rows.
-- Reloading every PR every few minutes is acceptable; GitHub has no watch here.
-  The plan for a notifications poll is in `refetch.md`.
+- Reloading every PR every few minutes is acceptable.
+- **The watch** (`Core.pollGitHub`, every minute from `Core.start`): loads
+  the list, and every PR in an open topic's chat, each only once it is no
+  longer fresh (so the list every 2 min, a PR every 10). Without it, only
+  what is on screen loads, and the topics mode never shows the list: it went
+  stale for hours. The plan for a notifications poll is in `refetch.md`.
 
 ## What stands in the way (`blockers` in `view.ts`)
 

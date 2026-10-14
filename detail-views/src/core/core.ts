@@ -29,6 +29,8 @@ const moduleAuthor = 'module'
 const clearEvery = 7 * 24 * 60 * 60_000
 /** How often what topics wait on is checked against its backoff (`pollWaits`). */
 const waitTick = 30_000
+/** How often GitHub is looked at (`pollGitHub`): each load still only when its part is no longer fresh. */
+const githubTick = 60_000
 const checkEvery = 10 * 60_000
 /** How far a scan reads past what it was asked for, in layers and in entities per layer. */
 const scanDepth = 1
@@ -119,6 +121,9 @@ export class Core {
   private lastNotified = 0
   private clearer: ReturnType<typeof setInterval> | null = null
   private waitPoller: ReturnType<typeof setInterval> | null = null
+  private githubPoller: ReturnType<typeof setInterval> | null = null
+  private pollingSlackWaits = false
+  private pollingGitHub = false
   /** When each wait was last looked at (`topic|on`), for its backoff. In memory: after a restart, each is looked at again. */
   private readonly waitPolled = new Map<string, number>()
   private stopWatches: (() => void) | null = null
@@ -199,8 +204,12 @@ export class Core {
   start(): void {
     this.clearCacheIfOld()
     this.clearer ??= setInterval(() => this.clearCacheIfOld(), checkEvery)
-    this.stopWatches ??= this.slack.watch()
+    this.stopWatches ??= this.slack.watch(() => this.pollSlackWaits())
     this.waitPoller ??= setInterval(() => void this.pollWaits(), waitTick)
+    if (!this.githubPoller) {
+      void this.pollGitHub()
+      this.githubPoller = setInterval(() => void this.pollGitHub(), githubTick)
+    }
     void this.claude.refreshRepos()
     void this.recoverAnswers()
   }
@@ -230,11 +239,56 @@ export class Core {
   }
 
   /**
-   * Looks again at what topics wait on, each when its backoff says
-   * (`waitPollEvery`): a Slack conversation or thread loaded on its own, a
-   * PR loaded again. Back or not: a PR can go back to waiting (once I
-   * approve it, say), and only a fresh load can tell. A topic's wait is left
-   * alone. Run every `waitTick` by `start`; a test calls it directly.
+   * Keeps GitHub current while the app runs, whatever is on screen: the
+   * list of my open PRs (`github`'s children), and every PR in a topic's
+   * chat, each only once it is no longer fresh (`ModuleView.foreign`). Run
+   * every `githubTick` by `start`; a test calls it directly.
+   */
+  async pollGitHub(): Promise<void> {
+    if (this.pollingGitHub) return
+    this.pollingGitHub = true
+    try {
+      await this.load({ id: 'github', part: 'children' })
+      const lens = this.lens()
+      const prs = new Set(lens.children(topicsIds.root).flatMap((topic) => lens.children(topic).filter((id) => lens.read(id)?.type === 'github.pr')))
+      for (const pr of prs) await this.load({ id: pr, part: 'self' })
+    } finally {
+      this.pollingGitHub = false
+    }
+  }
+
+  /**
+   * Loads every Slack conversation and thread a topic waits on: after each
+   * of the watch's polls (`Slack.watch`), so what is said there comes in as
+   * soon as anything else does. Nothing while the watch is paused. A test
+   * calls it directly.
+   */
+  async pollSlackWaits(): Promise<void> {
+    if (this.pollingSlackWaits) return
+    this.pollingSlackWaits = true
+    try {
+      const lens = this.lens()
+      for (const topic of lens.children(topicsIds.root)) {
+        for (const wait of waitsOf(lens.read(topic)?.data ?? {})) {
+          if (!wait.slack) continue
+          try {
+            await this.slack.waitedOn(wait.slack, wait.since)
+          } catch {
+            // Tried again after the next poll.
+          }
+        }
+      }
+    } finally {
+      this.pollingSlackWaits = false
+    }
+  }
+
+  /**
+   * Looks again at the PRs topics wait on, each when its backoff says
+   * (`waitPollEvery`). Back or not: a PR can go back to waiting (once I
+   * approve it, say), and only a fresh load can tell. Slack waits load with
+   * the watch (`pollSlackWaits`); a topic's wait is left alone. Run every
+   * `waitTick` by `start`; a test calls it directly.
    */
   async pollWaits(): Promise<void> {
     const lens = this.lens()
@@ -247,8 +301,7 @@ export class Core {
         if (now - (this.waitPolled.get(key) ?? wait.since) < every) continue
         this.waitPolled.set(key, now)
         try {
-          if (wait.slack) await this.slack.waitedOn(wait.slack, wait.since)
-          else if (wait.pr) await this.load({ id: wait.pr, part: 'self', force: true })
+          if (wait.pr) await this.load({ id: wait.pr, part: 'self', force: true })
         } catch {
           // Tried again at the next turn of its backoff.
         }
@@ -261,6 +314,8 @@ export class Core {
     this.clearer = null
     if (this.waitPoller) clearInterval(this.waitPoller)
     this.waitPoller = null
+    if (this.githubPoller) clearInterval(this.githubPoller)
+    this.githubPoller = null
     this.stopWatches?.()
     this.stopWatches = null
   }

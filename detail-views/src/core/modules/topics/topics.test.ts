@@ -718,29 +718,27 @@ test('topics: a PR wait is looked at again even while it is back, so approving i
   assert.equal(waiting(topic, core.lens()), true)
 })
 
-test('topics: waits are looked at again on a backoff: Slack every minute, then every 5, then hourly; PRs every 2, then 15, then hourly; topics never', async () => {
+test('topics: a PR wait is looked at again on a backoff (every 2 minutes, then 15, then hourly); a Slack wait loads with every poll of the watch', async () => {
   const minute = 60_000
-  const slack = (age: number) => waitPollEvery({ slack: 'slack:conv:C1', since: 0 }, age)
   const pr = (age: number) => waitPollEvery({ pr: 'github:pr:https://github.com/me/app/pull/1', since: 0 }, age)
-  assert.deepEqual([slack(0), slack(4 * minute), slack(5 * minute), slack(59 * minute), slack(60 * minute), slack(3 * 24 * 60 * minute)], [minute, minute, 5 * minute, 5 * minute, 60 * minute, 60 * minute])
   assert.deepEqual([pr(0), pr(59 * minute), pr(60 * minute), pr(24 * 60 * minute)], [2 * minute, 2 * minute, 15 * minute, 60 * minute])
-  assert.equal(waitPollEvery({ topic: 'x', since: 0 }, 0), null)
+  for (const wait of [{ slack: 'slack:conv:C1', since: 0 }, { topic: 'x', since: 0 }]) assert.equal(waitPollEvery(wait, 0), null)
 
-  // The poller loads a waited-on conversation only when its backoff says.
-  let now = 1_000_000
+  // Each poll of the watch loads the waited-on conversation, however soon after the last.
   const calls: string[] = []
-  const core = memoryCore({ now: () => now, fetch: fakeSlack({ ...slackAuth, 'conversations.history': () => ({ messages: [] }) }, calls) })
+  const core = memoryCore({ now: () => 1_000_000, fetch: fakeSlack({ ...slackAuth, 'conversations.history': () => ({ messages: [] }) }, calls) })
   await core.slack.setToken('xoxp-1')
   await core.actions.topicCreate({ name: 'Ops' })
   const [topic] = core.entity('topics').outboundLinks
   await core.actions.topicWait({ topic, on: ['slack:conv:C1'] })
   const loads = () => calls.filter((call) => call === 'conversations.history').length
-  const at = async (offset: number) => {
-    now = 1_000_000 + offset
-    await core.pollWaits()
-    return loads()
-  }
-  assert.deepEqual([await at(30_000), await at(minute), await at(minute + 30_000), await at(2 * minute)], [0, 1, 1, 2])
-  // After five minutes, every five from the last look (at 2): next at 7, then 12.
-  assert.deepEqual([await at(6 * minute), await at(7 * minute), await at(11 * minute), await at(12 * minute)], [2, 3, 3, 4])
+  await core.pollWaits()
+  assert.equal(loads(), 0)
+  await core.pollSlackWaits()
+  await core.pollSlackWaits()
+  assert.equal(loads(), 2)
+  // Not while the watch is paused.
+  await core.slack.setPaused(true)
+  await core.pollSlackWaits()
+  assert.equal(loads(), 2)
 })

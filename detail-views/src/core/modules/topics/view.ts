@@ -151,14 +151,13 @@ const minute = 60_000
 const hour = 60 * minute
 
 /**
- * How often a wait not yet back is looked at again (its own loads), by how
- * long it has waited: backing off, as an answer gets less likely to come
- * soon. Slack every minute for 5 minutes, every 5 for the first hour, then
- * hourly; a PR every 2 minutes for the first hour, every 15 for the first
- * day, then hourly. A topic's wait is local: null, nothing to load.
+ * How often a wait on a PR is looked at again (its own loads), by how long
+ * it has waited: backing off, as a change gets less likely to come soon.
+ * Every 2 minutes for the first hour, every 15 for the first day, then
+ * hourly. Null for the rest: a Slack wait loads with every poll of the
+ * watch (`Core.pollSlackWaits`), and a topic's or a snooze is local.
  */
 export function waitPollEvery(wait: Wait, age: number): number | null {
-  if (wait.slack) return age < 5 * minute ? minute : age < hour ? 5 * minute : hour
   if (wait.pr) return age < hour ? 2 * minute : age < 24 * hour ? 15 * minute : hour
   return null
 }

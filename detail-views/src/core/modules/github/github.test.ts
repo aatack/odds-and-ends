@@ -14,6 +14,31 @@ test('github: my open PRs, keyed by URL', async () => {
   assert.equal(pr.data.label, 'Fix it')
 })
 
+test('github: polled whatever is on screen: my PRs when no longer fresh, and each PR in a topic\'s chat', async () => {
+  let now = 1_000_000
+  const calls: string[][] = []
+  const other = 'https://github.com/o/r/pull/8'
+  const core = memoryCore({ now: () => now, gh: fakeGh(calls, {}, url) })
+  await core.actions.topicCreate({ name: 'Review' })
+  const [topic] = core.entity('topics').outboundLinks
+  await core.actions.link({ parent: topic, child: `github:pr:${other}` })
+  const lists = () => calls.filter((args) => args[3].includes('search(')).length
+  const prs = () => calls.filter((args) => args.includes(`url=${other}`)).length
+  await core.pollGitHub()
+  assert.deepEqual([lists(), prs()], [1, 1])
+  // Still fresh a minute on: nothing.
+  now += 60_000
+  await core.pollGitHub()
+  assert.deepEqual([lists(), prs()], [1, 1])
+  // The list after 2 minutes, a PR after 10.
+  now += 60_000
+  await core.pollGitHub()
+  assert.deepEqual([lists(), prs()], [2, 1])
+  now += 8 * 60_000
+  await core.pollGitHub()
+  assert.deepEqual([lists(), prs()], [3, 2])
+})
+
 test('github: comments are written when they were made, and can be hidden for me only', async () => {
   const core = memoryCore({ gh: fakeGh([]) })
   const id = `github:pr:${url}`
