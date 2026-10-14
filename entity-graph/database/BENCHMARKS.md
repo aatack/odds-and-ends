@@ -112,3 +112,47 @@ These numbers are estimates. We did not measure them.
 
 - At 10M nodes, the database is larger than the available memory on this machine. Then disk reads control the speed, and the speed can be much lower.
 - The generator streams the writes in batches, so it can make 1M and 10M graphs. A walk of a full 10M graph keeps a visited set of 10M IDs. Use pages and do not use the returned cache for such walks.
+
+## Cold cache
+
+This section shows the walk speed when the database file is not in memory.
+
+### Method
+
+- Graph: 100k nodes. We used the existing graph (`walk-100000.db`, IDs `n0`, `n1`, ...). We also used a second graph with hashed IDs (`--random-ids`, `walk-100000-rand.db`, 53 MB). With hashed IDs, the key order has no relation to the tree order. This is like UUID keys.
+- Before the runs, the benchmark does a WAL checkpoint (TRUNCATE).
+- Warm: the file is in the OS page cache. The SQLite cache is 2000 KiB (the default). `mmap_size` is 0 for all runs.
+- Cold (`--cold`): before each run, the benchmark opens a new connection (the SQLite cache is empty). Then it calls `posix_fadvise(POSIX_FADV_DONTNEED)` on the db and WAL files. `vmtouch` shows 0% of the file is resident after this.
+- Limited: cold, `--cache-size 256` (256 KiB SQLite cache), and the process runs in a cgroup v2 group with `memory.max` (12M, 10M or 8M) and `memory.swap.max` 0. The limit applies to the process memory and to the page cache that the process uses. A test with sequential and random reads showed that the kernel reads the file again under the limit. The process itself uses approximately 6 MB.
+- "MB read" is `read_bytes` from `/proc/self/io` for each run. Major faults are from `/proc/self/stat`. SQLite uses `pread`, not mmap, so major faults stay near 0.
+- Each value is the median of 3 runs.
+- Disk: virtio block device (`vda`). The kernel reports `rotational = 1`, but this is the default value for virtio. The device is virtual. A random 4 KiB read with `O_DIRECT` takes approximately 22 µs, and a sequential read is approximately 234 MB/s. The host possibly caches the disk. Thus "cold" is cold for this VM only, and the results are optimistic for real disks.
+
+### Results (entities/s)
+
+| graph | scenario | warm | cold | limited 12M | limited 10M | limited 8M |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| sequential IDs | page 1000 | 66308 | 55994 | 52348 | - | - |
+| sequential IDs | one page | 60780 | 54125 | (OOM) | - | - |
+| sequential IDs | read-ahead off | 35229 | 33950 | 31500 | - | - |
+| sequential IDs | frozen fork | 54038 | 46794 | 45202 | - | - |
+| hashed IDs | page 1000 | 62867 | 47993 | 49802 | 42971 | 28451 |
+| hashed IDs | one page | 53579 | 47270 | (OOM) | - | - |
+| hashed IDs | read-ahead off | 33585 | 27526 | 28247 | 27311 | 22549 |
+| hashed IDs | frozen fork | 48488 | 45606 | 42080 | 36279 | 24752 |
+
+MB read for each run (hashed IDs, page 1000): warm 0, cold 47, limited 12M 54, limited 10M 116, limited 8M 363.
+
+### Observations
+
+- When the file is cold, the walk reads the file one time. The walk is then 10% to 25% slower.
+- The working set of the walk is small. With approximately 5 MB of page cache, the walk reads each page approximately one time. With less page cache, the walk reads the same pages again and again. At 8M, it reads 7 times the file size and the speed decreases by 55%.
+- Each extra 4 KiB read costs approximately 20 µs on this machine. This agrees with the measured disk latency.
+- A walk that is one page for all 100k nodes did not complete with 128 MB or 256 MB of memory. Inside one call, the walk keeps every loaded entity in its cache. Use pages for large walks. A possible fix: remove cache entries when the walk leaves a subtree.
+- The tables that the walk reads (`value_current`, `link_current`, `entities` and their indexes) are approximately 55% of the file.
+
+### What this means for 10M nodes
+
+- The file is approximately 5.5 GB. The walk tables are approximately 3 GB. The working set for one walk is a small part of this, but it increases with the graph.
+- If the page cache cannot hold the working set, each entity costs several random reads. On this VM (approximately 20 µs per read), a walk can go down to approximately 20k to 30k entities/s. On a local NVMe disk (approximately 80 to 100 µs per read), expect approximately 5k to 10k entities/s. On a network disk (approximately 0.5 to 1 ms per read), expect approximately 1k entities/s or less.
+- Recommendation: give the page cache enough memory for the walk tables, or keep the walk tables on local SSD.
