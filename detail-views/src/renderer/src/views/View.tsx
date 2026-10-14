@@ -2,6 +2,7 @@ import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffec
 import type { ComponentType, CSSProperties, ReactNode } from 'react'
 import type { Entity, NoteValues, ViewRow } from '../../../core/types.ts'
 import { Checkbox } from './Notes.tsx'
+import { Text } from './messages.tsx'
 import type { Edit, ShownRow } from '../state.ts'
 import { ItemPill, KindsContext, Status, tintClass, tintOf } from './primitives.tsx'
 import { Composer } from './primitives.tsx'
@@ -54,9 +55,9 @@ export function TreePane(props: ViewProps & { root: Entity; look?: string }) {
       {props.interactive && props.find !== null && (
         <FindField find={props.find} focus={props.findFocus} onFind={props.onFind} onFocused={props.onFindFocused} />
       )}
-      <BoxedContext.Provider value={props.look === 'thoughts'}>
+      <ThoughtsContext.Provider value={props.look === 'thoughts'}>
         <TreeList props={props} root={root} Overview={Overview} />
-      </BoxedContext.Provider>
+      </ThoughtsContext.Provider>
       {view.loading && view.rows.length <= 1 && <div className="loading">Loading…</div>}
       <Status error={view.error} />
       {action && props.composing && (
@@ -266,12 +267,12 @@ function EditBox(props: { props: ViewProps }) {
   return <TextBox edit={props.props.edit} onEditDraft={props.props.onEditDraft} />
 }
 
-/** Whether typing in place uses a task's box (thoughts): a textarea that grows, as the box a message is typed in. */
-const BoxedContext = createContext(false)
+/** Whether the tree is drawn as entity-graph's editor draws one (thoughts): its rows, marks, type and typing in place. */
+const ThoughtsContext = createContext(false)
 
 export function TextBox(props: { edit: Edit | null; onEditDraft(text: string): void }) {
   const { edit, onEditDraft } = props
-  if (useContext(BoxedContext)) return <BoxedTextBox edit={edit} onEditDraft={onEditDraft} />
+  if (useContext(ThoughtsContext)) return <ThoughtsTextBox edit={edit} onEditDraft={onEditDraft} />
   return (
     <input
       className="edit"
@@ -286,30 +287,141 @@ export function TextBox(props: { edit: Edit | null; onEditDraft(text: string): v
   )
 }
 
-/** Typing in place in thoughts: the box a task's message is typed in, growing with what is typed. Enter writes, Shift+Enter breaks the line. */
-function BoxedTextBox(props: { edit: Edit | null; onEditDraft(text: string): void }) {
+// --- Thoughts: entity-graph's editor, copied (its `Editor.tsx` and `TextEditor.tsx`) ---
+
+/** A section's size by depth: about 1.5× at the root, easing to 1.1× as it nests. */
+const sectionStyle = (depth: number): CSSProperties => ({ fontSize: `${14 * Math.max(1.1, 1.5 - depth * 0.1)}px`, lineHeight: 1.3 })
+
+/** Untitled UI's icons, as entity-graph draws them: stroked in the colour of the text. */
+function Icon(props: { size: number; d: string }) {
+  return (
+    <svg viewBox="0 0 24 24" width={props.size} height={props.size} stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={props.d} />
+    </svg>
+  )
+}
+
+const icons = {
+  chevronRight: 'm9 18 6-6-6-6',
+  chevronDown: 'm6 9 6 6 6-6',
+  square:
+    'M3 7.8c0-1.68 0-2.52.327-3.162a3 3 0 0 1 1.311-1.311C5.28 3 6.12 3 7.8 3h8.4c1.68 0 2.52 0 3.162.327a3 3 0 0 1 1.311 1.311C21 5.28 21 6.12 21 7.8v8.4c0 1.68 0 2.52-.327 3.162a3 3 0 0 1-1.311 1.311C18.72 21 17.88 21 16.2 21H7.8c-1.68 0-2.52 0-3.162-.327a3 3 0 0 1-1.311-1.311C3 18.72 3 17.88 3 16.2V7.8Z',
+  check: 'M20 6 9 17l-5-5',
+}
+
+/** What leads a row: its box (kept even with children), else a chevron while it has children, else a small dot. */
+function ThoughtsMark(props: { open: boolean | null; foldable: boolean; collapsed: boolean }) {
+  if (props.open === true) return <Icon size={13} d={icons.square} />
+  if (props.open === false) return <Icon size={13} d={icons.check} />
+  if (props.foldable) return <Icon size={14} d={props.collapsed ? icons.chevronRight : icons.chevronDown} />
+  return <span className="eg-dot" />
+}
+
+/**
+ * A row of thoughts, as entity-graph's editor draws one: indented 20px a
+ * level, a 20px square for its mark (a click there folds it), then its text
+ * in Lora, faint while its children are hidden; a section larger the nearer
+ * the root. The root is a row like the others.
+ */
+const ThoughtsRow = memo(function ThoughtsRow(props: {
+  shown: Extract<ShownRow, { kind: 'entity' }>
+  edit: Edit | null
+  onSelect(path: string[]): void
+  onFold?(path: string[], open: boolean): void
+  onOpen(id: string): void
+  onImage(ref: string | null): void
+  onEditDraft(text: string): void
+  findText?: string
+}) {
+  const kinds = useContext(KindsContext)!
+  const { row, selected, editing } = props.shown
+  const { entity, depth } = row
+  const section = entity.data.section === true
+  const heading = section ? sectionStyle(depth) : undefined
+  const text = typeof entity.data.text === 'string' ? entity.data.text : ''
+  const box = boxOf(row)
+  const collapsed = row.hasChildren && !row.open
+  // A note (or the topic heading the tree) is its text; anything else linked in is its own row.
+  const prose = entity.type === 'note' || depth === 0
+  const Row = kinds[entity.type].Row
+  return (
+    <div className="eg-row-outer">
+      <div className={`eg-row${selected ? ' selected' : ''}`} style={{ paddingLeft: depth * 20 + 4 }} onMouseDown={() => props.onSelect(row.path)}>
+        <span
+          className="eg-mark"
+          onMouseDown={(event) => {
+            event.stopPropagation()
+            if (row.hasChildren && depth > 0) props.onFold?.(row.path, collapsed)
+          }}
+        >
+          <ThoughtsMark open={box} foldable={row.hasChildren} collapsed={collapsed} />
+        </span>
+        <div className="eg-content">
+          {editing ? (
+            <ThoughtsTextBox edit={props.edit} onEditDraft={props.onEditDraft} section={section} style={heading} />
+          ) : !prose ? (
+            <div className={`eg-text${collapsed ? ' hides' : ''}`}>
+              <Row entity={entity} parent={row.parent} above={row.above} onOpen={props.onOpen} onImage={props.onImage} findText={props.findText} />
+            </div>
+          ) : text ? (
+            <div className={`eg-text eg-markdown${section ? ' section' : ''}${collapsed ? ' hides' : ''}`} style={heading}>
+              <Text text={text} find={props.findText} />
+            </div>
+          ) : (
+            <span className="eg-text eg-empty">Empty</span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+})
+
+/** The row a new note is typed into, where it will appear, showing the mark it will have. */
+function ThoughtsInputRow(props: { depth: number; values?: NoteValues; edit: Edit | null; onEditDraft(text: string): void }) {
+  const section = props.values?.section === true
+  return (
+    <div className="eg-row-outer">
+      <div className="eg-row selected" style={{ paddingLeft: props.depth * 20 + 4 }}>
+        <span className="eg-mark">
+          <ThoughtsMark open={typeof props.values?.open === 'boolean' ? props.values.open : null} foldable={false} collapsed={false} />
+        </span>
+        <div className="eg-content">
+          <ThoughtsTextBox edit={props.edit} onEditDraft={props.onEditDraft} section={section} style={section ? sectionStyle(props.depth) : undefined} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Typing in place, as entity-graph does: a textarea in the row's own type,
+ * with no frame, growing with what is typed, so nothing moves when it opens.
+ * Enter writes, Shift+Enter breaks the line.
+ */
+function ThoughtsTextBox(props: { edit: Edit | null; onEditDraft(text: string): void; section?: boolean; style?: CSSProperties }) {
   const { edit, onEditDraft } = props
   const ref = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    const element = ref.current
+    if (!element) return
+    element.focus()
+    element.setSelectionRange(element.value.length, element.value.length)
+  }, [])
   useLayoutEffect(() => {
     const element = ref.current
     if (!element) return
     element.style.height = 'auto'
-    element.style.height = `${element.scrollHeight + element.offsetHeight - element.clientHeight}px`
-  }, [edit?.draft])
-  useEffect(() => {
-    const element = ref.current
-    // The caret goes after what is there, as in the task's box.
-    element?.setSelectionRange(element.value.length, element.value.length)
-  }, [])
+    element.style.height = `${element.scrollHeight}px`
+  }, [edit?.draft, props.style?.fontSize, props.style?.lineHeight])
   return (
     <textarea
       ref={ref}
-      className="composer boxed-edit"
+      className={`eg-text eg-edit${props.section ? ' section' : ''}`}
       rows={1}
-      autoFocus
       spellCheck
+      style={props.style}
       value={edit?.draft ?? ''}
-      placeholder={edit?.mode === 'create' ? 'Message' : ''}
+      placeholder={edit?.mode === 'create' ? (props.section ? 'New section…' : 'New note…') : ''}
       data-field="edit"
       onChange={(event) => onEditDraft(event.target.value)}
       onMouseDown={(event) => event.stopPropagation()}
@@ -341,6 +453,7 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
   const view = props.props
   const { rows, keys, selectedIndex } = view.shown
   const chat = view.view.startsAtEnd
+  const thoughts = useContext(ThoughtsContext)
   // The rows the list lays out: in chat, all but the overview, which sits above it.
   const body = chat ? 1 : 0
   const ref = useRef<HTMLDivElement>(null)
@@ -500,7 +613,22 @@ function TreeList(props: { props: ViewProps; root: Entity; Overview: ComponentTy
     const shown = rows[index]
     return (
       <Measured key={shown.key} measureKey={shown.key} onMeasure={onMeasure} gap={chat && shown.kind === 'entity' && shown.row.depth === 1}>
-        {shown.kind === 'input' ? (
+        {thoughts ? (
+          shown.kind === 'input' ? (
+            <ThoughtsInputRow depth={shown.depth} values={shown.values} edit={view.edit} onEditDraft={view.onEditDraft} />
+          ) : (
+            <ThoughtsRow
+              shown={shown}
+              edit={shown.editing ? view.edit : null}
+              onSelect={view.onSelect}
+              onFold={view.onFold}
+              onOpen={view.onOpen}
+              onImage={view.onImage}
+              onEditDraft={view.onEditDraft}
+              findText={view.find ?? undefined}
+            />
+          )
+        ) : shown.kind === 'input' ? (
           <EditRow depth={shown.depth} values={shown.values} props={view} />
         ) : shown.row.depth === 0 ? (
           overview(shown)

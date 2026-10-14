@@ -1374,6 +1374,12 @@ export class Session {
 
 
   /** A click on a row's box: selects the row and ticks it. */
+  /** A row's fold mark clicked (thoughts): it opens or folds, as ArrowRight / ArrowLeft would. */
+  foldAt(path: string[], open: boolean): void {
+    const id = path[path.length - 1]
+    if (id && path.length > 1) this.update(S.fold(this.state, id, open))
+  }
+
   toggleAt(path: string[]): void {
     this.select(path)
     this.toggle()

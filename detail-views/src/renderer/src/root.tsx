@@ -10,6 +10,11 @@ import { actionsNow, labelOf, runTool, tools } from './tools.ts'
 import { App } from './views/App.tsx'
 import '@fontsource/lato/400.css'
 import '@fontsource/lato/700.css'
+// Thoughts are set as entity-graph sets them: Geist, Lora, Fira Code.
+import '@fontsource-variable/geist/index.css'
+import '@fontsource-variable/lora/index.css'
+import '@fontsource-variable/lora/wght-italic.css'
+import '@fontsource-variable/fira-code/index.css'
 import './styles.css'
 
 /**
@@ -46,6 +51,7 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
   const onFind = useCallback((text: string) => session.setFind(text), [])
   const onFindFocused = useCallback(() => session.findFocused(), [])
   const onToggle = useCallback((path: string[]) => session.toggleAt(path), [session])
+  const onFold = useCallback((path: string[], open: boolean) => session.foldAt(path, open), [session])
   const onNearEnd = useCallback(() => session.loadMore(), [])
   const onOpen = useCallback((id: string) => session.navigate(id), [])
   const onDraft = useCallback((text: string) => session.setDraft(text), [])
@@ -159,9 +165,10 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
         onFindFocused,
         onNearEnd,
         onToggle,
+        onFold,
         onClose: onBack,
       },
-    [tree, shown, onNearEnd, onToggle, onBack, state, working, now, findFocus, centre, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onPause, onNewChat, contextViews, onContextToggle, onSideResize, onSetDirectory, onResolveTopic, onTopicGit, onPathDraft, onAddPath, topic, onEditDraft, onCommitEdit, onCancelEdit],
+    [tree, shown, onNearEnd, onToggle, onFold, onBack, state, working, now, findFocus, centre, onFind, onFindFocused, onSelect, onOpen, onDraft, onCompose, onImage, onAction, onOlder, onPause, onNewChat, contextViews, onContextToggle, onSideResize, onSetDirectory, onResolveTopic, onTopicGit, onPathDraft, onAddPath, topic, onEditDraft, onCommitEdit, onCancelEdit],
   )
   const picking = useMemo(() => {
     const pick = state.picking

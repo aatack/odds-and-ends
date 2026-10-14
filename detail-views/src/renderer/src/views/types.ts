@@ -81,6 +81,8 @@ export interface ViewProps {
   onFindFocused(): void
   /** Ticks or unticks a row's box, by a click on it. */
   onToggle?(path: string[]): void
+  /** Opens or folds a row, by a click on its fold mark. */
+  onFold?(path: string[], open: boolean): void
   /** The view is scrolled near its end, or doesn't fill the screen: walk further. */
   onNearEnd?(): void
   onEditDraft(text: string): void
