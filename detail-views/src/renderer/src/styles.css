@@ -2285,7 +2285,10 @@ textarea:hover,
   background: var(--eg-panel);
 }
 
+/* The whole column's width, so the rows sit at its left: in a flex column, auto side margins alone would shrink it to its rows and centre them. */
 .pane.thoughts .rows {
+  width: 100%;
+  box-sizing: border-box;
   max-width: 840px;
   margin-left: auto;
   margin-right: auto;
