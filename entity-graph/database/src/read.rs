@@ -156,7 +156,7 @@ impl Store {
                 continue;
             }
             for ((eid, ty, other_eid), c) in
-                resolve_links(&self.conn, view, &keys, direction, &types)?
+                resolve_links(&self.conn, view, &keys, direction, &types, typed_only)?
             {
                 if let Some(l) = learn.as_deref_mut() {
                     l.insert(c.data.0.clone(), other_eid);
@@ -166,16 +166,7 @@ impl Store {
                 }
             }
         }
-        let typed = if typed_only {
-            let others: Vec<i64> = found.iter().map(|f| f.3).collect();
-            Some(typed_entities(&self.conn, view, &others)?)
-        } else {
-            None
-        };
-        for (direction, eid, link_type, other_eid, cand) in found {
-            if typed.as_ref().is_some_and(|t| !t.contains(&other_eid)) {
-                continue;
-            }
+        for (direction, eid, link_type, _, cand) in found {
             let me = eids[&eid].clone();
             let (other, sort) = cand.data;
             let sort = sort.expect("removed links filtered above");
@@ -342,19 +333,35 @@ pub(crate) fn with_source(current_sql: &str, src: EventSource, history_index: &s
     }
 }
 
-/// The entities of `eids` whose winning `type` value in the view is not null.
-fn typed_entities(conn: &Connection, view: &View, eids: &[i64]) -> Result<HashSet<i64>> {
-    let mut unique = eids.to_vec();
-    unique.sort_unstable();
-    unique.dedup();
-    if unique.is_empty() {
-        return Ok(HashSet::new());
+/// The SQL condition "the entity `e.eid` has a winning `type` value in the
+/// view that is not null", for use inside a link query that joins `entities e`.
+///
+/// It is the same decision as rolling up the `type` events of the view, as a
+/// chain of lookups from the top layer down: the first layer (and, inside a
+/// layer, the highest interval) that has a `type` event decides. An open
+/// interval reads the current table only; a bounded one reads the current row
+/// when it is inside the interval, else the newest history row inside it. The
+/// current row is the newest event of its target, so it wins over history.
+fn typed_condition(view: &View) -> String {
+    let mut chain = Vec::new();
+    for src in view.sources.iter().rev() {
+        for &(lo, hi) in src.intervals.iter().rev() {
+            let bid = src.bid;
+            chain.push(format!(
+                "(SELECT vtype FROM value_current WHERE bid = {bid} AND eid = e.eid \
+                 AND key = '{TYPE_KEY}' AND +seq BETWEEN {lo} AND {hi})"
+            ));
+            if hi != crate::view::OPEN {
+                chain.push(format!(
+                    "(SELECT vtype FROM value_history INDEXED BY value_history_target \
+                     WHERE bid = {bid} AND eid = e.eid AND key = '{TYPE_KEY}' \
+                     AND seq BETWEEN {lo} AND {hi} ORDER BY seq DESC LIMIT 1)"
+                ));
+            }
+        }
     }
-    Ok(resolve_values(conn, view, &unique, Some(TYPE_KEY))?
-        .into_iter()
-        .filter(|(_, c)| !c.data.is_null())
-        .map(|((eid, _), _)| eid)
-        .collect())
+    chain.push("0".to_owned());
+    format!(" AND COALESCE({}) != 0", chain.join(", "))
 }
 
 fn order(src: &Source, seq: Seq, ts: Timestamp) -> Order {
@@ -432,7 +439,7 @@ pub(crate) fn links_sql(direction: Direction) -> (String, &'static str) {
              FROM link_current l{hint} JOIN entities e ON e.eid = l.{other}
              WHERE l.bid = ?1 AND l.{me} IN (SELECT value FROM json_each(?2))
                AND l.link_type IN (SELECT value FROM json_each(?3))
-               AND +l.seq BETWEEN ?4 AND ?5"
+               AND +l.seq BETWEEN ?4 AND ?5 /*TYPED*/"
         ),
         index,
     )
@@ -446,14 +453,22 @@ pub(crate) fn resolve_links(
     eids: &[i64],
     direction: Direction,
     types: &[&str],
+    typed_only: bool,
 ) -> Result<HashMap<LinkKey, LinkCand>> {
     let (base, index) = links_sql(direction);
+    // Only entities with a non-null winning type, decided in the same query.
+    let typed = if typed_only {
+        typed_condition(view)
+    } else {
+        String::new()
+    };
     let batch = json_keys(eids);
     let types = serde_json::to_string(types).expect("strings serialise");
     let mut events = Vec::new();
     for src in &view.sources {
         for &(lo, hi) in &src.intervals {
-            let sql = with_source(&base, EventSource::of((lo, hi)), index);
+            let sql = with_source(&base, EventSource::of((lo, hi)), index)
+                .replace("/*TYPED*/", &typed);
             let mut stmt = conn.prepare_cached(&sql)?;
             let mut rows = stmt.query(params![src.bid, batch, types, lo, hi])?;
             while let Some(r) = rows.next()? {
