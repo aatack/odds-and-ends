@@ -156,3 +156,35 @@ MB read for each run (hashed IDs, page 1000): warm 0, cold 47, limited 12M 54, l
 - The file is approximately 5.5 GB. The walk tables are approximately 3 GB. The working set for one walk is a small part of this, but it increases with the graph.
 - If the page cache cannot hold the working set, each entity costs several random reads. On this VM (approximately 20 µs per read), a walk can go down to approximately 20k to 30k entities/s. On a local NVMe disk (approximately 80 to 100 µs per read), expect approximately 5k to 10k entities/s. On a network disk (approximately 0.5 to 1 ms per read), expect approximately 1k entities/s or less.
 - Recommendation: give the page cache enough memory for the walk tables, or keep the walk tables on local SSD.
+
+## Look up interned IDs once per load (commits 707a6be, 32491f4)
+
+Before, a walk load round called `lookup` (external ID to `eid`) once in the values read and once in the links read, 20,226 lookup queries per 100k walk. Now:
+
+- `707a6be`: the load does one lookup and passes the `eid`s to `values_with` and `links_with`. The public `values`, `links` and the rest are unchanged (they look up, then call the same internals).
+- `32491f4`: the links read also returns the `eid` of every other entity it saw, and the walk keeps them for the whole walk. A load looks up only IDs it has not seen. In a tree, nearly every ID of a load is a child that the previous link read returned, so almost no lookup is left.
+
+Same machine, back to back, hashed-ID graph (`--random-ids`, 100k nodes, same data file for both). "old" is 9970dd3. Each cell is the median of 3 runs (warm: 3 invocations, shown as the range). Cold and limited use the method of the cold-cache section.
+
+| scenario (entities/s) | old | new |
+| --- | ---: | ---: |
+| page 1000, warm | 66640 - 67512 | 80855 - 81451 |
+| one page, warm | 64161 - 66663 | 72977 - 78148 |
+| read-ahead off, warm | 36650 - 37251 | 50607 - 51472 |
+| frozen fork, warm | 54078 - 55385 | 62873 - 64481 |
+| page 1000, cold | 55982 | 67772 |
+| read-ahead off, cold | 30176 | 41544 |
+| frozen fork, cold | 45317 | 50847 |
+| page 1000, 12M | 51496 | 61030 |
+| page 1000, 10M | 44135 | 61791 |
+| page 1000, 8M | 29412 | 59799 |
+| read-ahead off, 8M | 22803 | 40451 |
+| frozen fork, 8M | 26200 | 47323 |
+
+| SQL queries per full 100k walk | old | new, 707a6be only | new, 32491f4 |
+| --- | ---: | ---: | ---: |
+| page 1000 | 41105 | 31217 | 21429 |
+| frozen fork | 62434 | 52546 | 42758 |
+| read-ahead off | 411888 | 311888 | 211988 |
+
+The build is unchanged (about 4 s, 53.1 MB). The big gain under a memory limit (8M: 29k to 60k) is because the walk no longer reads the `entities` table and its unique index, so it touches fewer pages: MB read per walk at 8M went from 395 to 66.
