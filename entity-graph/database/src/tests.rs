@@ -1665,3 +1665,126 @@ fn walk_visited_set_dedupes_across_pages_like_one_long_walk() {
         assert_eq!(Some(visited), long.visited.clone());
     }
 }
+
+// --- The type filter inside the link query (equivalence) -----------------------
+
+/// Per asked entity: its links as (source, destination, seq).
+type TypedLinks = Vec<(String, Vec<(String, String, i64)>)>;
+
+/// The reference for the implicit type filter: all links, then keep those whose
+/// other entity has a non-null winning `type` value in a separate read.
+fn typed_links_by_reading_values(
+    f: &Fixture,
+    branch: BranchId,
+    ents: &[&str],
+    dir: Direction,
+) -> TypedLinks {
+    let all = f
+        .store
+        .links_including_archived(branch, ents, &[("child", dir)])
+        .unwrap();
+    ents.iter()
+        .map(|e| {
+            let links = all[*e][&("child".to_owned(), dir)]
+                .iter()
+                .filter(|l| {
+                    let other = if dir == Direction::Outbound {
+                        &l.destination
+                    } else {
+                        &l.source
+                    };
+                    matches!(f.values(branch, other).get(TYPE_KEY), Some(v) if !v.is_null())
+                })
+                .map(|l| (l.source.clone(), l.destination.clone(), l.event.seq))
+                .collect();
+            ((*e).to_owned(), links)
+        })
+        .collect()
+}
+
+fn typed_links_in_query(
+    f: &Fixture,
+    branch: BranchId,
+    ents: &[&str],
+    dir: Direction,
+) -> TypedLinks {
+    let got = f.store.links(branch, ents, &[("child", dir)]).unwrap();
+    ents.iter()
+        .map(|e| {
+            let links = got[*e][&("child".to_owned(), dir)]
+                .iter()
+                .map(|l| (l.source.clone(), l.destination.clone(), l.event.seq))
+                .collect();
+            ((*e).to_owned(), links)
+        })
+        .collect()
+}
+
+#[test]
+fn the_sql_type_filter_equals_reading_the_type_for_stacks_forks_and_archives() {
+    // A tiny xorshift, so that the scenario is the same on every run.
+    let mut x = 0x2545_F491_4F6C_DD1Du64;
+    let mut rnd = move |n: u64| {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        x % n
+    };
+    for _case in 0..60 {
+        let mut f = Fixture::new();
+        let names: Vec<String> = (0..8).map(|i| format!("e{i}")).collect();
+        let ents: Vec<&str> = names.iter().map(String::as_str).collect();
+        let mut branches = vec![f.main];
+        let mut frozen_forks = vec![];
+        for round in 0..24 {
+            let b = branches[rnd(branches.len() as u64) as usize];
+            let e = &names[rnd(8) as usize];
+            let op = match rnd(6) {
+                0 => Op::set(e.as_str(), TYPE_KEY, "task"),
+                1 => Op::set(e.as_str(), TYPE_KEY, "list"),
+                2 => Op::clear(e.as_str(), TYPE_KEY),
+                3 | 4 => Op::link(
+                    names[rnd(8) as usize].as_str(),
+                    e.as_str(),
+                    "child",
+                    if rnd(4) == 0 {
+                        SortOrder::Removed
+                    } else {
+                        SortOrder::Explicit(rnd(5) as f64)
+                    },
+                ),
+                _ => Op::set(e.as_str(), "title", format!("t{round}")),
+            };
+            f.write(b, "alex", vec![op]);
+            if round % 5 == 4 && branches.len() < 5 {
+                let from = branches[rnd(branches.len() as u64) as usize];
+                let name = format!("b{round}");
+                let nb = match rnd(3) {
+                    0 => {
+                        let nb = f.store.fork(from, &name).unwrap();
+                        frozen_forks.push(nb);
+                        nb
+                    }
+                    1 => f
+                        .store
+                        .create_branch(&name, &[ParentRef::new(from, SeqRange::ALL)])
+                        .unwrap(),
+                    _ => f
+                        .store
+                        .create_branch(&name, &[ParentRef::new(from, SeqRange::up_to(2))])
+                        .unwrap(),
+                };
+                branches.push(nb);
+            }
+        }
+        for &b in &branches {
+            for dir in [Direction::Outbound, Direction::Inbound] {
+                assert_eq!(
+                    typed_links_in_query(&f, b, &ents, dir),
+                    typed_links_by_reading_values(&f, b, &ents, dir)
+                );
+            }
+        }
+        let _ = frozen_forks;
+    }
+}
