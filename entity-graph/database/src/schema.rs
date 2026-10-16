@@ -1,6 +1,6 @@
 //! Schema and migrations. `PRAGMA user_version` holds the applied version.
 
-use rusqlite::Connection;
+use rusqlite::{Connection, TransactionBehavior};
 
 use crate::error::{Error, Result};
 
@@ -127,7 +127,13 @@ pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
         });
     }
     for (index, sql) in MIGRATIONS.iter().enumerate().skip(found as usize) {
-        let tx = conn.transaction()?;
+        // Take the write lock first, then read the version again: another
+        // connection may have applied this step while this one waited.
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let now: u32 = tx.pragma_query_value(None, "user_version", |r| r.get(0))?;
+        if now > index as u32 {
+            continue;
+        }
         tx.execute_batch(sql)?;
         tx.pragma_update(None, "user_version", index as u32 + 1)?;
         tx.commit()?;

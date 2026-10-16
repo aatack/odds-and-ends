@@ -31,4 +31,6 @@ pub use walk::{Follow, ReadAhead, Walk, WalkCache, WalkNode, WalkOptions, WalkRo
 #[cfg(test)]
 mod model_tests;
 #[cfg(test)]
+mod robust_tests;
+#[cfg(test)]
 mod tests;

@@ -34,7 +34,21 @@ impl Store {
     /// Open or create a store file, and apply any missing migrations.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let conn = Connection::open(path)?;
-        conn.pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(()))?;
+        // Switching a new file to WAL needs a lock that the busy timeout does
+        // not wait for, so a second connection that opens at the same moment
+        // can get "database is locked". Retry for a few seconds.
+        let mut tries = 0;
+        loop {
+            match conn.pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(())) {
+                Err(rusqlite::Error::SqliteFailure(e, _))
+                    if e.code == rusqlite::ErrorCode::DatabaseBusy && tries < 500 =>
+                {
+                    tries += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                other => break other?,
+            }
+        }
         Self::init(conn)
     }
 
