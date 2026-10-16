@@ -29,4 +29,6 @@ pub use types::*;
 pub use walk::{Follow, ReadAhead, Walk, WalkCache, WalkNode, WalkOptions, WalkRow};
 
 #[cfg(test)]
+mod model_tests;
+#[cfg(test)]
 mod tests;
