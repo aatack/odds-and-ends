@@ -397,13 +397,12 @@ impl Store {
                 v.insert(id.clone());
             }
             let node = &w.nodes[id];
-            if (w.include)(&p, node) {
-                rows.push(WalkRow {
-                    path: p.clone(),
-                    node: node.clone(),
-                });
-            }
+            let emit = (w.include)(&p, node);
+            let node = emit.then(|| node.clone());
             path = w.step(&p, remaining - 1)?;
+            if let Some(node) = node {
+                rows.push(WalkRow { path: p, node });
+            }
         }
         let cache = options.return_cache.then(|| WalkCache {
             nodes: std::mem::take(&mut w.nodes),
