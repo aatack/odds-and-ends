@@ -122,10 +122,11 @@ impl Store {
         typed_only: bool,
     ) -> Result<HashMap<String, LinkGroups>> {
         let eids = self.lookup(entities)?;
-        self.links_with(view, entities, &eids, groups, typed_only)
+        self.links_with(view, entities, &eids, groups, typed_only, None)
     }
 
-    /// [`Store::links_in`] with the interned keys already looked up.
+    /// [`Store::links_in`] with the interned keys already looked up. `learn`
+    /// collects the interned key of every other entity that the read saw.
     pub(crate) fn links_with(
         &self,
         view: &View,
@@ -133,6 +134,7 @@ impl Store {
         eids: &HashMap<i64, String>,
         groups: &[(&str, Direction)],
         typed_only: bool,
+        mut learn: Option<&mut HashMap<String, i64>>,
     ) -> Result<HashMap<String, LinkGroups>> {
         let empty: LinkGroups = groups
             .iter()
@@ -156,6 +158,9 @@ impl Store {
             for ((eid, ty, other_eid), c) in
                 resolve_links(&self.conn, view, &keys, direction, &types)?
             {
+                if let Some(l) = learn.as_deref_mut() {
+                    l.insert(c.data.0.clone(), other_eid);
+                }
                 if c.data.1.is_some() {
                     found.push((direction, eid, ty, other_eid, c));
                 }
