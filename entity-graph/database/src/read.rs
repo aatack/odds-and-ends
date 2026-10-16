@@ -328,7 +328,8 @@ pub(crate) fn with_source(current_sql: &str, src: EventSource, history_index: &s
                     "link_current",
                     &format!("link_history INDEXED BY {history_index}"),
                 );
-            format!("{current_sql} UNION ALL {history}")
+            let hi = if current_sql.contains("?5") { "?5" } else { "?4" };
+            format!("{current_sql} UNION ALL {history} AND superseded_by > {hi}")
         }
     }
 }
