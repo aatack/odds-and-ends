@@ -188,3 +188,50 @@ Same machine, back to back, hashed-ID graph (`--random-ids`, 100k nodes, same da
 | read-ahead off | 411888 | 311888 | 211988 |
 
 The build is unchanged (about 4 s, 53.1 MB). The big gain under a memory limit (8M: 29k to 60k) is because the walk no longer reads the `entities` table and its unique index, so it touches fewer pages: MB read per walk at 8M went from 395 to 66.
+
+## Rich history and a branch stack (`examples/bench_rich.rs`)
+
+Run: `cargo run --release --example bench_rich -- 100000 /workspace/bench-data --random-ids [--reuse] [--cold]`. Measured on 32491f4 (master), hashed IDs, 100k nodes, page 1000, read-ahead default, `child` links only.
+
+Graph: the same tree as the simple benchmark (same seed and generator calls), then on `base`:
+
+- 1 to 3 extra revisions per entity (2 to 4 in all) of 3 or 4 of the fields `title`, `done`, `priority`, `note`. `priority` and `note` are set to null in 15% of the revisions.
+- 30% of the `child` links get an explicit sort key. Half of those are then removed and added again with another explicit sort key.
+
+Branch stack (the same edits go to the frozen and the open variant):
+
+- `mid_frozen` = fork of `base`; `mid_open` = open pull of `base`. Each has its own edits: 15% of titles and priorities overridden, 2% of entities archived (null type), 1% of `child` links removed.
+- `top_frozen` = fork of `mid_frozen`; `top_open` = open pull of `mid_open`. Each has 5% titles overridden, 1% archived and 2% of `child` links with a new explicit sort key.
+- After that `base` gets 10% more title edits, so only the open stack sees them.
+
+Archived entities and removed links are not reached, so the mid and top walks visit fewer entities (78,495 and 74,490).
+
+Build and size (one run):
+
+| | simple | rich |
+| --- | ---: | ---: |
+| events written | 504,992 (+10,021 supersede) | 1,357,077 |
+| build time | about 4 s | 14.6 s (tree part 4.8 s) |
+| file MB | 53.1 | 143.1 |
+
+Rows per table (rich): `value_current` 547,236; `value_history` 639,448; `link_current` 111,272; `link_history` 59,121.
+
+Entities/s (warm: two runs; cold: one run, median of 3 inside; "visited" is the number of entities walked). Simple benchmark: the same tree on the simple file, page 1000, 3 warm runs 80855-81451, cold 67772.
+
+| walk | visited | warm | cold | MB read cold | queries per walk (new) | queries per walk (9970dd3) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| base | 100000 | 73136 / 76067 | 62307 | 47.0 | 21452 | 41072 |
+| mid_frozen | 78495 | 34430 / 34447 | 28351 | 108.0 | 34315 | 50052 |
+| mid_open | 78495 | 62030 / 62020 | 49524 | 42.7 | 34315 | 50052 |
+| top_frozen | 74490 | 30618 / 30801 | 24861 | 106.2 | 48942 | 63911 |
+| top_open | 74490 | 54118 / 54265 | 44143 | 42.6 | 48942 | 63911 |
+| top_open, read-ahead off | 74490 | 25007 / 25168 | 21904 | 36.9 | 474693 | 623598 |
+
+The old commit 9970dd3 on the same rich file, one warm run: base 61351, mid_frozen 30948, mid_open 52198, top_frozen 27559, top_open 46847, top_open read-ahead off 20735.
+
+### Observations
+
+- `base` on the rich graph is 6% to 10% slower than on the simple graph (73-76k vs 81k), with history tables more than twice as large as the current tables. Reads on an unbounded branch use only the current tables, so history costs little.
+- Open stacks are slower as the stack gets deeper: 76k (base), 62k (mid), 54k (top). Each layer in the stack is one more event source, so each read runs one more query for each layer.
+- Frozen stacks are about 2 times slower than open ones (mid 34k vs 62k, top 31k vs 54k). A bounded range reads current UNION ALL history, and the cold run reads 2.5 times more data (106 MB vs 43 MB).
+- The number of queries is the same for the frozen and the open stack (one query per layer for each read), so the difference is the cost of each query, not their number.
