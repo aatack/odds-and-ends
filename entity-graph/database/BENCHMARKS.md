@@ -235,3 +235,31 @@ The old commit 9970dd3 on the same rich file, one warm run: base 61351, mid_froz
 - Open stacks are slower as the stack gets deeper: 76k (base), 62k (mid), 54k (top). Each layer in the stack is one more event source, so each read runs one more query for each layer.
 - Frozen stacks are about 2 times slower than open ones (mid 34k vs 62k, top 31k vs 54k). A bounded range reads current UNION ALL history, and the cold run reads 2.5 times more data (106 MB vs 43 MB).
 - The number of queries is the same for the frozen and the open stack (one query per layer for each read), so the difference is the cost of each query, not their number.
+
+## SQL type filter, history half filter, path move (cbe4906 vs f8e2855)
+
+Three changes, one commit each: the implicit type filter (R23) is a correlated
+subquery in the link query instead of a second query (3f89156); the history half
+of a frozen read skips rows superseded inside the range (97c90a0); the walk moves
+the path into the emitted row instead of cloning it (cbe4906).
+
+Method as before: hashed IDs, warm cache, page 1000, two paired runs each
+(base, new, base, new) at `nice -20`, mean of the two runs. Machine shared with
+other jobs; noise about +-3% warm (the two runs of one variant differ by up to
+that, top_open base by 25%, so read that row with care). Cold-cache runs were within
+the +-7% noise and are not tabulated.
+
+| Scenario (entities/s, page 1000) | f8e2855 | cbe4906 | Change |
+|---|---|---|---|
+| tree 100k, one branch | 77,600 | 90,300 | +16% |
+| tree 100k, frozen fork | 63,800 | 68,400 | +7% |
+| rich base (no stack) | 72,900 | 80,800 | +11% |
+| rich mid_open | 60,900 | 67,900 | +11% |
+| rich mid_frozen | 32,600 | 49,800 | +53% |
+| rich top_open | 46,800 | 57,900 | +24% |
+| rich top_frozen | 29,500 | 40,000 | +36% |
+
+The typed filter helps most on stacks (it removes one query per layer-set per
+batch); the history filter helps frozen reads. Equivalence of the SQL type filter
+with reading the type value is covered by
+`the_sql_type_filter_equals_reading_the_type_for_stacks_forks_and_archives`.
