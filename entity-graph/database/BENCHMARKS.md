@@ -263,3 +263,93 @@ The typed filter helps most on stacks (it removes one query per layer-set per
 batch); the history filter helps frozen reads. Equivalence of the SQL type filter
 with reading the type value is covered by
 `the_sql_type_filter_equals_reading_the_type_for_stacks_forks_and_archives`.
+
+## Scale: 100k to 20M entities (101M events) in one file
+
+Tool: `examples/bench_scale.rs`. Same generator as `bench_walk` (tree, 4 values + 1
+`child` link per node, `ref` link on 5%; 5.05 events per entity), hashed IDs, one
+branch, batches of 2000 ops, default SQLite cache (2000 KiB), mmap off, page size 4096,
+WAL, synchronous NORMAL. One growing file, measured at each milestone after a
+checkpoint. Box: 8 cores, 15.6 GB RAM, virtio disk. During this run 9-13 GB of RAM was
+free, so the OS page cache held the whole file up to about 10M entities and most of it at
+20M. "Cold" = file dropped from the OS cache (`posix_fadvise DONTNEED`), new
+connection, root read first. Cold numbers are therefore the worst case of "working
+set larger than RAM", on a fast disk; they are not a measurement of a swapping box.
+
+| Entities | Events | File | Bytes/event | Write rate since last milestone | Warm `values` p50/p99 | Warm `children` p50/p99 | Warm walk | Cold `values` p50/p99 | Cold `children` p50/p99 | Cold walk |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 100k | 0.5M | 54 MB | 106 | 162,600/s | 14/24 us | 27/44 us | 97,700/s | 101/902 us | 297/444 us | 70,900/s |
+| 1M | 5.0M | 544 MB | 108 | 105,800/s | 19/31 us | 36/61 us | 83,000/s | 121/1505 us | 347/608 us | 63,000/s |
+| 5M | 25.2M | 2.78 GB | 110 | 84,600/s | 27/48 us | 53/93 us | 84,800/s | 145/742 us | 381/680 us | 60,300/s |
+| 10M | 50.5M | 5.62 GB | 111 | 85,800/s | 30/57 us | 57/102 us | 83,600/s | 159/383 us | 389/1099 us | 58,500/s |
+| 20M | 101.0M | 11.43 GB | 113 | about 88,000/s | 33/590 us | 63/977 us | 81,400/s | 276/2925 us | 601/3156 us | 44,900/s |
+
+Write time for the whole 101M events: 1141 s (88,500 events/s overall, write calls
+only). The walk is 1000-step pages from the root, so it does not slow down with size
+while cached. Point reads grow slowly (log of the tree depth, and the 20M p99 shows
+cache misses). The query plans use no statistics (no `ANALYZE`, no `sqlite_stat1`), so
+they cannot change with size; walk and read latency stay flat, which agrees.
+
+Where the bytes are (20M entities, 11.43 GB, 4096-byte pages; same shares at every size):
+
+| Table / index | Share of file |
+|---|---|
+| `value_current` | 36.1% |
+| `value_current_value` (the value index) | 19.5% |
+| `value_current` UNIQUE(bid, seq) index | 16.7% |
+| `link_current` | 9.1% |
+| `link_current` UNIQUE(bid, seq) index | 5.1% |
+| `entities` table + `ext_id` index | 4.6% + 5.0% |
+| `link_current_in` | 4.0% |
+
+The two secondary indexes on `value_current` (value index and UNIQUE seq) are 36% of the
+file: indexes are about 46% of the file in total. Pages are 88-92% full.
+
+Write throughput by batch size (1M entities, 5.05M events, warm):
+
+| Ops per batch | Events/s | Bytes written to storage per event |
+|---|---|---|
+| 10 | 44,900 | 11,433 |
+| 100 | 77,900 | 4,419 |
+| 2,000 | 115,100 | 2,180 |
+| 20,000 | 143,100 | 1,242 |
+
+Write amplification: the final file is 108 bytes per event, but 2,180 bytes per event
+reach storage at 2000 ops per batch (about 20x: each batch writes every touched page
+to the WAL, and the checkpoint writes it again). It falls as batches get larger because
+more events share each touched page. With sequential IDs the same load runs at 189,700
+events/s and 519 bytes per event written (hashed IDs: 103,972 and 2,180): random keys
+touch a different leaf in each table and index for every event.
+
+Other settings (1M entities, same load):
+
+| Setting | Events/s | Warm `values` | Warm walk | Cold `values` | Cold walk |
+|---|---|---|---|---|---|
+| default (page 4096, cache 2 MB) | 115,100 | 19 us | 86,500/s | 121 us | 63,000/s |
+| page 16384 | 86,900 | 25 us | 81,600/s | 155 us | 69,300/s |
+| page 65536 | 35,100 | 35 us | 87,500/s | 243 us | 71,000/s |
+| cache 512 MB | 104,000 | - | - | - | - |
+| mmap 4 GB | 110,700 | 17 us | 88,200/s | 505 us | 58,800/s |
+
+Bigger pages cost write speed (5,200 and 9,970 bytes written per event) and give no
+read gain here; the cache setting made no difference because the OS cache already held
+the file. Cold numbers vary by about 20% between runs.
+
+Verdict for 100M events (measured to 101M on this box): it works. The file is 11.4 GB
+(113 bytes/event), writes run at 85-90k events/s with batches of 2000, warm reads and
+walks are flat, and a cold point read costs 0.3-0.6 ms. Limits are far away (max
+database size 281 TB at 64 KiB pages, 17.5 TB at 4 KiB pages; the 20M file has 2.79M of
+4.29G pages). What gets worse: (1) write rate falls from 160k to 85k events/s as the
+indexes outgrow the cache and stays near 85k while the OS cache holds the file; beyond
+RAM it will fall further (not measured: estimate, a random-page write per index per
+event, so disk IOPS bound; this box could not be run out of RAM); (2) cold reads have a
+heavier tail (p99 up to 3 ms at 20M); (3) tiny batches are slow (45k events/s at 10
+ops) and write 11 KB per event, so the app should batch writes; (4) history tables
+grow with edits (not exercised here: this run has almost no history). At 1B events the
+file would be about 113 GB (estimate); that needs sharding or a different store.
+Mitigations that matter, in order: batch the writes; keep RAM at least as large as the
+hot part of the file (value_current and its indexes); sequential or time-ordered IDs
+(1.8x write speed, 4x less write traffic); do not raise page size; mmap and a large
+SQLite cache gave nothing while the file was in the OS cache. Not measured: dropping
+indexes (the value index is 19.5% of the file; `find` needs it), partitioning, and
+sharding by branch.
