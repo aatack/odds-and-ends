@@ -130,6 +130,8 @@ struct Walker<'a, D, I> {
     stack_ids: Vec<String>,
     stack_kids: Vec<Option<Vec<String>>>,
     loads: usize,
+    /// Interned keys that this walk has seen, by entity ID.
+    eid_of: HashMap<String, i64>,
 }
 
 impl<D, I> Walker<'_, D, I>
@@ -179,7 +181,24 @@ where
     fn load(&mut self, ids: &[String]) -> Result<()> {
         self.loads += 1;
         let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
-        let eids = self.store.lookup(&refs)?;
+        // Interned keys: reuse the ones that earlier link reads showed; look
+        // up only the rest, once for the whole batch.
+        let mut eids: HashMap<i64, String> = HashMap::with_capacity(refs.len());
+        let mut unknown: Vec<&str> = Vec::new();
+        for id in &refs {
+            match self.eid_of.get(*id) {
+                Some(eid) => {
+                    eids.insert(*eid, (*id).to_owned());
+                }
+                None => unknown.push(id),
+            }
+        }
+        if !unknown.is_empty() {
+            for (eid, ext) in self.store.lookup(&unknown)? {
+                self.eid_of.insert(ext.clone(), eid);
+                eids.insert(eid, ext);
+            }
+        }
         let mut values = self.store.values_with(&self.view, &refs, &eids)?;
         // Group by the followed pairs, not by type: types that follow the
         // same pairs share one batch read.
@@ -211,7 +230,7 @@ where
                 .collect();
             let links = self
                 .store
-                .links_with(&self.view, &members, &mine, &groups, true)?;
+                .links_with(&self.view, &members, &mine, &groups, true, Some(&mut self.eid_of))?;
             for id in members {
                 self.links.insert(id.to_owned(), links[id].clone());
                 let mut out = Vec::new();
@@ -355,6 +374,7 @@ impl Store {
             stack_ids: Vec::new(),
             stack_kids: Vec::new(),
             loads: 0,
+            eid_of: HashMap::new(),
         };
         let mut rows = Vec::new();
         let mut visited = 0;
