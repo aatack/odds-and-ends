@@ -115,6 +115,8 @@ export interface TopicDialog {
   name: string
   /** A task (a chat with Claude, with a path) or thoughts (a tree of notes, no path). */
   display: TopicDisplay
+  /** An item whose context the new topic joins, by id; blank for none. */
+  context: string
   path: string
   worktree: boolean
   /** Made from another topic (`?`): it goes into that one's chat too. */

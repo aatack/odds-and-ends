@@ -9,7 +9,7 @@ import { kinds } from './kinds.tsx'
 import { ItemContext, KindsContext, PeekContext } from './primitives.tsx'
 import type { ItemGestures, PeekGestures } from './primitives.tsx'
 import type { ViewProps } from './types.ts'
-import { Button, ClockContext, HeaderPill, Modal, PillContent, SideSlotContext, useEdgeResize } from './primitives.tsx'
+import { Button, ClockContext, HeaderPill, ItemPill, Modal, PillContent, SideSlotContext, useEdgeResize } from './primitives.tsx'
 import { useMemo, useState } from 'react'
 import { TopicList, type TopicListProps } from './Topics.tsx'
 
@@ -376,6 +376,24 @@ function TopicForm(props: DialogProps<TopicDialog>) {
         value={dialog.name}
         onChange={(event) => props.onChange({ name: event.target.value })}
       />
+      {/* The item whose context it joins, by id (the task open, or the thought selected, to start with); blank for none. */}
+      <div className="topic-context">
+        <input
+          className="find"
+          data-field="dialog-topic-context"
+          placeholder="Context (optional)"
+          spellCheck={false}
+          value={dialog.context}
+          onChange={(event) => props.onChange({ context: event.target.value })}
+        />
+        {dialog.context.trim() && (
+          <>
+            <ItemPill id={dialog.context.trim()} fallback="…" />
+            {/* None: the new topic stands on its own. */}
+            <Button quiet label="×" title="No context" onClick={() => props.onChange({ context: '' })} />
+          </>
+        )}
+      </div>
       {/* A task is a chat with Claude, run in a path; thoughts are a tree of notes, with no path. */}
       <div className="topic-displays">
         <Button label="Task" active={dialog.display === 'task'} onClick={() => props.onChange({ display: 'task' })} />

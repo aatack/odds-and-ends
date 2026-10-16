@@ -39,7 +39,7 @@ async function headless(options: Parameters<typeof memoryCore>[0] = {}, ui: { to
     redo: async (events) => a.redo({ events }),
     claudeCreate: (input) => a.claudeCreate(input),
     claudeSetDirectory: (session, cwd, worktree) => a.claudeSetDirectory({ session, cwd, worktree }),
-    topicCreate: (name, path, parent, display) => a.topicCreate({ name, ...path, parent, display }),
+    topicCreate: (name, path, parent, display, context) => a.topicCreate({ name, ...path, parent, display, context }),
     topicAddPath: (topic, cwd, worktree) => a.topicAddPath({ topic, cwd, worktree }),
     topicDispatch: (topic) => a.topicDispatch({ topic }),
     topicPaste: (topic, text) => a.topicPaste({ topic, text }),
@@ -696,7 +696,7 @@ test('topics mode: Ctrl+. opens a form for a new topic, from anywhere; Enter in 
   await settle()
   assert.equal(key('Ctrl+.', 'topic-name'), 'topic.new')
   session.openTopicDialog()
-  assert.deepEqual(session.get().state.dialog, { kind: 'topic', name: '', display: 'task', path: '', worktree: false })
+  assert.deepEqual(session.get().state.dialog, { kind: 'topic', name: '', display: 'task', context: '', path: '', worktree: false })
   // Not a second form over the first.
   assert.equal(key('Ctrl+.', null), undefined)
   // Nothing made without a name.
@@ -743,6 +743,49 @@ test('topics mode: a thoughts topic is a tree of notes, worked as any tree is, w
   assert.equal(key('Ctrl+Enter') === 'topic.dispatch', false)
   assert.equal(session.canSnooze(), true)
   assert.equal(session.canResolveTopic(), true)
+  } finally {
+    stop()
+  }
+})
+
+test('topics mode: a new topic\'s form starts with a context: the task open, or the thought selected; cleared, the topic stands alone', async () => {
+  const { session, stop, settle } = await headless({}, { topics: true })
+  const make = async (name: string, change: Record<string, unknown> = {}) => {
+    session.openTopicDialog()
+    session.setDialog({ name, ...change })
+    session.submitDialog()
+    await settle()
+    return session.get().view!.root!
+  }
+  const contextOf = (id: string) => session.get().item(id)?.data.context
+  try {
+  await settle()
+  // Nothing open: no context.
+  session.openTopicDialog()
+  assert.equal((session.get().state.dialog as { context: string }).context, '')
+  session.cancelDialog()
+  const task = await make('Task')
+  // On a task: the task.
+  session.openTopicDialog()
+  assert.equal((session.get().state.dialog as { context: string }).context, task.id)
+  session.cancelDialog()
+  const related = await make('Related')
+  assert.ok(contextOf(related.id))
+  assert.equal(contextOf(related.id), contextOf(task.id))
+  // Cleared: on its own.
+  const alone = await make('Alone', { context: '' })
+  assert.equal(contextOf(alone.id) ?? null, null)
+  // On thoughts: the row selected.
+  const thoughts = await make('Thoughts', { context: '', display: 'thoughts' })
+  session.startCreate()
+  session.setEditDraft('A thought')
+  await session.commitEdit()
+  await settle()
+  const note = session.get().view!.rows[1].entity
+  session.select([thoughts.id, note.id])
+  session.openTopicDialog()
+  assert.equal((session.get().state.dialog as { context: string }).context, note.id)
+  session.cancelDialog()
   } finally {
     stop()
   }

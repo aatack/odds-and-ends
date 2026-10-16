@@ -2524,6 +2524,17 @@ textarea:hover,
   line-height: 1.3;
 }
 
+/* The new-topic form's context: the id, and the item's pill once it names one. */
+.topic-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topic-context > .find {
+  flex: 1;
+}
+
 /* The new-topic form's choice: a task, or thoughts. */
 .topic-displays {
   display: flex;

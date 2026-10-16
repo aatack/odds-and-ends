@@ -628,10 +628,16 @@ export class Core {
       text.trim() ? { events: this.claude.prompt(session, text), error: null } : { events: [], error: null },
     /** A new topic, named, in the one list of them. */
     /** A new topic, named; with a path, if one is given (`cwd`, or a new worktree of it). */
-    /** Thoughts (`display`) are a tree of notes, with nothing of Claude's: no path. */
-    topicCreate: ({ name, cwd, worktree, parent, display }: { name: string; cwd?: string; worktree?: boolean; parent?: string; display?: TopicDisplay }): Promise<Outcome> =>
+    /**
+     * Thoughts (`display`) are a tree of notes, with nothing of Claude's: no
+     * path. With `context`, the new topic goes into that item's context (one
+     * made for them both if it has none).
+     */
+    topicCreate: ({ name, cwd, worktree, parent, display, context }: { name: string; cwd?: string; worktree?: boolean; parent?: string; display?: TopicDisplay; context?: string }): Promise<Outcome> =>
       this.attempt('topics', async () => {
         if (parent && this.item(parent)?.type !== 'topic') throw new Error('Not a topic')
+        const relative = context?.trim()
+        if (relative && !this.item(relative)) throw new Error(`No item ${relative} to share a context with`)
         if (display === 'thoughts' && cwd?.trim()) throw new Error('Thoughts have no path: only a task topic runs somewhere')
         const made = this.topics.create(name, display)
         const listed = made.find((event) => event.type === 'link')
@@ -640,7 +646,9 @@ export class Core {
         // Made from another topic (`?`): in its chat too, as a pill.
         const under = parent ? [link(parent, id, this.now(), me)] : []
         this.owned.write(under)
-        return [...made, ...under, ...(cwd?.trim() ? await this.addPath(id, cwd, worktree ?? false) : [])]
+        const shared = relative ? this.shareContext(id, relative, me) : { events: [], error: null }
+        if (shared.error) throw new Error(shared.error)
+        return [...made, ...under, ...shared.events, ...(cwd?.trim() ? await this.addPath(id, cwd, worktree ?? false) : [])]
       }),
     /** A path for a topic: `cwd` as it is, or a new worktree of its repo; a `path` item under the topic, where the next dispatch runs. */
     topicAddPath: ({ topic, cwd, worktree }: { topic: string; cwd: string; worktree: boolean }): Promise<Outcome> =>

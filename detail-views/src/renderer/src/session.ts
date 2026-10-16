@@ -584,7 +584,7 @@ export class Session {
   }
 
   openTopicDialog(): void {
-    if (this.canOpenTopicDialog()) this.update(S.setDialog(this.state, { kind: 'topic', name: '', display: 'task', path: '', worktree: false }))
+    if (this.canOpenTopicDialog()) this.update(S.setDialog(this.state, { kind: 'topic', name: '', display: 'task', context: this.defaultTopicContext(), path: '', worktree: false }))
   }
 
   /** `?` on a topic: the same form, for a topic that also goes into this one's chat. */
@@ -593,7 +593,14 @@ export class Session {
   }
 
   openChildTopicDialog(): void {
-    if (this.canOpenChildTopicDialog()) this.update(S.setDialog(this.state, { kind: 'topic', name: '', display: 'task', path: '', worktree: false, parent: S.focused(this.state) }))
+    if (this.canOpenChildTopicDialog()) this.update(S.setDialog(this.state, { kind: 'topic', name: '', display: 'task', context: this.defaultTopicContext(), path: '', worktree: false, parent: S.focused(this.state) }))
+  }
+
+  /** What a new topic's context is with, to start with: the task open, or the row selected in the thoughts open; none elsewhere. */
+  private defaultTopicContext(): string {
+    if (this.onTopic()) return S.focused(this.state)
+    if (this.onAnyTopic()) return this.selected()?.entity.id ?? S.focused(this.state)
+    return ''
   }
 
   hasDialog(): boolean {
@@ -628,7 +635,7 @@ export class Session {
       this.update(S.setDialog(this.state, null))
       // Thoughts have no path, whatever was typed before switching to them.
       const path = dialog.display === 'task' && dialog.path.trim() ? { cwd: dialog.path, worktree: dialog.worktree } : undefined
-      this.makeTopic(dialog.name, path, dialog.parent, dialog.display)
+      this.makeTopic(dialog.name, path, dialog.parent, dialog.display, dialog.context.trim() || undefined)
       return
     }
     this.update(S.setDialog(this.state, null))
@@ -664,8 +671,9 @@ export class Session {
   }
 
   /** A topic named `name` is made (with its first path, and in another's chat, if given), and opened. */
-  private makeTopic(name: string, path?: { cwd: string; worktree: boolean }, parent?: string, display?: TopicDisplay): void {
-    void this.working(topicsIds.root, 'create', () => this.api.topicCreate(name, path, parent, display)).then((outcome) => {
+  private makeTopic(name: string, path?: { cwd: string; worktree: boolean }, parent?: string, display?: TopicDisplay, context?: string): void {
+    void this.working(topicsIds.root, 'create', () => this.api.topicCreate(name, path, parent, display, context)).then((outcome) => {
+      if (context) this.settle(context, outcome)
       if (parent) this.settle(parent, outcome)
       this.settle(topicsIds.root, outcome)
       if (outcome.error) this.showToast(outcome.error)
