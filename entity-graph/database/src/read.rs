@@ -36,6 +36,16 @@ impl Store {
         entities: &[&str],
     ) -> Result<HashMap<String, BTreeMap<String, Value>>> {
         let eids = self.lookup(entities)?;
+        self.values_with(view, entities, &eids)
+    }
+
+    /// [`Store::values_in`] with the interned keys already looked up.
+    pub(crate) fn values_with(
+        &self,
+        view: &View,
+        entities: &[&str],
+        eids: &HashMap<i64, String>,
+    ) -> Result<HashMap<String, BTreeMap<String, Value>>> {
         let mut out: HashMap<String, BTreeMap<String, Value>> = entities
             .iter()
             .map(|e| ((*e).to_owned(), BTreeMap::new()))
@@ -112,6 +122,18 @@ impl Store {
         typed_only: bool,
     ) -> Result<HashMap<String, LinkGroups>> {
         let eids = self.lookup(entities)?;
+        self.links_with(view, entities, &eids, groups, typed_only)
+    }
+
+    /// [`Store::links_in`] with the interned keys already looked up.
+    pub(crate) fn links_with(
+        &self,
+        view: &View,
+        entities: &[&str],
+        eids: &HashMap<i64, String>,
+        groups: &[(&str, Direction)],
+        typed_only: bool,
+    ) -> Result<HashMap<String, LinkGroups>> {
         let empty: LinkGroups = groups
             .iter()
             .map(|&(t, d)| ((t.to_owned(), d), Vec::new()))
@@ -264,7 +286,7 @@ impl Store {
     }
 
     /// The interned keys of the IDs that the store knows.
-    fn lookup(&self, entities: &[&str]) -> Result<HashMap<i64, String>> {
+    pub(crate) fn lookup(&self, entities: &[&str]) -> Result<HashMap<i64, String>> {
         let json = serde_json::to_string(entities).expect("strings serialise");
         let mut stmt = self.conn.prepare_cached(
             "SELECT eid, ext_id FROM entities WHERE ext_id IN (SELECT value FROM json_each(?1))",

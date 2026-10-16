@@ -179,7 +179,8 @@ where
     fn load(&mut self, ids: &[String]) -> Result<()> {
         self.loads += 1;
         let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
-        let mut values = self.store.values_in(&self.view, &refs)?;
+        let eids = self.store.lookup(&refs)?;
+        let mut values = self.store.values_with(&self.view, &refs, &eids)?;
         // Group by the followed pairs, not by type: types that follow the
         // same pairs share one batch read.
         let mut by_pairs: HashMap<&[(String, Direction)], Vec<&str>> = HashMap::new();
@@ -203,7 +204,14 @@ where
         for (pairs, members) in by_pairs {
             let groups: Vec<(&str, Direction)> =
                 pairs.iter().map(|(t, d)| (t.as_str(), *d)).collect();
-            let links = self.store.links_in(&self.view, &members, &groups, true)?;
+            let mine: HashMap<i64, String> = eids
+                .iter()
+                .filter(|(_, ext)| members.contains(&ext.as_str()))
+                .map(|(k, v)| (*k, v.clone()))
+                .collect();
+            let links = self
+                .store
+                .links_with(&self.view, &members, &mine, &groups, true)?;
             for id in members {
                 self.links.insert(id.to_owned(), links[id].clone());
                 let mut out = Vec::new();
