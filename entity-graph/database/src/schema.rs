@@ -6,12 +6,12 @@ use crate::error::{Error, Result};
 
 /// Migration `i` takes the file from version `i` to version `i + 1`.
 /// Append only: never edit a migration that has shipped.
-const MIGRATIONS: &[&str] = &[V1];
+const MIGRATIONS: &[&str] = &[V1, V2];
 
 /// The schema version this build writes.
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
 
-const V1: &str = r#"
+pub(crate) const V1: &str = r#"
 CREATE TABLE branches (
   bid        INTEGER PRIMARY KEY,          -- local key, compact
   id         BLOB    NOT NULL UNIQUE,      -- BranchId (UUIDv7), fixed at creation
@@ -78,7 +78,7 @@ CREATE TABLE value_history (
 ) STRICT, WITHOUT ROWID;
 -- History has the same lookups as current, plus seq, so bounded roll-ups stay indexed.
 CREATE INDEX value_history_target     ON value_history(bid, eid, key, seq);
-CREATE INDEX value_history_value      ON value_history(bid, key, value, eid, seq);
+CREATE INDEX value_history_value      ON value_history(bid, key, value, eid, seq);  -- replaced in V2
 CREATE INDEX value_history_superseded ON value_history(bid, superseded_by);  -- undo
 
 -- Find by value, including "all entities of type X" (key = 'type').
@@ -140,3 +140,10 @@ pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
     }
     Ok(())
 }
+
+/// V2: `superseded_by` joins the history value index, so that `find` checks
+/// "still the winner at the end of the range" without a table lookup.
+const V2: &str = r#"
+DROP INDEX value_history_value;
+CREATE INDEX value_history_value ON value_history(bid, key, value, eid, seq, superseded_by);
+"#;

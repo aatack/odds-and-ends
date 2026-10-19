@@ -91,6 +91,29 @@ impl Fixture {
 // --- Schema ---------------------------------------------------------------
 
 #[test]
+fn migrates_a_version_1_file_to_the_covering_history_index() {
+    let dir = std::env::temp_dir().join(format!("egdb-{}", uuid::Uuid::now_v7()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("store.db");
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(crate::schema::V1).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+    }
+    let store = Store::open(&path).unwrap();
+    assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+    let cols: Vec<String> = store
+        .conn
+        .prepare("SELECT name FROM pragma_index_info('value_history_value')")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(cols, ["bid", "key", "value", "eid", "seq", "superseded_by"]);
+}
+
+#[test]
 fn migrates_a_new_file_and_refuses_a_newer_one() {
     let dir = std::env::temp_dir().join(format!("egdb-{}", uuid::Uuid::now_v7()));
     std::fs::create_dir_all(&dir).unwrap();

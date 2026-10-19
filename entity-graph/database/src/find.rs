@@ -300,6 +300,15 @@ enum Plan {
 }
 
 impl Plan {
+    /// Whether the plan only has exact matches (cheap per-entity probes).
+    fn exact(&self) -> bool {
+        match self {
+            Plan::Term(_, c) => matches!(c, Cond::Eq(_) | Cond::In(_)),
+            Plan::All(p) | Plan::Any(p) => p.iter().all(Plan::exact),
+            Plan::Everything => false,
+        }
+    }
+
     /// A rough cost rank: lower is more selective.
     fn rank(&self) -> u32 {
         match self {
@@ -578,6 +587,11 @@ enum After {
     Eid(i64),
 }
 
+/// Whether the view is one open layer (no ranges, no history).
+fn one_open_layer(view: &View) -> bool {
+    matches!(view.sources.as_slice(), [src] if matches!(src.intervals.as_slice(), [(lo, hi)] if *lo <= 1 && *hi == OPEN))
+}
+
 /// `And` terms with fewer candidates than this are used alone.
 const AND_COUNT_CAP: i64 = 2048;
 
@@ -621,12 +635,22 @@ impl Store {
             .flatten();
         let one_key = key.is_some();
 
-        let probe = matches!(options.order, FindOrder::EntityId)
-            && !matches!(plan, Plan::Everything)
-            && match knobs::probe() {
-                Some(forced) => forced,
-                None => self.dense(&view, &plan)?,
-            };
+        // Sparse candidates are sorted in SQL. Dense ones are found by reading
+        // the dictionary in page order: with a probe of each entity when the
+        // probe is cheap (exact matches, or one open layer), else by checking
+        // every entity after the roll-up.
+        let (plan, probe) = match (&plan, knobs::probe()) {
+            (Plan::Everything, _) => (plan, false),
+            (_, Some(forced)) => (plan, forced && matches!(options.order, FindOrder::EntityId)),
+            (_, None) if !self.dense(&view, &plan)? => (plan, false),
+            (_, None)
+                if matches!(options.order, FindOrder::EntityId)
+                    && (plan.exact() || one_open_layer(&view)) =>
+            {
+                (plan, true)
+            }
+            (_, None) => (Plan::Everything, false),
+        };
 
         let mut after = match (&options.cursor, options.order) {
             (None, _) => After::Start,
