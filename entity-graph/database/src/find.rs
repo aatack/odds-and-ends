@@ -595,10 +595,6 @@ fn one_open_layer(view: &View) -> bool {
 /// `And` terms with fewer candidates than this are used alone.
 const AND_COUNT_CAP: i64 = 2048;
 
-/// The share of the store's entities above which a plan reads candidates by
-/// probing each entity in page order instead of sorting all candidates.
-const PROBE_SHARE: f64 = 0.10;
-
 impl Store {
     /// A page of the entities of `branch` whose final values match `filter`.
     /// See [`Filter`] for the semantics and [`FindOptions`] for paging.
@@ -609,6 +605,7 @@ impl Store {
             return Err(Error::Invalid("limit must be at least 1".into()));
         }
         let view = self.branch_view(branch)?;
+        let cap = self.dense_cap(options.limit)?;
         let mut plan = plan_of(filter);
         if plan.is_none() && !options.include_archived {
             plan = Some(Plan::Term(TYPE_KEY.into(), Cond::NotNull));
@@ -620,7 +617,7 @@ impl Store {
             Some(Plan::Term(k, Cond::NotNull)) if k == TYPE_KEY && plan_of(filter).is_none() => {
                 Plan::Everything
             }
-            Some(p) => self.refine(&view, p)?,
+            Some(p) => self.refine(&view, p, cap)?,
             None => Plan::Everything,
         };
 
@@ -642,7 +639,7 @@ impl Store {
         let (plan, probe) = match (&plan, knobs::probe()) {
             (Plan::Everything, _) => (plan, false),
             (_, Some(forced)) => (plan, forced && matches!(options.order, FindOrder::EntityId)),
-            (_, None) if !self.dense(&view, &plan)? => (plan, false),
+            (_, None) if self.count(&view, &plan, cap)? < cap => (plan, false),
             (_, None)
                 if matches!(options.order, FindOrder::EntityId)
                     && (plan.exact() || one_open_layer(&view)) =>
@@ -754,30 +751,42 @@ impl Store {
         }
     }
 
-    /// Pick the terms of each `And`: count the candidates of each term (up to
-    /// [`AND_COUNT_CAP`]) in rank order and keep the first small one alone;
-    /// when every term is large, intersect the two first ranks in SQL.
-    fn refine(&self, view: &View, plan: Plan) -> Result<Plan> {
+    /// Pick the terms of each `And`. Each term is counted up to `cap` in
+    /// rank order (`Eq` first). A term with fewer than [`AND_COUNT_CAP`]
+    /// candidates is used alone at once; else the smallest term under `cap`
+    /// is used alone (its candidates are sorted, the other terms are checked
+    /// after the roll-up). When every term is dense, the two first are
+    /// intersected in SQL.
+    fn refine(&self, view: &View, plan: Plan, cap: i64) -> Result<Plan> {
         Ok(match plan {
             Plan::All(parts) => {
                 if !knobs::intersect() {
                     let first = parts.into_iter().next().expect("two or more");
-                    return self.refine(view, first);
+                    return self.refine(view, first, cap);
                 }
-                let mut large = Vec::new();
-                for p in parts {
-                    if self.count(view, &p, AND_COUNT_CAP)? < AND_COUNT_CAP {
-                        return self.refine(view, p);
+                let mut best: Option<(i64, usize)> = None;
+                for (i, p) in parts.iter().enumerate() {
+                    let n = self.count(view, p, cap)?;
+                    if n < AND_COUNT_CAP {
+                        best = Some((n, i));
+                        break;
                     }
-                    large.push(p);
+                    if n < cap && best.is_none_or(|(m, _)| n < m) {
+                        best = Some((n, i));
+                    }
                 }
-                large.truncate(2);
-                Plan::All(large)
+                match best {
+                    Some((_, i)) => {
+                        let p = parts.into_iter().nth(i).expect("in range");
+                        self.refine(view, p, cap)?
+                    }
+                    None => Plan::All(parts.into_iter().take(2).collect()),
+                }
             }
             Plan::Any(parts) => Plan::Any(
                 parts
                     .into_iter()
-                    .map(|p| self.refine(view, p))
+                    .map(|p| self.refine(view, p, cap))
                     .collect::<Result<_>>()?,
             ),
             other => other,
@@ -829,15 +838,16 @@ impl Store {
         })
     }
 
-    /// Whether the plan's candidates are a large share of all entities.
-    fn dense(&self, view: &View, plan: &Plan) -> Result<bool> {
+    /// The candidate count above which a plan is dense: `sqrt(limit × entities)`.
+    /// Sorting the candidates costs about their number on each page; reading
+    /// the dictionary in order costs about `limit / density`. The two meet
+    /// at this count (10 000 for 1000 rows of 100 000 entities).
+    fn dense_cap(&self, limit: usize) -> Result<i64> {
         let total: i64 = self
             .conn
             .prepare_cached("SELECT coalesce(max(eid), 0) FROM entities")?
             .query_row([], |r| r.get(0))?;
-        let cap = ((total as f64 * PROBE_SHARE) as i64).max(1);
-        let n = self.count(view, plan, cap)?;
-        Ok(n >= cap && total > 0)
+        Ok(((limit as f64 * total as f64).sqrt() as i64).max(1))
     }
 
     /// The next `chunk` candidates after `after`, in page order.

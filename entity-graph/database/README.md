@@ -48,6 +48,19 @@ store.write(WriteBatch::new(agent, "agent", vec![Op::set("note-1", "text", "draf
 store.merge(main, agent)?;                       // or skip it, or archive the branch
 let children = store.children(main, "@index", "child")?;
 store.undo(main, "alex")?;
+
+use egdb::{Filter, FindOptions, Value};
+let open_tasks = Filter::And(vec![
+    Filter::Eq("type".into(), Value::Text("task".into())),
+    Filter::Contains("title".into(), "report".into()),
+    Filter::Gt("score".into(), Value::Int(50)),
+]);
+let mut cursor = None;
+loop {
+    let page = store.find(main, &open_tasks, FindOptions { cursor, ..Default::default() })?;
+    for row in &page.rows { println!("{} {:?}", row.id, row.values.get("title")); }
+    match page.next { Some(next) => cursor = Some(next), None => break }
+}
 ```
 
 ## Status
@@ -62,7 +75,7 @@ store.undo(main, "alex")?;
   - Branches: create, fork, pull, merge, rebase, archive
   - Undo
 - **Walk:** `walk` is a paginated depth-first walk (type-based follow map, continue/include predicates, step limit, `next` path to resume, read-ahead, optional cache and visited set). See DESIGN.md section 11.1.
-- **Not yet:** `find` returns `Error::NotImplemented` until Alexander sends the semantics.
+- **Find:** `find` gives a paginated flat list of entities that match a `Filter` (Eq, ranges, contains, prefix, in, null, and/or/not, custom). See DESIGN.md section 11.2.
 
 ## Develop
 
