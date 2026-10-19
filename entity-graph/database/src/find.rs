@@ -617,7 +617,7 @@ impl Store {
             Some(Plan::Term(k, Cond::NotNull)) if k == TYPE_KEY && plan_of(filter).is_none() => {
                 Plan::Everything
             }
-            Some(p) => self.refine(&view, p, cap)?,
+            Some(p) => self.refine(&view, p)?,
             None => Plan::Everything,
         };
 
@@ -751,42 +751,32 @@ impl Store {
         }
     }
 
-    /// Pick the terms of each `And`. Each term is counted up to `cap` in
-    /// rank order (`Eq` first). A term with fewer than [`AND_COUNT_CAP`]
-    /// candidates is used alone at once; else the smallest term under `cap`
-    /// is used alone (its candidates are sorted, the other terms are checked
-    /// after the roll-up). When every term is dense, the two first are
-    /// intersected in SQL.
-    fn refine(&self, view: &View, plan: Plan, cap: i64) -> Result<Plan> {
+    /// Pick the terms of each `And`: estimate the candidates of each term
+    /// (up to [`AND_COUNT_CAP`]) in rank order (`Eq` first) and use the first
+    /// small one alone; the other terms are checked after the roll-up. When
+    /// every term is large, intersect the two first in SQL. (Measured: the
+    /// intersection beats the smallest large term alone, BENCHMARKS.md.)
+    fn refine(&self, view: &View, plan: Plan) -> Result<Plan> {
         Ok(match plan {
             Plan::All(parts) => {
                 if !knobs::intersect() {
                     let first = parts.into_iter().next().expect("two or more");
-                    return self.refine(view, first, cap);
+                    return self.refine(view, first);
                 }
-                let mut best: Option<(i64, usize)> = None;
-                for (i, p) in parts.iter().enumerate() {
-                    let n = self.count(view, p, cap)?;
-                    if n < AND_COUNT_CAP {
-                        best = Some((n, i));
-                        break;
+                let mut large = Vec::new();
+                for p in parts {
+                    if self.count(view, &p, AND_COUNT_CAP)? < AND_COUNT_CAP {
+                        return self.refine(view, p);
                     }
-                    if n < cap && best.is_none_or(|(m, _)| n < m) {
-                        best = Some((n, i));
-                    }
+                    large.push(p);
                 }
-                match best {
-                    Some((_, i)) => {
-                        let p = parts.into_iter().nth(i).expect("in range");
-                        self.refine(view, p, cap)?
-                    }
-                    None => Plan::All(parts.into_iter().take(2).collect()),
-                }
+                large.truncate(2);
+                Plan::All(large)
             }
             Plan::Any(parts) => Plan::Any(
                 parts
                     .into_iter()
-                    .map(|p| self.refine(view, p, cap))
+                    .map(|p| self.refine(view, p))
                     .collect::<Result<_>>()?,
             ),
             other => other,
