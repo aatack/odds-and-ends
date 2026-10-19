@@ -496,7 +496,7 @@ Base and top_frozen, final build (first page ms / full read s):
 | top_frozen | priority = 1 OR priority = 2 | 83.7 / 1.547 | 87.47 / 1.613 | 31.4 / 0.606 |
 | top_frozen | score > 9899 AND type = task | 16.44 / 0.016 | 22.93 / 0.021 | 13.53 / 0.013 |
 
-- Values on cost 10–80% more (all keys are read and copied).
+- Values on cost 5–80% more (all keys are read and copied).
 - Insertion order reads the dictionary by `eid`, with no probe. On frozen views this is faster than the entity-id order of the same plan: `priority = 1 OR 2` on top_frozen 0.61 s vs 1.55 s (open question below).
 
 ### Contains: instr scan vs FTS5 trigram
@@ -521,7 +521,7 @@ On the rich file (639 448 history rows): the migration (drop and rebuild `value_
 ### Observations
 
 - `Eq` is the fast path: 0.02–0.06 ms for one entity on every branch, at 100k and 1M (naive: 0.6–6.5 s).
-- Rare terms (1% ranges, rare contains, `And` with a small term) are 30–100× faster than naive at 100k, 30–40× at 1M (full read).
+- Rare terms (1% ranges, rare contains, `And` with a small term) are 19–110× faster than naive at 100k, 31–42× at 1M (full read).
 - Dense terms (40–50%) are close to naive, because both must roll up about two entities per row. The index plan gives only rows that can match, so it checks half as many entities.
 - Frozen views cost 2–5× open ones: each frozen layer adds a history arm, and the roll-up reads history.
 - Weak spots: 1M `contains "9"` (47%) is slower than naive (8.0 s vs 6.9 s full read; the per-entity probe on one open layer). 1M `type = task AND contains "99"`: 0.30 s per page with the SQL intersection (the estimate before 5c0c0e4 measured 0.24 s; not explained yet).
