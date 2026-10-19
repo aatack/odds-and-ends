@@ -27,7 +27,7 @@ use rusqlite::types::Value as SqlValue;
 
 use crate::codec::encode_value;
 use crate::error::{Error, Result};
-use crate::read::{any_event, resolve_values};
+use crate::read::{any_event, resolve_values, resolve_values_of};
 use crate::store::Store;
 use crate::types::{BranchId, Value, TYPE_KEY};
 use crate::view::{View, OPEN};
@@ -376,18 +376,11 @@ fn plan_of(f: &Filter) -> Option<Plan> {
         Filter::NotNull(k) => term(k, Cond::NotNull),
         Filter::And(v) => {
             let mut parts: Vec<Plan> = v.iter().filter_map(plan_of).collect();
-            if parts.is_empty() {
-                return None;
-            }
             parts.sort_by_key(Plan::rank);
-            if knobs::intersect() {
-                parts.truncate(2);
-                if parts.len() == 1 || parts[1].rank() > 12 {
-                    return parts.into_iter().next();
-                }
-                Some(Plan::All(parts))
-            } else {
-                parts.into_iter().next()
+            match parts.len() {
+                0 => None,
+                1 => parts.pop(),
+                _ => Some(Plan::All(parts)),
             }
         }
         Filter::Or(v) => v
@@ -400,7 +393,7 @@ fn plan_of(f: &Filter) -> Option<Plan> {
 }
 
 /// Planner switches. Tests flip them to cover every path.
-pub(crate) mod knobs {
+pub mod knobs {
     use std::sync::atomic::{AtomicU8, Ordering};
 
     /// 0: choose by density; 1: always probe; 2: never probe.
@@ -585,6 +578,9 @@ enum After {
     Eid(i64),
 }
 
+/// `And` terms with fewer candidates than this are used alone.
+const AND_COUNT_CAP: i64 = 2048;
+
 /// The share of the store's entities above which a plan reads candidates by
 /// probing each entity in page order instead of sorting all candidates.
 const PROBE_SHARE: f64 = 0.10;
@@ -603,7 +599,16 @@ impl Store {
         if plan.is_none() && !options.include_archived {
             plan = Some(Plan::Term(TYPE_KEY.into(), Cond::NotNull));
         }
-        let plan = plan.unwrap_or(Plan::Everything);
+        let plan = match plan {
+            // The implicit type term matches almost every entity: reading
+            // the dictionary in page order and checking the type after the
+            // roll-up is cheaper than probing the type of every layer.
+            Some(Plan::Term(k, Cond::NotNull)) if k == TYPE_KEY && plan_of(filter).is_none() => {
+                Plan::Everything
+            }
+            Some(p) => self.refine(&view, p)?,
+            None => Plan::Everything,
+        };
 
         // Which keys the check needs.
         let mut keys = BTreeSet::new();
@@ -648,7 +653,13 @@ impl Store {
             let eids: Vec<i64> = cands.iter().map(|c| c.0).collect();
             let mut vals: HashMap<i64, BTreeMap<String, Value>> = HashMap::new();
             let mut seen: HashSet<i64> = HashSet::new();
-            for ((eid, k), c) in resolve_values(&self.conn, &view, &eids, key.as_deref())? {
+            let rolled = if all_keys || one_key {
+                resolve_values(&self.conn, &view, &eids, key.as_deref())?
+            } else {
+                let ks: Vec<&str> = keys.iter().map(String::as_str).collect();
+                resolve_values_of(&self.conn, &view, &eids, &ks)?
+            };
+            for ((eid, k), c) in rolled {
                 seen.insert(eid);
                 if !c.data.is_null() {
                     vals.entry(eid).or_default().insert(k, c.data);
@@ -656,18 +667,19 @@ impl Store {
             }
             // With the whole dictionary as candidates, an entity must exist in
             // the view; an entity with values in the view does.
-            let exists: HashSet<i64> = if matches!(plan, Plan::Everything) {
-                let missing: Vec<i64> = eids
-                    .iter()
-                    .copied()
-                    .filter(|e| one_key || !seen.contains(e))
-                    .collect();
-                let mut found = any_event(&self.conn, &view, &missing)?;
-                found.extend(seen.iter().copied());
-                found
-            } else {
-                eids.iter().copied().collect()
-            };
+            let exists: HashSet<i64> =
+                if matches!(plan, Plan::Everything) && options.include_archived {
+                    let missing: Vec<i64> = eids
+                        .iter()
+                        .copied()
+                        .filter(|e| !all_keys || !seen.contains(e))
+                        .collect();
+                    let mut found = any_event(&self.conn, &view, &missing)?;
+                    found.extend(seen.iter().copied());
+                    found
+                } else {
+                    eids.iter().copied().collect()
+                };
             let empty = BTreeMap::new();
             for (eid, id) in &cands {
                 if !exists.contains(eid) {
@@ -718,6 +730,47 @@ impl Store {
         }
     }
 
+    /// Pick the terms of each `And`: count the candidates of each term (up to
+    /// [`AND_COUNT_CAP`]) in rank order and keep the first small one alone;
+    /// when every term is large, intersect the two first ranks in SQL.
+    fn refine(&self, view: &View, plan: Plan) -> Result<Plan> {
+        Ok(match plan {
+            Plan::All(parts) => {
+                if !knobs::intersect() {
+                    let first = parts.into_iter().next().expect("two or more");
+                    return self.refine(view, first);
+                }
+                let mut large = Vec::new();
+                for p in parts {
+                    if self.count(view, &p, AND_COUNT_CAP)? < AND_COUNT_CAP {
+                        return self.refine(view, p);
+                    }
+                    large.push(p);
+                }
+                large.truncate(2);
+                Plan::All(large)
+            }
+            Plan::Any(parts) => Plan::Any(
+                parts
+                    .into_iter()
+                    .map(|p| self.refine(view, p))
+                    .collect::<Result<_>>()?,
+            ),
+            other => other,
+        })
+    }
+
+    /// The number of candidates of a plan, counted up to `cap`.
+    fn count(&self, view: &View, plan: &Plan, cap: i64) -> Result<i64> {
+        let mut sql = Sql::default();
+        let gen = sql.gen(view, plan);
+        let text = format!("SELECT count(*) FROM (SELECT 1 FROM ({gen}) LIMIT {cap})");
+        Ok(self
+            .conn
+            .prepare_cached(&text)?
+            .query_row(rusqlite::params_from_iter(sql.params.iter()), |r| r.get(0))?)
+    }
+
     /// Whether the plan's candidates are a large share of all entities.
     fn dense(&self, view: &View, plan: &Plan) -> Result<bool> {
         let total: i64 = self
@@ -725,13 +778,7 @@ impl Store {
             .prepare_cached("SELECT coalesce(max(eid), 0) FROM entities")?
             .query_row([], |r| r.get(0))?;
         let cap = ((total as f64 * PROBE_SHARE) as i64).max(1);
-        let mut sql = Sql::default();
-        let gen = sql.gen(view, plan);
-        let text = format!("SELECT count(*) FROM (SELECT 1 FROM ({gen}) LIMIT {cap})");
-        let n: i64 = self
-            .conn
-            .prepare_cached(&text)?
-            .query_row(rusqlite::params_from_iter(sql.params.iter()), |r| r.get(0))?;
+        let n = self.count(view, plan, cap)?;
         Ok(n >= cap && total > 0)
     }
 
