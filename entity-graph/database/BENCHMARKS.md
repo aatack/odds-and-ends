@@ -353,3 +353,175 @@ hot part of the file (value_current and its indexes); sequential or time-ordered
 SQLite cache gave nothing while the file was in the OS cache. Not measured: dropping
 indexes (the value index is 19.5% of the file; `find` needs it), partitioning, and
 sharding by branch.
+
+
+## Find (`examples/bench_find.rs`)
+
+```text
+cargo run --release --example bench_find -- FILE N [--branches a,b] [--queries 0,3] \
+    [--baseline] [--no-full] [--add-score BR,...] [--values] [--insertion]
+```
+
+### Data and method
+
+- **Rich:** the 100k `bench_rich` file (random ids), branch stack base, mid and top, each open and frozen. `--add-score base,mid_frozen,top_frozen` first wrote `score = hash(i) % 10000` (an int) on those branches, so frozen views read it from history.
+- **1M simple:** `bench_scale --milestones 1000000 --no-cold --no-dbstat` (one open branch `main`, 1M entities, 5.05M events), plus `score` on `main` (written twice, because a first run was stopped; the open view does not read the history copy).
+- Queries: `type = task` (25%), `title =` one entity, `score > 9899` (1%), `score > 4999` (50%), `title contains "12345"` (rare), `title contains "9"` (40%), `type = task AND title contains "99"`, `priority = 1 OR priority = 2` (≈17%), `score > 9899 AND type = task`.
+- Pages of 1000, ids only (`values = false`), entity-id order unless stated. "First page" is the median of 5 runs. "Full read" pages through the whole result. "Checked" is the number of candidates rolled up and checked (`Find::scanned`).
+- **Naive** is the same query as a `Filter::Custom` closure with `include_archived` (no index can serve it): it reads the dictionary in order, rolls up every entity and checks it. Its numbers are from the first build; its code path did not change.
+- Times are wall clock on the machine above, one run per cell (median of 5 for the first page). Other jobs ran on the box during some runs, so a ±15% spread between runs is normal.
+
+### Before and after
+
+**base** (first page ms / full read s / entities checked in the full read)
+
+| query | naive | first build (3dee406) | final (da0b12e) |
+| --- | ---: | ---: | ---: |
+| type = task | 22.72 / 0.609 / 100906 | 8.47 / 0.220 / 25208 | 8.25 / 0.211 / 25208 |
+| title = (1 entity) | 599.79 / 0.611 / 100000 | 0.04 / 0.000 / 1 | 0.02 / 0.000 / 1 |
+| score > 9899 (1%) | 572.37 / 0.569 / 100000 | 7.07 / 0.008 / 1007 | 4.84 / 0.005 / 1007 |
+| score > 4999 (50%) | 11.81 / 0.599 / 101375 | 8.76 / 0.471 / 49982 | 6.22 / 0.349 / 49982 |
+| title contains "12345" (rare) | 601.93 / 0.605 / 100000 | 13.21 / 0.014 / 1 | 13.13 / 0.012 / 1 |
+| title contains "9" (common) | 13.73 / 0.580 / 101184 | 11.38 / 0.474 / 40951 | 9.07 / 0.391 / 40951 |
+| type = task AND title contains "99" | 567.78 / 0.560 / 100000 | 278.45 / 0.272 / 25208 | 28.58 / 0.029 / 972 |
+| priority = 1 OR priority = 2 | 33.09 / 0.594 / 100537 | 21.26 / 0.334 / 16976 | 14.99 / 0.253 / 16976 |
+| score > 9899 AND type = task | 617.87 / 0.626 / 100000 | 10.46 / 0.010 / 253 | 5.34 / 0.005 / 1007 |
+
+**mid_open** (first page ms / full read s / entities checked in the full read)
+
+| query | naive | first build (3dee406) | final (da0b12e) |
+| --- | ---: | ---: | ---: |
+| type = task | 27.08 / 0.686 / 100736 | 17.00 / 0.389 / 26210 | 12.81 / 0.305 / 26210 |
+| title = (1 entity) | 701.21 / 0.702 / 100000 | 0.03 / 0.000 / 1 | 0.04 / 0.000 / 1 |
+| score > 9899 (1%) | 679.95 / 0.688 / 100000 | 10.03 / 0.010 / 1007 | 7.01 / 0.007 / 1007 |
+| score > 4999 (50%) | 14.25 / 0.709 / 101385 | 30.40 / 1.544 / 52036 | 10.35 / 0.549 / 101385 |
+| title contains "12345" (rare) | 691.19 / 0.699 / 100000 | 15.32 / 0.017 / 1 | 15.24 / 0.016 / 1 |
+| title contains "9" (common) | 16.65 / 0.679 / 100912 | 26.56 / 1.079 / 42682 | 17.38 / 0.644 / 100912 |
+| type = task AND title contains "99" | 709.81 / 0.711 / 100000 | 383.04 / 0.399 / 25208 | 35.70 / 0.035 / 972 |
+| priority = 1 OR priority = 2 | 37.47 / 0.707 / 100494 | 33.37 / 0.635 / 21546 | 24.62 / 0.446 / 21546 |
+| score > 9899 AND type = task | 739.93 / 0.733 / 100000 | 18.12 / 0.016 / 253 | 7.41 / 0.007 / 1007 |
+
+**mid_frozen** (first page ms / full read s / entities checked in the full read)
+
+| query | naive | first build (3dee406) | final (da0b12e) |
+| --- | ---: | ---: | ---: |
+| type = task | 48.56 / 1.309 / 100736 | 38.93 / 1.003 / 26210 | 23.82 / 0.603 / 26210 |
+| title = (1 entity) | 1242.35 / 1.246 / 100000 | 0.03 / 0.000 / 1 | 0.04 / 0.000 / 1 |
+| score > 9899 (1%) | 1249.34 / 1.237 / 100000 | 18.94 / 0.017 / 1007 | 12.28 / 0.012 / 1007 |
+| score > 4999 (50%) | 23.65 / 1.269 / 101385 | 98.68 / 4.890 / 52036 | 16.32 / 0.808 / 101385 |
+| title contains "12345" (rare) | 1235.62 / 1.227 / 100000 | 241.17 / 0.233 / 1 | 61.40 / 0.061 / 1 |
+| title contains "9" (common) | 33.02 / 1.384 / 100912 | 157.68 / 6.491 / 42682 | 29.20 / 1.180 / 100912 |
+| type = task AND title contains "99" | 1270.11 / 1.288 / 100000 | 683.05 / 0.677 / 25208 | 104.42 / 0.105 / 972 |
+| priority = 1 OR priority = 2 | 154.36 / 2.503 / 100494 | 113.71 / 2.163 / 21546 | 67.56 / 1.234 / 21546 |
+| score > 9899 AND type = task | 1234.08 / 1.260 / 100000 | 47.86 / 0.044 / 253 | 11.84 / 0.012 / 1007 |
+
+**top_open** (first page ms / full read s / entities checked in the full read)
+
+| query | naive | first build (3dee406) | final (da0b12e) |
+| --- | ---: | ---: | ---: |
+| type = task | 31.46 / 0.797 / 100890 | 18.68 / 0.460 / 25953 | 16.37 / 0.353 / 25953 |
+| title = (1 entity) | 767.78 / 0.792 / 100000 | 0.03 / 0.000 / 1 | 0.03 / 0.000 / 1 |
+| score > 9899 (1%) | 763.81 / 0.782 / 100000 | 9.62 / 0.010 / 1007 | 7.43 / 0.007 / 1007 |
+| score > 4999 (50%) | 15.52 / 0.805 / 101859 | 34.47 / 1.642 / 51578 | 11.59 / 0.606 / 101859 |
+| title contains "12345" (rare) | 787.51 / 0.821 / 100000 | 15.48 / 0.015 / 1 | 14.91 / 0.015 / 1 |
+| title contains "9" (common) | 19.27 / 0.837 / 101075 | 28.13 / 1.204 / 42249 | 18.61 / 0.738 / 101075 |
+| type = task AND title contains "99" | 805.48 / 0.798 / 100000 | 485.39 / 0.476 / 25208 | 37.69 / 0.036 / 972 |
+| priority = 1 OR priority = 2 | 48.11 / 0.830 / 100673 | 40.77 / 0.822 / 21499 | 29.05 / 0.554 / 21499 |
+| score > 9899 AND type = task | 799.66 / 0.789 / 100000 | 17.28 / 0.016 / 253 | 9.03 / 0.008 / 1007 |
+
+**top_frozen** (first page ms / full read s / entities checked in the full read)
+
+| query | naive | first build (3dee406) | final (da0b12e) |
+| --- | ---: | ---: | ---: |
+| type = task | 58.14 / 1.554 / 100890 | 48.42 / 1.187 / 25953 | 31.69 / 0.773 / 25953 |
+| title = (1 entity) | 1388.42 / 1.391 / 100000 | 0.05 / 0.000 / 1 | 0.06 / 0.000 / 1 |
+| score > 9899 (1%) | 1425.35 / 1.407 / 100000 | 23.02 / 0.024 / 1007 | 16.37 / 0.015 / 1007 |
+| score > 4999 (50%) | 27.96 / 1.491 / 101859 | 148.50 / 7.525 / 51578 | 19.81 / 1.014 / 101859 |
+| title contains "12345" (rare) | 1431.76 / 1.419 / 100000 | 254.55 / 0.256 / 1 | 65.82 / 0.066 / 1 |
+| title contains "9" (common) | 37.48 / 1.494 / 101075 | 175.94 / 6.822 / 42249 | 34.80 / 1.393 / 101075 |
+| type = task AND title contains "99" | 1432.99 / 1.435 / 100000 | 847.75 / 0.880 / 25208 | 108.53 / 0.103 / 972 |
+| priority = 1 OR priority = 2 | 80.90 / 1.537 / 100673 | 142.15 / 2.544 / 21499 | 83.70 / 1.547 / 21499 |
+| score > 9899 AND type = task | 1413.45 / 1.407 / 100000 | 51.75 / 0.049 / 253 | 16.44 / 0.016 / 1007 |
+
+
+**1M simple, main (one open layer)** (first page ms / full read s / checked)
+
+| query | naive | 3f3549d | final (da0b12e) |
+| --- | ---: | ---: | ---: |
+| type = task | 27.14 / 6.367 / 1007576 | 15.19 / 4.176 / 249284 | 15.52 / 3.736 / 249284 |
+| title = (1 entity) | 6383.94 / 6.626 / 1000000 | 0.02 / 0.000 / 1 | 0.02 / 0.000 / 1 |
+| score > 9899 (1%) | 606.20 / 6.200 / 1000291 | 17.93 / 0.157 / 9779 | 19.51 / 0.184 / 9779 |
+| score > 4999 (50%) | 11.95 / 6.825 / 1013878 | 12.29 / 6.519 / 500430 | 9.63 / 5.504 / 500430 |
+| title contains "12345" (rare) | 6419.91 / 20.710 / 1000000 | 146.79 / 0.157 / 20 | 155.41 / 0.154 / 20 |
+| title contains "9" (common) | 13.64 / 6.852 / 1016450 | 26.25 / 13.386 / 468559 | 16.71 / 8.032 / 468559 |
+| type = task AND title contains "99" | 536.40 / 6.118 / 1000336 | 224.87 / 2.742 / 11335 | 315.46 / 3.624 / 11335 |
+| priority = 1 OR priority = 2 | 17.49 / 6.199 / 1010227 | 19.46 / 7.177 / 334171 | 16.33 / 5.514 / 334171 |
+| score > 9899 AND type = task | 2429.49 / 6.342 / 1000069 | 68.85 / 0.192 / 2420 | 68.02 / 0.201 / 2420 |
+
+What changed between the first build (3dee406) and the final one:
+
+| change | commit | measured effect |
+| --- | --- | --- |
+| `And` estimates its terms (cap 2048) and intersects two large terms in SQL instead of using the best-ranked term alone | 961ce27, da0b12e | `type = task AND contains "99"`, base: first page 278 → 29 ms, checked 25 208 → 972 |
+| The implicit type filter alone (no index term) reads the dictionary in order instead of a `type NOT NULL` index plan | 961ce27 | `Custom` filter, `type = task` closure, first build: typed plan 27.7 ms / 0.73 s vs dictionary 22.7 ms / 0.61 s on base, 130.9 ms / 3.18 s vs 48.6 ms / 1.31 s on mid_frozen |
+| Existence check (`any_event`) only with `include_archived` | 961ce27 | the type check after the roll-up already proves existence |
+| Roll-up of only the keys the filter needs (several keys: `key IN json_each`) | 961ce27 | mid_frozen `score > 9899 AND type = task`, first page: all keys 16.7 ms, two keys 11.7 ms |
+| Schema V2: `superseded_by` in `value_history_value` | b0943e8 | history arm of `contains "12345"` for bid 1 alone: 88.7 → 21.6 ms; mid_frozen rare contains, first page 241 → 102 ms (→ 59 ms after 3f3549d) |
+| Dense plans on layered views read the dictionary instead of probing each entity | b0943e8 | mid_frozen `score > 4999` full read 4.89 → 0.81 s |
+| Candidate estimate counts each layer separately and streams (no `UNION`, stops at the cap) | 3f3549d | the old `UNION` count cost 32 ms per page on mid_frozen; full read of `score > 4999` 4.42 → 0.74 s |
+| Dense threshold `sqrt(limit × entities)` instead of 10% of entities | 5c0c0e4 | 1M `contains "9"` full read 13.4 → 8.0 s (counting 100k rows on each page was the cost) |
+
+### Values, order
+
+Base and top_frozen, final build (first page ms / full read s):
+
+| branch | query | ids only | with values | insertion order |
+| --- | --- | ---: | ---: | ---: |
+| base | type = task | 8.25 / 0.211 | 11.76 / 0.313 | 6.56 / 0.17 |
+| base | title = (one entity) | 0.02 / 0 | 0.02 / 0 | 0.02 / 0 |
+| base | score > 9899 (1%) | 4.84 / 0.005 | 7.41 / 0.008 | 4.7 / 0.005 |
+| base | score > 4999 (50%) | 6.22 / 0.349 | 9.06 / 0.491 | 5.39 / 0.278 |
+| base | title contains "12345" (rare) | 13.13 / 0.012 | 13.16 / 0.013 | 13.65 / 0.013 |
+| base | title contains "9" (common) | 9.07 / 0.391 | 11.78 / 0.504 | 11.58 / 0.34 |
+| base | type = task AND title contains "99" | 28.58 / 0.029 | 31.16 / 0.032 | 29.26 / 0.029 |
+| base | priority = 1 OR priority = 2 | 14.99 / 0.253 | 17.58 / 0.334 | 15.48 / 0.249 |
+| base | score > 9899 AND type = task | 5.34 / 0.005 | 9.09 / 0.008 | 5.01 / 0.005 |
+| top_frozen | type = task | 31.69 / 0.773 | 36.73 / 0.921 | 21.37 / 0.512 |
+| top_frozen | title = (one entity) | 0.06 / 0 | 0.05 / 0 | 0.06 / 0 |
+| top_frozen | score > 9899 (1%) | 16.37 / 0.015 | 21.05 / 0.021 | 13.39 / 0.013 |
+| top_frozen | score > 4999 (50%) | 19.81 / 1.014 | 32.76 / 1.797 | 11.45 / 0.585 |
+| top_frozen | title contains "12345" (rare) | 65.82 / 0.066 | 72.52 / 0.071 | 67.34 / 0.07 |
+| top_frozen | title contains "9" (common) | 34.8 / 1.393 | 43.6 / 1.758 | 28.61 / 0.747 |
+| top_frozen | type = task AND title contains "99" | 108.53 / 0.103 | 113.76 / 0.112 | 103.07 / 0.108 |
+| top_frozen | priority = 1 OR priority = 2 | 83.7 / 1.547 | 87.47 / 1.613 | 31.4 / 0.606 |
+| top_frozen | score > 9899 AND type = task | 16.44 / 0.016 | 22.93 / 0.021 | 13.53 / 0.013 |
+
+- Values on cost 10–80% more (all keys are read and copied).
+- Insertion order reads the dictionary by `eid`, with no probe. On frozen views this is faster than the entity-id order of the same plan: `priority = 1 OR 2` on top_frozen 0.61 s vs 1.55 s (open question below).
+
+### Contains: instr scan vs FTS5 trigram
+
+Measured with Python's sqlite3 (SQLite 3.46.1, the same minor version as the bundled one) on a copy of the rich file: a contentless FTS5 table (`tokenize='trigram'`, `contentless_delete=1`) over the 300 403 text rows of `value_current` (all branches; history not included), rowid `bid << 40 | seq`, joined back to `value_current` on `(bid, seq)`.
+
+| | instr scan (value index range of `title`, base) | FTS5 trigram |
+| --- | ---: | ---: |
+| build | – | 2.73 s |
+| size | – | +14.6 MB on 156.8 MB (+9%), after VACUUM |
+| `contains "12345"` (1 row) | 9.57 ms | 0.04 ms |
+| `contains "999"` (280 rows) | 11.08 ms | 0.53 ms |
+| `contains "99"` (3 691 rows) | 12.22 ms | not possible (trigram needs 3+ characters) |
+| `contains "9"` (40 951 rows) | 19.85 ms | not possible |
+
+Decision: no FTS index for now. The scan of 100k titles costs 10–20 ms. FTS5 is 20–250× faster for rare strings of 3+ characters, but it costs 9% of the file, a second write on each text event (not measured), a history copy for frozen views, and a fallback for short strings. It becomes worth it when one key has millions of text values (1M: rare contains 155 ms per call).
+
+### Schema V2 cost
+
+On the rich file (639 448 history rows): the migration (drop and rebuild `value_history_value` with `superseded_by`) took 0.59 s, and the file grew from 156.8 to 159.4 MB (+1.7%, after VACUUM).
+
+### Observations
+
+- `Eq` is the fast path: 0.02–0.06 ms for one entity on every branch, at 100k and 1M (naive: 0.6–6.5 s).
+- Rare terms (1% ranges, rare contains, `And` with a small term) are 30–100× faster than naive at 100k, 30–40× at 1M (full read).
+- Dense terms (40–50%) are close to naive, because both must roll up about two entities per row. The index plan gives only rows that can match, so it checks half as many entities.
+- Frozen views cost 2–5× open ones: each frozen layer adds a history arm, and the roll-up reads history.
+- Weak spots: 1M `contains "9"` (47%) is slower than naive (8.0 s vs 6.9 s full read; the per-entity probe on one open layer). 1M `type = task AND contains "99"`: 0.30 s per page with the SQL intersection (the estimate before 5c0c0e4 measured 0.24 s; not explained yet).
