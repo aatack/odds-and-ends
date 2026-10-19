@@ -70,6 +70,9 @@ export const tools: Tool[] = [
   // Not while the new-session form is over it: Enter there is the form's.
   { id: 'composer.submit', scope: 'input', keys: ['Enter'], enabled: (s) => s.composerOpen() && !s.hasDialog(), run: (s) => void s.send() },
   // The new-session form: Enter makes it, Escape gives up.
+  // Ctrl+L's form: ↓ / ↑ go through the matches; Enter (dialog.submit) opens the one under the cursor.
+  { id: 'jump.down', scope: 'input', keys: ['ArrowDown'], enabled: (_, field) => field === 'dialog-jump', run: (s) => s.moveJump(1) },
+  { id: 'jump.up', scope: 'input', keys: ['ArrowUp'], enabled: (_, field) => field === 'dialog-jump', run: (s) => s.moveJump(-1) },
   { id: 'dialog.submit', scope: 'input', keys: ['Enter'], enabled: (s, field) => s.hasDialog() && field?.startsWith('dialog') === true, run: (s) => s.submitDialog() },
   { id: 'dialog.cancel', scope: 'input', keys: ['Escape'], enabled: (s) => s.hasDialog(), run: (s) => s.cancelDialog() },
   { id: 'composer.leave', scope: 'input', keys: ['Escape'], run: (s) => s.compose(false) },
@@ -153,6 +156,10 @@ export const tools: Tool[] = [
   // From anywhere, typing too: a form for the new topic's name.
   // On a topic, not while typing: the same form, for a topic that goes into this one's chat too.
   { id: 'topic.child', label: 'New topic here', scope: 'list', keys: ['?'], enabled: (s) => s.canOpenChildTopicDialog(), run: (s) => s.openChildTopicDialog() },
+  // From anywhere, typing too: a topic in the list, found by its name.
+  { id: 'topic.jump', label: 'Find topic', scope: 'app', keys: ['Ctrl+l'], enabled: (s) => s.canOpenJump(), run: (s) => s.openJump() },
+  // The clock beside the list's box: snoozed topics out of the list, or back.
+  { id: 'topics.hideSnoozed', label: (s) => (s.hidingSnoozed() ? 'Show snoozed' : 'Hide snoozed'), scope: 'list', keys: [], enabled: (s) => s.get().state.dialog === null, run: (s) => s.toggleHideSnoozed() },
   { id: 'topic.new', label: 'New topic', scope: 'app', keys: ['Ctrl+.'], enabled: (s) => s.canOpenTopicDialog(), run: (s) => s.openTopicDialog() },
   { id: 'session.send', label: 'To session', scope: 'list', keys: ['k'], enabled: (s) => s.canSendToSession(), run: (s) => s.sendToSession() },
   // On a topic, from its box or its rows: every message since the last dispatch, to Claude at once (before the side panel's Ctrl+Enter).

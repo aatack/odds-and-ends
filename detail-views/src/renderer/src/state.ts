@@ -73,6 +73,8 @@ export interface State {
   chatContext: Record<string, string[]>
   /** What a chat's box writes, by the chat's id: a prompt to Claude (the default), or a note in the chat. */
   chatModes: Record<string, ChatMode>
+  /** Whether the topics list leaves out the snoozed ones (the open one apart). */
+  hideSnoozed: boolean
   /**
    * Where a topic's box sends, by the topic's id, when not a note: the Slack
    * conversation or thread (`SendTarget.on`) Tab chose. Not persisted, so the
@@ -131,7 +133,7 @@ export interface SnoozeDialog {
 }
 
 /** What a form's fields can change (`kind` apart). */
-export type DialogFields = Partial<Omit<SessionDialog, 'kind'> & Omit<TopicDialog, 'kind'> & Omit<SnoozeDialog, 'kind' | 'topic'>>
+export type DialogFields = Partial<Omit<SessionDialog, 'kind'> & Omit<TopicDialog, 'kind'> & Omit<SnoozeDialog, 'kind' | 'topic'> & Omit<JumpDialog, 'kind'>>
 
 /** The key of the draft in a topic's path picker. */
 export const pathDraftKey = (topic: string): string => `${topic}#path`
@@ -143,8 +145,15 @@ export interface ResolveDialog {
   warnings: string[]
 }
 
+/** Ctrl+L: finding a topic in the list by its name, fuzzily; `at` is the match the cursor is on. */
+export interface JumpDialog {
+  kind: 'jump'
+  query: string
+  at: number
+}
+
 /** The form over everything, if one is open. */
-export type Dialog = SessionDialog | TopicDialog | ResolveDialog | SnoozeDialog
+export type Dialog = SessionDialog | TopicDialog | ResolveDialog | SnoozeDialog | JumpDialog
 
 export type PickTool = 'move' | 'link' | 'linkReverse' | 'context'
 
@@ -309,6 +318,7 @@ export function initialState(root: string): State {
     sideWidth: null,
     chatContext: {},
     chatModes: {},
+    hideSnoozed: false,
     topicTargets: {},
     window: null,
     prompting: false,
@@ -608,6 +618,7 @@ export function restore(saved: unknown, root: string): State {
         ? Object.fromEntries(Object.entries(value.chatContext).filter(([, ids]) => Array.isArray(ids)))
         : {},
     chatModes: value.chatModes && typeof value.chatModes === 'object' ? value.chatModes : {},
+    hideSnoozed: value.hideSnoozed === true,
   }
 }
 

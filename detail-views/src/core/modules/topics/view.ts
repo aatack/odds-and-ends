@@ -214,6 +214,44 @@ export function waiting(topic: string, lens: Lens, now: number = Date.now()): bo
   return waits.length > 0 && waits.every((wait) => !waitReturned(topic, wait, lens, now))
 }
 
+/** Whether a topic is snoozed now: a snooze of its own not yet over. */
+export const snoozed = (data: Record<string, unknown>, now: number): boolean => waitsOf(data).some((wait) => wait.until !== undefined && wait.until > now)
+
+/**
+ * How well `text` matches `query`, fuzzily: every character of the query in
+ * order, case aside. Null for no match; higher is better: runs of
+ * consecutive characters, characters at the start of a word, and an early
+ * first match count for more, gaps against.
+ */
+export function fuzzyScore(query: string, text: string): number | null {
+  const q = query.toLowerCase().replace(/\s+/g, '')
+  if (!q) return 0
+  const t = text.toLowerCase()
+  let score = 0
+  let from = 0
+  let last = -2
+  for (const char of q) {
+    const at = t.indexOf(char, from)
+    if (at < 0) return null
+    const wordStart = at === 0 || /[^a-z0-9]/.test(t[at - 1])
+    score += 1 + (at === last + 1 ? 3 : 0) + (wordStart ? 2 : 0) - Math.min(at - from, 5) * 0.1
+    if (last < 0) score -= Math.min(at, 10) * 0.05
+    last = at
+    from = at + 1
+  }
+  return score
+}
+
+/** Items ranked by how well their text matches `query` (`fuzzyScore`), best first; the rest left out. An empty query keeps them all, in order. */
+export function fuzzyRank<T>(query: string, items: readonly T[], textOf: (item: T) => string): T[] {
+  if (!query.trim()) return [...items]
+  return items
+    .map((item, index) => ({ item, index, score: fuzzyScore(query, textOf(item)) }))
+    .filter((scored): scored is { item: T; index: number; score: number } => scored.score !== null)
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map((scored) => scored.item)
+}
+
 const snoozeUnits: Record<string, number> = { m: minute, h: hour, d: 24 * hour, w: 7 * 24 * hour }
 
 /** How long a snooze typed as `30m`, `6h`, `2d` or `1w` lasts, in ms; null for anything else. */

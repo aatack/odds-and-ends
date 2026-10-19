@@ -310,6 +310,9 @@ export interface TopicListProps {
   /** The name being typed for a new one. */
   draft: string
   busy: boolean
+  /** Whether snoozed topics are left out of the list; and the clock beside the box that switches it. */
+  hidingSnoozed: boolean
+  onHideSnoozed(): void
   onDraft(text: string): void
   onOpen(id: string): void
 }
@@ -342,14 +345,24 @@ function TopicGit(props: { props: OverviewProps }) {
 export function TopicList(props: TopicListProps) {
   return (
     <nav className="topic-list">
-      <input
-        className="find topic-new"
-        data-field="topic-name"
-        placeholder={props.busy ? 'Making…' : 'New topic'}
-        spellCheck={false}
-        value={props.draft}
-        onChange={(event) => props.onDraft(event.target.value)}
-      />
+      <div className="topic-head">
+        <input
+          className="find topic-new"
+          data-field="topic-name"
+          placeholder={props.busy ? 'Making…' : 'New topic'}
+          spellCheck={false}
+          value={props.draft}
+          onChange={(event) => props.onDraft(event.target.value)}
+        />
+        {/* Pressed in while the snoozed ones are out of the list. */}
+        <Button
+          quiet
+          active={props.hidingSnoozed}
+          label={<span className="clock-mark" role="img" aria-label="Snoozed" />}
+          title={props.hidingSnoozed ? 'Show snoozed topics' : 'Hide snoozed topics'}
+          onClick={props.onHideSnoozed}
+        />
+      </div>
       <div className="topic-cards">
         {props.topics.map((topic) => (
           <TopicCard key={topic.id} entity={topic} open={topic.id === props.open} waiting={props.waiting.includes(topic.id)} onOpen={props.onOpen} />

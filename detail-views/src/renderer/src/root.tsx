@@ -227,6 +227,8 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
             busy: working.topics?.includes('create') ?? false,
             onDraft: (text: string) => session.setTopicName(text),
             onOpen: (id: string) => session.openTopic(id),
+            hidingSnoozed: state.hideSnoozed,
+            onHideSnoozed: () => runTool(session, 'topics.hideSnoozed'),
           }
         : null,
     [session, topics, waiting, state, working],
@@ -276,11 +278,13 @@ function Root({ session, phone }: { session: Session; phone: boolean }) {
             : state.dialog.kind === 'snooze'
               ? (working[state.dialog.topic]?.includes('snooze') ?? false)
             : (working[focused(state)]?.includes('claude') ?? false),
+      matches: state.dialog.kind === 'jump' ? session.jumpMatches() : [],
+      onJump: (id: string) => session.jumpTo(id),
       onChange: (fields: DialogFields) => session.setDialog(fields),
       onSubmit: () => session.submitDialog(),
       onCancel: () => session.cancelDialog(),
     }
-  }, [state, item, working, session])
+  }, [state, item, working, session, topics])
 
   return (
     <App

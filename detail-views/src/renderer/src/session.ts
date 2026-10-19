@@ -2,7 +2,7 @@ import { EntityCache, type CacheState } from '../../core/graph/cache.ts'
 import { findInContext, foreignOf, itemOf, lensOf, moduleInfos, viewOf } from '../../core/present.ts'
 import { activity } from '../../core/modules/slack/view.ts'
 import { byMade, claudeIds } from '../../core/modules/claude/view.ts'
-import { answering, isTaskTopic, sendTargets, snoozeLength, topicsIds, type TopicDisplay, unsent, waitCandidates, waiting, waitsOf, type SendTarget, type Wait } from '../../core/modules/topics/view.ts'
+import { answering, fuzzyRank, isTaskTopic, sendTargets, snoozed, snoozeLength, topicsIds, type TopicDisplay, unsent, waitCandidates, waiting, waitsOf, type SendTarget, type Wait } from '../../core/modules/topics/view.ts'
 import { entityScheme, type Entity, type ModuleInfo, type NoteValues, type Outcome, type View, type ViewRow } from '../../core/types.ts'
 import type { Api } from './api.ts'
 import type { Environment } from './environment.ts'
@@ -257,7 +257,9 @@ export class Session {
     // The list of topics is the walk of their root, one level down.
     const topicsView = this.topicsMode ? this.walk(topicsIds.root, state) : null
     const topics = topicsView ? topicsView.rows.filter((row) => row.depth === 1).map((row) => row.entity) : []
-    const sameTopics = topics.length === previous.topics.length && topics.every((topic, at) => topic === previous.topics[at])
+    // Snoozed ones left out of the list while I ask, unless open; their waits are still watched.
+    const listed = state.hideSnoozed ? topics.filter((topic) => topic.id === root || !snoozed(topic.data, Date.now())) : topics
+    const sameTopics = listed.length === previous.topics.length && listed.every((topic, at) => topic === previous.topics[at])
     // Walks for views no longer anywhere are dropped.
     const live = new Set([root, ...Object.keys(peekViews), ...(state.side ? [state.side] : []), ...opened, ...(this.topicsMode ? [topicsIds.root] : [])])
     for (const key of this.walks.keys()) if (!live.has(key)) this.walks.delete(key)
@@ -302,7 +304,7 @@ export class Session {
       shown,
       peekViews,
       sideView,
-      topics: sameTopics ? previous.topics : topics,
+      topics: sameTopics ? previous.topics : listed,
       waiting: sameWaiting ? previous.waiting : waitingNow,
       topicWaits: sameJson(topicWaits, previous.topicWaits) ? previous.topicWaits : topicWaits,
       topicTargets: sameJson(topicTargets, previous.topicTargets) ? previous.topicTargets : topicTargets,
@@ -611,6 +613,50 @@ export class Session {
     this.update(S.setDialog(this.state, null))
   }
 
+  // --- Ctrl+L: a topic by its name, and the snoozed ones hidden ------------------------
+
+  canOpenJump(): boolean {
+    return this.topicsMode && this.state.dialog === null
+  }
+
+  /** Ctrl+L: a form to find a topic in the list by its name. */
+  openJump(): void {
+    if (this.canOpenJump()) this.update(S.setDialog(this.state, { kind: 'jump', query: '', at: 0 }))
+  }
+
+  /** The topics in the list whose names match what is typed, fuzzily, best first. */
+  jumpMatches(): Entity[] {
+    const dialog = this.state.dialog
+    if (dialog?.kind !== 'jump') return []
+    return fuzzyRank(dialog.query, this.snapshot.topics, (topic) => (typeof topic.data.text === 'string' ? topic.data.text : ''))
+  }
+
+  /** ↓ / ↑ in it: the next or previous match, stopping at the ends. */
+  moveJump(by: number): void {
+    const dialog = this.state.dialog
+    if (dialog?.kind !== 'jump') return
+    const at = Math.max(0, Math.min(this.jumpMatches().length - 1, dialog.at + by))
+    if (at !== dialog.at) this.update(S.setDialog(this.state, { ...dialog, at }))
+  }
+
+  /** Opens a match (the one under the cursor, by default), and closes the form. */
+  jumpTo(id?: string): void {
+    const dialog = this.state.dialog
+    if (dialog?.kind !== 'jump') return
+    const target = id ?? this.jumpMatches()[dialog.at]?.id
+    this.update(S.setDialog(this.state, null))
+    if (target) this.openTopic(target)
+  }
+
+  /** Whether the list leaves out snoozed topics. */
+  hidingSnoozed(): boolean {
+    return this.state.hideSnoozed
+  }
+
+  toggleHideSnoozed(): void {
+    this.update({ ...this.state, hideSnoozed: !this.state.hideSnoozed })
+  }
+
   /** Makes the session the form describes, under the Claude root, and pushes its view: its chat, ready for a prompt. A topic's form makes the topic, and opens it. */
   submitDialog(): void {
     const dialog = this.state.dialog
@@ -620,6 +666,7 @@ export class Session {
       this.resolve(dialog.topic, true)
       return
     }
+    if (dialog.kind === 'jump') return this.jumpTo()
     if (dialog.kind === 'snooze') {
       const length = snoozeLength(dialog.length)
       if (length === null) return

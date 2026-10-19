@@ -128,8 +128,39 @@ body,
   gap: 8px;
 }
 
-.topic-new {
+/* The list's head: the box naming a new topic, and the clock that hides the snoozed ones. */
+.topic-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   margin: 0 4px;
+}
+
+.topic-new {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Ctrl+L's matches, under its box: the one Enter opens on the selection's fill. */
+.jump-matches {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.jump-match {
+  padding: 4px 8px;
+  border-radius: var(--radius);
+}
+
+.jump-match:hover {
+  background: var(--hover);
+}
+
+.jump-match.selected {
+  background: var(--select);
 }
 
 .topic-cards {

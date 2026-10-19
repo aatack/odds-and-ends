@@ -791,6 +791,64 @@ test('topics mode: a new topic\'s form starts with a context: the task open, or 
   }
 })
 
+test('topics mode: Ctrl+L finds a topic by its name, fuzzily; the clock hides snoozed topics from the list, the open one apart', async () => {
+  const { session, stop, settle } = await headless({}, { topics: true })
+  const key = (name: string, field: string | null) => tools.find((tool) => tool.keys.includes(name) && (field === null ? tool.scope !== 'input' : true) && (tool.enabled?.(session, field) ?? true))?.id
+  const names = () => session.get().topics.map((topic) => topic.data.text)
+  const open = () => session.get().view?.root?.data.text
+  try {
+  await settle()
+  for (const name of ['Flights to Lisbon', 'Fix login bug', 'Quarterly report']) {
+    session.setTopicName(name)
+    session.createTopic()
+    await settle()
+  }
+  assert.equal(key('Ctrl+l', null), 'topic.jump')
+  session.openJump()
+  // Nothing typed: every topic, in the list's order.
+  assert.deepEqual(session.jumpMatches().map((topic) => topic.data.text), names())
+  session.setDialog({ query: 'fl', at: 0 })
+  assert.deepEqual(session.jumpMatches().map((topic) => topic.data.text), ['Flights to Lisbon', 'Fix login bug'])
+  assert.equal(key('ArrowDown', 'dialog-jump'), 'jump.down')
+  session.moveJump(1)
+  session.moveJump(1)
+  assert.equal((session.get().state.dialog as { at: number }).at, 1)
+  assert.equal(key('Enter', 'dialog-jump'), 'dialog.submit')
+  session.submitDialog()
+  await settle()
+  assert.equal(session.hasDialog(), false)
+  assert.equal(open(), 'Fix login bug')
+  session.openJump()
+  session.setDialog({ query: 'zzz', at: 0 })
+  assert.deepEqual(session.jumpMatches(), [])
+  session.cancelDialog()
+
+  // Snoozed: still listed until I hide them; then gone, but for the one open.
+  session.openTopicDialog()
+  session.cancelDialog()
+  for (const name of ['Quarterly report', 'Fix login bug']) {
+    session.openJump()
+    session.setDialog({ query: name, at: 0 })
+    session.submitDialog()
+    await settle()
+    session.openSnoozeDialog()
+    session.setDialog({ length: '2d' })
+    session.submitDialog()
+    await settle()
+  }
+  assert.equal(names().length, 3)
+  runTool(session, 'topics.hideSnoozed')
+  await settle()
+  assert.equal(session.get().state.hideSnoozed, true)
+  assert.deepEqual(names().sort(), ['Fix login bug', 'Flights to Lisbon'])
+  runTool(session, 'topics.hideSnoozed')
+  await settle()
+  assert.equal(names().length, 3)
+  } finally {
+    stop()
+  }
+})
+
 test('topics mode: `.` opens the next topic down the list where Claude isn’t working, round from the open one', async () => {
   let answer: (() => void) | null = null
   const run = (command: string) => {

@@ -8,7 +8,7 @@ import { link, values } from '../../graph/events.ts'
 import { fakeGh, fakeSlack, memoryCore } from '../../testing.ts'
 import { interrupted } from '../claude/claude.ts'
 import { commitPrompt } from './topics.ts'
-import { prBackReasons, sendTargets, snoozeLength, waitCandidates, waiting, waitPollEvery, waitsOf } from './view.ts'
+import { fuzzyRank, prBackReasons, sendTargets, snoozed, snoozeLength, waitCandidates, waiting, waitPollEvery, waitsOf } from './view.ts'
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
 
@@ -663,6 +663,21 @@ test('topics: thoughts are a tree of notes, with nothing of Claude\'s: no path, 
   const task = core.entity('topics').outboundLinks.find((id) => id !== topic)!
   assert.equal(core.item(task)!.data.display ?? null, null)
   assert.equal(core.actions.view({ id: task }).startsAtEnd, true)
+})
+
+test('topics: names ranked fuzzily: every character in order, runs and word starts first; snoozed while a snooze is still to end', () => {
+  const names = ['Quarterly report', 'Fix login bug', 'Flights to Lisbon', 'flaky tests']
+  const rank = (query: string) => fuzzyRank(query, names, (name) => name)
+  assert.deepEqual(rank(''), names)
+  assert.deepEqual(rank('flig'), ['Flights to Lisbon', 'Fix login bug'])
+  // A run at the start beats letters apart; equals keep the list's order.
+  assert.deepEqual(rank('fl'), ['Flights to Lisbon', 'flaky tests', 'Fix login bug'])
+  assert.deepEqual(rank('flb').sort(), ['Fix login bug', 'Flights to Lisbon'].sort())
+  assert.deepEqual(rank('LOGIN'), ['Fix login bug'])
+  assert.deepEqual(rank('xyz'), [])
+  assert.equal(snoozed({ wait: [{ until: 2000, since: 0 }] }, 1999), true)
+  assert.equal(snoozed({ wait: [{ until: 2000, since: 0 }] }, 2000), false)
+  assert.equal(snoozed({ wait: [{ topic: 'x', since: 0 }] }, 0), false)
 })
 
 test('topics: a snooze puts a topic down until its time, beside its other waits, and one replaces another', async () => {

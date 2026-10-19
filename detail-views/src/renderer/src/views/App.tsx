@@ -1,6 +1,6 @@
 import type { Entity, ModuleInfo, View } from '../../../core/types.ts'
 import { snoozeLength } from '../../../core/modules/topics/view.ts'
-import type { Dialog, DialogFields, Edit, Peek, PeekTarget, Pick, Rect, ResolveDialog, SessionDialog, ShownView, SnoozeDialog, TopicDialog } from '../state.ts'
+import type { Dialog, DialogFields, Edit, JumpDialog, Peek, PeekTarget, Pick, Rect, ResolveDialog, SessionDialog, ShownView, SnoozeDialog, TopicDialog } from '../state.ts'
 import { PathOptions } from './Paths.tsx'
 import { imageSrc } from '../images.ts'
 import { PeekWindow } from './Peek.tsx'
@@ -9,7 +9,7 @@ import { kinds } from './kinds.tsx'
 import { ItemContext, KindsContext, PeekContext } from './primitives.tsx'
 import type { ItemGestures, PeekGestures } from './primitives.tsx'
 import type { ViewProps } from './types.ts'
-import { Button, ClockContext, HeaderPill, ItemPill, Modal, PillContent, SideSlotContext, useEdgeResize } from './primitives.tsx'
+import { Button, ClockContext, HeaderPill, Highlight, ItemPill, Modal, PillContent, SideSlotContext, useEdgeResize } from './primitives.tsx'
 import { useMemo, useState } from 'react'
 import { TopicList, type TopicListProps } from './Topics.tsx'
 
@@ -146,6 +146,8 @@ export function App(props: {
               <TopicForm {...props.dialog} dialog={props.dialog.dialog} />
             ) : props.dialog.dialog.kind === 'resolve' ? (
               <ResolveForm {...props.dialog} dialog={props.dialog.dialog} />
+            ) : props.dialog.dialog.kind === 'jump' ? (
+              <JumpForm {...props.dialog} dialog={props.dialog.dialog} />
             ) : props.dialog.dialog.kind === 'snooze' ? (
               <SnoozeForm {...props.dialog} dialog={props.dialog.dialog} />
             ) : (
@@ -349,6 +351,9 @@ export interface DialogProps<D extends Dialog = Dialog> {
   cwds: string[]
   repos: string[]
   busy: boolean
+  /** Ctrl+L's: the topics whose names match, best first; and opening one. */
+  matches: Entity[]
+  onJump(id: string): void
   onChange(fields: DialogFields): void
   onSubmit(): void
   onCancel(): void
@@ -421,6 +426,39 @@ function TopicForm(props: DialogProps<TopicDialog>) {
       <div className="dialog-buttons">
         <Button label="Cancel" hotkey="Esc" onClick={props.onCancel} />
         <Button label="Make" hotkey="↵" busy={props.busy} busyLabel="Making…" disabled={!props.dialog.name.trim() && 'Name it first'} onClick={props.onSubmit} />
+      </div>
+    </Modal>
+  )
+}
+
+/**
+ * Ctrl+L: a topic in the list, by its name, matched fuzzily as it is typed,
+ * best first. ↓ / ↑ move through them, Enter opens the one marked (or a
+ * click, any), Escape gives up.
+ */
+function JumpForm(props: DialogProps<JumpDialog>) {
+  const { dialog, matches } = props
+  return (
+    <Modal title="Find topic" onClose={props.onCancel}>
+      <input
+        className="find"
+        data-field="dialog-jump"
+        autoFocus
+        placeholder="Name"
+        spellCheck={false}
+        value={dialog.query}
+        onChange={(event) => props.onChange({ query: event.target.value, at: 0 })}
+      />
+      <div className="jump-matches">
+        {matches.length ? (
+          matches.map((topic, at) => (
+            <div key={topic.id} className={`jump-match${at === dialog.at ? ' selected' : ''}`} onMouseDown={() => props.onJump(topic.id)}>
+              <Highlight text={typeof topic.data.text === 'string' ? topic.data.text : 'Topic'} find={dialog.query} />
+            </div>
+          ))
+        ) : (
+          <span className="muted">No topic matches</span>
+        )}
       </div>
     </Modal>
   )
