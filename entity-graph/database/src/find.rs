@@ -784,15 +784,49 @@ impl Store {
         })
     }
 
-    /// The number of candidates of a plan, counted up to `cap`.
+    /// An estimate of the number of candidates of a plan, up to `cap`, for
+    /// plan choices only. A term counts the matching current rows of each
+    /// layer separately (each count streams from the value index and stops
+    /// at `cap`) and takes the largest; `And` takes the smallest part, `Or`
+    /// the sum. History rows are not counted.
     fn count(&self, view: &View, plan: &Plan, cap: i64) -> Result<i64> {
-        let mut sql = Sql::default();
-        let gen = sql.gen(view, plan);
-        let text = format!("SELECT count(*) FROM (SELECT 1 FROM ({gen}) LIMIT {cap})");
-        Ok(self
-            .conn
-            .prepare_cached(&text)?
-            .query_row(rusqlite::params_from_iter(sql.params.iter()), |r| r.get(0))?)
+        Ok(match plan {
+            Plan::Term(key, cond) => {
+                let mut most = 0;
+                for src in &view.sources {
+                    let mut sql = Sql::default();
+                    let k = sql.bind(SqlValue::Text(key.clone()));
+                    let c = sql.cond(cond);
+                    let text = format!(
+                        "SELECT count(*) FROM (SELECT 1 FROM value_current \
+                         INDEXED BY value_current_value \
+                         WHERE bid = {} AND key = {k} AND {c} LIMIT {cap})",
+                        src.bid
+                    );
+                    let n: i64 = self
+                        .conn
+                        .prepare_cached(&text)?
+                        .query_row(rusqlite::params_from_iter(sql.params.iter()), |r| r.get(0))?;
+                    most = most.max(n);
+                }
+                most
+            }
+            Plan::All(parts) => {
+                let mut least = cap;
+                for p in parts {
+                    least = least.min(self.count(view, p, cap)?);
+                }
+                least
+            }
+            Plan::Any(parts) => {
+                let mut sum = 0;
+                for p in parts {
+                    sum = (sum + self.count(view, p, cap)?).min(cap);
+                }
+                sum
+            }
+            Plan::Everything => cap,
+        })
     }
 
     /// Whether the plan's candidates are a large share of all entities.
