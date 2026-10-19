@@ -109,7 +109,7 @@ Later rules (2026-10-12). These rules replace parts of the rules above and of dr
 7. Support branches as agent sandboxes (R2 to R11).
 8. Make each write batch one transaction.
 9. Make undo remove the events of a recent batch (R19). Normal reads never use history.
-10. Supply dedicated reads: `walk` (done, R30) and `find` [TBD: Alexander].
+10. Supply dedicated reads: `walk` (done, R30) and `find` (done, section 11.2).
 
 ## 3. Non-goals (for now)
 
@@ -307,7 +307,7 @@ CREATE TABLE value_history (
 ) STRICT, WITHOUT ROWID;
 -- History has the same lookups as current, plus seq (R25).
 CREATE INDEX value_history_target     ON value_history(bid, eid, key, seq);
-CREATE INDEX value_history_value      ON value_history(bid, key, value, eid, seq);
+CREATE INDEX value_history_value      ON value_history(bid, key, value, eid, seq, superseded_by);  -- V2
 CREATE INDEX value_history_superseded ON value_history(bid, superseded_by);  -- undo
 
 -- Find by value, including "all entities of type X" (key = 'type').
@@ -353,7 +353,7 @@ CREATE INDEX link_history_superseded ON link_history(bid, superseded_by);  -- un
 | `UNIQUE (bid, seq)` on current tables, PK `(bid, seq)` on history | R1 uniqueness. The events of one batch (undo). |
 | `value_current_value (bid, key, value, eid)` | Find by value. "All entities of type X" (R21): a null type does not match, so archived entities drop out. |
 | `value_history_target (bid, eid, key, seq)` | Bounded roll-up of values (section 8.3). The same lookup as the current PK, plus seq. |
-| `value_history_value (bid, key, value, eid, seq)` | Find by value "as of" a bounded range (future `find`). |
+| `value_history_value (bid, key, value, eid, seq, superseded_by)` | `find` in a bounded range. `superseded_by` (added in schema V2) lets the "still the winner at the range end" check use the index alone. |
 | `link_history_target (bid, source, link_type, destination, seq)` | Bounded roll-up of outbound links. |
 | `link_history_in (bid, destination, link_type, seq)` | Bounded roll-up of inbound links. Entity existence. |
 | `batches_author (bid, author, first_seq)` | Undo: the newest batch of one author. |
@@ -674,12 +674,7 @@ Other reads: `branch`, `branches`.
 
 `links` no longer has an "all types" mode. The caller names the `(type, direction)` pairs.
 
-Placeholder (it returns `Error::NotImplemented`). Alexander will give the signature:
-
-```rust
-/// TODO(Alexander): predicates, indexes, paging.
-fn find(&self, branch: BranchId, key: &str, value: &Value) -> Result<Vec<String>>;
-```
+`find` is in section 11.2.
 
 ### 11.1 Walk (R30)
 
@@ -731,7 +726,53 @@ Proposals for later (not built):
 
 - History reads: `value_history(branch, entity, key)` and `link_history(branch, source, type, destination)`.
 - A per-branch event log `events(branch, range)`. This prepares for sync.
-- `find` can use `value_current_value (bid, key, value, eid)`, also for types (R21). A bounded range can use `value_history_value`.
+
+### 11.2 Find [CHOSEN, I20]
+
+```rust
+pub enum Filter {
+    Eq(String, Value), Ne(String, Value),
+    Lt(String, Value), Le(String, Value), Gt(String, Value), Ge(String, Value),
+    Contains(String, String), ContainsIgnoreCase(String, String), Prefix(String, String),
+    In(String, Vec<Value>), IsNull(String), NotNull(String),
+    And(Vec<Filter>), Or(Vec<Filter>), Not(Box<Filter>),
+    Custom(Predicate),   // Arc<dyn Fn(&str, &BTreeMap<String, Value>) -> bool + Send + Sync>
+}
+pub enum FindOrder { EntityId /* default */, Insertion }
+pub struct FindOptions { pub limit: usize,              // default 1000 rows
+                         pub cursor: Option<String>,    // `next` of the previous page
+                         pub order: FindOrder,
+                         pub values: bool,              // default true: all values; false = ids only
+                         pub include_archived: bool,    // default false (R23)
+                         pub scan_limit: usize }        // default unlimited: candidates per call
+pub struct FindRow { pub id: String, pub values: BTreeMap<String, Value> }
+pub struct Find { pub rows: Vec<FindRow>, pub next: Option<String>, pub scanned: usize }
+
+fn find(&self, branch: BranchId, filter: &Filter, options: FindOptions) -> Result<Find>;
+```
+
+**Result.** The result is the same as this: roll up every entity in the view (R5, R6), apply the filter to the final values, sort, and cut a page. Indexes only choose candidates. Every candidate is rolled up and checked again with the exact filter.
+
+**Semantics.**
+
+1. **Two-valued logic.** A key is *absent* when it was never set or its winning event is a null clear. A comparison with an absent key is false. `Ne` and `Not` are true for it.
+2. **Eq is typed.** `Int(1)`, `Float(1.0)` and `Bool(true)` are all different. `Eq(k, Null)` is `IsNull(k)`. `In` is an `Or` of `Eq`.
+3. **Ranges.** A number bound (`Int` or `Float`) compares with `Int` and `Float` values only, exactly (no rounding of large `i64`). A `Text` bound compares with `Text` values only, in byte order (SQLite `BINARY`). Other bound types are `Error::Invalid`. `Bool` and `Json` values never match a range.
+4. **Text.** `Contains` and `Prefix` match `Text` values only. They are case-sensitive. `ContainsIgnoreCase` folds ASCII letters only.
+5. **Archived (R23).** By default, an entity matches only if its winning `type` is not null. With `include_archived`, every entity with at least one event in the view is a candidate (the same as `links_including_archived`).
+6. **Order and paging.** `EntityId` sorts by the external id (byte order). `Insertion` sorts by the store's internal entity number (first write anywhere in the store). `next` is the id of the last row when the page is full, `None` when nothing is left. Pass it back as `cursor`. Pages are stateless and stable: a store that does not change gives the same rows, and the pages put together are the result of one big call. `scan_limit` caps the candidates checked by one call. When it stops a page early, `next` is the last candidate checked.
+7. `limit = 0` is `Error::Invalid`.
+
+**Plan.** These steps are the optimisations (BENCHMARKS.md, "Find").
+
+1. **Candidates from the value index.** `Eq`, `In`, ranges, `Prefix`, `Contains` and `NotNull` turn into a range of `value_current_value (bid, key, value, eid)` for each layer. For a bounded range, the same range of `value_history_value (bid, key, value, eid, seq, superseded_by)` with `seq BETWEEN lo AND hi AND superseded_by > hi` is added; schema V2 put `superseded_by` in that index so the check needs no table lookup. `Eq` is one index seek, so it is the fastest path.
+2. **Ranges without a schema change.** In an `ANY` column, SQLite sorts numbers (INTEGER and REAL compared by value) before text. A number range adds `value < ''`, a text range adds `value >= ''`. So no type column is needed in the index.
+3. **Contains** is `instr(value, ?)` on the index range `value >= ''` of the key. No FTS index (see BENCHMARKS.md).
+4. **And** estimates the candidates of each term in rank order (`Eq` first). A term under 2048 is used alone at once. Else the smallest term under the dense count (step 6) is used alone. If all are dense, the two first are intersected in SQL. The other terms are checked after the roll-up. **Or** is a union, if every part has an index plan. Other filters (`Not`, `Ne`, `IsNull`, `Custom`) have no plan.
+5. **No plan.** The store reads the entity dictionary in page order and checks each entity after the roll-up. With the default archived filter this is also the plan of a lone `type` filter that has no index term.
+6. **Keyset pages.** Candidates come after the cursor, in chunks of `limit` (min 64, max 2048). A plan is *dense* when its estimated candidates reach `sqrt(limit × entities)` (10 000 for pages of 1000 in 100 000 entities): the cost of sorting all candidates on each page equals the cost of reading `limit / density` entities. Sparse candidates are sorted in SQL. Dense ones are read in dictionary order: with an `EXISTS` probe of each entity when the plan is exact matches only or the view is one open layer, else by checking every entity after the roll-up. The estimate counts the current rows of each layer separately (each count streams from the index and stops at the cap) and never decides a result.
+7. **Batched roll-up.** Each chunk is rolled up in one `values` read for each layer. With `values = false`, only the keys of the filter are read.
+
 
 ---
 
@@ -807,6 +848,7 @@ Proposals for later (not built):
 | I17 | R26: order and cycles | Expansion is depth-first in stack order (parents before the branch, list order, lowest priority first). "First appeared" means the lowest position in that order. There is no order error. A cycle through open entries is cut where the branch repeats on the path. |
 | I18 | R26, R27: same branch twice | One entry per branch, at its first position. Range = lowest start to highest end. Open beats frozen. |
 | I19 | R30: walk details | See section 11.1: start counts as a step and can be emitted, predicates see values only, no wildcard follow key (Q17, resolved), skipped nodes cost no step. |
+| I20 | `find` (11.2) | Typed `Eq`, numbers and text compared within their kind, case-sensitive text, two-valued null, archived hidden, keyset pages by id. |
 | I16 | R23: entities with no type | Hidden, the same as archived entities. The filter checks the other end of each link. `links_including_archived` skips the filter. |
 | I15 | R4: live merges | `merge` is a frozen snapshot. To follow a branch live, use `pull` with an open range. |
 
@@ -833,7 +875,7 @@ Resolved from draft 1:
 
 Still open:
 
-- **Q2. Walk and find** [TBD: Alexander]. Filters, order, depth, cycles and paging.
+- **Q2. Walk and find**: **resolved** by R30 (walk) and 11.2 (find). Open: is `find` ordered by a value (for example `score`) needed? Today the order is the entity id or insertion.
 
 - **Q3. Interpretations.** Do I2 to I18 match the intent? I2 (open entries chain, frozen entries do not) is the most important.
 - **Q13. Undo after a fork.** A fork or a merge freezes a range, so it blocks undo of earlier batches. Must undo be allowed and the frozen follower lose the events? Or must open forks be used?

@@ -198,6 +198,16 @@ The walk reads `root, a, a1, a2, b, c`, one node at a time.
 - **Read-ahead in batches.** On a miss, the walk loads the needed entities and about two layers below them, in batches. Why: fewer round trips to the database. The read-ahead is limited by the steps left, so a small page does not load the whole graph.
 - **Optional cache in the result.** Why: a frontend can show the rows without a second read of the same data.
 
+## 12a. Find
+
+- **Find gives a flat list of entities that match a filter on their values.** Why: lists ("all open tasks", "titles with this word") do not follow links.
+- **The answer is defined by the roll-up.** The result is what the filter gives on the final values of every entity in the view. Indexes only find candidates; each candidate is rolled up and checked again. Why: an index row can be an overridden or cleared value. Only the roll-up knows the winner.
+- **Exact matches are the fast path.** An `Eq` filter is one index seek for each layer. Why: "type is X" and "id field is Y" are the most common queries.
+- **Typed comparisons.** Numbers compare with numbers, text with text. Why: `"10" > 9` has no useful meaning.
+- **Keyset pages, sorted by id.** The cursor is the last id returned. Why: no state between pages, like the walk. A page has a bounded cost.
+- **No new indexes.** Find uses the value indexes that already exist (one gained a column). Why: a full text index costs build time, space and work on each write, and the scan is fast enough at this size (BENCHMARKS.md).
+- **Plan choices use estimates; results never do.** Why: a wrong estimate must only cost time.
+
 ## 13. Undo
 
 - Undo removes the newest batch of one user on one branch. The batch must be less than five minutes old.
@@ -217,5 +227,5 @@ The walk reads `root, a, a1, a2, b, c`, one node at a time.
 ## 15. Out of scope and pending
 
 - Diffs between branches are out of scope for now.
-- `find` is pending. Alexander will give its signature.
+- `find` ordered by a value is not built.
 - Sync between two stores is not built. Fixed branch IDs and per-branch sequence IDs prepare for it.
