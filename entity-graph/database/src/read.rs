@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use rusqlite::types::Value as SqlValue;
 use rusqlite::{params, Connection};
 
 use crate::codec::decode_value;
@@ -320,7 +321,11 @@ pub(crate) fn with_source(current_sql: &str, src: EventSource, history_index: &s
                     "link_current",
                     &format!("link_history INDEXED BY {history_index}"),
                 );
-            let hi = if current_sql.contains("?5") { "?5" } else { "?4" };
+            let hi = if current_sql.contains("?5") {
+                "?5"
+            } else {
+                "?4"
+            };
             format!("{current_sql} UNION ALL {history} AND superseded_by > {hi}")
         }
     }
@@ -380,6 +385,44 @@ pub(crate) fn resolve_values(
     eids: &[i64],
     key: Option<&str>,
 ) -> Result<HashMap<(i64, String), Cand<Value>>> {
+    resolve_values_sql(
+        conn,
+        view,
+        eids,
+        VALUES_SQL,
+        key.map(|k| SqlValue::Text(k.to_owned())),
+    )
+}
+
+pub(crate) const VALUES_KEYS_SQL: &str =
+    "SELECT eid, key, seq, ts, author, vtype, value FROM value_current
+     WHERE bid = ?1 AND eid IN (SELECT value FROM json_each(?2))
+       AND key IN (SELECT value FROM json_each(?3)) AND +seq BETWEEN ?4 AND ?5";
+
+/// [`resolve_values`] for a set of keys.
+pub(crate) fn resolve_values_of(
+    conn: &Connection,
+    view: &View,
+    eids: &[i64],
+    keys: &[&str],
+) -> Result<HashMap<(i64, String), Cand<Value>>> {
+    let json = serde_json::to_string(keys).expect("strings serialise");
+    resolve_values_sql(
+        conn,
+        view,
+        eids,
+        VALUES_KEYS_SQL,
+        Some(SqlValue::Text(json)),
+    )
+}
+
+fn resolve_values_sql(
+    conn: &Connection,
+    view: &View,
+    eids: &[i64],
+    base: &str,
+    key: Option<SqlValue>,
+) -> Result<HashMap<(i64, String), Cand<Value>>> {
     if eids.is_empty() {
         return Ok(HashMap::new());
     }
@@ -387,11 +430,7 @@ pub(crate) fn resolve_values(
     let mut events = Vec::new();
     for src in &view.sources {
         for &(lo, hi) in &src.intervals {
-            let sql = with_source(
-                VALUES_SQL,
-                EventSource::of((lo, hi)),
-                "value_history_target",
-            );
+            let sql = with_source(base, EventSource::of((lo, hi)), "value_history_target");
             let mut stmt = conn.prepare_cached(&sql)?;
             let mut rows = stmt.query(params![src.bid, batch, key, lo, hi])?;
             while let Some(r) = rows.next()? {
@@ -460,8 +499,8 @@ pub(crate) fn resolve_links(
     let mut events = Vec::new();
     for src in &view.sources {
         for &(lo, hi) in &src.intervals {
-            let sql = with_source(&base, EventSource::of((lo, hi)), index)
-                .replace("/*TYPED*/", &typed);
+            let sql =
+                with_source(&base, EventSource::of((lo, hi)), index).replace("/*TYPED*/", &typed);
             let mut stmt = conn.prepare_cached(&sql)?;
             let mut rows = stmt.query(params![src.bid, batch, types, lo, hi])?;
             while let Some(r) = rows.next()? {

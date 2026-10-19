@@ -228,9 +228,14 @@ where
                 .filter(|(_, ext)| members.contains(&ext.as_str()))
                 .map(|(k, v)| (*k, v.clone()))
                 .collect();
-            let links = self
-                .store
-                .links_with(&self.view, &members, &mine, &groups, true, Some(&mut self.eid_of))?;
+            let links = self.store.links_with(
+                &self.view,
+                &members,
+                &mine,
+                &groups,
+                true,
+                Some(&mut self.eid_of),
+            )?;
             for id in members {
                 self.links.insert(id.to_owned(), links[id].clone());
                 let mut out = Vec::new();

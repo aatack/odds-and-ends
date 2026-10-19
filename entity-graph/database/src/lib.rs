@@ -23,6 +23,9 @@ mod walk;
 mod write;
 
 pub use error::{Error, Result};
+/// Planner switches for benchmarks and tests. Not part of the API.
+#[doc(hidden)]
+pub use find::knobs as find_knobs;
 pub use find::{Filter, Find, FindOptions, FindOrder, FindRow, Predicate};
 pub use read::LinkGroups;
 pub use schema::SCHEMA_VERSION;
