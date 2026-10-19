@@ -872,17 +872,6 @@ fn reads_of_own_and_open_ranges_do_not_use_history() {
     assert!(f.exists(f.main, "m"));
 }
 
-// --- Stubs ----------------------------------------------------------------
-
-#[test]
-fn find_is_not_implemented_yet() {
-    let f = Fixture::new();
-    assert!(matches!(
-        f.store.find(f.main, "text", &Value::Null),
-        Err(Error::NotImplemented("find"))
-    ));
-}
-
 // --- Flattened views (MRO) and the shared roll-up --------------------------
 
 fn plan(f: &Fixture, sql: &str) -> String {

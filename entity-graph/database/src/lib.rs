@@ -12,6 +12,7 @@
 
 mod codec;
 mod error;
+mod find;
 mod read;
 mod schema;
 mod store;
@@ -22,12 +23,15 @@ mod walk;
 mod write;
 
 pub use error::{Error, Result};
+pub use find::{Filter, Find, FindOptions, FindOrder, FindRow, Predicate};
 pub use read::LinkGroups;
 pub use schema::SCHEMA_VERSION;
 pub use store::Store;
 pub use types::*;
 pub use walk::{Follow, ReadAhead, Walk, WalkCache, WalkNode, WalkOptions, WalkRow};
 
+#[cfg(test)]
+mod find_tests;
 #[cfg(test)]
 mod model_tests;
 #[cfg(test)]
