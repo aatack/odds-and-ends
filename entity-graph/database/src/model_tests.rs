@@ -484,10 +484,11 @@ fn rand_op(r: &mut Rng) -> Op {
         2 => Op::clear(e, TYPE_KEY),
         3 => Op::set(e, "title", format!("t{}", r.below(5))),
         4 => {
-            let v: Value = match r.below(4) {
+            let v: Value = match r.below(5) {
                 0 => Value::Int(r.below(7) as i64),
                 1 => Value::Bool(r.chance(1, 2)),
                 2 => Value::Null,
+                3 => Value::Float(r.below(7) as f64 / 2.0),
                 _ => Value::Text("x".into()),
             };
             Op::set(e, "priority", v)
@@ -884,11 +885,13 @@ fn run_case(seed: u64) {
         step(&mut rig, &mut r, seed, i);
         if i % 12 == 11 {
             compare_reads(&rig, &format!("seed {seed} after op {i}"));
+            compare_finds(&rig, &mut r, &format!("seed {seed} after op {i}"));
         }
     }
     let ctx = format!("seed {seed} final");
     compare_reads(&rig, &ctx);
     compare_walks(&rig, &mut r, &ctx);
+    compare_finds(&rig, &mut r, &ctx);
 }
 
 #[test]
@@ -903,5 +906,142 @@ fn the_store_agrees_with_a_naive_model_on_random_histories() {
         .unwrap_or(1);
     for seed in first..first + cases {
         run_case(seed);
+    }
+}
+
+fn rand_value(r: &mut Rng) -> Value {
+    match r.below(6) {
+        0 => Value::Int(r.below(7) as i64),
+        1 => Value::Float(r.below(7) as f64 / 2.0),
+        2 => Value::Bool(r.chance(1, 2)),
+        3 => Value::Null,
+        4 => Value::Text(format!("t{}", r.below(5))),
+        _ => Value::Text("x".into()),
+    }
+}
+
+fn rand_bound(r: &mut Rng) -> Value {
+    match r.below(3) {
+        0 => Value::Int(r.below(7) as i64),
+        1 => Value::Float(r.below(7) as f64 / 2.0 - 0.25),
+        _ => Value::Text(format!("t{}", r.below(5))),
+    }
+}
+
+fn rand_filter(r: &mut Rng, depth: usize) -> Filter {
+    let key = |r: &mut Rng| ["type", "title", "priority"][r.below(3)].to_owned();
+    if depth > 0 && r.chance(1, 3) {
+        let n = r.below(4);
+        let parts: Vec<Filter> = (0..n).map(|_| rand_filter(r, depth - 1)).collect();
+        return match r.below(3) {
+            0 => Filter::And(parts),
+            1 => Filter::Or(parts),
+            _ => Filter::Not(Box::new(rand_filter(r, depth - 1))),
+        };
+    }
+    match r.below(14) {
+        0 => Filter::Eq(TYPE_KEY.into(), ["note", "task", "list"][r.below(3)].into()),
+        1 | 2 => Filter::Eq(key(r), rand_value(r)),
+        3 => Filter::Ne(key(r), rand_value(r)),
+        4 => Filter::Gt(key(r), rand_bound(r)),
+        5 => Filter::Ge(key(r), rand_bound(r)),
+        6 => Filter::Lt(key(r), rand_bound(r)),
+        7 => Filter::Le(key(r), rand_bound(r)),
+        8 => Filter::Contains(key(r), ["1", "t", "", "x", "o"][r.below(5)].into()),
+        9 => Filter::ContainsIgnoreCase(key(r), ["T1", "X", "NOTE", "t"][r.below(4)].into()),
+        10 => Filter::Prefix(key(r), ["t", "t1", "", "n", "ta"][r.below(5)].into()),
+        11 => Filter::In(key(r), (0..r.below(3)).map(|_| rand_value(r)).collect()),
+        12 => {
+            if r.chance(1, 2) {
+                Filter::IsNull(key(r))
+            } else {
+                Filter::NotNull(key(r))
+            }
+        }
+        _ => {
+            let odd = r.chance(1, 2);
+            Filter::custom(move |id, _| id.ends_with(['1', '3', '5']) == odd)
+        }
+    }
+}
+
+fn compare_finds(rig: &Rig, r: &mut Rng, ctx: &str) {
+    let names: Vec<String> = (0..ENTS + 1).map(ent).collect();
+    for (b, id) in rig.ids.iter().enumerate() {
+        let w = rig.m.view(b);
+        for _ in 0..2 {
+            let filter = rand_filter(r, 2);
+            // Global switches: the model test runs on one thread.
+            crate::find::knobs::PROBE.store(r.below(3) as u8, Ordering::Relaxed);
+            crate::find::knobs::NO_INTERSECT.store(r.below(2) as u8, Ordering::Relaxed);
+            let include_archived = r.chance(1, 3);
+            let mut want: Vec<String> = names
+                .iter()
+                .filter(|e| w.exists(e) && (include_archived || w.typed(e)))
+                .filter(|e| crate::find::matches(&filter, e, &w.values(e)))
+                .cloned()
+                .collect();
+            want.sort();
+            let order = if r.chance(1, 3) {
+                FindOrder::Insertion
+            } else {
+                FindOrder::EntityId
+            };
+            let values = r.chance(1, 2);
+            let limit = [1, 2, 3, 1000][r.below(4)];
+            let scan_limit = if r.chance(1, 4) {
+                1 + r.below(4)
+            } else {
+                usize::MAX
+            };
+            let mut got: Vec<String> = Vec::new();
+            let mut cursor = None;
+            for _ in 0..100 {
+                let page = rig
+                    .store
+                    .find(
+                        *id,
+                        &filter,
+                        FindOptions {
+                            limit,
+                            cursor,
+                            order,
+                            values,
+                            include_archived,
+                            scan_limit,
+                        },
+                    )
+                    .unwrap();
+                assert!(page.rows.len() <= limit);
+                for row in &page.rows {
+                    let expect = if values {
+                        w.values(&row.id)
+                    } else {
+                        BTreeMap::new()
+                    };
+                    assert_eq!(
+                        row.values, expect,
+                        "{ctx}: find values of {} on {b}",
+                        row.id
+                    );
+                    got.push(row.id.clone());
+                }
+                cursor = page.next;
+                if cursor.is_none() {
+                    break;
+                }
+            }
+            assert!(cursor.is_none(), "{ctx}: find did not end");
+            if order == FindOrder::Insertion {
+                let n = got.len();
+                got.sort();
+                got.dedup();
+                assert_eq!(got.len(), n, "{ctx}: duplicate rows");
+            }
+            assert_eq!(
+                got, want,
+                "{ctx}: find {filter:?} on {b} (archived {include_archived}, {order:?}, limit {limit}, scan {scan_limit})"
+            );
+        }
     }
 }

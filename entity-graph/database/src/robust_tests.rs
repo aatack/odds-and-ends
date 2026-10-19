@@ -255,13 +255,11 @@ fn large_ids_round_trip() {
             ))
             .unwrap();
         assert_eq!(store.value(main, &id, "n").unwrap(), Some(Value::Int(base)));
-        assert_eq!(
-            store
-                .find(main, "n", &Value::Int(base))
-                .map(|v| v.len())
-                .unwrap_or(1),
-            1
-        );
+        let found = store
+            .find(main, &Filter::eq("n", base), FindOptions::default())
+            .unwrap();
+        assert_eq!(found.rows.len(), 1);
+        assert_eq!(found.rows[0].id, id);
     }
     // Sequence IDs beyond 2^53, and extreme integers as values.
     store

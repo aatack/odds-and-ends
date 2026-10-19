@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use rusqlite::{params, Connection};
 
 use crate::codec::decode_value;
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::store::{branch_row, Store};
 use crate::types::{BranchId, Direction, EventRef, Link, Seq, Timestamp, Value, TYPE_KEY};
 use crate::view::{roll_up, Cand, EventSource, Order, Source, View};
@@ -262,14 +262,6 @@ impl Store {
             .collect())
     }
 
-    /// Find entities by their values.
-    ///
-    /// TODO(Alexander): signatures to come (predicates, indexes, paging).
-    /// Must return only entities whose `type` is not null (R23).
-    pub fn find(&self, _branch: BranchId, _key: &str, _value: &Value) -> Result<Vec<String>> {
-        Err(Error::NotImplemented("find"))
-    }
-
     /// The view of a branch (resolved once per call) and the interned keys of
     /// the asked-for IDs. IDs never written anywhere in the store are absent.
     fn prepare(&self, branch: BranchId, entities: &[&str]) -> Result<(View, HashMap<i64, String>)> {
@@ -489,7 +481,7 @@ pub(crate) fn resolve_links(
 
 /// The entities of the batch that some event of the view names. Uses the
 /// same per-layer event sources as the roll-ups.
-fn any_event(conn: &Connection, view: &View, eids: &[i64]) -> Result<HashSet<i64>> {
+pub(crate) fn any_event(conn: &Connection, view: &View, eids: &[i64]) -> Result<HashSet<i64>> {
     const PROBES: [(&str, &str); 3] = [
         (
             "SELECT eid FROM value_current WHERE bid = ?1 AND eid IN (SELECT value FROM json_each(?2)) AND +seq BETWEEN ?3 AND ?4",
