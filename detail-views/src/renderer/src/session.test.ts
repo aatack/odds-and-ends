@@ -791,7 +791,7 @@ test('topics mode: a new topic\'s form starts with a context: the task open, or 
   }
 })
 
-test('topics mode: Ctrl+L finds a topic by its name, fuzzily; the clock hides topics waiting (snoozed, or on what isn't back) from the list, the open one apart', async () => {
+test('topics mode: Ctrl+L finds a topic by its name, fuzzily; the clock hides topics waiting (snoozed, or on what is not back) from the list, the open one apart', async () => {
   const { core, session, stop, settle } = await headless({}, { topics: true })
   const key = (name: string, field: string | null) => tools.find((tool) => tool.keys.includes(name) && (field === null ? tool.scope !== 'input' : true) && (tool.enabled?.(session, field) ?? true))?.id
   const names = () => session.get().topics.map((topic) => topic.data.text)
