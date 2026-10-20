@@ -9,7 +9,7 @@ Written in ASD-STE100. Code: `src/core/modules/claude/` (`view.ts` is pure, `cla
 3. The ID of the session item is the ID of the Claude session. The app makes the ID and gives it to Claude (`--session-id`).
 4. A session has a name.
 5. A session has an optional working directory, and a worktree checkbox. The form shows the checkbox only when the directory field has text.
-6. If there is no working directory, make a new temporary directory. Run the agent there.
+6. If there is no working directory, make a new temporary directory. Run the agent there. If that temporary directory has gone (a reboot clears it), make it again at the same path before the agent runs (`restoreTempDir`): the transcript is kept by that path.
 7. If there is a working directory and no worktree, run the agent in that directory.
 8. If there is a working directory and a worktree, make a git worktree of the repo of that directory. Run the agent in the worktree.
 9. Do not put a worktree in a repo. No repo must commit it.
