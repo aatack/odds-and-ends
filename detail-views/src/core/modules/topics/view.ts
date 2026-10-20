@@ -136,8 +136,12 @@ export function prBack(pr: string, lens: Lens): string[] {
   return data ? prBackReasons(data, Boolean(localApproval(lens, pr))) : []
 }
 
-/** What keeps a PR of mine waiting: CI running, someone else's review, auto-merge under way. Anything else on it is mine to do. */
-const othersTurn = new Set(['pending', 'awaiting', 'auto'])
+/**
+ * What keeps a PR of mine waiting: CI running, someone else's review,
+ * auto-merge under way, and threads left open (a conversation with the
+ * reviewer, theirs to close as often as mine). Anything else on it is mine to do.
+ */
+const othersTurn = new Set(['pending', 'awaiting', 'auto', 'threads'])
 
 /**
  * Why a wait on a PR is back, as the GitHub view names it (`blockers`);

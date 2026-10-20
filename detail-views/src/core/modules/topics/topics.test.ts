@@ -741,6 +741,8 @@ test('topics: a wait on someone else\'s PR is back only while it wants my review
   assert.deepEqual(mine({ approvedByOthers: false, review: 'REVIEW_REQUIRED', reviewers: ['ann'] }), [])
   assert.deepEqual(mine({ approvedByOthers: false, review: 'REVIEW_REQUIRED', checks: 'pending' }), [])
   assert.deepEqual(mine({ review: 'APPROVED', autoMerge: true }), [])
+  // Threads left open, as the review goes on: still waiting.
+  assert.deepEqual(mine({ approvedByOthers: false, review: 'REVIEW_REQUIRED', unresolved: 4, autoMerge: true }), [])
   // Back for anything of mine to do.
   assert.deepEqual(mine({ approvedByOthers: false, review: 'REVIEW_REQUIRED', conflicts: true }), ['Conflicts'])
   assert.deepEqual(mine({ review: 'APPROVED', checks: 'failing' }), ['CI failing'])
