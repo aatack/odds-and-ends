@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { link, value, values, type AppEvent } from '../../graph/events.ts'
 import type { Entity } from '../../types.ts'
 import { mcpConfig, mcpName, type McpAddress } from '../../mcp.ts'
@@ -375,9 +375,21 @@ function transcriptAnswer(session: string, cwd: string, since: number): string |
  * `claude -p`, and puts the answer, or what went wrong, in `responseId`. The
  * session says it is running, and since when, while it does.
  */
+/**
+ * A temporary directory the app made for a session (`claude-…` in the
+ * system's temp dir) is made again if it has gone (the temp dir is cleared
+ * on a reboot): at the same path, since that is where Claude Code keeps the
+ * session's transcript (`projectDir`), so the conversation resumes. A
+ * directory of mine that has gone is left to fail, and say so.
+ */
+export function restoreTempDir(cwd: string): void {
+  if (!existsSync(cwd) && dirname(cwd) === tmpdir() && basename(cwd).startsWith('claude-')) mkdirSync(cwd, { recursive: true })
+}
+
 export async function ask(context: ModuleContext, session: string, responseId: string, prompt: string): Promise<void> {
   const data = context.data.get(session)
   const cwd = expandHome(String(data.cwd))
+  restoreTempDir(cwd)
   const mode = String(data.permissionMode ?? defaultPermissionMode)
   // Its transcript, not only an answer that came back, says it has started: a claude stopped part way leaves one, and it refuses a new session of the same id.
   const started = Boolean(data.started) || hasTranscript(session, cwd)

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -114,6 +114,25 @@ test('topics: no second dispatch while Claude is answering; what is written mean
   assert.equal((await core.actions.topicDispatch({ topic })).error, null)
   await settle()
   assert.deepEqual(calls, ['first', 'second'])
+})
+
+test('topics: a temporary directory cleared away (a reboot) is made again where it was, and the conversation resumes there', async () => {
+  const calls: { args: string[]; cwd: string }[] = []
+  const core = memoryCore({ run: fakeClaude(calls) })
+  await core.actions.topicCreate({ name: 'Old' })
+  const [topic] = core.entity('topics').outboundLinks
+  await core.actions.submit({ id: topic, text: 'first' })
+  await core.actions.topicDispatch({ topic })
+  await settle()
+  const cwd = String(core.item(topic)!.data.cwd)
+  rmSync(cwd, { recursive: true })
+  await core.actions.submit({ id: topic, text: 'second' })
+  assert.equal((await core.actions.topicDispatch({ topic })).error, null)
+  await settle()
+  assert.ok(existsSync(cwd))
+  assert.equal(calls[1].cwd, cwd)
+  assert.ok(calls[1].args.includes('--resume'))
+  assert.equal(chat(core, topic).at(-1)?.[1], 're: second')
 })
 
 test('topics: a paste is what it is: a PR, Slack message or branch link is that item; other text a message; a file kept, as an item; all go with the next dispatch', async () => {
