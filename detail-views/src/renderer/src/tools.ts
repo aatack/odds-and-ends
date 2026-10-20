@@ -158,8 +158,8 @@ export const tools: Tool[] = [
   { id: 'topic.child', label: 'New topic here', scope: 'list', keys: ['?'], enabled: (s) => s.canOpenChildTopicDialog(), run: (s) => s.openChildTopicDialog() },
   // From anywhere, typing too: a topic in the list, found by its name.
   { id: 'topic.jump', label: 'Find topic', scope: 'app', keys: ['Ctrl+l'], enabled: (s) => s.canOpenJump(), run: (s) => s.openJump() },
-  // The clock beside the list's box: snoozed topics out of the list, or back.
-  { id: 'topics.hideSnoozed', label: (s) => (s.hidingSnoozed() ? 'Show snoozed' : 'Hide snoozed'), scope: 'list', keys: [], enabled: (s) => s.get().state.dialog === null, run: (s) => s.toggleHideSnoozed() },
+  // The clock beside the list's box: topics waiting (snoozed, or on what isn't back yet) out of the list, or back.
+  { id: 'topics.hideSnoozed', label: (s) => (s.hidingSnoozed() ? 'Show waiting' : 'Hide waiting'), scope: 'list', keys: [], enabled: (s) => s.get().state.dialog === null, run: (s) => s.toggleHideSnoozed() },
   { id: 'topic.new', label: 'New topic', scope: 'app', keys: ['Ctrl+.'], enabled: (s) => s.canOpenTopicDialog(), run: (s) => s.openTopicDialog() },
   { id: 'session.send', label: 'To session', scope: 'list', keys: ['k'], enabled: (s) => s.canSendToSession(), run: (s) => s.sendToSession() },
   // On a topic, from its box or its rows: every message since the last dispatch, to Claude at once (before the side panel's Ctrl+Enter).

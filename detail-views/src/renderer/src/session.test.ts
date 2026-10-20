@@ -791,8 +791,8 @@ test('topics mode: a new topic\'s form starts with a context: the task open, or 
   }
 })
 
-test('topics mode: Ctrl+L finds a topic by its name, fuzzily; the clock hides snoozed topics from the list, the open one apart', async () => {
-  const { session, stop, settle } = await headless({}, { topics: true })
+test('topics mode: Ctrl+L finds a topic by its name, fuzzily; the clock hides topics waiting (snoozed, or on what isn't back) from the list, the open one apart', async () => {
+  const { core, session, stop, settle } = await headless({}, { topics: true })
   const key = (name: string, field: string | null) => tools.find((tool) => tool.keys.includes(name) && (field === null ? tool.scope !== 'input' : true) && (tool.enabled?.(session, field) ?? true))?.id
   const names = () => session.get().topics.map((topic) => topic.data.text)
   const open = () => session.get().view?.root?.data.text
@@ -836,14 +836,24 @@ test('topics mode: Ctrl+L finds a topic by its name, fuzzily; the clock hides sn
     session.submitDialog()
     await settle()
   }
-  assert.equal(names().length, 3)
+  // Waiting on another topic: nothing to do yet either.
+  session.setTopicName('Blocked')
+  session.createTopic()
+  await settle()
+  const blocked = session.get().view!.root!.id
+  const lisbon = session.get().topics.find((topic) => topic.data.text === 'Flights to Lisbon')!.id
+  await core.actions.link({ parent: blocked, child: lisbon })
+  await core.actions.topicWait({ topic: blocked, on: [lisbon] })
+  session.openTopic(lisbon)
+  await settle()
+  assert.equal(names().length, 4)
   runTool(session, 'topics.hideSnoozed')
   await settle()
   assert.equal(session.get().state.hideSnoozed, true)
-  assert.deepEqual(names().sort(), ['Fix login bug', 'Flights to Lisbon'])
+  assert.deepEqual(names(), ['Flights to Lisbon'])
   runTool(session, 'topics.hideSnoozed')
   await settle()
-  assert.equal(names().length, 3)
+  assert.equal(names().length, 4)
   } finally {
     stop()
   }

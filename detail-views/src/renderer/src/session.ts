@@ -2,7 +2,7 @@ import { EntityCache, type CacheState } from '../../core/graph/cache.ts'
 import { findInContext, foreignOf, itemOf, lensOf, moduleInfos, viewOf } from '../../core/present.ts'
 import { activity } from '../../core/modules/slack/view.ts'
 import { byMade, claudeIds } from '../../core/modules/claude/view.ts'
-import { answering, fuzzyRank, isTaskTopic, sendTargets, snoozed, snoozeLength, topicsIds, type TopicDisplay, unsent, waitCandidates, waiting, waitsOf, type SendTarget, type Wait } from '../../core/modules/topics/view.ts'
+import { answering, fuzzyRank, isTaskTopic, sendTargets, snoozeLength, topicsIds, type TopicDisplay, unsent, waitCandidates, waiting, waitsOf, type SendTarget, type Wait } from '../../core/modules/topics/view.ts'
 import { entityScheme, type Entity, type ModuleInfo, type NoteValues, type Outcome, type View, type ViewRow } from '../../core/types.ts'
 import type { Api } from './api.ts'
 import type { Environment } from './environment.ts'
@@ -257,9 +257,8 @@ export class Session {
     // The list of topics is the walk of their root, one level down.
     const topicsView = this.topicsMode ? this.walk(topicsIds.root, state) : null
     const topics = topicsView ? topicsView.rows.filter((row) => row.depth === 1).map((row) => row.entity) : []
-    // Snoozed ones left out of the list while I ask, unless open; their waits are still watched.
-    const listed = state.hideSnoozed ? topics.filter((topic) => topic.id === root || !snoozed(topic.data, Date.now())) : topics
-    const sameTopics = listed.length === previous.topics.length && listed.every((topic, at) => topic === previous.topics[at])
+    const sameTopics = topics.length === this.allTopics.length && topics.every((topic, at) => topic === this.allTopics[at])
+    this.allTopics = topics
     // Walks for views no longer anywhere are dropped.
     const live = new Set([root, ...Object.keys(peekViews), ...(state.side ? [state.side] : []), ...opened, ...(this.topicsMode ? [topicsIds.root] : [])])
     for (const key of this.walks.keys()) if (!live.has(key)) this.walks.delete(key)
@@ -291,6 +290,9 @@ export class Session {
       this.snoozeEnds = ends.length ? Math.min(...ends) : null
     }
     const sameWaiting = waitingNow.length === previous.waiting.length && waitingNow.every((id, at) => id === previous.waiting[at])
+    // Those waiting (snoozed, or on something not yet back: nothing for me to do yet) left out of the list while I ask, unless open; their waits are still watched.
+    const listed = state.hideSnoozed ? topics.filter((topic) => topic.id === root || !waitingNow.includes(topic.id)) : topics
+    const sameListed = listed.length === previous.topics.length && listed.every((topic, at) => topic === previous.topics[at])
     // Waits show on any topic; where a box sends, only on a task's.
     const onTopic = this.topicsMode && view.root?.type === 'topic'
     const sameTopic = sameCache && root === S.focused(previous.state)
@@ -304,7 +306,7 @@ export class Session {
       shown,
       peekViews,
       sideView,
-      topics: sameTopics ? previous.topics : listed,
+      topics: sameListed ? previous.topics : listed,
       waiting: sameWaiting ? previous.waiting : waitingNow,
       topicWaits: sameJson(topicWaits, previous.topicWaits) ? previous.topicWaits : topicWaits,
       topicTargets: sameJson(topicTargets, previous.topicTargets) ? previous.topicTargets : topicTargets,
@@ -315,6 +317,8 @@ export class Session {
   }
 
   private itemsFrom: CacheState | null = null
+  /** Every topic in the list's walk, as last derived: the waits are worked out over these, hidden or not. */
+  private allTopics: Entity[] = []
   /** When the next snooze of a topic ends, if one will; and whether one has, since the waits were last worked out. */
   private snoozeEnds: number | null = null
   private snoozeEnded = false
@@ -648,7 +652,7 @@ export class Session {
     if (target) this.openTopic(target)
   }
 
-  /** Whether the list leaves out snoozed topics. */
+  /** Whether the list leaves out the topics waiting (snoozed, or on something not yet back). */
   hidingSnoozed(): boolean {
     return this.state.hideSnoozed
   }

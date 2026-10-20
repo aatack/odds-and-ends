@@ -310,7 +310,7 @@ export interface TopicListProps {
   /** The name being typed for a new one. */
   draft: string
   busy: boolean
-  /** Whether snoozed topics are left out of the list; and the clock beside the box that switches it. */
+  /** Whether topics waiting (snoozed, or on what isn't back yet) are left out of the list; and the clock beside the box that switches it. */
   hidingSnoozed: boolean
   onHideSnoozed(): void
   onDraft(text: string): void
@@ -359,7 +359,7 @@ export function TopicList(props: TopicListProps) {
           quiet
           active={props.hidingSnoozed}
           label={<span className="clock-mark" role="img" aria-label="Snoozed" />}
-          title={props.hidingSnoozed ? 'Show snoozed topics' : 'Hide snoozed topics'}
+          title={props.hidingSnoozed ? 'Show waiting topics' : 'Hide waiting topics'}
           onClick={props.onHideSnoozed}
         />
       </div>
