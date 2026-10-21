@@ -56,54 +56,66 @@ export function approvedMine(data: Record<string, unknown>, locallyApproved: boo
 }
 
 /**
- * What stands between a PR and being merged, most pressing first, worked out
- * from what GitHub says and from my own approval here. Views show only the
- * first: what I need to know (and usually do) to move the PR on. Empty until
- * enough is known.
+ * What stands between a PR and being merged, most pressing first, as my
+ * workflow goes. Views show only the first: what I need to know (and
+ * usually do) to move it on. Empty until enough is known.
  *
- * The order is mine, as I asked for it: merged or closed; not reviewed by me
- * (mine: not approved, here or on GitHub; theirs: not approved by me); waiting
- * for someone else's review; failing CI; merge conflicts; CI still running;
- * then clear. Slotted in where they belong: a draft first (nothing else moves
- * until it is marked ready); changes requested and unresolved threads with the
- * reviews; behind its base with the conflicts.
+ * Mine: approve it myself (here: GitHub won't let me approve my own); then
+ * CI failing or merge conflicts, or changes asked for, to fix; then someone
+ * else's review; then CI running, while it merges itself (auto-merge, which
+ * approving turns on), or for me to turn that on.
+ *
+ * Someone else's: blocked on me until I approve it (unless I asked for
+ * changes: then on them); after that, only waiting for it to be merged.
+ *
+ * What doesn't change what I do (open threads, behind its base) isn't shown.
  */
 export function blockers(data: Record<string, unknown>, locallyApproved: boolean): Blocker[] {
   if (data.mine === undefined) return []
   if (data.state === 'MERGED') return [{ id: 'merged', label: 'Merged', turn: 'none', tone: 'purple' }]
   if (data.state === 'CLOSED') return [{ id: 'closed', label: 'Closed', turn: 'none', tone: 'gray' }]
-  const mine = Boolean(data.mine)
-  const theirs = !mine
   const out: Blocker[] = []
   const add = (id: string, label: string, turn: Turn, tone: Blocker['tone']) => out.push({ id, label, turn, tone })
-  const others = Array.isArray(data.reviewers) ? (data.reviewers as string[]) : []
 
-  if (data.draft) add('draft', 'Draft', mine ? 'me' : 'them', 'gray')
-  // Not reviewed by me.
-  if (mine && !approvedMine(data, locallyApproved)) add('self-review', 'Review it', 'me', 'yellow')
-  if (theirs && !data.approvedByMe && !data.changesRequestedByMe) {
-    add('review', data.reviewRequestedOfMe ? 'Review requested' : 'Not reviewed', 'me', 'yellow')
+  if (!data.mine) {
+    // Changes I asked for are theirs to make, until they ask me again.
+    if (data.changesRequestedByMe && !data.approvedByMe && !data.reviewRequestedOfMe) add('changes', 'You requested changes', 'them', 'yellow')
+    else if (!data.approvedByMe) add('review', data.reviewRequestedOfMe ? 'Review requested' : 'Review it', 'me', 'yellow')
+    else add('approved', 'Approved', 'them', 'green')
+    return out
   }
-  // Waiting on someone else's review.
-  if (data.review !== 'APPROVED' && data.review !== 'CHANGES_REQUESTED' && (mine ? !data.approvedByOthers : data.approvedByMe)) {
+
+  if (!approvedMine(data, locallyApproved)) add('self-review', 'Approve it', 'me', 'yellow')
+  if (data.checks === 'failing') add('ci', 'CI failing', 'me', 'red')
+  if (data.conflicts || data.mergeState === 'DIRTY') add('conflicts', 'Conflicts', 'me', 'red')
+  if (data.review === 'CHANGES_REQUESTED') add('changes', 'Changes requested', 'me', 'red')
+  else if (data.review !== 'APPROVED' && !data.approvedByOthers) {
+    const others = Array.isArray(data.reviewers) ? (data.reviewers as string[]) : []
     add('awaiting', others.length ? `Awaiting ${others.join(', ')}` : 'Awaiting review', 'them', 'yellow')
   }
-  if (data.review === 'CHANGES_REQUESTED') {
-    if (mine) add('changes', 'Changes requested', 'me', 'red')
-    else add('changes', data.changesRequestedByMe ? 'You requested changes' : 'Changes requested', 'them', 'yellow')
-  }
-  const unresolved = Number(data.unresolved ?? 0)
-  if (unresolved > 0) add('threads', `${unresolved} unresolved`, mine ? 'me' : 'them', 'yellow')
-  if (data.checks === 'failing') add('ci', 'CI failing', mine ? 'me' : 'them', 'red')
-  if (data.conflicts || data.mergeState === 'DIRTY') add('conflicts', 'Conflicts', mine ? 'me' : 'them', 'red')
-  if (data.mergeState === 'BEHIND') add('behind', 'Behind base', mine ? 'me' : 'them', 'yellow')
   if (data.checks === 'pending') add('pending', 'CI running', 'none', 'gray')
-  if (!out.length) {
-    if (mine && data.autoMerge) add('auto', 'Auto-merging', 'none', 'green')
-    else if (mine) add('merge', 'Ready to merge', 'me', 'green')
-    else add('clear', data.approvedByMe ? 'Approved' : 'Ready', 'none', 'green')
-  }
+  if (!data.autoMerge) add('merge', 'Merge it', 'me', 'green')
+  else if (!out.length) add('auto', 'Auto-merging', 'none', 'green')
   return out
+}
+
+/** What there is to fix on a PR of mine, as its blockers say: CI failing, conflicts, changes asked for. */
+export function toFix(data: Record<string, unknown>): string[] {
+  const reasons = blockers(data, true)
+  return reasons.filter((blocker) => ['ci', 'conflicts', 'changes'].includes(blocker.id)).map((blocker) => blocker.id)
+}
+
+/**
+ * The Claude sessions in an item's context, which can work on it: task
+ * topics and Claude module sessions, by id.
+ */
+export function sessionsInContext(entity: Entity, lens: Lens): string[] {
+  const context = entity.data.context
+  if (typeof context !== 'string' || !context) return []
+  return lens.children(context).filter((id) => {
+    const item = lens.read(id)
+    return (item?.type === 'topic' && item.data.display !== 'thoughts') || item?.type === 'claude.session'
+  })
 }
 
 /** The mark beside a PR's name: its first blocker, as a shape and a colour. */
@@ -192,26 +204,27 @@ export const githubView: ModuleView = {
         prompt: 'Approve: comment (optional), Enter to approve',
         disabled: entity.data.approvedByMe ? 'Already approved by me' : undefined,
       })
-    } else {
-      // GitHub won't let me approve my own PR, so "approved" is GitHub's
-      // review decision, or my own approval here. Approving marks a draft
-      // ready for review and turns on auto-merge; once it is approved and
-      // set to merge, Approve becomes Bump: its line copied again, to pass on.
-      const approved = approvedMine(entity.data, Boolean(localApproval(lens, entity.id)))
-      const ready = entity.data.draft ? 'mark it ready for review, ' : ''
-      if (approved && entity.data.autoMerge) {
-        actions.push({ id: 'bump', label: 'Bump', prompt: 'Copy its line again, to pass on: Enter', copy: prLine(entity.data) })
-      } else {
-        actions.push({
-          id: 'approve',
-          label: 'Approve',
-          prompt: approved ? `Already approved: Enter to ${ready}turn on auto-merge` : `Approve locally, ${ready}turn on auto-merge: Enter to confirm`,
-          // To pass on once it is set to merge.
-          copy: prLine(entity.data),
-        })
-      }
-      actions.push({ id: 'close', label: 'Close', prompt: 'Close and delete the branch: comment (optional), Enter to close' })
+      return actions
     }
+    // GitHub won't let me approve my own PR, so "approved" is GitHub's review
+    // decision, or my own approval here. Approving (asking nothing) marks a
+    // draft ready for review, turns on auto-merge and copies its line to pass
+    // on; once it is approved and set to merge, it is Bump: the line again.
+    const approved = approvedMine(entity.data, Boolean(localApproval(lens, entity.id)))
+    if (approved && entity.data.autoMerge) actions.push({ id: 'bump', label: 'Bump', prompt: null, copy: prLine(entity.data) })
+    else actions.push({ id: 'approve', label: approved ? 'Auto-merge' : 'Approve', prompt: null, copy: prLine(entity.data) })
+    // CI failing, conflicts or changes asked for: the Claude sessions in its context are asked to fix them.
+    const fixes = toFix(entity.data)
+    const sessions = sessionsInContext(entity, lens)
+    if (fixes.length) {
+      actions.push({
+        id: 'fix',
+        label: 'Fix',
+        prompt: null,
+        disabled: sessions.length ? undefined : 'No Claude session in its context to fix it',
+      })
+    }
+    actions.push({ id: 'close', label: 'Close', prompt: 'Close and delete the branch: comment (optional), Enter to close' })
     return actions
   },
 

@@ -92,6 +92,35 @@ async function loaded(author: string, approvers?: string[]) {
   return { core, id, calls }
 }
 
+test('github: Fix asks every Claude session in a PR\'s context to fix it: a task topic dispatches at once; none, and it is disabled', async () => {
+  const calls: string[][] = []
+  const prompts: string[] = []
+  const run = async (command: string, args: string[]) => {
+    if (!command.endsWith('claude')) throw new Error(`unexpected ${command}`)
+    prompts.push(args[1])
+    return JSON.stringify({ result: 'fixed', is_error: false })
+  }
+  const core = memoryCore({ gh: fakeGh(calls), run })
+  const id = `github:pr:${url}`
+  core.focus(id)
+  await core.refresh(id)
+  // Mine, CI failing (the fake's), nobody to fix it yet.
+  assert.equal(core.focus(id).actions.find((action) => action.id === 'fix')?.disabled, 'No Claude session in its context to fix it')
+  await core.actions.topicCreate({ name: 'Fix the build', context: id })
+  await core.actions.topicCreate({ name: 'Ideas', display: 'thoughts', context: id })
+  const [task] = core.entity('topics').outboundLinks.filter((topic) => core.item(topic)?.data.display !== 'thoughts')
+  assert.equal(core.focus(id).actions.find((action) => action.id === 'fix')?.disabled, undefined)
+  assert.equal((await core.actions.perform({ id, action: 'fix', text: '' })).error, null)
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  // The task got it, as a message, and sent it; thoughts aren't Claude's.
+  assert.equal(prompts.length, 1)
+  assert.match(prompts[0], /CI is failing/)
+  assert.match(prompts[0], /don't push/)
+  assert.equal(core.lens().children(task).map((child) => core.item(child)?.type ?? 'note')[1], 'claude.response')
+  // Nothing written to GitHub.
+  assert.equal(calls.filter((args) => args[0] === 'pr').length, 0)
+})
+
 test("github: approving someone else's PR leaves an approving review", async () => {
   const { core, id, calls } = await loaded('ann')
   assert.deepEqual(core.focus(id).actions.map((action) => action.id), ['approve'])
@@ -101,7 +130,8 @@ test("github: approving someone else's PR leaves an approving review", async () 
 
 test('github: approving my own PR is kept locally and turns on auto-merge', async () => {
   const { core, id, calls } = await loaded('me')
-  assert.deepEqual(core.focus(id).actions.map((action) => action.id), ['approve', 'close'])
+  // Its CI is failing, but no Claude session is in its context: Fix is offered, disabled.
+  assert.deepEqual(core.focus(id).actions.map((action) => action.id), ['approve', 'fix', 'close'])
   // Once done, it puts a line naming the PR on the clipboard.
   assert.match(core.focus(id).actions[0].copy ?? '', /^\[#\d+\]\(https:\/\/github\.com\/.+\) \S/)
   await core.actions.perform({ id, action: 'approve', text: '' })
@@ -149,23 +179,23 @@ test('github: what stands in the way, in my order, and whose move it is', () => 
   // Merged or closed: nothing more, whatever else is true.
   assert.equal(first({ mine: true, state: 'MERGED', checks: 'failing' }), 'Merged (none)')
   assert.equal(first({ mine: false, state: 'CLOSED' }), 'Closed (none)')
-  // Mine, in order: not reviewed by me, awaiting others, CI failing, conflicts, (behind), CI running.
-  assert.deepEqual(all({ mine: true, ...open, checks: 'failing', conflicts: true, mergeState: 'BEHIND' }), ['self-review', 'awaiting', 'ci', 'conflicts', 'behind'])
-  assert.deepEqual(all({ mine: true, ...open, checks: 'pending' }, true), ['awaiting', 'pending'])
-  // Approved on GitHub counts as reviewed, as it does for the Approve button.
+  // Mine, in order: approve it; CI failing, conflicts; someone else's review; CI running; merging.
+  assert.deepEqual(all({ mine: true, ...open, checks: 'failing', conflicts: true, mergeState: 'BEHIND', unresolved: 2 }), ['self-review', 'ci', 'conflicts', 'awaiting', 'merge'])
+  assert.deepEqual(all({ mine: true, ...open, checks: 'pending', autoMerge: true }, true), ['awaiting', 'pending'])
+  assert.equal(first({ mine: true, ...open, draft: true }), 'Approve it (me)')
+  // Approved on GitHub counts as approved, as it does for the Approve button.
   assert.equal(first({ mine: true, ...open, review: 'APPROVED', approvedByOthers: true, checks: 'failing' }), 'CI failing (me)')
-  assert.equal(first({ mine: true, ...open, draft: true }), 'Draft (me)')
-  assert.equal(first({ mine: true, ...open, reviewers: ['ann'] }, true), 'Awaiting ann (them)')
+  assert.equal(first({ mine: true, ...open, reviewers: ['ann'], autoMerge: true }, true), 'Awaiting ann (them)')
   assert.equal(first({ mine: true, ...open, review: 'CHANGES_REQUESTED', unresolved: 2 }, true), 'Changes requested (me)')
-  assert.equal(first({ mine: true, ...open, approvedByOthers: true, review: 'APPROVED', checks: 'passing' }, true), 'Ready to merge (me)')
+  assert.equal(first({ mine: true, ...open, approvedByOthers: true, review: 'APPROVED', checks: 'pending', autoMerge: true }, true), 'CI running (none)')
+  assert.equal(first({ mine: true, ...open, approvedByOthers: true, review: 'APPROVED', checks: 'passing' }, true), 'Merge it (me)')
   assert.equal(first({ mine: true, ...open, approvedByOthers: true, review: 'APPROVED', autoMerge: true }, true), 'Auto-merging (none)')
-  // Theirs: my review first (asked for, or not), then what's on them.
+  // Theirs: mine to approve, then only its merge to wait for.
   assert.equal(first({ mine: false, ...open, reviewRequestedOfMe: true }), 'Review requested (me)')
-  assert.equal(first({ mine: false, ...open }), 'Not reviewed (me)')
+  assert.equal(first({ mine: false, ...open }), 'Review it (me)')
   assert.equal(first({ mine: false, ...open, changesRequestedByMe: true, review: 'CHANGES_REQUESTED' }), 'You requested changes (them)')
-  assert.equal(first({ mine: false, ...open, approvedByMe: true, review: 'REVIEW_REQUIRED', reviewers: ['bo'] }), 'Awaiting bo (them)')
-  assert.equal(first({ mine: false, ...open, approvedByMe: true, review: 'APPROVED', checks: 'failing' }), 'CI failing (them)')
-  assert.equal(first({ mine: false, ...open, approvedByMe: true, review: 'APPROVED' }), 'Approved (none)')
+  assert.deepEqual(all({ mine: false, ...open, approvedByMe: true, review: 'REVIEW_REQUIRED', reviewers: ['bo'], checks: 'failing', unresolved: 3 }), ['approved'])
+  assert.equal(first({ mine: false, ...open, approvedByMe: true }), 'Approved (them)')
   // The badge is the first blocker.
   assert.deepEqual(badge({ mine: true, ...open, approvedByOthers: true, review: 'APPROVED', checks: 'failing' }, true), {
     shape: 'cross',
@@ -184,7 +214,7 @@ test('github: a PR seen only as a link is an item, and carries its badge once lo
   const loaded = core.focus(id).entity!
   // Mine, approved on GitHub (so reviewed, as Approve also sees it): the failing check is what's in the way.
   assert.deepEqual(loaded.data.badge, { shape: 'cross', tone: 'red', reason: 'CI failing' })
-  assert.deepEqual((loaded.data.blockers as { id: string }[]).map((blocker) => blocker.id), ['ci'])
+  assert.deepEqual((loaded.data.blockers as { id: string }[]).map((blocker) => blocker.id), ['ci', 'merge'])
 })
 
 test('github: an approve already done is shown but cannot be done again', async () => {
@@ -199,7 +229,7 @@ test('github: an approve already done is shown but cannot be done again', async 
   // auto-merge, Approve becomes Bump, with no approval of my own.
   const approvedThere = await loaded('me')
   approvedThere.core.cache.write([{ type: 'value', entityId: approvedThere.id, key: 'autoMerge', value: true, timestamp: 0, author: 'github' }])
-  assert.deepEqual(approvedThere.core.focus(approvedThere.id).actions.map((action) => action.id), ['bump', 'close'])
+  assert.deepEqual(approvedThere.core.focus(approvedThere.id).actions.map((action) => action.id), ['bump', 'fix', 'close'])
 
   // Not approved on GitHub: my approval here counts, once auto-merge is on.
   const mine = await loaded('me')
@@ -222,7 +252,8 @@ test('github: an approve already done is shown but cannot be done again', async 
 test('github: approving my own draft marks it ready for review first, then turns on auto-merge', async () => {
   const { core, id, calls } = await loaded('me')
   core.cache.write([{ type: 'value', entityId: id, key: 'draft', value: true, timestamp: 0, author: 'github' }])
-  assert.match(core.focus(id).actions[0].prompt, /mark it ready for review/)
+  // Approve asks nothing.
+  assert.equal(core.focus(id).actions[0].prompt, null)
   await core.actions.perform({ id, action: 'approve', text: '' })
   assert.deepEqual(calls.filter((args) => args[0] === 'pr'), [
     ['pr', 'ready', url],

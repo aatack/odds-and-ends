@@ -720,35 +720,31 @@ test('topics: a snooze puts a topic down until its time, beside its other waits,
   assert.equal(core.item(topic)!.data.wait ?? null, null)
 })
 
-test('topics: a wait on someone else\'s PR is back only while it wants my review (not a draft), or once merged or closed; on mine, while I have something to do', () => {
+test('topics: a wait on someone else\'s PR is back until I approve it, then once merged or closed; on mine, while I have something to do', () => {
   const back = (data: Record<string, unknown>) => prBackReasons({ state: 'OPEN', ...data }, false)
-  // Someone else's.
+  // Someone else's: mine to approve.
   assert.deepEqual(back({ mine: false, approvedByMe: false, reviewRequestedOfMe: true }), ['Review requested'])
-  assert.deepEqual(back({ mine: false, approvedByMe: false }), ['Not reviewed'])
-  assert.deepEqual(back({ mine: false, approvedByMe: false, reviewRequestedOfMe: true, draft: true }), [])
-  // Approved by me: waiting, whatever else is up with it (theirs to fix).
-  assert.deepEqual(back({ mine: false, approvedByMe: true, review: 'REVIEW_REQUIRED', reviewers: ['ann'] }), [])
+  assert.deepEqual(back({ mine: false, approvedByMe: false }), ['Review it'])
+  // Approved by me: waiting for it to be merged, whatever else is up with it.
+  assert.deepEqual(back({ mine: false, approvedByMe: true, review: 'REVIEW_REQUIRED', reviewers: ['ann'], unresolved: 2 }), [])
   assert.deepEqual(back({ mine: false, approvedByMe: true, conflicts: true, checks: 'failing' }), [])
+  // Changes I asked for: theirs, until they ask me again.
   assert.deepEqual(back({ mine: false, changesRequestedByMe: true, review: 'CHANGES_REQUESTED' }), [])
-  // …until they ask me again.
   assert.deepEqual(back({ mine: false, changesRequestedByMe: true, reviewRequestedOfMe: true }), ['Review requested'])
   assert.deepEqual(back({ mine: false, state: 'MERGED' }), ['Merged'])
   assert.deepEqual(back({ mine: false, state: 'CLOSED' }), ['Closed'])
 
-  // Mine (approved here, so my own review is done): waiting while CI runs or others review, or it merges itself.
-  const mine = (data: Record<string, unknown>) => prBackReasons({ state: 'OPEN', mine: true, ...data }, true)
-  assert.deepEqual(mine({ checks: 'pending', approvedByOthers: true, review: 'APPROVED' }), [])
-  assert.deepEqual(mine({ approvedByOthers: false, review: 'REVIEW_REQUIRED', reviewers: ['ann'] }), [])
-  assert.deepEqual(mine({ approvedByOthers: false, review: 'REVIEW_REQUIRED', checks: 'pending' }), [])
-  assert.deepEqual(mine({ review: 'APPROVED', autoMerge: true }), [])
-  // Threads left open, as the review goes on: still waiting.
-  assert.deepEqual(mine({ approvedByOthers: false, review: 'REVIEW_REQUIRED', unresolved: 4, autoMerge: true }), [])
-  // Back for anything of mine to do.
-  assert.deepEqual(mine({ approvedByOthers: false, review: 'REVIEW_REQUIRED', conflicts: true }), ['Conflicts'])
+  // Mine (approved here): waiting while others review or CI runs, auto-merge on.
+  const mine = (data: Record<string, unknown>) => prBackReasons({ state: 'OPEN', mine: true, autoMerge: true, ...data }, true)
+  assert.deepEqual(mine({ review: 'REVIEW_REQUIRED', reviewers: ['ann'], unresolved: 4 }), [])
+  assert.deepEqual(mine({ approvedByOthers: true, review: 'APPROVED', checks: 'pending' }), [])
+  assert.deepEqual(mine({ approvedByOthers: true, review: 'APPROVED' }), [])
+  // Back for anything of mine to do: fix it, or merge it.
+  assert.deepEqual(mine({ conflicts: true }), ['Conflicts'])
   assert.deepEqual(mine({ review: 'APPROVED', checks: 'failing' }), ['CI failing'])
   assert.deepEqual(mine({ review: 'CHANGES_REQUESTED' }), ['Changes requested'])
-  assert.deepEqual(mine({ review: 'APPROVED' }), ['Ready to merge'])
-  assert.deepEqual(prBackReasons({ state: 'OPEN', mine: true, review: 'REVIEW_REQUIRED' }, false)[0], 'Review it')
+  assert.deepEqual(mine({ review: 'APPROVED', autoMerge: false }), ['Merge it'])
+  assert.deepEqual(prBackReasons({ state: 'OPEN', mine: true, review: 'REVIEW_REQUIRED' }, false)[0], 'Approve it')
   // Not loaded yet: waiting.
   assert.deepEqual(prBackReasons({}, false), [])
 })

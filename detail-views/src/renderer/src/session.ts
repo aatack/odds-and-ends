@@ -1333,9 +1333,24 @@ export class Session {
     if (peek !== null && target?.kind !== 'entity') return
     const on = target?.kind === 'entity' ? target.id : S.focused(this.state)
     const view = peek === null ? this.snapshot.view : this.snapshot.peekViews[on]
-    if (view?.actions.some((offered) => offered.id === action && !offered.disabled)) {
-      this.update(S.startAction(this.state, { action, on, peek }))
+    const offered = view?.actions.find((one) => one.id === action && !one.disabled)
+    if (!offered) return
+    // Nothing to ask: done at once, its line (if any) copied first, so it is there straight away.
+    if (offered.prompt === null) void this.performNow(on, action, offered.copy)
+    else this.update(S.startAction(this.state, { action, on, peek }))
+  }
+
+  /** An action that asks nothing: copied (if it copies), then done. */
+  private async performNow(id: string, action: string, copy: string | undefined): Promise<void> {
+    if (copy) {
+      await this.api.copy(copy).then(
+        () => this.showToast('Copied'),
+        () => this.showToast("Couldn't copy"),
+      )
     }
+    const outcome = await this.working(id, action, () => this.api.perform(id, action, ''))
+    this.settle(id, outcome)
+    if (outcome.error) this.showToast(outcome.error)
   }
 
   /** Confirms the action waiting on the prompt, with whatever was typed. */

@@ -12,6 +12,7 @@ import { Claude, author as claudeAuthor, type NewSession } from './modules/claud
 import { claudeIds } from './modules/claude/view.ts'
 import { Recents } from './modules/recents/recents.ts'
 import { GitHub } from './modules/github/github.ts'
+import { prLine, sessionsInContext, toFix } from './modules/github/view.ts'
 import type { Module, ModuleContext } from './modules/module.ts'
 import { Slack } from './modules/slack/slack.ts'
 import { me, tasksModule } from './modules/tasks/tasks.ts'
@@ -533,9 +534,46 @@ export class Core {
     const offered = module.view.actions?.(entity, lens).find((candidate) => candidate.id === action)
     if (!offered) return this.attempt(id, () => Promise.reject(new Error(`${action} is not available here`)))
     if (offered.disabled) return this.attempt(id, () => Promise.reject(new Error(offered.disabled)))
+    // Fixing a PR is the Claude sessions' work, not GitHub's.
+    if (entity.type === 'github.pr' && action === 'fix') return this.attempt(id, async () => this.fixPr(entity))
     const outcome = await this.attempt(id, () => module.perform!(entity, action, text.trim()))
     await this.load({ id, part: 'children', force: true })
     return outcome
+  }
+
+  /**
+   * A PR of mine with CI failing, conflicts or changes asked for: each Claude
+   * session in its context (a task topic, or a Claude module session) is
+   * asked to fix them on its branch and commit. A topic gets it as a message
+   * and dispatches at once, unless Claude is still answering there: then it
+   * goes with the next. Pushing stays mine (a topic's Push).
+   */
+  private fixPr(pr: Entity): AppEvent[] {
+    const lens = this.lens()
+    const what = toFix(pr.data).map((id) => ({ ci: 'CI is failing', conflicts: 'it has merge conflicts with its base', changes: 'changes were requested in review' })[id as 'ci'])
+    const sessions = sessionsInContext(pr, lens)
+    if (!what.length) throw new Error('Nothing to fix')
+    if (!sessions.length) throw new Error('No Claude session in its context to fix it')
+    const text = `On ${prLine(pr.data)}: ${what.join(', and ')}. Fix ${what.length > 1 ? 'them' : 'it'} on its branch and commit; don't push. [Item: ${pr.id}]`
+    const events: AppEvent[] = []
+    for (const id of sessions) {
+      const session = lens.read(id)!
+      if (session.type === 'claude.session') {
+        events.push(...this.claude.prompt(id, text))
+        continue
+      }
+      const message = randomUUID()
+      const at = this.now()
+      const written = [value(message, 'text', text, at, me), link(id, message, at, me)]
+      this.owned.write(written)
+      events.push(...written)
+      try {
+        events.push(...this.topics.dispatch(id))
+      } catch {
+        // Claude is still answering there: the message goes with the next dispatch.
+      }
+    }
+    return events
   }
 
   older(id: string): Promise<Outcome> {

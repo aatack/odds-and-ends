@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AppEvent } from '../../core/graph/events.ts'
 import { link, values } from '../../core/graph/events.ts'
-import { memoryCore } from '../../core/testing.ts'
+import { fakeGh, memoryCore } from '../../core/testing.ts'
 import type { Api } from './api.ts'
 import { memoryEnvironment } from './environment.ts'
 import { Session } from './session.ts'
@@ -710,6 +710,25 @@ test('topics mode: Ctrl+. opens a form for a new topic, from anywhere; Enter in 
   const [topic] = session.get().topics
   assert.equal(topic.data.text, 'Flights')
   assert.equal(session.get().view?.root?.id, topic.id)
+  } finally {
+    stop()
+  }
+})
+
+test('a PR of mine: Approve asks nothing; its line is copied straight away, then it is approved here and set to merge', async () => {
+  const calls: string[][] = []
+  const { session, stop, settle, copied } = await headless({ gh: fakeGh(calls) })
+  const id = 'github:pr:https://github.com/o/r/pull/7'
+  try {
+  session.navigate(id)
+  await settle()
+  await settle()
+  session.startAction('approve')
+  assert.equal(session.get().state.acting, null)
+  await settle()
+  await settle()
+  assert.match(copied[0] ?? '', /^\[#7\]\(https:\/\/github\.com\/o\/r\/pull\/7\) /)
+  assert.ok(calls.some((args) => args[0] === 'pr' && args[1] === 'merge' && args.includes('--auto')))
   } finally {
     stop()
   }

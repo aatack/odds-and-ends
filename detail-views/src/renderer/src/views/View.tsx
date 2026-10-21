@@ -63,7 +63,7 @@ export function TreePane(props: ViewProps & { root: Entity; look?: string }) {
       {action && props.composing && (
         <Composer
           kind="action"
-          placeholder={action.prompt}
+          placeholder={action.prompt ?? undefined}
           draft={props.draft}
           composing={props.composing}
           onDraft={props.onDraft}

@@ -27,13 +27,21 @@ quiet chip where a dot would be (row, pill, and so the overview's heading).
 Once it's done, the next one shows. Each has whose move it is (`me`, `them`,
 `none`); mine is the same chip, a touch heavier.
 
-The order is the one I asked for: merged / closed; not reviewed by me (mine:
-not approved, on GitHub *or* here, the same rule as the Approve button,
-`approvedMine`; theirs: not approved by me, "review requested" when asked);
-waiting on someone else's review (and who); CI failing; conflicts; CI
-running; then clear ("auto-merging", "ready to merge", "approved", "ready").
-Slotted in: a draft first; changes requested and unresolved threads after
-awaited reviews; behind its base after conflicts.
+The order is my workflow. Merged or closed first, whoever's it is.
+
+- **Mine:** approve it myself ("Approve it": on GitHub *or* here, the same
+  rule as the Approve button, `approvedMine`); then CI failing, conflicts,
+  changes requested (to fix); then someone else's review ("Awaiting …");
+  then CI running; then merging: "Merge it" until auto-merge is on (which
+  approving turns on), "Auto-merging" once it is.
+- **Someone else's:** mine until I approve it ("Review it", or "Review
+  requested" when asked); "You requested changes" (theirs) once I asked for
+  changes, until they ask me again; then "Approved", only waiting for it to
+  be merged.
+
+What doesn't change what I do is not shown: unresolved threads, behind its
+base, a draft (approving mine marks it ready), anything on someone else's PR
+once I've approved it.
 
 From GitHub, per PR: `reviewDecision`, `latestReviews`, `reviewRequests`,
 `reviewThreads.isResolved`, `mergeable`, `mergeStateStatus`, the check rollup,
@@ -55,16 +63,26 @@ let me approve, so "approved" is GitHub's review decision (`review ===
 a draft ready for review (`gh pr ready`), then turns on auto-merge. Once it is
 approved and auto-merge is on, **Approve** becomes **Bump** (the same key,
 `p`): it writes nothing, and puts the PR's line (below) on the clipboard
-again, to pass on. Both come from the latest PR load.
+again, to pass on. Approved without auto-merge (on GitHub, say), it is
+**Auto-merge**. Both come from the latest PR load. On my own PR these ask
+nothing (`Action.prompt` null): the line is copied at once, then it is done.
+
+**Fix** (mine, while CI fails, it has conflicts or changes were requested;
+no key): every Claude session in the PR's context (`sessionsInContext`: a
+task topic, or a Claude module session) is asked to fix it on its branch and
+commit, not push (`Core.fixPr`). A topic gets it as a message and dispatches
+at once, unless Claude is still answering there (then it goes with the
+next). Disabled when its context has none. Pushing stays mine (a topic's
+**Push**).
 
 Only the allowlist in `checkWrite`: approve someone else's PR; on mine,
 approve locally (an owned `github.localApproval` child), mark a draft ready
 for review (never back to a draft), and turn on auto-merge; close mine and
-delete the branch. Each is started by me and
-confirmed with Enter.
+delete the branch. Each is started by me: approving someone else's and
+closing mine are confirmed with Enter (each takes an optional comment);
+approving mine is done at once.
 
-Once approving mine has worked, a line naming the PR goes on the clipboard,
-to pass on: `[#1234](<PR url>) Name - [preview](<preview url>)`, the preview
+Approving mine puts a line naming the PR on the clipboard, at once, to pass on: `[#1234](<PR url>) Name - [preview](<preview url>)`, the preview
 only for a repo with previews (`prLine`). Any action can do this: its
 `Action.copy` is copied when it succeeds, through `Api.copy` (Electron's
 clipboard on the desktop, the browser's on the phone).

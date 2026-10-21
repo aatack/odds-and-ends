@@ -195,13 +195,15 @@ export const tools: Tool[] = [
       // Approve, once it is done on a PR of mine: never both offered, so one key.
       ['bump', 'p'],
       ['close', 'X'],
+      // No key: a button on the PR.
+      ['fix', null],
     ] as const
   ).map(
     ([action, key]): Tool => ({
       id: `action.${action}`,
       label: (s) => s.get().view?.actions.find((offered) => offered.id === action)?.label ?? action,
       scope: 'app',
-      keys: [key],
+      keys: key ? [key] : [],
       enabled: (s) => Boolean(s.get().view?.actions.some((offered) => offered.id === action && !offered.disabled)),
       run: (s) => s.startAction(action),
     }),

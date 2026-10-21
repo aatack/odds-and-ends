@@ -136,33 +136,18 @@ export function prBack(pr: string, lens: Lens): string[] {
   return data ? prBackReasons(data, Boolean(localApproval(lens, pr))) : []
 }
 
-/**
- * What keeps a PR of mine waiting: CI running, someone else's review,
- * auto-merge under way, and threads left open (a conversation with the
- * reviewer, theirs to close as often as mine). Anything else on it is mine to do.
- */
-const othersTurn = new Set(['pending', 'awaiting', 'auto', 'threads'])
 
 /**
- * Why a wait on a PR is back, as the GitHub view names it (`blockers`);
- * empty while it waits, or until the PR has loaded. Merged or closed: back.
- * Mine: waits while CI runs or someone else's review is all that is left
- * (or it merges itself); back for anything I must do (conflicts, CI
- * failing, changes asked for, threads, my own review, ready to merge).
- * Someone else's: back only while it wants my review and is not a draft.
+ * Why a wait on a PR is back, as the GitHub view names it (`blockers`):
+ * whatever on it is mine to do (mine: approve it, fix CI or conflicts or
+ * changes asked for, merge it; someone else's: approve it), or that it is
+ * merged or closed. Empty while it waits on others (their review, CI, its
+ * merge), or until the PR has loaded.
  */
 export function prBackReasons(data: Record<string, unknown>, locallyApproved: boolean): string[] {
-  const all = blockers(data, locallyApproved)
-  if (!all.length) return []
-  const ended = all.filter((blocker) => blocker.id === 'merged' || blocker.id === 'closed')
-  if (ended.length) return ended.map((blocker) => blocker.label)
-  if (data.mine) {
-    const mineToDo = all.filter((blocker) => !othersTurn.has(blocker.id))
-    return mineToDo.map((blocker) => blocker.label)
-  }
-  if (data.draft) return []
-  const wantsMe = data.reviewRequestedOfMe === true || (!data.approvedByMe && !data.changesRequestedByMe)
-  return wantsMe ? [data.reviewRequestedOfMe ? 'Review requested' : 'Not reviewed'] : []
+  return blockers(data, locallyApproved)
+    .filter((blocker) => blocker.turn === 'me' || blocker.id === 'merged' || blocker.id === 'closed')
+    .map((blocker) => blocker.label)
 }
 
 const minute = 60_000

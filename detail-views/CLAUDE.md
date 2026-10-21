@@ -166,11 +166,15 @@ doc for the area you change, and keep it up to date in the same commit.
   `checkWrite` (`modules/github/github.ts`): approve someone else's PR; on my
   own, approve locally (an owned entity), mark a draft ready for review, and
   turn on auto-merge (then Approve is Bump: its line copied again, no write);
-  close mine and delete the branch. Each is started by me and confirmed with Enter. `gh` runs
+  close mine and delete the branch. Each is started by me; approving mine
+  asks nothing (its line copied at once), the rest are confirmed with Enter.
+  On mine, **Fix** asks the Claude sessions in its context to fix CI,
+  conflicts or requested changes (commit, not push). `gh` runs
   from the temp dir so `--delete-branch` never touches a local checkout.
 - **Actions are generic.** A module offers `actions(entity)` (in its view) and
   does them in `perform`; the UI shows each as a button and a key (`tools.ts`),
-  opens a prompt, and only Enter confirms. A PR is an entity keyed by its URL
+  opens a prompt, and only Enter confirms; an action whose `prompt` is null
+  (my own PR's Approve, Bump, Fix) is done at once. A PR is an entity keyed by its URL
   (`prEntityId` in `core/types.ts`), so a link to one anywhere is that item.
 - Migrations are append-only, per file, in `src/core/db.ts`. Never edit a
   shipped one.

@@ -97,7 +97,8 @@ export type ComposeKind = 'slack' | 'slack-token' | 'claude' | 'topic'
 export interface Action {
   id: string
   label: string
-  prompt: string
+  /** What the prompt asks, Enter confirming; null to do it at once, asking nothing (a PR's Approve, say). */
+  prompt: string | null
   /** Why it can't be done now (already done, say). Shown, but not offered. */
   disabled?: string
   /** Put on the clipboard once it is done. */
