@@ -308,15 +308,6 @@ enum Plan {
 }
 
 impl Plan {
-    /// Whether the plan only has exact matches (cheap per-entity probes).
-    fn exact(&self) -> bool {
-        match self {
-            Plan::Term(_, c) => matches!(c, Cond::Eq(_) | Cond::In(_)),
-            Plan::All(p) | Plan::Any(p) => p.iter().all(Plan::exact),
-            Plan::Everything => false,
-        }
-    }
-
     /// A rough cost rank: lower is more selective.
     fn rank(&self) -> u32 {
         match self {
@@ -630,14 +621,30 @@ enum After {
     Eid(i64),
 }
 
-/// Whether the view is one open layer (no ranges, no history).
-fn one_open_layer(view: &View) -> bool {
-    matches!(view.sources.as_slice(), [src] if matches!(src.intervals.as_slice(), [(lo, hi)] if *lo <= 1 && *hi == OPEN))
+/// Whether the view reads no history (no frozen range in any layer).
+fn no_history(view: &View) -> bool {
+    view.sources
+        .iter()
+        .all(|src| src.intervals.iter().all(|&(_, hi)| hi == OPEN))
 }
 
-/// Estimates sample this many windows of this many consecutive entities.
-const SAMPLE_WINDOWS: i64 = 4;
-const SAMPLE_WIDTH: i64 = 512;
+/// Estimates look at this many entities (spread by a hash).
+const SAMPLE: i64 = 2048;
+
+/// [`SAMPLE`] distinct entity numbers in `1..=total`, the same on every call.
+fn sample_eids(total: i64) -> Vec<i64> {
+    let mut out: Vec<i64> = (0..SAMPLE as u64)
+        .map(|j| {
+            let mut z = j.wrapping_add(0x9e37_79b9_7f4a_7c15);
+            z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+            1 + ((z ^ (z >> 31)) % total.max(1) as u64) as i64
+        })
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
 
 /// `And` terms with fewer candidates than this are used alone.
 const AND_COUNT_CAP: i64 = 2048;
@@ -690,16 +697,16 @@ impl Store {
 
         // Sparse candidates are sorted in SQL. Dense ones are found by reading
         // the dictionary in page order: with a probe of each entity when the
-        // probe is cheap (exact matches, or one open layer), else by checking
-        // every entity after the roll-up.
+        // view reads no history (the probes are primary key lookups), else
+        // by checking every entity after the roll-up (measured faster than
+        // probes that must also search history, BENCHMARKS.md).
         let (plan, probe) = match (&plan, knobs::probe()) {
             (Plan::Everything, _) => (plan, false),
             (_, Some(forced)) => (plan, forced && matches!(options.order, FindOrder::EntityId)),
             (_, None) if self.count(&view, &plan, cap)? < cap => (plan, false),
             (_, None)
                 if matches!(options.order, FindOrder::EntityId)
-                    && (knobs::dense() == 1
-                        || (knobs::dense() == 0 && (plan.exact() || one_open_layer(&view)))) =>
+                    && (knobs::dense() == 1 || (knobs::dense() == 0 && no_history(&view))) =>
             {
                 (plan, true)
             }
@@ -854,39 +861,33 @@ impl Store {
     fn count(&self, view: &View, plan: &Plan, cap: i64) -> Result<i64> {
         Ok(match plan {
             Plan::Term(key, cond) if !knobs::exact_count() => {
-                // Sample: the matching current rows of a few windows of
-                // consecutive entity numbers, scaled to all entities. Each
-                // window reads the primary key `(bid, eid, key)` (`+key` keeps
+                // Sample: the matching current rows of [`SAMPLE`] entity
+                // numbers spread by a hash over the store, scaled to all
+                // entities. Each sample is a primary key lookup (`+key` keeps
                 // SQLite off the value index), so the cost does not depend on
                 // the selectivity of the condition.
                 let total = self.max_eid()?;
-                if total <= SAMPLE_WINDOWS * SAMPLE_WIDTH * 4 && !knobs::always_sample() {
+                if total <= SAMPLE * 4 && !knobs::always_sample() {
                     return self.count_exact(view, key, cond, cap);
                 }
+                let sample = sample_eids(total);
+                let json = serde_json::to_string(&sample).expect("ints serialise");
                 let mut most = 0;
                 for src in &view.sources {
-                    let mut hits = 0i64;
-                    for w in 0..SAMPLE_WINDOWS {
-                        let lo = 1 + total * (2 * w + 1) / (2 * SAMPLE_WINDOWS) - SAMPLE_WIDTH / 2;
-                        let mut sql = Sql::default();
-                        let k = sql.bind(SqlValue::Text(key.clone()));
-                        let c = sql.cond(cond);
-                        let text = format!(
-                            "SELECT count(*) FROM value_current WHERE bid = {} \
-                             AND eid BETWEEN {lo} AND {} AND +key = {k} AND {c}",
-                            src.bid,
-                            lo + SAMPLE_WIDTH - 1
-                        );
-                        let n: i64 = self
-                            .conn
-                            .prepare_cached(&text)?
-                            .query_row(rusqlite::params_from_iter(sql.params.iter()), |r| {
-                                r.get(0)
-                            })?;
-                        hits += n;
-                    }
-                    let est = hits * total / (SAMPLE_WINDOWS * SAMPLE_WIDTH);
-                    most = most.max(est);
+                    let mut sql = Sql::default();
+                    let s = sql.bind(SqlValue::Text(json.clone()));
+                    let k = sql.bind(SqlValue::Text(key.clone()));
+                    let c = sql.cond(cond);
+                    let text = format!(
+                        "SELECT count(*) FROM value_current WHERE bid = {} \
+                         AND eid IN (SELECT value FROM json_each({s})) AND +key = {k} AND {c}",
+                        src.bid
+                    );
+                    let hits: i64 = self
+                        .conn
+                        .prepare_cached(&text)?
+                        .query_row(rusqlite::params_from_iter(sql.params.iter()), |r| r.get(0))?;
+                    most = most.max(hits * total / sample.len().max(1) as i64);
                 }
                 most.min(cap)
             }
