@@ -524,4 +524,190 @@ On the rich file (639 448 history rows): the migration (drop and rebuild `value_
 - Rare terms (1% ranges, rare contains, `And` with a small term) are 19–110× faster than naive at 100k, 31–42× at 1M (full read).
 - Dense terms (40–50%) are close to naive, because both must roll up about two entities per row. The index plan gives only rows that can match, so it checks half as many entities.
 - Frozen views cost 2–5× open ones: each frozen layer adds a history arm, and the roll-up reads history.
-- Weak spots: 1M `contains "9"` (47%) is slower than naive (8.0 s vs 6.9 s full read; the per-entity probe on one open layer). 1M `type = task AND contains "99"`: 0.30 s per page with the SQL intersection (the estimate before 5c0c0e4 measured 0.24 s; not explained yet).
+- Weak spots of the build above (both settled in the next section): 1M `contains "9"` (47%) was slower than naive (8.0 s vs 6.9 s full read, wall clock), and 1M `type = task AND contains "99"` was slower than at 3f3549d.
+
+## Find, round 2: open questions settled (CPU time)
+
+The runs above are wall clock and moved ±15% (or more) with other jobs on the box. From here, `bench_find` also reports the CPU time of the thread (`/proc/thread-self/schedstat`), and a Python driver records the CPU time of each whole process (`getrusage(RUSAGE_CHILDREN)`: open, 5 first pages, full read), so old binaries without the CPU columns can be compared. Each cell is the minimum of 2–3 processes. Files: the rich and 1M files of the section above; the current build runs on copies migrated to schema V3.
+
+### Before and after (process CPU s; first page = thread CPU ms, median of 5)
+
+| branch | query | rows | before (31929d0) | after (04582c9) | naive | after, first page CPU ms |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| base | type = task | 25208 | 0.28 | 0.32 | 0.71 | 11.4 |
+| base | title = (one entity) | 1 | 0.00 | 0.02 | 3.56 | 3.7 |
+| base | score > 9899 (1%) | 1007 | 0.03 | 0.05 | 3.40 | 6.7 |
+| base | score > 4999 (50%) | 49982 | 0.38 | 0.45 | 0.63 | 8.0 |
+| base | title contains "12345" (rare) | 1 | 0.08 | 0.06 | 3.43 | 8.0 |
+| base | title contains "9" (common) | 40951 | 0.42 | 0.40 | 0.64 | 8.0 |
+| base | type = task AND title contains "99" | 972 | 0.18 | 0.17 | 3.51 | 26.7 |
+| base | priority = 1 OR priority = 2 | 16976 | 0.33 | 0.40 | 0.76 | 19.8 |
+| base | score > 9899 AND type = task | 253 | 0.04 | 0.08 | 3.69 | 12.7 |
+| mid_frozen | type = task | 24659 | 0.78 | 0.81 | 1.57 | 27.9 |
+| mid_frozen | title = (one entity) | 1 | 0.00 | 0.03 | 7.32 | 4.0 |
+| mid_frozen | score > 9899 (1%) | 983 | 0.08 | 0.08 | 7.59 | 13.8 |
+| mid_frozen | score > 4999 (50%) | 48944 | 0.94 | 0.99 | 1.36 | 19.8 |
+| mid_frozen | title contains "12345" (rare) | 1 | 0.38 | 0.16 | 7.05 | 24.9 |
+| mid_frozen | title contains "9" (common) | 40121 | 1.37 | 1.25 | 1.46 | 30.6 |
+| mid_frozen | type = task AND title contains "99" | 953 | 0.63 | 0.34 | 7.38 | 57.8 |
+| mid_frozen | priority = 1 OR priority = 2 | 18407 | 1.61 | 1.39 | 1.60 | 56.0 |
+| mid_frozen | score > 9899 AND type = task | 244 | 0.08 | 0.13 | 7.77 | 20.6 |
+| top_open | type = task | 24403 | 0.46 | 0.54 | 0.89 | 19.9 |
+| top_open | title = (one entity) | 1 | 0.00 | 0.03 | 4.50 | 3.7 |
+| top_open | score > 9899 (1%) | 977 | 0.05 | 0.07 | 4.40 | 11.6 |
+| top_open | score > 4999 (50%) | 48494 | 0.68 | 0.76 | 0.82 | 14.7 |
+| top_open | title contains "12345" (rare) | 1 | 0.09 | 0.07 | 4.50 | 12.0 |
+| top_open | title contains "9" (common) | 39730 | 0.88 | 0.69 | 0.84 | 16.9 |
+| top_open | type = task AND title contains "99" | 939 | 0.23 | 0.24 | 4.48 | 39.4 |
+| top_open | priority = 1 OR priority = 2 | 18227 | 0.74 | 0.86 | 0.96 | 36.1 |
+| top_open | score > 9899 AND type = task | 243 | 0.05 | 0.12 | 4.70 | 19.9 |
+| top_frozen | type = task | 24403 | 1.07 | 1.08 | 1.68 | 34.7 |
+| top_frozen | title = (one entity) | 1 | 0.00 | 0.04 | 7.98 | 5.0 |
+| top_frozen | score > 9899 (1%) | 977 | 0.10 | 0.11 | 8.31 | 17.7 |
+| top_frozen | score > 4999 (50%) | 48494 | 1.16 | 1.27 | 1.56 | 24.0 |
+| top_frozen | title contains "12345" (rare) | 1 | 0.42 | 0.18 | 8.06 | 28.2 |
+| top_frozen | title contains "9" (common) | 39730 | 1.68 | 1.52 | 1.57 | 33.9 |
+| top_frozen | type = task AND title contains "99" | 939 | 0.65 | 0.38 | 8.34 | 63.6 |
+| top_frozen | priority = 1 OR priority = 2 | 18227 | 2.06 | 1.75 | 1.85 | 75.8 |
+| top_frozen | score > 9899 AND type = task | 243 | 0.11 | 0.16 | 8.40 | 27.9 |
+| main | type = task | 249284 | 3.78 | 3.93 | 6.32 | 16.9 |
+| main | title = (one entity) | 1 | 0.00 | 0.02 | 37.86 | 4.0 |
+| main | score > 9899 (1%) | 9779 | 0.30 | 0.30 | 9.08 | 19.9 |
+| main | score > 4999 (50%) | 500430 | 5.54 | 6.05 | 6.33 | 12.0 |
+| main | title contains "12345" (rare) | 20 | 0.96 | 0.48 | 37.72 | 74.7 |
+| main | title contains "9" (common) | 468559 | 8.27 | 5.81 | 6.46 | 13.1 |
+| main | type = task AND title contains "99" | 11335 | 5.11 | 3.73 | 8.77 | 229.3 |
+| main | priority = 1 OR priority = 2 | 334171 | 5.53 | 6.45 | 6.34 | 16.4 |
+| main | score > 9899 AND type = task | 2420 | 0.54 | 0.62 | 18.47 | 79.4 |
+
+- `after` is 04582c9. Two later commits change some cells: de66145 (selective `Eq`/range terms counted exactly instead of sampled: `title =` one entity, first page 3.6–4.0 → 0.0 ms CPU; base `score > 9899` 7.9 → 4.4 ms; base `score > 9899 AND type = task` 12.4–14.1 → 8.9–10.4 ms) and cb24a30 (Insertion order, below; entity-id order is unchanged).
+- The small queries cost 10–40 ms more process CPU than before: the sampled estimate (2048 primary key lookups per layer) replaced exact counts that were wrong by up to 50× for `contains` (see Q3). de66145 takes back most of it for index-range terms.
+- Frozen views: rare contains 0.38–0.42 → 0.16–0.18 s, `type = task AND contains "99"` 0.63–0.65 → 0.34–0.38 s, `priority = 1 OR 2` 1.61–2.06 → 1.39–1.75 s (now below naive 1.60–1.85 s).
+
+### Q1. Dense contains and ranges on one open layer at 1M
+
+Variants measured (full read, 1M `main`): a per-entity `EXISTS` probe in dictionary order (`--knob dense=1`), reading the dictionary and checking every entity after the roll-up (`dense=2`), and the default rule. Wall clock, two runs each, other jobs on the box:
+
+| query | probe (dense=1) | check all (dense=2) | naive |
+| --- | ---: | ---: | ---: |
+| score > 4999 (50%) | 8.91 / 15.40 s | 11.66 / 9.84 s | 9.58 s |
+| title contains "9" (47%) | 15.53 / 10.33 s | 15.70 / 16.95 s | 11.54 s |
+| priority = 1 OR 2 (33%) | 7.46 / 8.60 s | 8.14 / 7.87 s | 14.61 s |
+
+The wall clock could not separate them, so the decision used process CPU (3 runs each, current build):
+
+| query | default (probe: the view has no history) | naive |
+| --- | ---: | ---: |
+| score > 4999 (50%) | 6.04–6.35 s | 6.48–6.52 s |
+| title contains "9" (47%) | 5.97–6.08 s | 6.45–6.57 s |
+| priority = 1 OR 2 (33%) | 6.32–6.69 s | 6.15–6.33 s |
+
+Decision (9663e18, 04582c9): a dense plan probes each entity when the view reads no history (no frozen range) or the plan is one `Eq`; otherwise it reads the dictionary and checks every entity after the roll-up (a probe that must also search the history arms costs more than the roll-up: top_frozen `score > 4999` probe vs check all, first build: 7.5 vs 1.0 s). With CPU time, the dense 1M queries are 2–8% faster than naive, and the `Or` is up to 6% slower. The old 8.0 s vs 6.9 s gap was mostly the 10%-of-entities dense threshold (fixed in 5c0c0e4) and wall-clock noise.
+
+### Q2. Insertion vs entity-id order
+
+Full read, thread CPU s, ids only (minimum of 2; `--cache-kib` 2000 is the default cache, 65536 holds the hot part of the file):
+
+| data | branch | query | cache KiB | EntityId | Insertion (04582c9) |
+| --- | --- | --- | ---: | ---: | ---: |
+| rich (random ids) | top_frozen | type = task | 2000 | 0.87 | 0.68 |
+| rich | top_frozen | type = task | 65536 | 0.69 | 0.68 |
+| rich | top_frozen | score > 4999 | 2000 | 1.15 | 0.76 |
+| rich | top_frozen | contains "9" | 2000 | 1.39 | 0.83 |
+| rich | top_frozen | priority = 1 OR 2 | 2000 | 1.37 | 0.80 |
+| rich | mid_frozen | priority = 1 OR 2 | 2000 | 1.12 | 0.63 |
+| 1M random ids | main | type = task | 2000 | 3.78 | 2.43 |
+| 1M random ids | main | contains "9" | 2000 | 5.58 | 4.10 |
+| 1M random ids | main | priority = 1 OR 2 | 2000 | 6.13 | 4.51 |
+| 1M sequential ids | main | type = task | 2000 | 1.82 | 2.45 |
+| 1M sequential ids | main | contains "9" | 2000 | 3.35 | 4.26 |
+| 1M sequential ids | main | priority = 1 OR 2 | 2000 | 3.85 | 4.79 |
+
+- The gap is locality, not the plan: the roll-up reads `value_current` by `(bid, eid, key)`, so pages in `eid` order read the table in order, and pages in random-id order jump. A larger cache closes part of it. With sequential ids (UUIDv7 and the like) the two orders are the same order, and entity-id order was *faster*, because Insertion pages never used the probe.
+- Sorting a chunk by `eid` before the roll-up cannot help: 1000 random ids of 1M are on 1000 different pages either way.
+- Fix (cb24a30): dense Insertion pages use the same `EXISTS` probe rule as entity-id pages. Full read, thread CPU s (minimum of 2):
+
+| data | branch | query | Insertion before | Insertion after |
+| --- | --- | --- | ---: | ---: |
+| rich | base | type = task | 0.212 | 0.145 |
+| rich | base | contains "9" | 0.345 | 0.248 |
+| rich | base | priority = 1 OR 2 | 0.311 | 0.197 |
+| rich | top_frozen | type = task | 0.654 | 0.417 |
+| rich | top_frozen | priority = 1 OR 2 | 0.778 | 0.791 |
+| 1M random | main | type = task | 2.412 | 1.774 |
+| 1M random | main | score > 4999 | 4.121 | 3.357 |
+| 1M random | main | contains "9" | 4.100 | 3.232 |
+| 1M sequential | main | type = task | 2.355 | 1.739 |
+| 1M sequential | main | contains "9" | 4.113 | 3.320 |
+
+- Decision: the default stays `EntityId` (it is the order a caller can use). Recommendation: use `Insertion` for exports and bulk reads with random ids (1.3–1.9× less CPU), and prefer time-ordered ids for new entities, which make entity-id pages as fast as insertion pages.
+
+### Q3. The 1M `And` regression
+
+`type = task AND title contains "99"` (11 335 rows), 1M `main`, process CPU s, 3 runs each:
+
+| build | process CPU s | first page |
+| --- | ---: | ---: |
+| 3f3549d | 4.01–4.57 | 235–270 ms wall (earlier bisect, 3 runs) |
+| 5c0c0e4 | 6.28–8.16 | 351–417 ms wall |
+| da0b12e | 5.07–5.65 | 289–400 ms wall |
+| 31929d0 | 5.03–5.35 | – |
+| now (cb24a30) | 3.72–4.06 | 226–232 ms thread CPU |
+
+- It was real, from 5c0c0e4 (dense threshold `sqrt(limit × entities)`). The estimate counted the first `cap` rows of `title` with `instr`, and that count stopped early or late depending on where matches fell in the index: the estimate for `contains "99"` was 50× off, so the planner switched between plans from page to page.
+- Fix (6e48eb4, 7737652, 9663e18, 04582c9): estimates for large stores use a fixed hashed sample of 2048 entity numbers (primary key lookups, `+key` keeps SQLite off the value index), so the cost does not depend on the selectivity; `And` intersects its two smallest terms in SQL. Reading the smallest term and probing the others (6e48eb4) measured slower than the `INTERSECT` and was reverted in 04582c9.
+
+### Q4. Order by a value (`FindOrder::ValueAsc(key)` / `ValueDesc(key)`)
+
+Thread CPU, ids only, order key `score` (minimum of 2):
+
+| data | query | rows | by score asc: first page ms / full s | desc | entity id |
+| --- | --- | ---: | ---: | ---: | ---: |
+| rich base | type = task | 25208 | 20.0 / 0.50 | 19.9 / 0.51 | 10.8 / 0.23 |
+| rich base | score > 9899 | 1007 | 4.0 / 0.00 | 6.0 / 0.00 | 7.9 / 0.01 |
+| rich base | score > 4999 | 49982 | 4.0 / 0.21 | 4.0 / 0.21 | 8.0 / 0.43 |
+| rich top_frozen | type = task | 24403 | 193.0 / 2.98 | 198.9 / 3.10 | 38.8 / 0.88 |
+| rich top_frozen | score > 9899 | 977 | 8.0 / 0.01 | 9.2 / 0.01 | 16.5 / 0.02 |
+| rich top_frozen | score > 4999 | 48494 | 21.7 / 0.79 | 20.9 / 0.78 | 23.6 / 1.12 |
+| 1M main | type = task | 249284 | 25.8 / 6.83 | 24.8 / 6.83 | 16.0 / 3.75 |
+| 1M main | score > 9899 | 9779 | 5.0 / 0.06 | 4.0 / 0.06 | 19.8 / 0.18 |
+| 1M main | score > 4999 | 500430 | 5.3 / 2.81 | 4.8 / 2.81 | 11.7 / 5.95 |
+
+- Keyset on `(value, eid)`; the cursor is opaque. A filter on the order key is served by the merge scan itself and is 2× faster than entity-id order. A dense filter on another key (`type = task` by score) walks the `score` rows in order and checks the filter: 2× the entity-id cost on open views, 3.4× on top_frozen (the frozen layers merge history rows of `score`, which the rich file changes often).
+- Schema V3 (04582c9) adds `seq` to `value_current_value`, so the "is this row the winner" check of the merge reads the index only. Pushing the filter's bound on the order key into the scan (04582c9): top_frozen `type = task` by score, full read 38.1 → 0.54 s CPU when the filter has a bound on `score`.
+- Decision: added (ae705e1, 04582c9). The model test covers it (random filters, both directions, paging).
+
+### Q5. FTS5 trigram for contains at 1M
+
+Python sqlite3 on a copy of the 1M file: contentless FTS5 (`tokenize='trigram'`, `contentless_delete=1`) over the 2 000 000 text rows of `value_current`.
+
+| | instr scan | FTS5 trigram |
+| --- | ---: | ---: |
+| build | – | 52.8 s (37 890 rows/s) |
+| size | 564 MB | 686 MB (+122 MB, +21.6%) |
+| contains "12345" (20 rows) | 108.6 ms CPU | 0.23 ms |
+| contains "99999" (19 rows) | 107.7 ms | 0.29 ms |
+| contains "999" (3 700 rows) | 109.0 ms | 6.21 ms |
+| contains "123" (3 999 rows) | 109.3 ms | 7.41 ms |
+| contains "9" (468 559 rows) | 238.8 ms | not possible (< 3 characters) |
+| write of 100k text rows | 0.6 µs/row | 4.4 µs/row (+3.7 µs per text event) |
+
+- The writer averages 14.4 µs per event at 1M (69 294 events/s, `bench_scale`), so FTS5 would add about 26% to each text event (estimate from these two numbers, not measured end to end).
+- Branches and history: the index would also need the history rows (frozen views) and the same "winner at the range end" check as the value index, plus a fallback scan for strings under 3 characters.
+- Decision: not added. Rare contains at 1M costs ~110 ms per call with the scan, and the cost (+22% file, +26% per text write, a second index path with history) is not worth it now. Revisit as an opt-in per key if one key reaches about 10M text values (the scan grows linearly: ~1 s per call, estimate).
+
+### Schema V3 cost
+
+Migration of the rich file (V2 → V3, 847 236 current value rows; rebuild of `value_current_value` with `seq`): 1.05 s for open + migration + one query (wall clock); a second open takes 6 ms. File after VACUUM: 159.4 → 162.7 MB (+2.1%). Test: `migrates_a_version_1_file_to_the_covering_history_index` migrates a V1 file through V2 and V3 and checks both index column lists.
+
+### Extra optimisations found while profiling
+
+| change | commit | measured |
+| --- | --- | --- |
+| Index-range terms (all but contains) are counted exactly up to 2048 rows before sampling | de66145 | `title =` one entity, first page 3.6–4.0 → 0.0 ms CPU (base and 1M); base `score > 9899` 7.9 → 4.4 ms |
+| Dense Insertion pages probe | cb24a30 | table in Q2: 1M `type = task` 2.41 → 1.77 s |
+| Dense probe also for one `Eq` on frozen views | 04582c9 | top_frozen `type = task` entity-id order, full read 0.88 s (check all: 1.07 s process CPU before) |
+
+### Tests
+
+`cargo test --release`: 71 passed. Differential model test with `EGDB_DIFF_CASES=20000`: passed (325 s) at 04582c9, with random filters, paging, all four orders, and random planner knobs (probe/dense/exact count/always sample). `cargo clippy --all-targets --release -- -D warnings`: clean.
