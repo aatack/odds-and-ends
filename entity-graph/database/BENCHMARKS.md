@@ -709,4 +709,4 @@ Migration of the rich file (V2 → V3, 847 236 current value rows; rebuild of `v
 
 ### Tests
 
-`cargo test --release`: 71 passed. Differential model test with `EGDB_DIFF_CASES=20000`: passed (325 s) at 04582c9, with random filters, paging, all four orders, and random planner knobs (probe/dense/exact count/always sample). `cargo clippy --all-targets --release -- -D warnings`: clean.
+`cargo test --release`: 71 passed. Differential model test with `EGDB_DIFF_CASES=20000`: passed at 04582c9 (325 s) and again at cb24a30 (224 s), with random filters, paging, all four orders, and random planner knobs (probe/dense/exact count/always sample). `cargo clippy --all-targets --release -- -D warnings`: clean.
