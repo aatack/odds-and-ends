@@ -985,11 +985,17 @@ fn compare_finds(rig: &Rig, r: &mut Rng, ctx: &str) {
                 .cloned()
                 .collect();
             want.sort();
-            let order = if r.chance(1, 3) {
-                FindOrder::Insertion
-            } else {
-                FindOrder::EntityId
+            let vkey = ["type", "title", "priority"][r.below(3)].to_owned();
+            let order = match r.below(6) {
+                0 | 1 => FindOrder::Insertion,
+                2 => FindOrder::ValueAsc(vkey.clone()),
+                3 => FindOrder::ValueDesc(vkey.clone()),
+                _ => FindOrder::EntityId,
             };
+            let by_value = matches!(order, FindOrder::ValueAsc(_) | FindOrder::ValueDesc(_));
+            if by_value {
+                want.retain(|e| w.values(e).contains_key(&vkey));
+            }
             let values = r.chance(1, 2);
             let limit = [1, 2, 3, 1000][r.below(4)];
             let scan_limit = if r.chance(1, 4) {
@@ -1008,7 +1014,7 @@ fn compare_finds(rig: &Rig, r: &mut Rng, ctx: &str) {
                         FindOptions {
                             limit,
                             cursor,
-                            order,
+                            order: order.clone(),
                             values,
                             include_archived,
                             scan_limit,
@@ -1035,7 +1041,20 @@ fn compare_finds(rig: &Rig, r: &mut Rng, ctx: &str) {
                 }
             }
             assert!(cursor.is_none(), "{ctx}: find did not end");
-            if order == FindOrder::Insertion {
+            if by_value {
+                // Non-decreasing (or non-increasing) final values.
+                let key_of = |e: &String| crate::find::sql_value(&w.values(e)[&vkey]);
+                for pair in got.windows(2) {
+                    let o = crate::find::cmp_sql(&key_of(&pair[0]), &key_of(&pair[1]));
+                    let bad = if matches!(order, FindOrder::ValueAsc(_)) {
+                        o.is_gt()
+                    } else {
+                        o.is_lt()
+                    };
+                    assert!(!bad, "{ctx}: {order:?} out of order at {pair:?}");
+                }
+            }
+            if order != FindOrder::EntityId {
                 let n = got.len();
                 got.sort();
                 got.dedup();

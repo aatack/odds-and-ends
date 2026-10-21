@@ -109,7 +109,7 @@ impl Filter {
 }
 
 /// The order of a find.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum FindOrder {
     /// By entity ID, ascending, by byte order (the default).
     #[default]
@@ -117,6 +117,14 @@ pub enum FindOrder {
     /// By the order in which the store first saw each entity ID. Stable, but
     /// it has no meaning for the caller. Faster for large `Eq` results.
     Insertion,
+    /// By the final value of a key, ascending; ties in insertion order.
+    /// Numbers (`Int`, `Float`, and `Bool` as 0 and 1) compare by value and
+    /// come before text (`Text`, and `Json` as its text), which compares by
+    /// bytes. Only entities with a value for the key are returned: the order
+    /// adds `NotNull(key)` to the filter. The cursor is opaque.
+    ValueAsc(String),
+    /// [`FindOrder::ValueAsc`], descending (ties in reverse insertion order).
+    ValueDesc(String),
 }
 
 #[derive(Clone, Debug)]
@@ -325,7 +333,7 @@ impl Plan {
     }
 }
 
-fn sql_value(v: &Value) -> SqlValue {
+pub(crate) fn sql_value(v: &Value) -> SqlValue {
     encode_value(v).1
 }
 
@@ -645,6 +653,15 @@ impl Store {
         }
         let view = self.branch_view(branch)?;
         let cap = self.dense_cap(options.limit)?;
+        match &options.order {
+            FindOrder::ValueAsc(k) => {
+                return self.find_by_value(&view, filter, &options, k, false, cap)
+            }
+            FindOrder::ValueDesc(k) => {
+                return self.find_by_value(&view, filter, &options, k, true, cap)
+            }
+            _ => {}
+        }
         let mut plan = plan_of(filter);
         if plan.is_none() && !options.include_archived {
             plan = Some(Plan::Term(TYPE_KEY.into(), Cond::NotNull));
@@ -689,10 +706,10 @@ impl Store {
             (_, None) => (Plan::Everything, false),
         };
 
-        let mut after = match (&options.cursor, options.order) {
+        let mut after = match (&options.cursor, &options.order) {
             (None, _) => After::Start,
             (Some(c), FindOrder::EntityId) => After::Id(c.clone()),
-            (Some(c), FindOrder::Insertion) => match crate::store::lookup_entity(&self.conn, c)? {
+            (Some(c), _) => match crate::store::lookup_entity(&self.conn, c)? {
                 Some(eid) => After::Eid(eid),
                 None => return Err(Error::Invalid(format!("unknown cursor entity {c:?}"))),
             },
@@ -702,7 +719,7 @@ impl Store {
         loop {
             let want = (options.limit - rows.len()).clamp(64, 2048);
             let chunk = want.min(options.scan_limit.saturating_sub(scanned).max(1));
-            let cands = self.candidates(&view, &plan, options.order, probe, &after, chunk)?;
+            let cands = self.candidates(&view, &plan, &options.order, probe, &after, chunk)?;
             if cands.is_empty() {
                 return Ok(Find {
                     rows,
@@ -786,7 +803,7 @@ impl Store {
             }
             after = match options.order {
                 FindOrder::EntityId => After::Id(last_id),
-                FindOrder::Insertion => After::Eid(last_eid),
+                _ => After::Eid(last_eid),
             };
         }
     }
@@ -936,7 +953,7 @@ impl Store {
         &self,
         view: &View,
         plan: &Plan,
-        order: FindOrder,
+        order: &FindOrder,
         probe: bool,
         after: &After,
         chunk: usize,
@@ -947,7 +964,7 @@ impl Store {
                 let c = self.after_cond(&mut sql, after, "ext_id", "eid");
                 format!("SELECT eid, ext_id FROM entities WHERE {c} ORDER BY ext_id LIMIT {chunk}")
             }
-            (Plan::Everything, FindOrder::Insertion) => {
+            (Plan::Everything, _) => {
                 let c = self.after_cond(&mut sql, after, "ext_id", "eid");
                 format!("SELECT eid, ext_id FROM entities WHERE {c} ORDER BY eid LIMIT {chunk}")
             }
@@ -967,7 +984,7 @@ impl Store {
                      WHERE {c} ORDER BY e.ext_id LIMIT {chunk}"
                 )
             }
-            (_, FindOrder::Insertion) => {
+            (_, _) => {
                 let g = sql.gen(view, plan);
                 let c = self.after_cond(&mut sql, after, "e.ext_id", "g.eid");
                 format!(
@@ -990,6 +1007,294 @@ impl Store {
             After::Start => "1".into(),
             After::Id(id) => format!("{id_col} > {}", sql.bind(SqlValue::Text(id.clone()))),
             After::Eid(e) => format!("{eid_col} > {e}"),
+        }
+    }
+}
+
+/// SQLite's order of stored values: numbers (by value) before text (by bytes).
+pub(crate) fn cmp_sql(a: &SqlValue, b: &SqlValue) -> Ordering {
+    use SqlValue::{Integer, Real, Text};
+    let class = |v: &SqlValue| match v {
+        SqlValue::Null => 0,
+        Integer(_) | Real(_) => 1,
+        Text(_) => 2,
+        SqlValue::Blob(_) => 3,
+    };
+    match (a, b) {
+        (Integer(x), Integer(y)) => x.cmp(y),
+        (Real(x), Real(y)) => x.total_cmp(y),
+        (Integer(x), Real(y)) => cmp_int_float(*x, *y),
+        (Real(x), Integer(y)) => cmp_int_float(*y, *x).reverse(),
+        (Text(x), Text(y)) => x.as_bytes().cmp(y.as_bytes()),
+        _ => class(a).cmp(&class(b)),
+    }
+}
+
+/// The opaque cursor of a value order: `[tag, value, id]`.
+fn value_cursor(v: &SqlValue, id: &str) -> String {
+    let (tag, val) = match v {
+        SqlValue::Integer(i) => ("i", serde_json::Value::from(*i)),
+        SqlValue::Real(f) => (
+            "f",
+            serde_json::Value::from(format!("{:016x}", f.to_bits())),
+        ),
+        SqlValue::Text(t) => ("t", serde_json::Value::from(t.as_str())),
+        _ => ("n", serde_json::Value::Null),
+    };
+    serde_json::json!([tag, val, id]).to_string()
+}
+
+fn parse_value_cursor(c: &str) -> Result<(SqlValue, String)> {
+    let bad = || Error::Invalid(format!("bad value-order cursor {c:?}"));
+    let j: serde_json::Value = serde_json::from_str(c).map_err(|_| bad())?;
+    let a = j.as_array().filter(|a| a.len() == 3).ok_or_else(bad)?;
+    let id = a[2].as_str().ok_or_else(bad)?.to_owned();
+    let v = match a[0].as_str().ok_or_else(bad)? {
+        "i" => SqlValue::Integer(a[1].as_i64().ok_or_else(bad)?),
+        "f" => SqlValue::Real(f64::from_bits(
+            u64::from_str_radix(a[1].as_str().ok_or_else(bad)?, 16).map_err(|_| bad())?,
+        )),
+        "t" => SqlValue::Text(a[1].as_str().ok_or_else(bad)?.to_owned()),
+        _ => return Err(bad()),
+    };
+    Ok((v, id))
+}
+
+impl Store {
+    /// `find` in the order of the final value of `key` (see
+    /// [`FindOrder::ValueAsc`]). Sparse filters: all candidates are rolled
+    /// up and sorted on each page. Dense ones: the rows of `key` are read
+    /// in `(value, eid)` order from every layer (the value indexes give that
+    /// order; SQLite merges the layers), and an entity is emitted at the row
+    /// that holds its final value.
+    fn find_by_value(
+        &self,
+        view: &View,
+        filter: &Filter,
+        options: &FindOptions,
+        key: &str,
+        desc: bool,
+        cap: i64,
+    ) -> Result<Find> {
+        let order_term = Filter::NotNull(key.to_owned());
+        let full = Filter::And(vec![order_term, filter.clone()]);
+        let mut keys = BTreeSet::new();
+        let all_keys = options.values || !keys_of(&full, &mut keys);
+        if !options.include_archived {
+            keys.insert(TYPE_KEY.to_owned());
+        }
+        let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
+        let mut after: Option<(SqlValue, i64)> = match &options.cursor {
+            None => None,
+            Some(c) => {
+                let (v, id) = parse_value_cursor(c)?;
+                match crate::store::lookup_entity(&self.conn, &id)? {
+                    Some(eid) => Some((v, eid)),
+                    None => return Err(Error::Invalid(format!("unknown cursor entity {id:?}"))),
+                }
+            }
+        };
+        let before = |a: &(SqlValue, i64), b: &(SqlValue, i64)| {
+            let o = cmp_sql(&a.0, &b.0).then(a.1.cmp(&b.1));
+            if desc {
+                o.reverse()
+            } else {
+                o
+            }
+        };
+        // Roll up a batch; the final values of the entities that match.
+        let check = |eids: &[i64]| -> Result<HashMap<i64, BTreeMap<String, Value>>> {
+            let rolled = if all_keys {
+                resolve_values(&self.conn, view, eids, None)?
+            } else {
+                resolve_values_of(&self.conn, view, eids, &keys)?
+            };
+            let mut vals: HashMap<i64, BTreeMap<String, Value>> = HashMap::new();
+            for ((eid, k), c) in rolled {
+                if !c.data.is_null() {
+                    vals.entry(eid).or_default().insert(k, c.data);
+                }
+            }
+            Ok(vals)
+        };
+        let ext_ids = |eids: &[i64]| -> Result<HashMap<i64, String>> {
+            let mut stmt = self.conn.prepare_cached(
+                "SELECT eid, ext_id FROM entities WHERE eid IN (SELECT value FROM json_each(?1))",
+            )?;
+            let json = serde_json::to_string(eids).expect("ints serialise");
+            let rows = stmt
+                .query_map([json], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<rusqlite::Result<HashMap<i64, String>>>()?;
+            Ok(rows)
+        };
+        let keep = |id: &str, v: &BTreeMap<String, Value>| {
+            (options.include_archived || v.contains_key(TYPE_KEY)) && matches(&full, id, v)
+        };
+        let row = |id: &str, v: BTreeMap<String, Value>| FindRow {
+            id: id.to_owned(),
+            values: if options.values { v } else { BTreeMap::new() },
+        };
+
+        let plan = match plan_of(filter) {
+            Some(p) => Some(self.refine(view, p)?),
+            None => None,
+        };
+        let sparse = match (&plan, knobs::probe()) {
+            (None, _) => false,
+            (Some(_), Some(forced)) => !forced,
+            (Some(p), None) => self.count(view, p, cap)? < cap,
+        };
+        if sparse {
+            let plan = plan.expect("sparse needs a plan");
+            let mut sql = Sql::default();
+            let g = sql.gen(view, &plan);
+            let mut stmt = self
+                .conn
+                .prepare_cached(&format!("SELECT eid FROM ({g})"))?;
+            let eids = stmt
+                .query_map(rusqlite::params_from_iter(sql.params.iter()), |r| r.get(0))?
+                .collect::<rusqlite::Result<Vec<i64>>>()?;
+            let mut found: Vec<((SqlValue, i64), BTreeMap<String, Value>)> = Vec::new();
+            for batch in eids.chunks(2048) {
+                let ids = ext_ids(batch)?;
+                for (eid, v) in check(batch)? {
+                    let id = &ids[&eid];
+                    if !keep(id, &v) {
+                        continue;
+                    }
+                    let pos = (sql_value(&v[key]), eid);
+                    if after.as_ref().is_some_and(|a| before(&pos, a).is_le()) {
+                        continue;
+                    }
+                    found.push((pos, v));
+                }
+            }
+            found.sort_by(|a, b| before(&a.0, &b.0));
+            let more = found.len() > options.limit;
+            found.truncate(options.limit);
+            let ids = ext_ids(&found.iter().map(|f| f.0 .1).collect::<Vec<_>>())?;
+            let next = more.then(|| {
+                let (v, eid) = &found.last().expect("more than limit").0;
+                value_cursor(v, &ids[eid])
+            });
+            let scanned = eids.len();
+            let rows = found
+                .into_iter()
+                .map(|((_, eid), v)| row(&ids[&eid], v))
+                .collect();
+            return Ok(Find {
+                rows,
+                next,
+                scanned,
+            });
+        }
+
+        // Dense: merge the rows of `key` of every layer in value order.
+        let (cmp, dir) = if desc { ("<", "DESC") } else { (">", "ASC") };
+        let mut rows = Vec::new();
+        let mut scanned = 0usize;
+        loop {
+            let want = (options.limit - rows.len()).clamp(64, 2048);
+            let chunk = want.min(options.scan_limit.saturating_sub(scanned).max(1));
+            let mut sql = Sql::default();
+            let k = sql.bind(SqlValue::Text(key.to_owned()));
+            let pos = match &after {
+                None => "value IS NOT NULL".to_owned(),
+                Some((v, eid)) => {
+                    let v = sql.bind(v.clone());
+                    format!("(value, eid) {cmp} ({v}, {eid})")
+                }
+            };
+            let mut arms = Vec::new();
+            for src in &view.sources {
+                for &(lo, hi) in &src.intervals {
+                    let bid = src.bid;
+                    let seq = if lo <= 1 && hi == OPEN {
+                        String::new()
+                    } else {
+                        format!(" AND +seq BETWEEN {lo} AND {hi}")
+                    };
+                    arms.push(format!(
+                        "SELECT value, eid FROM value_current INDEXED BY value_current_value \
+                         WHERE bid = {bid} AND key = {k} AND {pos}{seq}"
+                    ));
+                    if hi != OPEN {
+                        arms.push(format!(
+                            "SELECT value, eid FROM value_history INDEXED BY value_history_value \
+                             WHERE bid = {bid} AND key = {k} AND {pos} \
+                             AND seq BETWEEN {lo} AND {hi} AND superseded_by > {hi}"
+                        ));
+                    }
+                }
+            }
+            if arms.is_empty() {
+                return Ok(Find {
+                    rows,
+                    next: None,
+                    scanned,
+                });
+            }
+            let text = format!(
+                "{} ORDER BY 1 {dir}, 2 {dir} LIMIT {chunk}",
+                arms.join(" UNION ")
+            );
+            let mut stmt = self.conn.prepare_cached(&text)?;
+            let cands = stmt
+                .query_map(rusqlite::params_from_iter(sql.params.iter()), |r| {
+                    Ok((r.get::<_, SqlValue>(0)?, r.get::<_, i64>(1)?))
+                })?
+                .collect::<rusqlite::Result<Vec<(SqlValue, i64)>>>()?;
+            if cands.is_empty() {
+                return Ok(Find {
+                    rows,
+                    next: None,
+                    scanned,
+                });
+            }
+            scanned += cands.len();
+            let mut eids: Vec<i64> = cands.iter().map(|c| c.1).collect();
+            eids.sort_unstable();
+            eids.dedup();
+            let mut vals = check(&eids)?;
+            let ids = ext_ids(&eids)?;
+            for (v, eid) in &cands {
+                let Some(fv) = vals.get(eid) else { continue };
+                let Some(final_v) = fv.get(key) else { continue };
+                // Emit the entity at the row of its final value only.
+                if cmp_sql(&sql_value(final_v), v) != Ordering::Equal {
+                    continue;
+                }
+                let id = &ids[eid];
+                if !keep(id, fv) {
+                    continue;
+                }
+                let fv = vals.remove(eid).expect("present");
+                rows.push(row(id, fv));
+                if rows.len() == options.limit {
+                    return Ok(Find {
+                        rows,
+                        next: Some(value_cursor(v, id)),
+                        scanned,
+                    });
+                }
+            }
+            let (last_v, last_eid) = cands.last().cloned().expect("not empty");
+            if cands.len() < chunk {
+                return Ok(Find {
+                    rows,
+                    next: None,
+                    scanned,
+                });
+            }
+            if scanned >= options.scan_limit {
+                let id = ids[&last_eid].clone();
+                return Ok(Find {
+                    rows,
+                    next: Some(value_cursor(&last_v, &id)),
+                    scanned,
+                });
+            }
+            after = Some((last_v, last_eid));
         }
     }
 }

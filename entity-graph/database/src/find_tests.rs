@@ -269,14 +269,19 @@ fn pages_concatenate_to_one_big_find_in_both_orders() {
         Filter::And(vec![]),
         Filter::Not(Box::new(Filter::eq(TYPE_KEY, "task"))),
     ] {
-        for order in [FindOrder::EntityId, FindOrder::Insertion] {
+        for order in [
+            FindOrder::EntityId,
+            FindOrder::Insertion,
+            FindOrder::ValueAsc(TYPE_KEY.into()),
+            FindOrder::ValueDesc(TYPE_KEY.into()),
+        ] {
             let one = s
                 .find(
                     b,
                     &f,
                     FindOptions {
                         limit: 10_000,
-                        order,
+                        order: order.clone(),
                         ..Default::default()
                     },
                 )
@@ -292,7 +297,7 @@ fn pages_concatenate_to_one_big_find_in_both_orders() {
                         FindOptions {
                             limit: 37,
                             cursor,
-                            order,
+                            order: order.clone(),
                             values: false,
                             ..Default::default()
                         },
