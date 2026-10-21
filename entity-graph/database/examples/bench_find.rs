@@ -121,7 +121,18 @@ fn queries(store: &Store, b: BranchId, n: u64) -> Vec<(&'static str, Filter, Che
     ]
 }
 
+/// CPU time of this thread in ns (`/proc/thread-self/schedstat`): stable
+/// when other jobs share the machine, unlike wall time.
+fn cpu_ns() -> u64 {
+    std::fs::read_to_string("/proc/thread-self/schedstat")
+        .ok()
+        .and_then(|s| s.split_whitespace().next()?.parse().ok())
+        .unwrap_or(0)
+}
+
 struct Run {
+    first_cpu_ms: f64,
+    full_cpu_s: f64,
     first_ms: f64,
     first_scanned: usize,
     rows: usize,
@@ -131,17 +142,23 @@ struct Run {
 
 fn run(store: &Store, b: BranchId, f: &Filter, base: &FindOptions, full: bool) -> Run {
     let mut times = Vec::new();
+    let mut cpus = Vec::new();
     let mut first_scanned = 0;
     for _ in 0..5 {
         let t = Instant::now();
+        let c = cpu_ns();
         let page = store.find(b, f, base.clone()).unwrap();
+        cpus.push((cpu_ns() - c) as f64 / 1e6);
         times.push(t.elapsed().as_secs_f64() * 1e3);
         first_scanned = page.scanned;
     }
     times.sort_by(f64::total_cmp);
+    cpus.sort_by(f64::total_cmp);
+    let mut full_cpu_s = 0.0;
     let (mut rows, mut scanned, mut full_s) = (0, 0, 0.0);
     if full {
         let t = Instant::now();
+        let c = cpu_ns();
         let mut cursor = None;
         loop {
             let page = store
@@ -162,8 +179,11 @@ fn run(store: &Store, b: BranchId, f: &Filter, base: &FindOptions, full: bool) -
             }
         }
         full_s = t.elapsed().as_secs_f64();
+        full_cpu_s = (cpu_ns() - c) as f64 / 1e9;
     }
     Run {
+        first_cpu_ms: cpus[2],
+        full_cpu_s,
         first_ms: times[2],
         first_scanned,
         rows,
@@ -265,8 +285,8 @@ fn main() {
         opts.values, opts.order
     );
     println!();
-    println!("| branch | query | path | first page ms | checked (first page) | rows | full read s | rows/s | checked (full) |");
-    println!("| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |");
+    println!("| branch | query | path | first page ms | checked (first page) | rows | full read s | rows/s | checked (full) | first page CPU ms | full read CPU s |");
+    println!("| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
     for name in &branches {
         let b = named(&store, name);
         for (i, (q, f, check)) in queries(&store, b, n).into_iter().enumerate() {
@@ -302,7 +322,7 @@ fn main() {
             for (label, filter, o) in variants {
                 let r = run(&store, b, &filter, &o, full);
                 println!(
-                    "| {name} | {q} | {label} | {:.2} | {} | {} | {:.3} | {:.0} | {} |",
+                    "| {name} | {q} | {label} | {:.2} | {} | {} | {:.3} | {:.0} | {} | {:.2} | {:.3} |",
                     r.first_ms,
                     r.first_scanned,
                     r.rows,
@@ -312,7 +332,9 @@ fn main() {
                     } else {
                         0.0
                     },
-                    r.scanned
+                    r.scanned,
+                    r.first_cpu_ms,
+                    r.full_cpu_s
                 );
             }
         }
