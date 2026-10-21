@@ -710,3 +710,311 @@ Migration of the rich file (V2 → V3, 847 236 current value rows; rebuild of `v
 ### Tests
 
 `cargo test --release`: 71 passed. Differential model test with `EGDB_DIFF_CASES=20000`: passed at 04582c9 (325 s) and again at cb24a30 (224 s), with random filters, paging, all four orders, and random planner knobs (probe/dense/exact count/always sample). `cargo clippy --all-targets --release -- -D warnings`: clean.
+
+## Search: type equality and name text (`examples/bench_search.rs`)
+
+```text
+cargo run --release --example bench_search -- build N DIR       # DIR/search-N.db
+cargo run --release --example bench_search -- run FILE [--branches base,top_open,top_frozen] \
+    [--queries t1,c2,...] [--repeats 7] [--full-repeats 3] [--cold] [--knob probe=2]...
+```
+
+Measured on a5174c7 (the `find` code of b374eae), same box as above (8 vCPU, 15 GB RAM, about 3 GB free; other jobs ran on the box).
+
+### Data
+
+- Built by `bench_search build` at 10 000, 100 000 and 1 000 000 entities, hashed 16-hex ids, batches of 2000 ops.
+- `type`: task 50%, note 25%, project 10%, person 9.9%, doc 5%, invoice 0.1%. `name`: 2 to 5 words from a list of about 300 words with Zipf-like frequencies, mixed case (60% Title Case, 25% sentence case, 10% lower, 5% UPPER), 10% with a number (`2026`, `#417`). Also `done`, `priority` and one `child` link per entity.
+- History on `base`: 30% of entities renamed 1 or 2 times, 3% retyped, 20% `done` toggled. Branch stack as in `bench_rich`: `mid_*` renames 10%, archives 1%, retypes 0.5%; `top_*` renames 3%, archives 0.5%; then `base` renames 5% more. `top_open` = open pulls (3 layers, current tables only); `top_frozen` = forks (3 layers, frozen ranges read history).
+- Size: 10k 60 025 events, 6.7 MB; 100k 602 330 events, 69.1 MB; 1M 6 026 678 events, 699.8 MB (build 100 s of write calls, 16.6 µs per event).
+
+### Method
+
+- Every query: ids only (`values = false`), entity-id order, limit 1000. "First page" = one `find` call; "all pages" = page with the cursor to the end. Warm: one warm-up call, then the median of 7 first pages (5 at 1M) and of 3 full reads. Wall time and thread CPU time (`CLOCK_THREAD_CPUTIME_ID`) are both medians. Warm runs are CPU bound, so wall and CPU agree within about 1% everywhere; other jobs ran on the box, so expect ±10–15% between runs (repeated cells moved by that much).
+- "checked" = `Find::scanned` summed over all pages (candidates rolled up and checked).
+- Fuzzy (not in the API) is done with the current API: `Custom` = some word of the name (ASCII-folded) within Levenshtein distance k of the query; "pieces" = `And([Or(ContainsIgnoreCase(piece)…), Custom])` with the query split into k + 1 disjoint pieces (a word within k edits contains one piece unchanged, so the pre-filter never loses a match); "trigrams" = `Or` over every trigram of the query, then the `Custom`.
+
+### Results (current code)
+
+All times in ms per query (whole result for "all pages"). Matches = rows returned by the full read.
+
+#### Type equality (`Filter::Eq("type", ..)`)
+
+| entities | query | matches (base) | base: first page wall / CPU ms | base: all pages wall / CPU ms | base: checked (all pages) | top_open: first / all pages CPU ms | top_frozen: first / all pages CPU ms | matches (top_frozen) |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 10,000 | type = "task" | 5,001 | 4.16 / 4.16 | 20.3 / 20.3 | 5,001 | 6.60 / 33.5 | 8.64 / 42.4 | 4,906 |
+| 10,000 | type = "project" | 999 | 2.44 / 2.44 | 2.60 / 2.60 | 999 | 3.85 / 4.20 | 4.47 / 4.40 | 982 |
+| 10,000 | type = "doc" | 480 | 1.11 / 1.11 | 1.00 / 1.00 | 480 | 1.42 / 1.40 | 2.20 / 2.40 | 472 |
+| 10,000 | type = "invoice" | 9 | 0.03 / 0.03 | 0.00 / 0.00 | 9 | 0.06 / 0.10 | 0.06 / 0.10 | 10 |
+| 10,000 | type = "spaceship" | 0 | 0.02 / 0.02 | 0.00 / 0.00 | 0 | 0.02 / 0.00 | 0.02 / 0.00 | 0 |
+| 100,000 | type = "task" | 50,278 | 8.03 / 8.03 | 406 / 405 | 50,278 | 11.9 / 613 | 15.4 / 772 | 49,582 |
+| 100,000 | type = "project" | 9,988 | 17.0 / 16.9 | 176 / 176 | 9,988 | 31.8 / 328 | 47.6 / 483 | 9,842 |
+| 100,000 | type = "doc" | 4,800 | 7.84 / 7.84 | 39.6 / 39.6 | 4,800 | 13.7 / 67.1 | 15.8 / 71.1 | 4,728 |
+| 100,000 | type = "invoice" | 120 | 0.31 / 0.31 | 0.20 / 0.20 | 120 | 0.37 / 0.40 | 1.01 / 1.10 | 122 |
+| 100,000 | type = "spaceship" | 0 | 0.01 / 0.01 | 0.00 / 0.00 | 0 | 0.02 / 0.00 | 0.02 / 0.00 | 0 |
+| 1,000,000 | type = "task" | 500,076 | 10.9 / 10.9 | 6010 / 6010 | 500,076 | 21.4 / 10518 | 25.8 / 13361 | 492,688 |
+| 1,000,000 | type = "project" | 99,875 | 29.3 / 29.3 | 2942 / 2941 | 99,875 | 61.2 / 6537 | 86.5 / 8839 | 98,400 |
+| 1,000,000 | type = "doc" | 49,466 | 58.8 / 58.8 | 3030 / 3030 | 49,466 | 134 / 5883 | 182 / 8666 | 48,755 |
+| 1,000,000 | type = "invoice" | 1,006 | 4.87 / 4.87 | 5.70 / 5.70 | 1,006 | 7.96 / 7.90 | 10.4 / 10.0 | 998 |
+| 1,000,000 | type = "spaceship" | 0 | 0.01 / 0.01 | 0.00 / 0.00 | 0 | 0.02 / 0.00 | 0.02 / 0.00 | 0 |
+
+#### Name contains, case-sensitive (`Contains`)
+
+| entities | query | matches (base) | base: first page wall / CPU ms | base: all pages wall / CPU ms | base: checked (all pages) | top_open: first / all pages CPU ms | top_frozen: first / all pages CPU ms | matches (top_frozen) |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 10,000 | name contains "Zeppelin" | 8 | 2.39 / 2.39 | 2.30 / 2.30 | 8 | 3.94 / 3.90 | 3.75 / 3.90 | 10 |
+| 10,000 | name contains "Budget" | 175 | 2.93 / 2.92 | 3.00 / 3.00 | 175 | 4.42 / 4.30 | 5.14 / 4.90 | 176 |
+| 10,000 | name contains "in" | 2,946 | 7.17 / 7.17 | 20.8 / 20.8 | 2,946 | 15.6 / 40.0 | 18.9 / 53.3 | 2,893 |
+| 10,000 | name contains "e" | 9,042 | 4.66 / 4.66 | 45.5 / 45.5 | 9,042 | 6.73 / 60.8 | 8.00 / 72.3 | 8,897 |
+| 100,000 | name contains "Zeppelin" | 188 | 11.5 / 11.5 | 11.3 / 11.3 | 188 | 14.2 / 15.1 | 19.0 / 18.4 | 192 |
+| 100,000 | name contains "Budget" | 1,873 | 17.2 / 17.2 | 36.2 / 36.2 | 1,873 | 42.6 / 62.5 | 57.9 / 82.6 | 1,875 |
+| 100,000 | name contains "in" | 30,023 | 10.5 / 10.5 | 328 / 328 | 30,023 | 18.8 / 528 | 28.7 / 859 | 29,573 |
+| 100,000 | name contains "e" | 90,486 | 7.63 / 7.63 | 696 / 696 | 90,486 | 10.8 / 1008 | 13.5 / 1135 | 89,119 |
+| 1,000,000 | name contains "Zeppelin" | 1,824 | 93.2 / 93.2 | 186 / 186 | 1,824 | 325 / 449 | 457 / 627 | 1,773 |
+| 1,000,000 | name contains "Budget" | 19,198 | 116 / 116 | 2507 / 2507 | 19,198 | 396 / 7391 | 520 / 10238 | 19,019 |
+| 1,000,000 | name contains "in" | 301,195 | 14.3 / 14.3 | 4875 / 4874 | 301,195 | 32.4 / 9218 | 42.7 / 13632 | 296,781 |
+| 1,000,000 | name contains "e" | 904,331 | 10.4 / 10.4 | 9948 / 9945 | 904,331 | 15.9 / 16173 | 20.0 / 16685 | 891,185 |
+
+#### Name contains, ignore case (`ContainsIgnoreCase`)
+
+| entities | query | matches (base) | base: first page wall / CPU ms | base: all pages wall / CPU ms | base: checked (all pages) | top_open: first / all pages CPU ms | top_frozen: first / all pages CPU ms | matches (top_frozen) |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 10,000 | name contains-ignore-case "zeppelin" | 15 | 3.37 / 3.37 | 3.40 / 3.40 | 15 | 4.69 / 4.80 | 4.81 / 4.80 | 18 |
+| 10,000 | name contains-ignore-case "budget" | 260 | 4.39 / 4.39 | 4.20 / 4.20 | 260 | 6.26 / 5.40 | 6.73 / 6.70 | 254 |
+| 10,000 | name contains-ignore-case "re" | 5,045 | 5.47 / 5.47 | 28.6 / 28.6 | 5,045 | 8.36 / 42.4 | 12.6 / 70.4 | 5,004 |
+| 10,000 | name contains-ignore-case "e" | 9,515 | 4.69 / 4.69 | 45.6 / 45.5 | 9,515 | 6.86 / 67.7 | 7.89 / 77.7 | 9,368 |
+| 100,000 | name contains-ignore-case "zeppelin" | 265 | 17.7 / 17.7 | 17.6 / 17.6 | 265 | 20.9 / 21.0 | 29.4 / 33.5 | 270 |
+| 100,000 | name contains-ignore-case "budget" | 2,792 | 24.7 / 24.7 | 77.1 / 77.1 | 2,792 | 64.8 / 156 | 92.7 / 238 | 2,790 |
+| 100,000 | name contains-ignore-case "re" | 50,793 | 10.0 / 10.0 | 498 / 498 | 50,793 | 14.1 / 729 | 20.4 / 1009 | 50,001 |
+| 100,000 | name contains-ignore-case "e" | 95,360 | 7.99 / 7.99 | 785 / 785 | 95,360 | 10.9 / 1084 | 11.4 / 1144 | 93,968 |
+| 1,000,000 | name contains-ignore-case "zeppelin" | 2,713 | 155 / 155 | 465 / 465 | 2,713 | 549 / 1293 | 724 / 1708 | 2,626 |
+| 1,000,000 | name contains-ignore-case "budget" | 28,544 | 96.6 / 96.6 | 2634 / 2634 | 28,544 | 214 / 5948 | 399 / 11234 | 28,284 |
+| 1,000,000 | name contains-ignore-case "re" | 507,281 | 11.9 / 11.9 | 6631 / 6630 | 507,281 | 22.7 / 11843 | 27.1 / 14721 | 499,354 |
+| 1,000,000 | name contains-ignore-case "e" | 952,347 | 9.61 / 9.61 | 10541 / 10538 | 952,347 | 18.3 / 16644 | 19.9 / 16907 | 938,478 |
+
+#### Name prefix (`Prefix`)
+
+| entities | query | matches (base) | base: first page wall / CPU ms | base: all pages wall / CPU ms | base: checked (all pages) | top_open: first / all pages CPU ms | top_frozen: first / all pages CPU ms | matches (top_frozen) |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 10,000 | name prefix "Zep" | 1 | 0.02 / 0.02 | 0.00 / 0.00 | 1 | 0.04 / 0.00 | 0.05 / 0.00 | 2 |
+| 10,000 | name prefix "Weekly" | 164 | 0.44 / 0.44 | 0.50 / 0.50 | 164 | 0.74 / 0.90 | 1.18 / 1.20 | 165 |
+| 10,000 | name prefix "R" | 1,755 | 4.16 / 4.16 | 6.70 / 6.70 | 1,755 | 7.86 / 14.2 | 9.72 / 15.4 | 1,740 |
+| 100,000 | name prefix "Zep" | 57 | 0.17 / 0.17 | 0.20 / 0.20 | 57 | 0.32 / 0.30 | 0.55 / 0.50 | 59 |
+| 100,000 | name prefix "Weekly" | 1,615 | 5.64 / 5.64 | 9.00 / 9.00 | 1,615 | 11.0 / 16.2 | 15.8 / 20.2 | 1,605 |
+| 100,000 | name prefix "R" | 17,243 | 14.3 / 14.3 | 240 / 240 | 17,243 | 23.5 / 413 | 48.3 / 857 | 16,945 |
+| 1,000,000 | name prefix "Zep" | 651 | 3.61 / 3.61 | 4.00 / 4.00 | 651 | 6.14 / 6.20 | 8.81 / 8.20 | 640 |
+| 1,000,000 | name prefix "Weekly" | 16,008 | 29.3 / 29.3 | 468 / 468 | 16,008 | 70.3 / 1110 | 72.3 / 1183 | 15,933 |
+| 1,000,000 | name prefix "R" | 174,382 | 19.5 / 19.5 | 3772 / 3771 | 174,382 | 42.0 / 7434 | 70.3 / 12917 | 171,572 |
+
+#### Fuzzy name match (current API: `Custom`, optionally behind a `ContainsIgnoreCase` pre-filter)
+
+| entities | query | matches (base) | base: first page wall / CPU ms | base: all pages wall / CPU ms | base: checked (all pages) | top_open: first / all pages CPU ms | top_frozen: first / all pages CPU ms | matches (top_frozen) |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 10,000 | name fuzzy "managment" <= 1 edits, Custom scan | 141 | 41.1 / 41.0 | 41.2 / 41.2 | 10,000 | 49.4 / 50.1 | 65.4 / 68.3 | 136 |
+| 10,000 | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 141 | 6.63 / 6.62 | 6.50 / 6.50 | 141 | 10.1 / 9.90 | 11.1 / 10.9 | 136 |
+| 10,000 | name fuzzy "managment" <= 1, pre-filter any of 7 trigrams | 141 | 40.7 / 40.7 | 40.3 / 40.3 | 1,320 | 50.3 / 50.2 | 68.5 / 67.5 | 136 |
+| 10,000 | name fuzzy "mangment" <= 2 edits, Custom scan | 141 | 42.9 / 42.8 | 42.5 / 42.5 | 10,000 | 50.0 / 49.8 | 66.9 / 64.7 | 136 |
+| 10,000 | name fuzzy "mangment" <= 2, pre-filter pieces ["ma", "ngm", "ent"] | 141 | 30.5 / 30.4 | 31.7 / 31.7 | 1,931 | 39.9 / 40.3 | 52.5 / 51.4 | 136 |
+| 10,000 | name fuzzy "zepelin" <= 1 edits, Custom scan | 15 | 43.4 / 43.4 | 42.7 / 42.7 | 10,000 | 51.5 / 51.4 | 66.3 / 66.1 | 18 |
+| 10,000 | name fuzzy "zepelin" <= 1, pre-filter pieces ["zep", "elin"] | 15 | 6.67 / 6.67 | 7.10 / 7.10 | 137 | 9.35 / 8.90 | 11.2 / 12.6 | 18 |
+| 10,000 | name fuzzy "zepelin" <= 1, pre-filter any of 5 trigrams | 15 | 15.8 / 15.8 | 15.7 / 15.7 | 349 | 22.2 / 25.0 | 28.0 / 28.3 | 18 |
+| 100,000 | name fuzzy "managment" <= 1 edits, Custom scan | 1,574 | 294 / 294 | 452 / 452 | 100,016 | 361 / 604 | 490 / 752 | 1,567 |
+| 100,000 | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 1,574 | 40.9 / 40.9 | 77.9 / 77.9 | 1,574 | 119 / 167 | 165 / 224 | 1,567 |
+| 100,000 | name fuzzy "managment" <= 1, pre-filter any of 7 trigrams | 1,574 | 332 / 332 | 527 / 527 | 13,440 | 651 / 1053 | 541 / 846 | 1,567 |
+| 100,000 | name fuzzy "mangment" <= 2 edits, Custom scan | 1,574 | 302 / 302 | 470 / 469 | 100,016 | 380 / 588 | 498 / 838 | 1,567 |
+| 100,000 | name fuzzy "mangment" <= 2, pre-filter pieces ["ma", "ngm", "ent"] | 1,574 | 236 / 236 | 389 / 388 | 19,633 | 389 / 627 | 518 / 830 | 1,567 |
+| 100,000 | name fuzzy "zepelin" <= 1 edits, Custom scan | 265 | 465 / 465 | 462 / 462 | 100,000 | 583 / 582 | 773 / 762 | 270 |
+| 100,000 | name fuzzy "zepelin" <= 1, pre-filter pieces ["zep", "elin"] | 265 | 74.3 / 74.3 | 74.1 / 74.1 | 1,353 | 91.7 / 89.8 | 129 / 130 | 270 |
+| 100,000 | name fuzzy "zepelin" <= 1, pre-filter any of 5 trigrams | 265 | 356 / 356 | 368 / 368 | 3,572 | 517 / 520 | 737 / 747 | 270 |
+| 1,000,000 | name fuzzy "managment" <= 1 edits, Custom scan | 15,488 | 359 / 359 | 5633 / 5622 | 1,000,485 | 552 / 8253 | 750 / 11462 | 15,221 |
+| 1,000,000 | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 15,488 | 325 / 325 | 5573 / 5572 | 15,488 | 1125 / 16979 | 1571 / 24612 | 15,221 |
+| 1,000,000 | name fuzzy "managment" <= 1, pre-filter any of 7 trigrams | 15,488 | 442 / 442 | 6916 / 6914 | 133,631 | 977 / 15042 | 818 / 12393 | 15,221 |
+| 1,000,000 | name fuzzy "mangment" <= 2 edits, Custom scan | 15,488 | 356 / 356 | 5778 / 5775 | 1,000,485 | 546 / 8208 | 789 / 11612 | 15,221 |
+| 1,000,000 | name fuzzy "mangment" <= 2, pre-filter pieces ["ma", "ngm", "ent"] | 15,488 | 322 / 320 | 5226 / 5224 | 194,551 | 634 / 10435 | 828 / 12229 | 15,221 |
+| 1,000,000 | name fuzzy "zepelin" <= 1 edits, Custom scan | 2,713 | 1985 / 1985 | 5771 / 5766 | 1,000,080 | 3128 / 8524 | 4217 / 11528 | 2,626 |
+| 1,000,000 | name fuzzy "zepelin" <= 1, pre-filter pieces ["zep", "elin"] | 2,713 | 5821 / 5820 | 14185 / 14184 | 13,623 | 7836 / 18320 | 11160 / 26519 | 2,626 |
+| 1,000,000 | name fuzzy "zepelin" <= 1, pre-filter any of 5 trigrams | 2,713 | 1824 / 1824 | 5208 / 5208 | 35,655 | 4039 / 11413 | 4227 / 11761 | 2,626 |
+
+Observations:
+
+- `type` equality: absent and rare types cost 0.01–10 ms at every size. Large types cost about 8–30 ms for the first page on `base`, and the full read grows with the number of matches (about 12 µs per row on `base` at 1M, 20–27 µs on the stacks).
+- Contains is a scan of every text value of the key in each layer (the value index range, `instr`): a rare string costs ~2–3 ms at 10k, ~11–18 ms at 100k and ~95–155 ms at 1M on `base`, 3–5× that on the 1M stacks. Common strings are fast for the first page (dense plan: 10–20 ms) and pay per row for the full read.
+- `ContainsIgnoreCase` is 1.3–1.7× the case-sensitive scan (`instr(lower(value), ..)` copies every value).
+- `Prefix` is an index range: 0.02–9 ms for rare prefixes, and the cost follows the number of matches.
+- Fuzzy with `Custom` is a full roll-up of every entity: ~4 µs per entity (41 ms at 10k, 450–760 ms at 100k, 5.6–11.6 s at 1M for all pages). The pigeonhole pre-filter helps when its pieces are rare (`managment`: 6× at 10k and 100k), but not at 1M on `base` (325 vs 359 ms first page, 5.6 s both for all pages: each of the 16 pages scans 1M names twice with `instr(lower())`); it hurts when a piece is common or short (`mangment` k=2 has the piece "ma"; `zepelin` has "elin", 13% of names: at 1M the dense probe plan of that `Or` took 5.8 s for the first page vs 2.0 s for the plain scan). The any-trigram `Or` is no better than the scan.
+- Stacks: open stacks cost 1.5–3.5×, frozen stacks 2–5× `base`.
+
+#### Cold (1M, one run per cell)
+
+`--cold`: new connection and `posix_fadvise(DONTNEED)` on the file before the first page and again before the full read. One run per cell, so treat these as indicative. MB read covers both runs.
+
+| branch | query | matches | first page wall / CPU ms | all pages wall / CPU ms | MB read | warm first / all pages wall ms |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| base | type = "task" | 500,076 | 2058 / 120 | 21399 / 7417 | 251.9 MB | 10.9 / 6010 |
+| base | type = "project" | 99,875 | 292 / 136 | 5114 / 3998 | 279.8 MB | 29.3 / 2942 |
+| base | type = "invoice" | 1,006 | 218 / 28.2 | 57.9 / 26.4 | 21.2 MB | 4.87 / 5.70 |
+| base | name contains "Zeppelin" | 1,824 | 2430 / 350 | 810 / 466 | 150.9 MB | 93.2 / 186 |
+| base | name contains "Budget" | 19,198 | 1384 / 443 | 3855 / 3130 | 251.6 MB | 116 / 2507 |
+| base | name contains-ignore-case "zeppelin" | 2,713 | 565 / 320 | 890 / 659 | 159.8 MB | 155 / 465 |
+| base | name prefix "Zep" | 651 | 39.7 / 18.0 | 34.9 / 15.8 | 14.6 MB | 3.61 / 4.00 |
+| base | name prefix "Weekly" | 16,008 | 272 / 118 | 1035 / 710 | 135.6 MB | 29.3 / 468 |
+| base | name fuzzy "managment" <= 1 edits, Custom scan | 15,488 | 1357 / 735 | 7756 / 6391 | 411.9 MB | 359 / 5633 |
+| base | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 15,488 | 827 / 503 | 6107 / 5557 | 239.2 MB | 325 / 5573 |
+| top_frozen | type = "task" | 492,688 | 1078 / 129 | 18437 / 14477 | 369.4 MB | 25.8 / 13372 |
+| top_frozen | type = "project" | 98,400 | 464 / 238 | 11079 / 9630 | 403.5 MB | 86.5 / 8840 |
+| top_frozen | type = "invoice" | 998 | 113 / 51.4 | 168 / 78.4 | 57.5 MB | 10.4 / 10.0 |
+| top_frozen | name contains "Zeppelin" | 1,773 | 1448 / 717 | 1210 / 853 | 272.3 MB | 457 / 627 |
+| top_frozen | name contains "Budget" | 19,019 | 1174 / 777 | 11640 / 10790 | 422.5 MB | 520 / 10239 |
+| top_frozen | name contains-ignore-case "zeppelin" | 2,626 | 1316 / 956 | 2356 / 1971 | 287.1 MB | 724 / 1711 |
+| top_frozen | name prefix "Zep" | 640 | 92.3 / 41.0 | 80.5 / 39.6 | 42.9 MB | 8.81 / 8.20 |
+| top_frozen | name prefix "Weekly" | 15,933 | 355 / 184 | 2178 / 1601 | 234.4 MB | 72.3 / 1183 |
+| top_frozen | name fuzzy "managment" <= 1 edits, Custom scan | 15,221 | 2008 / 1311 | 15189 / 12816 | 590.5 MB | 750 / 11462 |
+| top_frozen | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 15,221 | 2236 / 1800 | 25306 / 24534 | 409.2 MB | 1575 / 24615 |
+
+Cold first pages cost 0.04–2.4 s; the full scans read 150–590 MB (most of the 700 MB file). The first query after eviction also pays for the schema and the dictionary pages (t1 `base`: 2.06 s wall but 0.12 s CPU).
+
+### Trigram index prototype (FTS5), not committed
+
+A copy of the crate (outside the repository) added an optional index: a contentless FTS5 table (`tokenize='trigram'`, `contentless_delete=1`) over every text event of `name` (current and history, row id `bid << 40 | seq`), kept up to date by triggers on `value_current`. `Contains` and `ContainsIgnoreCase` of 3 or more characters take their candidates from it, with one arm per layer interval that mirrors the value-index arms (current row in range; history rows still newest at a frozen end), so the candidate set is still a superset and the roll-up decides; dense terms fall back to `instr`. Every query gave the same ids with and without the index (24 queries × 3 branches at 10k and 100k).
+
+Size and build (dbstat, after a checkpoint, no VACUUM):
+
+| entities | name events indexed | build s | file MB before → after | added MB |
+| ---: | ---: | ---: | ---: | ---: |
+| 10,000 | 17,420 | 0.15 | 6.7 → 8.4 | +1.7 MB (+25.0%) |
+| 100,000 | 175,517 | 1.78 | 69.1 → 85.8 | +16.7 MB (+24.1%) |
+| 1,000,000 | 1,757,571 | 18.41 (10.5 µs per event) | 699.8 → 866.1 | +166.4 MB (+23.8%) |
+
+Write cost (`Store::write`, random existing entities on `base`, 40 000 events in batches of 2000, 4000 events in batches of 10; µs per event, wall / thread CPU; one run at 1M, two at 100k):
+
+| entities | workload | no index | with trigram index | added |
+| ---: | --- | ---: | ---: | ---: |
+| 100,000 | renames, batch 2000 | 64–76 / 52–59 | 115 / 100 | +40–50 µs wall per name event |
+| 100,000 | mixed (1 in 4 is a rename), batch 2000 | 70–82 / 59–61 | 98–99 / 80 | +16–28 µs per event |
+| 100,000 | renames, batch 10 | 93–129 / 60–70 | 147–150 / 92–95 | +20–55 µs per name event |
+| 100,000 | mixed, batch 10 | 94–124 / 61–74 | 122–136 / 76–77 | +10–30 µs per event |
+| 1,000,000 | renames, batch 2000 | 151 / 97 | 221 / 181 | +70 µs wall, +84 µs CPU per name event |
+| 1,000,000 | mixed, batch 2000 | 141 / 94 | 165 / 134 | +24 µs wall, +40 µs CPU per event |
+| 1,000,000 | renames, batch 10 | 139 / 78 | 164 / 108 | +25 µs wall, +29 µs CPU per name event |
+| 1,000,000 | mixed, batch 10 | 136 / 79 | 150 / 91 | +14 µs wall, +12 µs CPU per event |
+
+(These random superseding updates cost far more than the sequential build, 10–17 µs per event, because each touches random pages of 6–8 B-trees with the default 2 MB cache. Plain `INSERT` triggers instead of `INSERT OR REPLACE` saved about 6 µs per name event.)
+
+Query time, first page / all pages, CPU ms (wall within 1%), `instr` scan → trigram index:
+
+| entities | query | matches (base) | base: instr → FTS, first page CPU ms | base: instr → FTS, all pages CPU ms | top_frozen: instr → FTS, first page CPU ms | top_frozen: instr → FTS, all pages CPU ms |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 10,000 | name contains "Zeppelin" | 8 | 2.39 → 0.14 | 2.30 → 0.10 | 3.75 → 0.37 | 3.90 → 0.30 |
+| 10,000 | name contains "Budget" | 175 | 2.92 → 1.21 | 3.00 → 1.20 | 5.14 → 3.00 | 4.90 → 3.00 |
+| 10,000 | name contains "in" | 2,946 | 7.17 → 7.53 | 20.8 → 26.5 | 18.9 → 20.3 | 53.3 → 52.6 |
+| 10,000 | name contains-ignore-case "zeppelin" | 15 | 3.37 → 0.16 | 3.40 → 0.20 | 4.81 → 0.34 | 4.80 → 0.40 |
+| 10,000 | name contains-ignore-case "budget" | 260 | 4.39 → 1.54 | 4.20 → 2.10 | 6.73 → 2.81 | 6.70 → 2.70 |
+| 10,000 | name contains-ignore-case "re" | 5,045 | 5.47 → 10.2 | 28.6 → 42.3 | 12.6 → 13.2 | 70.4 → 70.8 |
+| 10,000 | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 141 | 6.62 → 1.04 | 6.50 → 1.10 | 11.1 → 1.74 | 10.9 → 1.70 |
+| 10,000 | name fuzzy "mangment" <= 2, pre-filter pieces ["ma", "ngm", "ent"] | 141 | 30.4 → 25.4 | 31.7 → 25.7 | 52.5 → 38.4 | 51.4 → 37.4 |
+| 10,000 | name fuzzy "zepelin" <= 1, pre-filter pieces ["zep", "elin"] | 15 | 6.67 → 0.88 | 7.10 → 0.80 | 11.2 → 1.54 | 12.6 → 2.20 |
+| 100,000 | name contains "Zeppelin" | 188 | 11.5 → 3.04 | 11.3 → 3.00 | 19.0 → 6.19 | 18.4 → 6.00 |
+| 100,000 | name contains "Budget" | 1,873 | 17.2 → 38.0 | 36.2 → 61.4 | 57.9 → 80.2 | 82.6 → 129 |
+| 100,000 | name contains "in" | 30,023 | 10.5 → 10.5 | 328 → 334 | 28.7 → 30.7 | 859 → 910 |
+| 100,000 | name contains-ignore-case "zeppelin" | 265 | 17.7 → 3.15 | 17.6 → 3.10 | 29.4 → 6.04 | 33.5 → 6.00 |
+| 100,000 | name contains-ignore-case "budget" | 2,792 | 24.7 → 13.6 | 77.1 → 38.2 | 92.7 → 48.4 | 238 → 117 |
+| 100,000 | name contains-ignore-case "re" | 50,793 | 10.0 → 9.02 | 498 → 495 | 20.4 → 19.4 | 1009 → 1000 |
+| 100,000 | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 1,574 | 40.9 → 11.4 | 77.9 → 19.5 | 165 → 35.0 | 224 → 48.4 |
+| 100,000 | name fuzzy "mangment" <= 2, pre-filter pieces ["ma", "ngm", "ent"] | 1,574 | 236 → 219 | 388 → 355 | 518 → 514 | 830 → 808 |
+| 100,000 | name fuzzy "zepelin" <= 1, pre-filter pieces ["zep", "elin"] | 265 | 74.3 → 18.5 | 74.1 → 18.4 | 129 → 30.3 | 130 → 31.7 |
+| 1,000,000 | name contains "Zeppelin" | 1,824 | 93.2 → 79.0 | 186 → 113 | 457 → 174 | 627 → 241 |
+| 1,000,000 | name contains "Budget" | 19,198 | 116 → 148 | 2507 → 3150 | 520 → 605 | 10238 → 11548 |
+| 1,000,000 | name contains "in" | 301,195 | 14.3 → 16.0 | 4874 → 5510 | 42.7 → 45.8 | 13632 → 13215 |
+| 1,000,000 | name contains-ignore-case "zeppelin" | 2,713 | 155 → 24.5 | 465 → 64.7 | 724 → 96.7 | 1708 → 231 |
+| 1,000,000 | name contains-ignore-case "budget" | 28,544 | 96.6 → 110 | 2634 → 3046 | 399 → 406 | 11234 → 11488 |
+| 1,000,000 | name contains-ignore-case "re" | 507,281 | 11.9 → 14.2 | 6630 → 7280 | 27.1 → 37.3 | 14721 → 15407 |
+| 1,000,000 | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 15,488 | 325 → 79.7 | 5572 → 1296 | 1571 → 324 | 24612 → 4828 |
+| 1,000,000 | name fuzzy "mangment" <= 2, pre-filter pieces ["ma", "ngm", "ent"] | 15,488 | 320 → 322 | 5224 → 5369 | 828 → 820 | 12229 → 12103 |
+| 1,000,000 | name fuzzy "zepelin" <= 1, pre-filter pieces ["zep", "elin"] | 2,713 | 5820 → 1274 | 14184 → 3434 | 11160 → 2136 | 26519 → 5068 |
+
+- Rare strings: 15–20× faster at 10k, 3.5–6× at 100k, 1.2–7.5× at 1M (`base` "Zeppelin" 93 → 79 ms, "zeppelin" ignore case 155 → 25 ms; `top_frozen` 457 → 174 ms and 724 → 97 ms). Case-insensitive gains most; case-sensitive rare strings gain less, because the index is case-insensitive: the candidates include the other casings (2731 for 1824 rows of "Zeppelin"), and a page that rejects many candidates queries twice.
+- Medium strings (2–3% of names: "Budget"): case-sensitive is slower with the index at every size from 100k (1M `base` 148 vs 116 ms first page); ignore case is 2× faster at 100k and 1.1–1.2× slower at 1M. Each hit costs an FTS row plus a lookup of its event, so 20–30k hits cost more than the sequential scan of the value index.
+- Short strings (1–2 characters) and dense strings cannot use it.
+- Fuzzy with pieces: `managment` at 1M 4.1× (first page) and 4.3× (all pages) faster on `base`, 5× on `top_frozen`; `zepelin` 4.6× / 4.1×. The q-gram count filter (names with at least `trigrams − 3k` query trigrams, FTS only) found candidates in 99 ms (`managment`) and 29 ms (`zepelin`) at 1M, not better than the pieces, and for k = 2 on an 8-letter word the threshold is 0 (no filter).
+
+### Optimisations measured (not committed)
+
+Two changes in a copy of `find.rs`, interface unchanged; `cargo test --release` passed (72 tests) and the differential model test passed with `EGDB_DIFF_CASES=3000`:
+
+1. `ContainsIgnoreCase` uses a Rust SQL function `egdb_contains(value, needle, 1)` (ASCII fold, no copy of the value) in place of `instr(lower(value), needle) > 0`. Same result, also for values with NUL bytes. (`LIKE '%x%'` was 2× faster than `instr(lower())` but misses values that contain a NUL byte, checked; with a NUL guard the gain shrank to ~13%. A Rust function for case-sensitive contains was slower than `instr`, so `Contains` keeps `instr`.) Needs the `functions` feature of rusqlite.
+2. Sparse plans fetch twice the chunk of candidates and keep the rest for the next chunk of the same call. A sparse plan scans and sorts all candidates on every query, so a page that rejected candidates (overridden names in a stack, the other casings) paid a whole second scan.
+
+CPU ms per query, first page / all pages, now → both changes:
+
+| entities | branch | query | matches | first page CPU ms: now → opt | all pages CPU ms: now → opt |
+| ---: | --- | --- | ---: | ---: | ---: |
+| 100,000 | base | name contains "Zeppelin" | 188 | 12.6 → 11.7 | 12.2 → 12.7 |
+| 100,000 | base | name contains "Budget" | 1,873 | 16.9 → 18.6 | 32.7 → 34.1 |
+| 100,000 | base | name contains-ignore-case "zeppelin" | 265 | 17.6 → 12.2 | 18.0 → 12.2 |
+| 100,000 | base | name contains-ignore-case "budget" | 2,792 | 25.1 → 18.8 | 76.6 → 57.6 |
+| 100,000 | base | name prefix "Weekly" | 1,615 | 5.39 → 6.06 | 9.80 → 9.20 |
+| 100,000 | base | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 1,574 | 43.9 → 32.3 | 86.6 → 57.8 |
+| 100,000 | base | name fuzzy "zepelin" <= 1, pre-filter pieces ["zep", "elin"] | 265 | 80.9 → 33.4 | 84.4 → 33.3 |
+| 100,000 | top_open | name contains "Zeppelin" | 187 | 14.9 → 14.6 | 15.0 → 14.3 |
+| 100,000 | top_open | name contains "Budget" | 1,874 | 47.6 → 23.7 | 65.5 → 42.2 |
+| 100,000 | top_open | name contains-ignore-case "zeppelin" | 261 | 22.6 → 16.1 | 24.1 → 15.7 |
+| 100,000 | top_open | name contains-ignore-case "budget" | 2,791 | 80.4 → 24.9 | 167 → 67.8 |
+| 100,000 | top_open | name prefix "Weekly" | 1,605 | 11.4 → 7.98 | 18.5 → 13.4 |
+| 100,000 | top_open | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 1,563 | 124 → 41.0 | 172 → 74.6 |
+| 100,000 | top_open | name fuzzy "zepelin" <= 1, pre-filter pieces ["zep", "elin"] | 261 | 92.0 → 43.1 | 90.4 → 43.6 |
+| 100,000 | top_frozen | name contains "Zeppelin" | 192 | 19.0 → 19.5 | 19.5 → 20.2 |
+| 100,000 | top_frozen | name contains "Budget" | 1,875 | 60.5 → 29.4 | 90.0 → 55.5 |
+| 100,000 | top_frozen | name contains-ignore-case "zeppelin" | 270 | 31.7 → 20.4 | 31.4 → 21.0 |
+| 100,000 | top_frozen | name contains-ignore-case "budget" | 2,790 | 97.5 → 33.0 | 223 → 91.8 |
+| 100,000 | top_frozen | name prefix "Weekly" | 1,605 | 13.8 → 11.2 | 20.7 → 17.4 |
+| 100,000 | top_frozen | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 1,567 | 166 → 52.4 | 242 → 101 |
+| 100,000 | top_frozen | name fuzzy "zepelin" <= 1, pre-filter pieces ["zep", "elin"] | 270 | 129 → 57.2 | 126 → 60.0 |
+| 1,000,000 | base | name contains "Zeppelin" | 1,824 | 107 → 94.9 | 210 → 194 |
+| 1,000,000 | base | name contains "Budget" | 19,198 | 133 → 131 | 2638 → 2519 |
+| 1,000,000 | base | name contains-ignore-case "zeppelin" | 2,713 | 163 → 104 | 525 → 301 |
+| 1,000,000 | base | name contains-ignore-case "budget" | 28,544 | 103 → 87.2 | 2819 → 2600 |
+| 1,000,000 | base | name prefix "Weekly" | 16,008 | 33.6 → 31.7 | 523 → 507 |
+| 1,000,000 | base | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 15,488 | 349 → 222 | 5754 → 3549 |
+| 1,000,000 | base | name fuzzy "zepelin" <= 1, pre-filter pieces ["zep", "elin"] | 2,713 | 5969 → 1556 | 15079 → 3878 |
+| 1,000,000 | top_open | name contains "Zeppelin" | 1,782 | 335 → 116 | 447 → 224 |
+| 1,000,000 | top_open | name contains "Budget" | 18,976 | 403 → 136 | 7444 → 2583 |
+| 1,000,000 | top_open | name contains-ignore-case "zeppelin" | 2,638 | 537 → 119 | 1301 → 353 |
+| 1,000,000 | top_open | name contains-ignore-case "budget" | 28,237 | 214 → 194 | 5996 → 5430 |
+| 1,000,000 | top_open | name prefix "Weekly" | 15,935 | 74.8 → 38.2 | 1176 → 568 |
+| 1,000,000 | top_open | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 15,218 | 1138 → 257 | 17518 → 4110 |
+| 1,000,000 | top_open | name fuzzy "zepelin" <= 1, pre-filter pieces ["zep", "elin"] | 2,638 | 7822 → 2287 | 18284 → 5319 |
+| 1,000,000 | top_frozen | name contains "Zeppelin" | 1,773 | 463 → 160 | 636 → 323 |
+| 1,000,000 | top_frozen | name contains "Budget" | 19,019 | 536 → 186 | 10455 → 3754 |
+| 1,000,000 | top_frozen | name contains-ignore-case "zeppelin" | 2,626 | 725 → 177 | 1663 → 536 |
+| 1,000,000 | top_frozen | name contains-ignore-case "budget" | 28,284 | 392 → 412 | 10994 → 11285 |
+| 1,000,000 | top_frozen | name prefix "Weekly" | 15,933 | 69.3 → 42.2 | 1120 → 708 |
+| 1,000,000 | top_frozen | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 15,221 | 1482 → 401 | 23433 → 5831 |
+| 1,000,000 | top_frozen | name fuzzy "zepelin" <= 1, pre-filter pieces ["zep", "elin"] | 2,626 | 10765 → 3264 | 24659 → 7626 |
+
+- Rare contains on the 1M stacks: 335 → 116 ms (`top_open`), 463 → 160 ms (`top_frozen`) for the first page; ignore case 537 → 119 ms and 725 → 177 ms. Medium contains on stacks 2.9× faster for the full read. Fuzzy with pieces 2.6–4.4× faster. Single-layer case-sensitive queries do not change (within noise). `top_frozen` ignore-case "budget" at 1M does not change: its plan is the dictionary scan.
+
+A third, measured with the existing planner knobs only (no code written): the dense threshold for a lone `Eq` term. Today a plan is dense at `sqrt(limit × entities)` candidates (10 000 at 100k, 31 623 at 1M) and is then probed per entity. For `type = X` the sorted (sparse) plan stays cheaper up to about 2.5× that count:
+
+| entities | branch | query | matches | default (probe): first page / all pages CPU ms | sparse (sorted in SQL, `probe=2`): first / all CPU ms | dictionary scan (`dense=2`): first / all CPU ms |
+| ---: | --- | --- | ---: | ---: | ---: | ---: |
+| 100,000 | base | type = "task" | 50,278 | 8.03 / 405 | 14.6 / 703 | 7.74 / 403 |
+| 100,000 | base | type = "project" | 9,988 | 16.9 / 176 | 6.84 / 66.7 | 30.2 / 289 |
+| 100,000 | base | type = "doc" | 4,800 | 7.84 / 39.6 | 5.23 / 24.7 | 7.79 / 37.5 |
+| 100,000 | top_frozen | type = "task" | 49,582 | 15.4 / 772 | 41.1 / 1910 | 16.3 / 808 |
+| 100,000 | top_frozen | type = "project" | 9,842 | 47.6 / 483 | 15.4 / 148 | 62.4 / 617 |
+| 100,000 | top_frozen | type = "doc" | 4,728 | 15.8 / 71.1 | 11.2 / 51.7 | 15.1 / 76.5 |
+| 1,000,000 | base | type = "task" | 500,076 | 10.9 / 6010 | 96.6 / 50204 | 13.0 / 5657 |
+| 1,000,000 | base | type = "project" | 99,875 | 29.3 / 2941 | 34.0 / 3557 | 40.5 / 4638 |
+| 1,000,000 | base | type = "doc" | 49,466 | 58.8 / 3030 | 22.4 / 1116 | 76.7 / 4419 |
+| 1,000,000 | top_frozen | type = "task" | 492,688 | 25.8 / 13361 | 385 / 196545 | 24.8 / 12989 |
+| 1,000,000 | top_frozen | type = "project" | 98,400 | 86.5 / 8839 | 105 / 10054 | 90.7 / 10071 |
+| 1,000,000 | top_frozen | type = "doc" | 48,755 | 182 / 8666 | 63.3 / 3092 | 192 / 9748 |
+
+`doc` (5%) at 1M: 2.6–2.8× faster all pages and first page if sorted in SQL; `project` (10%) at 100k: 2.5–3×; `project` at 1M and `task` (50%) at any size are faster with the probe. Raising the cap for a lone `Eq` to about `sqrt(6 × limit × entities)` would pick the faster plan in every measured case. The dictionary scan (`dense=2`) was never better than the probe for these queries.
+
+### Recommendation
+
+- Exact `type` and `Prefix` are fine at 1M (index seeks; cost follows matches). Contains at 1M costs about 0.1 s on one layer and 0.3–0.5 s on a 3-layer stack per call, and every further page of a sparse result scans again; that is the limit of the scan design.
+- Fuzzy: do not add a fuzzy filter to the core yet. A caller can do typo-tolerant search now with `Custom` behind a pigeonhole `ContainsIgnoreCase` pre-filter: it never loses matches, and it is about 6× faster than `Custom` alone up to 100k entities when the pieces are 4+ letters and not common. At 1M it gains little today (1.6× with optimisations 1 and 2), and it is slower than the plain `Custom` scan when a piece is short or common, so a caller should only use pieces of 4+ letters that are not common words. Expect 0.4–0.6 s per first page and 6–12 s for a full fuzzy read at 1M without an index.
+- If fuzzy or rare-substring search on millions of names becomes a product need, the trigram index is the right tool for rare strings (1.2–20× faster; ignore case 6–20×; fuzzy with pieces 4–5× faster at 1M), but it costs about +24% of the file, +25–85 µs per text event written (+15–40 µs per event of a mixed workload), a second candidate path with history, and it is slower than the scan for medium-frequency strings. If built: make it opt-in per key, index current rows and frozen-range history only, encode the entity in the index row (to drop the event lookup), and keep the scan for short and dense strings.
+- Worth doing first, low risk: optimisation 1 and 2 above (up to 3–4× on stacks), and the `Eq` dense-threshold change (2.5–3× on 5–10% types).
