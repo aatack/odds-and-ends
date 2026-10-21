@@ -205,7 +205,8 @@ The walk reads `root, a, a1, a2, b, c`, one node at a time.
 - **Exact matches are the fast path.** An `Eq` filter is one index seek for each layer. Why: "type is X" and "id field is Y" are the most common queries.
 - **Typed comparisons.** Numbers compare with numbers, text with text. Why: `"10" > 9` has no useful meaning.
 - **Keyset pages, sorted by id.** The cursor is the last id returned. Why: no state between pages, like the walk. A page has a bounded cost.
-- **No new indexes.** Find uses the value indexes that already exist (one gained a column). Why: a full text index costs build time, space and work on each write, and the scan is fast enough at this size (BENCHMARKS.md).
+- **Optional order by a value.** The cursor is then the last value and id. The value index already holds the rows in value order, so a large result is a merge of index ranges, not a sort. Why: "top tasks by score" is a common list.
+- **No new indexes.** Find uses the value indexes that already exist (two gained a column, schema V2 and V3, so checks read the index alone). Why: a full text index costs build time, space and work on each write, and the scan is fast enough at this size (BENCHMARKS.md).
 - **Plan choices use estimates; results never do.** Why: a wrong estimate must only cost time.
 
 ## 13. Undo
@@ -227,5 +228,4 @@ The walk reads `root, a, a1, a2, b, c`, one node at a time.
 ## 15. Out of scope and pending
 
 - Diffs between branches are out of scope for now.
-- `find` ordered by a value is not built.
 - Sync between two stores is not built. Fixed branch IDs and per-branch sequence IDs prepare for it.

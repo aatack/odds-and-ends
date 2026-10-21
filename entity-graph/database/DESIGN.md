@@ -351,7 +351,7 @@ CREATE INDEX link_history_superseded ON link_history(bid, superseded_by);  -- un
 | PK `link_current (bid, source, link_type, destination)` | Outbound links of one type (prefix). One link. Supersede. |
 | `link_current_in (bid, destination, link_type)` | Inbound links (parents). |
 | `UNIQUE (bid, seq)` on current tables, PK `(bid, seq)` on history | R1 uniqueness. The events of one batch (undo). |
-| `value_current_value (bid, key, value, eid)` | Find by value. "All entities of type X" (R21): a null type does not match, so archived entities drop out. |
+| `value_current_value (bid, key, value, eid, seq)` | Find by value. `seq` (schema V3) lets a value-order scan tell the winning row from the index alone. "All entities of type X" (R21): a null type does not match, so archived entities drop out. |
 | `value_history_target (bid, eid, key, seq)` | Bounded roll-up of values (section 8.3). The same lookup as the current PK, plus seq. |
 | `value_history_value (bid, key, value, eid, seq, superseded_by)` | `find` in a bounded range. `superseded_by` (added in schema V2) lets the "still the winner at the range end" check use the index alone. |
 | `link_history_target (bid, source, link_type, destination, seq)` | Bounded roll-up of outbound links. |
@@ -738,7 +738,7 @@ pub enum Filter {
     And(Vec<Filter>), Or(Vec<Filter>), Not(Box<Filter>),
     Custom(Predicate),   // Arc<dyn Fn(&str, &BTreeMap<String, Value>) -> bool + Send + Sync>
 }
-pub enum FindOrder { EntityId /* default */, Insertion }
+pub enum FindOrder { EntityId /* default */, Insertion, ValueAsc(String), ValueDesc(String) }
 pub struct FindOptions { pub limit: usize,              // default 1000 rows
                          pub cursor: Option<String>,    // `next` of the previous page
                          pub order: FindOrder,
@@ -760,7 +760,7 @@ fn find(&self, branch: BranchId, filter: &Filter, options: FindOptions) -> Resul
 3. **Ranges.** A number bound (`Int` or `Float`) compares with `Int` and `Float` values only, exactly (no rounding of large `i64`). A `Text` bound compares with `Text` values only, in byte order (SQLite `BINARY`). Other bound types are `Error::Invalid`. `Bool` and `Json` values never match a range.
 4. **Text.** `Contains` and `Prefix` match `Text` values only. They are case-sensitive. `ContainsIgnoreCase` folds ASCII letters only.
 5. **Archived (R23).** By default, an entity matches only if its winning `type` is not null. With `include_archived`, every entity with at least one event in the view is a candidate (the same as `links_including_archived`).
-6. **Order and paging.** `EntityId` sorts by the external id (byte order). `Insertion` sorts by the store's internal entity number (first write anywhere in the store). `next` is the id of the last row when the page is full, `None` when nothing is left. Pass it back as `cursor`. Pages are stateless and stable: a store that does not change gives the same rows, and the pages put together are the result of one big call. `scan_limit` caps the candidates checked by one call. When it stops a page early, `next` is the last candidate checked.
+6. **Order and paging.** `EntityId` sorts by the external id (byte order). `Insertion` sorts by the store's internal entity number (first write anywhere in the store). `next` is the id of the last row when the page is full, `None` when nothing is left. Pass it back as `cursor`. `ValueAsc(key)` and `ValueDesc(key)` sort by the final value of `key`: numbers (`Int`, `Float`, `Bool` as 0/1) by value before text (`Text`, `Json` as its text) by bytes, ties by the internal entity number (reversed for `ValueDesc`). They add `NotNull(key)` to the filter. Their cursor is opaque (the last row's value and id). Pages are stateless and stable: a store that does not change gives the same rows, and the pages put together are the result of one big call. `scan_limit` caps the candidates checked by one call. When it stops a page early, `next` is the last candidate checked.
 7. `limit = 0` is `Error::Invalid`.
 
 **Plan.** These steps are the optimisations (BENCHMARKS.md, "Find").
@@ -770,8 +770,9 @@ fn find(&self, branch: BranchId, filter: &Filter, options: FindOptions) -> Resul
 3. **Contains** is `instr(value, ?)` on the index range `value >= ''` of the key. No FTS index (see BENCHMARKS.md).
 4. **And** estimates the candidates of each term (up to 2048) in rank order (`Eq` first). The first term under 2048 is used alone, and the other terms are checked after the roll-up. If all terms are large, the two first are intersected in SQL (measured faster than the smallest large term alone). **Or** is a union, if every part has an index plan. Other filters (`Not`, `Ne`, `IsNull`, `Custom`) have no plan.
 5. **No plan.** The store reads the entity dictionary in page order and checks each entity after the roll-up. With the default archived filter this is also the plan of a lone `type` filter that has no index term.
-6. **Keyset pages.** Candidates come after the cursor, in chunks of `limit` (min 64, max 2048). A plan is *dense* when its estimated candidates reach `sqrt(limit × entities)` (10 000 for pages of 1000 in 100 000 entities): the cost of sorting all candidates on each page equals the cost of reading `limit / density` entities. Sparse candidates are sorted in SQL. Dense ones are read in dictionary order: with an `EXISTS` probe of each entity when the plan is exact matches only or the view is one open layer, else by checking every entity after the roll-up. The estimate counts the current rows of each layer separately (each count streams from the index and stops at the cap) and never decides a result.
-7. **Batched roll-up.** Each chunk is rolled up in one `values` read for each layer. With `values = false`, only the keys of the filter are read.
+6. **Keyset pages.** Candidates come after the cursor, in chunks of `limit` (min 64, max 2048). A plan is *dense* when its estimated candidates reach `sqrt(limit × entities)` (10 000 for pages of 1000 in 100 000 entities): the cost of sorting all candidates on each page equals the cost of reading `limit / density` entities. Sparse candidates are sorted in SQL. Dense ones are read in dictionary order: with an `EXISTS` probe of each entity when the view reads no history (no frozen range) or the plan is one `Eq`, else by checking every entity after the roll-up (a probe that must also search history costs more than the roll-up). The estimate counts the current rows of each layer separately (each count streams from the index and stops at the cap) and never decides a result.
+7. **Value order.** A sparse filter collects all its candidates, rolls them up and sorts them by `(value, eid)` in memory on each page. A dense filter reads the rows of the order key in `(value, eid)` order from `value_current_value` (and `value_history_value` for frozen ranges) of every layer, merged by SQLite, and emits an entity at the row that holds its final value. A bound of the filter on the order key (for example `score > 50`) limits that scan. Schema V3 put `seq` in `value_current_value`, so the "is this row the winner" check of the merge needs no table lookup.
+8. **Batched roll-up.** Each chunk is rolled up in one `values` read for each layer. With `values = false`, only the keys of the filter are read.
 
 
 ---
@@ -875,7 +876,7 @@ Resolved from draft 1:
 
 Still open:
 
-- **Q2. Walk and find**: **resolved** by R30 (walk) and 11.2 (find). Open: is `find` ordered by a value (for example `score`) needed? Today the order is the entity id or insertion.
+- **Q2. Walk and find**: **resolved** by R30 (walk) and 11.2 (find). `find` can also be ordered by a value (`FindOrder::ValueAsc/ValueDesc`).
 
 - **Q3. Interpretations.** Do I2 to I18 match the intent? I2 (open entries chain, frozen entries do not) is the most important.
 - **Q13. Undo after a fork.** A fork or a merge freezes a range, so it blocks undo of earlier batches. Must undo be allowed and the frozen follower lose the events? Or must open forks be used?

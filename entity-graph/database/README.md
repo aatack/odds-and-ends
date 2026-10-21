@@ -61,6 +61,10 @@ loop {
     for row in &page.rows { println!("{} {:?}", row.id, row.values.get("title")); }
     match page.next { Some(next) => cursor = Some(next), None => break }
 }
+
+// Top 20 tasks by score, highest first (the cursor of the next page is in `next`).
+let top = store.find(main, &Filter::Eq("type".into(), Value::Text("task".into())),
+    FindOptions { limit: 20, order: egdb::FindOrder::ValueDesc("score".into()), ..Default::default() })?;
 ```
 
 ## Status
@@ -75,7 +79,7 @@ loop {
   - Branches: create, fork, pull, merge, rebase, archive
   - Undo
 - **Walk:** `walk` is a paginated depth-first walk (type-based follow map, continue/include predicates, step limit, `next` path to resume, read-ahead, optional cache and visited set). See DESIGN.md section 11.1.
-- **Find:** `find` gives a paginated flat list of entities that match a `Filter` (Eq, ranges, contains, prefix, in, null, and/or/not, custom). See DESIGN.md section 11.2.
+- **Find:** `find` gives a paginated flat list of entities that match a `Filter` (Eq, ranges, contains, prefix, in, null, and/or/not, custom), ordered by entity id, insertion, or a value. See DESIGN.md section 11.2.
 
 ## Develop
 
