@@ -3,7 +3,7 @@
 //! ```text
 //! cargo run --release --example bench_find -- FILE N [--branches base,top_open] \
 //!     [--queries 0,3,...] [--baseline | --naive] [--no-full] [--add-score BRANCH,...] \
-//!     [--values] [--insertion | --order-by KEY | --order-desc KEY] [--cache-kib N] [--knob probe|no_intersect|dense|intersect_sql|exact_count=V]...
+//!     [--values] [--insertion | --order-by KEY | --order-desc KEY] [--cache-kib N] [--knob probe|no_intersect|dense|exact_count=V]...
 //! ```
 //!
 //! `N` is the entity count of the file (IDs are the hashed IDs of the
@@ -224,7 +224,6 @@ fn main() {
                 "probe" => &egdb::find_knobs::PROBE,
                 "no_intersect" => &egdb::find_knobs::NO_INTERSECT,
                 "dense" => &egdb::find_knobs::DENSE,
-                "intersect_sql" => &egdb::find_knobs::INTERSECT_SQL,
                 "exact_count" => &egdb::find_knobs::EXACT_COUNT,
                 _ => panic!("unknown knob {k}"),
             };

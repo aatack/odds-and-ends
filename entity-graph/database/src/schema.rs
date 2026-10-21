@@ -6,7 +6,7 @@ use crate::error::{Error, Result};
 
 /// Migration `i` takes the file from version `i` to version `i + 1`.
 /// Append only: never edit a migration that has shipped.
-const MIGRATIONS: &[&str] = &[V1, V2];
+const MIGRATIONS: &[&str] = &[V1, V2, V3];
 
 /// The schema version this build writes.
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
@@ -82,7 +82,7 @@ CREATE INDEX value_history_value      ON value_history(bid, key, value, eid, seq
 CREATE INDEX value_history_superseded ON value_history(bid, superseded_by);  -- undo
 
 -- Find by value, including "all entities of type X" (key = 'type').
-CREATE INDEX value_current_value ON value_current(bid, key, value, eid);
+CREATE INDEX value_current_value ON value_current(bid, key, value, eid);  -- replaced in V3
 
 -- Links: one current row per (branch, source, type, destination).
 CREATE TABLE link_current (
@@ -146,4 +146,11 @@ pub(crate) fn migrate(conn: &mut Connection) -> Result<()> {
 const V2: &str = r#"
 DROP INDEX value_history_value;
 CREATE INDEX value_history_value ON value_history(bid, key, value, eid, seq, superseded_by);
+"#;
+
+/// V3: `seq` joins the current value index, so that `find` checks the range
+/// of a frozen layer (`seq BETWEEN lo AND hi`) without a table lookup.
+const V3: &str = r#"
+DROP INDEX value_current_value;
+CREATE INDEX value_current_value ON value_current(bid, key, value, eid, seq);
 "#;
