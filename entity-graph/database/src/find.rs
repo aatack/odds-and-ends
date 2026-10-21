@@ -854,6 +854,16 @@ impl Store {
                 if total <= SAMPLE * 4 && !knobs::always_sample() {
                     return self.count_exact(view, key, cond, cap);
                 }
+                // A condition that is an index range (all but `Instr`) is
+                // first counted exactly up to `SAMPLE` rows: for a selective
+                // term that is a short index read, cheaper than the sample.
+                if !matches!(cond, Cond::Instr(..)) && !knobs::always_sample() {
+                    let small = cap.min(SAMPLE);
+                    let n = self.count_exact(view, key, cond, small)?;
+                    if n < small {
+                        return Ok(n);
+                    }
+                }
                 let sample = sample_eids(total);
                 let json = serde_json::to_string(&sample).expect("ints serialise");
                 let mut most = 0;
