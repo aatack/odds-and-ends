@@ -685,14 +685,12 @@ impl Store {
         // must also search history, BENCHMARKS.md).
         let (plan, probe) = match (&plan, knobs::probe()) {
             (Plan::Everything, _) => (plan, false),
-            (_, Some(forced)) => (plan, forced && matches!(options.order, FindOrder::EntityId)),
+            (_, Some(forced)) => (plan, forced),
             (_, None) if self.count(&view, &plan, cap)? < cap => (plan, false),
             (_, None)
-                if matches!(options.order, FindOrder::EntityId)
-                    && (knobs::dense() == 1
-                        || (knobs::dense() == 0
-                            && (no_history(&view)
-                                || matches!(plan, Plan::Term(_, Cond::Eq(_)))))) =>
+                if (knobs::dense() == 1
+                    || (knobs::dense() == 0
+                        && (no_history(&view) || matches!(plan, Plan::Term(_, Cond::Eq(_)))))) =>
             {
                 (plan, true)
             }
@@ -970,6 +968,14 @@ impl Store {
                 format!(
                     "SELECT e.eid, e.ext_id FROM entities e INDEXED BY sqlite_autoindex_entities_1 \
                      WHERE {c} AND {p} ORDER BY e.ext_id LIMIT {chunk}"
+                )
+            }
+            (_, _) if probe => {
+                let p = sql.probe(view, plan, "e.eid");
+                let c = self.after_cond(&mut sql, after, "e.ext_id", "e.eid");
+                format!(
+                    "SELECT e.eid, e.ext_id FROM entities e \
+                     WHERE {c} AND {p} ORDER BY e.eid LIMIT {chunk}"
                 )
             }
             (_, FindOrder::EntityId) => {
