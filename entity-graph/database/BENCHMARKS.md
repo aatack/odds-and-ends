@@ -497,7 +497,7 @@ Base and top_frozen, final build (first page ms / full read s):
 | top_frozen | score > 9899 AND type = task | 16.44 / 0.016 | 22.93 / 0.021 | 13.53 / 0.013 |
 
 - Values on cost 5–80% more (all keys are read and copied).
-- Insertion order reads the dictionary by `eid`, with no probe. On frozen views this is faster than the entity-id order of the same plan: `priority = 1 OR 2` on top_frozen 0.61 s vs 1.55 s (open question below).
+- Insertion order reads the dictionary by `eid`, with no probe. On frozen views this is faster than the entity-id order of the same plan: `priority = 1 OR 2` on top_frozen 0.61 s vs 1.55 s (settled in Q2 of round 2: locality of the roll-up; since cb24a30 Insertion pages also probe).
 
 ### Contains: instr scan vs FTS5 trigram
 
