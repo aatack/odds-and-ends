@@ -856,8 +856,9 @@ impl Store {
             Plan::Term(key, cond) if !knobs::exact_count() => {
                 // Sample: the matching current rows of a few windows of
                 // consecutive entity numbers, scaled to all entities. Each
-                // window reads the primary key `(bid, eid, key)`, so the cost
-                // does not depend on the selectivity of the condition.
+                // window reads the primary key `(bid, eid, key)` (`+key` keeps
+                // SQLite off the value index), so the cost does not depend on
+                // the selectivity of the condition.
                 let total = self.max_eid()?;
                 if total <= SAMPLE_WINDOWS * SAMPLE_WIDTH * 4 && !knobs::always_sample() {
                     return self.count_exact(view, key, cond, cap);
@@ -872,7 +873,7 @@ impl Store {
                         let c = sql.cond(cond);
                         let text = format!(
                             "SELECT count(*) FROM value_current WHERE bid = {} \
-                             AND eid BETWEEN {lo} AND {} AND key = {k} AND {c}",
+                             AND eid BETWEEN {lo} AND {} AND +key = {k} AND {c}",
                             src.bid,
                             lo + SAMPLE_WIDTH - 1
                         );
