@@ -3,7 +3,7 @@
 //! ```text
 //! cargo run --release --example bench_find -- FILE N [--branches base,top_open] \
 //!     [--queries 0,3,...] [--baseline | --naive] [--no-full] [--add-score BRANCH,...] \
-//!     [--values] [--insertion] [--cache-kib N] [--knob probe|no_intersect|dense|intersect_sql|exact_count=V]...
+//!     [--values] [--insertion | --order-by KEY | --order-desc KEY] [--cache-kib N] [--knob probe|no_intersect|dense|intersect_sql|exact_count=V]...
 //! ```
 //!
 //! `N` is the entity count of the file (IDs are the hashed IDs of the
@@ -273,7 +273,11 @@ fn main() {
     let full = !flag("--no-full");
     let opts = FindOptions {
         values: flag("--values"),
-        order: if flag("--insertion") {
+        order: if let Some(k) = value("--order-by") {
+            FindOrder::ValueAsc(k)
+        } else if let Some(k) = value("--order-desc") {
+            FindOrder::ValueDesc(k)
+        } else if flag("--insertion") {
             FindOrder::Insertion
         } else {
             FindOrder::EntityId
