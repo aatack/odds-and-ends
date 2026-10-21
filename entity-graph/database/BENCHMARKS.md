@@ -602,7 +602,7 @@ The wall clock could not separate them, so the decision used process CPU (3 runs
 | title contains "9" (47%) | 5.97–6.08 s | 6.45–6.57 s |
 | priority = 1 OR 2 (33%) | 6.32–6.69 s | 6.15–6.33 s |
 
-Decision (9663e18, 04582c9): a dense plan probes each entity when the view reads no history (no frozen range) or the plan is one `Eq`; otherwise it reads the dictionary and checks every entity after the roll-up (a probe that must also search the history arms costs more than the roll-up: top_frozen `score > 4999` probe vs check all, first build: 7.5 vs 1.0 s). With CPU time, the dense 1M queries are 2–8% faster than naive, and the `Or` is up to 6% slower. The old 8.0 s vs 6.9 s gap was mostly the 10%-of-entities dense threshold (fixed in 5c0c0e4) and wall-clock noise.
+Decision (9663e18, 04582c9): a dense plan probes each entity when the view reads no history (no frozen range) or the plan is one `Eq`; otherwise it reads the dictionary and checks every entity after the roll-up (a probe that must also search the history arms costs more than the roll-up: top_frozen `score > 4999` full read, wall clock, first build with the probe 7.53 s, da0b12e checking all 1.01 s). With CPU time, the dense 1M queries are 2–8% faster than naive, and the `Or` is up to 6% slower. The old 8.0 s vs 6.9 s gap was mostly the 10%-of-entities dense threshold (fixed in 5c0c0e4) and wall-clock noise.
 
 ### Q2. Insertion vs entity-id order
 
@@ -654,7 +654,7 @@ Full read, thread CPU s, ids only (minimum of 2; `--cache-kib` 2000 is the defau
 | 31929d0 | 5.03–5.35 | – |
 | now (cb24a30) | 3.72–4.06 | 226–232 ms thread CPU |
 
-- It was real, from 5c0c0e4 (dense threshold `sqrt(limit × entities)`). The estimate counted the first `cap` rows of `title` with `instr`, and that count stopped early or late depending on where matches fell in the index: the estimate for `contains "99"` was 50× off, so the planner switched between plans from page to page.
+- It was real, from 5c0c0e4 (dense threshold `sqrt(limit × entities)`). The estimate counted the first `cap` rows of `title` with `instr`; with the larger cap that count read far more of the index on each page, and where it stopped depended on where matches fell in the index, so the cost and the plan choice moved between pages.
 - Fix (6e48eb4, 7737652, 9663e18, 04582c9): estimates for large stores use a fixed hashed sample of 2048 entity numbers (primary key lookups, `+key` keeps SQLite off the value index), so the cost does not depend on the selectivity; `And` intersects its two smallest terms in SQL. Reading the smallest term and probing the others (6e48eb4) measured slower than the `INTERSECT` and was reverted in 04582c9.
 
 ### Q4. Order by a value (`FindOrder::ValueAsc(key)` / `ValueDesc(key)`)
@@ -674,7 +674,7 @@ Thread CPU, ids only, order key `score` (minimum of 2):
 | 1M main | score > 4999 | 500430 | 5.3 / 2.81 | 4.8 / 2.81 | 11.7 / 5.95 |
 
 - Keyset on `(value, eid)`; the cursor is opaque. A filter on the order key is served by the merge scan itself and is 2× faster than entity-id order. A dense filter on another key (`type = task` by score) walks the `score` rows in order and checks the filter: 2× the entity-id cost on open views, 3.4× on top_frozen (the frozen layers merge history rows of `score`, which the rich file changes often).
-- Schema V3 (04582c9) adds `seq` to `value_current_value`, so the "is this row the winner" check of the merge reads the index only. Pushing the filter's bound on the order key into the scan (04582c9): top_frozen `type = task` by score, full read 38.1 → 0.54 s CPU when the filter has a bound on `score`.
+- Schema V3 (04582c9) adds `seq` to `value_current_value`, so the "is this row the winner" check of the merge reads the index only. The filter's bound on the order key limits the merge scan (04582c9): top_frozen `score > 4999` by score, full read 0.79 s vs 1.12 s in entity-id order.
 - Decision: added (ae705e1, 04582c9). The model test covers it (random filters, both directions, paging).
 
 ### Q5. FTS5 trigram for contains at 1M
@@ -706,7 +706,6 @@ Migration of the rich file (V2 → V3, 847 236 current value rows; rebuild of `v
 | --- | --- | --- |
 | Index-range terms (all but contains) are counted exactly up to 2048 rows before sampling | de66145 | `title =` one entity, first page 3.6–4.0 → 0.0 ms CPU (base and 1M); base `score > 9899` 7.9 → 4.4 ms |
 | Dense Insertion pages probe | cb24a30 | table in Q2: 1M `type = task` 2.41 → 1.77 s |
-| Dense probe also for one `Eq` on frozen views | 04582c9 | top_frozen `type = task` entity-id order, full read 0.88 s (check all: 1.07 s process CPU before) |
 
 ### Tests
 
