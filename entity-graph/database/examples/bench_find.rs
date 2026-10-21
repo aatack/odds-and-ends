@@ -2,7 +2,8 @@
 //!
 //! ```text
 //! cargo run --release --example bench_find -- FILE N [--branches base,top_open] \
-//!     [--queries type,title,...] [--baseline] [--no-full] [--add-score BRANCH,...]
+//!     [--queries 0,3,...] [--baseline | --naive] [--no-full] [--add-score BRANCH,...] \
+//!     [--values] [--insertion] [--cache-kib N] [--knob probe|no_intersect|dense|intersect_sql|exact_count=V]...
 //! ```
 //!
 //! `N` is the entity count of the file (IDs are the hashed IDs of the
@@ -182,7 +183,7 @@ fn main() {
             !a.starts_with("--")
                 && (*i == 0
                     || !all[i - 1].starts_with("--")
-                    || ["--baseline", "--no-full", "--values", "--insertion"]
+                    || ["--baseline", "--no-full", "--values", "--insertion", "--naive"]
                         .contains(&all[i - 1].as_str()))
         })
         .map(|(_, a)| a)
@@ -191,6 +192,25 @@ fn main() {
     let n: u64 = pos[1].parse().unwrap();
     let mut store = Store::open(&path).unwrap();
     store.set_mmap_size(0).unwrap();
+    if let Some(kib) = value("--cache-kib") {
+        store.set_cache_size_kib(kib.parse().unwrap()).unwrap();
+    }
+    // `--knob name=value`, repeatable: planner switches (`egdb::find_knobs`).
+    for (i, a) in all.iter().enumerate() {
+        if a == "--knob" {
+            let (k, v) = all[i + 1].split_once('=').expect("name=value");
+            let v: u8 = v.parse().unwrap();
+            let knob = match k {
+                "probe" => &egdb::find_knobs::PROBE,
+                "no_intersect" => &egdb::find_knobs::NO_INTERSECT,
+                "dense" => &egdb::find_knobs::DENSE,
+                "intersect_sql" => &egdb::find_knobs::INTERSECT_SQL,
+                "exact_count" => &egdb::find_knobs::EXACT_COUNT,
+                _ => panic!("unknown knob {k}"),
+            };
+            knob.store(v, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
     let named = |store: &Store, name: &str| {
         store
             .branches()
@@ -255,7 +275,17 @@ fn main() {
             }
             let mut variants: Vec<(&str, Filter, FindOptions)> =
                 vec![("index", f.clone(), opts.clone())];
-            if flag("--baseline") {
+            if flag("--naive") {
+                let check = std::sync::Arc::new(check);
+                variants = vec![(
+                    "naive",
+                    Filter::custom(move |_, v| v.contains_key(TYPE_KEY) && check(v)),
+                    FindOptions {
+                        include_archived: true,
+                        ..opts.clone()
+                    },
+                )];
+            } else if flag("--baseline") {
                 let check = std::sync::Arc::new(check);
                 let c1 = check.clone();
                 variants.push(("baseline", Filter::custom(move |_, v| c1(v)), opts.clone()));

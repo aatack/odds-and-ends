@@ -411,6 +411,28 @@ pub mod knobs {
     /// second one is a bounded term), instead of using the best one alone.
     /// 0: yes, 1: no.
     pub static NO_INTERSECT: AtomicU8 = AtomicU8::new(0);
+    /// For a dense plan: 0: choose; 1: probe; 2: dictionary scan.
+    pub static DENSE: AtomicU8 = AtomicU8::new(0);
+
+    /// 1: `And` intersects its parts with SQL `INTERSECT` (the older plan).
+    pub static INTERSECT_SQL: AtomicU8 = AtomicU8::new(0);
+    /// Estimates: 0: sample in large stores; 1: count exactly (up to the
+    /// cap); 2: always sample.
+    pub static EXACT_COUNT: AtomicU8 = AtomicU8::new(0);
+
+    pub fn intersect_sql() -> bool {
+        INTERSECT_SQL.load(Ordering::Relaxed) == 1
+    }
+    pub fn exact_count() -> bool {
+        EXACT_COUNT.load(Ordering::Relaxed) == 1
+    }
+    pub fn always_sample() -> bool {
+        EXACT_COUNT.load(Ordering::Relaxed) == 2
+    }
+
+    pub fn dense() -> u8 {
+        DENSE.load(Ordering::Relaxed)
+    }
 
     pub fn probe() -> Option<bool> {
         match PROBE.load(Ordering::Relaxed) {
@@ -509,11 +531,23 @@ impl Sql {
                 }
                 arms.join(" UNION ")
             }
-            Plan::All(parts) => parts
+            // The first (smallest) part gives the rows; the others are
+            // probed for each of them. `knobs::intersect_sql` keeps the
+            // older `INTERSECT` of every part, for comparison.
+            Plan::All(parts) if knobs::intersect_sql() => parts
                 .iter()
                 .map(|p| format!("SELECT eid FROM ({})", self.gen(view, p)))
                 .collect::<Vec<_>>()
                 .join(" INTERSECT "),
+            Plan::All(parts) => {
+                let first = self.gen(view, &parts[0]);
+                let rest = parts[1..]
+                    .iter()
+                    .map(|p| self.probe(view, p, "a.eid"))
+                    .collect::<Vec<_>>()
+                    .join(" AND ");
+                format!("SELECT a.eid FROM ({first}) AS a WHERE {rest}")
+            }
             Plan::Any(parts) if parts.is_empty() => "SELECT eid FROM entities WHERE 0".into(),
             Plan::Any(parts) => parts
                 .iter()
@@ -524,8 +558,9 @@ impl Sql {
         }
     }
 
-    /// A condition on `e.eid`: it is a candidate of the plan (per-entity probes).
-    fn probe(&mut self, view: &View, plan: &Plan) -> String {
+    /// A condition on the entity column `col`: it is a candidate of the plan
+    /// (per-entity probes).
+    fn probe(&mut self, view: &View, plan: &Plan, col: &str) -> String {
         match plan {
             Plan::Term(key, cond) => {
                 let k = self.bind(SqlValue::Text(key.clone()));
@@ -541,12 +576,12 @@ impl Sql {
                         };
                         arms.push(format!(
                             "EXISTS (SELECT 1 FROM value_current WHERE bid = {bid} \
-                             AND eid = e.eid AND key = {k} AND {c}{seq})"
+                             AND eid = {col} AND key = {k} AND {c}{seq})"
                         ));
                         if hi != OPEN {
                             arms.push(format!(
                                 "EXISTS (SELECT 1 FROM value_history INDEXED BY value_history_target \
-                                 WHERE bid = {bid} AND eid = e.eid AND key = {k} \
+                                 WHERE bid = {bid} AND eid = {col} AND key = {k} \
                                  AND seq BETWEEN {lo} AND {hi} AND superseded_by > {hi} AND {c})"
                             ));
                         }
@@ -562,7 +597,7 @@ impl Sql {
                 "({})",
                 parts
                     .iter()
-                    .map(|p| self.probe(view, p))
+                    .map(|p| self.probe(view, p, col))
                     .collect::<Vec<_>>()
                     .join(" AND ")
             ),
@@ -571,7 +606,7 @@ impl Sql {
                 "({})",
                 parts
                     .iter()
-                    .map(|p| self.probe(view, p))
+                    .map(|p| self.probe(view, p, col))
                     .collect::<Vec<_>>()
                     .join(" OR ")
             ),
@@ -591,6 +626,10 @@ enum After {
 fn one_open_layer(view: &View) -> bool {
     matches!(view.sources.as_slice(), [src] if matches!(src.intervals.as_slice(), [(lo, hi)] if *lo <= 1 && *hi == OPEN))
 }
+
+/// Estimates sample this many windows of this many consecutive entities.
+const SAMPLE_WINDOWS: i64 = 4;
+const SAMPLE_WIDTH: i64 = 512;
 
 /// `And` terms with fewer candidates than this are used alone.
 const AND_COUNT_CAP: i64 = 2048;
@@ -642,7 +681,8 @@ impl Store {
             (_, None) if self.count(&view, &plan, cap)? < cap => (plan, false),
             (_, None)
                 if matches!(options.order, FindOrder::EntityId)
-                    && (plan.exact() || one_open_layer(&view)) =>
+                    && (knobs::dense() == 1
+                        || (knobs::dense() == 0 && (plan.exact() || one_open_layer(&view)))) =>
             {
                 (plan, true)
             }
@@ -765,13 +805,19 @@ impl Store {
                 }
                 let mut large = Vec::new();
                 for p in parts {
-                    if self.count(view, &p, AND_COUNT_CAP)? < AND_COUNT_CAP {
+                    let n = self.count(view, &p, AND_COUNT_CAP)?;
+                    if n < AND_COUNT_CAP {
                         return self.refine(view, p);
                     }
-                    large.push(p);
+                    large.push((n, p));
                 }
-                large.truncate(2);
-                Plan::All(large)
+                if knobs::intersect_sql() {
+                    large.truncate(2);
+                } else {
+                    // The smallest part gives the rows, the others are probed.
+                    large.sort_by_key(|(n, _)| *n);
+                }
+                Plan::All(large.into_iter().map(|(_, p)| p).collect())
             }
             Plan::Any(parts) => Plan::Any(
                 parts
@@ -790,26 +836,43 @@ impl Store {
     /// the sum. History rows are not counted.
     fn count(&self, view: &View, plan: &Plan, cap: i64) -> Result<i64> {
         Ok(match plan {
-            Plan::Term(key, cond) => {
+            Plan::Term(key, cond) if !knobs::exact_count() => {
+                // Sample: the matching current rows of a few windows of
+                // consecutive entity numbers, scaled to all entities. Each
+                // window reads the primary key `(bid, eid, key)`, so the cost
+                // does not depend on the selectivity of the condition.
+                let total = self.max_eid()?;
+                if total <= SAMPLE_WINDOWS * SAMPLE_WIDTH * 4 && !knobs::always_sample() {
+                    return self.count_exact(view, key, cond, cap);
+                }
                 let mut most = 0;
                 for src in &view.sources {
-                    let mut sql = Sql::default();
-                    let k = sql.bind(SqlValue::Text(key.clone()));
-                    let c = sql.cond(cond);
-                    let text = format!(
-                        "SELECT count(*) FROM (SELECT 1 FROM value_current \
-                         INDEXED BY value_current_value \
-                         WHERE bid = {} AND key = {k} AND {c} LIMIT {cap})",
-                        src.bid
-                    );
-                    let n: i64 = self
-                        .conn
-                        .prepare_cached(&text)?
-                        .query_row(rusqlite::params_from_iter(sql.params.iter()), |r| r.get(0))?;
-                    most = most.max(n);
+                    let mut hits = 0i64;
+                    for w in 0..SAMPLE_WINDOWS {
+                        let lo = 1 + total * (2 * w + 1) / (2 * SAMPLE_WINDOWS) - SAMPLE_WIDTH / 2;
+                        let mut sql = Sql::default();
+                        let k = sql.bind(SqlValue::Text(key.clone()));
+                        let c = sql.cond(cond);
+                        let text = format!(
+                            "SELECT count(*) FROM value_current WHERE bid = {} \
+                             AND eid BETWEEN {lo} AND {} AND key = {k} AND {c}",
+                            src.bid,
+                            lo + SAMPLE_WIDTH - 1
+                        );
+                        let n: i64 = self
+                            .conn
+                            .prepare_cached(&text)?
+                            .query_row(rusqlite::params_from_iter(sql.params.iter()), |r| {
+                                r.get(0)
+                            })?;
+                        hits += n;
+                    }
+                    let est = hits * total / (SAMPLE_WINDOWS * SAMPLE_WIDTH);
+                    most = most.max(est);
                 }
-                most
+                most.min(cap)
             }
+            Plan::Term(key, cond) => self.count_exact(view, key, cond, cap)?,
             Plan::All(parts) => {
                 let mut least = cap;
                 for p in parts {
@@ -828,15 +891,43 @@ impl Store {
         })
     }
 
+    /// The largest entity number (about the number of entities).
+    fn max_eid(&self) -> Result<i64> {
+        Ok(self
+            .conn
+            .prepare_cached("SELECT coalesce(max(eid), 0) FROM entities")?
+            .query_row([], |r| r.get(0))?)
+    }
+
+    /// The matching current rows of each layer, counted up to `cap`
+    /// (streams from the value index), the largest of the layers.
+    fn count_exact(&self, view: &View, key: &str, cond: &Cond, cap: i64) -> Result<i64> {
+        let mut most = 0;
+        for src in &view.sources {
+            let mut sql = Sql::default();
+            let k = sql.bind(SqlValue::Text(key.to_owned()));
+            let c = sql.cond(cond);
+            let text = format!(
+                "SELECT count(*) FROM (SELECT 1 FROM value_current \
+                 INDEXED BY value_current_value \
+                 WHERE bid = {} AND key = {k} AND {c} LIMIT {cap})",
+                src.bid
+            );
+            let n: i64 = self
+                .conn
+                .prepare_cached(&text)?
+                .query_row(rusqlite::params_from_iter(sql.params.iter()), |r| r.get(0))?;
+            most = most.max(n);
+        }
+        Ok(most)
+    }
+
     /// The candidate count above which a plan is dense: `sqrt(limit × entities)`.
     /// Sorting the candidates costs about their number on each page; reading
     /// the dictionary in order costs about `limit / density`. The two meet
     /// at this count (10 000 for 1000 rows of 100 000 entities).
     fn dense_cap(&self, limit: usize) -> Result<i64> {
-        let total: i64 = self
-            .conn
-            .prepare_cached("SELECT coalesce(max(eid), 0) FROM entities")?
-            .query_row([], |r| r.get(0))?;
+        let total = self.max_eid()?;
         Ok(((limit as f64 * total as f64).sqrt() as i64).max(1))
     }
 
@@ -861,7 +952,7 @@ impl Store {
                 format!("SELECT eid, ext_id FROM entities WHERE {c} ORDER BY eid LIMIT {chunk}")
             }
             (_, FindOrder::EntityId) if probe => {
-                let p = sql.probe(view, plan);
+                let p = sql.probe(view, plan, "e.eid");
                 let c = self.after_cond(&mut sql, after, "e.ext_id", "e.eid");
                 format!(
                     "SELECT e.eid, e.ext_id FROM entities e INDEXED BY sqlite_autoindex_entities_1 \
