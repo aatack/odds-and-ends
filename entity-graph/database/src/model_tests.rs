@@ -974,6 +974,9 @@ fn compare_finds(rig: &Rig, r: &mut Rng, ctx: &str) {
             // Global switches: the model test runs on one thread.
             crate::find::knobs::PROBE.store(r.below(3) as u8, Ordering::Relaxed);
             crate::find::knobs::NO_INTERSECT.store(r.below(2) as u8, Ordering::Relaxed);
+            crate::find::knobs::DENSE.store(r.below(3) as u8, Ordering::Relaxed);
+            crate::find::knobs::INTERSECT_SQL.store(r.below(2) as u8, Ordering::Relaxed);
+            crate::find::knobs::EXACT_COUNT.store(r.below(3) as u8, Ordering::Relaxed);
             let include_archived = r.chance(1, 3);
             let mut want: Vec<String> = names
                 .iter()
