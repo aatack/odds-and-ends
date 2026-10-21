@@ -111,6 +111,15 @@ fn migrates_a_version_1_file_to_the_covering_history_index() {
         .collect::<rusqlite::Result<_>>()
         .unwrap();
     assert_eq!(cols, ["bid", "key", "value", "eid", "seq", "superseded_by"]);
+    let cols: Vec<String> = store
+        .conn
+        .prepare("SELECT name FROM pragma_index_info('value_current_value')")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(cols, ["bid", "key", "value", "eid", "seq"]);
 }
 
 #[test]

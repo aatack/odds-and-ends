@@ -413,15 +413,10 @@ pub mod knobs {
     /// For a dense plan: 0: choose; 1: probe; 2: dictionary scan.
     pub static DENSE: AtomicU8 = AtomicU8::new(0);
 
-    /// 1: `And` intersects its parts with SQL `INTERSECT` (the older plan).
-    pub static INTERSECT_SQL: AtomicU8 = AtomicU8::new(0);
     /// Estimates: 0: sample in large stores; 1: count exactly (up to the
     /// cap); 2: always sample.
     pub static EXACT_COUNT: AtomicU8 = AtomicU8::new(0);
 
-    pub fn intersect_sql() -> bool {
-        INTERSECT_SQL.load(Ordering::Relaxed) == 1
-    }
     pub fn exact_count() -> bool {
         EXACT_COUNT.load(Ordering::Relaxed) == 1
     }
@@ -530,23 +525,11 @@ impl Sql {
                 }
                 arms.join(" UNION ")
             }
-            // The first (smallest) part gives the rows; the others are
-            // probed for each of them. `knobs::intersect_sql` keeps the
-            // older `INTERSECT` of every part, for comparison.
-            Plan::All(parts) if knobs::intersect_sql() => parts
+            Plan::All(parts) => parts
                 .iter()
                 .map(|p| format!("SELECT eid FROM ({})", self.gen(view, p)))
                 .collect::<Vec<_>>()
                 .join(" INTERSECT "),
-            Plan::All(parts) => {
-                let first = self.gen(view, &parts[0]);
-                let rest = parts[1..]
-                    .iter()
-                    .map(|p| self.probe(view, p, "a.eid"))
-                    .collect::<Vec<_>>()
-                    .join(" AND ");
-                format!("SELECT a.eid FROM ({first}) AS a WHERE {rest}")
-            }
             Plan::Any(parts) if parts.is_empty() => "SELECT eid FROM entities WHERE 0".into(),
             Plan::Any(parts) => parts
                 .iter()
@@ -697,16 +680,19 @@ impl Store {
 
         // Sparse candidates are sorted in SQL. Dense ones are found by reading
         // the dictionary in page order: with a probe of each entity when the
-        // view reads no history (the probes are primary key lookups), else
-        // by checking every entity after the roll-up (measured faster than
-        // probes that must also search history, BENCHMARKS.md).
+        // view reads no history or the plan is one `Eq`, else by checking
+        // every entity after the roll-up (measured faster than probes that
+        // must also search history, BENCHMARKS.md).
         let (plan, probe) = match (&plan, knobs::probe()) {
             (Plan::Everything, _) => (plan, false),
             (_, Some(forced)) => (plan, forced && matches!(options.order, FindOrder::EntityId)),
             (_, None) if self.count(&view, &plan, cap)? < cap => (plan, false),
             (_, None)
                 if matches!(options.order, FindOrder::EntityId)
-                    && (knobs::dense() == 1 || (knobs::dense() == 0 && no_history(&view))) =>
+                    && (knobs::dense() == 1
+                        || (knobs::dense() == 0
+                            && (no_history(&view)
+                                || matches!(plan, Plan::Term(_, Cond::Eq(_)))))) =>
             {
                 (plan, true)
             }
@@ -835,12 +821,10 @@ impl Store {
                     }
                     large.push((n, p));
                 }
-                if knobs::intersect_sql() {
-                    large.truncate(2);
-                } else {
-                    // The smallest part gives the rows, the others are probed.
-                    large.sort_by_key(|(n, _)| *n);
-                }
+                // Intersect the two smallest in SQL (measured faster than
+                // reading the smallest and probing the others).
+                large.sort_by_key(|(n, _)| *n);
+                large.truncate(2);
                 Plan::All(large.into_iter().map(|(_, p)| p).collect())
             }
             Plan::Any(parts) => Plan::Any(
@@ -1141,9 +1125,21 @@ impl Store {
             Some(p) => Some(self.refine(view, p)?),
             None => None,
         };
+        // A condition of the filter on the order key bounds the merge scan:
+        // the row of an entity's final value must satisfy it.
+        let bound = match plan_of(filter) {
+            Some(Plan::Term(k, c)) if k == key => Some(c),
+            Some(Plan::All(parts)) => parts.into_iter().find_map(|p| match p {
+                Plan::Term(k, c) if k == key => Some(c),
+                _ => None,
+            }),
+            _ => None,
+        };
+        let only_bound = matches!(&plan, Some(Plan::Term(k, _)) if k == key);
         let sparse = match (&plan, knobs::probe()) {
             (None, _) => false,
             (Some(_), Some(forced)) => !forced,
+            (Some(_), None) if only_bound => false,
             (Some(p), None) => self.count(view, p, cap)? < cap,
         };
         if sparse {
@@ -1200,13 +1196,16 @@ impl Store {
             let chunk = want.min(options.scan_limit.saturating_sub(scanned).max(1));
             let mut sql = Sql::default();
             let k = sql.bind(SqlValue::Text(key.to_owned()));
-            let pos = match &after {
+            let mut pos = match &after {
                 None => "value IS NOT NULL".to_owned(),
                 Some((v, eid)) => {
                     let v = sql.bind(v.clone());
                     format!("(value, eid) {cmp} ({v}, {eid})")
                 }
             };
+            if let Some(c) = &bound {
+                pos = format!("{pos} AND {}", sql.cond(c));
+            }
             let mut arms = Vec::new();
             for src in &view.sources {
                 for &(lo, hi) in &src.intervals {
