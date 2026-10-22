@@ -134,7 +134,7 @@ made every caller pay for a full walk.
 
 ### Types
 
-An entity's `type` value names a kind the app draws (`components/kinds/`). It
+An entity's `type` value names how the app draws it (`components/types/`). It
 is a name and nothing more: the cache does not fetch a type entity, and nothing
 is lent to an entity by the type it names.
 

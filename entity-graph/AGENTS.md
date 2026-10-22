@@ -112,7 +112,7 @@ is the long form; the rules that matter day to day:
   describes those fields; `core/cache.ts` runs `onLoad` (`startLazy`) through
   `helpers/onLoad.ts`. [`docs/types.md`](./docs/types.md) is the long form, and
   MCP serves it as `docs://types`. How a type is *drawn* is still chosen in code
-  (`components/kinds/`): a type it has no entry for draws as a note.
+  (`components/types/`): a type it has no entry for draws as a note.
 - **Schema components** (`components/schema/`, imported through its
   `index.ts`): `SchemaForm` (value, setValue, schema) edits a value its schema
   describes; `SchemaBuilder` (value, setValue) writes a schema. Both draw lines
@@ -277,27 +277,33 @@ and scroll the backdrop; `large` is a panel — nearly the whole window, `flex`
 column, its body scrolling *inside* the card so whatever the child pins to the top
 stays there. `EntityInspector` is the one of those, and its tabs are why.
 
-**Every kind of entity has three views** (`components/kinds/`), by how much room
+**Every type of entity has three views** (`components/types/`), by how much room
 it is given — 0-, 1- and 2-dimensional:
 
 - **Pill** — inline, in prose or beside other things: a name and a mark.
 - **Card** — a row to itself: the gist and its key actions. A row draws its
-  kind's card and nothing else — no type pill.
-- **Focus** — a page to itself, which is the root row of a frame. Optional, and a
-  note's is its card: its page is its text with its children as the rows below.
-  A file's focus is the whole file (a large image, text read out, media playing).
+  type's card and nothing else — no type pill. While the row is being edited the
+  card is its type's **Edit** instead, which by default is a text box over `text`
+  (`TypeCard` in `components/types/card.tsx` chooses between the two).
+- **Focus** — a frame to itself, drawn from the frame's root. Optional: the
+  default is the outline (`layout/Outline.tsx`) — the frame's query as a card
+  per row, with its find, filters, folding and selection. A type with a focus of
+  its own takes the whole frame instead, with no rows: a file's is the whole file
+  (a large image, text read out, media playing), a `url`'s the page in a
+  locked-down webview.
 
-`kindOf(type)` in `components/kinds/index.ts` is the one place a kind's views are
-chosen — rows, pills and frame roots all ask there — and a type nothing is
-registered for is drawn as a note. Two kinds exist: the note and `file`. Adding
-a kind is adding an entry, not a branch in the editor.
+`viewsFor(type)` in `components/types/index.ts` is the one place a type's views
+are chosen — rows, pills and frames all ask there — and a type nothing is
+registered for, custom types included, is drawn as a note. Three exist: the note,
+`file` and `url` (whose `url` value is an http(s) address). Adding one is adding
+an entry, not a branch in the editor.
 
 **Peeks** (`layout/PeekLayer.tsx`, `state/peeks.ts`) are floating windows onto
 whatever a pill or a link refers to, opened by hovering it for a moment and closed
 a moment after the pointer leaves — unless the window has been moved or resized,
 which pins it until its ×. An entity's peek is a tab of its own that belongs to no
-group, so its frame is an ordinary frame: it draws the entity's focus with its
-children below, and pressing in it gives it the keys (`peekFocus`), which points
+group, so its frame is an ordinary frame: it draws the entity's focus (the
+outline, for most), and pressing in it gives it the keys (`peekFocus`), which points
 the focus chain at its frame — its own selection and stack, the same tools, and
 no group tools, since it has no group. A page's peek is a locked-down `<webview>`
 (no preload, no node, its own partition; see `will-attach-webview` in
@@ -316,7 +322,7 @@ already on screen).
 **Entity pills** (`components/EntityPill.tsx`) are how an entity appears anywhere
 it is referenced in passing rather than shown in full — a tab title, a crumb, a
 mention inside another entity's text. Three parts, usable separately:
-`PillContent` (the entity's kind's pill), `PillWrapper` (the entity
+`PillContent` (the entity's type's pill), `PillWrapper` (the entity
 gestures, around any child — it publishes `data-entity-id`, which is all the
 global right-click and middle-click handlers need), and `PillBackground` (a
 surface for a pill that has to be told apart from the text around it).
