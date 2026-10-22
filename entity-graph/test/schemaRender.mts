@@ -86,7 +86,7 @@ test('folds a schema that holds others, and only that', () => {
   assert.equal((html.match(/title="Fold"/g) ?? []).length, 3)
 })
 
-test('draws the form as one box of lines, nested lines one step in', () => {
+test('draws the form as one box of lines, nested content inside its line', () => {
   const html = renderToStaticMarkup(
     h(SchemaForm, {
       schema: {
@@ -104,10 +104,13 @@ test('draws the form as one box of lines, nested lines one step in', () => {
   // One bordered surface, however deep the value goes.
   assert.equal((html.match(/border-gray-200/g) ?? []).length, 1)
   assert.match(html, /value="Soup"/)
-  assert.match(html, /1 item/)
   assert.match(html, /value="leek"/)
-  // The item's field sits two steps in: 10px, plus 16px a level.
-  assert.match(html, /padding-left:42px/)
+  // No summary lines: a list is its items and the line for adding one.
+  assert.doesNotMatch(html, />\d+ (items?|fields?)</)
+  assert.match(html, /> Add</)
+  // Labels inside another line take the narrower column.
+  assert.equal((html.match(/w-36/g) ?? []).length, 2)
+  assert.ok((html.match(/w-24/g) ?? []).length >= 2)
 })
 
 test('marks a line whose value breaks its schema, and draws a multi-line string as a text box', () => {

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { Plus, Trash03 } from '@untitledui/icons'
 import { cn } from '../../helpers/cn'
 import { Switch } from '../ui/Switch'
@@ -6,10 +6,10 @@ import { TextEditor } from '../ui/TextEditor'
 import { JsonEditor } from './JsonEditor'
 import { SchemaBuilder } from './SchemaBuilder'
 import {
-  defaultFor,
-  isObject,
   MONOSPACE_KEYWORD,
   MULTILINE_KEYWORD,
+  defaultFor,
+  isObject,
   isSchemaRef,
   matches,
   problemOf,
@@ -22,13 +22,15 @@ import {
 
 // A form for a value, drawn from a JSON Schema. It covers the shapes a value in
 // this store actually takes — strings, numbers, booleans, null, literals, unions
-// (a union of literals is a set of choices), objects of named fields and lists —
-// and falls back to a JSON box for anything else, so no value is ever uneditable.
+// (a union of literals is a set of choices), objects of named fields, lists, and
+// values that are themselves schemas — and falls back to a JSON box for anything
+// else, so no value is ever uneditable.
 //
-// The whole form is one box, a line per value: its label on the left and its
-// control on the right, a hairline between lines. An object or a list is a line
-// of its own followed by its lines one step in, so depth reads as indentation
-// inside the same box rather than as boxes inside boxes.
+// The whole form is one box of lines: a label on the left, a hairline, and the
+// value on the right. A value that holds others — an object, a list, a schema —
+// is still one line: its label on the left, and on the right everything inside
+// it, as lines of their own. Depth is where the content sits, not a header above
+// it.
 //
 // Every edit hands the whole value back through `setValue`. Keys the schema
 // doesn't name are kept as they were: the form edits what it knows about and
@@ -46,15 +48,11 @@ export function SchemaForm({
   // An object is its fields, with no line for itself: the box is the object.
   const fields = typeOf(schema) === 'object' && propertiesOf(schema).length > 0
   return (
-    <div
-      className={cn(
-        'divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-200 bg-white shadow-xs',
-      )}
-    >
+    <div className="divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-200 bg-white shadow-xs">
       {fields ? (
-        <Fields schema={schema} value={value} onChange={setValue} depth={0} />
+        <Fields schema={schema} value={value} onChange={setValue} />
       ) : (
-        <Entry label="Value" schema={schema} value={value} onChange={setValue} depth={0} />
+        <Entry label="Value" schema={schema} value={value} onChange={setValue} />
       )}
     </div>
   )
@@ -66,30 +64,31 @@ const BARE =
 const BARE_MONO = cn(BARE, 'font-mono text-[12.5px]')
 const MUTED = 'px-2.5 font-mono text-[12.5px] leading-8 text-gray-400'
 
-/** How far in a line's label starts, per level. */
-const INDENT = 16
+/** Lines inside a line: the content of an object, a list or a union's option. */
+const INNER = 'w-full divide-y divide-gray-100'
 
-interface EntryProps {
-  label: string
-  schema: JsonSchema
-  value: unknown
-  onChange: (value: unknown) => void
-  depth: number
-  required?: boolean
-  /** Set for a list's item, which can be taken out. */
-  onRemove?: () => void
+/**
+ * Whether these lines sit inside another line. Their labels take a narrower
+ * column there — the line around them has already spent one.
+ */
+const Nested = createContext(false)
+
+/** Lines inside a line, which know it. */
+function Inner({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <Nested.Provider value={true}>
+      <div className={INNER}>{children}</div>
+    </Nested.Provider>
+  )
 }
 
 /**
- * One line: the label, a hairline, and the control. The label's column is the
- * same width at every depth, its text pushed in by the depth, so the controls
- * line up down the whole box; pressing the label puts the caret in its control.
- * A value that doesn't fit its schema tints the line in the warning tone and
- * says why at its end — and is written all the same.
+ * One line: the label, a hairline, and the value. Pressing the label puts the
+ * caret in its control. A value that doesn't fit its schema tints the line in the
+ * warning tone and says why at its end — and is written all the same.
  */
 function Line({
   label,
-  depth,
   required,
   description,
   problem,
@@ -98,44 +97,51 @@ function Line({
   children,
 }: {
   label: string
-  depth: number
   required?: boolean
   description?: string
   /** Why the value doesn't fit, if it doesn't. */
   problem?: string | null
-  /** The control grows past one line, so the label sits at its top. */
+  /** The value takes more than one line, so the label sits at its top. */
   tall?: boolean
-  /** Something small at the end of the line: a remove, an add. */
+  /** Something small at the end of the line: a remove. */
   aside?: React.ReactNode
   children?: React.ReactNode
 }): React.JSX.Element {
   const control = useRef<HTMLDivElement>(null)
+  const nested = useContext(Nested)
   return (
     <div
       className={cn(
-        'group flex min-h-8 items-stretch',
-        problem ? 'bg-warning-50/60' : 'focus-within:bg-brand-50/40',
+        'group/line flex min-h-8 items-stretch',
+        problem ? 'bg-warning-50/60' : !tall && 'focus-within:bg-brand-50/40',
       )}
     >
       <div
         className={cn(
-          'flex w-40 shrink-0 cursor-default gap-1 truncate border-r border-gray-100 py-1.5 pr-2 text-[12px] leading-5 text-gray-500',
+          nested ? 'w-24' : 'w-36',
+          'flex shrink-0 cursor-default gap-1 truncate border-r border-gray-100 px-2.5 py-1.5 text-[12px] leading-5 text-gray-500',
           tall ? 'items-start' : 'items-center',
         )}
-        style={{ paddingLeft: 10 + depth * INDENT }}
         title={description}
-        onClick={() => control.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus()}
+        onClick={() =>
+          control.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus()
+        }
       >
         <span className="truncate">{label}</span>
         {required && <span className="shrink-0 text-gray-300">*</span>}
       </div>
-      <div ref={control} className={cn('flex min-w-0 flex-1', tall ? 'items-start' : 'items-center')}>
+      <div
+        ref={control}
+        className={cn('flex min-w-0 flex-1', tall ? 'items-stretch' : 'items-center')}
+      >
         {children}
       </div>
       {problem && (
-        <div className="flex shrink-0 items-center px-2 text-[11px] text-warning-700">{problem}</div>
+        <div className="flex shrink-0 items-start px-2 py-1.5 text-[11px] leading-5 text-warning-700">
+          {problem}
+        </div>
       )}
-      {aside && <div className="flex shrink-0 items-center pr-1.5">{aside}</div>}
+      {aside && <div className="flex shrink-0 items-start py-1 pr-1.5">{aside}</div>}
     </div>
   )
 }
@@ -155,7 +161,7 @@ function LineButton({
       title={title}
       aria-label={title}
       onClick={onClick}
-      className="flex size-6 items-center justify-center rounded text-gray-300 group-hover:text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:text-gray-700"
+      className="flex size-6 items-center justify-center rounded text-gray-300 group-hover/line:text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:text-gray-700"
     >
       {children}
     </button>
@@ -168,17 +174,25 @@ const descriptionOf = (schema: JsonSchema): string | undefined =>
 const titleOf = (schema: JsonSchema, fallback: string): string =>
   typeof schema.title === 'string' ? schema.title : fallback
 
-/** An object's fields, a line (or a line and its lines) each. */
+/** Whether a schema's value takes more than one line. */
+const compound = (schema: JsonSchema): boolean => {
+  if (isSchemaRef(schema)) return true
+  if (schema[MULTILINE_KEYWORD] === true) return true
+  const variants = variantsOf(schema)
+  if (variants) return !variants.every((v) => 'const' in v)
+  const type = typeOf(schema)
+  return type === 'array' || (type === 'object' && propertiesOf(schema).length > 0)
+}
+
+/** An object's fields, a line each. */
 function Fields({
   schema,
   value,
   onChange,
-  depth,
 }: {
   schema: JsonSchema
   value: unknown
   onChange: (value: unknown) => void
-  depth: number
 }): React.JSX.Element {
   const required = requiredOf(schema)
   const current = isObject(value) ? value : {}
@@ -191,7 +205,6 @@ function Fields({
           schema={property}
           value={current[key]}
           required={required.includes(key)}
-          depth={depth}
           onChange={(next) => {
             const out = { ...current }
             // Taking a field away leaves no key, rather than an `undefined`.
@@ -205,56 +218,63 @@ function Fields({
   )
 }
 
-/**
- * One value of the form, whatever its shape: a line, and for an object, a list
- * or a union of those, the lines inside it. Rendered as siblings, so every line
- * in the box takes the same hairline above it.
- */
+/** One value of the form: its line, with its control — however much is inside it. */
 function Entry({
   label,
   schema,
   value,
   onChange,
-  depth,
   required,
   onRemove,
-}: EntryProps): React.JSX.Element {
-  const description = descriptionOf(schema)
-  const remove = onRemove && (
-    <LineButton title="Remove" onClick={onRemove}>
-      <Trash03 size={13} />
-    </LineButton>
-  )
-  const line = (
-    children: React.ReactNode,
-    aside: React.ReactNode = remove,
-    tall = false,
-  ): React.JSX.Element => (
+}: {
+  label: string
+  schema: JsonSchema
+  value: unknown
+  onChange: (value: unknown) => void
+  required?: boolean
+  /** Set for a list's item, which can be taken out. */
+  onRemove?: () => void
+}): React.JSX.Element {
+  return (
     <Line
-      tall={tall}
       label={label}
-      depth={depth}
       required={required}
-      description={description}
+      description={descriptionOf(schema)}
       problem={problemOf(schema, value, required)}
-      aside={aside}
+      tall={compound(schema)}
+      aside={
+        onRemove && (
+          <LineButton title="Remove" onClick={onRemove}>
+            <Trash03 size={13} />
+          </LineButton>
+        )
+      }
     >
-      {children}
+      <Control schema={schema} value={value} onChange={onChange} label={label} />
     </Line>
   )
+}
 
-  if ('const' in schema) return line(<span className={MUTED}>{JSON.stringify(schema.const)}</span>)
+/** A value's control alone: what goes on the right of its line. */
+function Control({
+  schema,
+  value,
+  onChange,
+  label,
+}: {
+  schema: JsonSchema
+  value: unknown
+  onChange: (value: unknown) => void
+  label: string
+}): React.JSX.Element {
+  if ('const' in schema) return <span className={MUTED}>{JSON.stringify(schema.const)}</span>
 
-  // A value that is itself a schema: written with the schema builder, on the
-  // lines below its own, one step in.
+  // A value that is itself a schema, written with the schema builder.
   if (isSchemaRef(schema)) {
     return (
-      <>
-        {line(<span className={MUTED}>schema</span>)}
-        <div className="py-2 pr-2" style={{ paddingLeft: 10 + (depth + 1) * INDENT }}>
-          <SchemaBuilder value={value} setValue={onChange} />
-        </div>
-      </>
+      <div className="w-full p-2">
+        <SchemaBuilder value={value} setValue={onChange} />
+      </div>
     )
   }
 
@@ -262,17 +282,16 @@ function Entry({
   if (variants) {
     // Every option a literal: a choice, drawn as one.
     if (variants.every((v) => 'const' in v)) {
-      return line(
-        <Choice options={variants.map((v) => v.const)} value={value} onChange={onChange} />,
-      )
+      return <Choice options={variants.map((v) => v.const)} value={value} onChange={onChange} />
     }
-    return <Union variants={variants} value={value} onChange={onChange} line={line} depth={depth} />
+    return <Union variants={variants} value={value} onChange={onChange} label={label} />
   }
 
+  const mono = schema[MONOSPACE_KEYWORD] === true
   switch (typeOf(schema)) {
     case 'string':
       if (schema[MULTILINE_KEYWORD] === true) {
-        return line(
+        return (
           <div className="w-full px-2.5 py-1.5">
             <TextEditor
               multiline
@@ -281,105 +300,82 @@ function Entry({
               setValue={onChange}
               className={cn(
                 'leading-5 text-gray-900',
-                schema[MONOSPACE_KEYWORD] === true ? 'font-mono text-[12.5px]' : 'text-[13px]',
+                mono ? 'font-mono text-[12.5px]' : 'text-[13px]',
               )}
             />
-          </div>,
-          remove,
-          true,
+          </div>
         )
       }
-      return line(
+      return (
         <input
-          className={schema[MONOSPACE_KEYWORD] === true ? BARE_MONO : BARE}
+          className={mono ? BARE_MONO : BARE}
           value={typeof value === 'string' ? value : ''}
           placeholder={typeof schema.default === 'string' ? schema.default : undefined}
           onChange={(e) => onChange(e.target.value)}
-        />,
+        />
       )
     case 'number':
     case 'integer':
-      return line(
-        <NumberInput integer={typeOf(schema) === 'integer'} value={value} onChange={onChange} />,
+      return (
+        <NumberInput integer={typeOf(schema) === 'integer'} value={value} onChange={onChange} />
       )
     case 'boolean':
-      return line(
+      return (
         <div className="px-2.5">
           <Switch checked={value === true} onChange={onChange} label={label} />
-        </div>,
+        </div>
       )
     case 'null':
-      return line(<span className={MUTED}>null</span>)
+      return <span className={MUTED}>null</span>
     case 'object':
       if (!propertiesOf(schema).length) break
       return (
-        <>
-          {line(<span className={MUTED}>{summary(value)}</span>)}
-          <Fields schema={schema} value={value} onChange={onChange} depth={depth + 1} />
-        </>
+        <Inner>
+          <Fields schema={schema} value={value} onChange={onChange} />
+        </Inner>
       )
     case 'array':
-      return <List schema={schema} value={value} onChange={onChange} line={line} depth={depth} />
+      return <List schema={schema} value={value} onChange={onChange} />
   }
   // Anything the form can't draw a control for — no type, a bag of keys — is JSON.
-  return line(
-    <div className="w-full py-1 pr-1.5">
+  return (
+    <div className="w-full p-1">
       <JsonEditor value={value} setValue={onChange} placeholder="Any JSON" />
-    </div>,
+    </div>
   )
 }
 
-/** What an object or a list holds, in a word, on its own line. */
-function summary(value: unknown): string {
-  if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? '' : 's'}`
-  if (isObject(value)) {
-    const n = Object.keys(value).length
-    return `${n} field${n === 1 ? '' : 's'}`
-  }
-  return ''
-}
-
-type LineMaker = (
-  children: React.ReactNode,
-  aside?: React.ReactNode,
-  tall?: boolean,
-) => React.JSX.Element
-
+/** A list: a line per item, numbered, and a last line for adding one. */
 function List({
   schema,
   value,
   onChange,
-  line,
-  depth,
 }: {
   schema: JsonSchema
   value: unknown
   onChange: (value: unknown) => void
-  line: LineMaker
-  depth: number
 }): React.JSX.Element {
   const items = isObject(schema.items) ? schema.items : {}
   const list = Array.isArray(value) ? value : []
-  const add = (
-    <LineButton title="Add an item" onClick={() => onChange([...list, defaultFor(items)])}>
-      <Plus size={13} />
-    </LineButton>
-  )
   return (
-    <>
-      {line(<span className={MUTED}>{summary(list)}</span>, add)}
+    <Inner>
       {list.map((item, i) => (
         <Entry
           key={i}
           label={String(i + 1)}
           schema={items}
           value={item}
-          depth={depth + 1}
           onChange={(next) => onChange(list.map((old, j) => (j === i ? next : old)))}
           onRemove={() => onChange(list.filter((_, j) => j !== i))}
         />
       ))}
-    </>
+      <button
+        className="flex h-8 w-full items-center gap-1.5 px-2.5 text-[12px] text-gray-400 hover:bg-gray-50 hover:text-gray-700 focus:outline-none focus-visible:bg-gray-50"
+        onClick={() => onChange([...list, defaultFor(items)])}
+      >
+        <Plus size={13} /> Add
+      </button>
+    </Inner>
   )
 }
 
@@ -393,23 +389,21 @@ function variantLabel(variant: JsonSchema, i: number): string {
 }
 
 /**
- * One of several schemas: a picker for which, then that schema's control — on
- * the same line where it is a single value, on lines below where it holds others.
- * The option shown is the first the value fits, so nothing about the choice is
+ * One of several schemas: a picker for which, and that option's control — beside
+ * the picker where it is a single value, under it where it holds others. The
+ * option shown is the first the value fits, so nothing about the choice is
  * stored but the value; picking another starts it from that option's default.
  */
 function Union({
   variants,
   value,
   onChange,
-  line,
-  depth,
+  label,
 }: {
   variants: JsonSchema[]
   value: unknown
   onChange: (value: unknown) => void
-  line: LineMaker
-  depth: number
+  label: string
 }): React.JSX.Element {
   const fitted = variants.findIndex((v) => matches(v, value))
   const at = fitted < 0 ? 0 : fitted
@@ -427,66 +421,23 @@ function Union({
       ))}
     </select>
   )
-  const nests = typeOf(variant) === 'object' || typeOf(variant) === 'array'
-  if (nests) {
+  const control = <Control schema={variant} value={value} onChange={onChange} label={label} />
+  if (compound(variant)) {
     return (
-      <>
-        {line(picker)}
-        <Entry label="" schema={variant} value={value} onChange={onChange} depth={depth + 1} />
-      </>
+      <Inner>
+        {picker}
+        {control}
+      </Inner>
     )
   }
-  // The chosen option's own control, beside the picker: a line inside the line.
-  return line(
-    <>
+  return (
+    <div className="flex w-full items-center">
       {picker}
-      <div className="flex min-w-0 flex-1 items-center border-l border-gray-100">
-        <Inline schema={variant} value={value} onChange={onChange} />
+      <div className="flex min-w-0 flex-1 items-center self-stretch border-l border-gray-100">
+        {control}
       </div>
-    </>,
+    </div>
   )
-}
-
-/** A single value's control alone, with no line of its own — for beside a picker. */
-function Inline({
-  schema,
-  value,
-  onChange,
-}: {
-  schema: JsonSchema
-  value: unknown
-  onChange: (value: unknown) => void
-}): React.JSX.Element {
-  if ('const' in schema) return <span className={MUTED}>{JSON.stringify(schema.const)}</span>
-  switch (typeOf(schema)) {
-    case 'string':
-      return (
-        <input
-          className={schema[MONOSPACE_KEYWORD] === true ? BARE_MONO : BARE}
-          value={typeof value === 'string' ? value : ''}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      )
-    case 'number':
-    case 'integer':
-      return (
-        <NumberInput integer={typeOf(schema) === 'integer'} value={value} onChange={onChange} />
-      )
-    case 'boolean':
-      return (
-        <div className="px-2.5">
-          <Switch checked={value === true} onChange={onChange} label="Toggle" />
-        </div>
-      )
-    case 'null':
-      return <span className={MUTED}>null</span>
-    default:
-      return (
-        <div className="w-full py-1 pr-1.5 pl-1.5">
-          <JsonEditor value={value} setValue={onChange} placeholder="Any JSON" />
-        </div>
-      )
-  }
 }
 
 function Choice({
