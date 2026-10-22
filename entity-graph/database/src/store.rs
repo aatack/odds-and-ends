@@ -61,6 +61,7 @@ impl Store {
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.set_prepared_statement_cache_capacity(64);
+        crate::find::register_functions(&conn)?;
         schema::migrate(&mut conn)?;
         Ok(Self {
             conn,

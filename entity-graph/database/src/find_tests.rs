@@ -345,3 +345,140 @@ fn pages_concatenate_to_one_big_find_in_both_orders() {
     assert_eq!(found.len(), 1);
     assert!(pages <= 2);
 }
+
+/// Non-ASCII names for the `ContainsIgnoreCase` tests: German, Turkish,
+/// Greek, combining marks, a NUL byte, a 4-byte code point.
+const FOLD_NAMES: [&str; 22] = [
+    "Ä",
+    "ä",
+    "Straße",
+    "STRASSE",
+    "straẞe",
+    "İstanbul",
+    "istanbul",
+    "ISTANBUL",
+    "ıI",
+    "Café",
+    "Cafe\u{301}",
+    "CAFÉ",
+    "ΣΊΣΥΦΟΣ",
+    "σίσυφος",
+    "ﬁle",
+    "FILE",
+    "a\0Budget",
+    "Ｆｕｌｌ",
+    "x😀y",
+    "KELVIN \u{212A}",
+    "kelvin k",
+    "Ǆ ǅ ǆ",
+];
+const FOLD_NEEDLES: [&str; 24] = [
+    "ä", "Ä", "ß", "ss", "SS", "ẞ", "i", "I", "İ", "ı", "é", "É", "e\u{301}", "e", "σ", "Σ", "ς",
+    "fi", "ﬁ", "budget", "ｆ", "😀", "k", "ǅ",
+];
+
+/// What `ContainsIgnoreCase` means (DESIGN.md, "find"): fold ASCII `A`-`Z`
+/// only, then a byte substring test. No Unicode case folding and no
+/// normalisation.
+fn fold_reference(name: &str, needle: &str) -> bool {
+    name.to_ascii_lowercase()
+        .contains(&needle.to_ascii_lowercase())
+}
+
+#[test]
+fn contains_function_agrees_with_instr_lower_on_non_ascii_text() {
+    // The SQL that `ContainsIgnoreCase` used before the Rust function, the
+    // function itself, and the reference, on every pair.
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    crate::find::register_functions(&conn).unwrap();
+    for h in FOLD_NAMES {
+        for n in FOLD_NEEDLES.iter().chain(&["", "xyz", "a\0b"]) {
+            let low = n.to_ascii_lowercase();
+            let (old, new): (bool, bool) = conn
+                .query_row(
+                    "SELECT instr(lower(?1), ?2) > 0, egdb_contains(?1, ?2, 1)",
+                    rusqlite::params![h, low],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap();
+            let want = fold_reference(h, n);
+            assert_eq!(old, want, "instr(lower({h:?}), {low:?})");
+            assert_eq!(new, want, "egdb_contains({h:?}, {low:?})");
+            let cs: (bool, bool) = conn
+                .query_row(
+                    "SELECT instr(?1, ?2) > 0, egdb_contains(?1, ?2, 0)",
+                    rusqlite::params![h, n],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(
+                cs,
+                (h.contains(n), h.contains(n)),
+                "case-sensitive {h:?} {n:?}"
+            );
+        }
+    }
+    // Not text: never a match.
+    let v: bool = conn
+        .query_row(
+            "SELECT egdb_contains(12, '1', 1) OR egdb_contains(NULL, '', 1)",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(!v);
+}
+
+#[test]
+fn contains_ignore_case_folds_ascii_only_on_every_path() {
+    // Current values, a frozen fork that reads them from history, and both
+    // SQL forms (`NO_CONTAINS_FN`); probe and sorted plans.
+    use crate::find::knobs::{NO_CONTAINS_FN, PROBE};
+    let (mut s, b) = store();
+    let mut ops = Vec::new();
+    for (i, n) in FOLD_NAMES.iter().enumerate() {
+        let e = format!("x{i:02}");
+        ops.push(Op::set(e.as_str(), TYPE_KEY, "note"));
+        ops.push(Op::set(e.as_str(), "name", *n));
+    }
+    w(&mut s, b, ops);
+    let fork = s.fork(b, "f").unwrap();
+    let mut ops = Vec::new();
+    for i in 0..FOLD_NAMES.len() {
+        ops.push(Op::set(format!("x{i:02}").as_str(), "name", "renamed"));
+    }
+    w(&mut s, b, ops);
+    for n in FOLD_NEEDLES {
+        let want: Vec<String> = FOLD_NAMES
+            .iter()
+            .enumerate()
+            .filter(|(_, h)| fold_reference(h, n))
+            .map(|(i, _)| format!("x{i:02}"))
+            .collect();
+        let f = Filter::ContainsIgnoreCase(k("name"), k(n));
+        for fn_knob in [0, 1] {
+            for probe in [1, 2] {
+                NO_CONTAINS_FN.store(fn_knob, Ordering::Relaxed);
+                PROBE.store(probe, Ordering::Relaxed);
+                let got = ids(&s, fork, &f);
+                PROBE.store(0, Ordering::Relaxed);
+                NO_CONTAINS_FN.store(0, Ordering::Relaxed);
+                assert_eq!(got, want, "fork {n:?} fn_knob {fn_knob} probe {probe}");
+            }
+        }
+        assert!(
+            ids(&s, b, &f).is_empty() || fold_reference("renamed", n),
+            "{n:?}"
+        );
+    }
+    // Spot checks of the documented meaning.
+    let one = |n: &str| ids(&s, fork, &Filter::ContainsIgnoreCase(k("name"), k(n)));
+    assert_eq!(one("ä"), ["x01"]); // "Ä" (x00) is not folded
+    assert_eq!(one("SS"), ["x03"]); // "ß" and "ẞ" are not "ss"
+    assert_eq!(one("I"), ["x06", "x07", "x08", "x15", "x19", "x20"]); // not "İ" (x05)
+    assert_eq!(one("İ"), ["x05"]);
+    assert_eq!(one("é"), ["x09"]); // not "É" or "e" + U+0301
+    assert_eq!(one("e\u{301}"), ["x10"]);
+    assert_eq!(one("σ"), ["x13"]);
+    assert_eq!(one("BUDGET"), ["x16"]); // after a NUL byte
+}
