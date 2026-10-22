@@ -33,6 +33,7 @@ import {
 //                of choices
 //   schema       a value that is itself a schema (a `$ref` to the meta-schema),
 //                which the form edits with this builder
+//   json         no type at all: any JSON value, edited as JSON
 //
 // Beneath the kinds the same menu ticks the extras a kind can carry —
 // optional, a description, bounds, a format — and, last, removes the row. Each
@@ -73,9 +74,9 @@ export function SchemaBuilder({
 const Surface = createContext(false)
 
 /** The kinds the menu offers, in its order. */
-const KINDS = [...SCHEMA_TYPES, 'literal', 'union', 'schema'] as const
-/** A kind, or `unset`: a schema that says nothing yet, waiting for one to be chosen. */
-type Kind = (typeof KINDS)[number] | 'unset'
+const KINDS = [...SCHEMA_TYPES, 'literal', 'union', 'schema', 'json'] as const
+/** A kind. `json` is a schema with no type: any JSON value at all. */
+type Kind = (typeof KINDS)[number]
 
 const KIND_LABELS: Record<Kind, string> = {
   string: 'String',
@@ -88,7 +89,7 @@ const KIND_LABELS: Record<Kind, string> = {
   literal: 'Literal',
   union: 'Union',
   schema: 'Schema',
-  unset: 'Choose type',
+  json: 'JSON',
 }
 
 /** Which kind a schema is, as the builder reads it. */
@@ -96,7 +97,7 @@ function kindOf(schema: JsonSchema): Kind {
   if ('const' in schema) return 'literal'
   if (isSchemaRef(schema)) return 'schema'
   if (variantsOf(schema)) return 'union'
-  return typeOf(schema) ?? 'unset'
+  return typeOf(schema) ?? 'json'
 }
 
 /**
@@ -217,7 +218,7 @@ function withKind(schema: JsonSchema, next: Kind): JsonSchema {
   const out: JsonSchema = { ...schema }
   for (const key of KIND_KEYS) delete out[key]
   switch (next) {
-    case 'unset':
+    case 'json':
       return out
     case 'schema':
       return { ...out, $ref: META_SCHEMA }
@@ -275,9 +276,11 @@ function SchemaNode({
   }
   const shown = extrasFor(kind).filter((e) => e.field && e.key in schema)
   const remove = slot?.onRemove ?? onRemove
-  // Anything holding schemas of its own folds, so a deep schema reads as an
-  // outline. Open to begin with: a fold is something done to it.
+  // Anything with more than its name line folds — the schemas it holds, and
+  // the lines of its own options — so a deep schema reads as an outline. Open
+  // to begin with: a fold is something done to it.
   const nests = kind === 'object' || kind === 'array' || kind === 'union'
+  const folds = nests || kind === 'literal' || shown.length > 0
   const [open, setOpen] = useState(true)
 
   const bare = useContext(Surface)
@@ -293,7 +296,7 @@ function SchemaNode({
             onChange: (title: string) => set('title', title || undefined),
           }
         }
-        fold={nests ? { open, toggle: () => setOpen((o) => !o) } : undefined}
+        fold={folds ? { open, toggle: () => setOpen((o) => !o) } : undefined}
         menu={
           <KindMenu
             schema={schema}
@@ -305,8 +308,10 @@ function SchemaNode({
           />
         }
       >
-        {kind === 'literal' && <LiteralValue schema={schema} onChange={onChange} />}
-        {shown.length > 0 && <ExtraFields extras={shown} schema={schema} onChange={onChange} />}
+        {open && kind === 'literal' && <LiteralValue schema={schema} onChange={onChange} />}
+        {open && shown.length > 0 && (
+          <ExtraFields extras={shown} schema={schema} onChange={onChange} />
+        )}
       </NameBox>
       {open && kind === 'object' && <Properties schema={schema} onChange={onChange} />}
       {open && kind === 'array' && (

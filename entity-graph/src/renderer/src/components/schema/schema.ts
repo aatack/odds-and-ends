@@ -226,10 +226,11 @@ export function problemOf(schema: JsonSchema, value: unknown, required = false):
 const article = (type: string): string => (/^[aeiou]/.test(type) ? `an ${type}` : `a ${type}`)
 
 /** A type's name as the builder and the form show it: `String`, `Object`. */
-export function typeName(schema: JsonSchema): string | null {
+export function typeName(schema: JsonSchema): string {
   if (isSchemaRef(schema)) return 'Schema'
   const type = typeOf(schema)
-  return type ? type.charAt(0).toUpperCase() + type.slice(1) : null
+  // No one type: any JSON, which is what the form edits it as.
+  return type ? type.charAt(0).toUpperCase() + type.slice(1) : 'JSON'
 }
 
 /** A literal's value as a name: a string as itself, anything else as JSON. */
@@ -247,7 +248,7 @@ export function optionNames(variants: JsonSchema[]): string[] {
       ? { name: v.title, numbered: false }
       : 'const' in v
         ? { name: literalName(v.const), numbered: false }
-        : { name: typeName(v) ?? 'Option', numbered: true },
+        : { name: typeName(v), numbered: true },
   )
   const seen = new Map<string, number>()
   return base.map(({ name, numbered }) => {

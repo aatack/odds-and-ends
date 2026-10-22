@@ -154,10 +154,18 @@ test('draws a schema-valued field with the builder, and code in monospace', () =
   assert.match(html, /font-mono[^"]*" value="x = 1"/)
 })
 
-test('offers no Any, and asks for a type where a schema says nothing', () => {
+test('reads a schema with no type as JSON', () => {
   const html = renderToStaticMarkup(h(SchemaBuilder, { value: {}, setValue: noop }))
-  assert.match(html, />Choose type</)
-  assert.doesNotMatch(html, />any</i)
+  assert.match(html, />JSON</)
+})
+
+test('folds a field\'s option lines with it', () => {
+  const html = renderToStaticMarkup(
+    h(SchemaBuilder, { value: { type: 'number', description: 'Count' }, setValue: noop }),
+  )
+  // A field with option lines folds, though it holds no schemas.
+  assert.match(html, /title="Fold"/)
+  assert.match(html, />Count</)
 })
 
 test('draws a multi-line box as a block, with no gap under its last line', () => {
