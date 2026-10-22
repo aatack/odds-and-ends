@@ -57,10 +57,9 @@ Consequences worth knowing:
 - **Invalidation is by name.** A write says what it changed, so that is all that
   is read again — the parent whose links moved, and not the two hundred rows
   around it. The wholesale version (`refreshEntities`) is kept for what has
-  nothing to go on: a change made where this client cannot see it. That is an
-  integration tool declaring `writesUnseen` — a Claude session writing notes over
-  MCP — the inspector's raw events, and the `source.refresh` tool for saying so
-  by hand. It is pointedly *not* on the end of every keystroke, which is what it
+  nothing to go on: a change made where this client cannot see it — an agent
+  writing notes over MCP, the inspector's raw events — and the `source.refresh`
+  tool for saying so by hand. It is pointedly *not* on the end of every keystroke, which is what it
   used to be.
 - **Invalidation takes nothing away.** An entry marked for re-reading keeps its
   events and goes to `stale`, which is complete-but-perhaps-old and deliberately
@@ -146,7 +145,7 @@ and what can be done with it. See
   a type usually has no row of its own to be refetched by.
 - **The rollup is one level.** An entity's values are its own events, so a type
   arriving changes nothing about its instances' values; what it changes is the
-  rows built from them (a type's `actions` are buttons on every instance).
+  the details panel drawn for them (a type's `schema` is its form).
 
 ## Vocabulary
 
@@ -282,8 +281,8 @@ history: `lastArgValue` walks it newest-first for the most recent call of this
 tool that supplied that argument, skipping the call being built so a rerun does
 not offer back what is already in the field. So it reaches exactly as far as
 retention does — every external call *the user made*, and anything abandoned
-part-way — which is why it shows up most on the integrations, rarely on an entity
-tool, and never with something a script chose. It is also
+part-way — which is why it rarely shows up on an entity tool, and never with
+something a script chose. It is also
 per-argument rather than per-call: an argument the last call left blank is
 answered by the one before it that didn't.
 
@@ -299,11 +298,10 @@ set of duplicates.
 Retention turns on two things, and the first is **who asked**. Every invocation
 carries an `origin`: `user` for a gesture — a hotkey, the palette, a right-click,
 a button — and `code` for a script's, whether a `type: code` entity the user ran
-or an `events` key that ran itself. **Nothing a script did is kept, however far it
+or the body of a tool they wrote. **Nothing a script did is kept, however far it
 reached.** The log answers "what have I done?", and a script's calls are not that:
-one `events` key runs itself every time an entity is read, so a single script left
-in the tree would fill the log on its own and push the day's actual work off the
-end of it. What a script did is shown where it was run — the code entity's own
+one loop in a script would fill the log on its own and push the day's actual work
+off the end of it. What a script did is shown where it was run — the code entity's own
 output.
 
 `callToolByName` is the only way into the call machine that isn't a gesture, so it
@@ -320,17 +318,15 @@ exhaust the localStorage quota, which `persistentAtom` swallows silently.
 The toast layer follows the same line. Every call the user made is announced when
 it settles, whether or not it is kept, and that is what raises errors and
 confirmations; a script's calls announce nothing. A toast is the app answering
-something you just did, and an `events` key that fails would otherwise raise the
-same one every time anything reads the entity it sits on. A script's failures are
-shown where the script is — the code entity's own output, and the error the cache
-records against the entity whose `events` threw.
+something you just did. A script's failures are shown where the script is — the
+code entity's own output.
 
 So `origin` decides two things and they agree: a script's call runs, writes,
 brings the cache into step and returns its value, and leaves no other trace.
 
 A call that would be kept is recorded **before** it runs, as `running`, and
-settled in place afterwards. `claude.runPrompt` holds a session open for minutes,
-and a log it only appears in once it is over is no use while you are waiting for
+settled in place afterwards. A slow call may take minutes, and a log it only
+appears in once it is over is no use while you are waiting for
 it; the row offers nothing to press until it answers, and shows when it started
 rather than pretending to be done. Anything still marked running in the persisted
 log was running when the window closed and can never answer now, so it is settled
@@ -340,13 +336,13 @@ the log tells about itself.
 Kept calls are bounded twice over, because the same quota argument applies to
 the ones that *are* kept: the log holds its most recent 200 entries, and a
 result longer than 20 000 characters is stored as its opening rather than in
-full. An integration listing a hundred pull requests would otherwise fill the
-quota on its own, and silently take the whole persisted log down with it.
+full. One tool handing back thousands of rows would otherwise fill the quota on
+its own, and silently take the whole persisted log down with it.
 
 The log is also the only place a call's result is *shown* — a row with one
 reveals it as JSON. That is what makes an external tool worth invoking from the
 palette at all: a toast can confirm that something happened, but the answer to
-"what are my open pull requests" has to land somewhere you can read it.
+"which notes mention this" has to land somewhere you can read it.
 
 ## Undo
 
@@ -512,9 +508,7 @@ A tool declares whether it `mutates`, which strands the undo stack — a run can
 override that when it turns out there was nothing to write (committing an editor
 that was already empty, say). It says nothing about refetching: a write goes
 through `source/entity`, which tells the cache what it changed on its way out, so
-there is nothing left for the call machine to invalidate. `writesUnseen` is the
-separate declaration for the other case — the store may have changed where this
-side cannot see it, and everything is read again.
+there is nothing left for the call machine to invalidate.
 
 One tool takes an argument it could have inferred: `edit.commit` names its frame,
 because a blur can arrive after the click that moved focus somewhere else, and the

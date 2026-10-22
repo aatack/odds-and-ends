@@ -1,23 +1,20 @@
 # Types
 
 An entity's `type` value names another entity. That entity is a **type**, and it
-describes the entities that name it: which values they are expected to hold and
-what can be done with them.
+describes the entities that name it: which values they are expected to hold.
 
 A type is an entity like any other, so all of this is written in the store rather
-than in this repository. What is here is the three keys that are read by name, the
-one type the store supplies whether or not anybody wrote it, and where each of
-them is acted on.
+than in this repository. What is here is the key that is read by name, the one
+type the store supplies whether or not anybody wrote it, and where it is acted on.
 
 ## What a type holds
 
 | value | what it is |
 | --- | --- |
 | `schema` | JSON Schema for the values an instance holds |
-| `actions` | the ids of the tools every instance wears as a button |
 
-`core/schema.ts` is the whole reading of them — `schemaOf`, `fieldsOf`,
-`actionsOf`, `checkValue` — and has no dependencies, so the desktop app, the phone
+`core/schema.ts` is the whole reading of it — `schemaOf`, `fieldsOf`,
+`checkValue` — and has no dependencies, so the desktop app, the phone
 and a pensive's own tools agree about what a type says.
 
 **A type lends its instances nothing.** It used to: a key the type defined and the
@@ -28,8 +25,8 @@ not something a reader has to know to subtract before believing what an entity
 says.
 
 A type's own id is its name: `type` holds the id of the type entity and the pill
-on a row draws that string verbatim, so `code`, `file`, `changeset` and
-`github/pullRequest` are entity ids rather than an enum. That is also why a type is
+on a row draws that string verbatim, so `code`, `file`, `recipe` and
+`kitchen/recipe` are entity ids rather than an enum. That is also why a type is
 written to a *named* id rather than a minted uuid.
 
 ## `schema`
@@ -68,34 +65,6 @@ It understands the keywords a hand-written field description actually uses —
 append-only store, so a required field that has been cleared is an empty field
 rather than a wrong one.
 
-## `actions`
-
-A list of tool ids, in the order they should be drawn:
-
-```json
-["changeset.checkout", "changeset.merge", "changeset.openPullRequest"]
-```
-
-Every row of that type wears one button per action, and the button *is* the tool:
-pressing it runs that tool along the row, so `context.entityId` is the row it was
-pressed on and the folded context is the one that row's path gives. A body reads
-what it needs off the context and declares no arguments — an argument nothing
-filled would stop the press to ask for it.
-
-**They are drawn by being written.** `views/Editor` appends `[@button:<id>]()` to
-the row's text before rendering it, and the inline-button field
-(`components/EntityMarkdown`) does the rest, so there is no second way of laying a
-button out beside a row. Inline after the text while it is one line; in a
-paragraph of its own when it isn't. It follows that a row not drawing its text as
-markdown — one being edited, a code row, a file's bytes — doesn't draw them
-either.
-
-The point of a tool rather than a script on the type is everywhere else it then
-is. The same action is in the command palette, in the right-click menu (which is
-the palette, seeded with the row under the cursor), reachable from another script
-as `tool['changeset.merge']()`, and editable where every other tool is — under
-`@tools`, or in `tools/` if it is the app's. A type names it; it doesn't own it.
-
 ## The `type` type
 
 The entity `type` is the type of types, and the store serves it rather than holding
@@ -109,7 +78,7 @@ over MCP all see the same thing, and none of them has to know it was never writt
 down. A dump of the whole store (`readEvents` with no ids) leaves them out: that is
 what *is* written down.
 
-Its schema is the keys above, which is what makes the details panel of a type
+Its schema is the key above, which is what makes the details panel of a type
 a form for writing one.
 
 ## Writing a type
@@ -117,12 +86,12 @@ a form for writing one.
 By hand, or over MCP, which tells an agent the same thing
 (`src/main/pensive/mcpServer.ts`):
 
-1. **Choose the id, which is the name** — `github/pullRequest`. Writing a value to
+1. **Choose the id, which is the name** — `kitchen/recipe`. Writing a value to
    an id nothing has been written to is how an entity gets a name rather than a
    uuid.
 2. Set `type` to `type`, `text` to what it is called, and `schema` to the JSON
    Schema.
 3. Link it under `@types`, where types are collected — a reserved entity in the
-   manner of `@tools` and `@changesets`. Nothing in the code reads it; it is where
+   manner of `@tools`. Nothing in the code reads it; it is where
    to look.
 4. Set `type` on the entities that are of it.

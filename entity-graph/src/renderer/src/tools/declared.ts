@@ -1,9 +1,4 @@
-import {
-  FROM_CONTEXT_KEYWORD,
-  KIND_KEYWORD,
-  RECENT_KEYWORD,
-  UNLESS_CONTEXT_KEYWORD,
-} from '../../../core/toolArguments'
+import { FROM_CONTEXT_KEYWORD, KIND_KEYWORD } from '../../../core/toolArguments'
 import type { ArgKind, ArgSpec } from './types'
 
 // Tools the app didn't declare: the `@tools` entities the user writes in the
@@ -19,8 +14,6 @@ interface PropertySchema {
   /** What the app should make of it, where a schema type can't say. */
   [KIND_KEYWORD]?: string
   [FROM_CONTEXT_KEYWORD]?: string
-  [UNLESS_CONTEXT_KEYWORD]?: string
-  [RECENT_KEYWORD]?: boolean
 }
 
 interface ObjectSchema {
@@ -71,10 +64,6 @@ function argSpec(name: string, schema: PropertySchema, required: boolean): ArgSp
     ...(typeof schema[FROM_CONTEXT_KEYWORD] === 'string'
       ? { fromContext: schema[FROM_CONTEXT_KEYWORD] }
       : {}),
-    ...(typeof schema[UNLESS_CONTEXT_KEYWORD] === 'string'
-      ? { unlessContext: schema[UNLESS_CONTEXT_KEYWORD] }
-      : {}),
-    ...(schema[RECENT_KEYWORD] === true ? { recent: true } : {}),
   }
 }
 

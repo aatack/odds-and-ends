@@ -406,7 +406,7 @@ test('does not lend a type’s values to the entities that name it', async () =>
   assert.equal(getEntity('a').values.open, undefined)
   assert.equal(getEntity('b').values.text, 'Write it')
   // The type was never asked for by name — naming it in `type` fetched it, which
-  // is what its schema and its actions are read off.
+  // is what its schema is read off.
   assert.equal(getEntity('task').values.text, 'Task')
 })
 
@@ -423,36 +423,10 @@ test('reaches a type nothing links to', async () => {
   assert.equal(getEntity('far').values.text, 'Far')
 })
 
-test('puts a type’s actions on the rows of that type, and follows a write to them', async () => {
-  open()
-  source.tree({ root: ['a'] })
-  source.values({ a: { text: 'A', type: 'pr' }, pr: { actions: ['github.mergePullRequest'] } })
-  rowsOf(frameId())
-  await settle()
-  const actionsOnA = (): string[] | undefined => {
-    const row = rowsOf(frameId()).rows.find((r) => r.kind === 'entity' && r.id === 'a')
-    return row && row.kind === 'entity' ? row.actions : undefined
-  }
-  assert.deepEqual(actionsOnA(), ['github.mergePullRequest'])
-
-  // Written on the type, though nothing has a row for it: the entity that names
-  // it is what re-reads it.
-  source.given({
-    type: 'value',
-    entityId: 'pr',
-    key: 'actions',
-    value: ['github.mergePullRequest', 'github.approvePullRequest'],
-    timestamp: Date.now(),
-  })
-  refreshEntities()
-  await settle()
-  assert.deepEqual(actionsOnA(), ['github.mergePullRequest', 'github.approvePullRequest'])
-})
-
 test('knows what a type is without anything having written it down', async () => {
   open()
-  source.tree({ root: ['claude/session'] })
-  source.values({ 'claude/session': { text: 'A session', type: 'type' } })
+  source.tree({ root: ['recipe'] })
+  source.values({ recipe: { text: 'A recipe', type: 'type' } })
   rowsOf(frameId())
   await settle()
 
@@ -460,7 +434,7 @@ test('knows what a type is without anything having written it down', async () =>
   // the store serves it (`core/builtins`), so a schema can be written against it
   // on a store that is one entity old.
   const schema = getEntity('type').values.schema as { properties: Record<string, unknown> }
-  assert.deepEqual(Object.keys(schema.properties), ['schema', 'actions'])
+  assert.deepEqual(Object.keys(schema.properties), ['schema'])
   assert.equal(getEntity('type').values.type, 'type', 'and it is its own type')
 })
 

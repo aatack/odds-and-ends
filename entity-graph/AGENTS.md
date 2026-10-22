@@ -105,14 +105,16 @@ is the long form; the rules that matter day to day:
   [`mobile/AGENTS.md`](./mobile/AGENTS.md) for where that line is drawn.
 - **A type describes its instances; it does not lend them values.** An entity's
   `type` names another entity, whose `schema` says which values an entity of that
-  kind holds, and whose `actions` name the tools every row of it wears as a button. Nothing of it is inherited — what an
-  entity holds is what was written to it. `core/schema.ts` is the reading of a
+  kind holds. Nothing of it is inherited — what an entity holds is what was
+  written to it. `core/schema.ts` is the reading of a
   type and `core/builtins.ts` the types the store supplies whether or not anybody
   wrote them — `type` itself, schema and all, plus `tool` and `diagram`;
   [`docs/types.md`](./docs/types.md) is the long form.
 - **`tools/` is the only way the user does anything.** Every command — moving the
   selection, opening a tab, writing a value — is one `ToolSpec` declaring its
-  arguments, its scope, and how far it reaches. Hotkeys and the command palette
+  arguments, its scope, and how far it reaches. A tool is that and its `run`:
+  there are no buttons a type hangs on rows, no named calls a note watches, and
+  no argument that answers itself from somewhere else. Hotkeys and the command palette
   both dispatch through that declaration, so they cannot drift. New commands go
   here, never inline in a keydown handler.
 - **The registry isn't all built at build time.** The user's own tools (below)
@@ -294,34 +296,19 @@ the same shape mid-sentence, for a word no value on the entity accounts for.
 
 **Custom fields** (`components/ui/markdownFields.ts`) are how a row's text holds
 something other than text: `[@type:arg](text)` renders as a component instead of
-as markup — `[@button:tool](label)` is the Actions button inline, naming a tool
-the way a script does (its id, or the camel case of its label),
-`[@codeEditor:key](hint)` a code box over one of the entity's values,
+as markup — `[@codeEditor:key](hint)` a code box over one of the entity's values,
 `[@entity:id](label)` another entity as a pill mid-sentence — the label a fallback
 for while that entity has no text of its own —
-`[@pill](text)` the type pill's shape around a word the sentence wants set apart,
-and `[@tool:callId](label)` how one call is getting on — counting while it runs,
-and how it ended after. The `:arg` is optional, as the pill shows: a form that
+and `[@pill](text)` the type pill's shape around a word the sentence wants set
+apart. The `:arg` is optional, as the pill shows: a form that
 points at nothing is written without one. A link is still a link; only that label
 shape, and only for a type the caller can render, is taken. `Markdown` takes the
 renderers and knows nothing else about them;
 `EntityMarkdown` is where they meet the app, and is what the outliner renders a
 row with. A field acts on the entity whose text it appears in and not on the
 selection: its calls are born along that row's path (`runTool`'s `within`, the
-gesture counterpart of `contextWithin`), so a button in a row's prose is a button
-on *that* row wherever the cursor happens to be.
-
-`[@button:…]` is also how a **type's actions** are drawn: `views/Editor` appends
-one per action to the row's text before rendering it, so there is one way a
-button gets beside a row rather than two. See [`docs/types.md`](./docs/types.md).
-
-**A call can be named.** `$callId` alongside a script's arguments —
-`tool['claude.runPrompt']({ …, $callId: id })` — makes that string the call's id
-instead of a fresh uuid, and a named call is kept in the activity log however it
-came about, where a script's calls otherwise are not. Naming one is only ever
-done in order to point at it afterwards, which is what `[@tool:callId]` does:
-write the field into a note before making the call, and the note watches the
-call.
+gesture counterpart of `contextWithin`), so a code box in a row's prose writes to
+*that* row wherever the cursor happens to be.
 
 ## Layout
 

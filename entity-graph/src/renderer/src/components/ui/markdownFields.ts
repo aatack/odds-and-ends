@@ -2,13 +2,13 @@ import type { Root, RootContent, Text } from 'mdast'
 
 // The custom inline forms entity text can carry: `[@type:arg](text)`, which the
 // renderer hands to a component instead of drawing. A row is prose most of the
-// time, and occasionally it wants a button in the middle of a sentence or a box
-// that edits one of the entity's values — so the syntax is deliberately the one
+// time, and occasionally it wants another entity in the middle of a sentence or
+// a box that edits one of the entity's values — so the syntax is deliberately the one
 // markdown already has for a link, with an `@type:` label that no real link
 // would use.
 //
 // The `:arg` is optional, because not every form has anything to point at: a
-// button names a tool and a code box names a value key, but `[@pill](text)` is
+// mention names an entity and a code box names a value key, but `[@pill](text)` is
 // the whole of what a pill needs. A form written without one arrives with an
 // empty `arg` rather than being left in the text.
 //
@@ -17,7 +17,7 @@ import type { Root, RootContent, Text } from 'mdast'
 // `[@nonesuch:x](y)` — falls through and renders as it always did.
 //
 // Two shapes have to be caught, because markdown parses the same form two
-// different ways. `[@button:x]()` is a valid link (empty destination), so it
+// different ways. `[@entity:x]()` is a valid link (empty destination), so it
 // arrives as a `link` node; `[@codeEditor:x](a hint)` is *not* (a link
 // destination may not contain spaces), so it arrives as literal text. Handling
 // both here is what lets the text in the parens be an ordinary phrase.
@@ -28,13 +28,13 @@ import type { Root, RootContent, Text } from 'mdast'
 
 /** What a field's two parts are called once parsed out of the label. */
 export interface MarkdownFieldProps {
-  /** The `:arg` half of the label — a tool id, a value key. */
+  /** The `:arg` half of the label — an entity id, a value key. */
   arg: string
   /** Whatever stood in the parens: a hint, a caption. */
   text: string
 }
 
-/** Field renderers by type name, e.g. `{ button: …, codeEditor: … }`. */
+/** Field renderers by type name, e.g. `{ entity: …, codeEditor: … }`. */
 export type MarkdownFields = Record<string, React.ComponentType<MarkdownFieldProps>>
 
 /**

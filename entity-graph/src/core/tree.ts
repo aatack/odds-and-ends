@@ -1,5 +1,4 @@
-import { str, summaryOf, type Entity, type EntitySummary, type LinkDirection } from './entity'
-import { actionsOf } from './schema'
+import { summaryOf, type Entity, type EntitySummary, type LinkDirection } from './entity'
 import { checkboxOf, waits } from './open'
 import {
   filterPaths,
@@ -54,14 +53,6 @@ export interface TreeRow extends EntitySummary {
    * hasn't been read yet.
    */
   loading: boolean
-  /**
-   * The tools the row's *type* puts on it, by id and in the order the type
-   * listed them — a button each, drawn on the end of the row's text. Absent
-   * where there is no source to look the type up in, which is the caller
-   * reading a page it was handed ({@link rowsOfPage}) rather than walking a
-   * cache itself.
-   */
-  actions?: string[]
 }
 
 export interface Tree {
@@ -80,7 +71,6 @@ interface RowFacts {
   collapsed: boolean
   loading: boolean
   hidesChildren: boolean
-  actions?: string[]
 }
 
 /**
@@ -94,10 +84,9 @@ function rowOf(
   entity: Entity,
   depth: number,
   direction: LinkDirection,
-  { collapsed, loading, hidesChildren, actions }: RowFacts,
+  { collapsed, loading, hidesChildren }: RowFacts,
 ): TreeRow {
   return {
-    ...(actions?.length ? { actions } : {}),
     id: path[path.length - 1],
     depth,
     path: [...path],
@@ -206,13 +195,6 @@ export function buildTree(
   const folded = new Set(traversal.collapsed)
   const depths = keptDepths(kept, (path) => path.length - start.length)
 
-  // What each row's type has to say about it. Reading a type is also what asks
-  // for it, so a row's buttons appear as soon as its type lands — and a type only
-  // rows reference is fetched on their behalf.
-  const typeIds = [
-    ...new Set(kept.map((path) => str(entities[path[path.length - 1]]?.values.type))),
-  ].filter((id): id is string => !!id)
-  const types = typeIds.length ? source.get(typeIds) : {}
 
   // Which rows are on screen, so each of them can be asked whether its own
   // children are among them. Every reason a child might not be — folded, capped,
@@ -224,7 +206,6 @@ export function buildTree(
   const rows = kept.map((path, i): TreeRow => {
     const id = path[path.length - 1]
     const entity = entities[id]
-    const typeId = str(entity?.values.type)
     const links = traversal.direction === 'in' ? entity.inboundLinks : entity.outboundLinks
     return rowOf(path, entity, depths[i], traversal.direction, {
       collapsed: folded.has(id),
@@ -234,7 +215,6 @@ export function buildTree(
       // whole of it.
       hidesChildren:
         links.length > 0 && !links.some((child) => shown.has(keyOf([...path, child]))),
-      actions: typeId ? actionsOf(types[typeId]?.values) : undefined,
     })
   })
 

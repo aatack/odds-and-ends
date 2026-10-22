@@ -21,7 +21,7 @@ Object.defineProperty(globalThis, 'window', { value: { entityGraph: {} } })
 
 const { userToolsAtom } = await import('../src/renderer/src/tools/userTools')
 const { callToolByName, stopCall } = await import('../src/renderer/src/tools/call')
-const { callsAtom, runningCallsAtom } = await import('../src/renderer/src/state/store')
+const { runningCallsAtom } = await import('../src/renderer/src/state/store')
 
 const context = () => ({
   values: {},
@@ -59,32 +59,31 @@ const tick = () => new Promise((r) => setTimeout(r, 0))
 
 await test('settles a stopped call as cancelled, and aborts its signal', async () => {
   aborted = false
-  const result = callToolByName('slow', [{ $callId: 'one' }], context())
+  const result = callToolByName('slow', [], context())
   await tick()
-  assert.deepEqual(runningCallsAtom.get(), ['one'])
-  assert.equal(callsAtom.get()[0]?.outcome.kind, 'running')
+  const [id] = runningCallsAtom.get()
+  assert.ok(id)
 
-  stopCall('one')
+  stopCall(id)
   assert.equal(aborted, true)
   assert.deepEqual(runningCallsAtom.get(), [])
-  assert.equal(callsAtom.get()[0]?.outcome.kind, 'cancelled')
   // A script waiting on it is told, rather than handed nothing.
   await assert.rejects(result, /stopped/)
 
   // Whatever the tool says afterwards changes nothing.
   finish('late')
   await tick()
-  assert.equal(callsAtom.get()[0]?.outcome.kind, 'cancelled')
-  assert.equal(callsAtom.get().length, 1)
+  assert.deepEqual(runningCallsAtom.get(), [])
 })
 
 await test('leaves a call that has answered alone', async () => {
-  const result = callToolByName('slow', [{ $callId: 'two' }], context())
+  const result = callToolByName('slow', [], context())
   await tick()
+  const [id] = runningCallsAtom.get()
   finish('done')
   assert.equal(await result, 'done')
-  stopCall('two')
-  assert.equal(callsAtom.get()[0]?.outcome.kind, 'success')
+  stopCall(id)
+  assert.deepEqual(runningCallsAtom.get(), [])
 })
 
 console.log(`${passed} passed`)

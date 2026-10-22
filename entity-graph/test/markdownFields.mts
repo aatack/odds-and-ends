@@ -42,15 +42,15 @@ function textIn(text: string, types: readonly string[]): string {
   return parts.join('')
 }
 
-const KNOWN = ['button', 'codeEditor', 'pill']
+const KNOWN = ['entity', 'codeEditor', 'pill']
 
 const tests: [string, () => void][] = []
 const test = (name: string, run: () => void): void => void tests.push([name, run])
 
 test('takes a form the parser turned into a link', () => {
   // No space in the parens, so markdown reads it as a link with an empty label.
-  assert.deepEqual(fieldsIn('[@pill](changeset)', KNOWN), [
-    { 'data-field-type': 'pill', 'data-field-arg': '', 'data-field-text': 'changeset' },
+  assert.deepEqual(fieldsIn('[@pill](recipe)', KNOWN), [
+    { 'data-field-type': 'pill', 'data-field-arg': '', 'data-field-text': 'recipe' },
   ])
 })
 
@@ -62,11 +62,11 @@ test('takes a form the parser left as text', () => {
 })
 
 test('keeps the arg when there is one', () => {
-  assert.deepEqual(fieldsIn('[@button:entity.inspect](Look)', KNOWN), [
-    { 'data-field-type': 'button', 'data-field-arg': 'entity.inspect', 'data-field-text': 'Look' },
+  assert.deepEqual(fieldsIn('[@entity:abc-123](Look)', KNOWN), [
+    { 'data-field-type': 'entity', 'data-field-arg': 'abc-123', 'data-field-text': 'Look' },
   ])
-  assert.deepEqual(fieldsIn('[@codeEditor:events](a hint)', KNOWN), [
-    { 'data-field-type': 'codeEditor', 'data-field-arg': 'events', 'data-field-text': 'a hint' },
+  assert.deepEqual(fieldsIn('[@codeEditor:body](a hint)', KNOWN), [
+    { 'data-field-type': 'codeEditor', 'data-field-arg': 'body', 'data-field-text': 'a hint' },
   ])
 })
 
@@ -78,7 +78,7 @@ test('takes a form mid-sentence, and leaves the sentence', () => {
 })
 
 test('leaves a type nobody can draw', () => {
-  assert.deepEqual(fieldsIn('[@pill](changeset)', ['button']), [])
+  assert.deepEqual(fieldsIn('[@pill](recipe)', ['entity']), [])
   assert.deepEqual(fieldsIn('[@nonesuch](x)', KNOWN), [])
   assert.deepEqual(fieldsIn('[@nonesuch:y](a phrase)', KNOWN), [])
   assert.equal(textIn('[@nonesuch:y](a phrase)', KNOWN), '[@nonesuch:y](a phrase)')
@@ -86,26 +86,8 @@ test('leaves a type nobody can draw', () => {
 
 test('leaves ordinary links, and the syntax quoted in code', () => {
   assert.deepEqual(fieldsIn('[a link](https://example.com)', KNOWN), [])
-  assert.deepEqual(fieldsIn('`[@pill](changeset)`', KNOWN), [])
-  assert.equal(textIn('`[@pill](changeset)`', KNOWN), '[@pill](changeset)')
-})
-
-// The shape a type's actions are drawn in: `views/Editor` writes one of these on
-// the end of the row's text and the field renderer does the rest, so the dotted
-// id and the empty parens are load-bearing rather than incidental.
-test('takes the buttons a type puts on a row', () => {
-  assert.deepEqual(
-    fieldsIn('Improvements [@button:changeset.checkout]() [@button:changeset.merge]()', KNOWN),
-    [
-      { 'data-field-type': 'button', 'data-field-arg': 'changeset.checkout', 'data-field-text': '' },
-      { 'data-field-type': 'button', 'data-field-arg': 'changeset.merge', 'data-field-text': '' },
-    ],
-  )
-  assert.equal(
-    textIn('Improvements [@button:changeset.checkout]()', KNOWN),
-    'Improvements ',
-    'the row still reads as itself',
-  )
+  assert.deepEqual(fieldsIn('`[@pill](recipe)`', KNOWN), [])
+  assert.equal(textIn('`[@pill](recipe)`', KNOWN), '[@pill](recipe)')
 })
 
 let failed = 0

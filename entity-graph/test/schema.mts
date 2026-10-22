@@ -10,7 +10,7 @@
 
 import assert from 'node:assert/strict'
 
-const { actionsOf, checkValue, fieldsOf, isTextual, schemaOf, typeLabel } = await import(
+const { checkValue, fieldsOf, isTextual, schemaOf, typeLabel } = await import(
   '../src/core/schema'
 )
 const { TOOL_ID, TYPE_ID, builtinEvents } = await import('../src/core/builtins')
@@ -79,20 +79,10 @@ test('ignores what it does not understand rather than calling it a failure', () 
   assert.equal(checkValue('anything', { pattern: '(' }), null, 'including a pattern that is not one')
 })
 
-test('reads a schema and its actions off a type, and nothing off a half-written one', () => {
+test('reads a schema off a type, and nothing off a half-written one', () => {
   assert.deepEqual(schemaOf({ schema: SCHEMA }), SCHEMA)
   assert.equal(schemaOf({ schema: 'an object, please' }), null)
   assert.equal(schemaOf(undefined), null)
-  assert.deepEqual(actionsOf({ actions: ['github.mergePullRequest', 'link.open'] }), [
-    'github.mergePullRequest',
-    'link.open',
-  ])
-  // Anything that doesn't name a tool is not a button: a dead one on every
-  // instance of a type is worse than one that isn't there.
-  assert.deepEqual(actionsOf({ actions: ['changeset.merge', 3, '  ', null] }), ['changeset.merge'])
-  // The old shape — a dictionary of name → script — says nothing now.
-  assert.deepEqual(actionsOf({ actions: { Merge: 'merge()' } }), [])
-  assert.deepEqual(actionsOf({}), [])
 })
 
 test('serves the type entity as events, behind anything anybody wrote', () => {
@@ -108,7 +98,6 @@ test('serves the type entity as events, behind anything anybody wrote', () => {
   assert.equal(rolled.values.text, 'Mine', 'a real write wins')
   assert.deepEqual(Object.keys(schemaOf(rolled.values)?.properties as object), [
     'schema',
-    'actions',
   ])
   // Only ids asked for by name, and a dump of the store is what is written down.
   assert.deepEqual(builtinEvents(['something-else']), [])

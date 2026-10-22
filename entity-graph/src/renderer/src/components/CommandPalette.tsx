@@ -13,7 +13,6 @@ import {
   fillActiveArg,
   lastArgValue,
   minimisePending,
-  recentArgValues,
   retreatArg,
   setArg,
   setPendingQuery,
@@ -153,13 +152,6 @@ export function CommandPalette(): React.JSX.Element | null {
   if (activeArg) {
     push('From here', TAKE_CONTEXT, contextValue(activeArg, visible.context))
     push('Last used', TAKE_RECENT, remembered)
-    // An argument that asks for them gets everything recent calls were given
-    // under its name, as a list the arrow keys walk.
-    if (activeArg.recent) {
-      for (const value of recentArgValues(calls, activeArg.name, visible.callId)) {
-        push('Recent', undefined, value)
-      }
-    }
   }
 
   /** Write the buffer into the call. Returns false when it doesn't parse. */

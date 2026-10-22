@@ -438,7 +438,7 @@ const RowView = React.memo(function RowView({
   const isDiagram = row.type === DIAGRAM_ID
   const running = run?.status === 'running'
   const heading = row.section ? sectionStyle(row.depth) : undefined
-  const text = withActions(row.text ?? '', row.actions ?? [])
+  const text = row.text ?? ''
 
   // Where a typed row's pill goes. A row drawing prose floats it into the text:
   // the first line starts after it and every line below runs the full width, so
@@ -584,23 +584,3 @@ const RowView = React.memo(function RowView({
     </div>
   )
 })
-
-/**
- * A row's text with the buttons its type put on it written onto the end.
- * `[@button:id]()` is the inline-button field the markdown already renders, so
- * an action is drawn by *writing* it rather than by laying anything out beside
- * the text — which is also why the same buttons appear wherever a row's text is
- * rendered, and nowhere it isn't: a row being edited shows its source, and a
- * code row and a file's bytes are surfaces of their own.
- *
- * Inline after the last word while the text is one line, so they read as part of
- * the row. Text of several lines gets them in a paragraph of their own: markdown
- * is line-sensitive, and appending to the end of a list or a fenced block would
- * put the field inside it.
- */
-function withActions(text: string, actions: readonly string[]): string {
-  if (actions.length === 0) return text
-  const buttons = actions.map((id) => `[@button:${id}]()`).join(' ')
-  if (!text) return buttons
-  return text.includes('\n') ? `${text}\n\n${buttons}` : `${text} ${buttons}`
-}

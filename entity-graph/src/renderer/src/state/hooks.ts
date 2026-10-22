@@ -17,7 +17,7 @@ import type { EntitySource } from '../../../core/query'
 import { focusRequestAtom, focusTaken } from './focusRequest'
 import { rowLimitsAtom, treeOf } from './query'
 import { loadResource, resourcesAtom, type ResourceState } from './resources'
-import { callsAtom, focusOf, layoutAtom, pendingAtom, runningCallsAtom, type Focus } from './store'
+import { callsAtom, focusOf, layoutAtom, pendingAtom, type Focus } from './store'
 import { themeAtom, uiAtom, type Theme, type UiState } from './ui'
 import type { LayoutState, PendingCall, RecordedCall } from './types'
 
@@ -33,20 +33,10 @@ export const usePendingCall = (): PendingCall | null => useAtomValue(pendingAtom
 export const useCalls = (): RecordedCall[] => useAtomValue(callsAtom)
 
 /**
- * Whether one particular call is still running. Takes the id rather than the list
- * so a control can watch its own press and nothing else: the list changes on every
- * call anything makes, and a button redrawing for somebody else's is noise.
- */
-export const useCallRunning = (callId: string | null): boolean =>
-  useAtomValue(runningCallsAtom).includes(callId ?? '')
-
-/**
- * Whether a snooze or a tool call is keeping a task shut right now. Watches the
- * running calls, and wakes itself when the soonest snooze runs out, so the row
- * changes without anything else having to.
+ * Whether a snooze is keeping a task shut right now. Wakes itself when the
+ * soonest snooze runs out, so the row changes without anything else having to.
  */
 export function usePaused(wait: unknown): boolean {
-  const running = useAtomValue(runningCallsAtom)
   const [now, setNow] = useState(Date.now)
   const wake = nextWake(wait, now)
   useEffect(() => {
@@ -56,7 +46,7 @@ export function usePaused(wait: unknown): boolean {
     const timer = setTimeout(() => setNow(Date.now()), Math.min(wake - Date.now(), 2 ** 31 - 1))
     return () => clearTimeout(timer)
   }, [wake])
-  return isPaused(wait, { now, running: (id) => running.includes(id) })
+  return isPaused(wait, now)
 }
 
 export const useUi = (): UiState => useAtomValue(uiAtom)

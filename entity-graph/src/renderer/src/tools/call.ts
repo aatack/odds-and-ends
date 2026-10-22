@@ -1,5 +1,4 @@
 import { v4 as uuid } from 'uuid'
-import { refreshEntities } from '../../../core/cache'
 import { liveContext } from '../state/query'
 import { callsAtom, pendingAtom, runningCallsAtom } from '../state/store'
 import { clearUndo } from '../state/undo'
@@ -21,7 +20,6 @@ import {
   prevStopBefore,
   resolveArgs,
   seedArgs,
-  takeCallId,
 } from './args'
 import { findTool, findToolByName, nearestToolNames } from './registry'
 import { argsOf, type ToolSpec } from './types'
@@ -68,8 +66,6 @@ interface Invocation {
   /** The recorded call this one was resumed or rerun from. */
   fromCallId?: string
   origin: CallOrigin
-  /** True when the caller chose `callId` — see {@link takeCallId}. */
-  named?: boolean
 }
 
 /**
@@ -83,14 +79,8 @@ interface Invocation {
  * fill the log on its own and push the day's actual work off the end of it. What a
  * script did is shown where it was run — the code entity's own output. It doesn't
  * toast either; `settle` says why.
- *
- * Unless the script named the call. Choosing an id is the one thing a caller can
- * only be doing in order to point at the call afterwards — a note that watches a
- * Claude turn is the case — so a named call is kept however it came about. The
- * flood the rule above is guarding against is calls nobody chose an id for.
  */
 const worthKeeping = (call: Invocation, tool: ToolSpec, outcome: CallOutcome): boolean => {
-  if (call.named) return true
   if (call.origin === 'code') return false
   // A cancelled call that reached outside was stopped while it ran — it may have
   // done half its work, so it stays where the log said it was running.
@@ -101,8 +91,7 @@ const worthKeeping = (call: Invocation, tool: ToolSpec, outcome: CallOutcome): b
 
 /**
  * How much of a result is kept, and how many results. The log is persisted, and
- * an integration will happily hand back a hundred pull requests: without a
- * ceiling it eventually fills localStorage, at which point the whole log
+ * a tool will happily hand back thousands of rows: without a ceiling it eventually fills localStorage, at which point the whole log
  * silently stops surviving a reload. Generous enough to read; bounded.
  */
 const RESULT_CHARS = 20_000
@@ -134,8 +123,8 @@ const recordOf = (call: Invocation, outcome: CallOutcome): RecordedCall => ({
 })
 
 /**
- * Put a call in the log *before* it has run, so that one taking minutes — a
- * Claude session — can be watched rather than appearing from nowhere once it is
+ * Put a call in the log *before* it has run, so that one taking minutes can be
+ * watched rather than appearing from nowhere once it is
  * over. Recorded under the call's own id, so settling it later updates that row
  * in place rather than leaving a second one behind.
  *
@@ -223,8 +212,8 @@ async function execute(call: Invocation): Promise<CallOutcome> {
   inFlight.set(call.callId, { call, tool, controller })
   const stopped: CallOutcome = { kind: 'cancelled' }
   try {
-    // Raced against the stop, so whoever is waiting — a script, a note watching
-    // the call — is let go at once rather than when the tool gets round to it.
+    // Raced against the stop, so whoever is waiting — a script, say — is let go
+    // at once rather than when the tool gets round to it.
     const outcome = (await Promise.race([
       tool.run(resolveArgs(tool, call.args), {
         callId: call.callId,
@@ -247,9 +236,6 @@ async function execute(call: Invocation): Promise<CallOutcome> {
       // after the newer edit.
       if (!tool.preservesUndo) clearUndo()
     }
-    // The exception: a tool that may have changed the store somewhere this side
-    // cannot see. There is nothing to work out from, so everything is read again.
-    if (tool.writesUnseen) refreshEntities()
     const succeeded: CallOutcome = { kind: 'success', data: outcome.data, message: outcome.message }
     settle(call, tool, succeeded)
     return succeeded
@@ -391,7 +377,7 @@ export const contextWithin = (within: string[]): CallContext =>
   liveContext({ within })
 
 /**
- * Run a tool the way a script names it: `tool.sendSlackMessage(channel, text)`.
+ * Run a tool the way a script names it: `tool.createChildOfEntity(parentId, text)`.
  * Everything else about it is an ordinary call — it is recorded, it refreshes the
  * frames if it wrote anything, and its result is what the tool handed back. An
  * error is thrown rather than returned, so a script can let it fall out to the
@@ -401,9 +387,6 @@ export const contextWithin = (within: string[]): CallContext =>
  * required argument is an error like any other. Nor is it kept in the log, which
  * records what the user did — this is the one path into the machine that isn't a
  * gesture, so it is the one place `origin: 'code'` is set.
- *
- * Unless it passed `$callId`, which names the call: that one is kept, because
- * naming it is how a script points at it later. See {@link takeCallId}.
  */
 export async function callToolByName(
   name: string,
@@ -417,14 +400,12 @@ export async function callToolByName(
       `No tool called "${name}"${nearest.length ? `. Did you mean ${nearest.join(', ')}?` : ''}`,
     )
   }
-  const { args, callId } = takeCallId(passed)
   const outcome = await execute({
-    callId: callId ?? uuid(),
+    callId: uuid(),
     toolId: tool.id,
-    args: argsFromCall(tool, args),
+    args: argsFromCall(tool, passed),
     context,
     origin: 'code',
-    named: callId != null,
   })
   if (outcome.kind === 'error') throw new Error(outcome.message)
   // Stopped: the script was waiting on an answer that is not coming.
@@ -605,31 +586,6 @@ export function lastArgValue(
     if (value?.kind === 'value') return value.value
   }
   return undefined
-}
-
-/**
- * Every distinct value recent calls passed under an argument's name, whichever
- * tool they were to, newest first. Only text is offered: an argument worth
- * picking from a list is one somebody typed, and the same name on another tool
- * holding an object is not the same thing.
- */
-export function recentArgValues(
-  calls: RecordedCall[],
-  name: string,
-  except?: string,
-  limit = 8,
-): string[] {
-  const out: string[] = []
-  for (const call of calls) {
-    if (call.callId === except) continue
-    const value = call.args[name]
-    if (value?.kind !== 'value' || typeof value.value !== 'string') continue
-    const text = value.value.trim()
-    if (!text || out.includes(text)) continue
-    out.push(text)
-    if (out.length >= limit) break
-  }
-  return out
 }
 
 /**

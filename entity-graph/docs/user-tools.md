@@ -7,7 +7,7 @@ shows in the activity log.
 
 Its body runs in the same QuickJS sandbox a `type: code` entity runs in, with the
 same `tool` façade — so a tool you wrote reaches everything in the registry: the
-frame tools, the writes, the app's integrations. That is why this is a frontend
+frame tools, the writes, the other tools you wrote. That is why this is a frontend
 feature. A pensive *lists* the same definitions (`core/pensive/userTools.ts`,
 which splices them into its own tool list and so into what a broadcast publishes)
 but has nothing to run one with, since most of what a tool would want to do only
@@ -33,7 +33,7 @@ Values on the note itself. Two are required; everything else has a default.
 The note's own `text` is **what the tool is called** — the palette label and the
 outline's line are the same words, so renaming it in the outline renames the tool.
 There was a `name` value beside the text and the two only ever drifted apart. A
-definition that wants to sit under a heading of "Slack things" hangs under one.
+definition that wants to sit under a heading of "Kitchen things" hangs under one.
 
 | Value | Type | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
@@ -68,8 +68,6 @@ A list, one entry per argument, in the order you want to be asked for them:
 | `options` | A list. Makes it a picker, whatever `type` says. |
 | `description` | Shown as the field's placeholder. |
 | `fromContext` | A context key that fills it, as `repo` from a note above. The palette skips past it then. |
-| `unlessContext` | A context key whose presence means it is not asked for at all: it reaches the body as `null`. |
-| `recent` | `true` offers every value recent calls, of any tool, passed under this name, deduplicated. The arrow keys walk them. |
 | `default` | See the gotcha below. |
 
 The **label** is derived from the name — `pullRequest` is prompted for as "Pull
@@ -115,18 +113,6 @@ The symptom is worth recognising because it doesn't look like a declaration
 problem: the body is called with `undefined` for every parameter, so `first +
 second` comes back as `NaN`, which the log shows as `null`.
 
-### A tool that is a button on a row
-
-A type's `actions` are a list of tool ids, and every instance of that type wears
-one button per id — see [`types.md`](./types.md). Pressing one runs your tool along
-that row, so `context.entityId` is the row it was pressed on and the folded context
-is that row's.
-
-**Declare no arguments on a tool meant to be an action.** A press only runs
-straight through when nothing is outstanding; an argument the context didn't fill
-stops it and opens the palette to ask, which is not what a button should do. Read
-what you need off `context` instead.
-
 ## The body
 
 `execute` is a string holding **an expression that evaluates to a function**. The
@@ -169,35 +155,12 @@ user left blank arrives as `undefined`, the same as a parameter that wasn't pass
 Don't make it `async`. The sandbox has no promise support, by design — that is what
 buys the synchronous `tool` calls — so a returned promise comes back as nothing.
 
-### Naming a call
+### Stopping one
 
-A call gets a uuid nobody outside the machine ever sees. Pass `$callId` alongside
-the arguments and it gets yours instead:
-
-```js
-const watching = tool['claude.runPrompt']({
-  path: worktree,
-  prompt: ask,
-  sessionId: session,
-  $callId: noteId,
-})
-```
-
-Only the object form can carry one — there is nowhere to put a name in a
-positional call — and `$callId` is taken off before the rest is read as arguments,
-so a tool that has no such argument is none the wiser. An object left with nothing
-else in it was a name and not arguments, so `tool.reloadTools({ $callId: id })` is
-a call with no arguments rather than one with an object for its first.
-
-Naming a call is also what puts it in the **activity log**, which a script's calls
-otherwise stay out of. Nothing names a call except to point at it afterwards, and
-`[@tool:callId](label)` in a note's text is what points: write the note first, and
-it shows the call counting up while it runs and how it ended after.
-
-A running call in the log has a **Stop**. It settles the call as cancelled at
-once, and the script waiting on it gets an error saying so. An integration is
-stopped where it runs — a Claude session's process is killed. A tool the user
-wrote is not interrupted: nothing waits on it any more, but it runs to its end.
+A running call in the activity log has a **Stop**. It settles the call as
+cancelled at once, and a script waiting on it gets an error saying so. A tool the
+user wrote is not interrupted: nothing waits on it any more, but it runs to its
+end.
 
 ### The older shape
 
@@ -252,7 +215,7 @@ this file rather than a retelling, so none of them goes stale on its own:
   two calls an agent reaches for when it has been asked to build something, and it
   should not have to have retained the instructions to be told where the note goes.
 - **This page, as a resource.** `docs://tools` on the MCP endpoint serves this file
-  from disk, alongside `docs://types`, `docs://changesets` and `docs://integrations`.
+  from disk, alongside `docs://types` and `docs://diagrams`.
   Nothing truncates a resource, so an agent that wants the whole story can fetch it.
 
 **New tool of your own** stamps `type: tool` on the stub it writes, so a definition

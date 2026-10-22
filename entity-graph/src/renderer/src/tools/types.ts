@@ -25,18 +25,6 @@ export interface ArgSpec {
    */
   fromContext?: string
   /**
-   * Context key that makes this argument unnecessary: while the context holds it,
-   * the argument is not asked for, and reaches `run` as the default. For a value
-   * only needed when something isn't there yet — a repository for a session that
-   * hasn't been started.
-   */
-  unlessContext?: string
-  /**
-   * Offer what recent calls, of any tool, passed under this argument's name —
-   * deduplicated, newest first — as values to pick from.
-   */
-  recent?: boolean
-  /**
    * The tool supplies its own value when this is left as `default`. Tab still
    * lands on it (unlike a context-filled argument), so it can be overridden.
    */
@@ -105,16 +93,6 @@ export interface ToolSpec {
    * the call machine to invalidate.
    */
   mutates?: boolean
-  /**
-   * Set when the store may change where this side cannot see it — a Claude
-   * session writing notes over MCP, an integration acting on the graph through
-   * the server. Nothing in the cache accounts for those, so the only honest
-   * answer is to read everything again. Separate from {@link mutates}, since a
-   * tool can be one without the other: a pull request listed changes nothing and
-   * still deserves a look afterwards, and a rename changes everything about a row
-   * without a single unaccounted event.
-   */
-  writesUnseen?: boolean
   /**
    * Set for the tools that work *on* the undo stack. Any other write clears it,
    * since events written back after newer edits would come back out of order.

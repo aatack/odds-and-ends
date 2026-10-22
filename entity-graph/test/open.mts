@@ -11,7 +11,6 @@ const EARLIER = '2026-09-21T12:00:00Z'
 
 const probes = (over: Partial<WaitProbes> = {}): WaitProbes => ({
   now: NOW,
-  running: () => false,
   code: () => undefined,
   ...over,
 })
@@ -25,35 +24,28 @@ test('waits out a snooze, and opens once it has passed', () => {
   assert.equal(openNow({ snooze: Date.parse(LATER) }, probes()), false)
 })
 
-test('is paused while a snooze or a call keeps it shut, and not for code alone', () => {
-  const at = { now: NOW, running: (id: string) => id === 'c' }
-  assert.equal(isPaused({ snooze: LATER }, at), true)
-  assert.equal(isPaused({ snooze: EARLIER }, at), false)
-  assert.equal(isPaused({ toolCall: 'c' }, at), true)
-  assert.equal(isPaused({ toolCall: 'd' }, at), false)
-  assert.equal(isPaused({ code: 'true' }, at), false)
-  assert.equal(isPaused({ snooze: LATER, code: 'true' }, at), true)
-  assert.equal(isPaused(true, at), false)
+test('is paused while a snooze keeps it shut, and not for code alone', () => {
+  assert.equal(isPaused({ snooze: LATER }, NOW), true)
+  assert.equal(isPaused({ snooze: EARLIER }, NOW), false)
+  assert.equal(isPaused({ code: 'true' }, NOW), false)
+  assert.equal(isPaused({ snooze: LATER, code: 'true' }, NOW), true)
+  assert.equal(isPaused(true, NOW), false)
 })
 
 test('wakes at the soonest snooze still to run out', () => {
-  assert.equal(nextWake([{ snooze: LATER }, { snooze: EARLIER }, { toolCall: 'c' }], NOW), Date.parse(LATER))
+  assert.equal(nextWake([{ snooze: LATER }, { snooze: EARLIER }, { code: 'c' }], NOW), Date.parse(LATER))
   assert.equal(nextWake({ snooze: EARLIER }, NOW), undefined)
 })
 
-test('waits on a tool call only while it runs', () => {
-  const open = { toolCall: 'call-1' }
-  assert.equal(openNow(open, probes({ running: (id) => id === 'call-1' })), false)
-  assert.equal(openNow(open, probes()), true)
+test('opens as soon as any one condition does', () => {
+  const yes = probes({ code: () => ({ result: true }) })
+  // The code has said so, though the snooze has not run out.
+  assert.equal(openNow([{ code: 'c' }, { snooze: LATER }], yes), true)
+  assert.equal(openNow({ code: 'c', snooze: LATER }, probes({ code: () => ({ result: false }) })), false)
 })
 
-test('opens as soon as any one condition does', () => {
-  const running = probes({ running: () => true })
-  // Still running, but the snooze has run out: offered rather than stuck.
-  assert.equal(openNow({ toolCall: 'c', snooze: EARLIER }, running), true)
-  // Finished, though the snooze has not run out.
-  assert.equal(openNow([{ toolCall: 'c' }, { snooze: LATER }], probes()), true)
-  assert.equal(openNow({ toolCall: 'c', snooze: LATER }, running), false)
+test('treats a condition it does not know as nothing to wait on', () => {
+  assert.equal(openNow({ toolCall: 'c' }, probes()), true)
 })
 
 test('opens when code says so, and asks for it only when nothing cheaper has', () => {
@@ -87,7 +79,7 @@ test('leaves an open that waits on nothing as written', () => {
 
 test('draws a waiting task as an unticked one', () => {
   assert.equal(checkboxOf({ snooze: LATER }), true)
-  assert.equal(checkboxOf([{ toolCall: 'c' }]), true)
+  assert.equal(checkboxOf([{ code: 'c' }]), true)
   assert.equal(checkboxOf(false), false)
   assert.equal(checkboxOf('yes'), undefined)
 })
@@ -105,9 +97,9 @@ test('sets a snooze, keeping what else the task waits on', () => {
   assert.deepEqual(withSnooze(undefined, LATER), { snooze: LATER })
   assert.deepEqual(withSnooze(true, LATER), { snooze: LATER })
   assert.deepEqual(withSnooze(false, LATER), { snooze: LATER })
-  assert.deepEqual(withSnooze({ toolCall: 'c', snooze: EARLIER }, LATER), { toolCall: 'c', snooze: LATER })
-  assert.deepEqual(withSnooze([{ toolCall: 'c' }, { snooze: EARLIER }], LATER), [
-    { toolCall: 'c' },
+  assert.deepEqual(withSnooze({ code: 'c', snooze: EARLIER }, LATER), { code: 'c', snooze: LATER })
+  assert.deepEqual(withSnooze([{ code: 'c' }, { snooze: EARLIER }], LATER), [
+    { code: 'c' },
     { snooze: LATER },
   ])
 })

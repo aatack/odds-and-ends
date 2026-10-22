@@ -5,19 +5,16 @@
 // without anybody ticking it.
 //
 //   open: { snooze: '2026-09-23T09:00:00Z' }            until then
-//   open: { toolCall: '<call id>' }                     while that call runs
 //   open: { code: 'tool.getEntity("x").values.done' }   until this says true
 //
 // Any number of them, in one object or a list of objects. The task opens as
-// soon as *any* of them does: a snooze beside a tool call is how to say "tell me
-// anyway if it has not finished by tomorrow", and a call that finishes early
-// needs no snooze to run out first. Drawn, a waiting task is an unticked one.
+// soon as *any* of them does: a snooze beside a code condition is how to say
+// "tell me anyway if it has not happened by tomorrow". Drawn, a waiting task is
+// an unticked one.
 
 /** What a wait condition needs from outside the entity. */
 export interface WaitProbes {
   now: number
-  /** True while the call with this id is still running. */
-  running: (callId: string) => boolean
   /**
    * What a `code` condition returned, or undefined when it has yet to run. Only
    * asked once nothing cheaper has opened the task.
@@ -27,7 +24,6 @@ export interface WaitProbes {
 
 interface Condition {
   snooze?: unknown
-  toolCall?: unknown
   code?: unknown
 }
 
@@ -72,10 +68,6 @@ export function isWaiting(open: unknown, probes: WaitProbes): boolean | undefine
       const until = snoozedUntil(c.snooze)
       if (!(probes.now < until)) return false
     }
-    if (typeof c.toolCall === 'string') {
-      any = true
-      if (!probes.running(c.toolCall)) return false
-    }
     if (typeof c.code === 'string') {
       any = true
       code.push(c.code)
@@ -92,14 +84,14 @@ export function isWaiting(open: unknown, probes: WaitProbes): boolean | undefine
 }
 
 /**
- * True while a snooze or a tool call is keeping the task shut: it has at least
- * one of those, and nothing has opened it yet. A `code` condition is taken as
- * not having said, since drawing a row is no reason to run one — so a task that
- * waits on code alone is never paused in this sense.
+ * True while a snooze is keeping the task shut: it has one, and nothing has
+ * opened it yet. A `code` condition is taken as not having said, since drawing a
+ * row is no reason to run one — so a task that waits on code alone is never
+ * paused in this sense.
  */
-export function isPaused(open: unknown, probes: Omit<WaitProbes, 'code'>): boolean {
-  const timed = conditionsOf(open).some((c) => c.snooze != null || typeof c.toolCall === 'string')
-  return timed && isWaiting(open, { ...probes, code: () => undefined }) !== false
+export function isPaused(open: unknown, now: number): boolean {
+  const timed = conditionsOf(open).some((c) => c.snooze != null)
+  return timed && isWaiting(open, { now, code: () => undefined }) !== false
 }
 
 /** The soonest snooze in `open` still to run out after `now`, if any. */
@@ -139,7 +131,7 @@ export function parseDuration(text: string): number | null {
 
 /**
  * An `open` value snoozed until `until`. Whatever else it waits on is kept, so
- * snoozing a task that waits on a call still wakes it when the call ends; `true`,
+ * snoozing a task that waits on code still wakes it when the code says so; `true`,
  * `false` or nothing at all become a task waiting on the snooze alone.
  */
 export function withSnooze(open: unknown, until: string): unknown {

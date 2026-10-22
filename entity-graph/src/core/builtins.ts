@@ -31,8 +31,7 @@ export const DIAGRAM_ID = 'diagram'
 const BUILTIN_AUTHOR = 'builtin'
 
 /**
- * What a type entity holds. Two keys, each of which is read by name somewhere:
- * the schema by the details panel, and the actions by every row of that type.
+ * What a type entity holds: a schema, read by name by the details panel.
  */
 export const TYPE_SCHEMA: Schema = {
   type: 'object',
@@ -48,16 +47,6 @@ export const TYPE_SCHEMA: Schema = {
         'the field list, in the order they should be shown; each field may carry a ' +
         '`type` and a `description`, and `required` names the ones an instance is ' +
         'incomplete without. Fields are offered and checked, never enforced.',
-    },
-    actions: {
-      type: 'array',
-      description:
-        'Buttons every instance of this type wears, as the ids of the tools they run — ' +
-        '`["changeset.merge", "link.open"]` — in the order they should be drawn. Each is ' +
-        'appended to the row\'s text as an inline button when it renders, and pressing one ' +
-        'runs that tool along the row, so `context.entityId` is the row it was pressed on. ' +
-        'Being ordinary tools, the same actions are in the palette and the right-click menu.',
-      items: { type: 'string' },
     },
   },
 }
@@ -117,9 +106,7 @@ export const TOOL_SCHEMA: Schema = {
         '"type": "string", "required": true }`, or a bare `"who"` when the name is all ' +
         'of it; `type` is `string`, `number`, `integer`, `boolean`, `entity`, or absent ' +
         'for a value entered as JSON, and `options` makes it a picker. `fromContext` ' +
-        'names a context key that fills it, `unlessContext` one whose presence means it ' +
-        'is not asked for, and `recent: true` offers what recent calls passed under ' +
-        'the same name. Add a parameter ' +
+        'names a context key that fills it. Add a parameter ' +
         'to `execute` for each one, in the same order. A `default` does not fill the ' +
         'value in — it sends `null` for the body to interpret — so read an optional ' +
         'argument as `context.times ?? 1`.',

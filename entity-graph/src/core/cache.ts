@@ -447,7 +447,7 @@ function typeIdOf(values: Record<string, unknown>): string | null {
  * not the two it used to be: the second pass existed only to lay a type's values
  * in behind an entity's own. What is left of the type is still read here, though
  * — an entity naming one is what asks for it, since nothing else does, and its
- * `actions` and `schema` are read off it wherever they are shown.
+ * `schema` is read off it wherever it is shown.
  *
  * The loop covers the whole cache rather than only what changed, since a type
  * arriving has to reach every entity that names it. That is one walk of a
