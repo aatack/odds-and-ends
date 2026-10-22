@@ -5,11 +5,10 @@ import * as A from '../state/actions'
 import { tabRootId } from '../state/derive'
 import { useLayoutState } from '../state/hooks'
 import type { GroupState } from '../state/types'
-import { EntityFrame } from './EntityFrame'
-import { Breadcrumb, TabTitle } from './TabHeader'
+import { TabContent, TabTitle } from './TabHeader'
 
 /**
- * One column of the layout: a tab strip plus the active tab's top frame. Groups
+ * One column of the layout: a tab strip plus the active tab's content. Groups
  * split the screen evenly; the selected one carries a subtle ring.
  */
 export function TabGroupView({
@@ -21,7 +20,6 @@ export function TabGroupView({
 }): React.JSX.Element {
   const layout = useLayoutState()
   const activeTab = group.activeTabId ? layout.tabs[group.activeTabId] : null
-  const topFrameId = activeTab?.top
 
   return (
     <section
@@ -52,11 +50,9 @@ export function TabGroupView({
         </button>
       </div>
 
-      {activeTab && <Breadcrumb tabId={activeTab.id} />}
-
-      <div className="relative min-h-0 flex-1">
-        {topFrameId ? (
-          <EntityFrame frameId={topFrameId} />
+      <div className="min-h-0 flex-1">
+        {activeTab ? (
+          <TabContent tabId={activeTab.id} />
         ) : (
           <div className="p-8 text-center text-[13px] text-gray-400">No tab open.</div>
         )}

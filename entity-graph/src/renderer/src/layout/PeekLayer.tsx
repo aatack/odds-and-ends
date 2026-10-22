@@ -1,16 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { X } from '@untitledui/icons'
 import { PEEK_ATTRIBUTE } from '../components/peekHover'
-import { Button } from '../components/ui/Button'
+import { cn } from '../helpers/cn'
 import * as A from '../state/actions'
 import { PEEK_SIZE } from '../state/peeks'
 import { useLayoutState } from '../state/hooks'
 import { getLayout } from '../state/store'
-import { URL_PREFIX } from '../../../core/builtins'
 import { peeksOf, type PeekState, type Rect } from '../state/types'
-import { runTool } from '../tools/call'
-import { EntityFrame } from './EntityFrame'
-import { Breadcrumb, TabTitle } from './TabHeader'
+import { TAB_BAR_ATTRIBUTE, TabContent } from './TabHeader'
 
 // The floating windows a hover opens onto whatever a pill or a link refers to
 // (a link's being its URL entity), or that "Open in peek" opens. Each is a tab
@@ -61,7 +57,6 @@ export function PeekLayer(): React.JSX.Element | null {
           peek={peek}
           z={i}
           frameId={frameOf(peek)}
-          rootId={layout.frames[frameOf(peek) ?? '']?.rootId ?? null}
           focused={layout.peekFocus === peek.key}
         />
       ))}
@@ -75,7 +70,6 @@ function PeekWindow({
   peek,
   z,
   frameId,
-  rootId,
   focused,
 }: {
   peek: PeekState
@@ -83,8 +77,6 @@ function PeekWindow({
   z: number
   /** The top frame of the peek's tab. */
   frameId: string | null
-  /** The entity at the root of that frame — the one the bar names. */
-  rootId: string | null
   /** Whether it has the keys. */
   focused: boolean
 }): React.JSX.Element | null {
@@ -130,59 +122,29 @@ function PeekWindow({
     setLive(null)
   }
 
-  const open = (): void => {
-    const entityId = rootId ?? peek.entityId
-    // A web page nobody has written anything about opens where pages open.
-    if (entityId.startsWith(URL_PREFIX)) {
-      runTool('link.open', { extra: { url: entityId.slice(URL_PREFIX.length) } })
-    } else runTool('entity.openInTab', { extra: { entityId } })
-  }
-
   // A peek whose tab has gone has nothing left to show.
   if (!frameId) return null
 
   return (
     <div
       {...{ [PEEK_ATTRIBUTE]: peek.key }}
-      className="fixed flex flex-col overflow-hidden rounded-xl bg-white shadow-[0_12px_40px_rgb(0_0_0/0.18)]"
+      className={cn(
+        'fixed flex flex-col overflow-hidden rounded-xl bg-white shadow-[0_12px_40px_rgb(0_0_0/0.18)]',
+        // The keys are in it — as a group says it is the selected one.
+        focused && 'ring-1 ring-inset ring-brand-200',
+      )}
       style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height, zIndex: 55 + z }}
       onMouseEnter={() => A.enterPeek(peek.key)}
       onMouseLeave={() => A.leavePeek(peek.key)}
-      onPointerDown={() => {
+      onPointerDown={(e) => {
         A.raisePeek(peek.key)
         A.focusPeek(peek.key)
+        // Dragged by its tab's bar, anywhere but on something to press.
+        const at = e.target instanceof Element ? e.target : null
+        if (at?.closest(`[${TAB_BAR_ATTRIBUTE}]`) && !at.closest('button, a')) begin('move')(e)
       }}
     >
-      {/* The top of a tab, as a group's strip draws it: the peek is one tab, the
-        filled title while it has the keys and the quiet one while it doesn't. */}
-      <div
-        className="flex shrink-0 items-center gap-0.5 border-b border-gray-100 bg-white px-1 py-1 select-none"
-        onPointerDown={begin('move')}
-      >
-        <span className="flex min-w-0 flex-1 items-center">
-          <TabTitle rootId={rootId ?? undefined} active={focused} />
-        </span>
-        {/* Pressing a button never starts a drag. */}
-        <span className="flex items-center gap-1 pr-1.5" onPointerDown={(e) => e.stopPropagation()}>
-          <Button variant="tertiary" size="sm" onClick={open}>
-            Open
-          </Button>
-          {peek.pinned && (
-            <button
-              className="text-gray-400 hover:text-gray-700 focus:outline-none"
-              title="Close"
-              aria-label="Close"
-              onClick={() => A.closePeek(peek.key)}
-            >
-              <X size={13} />
-            </button>
-          )}
-        </span>
-      </div>
-      <Breadcrumb tabId={peek.tabId} />
-      <div className="relative min-h-0 flex-1">
-        <EntityFrame frameId={frameId} />
-      </div>
+      <TabContent tabId={peek.tabId} peek={peek} />
       <div
         className="absolute bottom-0 right-0 size-4 cursor-nwse-resize"
         onPointerDown={(e) => {
