@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { ChevronDown, Expand01, Plus, XClose } from '@untitledui/icons'
+import { ChevronDown, Pencil01, Plus, XClose } from '@untitledui/icons'
 import { cn } from '../../helpers/cn'
 import { Dropdown } from '../ui/Dropdown'
 import { Modal } from '../ui/Modal'
@@ -306,7 +306,7 @@ function PopOut({
         onClick={() => setOpen(true)}
       >
         <span className="min-w-0 flex-1 truncate text-gray-500">{summaryOf(schema, value)}</span>
-        <Expand01 size={12} className="shrink-0 text-gray-400" />
+        <Pencil01 size={12} className="shrink-0 text-gray-400" />
       </button>
       {open && (
         <Modal title={label ?? titleOf(schema, 'Edit')} size="wide" onClose={() => setOpen(false)}>
