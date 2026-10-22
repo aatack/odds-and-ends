@@ -108,9 +108,11 @@ test('draws the form as one box of lines, nested content inside its line', () =>
   // No summary lines: a list is its items and the line for adding one.
   assert.doesNotMatch(html, />\d+ (items?|fields?)</)
   assert.match(html, /> Add</)
-  // Labels inside another line take the narrower column.
-  assert.equal((html.match(/w-36/g) ?? []).length, 2)
-  assert.ok((html.match(/w-24/g) ?? []).length >= 2)
+  // Each run of lines is a grid whose label column fits its longest label.
+  assert.match(html, /grid-cols-\[max-content_minmax\(0,1fr\)\]/)
+  assert.match(html, /grid-cols-subgrid/)
+  // An item's remove is a cross in its label, beside its number.
+  assert.match(html, /<span class="truncate">1<\/span>(<[^>]*>)*?<button title="Remove"/)
 })
 
 test('marks a line whose value breaks its schema, and draws a multi-line string as a text box', () => {

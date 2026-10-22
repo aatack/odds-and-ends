@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react'
-import { Plus, Trash03 } from '@untitledui/icons'
+import React, { useEffect, useRef, useState } from 'react'
+import { Plus, XClose } from '@untitledui/icons'
 import { cn } from '../../helpers/cn'
 import { Switch } from '../ui/Switch'
 import { TextEditor } from '../ui/TextEditor'
@@ -48,7 +48,9 @@ export function SchemaForm({
   // An object is its fields, with no line for itself: the box is the object.
   const fields = typeOf(schema) === 'object' && propertiesOf(schema).length > 0
   return (
-    <div className="divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-200 bg-white shadow-xs">
+    <div
+      className={cn(LINES, 'overflow-hidden rounded-md border border-gray-200 bg-white shadow-xs')}
+    >
       {fields ? (
         <Fields schema={schema} value={value} onChange={setValue} />
       ) : (
@@ -64,22 +66,20 @@ const BARE =
 const BARE_MONO = cn(BARE, 'font-mono text-[12.5px]')
 const MUTED = 'px-2.5 font-mono text-[12.5px] leading-8 text-gray-400'
 
-/** Lines inside a line: the content of an object, a list or a union's option. */
-const INNER = 'w-full divide-y divide-gray-100'
-
 /**
- * Whether these lines sit inside another line. Their labels take a narrower
- * column there — the line around them has already spent one.
+ * A run of sibling lines: a grid of two columns, the labels' and the values',
+ * with each line a row of it (a subgrid). So the hairline between label and
+ * value sits just right of the longest label among the siblings, rather than at
+ * a width chosen for all of them — and each group finds its own.
  */
-const Nested = createContext(false)
+const LINES = 'grid w-full grid-cols-[max-content_minmax(0,1fr)] divide-y divide-gray-100'
 
-/** Lines inside a line, which know it. */
+/** Something in a run of lines that is not a line, across both columns. */
+const SPAN = 'col-span-2'
+
+/** Lines inside a line: the content of an object, a list or a union's option. */
 function Inner({ children }: { children: React.ReactNode }): React.JSX.Element {
-  return (
-    <Nested.Provider value={true}>
-      <div className={INNER}>{children}</div>
-    </Nested.Provider>
-  )
+  return <div className={LINES}>{children}</div>
 }
 
 /**
@@ -93,7 +93,7 @@ function Line({
   description,
   problem,
   tall,
-  aside,
+  onRemove,
   children,
 }: {
   label: string
@@ -103,23 +103,21 @@ function Line({
   problem?: string | null
   /** The value takes more than one line, so the label sits at its top. */
   tall?: boolean
-  /** Something small at the end of the line: a remove. */
-  aside?: React.ReactNode
+  /** Set for a list's item: a small cross beside its number takes it out. */
+  onRemove?: () => void
   children?: React.ReactNode
 }): React.JSX.Element {
   const control = useRef<HTMLDivElement>(null)
-  const nested = useContext(Nested)
   return (
     <div
       className={cn(
-        'group/line flex min-h-8 items-stretch',
+        'group/line col-span-2 grid min-h-8 grid-cols-subgrid',
         problem ? 'bg-warning-50/60' : !tall && 'focus-within:bg-brand-50/40',
       )}
     >
       <div
         className={cn(
-          nested ? 'w-24' : 'w-36',
-          'flex shrink-0 cursor-default gap-1 truncate border-r border-gray-100 px-2.5 py-1.5 text-[12px] leading-5 text-gray-500',
+          'flex max-w-56 min-w-0 cursor-default gap-1 border-r border-gray-100 py-1.5 pr-2.5 pl-2.5 text-[12px] leading-5 text-gray-500',
           tall ? 'items-start' : 'items-center',
         )}
         title={description}
@@ -129,42 +127,34 @@ function Line({
       >
         <span className="truncate">{label}</span>
         {required && <span className="shrink-0 text-gray-300">*</span>}
+        {onRemove && (
+          <button
+            title="Remove"
+            aria-label="Remove"
+            className="-mr-1 flex h-5 w-4 shrink-0 items-center justify-center text-gray-300 group-hover/line:text-gray-400 hover:text-gray-700 focus:outline-none focus-visible:text-gray-700"
+            onClick={(e) => {
+              e.stopPropagation()
+              onRemove()
+            }}
+          >
+            <XClose size={12} />
+          </button>
+        )}
       </div>
-      <div
-        ref={control}
-        className={cn('flex min-w-0 flex-1', tall ? 'items-stretch' : 'items-center')}
-      >
-        {children}
-      </div>
-      {problem && (
-        <div className="flex shrink-0 items-start px-2 py-1.5 text-[11px] leading-5 text-warning-700">
-          {problem}
+      <div className="flex min-w-0">
+        <div
+          ref={control}
+          className={cn('flex min-w-0 flex-1', tall ? 'items-stretch' : 'items-center')}
+        >
+          {children}
         </div>
-      )}
-      {aside && <div className="flex shrink-0 items-start py-1 pr-1.5">{aside}</div>}
+        {problem && (
+          <div className="flex shrink-0 items-start px-2 py-1.5 text-[11px] leading-5 text-warning-700">
+            {problem}
+          </div>
+        )}
+      </div>
     </div>
-  )
-}
-
-/** A small control at the end of a line, quiet until the line is hovered. */
-function LineButton({
-  title,
-  onClick,
-  children,
-}: {
-  title: string
-  onClick: () => void
-  children: React.ReactNode
-}): React.JSX.Element {
-  return (
-    <button
-      title={title}
-      aria-label={title}
-      onClick={onClick}
-      className="flex size-6 items-center justify-center rounded text-gray-300 group-hover/line:text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:text-gray-700"
-    >
-      {children}
-    </button>
   )
 }
 
@@ -242,13 +232,7 @@ function Entry({
       description={descriptionOf(schema)}
       problem={problemOf(schema, value, required)}
       tall={compound(schema)}
-      aside={
-        onRemove && (
-          <LineButton title="Remove" onClick={onRemove}>
-            <Trash03 size={13} />
-          </LineButton>
-        )
-      }
+      onRemove={onRemove}
     >
       <Control schema={schema} value={value} onChange={onChange} label={label} />
     </Line>
@@ -370,7 +354,7 @@ function List({
         />
       ))}
       <button
-        className="flex h-8 w-full items-center gap-1.5 px-2.5 text-[12px] text-gray-400 hover:bg-gray-50 hover:text-gray-700 focus:outline-none focus-visible:bg-gray-50"
+        className="col-span-2 flex h-8 w-full items-center gap-1.5 px-2.5 text-[12px] text-gray-400 hover:bg-gray-50 hover:text-gray-700 focus:outline-none focus-visible:bg-gray-50"
         onClick={() => onChange([...list, defaultFor(items)])}
       >
         <Plus size={13} /> Add
@@ -425,8 +409,8 @@ function Union({
   if (compound(variant)) {
     return (
       <Inner>
-        {picker}
-        {control}
+        <div className={cn(SPAN, 'flex')}>{picker}</div>
+        <div className={cn(SPAN, 'flex min-w-0')}>{control}</div>
       </Inner>
     )
   }
