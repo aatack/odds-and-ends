@@ -15,7 +15,6 @@ import { useCalls, useTheme, useUi } from './state/hooks'
 import { toggleTheme, updateUi } from './state/ui'
 import { onCallSettled, openToolList, runTool, togglePalette } from './tools/call'
 import { PALETTE_KEY, installKeyRouter } from './tools/dispatch'
-import { loadIntegrations } from './tools/integrationTools'
 import { keyHint } from './tools/keys'
 import { useApp, type AppActions } from './views/useApp'
 
@@ -29,10 +28,6 @@ export default function App(): React.JSX.Element | null {
   // One keydown listener for the whole app. Keys act on global state and resolve
   // through the focus chain, not through whatever has DOM focus.
   useEffect(installKeyRouter, [])
-
-  // The integrations are the app's own hands rather than any pensive's, so they
-  // are read once here instead of when a store is opened.
-  useEffect(loadIntegrations, [])
 
   // Every call the user made announces itself when it finishes; errors and
   // confirmations become toasts. Nothing else in the app raises one — and a

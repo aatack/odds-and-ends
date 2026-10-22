@@ -137,8 +137,8 @@ export const APP_TOOLS: ToolSpec[] = [
     run: () => updateUi({ activityOpen: !uiAtom.get().activityOpen }),
   },
   {
-    // For a change nothing here made: a Claude session that has been writing
-    // notes for the last ten minutes, or somebody editing the same store from a
+    // For a change nothing here made: an agent that has been writing notes over
+    // MCP for the last ten minutes, or somebody editing the same store from a
     // phone. The app's own writes need none of this — each one tells the cache
     // what it changed as it goes — so this is a gesture rather than something on
     // the end of every keystroke.
@@ -166,13 +166,13 @@ export const APP_TOOLS: ToolSpec[] = [
   },
   {
     // The one tool that leaves the app. Everything a note holds that points
-    // somewhere else — a pull request, a Slack thread, a dashboard — is a string
+    // somewhere else — a document, a ticket, a dashboard — is a string
     // until something opens it, and the browser it should open in is the one the
     // user is already signed into rather than a window of ours.
     //
     // `url` comes from the context, so a row holding one has it filled in
     // already: right-click, Open link. Anything else is typed, or passed by a
-    // script — `tool.openLink(values.pullRequest)`.
+    // script — `tool.openLink(values.url)`.
     id: 'link.open',
     label: 'Open link',
     aliases: ['url', 'browser', 'open in browser', 'visit', 'website'],
@@ -227,9 +227,9 @@ export const APP_TOOLS: ToolSpec[] = [
   },
   {
     // `link.open` opens what a note points at; this one says where it *is*, which
-    // for a path on this machine is the more useful half. A changeset's worktree
-    // is the case it was written for — `tool.revealInFileManager(values.worktree)`
-    // — so the argument is a plain path and the context key is `path`.
+    // for a path on this machine is the more useful half —
+    // `tool.revealInFileManager(values.path)` — so the argument is a plain path and
+    // the context key is `path`.
     id: 'file.reveal',
     label: 'Reveal in file manager',
     aliases: ['show in folder', 'finder', 'explorer', 'locate', 'where is it'],

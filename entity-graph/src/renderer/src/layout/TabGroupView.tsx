@@ -1,6 +1,5 @@
 import React from 'react'
 import { ChevronRight, Plus, X } from '@untitledui/icons'
-import { ChatDock } from '../components/ChatDock'
 import { EntityPill, PillContent, PillWrapper } from '../components/EntityPill'
 import { Button } from '../components/ui/Button'
 import { cn } from '../helpers/cn'
@@ -56,15 +55,12 @@ export function TabGroupView({
 
       {activeTab && <Breadcrumb tabId={activeTab.id} />}
 
-      {/* Positioning context for the chats, which float over the frame's bottom
-          right corner rather than taking any of its height. */}
       <div className="relative min-h-0 flex-1">
         {topFrameId ? (
           <EntityFrame frameId={topFrameId} />
         ) : (
           <div className="p-8 text-center text-[13px] text-gray-400">No tab open.</div>
         )}
-        {activeTab && <ChatDock tabId={activeTab.id} />}
       </div>
     </section>
   )

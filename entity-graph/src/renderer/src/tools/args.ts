@@ -126,7 +126,7 @@ export function takeCallId(passed: readonly unknown[]): {
 
 /**
  * Arguments as code passes them: positionally, in the order the tool declares
- * them — `tool.sendSlackMessage(channel, text)` — or as one object naming them,
+ * them — `tool.createChildOfEntity(parentId, text)` — or as one object naming them,
  * which is how a tool with several optional arguments stays readable.
  *
  * The object form is taken only when every one of its keys is an argument name,

@@ -27,9 +27,8 @@ export const scanEvents = (entityIds: string[]): Promise<EventScan> =>
  * This is for the callers that have nowhere to put "not yet": a script, and the
  * tool loader. They ask, they wait, and what comes back is what the store holds.
  *
- * The rollup is the store's own, so it is the events and nothing else — no
- * `events` script run over the top, that being the cache's doing and this not
- * going through it. What the store *does* lay in is the entities it serves rather
+ * The rollup is the store's own, so it is the events and nothing else. What the
+ * store *does* lay in is the entities it serves rather
  * than holds (`core/builtins`), since those are the store's own answer about
  * itself and not a client's.
  */
@@ -50,10 +49,9 @@ const OUTLINE_LIMIT = 400
  * one whose entities have never been read.
  *
  * One page. A subtree that outruns the limit comes back truncated rather than
- * paged, because both callers are composing a prompt: the rules an agent is
- * given, and the description of a pull request. Neither is improved by being
- * unbounded, and a set of notes that long has a shape problem the paging would
- * only hide.
+ * paged: the caller is putting it somewhere a person reads, which is not improved
+ * by being unbounded, and a set of notes that long has a shape problem the paging
+ * would only hide.
  */
 export async function readOutline(entityId: string, limit = OUTLINE_LIMIT): Promise<string> {
   return outlineMarkdown(rowsOfPage((await readQuery({ path: entityId, limit })).rows))

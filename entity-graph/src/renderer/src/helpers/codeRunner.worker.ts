@@ -5,7 +5,7 @@
 // `fetch`, no `require` — only what we inject: `console`, the `context` the
 // entity was run in, and `tool`, which is how it reaches everything else.
 //
-// `tool.sendSlackMessage(channel, text)` is a *synchronous* call, and this worker
+// `tool.createChildOfEntity(parentId, text)` is a *synchronous* call, and this worker
 // is where that is bought: the call is posted to the main thread, which owns the
 // tool registry, and this thread then blocks on a shared word until the answer is
 // written back beside it. A promise would be the ordinary way to do it, but a
@@ -63,8 +63,8 @@ export type ToolReply = { ok: true; value?: unknown } | { ok: false; error: stri
 
 // A hard ceiling so a wedged VM can't hold the worker forever even if the user
 // never presses Stop. The Stop button terminates the worker long before this.
-// Time spent blocked in a tool call doesn't count against it — a script that
-// waits half an hour on a Claude session has not run away.
+// Time spent blocked in a tool call doesn't count against it — a script waiting
+// on a slow call has not run away.
 const DEADLINE_MS = 10_000
 const MEMORY_LIMIT = 64 * 1024 * 1024
 
@@ -72,10 +72,8 @@ const MEMORY_LIMIT = 64 * 1024 * 1024
  * How long a single tool call may block before the script is told it failed.
  *
  * This is a backstop against an answer that is never coming — a main thread that
- * died holding the other end — and not a budget for one that is. It used to sit
- * just past `claude.runPrompt`'s half-hour ceiling; that ceiling is gone, since a
- * session runs until it is done, so this is now a day: long enough that no honest
- * call reaches it, short enough that a worker wedged by a lost main thread is not
+ * died holding the other end — and not a budget for one that is. A day: long
+ * enough that no honest call reaches it, short enough that a worker wedged by a lost main thread is not
  * wedged forever. Stop is what interrupts a call you have changed your mind about.
  */
 const TOOL_TIMEOUT_MS = 24 * 60 * 60_000
@@ -83,8 +81,7 @@ const TOOL_TIMEOUT_MS = 24 * 60 * 60_000
 // The shared cells the bridge runs over, allocated once and reused: this worker
 // runs one script at a time, and one call within it at a time, so a call that has
 // been answered leaves nothing behind to collide with the next (a call that timed
-// out does, and gives up its buffers accordingly). Room for a large result — a
-// hundred pull requests — and an error rather than a truncation past that.
+// out does, and gives up its buffers accordingly). Room for a large result, and an error rather than a truncation past that.
 const REPLY_BYTES = 4 * 1024 * 1024
 const WAITING = 0
 const ANSWERED = 1

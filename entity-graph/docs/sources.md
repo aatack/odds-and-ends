@@ -36,9 +36,8 @@ machine without knowing which it has.
 
 Two things are deliberately *not* in it:
 
-- **No reach outside the store.** No HTTP, no shell. Those are the app's own
-  hands ([`integrations.md`](./integrations.md)), held in the main process, so a
-  pensive that is published to somebody cannot be a way onto this machine.
+- **No reach outside the store.** No HTTP, no shell, so a pensive that is
+  published to somebody cannot be a way onto this machine.
 - **No transport, no tokens, no server.** How a pensive is stored and how it is
   exposed are separate decisions, made by the user rather than built in.
 
@@ -111,8 +110,6 @@ type NodeConfig =
   | { kind: 'mcp'; port: number }
   | { kind: 'connect'; url: string; token: string }
   | { kind: 'desktop' }
-  | { kind: 'slackEvents'; userToken: string; appToken: string; cursor: string; muted: string }
-  | { kind: 'githubEvents'; token: string; cursor: string; lastModified: string }
 
 interface SourceNode {
   id: string
@@ -148,17 +145,11 @@ interface SourceToken {
 | `broadcast` | its input, over HTTP, to whoever holds a token | 1 | no |
 | `mcp` | its input, as an MCP server, for an agent | 1 | no |
 | `desktop` | this window; its input is what the outliner shows | 1 | no |
-| `slackEvents` | Slack, written into its input | 1 | no |
-| `githubEvents` | your GitHub notifications, written into its input | 1 | no |
-
-The last two are the only nodes that *do* something rather than being something:
-they hold a cursor, they run, and pausing one stops it rather than making it
-refuse. [`events.md`](./events.md) is the whole of them. They hold their own
-credentials, which is why this file is the app's own and never a pensive — a
-secret copied into a store is a secret published with it.
 
 `NODE_KINDS` is that table as data: the page draws its handles from it and the
-main process refuses an edge that disagrees with it. A node's inputs are edges
+main process refuses an edge that disagrees with it. A node of a kind not in it —
+the Slack and GitHub feeds an older build drew — stays in the file and is left
+out of every read, along with the edges into it. A node's inputs are edges
 rather than configuration, which is why a combiner has no `children` — only a
 `writeTo` naming one of the nodes drawn into it.
 
@@ -178,10 +169,6 @@ once (`pensive:changed` → `useApp` re-reads → `SourceView` re-lays its seams
 | `http.ts` | one small `node:http` server per published node |
 | `mcpServer.ts` | what an agent sees: six tools over the same store |
 | `servers.ts` | keeping the listeners in step with the drawing |
-
-`src/main/events/` is the other half of "keeping the drawing and what is running
-in step": `feeds.ts` starts and stops a feed per `slackEvents` / `githubEvents`
-node, the way `servers.ts` does for the ones that publish.
 
 Three rules hold here rather than in the page, because the page is not the only
 caller — a broadcast answers anything on this machine holding a token:

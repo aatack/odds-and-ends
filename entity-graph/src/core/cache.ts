@@ -329,15 +329,12 @@ function invalidate(entry: CachedEntity): CachedEntity | null {
 
 /**
  * Mark everything as needing reading again. Reserved for changes nothing here
- * saw at all — a Claude session writing notes over MCP, or the inspector writing
+ * saw at all — an agent writing notes over MCP, or the inspector writing
  * events of its own — since a write made through `source/entity` says what it
  * changed and only that needs re-reading.
  *
  * Entries keep their events and go to `stale` rather than `unloaded`, so no row
  * turns back into its loading state over this.
- *
- * Derived events are deliberately left alone. They are computed once a session,
- * and re-running a script that reaches out to GitHub every time would not do.
  */
 export function refreshEntities(): void {
   const cache = entitiesAtom.get()

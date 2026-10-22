@@ -100,8 +100,8 @@ export interface PendingCall {
 export type CallOutcome =
   /**
    * Still going. Only calls that reach outside the app are recorded this early —
-   * a Claude session runs for minutes, and a log it appears in only once it is
-   * over is no use while you are waiting for it.
+   * a log a slow call appears in only once it is over is no use while you are
+   * waiting for it.
    */
   | { kind: 'running' }
   | { kind: 'cancelled' }
@@ -180,19 +180,6 @@ export interface TabState {
    * selection, which is keyed by path.
    */
   collapsed: string[]
-  /**
-   * Conversations kept open in the corner of this tab, as entity ids — nothing
-   * more, since everything else about a chat is the entity's own. One little
-   * round picture each, along the bottom right. Read through {@link tabChats},
-   * since a layout persisted before chats existed has none.
-   */
-  chats?: string[]
-  /**
-   * Which of them is showing its panel, if any. Latent and per tab, like the
-   * collapse set: two tabs on the same chat are two places to be in it, and
-   * which one you last had open is a fact about the tab.
-   */
-  openChatId?: string | null
 }
 
 export interface GroupState {
@@ -327,10 +314,3 @@ export const samePath = (a: readonly string[], b: readonly string[]): boolean =>
  */
 export const collapsedBelow = (collapsed: readonly string[], rootId: string): string[] =>
   collapsed.filter((id) => id !== rootId)
-
-/**
- * A tab's chats. Tolerates a tab from a layout persisted before they existed,
- * where "none" is the only answer — the same courtesy {@link directionOf} does
- * a frame.
- */
-export const tabChats = (tab: TabState | null | undefined): string[] => tab?.chats ?? []

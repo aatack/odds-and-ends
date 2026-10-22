@@ -84,9 +84,9 @@ export interface ToolSpec {
  * Where a tool was invoked. Assembled once when the call starts and then fixed.
  *
  * Deliberately thinner than the desktop's: there, the context folds every entity
- * value along the path to the selection, because the integration tools (GitHub,
- * Slack) take arguments like `channel` that an ancestor is expected to have
- * declared. This app has no integrations, so the context is positional — which
+ * value along the path to the selection, because a tool may take arguments that
+ * an ancestor is expected to have declared. This app runs no such tools, so the
+ * context is positional — which
  * row, which parent, which level — plus the sibling order that inserting and
  * reordering need.
  */

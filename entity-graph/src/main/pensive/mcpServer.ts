@@ -9,7 +9,7 @@ import {
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
-import { CHAT_ID, DIAGRAM_ID, TOOL_ID, TYPE_ID } from '../../core/builtins'
+import { DIAGRAM_ID, TOOL_ID, TYPE_ID } from '../../core/builtins'
 import { outlineMarkdown } from '../../core/markdown'
 import type { QueryPage } from '../../core/query'
 import { rowsOfPage } from '../../core/tree'
@@ -203,12 +203,11 @@ export const MCP_TOOLS: McpTool[] = [
       '`inboundLinks` — every entity in the store that links to this one, which is how ' +
       'to find where else a note is referenced. An id nothing has been written to comes ' +
       'back empty rather than missing.\n\n' +
-      'Four ids answer even in a store nobody has written to, because the store ' +
+      'Three ids answer even in a store nobody has written to, because the store ' +
       `supplies them: \`${TYPE_ID}\`, whose schema says what a type holds, ` +
       `\`${TOOL_ID}\`, whose schema says what a tool holds — every value a definition can ` +
-      `carry and what each one does — \`${DIAGRAM_ID}\`, whose schema says how a note ` +
-      `holds a drawing, and \`${CHAT_ID}\`, whose schema says how one holds a ` +
-      'conversation. **Asked to write a tool for the user, read ' +
+      `carry and what each one does — and \`${DIAGRAM_ID}\`, whose schema says how a ` +
+      'note holds a drawing. **Asked to write a tool for the user, read ' +
       `\`${TOOL_ID}\` first and create the note under \`${TOOLS_ID}\`;** the \`docs://tools\` ` +
       'resource is the same thing at length.',
     needs: 'readEntities',
@@ -295,7 +294,7 @@ export const MCP_TOOLS: McpTool[] = [
       'This is for editing a note that already exists. To add one, use `create`, which ' +
       'mints the id and links it in the same call — with one exception: writing to an id ' +
       'nothing has been written to yet is how a note gets a *name* instead of a uuid, ' +
-      'which is what a type is (`github/pullRequest`). Link it somewhere afterwards.\n\n' +
+      'which is what a type is (`recipe`). Link it somewhere afterwards.\n\n' +
       'There is no way to take a key off a note: `null` blanks it, which reads as ' +
       'absent everywhere it matters — no heading, no checkbox — but stays on the entity ' +
       'as a value, and is how a note refuses a default its type would otherwise give it.' +
@@ -446,16 +445,6 @@ const DOCS: Doc[] = [
     path: 'docs/types.md',
   },
   {
-    uri: 'docs://changesets',
-    name: 'Changesets: work held open across a worktree, branch and PR',
-    description:
-      'How a piece of work is carried in this store — the entity, the worktree, the ' +
-      'branch and the pull request kept as one thing. Worth reading before writing a ' +
-      'tool that touches any of them, since the tools that do are themselves notes ' +
-      `under \`${TOOLS_ID}\` and this is what they assume.`,
-    path: 'docs/changesets.md',
-  },
-  {
     uri: 'docs://diagrams',
     name: 'Diagrams: a note that holds a drawing',
     description:
@@ -466,17 +455,6 @@ const DOCS: Doc[] = [
     path: 'docs/diagrams.md',
   },
   {
-    uri: 'docs://chats',
-    name: 'Chats: a note you talk to a tool through',
-    description:
-      `What a note saying \`type: ${CHAT_ID}\` holds — a \`${CHAT_ID}\` value naming the tool ` +
-      'every message goes to — and how the exchange is stored: each message is an ' +
-      'ordinary child note, yours authored by you and the answers carrying `owner`. ' +
-      'How the tool is called, and what a chat has to hold for it to be called with ' +
-      `anything. The long version of \`get_details\` on \`${CHAT_ID}\`.`,
-    path: 'docs/chats.md',
-  },
-  {
     uri: 'docs://sources',
     name: 'What a pensive is, and the graph the user draws them in',
     description:
@@ -485,16 +463,6 @@ const DOCS: Doc[] = [
       "machine, and a store whose writes are all recorded as one person. Read this if " +
       'you are asked about where these notes live, or about publishing them.',
     path: 'docs/sources.md',
-  },
-  {
-    uri: 'docs://integrations',
-    name: "The app's integrations: GitHub, Slack, Claude Code, git, a terminal",
-    description:
-      'What the app can reach outside itself, and the id and arguments of every one of ' +
-      'those tools. You cannot call them from here — they are the app\'s own hands and ' +
-      'no pensive is given them — but a tool you write can, by the camel case of its ' +
-      'name, so this is the list of what a body has to work with.',
-    path: 'docs/integrations.md',
   },
 ]
 

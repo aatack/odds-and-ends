@@ -2,7 +2,7 @@ import React, { createContext, useContext } from 'react'
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
 import { Key01, PauseCircle, PlayCircle, Trash03 } from '@untitledui/icons'
 import type { NodeStatus, SourceNode } from '../../../../core/client'
-import { nodeAddress, nodeKind, watches } from '../../../../core/client'
+import { nodeAddress, nodeKind } from '../../../../core/client'
 import { cn } from '../../helpers/cn'
 import { Badge } from '../ui/Badge'
 import { CopyButton } from '../ui/CopyButton'
@@ -11,7 +11,6 @@ import { IconButton } from '../ui/IconButton'
 import { Select } from '../ui/Select'
 import type { SourceGraphActions } from '../../views/useSourceGraph'
 import { DraftInput } from './DraftInput'
-import { FeedBody } from './FeedNode'
 
 // One node of the sources graph, drawn as a small card.
 //
@@ -117,9 +116,7 @@ export function PensiveNode({ data, selected }: NodeProps<PensiveFlowNode>): Rea
           actions={actions}
           openAccess={openAccess}
         />
-        {node.paused && !watches(node.config.kind) ? (
-          // A feed says its own version of this: being switched off means it has
-          // stopped rather than that it is refusing, which is a different thing.
+        {node.paused ? (
           <p className="text-xs text-gray-400">Switched off — calls through it are refused.</p>
         ) : (
           state?.problem && <p className="text-xs text-error-600">{state.problem}</p>
@@ -237,12 +234,6 @@ function Body({
         </>
       )
     }
-
-    // The two that run rather than sit there. Their own file: they hold three
-    // fields apiece and a page of instructions on where each one comes from.
-    case 'slackEvents':
-    case 'githubEvents':
-      return <FeedBody node={node} config={config} status={status} actions={actions} />
 
     case 'desktop':
       return (

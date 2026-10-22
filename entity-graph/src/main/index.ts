@@ -15,7 +15,6 @@ import { pathToFileURL } from 'url'
 import { v4 as uuidv4 } from 'uuid'
 import type {
   CurrentPensive,
-  FeedRecord,
   NodeKind,
   NodePatch,
   SourceEdge,
@@ -30,10 +29,7 @@ import { store } from './store'
 import { GraphDb } from './pensive/graph'
 import { PensiveRegistry, wouldCycle } from './pensive/registry'
 import { PensiveServers, findFreePort } from './pensive/servers'
-import { EventFeeds } from './events/feeds'
 import { setDocsRoot } from './pensive/mcpServer'
-import { INTEGRATION_TOOLS, runIntegrationTool } from './integrations/index'
-import { loadEnvFile } from './integrations/env'
 import { phoneAppDist, setServed, tailscaleView } from './tailscale'
 
 // The app is the whole of it now. There is no server to start, no admin token to
@@ -53,7 +49,6 @@ class AppError extends Error {}
 let graph: GraphDb
 let registry: PensiveRegistry
 let servers: PensiveServers
-let feeds: EventFeeds
 
 function setUpPensives(): void {
   const root = app.getAppPath()
@@ -65,15 +60,7 @@ function setUpPensives(): void {
     author: () => store.get('user'),
   })
   servers = new PensiveServers(graph, registry)
-  // A feed says a new thing about itself every minute or so, which the sources
-  // page draws. Its own channel rather than `pensive:changed`: nothing about the
-  // graph has changed, and rebuilding every store to redraw a line of text would
-  // close the SQLite handles under the window.
-  feeds = new EventFeeds(graph, registry, () => {
-    for (const win of BrowserWindow.getAllWindows()) win.webContents.send('feeds:changed')
-  })
   setDocsRoot(root)
-  loadEnvFile(root)
 }
 
 /**
@@ -84,7 +71,6 @@ function setUpPensives(): void {
 async function graphChanged(): Promise<void> {
   registry.invalidate()
   await servers.sync()
-  await feeds.sync()
   for (const win of BrowserWindow.getAllWindows()) win.webContents.send('pensive:changed')
 }
 
@@ -98,14 +84,10 @@ async function readGraph(): Promise<SourceGraph> {
     // cheap, since the answers are cached until the graph changes.
     const built = await registry.tryGet(node.id)
     const server = servers.status(node.id)
-    const feed = feeds.status(node.id)
     status[node.id] = {
       url: server.url,
       localUrl: server.localUrl,
-      // A feed's own trouble — a token Slack refused — comes first: by the time
-      // it has one, whatever it is plugged into built fine.
-      problem: feed.problem ?? ('problem' in built ? built.problem : server.problem),
-      activity: feed.activity,
+      problem: 'problem' in built ? built.problem : server.problem,
     }
   }
   return { nodes, edges, status }
@@ -170,12 +152,6 @@ ipcMain.handle('graph:addNode', async (_e, kind: NodeKind, x: number, y: number)
   if ((config.kind === 'broadcast' || config.kind === 'mcp') && !config.port) {
     config.port = await findFreePort()
   }
-  // A feed's cursor starts *now*, set here rather than defaulted in the feed:
-  // switching one on is a decision about what happens next, not a request to
-  // import whatever has already been said. Winding it back is a thing somebody
-  // can choose to do; being handed a week of history is not.
-  if (config.kind === 'slackEvents') config.cursor = (Date.now() / 1000).toFixed(6)
-  if (config.kind === 'githubEvents') config.cursor = new Date().toISOString()
   const node = graph.addNode({ label: info.label, x, y, config })
   await graphChanged()
   return node
@@ -227,11 +203,6 @@ ipcMain.handle('graph:disconnect', async (_e, edgeId: string) => {
 // IPC — tokens on a broadcast or MCP node
 // ---------------------------------------------------------------------------
 
-// What a feed has been doing, newest first. Its own call rather than part of
-// `graph:read`, because it is only ever read while somebody has the inspector
-// open and it is the one answer on this page that is a page long.
-ipcMain.handle('feeds:log', (_e, nodeId: string): FeedRecord[] => feeds.log(nodeId))
-
 ipcMain.handle('graph:tokens', (_e, nodeId: string): SourceToken[] => graph.tokens(nodeId))
 ipcMain.handle('graph:issueToken', (_e, nodeId: string, name: string): SourceToken =>
   graph.issueToken(nodeId, name.trim() || 'anonymous'),
@@ -240,30 +211,6 @@ ipcMain.handle('graph:pauseToken', (_e, token: string, paused: boolean) =>
   graph.pauseToken(token, paused),
 )
 ipcMain.handle('graph:revokeToken', (_e, token: string) => graph.revokeToken(token))
-
-// ---------------------------------------------------------------------------
-// IPC — the integrations: the app's own reach outside itself
-// ---------------------------------------------------------------------------
-
-ipcMain.handle('integrations:tools', (): ToolMeta[] => INTEGRATION_TOOLS.map(toolMeta))
-// Waits as long as the tool takes: `claude.runPrompt` holds a session open for
-// minutes and can hold one for tens of them. Nothing here gives up first — the
-// call shows as running in the activity log until it answers.
-//
-// Unless the renderer stops it. Each run is held here by the id of the call it
-// answers, so `integrations:stop` can abort it — which kills whatever process the
-// tool has open.
-const integrationRuns = new Map<string, AbortController>()
-ipcMain.handle('integrations:run', async (_e, tool: string, args: unknown, callId?: string) => {
-  const controller = new AbortController()
-  if (callId) integrationRuns.set(callId, controller)
-  try {
-    return await runIntegrationTool(tool, args, { signal: controller.signal })
-  } finally {
-    if (callId && integrationRuns.get(callId) === controller) integrationRuns.delete(callId)
-  }
-})
-ipcMain.handle('integrations:stop', (_e, callId: string) => integrationRuns.get(callId)?.abort())
 
 // ---------------------------------------------------------------------------
 // IPC — user config
@@ -506,9 +453,6 @@ app.whenReady().then(async () => {
   // Every broadcast and MCP node comes back up with the app: they are part of
   // the drawing rather than something started by hand.
   await servers.sync()
-  // The feeds too, and each begins by reading everything said while the app was
-  // shut. Not awaited: that catch-up is the long one, and the window should draw.
-  void feeds.sync()
   createWindow()
 })
 app.on('window-all-closed', () => {
@@ -518,7 +462,6 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()
 })
 app.on('will-quit', () => {
-  void feeds.stopAll()
   void servers.stopAll()
   registry?.invalidate()
   graph?.close()

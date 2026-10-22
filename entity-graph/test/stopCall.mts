@@ -1,7 +1,6 @@
 // Stopping a call that is still running: the activity log's Stop.
 //
-// A Claude turn runs for minutes, and a second one started by mistake is the case
-// this is for. Stopping settles the call as cancelled at once, aborts its signal
+// Stopping settles the call as cancelled at once, aborts its signal
 // so the tool can let go of what it holds, and ignores whatever the tool hands
 // back afterwards.
 //
@@ -20,7 +19,7 @@ Object.defineProperty(globalThis, 'localStorage', {
 })
 Object.defineProperty(globalThis, 'window', { value: { entityGraph: {} } })
 
-const { integrationsAtom } = await import('../src/renderer/src/tools/integrationTools')
+const { userToolsAtom } = await import('../src/renderer/src/tools/userTools')
 const { callToolByName, stopCall } = await import('../src/renderer/src/tools/call')
 const { callsAtom, runningCallsAtom } = await import('../src/renderer/src/state/store')
 
@@ -36,7 +35,7 @@ const context = () => ({
 /** A tool that answers only when told to, and says whether it was aborted. */
 let finish: (value: unknown) => void = () => undefined
 let aborted = false
-integrationsAtom.set([
+userToolsAtom.set([
   {
     id: 'test.slow',
     label: 'Slow',

@@ -68,9 +68,7 @@ export interface EventScan {
  * primitives, so a pensive gains them by being one rather than by declaring them
  * again.
  *
- * Nothing in it reaches outside the store. The integrations — GitHub, Slack,
- * Claude, a terminal — are the *app's* hands and are held in the app, so no
- * pensive can be handed them by being composed or published.
+ * Nothing in it reaches outside the store.
  */
 export interface Pensive {
   /** Opaque, and the id of the node that defines it. */

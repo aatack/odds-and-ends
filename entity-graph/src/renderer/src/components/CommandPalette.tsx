@@ -21,7 +21,6 @@ import {
 } from '../tools/call'
 import { contextValue, formatArg, parseArg } from '../tools/args'
 import { keyHint, matchesKey, type KeyBinding } from '../tools/keys'
-import { integrationsAtom } from '../tools/integrationTools'
 import { findTool, listedTools } from '../tools/registry'
 import { userToolsAtom } from '../tools/userTools'
 import { argsOf, kindOf, type ToolSpec } from '../tools/types'
@@ -102,10 +101,9 @@ export function CommandPalette(): React.JSX.Element | null {
   }, [seedKey])
 
   const query = visible?.query ?? ''
-  // The registry isn't fixed: the server's integrations join it once a source is
-  // open, and so do the tools the user wrote in the store, so the list is
-  // recomputed when either lands as well as when the query changes.
-  const integrations = useAtomValue(integrationsAtom)
+  // The registry isn't fixed: the tools the user wrote in the store join it once
+  // a source is open, so the list is recomputed when they land as well as when
+  // the query changes.
   const userTools = useAtomValue(userToolsAtom)
   const matches = useMemo(() => {
     const tools = listedTools()
@@ -114,7 +112,7 @@ export function CommandPalette(): React.JSX.Element | null {
     return fuzzysort
       .go(q, tools, { keys: ['label', (t) => t.aliases?.join(' ') ?? ''] })
       .map((r) => r.obj)
-  }, [query, integrations, userTools])
+  }, [query, userTools])
   const active = matches.length ? Math.min(activeIndex, matches.length - 1) : 0
 
   // What this tool was last given for the argument being entered. Read straight

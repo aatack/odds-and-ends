@@ -583,7 +583,7 @@ export const ENTITY_TOOLS: ToolSpec[] = [
         label: 'Other values (JSON)',
         kind: 'json',
         optional: true,
-        placeholder: 'e.g. {"type": "changeset"}',
+        placeholder: 'e.g. {"type": "recipe"}',
       },
     ],
     run: async ({ parentId, text, values }) => {

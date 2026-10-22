@@ -1,10 +1,8 @@
 import fuzzysort from 'fuzzysort'
 import { APP_TOOLS, GROUP_TOOLS } from './appTools'
-import { CHAT_TOOLS } from './chatTools'
 import { DIAGRAM_SELECTION_TOOLS, DIAGRAM_TOOLS } from './diagramTools'
 import { ENTITY_TOOLS } from './entityTools'
 import { FRAME_TOOLS } from './frameTools'
-import { integrationsAtom } from './integrationTools'
 import { RESOURCE_TOOLS } from './resourceTools'
 import { SOURCE_TOOLS } from './sourceTools'
 import { UNDO_TOOLS } from './undoTools'
@@ -16,12 +14,11 @@ import type { ToolScope, ToolSpec } from './types'
 // looking at), and the order the key router resolves collisions in within a
 // scope.
 //
-// Most of it is fixed at build time. Two parts are not: the integrations, which
-// are declared on the server and arrive when a source is opened, and the user's
-// own tools, which are notes in the store. So the list is a function rather than
-// a constant, and the palette re-reads it when either lands.
+// Most of it is fixed at build time. One part is not: the user's own tools, which
+// are notes in the store and arrive when a source is opened. So the list is a
+// function rather than a constant, and the palette re-reads it when they land.
 //
-// Both trail the built-ins, which settles every collision between a declared tool
+// They trail the built-ins, which settles every collision between a declared tool
 // and one of the app's own in the app's favour — a store cannot rebind `d` out
 // from under the user by naming a tool badly.
 
@@ -37,16 +34,14 @@ const BUILT_IN: ToolSpec[] = [
   ...FRAME_TOOLS,
   ...DIAGRAM_TOOLS,
   ...RESOURCE_TOOLS,
-  ...CHAT_TOOLS,
   ...GROUP_TOOLS,
   ...UNDO_TOOLS,
   ...APP_TOOLS,
 ]
 
-/** Everything invocable right now. Declared tools trail the built-ins. */
+/** Everything invocable right now. The user's tools trail the built-ins. */
 export const allTools = (): ToolSpec[] => [
   ...BUILT_IN,
-  ...integrationsAtom.get(),
   ...userToolsAtom.get(),
 ]
 
@@ -54,7 +49,6 @@ const byId = new Map(BUILT_IN.map((t) => [t.id, t]))
 
 export const findTool = (id: string): ToolSpec | undefined =>
   byId.get(id) ??
-  integrationsAtom.get().find((t) => t.id === id) ??
   userToolsAtom.get().find((t) => t.id === id)
 
 /** Tools offered in the palette's list. */
@@ -65,23 +59,23 @@ export const toolsInScope = (scope: ToolScope): ToolSpec[] =>
 
 // --- Naming a tool in code --------------------------------------------------
 
-// A script says `tool.sendSlackMessage(…)`, so every tool needs a name that is a
+// A script says `tool.createChildOfEntity(…)`, so every tool needs a name that is a
 // JavaScript identifier. It is derived from the label rather than declared: the
-// label is the one thing every tool already has, including the integrations,
-// which are named on the server and would otherwise need a second name here.
+// label is the one thing every tool already has, including the user's own, which
+// are named in the store and would otherwise need a second name there.
 
 /** Words a label carries for the reader and an identifier is better without. */
 const FILLER = new Set(['a', 'an', 'the'])
 
 /**
- * A tool's label as a script writes it: "Send a Slack message" →
- * `sendSlackMessage`. Words keep their own capitals (so "GitHub" survives), and
+ * A tool's label as a script writes it: "Send a message to the team" →
+ * `sendMessageToTeam`. Words keep their own capitals (so "JSON" survives), and
  * only the first letter of the whole name is forced to lower case.
  */
 export function toolName(label: string): string {
   const words = label
     // A possessive would otherwise read as a word of its own, since the
-    // apostrophe is a boundary: "a repo's pull requests" → `repoSPullRequests`.
+    // apostrophe is a boundary: "a note's children" → `noteSChildren`.
     .replace(/['’]s\b/g, '')
     .split(/[^A-Za-z0-9]+/)
     .filter(Boolean)

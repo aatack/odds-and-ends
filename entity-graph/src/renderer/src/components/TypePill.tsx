@@ -3,7 +3,7 @@ import { DOT_COLORS, type BadgeColor } from './ui/Badge'
 
 // An entity's `type`, said out loud. A type is otherwise invisible unless the app
 // happens to know it: `code` and `file` change how a row draws itself, and
-// anything else the user invents — `changeset`, say — reads as an ordinary
+// anything else the user invents — `recipe`, say — reads as an ordinary
 // bullet. This is what tells them apart, at the head of the row and at a glance.
 //
 // It is chrome and not text, so it is set in the app's sans rather than the serif

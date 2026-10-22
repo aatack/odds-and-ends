@@ -120,8 +120,7 @@ function CallRow({ call, onClose }: { call: RecordedCall; onClose: () => void })
             {status.label}
           </Badge>
           {/* A call that hasn't answered yet can only be stopped: it has no
-              result, and starting a second one — another turn in the same Claude
-              conversation — is the last thing wanted. */}
+              result to resume from. */}
           {running && (
             <Button size="sm" variant="tertiary" onClick={() => stopCall(call.callId)}>
               Stop

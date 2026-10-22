@@ -14,8 +14,6 @@ export type NodeKind =
   | 'connect'
   | 'mcp'
   | 'desktop'
-  | 'slackEvents'
-  | 'githubEvents'
 
 /**
  * What one node holds, over and above its name and where it sits.
@@ -43,30 +41,6 @@ export type NodeConfig =
   | { kind: 'connect'; url: string; token: string }
   /** This app's own window. Its input is the pensive the outliner shows. */
   | { kind: 'desktop' }
-  /**
-   * Slack, watched and written into the pensive plugged into it.
-   *
-   * The token sits here rather than in a note because this file is the app's
-   * own, not a pensive: it already holds the bearer tokens a broadcast issues,
-   * and a secret copied into a store is a secret published with it.
-   */
-  | {
-      kind: 'slackEvents'
-      /** The `xoxp-…` user token. Search is user-token only; a bot cannot. */
-      userToken: string
-      /** A Slack `ts`. Everything after it has been read. */
-      cursor: string
-    }
-  /** GitHub notifications, watched and written into the pensive plugged in. */
-  | {
-      kind: 'githubEvents'
-      /** Leave empty to use `gh auth token`. */
-      token: string
-      /** ISO 8601. Everything after it has been read. */
-      cursor: string
-      /** The last `Last-Modified`, sent back as `If-Modified-Since`. */
-      lastModified: string
-    }
 
 /** One node of the graph, as it is stored and as the page draws it. */
 export interface SourceNode {
@@ -119,26 +93,6 @@ export interface NodeStatus {
   localUrl: string | null
   /** Why this node isn't working — an actionable sentence, or null. */
   problem: string | null
-  /**
-   * What a node that runs of its own accord is doing — how far a feed has read,
-   * and when. Null for the nodes that only sit there being read.
-   */
-  activity: string | null
-}
-
-/**
- * One thing a feed did, as the node's inspector shows it. A ring of these is the
- * answer to "is this working?", which nothing else on the page can give: a feed
- * that is polling happily and finding nothing looks exactly like one that is not
- * polling at all.
- */
-export interface FeedRecord {
-  /** Unix ms. */
-  at: number
-  /** One line: what was asked for, or what came back. */
-  summary: string
-  /** The raw thing it is about, as JSON, cut off past a few thousand characters. */
-  detail: string | null
 }
 
 /** The whole page in one answer: the graph, plus how each node is getting on. */
@@ -216,24 +170,6 @@ export const NODE_KINDS: NodeKindInfo[] = [
     config: { kind: 'mcp', port: 0 },
   },
   {
-    kind: 'slackEvents',
-    label: 'Slack',
-    blurb: 'Watch Slack, and write every message into the pensive plugged in.',
-    inputs: 1,
-    output: false,
-    addable: true,
-    config: { kind: 'slackEvents', userToken: '', cursor: '' },
-  },
-  {
-    kind: 'githubEvents',
-    label: 'GitHub',
-    blurb: 'Watch your GitHub notifications, and write them into the pensive plugged in.',
-    inputs: 1,
-    output: false,
-    addable: true,
-    config: { kind: 'githubEvents', token: '', cursor: '', lastModified: '' },
-  },
-  {
     kind: 'desktop',
     label: 'This app',
     blurb: 'Whatever is plugged in here is what the outliner shows.',
@@ -249,15 +185,6 @@ export const nodeKind = (kind: NodeKind): NodeKindInfo =>
 
 /** Whether a node of this kind holds tokens — the two that publish. */
 export const publishes = (kind: NodeKind): boolean => kind === 'broadcast' || kind === 'mcp'
-
-/**
- * Whether a node of this kind runs of its own accord, writing entities into
- * whatever is plugged into it. The two feeds are the only nodes that *do*
- * something rather than being something: they hold a cursor, they poll, and
- * pausing one stops it rather than refusing calls through it.
- */
-export const watches = (kind: NodeKind): boolean =>
-  kind === 'slackEvents' || kind === 'githubEvents'
 
 /**
  * The address a published node answers on, ready to be pasted somewhere.

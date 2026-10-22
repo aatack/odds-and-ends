@@ -163,14 +163,11 @@ A **call** is one invocation of a tool: a generated `callId`, the tool's id, the
 argument values so far, and an immutable snapshot of the context it started in.
 
 Most tools are fixed at build time, but the registry is not a constant: the
-**integrations** — GitHub, Slack, Claude, git, a terminal, declared in
-`src/main/integrations/` — are read from the main process when the app starts and
-folded in alongside the built-ins (`tools/integrationTools.ts`). They arrive as
-JSON Schema, and the argument prompts are derived from it rather than restated, so
-a tool gained there needs nothing doing in the renderer. This is why
-`tools/registry.ts` exposes `allTools()` rather than a `TOOLS` array, and why the
-palette recomputes its list when the integrations land. They are all `external`,
-so every one of them is kept in the call log.
+tools the user writes under `@tools` are read from the store when it opens and
+folded in alongside the built-ins (`tools/userTools.ts`). They arrive as JSON
+Schema, and the argument prompts are derived from it rather than restated. This
+is why `tools/registry.ts` exposes `allTools()` rather than a `TOOLS` array, and
+why the palette recomputes its list when they land.
 
 ## Argument values
 

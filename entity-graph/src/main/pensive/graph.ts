@@ -10,10 +10,20 @@ import type {
   SourceNode,
   SourceToken,
 } from '../../core/client'
+import { NODE_KINDS } from '../../core/client'
 
 // Where the graph of pensives is kept: a SQLite file of the app's own, beside
 // its other local state. It holds *what the user drew* and nothing else — no
 // notes, no events. The stores it points at are the sqlite nodes.
+
+/**
+ * The kinds this build knows. A node of any other kind — one a build that had it
+ * drew, since taken out — stays in the file and is left out of every read, along
+ * with whatever is plugged into it, so dropping a kind writes nothing.
+ */
+const KNOWN = new Set<string>(NODE_KINDS.map((k) => k.kind))
+
+const known = (r: RawNode): boolean => KNOWN.has((JSON.parse(r.config_json) as { kind: string }).kind)
 
 interface RawNode {
   id: string
@@ -101,18 +111,21 @@ export class GraphDb {
     return this.db
       .prepare<[], RawNode>('SELECT * FROM nodes')
       .all()
+      .filter(known)
       .map((r) => this.toNode(r))
   }
 
   node(id: string): SourceNode | undefined {
     const r = this.db.prepare<[string], RawNode>('SELECT * FROM nodes WHERE id = ?').get(id)
-    return r ? this.toNode(r) : undefined
+    return r && known(r) ? this.toNode(r) : undefined
   }
 
   edges(): SourceEdge[] {
+    const ids = new Set(this.nodes().map((n) => n.id))
     return this.db
       .prepare<[], RawEdge>('SELECT * FROM edges')
       .all()
+      .filter((r) => ids.has(r.from_id) && ids.has(r.to_id))
       .map((r) => ({ id: r.id, from: r.from_id, to: r.to_id }))
   }
 

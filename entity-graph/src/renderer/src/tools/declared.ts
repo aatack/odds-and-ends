@@ -6,15 +6,10 @@ import {
 } from '../../../core/toolArguments'
 import type { ArgKind, ArgSpec } from './types'
 
-// Tools the app didn't declare. Two things describe a tool from the outside — the
-// server's integrations, and the `@tools` entities the user writes in the graph —
-// and both have to arrive as a `ToolSpec` the palette can prompt for. What they
-// have in common lives here: the mapping from a JSON Schema's properties onto
-// argument prompts, and the one line a result is worth summarising to.
-//
-// Sharing it is the point. An argument's *kind* decides how it is parsed, so two
-// copies of this mapping would mean a number typed against an integration and a
-// number typed against a user tool disagreeing about what they are.
+// Tools the app didn't declare: the `@tools` entities the user writes in the
+// graph, which arrive described as JSON Schema and have to become a `ToolSpec` the
+// palette can prompt for. The mapping from a schema's properties onto argument
+// prompts lives here, and the one line a result is worth summarising to.
 
 interface PropertySchema {
   type?: string
@@ -52,7 +47,7 @@ function kindOf(schema: PropertySchema): ArgKind {
   return KINDS[schema.type ?? ''] ?? 'json'
 }
 
-/** `pullRequest` → "Pull request". */
+/** `parentId` → "Parent id". */
 export function labelOf(name: string): string {
   const words = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
   return words.charAt(0).toUpperCase() + words.slice(1)
@@ -110,8 +105,7 @@ const clip = (text: string, limit = 160): string =>
  * confirmation — the whole result is in the activity log.
  *
  * `result` trails the rest because it is the vaguest of these names, and the one
- * a payload is least likely to have meant as its headline — but it is what a
- * Claude session's reply comes back under, and that is worth a toast.
+ * a payload is least likely to have meant as its headline.
  */
 const TELLING = ['output', 'text', 'title', 'permalink', 'url', 'result']
 

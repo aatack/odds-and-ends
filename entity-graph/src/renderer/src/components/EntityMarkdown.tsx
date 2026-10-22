@@ -11,7 +11,6 @@ import { elapsedTime } from '../helpers/time'
 import { useAtomValue, useCallRunning, useCalls, useGetEntities } from '../state/hooks'
 import { rowKey } from '../state/derive'
 import { runTool } from '../tools/call'
-import { integrationsAtom } from '../tools/integrationTools'
 import { findToolByName, nearestToolNames } from '../tools/registry'
 import { userToolsAtom } from '../tools/userTools'
 import type { ToolSpec } from '../tools/types'
@@ -85,13 +84,12 @@ export function EntityMarkdown({
  * The tool a field names — by its id, or by the name a script would call it
  * (`tool.inspectEntity(…)`), since a button in a row of text is naming a tool for
  * the same reasons a script is. Read through the atoms the declared tools land
- * in, so a button naming an integration stops being dead once the source has
- * opened and said what the server can do.
+ * in, so a button naming one of the user's tools stops being dead once the
+ * source has opened.
  */
 function useTool(name: string): ToolSpec | undefined {
-  const integrations = useAtomValue(integrationsAtom)
   const userTools = useAtomValue(userToolsAtom)
-  return useMemo(() => findToolByName(name), [name, integrations, userTools])
+  return useMemo(() => findToolByName(name), [name, userTools])
 }
 
 /**

@@ -1,7 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   CurrentPensive,
-  FeedRecord,
   NodeKind,
   NodePatch,
   SourceEdge,
@@ -70,19 +69,6 @@ export interface EntityGraphAPI {
    * different store. Returns the teardown.
    */
   onPensiveChanged: (listener: () => void) => () => void
-  /**
-   * Fires when a feed node says a new thing about itself — how far it has read,
-   * what refused it. Its own channel because nothing about the graph changed:
-   * `onPensiveChanged` means "you are looking at a different store now", which
-   * a cursor moving is not.
-   */
-  onFeedsChanged: (listener: () => void) => () => void
-  /**
-   * What a feed node has been doing, newest first — what it asked for and what
-   * came back. The only way to tell a feed finding nothing from a feed that is
-   * not running, which from outside look exactly alike.
-   */
-  feedLog: (nodeId: string) => Promise<FeedRecord[]>
 
   // --- The graph of pensives ----------------------------------------------
 
@@ -101,17 +87,6 @@ export interface EntityGraphAPI {
   issueToken: (nodeId: string, name: string) => Promise<SourceToken>
   pauseToken: (token: string, paused: boolean) => Promise<void>
   revokeToken: (token: string) => Promise<void>
-
-  /**
-   * The app's integrations — GitHub, Slack, Claude, git, a terminal. The app's
-   * own hands rather than anything a pensive holds, which is why they are not
-   * addressed by node.
-   */
-  integrationTools: () => Promise<ToolMeta[]>
-  /** `callId` names the run, so {@link stopIntegrationTool} can stop it. */
-  runIntegrationTool: (tool: string, args: unknown, callId?: string) => Promise<unknown>
-  /** Abort a run still in progress. Nothing happens if it has already answered. */
-  stopIntegrationTool: (callId: string) => Promise<void>
 
   /**
    * Phone access, over Tailscale. Machine-scoped: there is one tailnet name and
@@ -145,14 +120,6 @@ const api: EntityGraphAPI = {
     ipcRenderer.on('pensive:changed', handler)
     return () => ipcRenderer.off('pensive:changed', handler)
   },
-  onFeedsChanged: (listener) => {
-    const handler = (): void => listener()
-    ipcRenderer.on('feeds:changed', handler)
-    return () => ipcRenderer.off('feeds:changed', handler)
-  },
-
-  feedLog: (nodeId) => ipcRenderer.invoke('feeds:log', nodeId),
-
   readGraph: () => ipcRenderer.invoke('graph:read'),
   addNode: (kind, x, y) => ipcRenderer.invoke('graph:addNode', kind, x, y),
   updateNode: (id, patch) => ipcRenderer.invoke('graph:updateNode', id, patch),
@@ -164,11 +131,6 @@ const api: EntityGraphAPI = {
   issueToken: (nodeId, name) => ipcRenderer.invoke('graph:issueToken', nodeId, name),
   pauseToken: (token, paused) => ipcRenderer.invoke('graph:pauseToken', token, paused),
   revokeToken: (token) => ipcRenderer.invoke('graph:revokeToken', token),
-
-  integrationTools: () => ipcRenderer.invoke('integrations:tools'),
-  runIntegrationTool: (tool, args, callId) =>
-    ipcRenderer.invoke('integrations:run', tool, args, callId),
-  stopIntegrationTool: (callId) => ipcRenderer.invoke('integrations:stop', callId),
 
   tailscaleStatus: () => ipcRenderer.invoke('tailscale:status'),
   tailscaleServeApp: (on) => ipcRenderer.invoke('tailscale:serveApp', on),

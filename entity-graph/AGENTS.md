@@ -108,35 +108,27 @@ is the long form; the rules that matter day to day:
   kind holds, and whose `actions` name the tools every row of it wears as a button. Nothing of it is inherited — what an
   entity holds is what was written to it. `core/schema.ts` is the reading of a
   type and `core/builtins.ts` the types the store supplies whether or not anybody
-  wrote them — `type` itself, schema and all, plus `tool`, `diagram` and `chat`;
+  wrote them — `type` itself, schema and all, plus `tool` and `diagram`;
   [`docs/types.md`](./docs/types.md) is the long form.
 - **`tools/` is the only way the user does anything.** Every command — moving the
   selection, opening a tab, writing a value — is one `ToolSpec` declaring its
   arguments, its scope, and how far it reaches. Hotkeys and the command palette
   both dispatch through that declaration, so they cannot drift. New commands go
   here, never inline in a keydown handler.
-- **The registry isn't all built at build time.** The *integrations* (GitHub,
-  Slack, Claude, git, a terminal — `src/main/integrations/`, documented in
-  [`docs/integrations.md`](./docs/integrations.md)) are read from the main process
-  when the app starts and folded into the same registry, with their argument
-  prompts derived from the JSON Schema they publish. So read the list through
-  `allTools()`, never a constant, and add a new integration in `src/main` rather
-  than here. **They are the app's own hands and belong to no pensive** — nothing
-  a broadcast or an MCP node serves can reach them.
+- **The registry isn't all built at build time.** The user's own tools (below)
+  are read from the store when it opens and folded into the same registry, so
+  read the list through `allTools()`, never a constant. **The app has no
+  integrations**: nothing in the code reaches Slack, GitHub, Claude or any other
+  service, and a note naming one is an ordinary note.
 - **The store defines tools too.** A note under `@tools` saying `type: tool`
   becomes a tool of the app, called whatever its text says — palette entry,
   optional key, callable from other scripts. Its `execute` value
   is an expression evaluating to a function, applied to the declared arguments
   positionally and run in the same sandbox a code entity uses, so it reaches the
   whole registry. See [`docs/user-tools.md`](./docs/user-tools.md) for the fields.
-  `tools/declared.ts` holds what these have in common with the integrations, since
-  both arrive described from outside; `tools/userTools.ts` reads them, and
-  "Reload your tools" re-reads them after an edit. **Changesets are the largest
-  thing written this way** — a worktree, a Claude session and a pull request held
-  open as one entity — and [`docs/changesets.md`](./docs/changesets.md) is the
-  worked example: what the definitions are, and which tools here exist for them
-  to be written in terms of. When something a definition needs is missing, the
-  answer is a tool it can reach, not a feature in `tools/`.
+  `tools/declared.ts` maps their JSON Schema onto argument prompts;
+  `tools/userTools.ts` reads them, and "Reload your tools" re-reads them after an
+  edit.
 - **A diagram is a note that holds a drawing.** `type: diagram` draws a pannable
   canvas above the note's own text, and its shapes are the entity's own values —
   one per key, under a key beginning `diagram/`, so a diagram still has ordinary
@@ -146,26 +138,12 @@ is the long form; the rules that matter day to day:
   Flow does the viewport, the dragging and the arrow heads; it does not do the
   state, and it holds no keys — its own key handling is off, since there is one key
   listener and it is at the top.
-- **A chat is a note you talk to a tool through.** `type: chat` on a note, with a
-  `chat` value naming a tool, makes its children the messages in a conversation;
-  a tab carries a list of them and draws one small round picture per chat in its
-  bottom right corner, over the rows rather than in them. Pressing Enter in one
-  runs `chat.send`, which writes what you typed as a child, calls that tool with
-  the chat's own values for whatever arguments it declares plus the message as
-  `text`, and writes the answer as the next child. A reply carries `owner`, which
-  is what keeps it on the left: the app wrote that note too, so without it the
-  answer would look like something the user said. `tools/chatTools.ts` is the
-  three tools, `components/ChatDock.tsx` the corner, `helpers/identicon.ts` the
-  picture (drawn from the id, stored nowhere), and
-  [`docs/chats.md`](./docs/chats.md) the long form. Nothing here is a new kind of
-  thing in the store — a chat is notes under a note, written by the write tools
-  that were already there.
 - **A code entity is another caller.** `type: code` runs in a QuickJS worker
   (`helpers/codeRunner*`) whose only globals are `console`, `context` — the folded
-  call context of the entity it is on, so `context.channel` is whatever an
-  ancestor said the channel was — and `tool`, which reaches the whole registry by
-  the camel case of a tool's label (`tool.sendSlackMessage(channel, text)`) or by
-  its id (`tool['slack.sendMessage'](…)`). Arguments go positionally in the order
+  call context of the entity it is on, so `context.project` is whatever an
+  ancestor said the project was — and `tool`, which reaches the whole registry by
+  the camel case of a tool's label (`tool.createChildOfEntity(parentId, text)`) or
+  by its id (`tool['entity.create'](…)`). Arguments go positionally in the order
   the tool declares them, or as one object naming them. The calls are
   **synchronous**: the worker blocks on a `SharedArrayBuffer` while the main
   thread runs the call through the same machine a hotkey does, so a script's calls
@@ -210,14 +188,15 @@ the outline down — but writing to it still fails, having one place to go.
 
 **The user draws the arrangement.** The Sources page is a graph of nodes — a
 node per pensive, plus the two that publish one (`broadcast` over HTTP,
-`mcp` for an agent), the two that *write into* one (`slackEvents`,
-`githubEvents`) and one fixed node standing for this window. An edge names the
+`mcp` for an agent) and one fixed node standing for this window. An edge names the
 pensive at the other end of it, so a combiner's children are edges rather than
 configuration, and what the outliner shows is whatever has been dragged into the
 desktop node.
 The graph is a SQLite file of the app's own under `userData`; `src/core/client.ts`
 holds the shapes both ends read, `NODE_KINDS` included — the page draws its
 handles from it and the main process refuses an edge that disagrees with it.
+A node of a kind this build doesn't know (the Slack and GitHub feeds an older
+build drew) stays in the file and is left out of every read.
 
 Three rules hold on the main-process side rather than in the page, because the
 page is not the only caller:
@@ -240,20 +219,6 @@ Electron main process now, so it must be built against Electron's ABI:
 touch it — `test/source.mts` is an in-memory pensive for exactly that reason — but
 `npm run migrate:v2` does, and needs `npm run rebuild:node` first (and
 `rebuild:electron` again afterwards, or the app won't start).
-
-**Two nodes run rather than sit there.** `slackEvents` and `githubEvents` watch
-one service each from a cursor and write what they find into whatever is plugged
-into them, as notes under `@inbox`; `src/main/events/` is the whole of it and
-[`docs/events.md`](./docs/events.md) the long form. The thing to know before
-touching one: **an entity's id is made from the thing's own id**, so reading the
-same stretch twice writes nothing the second time — which is what lets the cursor
-be wound back before every request and moved only *after* the entities are in.
-Their credentials live on the node, in the app's own graph file, and are never
-copied into a store. Pausing one **stops** it, unlike every other node, where
-pausing means refusing. Each keeps a ring of the last few things it did, raw
-answers included, which the node shows behind a terminal icon — a feed polling
-happily and finding nothing is otherwise indistinguishable from one that never
-ran.
 
 `src/main/pensive/` is the rest: `graph.ts` the file, `registry.ts` the building
 of pensives from it, `http.ts` one small server per published node, `mcpServer.ts`
@@ -365,8 +330,6 @@ mobile/         a separate phone client (PWA) for one pensive — its own instal
 scripts/        one-off tools run outside the app with tsx (the v2 migration, the sources one)
 src/main       Electron main — window, tailscale serve, and:
   pensive/        the graph of nodes, the pensives built from it, and the servers publishing them
-  events/         the two nodes that watch a service and write into a pensive
-  integrations/   the app's reach outside itself (GitHub, Slack, Claude, git, terminal)
 src/preload     contextBridge exposing the typed EntityGraphAPI
 src/core        the shared model: entity + rollup, traversal, tree, markdown, cache
   pensive/        what a pensive is, the tools it wears, and the four kinds of one
