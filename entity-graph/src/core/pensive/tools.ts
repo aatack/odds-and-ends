@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { builtinEvents } from '../builtins'
 import { bucketEvents, rollupEntity, type LinkDirection } from '../entity'
 import type { AppEvent, LinkAction } from '../events'
 import type { EntityInterface } from '../interface/index'
@@ -160,25 +159,15 @@ export function scanEventsTool(read: (entityIds: string[]) => Promise<AppEvent[]
   }
 }
 
-/**
- * Reading events, with the ones the store supplies rather than holds in front of
- * them — see `../builtins`. Every read of the store goes through here, so a
- * client's cache, a query and an agent over MCP all see the same `type` entity,
- * and none of them has to know it was never written down.
- *
- * They arrive first and timestamped 0, which is only tidiness: a rollup sorts,
- * so what is actually written wins whatever order it came back in.
- */
-export const readWithBuiltins =
+/** Reading events, as every read of the store does. */
+const readerOf =
   (pensive: Pensive) =>
-  async (entityIds?: string[]): Promise<AppEvent[]> => [
-    ...builtinEvents(entityIds),
-    ...(await pensive.readEvents(entityIds)),
-  ]
+  (entityIds?: string[]): Promise<AppEvent[]> =>
+    pensive.readEvents(entityIds)
 
 /** An `EntityInterface` backed by a pensive's own reads and writes. */
 function entityInterface(pensive: Pensive): EntityInterface {
-  const read = readWithBuiltins(pensive)
+  const read = readerOf(pensive)
   return {
     readEvents: async (ids) => bucketEvents(ids, await read(ids)),
     writeEvents: (events) => pensive.writeEvents(events),
@@ -219,7 +208,7 @@ export function pensiveTools(pensive: Pensive, opts: PensiveToolOptions = {}): T
     .optional()
     .describe('Surface the write came over; recorded as `author:via`, e.g. `mcp`.')
 
-  const read = readWithBuiltins(pensive)
+  const read = readerOf(pensive)
   const readEvents = readEventsTool(read)
   const scanEvents = scanEventsTool(read)
 

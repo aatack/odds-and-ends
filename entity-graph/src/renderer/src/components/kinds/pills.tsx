@@ -1,5 +1,5 @@
 import React from 'react'
-import { File02, Hexagon01, Tool01 } from '@untitledui/icons'
+import { File02 } from '@untitledui/icons'
 import { cn } from '../../helpers/cn'
 import { useEntityLabel, useLoadedFileName } from '../../state/hooks'
 import type { PillProps } from './types'
@@ -49,12 +49,4 @@ export function FilePill({ id, className }: PillProps): React.JSX.Element {
   const label = useEntityLabel(id)
   const name = useLoadedFileName(id)
   return <Marked icon={File02} label={name ?? label} className={className} />
-}
-
-export function TypeKindPill({ id, className }: PillProps): React.JSX.Element {
-  return <Marked icon={Hexagon01} label={useEntityLabel(id)} className={className} />
-}
-
-export function ToolPill({ id, className }: PillProps): React.JSX.Element {
-  return <Marked icon={Tool01} label={useEntityLabel(id)} className={className} />
 }

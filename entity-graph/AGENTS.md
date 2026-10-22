@@ -103,18 +103,15 @@ is the long form; the rules that matter day to day:
   both clients have to agree on them — and in the markdown's case because the
   same outline goes to an agent over MCP; see
   [`mobile/AGENTS.md`](./mobile/AGENTS.md) for where that line is drawn.
-- **A type describes its instances; it does not lend them values.** An entity's
-  `type` names another entity, whose `schema` says which values an entity of that
-  kind holds. Nothing of it is inherited — what an entity holds is what was
-  written to it. `core/schema.ts` is the reading of a
-  type and `core/builtins.ts` the types the store supplies whether or not anybody
-  wrote them — `type` itself, schema and all, plus `tool`;
-  [`docs/types.md`](./docs/types.md) is the long form.
+- **Types are defined in code.** An entity's `type` value is a name the app
+  knows, and how an entity of it is drawn is chosen in `components/kinds/`. The
+  store holds no types and no schemas: a `type` naming nothing the app knows is
+  an ordinary note.
 - **`tools/` is the only way the user does anything.** Every command — moving the
   selection, opening a tab, writing a value — is one `ToolSpec` declaring its
   arguments, its scope, and how far it reaches. A tool is that and its `run`:
-  there are no buttons a type hangs on rows, no named calls a note watches, and
-  no argument that answers itself from somewhere else. Hotkeys and the command palette
+  there are no buttons on rows, no named calls a note watches, and no argument
+  that answers itself from somewhere else. Hotkeys and the command palette
   both dispatch through that declaration, so they cannot drift. New commands go
   here, never inline in a keydown handler.
 - **Every tool is the app's own.** The registry is fixed at build time; read it
@@ -256,16 +253,16 @@ stays there. `EntityInspector` is the one of those, and its tabs are why.
 it is given — 0-, 1- and 2-dimensional:
 
 - **Pill** — inline, in prose or beside other things: a name and a mark.
-- **Card** — a row to itself: the gist and its key action (a code row's run).
+- **Card** — a row to itself: the gist and its key actions. A row draws its
+  kind's card and nothing else — no type pill.
 - **Focus** — a page to itself, which is the root row of a frame. Optional, and a
   note's is its card: its page is its text with its children as the rows below.
-  A file's focus is the whole file (a large image, text read out, media playing),
-  a type's its fields, a tool's its body.
+  A file's focus is the whole file (a large image, text read out, media playing).
 
 `kindOf(type)` in `components/kinds/index.ts` is the one place a kind's views are
 chosen — rows, pills and frame roots all ask there — and a type nothing is
-registered for is drawn as a note wearing its type pill. Adding a kind is adding
-an entry, not a branch in the editor.
+registered for is drawn as a note. Two kinds exist: the note and `file`. Adding
+a kind is adding an entry, not a branch in the editor.
 
 **Peeks** (`layout/PeekLayer.tsx`, `state/peeks.ts`) are floating windows onto
 whatever a pill or a link refers to, opened by hovering it for a moment and closed
@@ -297,18 +294,6 @@ global right-click and middle-click handlers need), and `PillBackground` (a
 surface for a pill that has to be told apart from the text around it).
 `EntityPill` is all three. Reach for these rather than writing out an entity's
 label: a bare label can't be right-clicked, and it won't follow the entity.
-
-**Type pills** (`components/TypePill.tsx`) are how a row shows what it *is*. Any
-entity with a `type` value gets one at the head of its row, in the tone of a
-secondary button with nothing to press. On a row drawing prose it is *floated into
-the text*: the first line begins after it and every line below runs the full
-width, so the type reads as the entity's first word rather than as a column in
-front of it. A code block, a file's bytes and a box being typed into can't flow
-around a float, so on those the pill sits beside the mark instead. `code` and
-`file` already look like themselves; the pill is what stops every other type the
-user invents from reading as a plain bullet. It takes a `label` rather than a
-type, because a row's type is not its only caller: the `[@pill](text)` field puts
-the same shape mid-sentence, for a word no value on the entity accounts for.
 
 **Custom fields** (`components/ui/markdownFields.ts`) are how a row's text holds
 something other than text: `[@type:arg](text)` renders as a component instead of

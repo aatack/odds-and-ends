@@ -134,18 +134,9 @@ made every caller pay for a full walk.
 
 ### Types
 
-An entity's `type` value names another entity, and that entity — a *type* —
-describes the entities that name it. It does not lend them anything: what an
-entity holds is what was written to it, and a type says what it *should* hold,
-and what can be done with it. See
-[`types.md`](./types.md) for the whole of it; what the cache does about it is:
-
-- **Naming a type is what fetches it.** Nothing else reads one, so `reconcile`
-  asks for the type of every entity it sees — and asks again after a write, since
-  a type usually has no row of its own to be refetched by.
-- **The rollup is one level.** An entity's values are its own events, so a type
-  arriving changes nothing about its instances' values; what it changes is the
-  the details panel drawn for them (a type's `schema` is its form).
+An entity's `type` value names a kind the app draws (`components/kinds/`). It
+is a name and nothing more: the cache does not fetch a type entity, and nothing
+is lent to an entity by the type it names.
 
 ## Vocabulary
 

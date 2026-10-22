@@ -58,8 +58,3 @@ export function RowText({
 
 /** A row with no text at all, which would otherwise be an invisible line. */
 export const EMPTY = <span className={`${TEXT} italic text-gray-400`}>Empty</span>
-
-/** A line of chrome under an entity's text: what the app says about it, in sans. */
-export function Aside({ children }: { children: React.ReactNode }): React.JSX.Element {
-  return <div className="mt-0.5 text-[12px] leading-4 text-gray-400">{children}</div>
-}

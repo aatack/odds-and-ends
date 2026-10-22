@@ -14,7 +14,8 @@ import type { EntityRow } from '../../state/derive'
 // is the case for one — a row shows a thumbnail, and its own page the whole thing.
 //
 // The kind is the entity's `type` value (`kindOf` in `./index`); an entity of a
-// type no kind is registered for is drawn as a note.
+// type no kind is registered for is drawn as a note. A row draws its kind's card
+// and nothing else: there is no type pill in front of it.
 
 export interface PillProps {
   id: string
@@ -33,10 +34,4 @@ export interface Kind {
   Card: React.ComponentType<CardProps>
   /** The root of a frame. Absent: the card again, which is what a note wants. */
   Focus?: React.ComponentType<CardProps>
-  /**
-   * Whether the card is prose, which the type pill is floated into as the
-   * entity's first word. A surface of its own — a code block, a file, a canvas —
-   * can't flow around a float, so the pill sits beside the mark instead.
-   */
-  prose: boolean
 }

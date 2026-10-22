@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, ChevronRight, Loading02, Square } from '@untitledui/icons'
 import { TextEditor } from '../components/ui/TextEditor'
-import { TypePill } from '../components/TypePill'
 import { kindOf } from '../components/kinds'
 import { TEXT, sectionStyle } from '../components/kinds/text'
 import { cn } from '../helpers/cn'
@@ -347,8 +346,6 @@ const RowView = React.memo(function RowView({
           <span className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 select-none">
             <Mark open={row.open} />
           </span>
-          {/* The row it is about to become already wears its type. */}
-          {row.type && <TypePill label={row.type} className="mr-1" />}
           <div className="flex-1 min-w-0">
             <TextEditor
               autoFocus
@@ -377,14 +374,6 @@ const RowView = React.memo(function RowView({
   const Body = (row.path.length === 1 && kind.Focus) || kind.Card
   const cardProps = { row, highlight }
   const heading = row.section ? sectionStyle(row.depth) : undefined
-
-  // Where a typed row's pill goes. A row drawing prose floats it into the text:
-  // the first line starts after it and every line below runs the full width, so
-  // it reads as the first word of the entity rather than as a column in front of
-  // it. A surface of its own can't flow around a float, and a `w-full` textarea
-  // beside a float overflows its container instead of narrowing to fit — so
-  // those keep the pill beside the mark, where it lines up with the bullet.
-  const prose = !row.editing && kind.prose
 
   const foldable = row.hasChildren
 
@@ -425,11 +414,7 @@ const RowView = React.memo(function RowView({
             <ChevronDown size={14} />
           )}
         </span>
-        {row.type && !prose && <TypePill label={row.type} className="mr-1" />}
-        {/* The content column is a flex item and so contains its own floats: the
-            pill can't escape into the row below. */}
         <div className="flex-1 min-w-0">
-          {row.type && prose && <TypePill label={row.type} className="float-left mr-1" />}
           {row.editing ? (
             <TextEditor
               autoFocus

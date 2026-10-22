@@ -7,13 +7,6 @@ import {
   invalidateEntities,
   type LoadState,
 } from '../../../core/cache'
-import {
-  checkValue,
-  fieldsOf,
-  isTextual,
-  schemaOf,
-  type SchemaField,
-} from '../../../core/schema'
 import { cn } from '../helpers/cn'
 import { callSource } from '../source/transport'
 import { useAtomValue } from '../state/hooks'
@@ -67,16 +60,12 @@ export function EntityInspector({ entityId, user, onClose }: Props): React.JSX.E
   const [missing, setMissing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('values')
-  /** The entity's type, and the fields its schema says an instance holds. */
-  const [typeId, setTypeId] = useState<string | null>(null)
-  const [fields, setFields] = useState<SchemaField[]>([])
 
   const load = useCallback(async (): Promise<void> => {
     setError(null)
     try {
       // Straight from the source rather than from the cache, and rolled up by
-      // the store: the point of this panel is what is actually written down,
-      // without an `events` script laid over the top.
+      // the store: the point of this panel is what is actually written down.
       const read = (await callSource('readEntities', {
         entityIds: [entityId],
       })) as Record<string, Entity>
@@ -84,19 +73,6 @@ export function EntityInspector({ entityId, user, onClose }: Props): React.JSX.E
       setValues(self?.values ?? {})
       setLinks(self?.outboundLinks ?? [])
       setInbound(self?.inboundLinks ?? [])
-      // A second read, because which entity to ask for is the answer to the
-      // first. The type is what says which fields this entity is *expected* to
-      // hold, which is the whole reason a box can be here before a value is.
-      const type = str(self?.values.type) ?? null
-      setTypeId(type)
-      if (type) {
-        const readType = (await callSource('readEntities', {
-          entityIds: [type],
-        })) as Record<string, Entity>
-        setFields(fieldsOf(schemaOf(readType[type]?.values)))
-      } else {
-        setFields([])
-      }
       // No values and nothing pointing either way: an id that was written to by
       // accident, or one that has since been fully unlinked.
       setMissing(
@@ -190,7 +166,7 @@ export function EntityInspector({ entityId, user, onClose }: Props): React.JSX.E
           moving between tabs never moves the tabs. */}
       <div className="mt-3 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
         {tab === 'values' && (
-          <Values values={values} fields={fields} typeId={typeId} onWrite={writeValue} />
+          <Values values={values} onWrite={writeValue} />
         )}
         {tab === 'links' && (
           <Links
@@ -228,48 +204,21 @@ const pretty = (value: unknown): string => {
 
 function Values({
   values,
-  fields,
-  typeId,
   onWrite,
 }: {
   values: Record<string, unknown>
-  /** What the entity's type says it holds — a box each, value or no value. */
-  fields: SchemaField[]
-  typeId: string | null
   onWrite: (key: string, value: unknown) => Promise<void>
 }): React.JSX.Element {
-  const declared = new Set(fields.map((f) => f.key))
-  // The schema's fields come first, in the order the schema wrote them — a schema
-  // is a form, and the order its author typed the keys in is the only ordering
-  // anyone meant. What is written and not declared then follows, sorted, because
-  // the order the store hands those back in is the order they were first written,
-  // which is nothing to anyone looking for one of them.
-  const rest = Object.keys(values)
-    .filter((key) => !declared.has(key))
-    .sort()
+  // Sorted: the order the store hands keys back in is the order they were first
+  // written, which is nothing to anyone looking for one of them.
+  const keys = Object.keys(values).sort()
 
   return (
     <>
-      {fields.length > 0 && (
-        <p className={EMPTY}>
-          The first {fields.length === 1 ? 'field' : `${fields.length} fields`} are what the{' '}
-          <span className="font-mono">{typeId}</span> type says an entity of this type holds. An
-          empty one has never been written.
-        </p>
-      )}
-      {fields.map((field) => (
-        <ValueEditor
-          key={field.key}
-          name={field.key}
-          value={values[field.key]}
-          field={field}
-          onWrite={(next) => onWrite(field.key, next)}
-        />
-      ))}
-      {fields.length === 0 && rest.length === 0 ? (
+      {keys.length === 0 ? (
         <p className={EMPTY}>No values.</p>
       ) : (
-        rest.map((key) => (
+        keys.map((key) => (
           <ValueEditor
             key={key}
             name={key}
@@ -289,23 +238,14 @@ function Values({
  * One key, editable, on the ground code sits on.
  *
  * A string is edited as itself and anything else as JSON. That distinction earns
- * its keep on exactly the values worth coming in here for: `text` and `events`
- * hold prose and code, and `"const a = 1\nconst b = 2"` on one escaped line is
+ * its keep on exactly the values worth coming in here for: `text` holds prose,
+ * and `"const a = 1\nconst b = 2"` on one escaped line is
  * not something anyone can read, let alone edit. What goes back keeps the shape
  * it was read in — a string stays a string, and an object has to stay valid JSON.
- * A field with no value yet takes that decision from its schema instead, which is
- * how an empty box knows whether it is a sentence or a number.
  *
  * Nothing is written until the tick is pressed. Blur doesn't commit and nor does
  * Enter, which puts in a newline: this is the raw store, where a value half-typed
  * is not a value, and the tick is there only when there is something to write.
- *
- * Where a schema has something to say about the value, it says it and gets out of
- * the way: the shape and the description above the box, and a value that doesn't
- * fit marked in the warning tone with the reason beside it — while the tick stays
- * exactly as willing to write it. A store where a schema could refuse a value
- * would be a store where a schema written after the fact locks its own entities
- * out.
  *
  * The bin writes null, which is what taking a value off *is* in an append-only
  * store. The row stays, showing that null: this panel is what is written down,
@@ -315,19 +255,14 @@ function Values({
 function ValueEditor({
   name,
   value,
-  field,
   onWrite,
 }: {
   name: string
   value: unknown
-  /** What the type's schema says about this key, where it declares one. */
-  field?: SchemaField
   onWrite: (value: unknown) => Promise<void>
 }): React.JSX.Element {
-  // Written and a string, or not written at all and declared as one. Anything
-  // else is JSON, including the null a cleared key holds — where the schema is
-  // what stops an empty box turning a sentence into a JSON parse error.
-  const isText = typeof value === 'string' || (value == null && isTextual(field?.schema))
+  // A string is text; anything else is JSON, including the null a cleared key holds.
+  const isText = typeof value === 'string'
   const original = value === undefined ? '' : isText ? String(value) : pretty(value)
   const [draft, setDraft] = useState(original)
   const [error, setError] = useState<string | null>(null)
@@ -352,10 +287,7 @@ function ValueEditor({
     }
   }
 
-  // Checked as you type, against what is about to be written rather than what is
-  // there: the point of a soft check is to be read before the tick is pressed.
   const parsed = parse()
-  const warning = 'value' in parsed ? checkValue(parsed.value, field?.schema) : null
 
   const save = (): void => {
     if ('problem' in parsed) {
@@ -371,12 +303,10 @@ function ValueEditor({
       <div className="flex items-center gap-2 pb-1 pl-0.5">
         <span className="font-mono text-xs text-gray-900">{name}</span>
         <span className="text-[11px] text-gray-400">
-          {field ? field.label : isText ? 'text' : 'JSON'}
+          {isText ? 'text' : 'JSON'}
         </span>
-        {field?.required && <span className="text-[11px] text-gray-400">required</span>}
         <div className="flex-1" />
         {error && <span className="text-xs text-error-600">{error}</span>}
-        {!error && warning && <span className="text-xs text-warning-700">{warning}</span>}
         {changed && (
           <IconButton title={`Write ${name}`} onClick={save} className="text-brand-600">
             <Check size={15} />
@@ -391,25 +321,18 @@ function ValueEditor({
           </IconButton>
         )}
       </div>
-      {field?.description && (
-        <p className="pb-1 pl-0.5 text-[11px] text-gray-500">{field.description}</p>
-      )}
       {/* The editor grows to its content and this box stops at a screenful, so a
           long value scrolls here rather than running off the bottom of the panel.
           The padding belongs to the editor rather than the box, or it would scroll
           away from the top of a value taller than the box. */}
       <div
-        className={cn(
-          'max-h-[40vh] overflow-auto rounded-md shadow-xs',
-          warning ? 'bg-warning-50 ring-1 ring-warning-200' : 'bg-gray-100',
-        )}
+        className="max-h-[40vh] overflow-auto rounded-md bg-gray-100 shadow-xs"
       >
         <TextEditor
           multiline
           eager
           value={draft}
           setValue={setDraft}
-          placeholder={field ? field.label : undefined}
           className={cn(CODE, 'px-2.5 py-1.5')}
         />
       </div>

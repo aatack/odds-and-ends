@@ -50,10 +50,6 @@ export interface CachedEntity {
    * The events above, rolled up — the entity everything else reads. Derived, but
    * cached and recomputed only when the events it came from change, so a row
    * keeps its identity across unrelated updates.
-   *
-   * An entity's *type* contributes nothing to it. A type describes its instances
-   * — what they should hold, what can be done with them — rather than lending
-   * them values, so what is here is what was written down.
    */
   entity: Entity
 }
@@ -433,26 +429,7 @@ function update(mutate: (draft: EntityCache) => void): void {
   })
 }
 
-/** The id of the entity a set of values names as its type, if any. */
-function typeIdOf(values: Record<string, unknown>): string | null {
-  const typeId = values.type
-  return typeof typeId === 'string' && typeId ? typeId : null
-}
-
-/**
- * Roll up every entry whose events changed, and start whatever that leaves worth
- * starting.
- *
- * A type contributes nothing to its instances' values, so this is one walk and
- * not the two it used to be: the second pass existed only to lay a type's values
- * in behind an entity's own. What is left of the type is still read here, though
- * — an entity naming one is what asks for it, since nothing else does, and its
- * `schema` is read off it wherever it is shown.
- *
- * The loop covers the whole cache rather than only what changed, since a type
- * arriving has to reach every entity that names it. That is one walk of a
- * session's worth of entities per batch of events, not per event.
- */
+/** Roll up every entry whose events changed; the rest keep their identity. */
 function reconcile(before: EntityCache, draft: EntityCache): EntityCache {
   const next: EntityCache = {}
 
@@ -466,19 +443,6 @@ function reconcile(before: EntityCache, draft: EntityCache): EntityCache {
     // entry is whatever the change being reconciled left it as.
     next[id] = { ...entry, entity: rollupEntity(id, entry.events) }
   }
-
-  /** Types nothing has read, or has read but since invalidated. */
-  const staleTypes = new Set<string>()
-
-  for (const [id, entry] of Object.entries(next)) {
-    const typeId = typeIdOf(entry.entity.values)
-    // Naming a type is what asks for it — nothing else reads one, so without
-    // this a type would never load at all, and never reload after a write.
-    if (typeId && unread(stateOf(next, typeId))) staleTypes.add(typeId)
-  }
-
-  // It writes back here, so it may not run inside the update.
-  if (staleTypes.size) queueMicrotask(() => requestEntities([...staleTypes]))
 
   return same(before, next) ? before : next
 }
