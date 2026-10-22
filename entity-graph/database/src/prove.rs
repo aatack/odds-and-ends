@@ -32,11 +32,13 @@ pub enum ProveStrategy {
     /// stopping at the first layer that contains a root. Shortest.
     #[default]
     Backward,
-    /// Breadth-first search from both ends, expanding the smaller frontier,
-    /// stopping when the frontiers meet. Shortest.
+    /// Breadth-first search from both ends, expanding the shallower side
+    /// (balanced depths), stopping when the frontiers meet. Shortest, unless a
+    /// [`ProveOptions::max_nodes`] budget returns an in-hand proof early.
     Bidirectional,
-    /// Depth-first search from the item over reversed relationships. Returns
-    /// the first proof found, not necessarily the shortest.
+    /// Depth-first search from the item over reversed relationships, driving
+    /// the walk's own read-ahead cache (see [`crate::walk`]). Returns the first
+    /// proof found, not necessarily the shortest.
     Walk,
 }
 
@@ -48,8 +50,11 @@ pub struct ProveOptions {
     /// [`ProveOutcome::NoPath`] (a definite "no path of length <= max_depth").
     pub max_depth: Option<usize>,
     /// The budget: the most entities the search may expand (read links for) in
-    /// total. `None` is unlimited. If the budget runs out before the search
-    /// can decide, the answer is [`ProveOutcome::Unknown`].
+    /// total. `None` is unlimited. If the budget runs out with no proof yet
+    /// found, the answer is [`ProveOutcome::Unknown`]. If a proof is already in
+    /// hand (for example a `Bidirectional` meeting that was not yet shown to be
+    /// shortest), that proof is returned instead — still valid, but possibly
+    /// not the shortest.
     pub max_nodes: Option<usize>,
     /// Include archived (null-typed) and never-typed entities. Default false:
     /// the same type filter as [`Store::links`], so archived entities and
@@ -810,12 +815,15 @@ impl Store {
     /// `root = p0, p1, ..., pk = item` where each `p(i) -> p(i+1)` is such a
     /// step from `p(i)`'s type. The map key is the type of the upper entity.
     ///
-    /// Semantics are in `DESIGN.md` section 11.3. In brief: every entity on
-    /// the path needs a live non-null type unless
-    /// [`ProveOptions::include_archived`]; a removed link does not count;
-    /// `item == root` is a depth-0 proof; unknown IDs and empty roots give
-    /// [`ProveOutcome::NoPath`]; [`ProveStrategy::Backward`] and
-    /// [`ProveStrategy::Bidirectional`] return a shortest proof.
+    /// In brief: every upper node on the path (a root or an intermediate)
+    /// needs a live non-null type that the map can step from; the item needs
+    /// one too unless [`ProveOptions::include_archived`], in which case it may
+    /// be archived or untyped. A removed link does not count. `item == root`
+    /// is a depth-0 proof when the item is known. Unknown IDs and empty roots
+    /// give [`ProveOutcome::NoPath`]. [`ProveStrategy::Backward`] and
+    /// [`ProveStrategy::Bidirectional`] return a shortest proof (fewest links),
+    /// except when a [`ProveOptions::max_nodes`] budget returns an in-hand
+    /// proof early.
     pub fn prove(
         &self,
         branch: BranchId,
