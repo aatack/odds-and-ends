@@ -75,7 +75,8 @@ test('puts the kind in the name box, and an extra under it once ticked', () => {
   assert.match(html, />Number</)
   assert.match(html, /Minimum/)
   assert.match(html, /value="2"/)
-  assert.match(html, /value="How many"/)
+  // The description is the form's own multi-line box.
+  assert.match(html, /<textarea[^>]*>How many<\/textarea>/)
   // Not required, so the chip says so.
   assert.match(html, />\?</)
 })

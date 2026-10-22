@@ -43,16 +43,26 @@ export function SchemaForm({
   value,
   setValue,
   schema,
+  bare = false,
 }: {
   value: unknown
   setValue: (value: unknown) => void
   schema: JsonSchema
+  /**
+   * Inside another surface rather than on its own: the lines with no box around
+   * them, filling the space they are given. The schema builder draws its
+   * options this way.
+   */
+  bare?: boolean
 }): React.JSX.Element {
   // An object is its fields, with no line for itself: the box is the object.
   const fields = typeOf(schema) === 'object' && propertiesOf(schema).length > 0
   return (
     <div
-      className={cn(LINES, 'overflow-hidden rounded-md border border-gray-200 bg-white shadow-xs')}
+      className={cn(
+        LINES,
+        !bare && 'overflow-hidden rounded-md border border-gray-200 bg-white shadow-xs',
+      )}
     >
       {fields ? (
         <Fields schema={schema} value={value} onChange={setValue} />

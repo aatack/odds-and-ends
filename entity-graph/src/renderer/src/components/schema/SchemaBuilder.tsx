@@ -4,6 +4,7 @@ import { cn } from '../../helpers/cn'
 import { Button } from '../ui/Button'
 import { Dropdown, DropdownSeparator } from '../ui/Dropdown'
 import { MenuChip, MenuItem } from './Menu'
+import { SchemaForm } from './SchemaForm'
 import {
   META_SCHEMA,
   MONOSPACE_KEYWORD,
@@ -100,14 +101,15 @@ function kindOf(schema: JsonSchema): Kind {
 
 /**
  * The extras a kind can carry: JSON Schema keywords, ticked on and off in the
- * menu. One with an `input` takes a value, entered in a box under the row; one
- * without is the tick alone, written as `set`.
+ * menu. One with a `field` takes a value: `field` is that value's own schema,
+ * and the ticked ones are drawn by the schema form, under the row. One without
+ * is the tick alone, written as `initial`.
  */
 interface Extra {
   key: string
   label: string
   kinds: readonly Kind[] | 'all'
-  input?: 'text' | 'number' | 'format'
+  field?: JsonSchema
   /** What ticking it writes, before anything is typed. */
   initial: unknown
 }
@@ -119,35 +121,35 @@ const EXTRAS: Extra[] = [
     key: 'description',
     label: 'Description',
     kinds: 'all',
-    input: 'text',
+    field: { type: 'string', [MULTILINE_KEYWORD]: true },
     initial: '',
   },
   {
     key: 'minimum',
     label: 'Minimum',
     kinds: ['number', 'integer'],
-    input: 'number',
+    field: { type: 'number' },
     initial: 0,
   },
   {
     key: 'maximum',
     label: 'Maximum',
     kinds: ['number', 'integer'],
-    input: 'number',
+    field: { type: 'number' },
     initial: 100,
   },
   {
     key: 'minLength',
     label: 'Minimum length',
     kinds: ['string'],
-    input: 'number',
+    field: { type: 'integer', minimum: 0 },
     initial: 1,
   },
   {
     key: 'maxLength',
     label: 'Maximum length',
     kinds: ['string'],
-    input: 'number',
+    field: { type: 'integer', minimum: 0 },
     initial: 100,
   },
   { key: MULTILINE_KEYWORD, label: 'Multi-line', kinds: ['string'], initial: true },
@@ -156,28 +158,28 @@ const EXTRAS: Extra[] = [
     key: 'pattern',
     label: 'Pattern',
     kinds: ['string'],
-    input: 'text',
+    field: { type: 'string', [MONOSPACE_KEYWORD]: true },
     initial: '',
   },
   {
     key: 'format',
     label: 'Format',
     kinds: ['string'],
-    input: 'format',
+    field: { anyOf: FORMATS.map((f) => ({ const: f })) },
     initial: 'date',
   },
   {
     key: 'minItems',
     label: 'Minimum items',
     kinds: ['array'],
-    input: 'number',
+    field: { type: 'integer', minimum: 0 },
     initial: 1,
   },
   {
     key: 'maxItems',
     label: 'Maximum items',
     kinds: ['array'],
-    input: 'number',
+    field: { type: 'integer', minimum: 0 },
     initial: 10,
   },
   {
@@ -271,7 +273,7 @@ function SchemaNode({
     else out[key] = value
     onChange(out)
   }
-  const shown = extrasFor(kind).filter((e) => e.input && e.key in schema)
+  const shown = extrasFor(kind).filter((e) => e.field && e.key in schema)
   const remove = slot?.onRemove ?? onRemove
   // Anything holding schemas of its own folds, so a deep schema reads as an
   // outline. Open to begin with: a fold is something done to it.
@@ -304,14 +306,7 @@ function SchemaNode({
         }
       >
         {kind === 'literal' && <LiteralValue schema={schema} onChange={onChange} />}
-        {shown.map((extra) => (
-          <ExtraInput
-            key={extra.key}
-            extra={extra}
-            value={schema[extra.key]}
-            onChange={(v) => set(extra.key, v)}
-          />
-        ))}
+        {shown.length > 0 && <ExtraFields extras={shown} schema={schema} onChange={onChange} />}
       </NameBox>
       {open && kind === 'object' && <Properties schema={schema} onChange={onChange} />}
       {open && kind === 'array' && (
@@ -489,7 +484,7 @@ function KindMenu({
             </MenuItem>
           )}
           {extrasFor(kind).map((extra) => {
-            const on = extra.input ? extra.key in schema : schema[extra.key] === extra.initial
+            const on = extra.field ? extra.key in schema : schema[extra.key] === extra.initial
             return (
               <MenuItem
                 key={extra.key}
@@ -518,67 +513,44 @@ function KindMenu({
   )
 }
 
-/** An extra that takes a value, as a line of the name box. */
-function ExtraInput({
-  extra,
-  value,
+/**
+ * The ticked extras that take a value, drawn by the schema form — bare, as lines
+ * of the name box — from each extra's own schema. So a description is the
+ * form's multi-line box, a format its picker, a bound its number box, and any
+ * value that doesn't fit says so, as it would anywhere else.
+ */
+function ExtraFields({
+  extras,
+  schema,
   onChange,
 }: {
-  extra: Extra
-  value: unknown
-  onChange: (value: unknown) => void
+  extras: Extra[]
+  schema: JsonSchema
+  onChange: (schema: JsonSchema) => void
 }): React.JSX.Element {
+  const fields: JsonSchema = {
+    type: 'object',
+    properties: Object.fromEntries(extras.map((e) => [e.key, { ...e.field, title: e.label }])),
+  }
+  const values = Object.fromEntries(extras.map((e) => [e.key, schema[e.key]]))
   return (
-    <BoxLine label={extra.label}>
-      {extra.input === 'format' ? (
-        <select
-          className={cn(BARE, 'pr-2')}
-          value={String(value ?? '')}
-          onChange={(e) => onChange(e.target.value)}
-        >
-          {FORMATS.map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-        </select>
-      ) : extra.input === 'number' ? (
-        <NumberInput value={value} onChange={onChange} />
-      ) : (
-        <input
-          className={extra.key === 'pattern' ? BARE_MONO : BARE}
-          value={typeof value === 'string' ? value : ''}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      )}
-    </BoxLine>
-  )
-}
-
-/** A number, held as text so a half-typed `-` survives; only a number is written. */
-function NumberInput({
-  value,
-  onChange,
-}: {
-  value: unknown
-  onChange: (value: unknown) => void
-}): React.JSX.Element {
-  const [text, setText] = useState(typeof value === 'number' ? String(value) : '')
-  useEffect(() => {
-    if (typeof value === 'number' && Number(text) !== value) setText(String(value))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value])
-  return (
-    <input
-      className={BARE_MONO}
-      inputMode="decimal"
-      value={text}
-      onChange={(e) => {
-        setText(e.target.value)
-        const n = Number(e.target.value)
-        if (e.target.value.trim() && Number.isFinite(n)) onChange(n)
-      }}
-    />
+    <div className="border-t border-gray-100">
+      <SchemaForm
+        bare
+        schema={fields}
+        value={values}
+        setValue={(next) => {
+          const out = { ...schema }
+          // A box emptied is the extra still ticked, with nothing in it yet: it
+          // comes off from the menu, not by clearing it.
+          for (const e of extras) {
+            const v = isObject(next) ? next[e.key] : undefined
+            if (v !== undefined) out[e.key] = v
+          }
+          onChange(out)
+        }}
+      />
+    </div>
   )
 }
 
