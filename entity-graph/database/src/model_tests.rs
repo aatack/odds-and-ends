@@ -70,6 +70,10 @@ struct Batch {
 struct Model {
     bs: Vec<MBranch>,
     batches: Vec<Batch>,
+    /// Every entity ID ever referenced by a write, on any branch: the store's
+    /// append-only `entities` table, which `Store::prove` consults with
+    /// `lookup`. It never shrinks, not even on undo.
+    interned: HashSet<String>,
 }
 
 type Entry = (usize, i64, i64);
@@ -224,6 +228,20 @@ impl Winners {
             )
     }
 
+    /// The non-null `type` text of an entity, the key `Store::prove` uses.
+    fn type_of(&self, ent: &str) -> Option<String> {
+        match self.vals.get(&(ent.to_owned(), TYPE_KEY.to_owned())) {
+            Some((_, _, _, ev)) => match &ev.kind {
+                Kind::Val {
+                    val: Value::Text(t),
+                    ..
+                } => Some(t.clone()),
+                _ => None,
+            },
+            None => None,
+        }
+    }
+
     fn exists(&self, ent: &str) -> bool {
         self.vals.keys().any(|(e, _)| e == ent)
             || self.lnks.keys().any(|(s, _, d)| s == ent || d == ent)
@@ -283,6 +301,21 @@ impl Model {
     fn write(&mut self, b: usize, author: &str, ops: &[Op], now: i64) -> Option<(i64, i64)> {
         if self.bs[b].archived {
             return None;
+        }
+        for op in ops {
+            match op {
+                Op::SetValue { entity, .. } => {
+                    self.interned.insert(entity.clone());
+                }
+                Op::Link {
+                    source,
+                    destination,
+                    ..
+                } => {
+                    self.interned.insert(source.clone());
+                    self.interned.insert(destination.clone());
+                }
+            }
         }
         let br = &mut self.bs[b];
         let ts = now.max(br.last_ts);
@@ -444,6 +477,7 @@ mod stats {
     pub static FINDS_PAGED: AtomicUsize = AtomicUsize::new(0);
     pub static READS: AtomicUsize = AtomicUsize::new(0);
     pub static WALKS: AtomicUsize = AtomicUsize::new(0);
+    pub static PROVES: AtomicUsize = AtomicUsize::new(0);
     pub static UNDOS: AtomicUsize = AtomicUsize::new(0);
     pub static MERGES: AtomicUsize = AtomicUsize::new(0);
     pub static MAX_RENAMES_ONE_ENTITY: AtomicUsize = AtomicUsize::new(0);
@@ -488,6 +522,7 @@ impl Rig {
                 archived: false,
             }],
             batches: vec![],
+            interned: HashSet::new(),
         };
         Self {
             store,
@@ -985,6 +1020,299 @@ fn compare_walks(rig: &Rig, r: &mut Rng, ctx: &str) {
     }
 }
 
+// --- comparing proves ---------------------------------------------------------
+
+/// The reverse direction, matching `prove`.
+fn rev_dir(d: Direction) -> Direction {
+    match d {
+        Direction::Outbound => Direction::Inbound,
+        Direction::Inbound => Direction::Outbound,
+    }
+}
+
+/// The model's answer to a prove query, ignoring any node budget: whether the
+/// item is reachable from a root under the exact semantics of `Store::prove`,
+/// and if so the shortest number of links. Backward BFS over the model's live
+/// links and types.
+#[derive(Debug, PartialEq, Eq)]
+enum MProve {
+    Proved(usize),
+    NoPath,
+}
+
+fn model_prove(
+    m: &Model,
+    w: &Winners,
+    item: &str,
+    roots: &[&str],
+    rel: &Follow,
+    include_archived: bool,
+    max_depth: Option<usize>,
+) -> MProve {
+    let typed_only = !include_archived;
+    if roots.is_empty() {
+        return MProve::NoPath;
+    }
+    let item_ty = w.type_of(item);
+    // The item must be typed in the default mode (the archived rule).
+    if typed_only && item_ty.is_none() {
+        return MProve::NoPath;
+    }
+    // item == a root: a depth-0 proof, if the item is known (interned).
+    if roots.contains(&item) && (item_ty.is_some() || m.interned.contains(item)) {
+        return MProve::Proved(0);
+    }
+    // Distinct downward pairs.
+    let mut forward: Vec<(String, Direction)> = Vec::new();
+    for pairs in rel.values() {
+        for p in pairs {
+            if !forward.contains(p) {
+                forward.push(p.clone());
+            }
+        }
+    }
+    let mut visited: HashSet<String> = HashSet::from([item.to_owned()]);
+    let mut frontier: Vec<String> = vec![item.to_owned()];
+    let mut depth = 0usize;
+    loop {
+        if frontier.is_empty() {
+            return MProve::NoPath;
+        }
+        if max_depth.is_some_and(|mx| depth >= mx) {
+            return MProve::NoPath;
+        }
+        let mut next: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for x in &frontier {
+            for (lt, d) in &forward {
+                // Candidate predecessors `u` of `x` via the downward pair
+                // (lt, d): read `x`'s links in the reversed direction.
+                let rd = rev_dir(*d);
+                for link in w.links(m, x, lt, rd, false) {
+                    let u = match rd {
+                        Direction::Outbound => link.destination.clone(),
+                        Direction::Inbound => link.source.clone(),
+                    };
+                    if visited.contains(&u) {
+                        continue;
+                    }
+                    let Some(tu) = w.type_of(&u) else {
+                        continue;
+                    };
+                    if !rel
+                        .get(&tu)
+                        .is_some_and(|ps| ps.contains(&(lt.clone(), *d)))
+                    {
+                        continue;
+                    }
+                    visited.insert(u.clone());
+                    next.insert(u);
+                }
+            }
+        }
+        depth += 1;
+        if next.iter().any(|u| roots.contains(&u.as_str())) {
+            return MProve::Proved(depth);
+        }
+        frontier = next.into_iter().collect();
+    }
+}
+
+/// Assert a returned proof is valid against the model: it starts at a root,
+/// ends at the item, every step is a live link of a mapped pair from the upper
+/// node's type, every entity is typed (except the item under include_archived),
+/// and it is within `max_depth`.
+#[allow(clippy::too_many_arguments)]
+fn model_validate(
+    m: &Model,
+    w: &Winners,
+    proof: &Proof,
+    item: &str,
+    roots: &[&str],
+    rel: &Follow,
+    include_archived: bool,
+    max_depth: Option<usize>,
+    ctx: &str,
+) {
+    assert_eq!(
+        proof.links.len() + 1,
+        proof.path.len(),
+        "{ctx}: proof shape"
+    );
+    assert!(
+        roots.contains(&proof.path[0].as_str()),
+        "{ctx}: proof root {} not in {roots:?}",
+        proof.path[0]
+    );
+    assert_eq!(proof.path.last().unwrap(), item, "{ctx}: proof item");
+    if let Some(mx) = max_depth {
+        assert!(proof.links.len() <= mx, "{ctx}: proof exceeds max_depth");
+    }
+    for (i, link) in proof.links.iter().enumerate() {
+        let upper = &proof.path[i];
+        let lower = &proof.path[i + 1];
+        let tu = w
+            .type_of(upper)
+            .unwrap_or_else(|| panic!("{ctx}: upper node {upper} is untyped"));
+        let d = if &link.source == upper && &link.destination == lower {
+            Direction::Outbound
+        } else if &link.source == lower && &link.destination == upper {
+            Direction::Inbound
+        } else {
+            panic!("{ctx}: link does not connect {upper} -> {lower}");
+        };
+        assert!(
+            rel.get(&tu)
+                .is_some_and(|ps| ps.contains(&(link.link_type.clone(), d))),
+            "{ctx}: step {upper}({tu}) -> {lower} uses an unmapped pair"
+        );
+        let live = w.links(m, upper, &link.link_type, d, false);
+        assert!(
+            live.contains(link),
+            "{ctx}: returned link {link:?} is not live in the model"
+        );
+    }
+    for (idx, e) in proof.path.iter().enumerate() {
+        let is_item = idx == proof.path.len() - 1;
+        if w.type_of(e).is_none() {
+            assert!(
+                is_item && include_archived,
+                "{ctx}: untyped non-item {e} on the path"
+            );
+        }
+    }
+}
+
+/// A random entity ID: mostly `e0..e6`, occasionally an unknown id.
+fn prove_id(r: &mut Rng) -> String {
+    if r.chance(1, 12) {
+        "ghost".to_owned()
+    } else {
+        ent(r.below(ENTS + 1))
+    }
+}
+
+/// A random relationship map over the model's types and link types, with
+/// random directions; some types are left out (a type not in the map).
+fn rand_relationships(r: &mut Rng) -> Follow {
+    let mut m: Follow = HashMap::new();
+    for ty in ["task", "list", "note"] {
+        if r.chance(2, 3) {
+            let mut pairs: Vec<(String, Direction)> = Vec::new();
+            for (lt, d) in [
+                ("child", Direction::Outbound),
+                ("child", Direction::Inbound),
+                ("ref", Direction::Outbound),
+                ("ref", Direction::Inbound),
+            ] {
+                if r.chance(1, 2) {
+                    pairs.push((lt.to_owned(), d));
+                }
+            }
+            if !pairs.is_empty() {
+                m.insert(ty.to_owned(), pairs);
+            }
+        }
+    }
+    m
+}
+
+fn compare_proves(rig: &Rig, r: &mut Rng, ctx: &str) {
+    const STRATS: [ProveStrategy; 3] = [
+        ProveStrategy::Backward,
+        ProveStrategy::Bidirectional,
+        ProveStrategy::Walk,
+    ];
+    for (b, id) in rig.ids.iter().enumerate() {
+        let w = rig.m.view(b);
+        for _ in 0..2 {
+            bump(&stats::PROVES);
+            let item = prove_id(r);
+            let mut roots: Vec<String> = (0..1 + r.below(3)).map(|_| prove_id(r)).collect();
+            if r.chance(1, 4) {
+                roots.push(item.clone());
+            }
+            let root_refs: Vec<&str> = roots.iter().map(String::as_str).collect();
+            let rel = rand_relationships(r);
+            let include_archived = r.chance(1, 3);
+            let max_depth = if r.chance(1, 2) {
+                Some(r.below(6))
+            } else {
+                None
+            };
+            let max_nodes = if r.chance(1, 4) {
+                Some(1 + r.below(8))
+            } else {
+                None
+            };
+            let model = model_prove(
+                &rig.m,
+                &w,
+                &item,
+                &root_refs,
+                &rel,
+                include_archived,
+                max_depth,
+            );
+            for s in STRATS {
+                let p = rig
+                    .store
+                    .prove(
+                        *id,
+                        &item,
+                        &root_refs,
+                        &rel,
+                        ProveOptions {
+                            max_depth,
+                            max_nodes,
+                            include_archived,
+                            strategy: s,
+                        },
+                    )
+                    .unwrap();
+                let case = format!(
+                    "{ctx}: prove {s:?} item={item} roots={roots:?} rel={rel:?} \
+                     archived={include_archived} depth={max_depth:?} nodes={max_nodes:?} on b{b}"
+                );
+                match &p.outcome {
+                    ProveOutcome::Proved(proof) => {
+                        model_validate(
+                            &rig.m,
+                            &w,
+                            proof,
+                            &item,
+                            &root_refs,
+                            &rel,
+                            include_archived,
+                            max_depth,
+                            &case,
+                        );
+                        // A valid in-limit proof means the model must agree a
+                        // path exists.
+                        let MProve::Proved(len) = model else {
+                            panic!("{case}: Proved but the model says NoPath");
+                        };
+                        if matches!(s, ProveStrategy::Backward | ProveStrategy::Bidirectional) {
+                            if max_nodes.is_none() {
+                                assert_eq!(proof.links.len(), len, "{case}: not the shortest");
+                            } else {
+                                assert!(proof.links.len() >= len, "{case}: shorter than shortest");
+                            }
+                        }
+                    }
+                    ProveOutcome::NoPath => {
+                        // NoPath is only ever definitive (a budget cut gives
+                        // Unknown), so the model must also say NoPath.
+                        assert_eq!(model, MProve::NoPath, "{case}: NoPath but the model proves");
+                    }
+                    ProveOutcome::Unknown => {
+                        assert!(max_nodes.is_some(), "{case}: Unknown without a budget");
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn run_case(seed: u64) {
     let mut r = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
     let mut rig = Rig::new();
@@ -1006,12 +1334,14 @@ fn run_case(seed: u64) {
             compare_finds(&rig, &mut r, &format!("seed {seed} after op {i}"));
             if heavy {
                 compare_walks(&rig, &mut r, &format!("seed {seed} after op {i}"));
+                compare_proves(&rig, &mut r, &format!("seed {seed} after op {i}"));
             }
         }
     }
     let ctx = format!("seed {seed} final");
     compare_reads(&rig, &ctx);
     compare_walks(&rig, &mut r, &ctx);
+    compare_proves(&rig, &mut r, &ctx);
     compare_finds(&rig, &mut r, &ctx);
 }
 
@@ -1033,8 +1363,8 @@ fn the_store_agrees_with_a_naive_model_on_random_histories() {
         eprintln!(
             "diff stats: cases {} (history-heavy {}), title writes {}, rename bursts {} \
              (with a fork {}), most renames in one burst {}, read checks {}, walk checks {}, \
-             finds {} (on branches with a frozen range {}, with more than one page {}), \
-             undos {}, merges {}",
+             prove comparisons {}, finds {} (on branches with a frozen range {}, with more than \
+             one page {}), undos {}, merges {}",
             g(&stats::CASES),
             g(&stats::HEAVY_CASES),
             g(&stats::RENAMES),
@@ -1043,6 +1373,7 @@ fn the_store_agrees_with_a_naive_model_on_random_histories() {
             g(&stats::MAX_RENAMES_ONE_ENTITY),
             g(&stats::READS),
             g(&stats::WALKS),
+            g(&stats::PROVES),
             g(&stats::FINDS),
             g(&stats::FINDS_FROZEN),
             g(&stats::FINDS_PAGED),
