@@ -14,7 +14,8 @@ const EXAMPLE_SCHEMA: JsonSchema = {
   type: 'object',
   properties: {
     title: { type: 'string', description: 'What it is called' },
-    servings: { type: 'integer' },
+    servings: { type: 'integer', minimum: 1, maximum: 12 },
+    method: { type: 'string', 'x-multiline': true, description: 'How to make it' },
     vegetarian: { type: 'boolean' },
     course: { anyOf: [{ const: 'starter' }, { const: 'main' }, { const: 'dessert' }] },
     rating: { anyOf: [{ type: 'integer', description: 'Out of five' }, { type: 'null' }] },

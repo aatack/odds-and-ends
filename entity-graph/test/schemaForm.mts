@@ -3,7 +3,7 @@
 //   npm test
 
 import assert from 'node:assert/strict'
-import { defaultFor, propertiesOf, typeOf } from '../src/renderer/src/components/schema/schema'
+import { defaultFor, problemOf, propertiesOf, typeOf } from '../src/renderer/src/components/schema/schema'
 
 const tests: [string, () => void][] = []
 const test = (name: string, run: () => void): void => void tests.push([name, run])
@@ -33,6 +33,23 @@ test('makes a fresh value with its required fields filled', () => {
 test('keeps properties in the order written', () => {
   const keys = propertiesOf({ properties: { z: {}, a: {}, m: {} } }).map(([k]) => k)
   assert.deepEqual(keys, ['z', 'a', 'm'])
+})
+
+test('says why a value does not fit, and says nothing when it does', () => {
+  assert.equal(problemOf({ type: 'number', minimum: 2, maximum: 5 }, 1), 'At least 2')
+  assert.equal(problemOf({ type: 'number', minimum: 2, maximum: 5 }, 9), 'At most 5')
+  assert.equal(problemOf({ type: 'number', minimum: 2, maximum: 5 }, 3), null)
+  assert.equal(problemOf({ type: 'integer' }, 1.5), 'Not a whole number')
+  assert.equal(problemOf({ type: 'string', minLength: 3 }, 'ab'), 'At least 3 characters')
+  assert.equal(problemOf({ type: 'string', pattern: '^a' }, 'ba'), "Doesn't match ^a")
+  assert.equal(problemOf({ type: 'string', format: 'email' }, 'nope'), 'Not an email')
+  assert.equal(problemOf({ type: 'array', maxItems: 1 }, [1, 2]), 'At most 1 item')
+  assert.equal(problemOf({ type: 'array', uniqueItems: true }, [1, 1]), 'Items repeat')
+  assert.equal(problemOf({ anyOf: [{ const: 'a' }, { const: 'b' }] }, 'c'), 'Fits none of the options')
+  assert.equal(problemOf({ type: 'string' }, 3), 'Not a string')
+  // Absent is fine unless it is required.
+  assert.equal(problemOf({ type: 'string' }, undefined), null)
+  assert.equal(problemOf({ type: 'string' }, undefined, true), 'Required')
 })
 
 let failed = 0

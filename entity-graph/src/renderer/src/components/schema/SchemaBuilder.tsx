@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, ChevronRight, Plus, Trash03 } from '@untitledui/icons'
 import { cn } from '../../helpers/cn'
 import { Button } from '../ui/Button'
 import { Dropdown, DropdownSeparator } from '../ui/Dropdown'
 import {
+  MULTILINE_KEYWORD,
   SCHEMA_TYPES,
   isObject,
   propertiesOf,
@@ -105,6 +106,7 @@ const EXTRAS: Extra[] = [
     input: 'number',
     initial: 100,
   },
+  { key: MULTILINE_KEYWORD, label: 'Multi-line', kinds: ['string'], initial: true },
   {
     key: 'pattern',
     label: 'Pattern',
@@ -350,9 +352,16 @@ function BoxLine({
   label: string
   children: React.ReactNode
 }): React.JSX.Element {
+  const line = useRef<HTMLDivElement>(null)
   return (
-    <div className="flex h-8 items-center border-t border-gray-100">
-      <span className="w-28 shrink-0 pl-2.5 text-[11px] text-gray-500">{label}</span>
+    <div ref={line} className="flex h-8 items-stretch border-t border-gray-100">
+      {/* Pressing the label puts the caret in its control. */}
+      <span
+        className="flex w-28 shrink-0 cursor-default items-center border-r border-gray-100 pl-2.5 text-[11px] text-gray-500"
+        onClick={() => line.current?.querySelector<HTMLElement>('input, select')?.focus()}
+      >
+        {label}
+      </span>
       {children}
     </div>
   )

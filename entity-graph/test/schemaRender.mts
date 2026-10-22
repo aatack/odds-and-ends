@@ -110,6 +110,24 @@ test('draws the form as one box of lines, nested lines one step in', () => {
   assert.match(html, /padding-left:42px/)
 })
 
+test('marks a line whose value breaks its schema, and draws a multi-line string as a text box', () => {
+  const html = renderToStaticMarkup(
+    h(SchemaForm, {
+      schema: {
+        type: 'object',
+        properties: {
+          servings: { type: 'integer', minimum: 1 },
+          method: { type: 'string', 'x-multiline': true },
+        },
+      },
+      value: { servings: 0, method: 'Boil.' },
+      setValue: noop,
+    }),
+  )
+  assert.match(html, /At least 1/)
+  assert.match(html, /<textarea[^>]*>Boil\.<\/textarea>/)
+})
+
 let failed = 0
 for (const [name, run] of tests) {
   try {

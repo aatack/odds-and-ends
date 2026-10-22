@@ -1,12 +1,15 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Plus, Trash03 } from '@untitledui/icons'
 import { cn } from '../../helpers/cn'
 import { Switch } from '../ui/Switch'
+import { TextEditor } from '../ui/TextEditor'
 import { JsonEditor } from './JsonEditor'
 import {
   defaultFor,
   isObject,
+  MULTILINE_KEYWORD,
   matches,
+  problemOf,
   propertiesOf,
   requiredOf,
   typeOf,
@@ -75,16 +78,19 @@ interface EntryProps {
 }
 
 /**
- * One line: the label, and the control. The label's column is the same width at
- * every depth, its text pushed in by the depth, so the controls line up down the
- * whole box. Focus inside a line tints it, which is where the box's focus ring
- * would otherwise have to be.
+ * One line: the label, a hairline, and the control. The label's column is the
+ * same width at every depth, its text pushed in by the depth, so the controls
+ * line up down the whole box; pressing the label puts the caret in its control.
+ * A value that doesn't fit its schema tints the line in the warning tone and
+ * says why at its end — and is written all the same.
  */
 function Line({
   label,
   depth,
   required,
   description,
+  problem,
+  tall,
   aside,
   children,
 }: {
@@ -92,21 +98,40 @@ function Line({
   depth: number
   required?: boolean
   description?: string
+  /** Why the value doesn't fit, if it doesn't. */
+  problem?: string | null
+  /** The control grows past one line, so the label sits at its top. */
+  tall?: boolean
   /** Something small at the end of the line: a remove, an add. */
   aside?: React.ReactNode
   children?: React.ReactNode
 }): React.JSX.Element {
+  const control = useRef<HTMLDivElement>(null)
   return (
-    <div className="group flex min-h-8 items-stretch focus-within:bg-brand-50/40">
+    <div
+      className={cn(
+        'group flex min-h-8 items-stretch',
+        problem ? 'bg-warning-50/60' : 'focus-within:bg-brand-50/40',
+      )}
+    >
       <div
-        className="flex w-40 shrink-0 items-center gap-1 truncate py-1.5 pr-2 text-[12px] text-gray-500"
+        className={cn(
+          'flex w-40 shrink-0 cursor-default gap-1 truncate border-r border-gray-100 py-1.5 pr-2 text-[12px] leading-5 text-gray-500',
+          tall ? 'items-start' : 'items-center',
+        )}
         style={{ paddingLeft: 10 + depth * INDENT }}
         title={description}
+        onClick={() => control.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus()}
       >
         <span className="truncate">{label}</span>
         {required && <span className="shrink-0 text-gray-300">*</span>}
       </div>
-      <div className="flex min-w-0 flex-1 items-center">{children}</div>
+      <div ref={control} className={cn('flex min-w-0 flex-1', tall ? 'items-start' : 'items-center')}>
+        {children}
+      </div>
+      {problem && (
+        <div className="flex shrink-0 items-center px-2 text-[11px] text-warning-700">{problem}</div>
+      )}
       {aside && <div className="flex shrink-0 items-center pr-1.5">{aside}</div>}
     </div>
   )
@@ -197,8 +222,20 @@ function Entry({
       <Trash03 size={13} />
     </LineButton>
   )
-  const line = (children: React.ReactNode, aside: React.ReactNode = remove): React.JSX.Element => (
-    <Line label={label} depth={depth} required={required} description={description} aside={aside}>
+  const line = (
+    children: React.ReactNode,
+    aside: React.ReactNode = remove,
+    tall = false,
+  ): React.JSX.Element => (
+    <Line
+      tall={tall}
+      label={label}
+      depth={depth}
+      required={required}
+      description={description}
+      problem={problemOf(schema, value, required)}
+      aside={aside}
+    >
       {children}
     </Line>
   )
@@ -218,6 +255,21 @@ function Entry({
 
   switch (typeOf(schema)) {
     case 'string':
+      if (schema[MULTILINE_KEYWORD] === true) {
+        return line(
+          <div className="w-full px-2.5 py-1.5">
+            <TextEditor
+              multiline
+              eager
+              value={typeof value === 'string' ? value : ''}
+              setValue={onChange}
+              className="text-[13px] leading-5 text-gray-900"
+            />
+          </div>,
+          remove,
+          true,
+        )
+      }
       return line(
         <input
           className={BARE}
@@ -268,7 +320,11 @@ function summary(value: unknown): string {
   return ''
 }
 
-type LineMaker = (children: React.ReactNode, aside?: React.ReactNode) => React.JSX.Element
+type LineMaker = (
+  children: React.ReactNode,
+  aside?: React.ReactNode,
+  tall?: boolean,
+) => React.JSX.Element
 
 function List({
   schema,

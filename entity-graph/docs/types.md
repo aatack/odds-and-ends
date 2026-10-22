@@ -41,7 +41,12 @@ Ordinary JSON Schema, usually an object with `properties`:
 ```
 
 Properties are read in the order written. A schema describes; it does not
-enforce. A value that does not fit is still written.
+enforce. A value that does not fit is still written — the form marks its line and
+says why (`problemOf` in `components/schema/schema.ts`).
+
+One extension keyword: `"x-multiline": true` on a string draws it as a growing
+text box rather than one line. JSON Schema itself has no word for how a value is
+entered; to everything else it is an ordinary string.
 
 ### `onLoad`
 

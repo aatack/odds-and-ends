@@ -4,6 +4,13 @@
 
 export type JsonSchema = Record<string, unknown>
 
+/**
+ * A string meant to hold more than a line: an extension keyword, since JSON
+ * Schema has no word for how a value is entered. The form draws a growing text
+ * box for it; to anything else it is a string like any other.
+ */
+export const MULTILINE_KEYWORD = 'x-multiline'
+
 /** The kinds of value the form draws a control for, and the builder offers. */
 export const SCHEMA_TYPES = ['string', 'number', 'integer', 'boolean', 'null', 'object', 'array'] as const
 export type SchemaType = (typeof SCHEMA_TYPES)[number]
@@ -115,3 +122,89 @@ export function matches(schema: JsonSchema, value: unknown): boolean {
       return true
   }
 }
+
+const FORMAT_TESTS: Record<string, RegExp> = {
+  date: /^\d{4}-\d{2}-\d{2}$/,
+  'date-time': /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?$/,
+  time: /^\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/,
+  email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+  uri: /^[a-z][a-z0-9+.-]*:\S*$/i,
+  uuid: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+}
+
+const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`
+
+/**
+ * Why a value doesn't fit its schema, at this level only, in a few words — or
+ * null when it does, or when there is nothing to say yet (an absent optional
+ * value). What is inside an object or a list is each its own line's business.
+ *
+ * Soft, like every check in the app: it says, and the value is kept regardless.
+ */
+export function problemOf(schema: JsonSchema, value: unknown, required = false): string | null {
+  if (value === undefined) return required ? 'Required' : null
+  if ('const' in schema) return same(schema.const, value) ? null : `Must be ${JSON.stringify(schema.const)}`
+  const variants = variantsOf(schema)
+  if (variants) return variants.some((v) => matches(v, value)) ? null : 'Fits none of the options'
+
+  const type = typeOf(schema)
+  if (type && !matches({ type }, value)) {
+    return type === 'integer' && typeof value === 'number' ? 'Not a whole number' : `Not ${article(type)}`
+  }
+
+  if (typeof value === 'number') {
+    const n = value
+    if (typeof schema.minimum === 'number' && n < schema.minimum) return `At least ${schema.minimum}`
+    if (typeof schema.maximum === 'number' && n > schema.maximum) return `At most ${schema.maximum}`
+    if (typeof schema.exclusiveMinimum === 'number' && n <= schema.exclusiveMinimum) {
+      return `More than ${schema.exclusiveMinimum}`
+    }
+    if (typeof schema.exclusiveMaximum === 'number' && n >= schema.exclusiveMaximum) {
+      return `Less than ${schema.exclusiveMaximum}`
+    }
+    if (typeof schema.multipleOf === 'number' && schema.multipleOf > 0 && !Number.isInteger(n / schema.multipleOf)) {
+      return `A multiple of ${schema.multipleOf}`
+    }
+  }
+
+  if (typeof value === 'string') {
+    if (typeof schema.minLength === 'number' && value.length < schema.minLength) {
+      return `At least ${plural(schema.minLength, 'character')}`
+    }
+    if (typeof schema.maxLength === 'number' && value.length > schema.maxLength) {
+      return `At most ${plural(schema.maxLength, 'character')}`
+    }
+    if (typeof schema.pattern === 'string') {
+      try {
+        if (!new RegExp(schema.pattern, 'u').test(value)) return `Doesn't match ${schema.pattern}`
+      } catch {
+        // A pattern that is not one says nothing about the value.
+      }
+    }
+    if (typeof schema.format === 'string' && value && FORMAT_TESTS[schema.format]) {
+      if (!FORMAT_TESTS[schema.format].test(value)) return `Not ${article(schema.format)}`
+    }
+  }
+
+  if (Array.isArray(value)) {
+    if (typeof schema.minItems === 'number' && value.length < schema.minItems) {
+      return `At least ${plural(schema.minItems, 'item')}`
+    }
+    if (typeof schema.maxItems === 'number' && value.length > schema.maxItems) {
+      return `At most ${plural(schema.maxItems, 'item')}`
+    }
+    if (schema.uniqueItems === true) {
+      const seen = new Set(value.map((v) => JSON.stringify(v)))
+      if (seen.size !== value.length) return 'Items repeat'
+    }
+  }
+
+  if (isObject(value) && schema.additionalProperties === false) {
+    const known = new Set(propertiesOf(schema).map(([k]) => k))
+    const extra = Object.keys(value).filter((k) => !known.has(k))
+    if (extra.length) return `Unexpected ${extra.join(', ')}`
+  }
+  return null
+}
+
+const article = (type: string): string => (/^[aeiou]/.test(type) ? `an ${type}` : `a ${type}`)
