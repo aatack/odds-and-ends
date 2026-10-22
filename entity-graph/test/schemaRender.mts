@@ -178,6 +178,20 @@ test('lets a union option be named in the builder, showing its default until it 
   assert.match(html, /placeholder="none"/)
 })
 
+test('puts a union picker where its option needs it', () => {
+  const schema = { anyOf: [{ type: 'integer' }, { const: 'none' }, { type: 'array', items: { type: 'string' } }] }
+  const one = renderToStaticMarkup(h(SchemaForm, { schema, value: 4, setValue: noop }))
+  // A number: its box first, the chip at the end of the line.
+  assert.match(one, /value="4"[\s\S]*<span class="truncate">Integer<\/span>/)
+  const literal = renderToStaticMarkup(h(SchemaForm, { schema, value: 'none', setValue: noop }))
+  // A literal: the picker is the line, and the value isn't drawn again.
+  assert.match(literal, /text-gray-900">none<\/span>/)
+  assert.doesNotMatch(literal, /&quot;none&quot;/)
+  const list = renderToStaticMarkup(h(SchemaForm, { schema, value: ['a'], setValue: noop }))
+  // A list: the picker's line, then the list's own lines.
+  assert.match(list, /text-gray-900">Array<\/span>[\s\S]*value="a"/)
+})
+
 let failed = 0
 for (const [name, run] of tests) {
   try {

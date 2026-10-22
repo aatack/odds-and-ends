@@ -369,10 +369,15 @@ function List({
 }
 
 /**
- * One of several schemas: a picker for which, and that option's control — beside
- * the picker where it is a single value, under it where it holds others. The
- * option shown is the first the value fits, so nothing about the choice is
- * stored but the value; picking another starts it from that option's default.
+ * One of several schemas, and the picker for which. The option shown is the
+ * first the value fits, so nothing about the choice is stored but the value;
+ * picking another starts it from that option's default. How the picker sits
+ * depends on what the option needs besides being picked:
+ *
+ *   nothing (a literal, null)   the picker is the whole line — its name is the value
+ *   one line (text, a number)   the option's control fills the line, the picker a
+ *                               chip at its right end, as in the schema builder
+ *   more (an object, a list)    the picker is a line, and the option's lines follow
  */
 function Union({
   variants,
@@ -389,31 +394,68 @@ function Union({
   const at = fitted < 0 ? 0 : fitted
   const variant = variants[at]
   const names = optionNames(variants)
-  const picker = (
-    <div className="flex h-8 max-w-48 shrink-0 items-center px-1.5">
-      <Picker
-        names={names}
-        at={at}
-        onPick={(i) => onChange(defaultFor(variants[i]))}
-        trigger={(toggle) => <MenuChip onClick={toggle}>{names[at]}</MenuChip>}
-      />
-    </div>
-  )
+  const pick = (i: number): void => onChange(defaultFor(variants[i]))
+
+  if ('const' in variant || typeOf(variant) === 'null') {
+    return <RowPicker names={names} at={at} onPick={pick} />
+  }
   const control = <Control schema={variant} value={value} onChange={onChange} label={label} />
   if (compound(variant)) {
     return (
       <Inner>
-        <div className={cn(SPAN, 'flex')}>{picker}</div>
+        <div className={SPAN}>
+          <RowPicker names={names} at={at} onPick={pick} />
+        </div>
         <div className={cn(SPAN, 'flex min-w-0')}>{control}</div>
       </Inner>
     )
   }
   return (
-    <div className="flex w-full items-center">
-      {picker}
-      <div className="flex min-w-0 flex-1 items-center self-stretch border-l border-gray-100">
-        {control}
+    <div className="flex w-full min-w-0 items-center">
+      <div className="flex min-w-0 flex-1 items-center">{control}</div>
+      <div className="flex max-w-48 shrink-0 items-center pr-1">
+        <Picker
+          names={names}
+          at={at}
+          onPick={pick}
+          trigger={(toggle) => <MenuChip onClick={toggle}>{names[at]}</MenuChip>}
+        />
       </div>
+    </div>
+  )
+}
+
+/** A picker that is the whole line: the chosen name, and a chevron at the end. */
+function RowPicker({
+  names,
+  at,
+  onPick,
+}: {
+  names: string[]
+  /** The option chosen now, or -1 for none. */
+  at: number
+  onPick: (index: number) => void
+}): React.JSX.Element {
+  return (
+    <div className="w-full">
+      <Picker
+        names={names}
+        at={at}
+        onPick={onPick}
+        trigger={(toggle) => (
+          <button
+            className="flex h-8 w-full items-center gap-1 px-2.5 text-left text-[13px] focus:outline-none"
+            onClick={toggle}
+          >
+            <span
+              className={cn('min-w-0 flex-1 truncate', at < 0 ? 'text-gray-400' : 'text-gray-900')}
+            >
+              {at < 0 ? 'Choose…' : names[at]}
+            </span>
+            <ChevronDown size={12} className="shrink-0 text-gray-400" />
+          </button>
+        )}
+      />
     </div>
   )
 }
@@ -461,29 +503,9 @@ function Choice({
   value: unknown
   onChange: (value: unknown) => void
 }): React.JSX.Element {
-  const names = optionNames(variants)
   const at = variants.findIndex((v) => JSON.stringify(v.const) === JSON.stringify(value))
   return (
-    <div className="w-full">
-      <Picker
-        names={names}
-        at={at}
-        onPick={(i) => onChange(variants[i].const)}
-        trigger={(toggle) => (
-          <button
-            className="flex h-8 w-full items-center gap-1 px-2.5 text-left text-[13px] focus:outline-none"
-            onClick={toggle}
-          >
-            <span
-              className={cn('min-w-0 flex-1 truncate', at < 0 ? 'text-gray-400' : 'text-gray-900')}
-            >
-              {at < 0 ? 'Choose…' : names[at]}
-            </span>
-            <ChevronDown size={12} className="shrink-0 text-gray-400" />
-          </button>
-        )}
-      />
-    </div>
+    <RowPicker names={optionNames(variants)} at={at} onPick={(i) => onChange(variants[i].const)} />
   )
 }
 
