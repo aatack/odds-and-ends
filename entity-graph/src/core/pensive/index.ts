@@ -13,8 +13,6 @@ export { argsJsonSchema, callInList, invokeTool, stripNulls, toolMeta } from './
 export type { PensiveToolOptions } from './tools'
 export { entityWrapper, pensiveTools, readEventsTool, scanEventsTool } from './tools'
 
-export type { UserToolOptions } from './userTools'
-export { TOOLS_ENTITY_ID, loadUserTools } from './userTools'
 
 export { BasePensive } from './base'
 export { SqlitePensive } from './sqlite'

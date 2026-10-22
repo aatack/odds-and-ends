@@ -107,11 +107,10 @@ test('stays out of the call log, being a read', async () => {
   assert.deepEqual(callsAtom.get(), [])
 })
 
-// --- What a tool written in the store needs of these ------------------------
+// --- What a script needs of these ------------------------------------------
 
-// Tools the user writes under `@tools` stand on these: an id to hang a reply
-// off, one write instead of seven, and a way to read a branch nothing has looked
-// at.
+// An id to hang a reply off, one write instead of seven, and a way to read a
+// branch nothing has looked at.
 
 const call = (name: string, args: unknown[]): Promise<any> =>
   callToolByName(name, args, context())

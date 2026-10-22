@@ -9,11 +9,10 @@ import {
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
-import { TOOL_ID, TYPE_ID } from '../../core/builtins'
 import { outlineMarkdown } from '../../core/markdown'
 import type { QueryPage } from '../../core/query'
 import { rowsOfPage } from '../../core/tree'
-import { TOOLS_ENTITY_ID as TOOLS_ID, type Pensive } from '../../core/pensive/index'
+import type { Pensive } from '../../core/pensive/index'
 import { formatError } from './format'
 
 // What an agent sees of a pensive. Deliberately *not* the pensive's own tool list:
@@ -34,9 +33,6 @@ const QUERY_LIMIT = 200
 
 /** The entity the outline hangs off, and where a model with no bearings starts. */
 const ROOT_ID = '@index'
-
-/** Where the types are collected, so a type written here can be found again. */
-const TYPES_ID = '@types'
 
 /**
  * How to use this store, told to the client at initialize. A client truncates
@@ -65,17 +61,6 @@ ticked. Any other value is arbitrary JSON under a string key.
 **Nesting is notes, not markdown.** A dash at the start of a line is nearly always a note
 that should have been created: write the lead as one note and each point under it as a
 child, however short.
-
-## Where what you write goes
-
-- **A tool you are making for the user goes under \`${TOOLS_ID}\`, and nowhere else.** A note
-  there saying \`type: ${TOOL_ID}\`, with an \`execute\` body and its own text for a name, is a
-  tool of this app: it lists in the command palette, can hold a key, and other tools call
-  it by name. \`get_details\` on \`${TOOL_ID}\` is the whole specification — read it first.
-  Written anywhere else it is an ordinary note and does nothing.
-- **A type** — a note describing the notes that name it in their \`type\` — goes under
-  \`${TYPES_ID}\`. \`get_details\` on \`${TYPE_ID}\` says what one holds.
-- **Anything else** is a note in the outline. Ask where it goes if you cannot tell.
 
 More is written down than fits here: list this server's resources and read what covers
 what you are doing.
@@ -202,13 +187,7 @@ export const MCP_TOOLS: McpTool[] = [
       'created and last edited, their children in order (`outboundLinks`), and their ' +
       '`inboundLinks` — every entity in the store that links to this one, which is how ' +
       'to find where else a note is referenced. An id nothing has been written to comes ' +
-      'back empty rather than missing.\n\n' +
-      'Two ids answer even in a store nobody has written to, because the store ' +
-      `supplies them: \`${TYPE_ID}\`, whose schema says what a type holds, and ` +
-      `\`${TOOL_ID}\`, whose schema says what a tool holds — every value a definition can ` +
-      'carry and what each one does. **Asked to write a tool for the user, read ' +
-      `\`${TOOL_ID}\` first and create the note under \`${TOOLS_ID}\`;** the \`docs://tools\` ` +
-      'resource is the same thing at length.',
+      'back empty rather than missing.',
     needs: 'readEntities',
     readOnly: true,
     inputSchema: {
@@ -238,10 +217,7 @@ export const MCP_TOOLS: McpTool[] = [
       '**Nesting is notes, not markdown.** A bullet list typed into one note\'s `text` is ' +
       'a single note as far as everything here is concerned: its points cannot be linked ' +
       'to, ticked, or read as their own lines. Write the lead as one note and each point ' +
-      'as a child of it, however short they are.\n\n' +
-      `A tool you are making for the user is a note like any other, created under ` +
-      `\`${TOOLS_ID}\` — see \`get_details\` on \`${TOOL_ID}\` for what to put on it. It has to ` +
-      `be under \`${TOOLS_ID}\` to be a tool at all, so this is the call that decides that.`,
+      'as a child of it, however short they are.',
     needs: 'createEntity',
     readOnly: false,
     // The one tool here that is not idempotent: called twice it makes two notes.
@@ -291,18 +267,10 @@ export const MCP_TOOLS: McpTool[] = [
       '`open` (`true` unticked, `false` ticked); any other key is stored as given. ' +
       '`value` is any JSON.\n\n' +
       'This is for editing a note that already exists. To add one, use `create`, which ' +
-      'mints the id and links it in the same call — with one exception: writing to an id ' +
-      'nothing has been written to yet is how a note gets a *name* instead of a uuid, ' +
-      'which is what a type is (`recipe`). Link it somewhere afterwards.\n\n' +
+      'mints the id and links it in the same call.\n\n' +
       'There is no way to take a key off a note: `null` blanks it, which reads as ' +
       'absent everywhere it matters — no heading, no checkbox — but stays on the entity ' +
-      'as a value, and is how a note refuses a default its type would otherwise give it.' +
-      '\n\nMost of what is not a note\'s text is written through here: a `type` naming ' +
-      'the note that describes it, a type\'s own `schema`, and every value that makes a ' +
-      `note under \`${TOOLS_ID}\` a tool — its \`type: ${TOOL_ID}\`, its \`execute\` body, its ` +
-      '`arguments`. Each is one call, and each wants the JSON type the schema asks for: ' +
-      'an `arguments` list written as a string is the usual way a tool ends up taking ' +
-      'none.',
+      'as a value.',
     needs: 'writeValue',
     readOnly: false,
     // It replaces whatever was under the key, so it is not a purely additive write.
@@ -423,26 +391,6 @@ interface Doc {
 }
 
 const DOCS: Doc[] = [
-  {
-    uri: 'docs://tools',
-    name: 'Writing a tool for this app',
-    description:
-      `Everything about writing a tool of your own into \`${TOOLS_ID}\`: every value a ` +
-      'definition can carry, what the body can call, how arguments are declared and ' +
-      'what the app does with them, and what has to happen before a tool that has ' +
-      `been written is a tool that runs. **Read this before writing under \`${TOOLS_ID}\`.** ` +
-      `\`get_details\` on \`${TOOL_ID}\` is the same shape in short.`,
-    path: 'docs/user-tools.md',
-  },
-  {
-    uri: 'docs://types',
-    name: 'What a type is and how to write one',
-    description:
-      'What a type says about the entities naming it in their `type`, the keys ' +
-      'that are read by name, and why nothing is inherited. The ' +
-      `long version of \`get_details\` on \`${TYPE_ID}\`.`,
-    path: 'docs/types.md',
-  },
   {
     uri: 'docs://sources',
     name: 'What a pensive is, and the graph the user draws them in',

@@ -117,20 +117,10 @@ is the long form; the rules that matter day to day:
   no argument that answers itself from somewhere else. Hotkeys and the command palette
   both dispatch through that declaration, so they cannot drift. New commands go
   here, never inline in a keydown handler.
-- **The registry isn't all built at build time.** The user's own tools (below)
-  are read from the store when it opens and folded into the same registry, so
-  read the list through `allTools()`, never a constant. **The app has no
+- **Every tool is the app's own.** The registry is fixed at build time; read it
+  through `allTools()`. The store defines no tools, and **the app has no
   integrations**: nothing in the code reaches Slack, GitHub, Claude or any other
   service, and a note naming one is an ordinary note.
-- **The store defines tools too.** A note under `@tools` saying `type: tool`
-  becomes a tool of the app, called whatever its text says — palette entry,
-  optional key, callable from other scripts. Its `execute` value
-  is an expression evaluating to a function, applied to the declared arguments
-  positionally and run in the script sandbox, so it reaches the
-  whole registry. See [`docs/user-tools.md`](./docs/user-tools.md) for the fields.
-  `tools/declared.ts` maps their JSON Schema onto argument prompts;
-  `tools/userTools.ts` reads them, and "Reload your tools" re-reads them after an
-  edit.
 - **A script is another caller.** `runScript` runs JavaScript in a QuickJS worker
   (`helpers/codeRunner*`) whose only globals are `console`, `context` — the call
   context it was handed — and `tool`, which reaches the whole registry by
@@ -159,8 +149,8 @@ is the long form; the rules that matter day to day:
 **A pensive is an interface, not an implementation.** `core/pensive/types.ts` is
 the whole contract: read events, write events, pop events, read a resource, write
 a resource, list tools, call a tool. The first five are the store; the last two
-are the *vocabulary* — `query`, `createEntity`, whatever the user has written
-under `@tools` — which `core/pensive/tools.ts` builds over those five, so a
+are the *vocabulary* — `query`, `createEntity` and the rest — which
+`core/pensive/tools.ts` builds over those five, so a
 pensive gains them by being one. `BasePensive` is that assembly; an
 implementation says how events are stored and nothing else.
 

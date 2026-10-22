@@ -27,9 +27,8 @@ undo, and takes no window: how much counts as one action and how far back it
 reaches at all are the *store's* to decide — five minutes as standard, less if a
 store says so — so there is nothing a client can widen. What it does take is an
 `author`, which narrows undo to one person's own events. The last two are
-its **vocabulary** — `query`, `readEntities`, `createEntity`, `scanEvents`, and
-whatever the user has written under `@tools` — which `core/pensive/tools.ts`
-builds out of those five. So a pensive gains the whole language of the app by
+its **vocabulary** — `query`, `readEntities`, `createEntity`, `scanEvents` and
+the rest — which `core/pensive/tools.ts` builds out of those five. So a pensive gains the whole language of the app by
 being one, and everything above it (the outliner, a script, an agent over MCP,
 the phone) speaks that language to a file on this laptop and to somebody else's
 machine without knowing which it has.
@@ -44,7 +43,7 @@ Two things are deliberately *not* in it:
 ## The kinds
 
 `refresh()` is implemented by anything that discovers rather than declares —
-`BasePensive` re-reads `@tools`, `ConnectPensive` re-reads the remote registry.
+`ConnectPensive` re-reads the remote registry.
 
 ```ts
 class SqlitePensive extends BasePensive {

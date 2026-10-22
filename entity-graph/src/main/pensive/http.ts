@@ -88,9 +88,8 @@ export class PensiveServer {
   /**
    * One wrapper per person, per build of the pensive underneath.
    *
-   * Wrapping is per request in principle, but a wrapper holds the tool list —
-   * including the ones the store itself defines, which cost a read to discover —
-   * so making a new one each time would read `@tools` on every call. Keyed on the
+   * Wrapping is per request in principle, but a wrapper holds the tool list, so
+   * making a new one each time would rebuild it on every call. Keyed on the
    * inner pensive by identity, weakly: the registry mints a new one whenever the
    * graph changes, which is exactly when these should be dropped.
    */

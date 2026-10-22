@@ -63,8 +63,7 @@ export interface EventScan {
  *
  * Six calls, in two halves. The first five are the store itself: events in and
  * out, bytes in and out. The last two are its *tools* — the vocabulary a client,
- * a script or an agent works in (`query`, `createEntity`, whatever the user has
- * written under `@tools`) — which every implementation here builds over those
+ * a script or an agent works in (`query`, `createEntity` and the rest) — which every implementation here builds over those
  * primitives, so a pensive gains them by being one rather than by declaring them
  * again.
  *
@@ -104,8 +103,7 @@ export interface Pensive {
   /** Validate the arguments against the named tool's schema, then run it. */
   callTool(toolId: string, args: unknown): Promise<unknown>
   /**
-   * Re-read anything discovered rather than declared — the user's own tools,
-   * which are notes in the store, or a remote registry. Called after a pensive
+   * Re-read anything discovered rather than declared — a remote registry. Called after a pensive
    * is built and whenever the graph changes; a pensive with nothing to discover
    * simply doesn't implement it.
    */

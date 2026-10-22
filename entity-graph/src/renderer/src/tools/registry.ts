@@ -5,21 +5,12 @@ import { FRAME_TOOLS } from './frameTools'
 import { RESOURCE_TOOLS } from './resourceTools'
 import { SOURCE_TOOLS } from './sourceTools'
 import { UNDO_TOOLS } from './undoTools'
-import { userToolsAtom } from './userTools'
 import type { ToolScope, ToolSpec } from './types'
 
 // The one registry. Order matters twice: it's the order the palette lists tools
 // in with no search text (entity tools first, since they act on what the user is
 // looking at), and the order the key router resolves collisions in within a
-// scope.
-//
-// Most of it is fixed at build time. One part is not: the user's own tools, which
-// are notes in the store and arrive when a source is opened. So the list is a
-// function rather than a constant, and the palette re-reads it when they land.
-//
-// They trail the built-ins, which settles every collision between a declared tool
-// and one of the app's own in the app's favour — a store cannot rebind `d` out
-// from under the user by naming a tool badly.
+// scope. Every tool is the app's own, fixed at build time.
 
 const BUILT_IN: ToolSpec[] = [
   // First: it takes Backspace off the row tools below while the sources page is
@@ -34,17 +25,12 @@ const BUILT_IN: ToolSpec[] = [
   ...APP_TOOLS,
 ]
 
-/** Everything invocable right now. The user's tools trail the built-ins. */
-export const allTools = (): ToolSpec[] => [
-  ...BUILT_IN,
-  ...userToolsAtom.get(),
-]
+/** Everything invocable. */
+export const allTools = (): ToolSpec[] => BUILT_IN
 
 const byId = new Map(BUILT_IN.map((t) => [t.id, t]))
 
-export const findTool = (id: string): ToolSpec | undefined =>
-  byId.get(id) ??
-  userToolsAtom.get().find((t) => t.id === id)
+export const findTool = (id: string): ToolSpec | undefined => byId.get(id)
 
 /** Tools offered in the palette's list. */
 export const listedTools = (): ToolSpec[] => allTools().filter((t) => t.listed !== false)

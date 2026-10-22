@@ -16,7 +16,6 @@ import { setResourceFetcher } from '../state/resources'
 import { updateUi } from '../state/ui'
 import { readResource, scanEvents, setWriteObserver } from '../source/entity'
 import { setSourceTransport } from '../source/transport'
-import { clearUserTools, loadUserTools } from '../tools/userTools'
 
 const api = window.entityGraph
 
@@ -55,15 +54,11 @@ export function SourceView({
     // Whatever is cached was rolled up from a different store, so it is read
     // again rather than trusted — the rows keep what they have until it lands.
     refreshEntities()
-    // The user's own tools belong to the store, and are read through the
-    // transport set just above, so this has to come after it.
-    void loadUserTools()
     return () => {
       setEntityFetcher(null)
       setWriteObserver(null)
       setResourceFetcher(null)
       setSourceTransport(null)
-      clearUserTools()
     }
   }, [pensive.id, user])
 

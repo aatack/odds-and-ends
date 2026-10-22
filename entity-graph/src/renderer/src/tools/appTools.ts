@@ -1,13 +1,9 @@
-import { TOOL_ID } from '../../../core/builtins'
 import { refreshEntities } from '../../../core/cache'
-import { createEntity } from '../source/entity'
 import { openExternal, readClipboardText, revealPath } from '../source/files'
 import { copyText } from '../helpers/clipboard'
-import { summarise } from './declared'
 import * as R from '../state/reducers'
 import { focusOf, getLayout, updateLayout } from '../state/store'
 import { toggleTheme, updateUi, uiAtom } from '../state/ui'
-import { TOOLS_ENTITY_ID, loadUserTools } from './userTools'
 import type { ToolSpec } from './types'
 
 // Note what isn't here: opening the palette and cancelling a pending call are
@@ -210,9 +206,8 @@ export const APP_TOOLS: ToolSpec[] = [
   {
     // The other direction, and the one the app had no way to go: `resource.paste`
     // takes *bytes* off the clipboard, and nothing took words. What it read is the
-    // result, so a tool written in the graph can be "take the link I just copied
-    // and hang it under this note" — `tool['entity.create']({ text:
-    // tool.readTheClipboard() })` — rather than a feature somebody has to build.
+    // result, so a script can be "take the link I just copied and hang it under
+    // this note" — `tool['entity.create']({ text: tool.readTheClipboard() })`.
     id: 'clipboard.read',
     label: 'Read the clipboard',
     aliases: ['paste text', 'clipboard text', 'what did I copy'],
@@ -222,7 +217,7 @@ export const APP_TOOLS: ToolSpec[] = [
     run: async () => {
       const text = await readClipboardText()
       if (!text) throw new Error('Nothing on the clipboard')
-      return { data: text, message: summarise(text) ?? undefined }
+      return { data: text, message: text.length > 80 ? `${text.slice(0, 80)}…` : text }
     },
   },
   {
@@ -263,72 +258,5 @@ export const APP_TOOLS: ToolSpec[] = [
     scope: 'app',
     reach: 'ui',
     run: () => updateUi({ page: 'sources' }),
-  },
-  {
-    // The skeleton, because assembling one by hand means creating a note, then
-    // linking `@tools` to it by typing the id, then remembering which values it
-    // has to carry. `execute` is written in rather than left out so that the
-    // inspector has a string to show: it edits a string as itself, on more than
-    // one line, and anything else as JSON on one escaped line.
-    id: 'source.newTool',
-    label: 'New tool of your own',
-    aliases: ['define tool', 'user tool', 'write a tool', 'custom command'],
-    hint: 'Shell',
-    scope: 'app',
-    reach: 'source',
-    mutates: true,
-    args: [{ name: 'name', label: 'Tool name', placeholder: 'e.g. greet' }],
-    run: async ({ name }) => {
-      const toolName = String(name ?? '').trim()
-      if (!toolName) throw new Error('Tool name is required')
-      const id = await createEntity(
-        {
-          // The note's text is what the tool is called, in the outline and in the
-          // palette alike. There is one word rather than two, so a tool renamed
-          // in the outline is renamed.
-          text: toolName,
-          // What makes it a tool, and what puts the fields — and what each one is
-          // for — in the inspector rather than only in the docs.
-          type: TOOL_ID,
-          // A function of no arguments, since it has none declared yet. Adding
-          // one to `arguments` means adding a parameter here, in the same order.
-          execute: '() => {\n  // What the tool does.\n}',
-        },
-        TOOLS_ENTITY_ID,
-      )
-      // Straight into the inspector, which is where the body is written, along
-      // with `arguments`, `key`, and whatever else the definition wants to say.
-      updateUi({ inspectEntityId: id })
-      return { message: `Fill ${toolName} in, then reload your tools` }
-    },
-  },
-  {
-    // The tools the user wrote are read once, when the source opens, so editing
-    // one has no effect until they are read again. Reloading is a tool rather
-    // than something a write triggers: a definition is edited a value at a time,
-    // and rebuilding the registry on every keystroke would mean binding half a
-    // key and running half a body.
-    id: 'source.reloadTools',
-    label: 'Reload your tools',
-    aliases: ['user tools', 'refresh tools', 'rebuild registry'],
-    hint: 'Shell',
-    scope: 'app',
-    reach: 'source',
-    run: async () => {
-      const { tools, skipped, warnings, linked } = await loadUserTools()
-      // Which is the whole use of it. A definition that isn't quite one is passed
-      // over, and a reload that only counted what it took would say the same
-      // "0 tools" whether the note was wrong or merely unlinked.
-      if (linked === 0) return { message: 'Nothing is linked under @tools' }
-      const found = tools.length
-        ? `${tools.length} tool${tools.length === 1 ? '' : 's'}: ${tools.map((t) => t.id).join(', ')}`
-        : 'No tools'
-      const said = [
-        found,
-        ...(skipped.length ? [`Skipped ${skipped.map((s) => `${s.id} (${s.why})`).join(', ')}`] : []),
-        ...warnings.map((w) => `${w.id}: ${w.why}`),
-      ]
-      return { message: said.join('. ') }
-    },
   },
 ]

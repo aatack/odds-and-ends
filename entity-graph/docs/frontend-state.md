@@ -161,12 +161,7 @@ A tool's `reach` says how far it reaches: `ui` (frontend state only), `source`
 A **call** is one invocation of a tool: a generated `callId`, the tool's id, the
 argument values so far, and an immutable snapshot of the context it started in.
 
-Most tools are fixed at build time, but the registry is not a constant: the
-tools the user writes under `@tools` are read from the store when it opens and
-folded in alongside the built-ins (`tools/userTools.ts`). They arrive as JSON
-Schema, and the argument prompts are derived from it rather than restated. This
-is why `tools/registry.ts` exposes `allTools()` rather than a `TOOLS` array, and
-why the palette recomputes its list when they land.
+Every tool is fixed at build time, in `tools/registry.ts`.
 
 ## Argument values
 
