@@ -482,3 +482,101 @@ fn contains_ignore_case_folds_ascii_only_on_every_path() {
     assert_eq!(one("σ"), ["x13"]);
     assert_eq!(one("BUDGET"), ["x16"]); // after a NUL byte
 }
+
+/// All pages of `f` on `b`, concatenated.
+fn all_pages(
+    s: &Store,
+    b: BranchId,
+    f: &Filter,
+    limit: usize,
+    scan_limit: usize,
+    order: &FindOrder,
+) -> Vec<String> {
+    let mut got = Vec::new();
+    let mut cursor = None;
+    loop {
+        let page = s
+            .find(
+                b,
+                f,
+                FindOptions {
+                    limit,
+                    cursor,
+                    order: order.clone(),
+                    scan_limit,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        got.extend(page.rows.into_iter().map(|r| r.id));
+        cursor = page.next;
+        if cursor.is_none() {
+            return got;
+        }
+    }
+}
+
+#[test]
+fn sparse_overfetch_pages_are_the_same_as_one_chunk_pages() {
+    // A stack where most candidates of the parent layer are overridden by
+    // the child (rejected after the roll-up), so pages need several chunks.
+    use crate::find::knobs::{NO_OVERFETCH, PROBE};
+    let (mut s, base) = store();
+    let mut ops = Vec::new();
+    for i in 0..3000u32 {
+        let e = format!("{:08x}", i.wrapping_mul(2_654_435_761));
+        ops.push(Op::set(e.as_str(), TYPE_KEY, "note"));
+        ops.push(Op::set(e.as_str(), "name", format!("Hit {i}")));
+    }
+    w(&mut s, base, ops);
+    let top = s
+        .create_branch("top", &[ParentRef::new(base, SeqRange::new(1, None))])
+        .unwrap();
+    let mut ops = Vec::new();
+    for i in (0..3000u32).filter(|i| i % 10 != 0) {
+        let e = format!("{:08x}", i.wrapping_mul(2_654_435_761));
+        ops.push(Op::set(e.as_str(), "name", format!("miss {i}")));
+    }
+    w(&mut s, top, ops);
+    let mut want: Vec<String> = (0..3000u32)
+        .filter(|i| i % 10 == 0)
+        .map(|i| format!("{:08x}", i.wrapping_mul(2_654_435_761)))
+        .collect();
+    want.sort();
+    for f in [
+        Filter::ContainsIgnoreCase(k("name"), k("hit")),
+        Filter::Contains(k("name"), k("Hit")),
+        Filter::Prefix(k("name"), k("Hit")),
+    ] {
+        for order in [FindOrder::EntityId, FindOrder::Insertion] {
+            for (limit, scan_limit) in [
+                (1, usize::MAX),
+                (7, usize::MAX),
+                (100, usize::MAX),
+                (1000, usize::MAX),
+                (50, 70),
+                (1000, 3),
+            ] {
+                for knob in [0, 1] {
+                    PROBE.store(2, Ordering::Relaxed);
+                    NO_OVERFETCH.store(knob, Ordering::Relaxed);
+                    let mut got = all_pages(&s, top, &f, limit, scan_limit, &order);
+                    NO_OVERFETCH.store(0, Ordering::Relaxed);
+                    PROBE.store(0, Ordering::Relaxed);
+                    let n = got.len();
+                    got.sort();
+                    got.dedup();
+                    assert_eq!(
+                        got.len(),
+                        n,
+                        "duplicates: {f:?} {order:?} {limit} {scan_limit} {knob}"
+                    );
+                    assert_eq!(
+                        got, want,
+                        "{f:?} {order:?} limit {limit} scan {scan_limit} knob {knob}"
+                    );
+                }
+            }
+        }
+    }
+}
