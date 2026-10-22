@@ -6,7 +6,7 @@
 //! ```text
 //! cargo run --release --example bench_search -- build N DIR
 //! cargo run --release --example bench_search -- run FILE [--branches base,top_open,top_frozen] \
-//!     [--queries t1,c2,...] [--repeats 7] [--full-repeats 3] [--cold] [--knob probe=1]...
+//!     [--queries t1,c2,...] [--repeats 7] [--full-repeats 3] [--limit 1000] [--cold] [--knob probe=1]...
 //! ```
 //!
 //! Data (`build`, file `DIR/search-N.db`, hashed 16-hex entity IDs, batches
@@ -389,7 +389,7 @@ fn fuzzy_filter(key: &str, q: &str, k: usize) -> Filter {
 /// (label, filter). Labels start with a short code for `--queries`.
 pub fn queries() -> Vec<(String, Filter)> {
     let mut q: Vec<(String, Filter)> = Vec::new();
-    for (c, t) in [("t1", "task"), ("t2", "project"), ("t5", "doc"), ("t3", "invoice"), ("t4", "spaceship")] {
+    for (c, t) in [("t1", "task"), ("t2", "project"), ("t5", "doc"), ("t6", "person"), ("t3", "invoice"), ("t4", "spaceship")] {
         q.push((format!("{c} type = {t:?}"), Filter::eq(TYPE_KEY, t)));
     }
     for (c, s) in [("c1", "Zeppelin"), ("c2", "Budget"), ("c3", "in"), ("c4", "e")] {
@@ -477,6 +477,12 @@ fn cpu_ns() -> u64 {
     ts.sec as u64 * 1_000_000_000 + ts.nsec as u64
 }
 
+/// Page size: `--limit N` (default 1000).
+static LIMIT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1000);
+fn page_limit() -> usize {
+    LIMIT.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 fn median(mut v: Vec<f64>) -> f64 {
     v.sort_by(f64::total_cmp);
     if v.is_empty() {
@@ -490,7 +496,7 @@ fn first_page(store: &Store, b: BranchId, f: &Filter) -> (f64, f64, usize) {
     let t = Instant::now();
     let c = cpu_ns();
     let p = store
-        .find(b, f, FindOptions { values: false, ..FindOptions::default() })
+        .find(b, f, FindOptions { values: false, limit: page_limit(), ..FindOptions::default() })
         .expect("find");
     let cpu = (cpu_ns() - c) as f64 / 1e6;
     (t.elapsed().as_secs_f64() * 1e3, cpu, p.scanned)
@@ -502,7 +508,7 @@ fn full_read(store: &Store, b: BranchId, f: &Filter) -> (f64, f64, usize, usize,
     let (mut rows, mut scanned, mut pages, mut cursor) = (0, 0, 0, None);
     loop {
         let p = store
-            .find(b, f, FindOptions { values: false, cursor, ..FindOptions::default() })
+            .find(b, f, FindOptions { values: false, cursor, limit: page_limit(), ..FindOptions::default() })
             .expect("find");
         rows += p.rows.len();
         scanned += p.scanned;
@@ -537,6 +543,9 @@ fn run(path: &str, args: &[String]) {
     let cold = args.iter().any(|a| a == "--cold");
     let reps: usize = value("--repeats").map_or(7, |v| v.parse().unwrap());
     let full_reps: usize = value("--full-repeats").map_or(3, |v| v.parse().unwrap());
+    if let Some(l) = value("--limit") {
+        LIMIT.store(l.parse().expect("--limit N"), std::sync::atomic::Ordering::Relaxed);
+    }
     let branches: Vec<String> = value("--branches")
         .unwrap_or("base,top_open,top_frozen".into())
         .split(',')
@@ -552,6 +561,9 @@ fn run(path: &str, args: &[String]) {
                 "no_intersect" => &egdb::find_knobs::NO_INTERSECT,
                 "dense" => &egdb::find_knobs::DENSE,
                 "exact_count" => &egdb::find_knobs::EXACT_COUNT,
+                "no_contains_fn" => &egdb::find_knobs::NO_CONTAINS_FN,
+                "no_overfetch" => &egdb::find_knobs::NO_OVERFETCH,
+                "eq_cap" => &egdb::find_knobs::EQ_CAP,
                 _ => panic!("unknown knob {k}"),
             };
             knob.store(v.parse().unwrap(), std::sync::atomic::Ordering::Relaxed);
