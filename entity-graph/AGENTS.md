@@ -303,10 +303,15 @@ an entry, not a branch in the editor.
 **Frames are views.** A tab shows the top of a stack of frames — a chain, each
 frame naming the one it was pushed onto (`below`) — and a frame is one view of one
 entity. `FrameState` is a union on the frame's `type`, and each type holds only
-its own state: the `focus` frame, the only one so far, holds the default focus's
-selection, find, filters, depth, direction and edit; a detail frame, say, would
-hold none of that. Another view of the same entity is pushed as a new frame, not
-switched to in place. `EntityFrame` draws a frame by its type, and
+its own state: the `focus` frame holds the default focus's selection, find,
+filters, depth, direction and edit; the `detail` frame (`layout/DetailView.tsx`,
+the root's values as a `SchemaForm` from its type's schema, or a text box
+without one) holds only its draft, written by `detail.commit` a moment after the
+typing stops and on blur, as one step to undo. Another view of the same entity is
+pushed as a new frame, not switched to in place. `FRAME_TYPES` in
+`state/types.ts` lists them; each has an "Open in … view" tool
+(`entity.open.<type>`, made from that list — only focus has a key, `d`), and
+`EntityFrame` draws a frame by its type. A new tab always opens in focus view.
 `docs/frontend-state.md` has the rest.
 
 **Web pages are entities.** The store supplies an entity for every address —

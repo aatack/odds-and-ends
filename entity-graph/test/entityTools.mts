@@ -226,7 +226,7 @@ test('reads each frame where it stands, and selects a path in one of them', asyn
   assert.deepEqual(base.selectedPath, ['root'])
 
   await call('selectPath', [{ path: ['root', 'a', 'a1'], frameId: base.frameId }])
-  await call('openEntity', ['a1'])
+  await call('openInFocusView', ['a1'])
   const frames = await call('readFrameStack', [])
   assert.equal(frames.length, 2)
   // The frame below keeps the path it was given, so a walk can carry on from it.
@@ -267,6 +267,56 @@ test('leaves a script\'s calls out of the log', async () => {
 })
 
 // --- Run --------------------------------------------------------------------
+
+// --- Views ------------------------------------------------------------------
+
+test('has an "Open in … view" tool per frame type, pushing a frame of that type', async () => {
+  const { layoutAtom, focusOf } = await import('../src/renderer/src/state/store')
+  const { FRAME_TYPES, defaultLayout } = await import('../src/renderer/src/state/types')
+  const { findToolByName } = await import('../src/renderer/src/tools/registry')
+  open()
+  for (const type of Object.keys(FRAME_TYPES)) {
+    assert.equal(findToolByName(`entity.open.${type}`)?.id, `entity.open.${type}`)
+  }
+  assert.equal(findToolByName('openInDetailView')?.id, 'entity.open.detail')
+
+  layoutAtom.set(defaultLayout('root'))
+  const at = () => {
+    const f = focusOf(layoutAtom.get())
+    return { ...context(), ...f, frame: layoutAtom.get().frames[f.frameId!] }
+  }
+  await callToolByName('entity.open.detail', ['a'], at())
+  assert.equal(at().frame.type, 'detail')
+  assert.equal(at().frame.rootId, 'a')
+  // The same view again is a duplicate, and is not pushed; another view is.
+  const top = at().frameId
+  await callToolByName('entity.open.detail', ['a'], at())
+  assert.equal(at().frameId, top)
+  await callToolByName('entity.open.focus', ['a'], at())
+  assert.equal(at().frame.type, 'focus')
+})
+
+test('writes what a detail form changed, as one step, and clears the draft', async () => {
+  const { layoutAtom } = await import('../src/renderer/src/state/store')
+  const { FRAME_TYPES, defaultLayout } = await import('../src/renderer/src/state/types')
+  const R = await import('../src/renderer/src/state/reducers')
+  open()
+  source.values({ a: { text: 'old', colour: 'blue', other: 'kept' } })
+  let s = defaultLayout('root')
+  const tabId = Object.keys(s.tabs)[0]
+  s = R.pushFrame(s, tabId, 'a', 'detail')
+  const frameId = s.tabs[tabId].top
+  assert.equal(FRAME_TYPES.detail.label, 'Detail')
+  s = R.setDetailDraft(s, frameId, { text: 'new', colour: null })
+  layoutAtom.set(s)
+
+  await callToolByName('detail.commit', [frameId], context())
+  const entity = await get('a')
+  assert.equal(entity.values.text, 'new')
+  assert.equal(entity.values.colour ?? null, null)
+  assert.equal(entity.values.other, 'kept')
+  assert.equal((layoutAtom.get().frames[frameId] as { draft: unknown }).draft, null)
+})
 
 let failed = 0
 for (const [name, run] of tests) {

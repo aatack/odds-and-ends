@@ -401,9 +401,14 @@ asymmetry is intended.
 A frame is one view of one entity, and its `type` says which: `FrameState` is a
 union on it, and every frame type holds only its own state beside the id, tab,
 root and `below` they all have. A different view of the same entity is a new
-frame pushed onto the stack, never a change of type. There is one frame type so
-far, `focus`, read through `focusFrame`; `EntityFrame` switches on the type, so
-adding one is a member of the union and a case there.
+frame pushed onto the stack, never a change of type. The types are listed in
+`FRAME_TYPES` — a label and how a fresh one is made — which is also where their
+"Open in … view" tools come from; `EntityFrame` switches on the type. Adding one
+is a member of the union, an entry there and a case in `EntityFrame`.
+
+A detail frame holds only `draft`: the form's keys as typed, a cleared one as
+null, or null when nothing is outstanding. `detail.commit` writes the keys that
+differ from the store, in one instant so they undo together, and clears it.
 
 A focus frame draws the root's type's focus, and holds the state of the default
 one: which way its query reads, the latent selection path, its filters

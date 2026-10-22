@@ -2,7 +2,16 @@ import * as A from '../state/actions'
 import { entityRows, type EntityRow } from '../state/derive'
 import { rowsOf } from '../state/query'
 import { focusOf, getLayout, mainGroupId } from '../state/store'
-import { directionOf, focusFrame, last, samePath, type LinkDirection } from '../state/types'
+import {
+  FRAME_TYPES,
+  detailFrame,
+  directionOf,
+  focusFrame,
+  last,
+  samePath,
+  type FrameType,
+  type LinkDirection,
+} from '../state/types'
 import { updateUi } from '../state/ui'
 import { base64ToBlob } from '../helpers/base64'
 import { copyImage, copyText } from '../helpers/clipboard'
@@ -25,6 +34,7 @@ import {
   readResource,
   unlink,
   writeValue,
+  writeValues,
 } from '../source/entity'
 import { copyFile, fileNameFor } from '../source/files'
 import type { ArgSpec, CallInfo, ToolSpec } from './types'
@@ -162,24 +172,77 @@ const callDirection = (call: CallInfo): LinkDirection => {
   return directionOf(focusFrame(frameId ? getLayout().frames[frameId] : null))
 }
 
+/**
+ * "Open in … view", one per frame type: push a frame of that type on the entity.
+ * Made from `FRAME_TYPES`, so a new frame type has its tool without one being
+ * written. Only the focus view's has a key, being the one that always had it.
+ */
+const OPEN_TOOLS: ToolSpec[] = (Object.keys(FRAME_TYPES) as FrameType[]).map((type) => ({
+  id: `entity.open.${type}`,
+  label: `Open in ${FRAME_TYPES[type].label.toLowerCase()} view`,
+  aliases:
+    type === 'focus'
+      ? ['open entity', 'focus', 'drill in', 'push frame']
+      : ['open entity', FRAME_TYPES[type].label.toLowerCase(), 'push frame'],
+  scope: 'frame',
+  reach: 'ui',
+  keys: type === 'focus' ? [{ key: 'd' }] : undefined,
+  args: [entityArg()],
+  run: ({ entityId }) => {
+    const layout = getLayout()
+    const { tabId, frameId } = focusOf(layout)
+    const target = id(entityId)
+    if (!tabId || !target) return
+    // Don't stack the view that is already showing — that just makes a
+    // duplicate to pop straight back off.
+    const top = frameId ? layout.frames[frameId] : null
+    if (top?.rootId === target && top.type === type) return
+    A.pushFrame(tabId, target, type)
+  },
+}))
+
+/**
+ * What a detail frame's draft would write: its values that differ from the
+ * entity's. The draft holds only the keys the form shows, a cleared one as null,
+ * so a value written elsewhere meanwhile is not written back over.
+ */
+function changedValues(
+  draft: Record<string, unknown>,
+  current: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const key of Object.keys(draft)) {
+    const next = draft[key] ?? null
+    if (JSON.stringify(next) !== JSON.stringify(current[key] ?? null)) out[key] = next
+  }
+  return out
+}
+
 export const ENTITY_TOOLS: ToolSpec[] = [
+  ...OPEN_TOOLS,
   {
-    id: 'entity.open',
-    label: 'Open entity',
-    aliases: ['focus', 'drill in', 'push frame'],
+    id: 'detail.commit',
+    label: 'Write detail form',
     scope: 'frame',
-    reach: 'ui',
-    keys: [{ key: 'd' }],
-    args: [entityArg()],
-    run: ({ entityId }) => {
-      const layout = getLayout()
-      const { tabId, frameId } = focusOf(layout)
-      const target = id(entityId)
-      if (!tabId || !target) return
-      // Don't stack a frame whose root is already what's showing — that just
-      // makes a duplicate to pop straight back off.
-      if (frameId && layout.frames[frameId]?.rootId === target) return
-      A.pushFrame(tabId, target)
+    reach: 'source',
+    mutates: true,
+    listed: false,
+    // Names the frame, as `edit.commit` does: the form commits a moment after
+    // the typing stops and when it loses focus, by which time the keys may be
+    // somewhere else.
+    args: [{ name: 'frameId', label: 'Frame id', fromContext: 'frameId' }],
+    run: async ({ frameId }) => {
+      const frame = detailFrame(getLayout().frames[String(frameId)])
+      if (!frame?.draft) return { mutated: false }
+      const draft = frame.draft
+      A.setDetailDraft(frame.id, null)
+      // Against the store rather than the cache, which may not have the entity
+      // yet: a key the draft leaves alone is not one to write.
+      const current = (await readEntities([frame.rootId]))[frame.rootId]?.values ?? {}
+      const changed = changedValues(draft, current)
+      if (!Object.keys(changed).length) return { mutated: false }
+      await writeValues(frame.rootId, changed)
+      return {}
     },
   },
   {

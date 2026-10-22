@@ -24,7 +24,10 @@ console.error = (...args: unknown[]) => {
 }
 
 const { viewsFor, TypeCard } = await import('../src/renderer/src/components/types')
-const { OWN_FOCUS_TYPES } = await import('../src/renderer/src/state/types')
+const { OWN_FOCUS_TYPES, defaultLayout } = await import('../src/renderer/src/state/types')
+const { layoutAtom } = await import('../src/renderer/src/state/store')
+const R = await import('../src/renderer/src/state/reducers')
+const { DetailView } = await import('../src/renderer/src/layout/DetailView')
 
 const tests: [string, () => void][] = []
 const test = (name: string, run: () => void): void => void tests.push([name, run])
@@ -71,6 +74,16 @@ test('edits a card in a text box over its draft, whatever its type draws', () =>
     )
     assert.match(html, /<textarea[^>]*>typing<\/textarea>/, `type ${type ?? 'none'}`)
   }
+})
+
+test('draws a detail frame as a form, a text box for an entity with no schema', () => {
+  let s = defaultLayout('root')
+  const tabId = Object.keys(s.tabs)[0]
+  s = R.pushFrame(s, tabId, 'a', 'detail')
+  const frameId = s.tabs[tabId].top
+  layoutAtom.set(R.setDetailDraft(s, frameId, { text: 'typing' }))
+  const html = renderToStaticMarkup(h(DetailView, { frameId }))
+  assert.match(html, /<textarea[^>]*>typing<\/textarea>/)
 })
 
 let failed = 0

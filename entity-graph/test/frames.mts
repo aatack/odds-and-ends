@@ -91,6 +91,16 @@ test('an undone pop lands on whatever is on top now', () => {
   assert.deepEqual(roots(R.undoPop(t, tabId), tabId), ['root', 'b'])
 })
 
+test('pushes a detail frame with nothing of the focus view about it', () => {
+  const { s, tabId } = stacked()
+  const t = R.pushFrame(s, tabId, 'a', 'detail')
+  const top = t.frames[t.tabs[tabId].top]
+  assert.deepEqual(Object.keys(top).sort(), ['below', 'draft', 'id', 'rootId', 'tabId', 'type'])
+  assert.equal(top.type, 'detail')
+  assert.deepEqual(roots(R.popFrame(t, tabId), tabId), ['root'])
+  assert.ok(isLayoutState(t))
+})
+
 test('reads a layout saved before frames were chained as no layout at all', () => {
   const old = { groups: {}, groupOrder: [], tabs: { t: { id: 't', frameIds: ['f'] } }, frames: {} }
   assert.equal(isLayoutState(old), false)

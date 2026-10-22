@@ -2,7 +2,7 @@ import * as P from './peeks'
 import { transientPeek } from './peeks'
 import * as R from './reducers'
 import { getLayout, updateLayout } from './store'
-import type { EditState, FrameState, LayoutState, LinkDirection, Rect } from './types'
+import type { EditState, FrameState, FrameType, LayoutState, LinkDirection, Rect } from './types'
 
 // Named mutators over the latent state. Two callers:
 //
@@ -87,8 +87,11 @@ export const closeTab = (groupId: string, tabId: string): void =>
 export const addTab = (groupId: string, rootId?: string): void =>
   updateLayout((s) => R.addTab(s, groupId, rootId))
 
-export const pushFrame = (tabId: string, rootId: string): void =>
-  updateLayout((s) => R.pushFrame(s, tabId, rootId))
+export const pushFrame = (tabId: string, rootId: string, type: FrameType = 'focus'): void =>
+  updateLayout((s) => R.pushFrame(s, tabId, rootId, type))
+
+export const setDetailDraft = (frameId: string, draft: Record<string, unknown> | null): void =>
+  updateLayout((s) => R.setDetailDraft(s, frameId, draft))
 
 export const popToFrame = (tabId: string, frameId: string): void =>
   updateLayout((s) => R.popToFrame(s, tabId, frameId))

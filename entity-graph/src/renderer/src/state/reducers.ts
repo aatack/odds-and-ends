@@ -3,10 +3,11 @@ import {
   SECTION_DEPTH,
   frameDepth,
   last,
-  newFrame,
   newTab,
+  FRAME_TYPES,
   stackOf,
   type EditState,
+  type FrameType,
   type FocusFrame,
   type FrameState,
   type GroupState,
@@ -175,11 +176,23 @@ function stackFrame(s: LayoutState, tab: TabState, frame: FrameState): LayoutSta
   }
 }
 
-/** Push a focus frame on `rootId`. */
-export function pushFrame(s: LayoutState, tabId: string, rootId: string): LayoutState {
+/** Push a frame of `type` (a focus frame unless said otherwise) on `rootId`. */
+export function pushFrame(
+  s: LayoutState,
+  tabId: string,
+  rootId: string,
+  type: FrameType = 'focus',
+): LayoutState {
   const tab = s.tabs[tabId]
-  return tab ? stackFrame(s, tab, newFrame(tabId, rootId)) : s
+  return tab ? stackFrame(s, tab, FRAME_TYPES[type].create(tabId, rootId, tab.top)) : s
 }
+
+/** Set or clear a detail frame's draft; any other frame is left as it is. */
+export const setDetailDraft = (
+  s: LayoutState,
+  frameId: string,
+  draft: Record<string, unknown> | null,
+): LayoutState => updateFrame(s, frameId, (f) => (f.type === 'detail' ? { ...f, draft } : f))
 
 export function popFrame(s: LayoutState, tabId: string): LayoutState {
   const tab = s.tabs[tabId]

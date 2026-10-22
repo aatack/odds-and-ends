@@ -187,8 +187,45 @@ export interface FocusFrame extends FrameBase {
   edit: EditState | null
 }
 
+/**
+ * The detail view: the root's values as a form, from its type's schema. It has
+ * no rows, so nothing to select, find or filter — only what is being typed.
+ */
+export interface DetailFrame extends FrameBase {
+  type: 'detail'
+  /**
+   * The values as edited and not yet written, or null when there is nothing
+   * outstanding. Latent, like a focus frame's edit, so it survives a reload.
+   */
+  draft: Record<string, unknown> | null
+}
+
 /** Every frame type. Narrow on `type`; {@link focusFrame} does it for the focus view. */
-export type FrameState = FocusFrame
+export type FrameState = FocusFrame | DetailFrame
+
+export type FrameType = FrameState['type']
+
+/**
+ * Every frame type, in the order their tools are listed: what the type is called
+ * and how a fresh frame of it is made. Each gets an "Open in … view" tool, and
+ * `EntityFrame` a view, so a new type is an entry here and a case there.
+ */
+export const FRAME_TYPES: {
+  [T in FrameType]: {
+    label: string
+    create: (tabId: string, rootId: string, below: string | null) => Extract<FrameState, { type: T }>
+  }
+} = {
+  focus: { label: 'Focus', create: (tabId, rootId, below) => newFrame(tabId, rootId, below) },
+  detail: {
+    label: 'Detail',
+    create: (tabId, rootId, below) => ({ id: uuid(), type: 'detail', tabId, rootId, below, draft: null }),
+  },
+}
+
+/** The frame, if it is a detail frame. */
+export const detailFrame = (frame: FrameState | null | undefined): DetailFrame | null =>
+  frame?.type === 'detail' ? frame : null
 
 /** The frame, if it is a focus frame. */
 export const focusFrame = (frame: FrameState | null | undefined): FocusFrame | null =>

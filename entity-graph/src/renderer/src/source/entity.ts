@@ -129,6 +129,24 @@ export function writeValue(entityId: string, key: string, value: unknown): Promi
   return write([{ type: 'value', ...written }], () => callSource('writeValue', written))
 }
 
+/**
+ * Several values on one entity, written in the same instant — so they are one
+ * step to undo, as a form's edit should be.
+ */
+export function writeValues(entityId: string, values: Record<string, unknown>): Promise<unknown> {
+  const author = currentUser()
+  const timestamp = Date.now()
+  const events: AppEvent[] = Object.entries(values).map(([key, value]) => ({
+    type: 'value',
+    entityId,
+    key,
+    value: value ?? null,
+    author,
+    timestamp,
+  }))
+  return events.length ? writeEvents(events) : Promise.resolve()
+}
+
 // The tool stamps its own author on the events it writes, so unlike writeValue
 // these two take none — and the id is the server's, so there is nothing to show
 // ahead of the answer either. What they can say is which entities moved, which

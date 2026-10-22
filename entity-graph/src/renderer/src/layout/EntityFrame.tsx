@@ -3,6 +3,7 @@ import { viewsFor } from '../components/types'
 import { useEntitySummary, useLayoutState } from '../state/hooks'
 import type { FrameState } from '../state/types'
 import { DefaultFocus } from './DefaultFocus'
+import { DetailView } from './DetailView'
 
 /**
  * A frame, drawn as its frame type says. A tab's top frame and a peek's are
@@ -14,6 +15,8 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
   switch (frame.type) {
     case 'focus':
       return <Focused frameId={frameId} entityId={frame.rootId} />
+    case 'detail':
+      return <DetailView frameId={frameId} />
   }
 }
 
