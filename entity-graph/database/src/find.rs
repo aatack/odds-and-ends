@@ -750,8 +750,26 @@ impl Store {
         let mut scanned = 0usize;
         // Sparse plans sort every candidate in SQL on each query, so a
         // second query for the same page costs a whole scan again. Fetch
-        // twice the chunk and keep the rest for the next chunk of this call.
-        let overfetch = knobs::overfetch() && !probe && !matches!(plan, Plan::Everything);
+        // twice the chunk and keep the rest for the next chunk of this call,
+        // when the check can reject candidates: several layers or history
+        // (overridden values), or a filter that is more than its one term.
+        // One indexed term on one current layer rejects almost none, and the
+        // extra candidates would cost a lookup each for nothing.
+        let exact = view.sources.len() == 1
+            && no_history(&view)
+            && matches!(
+                filter,
+                Filter::Eq(..)
+                    | Filter::Lt(..)
+                    | Filter::Le(..)
+                    | Filter::Gt(..)
+                    | Filter::Ge(..)
+                    | Filter::Contains(..)
+                    | Filter::ContainsIgnoreCase(..)
+                    | Filter::Prefix(..)
+                    | Filter::In(..)
+            );
+        let overfetch = knobs::overfetch() && !probe && !exact && !matches!(plan, Plan::Everything);
         let mut buf: std::collections::VecDeque<(i64, String)> = Default::default();
         let mut fetch_after = None::<After>;
         let mut exhausted = false;
