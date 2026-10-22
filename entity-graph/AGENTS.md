@@ -320,8 +320,11 @@ mention inside another entity's text. Three parts, usable separately:
 gestures, around any child — it publishes `data-entity-id`, which is all the
 global right-click and middle-click handlers need), and `PillBackground` (a
 surface for a pill that has to be told apart from the text around it).
-`EntityPill` is all three. Reach for these rather than writing out an entity's
-label: a bare label can't be right-clicked, and it won't follow the entity.
+`EntityPill` is all three; with `bare` it leaves the surface out, for somewhere
+that is already one. A pill is capped at a maximum width only when `bounded` —
+the tab header, crumbs and mentions in text pass it; elsewhere a pill takes the
+room it is given. Reach for these rather than writing out an entity's label: a
+bare label can't be right-clicked, and it won't follow the entity.
 
 **Custom fields** (`components/ui/markdownFields.ts`) are how a row's text holds
 something other than text: `[@type:arg](text)` renders as a component instead of

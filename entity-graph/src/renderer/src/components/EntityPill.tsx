@@ -17,19 +17,27 @@ import { peekHandlers } from './peekHover'
 //   PillBackground  a surface, for a pill that has to be told apart from the text
 //                   around it
 //
-// `EntityPill` is the three together, which is what most callers want. Tabs take
-// the first two and put them on a background of their own.
+// `EntityPill` is the three together, which is what most callers want; with
+// `bare` it is the first two. Tabs take those two and put them on a background
+// of their own.
+//
+// A pill's width is capped only where it is `bounded` — in the tab header and
+// inline in text, where one long name would crowd everything beside it.
+// Elsewhere it takes the room it is given.
 
 /** The entity, as small as it goes: whatever its kind draws a pill as. */
 export function PillContent({
   id,
   className,
+  bounded,
 }: {
   id: string
   className?: string
+  /** Capped at a pill's maximum width; see `PillProps`. */
+  bounded?: boolean
 }): React.JSX.Element {
   const { Pill } = kindOf(useEntitySummary(id).type)
-  return <Pill id={id} className={className} />
+  return <Pill id={id} className={className} bounded={bounded} />
 }
 
 /**
@@ -90,17 +98,30 @@ export function PillBackground({
   )
 }
 
-/** All three: the everyday pill, which peeks. Button attributes reach the background. */
+/**
+ * The everyday pill, which peeks: the gestures, the surface, and the content.
+ * Button attributes reach the surface.
+ *
+ * `bare` leaves the surface out — the pill's gestures around its content alone,
+ * for somewhere that is already a surface (a menu line, a form line), as the
+ * schema components take `bare` inside another one. `bounded` caps its width,
+ * for a pill among others or in prose.
+ */
 export function EntityPill({
   id,
+  bare = false,
+  bounded = false,
   className,
   ...rest
-}: { id: string } & ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {
+}: {
+  id: string
+  bare?: boolean
+  bounded?: boolean
+} & ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {
+  const content = <PillContent id={id} bounded={bounded} />
   return (
     <PillWrapper id={id} peek className={className}>
-      <PillBackground {...rest}>
-        <PillContent id={id} />
-      </PillBackground>
+      {bare ? content : <PillBackground {...rest}>{content}</PillBackground>}
     </PillWrapper>
   )
 }

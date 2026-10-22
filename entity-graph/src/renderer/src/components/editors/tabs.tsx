@@ -1,6 +1,6 @@
 import React from 'react'
 import { ChevronDown } from '@untitledui/icons'
-import { PillContent } from '../EntityPill'
+import { EntityPill } from '../EntityPill'
 import { Dropdown } from '../ui/Dropdown'
 import { MenuItem, type Editors } from '../schema'
 import { tabRootId } from '../../state/derive'
@@ -45,7 +45,7 @@ function TabEntityPicker({
           >
             <span className="flex min-w-0 flex-1 items-center">
               {chosen ? (
-                <PillContent id={chosen} className="text-gray-900" />
+                <EntityPill id={chosen} bare className="text-gray-900" />
               ) : (
                 <span className="text-gray-400">Choose a tab…</span>
               )}
@@ -65,7 +65,7 @@ function TabEntityPicker({
                   close()
                 }}
               >
-                <PillContent id={id} />
+                <EntityPill id={id} bare />
               </MenuItem>
             ))
           ) : (

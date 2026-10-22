@@ -2,6 +2,8 @@ import React from 'react'
 import { Markdown, type LinkRenderer } from './ui/Markdown'
 import { LinkPill } from './LinkPill'
 import { PillBackground, PillContent, PillWrapper } from './EntityPill'
+import { PILL_MAX_WIDTH } from './kinds/types'
+import { cn } from '../helpers/cn'
 import type { MarkdownFieldProps, MarkdownFields } from './ui/markdownFields'
 import { useGetEntities } from '../state/hooks'
 
@@ -57,7 +59,11 @@ function FieldEntity({ id, fallback }: { id: string; fallback: string }): React.
   return (
     <PillWrapper id={id} title={fallback} peek className="mx-0.5 align-middle">
       <PillBackground>
-        {known ? <PillContent id={id} /> : <span className="font-serif">{fallback}</span>}
+        {known ? (
+          <PillContent id={id} bounded />
+        ) : (
+          <span className={cn('truncate font-serif', PILL_MAX_WIDTH)}>{fallback}</span>
+        )}
       </PillBackground>
     </PillWrapper>
   )

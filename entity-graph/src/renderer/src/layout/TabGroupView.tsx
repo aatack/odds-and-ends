@@ -83,6 +83,7 @@ function Breadcrumb({ tabId }: { tabId: string }): React.JSX.Element | null {
         <React.Fragment key={crumb.frameId}>
           <EntityPill
             id={crumb.rootId}
+            bounded
             className="shrink-0"
             onClick={() => A.popToFrame(tabId, crumb.frameId)}
             title={`Back to ${crumb.label}`}
@@ -119,7 +120,7 @@ function TabButton({
       className="group shrink-0"
       onClick={onSelect}
     >
-      {rootId ? <PillContent id={rootId} /> : <span className="text-gray-400">Empty</span>}
+      {rootId ? <PillContent id={rootId} bounded /> : <span className="text-gray-400">Empty</span>}
       <span
         role="button"
         tabIndex={-1}

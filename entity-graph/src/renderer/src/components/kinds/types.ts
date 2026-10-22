@@ -20,7 +20,16 @@ import type { EntityRow } from '../../state/derive'
 export interface PillProps {
   id: string
   className?: string
+  /**
+   * Capped at a pill's maximum width ({@link PILL_MAX_WIDTH}) — for a pill in
+   * a row of others or a line of prose, where one long name would crowd the rest.
+   * Unbounded, it still truncates, but only to the room it is given.
+   */
+  bounded?: boolean
 }
+
+/** How wide a bounded pill may get before it ellipses. */
+export const PILL_MAX_WIDTH = 'max-w-[140px]'
 
 /** What a card or a focus is drawn from. */
 export interface CardProps {
