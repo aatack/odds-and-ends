@@ -26,6 +26,7 @@ import { APP_MOUNT, nodeKind, phoneAppUrl, phoneBaseUrl, sourceMount } from '../
 import { PausedPensive, type Pensive, type ToolMeta } from '../core/pensive/index'
 import { toolMeta } from '../core/pensive/tool'
 import { store } from './store'
+import { watchApp, watchWindow } from './diagnostics'
 import { GraphDb } from './pensive/graph'
 import { PensiveRegistry, wouldCycle } from './pensive/registry'
 import { PensiveServers, findFreePort } from './pensive/servers'
@@ -434,6 +435,7 @@ function createWindow(): void {
       webviewTag: true,
     },
   })
+  watchWindow(win)
 
   // A peek's page is somebody else's: no preload, no node, its own sandbox, and
   // only http(s) into the one partition peeks use.
@@ -460,6 +462,7 @@ function createWindow(): void {
 app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer')
 
 app.whenReady().then(async () => {
+  watchApp()
   installMenu()
   setUpPensives()
   // Every broadcast and MCP node comes back up with the app: they are part of
