@@ -7,6 +7,13 @@
 //!
 //! Number of random cases: the environment variable `EGDB_DIFF_CASES`
 //! (default 300). The seed of a failing case is in the panic message.
+//!
+//! Every third seed is history-heavy: half its ops rename one of three
+//! entities (back to earlier names, the same name again, clears), a quarter
+//! of its steps are bursts of 5 to 10 single renames of one entity with a
+//! fork in the middle now and then (the fork must read the name as of
+//! then from history while the parent renames on), it runs longer and it
+//! compares every read every 6 steps. `EGDB_DIFF_STATS=1` prints counts.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -415,6 +422,48 @@ impl Rng {
 
 const ENTS: usize = 6;
 
+thread_local! {
+    /// This case is history-heavy (see the module docs).
+    static HEAVY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn heavy() -> bool {
+    HEAVY.with(std::cell::Cell::get)
+}
+
+/// Counters for `EGDB_DIFF_STATS`.
+mod stats {
+    use std::sync::atomic::AtomicUsize;
+    pub static CASES: AtomicUsize = AtomicUsize::new(0);
+    pub static HEAVY_CASES: AtomicUsize = AtomicUsize::new(0);
+    pub static RENAMES: AtomicUsize = AtomicUsize::new(0);
+    pub static BURSTS: AtomicUsize = AtomicUsize::new(0);
+    pub static BURST_FORKS: AtomicUsize = AtomicUsize::new(0);
+    pub static FINDS: AtomicUsize = AtomicUsize::new(0);
+    pub static FINDS_FROZEN: AtomicUsize = AtomicUsize::new(0);
+    pub static FINDS_PAGED: AtomicUsize = AtomicUsize::new(0);
+    pub static READS: AtomicUsize = AtomicUsize::new(0);
+    pub static WALKS: AtomicUsize = AtomicUsize::new(0);
+    pub static UNDOS: AtomicUsize = AtomicUsize::new(0);
+    pub static MERGES: AtomicUsize = AtomicUsize::new(0);
+    pub static MAX_RENAMES_ONE_ENTITY: AtomicUsize = AtomicUsize::new(0);
+}
+
+fn bump(c: &std::sync::atomic::AtomicUsize) {
+    c.fetch_add(1, Ordering::Relaxed);
+}
+
+/// A title for a history-heavy rename: few distinct values, so names come
+/// back, repeat and match a filter now and then; null clears it.
+fn heavy_title(r: &mut Rng) -> Value {
+    match r.below(8) {
+        0 => Value::Null,
+        1 => Value::Text("T1".into()),
+        2 => Value::Text("x".into()),
+        n => Value::Text(format!("t{}", n % 3)),
+    }
+}
+
 struct Rig {
     store: Store,
     clock: Arc<AtomicI64>,
@@ -477,6 +526,10 @@ fn ent(i: usize) -> String {
 }
 
 fn rand_op(r: &mut Rng) -> Op {
+    if heavy() && r.chance(1, 2) {
+        bump(&stats::RENAMES);
+        return Op::set(ent(r.below(3)), "title", heavy_title(r));
+    }
     let e = ent(r.below(ENTS));
     match r.below(8) {
         0 => Op::set(e, TYPE_KEY, if r.chance(1, 2) { "task" } else { "list" }),
@@ -526,6 +579,10 @@ fn step(rig: &mut Rig, r: &mut Rng, seed: u64, i: usize) {
     rig.clock
         .fetch_add(1 + r.below(50) as i64, Ordering::SeqCst);
     let tr = std::env::var("EGDB_DIFF_TRACE").is_ok();
+    if heavy() && r.chance(1, 4) {
+        rename_burst(rig, r, b, &ctx, tr);
+        return;
+    }
     match r.below(20) {
         0..=8 => {
             let author = if r.chance(1, 2) { "a" } else { "b" };
@@ -601,6 +658,7 @@ fn step(rig: &mut Rig, r: &mut Rng, seed: u64, i: usize) {
                 eprintln!("{ctx}: merge into b{b} from b{from} -> parents {parents:?}");
             }
             rig.store.merge(rig.ids[b], rig.ids[from]).unwrap();
+            bump(&stats::MERGES);
             rig.m.set_parents(b, parents);
         }
         13 => {
@@ -635,6 +693,7 @@ fn step(rig: &mut Rig, r: &mut Rng, seed: u64, i: usize) {
                 eprintln!("{ctx}: undo b{b} {author} @{} -> {want:?}", rig.now());
             }
             let got = rig.store.undo(rig.ids[b], author);
+            bump(&stats::UNDOS);
             match (want, got) {
                 (Ok(w), Ok(g)) => assert_eq!(w, g, "{ctx}: undo"),
                 (Err(true), Err(Error::UndoRefused(_))) => {}
@@ -656,6 +715,53 @@ fn step(rig: &mut Rig, r: &mut Rng, seed: u64, i: usize) {
         }
         _ => {}
     }
+}
+
+/// 5 to 10 single renames of one entity on branch `b`, each its own batch,
+/// sometimes the same name twice; with a fork of `b` in the middle now and
+/// then.
+fn rename_burst(rig: &mut Rig, r: &mut Rng, b: usize, ctx: &str, tr: bool) {
+    bump(&stats::BURSTS);
+    let e = ent(r.below(3));
+    let n = 5 + r.below(6);
+    let fork_at = (rig.ids.len() < 6 && r.chance(1, 3)).then(|| 1 + r.below(n - 1));
+    let mut last = heavy_title(r);
+    let mut renames = 0;
+    for i in 0..n {
+        if fork_at == Some(i) {
+            let entries = rig.m.frozen_view(b);
+            if tr {
+                eprintln!(
+                    "{ctx}: burst fork b{b} -> b{} entries {entries:?}",
+                    rig.ids.len()
+                );
+            }
+            let id = rig.store.fork(rig.ids[b], "f").unwrap();
+            rig.add_branch(id, entries);
+            bump(&stats::BURST_FORKS);
+        }
+        rig.clock.fetch_add(1 + r.below(5) as i64, Ordering::SeqCst);
+        if !r.chance(1, 4) {
+            last = heavy_title(r); // else: the same name again
+        }
+        let ops = vec![Op::set(e.as_str(), "title", last.clone())];
+        let author = if r.chance(1, 2) { "a" } else { "b" };
+        if tr {
+            eprintln!("{ctx}: burst write b{b} {author} @{} {ops:?}", rig.now());
+        }
+        let want = rig.m.write(b, author, &ops, rig.now());
+        let got = rig.store.write(WriteBatch::new(rig.ids[b], author, ops));
+        match (want, got) {
+            (Some((f, l)), Ok(w)) => {
+                assert_eq!((f, l), (w.first_seq, w.last_seq), "{ctx}");
+                renames += 1;
+            }
+            (None, Err(Error::BranchArchived(_))) => {}
+            (w, g) => panic!("{ctx}: burst write {w:?} vs {g:?}"),
+        }
+    }
+    stats::RENAMES.fetch_add(renames, Ordering::Relaxed);
+    stats::MAX_RENAMES_ONE_ENTITY.fetch_max(renames, Ordering::Relaxed);
 }
 
 // --- comparing reads ----------------------------------------------------------------
@@ -760,6 +866,7 @@ fn model_walk(
 }
 
 fn compare_reads(rig: &Rig, ctx: &str) {
+    bump(&stats::READS);
     let names: Vec<String> = (0..ENTS + 1).map(ent).collect(); // one never written
     let refs: Vec<&str> = names.iter().map(String::as_str).collect();
     for (b, id) in rig.ids.iter().enumerate() {
@@ -815,6 +922,7 @@ fn compare_reads(rig: &Rig, ctx: &str) {
 }
 
 fn compare_walks(rig: &Rig, r: &mut Rng, ctx: &str) {
+    bump(&stats::WALKS);
     let follow = follow_map();
     for (b, id) in rig.ids.iter().enumerate() {
         let w = rig.m.view(b);
@@ -880,12 +988,25 @@ fn compare_walks(rig: &Rig, r: &mut Rng, ctx: &str) {
 fn run_case(seed: u64) {
     let mut r = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
     let mut rig = Rig::new();
-    let ops = 10 + r.below(30);
+    let heavy = matches!(seed % 3, 0);
+    HEAVY.with(|h| h.set(heavy));
+    bump(&stats::CASES);
+    if heavy {
+        bump(&stats::HEAVY_CASES);
+    }
+    let (ops, every) = if heavy {
+        (30 + r.below(30), 6)
+    } else {
+        (10 + r.below(30), 12)
+    };
     for i in 0..ops {
         step(&mut rig, &mut r, seed, i);
-        if i % 12 == 11 {
+        if i % every == every - 1 {
             compare_reads(&rig, &format!("seed {seed} after op {i}"));
             compare_finds(&rig, &mut r, &format!("seed {seed} after op {i}"));
+            if heavy {
+                compare_walks(&rig, &mut r, &format!("seed {seed} after op {i}"));
+            }
         }
     }
     let ctx = format!("seed {seed} final");
@@ -906,6 +1027,28 @@ fn the_store_agrees_with_a_naive_model_on_random_histories() {
         .unwrap_or(1);
     for seed in first..first + cases {
         run_case(seed);
+    }
+    if std::env::var("EGDB_DIFF_STATS").is_ok() {
+        let g = |c: &std::sync::atomic::AtomicUsize| c.load(Ordering::Relaxed);
+        eprintln!(
+            "diff stats: cases {} (history-heavy {}), title writes {}, rename bursts {} \
+             (with a fork {}), most renames in one burst {}, read checks {}, walk checks {}, \
+             finds {} (on branches with a frozen range {}, with more than one page {}), \
+             undos {}, merges {}",
+            g(&stats::CASES),
+            g(&stats::HEAVY_CASES),
+            g(&stats::RENAMES),
+            g(&stats::BURSTS),
+            g(&stats::BURST_FORKS),
+            g(&stats::MAX_RENAMES_ONE_ENTITY),
+            g(&stats::READS),
+            g(&stats::WALKS),
+            g(&stats::FINDS),
+            g(&stats::FINDS_FROZEN),
+            g(&stats::FINDS_PAGED),
+            g(&stats::UNDOS),
+            g(&stats::MERGES),
+        );
     }
 }
 
@@ -1005,9 +1148,16 @@ fn compare_finds(rig: &Rig, r: &mut Rng, ctx: &str) {
             } else {
                 usize::MAX
             };
+            bump(&stats::FINDS);
+            if rig.m.bs[b].parents.iter().any(|p| p.2 != OPEN) {
+                bump(&stats::FINDS_FROZEN);
+            }
             let mut got: Vec<String> = Vec::new();
             let mut cursor = None;
-            for _ in 0..100 {
+            for page_no in 0..100 {
+                if page_no == 1 {
+                    bump(&stats::FINDS_PAGED);
+                }
                 let page = rig
                     .store
                     .find(
