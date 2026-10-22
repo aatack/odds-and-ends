@@ -5,9 +5,12 @@
 //! It reuses the shared read path exactly like [`Store::walk`]: the view is
 //! resolved once ([`Store::branch_view`]), every link read is one batched
 //! [`Store::links_with`] over a whole frontier, and every type read is one
-//! batched [`Store::resolve_types`]. No new SQL bypasses the roll-up, so prove
-//! works unchanged at branch heads, on stacks of open and frozen parent
-//! ranges, on frozen views, and after archive, undo, merge, pull and rebase.
+//! batched [`Store::resolve_types`]. The `Walk` strategy goes further and
+//! drives the walk's own read-ahead cache (a `pub(crate)` [`Walker`]) over a
+//! reversed follow map, so it batches like [`Store::walk`] does. No new SQL
+//! bypasses the roll-up, so prove works unchanged at branch heads, on stacks
+//! of open and frozen parent ranges, on frozen views, and after archive,
+//! undo, merge, pull and rebase.
 //!
 //! See `DESIGN.md` section 11.3 for the semantics.
 
@@ -15,9 +18,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::error::Result;
 use crate::store::Store;
-use crate::types::{BranchId, Direction, Link, Value};
+use crate::types::{BranchId, Direction, Link, Value, TYPE_KEY};
 use crate::view::View;
-use crate::walk::Follow;
+use crate::walk::{Follow, ReadAhead, WalkNode, Walker};
 
 /// Which search a [`Store::prove`] call uses. All three return the same
 /// reachability answer; `Backward` and `Bidirectional` return a shortest
@@ -416,10 +419,20 @@ fn expand_fwd(ctx: &mut Ctx, fwd: &mut Side, max_depth: Option<usize>) -> Result
             fwd.types.insert(n.clone(), t);
         }
     }
-    // A node at the depth cap is kept (it may be a meeting point) but is not
-    // expanded again.
+    // Every discovered node stays in `visited` (it may be a meeting point),
+    // but only expand further the ones within the depth cap whose type has
+    // outgoing relationships: a node that cannot step forward would only
+    // inflate `nodes_visited` and the budget.
     if max_depth != Some(nd) {
-        fwd.frontier = new_nodes.clone();
+        fwd.frontier = new_nodes
+            .iter()
+            .filter(|v| {
+                fwd.types
+                    .get(*v)
+                    .is_some_and(|t| ctx.relationships.contains_key(t))
+            })
+            .cloned()
+            .collect();
     }
     Ok(new_nodes)
 }
@@ -528,9 +541,14 @@ fn bidirectional(
     let rtypes = ctx.types_of(&root_refs)?;
     for r in &roots {
         if let Some(ty) = type_text(&rtypes, r) {
+            // A root that cannot step forward stays a possible meeting point
+            // (in `visited`) but is not expanded.
+            let can_step = ctx.relationships.contains_key(&ty);
             fwd.visited.insert(r.clone(), 0);
             fwd.types.insert(r.clone(), ty);
-            fwd.frontier.push(r.clone());
+            if can_step {
+                fwd.frontier.push(r.clone());
+            }
         }
     }
     let mut bwd = Side::default();
@@ -544,6 +562,12 @@ fn bidirectional(
             if *mu <= fwd.depth + bwd.depth {
                 break;
             }
+        }
+        // With balanced expansion, by the time the two depths sum to `m` every
+        // path of length <= m has been met; none found means none exists
+        // within the limit, so stop before expanding past it.
+        if best.is_none() && max_depth.is_some_and(|m| fwd.depth + bwd.depth >= m) {
+            break;
         }
         let fwd_done = fwd.frontier.is_empty();
         let bwd_done = bwd.frontier.is_empty();
@@ -567,7 +591,12 @@ fn bidirectional(
             bwd.frontier.len()
         };
         if max_nodes.is_some_and(|m| ctx.stats.nodes_visited + frontier_len > m) {
-            return Ok(ProveOutcome::Unknown);
+            // A proof already in hand is valid (possibly not the shortest, as
+            // the search was about to continue); return it rather than Unknown.
+            return Ok(match best {
+                Some((_, m)) => ProveOutcome::Proved(reconstruct_bi(&m, &fwd, &bwd, item)),
+                None => ProveOutcome::Unknown,
+            });
         }
         let new_nodes = if do_fwd {
             expand_fwd(ctx, &mut fwd, max_depth)?
@@ -591,18 +620,32 @@ fn bidirectional(
     }
 }
 
-/// Depth-first search from the item over reversed relationships, returning the
-/// first proof found. The predecessor-type check cannot live in a reversed
-/// follow map (which is keyed by the lower node's type), so it is done in this
-/// loader: for each candidate `u` reached from the current node by a reversed
-/// pair, we read `u`'s type and accept the step only if `relationships[type(u)]`
-/// contains the matching downward pair. `seen` memoises the shallowest depth a
-/// node was expanded at, so the search still terminates and stays complete for
-/// reachability within `max_depth`.
+/// The text of a loaded entity's `type` value, if it is text.
+fn loaded_type<D, I>(ld: &Walker<'_, D, I>, id: &str) -> Option<String>
+where
+    D: FnMut(&[String], &WalkNode) -> bool,
+    I: FnMut(&[String], &WalkNode) -> bool,
+{
+    match ld.nodes.get(id)?.values.get(TYPE_KEY) {
+        Some(Value::Text(t)) => Some(t.clone()),
+        _ => None,
+    }
+}
+
+/// One depth-first step of [`ProveStrategy::Walk`], driving the walk loader
+/// `ld`. [`Walker::ensure`] loads the current node and a couple of read-ahead
+/// layers of its reversed neighbours in batched rounds; the candidates' types
+/// are then already in [`Walker::nodes`], so the predecessor-type check needs
+/// no read of its own. `seen` memoises the shallowest depth a node was
+/// expanded at, so the search terminates and stays complete for reachability
+/// within `max_depth`.
 #[allow(clippy::too_many_arguments)]
-fn walk_dfs(
-    ctx: &mut Ctx,
+fn walk_dfs<D, I>(
+    ld: &mut Walker<'_, D, I>,
+    roots: &HashSet<String>,
+    relationships: &Follow,
     reversed: &[(String, Direction)],
+    stats: &mut ProveStats,
     seen: &mut HashMap<String, usize>,
     budget: &mut bool,
     path: &mut Vec<String>,
@@ -610,9 +653,13 @@ fn walk_dfs(
     depth: usize,
     max_depth: Option<usize>,
     max_nodes: Option<usize>,
-) -> Result<Option<Proof>> {
+) -> Result<Option<Proof>>
+where
+    D: FnMut(&[String], &WalkNode) -> bool,
+    I: FnMut(&[String], &WalkNode) -> bool,
+{
     let cur = path.last().expect("path is never empty").clone();
-    if depth > 0 && ctx.roots.contains(&cur) {
+    if depth > 0 && roots.contains(&cur) {
         let mut p = path.clone();
         p.reverse();
         let mut l = links.clone();
@@ -622,55 +669,61 @@ fn walk_dfs(
     if max_depth.is_some_and(|m| depth >= m) {
         return Ok(None);
     }
-    match seen.get(&cur) {
-        Some(&sd) if sd <= depth => return Ok(None),
-        _ => {}
+    if matches!(seen.get(&cur), Some(&sd) if sd <= depth) {
+        return Ok(None);
     }
-    if max_nodes.is_some_and(|m| ctx.stats.nodes_visited >= m) {
+    if max_nodes.is_some_and(|m| stats.nodes_visited >= m) {
         *budget = true;
         return Ok(None);
     }
     seen.insert(cur.clone(), depth);
-    let read = ctx.read_links(std::slice::from_ref(&cur), reversed)?;
-    ctx.stats.depth_reached = ctx.stats.depth_reached.max(depth + 1);
+    // Read `cur`'s reversed links (the loader's type-keyed read already did so
+    // for a typed node; this also covers an untyped item).
+    ld.ensure_links(&cur, reversed)?;
+    stats.nodes_visited += 1;
+    stats.depth_reached = stats.depth_reached.max(depth + 1);
+    // Candidate predecessors from the reversed links of `cur`, each with the
+    // link and the downward pair it was reached by.
     let mut cands: Vec<(String, Link, (String, Direction))> = Vec::new();
-    {
-        let groups = &read[&cur];
+    if let Some(groups) = ld.links.get(&cur) {
         for (t, rd) in reversed {
             let orig = (t.clone(), reverse(*rd));
-            for link in &groups[&(t.clone(), *rd)] {
-                cands.push((other_end(link, *rd), link.clone(), orig.clone()));
+            if let Some(ls) = groups.get(&(t.clone(), *rd)) {
+                for link in ls {
+                    cands.push((other_end(link, *rd), link.clone(), orig.clone()));
+                }
             }
         }
     }
-    let mut fresh: Vec<&str> = cands
+    // Load the fresh candidates as one batch, so each one's type is known
+    // without a read of its own (mirrors walk's children "settle").
+    let mut fresh: Vec<String> = cands
         .iter()
-        .map(|c| c.0.as_str())
-        .filter(|u| !path.contains(&(*u).to_owned()))
+        .map(|c| c.0.clone())
+        .filter(|u| !path.contains(u))
         .collect();
     fresh.sort();
     fresh.dedup();
-    let types = ctx.types_of(&fresh)?;
+    ld.ensure(&fresh, usize::MAX)?;
     cands.sort_by(|a, b| a.0.cmp(&b.0));
     for (u, link, orig) in cands {
         if path.contains(&u) {
             continue;
         }
-        let Some(ty) = type_text(&types, &u) else {
+        let Some(ty) = loaded_type(ld, &u) else {
             continue;
         };
-        if !ctx
-            .relationships
-            .get(&ty)
-            .is_some_and(|ps| ps.contains(&orig))
-        {
+        if !relationships.get(&ty).is_some_and(|ps| ps.contains(&orig)) {
             continue;
         }
         path.push(u.clone());
         links.push(link);
         if let Some(p) = walk_dfs(
-            ctx,
+            ld,
+            roots,
+            relationships,
             reversed,
+            stats,
             seen,
             budget,
             path,
@@ -687,8 +740,8 @@ fn walk_dfs(
     Ok(None)
 }
 
-/// Depth-first [`ProveStrategy::Walk`]: first proof found, not necessarily
-/// shortest.
+/// Depth-first [`ProveStrategy::Walk`], built on the walk loader: first proof
+/// found, not necessarily shortest.
 fn walk_prove(
     ctx: &mut Ctx,
     item: &str,
@@ -696,13 +749,37 @@ fn walk_prove(
     max_nodes: Option<usize>,
 ) -> Result<ProveOutcome> {
     let reversed = ctx.reversed.clone();
+    // The reversed follow map: any type that can be an upper node (a
+    // relationships key) follows all reversed pairs; the item's own type is
+    // added so the start node expands even if its type steps nowhere.
+    let mut rev_follow: Follow = ctx
+        .relationships
+        .keys()
+        .map(|t| (t.clone(), reversed.clone()))
+        .collect();
+    let item_types = ctx.types_of(&[item])?;
+    if let Some(t) = type_text(&item_types, item) {
+        rev_follow.entry(t).or_insert_with(|| reversed.clone());
+    }
+    let mut ld = ctx.store.walk_loader(
+        ctx.view.clone(),
+        &rev_follow,
+        ReadAhead::default(),
+        ctx.typed_only,
+    );
+    let roots = &ctx.roots;
+    let relationships: &Follow = ctx.relationships;
+    let stats = &mut ctx.stats;
     let mut seen: HashMap<String, usize> = HashMap::new();
     let mut budget = false;
     let mut path = vec![item.to_owned()];
     let mut links = Vec::new();
     let proof = walk_dfs(
-        ctx,
+        &mut ld,
+        roots,
+        relationships,
         &reversed,
+        stats,
         &mut seen,
         &mut budget,
         &mut path,
@@ -711,6 +788,10 @@ fn walk_prove(
         max_depth,
         max_nodes,
     )?;
+    // Fold the loader's batched rounds into the stats: each round reads values
+    // once and links once. SQL is counted globally by the outer snapshot.
+    stats.link_reads += ld.loads;
+    stats.value_reads += ld.loads;
     Ok(match proof {
         Some(p) => ProveOutcome::Proved(p),
         None if budget => ProveOutcome::Unknown,

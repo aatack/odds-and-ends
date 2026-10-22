@@ -825,6 +825,169 @@ fn assert_valid(f: &Fix, branch: BranchId, p: &Proof) {
     }
 }
 
+// --- round-2 fixes --------------------------------------------------------
+
+#[test]
+fn budget_in_hand_is_proved_not_unknown() {
+    // A short proof R -> M -> I plus dead-end fan-out, so a search may expand
+    // several nodes. Under any budget the answer is never a wrong NoPath; a
+    // tiny budget may give Unknown, a generous one gives the (valid) proof.
+    let mut f = Fix::new();
+    let b = f.main;
+    f.typ(b, "R", "org");
+    f.typ(b, "M", "folder");
+    f.typ(b, "I", "doc");
+    f.link(b, "R", "M", "child");
+    f.link(b, "M", "I", "child");
+    for i in 0..6 {
+        let d = format!("d{i}");
+        f.typ(b, &d, "folder");
+        f.link(b, "M", &d, "child"); // dead ends under M
+    }
+    let r = rel(&[
+        ("org", "child", Direction::Outbound),
+        ("folder", "child", Direction::Outbound),
+    ]);
+    for s in STRATEGIES {
+        for budget in 1..=30 {
+            let p = prove1(
+                &f,
+                b,
+                "I",
+                &["R"],
+                &r,
+                s,
+                ProveOptions {
+                    max_nodes: Some(budget),
+                    ..Default::default()
+                },
+            );
+            match &p.outcome {
+                ProveOutcome::Proved(proof) => assert_valid(&f, b, proof),
+                ProveOutcome::Unknown => {}
+                ProveOutcome::NoPath => {
+                    panic!("{s:?} budget {budget}: a findable proof must never be NoPath")
+                }
+            }
+        }
+        // A generous budget always proves it.
+        let p = prove1(
+            &f,
+            b,
+            "I",
+            &["R"],
+            &r,
+            s,
+            ProveOptions {
+                max_nodes: Some(1000),
+                ..Default::default()
+            },
+        );
+        assert!(proved(&p.outcome), "{s:?} with a generous budget");
+    }
+}
+
+#[test]
+fn bidirectional_max_depth_stops_early() {
+    // A chain R -> f1 -> f2 -> f3 -> f4 -> I (5 links).
+    let mut f = Fix::new();
+    let b = f.main;
+    f.typ(b, "R", "org");
+    for i in 1..=4 {
+        f.typ(b, &format!("f{i}"), "folder");
+    }
+    f.typ(b, "I", "doc");
+    f.link(b, "R", "f1", "child");
+    f.link(b, "f1", "f2", "child");
+    f.link(b, "f2", "f3", "child");
+    f.link(b, "f3", "f4", "child");
+    f.link(b, "f4", "I", "child");
+    let r = rel(&[
+        ("org", "child", Direction::Outbound),
+        ("folder", "child", Direction::Outbound),
+    ]);
+    let bi = ProveStrategy::Bidirectional;
+    // Deep enough: proved, length 5.
+    let ok = prove1(
+        &f,
+        b,
+        "I",
+        &["R"],
+        &r,
+        bi,
+        ProveOptions {
+            max_depth: Some(5),
+            ..Default::default()
+        },
+    );
+    assert_eq!(len_of(&ok.outcome), Some(5));
+    // Too shallow: NoPath, and the two sides together stop at combined depth 2.
+    let tight = prove1(
+        &f,
+        b,
+        "I",
+        &["R"],
+        &r,
+        bi,
+        ProveOptions {
+            max_depth: Some(2),
+            ..Default::default()
+        },
+    );
+    assert_eq!(tight.outcome, ProveOutcome::NoPath);
+    assert!(
+        tight.stats.nodes_visited < ok.stats.nodes_visited,
+        "the capped search must expand fewer nodes ({} vs {})",
+        tight.stats.nodes_visited,
+        ok.stats.nodes_visited
+    );
+    assert!(
+        tight.stats.depth_reached <= 2,
+        "each side stops within the cap"
+    );
+}
+
+#[test]
+fn walk_batches_link_reads_below_nodes_visited() {
+    // The item has a wide fan-in of folders that lead nowhere (no root), so a
+    // depth-first Walk must visit every one. Read-ahead loads a whole layer in
+    // one batch, so the link-read rounds are far fewer than the nodes visited.
+    let mut f = Fix::new();
+    let b = f.main;
+    f.typ(b, "R", "org"); // a root that is not connected
+    f.typ(b, "I", "doc");
+    for i in 0..12 {
+        let g = format!("f{i}");
+        f.typ(b, &g, "folder");
+        f.link(b, &g, "I", "child"); // folder -> doc
+    }
+    let r = rel(&[
+        ("org", "child", Direction::Outbound),
+        ("folder", "child", Direction::Outbound),
+    ]);
+    let p = prove1(
+        &f,
+        b,
+        "I",
+        &["R"],
+        &r,
+        ProveStrategy::Walk,
+        ProveOptions::default(),
+    );
+    assert_eq!(p.outcome, ProveOutcome::NoPath);
+    assert!(
+        p.stats.nodes_visited >= 13,
+        "item plus its 12 parents are all visited (got {})",
+        p.stats.nodes_visited
+    );
+    assert!(
+        p.stats.link_reads < p.stats.nodes_visited,
+        "read-ahead batching: {} link-read rounds for {} nodes",
+        p.stats.link_reads,
+        p.stats.nodes_visited
+    );
+}
+
 #[test]
 fn returned_proofs_are_valid_for_all_strategies() {
     let mut f = Fix::new();
