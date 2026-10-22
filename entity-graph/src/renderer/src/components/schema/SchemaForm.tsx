@@ -1,28 +1,28 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Plus, Trash03 } from '@untitledui/icons'
 import { cn } from '../../helpers/cn'
-import { Button } from '../ui/Button'
-import { IconButton } from '../ui/IconButton'
-import { Input } from '../ui/Input'
-import { Select } from '../ui/Select'
 import { Switch } from '../ui/Switch'
 import { JsonEditor } from './JsonEditor'
 import {
   defaultFor,
   isObject,
   matches,
-  variantsOf,
   propertiesOf,
   requiredOf,
   typeOf,
+  variantsOf,
   type JsonSchema,
 } from './schema'
 
 // A form for a value, drawn from a JSON Schema. It covers the shapes a value in
 // this store actually takes — strings, numbers, booleans, null, literals, unions
 // (a union of literals is a set of choices), objects of named fields and lists —
-// and falls back to a JSON box for anything else (a
-// union, a schema that says nothing), so no value is ever uneditable.
+// and falls back to a JSON box for anything else, so no value is ever uneditable.
+//
+// The whole form is one box, a line per value: its label on the left and its
+// control on the right, a hairline between lines. An object or a list is a line
+// of its own followed by its lines one step in, so depth reads as indentation
+// inside the same box rather than as boxes inside boxes.
 //
 // Every edit hands the whole value back through `setValue`. Keys the schema
 // doesn't name are kept as they were: the form edits what it knows about and
@@ -37,97 +37,274 @@ export function SchemaForm({
   setValue: (value: unknown) => void
   schema: JsonSchema
 }): React.JSX.Element {
-  return <SchemaField schema={schema} value={value} onChange={setValue} />
-}
-
-/** A quiet label, the same micro-label `Field` uses, with what the field is for. */
-function Label({
-  name,
-  schema,
-  required,
-}: {
-  name: string
-  schema: JsonSchema
-  required: boolean
-}): React.JSX.Element {
-  const title = typeof schema.title === 'string' ? schema.title : name
-  const description = typeof schema.description === 'string' ? schema.description : null
+  // An object is its fields, with no line for itself: the box is the object.
+  const fields = typeOf(schema) === 'object' && propertiesOf(schema).length > 0
   return (
-    <div className="pb-1">
-      <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-gray-500">
-        {title}
-      </span>
-      {required && <span className="pl-1.5 text-[11px] text-gray-400">required</span>}
-      {description && <p className="text-[11px] text-gray-400">{description}</p>}
+    <div
+      className={cn(
+        'divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-200 bg-white shadow-xs',
+      )}
+    >
+      {fields ? (
+        <Fields schema={schema} value={value} onChange={setValue} depth={0} />
+      ) : (
+        <Entry label="Value" schema={schema} value={value} onChange={setValue} depth={0} />
+      )}
     </div>
   )
 }
 
-function SchemaField({
+/** A text box with no surface of its own: the line is the surface. */
+const BARE =
+  'h-8 w-full min-w-0 bg-transparent px-2.5 text-[13px] text-gray-900 placeholder:text-gray-400 focus:outline-none'
+const BARE_MONO = cn(BARE, 'font-mono text-[12.5px]')
+const MUTED = 'px-2.5 font-mono text-[12.5px] leading-8 text-gray-400'
+
+/** How far in a line's label starts, per level. */
+const INDENT = 16
+
+interface EntryProps {
+  label: string
+  schema: JsonSchema
+  value: unknown
+  onChange: (value: unknown) => void
+  depth: number
+  required?: boolean
+  /** Set for a list's item, which can be taken out. */
+  onRemove?: () => void
+}
+
+/**
+ * One line: the label, and the control. The label's column is the same width at
+ * every depth, its text pushed in by the depth, so the controls line up down the
+ * whole box. Focus inside a line tints it, which is where the box's focus ring
+ * would otherwise have to be.
+ */
+function Line({
+  label,
+  depth,
+  required,
+  description,
+  aside,
+  children,
+}: {
+  label: string
+  depth: number
+  required?: boolean
+  description?: string
+  /** Something small at the end of the line: a remove, an add. */
+  aside?: React.ReactNode
+  children?: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <div className="group flex min-h-8 items-stretch focus-within:bg-brand-50/40">
+      <div
+        className="flex w-40 shrink-0 items-center gap-1 truncate py-1.5 pr-2 text-[12px] text-gray-500"
+        style={{ paddingLeft: 10 + depth * INDENT }}
+        title={description}
+      >
+        <span className="truncate">{label}</span>
+        {required && <span className="shrink-0 text-gray-300">*</span>}
+      </div>
+      <div className="flex min-w-0 flex-1 items-center">{children}</div>
+      {aside && <div className="flex shrink-0 items-center pr-1.5">{aside}</div>}
+    </div>
+  )
+}
+
+/** A small control at the end of a line, quiet until the line is hovered. */
+function LineButton({
+  title,
+  onClick,
+  children,
+}: {
+  title: string
+  onClick: () => void
+  children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <button
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      className="flex size-6 items-center justify-center rounded text-gray-300 group-hover:text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:text-gray-700"
+    >
+      {children}
+    </button>
+  )
+}
+
+const descriptionOf = (schema: JsonSchema): string | undefined =>
+  typeof schema.description === 'string' ? schema.description : undefined
+
+const titleOf = (schema: JsonSchema, fallback: string): string =>
+  typeof schema.title === 'string' ? schema.title : fallback
+
+/** An object's fields, a line (or a line and its lines) each. */
+function Fields({
   schema,
   value,
   onChange,
+  depth,
 }: {
   schema: JsonSchema
   value: unknown
   onChange: (value: unknown) => void
+  depth: number
 }): React.JSX.Element {
-  if ('const' in schema) {
-    return <span className="font-mono text-[12.5px] text-gray-500">{JSON.stringify(schema.const)}</span>
-  }
+  const required = requiredOf(schema)
+  const current = isObject(value) ? value : {}
+  return (
+    <>
+      {propertiesOf(schema).map(([key, property]) => (
+        <Entry
+          key={key}
+          label={titleOf(property, key)}
+          schema={property}
+          value={current[key]}
+          required={required.includes(key)}
+          depth={depth}
+          onChange={(next) => {
+            const out = { ...current }
+            // Taking a field away leaves no key, rather than an `undefined`.
+            if (next === undefined) delete out[key]
+            else out[key] = next
+            onChange(out)
+          }}
+        />
+      ))}
+    </>
+  )
+}
+
+/**
+ * One value of the form, whatever its shape: a line, and for an object, a list
+ * or a union of those, the lines inside it. Rendered as siblings, so every line
+ * in the box takes the same hairline above it.
+ */
+function Entry({
+  label,
+  schema,
+  value,
+  onChange,
+  depth,
+  required,
+  onRemove,
+}: EntryProps): React.JSX.Element {
+  const description = descriptionOf(schema)
+  const remove = onRemove && (
+    <LineButton title="Remove" onClick={onRemove}>
+      <Trash03 size={13} />
+    </LineButton>
+  )
+  const line = (children: React.ReactNode, aside: React.ReactNode = remove): React.JSX.Element => (
+    <Line label={label} depth={depth} required={required} description={description} aside={aside}>
+      {children}
+    </Line>
+  )
+
+  if ('const' in schema) return line(<span className={MUTED}>{JSON.stringify(schema.const)}</span>)
+
   const variants = variantsOf(schema)
   if (variants) {
     // Every option a literal: a choice, drawn as one.
     if (variants.every((v) => 'const' in v)) {
-      return <EnumField options={variants.map((v) => v.const)} value={value} onChange={onChange} />
+      return line(
+        <Choice options={variants.map((v) => v.const)} value={value} onChange={onChange} />,
+      )
     }
-    return <UnionField variants={variants} value={value} onChange={onChange} />
+    return <Union variants={variants} value={value} onChange={onChange} line={line} depth={depth} />
   }
+
   switch (typeOf(schema)) {
-    case 'null':
-      return <span className="font-mono text-[12.5px] text-gray-400">null</span>
     case 'string':
-      return (
-        <Input
+      return line(
+        <input
+          className={BARE}
           value={typeof value === 'string' ? value : ''}
           placeholder={typeof schema.default === 'string' ? schema.default : undefined}
           onChange={(e) => onChange(e.target.value)}
-        />
+        />,
       )
     case 'number':
     case 'integer':
-      return <NumberField integer={typeOf(schema) === 'integer'} value={value} onChange={onChange} />
+      return line(
+        <NumberInput integer={typeOf(schema) === 'integer'} value={value} onChange={onChange} />,
+      )
     case 'boolean':
-      return <Switch checked={value === true} onChange={onChange} label="Toggle" />
+      return line(
+        <div className="px-2.5">
+          <Switch checked={value === true} onChange={onChange} label={label} />
+        </div>,
+      )
+    case 'null':
+      return line(<span className={MUTED}>null</span>)
     case 'object':
-      return <ObjectField schema={schema} value={value} onChange={onChange} />
+      if (!propertiesOf(schema).length) break
+      return (
+        <>
+          {line(<span className={MUTED}>{summary(value)}</span>)}
+          <Fields schema={schema} value={value} onChange={onChange} depth={depth + 1} />
+        </>
+      )
     case 'array':
-      return <ArrayField schema={schema} value={value} onChange={onChange} />
-    default:
-      return <JsonEditor value={value} setValue={onChange} placeholder="Any JSON" />
+      return <List schema={schema} value={value} onChange={onChange} line={line} depth={depth} />
   }
+  // Anything the form can't draw a control for — no type, a bag of keys — is JSON.
+  return line(
+    <div className="w-full py-1 pr-1.5">
+      <JsonEditor value={value} setValue={onChange} placeholder="Any JSON" />
+    </div>,
+  )
 }
 
-function EnumField({
-  options,
+/** What an object or a list holds, in a word, on its own line. */
+function summary(value: unknown): string {
+  if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? '' : 's'}`
+  if (isObject(value)) {
+    const n = Object.keys(value).length
+    return `${n} field${n === 1 ? '' : 's'}`
+  }
+  return ''
+}
+
+type LineMaker = (children: React.ReactNode, aside?: React.ReactNode) => React.JSX.Element
+
+function List({
+  schema,
   value,
   onChange,
+  line,
+  depth,
 }: {
-  options: unknown[]
+  schema: JsonSchema
   value: unknown
   onChange: (value: unknown) => void
+  line: LineMaker
+  depth: number
 }): React.JSX.Element {
-  // Options can be any JSON, so the select works on their indices.
-  const at = options.findIndex((o) => JSON.stringify(o) === JSON.stringify(value))
+  const items = isObject(schema.items) ? schema.items : {}
+  const list = Array.isArray(value) ? value : []
+  const add = (
+    <LineButton title="Add an item" onClick={() => onChange([...list, defaultFor(items)])}>
+      <Plus size={13} />
+    </LineButton>
+  )
   return (
-    <Select value={at < 0 ? '' : String(at)} onChange={(e) => onChange(options[Number(e.target.value)])}>
-      {at < 0 && <option value="">Choose…</option>}
-      {options.map((o, i) => (
-        <option key={i} value={i}>
-          {typeof o === 'string' ? o : JSON.stringify(o)}
-        </option>
+    <>
+      {line(<span className={MUTED}>{summary(list)}</span>, add)}
+      {list.map((item, i) => (
+        <Entry
+          key={i}
+          label={String(i + 1)}
+          schema={items}
+          value={item}
+          depth={depth + 1}
+          onChange={(next) => onChange(list.map((old, j) => (j === i ? next : old)))}
+          onRemove={() => onChange(list.filter((_, j) => j !== i))}
+        />
       ))}
-    </Select>
+    </>
   )
 }
 
@@ -139,40 +316,135 @@ function variantLabel(variant: JsonSchema, i: number): string {
 }
 
 /**
- * One of several schemas: a picker for which, and that schema's own field. The
- * option shown is the first the value fits, so nothing about the choice is
+ * One of several schemas: a picker for which, then that schema's control — on
+ * the same line where it is a single value, on lines below where it holds others.
+ * The option shown is the first the value fits, so nothing about the choice is
  * stored but the value; picking another starts it from that option's default.
  */
-function UnionField({
+function Union({
   variants,
   value,
   onChange,
+  line,
+  depth,
 }: {
   variants: JsonSchema[]
   value: unknown
   onChange: (value: unknown) => void
+  line: LineMaker
+  depth: number
 }): React.JSX.Element {
   const fitted = variants.findIndex((v) => matches(v, value))
   const at = fitted < 0 ? 0 : fitted
+  const variant = variants[at]
+  const picker = (
+    <select
+      className={cn(BARE, 'w-28 shrink-0 pr-2 text-gray-500')}
+      value={String(at)}
+      onChange={(e) => onChange(defaultFor(variants[Number(e.target.value)]))}
+    >
+      {variants.map((v, i) => (
+        <option key={i} value={i}>
+          {variantLabel(v, i)}
+        </option>
+      ))}
+    </select>
+  )
+  const nests = typeOf(variant) === 'object' || typeOf(variant) === 'array'
+  if (nests) {
+    return (
+      <>
+        {line(picker)}
+        <Entry label="" schema={variant} value={value} onChange={onChange} depth={depth + 1} />
+      </>
+    )
+  }
+  // The chosen option's own control, beside the picker: a line inside the line.
+  return line(
+    <>
+      {picker}
+      <div className="flex min-w-0 flex-1 items-center border-l border-gray-100">
+        <Inline schema={variant} value={value} onChange={onChange} />
+      </div>
+    </>,
+  )
+}
+
+/** A single value's control alone, with no line of its own — for beside a picker. */
+function Inline({
+  schema,
+  value,
+  onChange,
+}: {
+  schema: JsonSchema
+  value: unknown
+  onChange: (value: unknown) => void
+}): React.JSX.Element {
+  if ('const' in schema) return <span className={MUTED}>{JSON.stringify(schema.const)}</span>
+  switch (typeOf(schema)) {
+    case 'string':
+      return (
+        <input
+          className={BARE}
+          value={typeof value === 'string' ? value : ''}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      )
+    case 'number':
+    case 'integer':
+      return (
+        <NumberInput integer={typeOf(schema) === 'integer'} value={value} onChange={onChange} />
+      )
+    case 'boolean':
+      return (
+        <div className="px-2.5">
+          <Switch checked={value === true} onChange={onChange} label="Toggle" />
+        </div>
+      )
+    case 'null':
+      return <span className={MUTED}>null</span>
+    default:
+      return (
+        <div className="w-full py-1 pr-1.5 pl-1.5">
+          <JsonEditor value={value} setValue={onChange} placeholder="Any JSON" />
+        </div>
+      )
+  }
+}
+
+function Choice({
+  options,
+  value,
+  onChange,
+}: {
+  options: unknown[]
+  value: unknown
+  onChange: (value: unknown) => void
+}): React.JSX.Element {
+  // Options can be any JSON, so the select works on their indices.
+  const at = options.findIndex((o) => JSON.stringify(o) === JSON.stringify(value))
   return (
-    <div className="space-y-1.5">
-      <Select value={String(at)} onChange={(e) => onChange(defaultFor(variants[Number(e.target.value)]))}>
-        {variants.map((v, i) => (
-          <option key={i} value={i}>
-            {variantLabel(v, i)}
-          </option>
-        ))}
-      </Select>
-      <SchemaField schema={variants[at]} value={value} onChange={onChange} />
-    </div>
+    <select
+      className={cn(BARE, 'pr-2')}
+      value={at < 0 ? '' : String(at)}
+      onChange={(e) => onChange(options[Number(e.target.value)])}
+    >
+      {at < 0 && <option value="">Choose…</option>}
+      {options.map((o, i) => (
+        <option key={i} value={i}>
+          {typeof o === 'string' ? o : JSON.stringify(o)}
+        </option>
+      ))}
+    </select>
   )
 }
 
 /**
  * A number, typed as text so a half-typed `-` or `1.` isn't thrown away. Only a
- * value that reads as a number (an integer, for an integer field) is written.
+ * value that reads as a number (an integer, for an integer field) is written; a
+ * line that doesn't says so in its own tone.
  */
-function NumberField({
+function NumberInput({
   integer,
   value,
   onChange,
@@ -181,99 +453,27 @@ function NumberField({
   value: unknown
   onChange: (value: unknown) => void
 }): React.JSX.Element {
-  const [text, setText] = React.useState(typeof value === 'number' ? String(value) : '')
-  React.useEffect(() => {
+  const [text, setText] = useState(typeof value === 'number' ? String(value) : '')
+  useEffect(() => {
     if (typeof value === 'number' && Number(text) !== value) setText(String(value))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value])
   const parsed = Number(text)
-  const bad = text.trim() !== '' && (!Number.isFinite(parsed) || (integer && !Number.isInteger(parsed)))
+  const bad =
+    text.trim() !== '' && (!Number.isFinite(parsed) || (integer && !Number.isInteger(parsed)))
   return (
-    <div>
-      <Input
-        mono
-        inputMode={integer ? 'numeric' : 'decimal'}
-        value={text}
-        onChange={(e) => {
-          const next = e.target.value
-          setText(next)
-          const n = Number(next)
-          if (next.trim() === '') onChange(undefined)
-          else if (Number.isFinite(n) && (!integer || Number.isInteger(n))) onChange(n)
-        }}
-      />
-      {bad && <p className="pt-1 text-[11px] text-error-600">{integer ? 'Not a whole number' : 'Not a number'}</p>}
-    </div>
-  )
-}
-
-function ObjectField({
-  schema,
-  value,
-  onChange,
-}: {
-  schema: JsonSchema
-  value: unknown
-  onChange: (value: unknown) => void
-}): React.JSX.Element {
-  const properties = propertiesOf(schema)
-  const required = requiredOf(schema)
-  const current = isObject(value) ? value : {}
-  // An object that names no fields is a bag of anything: JSON is the honest form.
-  if (!properties.length) return <JsonEditor value={value} setValue={onChange} placeholder="{}" />
-  return (
-    <div className="space-y-3">
-      {properties.map(([key, property]) => (
-        <div key={key}>
-          <Label name={key} schema={property} required={required.includes(key)} />
-          <SchemaField
-            schema={property}
-            value={current[key]}
-            onChange={(next) => {
-              const out = { ...current }
-              // Taking a field away leaves no key, rather than an `undefined`.
-              if (next === undefined) delete out[key]
-              else out[key] = next
-              onChange(out)
-            }}
-          />
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function ArrayField({
-  schema,
-  value,
-  onChange,
-}: {
-  schema: JsonSchema
-  value: unknown
-  onChange: (value: unknown) => void
-}): React.JSX.Element {
-  const items = isObject(schema.items) ? schema.items : {}
-  const list = Array.isArray(value) ? value : []
-  const nested = typeOf(items) === 'object' || typeOf(items) === 'array'
-  return (
-    <div className="space-y-1.5">
-      {list.map((item, i) => (
-        <div key={i} className={cn('flex items-start gap-1.5', nested && 'rounded-md bg-gray-50 p-2')}>
-          <div className="min-w-0 flex-1">
-            <SchemaField
-              schema={items}
-              value={item}
-              onChange={(next) => onChange(list.map((old, j) => (j === i ? next : old)))}
-            />
-          </div>
-          <IconButton title="Remove" onClick={() => onChange(list.filter((_, j) => j !== i))}>
-            <Trash03 size={14} />
-          </IconButton>
-        </div>
-      ))}
-      <Button variant="tertiary" size="sm" onClick={() => onChange([...list, defaultFor(items)])}>
-        <Plus size={13} /> Add
-      </Button>
-    </div>
+    <input
+      className={cn(BARE_MONO, bad && 'text-error-600')}
+      inputMode={integer ? 'numeric' : 'decimal'}
+      title={bad ? (integer ? 'Not a whole number' : 'Not a number') : undefined}
+      value={text}
+      onChange={(e) => {
+        const next = e.target.value
+        setText(next)
+        const n = Number(next)
+        if (next.trim() === '') onChange(undefined)
+        else if (Number.isFinite(n) && (!integer || Number.isInteger(n))) onChange(n)
+      }}
+    />
   )
 }

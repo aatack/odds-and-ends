@@ -7,6 +7,13 @@ import assert from 'node:assert/strict'
 import { createElement as h } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
+// Rendering to a string runs no layout effects, and React says so for each one.
+const warn = console.error
+console.error = (...args: unknown[]) => {
+  if (String(args[0]).includes('useLayoutEffect does nothing on the server')) return
+  warn(...args)
+}
+
 const { SchemaBuilder } = await import('../src/renderer/src/components/schema/SchemaBuilder')
 const { SchemaForm } = await import('../src/renderer/src/components/schema/SchemaForm')
 
@@ -77,6 +84,30 @@ test('folds a schema that holds others, and only that', () => {
   const html = renderToStaticMarkup(h(SchemaBuilder, { value: NESTED, setValue: noop }))
   // The root, the list and the object in it hold schemas; the string `b` does not.
   assert.equal((html.match(/title="Fold"/g) ?? []).length, 3)
+})
+
+test('draws the form as one box of lines, nested lines one step in', () => {
+  const html = renderToStaticMarkup(
+    h(SchemaForm, {
+      schema: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          ingredients: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' } } } },
+        },
+        required: ['title'],
+      },
+      value: { title: 'Soup', ingredients: [{ name: 'leek' }] },
+      setValue: noop,
+    }),
+  )
+  // One bordered surface, however deep the value goes.
+  assert.equal((html.match(/border-gray-200/g) ?? []).length, 1)
+  assert.match(html, /value="Soup"/)
+  assert.match(html, /1 item/)
+  assert.match(html, /value="leek"/)
+  // The item's field sits two steps in: 10px, plus 16px a level.
+  assert.match(html, /padding-left:42px/)
 })
 
 let failed = 0
