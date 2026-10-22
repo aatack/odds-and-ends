@@ -6,7 +6,7 @@ import { cn } from '../helpers/cn'
 import * as A from '../state/actions'
 import { tabRootId } from '../state/derive'
 import { useCrumbs, useLayoutState } from '../state/hooks'
-import { last, type GroupState } from '../state/types'
+import type { GroupState } from '../state/types'
 import { EntityFrame } from './EntityFrame'
 
 /**
@@ -22,7 +22,7 @@ export function TabGroupView({
 }): React.JSX.Element {
   const layout = useLayoutState()
   const activeTab = group.activeTabId ? layout.tabs[group.activeTabId] : null
-  const topFrameId = activeTab ? last(activeTab.frameIds) : undefined
+  const topFrameId = activeTab?.top
 
   return (
     <section

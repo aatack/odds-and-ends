@@ -390,15 +390,28 @@ columns and a record has no order; the selected group's *index* is derived from
 it. Whether the selected group is expanded is one boolean at the top level, not
 one per group.
 
-A tab owns its frame stack, the frames popped off it (so a pop can be undone),
-and its collapsed set. Collapse is therefore per tab and keyed by entity id,
+A tab names the top of its frame stack, and each frame the one it was pushed
+onto (`below`), so the stack is a chain read down from the top — `stackOf` gives
+it bottom first. The tab also owns the frames popped off it (so a pop can be
+undone) and its collapsed set. Collapse is therefore per tab and keyed by entity id,
 while selection is per frame and keyed by *path* — so the same entity appearing
 twice in one frame can be selected in one place but folds in both. That
 asymmetry is intended.
 
-A frame holds its root entity id, which way its query reads, the latent selection
-path, its filters (nullable find text, a sections-only flag, an open-items-only
-flag), a per-entity max-depth map, and any in-progress edit.
+A frame is one view of one entity, and its `type` says which: `FrameState` is a
+union on it, and every frame type holds only its own state beside the id, tab,
+root and `below` they all have. A different view of the same entity is a new
+frame pushed onto the stack, never a change of type. There is one frame type so
+far, `focus`, read through `focusFrame`; `EntityFrame` switches on the type, so
+adding one is a member of the union and a case there.
+
+A focus frame draws the root's type's focus, and holds the state of the default
+one: which way its query reads, the latent selection path, its filters
+(nullable find text, a sections-only flag, an open-items-only flag), a
+per-entity max-depth map, and any in-progress edit. A type with a focus of its
+own (`OWN_FOCUS_TYPES`: a file, a page) draws no rows, so `rowFrame` in
+`state/query.ts` answers null for its frame, it has no rows, its selection is its
+root, and the tools reading rows do nothing there.
 
 - The **selection path** is latent and never overwritten by the resolved one.
   Resolution strips trailing ids until the path exists in the rendered rows,

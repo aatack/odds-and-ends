@@ -7,7 +7,7 @@ import * as A from '../state/actions'
 import { findField } from '../state/focusRequest'
 import { useAtomValue, useFocusRequest, useFrameRows, useLayoutState } from '../state/hooks'
 import { loadMore } from '../state/query'
-import { depthLabel, directionOf, frameDepth, nudgeDepth } from '../state/types'
+import { depthLabel, directionOf, focusFrame, frameDepth, nudgeDepth } from '../state/types'
 import { runTool } from '../tools/call'
 
 /**
@@ -17,10 +17,10 @@ import { runTool } from '../tools/call'
  * and every custom type. It owns no state: rows are derived from the frame plus
  * the query cache, and every gesture goes to a state action or a tool.
  */
-export function Outline({ frameId }: FocusProps): React.JSX.Element {
+export function DefaultFocus({ frameId }: FocusProps): React.JSX.Element {
   const layout = useLayoutState()
   const { rows, keys, selectedIndex, editIndex, loading, complete } = useFrameRows(frameId)
-  const frame = layout.frames[frameId]
+  const frame = focusFrame(layout.frames[frameId])
 
   if (!frame) return <div className="p-8 text-center text-[13px] text-gray-400">No frame.</div>
 

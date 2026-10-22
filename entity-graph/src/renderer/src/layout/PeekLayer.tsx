@@ -7,7 +7,8 @@ import { cn } from '../helpers/cn'
 import * as A from '../state/actions'
 import { useLayoutState } from '../state/hooks'
 import { getLayout } from '../state/store'
-import { last, peeksOf, type PeekState, type Rect } from '../state/types'
+import { URL_PREFIX } from '../../../core/builtins'
+import { peeksOf, type PeekState, type Rect } from '../state/types'
 import { runTool } from '../tools/call'
 import { EntityFrame } from './EntityFrame'
 
@@ -50,8 +51,7 @@ export function PeekLayer(): React.JSX.Element | null {
   }, [])
 
   if (!peeks.length) return null
-  const frameOf = (peek: PeekState): string | null =>
-    peek.tabId ? (last(layout.tabs[peek.tabId]?.frameIds ?? []) ?? null) : null
+  const frameOf = (peek: PeekState): string | null => layout.tabs[peek.tabId]?.top ?? null
   return (
     <>
       {peeks.map((peek, i) => (
@@ -80,7 +80,7 @@ function PeekWindow({
   peek: PeekState
   /** Its place in the stack, bottom first. */
   z: number
-  /** An entity peek's top frame. */
+  /** The top frame of the peek's tab. */
   frameId: string | null
   /** The entity at the root of that frame — the one the bar names. */
   rootId: string | null
@@ -130,12 +130,15 @@ function PeekWindow({
   }
 
   const open = (): void => {
-    if (peek.target.kind === 'url') runTool('link.open', { extra: { url: peek.target.url } })
-    else runTool('entity.openInTab', { extra: { entityId: rootId ?? peek.target.id } })
+    const entityId = rootId ?? peek.entityId
+    // A web page nobody has written anything about opens where pages open.
+    if (entityId.startsWith(URL_PREFIX)) {
+      runTool('link.open', { extra: { url: entityId.slice(URL_PREFIX.length) } })
+    } else runTool('entity.openInTab', { extra: { entityId } })
   }
 
-  // An entity peek whose tab has gone has nothing left to show.
-  if (peek.target.kind === 'entity' && !frameId) return null
+  // A peek whose tab has gone has nothing left to show.
+  if (!frameId) return null
 
   return (
     <div
@@ -158,11 +161,7 @@ function PeekWindow({
         onPointerDown={begin('move')}
       >
         <span className="flex min-w-0 flex-1 items-center">
-          {peek.target.kind === 'entity' ? (
-            rootId && <PillContent id={rootId} className="text-gray-700" />
-          ) : (
-            <span className="truncate">{peek.target.url}</span>
-          )}
+          {rootId && <PillContent id={rootId} className="text-gray-700" />}
         </span>
         {/* Pressing a button never starts a drag. */}
         <span className="flex items-center gap-1" onPointerDown={(e) => e.stopPropagation()}>
@@ -182,11 +181,7 @@ function PeekWindow({
         </span>
       </div>
       <div className="relative min-h-0 flex-1">
-        {peek.target.kind === 'url' ? (
-          <webview src={peek.target.url} partition="persist:preview" className="absolute inset-0" />
-        ) : (
-          frameId && <EntityFrame frameId={frameId} />
-        )}
+        <EntityFrame frameId={frameId} />
       </div>
       <div
         className="absolute bottom-0 right-0 size-4 cursor-nwse-resize"

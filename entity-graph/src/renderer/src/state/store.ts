@@ -3,7 +3,6 @@ import { settlePeeks } from './peeks'
 import {
   defaultLayout,
   isLayoutState,
-  last,
   peeksOf,
   type FrameState,
   type GroupState,
@@ -18,12 +17,12 @@ import {
 // derived (./derive) or a runtime cache (./query, ./code, ./ui).
 
 /**
- * `.v2` because the shape changed with this refactor (canvas views dropped,
- * groups id-keyed, collapse moved onto the tab). An older blob simply fails
- * validation and the default layout is used.
+ * `.v3` because the shape changed (frames typed and chained through `below`,
+ * peeks always a tab). An older blob simply fails validation and the default
+ * layout is used.
  */
 export const layoutAtom = persistentAtom<LayoutState>(
-  'entity-graph.layout.v2',
+  'entity-graph.layout.v3',
   defaultLayout(),
   isLayoutState,
 )
@@ -92,12 +91,12 @@ export interface Focus {
 export function focusOf(s: LayoutState): Focus {
   const peek = s.peekFocus ? peeksOf(s).find((p) => p.key === s.peekFocus) : null
   const peekTab = peek?.tabId ? s.tabs[peek.tabId] : null
-  if (peekTab) return { groupId: null, tabId: peekTab.id, frameId: last(peekTab.frameIds) ?? null }
+  if (peekTab) return { groupId: null, tabId: peekTab.id, frameId: peekTab.top }
   const groupId = mainGroupId(s)
   const group = groupId ? s.groups[groupId] : null
   const tabId = group?.activeTabId ?? null
   const tab = tabId ? s.tabs[tabId] : null
-  const frameId = (tab ? last(tab.frameIds) : null) ?? null
+  const frameId = tab?.top ?? null
   return { groupId, tabId, frameId }
 }
 

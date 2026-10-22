@@ -24,10 +24,17 @@ console.error = (...args: unknown[]) => {
 }
 
 const { viewsFor, TypeCard } = await import('../src/renderer/src/components/types')
+const { OWN_FOCUS_TYPES } = await import('../src/renderer/src/state/types')
 
 const tests: [string, () => void][] = []
 const test = (name: string, run: () => void): void => void tests.push([name, run])
 const noop = (): void => undefined
+
+test('names in OWN_FOCUS_TYPES exactly the types that draw a focus of their own', () => {
+  for (const type of ['file', 'url', 'note', 'recipe', 'type']) {
+    assert.equal(OWN_FOCUS_TYPES.includes(type), !!viewsFor(type).Focus, type)
+  }
+})
 
 const row = (over: Record<string, unknown>) =>
   ({
@@ -45,7 +52,7 @@ const row = (over: Record<string, unknown>) =>
     ...over,
   }) as never
 
-test('gives files and pages a focus of their own, and every other type the outline', () => {
+test('gives files and pages a focus of their own, and every other type the default', () => {
   assert.ok(viewsFor('file').Focus)
   assert.ok(viewsFor('url').Focus)
   assert.equal(viewsFor(undefined).Focus, undefined, 'a note is its outline')

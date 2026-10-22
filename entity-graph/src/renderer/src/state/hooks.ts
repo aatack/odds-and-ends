@@ -18,7 +18,7 @@ import { rowLimitsAtom, treeOf } from './query'
 import { loadResource, resourcesAtom, type ResourceState } from './resources'
 import { callsAtom, focusOf, layoutAtom, pendingAtom, type Focus } from './store'
 import { themeAtom, uiAtom, type Theme, type UiState } from './ui'
-import type { LayoutState, PendingCall, RecordedCall } from './types'
+import { focusFrame, type LayoutState, type PendingCall, type RecordedCall } from './types'
 
 // The only React in the state layer: thin subscriptions onto the atoms, plus the
 // derivations views need. Components read from here and never own domain state.
@@ -96,7 +96,7 @@ export function useFrameRows(frameId: string): FrameRows {
   const layout = useLayoutState()
   const cache = useAtomValue(entitiesAtom)
   const limits = useAtomValue(rowLimitsAtom)
-  const frame = layout.frames[frameId]
+  const frame = focusFrame(layout.frames[frameId])
   const tree = treeOf(layout, cache, limits, frameId)
 
   return useMemo(

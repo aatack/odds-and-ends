@@ -8,7 +8,10 @@ import {
   directionOf,
   last,
   samePath,
+  stackOf,
+  focusFrame,
   type CallContext,
+  type FocusFrame,
   type FrameState,
   type LayoutState,
 } from './types'
@@ -171,7 +174,7 @@ export const setQueryObserver = (
  * somewhere the rows don't go.
  */
 export const frameQuery = (
-  frame: FrameState,
+  frame: FocusFrame,
   collapsed: readonly string[],
 ): { traversal: Traversal; filters: QueryFilters } => ({
   traversal: {
@@ -186,7 +189,7 @@ export const frameQuery = (
 
 /** Everything about a frame's rows that its selection cannot change. */
 export function frameTree(
-  frame: FrameState,
+  frame: FocusFrame,
   collapsed: readonly string[],
   source: EntitySource,
   limit: number,
@@ -224,7 +227,7 @@ export function frameTree(
  * and the rows are the tree's own array with *at most two entries replaced* — so
  * a memoised row component re-renders only where something actually changed.
  */
-export function markRows(tree: FrameTree, frame: FrameState): FrameRows {
+export function markRows(tree: FrameTree, frame: FocusFrame): FrameRows {
   const { rows, complete, loading, error } = tree
 
   // A path that isn't among the rows may simply not have arrived yet, so the
@@ -307,7 +310,8 @@ export function tabPath(s: LayoutState, frameIds: readonly string[], selectedPat
   const frames = frameIds.map((id) => s.frames[id]).filter((f): f is FrameState => !!f)
   const path: string[] = []
   for (let i = 0; i < frames.length - 1; i++) {
-    const sel = frames[i].selectedPath
+    // Only a focus frame has a selection to have drilled in from.
+    const sel = focusFrame(frames[i])?.selectedPath ?? []
     const at = sel[0] === frames[i].rootId ? sel.lastIndexOf(frames[i + 1].rootId) : -1
     path.push(...(at > 0 ? sel.slice(0, at) : [frames[i].rootId]))
   }
@@ -344,7 +348,7 @@ export function buildCallContext(
   const frame = frameId ? s.frames[frameId] : null
   const selectedPath = rows.selectedPath
 
-  const path = tabPath(s, tab?.frameIds ?? [], selectedPath)
+  const path = tabPath(s, tab ? stackOf(s, tab.id) : [], selectedPath)
   const values: Record<string, unknown> = {}
   // Reading these is also what asks for them, so an outer frame that isn't
   // mounted contributes nothing the first time and its own values the next.
@@ -406,7 +410,7 @@ export function entityLabel(source: EntitySource, id: string): string {
 
 /** The entity a tab is showing: the root of its top frame. */
 export function tabRootId(s: LayoutState, tabId: string): string | undefined {
-  const topId = last(s.tabs[tabId]?.frameIds ?? [])
+  const topId = s.tabs[tabId]?.top
   return topId ? s.frames[topId]?.rootId : undefined
 }
 
@@ -427,7 +431,7 @@ export interface Crumb {
 export function frameCrumbs(s: LayoutState, source: EntitySource, tabId: string | null): Crumb[] {
   const tab = tabId ? s.tabs[tabId] : null
   if (!tab) return []
-  return tab.frameIds
+  return stackOf(s, tab.id)
     .map((frameId) => ({ frameId, rootId: s.frames[frameId]?.rootId }))
     .filter((f): f is { frameId: string; rootId: string } => !!f.rootId)
     .map(({ frameId, rootId }) => ({ frameId, rootId, label: entityLabel(source, rootId) }))

@@ -3,9 +3,9 @@ import {
   last,
   newTab,
   peeksOf,
+  stackOf,
   type LayoutState,
   type PeekState,
-  type PeekTarget,
   type Rect,
 } from './types'
 
@@ -14,11 +14,8 @@ import {
 // still in or under: a transient peek lasts exactly as long as something keeps it
 // — the pointer, the keys, or a peek stacked on it — and a pinned one until its ×.
 //
-// An entity peek's frames live in `tabs` and `frames` like anyone's, under a tab
-// that belongs to no group, so closing a peek has to take them with it.
-
-export const sameTarget = (a: PeekTarget, b: PeekTarget): boolean =>
-  a.kind === b.kind && (a.kind === 'entity' ? a.id === (b as typeof a).id : a.url === (b as typeof a).url)
+// A peek's frames live in `tabs` and `frames` like anyone's, under a tab that
+// belongs to no group, so closing a peek has to take them with it.
 
 /** The newest peek that isn't pinned — the one a hover would replace. */
 export const transientPeek = (s: LayoutState): PeekState | null =>
@@ -44,9 +41,9 @@ function keepPeeks(s: LayoutState, keep: (peek: PeekState) => boolean): LayoutSt
   const tabs = { ...s.tabs }
   const frames = { ...s.frames }
   for (const peek of gone) {
-    const tab = peek.tabId ? tabs[peek.tabId] : null
+    const tab = tabs[peek.tabId]
     if (!tab) continue
-    for (const id of [...tab.frameIds, ...tab.history]) delete frames[id]
+    for (const id of [...stackOf(s, tab.id), ...tab.history]) delete frames[id]
     delete tabs[tab.id]
   }
   const kept = peeks.filter(keep)
@@ -60,7 +57,7 @@ function keepPeeks(s: LayoutState, keep: (peek: PeekState) => boolean): LayoutSt
  */
 export function showPeek(
   s: LayoutState,
-  target: PeekTarget,
+  entityId: string,
   anchor: Rect,
   parent: string | null,
 ): LayoutState {
@@ -68,12 +65,8 @@ export function showPeek(
   for (const key of peekChain(s, s.peekFocus)) keep.add(key)
   const pruned = keepPeeks(s, (p) => p.pinned || keep.has(p.key))
   const key = uuid()
-  if (target.kind === 'url') {
-    const peek: PeekState = { key, target, tabId: null, anchor, rect: null, pinned: false, parent }
-    return { ...pruned, peeks: [...peeksOf(pruned), peek] }
-  }
-  const { tab, frame } = newTab(target.id)
-  const peek: PeekState = { key, target, tabId: tab.id, anchor, rect: null, pinned: false, parent }
+  const { tab, frame } = newTab(entityId)
+  const peek: PeekState = { key, entityId, tabId: tab.id, anchor, rect: null, pinned: false, parent }
   return {
     ...pruned,
     tabs: { ...pruned.tabs, [tab.id]: tab },

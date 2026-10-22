@@ -72,6 +72,26 @@ export const BUILTIN_VALUES: Record<string, Record<string, unknown>> = {
 }
 
 /**
+ * The prefix of a URL entity's id. Every web address has one, `url:` and the
+ * address, which the store supplies as `type: url` with the address as its `url`
+ * — so a link can be peeked at, or pushed as a frame, as an entity without
+ * anything being written. Writing to one makes it a note like any other.
+ */
+export const URL_PREFIX = 'url:'
+
+/** The id of the URL entity for an address. */
+export const urlEntityId = (url: string): string => URL_PREFIX + url
+
+/** The values the store supplies for an id, if it supplies any. */
+function builtinValues(id: string): Record<string, unknown> | undefined {
+  if (Object.prototype.hasOwnProperty.call(BUILTIN_VALUES, id)) return BUILTIN_VALUES[id]
+  if (id.startsWith(URL_PREFIX) && id.length > URL_PREFIX.length) {
+    return { type: 'url', url: id.slice(URL_PREFIX.length) }
+  }
+  return undefined
+}
+
+/**
  * The events that stand behind a set of ids. Only for ids asked for by name: a
  * dump of the whole store is what is written down, and a value nobody wrote does
  * not belong in it.
@@ -80,7 +100,7 @@ export function builtinEvents(entityIds: readonly string[] | undefined): AppEven
   if (!entityIds) return []
   const out: AppEvent[] = []
   for (const id of new Set(entityIds)) {
-    const values = BUILTIN_VALUES[id]
+    const values = builtinValues(id)
     if (!values) continue
     for (const [key, value] of Object.entries(values)) {
       out.push({ type: 'value', timestamp: 0, author: BUILTIN_AUTHOR, entityId: id, key, value })

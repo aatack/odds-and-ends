@@ -10,7 +10,7 @@ import {
 } from './derive'
 import { entities, entitiesAtom, entitiesFrom, type EntityCache } from '../../../core/cache'
 import { focusOf, getLayout, layoutAtom } from './store'
-import type { CallContext, FrameState, LayoutState } from './types'
+import { OWN_FOCUS_TYPES, focusFrame, type CallContext, type FocusFrame, type LayoutState } from './types'
 
 // A frame's query, which is no longer a fetch: the traversal in core/query runs
 // over the entity cache, so a frame's rows are a *derivation* like any other and
@@ -32,7 +32,7 @@ export const PAGE_SIZE = 200
  * and inheriting that when the filter is cleared would leave the frame resolving
  * every row it had to walk past to find three.
  */
-const shapeOf = (frame: FrameState): string =>
+const shapeOf = (frame: FocusFrame): string =>
   JSON.stringify([
     frame.rootId,
     frame.direction,
@@ -55,7 +55,7 @@ export interface RowBudget {
 export const rowLimitsAtom = atom<Record<string, RowBudget>>({})
 
 /** A frame's budget: what was raised for this query, or a fresh page for a new one. */
-const limitOf = (frame: FrameState, limits: Record<string, RowBudget>): number => {
+const limitOf = (frame: FocusFrame, limits: Record<string, RowBudget>): number => {
   const held = limits[frame.id]
   return held && held.shape === shapeOf(frame) ? held.limit : PAGE_SIZE
 }
@@ -76,7 +76,7 @@ const limitOf = (frame: FrameState, limits: Record<string, RowBudget>): number =
  * user has already read a thousand rows of asks for a thousand more.
  */
 export function loadMore(frameId: string): void {
-  const frame = getLayout().frames[frameId]
+  const frame = focusFrame(getLayout().frames[frameId])
   if (!frame || rowsOf(frameId).complete) return
   rowLimitsAtom.set((limits) => {
     const at = limitOf(frame, limits)
@@ -110,13 +110,33 @@ const unchanged = (a: readonly unknown[], b: readonly unknown[]): boolean =>
  * this exists: moving the cursor changes the frame, and the frame is the thing a
  * naive memo would key on.
  */
+/**
+ * The frame, if it draws rows: a focus frame drawing the default focus. Not a
+ * frame of another type, and not the focus of a type with one of its own (a
+ * file, a page), which has its root's state but nothing to lay it over — so the
+ * tools reading rows find none there and do nothing.
+ */
+export function rowFrame(
+  s: LayoutState,
+  cache: EntityCache,
+  frameId: string | null,
+): FocusFrame | null {
+  const frame = focusFrame(frameId ? s.frames[frameId] : null)
+  if (!frame) return null
+  // Read straight off the cache rather than asked for: this runs inside every
+  // derivation of the rows, and asking is a write. The rows ask for the root
+  // themselves, and a focus of its own reads its entity in drawing it.
+  const type = cache[frame.rootId]?.entity.values.type
+  return typeof type === 'string' && OWN_FOCUS_TYPES.includes(type) ? null : frame
+}
+
 export function treeOf(
   s: LayoutState,
   cache: EntityCache,
   limits: Record<string, RowBudget>,
   frameId: string | null,
 ): FrameTree {
-  const frame = frameId ? s.frames[frameId] : null
+  const frame = rowFrame(s, cache, frameId)
   if (!frame) return EMPTY_FRAME_TREE
   const collapsed = s.tabs[frame.tabId]?.collapsed ?? EMPTY_COLLAPSED
   const limit = limitOf(frame, limits)
@@ -148,9 +168,11 @@ export const rowsFrom = (
   limits: Record<string, RowBudget>,
   frameId: string | null,
 ): FrameRows => {
-  const frame = frameId ? s.frames[frameId] : null
-  const tree = treeOf(s, cache, limits, frameId)
-  return frame ? markRows(tree, frame) : EMPTY_FRAME_ROWS
+  const frame = rowFrame(s, cache, frameId)
+  if (frame) return markRows(treeOf(s, cache, limits, frameId), frame)
+  // No rows, but still somewhere: what is selected is the frame's root.
+  const rootId = frameId ? s.frames[frameId]?.rootId : undefined
+  return rootId ? { ...EMPTY_FRAME_ROWS, selectedPath: [rootId] } : EMPTY_FRAME_ROWS
 }
 
 /** A frame's rows as they stand — the live counterpart to `useFrameRows`. */

@@ -128,11 +128,30 @@ export type EditState =
   | { mode: 'edit'; path: string[]; draft: string }
   | { mode: 'create'; path: string[]; draft: string; values: Record<string, unknown> }
 
-export interface FrameState {
+/**
+ * One view of one entity, in a tab's stack. A frame's `type` says which view it
+ * is, and so which state it holds: every frame type has the fields below, and
+ * nothing else in common. A different view of the same entity is a new frame
+ * pushed onto the stack, never a change of type.
+ */
+interface FrameBase {
   id: string
   tabId: string
-  /** Passed to the query as a single-item array and expanded into rows. */
+  /** The entity the frame is a view of. */
   rootId: string
+  /** The frame this one was pushed onto; null at the bottom of the stack. */
+  below: string | null
+}
+
+/**
+ * The focus view: whatever the root's type draws with a whole frame. For most
+ * types that is the default focus — the root's query as rows — and the state here
+ * is that view's. A type with a focus of its own (`OWN_FOCUS_TYPES`) leaves it
+ * alone, and the tools that need it do nothing there.
+ */
+export interface FocusFrame extends FrameBase {
+  type: 'focus'
+  /** Passed to the query as a single-item array and expanded into rows. */
   /**
    * Which way the query follows links: `out` for the ordinary tree of children,
    * `in` to grow towards whatever references the root instead. Read through
@@ -168,10 +187,27 @@ export interface FrameState {
   edit: EditState | null
 }
 
+/** Every frame type. Narrow on `type`; {@link focusFrame} does it for the focus view. */
+export type FrameState = FocusFrame
+
+/** The frame, if it is a focus frame. */
+export const focusFrame = (frame: FrameState | null | undefined): FocusFrame | null =>
+  frame?.type === 'focus' ? frame : null
+
+/**
+ * The types whose focus is their own rather than the default one's rows. In
+ * step with the `Focus` views `components/types` registers, which a test checks;
+ * here so that state and tools can ask without importing a component.
+ */
+export const OWN_FOCUS_TYPES: readonly string[] = ['file', 'url']
+
 export interface TabState {
   id: string
-  /** Stack of frame ids; the last is the visible ("top") frame. */
-  frameIds: string[]
+  /**
+   * The frame on show: the top of the stack, which runs down from it through
+   * each frame's `below`. Read it bottom first with {@link stackOf}.
+   */
+  top: string
   /** Frames popped off the stack, kept so a pop can be undone. Last = most recent. */
   history: string[]
   /**
@@ -196,23 +232,22 @@ export interface Rect {
   height: number
 }
 
-/** What a peek looks at: an entity, or a page on the web. */
-export type PeekTarget = { kind: 'entity'; id: string } | { kind: 'url'; url: string }
-
 /**
  * A floating window onto something referred to — opened by hovering a pill or a
  * link, and gone again when the pointer leaves, unless it has been moved or
  * resized, which pins it.
  *
- * An entity's peek is a tab of its own, belonging to no group: its frames are
- * ordinary frames, so it has its own selection, folds and stack, and every frame
- * tool works in it once it has the keys (`LayoutState.peekFocus`).
+ * A peek is a tab of its own, belonging to no group: its frames are ordinary
+ * frames, so it has its own selection, folds and stack, and every frame tool
+ * works in it once it has the keys (`LayoutState.peekFocus`). A web page is
+ * peeked at as its URL entity (`urlEntityId`), whose focus is the page.
  */
 export interface PeekState {
   key: string
-  target: PeekTarget
-  /** The tab holding an entity peek's frames; null for a page. */
-  tabId: string | null
+  /** The entity hovered, which the peek's tab was opened on. */
+  entityId: string
+  /** The tab holding the peek's frames. */
+  tabId: string
   /** Where the hover was. A peek with no `rect` of its own is placed beside it. */
   anchor: Rect
   /** Where it was moved to. Set only once it has been moved or resized. */
@@ -247,7 +282,7 @@ export interface LayoutState {
  * A frame's traversal direction. Tolerates a frame from a layout persisted
  * before the field existed, where "the ordinary way round" is the only answer.
  */
-export const directionOf = (frame: FrameState | null | undefined): LinkDirection =>
+export const directionOf = (frame: FocusFrame | null | undefined): LinkDirection =>
   frame?.direction ?? 'out'
 
 /**
@@ -259,7 +294,7 @@ export const directionOf = (frame: FrameState | null | undefined): LinkDirection
  * under it is what folding is for, and reading zero as "no limit" is what lets
  * ⇧← walk the cap off the bottom of the scale.
  */
-export const frameDepth = (frame: FrameState | null | undefined): number | null => {
+export const frameDepth = (frame: FocusFrame | null | undefined): number | null => {
   const cap = frame ? frame.maxDepth[frame.rootId] : null
   return cap != null && cap > 0 ? cap : null
 }
@@ -290,11 +325,14 @@ export const nudgeDepth = (depth: number | null, by: 1 | -1): number | null => {
   return next > 0 ? next : null
 }
 
-export function newFrame(tabId: string, rootId: string): FrameState {
+/** A focus frame on `rootId`, pushed onto `below` (null for the bottom of a stack). */
+export function newFrame(tabId: string, rootId: string, below: string | null = null): FocusFrame {
   return {
     id: uuid(),
+    type: 'focus',
     tabId,
     rootId,
+    below,
     // Not inherited from the frame this was pushed from: whether a query type
     // should carry into a new frame is still an open question.
     direction: 'out',
@@ -308,11 +346,11 @@ export function newFrame(tabId: string, rootId: string): FrameState {
 }
 
 /** A fresh tab holding one frame rooted at `rootId`. */
-export function newTab(rootId: string = ROOT_ID): { tab: TabState; frame: FrameState } {
+export function newTab(rootId: string = ROOT_ID): { tab: TabState; frame: FocusFrame } {
   const tabId = uuid()
   const frame = newFrame(tabId, rootId)
   return {
-    tab: { id: tabId, frameIds: [frame.id], history: [], collapsed: [] },
+    tab: { id: tabId, top: frame.id, history: [], collapsed: [] },
     frame,
   }
 }
@@ -333,10 +371,34 @@ export function defaultLayout(rootId: string = ROOT_ID): LayoutState {
 
 export function isLayoutState(v: unknown): boolean {
   const s = v as LayoutState | null
-  return !!s && !!s.groups && Array.isArray(s.groupOrder) && !!s.tabs && !!s.frames
+  return (
+    !!s &&
+    !!s.groups &&
+    Array.isArray(s.groupOrder) &&
+    !!s.tabs &&
+    !!s.frames &&
+    Object.values(s.tabs).every((t) => typeof t?.top === 'string') &&
+    Object.values(s.frames).every((f) => typeof f?.type === 'string') &&
+    peeksOf(s).every((p) => typeof p?.entityId === 'string' && typeof p.tabId === 'string')
+  )
 }
 
 // --- Small shared helpers --------------------------------------------------
+
+/**
+ * A tab's stack of frame ids, bottom first, read down from its top. Stops at a
+ * frame that is missing or already seen, so a broken chain is a short stack
+ * rather than a hang.
+ */
+export function stackOf(s: LayoutState, tabId: string): string[] {
+  const out: string[] = []
+  let at: string | null = s.tabs[tabId]?.top ?? null
+  while (at && s.frames[at] && !out.includes(at)) {
+    out.push(at)
+    at = s.frames[at].below
+  }
+  return out.reverse()
+}
 
 /** A layout's peeks, bottom first. */
 export const peeksOf = (s: LayoutState): PeekState[] => s.peeks ?? []

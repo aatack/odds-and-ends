@@ -1,6 +1,7 @@
 import React from 'react'
 import { Globe01 } from '@untitledui/icons'
 import { cn } from '../helpers/cn'
+import { urlEntityId } from '../../../core/builtins'
 import { peekHandlers } from './peekHover'
 
 /** Where a link goes, as short as it reads: its host, or the whole thing if it has none. */
@@ -38,7 +39,7 @@ export function LinkPill({
         'mx-0.5 inline-flex max-w-full items-center gap-1 rounded bg-gray-100 px-1.5 align-middle',
         'text-[0.95em] leading-5 text-gray-700 no-underline shadow-xs hover:bg-gray-200',
       )}
-      {...peekHandlers(peekable(href) ? { kind: 'url', url: href } : null)}
+      {...peekHandlers(peekable(href) ? urlEntityId(href) : null)}
     >
       <Globe01 size={11} className="shrink-0 text-gray-400" />
       <span className="truncate">{children || hostOf(href)}</span>

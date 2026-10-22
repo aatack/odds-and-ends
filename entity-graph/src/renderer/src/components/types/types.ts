@@ -13,10 +13,12 @@ import type { EntityRow } from '../../state/derive'
 //
 //   Edit   defaults to a text box over the entity's `text`, so a type with a
 //          card of its own still edits the way every row does
-//   Focus  defaults to the outline: the frame's query, a card per row it
-//          returns, indented, with the frame's find, filters, folding and
-//          selection (`layout/Outline.tsx`). A type with a focus of its own — a
-//          file's preview, a page's — takes the whole frame instead
+//   Focus  defaults to the frame's query, a card per row it returns, indented,
+//          with the frame's find, filters, folding and selection
+//          (`layout/DefaultFocus.tsx`). A type with a focus of its own — a
+//          file's preview, a page's — takes the whole frame instead, and must
+//          be named in `OWN_FOCUS_TYPES` (`state/types.ts`) so the frame's
+//          tools know it draws no rows
 //
 // The type is the entity's `type` value (`viewsFor` in `./index`). An entity of
 // a type nothing is registered for — a custom type, say — is drawn as a note.

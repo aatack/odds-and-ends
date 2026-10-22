@@ -286,11 +286,13 @@ it is given — 0-, 1- and 2-dimensional:
   card is its type's **Edit** instead, which by default is a text box over `text`
   (`TypeCard` in `components/types/card.tsx` chooses between the two).
 - **Focus** — a frame to itself, drawn from the frame's root. Optional: the
-  default is the outline (`layout/Outline.tsx`) — the frame's query as a card
-  per row, with its find, filters, folding and selection. A type with a focus of
-  its own takes the whole frame instead, with no rows: a file's is the whole file
-  (a large image, text read out, media playing), a `url`'s the page in a
-  locked-down webview.
+  default (`layout/DefaultFocus.tsx`) is the frame's query as a card per row,
+  with its find, filters, folding and selection. A type with a focus of its own
+  takes the whole frame instead, with no rows: a file's is the whole file (a
+  large image, text read out, media playing), a `url`'s the page in a
+  locked-down webview. Such a type is also named in `OWN_FOCUS_TYPES`
+  (`state/types.ts`, kept in step by a test), so the tools reading rows know
+  there are none.
 
 `viewsFor(type)` in `components/types/index.ts` is the one place a type's views
 are chosen — rows, pills and frames all ask there — and a type nothing is
@@ -298,16 +300,30 @@ registered for, custom types included, is drawn as a note. Three exist: the note
 `file` and `url` (whose `url` value is an http(s) address). Adding one is adding
 an entry, not a branch in the editor.
 
+**Frames are views.** A tab shows the top of a stack of frames — a chain, each
+frame naming the one it was pushed onto (`below`) — and a frame is one view of one
+entity. `FrameState` is a union on the frame's `type`, and each type holds only
+its own state: the `focus` frame, the only one so far, holds the default focus's
+selection, find, filters, depth, direction and edit; a detail frame, say, would
+hold none of that. Another view of the same entity is pushed as a new frame, not
+switched to in place. `EntityFrame` draws a frame by its type, and
+`docs/frontend-state.md` has the rest.
+
+**Web pages are entities.** The store supplies an entity for every address —
+id `url:` plus the address, `type: url`, the address as its `url`
+(`core/builtins.ts`) — without anything being written; writing to one makes it a
+note like any other. That is what a link peeks at.
+
 **Peeks** (`layout/PeekLayer.tsx`, `state/peeks.ts`) are floating windows onto
 whatever a pill or a link refers to, opened by hovering it for a moment and closed
 a moment after the pointer leaves — unless the window has been moved or resized,
-which pins it until its ×. An entity's peek is a tab of its own that belongs to no
-group, so its frame is an ordinary frame: it draws the entity's focus (the
-outline, for most), and pressing in it gives it the keys (`peekFocus`), which points
-the focus chain at its frame — its own selection and stack, the same tools, and
-no group tools, since it has no group. A page's peek is a locked-down `<webview>`
-(no preload, no node, its own partition; see `will-attach-webview` in
-`src/main/index.ts`). Peeks stack: hovering inside one opens another on top, and
+which pins it until its ×. A peek is a tab of its own that belongs to no group,
+so its frames are ordinary frames: it draws the entity's focus, and pressing in it
+gives it the keys (`peekFocus`), which points the focus chain at its frame — its
+own selection and stack, the same tools, and no group tools, since it has no
+group. A link's peek is its URL entity's, so the page is in a locked-down
+`<webview>` (no preload, no node, its own partition; see `will-attach-webview` in
+`src/main/index.ts`), and its Open button opens the page in the browser. Peeks stack: hovering inside one opens another on top, and
 leaving closes everything above where the pointer went. Only pinned peeks survive
 a reload. No key opens or closes one.
 

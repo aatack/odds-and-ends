@@ -68,7 +68,7 @@ export function PillWrapper({
       data-entity-id={id}
       title={peek ? undefined : (title ?? label)}
       className={cn('inline-flex min-w-0 items-center', className)}
-      {...peekHandlers(peek ? { kind: 'entity', id } : null)}
+      {...peekHandlers(peek ? id : null)}
     >
       {children}
     </span>

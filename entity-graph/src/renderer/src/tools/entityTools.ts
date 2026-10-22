@@ -2,7 +2,7 @@ import * as A from '../state/actions'
 import { entityRows, type EntityRow } from '../state/derive'
 import { rowsOf } from '../state/query'
 import { focusOf, getLayout, mainGroupId } from '../state/store'
-import { directionOf, last, samePath, type LinkDirection } from '../state/types'
+import { directionOf, focusFrame, last, samePath, type LinkDirection } from '../state/types'
 import { updateUi } from '../state/ui'
 import { base64ToBlob } from '../helpers/base64'
 import { copyImage, copyText } from '../helpers/clipboard'
@@ -159,7 +159,7 @@ function selectedParent(): string | null {
  */
 const callDirection = (call: CallInfo): LinkDirection => {
   const frameId = call.context.frameId
-  return directionOf(frameId ? getLayout().frames[frameId] : null)
+  return directionOf(focusFrame(frameId ? getLayout().frames[frameId] : null))
 }
 
 export const ENTITY_TOOLS: ToolSpec[] = [

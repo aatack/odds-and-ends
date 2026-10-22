@@ -20,7 +20,7 @@ const { defaultLayout, peeksOf } = await import('../src/renderer/src/state/types
 const { focusOf } = await import('../src/renderer/src/state/store')
 
 const AT = { x: 10, y: 10, width: 40, height: 16 }
-const entity = (id: string) => ({ kind: 'entity', id }) as const
+const entity = (id: string): string => id
 
 const tests: [string, () => void][] = []
 const test = (name: string, run: () => void): void => void tests.push([name, run])
@@ -29,14 +29,14 @@ test('gives an entity peek a tab and a frame of its own, in no group', () => {
   const s = P.showPeek(defaultLayout('root'), entity('a'), AT, null)
   const [peek] = peeksOf(s)
   const tab = s.tabs[peek.tabId!]
-  assert.equal(s.frames[tab.frameIds[0]].rootId, 'a')
+  assert.equal(s.frames[tab.top].rootId, 'a')
   assert.ok(Object.values(s.groups).every((g) => !g.tabIds.includes(tab.id)))
 })
 
 test('replaces a transient peek with the next hover, frames and all', () => {
   const one = P.showPeek(defaultLayout('root'), entity('a'), AT, null)
   const two = P.showPeek(one, entity('b'), AT, null)
-  assert.deepEqual(peeksOf(two).map((p) => (p.target as { id: string }).id), ['b'])
+  assert.deepEqual(peeksOf(two).map((p) => p.entityId), ['b'])
   assert.equal(two.tabs[peeksOf(one)[0].tabId!], undefined)
   assert.equal(Object.keys(two.frames).length, Object.keys(one.frames).length)
 })

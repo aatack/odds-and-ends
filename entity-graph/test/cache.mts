@@ -230,7 +230,7 @@ test('writes the layout mirror once for a burst of cursor moves, not once each',
   flushPersisted()
   assert.equal(writes, before + 1, 'one write for the burst, holding the last value')
   assert.deepEqual(
-    JSON.parse(store.get('entity-graph.layout.v2')!).frames[frameId()].selectedPath,
+    JSON.parse(store.get('entity-graph.layout.v3')!).frames[frameId()].selectedPath,
     ['root', 'c'],
   )
 })

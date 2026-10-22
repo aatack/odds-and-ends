@@ -1,21 +1,24 @@
 import React from 'react'
 import { viewsFor } from '../components/types'
 import { useEntitySummary, useLayoutState } from '../state/hooks'
-import { Outline } from './Outline'
+import type { FrameState } from '../state/types'
+import { DefaultFocus } from './DefaultFocus'
 
 /**
- * One frame: the entity at its root, with the whole frame to itself — its
- * type's focus, or the outline where the type has none. Which it is follows the
- * root's `type`, so a note's frame is its outline and a file's is the file.
+ * A frame, drawn as its frame type says. A tab's top frame and a peek's are
+ * both drawn here, so a new frame type is one more case below.
  */
 export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element {
-  const frame = useLayoutState().frames[frameId]
+  const frame: FrameState | undefined = useLayoutState().frames[frameId]
   if (!frame) return <div className="p-8 text-center text-[13px] text-gray-400">No frame.</div>
-  return <Focused frameId={frameId} entityId={frame.rootId} />
+  switch (frame.type) {
+    case 'focus':
+      return <Focused frameId={frameId} entityId={frame.rootId} />
+  }
 }
 
-/** Reading the root's type is what loads it, so only for a frame that has one. */
+/** A focus frame: the root's type's focus, or the default one's rows. */
 function Focused({ frameId, entityId }: { frameId: string; entityId: string }): React.JSX.Element {
-  const { Focus = Outline } = viewsFor(useEntitySummary(entityId).type)
+  const { Focus = DefaultFocus } = viewsFor(useEntitySummary(entityId).type)
   return <Focus frameId={frameId} entityId={entityId} />
 }

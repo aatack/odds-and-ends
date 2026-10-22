@@ -5,7 +5,9 @@ import {
   last,
   newFrame,
   newTab,
+  stackOf,
   type EditState,
+  type FocusFrame,
   type FrameState,
   type GroupState,
   type LayoutState,
@@ -65,16 +67,25 @@ const dropFrames = (frames: Record<string, FrameState>, ids: string[]): Record<s
   return next
 }
 
-// --- Selection within a frame ----------------------------------------------
+// --- A focus frame's state --------------------------------------------------
+
+/** Patch a frame's focus state; a frame of any other type is left as it is. */
+export function updateFocus(
+  s: LayoutState,
+  frameId: string,
+  patch: (f: FocusFrame) => FocusFrame,
+): LayoutState {
+  return updateFrame(s, frameId, (f) => (f.type === 'focus' ? patch(f) : f))
+}
 
 export const setSelectedPath = (s: LayoutState, frameId: string, path: string[]): LayoutState =>
-  updateFrame(s, frameId, (f) => ({ ...f, selectedPath: path }))
+  updateFocus(s, frameId, (f) => ({ ...f, selectedPath: path }))
 
 export const setEdit = (s: LayoutState, frameId: string, edit: EditState | null): LayoutState =>
-  updateFrame(s, frameId, (f) => ({ ...f, edit }))
+  updateFocus(s, frameId, (f) => ({ ...f, edit }))
 
 export const setFind = (s: LayoutState, frameId: string, find: string | null): LayoutState =>
-  updateFrame(s, frameId, (f) => ({ ...f, find }))
+  updateFocus(s, frameId, (f) => ({ ...f, find }))
 
 /**
  * Turning the outline on gives the frame a depth of three *unless it already has
@@ -84,20 +95,20 @@ export const setFind = (s: LayoutState, frameId: string, find: string | null): L
  * of the one implying the other: an opening move rather than a rule.
  */
 export const setSectionsOnly = (s: LayoutState, frameId: string, on: boolean): LayoutState =>
-  updateFrame(s, frameId, (f) => {
+  updateFocus(s, frameId, (f) => {
     const next = { ...f, sectionsOnly: on }
     if (!on) return withDepth(next, null)
     return frameDepth(f) == null ? withDepth(next, SECTION_DEPTH) : next
   })
 
 export const setOpenOnly = (s: LayoutState, frameId: string, on: boolean): LayoutState =>
-  updateFrame(s, frameId, (f) => ({ ...f, openOnly: on }))
+  updateFocus(s, frameId, (f) => ({ ...f, openOnly: on }))
 
 export const setDirection = (
   s: LayoutState,
   frameId: string,
   direction: LinkDirection,
-): LayoutState => updateFrame(s, frameId, (f) => ({ ...f, direction }))
+): LayoutState => updateFocus(s, frameId, (f) => ({ ...f, direction }))
 
 export const setMaxDepth = (
   s: LayoutState,
@@ -105,7 +116,7 @@ export const setMaxDepth = (
   entityId: string,
   depth: number | null,
 ): LayoutState =>
-  updateFrame(s, frameId, (f) => ({
+  updateFocus(s, frameId, (f) => ({
     ...f,
     // Zero is not a cap; it says "no limit" here as it does everywhere else, and
     // is kept as an explicit null so that an entity deep in the tree can still
@@ -114,7 +125,7 @@ export const setMaxDepth = (
   }))
 
 /** The frame's own limit, which is the root's entry: absent when there is none. */
-const withDepth = (f: FrameState, depth: number | null): FrameState => {
+const withDepth = (f: FocusFrame, depth: number | null): FocusFrame => {
   const maxDepth = { ...f.maxDepth }
   if (depth != null && depth > 0) maxDepth[f.rootId] = depth
   else delete maxDepth[f.rootId]
@@ -125,7 +136,7 @@ export const setFrameDepth = (
   s: LayoutState,
   frameId: string,
   depth: number | null,
-): LayoutState => updateFrame(s, frameId, (f) => withDepth(f, depth))
+): LayoutState => updateFocus(s, frameId, (f) => withDepth(f, depth))
 
 // --- Collapse (per tab) -----------------------------------------------------
 
@@ -149,24 +160,32 @@ export const toggleCollapsed = (s: LayoutState, tabId: string, entityId: string)
   setCollapsed(s, tabId, entityId, !(s.tabs[tabId]?.collapsed.includes(entityId) ?? false))
 
 // --- Frame stack ------------------------------------------------------------
+//
+// A tab names its top frame, and each frame the one it was pushed onto, so the
+// stack is read down from the top (`stackOf`, bottom first). Popped frames wait
+// on the tab's history until a push makes them unreachable.
 
-export function pushFrame(s: LayoutState, tabId: string, rootId: string): LayoutState {
-  const tab = s.tabs[tabId]
-  if (!tab) return s
-  const frame = newFrame(tabId, rootId)
-  // A new frame makes the redo history unreachable, so drop those frames too.
+/** Put `frame` on top of the tab's stack, dropping the frames a pop left to redo. */
+function stackFrame(s: LayoutState, tab: TabState, frame: FrameState): LayoutState {
+  const pushed = { ...frame, tabId: tab.id, below: tab.top }
   return {
     ...s,
-    tabs: { ...s.tabs, [tabId]: { ...tab, frameIds: [...tab.frameIds, frame.id], history: [] } },
-    frames: { ...dropFrames(s.frames, tab.history), [frame.id]: frame },
+    tabs: { ...s.tabs, [tab.id]: { ...tab, top: pushed.id, history: [] } },
+    frames: { ...dropFrames(s.frames, tab.history), [pushed.id]: pushed },
   }
+}
+
+/** Push a focus frame on `rootId`. */
+export function pushFrame(s: LayoutState, tabId: string, rootId: string): LayoutState {
+  const tab = s.tabs[tabId]
+  return tab ? stackFrame(s, tab, newFrame(tabId, rootId)) : s
 }
 
 export function popFrame(s: LayoutState, tabId: string): LayoutState {
   const tab = s.tabs[tabId]
-  if (!tab || tab.frameIds.length <= 1) return s
-  const top = last(tab.frameIds)!
-  return withTab(s, { ...tab, frameIds: tab.frameIds.slice(0, -1), history: [...tab.history, top] })
+  const below = tab ? s.frames[tab.top]?.below : null
+  if (!tab || !below) return s
+  return withTab(s, { ...tab, top: below, history: [...tab.history, tab.top] })
 }
 
 /**
@@ -177,25 +196,25 @@ export function popFrame(s: LayoutState, tabId: string): LayoutState {
 export function popToFrame(s: LayoutState, tabId: string, frameId: string): LayoutState {
   const tab = s.tabs[tabId]
   if (!tab) return s
-  const at = tab.frameIds.indexOf(frameId)
-  if (at < 0 || at === tab.frameIds.length - 1) return s
-  const popped = tab.frameIds.slice(at + 1).reverse()
-  return withTab(s, {
-    ...tab,
-    frameIds: tab.frameIds.slice(0, at + 1),
-    history: [...tab.history, ...popped],
-  })
+  const stack = stackOf(s, tabId)
+  const at = stack.indexOf(frameId)
+  if (at < 0 || at === stack.length - 1) return s
+  const popped = stack.slice(at + 1).reverse()
+  return withTab(s, { ...tab, top: frameId, history: [...tab.history, ...popped] })
 }
 
+/**
+ * Put the last frame popped back on top. It goes onto whatever is on top now,
+ * which is where it came from unless the top has since moved to another tab.
+ */
 export function undoPop(s: LayoutState, tabId: string): LayoutState {
   const tab = s.tabs[tabId]
-  if (!tab || tab.history.length === 0) return s
-  const restored = last(tab.history)!
-  return withTab(s, {
-    ...tab,
-    frameIds: [...tab.frameIds, restored],
-    history: tab.history.slice(0, -1),
-  })
+  const restored = tab ? last(tab.history) : undefined
+  if (!tab || !restored || !s.frames[restored]) return s
+  return {
+    ...withTab(s, { ...tab, top: restored, history: tab.history.slice(0, -1) }),
+    frames: { ...s.frames, [restored]: { ...s.frames[restored], below: tab.top } },
+  }
 }
 
 /** Insert `tabId` into a group immediately after `afterTabId` and make it active. */
@@ -210,19 +229,19 @@ function insertTabAfter(group: GroupState, tabId: string, afterTabId: string): G
 export function popIntoNewTab(s: LayoutState, groupId: string, tabId: string): LayoutState {
   const tab = s.tabs[tabId]
   const group = s.groups[groupId]
-  if (!tab || !group || tab.frameIds.length <= 1) return s
-  const moved = last(tab.frameIds)!
+  const moved = tab ? s.frames[tab.top] : null
+  if (!tab || !group || !moved?.below) return s
   const newTabId = uuid()
   return {
     ...s,
     groups: { ...s.groups, [groupId]: insertTabAfter(group, newTabId, tabId) },
     tabs: {
       ...s.tabs,
-      [tabId]: { ...tab, frameIds: tab.frameIds.slice(0, -1) },
+      [tabId]: { ...tab, top: moved.below },
       // The new tab inherits the collapse state it was looking at.
-      [newTabId]: { id: newTabId, frameIds: [moved], history: [], collapsed: [...tab.collapsed] },
+      [newTabId]: { id: newTabId, top: moved.id, history: [], collapsed: [...tab.collapsed] },
     },
-    frames: { ...s.frames, [moved]: { ...s.frames[moved], tabId: newTabId } },
+    frames: { ...s.frames, [moved.id]: { ...moved, tabId: newTabId, below: null } },
   }
 }
 
@@ -249,7 +268,7 @@ export function closeTab(s: LayoutState, groupId: string, tabId: string): Layout
   const tabIds = group.tabIds.filter((t) => t !== tabId)
   const tabs = { ...s.tabs }
   delete tabs[tabId]
-  const frames = dropFrames(s.frames, [...tab.frameIds, ...tab.history])
+  const frames = dropFrames(s.frames, [...stackOf(s, tabId), ...tab.history])
 
   let groups = {
     ...s.groups,

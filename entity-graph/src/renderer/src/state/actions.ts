@@ -1,8 +1,8 @@
 import * as P from './peeks'
-import { sameTarget, transientPeek } from './peeks'
+import { transientPeek } from './peeks'
 import * as R from './reducers'
 import { getLayout, updateLayout } from './store'
-import type { EditState, FrameState, LayoutState, LinkDirection, PeekTarget, Rect } from './types'
+import type { EditState, FrameState, LayoutState, LinkDirection, Rect } from './types'
 
 // Named mutators over the latent state. Two callers:
 //
@@ -50,7 +50,7 @@ export const setEdit = (frameId: string, edit: EditState | null): void =>
 /** Update the persisted draft of whatever edit is in progress. */
 export const setDraft = (frameId: string, draft: string): void =>
   updateLayout((s) =>
-    R.updateFrame(s, frameId, (f) => (f.edit ? { ...f, edit: { ...f.edit, draft } } : f)),
+    R.updateFocus(s, frameId, (f) => (f.edit ? { ...f, edit: { ...f.edit, draft } } : f)),
   )
 
 export const startEdit = (frameId: string, path: string[], text: string): void =>
@@ -122,16 +122,16 @@ const holdPeeks = (): void => {
  * The pointer settled on something peekable. `origin` is the peek it is drawn
  * in (null: the main view), which the new one stacks on.
  */
-export function hoverPeek(target: PeekTarget, anchor: Rect, origin: string | null): void {
+export function hoverPeek(entityId: string, anchor: Rect, origin: string | null): void {
   hovering = origin
   holdPeeks()
   if (opening) clearTimeout(opening)
   opening = null
   const top = transientPeek(getLayout())
-  if (top && top.parent === origin && sameTarget(top.target, target)) return
+  if (top && top.parent === origin && top.entityId === entityId) return
   opening = setTimeout(() => {
     opening = null
-    updateLayout((s) => P.showPeek(s, target, anchor, origin))
+    updateLayout((s) => P.showPeek(s, entityId, anchor, origin))
   }, OPEN_AFTER)
 }
 

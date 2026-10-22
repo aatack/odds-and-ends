@@ -1,19 +1,21 @@
-import { entities } from '../../../core/cache'
+import { entities, entitiesAtom } from '../../../core/cache'
 import { subtreeMarkdown } from '../../../core/markdown'
 import { lastPath } from '../../../core/query'
 import * as A from '../state/actions'
 import { entityRows, frameQuery, type EntityRow, type Row } from '../state/derive'
 import { findField, requestFocus } from '../state/focusRequest'
-import { loadMore, rowsOf } from '../state/query'
+import { loadMore, rowFrame, rowsOf } from '../state/query'
 import * as R from '../state/reducers'
 import { focusOf, getLayout, updateLayout } from '../state/store'
 import { uiAtom } from '../state/ui'
 import {
   directionOf,
+  focusFrame,
   frameDepth,
   last,
   nudgeDepth,
-  type FrameState,
+  stackOf,
+  type FocusFrame,
   type LayoutState,
   type TabState,
 } from '../state/types'
@@ -28,7 +30,8 @@ import type { ToolSpec } from './types'
 /** Everything a frame tool needs, resolved from the current focus. */
 interface Target {
   layout: LayoutState
-  frame: FrameState
+  /** A frame drawing rows: tools that need them find no target anywhere else. */
+  frame: FocusFrame
   tab: TabState
   rows: Row[]
   /**
@@ -48,8 +51,7 @@ interface Target {
 
 function target(): Target | null {
   const layout = getLayout()
-  const { frameId } = focusOf(layout)
-  const frame = frameId ? layout.frames[frameId] : null
+  const frame = rowFrame(layout, entitiesAtom.get(), focusOf(layout).frameId)
   const tab = frame ? layout.tabs[frame.tabId] : null
   if (!frame || !tab) return null
   const { rows, selectedPath, selectedIndex } = rowsOf(frame.id, layout)
@@ -180,11 +182,7 @@ function fold(collapsed: boolean): void {
   A.setCollapsed(t.tab.id, id, collapsed)
 }
 
-const hasEdit = (): boolean => {
-  const layout = getLayout()
-  const { frameId } = focusOf(layout)
-  return !!(frameId && layout.frames[frameId]?.edit)
-}
+const hasEdit = (): boolean => !!frameOf()?.edit
 
 export const FRAME_TOOLS: ToolSpec[] = [
   {
@@ -309,7 +307,7 @@ export const FRAME_TOOLS: ToolSpec[] = [
     // frame that was being edited. The key path fills this from the context.
     args: [{ name: 'frameId', label: 'Frame id', fromContext: 'frameId' }],
     run: async ({ frameId }) => {
-      const frame = getLayout().frames[String(frameId)]
+      const frame = focusFrame(getLayout().frames[String(frameId)])
       const edit = frame?.edit
       if (!frame || !edit) return { mutated: false }
       const subject = last(edit.path)
@@ -467,10 +465,11 @@ export const FRAME_TOOLS: ToolSpec[] = [
       const { tabId } = focusOf(layout)
       const tab = tabId ? layout.tabs[tabId] : null
       if (!tab) throw new Error('No tab is focused')
-      const frames = tab.frameIds.flatMap((frameId) => {
+      const frames = stackOf(layout, tab.id).flatMap((frameId) => {
         const frame = layout.frames[frameId]
         if (!frame) return []
-        const selected = frame.selectedPath[0] === frame.rootId ? frame.selectedPath : [frame.rootId]
+        const path = focusFrame(frame)?.selectedPath ?? []
+        const selected = path[0] === frame.rootId ? path : [frame.rootId]
         return [{ frameId, rootId: frame.rootId, selectedPath: selected }]
       })
       return { data: frames }
@@ -493,8 +492,8 @@ export const FRAME_TOOLS: ToolSpec[] = [
     ],
     run: ({ path, frameId }) => {
       const layout = getLayout()
-      const frame = layout.frames[String(frameId ?? focusOf(layout).frameId ?? '')]
-      if (!frame) throw new Error('No such frame')
+      const frame = rowFrame(layout, entitiesAtom.get(), String(frameId ?? focusOf(layout).frameId ?? ''))
+      if (!frame) throw new Error('No such frame, or none with rows to select')
       if (!Array.isArray(path) || path[0] !== frame.rootId || !path.every((id) => typeof id === 'string')) {
         throw new Error("A path must be a list of ids starting at the frame's root")
       }
@@ -556,12 +555,12 @@ export const FRAME_TOOLS: ToolSpec[] = [
       // the frame you are already in, so there is nowhere to go and the rest of
       // this searches where you stand.
       if (id && id !== t.frame.rootId) A.pushFrame(t.tab.id, id)
-      const { frameId } = focusOf(getLayout())
+      const frameId = frameOf()?.id
       if (!frameId) return
       // Set rather than toggled. `q` is the toggle; this means "show me the
       // headings", which pressing again should not undo.
       A.setSectionsOnly(frameId, true)
-      if (getLayout().frames[frameId]?.find == null) A.setFind(frameId, '')
+      if (frameOf()?.find == null) A.setFind(frameId, '')
       requestFocus(findField(frameId))
     },
   },
@@ -576,13 +575,12 @@ export const FRAME_TOOLS: ToolSpec[] = [
     reach: 'ui',
     keys: [{ key: 'f', mod: true }],
     run: () => {
-      const layout = getLayout()
-      const { frameId } = focusOf(layout)
+      const frameId = frameOf()?.id
       if (!frameId) return
       // Empty string, not null: that is what puts the field on screen. Run
       // against a field already open it leaves the text alone and only asks for
       // the keyboard, so the key means "find" whatever state the frame is in.
-      if (layout.frames[frameId]?.find == null) A.setFind(frameId, '')
+      if (frameOf()?.find == null) A.setFind(frameId, '')
       requestFocus(findField(frameId))
     },
   },
@@ -597,13 +595,9 @@ export const FRAME_TOOLS: ToolSpec[] = [
     // the router settles that before it consults any tool.
     keys: [{ key: 'Escape' }],
     listed: false,
-    enabled: () => {
-      const layout = getLayout()
-      const { frameId } = focusOf(layout)
-      return !!(frameId && layout.frames[frameId]?.find != null)
-    },
+    enabled: () => frameOf()?.find != null,
     run: () => {
-      const { frameId } = focusOf(getLayout())
+      const frameId = frameOf()?.id
       if (frameId) A.setFind(frameId, null)
     },
   },
@@ -617,9 +611,8 @@ export const FRAME_TOOLS: ToolSpec[] = [
     // A toggle rather than a one-way switch, so the key that turns the outline on
     // turns it off again; the pill's own button runs `frame.sections.clear`.
     run: () => {
-      const layout = getLayout()
-      const { frameId } = focusOf(layout)
-      if (frameId) A.setSectionsOnly(frameId, !layout.frames[frameId]?.sectionsOnly)
+      const frame = frameOf()
+      if (frame) A.setSectionsOnly(frame.id, !frame.sectionsOnly)
     },
   },
   {
@@ -632,13 +625,9 @@ export const FRAME_TOOLS: ToolSpec[] = [
     // and only then the outline.
     keys: [{ key: 'Escape' }],
     listed: false,
-    enabled: () => {
-      const layout = getLayout()
-      const { frameId } = focusOf(layout)
-      return !!(frameId && layout.frames[frameId]?.sectionsOnly)
-    },
+    enabled: () => !!frameOf()?.sectionsOnly,
     run: () => {
-      const { frameId } = focusOf(getLayout())
+      const frameId = frameOf()?.id
       if (frameId) A.setSectionsOnly(frameId, false)
     },
   },
@@ -652,9 +641,8 @@ export const FRAME_TOOLS: ToolSpec[] = [
     // Beside the outline on ⇧Q, and a toggle for the same reason: what is left to
     // do is the other way of reading a page of notes.
     run: () => {
-      const layout = getLayout()
-      const { frameId } = focusOf(layout)
-      if (frameId) A.setOpenOnly(frameId, !layout.frames[frameId]?.openOnly)
+      const frame = frameOf()
+      if (frame) A.setOpenOnly(frame.id, !frame.openOnly)
     },
   },
   {
@@ -665,13 +653,9 @@ export const FRAME_TOOLS: ToolSpec[] = [
     reach: 'ui',
     keys: [{ key: 'Escape' }],
     listed: false,
-    enabled: () => {
-      const layout = getLayout()
-      const { frameId } = focusOf(layout)
-      return !!(frameId && layout.frames[frameId]?.openOnly)
-    },
+    enabled: () => !!frameOf()?.openOnly,
     run: () => {
-      const { frameId } = focusOf(getLayout())
+      const frameId = frameOf()?.id
       if (frameId) A.setOpenOnly(frameId, false)
     },
   },
@@ -687,11 +671,10 @@ export const FRAME_TOOLS: ToolSpec[] = [
     reach: 'ui',
     keys: [{ key: 'f' }],
     run: () => {
-      const layout = getLayout()
-      const { frameId } = focusOf(layout)
-      if (!frameId) return
-      const reversed = directionOf(layout.frames[frameId]) === 'in'
-      A.setDirection(frameId, reversed ? 'out' : 'in')
+      const frame = frameOf()
+      if (!frame) return
+      const reversed = directionOf(frame) === 'in'
+      A.setDirection(frame.id, reversed ? 'out' : 'in')
       return { message: reversed ? 'Following outbound links' : 'Following inbound links' }
     },
   },
@@ -713,7 +696,7 @@ export const FRAME_TOOLS: ToolSpec[] = [
       },
     ],
     run: ({ entityId, depth }) => {
-      const { frameId } = focusOf(getLayout())
+      const frameId = frameOf()?.id
       if (frameId) A.setMaxDepth(frameId, String(entityId), depth == null ? null : Number(depth))
     },
   },
@@ -753,17 +736,19 @@ export const FRAME_TOOLS: ToolSpec[] = [
     reach: 'ui',
     enabled: () => frameDepth(frameOf()) != null,
     run: () => {
-      const { frameId } = focusOf(getLayout())
+      const frameId = frameOf()?.id
       if (frameId) A.setFrameDepth(frameId, null)
     },
   },
 ]
 
-/** The focused frame, for the tools that only want to read one value off it. */
-const frameOf = (): FrameState | null => {
+/**
+ * The focused frame, if it draws rows — for the tools that only want to read or
+ * set one value on it. Anywhere else there is nothing for them to act on.
+ */
+function frameOf(): FocusFrame | null {
   const layout = getLayout()
-  const { frameId } = focusOf(layout)
-  return frameId ? (layout.frames[frameId] ?? null) : null
+  return rowFrame(layout, entitiesAtom.get(), focusOf(layout).frameId)
 }
 
 // No message back: a depth is read off the pill in the corner, and these are

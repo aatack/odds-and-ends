@@ -17,6 +17,11 @@ timestamped 0 and authored `builtin`, so anything written to the same keys wins.
 `type` is its own type, and its `schema` describes the fields below. Read
 `type` (`get_details` over MCP) to see them.
 
+The store serves one more family the same way: for any web address, the entity
+`url:<address>` says `type: url` and holds the address as its `url`. It is how
+the app peeks at a link without writing anything; write to it to say more about
+the page.
+
 ## Fields of a type
 
 | field | value | what the app does with it |
