@@ -1,8 +1,9 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from '@untitledui/icons'
 import { cn } from '../../helpers/cn'
 import { IconButton } from './IconButton'
+import { openModal } from '../../state/ui'
 
 /**
  * How much of the screen the card takes. `md` is a form; `wide` is a form with a
@@ -40,14 +41,34 @@ export function Modal({
   children: ReactNode
 }): React.JSX.Element {
   const large = size === 'large'
+  const card = useRef<HTMLDivElement>(null)
+  // Latest `onClose`, so registering once doesn't pin a stale one.
+  const close = useRef(onClose)
+  close.current = onClose
+
+  // The keyboard is the dialog's while it is up: the router leaves keys to it and
+  // Escape closes it (see `tools/dispatch`). Focus moves in, so typing starts
+  // here, and goes back to wherever it was when the dialog closes.
+  useEffect(() => {
+    const before = document.activeElement as HTMLElement | null
+    if (!card.current?.contains(document.activeElement)) card.current?.focus()
+    const release = openModal(() => close.current())
+    return () => {
+      release()
+      before?.focus?.()
+    }
+  }, [])
+
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-gray-950/30 p-6"
       onClick={onClose}
     >
       <div
+        ref={card}
+        tabIndex={-1}
         className={cn(
-          'my-6 w-full rounded-xl bg-white shadow-lg',
+          'my-6 w-full rounded-xl bg-white shadow-lg focus:outline-none',
           WIDTHS[size],
           // Exactly the room left by the backdrop's padding and the card's own
           // margin (1.5rem each, top and bottom), so the tall card fills the

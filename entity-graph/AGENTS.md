@@ -141,7 +141,11 @@ is the long form; the rules that matter day to day:
   machine that isn't a gesture, and it says so (`origin: 'code'`).
 - **One key listener, at the top.** `tools/dispatch.ts` owns it and resolves
   through the focus chain (focused frame → its tab group → the app), not through
-  whatever has DOM focus.
+  whatever has DOM focus. **A dialog owns the keyboard:** every `Modal` and open
+  `Dropdown` registers itself (`openModal` in `state/ui.ts`), and while one is up
+  the router hands keys to it rather than to the frames behind — Escape closes the
+  innermost, ⌘P still opens the palette. A modal takes focus when it opens and
+  hands it back when it closes.
 - **Views render and forward.** A dumb component takes rows and callbacks; state
   comes from `state/hooks.ts`. Direct manipulation (clicking a row, typing in the
   in-place editor) calls a named action in `state/actions.ts`; anything invocable

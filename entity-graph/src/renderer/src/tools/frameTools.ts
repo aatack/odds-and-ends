@@ -546,7 +546,7 @@ export const FRAME_TOOLS: ToolSpec[] = [
     // is left to do what it has always done.
     enabled: () => {
       const ui = uiAtom.get()
-      return ui.page === 'editor' && !ui.inspectEntityId && !ui.activityOpen && !ui.debug
+      return ui.page === 'editor' && !ui.inspectEntityId && !ui.activityOpen
     },
     run: () => {
       const t = target()

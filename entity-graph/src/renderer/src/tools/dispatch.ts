@@ -1,5 +1,5 @@
 import { pendingAtom } from '../state/store'
-import { uiAtom } from '../state/ui'
+import { modalsAtom, uiAtom } from '../state/ui'
 import { cancelCall, pickForPending, runTool, togglePalette } from './call'
 import { bindsKey, matchesKey, type KeyBinding } from './keys'
 import { allTools, findTool } from './registry'
@@ -60,6 +60,16 @@ export function handleKey(e: KeyboardEvent): boolean {
     }
     // Everything else falls through, so the selection can still be moved to
     // choose a target.
+  }
+
+  // A dialog owns the keyboard: nothing reaches the frames behind it, and Escape
+  // closes the innermost one. Everything else is left to the dialog's own
+  // controls — typing, Tab between fields, Enter on a button.
+  const modals = modalsAtom.get()
+  if (modals.length) {
+    if (e.key !== 'Escape') return false
+    modals[modals.length - 1]()
+    return true
   }
 
   // The overlays with their own dismissal keep Escape while they are up: it

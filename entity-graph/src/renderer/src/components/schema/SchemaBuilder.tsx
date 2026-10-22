@@ -412,9 +412,13 @@ function NumberInput({
   )
 }
 
-/** The panel a nested schema sits in, one step in from its parent. */
+/**
+ * Where a nested schema's rows sit: one step in from the row they belong to,
+ * with a soft rail down the left so the depth reads. Indented on the left only —
+ * the rows keep the full width to the right.
+ */
 function Nested({ children }: { children: React.ReactNode }): React.JSX.Element {
-  return <div className="ml-3 space-y-2 rounded-md bg-gray-50 p-2">{children}</div>
+  return <div className="ml-2 space-y-2 border-l-2 border-gray-100 pl-4">{children}</div>
 }
 
 /**

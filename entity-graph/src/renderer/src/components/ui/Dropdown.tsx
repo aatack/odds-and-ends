@@ -1,8 +1,11 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { cn } from '../../helpers/cn'
+import { openModal } from '../../state/ui'
 
 // The one dropdown for the app: an anchored popover that closes on an outside
 // click, on Escape, and (via the `close` passed to its children) on selection.
+// While open it holds the keyboard as a dialog does (`openModal`), so Escape
+// closes the menu and not the dialog it sits in.
 export function Dropdown({
   trigger,
   children,
@@ -22,14 +25,11 @@ export function Dropdown({
     const onPointerDown = (e: PointerEvent): void => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
-    const onKeyDown = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setOpen(false)
-    }
+    const release = openModal(() => setOpen(false))
     document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
     return () => {
+      release()
       document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
     }
   }, [open])
 

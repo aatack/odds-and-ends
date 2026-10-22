@@ -37,3 +37,16 @@ export const themeAtom = persistentAtom<Theme>(
 )
 
 export const toggleTheme = (): void => themeAtom.set((t) => (t === 'dark' ? 'light' : 'dark'))
+
+/**
+ * The dialogs open now, innermost last, each by how it closes. Runtime only. A
+ * dialog owns the keyboard while it is up: the key router hands every key to it
+ * rather than to the frames behind, and Escape closes the innermost.
+ */
+export const modalsAtom = atom<readonly (() => void)[]>([])
+
+/** Note a dialog as open; the returned function notes it closed. */
+export function openModal(close: () => void): () => void {
+  modalsAtom.set((list) => [...list, close])
+  return () => modalsAtom.set((list) => list.filter((c) => c !== close))
+}
