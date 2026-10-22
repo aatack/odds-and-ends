@@ -104,7 +104,8 @@ export function PillBackground({
  *
  * `bare` leaves the surface out — the pill's gestures around its content alone,
  * for somewhere that is already a surface (a menu line, a form line), as the
- * schema components take `bare` inside another one. `bounded` caps its width,
+ * schema components take `bare` inside another one; with an `onClick` it is
+ * still a button, just not a raised one. `bounded` caps its width,
  * for a pill among others or in prose. `peek` opens a preview on hover; by
  * default only a pill with its own surface does, since a bare one sits inside
  * something else with its own business — a menu being chosen from, say.
@@ -125,7 +126,19 @@ export function EntityPill({
   const content = <PillContent id={id} bounded={bounded} />
   return (
     <PillWrapper id={id} peek={peek} className={className}>
-      {bare ? content : <PillBackground {...rest}>{content}</PillBackground>}
+      {!bare ? (
+        <PillBackground {...rest}>{content}</PillBackground>
+      ) : rest.onClick ? (
+        // Bare but still pressable — a crumb: the button with none of the surface.
+        <button
+          className="inline-flex min-w-0 items-center rounded hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+          {...rest}
+        >
+          {content}
+        </button>
+      ) : (
+        content
+      )}
     </PillWrapper>
   )
 }

@@ -1,9 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { X } from '@untitledui/icons'
-import { PillContent } from '../components/EntityPill'
 import { PEEK_ATTRIBUTE } from '../components/peekHover'
 import { Button } from '../components/ui/Button'
-import { cn } from '../helpers/cn'
 import * as A from '../state/actions'
 import { PEEK_SIZE } from '../state/peeks'
 import { useLayoutState } from '../state/hooks'
@@ -12,6 +10,7 @@ import { URL_PREFIX } from '../../../core/builtins'
 import { peeksOf, type PeekState, type Rect } from '../state/types'
 import { runTool } from '../tools/call'
 import { EntityFrame } from './EntityFrame'
+import { Breadcrumb, TabTitle } from './TabHeader'
 
 // The floating windows a hover opens onto whatever a pill or a link refers to
 // (a link's being its URL entity), or that "Open in peek" opens. Each is a tab
@@ -154,19 +153,17 @@ function PeekWindow({
         A.focusPeek(peek.key)
       }}
     >
+      {/* The top of a tab, as a group's strip draws it: the peek is one tab, the
+        filled title while it has the keys and the quiet one while it doesn't. */}
       <div
-        className={cn(
-          'flex shrink-0 items-center gap-2 px-3 py-1.5 text-[12px] text-gray-500 select-none',
-          // The keys are in it: the one place it says so.
-          focused ? 'bg-gray-100' : 'bg-gray-50',
-        )}
+        className="flex shrink-0 items-center gap-0.5 border-b border-gray-100 bg-white px-1 py-1 select-none"
         onPointerDown={begin('move')}
       >
         <span className="flex min-w-0 flex-1 items-center">
-          {rootId && <PillContent id={rootId} className="text-gray-700" />}
+          <TabTitle rootId={rootId ?? undefined} active={focused} />
         </span>
         {/* Pressing a button never starts a drag. */}
-        <span className="flex items-center gap-1" onPointerDown={(e) => e.stopPropagation()}>
+        <span className="flex items-center gap-1 pr-1.5" onPointerDown={(e) => e.stopPropagation()}>
           <Button variant="tertiary" size="sm" onClick={open}>
             Open
           </Button>
@@ -182,6 +179,7 @@ function PeekWindow({
           )}
         </span>
       </div>
+      <Breadcrumb tabId={peek.tabId} />
       <div className="relative min-h-0 flex-1">
         <EntityFrame frameId={frameId} />
       </div>
