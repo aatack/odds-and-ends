@@ -54,7 +54,8 @@ export function MenuItem({
       <span className="flex size-3.5 shrink-0 items-center justify-center text-brand-600">
         {on && <Check size={13} />}
       </span>
-      {children}
+      {/* Shrinks with the menu, so a long name ellipses instead of widening it. */}
+      <span className="flex min-w-0 flex-1 items-center truncate">{children}</span>
     </button>
   )
 }

@@ -38,6 +38,8 @@ function TabEntityPicker({
   return (
     <div className="w-full">
       <Dropdown
+        // A long name ellipses within this rather than stretching the menu.
+        menuClassName="max-w-80"
         trigger={({ toggle }) => (
           <button
             className="flex h-8 w-full items-center gap-1 px-2.5 text-left text-[13px] focus:outline-none"
