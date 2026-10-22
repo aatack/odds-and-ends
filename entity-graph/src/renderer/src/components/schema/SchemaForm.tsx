@@ -258,11 +258,7 @@ function Control({
 
   // A value that is itself a schema, written with the schema builder.
   if (isSchemaRef(schema)) {
-    return (
-      <div className="w-full p-2">
-        <SchemaBuilder value={value} setValue={onChange} />
-      </div>
-    )
+    return <SchemaBuilder value={value} setValue={onChange} bare />
   }
 
   const variants = variantsOf(schema)

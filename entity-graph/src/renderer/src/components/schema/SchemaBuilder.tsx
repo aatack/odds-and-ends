@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, ChevronRight, Plus, Trash03 } from '@untitledui/icons'
 import { cn } from '../../helpers/cn'
 import { Button } from '../ui/Button'
@@ -43,12 +43,33 @@ import {
 export function SchemaBuilder({
   value,
   setValue,
+  bare = false,
 }: {
   value: unknown
   setValue: (value: unknown) => void
+  /**
+   * Inside another surface — a line of the schema form — rather than on its own.
+   * The builder then draws no boxes of its own: its rows are lines divided by
+   * hairlines, filling the space they are given, as the form's own lines are.
+   */
+  bare?: boolean
 }): React.JSX.Element {
-  return <SchemaNode schema={isObject(value) ? value : {}} onChange={setValue} label="Schema" />
+  return (
+    <Surface.Provider value={bare}>
+      <div className={cn(bare && 'w-full divide-y divide-gray-100')}>
+        {/* Bare, the line it sits in already says what it is. */}
+        <SchemaNode
+          schema={isObject(value) ? value : {}}
+          onChange={setValue}
+          label={bare ? '' : 'Schema'}
+        />
+      </div>
+    </Surface.Provider>
+  )
 }
+
+/** Whether the builder is bare (see {@link SchemaBuilder}). */
+const Surface = createContext(false)
 
 /** The kinds the menu offers, in its order. */
 const KINDS = [...SCHEMA_TYPES, 'literal', 'union', 'schema'] as const
@@ -257,8 +278,9 @@ function SchemaNode({
   const nests = kind === 'object' || kind === 'array' || kind === 'union'
   const [open, setOpen] = useState(true)
 
+  const bare = useContext(Surface)
   return (
-    <div className="space-y-1.5">
+    <div className={bare ? 'divide-y divide-gray-100' : 'space-y-1.5'}>
       <NameBox
         slot={slot}
         label={label}
@@ -339,12 +361,14 @@ function NameBox({
       : slot.taken.includes(trimmed)
         ? 'Already a field'
         : null
+  const bare = useContext(Surface)
   return (
     <div className="min-w-0 flex-1">
       <div
         className={cn(
-          'rounded-md border border-gray-200 bg-white shadow-xs',
-          'focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/40',
+          bare
+            ? 'focus-within:bg-brand-50/40'
+            : 'rounded-md border border-gray-200 bg-white shadow-xs focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/40',
         )}
       >
         <div className="flex h-8 items-center">
@@ -564,7 +588,38 @@ function NumberInput({
  * the rows keep the full width to the right.
  */
 function Nested({ children }: { children: React.ReactNode }): React.JSX.Element {
+  const bare = useContext(Surface)
+  // Bare, the rows run on as lines: a step in from the left and a hairline
+  // between each, with nothing to space them apart.
+  if (bare)
+    return <div className="ml-4 divide-y divide-gray-100 border-l border-gray-100">{children}</div>
   return <div className="ml-2 space-y-2 border-l-2 border-gray-100 pl-4">{children}</div>
+}
+
+/** The last row of a nested run: adds another field or option. */
+function AddRow({
+  onClick,
+  children,
+}: {
+  onClick: () => void
+  children: React.ReactNode
+}): React.JSX.Element {
+  const bare = useContext(Surface)
+  if (bare) {
+    return (
+      <button
+        className="flex h-8 w-full items-center gap-1.5 px-2.5 text-[12px] text-gray-400 hover:bg-gray-50 hover:text-gray-700 focus:outline-none focus-visible:bg-gray-50"
+        onClick={onClick}
+      >
+        <Plus size={13} /> {children}
+      </button>
+    )
+  }
+  return (
+    <Button variant="tertiary" size="sm" onClick={onClick}>
+      <Plus size={13} /> {children}
+    </Button>
+  )
 }
 
 /**
@@ -635,9 +690,7 @@ function Variants({
           onRemove={() => write(variants.filter((_, j) => j !== i))}
         />
       ))}
-      <Button variant="tertiary" size="sm" onClick={() => write([...variants, { const: '' }])}>
-        <Plus size={13} /> Add option
-      </Button>
+      <AddRow onClick={() => write([...variants, { const: '' }])}>Add option</AddRow>
     </Nested>
   )
 }
@@ -698,16 +751,14 @@ function Properties({
           }}
         />
       ))}
-      <Button
-        variant="tertiary"
-        size="sm"
+      <AddRow
         // New fields are required: optional is the thing worth saying.
         onClick={() =>
           write([...properties, [fresh(), { type: 'string' }]], [...required, fresh()])
         }
       >
-        <Plus size={13} /> Add field
-      </Button>
+        Add field
+      </AddRow>
     </Nested>
   )
 }
