@@ -113,15 +113,26 @@ impl Default for ReadAhead {
     }
 }
 
-struct Walker<'a, D, I> {
+/// The loading engine of a walk, shared with [`Store::prove`]'s `Walk`
+/// strategy: the per-call cache of values and followed links, with the batched
+/// read-ahead ([`Walker::ensure`]/`load`). It is `pub(crate)` so that `prove`
+/// can drive the same read-ahead over a reversed follow map; `prove` reads
+/// [`Walker::nodes`] and [`Walker::links`] after an [`Walker::ensure`], and
+/// does its own traversal and predecessor-type check.
+pub(crate) struct Walker<'a, D, I> {
     store: &'a Store,
     view: View,
     follow: &'a Follow,
     read_ahead: ReadAhead,
+    /// Link reads use the archived filter of [`Store::links`] when set (always
+    /// for `walk`; `!include_archived` for `prove`).
+    typed_only: bool,
     descend: D,
     include: I,
-    nodes: HashMap<String, WalkNode>,
-    links: HashMap<String, LinkGroups>,
+    /// Values of each loaded entity (its `type` included).
+    pub(crate) nodes: HashMap<String, WalkNode>,
+    /// Followed links of each loaded entity, grouped by `(link type, dir)`.
+    pub(crate) links: HashMap<String, LinkGroups>,
     visited: Option<HashSet<String>>,
     /// Followed link targets per entity, in order, before path filtering.
     targets: HashMap<String, Vec<String>>,
@@ -129,7 +140,8 @@ struct Walker<'a, D, I> {
     /// runs once per path. A stack, not a map: memory stays O(depth).
     stack_ids: Vec<String>,
     stack_kids: Vec<Option<Vec<String>>>,
-    loads: usize,
+    /// Database load rounds so far: one per read-ahead layer.
+    pub(crate) loads: usize,
     /// Interned keys that this walk has seen, by entity ID.
     eid_of: HashMap<String, i64>,
 }
@@ -141,7 +153,7 @@ where
 {
     /// Make sure `ids` are cached. A miss loads them, then up to
     /// `read_ahead.depth` layers of their followed targets.
-    fn ensure(&mut self, ids: &[String], remaining: usize) -> Result<()> {
+    pub(crate) fn ensure(&mut self, ids: &[String], remaining: usize) -> Result<()> {
         let mut layer: Vec<String> = ids
             .iter()
             .filter(|id| !self.nodes.contains_key(*id))
@@ -173,6 +185,33 @@ where
             }
             layer = next;
         }
+        Ok(())
+    }
+
+    /// Make sure the links of `id` for `pairs` are cached, even when `id`'s
+    /// type selects no follow pairs. [`Store::prove`]'s `Walk` strategy needs
+    /// this for an untyped item (its type keys nothing in the reversed follow
+    /// map), so that the walk still reads its links. For a node whose type
+    /// does follow these pairs, [`Walker::ensure`] already cached them and this
+    /// is a no-op; otherwise it is one extra load round.
+    pub(crate) fn ensure_links(&mut self, id: &str, pairs: &[(String, Direction)]) -> Result<()> {
+        let owned = id.to_owned();
+        self.ensure(std::slice::from_ref(&owned), usize::MAX)?;
+        if self.links.contains_key(id) {
+            return Ok(());
+        }
+        self.loads += 1;
+        let eids = self.store.lookup(&[id])?;
+        let groups: Vec<(&str, Direction)> = pairs.iter().map(|(t, d)| (t.as_str(), *d)).collect();
+        let links = self.store.links_with(
+            &self.view,
+            &[id],
+            &eids,
+            &groups,
+            self.typed_only,
+            Some(&mut self.eid_of),
+        )?;
+        self.links.insert(owned, links[id].clone());
         Ok(())
     }
 
@@ -233,7 +272,7 @@ where
                 &members,
                 &mine,
                 &groups,
-                true,
+                self.typed_only,
                 Some(&mut self.eid_of),
             )?;
             for id in members {
@@ -370,6 +409,7 @@ impl Store {
             view: self.branch_view(branch)?,
             follow,
             read_ahead: options.read_ahead,
+            typed_only: true,
             descend,
             include,
             nodes: HashMap::new(),
@@ -421,5 +461,40 @@ impl Store {
             cache,
             visited: w.visited,
         })
+    }
+
+    /// A bare [`Walker`] for [`Store::prove`]'s `Walk` strategy: the walk
+    /// cache and read-ahead over `follow`, with no descend/include predicate
+    /// and no visited set. `prove` calls [`Walker::ensure`] and reads the
+    /// loaded [`Walker::nodes`] and [`Walker::links`] itself.
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn walk_loader<'a>(
+        &'a self,
+        view: View,
+        follow: &'a Follow,
+        read_ahead: ReadAhead,
+        typed_only: bool,
+    ) -> Walker<
+        'a,
+        impl FnMut(&[String], &WalkNode) -> bool,
+        impl FnMut(&[String], &WalkNode) -> bool,
+    > {
+        Walker {
+            store: self,
+            view,
+            follow,
+            read_ahead,
+            typed_only,
+            descend: |_: &[String], _: &WalkNode| true,
+            include: |_: &[String], _: &WalkNode| true,
+            nodes: HashMap::new(),
+            links: HashMap::new(),
+            visited: None,
+            targets: HashMap::new(),
+            stack_ids: Vec::new(),
+            stack_kids: Vec::new(),
+            loads: 0,
+            eid_of: HashMap::new(),
+        }
     }
 }
