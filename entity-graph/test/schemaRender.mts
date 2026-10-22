@@ -283,6 +283,15 @@ test('carries editors into a builder inside a form', () => {
   assert.match(html, /text-gray-900">Shouting<\/span>/)
 })
 
+test('draws a boolean as a yes or no the whole line flips', () => {
+  const schema = { type: 'object', properties: { veg: { type: 'boolean' } } }
+  const yes = renderToStaticMarkup(h(SchemaForm, { schema, value: { veg: true }, setValue: noop }))
+  assert.match(yes, /<button[^>]*aria-pressed="true"[^>]*>Yes<\/button>/)
+  const no = renderToStaticMarkup(h(SchemaForm, { schema, value: {}, setValue: noop }))
+  assert.match(no, /<button[^>]*aria-pressed="false"[^>]*>No<\/button>/)
+  assert.doesNotMatch(no, /role="switch"/)
+})
+
 let failed = 0
 for (const [name, run] of tests) {
   try {

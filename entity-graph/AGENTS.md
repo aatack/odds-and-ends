@@ -119,7 +119,7 @@ is the long form; the rules that matter day to day:
   under hairlines and take `bare` inside another surface — only the outermost
   draws a border. `kindOf` in `schema.ts` is the one reading of what a schema is,
   and `parts.tsx` the pieces the two share. The folder depends on nothing of the
-  app but four `../ui` primitives (Dropdown, Modal, Switch, TextEditor); keep it
+  app but three `../ui` primitives (Dropdown, Modal, TextEditor); keep it
   that way. Extension keywords: `x-multiline`, `x-monospace`, `x-popout`,
   `x-editor`. **Custom editors** (`editors.tsx`): a schema names one with
   `x-editor`, and `editors` on the form or builder (or `EditorsProvider`) says

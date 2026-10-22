@@ -1,7 +1,7 @@
 // The schema components: a form for a value a JSON Schema describes, and a
 // builder for the schema itself. Everything here depends only on React, the
-// icon set and four of the app's UI primitives (`../ui/Dropdown`, `Modal`,
-// `Switch`, `TextEditor`) — Dropdown and Modal for the keyboard: while one is
+// icon set and three of the app's UI primitives (`../ui/Dropdown`, `Modal`,
+// `TextEditor`) — Dropdown and Modal for the keyboard: while one is
 // open it has the keys, which is the app's rule for dialogs.
 //
 // A host can draw any value its own way: a schema names an editor

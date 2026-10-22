@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { ChevronDown, Pencil01, XClose } from '@untitledui/icons'
 import { Modal } from '../ui/Modal'
-import { Switch } from '../ui/Switch'
 import { TextEditor } from '../ui/TextEditor'
 import { EditorsProvider, useEditorFor, type Editors } from './editors'
 import { JsonEditor } from './JsonEditor'
@@ -382,10 +381,15 @@ function Control({
         <NumberInput integer={kindOf(schema) === 'integer'} value={value} onChange={onChange} />
       )
     case 'boolean':
+      // Yes or no, written as a word: the whole line is the button that flips it.
       return (
-        <div className="px-2.5">
-          <Switch checked={value === true} onChange={onChange} label={label ?? 'Toggle'} />
-        </div>
+        <button
+          className={cx(BARE, 'text-left', value === true ? 'text-gray-900' : 'text-gray-500')}
+          aria-pressed={value === true}
+          onClick={() => onChange(value !== true)}
+        >
+          {value === true ? 'Yes' : 'No'}
+        </button>
       )
     case 'array':
       return <List schema={schema} value={value} onChange={onChange} />
