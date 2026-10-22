@@ -77,6 +77,19 @@ test('points the keys at the peek holding them, and keeps it open while they are
   assert.deepEqual(focusOf(back), focusOf(base))
 })
 
+test('opens a peek on purpose pinned where it is put, with the keys', () => {
+  const rect = { x: 100, y: 80, width: 720, height: 480 }
+  const s = P.openPeek(defaultLayout('root'), 'a', rect)
+  const [peek] = peeksOf(s)
+  assert.equal(peek.entityId, 'a')
+  assert.ok(peek.pinned)
+  assert.deepEqual(peek.rect, rect)
+  assert.equal(s.peekFocus, peek.key)
+  assert.equal(focusOf(s).tabId, peek.tabId)
+  // No pointer keeps it, and none is needed: leaving it closes nothing.
+  assert.equal(peeksOf(P.keepHovered({ ...s, peekFocus: null }, null)).length, 1)
+})
+
 let failed = 0
 for (const [name, run] of tests) {
   try {

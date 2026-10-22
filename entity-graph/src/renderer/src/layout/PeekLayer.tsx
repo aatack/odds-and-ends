@@ -5,6 +5,7 @@ import { PEEK_ATTRIBUTE } from '../components/peekHover'
 import { Button } from '../components/ui/Button'
 import { cn } from '../helpers/cn'
 import * as A from '../state/actions'
+import { PEEK_SIZE } from '../state/peeks'
 import { useLayoutState } from '../state/hooks'
 import { getLayout } from '../state/store'
 import { URL_PREFIX } from '../../../core/builtins'
@@ -12,17 +13,18 @@ import { peeksOf, type PeekState, type Rect } from '../state/types'
 import { runTool } from '../tools/call'
 import { EntityFrame } from './EntityFrame'
 
-// The floating windows a hover opens onto whatever a pill or a link refers to.
-// An entity's is a frame like any other, rooted at it — so it draws the entity's
-// focus with its children below, and once it has been pressed in it has the
-// keys: its own selection, its own stack, the same tools. A page's is the page.
+// The floating windows a hover opens onto whatever a pill or a link refers to
+// (a link's being its URL entity), or that "Open in peek" opens. Each is a tab
+// of frames like any other, rooted at the entity — so it draws the entity's
+// focus, and once it has been pressed in it has the keys: its own selection, its
+// own stack, the same tools.
 //
 // Moving or resizing one pins it, after which it stays until its × is pressed.
 //
 // They sit over dialogs (z-50), since a pill in the inspector peeks too, and
 // under popups (z-70): the palette opened from inside a peek belongs on top.
 
-const SIZE = { width: 720, height: 480 }
+const SIZE = PEEK_SIZE
 const GAP = 6
 const MINIMUM = { width: 280, height: 160 }
 

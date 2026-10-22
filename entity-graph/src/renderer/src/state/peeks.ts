@@ -17,6 +17,19 @@ import {
 // A peek's frames live in `tabs` and `frames` like anyone's, under a tab that
 // belongs to no group, so closing a peek has to take them with it.
 
+/** A peek's size until it is resized. */
+export const PEEK_SIZE = { width: 720, height: 480 }
+
+/**
+ * Open a peek on purpose rather than by hovering: pinned at `rect`, since no
+ * pointer is keeping it, stacked on the peek holding the keys, and given them.
+ */
+export function openPeek(s: LayoutState, entityId: string, rect: Rect): LayoutState {
+  const shown = showPeek(s, entityId, rect, s.peekFocus ?? null)
+  const peek = peeksOf(shown)[peeksOf(shown).length - 1]
+  return focusPeek(placePeek(shown, peek.key, rect), peek.key)
+}
+
 /** The newest peek that isn't pinned — the one a hover would replace. */
 export const transientPeek = (s: LayoutState): PeekState | null =>
   [...peeksOf(s)].reverse().find((p) => !p.pinned) ?? null

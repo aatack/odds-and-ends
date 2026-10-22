@@ -138,6 +138,10 @@ export function hoverPeek(entityId: string, anchor: Rect, origin: string | null)
   }, OPEN_AFTER)
 }
 
+/** Open a pinned peek on an entity, with the keys. */
+export const openPeek = (entityId: string, rect: Rect): void =>
+  updateLayout((s) => P.openPeek(s, entityId, rect))
+
 /** The pointer went into a peek's window. */
 export function enterPeek(key: string): void {
   // A close already scheduled still runs: it keeps this peek and those under it,

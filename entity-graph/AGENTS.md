@@ -330,7 +330,8 @@ group. A link's peek is its URL entity's, so the page is in a locked-down
 `<webview>` (no preload, no node, its own partition; see `will-attach-webview` in
 `src/main/index.ts`), and its Open button opens the page in the browser. Peeks stack: hovering inside one opens another on top, and
 leaving closes everything above where the pointer went. Only pinned peeks survive
-a reload. No key opens or closes one.
+a reload. No key opens or closes one; "Open in peek" (`entity.peek`, from the
+palette) opens one pinned in the middle of the window, with the keys.
 
 **Links are pills.** A link in an entity's text is drawn as `LinkPill` — its
 words behind a globe — and hovering a web page peeks at it; a plain click still

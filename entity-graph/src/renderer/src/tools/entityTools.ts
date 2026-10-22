@@ -1,5 +1,6 @@
 import * as A from '../state/actions'
 import { entityRows, type EntityRow } from '../state/derive'
+import { PEEK_SIZE } from '../state/peeks'
 import { rowsOf } from '../state/query'
 import { focusOf, getLayout, mainGroupId } from '../state/store'
 import {
@@ -220,6 +221,30 @@ function changedValues(
 
 export const ENTITY_TOOLS: ToolSpec[] = [
   ...OPEN_TOOLS,
+  {
+    id: 'entity.peek',
+    label: 'Open in peek',
+    aliases: ['peek', 'preview', 'float', 'popup'],
+    hint: 'Layout',
+    scope: 'frame',
+    reach: 'ui',
+    args: [entityArg()],
+    run: ({ entityId }) => {
+      const target = id(entityId)
+      if (!target) return
+      // Where a peek would be read rather than where a hover was: across the
+      // middle of the window, a little above centre.
+      const width = typeof window === 'undefined' ? 1280 : window.innerWidth
+      const height = typeof window === 'undefined' ? 800 : window.innerHeight
+      const size = {
+        width: Math.min(PEEK_SIZE.width, width - 24),
+        height: Math.min(PEEK_SIZE.height, height - 24),
+      }
+      const x = Math.max(12, Math.round((width - size.width) / 2))
+      const y = Math.max(12, Math.round((height - size.height) / 3))
+      A.openPeek(target, { x, y, ...size })
+    },
+  },
   {
     id: 'detail.commit',
     label: 'Write detail form',
