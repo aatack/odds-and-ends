@@ -105,22 +105,26 @@ export function PillBackground({
  * `bare` leaves the surface out — the pill's gestures around its content alone,
  * for somewhere that is already a surface (a menu line, a form line), as the
  * schema components take `bare` inside another one. `bounded` caps its width,
- * for a pill among others or in prose.
+ * for a pill among others or in prose. `peek` opens a preview on hover; by
+ * default only a pill with its own surface does, since a bare one sits inside
+ * something else with its own business — a menu being chosen from, say.
  */
 export function EntityPill({
   id,
   bare = false,
   bounded = false,
+  peek = !bare,
   className,
   ...rest
 }: {
   id: string
   bare?: boolean
   bounded?: boolean
+  peek?: boolean
 } & ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {
   const content = <PillContent id={id} bounded={bounded} />
   return (
-    <PillWrapper id={id} peek className={className}>
+    <PillWrapper id={id} peek={peek} className={className}>
       {bare ? content : <PillBackground {...rest}>{content}</PillBackground>}
     </PillWrapper>
   )
