@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react'
 import type { CurrentPensive } from '../../../core/client'
 import { Layout } from '../layout/Layout'
+import { runOnLoad } from '../helpers/onLoad'
 import { PeekLayer } from '../layout/PeekLayer'
 import { EntityInspector } from '../components/EntityInspector'
 import { ResourceModal } from '../components/Resource'
@@ -10,6 +11,7 @@ import {
   refreshEntities,
   removeEvents,
   setEntityFetcher,
+  setOnLoadRunner,
 } from '../../../core/cache'
 import { useUi } from '../state/hooks'
 import { setResourceFetcher } from '../state/resources'
@@ -51,6 +53,7 @@ export function SourceView({
       touched: invalidateEntities,
     })
     setResourceFetcher(readResource)
+    setOnLoadRunner(runOnLoad)
     // Whatever is cached was rolled up from a different store, so it is read
     // again rather than trusted — the rows keep what they have until it lands.
     refreshEntities()
@@ -58,6 +61,7 @@ export function SourceView({
       setEntityFetcher(null)
       setWriteObserver(null)
       setResourceFetcher(null)
+      setOnLoadRunner(null)
       setSourceTransport(null)
     }
   }, [pensive.id, user])

@@ -477,6 +477,11 @@ function Cached({ entityId }: { entityId: string }): React.JSX.Element {
           <div className="min-w-0 flex-1 overflow-hidden rounded-md bg-gray-50 font-mono text-xs">
             <Fact label="events" value={`${entry.events.length} (${STATE_NOTE[entry.loaded]})`} />
             {entry.error && <Fact label="read error" value={entry.error} bad />}
+            <Fact
+              label="onLoad"
+              value={`${entry.lazy?.length ?? 0} lazy (${STATE_NOTE[entry.lazyState ?? 'unloaded']})`}
+            />
+            {entry.lazyError && <Fact label="onLoad error" value={entry.lazyError} bad />}
           </div>
         ) : (
           <p className={cn('flex-1', EMPTY)}>
@@ -484,6 +489,11 @@ function Cached({ entityId }: { entityId: string }): React.JSX.Element {
           </p>
         )}
       </div>
+      {entry?.lazy?.length ? (
+        <pre className="overflow-auto rounded-md bg-gray-50 p-3 font-mono text-xs">
+          {JSON.stringify(entry.lazy, null, 2)}
+        </pre>
+      ) : null}
     </>
   )
 }

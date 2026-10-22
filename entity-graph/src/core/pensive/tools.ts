@@ -1,3 +1,4 @@
+import { builtinEvents } from '../builtins'
 import { z } from 'zod'
 import { bucketEvents, rollupEntity, type LinkDirection } from '../entity'
 import type { AppEvent, LinkAction } from '../events'
@@ -157,11 +158,17 @@ export function scanEventsTool(read: (entityIds: string[]) => Promise<AppEvent[]
   }
 }
 
-/** Reading events, as every read of the store does. */
+/**
+ * Reading events, with the ones the store supplies rather than holds in front of
+ * them — the `type` entity, see `../builtins`. Every read of the store goes
+ * through here, so a client's cache, a query and an agent over MCP all see it.
+ */
 const readerOf =
   (pensive: Pensive) =>
-  (entityIds?: string[]): Promise<AppEvent[]> =>
-    pensive.readEvents(entityIds)
+  async (entityIds?: string[]): Promise<AppEvent[]> => [
+    ...builtinEvents(entityIds),
+    ...(await pensive.readEvents(entityIds)),
+  ]
 
 /** An `EntityInterface` backed by a pensive's own reads and writes. */
 function entityInterface(pensive: Pensive): EntityInterface {

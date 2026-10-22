@@ -37,6 +37,7 @@ const {
   getEntity,
   refreshEntities,
   setEntityFetcher,
+  setOnLoadRunner,
 } = await import('../src/core/cache')
 const { PAGE_SIZE, loadMore, rowsOf } = await import('../src/renderer/src/state/query')
 const { setQueryObserver } = await import('../src/renderer/src/state/derive')
@@ -88,6 +89,7 @@ function open(): void {
     removed: removeEvents,
     touched: invalidateEntities,
   })
+  setOnLoadRunner(null)
   layoutAtom.set(defaultLayout('root'))
   // Stand in for the mounted frame. Reading is what asks the source for
   // anything missing, so without something re-reading when the cache changes
@@ -385,6 +387,61 @@ test('reads an outline three levels down, unless the frame says otherwise', asyn
 
   A.setSectionsOnly(frameId(), false)
 })
+
+// --- Types ------------------------------------------------------------------
+
+test('serves the type of types, with its own schema', async () => {
+  open()
+  source.tree({ root: ['type'] })
+  rowsOf(frameId())
+  await settle()
+  const type = getEntity('type').values
+  assert.equal(type.type, 'type', 'it is its own type')
+  const schema = type.schema as { properties: Record<string, unknown> }
+  assert.ok(schema.properties.schema, 'and describes `schema`')
+  assert.ok(schema.properties.onLoad, 'and `onLoad`')
+})
+
+test('runs a type’s onLoad for each instance, into the cache and not the store', async () => {
+  open()
+  source.tree({ root: ['a', 'b'] })
+  source.values({
+    recipe: { type: 'type', onLoad: '(e) => [{ key: "text", value: "Recipe " + e.entityId }]' },
+    a: { type: 'recipe' },
+    b: { type: 'recipe', text: 'Written' },
+  })
+  const seen: string[] = []
+  setOnLoadRunner(async (entityId, code, values) => {
+    seen.push(entityId)
+    // A stand-in for the sandbox: the function, called on the instance.
+    return (0, eval)(`(${code})`)({ ...values, entityId })
+  })
+  rowsOf(frameId())
+  await settle(20)
+  assert.deepEqual(seen.sort(), ['a', 'b'])
+  assert.equal(getEntity('a').values.text, 'Recipe a')
+  // Timestamped 0, so what is written wins.
+  assert.equal(getEntity('b').values.text, 'Written')
+  const stored = await source.readEvents(['a'])
+  assert.ok(!stored.some((e) => e.type === 'value' && e.key === 'text'), 'nothing was written')
+})
+
+test('records why an onLoad failed, and leaves the entity as it was', async () => {
+  open()
+  source.tree({ root: ['a'] })
+  source.values({ broken: { type: 'type', onLoad: 'nope' }, a: { type: 'broken', text: 'A' } })
+  setOnLoadRunner(async () => {
+    throw new Error('nope is not defined')
+  })
+  rowsOf(frameId())
+  await settle(20)
+  const entry = entitiesAtom.get().a
+  assert.equal(entry.lazyState, 'error')
+  assert.equal(entry.lazyError, 'nope is not defined')
+  assert.equal(getEntity('a').values.text, 'A')
+})
+
+// --- Writing and undoing ----------------------------------------------------
 
 test('shows a write before the round trip finishes', async () => {
   open()

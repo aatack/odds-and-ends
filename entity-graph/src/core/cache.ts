@@ -1,5 +1,6 @@
 import { atom } from './atom'
 import { emptyEntity, rollupEntity, type Entity } from './entity'
+import { lazyEvents } from './builtins'
 import type { AppEvent } from './events'
 import type { EntitySource } from './query'
 
@@ -46,6 +47,16 @@ export interface CachedEntity {
   loaded: LoadState
   /** Why the last read failed, so a row can say so rather than sitting blank. */
   error?: string
+  /**
+   * Events an `onLoad` function returned rather than read from the source, and
+   * never written back to it. Kept apart from the real ones so a refetch can
+   * replace those without disturbing these. See `../builtins`.
+   */
+  lazy?: AppEvent[]
+  /** Whether this entity's type has had its `onLoad` run for it. Absent: not yet. */
+  lazyState?: LoadState
+  /** Why that function failed, if it did. Apart from {@link error}: the read was fine. */
+  lazyError?: string
   /**
    * The events above, rolled up — the entity everything else reads. Derived, but
    * cached and recomputed only when the events it came from change, so a row
@@ -435,16 +446,117 @@ function reconcile(before: EntityCache, draft: EntityCache): EntityCache {
 
   for (const [id, entry] of Object.entries(draft)) {
     const prior = before[id]
-    if (prior && prior.events === entry.events) {
+    if (prior && prior.events === entry.events && prior.lazy === entry.lazy) {
       next[id] = entry
       continue
     }
     // Only the rolled-up entity is recomputed here; everything else about the
     // entry is whatever the change being reconciled left it as.
-    next[id] = { ...entry, entity: rollupEntity(id, entry.events) }
+    next[id] = { ...entry, entity: rollupEntity(id, [...(entry.lazy ?? []), ...entry.events]) }
   }
 
+  // Naming a type is what asks for it — nothing else reads one — and an entity
+  // whose events are in is what may have an `onLoad` to run. Both write back
+  // here, so neither may run inside the update.
+  const types = new Set<string>()
+  const ready: string[] = []
+  for (const [id, entry] of Object.entries(next)) {
+    const typeId = typeIdOf(entry.entity.values)
+    if (typeId && unread(stateOf(next, typeId))) types.add(typeId)
+    if (complete(entry.loaded) && !entry.lazyState) ready.push(id)
+  }
+  if (types.size) queueMicrotask(() => requestEntities([...types]))
+  if (ready.length) queueMicrotask(() => startLazy(ready))
+
   return same(before, next) ? before : next
+}
+
+/** The id of the entity a set of values names as its type, if any. */
+function typeIdOf(values: Record<string, unknown>): string | null {
+  const typeId = values.type
+  return typeof typeId === 'string' && typeId ? typeId : null
+}
+
+// --- Lazy events ------------------------------------------------------------
+
+/**
+ * Run a type's `onLoad` for one of its instances and hand back what it returned.
+ * Injected rather than imported: running code needs a worker, and this layer has
+ * no business knowing that.
+ */
+export type OnLoadRunner = (
+  entityId: string,
+  code: string,
+  values: Record<string, unknown>,
+) => Promise<unknown>
+
+let runner: OnLoadRunner | null = null
+export const setOnLoadRunner = (next: OnLoadRunner | null): void => {
+  runner = next
+}
+
+/**
+ * Decide what is left to run for entities whose events have arrived. The
+ * function is the *type's*: an entity of no type, or of a type with no `onLoad`,
+ * is settled on the spot. One waiting on its type is left until the type lands,
+ * and the type is asked for as soon as its id is known, so the wait ends.
+ */
+function startLazy(ids: readonly string[]): void {
+  if (!runner) return
+  const cache = entitiesAtom.get()
+  const run: { id: string; code: string }[] = []
+  const settled: string[] = []
+  for (const id of ids) {
+    const entry = cache[id]
+    if (!entry || !complete(entry.loaded) || entry.lazyState) continue
+    const typeId = typeIdOf(entry.entity.values)
+    if (!typeId) {
+      settled.push(id)
+      continue
+    }
+    if (!complete(stateOf(cache, typeId))) continue
+    const code = cache[typeId]?.entity.values.onLoad
+    if (typeof code === 'string' && code.trim()) run.push({ id, code })
+    else settled.push(id)
+  }
+  if (!settled.length && !run.length) return
+  update((next) => {
+    for (const id of settled) next[id] = { ...next[id], lazyState: 'loaded' }
+    for (const { id } of run) next[id] = { ...next[id], lazyState: 'loading' }
+  })
+  for (const { id, code } of run) void runLazy(id, code)
+}
+
+/** One at a time: a page of entities all reaching out at once is not kind to anything. */
+let lazyQueue: Promise<unknown> = Promise.resolve()
+
+function runLazy(id: string, code: string): Promise<void> {
+  const at = generation
+  const run = lazyQueue.then(async () => {
+    const go = runner
+    const entry = entitiesAtom.get()[id]
+    if (!go || !entry || at !== generation) return
+    try {
+      const events = lazyEvents(id, await go(id, code, entry.entity.values))
+      if (at !== generation) return
+      update((next) => {
+        // A function may speak for entities other than its own, so each event is
+        // filed under whichever entity it is about.
+        for (const [target, added] of byEntity(events)) {
+          const held = next[target] ?? blank(target)
+          next[target] = { ...held, lazy: [...(held.lazy ?? []), ...added] }
+        }
+        next[id] = { ...next[id], lazyState: 'loaded' }
+      })
+    } catch (e) {
+      if (at !== generation) return
+      update((next) => {
+        next[id] = { ...next[id], lazyState: 'error', lazyError: message(e) }
+      })
+    }
+  })
+  lazyQueue = run
+  return run
 }
 
 /** Whether nothing changed after all, so subscribers needn't hear about it. */

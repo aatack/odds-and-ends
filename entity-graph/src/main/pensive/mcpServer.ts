@@ -62,6 +62,11 @@ ticked. Any other value is arbitrary JSON under a string key.
 that should have been created: write the lead as one note and each point under it as a
 child, however short.
 
+**Custom types.** An entity whose \`type\` names another entity is an instance of it. A
+type says \`type: type\`, has its name for its id, and holds a \`schema\` (JSON Schema) and
+optionally an \`onLoad\` function. \`get_details\` on \`type\` describes both; \`docs://types\`
+is the long version.
+
 More is written down than fits here: list this server's resources and read what covers
 what you are doing.
 
@@ -187,7 +192,10 @@ export const MCP_TOOLS: McpTool[] = [
       'created and last edited, their children in order (`outboundLinks`), and their ' +
       '`inboundLinks` — every entity in the store that links to this one, which is how ' +
       'to find where else a note is referenced. An id nothing has been written to comes ' +
-      'back empty rather than missing.',
+      'back empty rather than missing.\n\n' +
+      'One id answers even in a store nobody has written to: `type`, the type of types, ' +
+      'whose `schema` says what a custom type holds. **Asked to write a type, read `type` ' +
+      'first.**',
     needs: 'readEntities',
     readOnly: true,
     inputSchema: {
@@ -391,6 +399,16 @@ interface Doc {
 }
 
 const DOCS: Doc[] = [
+  {
+    uri: 'docs://types',
+    name: 'Custom types: how to write one',
+    description:
+      'What a custom type is, the `type` type the store supplies, and the fields a type ' +
+      'holds: `schema` (JSON Schema for its instances) and `onLoad` (a function run as ' +
+      'each instance loads, returning events for the cache alone). Read this before ' +
+      'writing a type.',
+    path: 'docs/types.md',
+  },
   {
     uri: 'docs://sources',
     name: 'What a pensive is, and the graph the user draws them in',
