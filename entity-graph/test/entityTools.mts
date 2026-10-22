@@ -217,44 +217,6 @@ test('reaches a folded entity but does not walk below it', async () => {
   assert.deepEqual(await call('findNextEntity', [['root'], { open: false }]), ['root', 'b'])
 })
 
-test('steps past a task still waiting, and below it too', async () => {
-  open()
-  outstanding()
-  source.values({ a: { open: { snooze: new Date(Date.now() + 86400000).toISOString() } } })
-  const found = await call('findNextEntity', [
-    { path: ['root'], match: openSection, collapse: { open: false } },
-  ])
-  // `a` is snoozed, so it reads as ticked: neither it nor `a1` under it is offered.
-  assert.deepEqual(found, ['root', 'c'])
-  source.values({ a: { open: { snooze: new Date(Date.now() - 1000).toISOString() } } })
-  assert.deepEqual(await call('findNextEntity', [['root'], openSection]), ['root', 'a'])
-})
-
-test('reads a waiting task as open when asked for its checkbox', async () => {
-  open()
-  outstanding()
-  source.values({ a: { open: { snooze: new Date(Date.now() + 86400000).toISOString() } } })
-  const found = await call('findNextEntity', [
-    { path: ['root'], match: openSection, collapse: { open: false }, checkbox: true },
-  ])
-  // Snoozed is not done: `a` is still left to do, so whatever is above it waits on it.
-  assert.deepEqual(found, ['root', 'a'])
-})
-
-test('snoozes an entity, and the walk steps past it until then', async () => {
-  open()
-  outstanding()
-  await call('snoozeEntity', ['a', '2d'])
-  const { open: snoozed } = (await get('a')).values
-  const until = Date.parse(snoozed.snooze)
-  assert.ok(Math.abs(until - (Date.now() + 2 * 86_400_000)) < 60_000)
-  const found = await call('findNextEntity', [
-    { path: ['root'], match: openSection, collapse: { open: false } },
-  ])
-  assert.deepEqual(found, ['root', 'c'])
-  await assert.rejects(call('snoozeEntity', ['a', 'soon']), /not a duration/)
-})
-
 test('reads each frame where it stands, and selects a path in one of them', async () => {
   const { layoutAtom } = await import('../src/renderer/src/state/store')
   const { defaultLayout } = await import('../src/renderer/src/state/types')

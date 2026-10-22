@@ -7,7 +7,6 @@ import { updateUi } from '../state/ui'
 import { base64ToBlob } from '../helpers/base64'
 import { copyImage, copyText } from '../helpers/clipboard'
 import { emptyEntity, str, type Entity } from '../../../core/entity'
-import { PENDING, checkboxOf, openNow, parseDuration, withSnooze } from '../../../core/open'
 import {
   findPath,
   NO_TRAVERSAL,
@@ -95,89 +94,30 @@ function pathArg(v: unknown, label: string): string[] {
 /**
  * An object of values as a test: every key it names must hold that value on the
  * entity. Nothing written is not `false`, so `{ open: false }` is what ticked
- * means rather than "anything not left open". `open` is read as it stands now,
- * wait conditions and all — see `core/open`.
+ * means rather than "anything not left open".
  */
-function valuesTest(
-  v: unknown,
-  label: string,
-  openOf: (path: readonly string[], entity: Entity) => unknown,
-): PathTest {
+function valuesTest(v: unknown, label: string): PathTest {
   if (v == null || typeof v !== 'object' || Array.isArray(v)) {
     throw new Error(`${label} must be an object of values, such as { open: true }`)
   }
   const wanted = Object.entries(v)
-  return (path, entity) =>
-    wanted.every(([key, value]) => {
-      const held = key === 'open' ? openOf(path, entity) : entity.values[key]
-      return held !== PENDING && JSON.stringify(held) === JSON.stringify(value)
-    })
+  return (_path, entity) =>
+    wanted.every(([key, value]) => JSON.stringify(entity.values[key]) === JSON.stringify(value))
 }
 
-/** An entity's values with those of everything above it folded in, nearest last. */
-function foldedValues(path: readonly string[], get: GetEntities): Record<string, unknown> {
-  const entities = get([...path])
-  const values: Record<string, unknown> = {}
-  for (const id of path) {
-    for (const [k, v] of Object.entries(entities[id]?.values ?? {})) if (v !== null) values[k] = v
-  }
-  return values
-}
-
-/**
- * Walk on from `start` to the first match. A `code` wait condition is only run
- * once the walk reaches its task, so each pass collects the ones it needed and
- * could not answer, runs them, and walks again with what they said.
- *
- * With `checkbox`, `open` is read as its checkbox instead: a task that waits on
- * something is unticked, so it is open. That is how to ask whether anything
- * below a task is still left to do, done or not yet.
- */
-async function findNext(
+/** Walk on from `start` to the first match, reading the store rather than the screen. */
+function findNext(
   start: string[],
   match: unknown,
   collapse: unknown,
   limit: number | undefined,
-  checkbox = false,
 ): Promise<FoundPath> {
-  if (checkbox) {
-    const openOf = (_: readonly string[], entity: Entity): unknown => checkboxOf(entity.values.open)
-    return settle(readEntities, (get) =>
-      findPath(start, get, NO_TRAVERSAL, valuesTest(match, 'Values to match', openOf), {
-        collapse: collapse === undefined ? undefined : valuesTest(collapse, 'Values to fold shut', openOf),
-        ...(limit === undefined ? {} : { limit }),
-      }),
-    )
-  }
-  const now = Date.now()
-  const ran = new Map<string, { result: unknown }>()
-  for (;;) {
-    const wanted = new Map<string, { entityId: string; code: string; values: Record<string, unknown> }>()
-    const found = await settle(readEntities, (get) => {
-      wanted.clear()
-      const openOf = (path: readonly string[], entity: Entity): unknown =>
-        openNow(entity.values.open, {
-          now,
-          code: (code) => {
-            const key = [...path, code].join('\0')
-            const known = ran.get(key)
-            if (!known) wanted.set(key, { entityId: entity.id, code, values: foldedValues(path, get) })
-            return known
-          },
-        })
-      return findPath(start, get, NO_TRAVERSAL, valuesTest(match, 'Values to match', openOf), {
-        collapse: collapse === undefined ? undefined : valuesTest(collapse, 'Values to fold shut', openOf),
-        ...(limit === undefined ? {} : { limit }),
-      })
-    })
-    if (!wanted.size) return found
-    for (const [key, { entityId, code, values }] of wanted) {
-      // A condition that fails opens its task: waiting on it forever would hide
-      // the task for good, and the error is already in the console.
-      const result = await evaluateCode(entityId, code, values).catch(() => true)
-      ran.set(key, { result })
-    }
-  }
+  return settle(readEntities, (get) =>
+    findPath(start, get, NO_TRAVERSAL, valuesTest(match, 'Values to match'), {
+      collapse: collapse === undefined ? undefined : valuesTest(collapse, 'Values to fold shut'),
+      ...(limit === undefined ? {} : { limit }),
+    }),
+  )
 }
 
 /** A row of the focused frame by id — how a tool asks what it is acting on. */
@@ -485,23 +425,10 @@ export const ENTITY_TOOLS: ToolSpec[] = [
         optional: true,
         placeholder: 'No limit',
       },
-      {
-        name: 'checkbox',
-        label: 'Read open as its checkbox',
-        kind: 'boolean',
-        optional: true,
-        description: 'A task that waits on something counts as open, not as done.',
-      },
     ],
-    run: async ({ path, match, collapse, limit, checkbox }) => {
+    run: async ({ path, match, collapse, limit }) => {
       const start = pathArg(path, 'Start after')
-      const found = await findNext(
-        start,
-        match,
-        collapse,
-        typeof limit === 'number' ? limit : undefined,
-        checkbox === true,
-      )
+      const found = await findNext(start, match, collapse, typeof limit === 'number' ? limit : undefined)
       if (found.continuation) {
         throw new Error(`Gave up after ${found.scanned} entities without a match`)
       }
@@ -509,34 +436,6 @@ export const ENTITY_TOOLS: ToolSpec[] = [
         data: found.path,
         message: found.path ? `Found after ${found.scanned}` : 'Nothing further matches',
       }
-    },
-  },
-  {
-    id: 'entity.snooze',
-    label: 'Snooze entity',
-    aliases: ['wait', 'later', 'defer', 'remind me'],
-    hint: 'Entity',
-    scope: 'frame',
-    reach: 'source',
-    mutates: true,
-    keys: [{ key: 't' }],
-    args: [
-      entityArg(),
-      {
-        name: 'duration',
-        label: 'Snooze for',
-        placeholder: 'e.g. 3h, 2d, 1w',
-        description: 'A number followed by h, d or w, for hours, days or weeks.',
-      },
-    ],
-    run: async ({ entityId, duration }) => {
-      const target = requireId(entityId, 'Entity id')
-      const ms = parseDuration(String(duration ?? ''))
-      if (ms == null) throw new Error(`"${String(duration ?? '')}" is not a duration such as 3h, 2d or 1w`)
-      const until = new Date(Date.now() + ms)
-      const entity = (await readEntities([target]))[target] ?? emptyEntity(target)
-      await writeValue(target, 'open', withSnooze(entity.values.open, until.toISOString()))
-      return { message: `Snoozed until ${until.toLocaleString()}` }
     },
   },
   {

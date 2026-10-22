@@ -1,5 +1,4 @@
 import { summaryOf, type Entity, type EntitySummary, type LinkDirection } from './entity'
-import { checkboxOf, waits } from './open'
 import {
   filterPaths,
   resolveQuery,
@@ -33,8 +32,6 @@ export interface TreeRow extends EntitySummary {
   section?: boolean
   /** Checkbox state: `true` = open box, `false` = ticked, undefined = plain bullet. */
   open?: boolean
-  /** `open` as written, when it says what the task waits on. */
-  wait?: unknown
   hasChildren: boolean
   collapsed: boolean
   /**
@@ -93,8 +90,7 @@ function rowOf(
     parentId: path.length > 1 ? path[path.length - 2] : null,
     ...summaryOf(entity.values),
     section: entity.values.section === true,
-    open: checkboxOf(entity.values.open),
-    ...(waits(entity.values.open) ? { wait: entity.values.open } : {}),
+    open: typeof entity.values.open === 'boolean' ? entity.values.open : undefined,
     // Which links count is the direction the query reads in, so a chevron
     // means "there is more under this here" rather than always meaning
     // outbound links.
