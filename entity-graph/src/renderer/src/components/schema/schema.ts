@@ -22,6 +22,12 @@ export const MONOSPACE_KEYWORD = 'x-monospace'
 export const POPOUT_KEYWORD = 'x-popout'
 
 /**
+ * The id of a custom editor to draw the value with, in place of the form's own
+ * control — registered by the host through `editors` (see `./editors`).
+ */
+export const EDITOR_KEYWORD = 'x-editor'
+
+/**
  * The JSON Schema meta-schema. A schema that refers to it (`$ref`) describes a
  * value that is itself a schema — which the form edits with the schema builder.
  */

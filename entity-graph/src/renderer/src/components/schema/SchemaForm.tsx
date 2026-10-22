@@ -3,6 +3,7 @@ import { ChevronDown, Pencil01, XClose } from '@untitledui/icons'
 import { Modal } from '../ui/Modal'
 import { Switch } from '../ui/Switch'
 import { TextEditor } from '../ui/TextEditor'
+import { EditorsProvider, useEditorFor, type Editors } from './editors'
 import { JsonEditor } from './JsonEditor'
 import { AddLine, BARE, BARE_MONO, MUTED, MenuChip, Picker, cx } from './parts'
 import { SchemaBuilder } from './SchemaBuilder'
@@ -40,28 +41,36 @@ export function SchemaForm({
   setValue,
   schema,
   bare = false,
+  editors,
 }: {
   value: unknown
   setValue: (value: unknown) => void
   schema: JsonSchema
   /** Inside another surface: the lines with no border of their own. */
   bare?: boolean
+  /**
+   * Custom editors, by the id a schema's `x-editor` names — added to any a form
+   * or builder further out registered. See `./editors`.
+   */
+  editors?: Editors
 }): React.JSX.Element {
   return (
-    <div
-      className={cx(
-        LINES,
-        !bare && 'overflow-hidden rounded-md border border-gray-200 bg-white shadow-xs',
-      )}
-    >
-      {/* An object is its fields, a labelled line each; a lone value has nothing
+    <EditorsProvider editors={editors}>
+      <div
+        className={cx(
+          LINES,
+          !bare && 'overflow-hidden rounded-md border border-gray-200 bg-white shadow-xs',
+        )}
+      >
+        {/* An object is its fields, a labelled line each; a lone value has nothing
           to tell it apart from, so no label. */}
-      {hasFields(schema) ? (
-        <Fields schema={schema} value={value} onChange={setValue} />
-      ) : (
-        <Entry schema={schema} value={value} onChange={setValue} />
-      )}
-    </div>
+        {hasFields(schema) ? (
+          <Fields schema={schema} value={value} onChange={setValue} />
+        ) : (
+          <Entry schema={schema} value={value} onChange={setValue} />
+        )}
+      </div>
+    </EditorsProvider>
   )
 }
 
@@ -226,13 +235,16 @@ function Entry({
   onRemove?: () => void
 }): React.JSX.Element {
   const popped = schema[POPOUT_KEYWORD] === true
+  const editor = useEditorFor(schema)
+  // A custom editor says for itself whether it takes more than one line.
+  const tall = popped ? false : editor ? editor.tall === true : compound(schema)
   return (
     <Line
       label={label}
       required={required}
       description={typeof schema.description === 'string' ? schema.description : undefined}
       problem={problemOf(schema, value, required)}
-      tall={compound(schema) && !popped}
+      tall={tall}
       onRemove={onRemove}
     >
       {popped ? (
@@ -314,6 +326,12 @@ function Control({
   onChange: (value: unknown) => void
   label?: string
 }): React.JSX.Element {
+  // A custom editor the schema names comes first: it is the host's say over the
+  // form's. Inside a pop-out's dialog this is where it is drawn too, since the
+  // dialog's form draws the same schema.
+  const editor = useEditorFor(schema)
+  if (editor) return <>{editor.render({ schema, value, onChange, label })}</>
+
   const mono = schema[MONOSPACE_KEYWORD] === true
   switch (kindOf(schema)) {
     case 'literal':
@@ -324,7 +342,12 @@ function Control({
       return <SchemaBuilder value={value} setValue={onChange} bare />
     case 'union':
       return (
-        <Union variants={variantsOf(schema) ?? []} value={value} onChange={onChange} label={label} />
+        <Union
+          variants={variantsOf(schema) ?? []}
+          value={value}
+          onChange={onChange}
+          label={label}
+        />
       )
     case 'string':
       if (schema[MULTILINE_KEYWORD] === true) {

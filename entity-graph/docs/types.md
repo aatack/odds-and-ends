@@ -59,6 +59,45 @@ A field whose value is itself a schema says so in the standard way, with a
 The form edits it with the schema builder. The `type` type's own `schema` field
 is one.
 
+### Custom editors
+
+A field can be drawn with an editor of the host's own instead of the form's
+control. The schema names it — `"x-editor": "colour"` — and the code says what
+the name means, by passing `editors` to `SchemaForm` or `SchemaBuilder`
+(`components/schema/editors.tsx` is the whole of it, with examples):
+
+```tsx
+const editors: Editors = {
+  colour: {
+    name: 'Colour picker',      // what the builder offers it as
+    kinds: ['string'],          // the kinds it can edit; absent means all
+    tall: false,                // true if it takes more than one line
+    render: ({ value, onChange, schema, label }) => (
+      <input type="color" value={String(value ?? '#000000')}
+             onChange={(e) => onChange(e.target.value)} />
+    ),
+  },
+}
+
+<SchemaForm schema={schema} value={value} setValue={setValue} editors={editors} />
+```
+
+- **In place.** The editor replaces the control on the right of the field's line;
+  the line's label, its warning and a list item's cross are still the form's.
+- **In a dialog.** With `"x-popout": true` as well, the line keeps its pencil and
+  the editor is drawn in the dialog.
+- **Code rather than a control.** An editor that runs something — a picker, a tool
+  call — draws a button and calls `onChange` with what comes back. `onChange`
+  can be called whenever, so `async` is fine.
+- **Inherited.** Editors registered on a form or builder reach every form and
+  builder inside it: a pop-out's dialog, a schema builder in a form, the builder's
+  own option lines. `EditorsProvider` registers them once, high up.
+- **Missing editors.** A schema naming an editor nobody registered gets the
+  ordinary control. Nothing breaks.
+- **Choosing one.** The builder offers **Editor** in a field's menu when any
+  registered editor suits the field's kind, and the choice is made with the form,
+  from those editors by name. Changing the field's kind takes the editor off.
+
 ### `onLoad`
 
 The source of a function, `(entity) => [...]`:

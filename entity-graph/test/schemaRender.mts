@@ -239,6 +239,50 @@ test('draws a popped-out value as one line that opens it', () => {
   assert.doesNotMatch(html, /value="leek"/)
 })
 
+const EDITORS = {
+  shout: {
+    name: 'Shouting',
+    kinds: ['string'] as const,
+    render: ({ value }: { value: unknown }) => h('b', { 'data-shout': '' }, String(value).toUpperCase()),
+  },
+}
+
+test('draws a value with the editor its schema names, in place of the form\'s control', () => {
+  const schema = { type: 'object', properties: { a: { type: 'string', 'x-editor': 'shout' } } }
+  const html = renderToStaticMarkup(h(SchemaForm, { schema, value: { a: 'hi' }, setValue: noop, editors: EDITORS }))
+  assert.match(html, /<b data-shout="">HI<\/b>/)
+  // Its line is still the form's: the label is there.
+  assert.match(html, /<span class="truncate">a<\/span>/)
+  // An editor nobody registered: the ordinary control.
+  const plain = renderToStaticMarkup(h(SchemaForm, { schema, value: { a: 'hi' }, setValue: noop }))
+  assert.match(plain, /value="hi"/)
+})
+
+test('draws a popped-out value\'s editor in its dialog, not on its line', () => {
+  const schema = {
+    type: 'object',
+    properties: { a: { type: 'string', 'x-editor': 'shout', 'x-popout': true } },
+  }
+  const html = renderToStaticMarkup(h(SchemaForm, { schema, value: { a: 'hi' }, setValue: noop, editors: EDITORS }))
+  assert.doesNotMatch(html, /data-shout/)
+})
+
+test('lets the builder choose an editor with the form, from those that suit the kind', () => {
+  const html = renderToStaticMarkup(
+    h(SchemaBuilder, { value: { type: 'string', 'x-editor': 'shout' }, setValue: noop, editors: EDITORS }),
+  )
+  // The choice is a line of the form, named after the editor.
+  assert.match(html, /<span class="truncate">Editor<\/span>/)
+  assert.match(html, /text-gray-900">Shouting<\/span>/)
+})
+
+test('carries editors into a builder inside a form', () => {
+  const schema = { type: 'object', properties: { s: { $ref: 'https://json-schema.org/draft/2020-12/schema' } } }
+  const value = { s: { type: 'string', 'x-editor': 'shout' } }
+  const html = renderToStaticMarkup(h(SchemaForm, { schema, value, setValue: noop, editors: EDITORS }))
+  assert.match(html, /text-gray-900">Shouting<\/span>/)
+})
+
 let failed = 0
 for (const [name, run] of tests) {
   try {

@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, Trash03 } from '@untitledui/icons'
 import { Dropdown, DropdownSeparator } from '../ui/Dropdown'
+import { EditorsProvider, editorsFor, useEditors, type Editors } from './editors'
 import { AddLine, BARE_MONO, MenuChip, MenuItem, cx } from './parts'
 import { SchemaForm } from './SchemaForm'
 import {
   KINDS,
   KIND_NAMES,
+  EDITOR_KEYWORD,
   META_SCHEMA,
   MONOSPACE_KEYWORD,
   MULTILINE_KEYWORD,
@@ -35,21 +37,30 @@ export function SchemaBuilder({
   value,
   setValue,
   bare = false,
+  editors,
 }: {
   value: unknown
   setValue: (value: unknown) => void
   /** Inside another surface — a line of the schema form: no border of its own. */
   bare?: boolean
+  /**
+   * The custom editors a field may name, offered under Editor in its menu for
+   * the kinds each says it edits — added to any registered further out. See
+   * `./editors`.
+   */
+  editors?: Editors
 }): React.JSX.Element {
   return (
-    <div
-      className={cx(
-        'w-full divide-y divide-gray-100',
-        !bare && 'overflow-hidden rounded-md border border-gray-200 bg-white shadow-xs',
-      )}
-    >
-      <SchemaNode schema={isObject(value) ? value : {}} onChange={setValue} />
-    </div>
+    <EditorsProvider editors={editors}>
+      <div
+        className={cx(
+          'w-full divide-y divide-gray-100',
+          !bare && 'overflow-hidden rounded-md border border-gray-200 bg-white shadow-xs',
+        )}
+      >
+        <SchemaNode schema={isObject(value) ? value : {}} onChange={setValue} />
+      </div>
+    </EditorsProvider>
   )
 }
 
@@ -156,8 +167,27 @@ const EXTRAS: Extra[] = [
   },
 ]
 
-const extrasFor = (kind: Kind): Extra[] =>
-  EXTRAS.filter((e) => e.kinds === 'all' || e.kinds.includes(kind))
+/**
+ * The extras a schema can carry: those of its kind, and — where any editor
+ * registered here suits the kind — the choice of a custom editor, made from the
+ * editors there are, by the form like any other extra.
+ */
+function extrasFor(schema: JsonSchema, editors: Editors): Extra[] {
+  const kind = kindOf(schema)
+  const own = EXTRAS.filter((e) => e.kinds === 'all' || e.kinds.includes(kind))
+  const offered = editorsFor(editors, schema)
+  if (!offered.length) return own
+  return [
+    ...own,
+    {
+      key: EDITOR_KEYWORD,
+      label: 'Editor',
+      kinds: 'all',
+      field: { anyOf: offered.map(([id, e]) => ({ const: id, title: e.name ?? id })) },
+      initial: offered[0][0],
+    },
+  ]
+}
 
 /** The keys that belong to one kind and mean nothing to another. */
 const KIND_KEYS = [
@@ -170,6 +200,8 @@ const KIND_KEYS = [
   'anyOf',
   'oneOf',
   '$ref',
+  // An editor suits a kind, so it goes when the kind does.
+  EDITOR_KEYWORD,
   ...EXTRAS.filter((e) => e.kinds !== 'all').map((e) => e.key),
 ]
 
@@ -234,7 +266,8 @@ function SchemaNode({
     else out[key] = value
     onChange(out)
   }
-  const shown = extrasFor(kind).filter((e) => e.field && e.key in schema)
+  const extras = extrasFor(schema, useEditors())
+  const shown = extras.filter((e) => e.field && e.key in schema)
   // Anything with more than its name line folds — the schemas it holds, and
   // the lines of its own options — so a deep schema reads as an outline. Open
   // to begin with: a fold is something done to it.
@@ -251,6 +284,7 @@ function SchemaNode({
           <KindMenu
             schema={schema}
             kind={kind}
+            extras={extras}
             onKind={(next) => onChange(withKind(schema, next))}
             onExtra={set}
             slot={slot}
@@ -335,7 +369,8 @@ function NameBox({
 }
 
 /** The name line's text box: the shared one, filling what the menu leaves. */
-const BARE = 'h-full min-w-0 flex-1 bg-transparent px-2.5 text-[13px] text-gray-900 placeholder:text-gray-400 focus:outline-none'
+const BARE =
+  'h-full min-w-0 flex-1 bg-transparent px-2.5 text-[13px] text-gray-900 placeholder:text-gray-400 focus:outline-none'
 
 /** One line of a name box under the name: a hairline, a label, and its control. */
 function BoxLine({
@@ -364,6 +399,7 @@ function BoxLine({
 function KindMenu({
   schema,
   kind,
+  extras,
   onKind,
   onExtra,
   slot,
@@ -371,6 +407,8 @@ function KindMenu({
 }: {
   schema: JsonSchema
   kind: Kind
+  /** The extras this schema can carry, ticked on and off under the divider. */
+  extras: Extra[]
   onKind: (kind: Kind) => void
   onExtra: (key: string, value: unknown) => void
   slot?: Slot
@@ -407,7 +445,7 @@ function KindMenu({
               Optional
             </MenuItem>
           )}
-          {extrasFor(kind).map((extra) => {
+          {extras.map((extra) => {
             const on = extra.field ? extra.key in schema : schema[extra.key] === extra.initial
             return (
               <MenuItem
@@ -488,7 +526,6 @@ function Nested({ children }: { children: React.ReactNode }): React.JSX.Element 
   // each, with nothing to space them apart.
   return <div className="ml-4 divide-y divide-gray-100 border-l border-gray-100">{children}</div>
 }
-
 
 /**
  * A literal's value. What is typed is read as JSON where it parses — `3`,

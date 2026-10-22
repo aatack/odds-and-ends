@@ -120,7 +120,13 @@ is the long form; the rules that matter day to day:
   draws a border. `kindOf` in `schema.ts` is the one reading of what a schema is,
   and `parts.tsx` the pieces the two share. The folder depends on nothing of the
   app but four `../ui` primitives (Dropdown, Modal, Switch, TextEditor); keep it
-  that way. Extension keywords: `x-multiline`, `x-monospace`, `x-popout`.
+  that way. Extension keywords: `x-multiline`, `x-monospace`, `x-popout`,
+  `x-editor`. **Custom editors** (`editors.tsx`): a schema names one with
+  `x-editor`, and `editors` on the form or builder (or `EditorsProvider`) says
+  what the name means; it replaces a line's control in place, and the builder
+  offers the ones that suit a field's kind. Every input in either component goes
+  through the form — the builder's own options are a form — so add a control
+  to the form rather than writing one into the builder.
 - **`tools/` is the only way the user does anything.** Every command — moving the
   selection, opening a tab, writing a value — is one `ToolSpec` declaring its
   arguments, its scope, and how far it reaches. A tool is that and its `run`:
