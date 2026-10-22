@@ -5,7 +5,7 @@
 export type JsonSchema = Record<string, unknown>
 
 /** The kinds of value the form draws a control for, and the builder offers. */
-export const SCHEMA_TYPES = ['string', 'number', 'integer', 'boolean', 'object', 'array'] as const
+export const SCHEMA_TYPES = ['string', 'number', 'integer', 'boolean', 'null', 'object', 'array'] as const
 export type SchemaType = (typeof SCHEMA_TYPES)[number]
 
 export const isObject = (v: unknown): v is Record<string, unknown> =>
@@ -25,7 +25,7 @@ export function typeOf(schema: JsonSchema | undefined): SchemaType | null {
     if (isObject(schema.items)) return 'array'
     return null
   }
-  const named = Array.isArray(raw) ? raw.filter((t) => t !== 'null') : [raw]
+  const named = Array.isArray(raw) && raw.length > 1 ? raw.filter((t) => t !== 'null') : [raw].flat()
   if (named.length !== 1) return null
   return (SCHEMA_TYPES as readonly unknown[]).includes(named[0]) ? (named[0] as SchemaType) : null
 }
@@ -43,7 +43,8 @@ export const requiredOf = (schema: JsonSchema): string[] =>
 export function defaultFor(schema: JsonSchema): unknown {
   if ('default' in schema) return schema.default
   if ('const' in schema) return schema.const
-  if (Array.isArray(schema.enum) && schema.enum.length) return schema.enum[0]
+  const variants = variantsOf(schema)
+  if (variants) return variants.length ? defaultFor(variants[0]) : null
   switch (typeOf(schema)) {
     case 'string':
       return ''
@@ -54,6 +55,8 @@ export function defaultFor(schema: JsonSchema): unknown {
       return false
     case 'array':
       return []
+    case 'null':
+      return null
     case 'object': {
       const out: Record<string, unknown> = {}
       const required = requiredOf(schema)
@@ -70,3 +73,45 @@ export function defaultFor(schema: JsonSchema): unknown {
 /** Pretty JSON for showing, and `undefined` as nothing at all. */
 export const pretty = (value: unknown): string =>
   value === undefined ? '' : (JSON.stringify(value, null, 2) ?? '')
+
+/**
+ * The alternatives a schema allows, as schemas, or null when it isn't a union.
+ * `anyOf` and `oneOf` are read alike; an `enum` is a union of literals.
+ */
+export function variantsOf(schema: JsonSchema): JsonSchema[] | null {
+  const list = Array.isArray(schema.anyOf) ? schema.anyOf : Array.isArray(schema.oneOf) ? schema.oneOf : null
+  if (list) return list.map((v) => (isObject(v) ? v : {}))
+  if (Array.isArray(schema.enum)) return schema.enum.map((v) => ({ const: v }))
+  return null
+}
+
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
+
+/**
+ * Whether a value fits a schema, as far as telling a union's alternatives apart
+ * needs: literals by value, types by shape, an object's required fields. Not a
+ * validator: bounds and formats are not looked at.
+ */
+export function matches(schema: JsonSchema, value: unknown): boolean {
+  if ('const' in schema) return same(schema.const, value)
+  const variants = variantsOf(schema)
+  if (variants) return variants.some((v) => matches(v, value))
+  switch (typeOf(schema)) {
+    case 'string':
+      return typeof value === 'string'
+    case 'number':
+      return typeof value === 'number'
+    case 'integer':
+      return Number.isInteger(value)
+    case 'boolean':
+      return typeof value === 'boolean'
+    case 'null':
+      return value === null
+    case 'array':
+      return Array.isArray(value)
+    case 'object':
+      return isObject(value) && requiredOf(schema).every((k) => k in value)
+    default:
+      return true
+  }
+}

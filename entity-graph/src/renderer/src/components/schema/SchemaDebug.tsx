@@ -16,7 +16,8 @@ const EXAMPLE_SCHEMA: JsonSchema = {
     title: { type: 'string', description: 'What it is called' },
     servings: { type: 'integer' },
     vegetarian: { type: 'boolean' },
-    course: { type: 'string', enum: ['starter', 'main', 'dessert'] },
+    course: { anyOf: [{ const: 'starter' }, { const: 'main' }, { const: 'dessert' }] },
+    rating: { anyOf: [{ type: 'integer', description: 'Out of five' }, { type: 'null' }] },
     ingredients: {
       type: 'array',
       items: {

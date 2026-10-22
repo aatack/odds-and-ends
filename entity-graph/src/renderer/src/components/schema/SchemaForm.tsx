@@ -10,6 +10,8 @@ import { JsonEditor } from './JsonEditor'
 import {
   defaultFor,
   isObject,
+  matches,
+  variantsOf,
   propertiesOf,
   requiredOf,
   typeOf,
@@ -17,8 +19,9 @@ import {
 } from './schema'
 
 // A form for a value, drawn from a JSON Schema. It covers the shapes a value in
-// this store actually takes — strings, numbers, booleans, choices, objects of
-// named fields and lists — and falls back to a JSON box for anything else (a
+// this store actually takes — strings, numbers, booleans, null, literals, unions
+// (a union of literals is a set of choices), objects of named fields and lists —
+// and falls back to a JSON box for anything else (a
 // union, a schema that says nothing), so no value is ever uneditable.
 //
 // Every edit hands the whole value back through `setValue`. Keys the schema
@@ -69,11 +72,20 @@ function SchemaField({
   value: unknown
   onChange: (value: unknown) => void
 }): React.JSX.Element {
-  if (Array.isArray(schema.enum)) return <EnumField options={schema.enum} value={value} onChange={onChange} />
   if ('const' in schema) {
     return <span className="font-mono text-[12.5px] text-gray-500">{JSON.stringify(schema.const)}</span>
   }
+  const variants = variantsOf(schema)
+  if (variants) {
+    // Every option a literal: a choice, drawn as one.
+    if (variants.every((v) => 'const' in v)) {
+      return <EnumField options={variants.map((v) => v.const)} value={value} onChange={onChange} />
+    }
+    return <UnionField variants={variants} value={value} onChange={onChange} />
+  }
   switch (typeOf(schema)) {
+    case 'null':
+      return <span className="font-mono text-[12.5px] text-gray-400">null</span>
     case 'string':
       return (
         <Input
@@ -116,6 +128,43 @@ function EnumField({
         </option>
       ))}
     </Select>
+  )
+}
+
+/** How an option of a union is named in its picker. */
+function variantLabel(variant: JsonSchema, i: number): string {
+  if (typeof variant.title === 'string') return variant.title
+  if ('const' in variant) return JSON.stringify(variant.const)
+  return typeOf(variant) ?? `Option ${i + 1}`
+}
+
+/**
+ * One of several schemas: a picker for which, and that schema's own field. The
+ * option shown is the first the value fits, so nothing about the choice is
+ * stored but the value; picking another starts it from that option's default.
+ */
+function UnionField({
+  variants,
+  value,
+  onChange,
+}: {
+  variants: JsonSchema[]
+  value: unknown
+  onChange: (value: unknown) => void
+}): React.JSX.Element {
+  const fitted = variants.findIndex((v) => matches(v, value))
+  const at = fitted < 0 ? 0 : fitted
+  return (
+    <div className="space-y-1.5">
+      <Select value={String(at)} onChange={(e) => onChange(defaultFor(variants[Number(e.target.value)]))}>
+        {variants.map((v, i) => (
+          <option key={i} value={i}>
+            {variantLabel(v, i)}
+          </option>
+        ))}
+      </Select>
+      <SchemaField schema={variants[at]} value={value} onChange={onChange} />
+    </div>
   )
 }
 
