@@ -17,12 +17,11 @@ import type { ArgSpec, ToolReach, ToolScope, ToolSpec } from './types'
 // Which is the whole reason this lives on this side. The body runs in the same
 // sandbox a `type: code` entity does, with the same `tool` façade, so a
 // user-defined tool reaches everything in the registry — the frame tools, the
-// writes, the server's integrations. None of that is available to the server,
+// writes, the other tools the user wrote. None of that is available to the server,
 // which is why its half of this (`core/source/userTools.ts`) can list a
 // user-defined tool but not run one.
 //
-// Runtime only and pointedly not persisted, exactly like the integrations: this
-// is a cache of what the store says, and the store is the source of truth.
+// Runtime only and pointedly not persisted: this is a cache of what the store says, and the store is the source of truth.
 
 /**
  * The reserved entity whose direct children are the user's tools. Spelled here

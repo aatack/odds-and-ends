@@ -109,9 +109,9 @@ test('stays out of the call log, being a read', async () => {
 
 // --- What a tool written in the store needs of these ------------------------
 
-// The changeset tools live under `@tools` rather than in this repo, so what is
-// left to test here is the ground they stand on: an id to hang a reply off, one
-// write instead of seven, and a way to read a branch nothing has looked at.
+// Tools the user writes under `@tools` stand on these: an id to hang a reply
+// off, one write instead of seven, and a way to read a branch nothing has looked
+// at.
 
 const call = (name: string, args: unknown[]): Promise<any> =>
   callToolByName(name, args, context())
@@ -132,12 +132,12 @@ test('hands back the id of the entity it created', async () => {
 test('takes the rest of the values in the same write', async () => {
   open()
   const id = await call('createChildOfEntity', [
-    '@changesets',
+    '@recipes',
     'Fix the login flow',
-    { type: 'changeset', branch: 'aB3xY9' },
+    { type: 'recipe', branch: 'aB3xY9' },
   ])
   const made = await get(id)
-  assert.equal(made.values.type, 'changeset')
+  assert.equal(made.values.type, 'recipe')
   assert.equal(made.values.branch, 'aB3xY9')
   // Named twice, the palette's answer wins: it is the one that was asked for.
   assert.equal(made.values.text, 'Fix the login flow')

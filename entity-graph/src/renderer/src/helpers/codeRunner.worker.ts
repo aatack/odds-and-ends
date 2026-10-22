@@ -185,8 +185,8 @@ function callTool(id: string, name: string, argsJson: string): string {
 /**
  * The script-side half of the bridge, and the whole of the `tool` façade. A
  * proxy rather than an object of injected functions: names are resolved on the
- * main thread, against a registry that isn't fixed at build time (the server's
- * integrations join it when a source opens), so there is no list to inject.
+ * main thread, against a registry that isn't fixed at build time (the user's own
+ * tools join it when a source opens), so there is no list to inject.
  */
 const PRELUDE = `
 globalThis.context = Object.freeze(JSON.parse(__contextJson))
