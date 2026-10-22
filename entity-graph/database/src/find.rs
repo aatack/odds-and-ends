@@ -435,6 +435,12 @@ pub mod knobs {
             _ => None,
         }
     }
+    /// `ContainsIgnoreCase`: 0: the Rust function `egdb_contains`
+    /// (default); 1: `instr(lower(value), ..)`. Same result.
+    pub static NO_CONTAINS_FN: AtomicU8 = AtomicU8::new(0);
+    pub fn contains_fn() -> bool {
+        NO_CONTAINS_FN.load(Ordering::Relaxed) == 0
+    }
     pub fn intersect() -> bool {
         NO_INTERSECT.load(Ordering::Relaxed) == 0
     }
@@ -479,6 +485,12 @@ impl Sql {
                     parts.push("value IS NOT NULL".into());
                 }
                 parts.join(" AND ")
+            }
+            Cond::Instr(s, true) if knobs::contains_fn() => {
+                // A Rust function: folds while it compares, where
+                // `lower(value)` copies every value first.
+                let p = self.bind(SqlValue::Text(s.clone()));
+                format!("value >= '' AND egdb_contains(value, {p}, 1)")
             }
             Cond::Instr(s, lower) => {
                 let p = self.bind(SqlValue::Text(s.clone()));
@@ -1011,6 +1023,67 @@ impl Store {
             After::Eid(e) => format!("{eid_col} > {e}"),
         }
     }
+}
+
+/// `egdb_contains(text, needle, fold)`: 1 when `needle` is a byte substring
+/// of `text`; with `fold`, ASCII letters of `text` are folded to lower case
+/// first (`needle` must be lower case). The same result as
+/// `instr(text, needle) > 0` and `instr(lower(text), needle) > 0`.
+pub(crate) fn register_functions(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    use rusqlite::functions::FunctionFlags;
+    use rusqlite::types::ValueRef;
+    conn.create_scalar_function(
+        "egdb_contains",
+        3,
+        FunctionFlags::SQLITE_UTF8
+            | FunctionFlags::SQLITE_DETERMINISTIC
+            | FunctionFlags::SQLITE_INNOCUOUS,
+        |ctx| {
+            let h = match ctx.get_raw(0) {
+                ValueRef::Text(t) => t,
+                _ => return Ok(false),
+            };
+            let n = match ctx.get_raw(1) {
+                ValueRef::Text(t) => t,
+                _ => return Ok(false),
+            };
+            let fold = matches!(ctx.get_raw(2), ValueRef::Integer(1));
+            Ok(contains_bytes(h, n, fold))
+        },
+    )
+}
+
+fn contains_bytes(h: &[u8], n: &[u8], fold: bool) -> bool {
+    let Some((&first, rest)) = n.split_first() else {
+        return true;
+    };
+    if n.len() > h.len() {
+        return false;
+    }
+    let last = h.len() - n.len();
+    let mut i = 0;
+    while i <= last {
+        let c = if fold {
+            h[i].to_ascii_lowercase()
+        } else {
+            h[i]
+        };
+        if c == first {
+            let tail = &h[i + 1..i + n.len()];
+            let ok = if fold {
+                tail.iter()
+                    .zip(rest)
+                    .all(|(a, b)| a.to_ascii_lowercase() == *b)
+            } else {
+                tail == rest
+            };
+            if ok {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
 }
 
 /// SQLite's order of stored values: numbers (by value) before text (by bytes).
