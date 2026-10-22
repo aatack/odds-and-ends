@@ -67,7 +67,8 @@ export function SchemaForm({
       {fields ? (
         <Fields schema={schema} value={value} onChange={setValue} />
       ) : (
-        <Entry label="Value" schema={schema} value={value} onChange={setValue} />
+        // A lone value has nothing to tell it apart from, so it has no label.
+        <Entry schema={schema} value={value} onChange={setValue} />
       )}
     </div>
   )
@@ -96,8 +97,9 @@ function Inner({ children }: { children: React.ReactNode }): React.JSX.Element {
 }
 
 /**
- * One line: the label, a hairline, and the value. Pressing the label puts the
- * caret in its control. A value that doesn't fit its schema tints the line in the
+ * One line: the label, a hairline, and the value — or the value alone, across the
+ * whole line, where there is no label. Pressing the label puts the caret in its
+ * control. A value that doesn't fit its schema tints the line in the
  * warning tone and says why at its end — and is written all the same.
  */
 function Line({
@@ -109,7 +111,7 @@ function Line({
   onRemove,
   children,
 }: {
-  label: string
+  label?: string
   required?: boolean
   description?: string
   /** Why the value doesn't fit, if it doesn't. */
@@ -128,33 +130,35 @@ function Line({
         problem ? 'bg-warning-50/60' : !tall && 'focus-within:bg-brand-50/40',
       )}
     >
-      <div
-        className={cn(
-          'flex max-w-56 min-w-0 cursor-default gap-1 border-r border-gray-100 py-1.5 pr-2.5 pl-2.5 text-[12px] leading-5 text-gray-500',
-          tall ? 'items-start' : 'items-center',
-        )}
-        title={description}
-        onClick={() =>
-          control.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus()
-        }
-      >
-        <span className="truncate">{label}</span>
-        {required && <span className="shrink-0 text-gray-300">*</span>}
-        {onRemove && (
-          <button
-            title="Remove"
-            aria-label="Remove"
-            className="-mr-1 flex h-5 w-4 shrink-0 items-center justify-center text-gray-300 group-hover/line:text-gray-400 hover:text-gray-700 focus:outline-none focus-visible:text-gray-700"
-            onClick={(e) => {
-              e.stopPropagation()
-              onRemove()
-            }}
-          >
-            <XClose size={12} />
-          </button>
-        )}
-      </div>
-      <div className="flex min-w-0">
+      {label !== undefined && (
+        <div
+          className={cn(
+            'flex max-w-56 min-w-0 cursor-default gap-1 border-r border-gray-100 py-1.5 pr-2.5 pl-2.5 text-[12px] leading-5 text-gray-500',
+            tall ? 'items-start' : 'items-center',
+          )}
+          title={description}
+          onClick={() =>
+            control.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus()
+          }
+        >
+          <span className="truncate">{label}</span>
+          {required && <span className="shrink-0 text-gray-300">*</span>}
+          {onRemove && (
+            <button
+              title="Remove"
+              aria-label="Remove"
+              className="-mr-1 flex h-5 w-4 shrink-0 items-center justify-center text-gray-300 group-hover/line:text-gray-400 hover:text-gray-700 focus:outline-none focus-visible:text-gray-700"
+              onClick={(e) => {
+                e.stopPropagation()
+                onRemove()
+              }}
+            >
+              <XClose size={12} />
+            </button>
+          )}
+        </div>
+      )}
+      <div className={cn('flex min-w-0', label === undefined && SPAN)}>
         <div
           ref={control}
           className={cn('flex min-w-0 flex-1', tall ? 'items-stretch' : 'items-center')}
@@ -230,7 +234,7 @@ function Entry({
   required,
   onRemove,
 }: {
-  label: string
+  label?: string
   schema: JsonSchema
   value: unknown
   onChange: (value: unknown) => void
@@ -262,7 +266,7 @@ function Control({
   schema: JsonSchema
   value: unknown
   onChange: (value: unknown) => void
-  label: string
+  label?: string
 }): React.JSX.Element {
   if ('const' in schema) return <span className={MUTED}>{JSON.stringify(schema.const)}</span>
 
@@ -317,7 +321,7 @@ function Control({
     case 'boolean':
       return (
         <div className="px-2.5">
-          <Switch checked={value === true} onChange={onChange} label={label} />
+          <Switch checked={value === true} onChange={onChange} label={label ?? 'Toggle'} />
         </div>
       )
     case 'null':
@@ -394,7 +398,7 @@ function Union({
   variants: JsonSchema[]
   value: unknown
   onChange: (value: unknown) => void
-  label: string
+  label?: string
 }): React.JSX.Element {
   const fitted = variants.findIndex((v) => matches(v, value))
   const at = fitted < 0 ? 0 : fitted

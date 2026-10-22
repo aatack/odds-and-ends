@@ -206,6 +206,13 @@ test('draws a builder inside a form with no boxes of its own', () => {
   assert.ok((alone.match(/border-gray-200/g) ?? []).length >= 2)
 })
 
+test('draws a lone value with no label column', () => {
+  const html = renderToStaticMarkup(h(SchemaForm, { schema: { type: 'string' }, value: 'x', setValue: noop }))
+  assert.match(html, /value="x"/)
+  assert.doesNotMatch(html, /border-r border-gray-100/)
+  assert.doesNotMatch(html, />Value</)
+})
+
 let failed = 0
 for (const [name, run] of tests) {
   try {
