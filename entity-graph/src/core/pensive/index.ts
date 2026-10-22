@@ -1,7 +1,6 @@
-export type { Pensive, ResourceRecord, EventScan, ToolMeta, Safety } from './types'
+export type { Pensive, ResourceRecord, EventScan, ToolMeta } from './types'
 export {
   POP_AGE_LIMIT_MS,
-  SAFETY_RANK,
   NotSupportedError,
   PausedError,
   ToolNotFoundError,

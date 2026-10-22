@@ -49,7 +49,6 @@ export function readEventsTool(
     description:
       'Return raw events. With `entityIds`, only events touching those entities; ' +
       'omit or pass null to dump every event. No rollup is performed — roll up client-side.',
-    safety: 'pure',
     args: z.object({
       entityIds: z
         .array(z.string())
@@ -97,7 +96,6 @@ export function scanEventsTool(read: (entityIds: string[]) => Promise<AppEvent[]
       'reached. Nothing is rolled up. This is what a client that keeps its own ' +
       'cache reads through: almost every query walks the graph downwards, so ' +
       'reading a little ahead turns a round trip per level into one per query.',
-    safety: 'pure',
     args: z.object({
       entityIds: z.array(z.string()),
       depth: z
@@ -216,7 +214,6 @@ export function pensiveTools(pensive: Pensive, opts: PensiveToolOptions = {}): T
     id: 'writeValue',
     name: 'Write value',
     description: 'Append a value event setting `key` to `value` on an entity.',
-    safety: 'safe-mutating',
     args: z.object({
       entityId: z.string(),
       key: z.string(),
@@ -253,7 +250,6 @@ export function pensiveTools(pensive: Pensive, opts: PensiveToolOptions = {}): T
     description:
       'Append a link event between two entities. `action`: 0=add, 1=remove, ' +
       '2=move toward index 0, 3=move toward end.',
-    safety: 'safe-mutating',
     args: z.object({
       sourceId: z.string(),
       destinationId: z.string(),
@@ -301,7 +297,6 @@ export function pensiveTools(pensive: Pensive, opts: PensiveToolOptions = {}): T
       'a wide tree comes back quickly with few rows and a continuation, rather ' +
       'than reading the whole thing. `open` is the exception: it narrows the walk ' +
       'as well, since nothing under a ticked item is outstanding.',
-    safety: 'pure',
     args: z.object({
       path: z
         .union([z.string(), z.array(z.string())])
@@ -386,7 +381,6 @@ export function pensiveTools(pensive: Pensive, opts: PensiveToolOptions = {}): T
     id: 'readEntities',
     name: 'Read entities',
     description: 'Roll events up into entities. Returns a map of `entityId` → entity.',
-    safety: 'pure',
     args: z.object({ entityIds: z.array(z.string()) }),
     handler: async ({ entityIds }: { entityIds: string[] }) =>
       Object.fromEntries(await wrapper.readEntities(entityIds)),
@@ -398,7 +392,6 @@ export function pensiveTools(pensive: Pensive, opts: PensiveToolOptions = {}): T
     description:
       'Create a new entity from `values`, optionally linked under `parentId`. ' +
       'Writes the relevant value/link events and returns the new entity id.',
-    safety: 'safe-mutating',
     args: z.object({
       values: z.record(z.any()).describe('Key → value map for the new entity.'),
       parentId: z.string().optional().describe('Link the new entity under this parent.'),
@@ -412,7 +405,6 @@ export function pensiveTools(pensive: Pensive, opts: PensiveToolOptions = {}): T
     id: 'moveEntity',
     name: 'Move entity',
     description: 'Re-parent an entity: remove the link from `fromParentId` and add one from `toParentId`.',
-    safety: 'safe-mutating',
     args: z.object({
       entityId: z.string(),
       fromParentId: z.string(),
@@ -431,7 +423,6 @@ export function pensiveTools(pensive: Pensive, opts: PensiveToolOptions = {}): T
       'Append raw events verbatim, keeping the timestamps and authors they carry. ' +
       'Backs redo — pass back what `popEvents` returned. Prefer `writeValue` / ' +
       '`writeLink` for ordinary edits, which stamp the current time for you.',
-    safety: 'safe-mutating',
     args: z.object({ events: z.array(appEvent) }),
     handler: async ({ events }: { events: AppEvent[] }) => {
       await pensive.writeEvents(events)
@@ -450,7 +441,6 @@ export function pensiveTools(pensive: Pensive, opts: PensiveToolOptions = {}): T
       'the store\'s to decide — five minutes as standard, so on a store that has ' +
       'been idle that long this returns nothing. There is nothing to pass but ' +
       '`author`.',
-    safety: 'safe-mutating',
     args: z.object({
       author: z
         .string()
@@ -472,7 +462,6 @@ export function pensiveTools(pensive: Pensive, opts: PensiveToolOptions = {}): T
       'is the entity that describes the resource — conventionally one with ' +
       '`type: "file"` — so the bytes and their description share a key. Data is ' +
       'base64. Resources are not events: undo does not reach them.',
-    safety: 'safe-mutating',
     args: z.object({
       id: z.string().describe('The entity id the bytes belong to.'),
       mimeType: z.string(),
@@ -507,7 +496,6 @@ export function pensiveTools(pensive: Pensive, opts: PensiveToolOptions = {}): T
     description:
       'Return the bytes stored under an entity id as base64, with the mime type, ' +
       'name, author and timestamp. Null when there is nothing there.',
-    safety: 'pure',
     args: z.object({ id: z.string() }),
     handler: ({ id }: { id: string }) => pensive.readResource(id),
   }

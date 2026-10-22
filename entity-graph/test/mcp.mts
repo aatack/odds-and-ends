@@ -27,7 +27,7 @@ const offering = (ids: string[]): Pensive =>
   ({
     id: 'x',
     label: 'X',
-    listTools: async () => ids.map((id) => ({ id, name: id, description: '', safety: 'pure', args: {} })),
+    listTools: async () => ids.map((id) => ({ id, name: id, description: '', args: {} })),
   }) as unknown as Pensive
 
 test('keeps the instructions inside what a client will show', async () => {

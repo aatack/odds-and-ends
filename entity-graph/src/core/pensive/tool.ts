@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
-import { ToolNotFoundError, type Safety, type ToolMeta } from './types'
+import { ToolNotFoundError, type ToolMeta } from './types'
 
 // A tool as the side *implementing* it holds one: the schema is a zod type, so
 // there is one source of truth for validation at call time and for the JSON
@@ -25,7 +25,6 @@ export interface ToolDef<A = any, R = any> {
    * schema survives the round trip.
    */
   jsonSchema?: Record<string, unknown>
-  safety: Safety
   handler: (args: A, run?: ToolRun) => Promise<R>
 }
 
@@ -50,7 +49,6 @@ export function toolMeta(tool: ToolDef): ToolMeta {
     id: tool.id,
     name: tool.name,
     description: tool.description,
-    safety: tool.safety,
     args: argsJsonSchema(tool),
   }
 }

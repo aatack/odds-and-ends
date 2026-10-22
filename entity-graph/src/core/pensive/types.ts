@@ -113,22 +113,6 @@ export interface Pensive {
 // --- What a tool looks like -------------------------------------------------
 
 /**
- * How risky a tool is to call.
- * - `pure`: only reads; no effects.
- * - `safe-mutating`: only writes to the underlying event store, so its effects
- *   can be trivially undone.
- * - `dangerous`: interacts with the outside world in unpredictable ways.
- */
-export type Safety = 'pure' | 'safe-mutating' | 'dangerous'
-
-/** Ordering used where one safety has to be compared with another. Lower = safer. */
-export const SAFETY_RANK: Record<Safety, number> = {
-  pure: 0,
-  'safe-mutating': 1,
-  dangerous: 2,
-}
-
-/**
  * One tool as a caller sees it: what it is called, what it does, and the JSON
  * Schema of its arguments. This is what crosses a wire — the IPC bridge, the
  * broadcast API — so it carries no functions.
@@ -137,7 +121,6 @@ export interface ToolMeta {
   id: string
   name: string
   description: string
-  safety: string
   args: Record<string, unknown>
 }
 
