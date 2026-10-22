@@ -1,5 +1,4 @@
 import React from 'react'
-import { Play, Stop } from '@untitledui/icons'
 import { CodeBlock } from '../ui/CodeBlock'
 import { ResourceView } from '../Resource'
 import { fieldsOf, schemaOf } from '../../../../core/schema'
@@ -14,33 +13,8 @@ import type { CardProps } from './types'
 // --- Note -------------------------------------------------------------------
 
 /** What the user wrote, and nothing else. Also a note's focus. */
-export function NoteCard({ row, highlight }: Pick<CardProps, 'row' | 'highlight'>): React.JSX.Element {
+export function NoteCard({ row, highlight }: CardProps): React.JSX.Element {
   return row.text ? <RowText row={row} highlight={highlight} /> : EMPTY
-}
-
-// --- Code -------------------------------------------------------------------
-
-/** Its source and, once run, what it said. Running it is the mark's job. */
-export function CodeCard({ row, run }: CardProps): React.JSX.Element {
-  return <CodeBlock code={row.text ?? ''} run={run} />
-}
-
-/** In place of a bullet: run it, or stop it while it runs. */
-export function CodeMark({ row, run, onRunCode, onStopCode }: CardProps): React.JSX.Element {
-  const running = run?.status === 'running'
-  return (
-    <span
-      className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 select-none hover:text-gray-700"
-      title={running ? 'Stop' : 'Run'}
-      onClick={(e) => {
-        e.stopPropagation()
-        if (running) onStopCode()
-        else onRunCode(row.id, row.text ?? '', row.path)
-      }}
-    >
-      {running ? <Stop size={13} /> : <Play size={13} />}
-    </span>
-  )
 }
 
 // --- File -------------------------------------------------------------------

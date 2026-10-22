@@ -48,7 +48,7 @@ export interface EntityRow extends TreeRow {
 /**
  * The transient row shown while creating a child entity. It carries the values
  * the create was started with, so the row it is about to become — a section, a
- * checkbox, a code block — looks like itself while it is being typed.
+ * checkbox — looks like itself while it is being typed.
  */
 export interface InputRow {
   kind: 'input'
@@ -330,11 +330,6 @@ export function tabPath(s: LayoutState, frameIds: readonly string[], selectedPat
  * `autofill` says whether the result applies itself to a tool's arguments or is
  * merely offered to them; see {@link CallContext}.
  *
- * `within` names a path inside the top frame other than the selection — the row
- * a gesture landed on rather than the row the keyboard is on. The frame is still
- * the focused one: every such gesture starts with a mousedown, which selects the
- * group it is in before the click is handled.
- *
  * `rows` is the focused frame's, which is where the resolved selection comes
  * from; it is passed in rather than rebuilt because the caller has just built it.
  */
@@ -342,12 +337,12 @@ export function buildCallContext(
   s: LayoutState,
   source: EntitySource,
   rows: FrameRows,
-  opts: { extra?: Record<string, unknown>; autofill?: boolean; within?: string[] } = {},
+  opts: { extra?: Record<string, unknown>; autofill?: boolean } = {},
 ): CallContext {
   const { groupId, tabId, frameId } = focusOf(s)
   const tab = tabId ? s.tabs[tabId] : null
   const frame = frameId ? s.frames[frameId] : null
-  const selectedPath = opts.within ?? rows.selectedPath
+  const selectedPath = rows.selectedPath
 
   const path = tabPath(s, tab?.frameIds ?? [], selectedPath)
   const values: Record<string, unknown> = {}

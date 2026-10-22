@@ -1,5 +1,4 @@
 import type React from 'react'
-import type { CodeRunState } from '../../helpers/codeRunner'
 import type { EntityRow } from '../../state/derive'
 
 // What a kind of entity looks like, at the three sizes it is ever drawn at. A
@@ -22,14 +21,11 @@ export interface PillProps {
   className?: string
 }
 
-/** What a card or a focus is drawn from: the row, and the run state of a code row. */
+/** What a card or a focus is drawn from. */
 export interface CardProps {
   row: EntityRow
   /** The frame's find text, marked wherever the entity says it. */
   highlight?: string
-  run?: CodeRunState
-  onRunCode: (id: string, code: string, path: string[]) => void
-  onStopCode: () => void
 }
 
 export interface Kind {
@@ -37,11 +33,6 @@ export interface Kind {
   Card: React.ComponentType<CardProps>
   /** The root of a frame. Absent: the card again, which is what a note wants. */
   Focus?: React.ComponentType<CardProps>
-  /**
-   * What stands in front of the row in place of a bullet or a chevron — a code
-   * row's run button. Absent: the bullet, checkbox or chevron every row has.
-   */
-  Mark?: React.ComponentType<CardProps>
   /**
    * Whether the card is prose, which the type pill is floated into as the
    * entity's first word. A surface of its own — a code block, a file, a canvas —

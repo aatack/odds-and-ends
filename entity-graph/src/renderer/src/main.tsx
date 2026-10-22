@@ -6,7 +6,7 @@ import ReactDOM from 'react-dom/client'
 import '@fontsource-variable/geist/index.css'
 import '@fontsource-variable/lora/index.css'
 import '@fontsource-variable/lora/wght-italic.css'
-// Fira Code for `type: code` entities (the `font-mono` utility).
+// Fira Code for code (the `font-mono` utility).
 import '@fontsource-variable/fira-code/index.css'
 // The sources page's canvas (views/Sources). Before
 // index.css, which re-points the handful of surfaces the library owns at our own

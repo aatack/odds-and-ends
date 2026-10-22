@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react'
 import { Highlight, themes } from 'prism-react-renderer'
-import type { CodeRunState } from '../../helpers/codeRunner'
 import { cn } from '../../helpers/cn'
 
 // Track the `.dark` class on <html> so the syntax theme flips with the app's
@@ -67,69 +66,22 @@ export function CodeText({
   )
 }
 
-function formatValue(value: unknown): string {
-  if (typeof value === 'string') return value
-  try {
-    return JSON.stringify(value, null, 2) ?? String(value)
-  } catch {
-    return String(value)
-  }
-}
-
-function outputLines(run: CodeRunState): { text: string; error: boolean } | null {
-  if (run.status === 'running') return { text: 'Running…', error: false }
-  if (run.status === 'error') {
-    const parts = [...run.logs, run.error]
-    return { text: parts.join('\n'), error: true }
-  }
-  const parts = [...run.logs]
-  if (run.hasResult) parts.push(formatValue(run.result))
-  if (parts.length === 0) return { text: '(no output)', error: false }
-  return { text: parts.join('\n'), error: false }
-}
-
 export interface CodeBlockProps {
   code: string
-  /** Local run state for this entity, if it has been run this session. */
-  run?: CodeRunState
-  /** Prism language. Defaults to TypeScript — what a `type: code` entity is. */
+  /** Prism language. Defaults to TypeScript. */
   language?: string
 }
-
 /**
- * A `type: code` entity's body: TypeScript source on a faint grey ground in Fira
- * Code, with its (non-persisted) run output pinned below a hairline. Wide lines
- * scroll horizontally inside the block rather than wrapping or widening the row.
- *
- * Also the surface a fenced block inside markdown renders on, minus the run
- * output — a fence and a code entity should look like the same thing.
+ * A fenced block inside markdown: source on a faint grey ground in Fira Code.
+ * Wide lines scroll horizontally inside the block rather than wrapping or
+ * widening the row.
  */
-export function CodeBlock({ code, run, language = 'tsx' }: CodeBlockProps): React.JSX.Element {
-  const output = run ? outputLines(run) : null
-
+export function CodeBlock({ code, language = 'tsx' }: CodeBlockProps): React.JSX.Element {
   return (
     <div className={cn('my-px w-full min-w-0 overflow-hidden', CODE_GROUND)}>
       <div className="overflow-x-auto">
         <CodeText code={code} language={language} />
       </div>
-
-      {output && (
-        <>
-          <div className="border-t border-gray-200" />
-          <div className="overflow-x-auto">
-            <pre
-              className={cn(
-                'w-max min-w-full whitespace-pre',
-                CODE_TYPE,
-                CODE_PAD,
-                output.error ? 'text-red-600' : 'text-gray-500',
-              )}
-            >
-              {output.text}
-            </pre>
-          </div>
-        </>
-      )}
     </div>
   )
 }

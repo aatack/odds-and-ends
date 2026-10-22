@@ -126,15 +126,14 @@ is the long form; the rules that matter day to day:
   becomes a tool of the app, called whatever its text says — palette entry,
   optional key, callable from other scripts. Its `execute` value
   is an expression evaluating to a function, applied to the declared arguments
-  positionally and run in the same sandbox a code entity uses, so it reaches the
+  positionally and run in the script sandbox, so it reaches the
   whole registry. See [`docs/user-tools.md`](./docs/user-tools.md) for the fields.
   `tools/declared.ts` maps their JSON Schema onto argument prompts;
   `tools/userTools.ts` reads them, and "Reload your tools" re-reads them after an
   edit.
-- **A code entity is another caller.** `type: code` runs in a QuickJS worker
-  (`helpers/codeRunner*`) whose only globals are `console`, `context` — the folded
-  call context of the entity it is on, so `context.project` is whatever an
-  ancestor said the project was — and `tool`, which reaches the whole registry by
+- **A script is another caller.** `runScript` runs JavaScript in a QuickJS worker
+  (`helpers/codeRunner*`) whose only globals are `console`, `context` — the call
+  context it was handed — and `tool`, which reaches the whole registry by
   the camel case of a tool's label (`tool.createChildOfEntity(parentId, text)`) or
   by its id (`tool['entity.create'](…)`). Arguments go positionally in the order
   the tool declares them, or as one object naming them. The calls are

@@ -109,7 +109,7 @@ Object.defineProperty(globalThis, 'Worker', { value: FakeWorker, writable: true 
 
 const { setSourceTransport } = await import('../src/renderer/src/source/transport')
 const { TOOLS_ENTITY_ID, loadUserTools } = await import('../src/renderer/src/tools/userTools')
-const { runToolScript, stopCode } = await import('../src/renderer/src/helpers/codeRunner')
+const { runScript, stopCode } = await import('../src/renderer/src/helpers/codeRunner')
 const { defaultLayout } = await import('../src/renderer/src/state/types')
 const { layoutAtom } = await import('../src/renderer/src/state/store')
 
@@ -160,7 +160,7 @@ function within<T>(ms: number, work: Promise<T>, what: string): Promise<T> {
 test('runs a tool called from a script, rather than deadlocking on it', async () => {
   await openWithTool()
   const before = built
-  const run = runToolScript('outer', 'call:join:left,right', context())
+  const run = runScript('outer', 'call:join:left,right', context())
   const { result } = await within(2000, run, 'a script calling a tool the user wrote')
 
   assert.equal(result, 'joined')
@@ -172,8 +172,8 @@ test('runs a tool called from a script, rather than deadlocking on it', async ()
 test('reuses a worker once its run has finished', async () => {
   await openWithTool()
   const before = built
-  await within(2000, runToolScript('a', 'one', context()), 'the first run')
-  await within(2000, runToolScript('b', 'two', context()), 'the second run')
+  await within(2000, runScript('a', 'one', context()), 'the first run')
+  await within(2000, runScript('b', 'two', context()), 'the second run')
 
   assert.equal(built - before, 1, 'runs that do not overlap should share one worker')
 })
@@ -183,7 +183,7 @@ test('gives up rather than nesting without end', async () => {
   // needs a worker of its own — without a ceiling this takes the tab with it.
   await openWithTool('call:join:x')
 
-  const run = runToolScript('outer', 'call:join:x', context())
+  const run = runScript('outer', 'call:join:x', context())
   await assert.rejects(
     () => within(5000, run, 'a tool that calls itself'),
     /waiting on one another/,

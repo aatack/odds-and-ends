@@ -36,7 +36,7 @@ const plainText = (node: React.ReactNode): string =>
 /**
  * A fenced block. The info string is the Prism language, so ```` ```python ````
  * highlights as Python; a bare fence is left as TypeScript, which is what the
- * app's own code entities are. The fence's `code` child carries both.
+ * the app's own scripts are. The fence's `code` child carries both.
  */
 const fence: Components['pre'] = ({ children }) => {
   const code = React.Children.toArray(children).find(

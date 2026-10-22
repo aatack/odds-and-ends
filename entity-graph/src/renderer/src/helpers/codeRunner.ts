@@ -1,4 +1,3 @@
-import { atom } from '../state/atom'
 import type { CallContext } from '../state/types'
 import type {
   RunRequest,
@@ -8,8 +7,7 @@ import type {
   WorkerMessage,
 } from './codeRunner.worker'
 
-// Local execution of scripts — `type: code` entities and the
-// bodies of the tools the user wrote — in sandboxed QuickJS workers. A browser
+// Local execution of scripts in sandboxed QuickJS workers. A browser
 // service rather than state: the results are runtime-only and never written back,
 // and workers are made lazily and killed on Stop (terminating one is how a runaway
 // script is interrupted).
@@ -22,22 +20,12 @@ import type {
 // A blocked worker is why there is a pool rather than one worker; see it below.
 // Stop kills all of them, so stopping one run aborts any other in flight.
 
-export type CodeRunState =
-  | { status: 'running' }
-  | { status: 'done'; logs: string[]; result?: unknown; hasResult: boolean }
-  | { status: 'error'; logs: string[]; error: string }
-
-export const codeRunsAtom = atom<Record<string, CodeRunState>>({})
-
-const setRun = (id: string, state: CodeRunState): void =>
-  codeRunsAtom.set((runs) => ({ ...runs, [id]: state }))
-
 // A pool, and it has to be one. A script blocks its own thread while a tool call
 // is answered — that is what buys `tool.x()` its lack of `await` — so a worker
 // waiting on a call cannot pick up another script in the meantime. And answering
-// a call is exactly when another script may need to run: a tool the user wrote is
-// a body of its own, and `tool.myTool()` from a script would otherwise post it to
-// the very worker that is blocked waiting for it, which is a deadlock and looks
+// a call is exactly when another script may need to run: a tool may itself be a
+// script, and calling it would otherwise post it to the very worker that is
+// blocked waiting for it, which is a deadlock and looks
 // like a call that never comes back.
 //
 // So a run takes a worker for itself and gives it back when it settles. Nesting
@@ -118,80 +106,25 @@ function execute(id: string, code: string, context: CallContext): Promise<RunRes
   })
 }
 
-/** Run a code entity, recording what it did so its row can show it. */
-export function runCode(id: string, code: string, context: CallContext): void {
-  setRun(id, { status: 'running' })
-  void execute(id, code, context).then((r) => {
-    if (r.ok) setRun(id, { status: 'done', logs: r.logs, result: r.result, hasResult: !!r.hasResult })
-    else setRun(id, { status: 'error', logs: r.logs, error: r.error ?? 'Error' })
-  })
-}
-
-/**
- * Run a script for its value alone, with nothing shown for it — something
- * computed about an entity rather than something the user asked to run, so it
- * has no place in the run state a row draws its play button from.
- *
- * The id is namespaced away from the entity's own, so evaluating a script on a
- * `type: code` entity can't be mistaken for running the code in it.
- *
- * Nothing being *shown* is not the same as nothing being knowable: whatever the
- * script logged goes to the devtools console either way, since a script that
- * runs on its own behalf in the background has nowhere else to say anything.
- */
-export async function evaluateCode(
-  entityId: string,
-  code: string,
-  values: Record<string, unknown>,
-): Promise<unknown> {
-  // A script called upon by the entity rather than by the user has no frame and
-  // no selection behind it; the context is the entity, as promised.
-  const context: CallContext = {
-    values: { ...values, entityId, path: [entityId] },
-    path: [entityId],
-    groupId: null,
-    tabId: null,
-    frameId: null,
-    startedAt: Date.now(),
-  }
-  const where = `script on ${entityId}`
-  const result = await execute(`eval:${entityId}`, code, context)
-  for (const line of result.logs) console.log(`[${where}]`, line)
-  if (!result.ok) {
-    const error = result.error ?? 'Error'
-    console.error(`[${where}] ${error}`)
-    throw new Error(error)
-  }
-  return result.result
-}
-
-/** Distinguishes one run of the same script from another. See {@link runToolScript}. */
+/** Distinguishes one run of the same script from another. */
 let scriptRuns = 0
 
 /**
- * Run a user-defined tool's body and hand back what it evaluated to. A sibling of
- * {@link evaluateCode}: the same sandbox and the same synchronous `tool` bridge,
- * and likewise nowhere to *show* the run — a tool's output belongs to the call
- * that made it, which is what puts it in the activity log.
+ * Run a script and hand back what it evaluated to, and what it logged. `name`
+ * says what the script is, for the run id; it need not be unique, since each run
+ * is counted.
  *
- * The context is the *call's*, passed straight through rather than rebuilt around
- * the tool's own entity. A tool is invoked from somewhere, and what it goes on to
- * do should be recorded against the frame the user was looking at; a definition
- * sitting under `@tools` is not where any of it is happening.
- *
- * Logs are returned rather than printed, since unlike {@link evaluateCode} this
- * has a caller to hand them to.
+ * The context is the caller's, passed straight through: what the script goes on
+ * to do is recorded against the frame the user was looking at.
  */
-export async function runToolScript(
-  toolId: string,
+export async function runScript(
+  name: string,
   code: string,
   context: CallContext,
 ): Promise<{ result: unknown; logs: string[] }> {
-  // Namespaced away from a code entity's own id, so a tool whose body lives on an
-  // entity the user can also press play on doesn't overwrite that row's output —
-  // and counted, because the run id is what an answer finds its way back by, so
-  // two invocations of one tool must not share it.
-  const response = await execute(`tool:${toolId}#${++scriptRuns}`, code, context)
+  // Counted, because the run id is what an answer finds its way back by, so two
+  // runs of one script must not share it.
+  const response = await execute(`${name}#${++scriptRuns}`, code, context)
   if (!response.ok) throw new Error(response.error ?? 'Error')
   return { result: response.result, logs: response.logs }
 }
@@ -210,17 +143,7 @@ export function stopCode(): void {
     settle({ kind: 'result', id, ok: false, logs: [], error: 'Interrupted' })
   }
   waiting.clear()
-  codeRunsAtom.set((runs) => {
-    const next = { ...runs }
-    for (const [id, state] of Object.entries(next)) {
-      if (state.status === 'running') next[id] = { status: 'error', logs: [], error: 'Interrupted' }
-    }
-    return next
-  })
 }
-
-export const isRunning = (runs: Record<string, CodeRunState>, id: string): boolean =>
-  runs[id]?.status === 'running'
 
 // --- Answering a script's tool call -----------------------------------------
 

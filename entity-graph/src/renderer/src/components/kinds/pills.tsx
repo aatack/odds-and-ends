@@ -40,12 +40,6 @@ export function NotePill({ id, className }: PillProps): React.JSX.Element {
   return <span className={cn(BOUND, 'font-serif', className)}>{label}</span>
 }
 
-/** Code keeps its monospace, so it doesn't read as prose. */
-export function CodePill({ id, className }: PillProps): React.JSX.Element {
-  const label = useEntityLabel(id)
-  return <span className={cn(BOUND, 'font-mono text-[0.9em]', className)}>{label}</span>
-}
-
 /**
  * A file gives its name, which is the one thing about a file worth reading at
  * this size — once the bytes are on screen somewhere; until then the label has

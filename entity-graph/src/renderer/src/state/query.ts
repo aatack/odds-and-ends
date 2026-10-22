@@ -163,7 +163,7 @@ export const rowsOf = (frameId: string | null, s: LayoutState = getLayout()): Fr
  * unrolled is this module's business.
  */
 export function liveContext(
-  opts: { extra?: Record<string, unknown>; autofill?: boolean; within?: string[] } = {},
+  opts: { extra?: Record<string, unknown>; autofill?: boolean } = {},
 ): CallContext {
   const s = getLayout()
   const cache = entitiesAtom.get()

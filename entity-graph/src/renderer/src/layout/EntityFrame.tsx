@@ -2,13 +2,12 @@ import React, { useRef } from 'react'
 import { ChevronLeft, ChevronRight, SearchSm, X } from '@untitledui/icons'
 import { Editor } from '../views/Editor'
 import { cn } from '../helpers/cn'
-import { codeRunsAtom, runCode, stopCode } from '../helpers/codeRunner'
 import * as A from '../state/actions'
 import { findField } from '../state/focusRequest'
 import { useAtomValue, useFocusRequest, useFrameRows, useLayoutState } from '../state/hooks'
 import { loadMore } from '../state/query'
 import { depthLabel, directionOf, frameDepth, nudgeDepth } from '../state/types'
-import { contextWithin, runTool } from '../tools/call'
+import { runTool } from '../tools/call'
 
 /**
  * One entity view: the tree rooted at the frame's root entity. It owns no state
@@ -18,7 +17,6 @@ import { contextWithin, runTool } from '../tools/call'
 export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element {
   const layout = useLayoutState()
   const { rows, keys, selectedIndex, editIndex, loading, complete } = useFrameRows(frameId)
-  const codeRuns = useAtomValue(codeRunsAtom)
   const frame = layout.frames[frameId]
 
   if (!frame) return <div className="p-8 text-center text-[13px] text-gray-400">No frame.</div>
@@ -82,11 +80,6 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
           onCommit={() => runTool('edit.commit', { extra: { frameId } })}
           onNearEnd={() => loadMore(frameId)}
           complete={complete}
-          codeRuns={codeRuns}
-          // The run button is aimed at the row it sits on, which needn't be the
-          // selected one, so the script's context is folded along that row's path.
-          onRunCode={(id, code, path) => runCode(id, code, contextWithin(path))}
-          onStopCode={stopCode}
         />
       </div>
     </div>

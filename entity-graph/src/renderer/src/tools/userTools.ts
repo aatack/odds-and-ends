@@ -1,7 +1,7 @@
 import { TOOL_ID } from '../../../core/builtins'
 import { str, type Entity } from '../../../core/entity'
 import { readToolArguments } from '../../../core/toolArguments'
-import { runToolScript } from '../helpers/codeRunner'
+import { runScript } from '../helpers/codeRunner'
 import { readEntities } from '../source/entity'
 import { currentSourceId } from '../source/transport'
 import { atom } from '../state/atom'
@@ -257,7 +257,7 @@ function toolSpec(tool: Entity, id: string, name: string, args: ArgSpec[]): Tool
         ...call.context,
         values: { ...call.context.values, ...values, args: values },
       }
-      const { result, logs } = await runToolScript(id, source, context)
+      const { result, logs } = await runScript(`tool:${id}`, source, context)
       // Nowhere else for them to go: the tool's result is what the log keeps, and
       // a body debugged by printing has to print somewhere.
       for (const line of logs) console.log(`[${id}]`, line)

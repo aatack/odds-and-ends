@@ -128,7 +128,7 @@ export const emptyEntity = (id: string): Entity => ({
  */
 export interface EntitySummary {
   text?: string
-  /** The entity's `type` value, if any (e.g. `'code'` for a runnable block). */
+  /** The entity's `type` value, if any (e.g. `'file'`). */
   type?: string
   /** For `type: 'file'`, what the stored bytes are. */
   mimeType?: string

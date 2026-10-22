@@ -51,8 +51,7 @@ export function onCallSettled(listener: Listener): () => void {
 
 /**
  * Who asked for a call. `user` is a gesture — a hotkey, the palette, a
- * right-click, a button; `code` is a script's — a `type: code` entity the user
- * ran, or the body of a tool they wrote.
+ * right-click, a button; `code` is a script's, run in the sandbox.
  */
 type CallOrigin = 'user' | 'code'
 
@@ -77,8 +76,8 @@ interface Invocation {
  * And nothing a script did is kept, however far it reached. The log answers "what
  * have I done?", and a script's calls are not that: one loop in a script would
  * fill the log on its own and push the day's actual work off the end of it. What a
- * script did is shown where it was run — the code entity's own output. It doesn't
- * toast either; `settle` says why.
+ * script did is the script's own business. It doesn't toast either; `settle` says
+ * why.
  */
 const worthKeeping = (call: Invocation, tool: ToolSpec, outcome: CallOutcome): boolean => {
   if (call.origin === 'code') return false
@@ -144,8 +143,7 @@ function markRunning(call: Invocation, tool: ToolSpec): void {
 function settle(call: Invocation, tool: ToolSpec, outcome: CallOutcome): void {
   const record = recordOf(call, bounded(outcome))
   // Announced only if the user asked for it — a toast is the app answering
-  // something you just did. A script's calls are not that. What a script did, and how it failed, is shown where the
-  // script is: the code entity's own output.
+  // something you just did. A script's calls are not that.
   if (call.origin === 'user') listeners.forEach((l) => l(record))
   // Keyed by callId, so resuming and re-settling updates one entry in place
   // rather than leaving a stale row behind.
@@ -311,21 +309,16 @@ function begin(
  * the hotkey path — a toast names what's outstanding rather than taking over the
  * screen.
  *
- * `within` aims the call at a row other than the selected one — a button inside
- * an entity's own text, which acts on that entity however the keyboard is
- * pointed. See {@link contextWithin}, which is the same thing for a script.
- *
  * Hands back the id of the call it started, or null when the tool still wants an
- * argument and the palette has it instead. That is what lets whatever made the
- * gesture — a button in a row's prose — say it is still going.
+ * argument and the palette has it instead.
  */
 export function runTool(
   toolId: string,
-  opts: { display?: CallDisplay; extra?: Record<string, unknown>; within?: string[] } = {},
+  opts: { display?: CallDisplay; extra?: Record<string, unknown> } = {},
 ): string | null {
   return begin(
     toolId,
-    liveContext({ extra: opts.extra, within: opts.within }),
+    liveContext({ extra: opts.extra }),
     opts.display ?? HIDDEN,
   )
 }
@@ -366,15 +359,6 @@ export function togglePalette(): void {
 }
 
 // --- Calls from code --------------------------------------------------------
-
-/**
- * The context a call would be born in if it were aimed at `within` — the path of
- * a row other than the selected one. What a code entity is run with, so that a
- * script's `context` describes the entity it lives on rather than wherever the
- * keyboard happens to be.
- */
-export const contextWithin = (within: string[]): CallContext =>
-  liveContext({ within })
 
 /**
  * Run a tool the way a script names it: `tool.createChildOfEntity(parentId, text)`.

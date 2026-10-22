@@ -3,9 +3,8 @@ import { Check, ChevronDown, ChevronRight, Loading02, Square } from '@untitledui
 import { TextEditor } from '../components/ui/TextEditor'
 import { TypePill } from '../components/TypePill'
 import { kindOf } from '../components/kinds'
-import { MONO, TEXT, sectionStyle } from '../components/kinds/text'
+import { TEXT, sectionStyle } from '../components/kinds/text'
 import { cn } from '../helpers/cn'
-import type { CodeRunState } from '../helpers/codeRunner'
 import type { EntityRow, Row } from '../state/derive'
 
 // ---------------------------------------------------------------------------
@@ -77,11 +76,6 @@ export interface EditorProps {
    * empty space asks forever.
    */
   complete: boolean
-  /** Run state for code entities, keyed by entity id. */
-  codeRuns: Record<string, CodeRunState>
-  /** Run a code entity: its id and source, plus the path of the row it sits at. */
-  onRunCode: (id: string, code: string, path: string[]) => void
-  onStopCode: () => void
 }
 
 /**
@@ -104,9 +98,6 @@ export function Editor(props: EditorProps): React.JSX.Element {
     onCommit,
     onNearEnd,
     complete,
-    codeRuns,
-    onRunCode,
-    onStopCode,
   } = props
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -237,23 +228,17 @@ export function Editor(props: EditorProps): React.JSX.Element {
 
   const renderRow = (row: Row, index: number): React.JSX.Element => {
     const key = keys[index]
-    // Pass this row's run state directly (not the whole map) so the memoised
-    // RowView only re-renders when *its own* run changes.
-    const run = row.kind === 'entity' ? codeRuns[row.id] : undefined
     return (
       <RowView
         key={key}
         row={row}
         measureKey={key}
-        run={run}
         highlight={highlight}
         onMeasure={setHeight}
         onSelectRow={onSelectRow}
         onToggleCollapse={onToggleCollapse}
         onDraft={onDraft}
         onCommit={onCommit}
-        onRunCode={onRunCode}
-        onStopCode={onStopCode}
       />
     )
   }
@@ -304,7 +289,6 @@ export function Editor(props: EditorProps): React.JSX.Element {
 interface RowProps {
   row: Row
   measureKey: string
-  run?: CodeRunState
   /** The frame's find text; a string, so it doesn't defeat the memo. */
   highlight?: string
   onMeasure: (key: string, height: number) => void
@@ -312,23 +296,17 @@ interface RowProps {
   onToggleCollapse: (row: EntityRow) => void
   onDraft: (text: string) => void
   onCommit: () => void
-  /** Run a code entity: its id and source, plus the path of the row it sits at. */
-  onRunCode: (id: string, code: string, path: string[]) => void
-  onStopCode: () => void
 }
 
 const RowView = React.memo(function RowView({
   row,
   measureKey,
-  run,
   highlight,
   onMeasure,
   onSelectRow,
   onToggleCollapse,
   onDraft,
   onCommit,
-  onRunCode,
-  onStopCode,
 }: RowProps): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -381,7 +359,7 @@ const RowView = React.memo(function RowView({
               placeholder={row.section ? 'New section…' : 'New entity…'}
               onKeyDown={onKeyDown}
               className={cn(
-                row.type === 'code' ? MONO : TEXT,
+                TEXT,
                 'text-gray-900',
                 row.section && 'font-semibold',
               )}
@@ -397,7 +375,7 @@ const RowView = React.memo(function RowView({
   // The root of a frame is the entity with a page to itself: its focus, where the
   // kind has one, and its card where it doesn't. Every row below it is a card.
   const Body = (row.path.length === 1 && kind.Focus) || kind.Card
-  const cardProps = { row, highlight, run, onRunCode, onStopCode }
+  const cardProps = { row, highlight }
   const heading = row.section ? sectionStyle(row.depth) : undefined
 
   // Where a typed row's pill goes. A row drawing prose floats it into the text:
@@ -429,28 +407,24 @@ const RowView = React.memo(function RowView({
         )}
         style={{ paddingLeft: row.depth * INDENT + 4 }}
       >
-        {kind.Mark ? (
-          <kind.Mark {...cardProps} />
-        ) : (
-          <span
-            className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 select-none"
-            onClick={(e) => {
-              e.stopPropagation()
-              if (foldable) onToggleCollapse(row)
-            }}
-          >
-            {/* A checkbox keeps its box even with children; only a plain row
-                trades its bullet for a chevron. A row still arriving shows the
-                busy mark whichever it would have been. */}
-            {row.loading || row.open !== undefined || !foldable ? (
-              <Mark open={row.open} loading={row.loading} />
-            ) : row.collapsed ? (
-              <ChevronRight size={14} />
-            ) : (
-              <ChevronDown size={14} />
-            )}
-          </span>
-        )}
+        <span
+          className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 select-none"
+          onClick={(e) => {
+            e.stopPropagation()
+            if (foldable) onToggleCollapse(row)
+          }}
+        >
+          {/* A checkbox keeps its box even with children; only a plain row
+              trades its bullet for a chevron. A row still arriving shows the
+              busy mark whichever it would have been. */}
+          {row.loading || row.open !== undefined || !foldable ? (
+            <Mark open={row.open} loading={row.loading} />
+          ) : row.collapsed ? (
+            <ChevronRight size={14} />
+          ) : (
+            <ChevronDown size={14} />
+          )}
+        </span>
         {row.type && !prose && <TypePill label={row.type} className="mr-1" />}
         {/* The content column is a flex item and so contains its own floats: the
             pill can't escape into the row below. */}
@@ -464,7 +438,7 @@ const RowView = React.memo(function RowView({
               setValue={onDraft}
               onBlur={onCommit}
               onKeyDown={onKeyDown}
-              className={cn(row.type === 'code' ? MONO : TEXT, 'text-gray-900', row.section && 'font-semibold')}
+              className={cn(TEXT, 'text-gray-900', row.section && 'font-semibold')}
               style={heading}
             />
           ) : (

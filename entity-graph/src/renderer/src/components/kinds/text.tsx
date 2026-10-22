@@ -15,9 +15,6 @@ import type { EntityRow } from '../../state/derive'
  */
 export const TEXT = 'block font-serif text-[14px] leading-5'
 
-/** Monospace counterpart, for editing `type: code` entities in place. */
-export const MONO = 'block font-mono text-[12.5px] leading-5'
-
 /**
  * Section headings grow with prominence: ~1.5x at the top level, easing toward
  * ~1.1x as they nest deeper. Per depth, so it can't be a static utility class.

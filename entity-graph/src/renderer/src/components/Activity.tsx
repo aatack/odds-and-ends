@@ -162,7 +162,7 @@ function CallRow({ call, onClose }: { call: RecordedCall; onClose: () => void })
         </div>
       </div>
 
-      {/* The same ground a code entity sits on, but plain: a result runs to a
+      {/* The same ground code sits on, but plain: a result runs to a
           thousand lines, and syntax-highlighting one of those on every open
           costs more than the colour is worth. Scrolls inside itself, so it can't
           push the rest of the log off the bottom of the panel. */}

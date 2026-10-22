@@ -15,7 +15,6 @@ import {
   type GetEntities,
   type PathTest,
 } from '../../../core/query'
-import { evaluateCode } from '../helpers/codeRunner'
 import {
   createEntity,
   link,

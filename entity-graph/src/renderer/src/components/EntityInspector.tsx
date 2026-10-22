@@ -26,7 +26,7 @@ import { Input } from './ui/Input'
 import { Modal } from './ui/Modal'
 import { TextEditor } from './ui/TextEditor'
 
-/** The surface a `type: code` entity is edited on, which is this one too. */
+/** The surface a value is edited on: code's type, on code's ground. */
 const CODE = 'font-mono text-[12.5px] leading-5 text-gray-900'
 
 const EMPTY = 'text-xs text-gray-400'
@@ -286,7 +286,7 @@ function Values({
 }
 
 /**
- * One key, editable, on the ground a `type: code` entity is edited on.
+ * One key, editable, on the ground code sits on.
  *
  * A string is edited as itself and anything else as JSON. That distinction earns
  * its keep on exactly the values worth coming in here for: `text` and `events`

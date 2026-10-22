@@ -17,7 +17,6 @@ import {
   type LayoutState,
   type TabState,
 } from '../state/types'
-import { runCode, stopCode } from '../helpers/codeRunner'
 import { createEntity, link, writeValue } from '../source/entity'
 import type { ToolSpec } from './types'
 
@@ -389,18 +388,6 @@ export const FRAME_TOOLS: ToolSpec[] = [
       if (t?.selected) A.startCreate(t.frame.id, t.selectedPath, { open: true })
     },
   },
-  {
-    id: 'create.code',
-    label: 'Create code block',
-    aliases: ['script', 'run', 'quickjs', 'ts', 'typescript'],
-    scope: 'frame',
-    reach: 'ui',
-    keys: [{ key: 'c' }],
-    run: () => {
-      const t = target()
-      if (t?.selected) A.startCreate(t.frame.id, t.selectedPath, { type: 'code' })
-    },
-  },
 
   // --- Toggles against the selection --------------------------------------
   {
@@ -432,32 +419,6 @@ export const FRAME_TOOLS: ToolSpec[] = [
       const next = t.selected.open === undefined ? true : t.selected.open === true ? false : null
       await writeValue(t.selected.id, 'open', next)
     },
-  },
-
-  // --- Code ---------------------------------------------------------------
-  {
-    id: 'code.run',
-    label: 'Run code',
-    aliases: ['execute', 'eval', 'play'],
-    scope: 'frame',
-    reach: 'ui',
-    keys: [{ key: 'Enter', mod: true }],
-    // The script is handed the context this call was made in, which is folded
-    // along the path to the selection — the code entity itself.
-    run: (_args, call) => {
-      const t = target()
-      if (t?.selected?.type === 'code' && t.selected.text)
-        runCode(t.selected.id, t.selected.text, call.context)
-    },
-  },
-  {
-    id: 'code.stop',
-    label: 'Stop code',
-    aliases: ['interrupt', 'halt'],
-    scope: 'frame',
-    reach: 'ui',
-    listed: false,
-    run: () => stopCode(),
   },
 
   // --- Export -------------------------------------------------------------
