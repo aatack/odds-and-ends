@@ -11,6 +11,7 @@
 export { SchemaForm } from './SchemaForm'
 export { SchemaBuilder } from './SchemaBuilder'
 export { JsonEditor } from './JsonEditor'
+export { MenuChip, MenuItem } from './parts'
 export {
   EditorsProvider,
   useEditors,

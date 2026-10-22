@@ -127,6 +127,10 @@ is the long form; the rules that matter day to day:
   offers the ones that suit a field's kind. Every input in either component goes
   through the form — the builder's own options are a form — so add a control
   to the form rather than writing one into the builder.
+- **The editor library** (`components/editors/`) is where custom editors live:
+  `basic.tsx` for ones that need only their value, `tabs.tsx` and the like for
+  ones that read the app. `EDITORS` in its `index.ts` is all of them. It sits
+  beside `components/schema/` and is never imported by it.
 - **`tools/` is the only way the user does anything.** Every command — moving the
   selection, opening a tab, writing a value — is one `ToolSpec` declaring its
   arguments, its scope, and how far it reaches. A tool is that and its `run`:
