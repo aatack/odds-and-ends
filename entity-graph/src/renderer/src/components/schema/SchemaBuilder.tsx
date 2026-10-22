@@ -1,10 +1,8 @@
 import React, { useEffect, useState } from 'react'
-import { Check, ChevronDown, Plus, Trash03 } from '@untitledui/icons'
+import { Check, ChevronDown, ChevronRight, Plus, Trash03 } from '@untitledui/icons'
 import { cn } from '../../helpers/cn'
 import { Button } from '../ui/Button'
 import { Dropdown, DropdownSeparator } from '../ui/Dropdown'
-import { Input } from '../ui/Input'
-import { Select } from '../ui/Select'
 import {
   SCHEMA_TYPES,
   isObject,
@@ -72,17 +70,81 @@ interface Extra {
 const FORMATS = ['date', 'date-time', 'time', 'email', 'uri', 'uuid'] as const
 
 const EXTRAS: Extra[] = [
-  { key: 'description', label: 'Description', kinds: 'all', input: 'text', initial: '' },
-  { key: 'minimum', label: 'Minimum', kinds: ['number', 'integer'], input: 'number', initial: 0 },
-  { key: 'maximum', label: 'Maximum', kinds: ['number', 'integer'], input: 'number', initial: 100 },
-  { key: 'minLength', label: 'Minimum length', kinds: ['string'], input: 'number', initial: 1 },
-  { key: 'maxLength', label: 'Maximum length', kinds: ['string'], input: 'number', initial: 100 },
-  { key: 'pattern', label: 'Pattern', kinds: ['string'], input: 'text', initial: '' },
-  { key: 'format', label: 'Format', kinds: ['string'], input: 'format', initial: 'date' },
-  { key: 'minItems', label: 'Minimum items', kinds: ['array'], input: 'number', initial: 1 },
-  { key: 'maxItems', label: 'Maximum items', kinds: ['array'], input: 'number', initial: 10 },
-  { key: 'uniqueItems', label: 'Unique items', kinds: ['array'], initial: true },
-  { key: 'additionalProperties', label: 'No other fields', kinds: ['object'], initial: false },
+  {
+    key: 'description',
+    label: 'Description',
+    kinds: 'all',
+    input: 'text',
+    initial: '',
+  },
+  {
+    key: 'minimum',
+    label: 'Minimum',
+    kinds: ['number', 'integer'],
+    input: 'number',
+    initial: 0,
+  },
+  {
+    key: 'maximum',
+    label: 'Maximum',
+    kinds: ['number', 'integer'],
+    input: 'number',
+    initial: 100,
+  },
+  {
+    key: 'minLength',
+    label: 'Minimum length',
+    kinds: ['string'],
+    input: 'number',
+    initial: 1,
+  },
+  {
+    key: 'maxLength',
+    label: 'Maximum length',
+    kinds: ['string'],
+    input: 'number',
+    initial: 100,
+  },
+  {
+    key: 'pattern',
+    label: 'Pattern',
+    kinds: ['string'],
+    input: 'text',
+    initial: '',
+  },
+  {
+    key: 'format',
+    label: 'Format',
+    kinds: ['string'],
+    input: 'format',
+    initial: 'date',
+  },
+  {
+    key: 'minItems',
+    label: 'Minimum items',
+    kinds: ['array'],
+    input: 'number',
+    initial: 1,
+  },
+  {
+    key: 'maxItems',
+    label: 'Maximum items',
+    kinds: ['array'],
+    input: 'number',
+    initial: 10,
+  },
+  {
+    key: 'uniqueItems',
+    label: 'Unique items',
+    kinds: ['array'],
+    initial: true,
+  },
+  {
+    key: 'additionalProperties',
+    label: 'No other fields',
+    kinds: ['object'],
+    initial: false,
+  },
 ]
 
 const extrasFor = (kind: Kind): Extra[] =>
@@ -155,12 +217,17 @@ function SchemaNode({
   }
   const shown = extrasFor(kind).filter((e) => e.input && e.key in schema)
   const remove = slot?.onRemove ?? onRemove
+  // Anything holding schemas of its own folds, so a deep schema reads as an
+  // outline. Open to begin with: a fold is something done to it.
+  const nests = kind === 'object' || kind === 'array' || kind === 'union'
+  const [open, setOpen] = useState(true)
 
   return (
     <div className="space-y-1.5">
       <NameBox
         slot={slot}
         label={label}
+        fold={nests ? { open, toggle: () => setOpen((o) => !o) } : undefined}
         menu={
           <KindMenu
             schema={schema}
@@ -171,13 +238,19 @@ function SchemaNode({
             onRemove={remove}
           />
         }
-      />
-      {kind === 'literal' && <LiteralValue schema={schema} onChange={onChange} />}
-      {shown.map((extra) => (
-        <ExtraInput key={extra.key} extra={extra} value={schema[extra.key]} onChange={(v) => set(extra.key, v)} />
-      ))}
-      {kind === 'object' && <Properties schema={schema} onChange={onChange} />}
-      {kind === 'array' && (
+      >
+        {kind === 'literal' && <LiteralValue schema={schema} onChange={onChange} />}
+        {shown.map((extra) => (
+          <ExtraInput
+            key={extra.key}
+            extra={extra}
+            value={schema[extra.key]}
+            onChange={(v) => set(extra.key, v)}
+          />
+        ))}
+      </NameBox>
+      {open && kind === 'object' && <Properties schema={schema} onChange={onChange} />}
+      {open && kind === 'array' && (
         <Nested>
           <SchemaNode
             schema={isObject(schema.items) ? schema.items : {}}
@@ -186,7 +259,7 @@ function SchemaNode({
           />
         </Nested>
       )}
-      {kind === 'union' && <Variants schema={schema} onChange={onChange} />}
+      {open && kind === 'union' && <Variants schema={schema} onChange={onChange} />}
     </div>
   )
 }
@@ -194,16 +267,22 @@ function SchemaNode({
 /**
  * The row's box: a field's name, full width, typed into directly — or, for a
  * schema with no name, what it is for — with the kind menu inside it at the
- * right. One surface, styled as an input, so the menu reads as part of the name.
+ * right, and a fold at the left for a schema that holds others. The extras the
+ * schema carries are lines of the same box, under a hairline each: one surface,
+ * so all of it reads as the one field.
  */
 function NameBox({
   slot,
   label,
   menu,
+  fold,
+  children,
 }: {
   slot?: Slot
   label?: string
   menu: React.ReactNode
+  fold?: { open: boolean; toggle: () => void }
+  children?: React.ReactNode
 }): React.JSX.Element {
   const [text, setText] = useState(slot?.name ?? '')
   useEffect(() => setText(slot?.name ?? ''), [slot?.name])
@@ -219,27 +298,62 @@ function NameBox({
     <div className="min-w-0 flex-1">
       <div
         className={cn(
-          'flex h-8 items-center rounded-md border border-gray-200 bg-white shadow-xs',
+          'rounded-md border border-gray-200 bg-white shadow-xs',
           'focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/40',
         )}
       >
-        {slot ? (
-          <input
-            className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-[13px] text-gray-900 placeholder:text-gray-400 focus:outline-none"
-            value={text}
-            placeholder="Field name"
-            onChange={(e) => {
-              setText(e.target.value)
-              const next = e.target.value.trim()
-              if (next && !slot.taken.includes(next)) slot.onRename(next)
-            }}
-          />
-        ) : (
-          <span className="min-w-0 flex-1 truncate px-2.5 text-[13px] text-gray-500">{label}</span>
-        )}
-        <div className="shrink-0 pr-1">{menu}</div>
+        <div className="flex h-8 items-center">
+          {fold && (
+            <button
+              className="flex h-full shrink-0 items-center pl-1.5 text-gray-400 hover:text-gray-700 focus:outline-none"
+              title={fold.open ? 'Fold' : 'Unfold'}
+              onClick={fold.toggle}
+            >
+              {fold.open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+          )}
+          {slot ? (
+            <input
+              className={BARE}
+              value={text}
+              placeholder="Field name"
+              onChange={(e) => {
+                setText(e.target.value)
+                const next = e.target.value.trim()
+                if (next && !slot.taken.includes(next)) slot.onRename(next)
+              }}
+            />
+          ) : (
+            <span className="min-w-0 flex-1 truncate px-2.5 text-[13px] text-gray-500">
+              {label}
+            </span>
+          )}
+          <div className="shrink-0 pr-1">{menu}</div>
+        </div>
+        {children}
       </div>
       {clash && <p className="pt-1 text-[11px] text-error-600">{clash}</p>}
+    </div>
+  )
+}
+
+/** A text box with no surface of its own, for a line inside a name box. */
+const BARE =
+  'h-full min-w-0 flex-1 bg-transparent px-2.5 text-[13px] text-gray-900 placeholder:text-gray-400 focus:outline-none'
+const BARE_MONO = cn(BARE, 'font-mono text-[12.5px]')
+
+/** One line of a name box under the name: a hairline, a label, and its control. */
+function BoxLine({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <div className="flex h-8 items-center border-t border-gray-100">
+      <span className="w-28 shrink-0 pl-2.5 text-[11px] text-gray-500">{label}</span>
+      {children}
     </div>
   )
 }
@@ -287,7 +401,6 @@ function KindMenu({
   return (
     <Dropdown
       align="right"
-      menuClassName="mt-1 max-h-[60vh] overflow-y-auto"
       trigger={({ toggle }) => (
         <button
           className="flex h-6 items-center gap-0.5 rounded bg-gray-100 px-1.5 text-[12px] text-gray-600 hover:bg-gray-200 focus:outline-none"
@@ -349,7 +462,7 @@ function KindMenu({
   )
 }
 
-/** The box an extra that takes a value is entered in, labelled with what it is. */
+/** An extra that takes a value, as a line of the name box. */
 function ExtraInput({
   extra,
   value,
@@ -360,28 +473,29 @@ function ExtraInput({
   onChange: (value: unknown) => void
 }): React.JSX.Element {
   return (
-    <div className="flex items-center gap-2 pl-2.5">
-      <span className="w-28 shrink-0 text-[11px] text-gray-500">{extra.label}</span>
-      <div className="min-w-0 flex-1">
-        {extra.input === 'format' ? (
-          <Select value={String(value ?? '')} onChange={(e) => onChange(e.target.value)}>
-            {FORMATS.map((f) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
-          </Select>
-        ) : extra.input === 'number' ? (
-          <NumberInput value={value} onChange={onChange} />
-        ) : (
-          <Input
-            mono={extra.key === 'pattern'}
-            value={typeof value === 'string' ? value : ''}
-            onChange={(e) => onChange(e.target.value)}
-          />
-        )}
-      </div>
-    </div>
+    <BoxLine label={extra.label}>
+      {extra.input === 'format' ? (
+        <select
+          className={cn(BARE, 'pr-2')}
+          value={String(value ?? '')}
+          onChange={(e) => onChange(e.target.value)}
+        >
+          {FORMATS.map((f) => (
+            <option key={f} value={f}>
+              {f}
+            </option>
+          ))}
+        </select>
+      ) : extra.input === 'number' ? (
+        <NumberInput value={value} onChange={onChange} />
+      ) : (
+        <input
+          className={extra.key === 'pattern' ? BARE_MONO : BARE}
+          value={typeof value === 'string' ? value : ''}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      )}
+    </BoxLine>
   )
 }
 
@@ -399,8 +513,8 @@ function NumberInput({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value])
   return (
-    <Input
-      mono
+    <input
+      className={BARE_MONO}
       inputMode="decimal"
       value={text}
       onChange={(e) => {
@@ -440,19 +554,16 @@ function LiteralValue({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shown])
   return (
-    <div className="flex items-center gap-2 pl-2.5">
-      <span className="w-28 shrink-0 text-[11px] text-gray-500">Value</span>
-      <div className="min-w-0 flex-1">
-        <Input
-          mono
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value)
-            onChange({ ...schema, const: readLiteral(e.target.value) })
-          }}
-        />
-      </div>
-    </div>
+    <BoxLine label="Value">
+      <input
+        className={BARE_MONO}
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value)
+          onChange({ ...schema, const: readLiteral(e.target.value) })
+        }}
+      />
+    </BoxLine>
   )
 }
 
@@ -528,7 +639,12 @@ function Properties({
         <SchemaNode
           key={i}
           schema={property}
-          onChange={(next) => write(properties.map(([k, p], j) => (j === i ? [k, next] : [k, p])), required)}
+          onChange={(next) =>
+            write(
+              properties.map(([k, p], j) => (j === i ? [k, next] : [k, p])),
+              required,
+            )
+          }
           slot={{
             name: key,
             taken: properties.filter((_, j) => j !== i).map(([k]) => k),
@@ -538,8 +654,13 @@ function Properties({
                 required.map((r) => (r === key ? name : r)),
               ),
             required: required.includes(key),
-            onRequired: (on) => write(properties, on ? [...required, key] : required.filter((r) => r !== key)),
-            onRemove: () => write(properties.filter((_, j) => j !== i), required),
+            onRequired: (on) =>
+              write(properties, on ? [...required, key] : required.filter((r) => r !== key)),
+            onRemove: () =>
+              write(
+                properties.filter((_, j) => j !== i),
+                required,
+              ),
           }}
         />
       ))}
@@ -547,7 +668,9 @@ function Properties({
         variant="tertiary"
         size="sm"
         // New fields are required: optional is the thing worth saying.
-        onClick={() => write([...properties, [fresh(), { type: 'string' }]], [...required, fresh()])}
+        onClick={() =>
+          write([...properties, [fresh(), { type: 'string' }]], [...required, fresh()])
+        }
       >
         <Plus size={13} /> Add field
       </Button>

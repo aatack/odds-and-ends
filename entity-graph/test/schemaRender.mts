@@ -73,6 +73,12 @@ test('puts the kind in the name box, and an extra under it once ticked', () => {
   assert.match(html, />\?</)
 })
 
+test('folds a schema that holds others, and only that', () => {
+  const html = renderToStaticMarkup(h(SchemaBuilder, { value: NESTED, setValue: noop }))
+  // The root, the list and the object in it hold schemas; the string `b` does not.
+  assert.equal((html.match(/title="Fold"/g) ?? []).length, 3)
+})
+
 let failed = 0
 for (const [name, run] of tests) {
   try {
