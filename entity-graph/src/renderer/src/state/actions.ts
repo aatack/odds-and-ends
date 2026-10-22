@@ -1,6 +1,8 @@
+import * as P from './peeks'
+import { sameTarget, transientPeek } from './peeks'
 import * as R from './reducers'
-import { updateLayout } from './store'
-import type { EditState, FrameState, LayoutState, LinkDirection } from './types'
+import { getLayout, updateLayout } from './store'
+import type { EditState, FrameState, LayoutState, LinkDirection, PeekTarget, Rect } from './types'
 
 // Named mutators over the latent state. Two callers:
 //
@@ -94,3 +96,88 @@ export const popToFrame = (tabId: string, frameId: string): void =>
 /** The frame a tool is acting on, resolved from the current focus. */
 export const frameOf = (s: LayoutState, frameId: string | null): FrameState | null =>
   frameId ? (s.frames[frameId] ?? null) : null
+
+// --- Peeks ------------------------------------------------------------------
+
+// Hovering is direct manipulation with a clock in it: a peek opens a moment after
+// the pointer settles on something, so passing over a pill on the way somewhere
+// else opens nothing, and closes a moment after the pointer leaves, so crossing
+// the gap between a pill and its peek doesn't close it. The timers are runtime
+// only; what they decide is a reducer like any other.
+
+const OPEN_AFTER = 350
+const CLOSE_AFTER = 300
+
+/** The peek the pointer is in, or null for the main view. */
+let hovering: string | null = null
+let opening: ReturnType<typeof setTimeout> | null = null
+let closing: ReturnType<typeof setTimeout> | null = null
+
+const holdPeeks = (): void => {
+  if (closing) clearTimeout(closing)
+  closing = null
+}
+
+/**
+ * The pointer settled on something peekable. `origin` is the peek it is drawn
+ * in (null: the main view), which the new one stacks on.
+ */
+export function hoverPeek(target: PeekTarget, anchor: Rect, origin: string | null): void {
+  hovering = origin
+  holdPeeks()
+  if (opening) clearTimeout(opening)
+  opening = null
+  const top = transientPeek(getLayout())
+  if (top && top.parent === origin && sameTarget(top.target, target)) return
+  opening = setTimeout(() => {
+    opening = null
+    updateLayout((s) => P.showPeek(s, target, anchor, origin))
+  }, OPEN_AFTER)
+}
+
+/** The pointer went into a peek's window. */
+export function enterPeek(key: string): void {
+  // A close already scheduled still runs: it keeps this peek and those under it,
+  // and closes whatever was stacked above.
+  hovering = key
+}
+
+/**
+ * The pointer left something peekable (`window` null) or a peek's window. After
+ * a moment, the transient peeks it is no longer in or under close.
+ */
+export function leavePeek(window: string | null): void {
+  if (opening) clearTimeout(opening)
+  opening = null
+  // Leaving a pill leaves the pointer in the same window; leaving a window leaves
+  // it on the main view until it enters another.
+  if (window !== null && hovering === window) hovering = null
+  holdPeeks()
+  closing = setTimeout(() => {
+    closing = null
+    updateLayout((s) => P.keepHovered(s, hovering))
+  }, CLOSE_AFTER)
+}
+
+/** Close one peek (and what is stacked on it), or the top transient one. */
+export function closePeek(key: string | null): void {
+  holdPeeks()
+  updateLayout((s) => P.closePeek(s, key))
+}
+
+/** A peek was moved or resized, which pins it. */
+export const placePeek = (key: string, rect: Rect): void =>
+  updateLayout((s) => P.placePeek(s, key, rect))
+
+export const raisePeek = (key: string): void => updateLayout((s) => P.raisePeek(s, key))
+
+/**
+ * Give the keys to a peek, or back to the main view. Taking them out of a
+ * transient peek the pointer isn't in closes it: nothing is keeping it any more.
+ */
+export function focusPeek(key: string | null): void {
+  updateLayout((s) => {
+    const focused = P.focusPeek(s, key)
+    return key === null && focused !== s ? P.keepHovered(focused, hovering) : focused
+  })
+}

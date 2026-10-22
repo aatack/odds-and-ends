@@ -1,7 +1,7 @@
 import * as A from '../state/actions'
 import { entityRows, type EntityRow } from '../state/derive'
 import { rowsOf } from '../state/query'
-import { focusOf, getLayout } from '../state/store'
+import { focusOf, getLayout, mainGroupId } from '../state/store'
 import { directionOf, last, samePath, type LinkDirection } from '../state/types'
 import { updateUi } from '../state/ui'
 import { base64ToBlob } from '../helpers/base64'
@@ -252,7 +252,8 @@ export const ENTITY_TOOLS: ToolSpec[] = [
     reach: 'ui',
     args: [entityArg()],
     run: ({ entityId }) => {
-      const { groupId } = focusOf(getLayout())
+      // Into the main view's group even from a peek, which belongs to none.
+      const groupId = mainGroupId(getLayout())
       const target = id(entityId)
       if (groupId && target) A.addTab(groupId, target)
     },

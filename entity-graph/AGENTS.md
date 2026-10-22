@@ -287,6 +287,27 @@ chosen — rows, pills and frame roots all ask there — and a type nothing is
 registered for is drawn as a note wearing its type pill. Adding a kind is adding
 an entry, not a branch in the editor.
 
+**Peeks** (`layout/PeekLayer.tsx`, `state/peeks.ts`) are floating windows onto
+whatever a pill or a link refers to, opened by hovering it for a moment and closed
+a moment after the pointer leaves — unless the window has been moved or resized,
+which pins it until its ×. An entity's peek is a tab of its own that belongs to no
+group, so its frame is an ordinary frame: it draws the entity's focus with its
+children below, and pressing in it gives it the keys (`peekFocus`), which points
+the focus chain at its frame — its own selection and stack, the same tools, and
+no group tools, since it has no group. A page's peek is a locked-down `<webview>`
+(no preload, no node, its own partition; see `will-attach-webview` in
+`src/main/index.ts`). Peeks stack: hovering inside one opens another on top, and
+leaving closes everything above where the pointer went. Only pinned peeks survive
+a reload. No key opens or closes one.
+
+**Links are pills.** A link in an entity's text is drawn as `LinkPill` — its
+words behind a globe — and hovering a web page peeks at it; a plain click still
+does nothing and ⌘/Ctrl-click opens it in the browser. A link to `entity:<id>` is
+that entity's pill, exactly as `[@entity:id](label)` is. `peekHandlers` in
+`components/peekHover.ts` is what anything peekable spreads on; `PillWrapper`
+takes `peek` to do so (`EntityPill` always does; a tab doesn't, being what is
+already on screen).
+
 **Entity pills** (`components/EntityPill.tsx`) are how an entity appears anywhere
 it is referenced in passing rather than shown in full — a tab title, a crumb, a
 mention inside another entity's text. Three parts, usable separately:

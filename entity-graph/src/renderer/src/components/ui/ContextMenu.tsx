@@ -48,7 +48,7 @@ export function ContextMenu({
   return createPortal(
     <div
       ref={ref}
-      className="fixed z-50 min-w-44 rounded-lg bg-white py-1.5 shadow-lg"
+      className="fixed z-[70] min-w-44 rounded-lg bg-white py-1.5 shadow-lg"
       style={{ top: y, left: x }}
     >
       {items.map((item) => (

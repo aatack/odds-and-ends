@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react'
 import type { CurrentPensive } from '../../../core/client'
 import { Layout } from '../layout/Layout'
+import { PeekLayer } from '../layout/PeekLayer'
 import { EntityInspector } from '../components/EntityInspector'
 import { ResourceModal } from '../components/Resource'
 import {
@@ -72,6 +73,7 @@ export function SourceView({
         <Layout />
       </div>
 
+      <PeekLayer />
       {ui.resourceId && <ResourceModal id={ui.resourceId} />}
       {ui.inspectEntityId && (
         <EntityInspector

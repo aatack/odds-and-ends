@@ -430,7 +430,19 @@ function createWindow(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
+      // Peeks onto pages on the web. Every guest is locked down below.
+      webviewTag: true,
     },
+  })
+
+  // A peek's page is somebody else's: no preload, no node, its own sandbox, and
+  // only http(s) into the one partition peeks use.
+  win.webContents.on('will-attach-webview', (event, preferences, params) => {
+    delete preferences.preload
+    preferences.nodeIntegration = false
+    preferences.contextIsolation = true
+    preferences.sandbox = true
+    if (!/^https?:/.test(params.src) || params.partition !== 'persist:preview') event.preventDefault()
   })
 
   if (process.env['ELECTRON_RENDERER_URL']) {

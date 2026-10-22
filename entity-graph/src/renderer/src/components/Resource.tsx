@@ -232,7 +232,7 @@ export function ResourceModal({ id }: { id: string }): React.JSX.Element | null 
   return (
     <div
       ref={ref}
-      className="fixed inset-0 z-50 flex touch-none items-center justify-center overflow-hidden bg-gray-950/60 p-6"
+      className="fixed inset-0 z-[70] flex touch-none items-center justify-center overflow-hidden bg-gray-950/60 p-6"
       onClick={() => {
         if (!dragged.current) updateUi({ resourceId: null })
       }}

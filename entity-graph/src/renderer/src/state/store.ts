@@ -1,8 +1,10 @@
 import { atom, persistentAtom } from './atom'
+import { settlePeeks } from './peeks'
 import {
   defaultLayout,
   isLayoutState,
   last,
+  peeksOf,
   type FrameState,
   type GroupState,
   type LayoutState,
@@ -25,6 +27,10 @@ export const layoutAtom = persistentAtom<LayoutState>(
   defaultLayout(),
   isLayoutState,
 )
+
+// Only pinned peeks outlive the window: a transient one was being hovered, and
+// nothing is hovering it now. Handed back untouched when there is nothing to drop.
+layoutAtom.set(settlePeeks)
 
 /** The one call currently being built up, if any. */
 export const pendingAtom = persistentAtom<PendingCall | null>('entity-graph.pending', null)
@@ -71,6 +77,11 @@ export const updateLayout = (fn: (s: LayoutState) => LayoutState): void => layou
  * What the user is acting on: the selected group, its active tab, and that
  * tab's top frame. Derived, never stored — the selected group's *id* is the only
  * part that is latent.
+ *
+ * Unless a peek has the keys: then it is that peek's tab and frame, and no group
+ * at all, since a peek belongs to none — so the group's tools (the next tab, a
+ * frame popped into a new one) have nothing to act on rather than acting on a
+ * group the keys are not in.
  */
 export interface Focus {
   groupId: string | null
@@ -79,7 +90,10 @@ export interface Focus {
 }
 
 export function focusOf(s: LayoutState): Focus {
-  const groupId = (s.selectedGroupId && s.groups[s.selectedGroupId] ? s.selectedGroupId : s.groupOrder[0]) ?? null
+  const peek = s.peekFocus ? peeksOf(s).find((p) => p.key === s.peekFocus) : null
+  const peekTab = peek?.tabId ? s.tabs[peek.tabId] : null
+  if (peekTab) return { groupId: null, tabId: peekTab.id, frameId: last(peekTab.frameIds) ?? null }
+  const groupId = mainGroupId(s)
   const group = groupId ? s.groups[groupId] : null
   const tabId = group?.activeTabId ?? null
   const tab = tabId ? s.tabs[tabId] : null
@@ -88,6 +102,13 @@ export function focusOf(s: LayoutState): Focus {
 }
 
 export const focus = (): Focus => focusOf(getLayout())
+
+/**
+ * The group the main view's keys go to, whether or not a peek has them now —
+ * where something opened from a peek lands.
+ */
+export const mainGroupId = (s: LayoutState): string | null =>
+  (s.selectedGroupId && s.groups[s.selectedGroupId] ? s.selectedGroupId : s.groupOrder[0]) ?? null
 
 export function focusedFrame(s: LayoutState = getLayout()): FrameState | null {
   const { frameId } = focusOf(s)

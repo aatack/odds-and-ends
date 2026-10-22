@@ -41,7 +41,7 @@ export function Popup({
 
   return (
     <div
-      className={cn('fixed inset-0 z-50', !anchor && 'bg-gray-950/10 backdrop-blur-xs')}
+      className={cn('fixed inset-0 z-[70]', !anchor && 'bg-gray-950/10 backdrop-blur-xs')}
       onClick={onClose}
       onContextMenu={(e) => {
         // A right-click on the backdrop closes; stop it reaching the window

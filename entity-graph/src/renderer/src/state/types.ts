@@ -188,6 +188,41 @@ export interface GroupState {
   activeTabId: string | null
 }
 
+/** A box on screen, in window pixels. */
+export interface Rect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** What a peek looks at: an entity, or a page on the web. */
+export type PeekTarget = { kind: 'entity'; id: string } | { kind: 'url'; url: string }
+
+/**
+ * A floating window onto something referred to — opened by hovering a pill or a
+ * link, and gone again when the pointer leaves, unless it has been moved or
+ * resized, which pins it.
+ *
+ * An entity's peek is a tab of its own, belonging to no group: its frames are
+ * ordinary frames, so it has its own selection, folds and stack, and every frame
+ * tool works in it once it has the keys (`LayoutState.peekFocus`).
+ */
+export interface PeekState {
+  key: string
+  target: PeekTarget
+  /** The tab holding an entity peek's frames; null for a page. */
+  tabId: string | null
+  /** Where the hover was. A peek with no `rect` of its own is placed beside it. */
+  anchor: Rect
+  /** Where it was moved to. Set only once it has been moved or resized. */
+  rect: Rect | null
+  /** Moved or resized: it stays until its × is pressed. */
+  pinned: boolean
+  /** The peek this one was opened from, or null for the main view. */
+  parent: string | null
+}
+
 export interface LayoutState {
   /** Id-keyed, with the column order kept separately since a record has none. */
   groups: Record<string, GroupState>
@@ -197,6 +232,13 @@ export interface LayoutState {
   selectedGroupId: string | null
   /** When true only the selected group shows, full-width. One flag for all groups. */
   expanded: boolean
+  /**
+   * Open peeks, bottom first. Read through {@link peeksOf}, since a layout
+   * persisted before peeks existed has none. Only pinned ones survive a reload.
+   */
+  peeks?: PeekState[]
+  /** The peek the keys are in, by key; null or absent for the main view. */
+  peekFocus?: string | null
 }
 
 // --- Constructors ----------------------------------------------------------
@@ -295,6 +337,9 @@ export function isLayoutState(v: unknown): boolean {
 }
 
 // --- Small shared helpers --------------------------------------------------
+
+/** A layout's peeks, bottom first. */
+export const peeksOf = (s: LayoutState): PeekState[] => s.peeks ?? []
 
 /** The last element of an array, or undefined when empty. */
 export function last<T>(xs: readonly T[]): T | undefined {

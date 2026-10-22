@@ -130,7 +130,7 @@ export default function App(): React.JSX.Element | null {
       <Activity open={ui.activityOpen} />
       <CommandPalette />
       {/* One corner stack: transient messages above the pending-call guide. */}
-      <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-72 flex-col gap-2">
+      <div className="pointer-events-none fixed bottom-4 right-4 z-[70] flex w-72 flex-col gap-2">
         <Toaster />
         <CallGuide />
       </div>

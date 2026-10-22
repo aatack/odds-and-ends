@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react'
-import ReactMarkdown, { type Components } from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown'
 import rehypeKatex from 'rehype-katex'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -57,6 +57,16 @@ const COMPONENTS: Components = {
   a: ({ href, children }) => <a href={href}>{children}</a>,
 }
 
+/**
+ * Links that survive the renderer's sanitising. Its own rules, plus `entity:`,
+ * which names an entity in this store rather than anywhere on the web.
+ */
+const urlTransform = (url: string): string =>
+  url.startsWith('entity:') ? url : defaultUrlTransform(url)
+
+/** How a caller draws a link, given where it goes and what it says. */
+export type LinkRenderer = (props: { href: string; children: React.ReactNode }) => React.ReactNode
+
 // `$x$` inline and `$$x$$` on its own line, turned into markup by KaTeX rather
 // than being left to a browser that has no idea what to do with them.
 const REMARK = [remarkGfm, remarkMath]
@@ -70,6 +80,7 @@ export function Markdown({
   style,
   fields,
   highlight,
+  link,
 }: {
   text: string
   className?: string
@@ -90,6 +101,11 @@ export function Markdown({
    * with something to point out can use it too.
    */
   highlight?: string
+  /**
+   * Draws every link, in place of a plain anchor — how an app turns them into
+   * pills. A stable function, for the same reason as `fields`.
+   */
+  link?: LinkRenderer
 }): React.JSX.Element {
   // The parse is the expensive part of a row, and rows re-render whenever the
   // selection moves past them.
@@ -102,10 +118,13 @@ export function Markdown({
       // a field it was about to replace.
       ...(highlight?.trim() ? [markdownHighlightPlugin(highlight)] : []),
     ]
+    const base: Components = link
+      ? { ...COMPONENTS, a: ({ href, children }) => <>{link({ href: href ?? '', children })}</> }
+      : COMPONENTS
     const components: Components = !fields
-      ? COMPONENTS
+      ? base
       : ({
-          ...COMPONENTS,
+          ...base,
           [FIELD_TAG]: (props: FieldElementProps) => {
             const Field = fields[props['data-field-type'] ?? '']
             // Unreachable while the plugin is only told about types in `fields`,
@@ -117,11 +136,16 @@ export function Markdown({
           },
         } as Components)
     return (
-      <ReactMarkdown remarkPlugins={remark} rehypePlugins={REHYPE} components={components}>
+      <ReactMarkdown
+        remarkPlugins={remark}
+        rehypePlugins={REHYPE}
+        components={components}
+        urlTransform={urlTransform}
+      >
         {text}
       </ReactMarkdown>
     )
-  }, [text, fields, highlight])
+  }, [text, fields, highlight, link])
   return (
     <div className={cn('markdown', className)} style={style}>
       {tree}

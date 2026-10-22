@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react'
-import { Markdown } from './ui/Markdown'
+import { Markdown, type LinkRenderer } from './ui/Markdown'
+import { LinkPill } from './LinkPill'
 import { CodeEditor } from './ui/CodeEditor'
 import { TypePill } from './TypePill'
 import { PillBackground, PillContent, PillWrapper } from './EntityPill'
@@ -62,9 +63,33 @@ export function EntityMarkdown({
       style={style}
       fields={fields}
       highlight={highlight}
+      link={renderLink}
     />
   )
 }
+
+/** The words of a link, ignoring any markup nested in them. */
+const wordsOf = (node: React.ReactNode): string =>
+  React.Children.toArray(node)
+    .map((child) =>
+      typeof child === 'string'
+        ? child
+        : React.isValidElement<{ children?: React.ReactNode }>(child)
+          ? wordsOf(child.props.children)
+          : '',
+    )
+    .join('')
+
+/**
+ * Every link in an entity's text is a pill. One to `entity:<id>` is that entity,
+ * exactly as a mention is; anything else is a page, which peeks at the web.
+ */
+const renderLink: LinkRenderer = ({ href, children }) =>
+  href.startsWith('entity:') ? (
+    <FieldEntity id={href.slice('entity:'.length)} fallback={wordsOf(children)} />
+  ) : (
+    <LinkPill href={href}>{children}</LinkPill>
+  )
 
 /**
  * `[@codeEditor:field](hint)` — a code box over one of the entity's values.
@@ -124,7 +149,7 @@ function FieldEntity({ id, fallback }: { id: string; fallback: string }): React.
   const entities = useGetEntities()
   const known = !!entities([id])[id]?.values.text
   return (
-    <PillWrapper id={id} title={fallback} className="mx-0.5 align-middle">
+    <PillWrapper id={id} title={fallback} peek className="mx-0.5 align-middle">
       <PillBackground>
         {known ? <PillContent id={id} /> : <span className="font-serif">{fallback}</span>}
       </PillBackground>

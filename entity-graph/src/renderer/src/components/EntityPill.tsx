@@ -2,6 +2,7 @@ import React, { type ButtonHTMLAttributes } from 'react'
 import { cn } from '../helpers/cn'
 import { useEntityLabel, useEntitySummary } from '../state/hooks'
 import { kindOf } from './kinds'
+import { peekHandlers } from './peekHover'
 
 // An entity referenced in passing: a tab's title, a crumb in the frame trail, a
 // mention inside another entity's text. Small enough to sit in a line of prose,
@@ -33,18 +34,23 @@ export function PillContent({
 
 /**
  * Pill behaviour, from the id alone. The app's global handlers pick the entity off
- * the DOM, so publishing it here is the whole implementation: right-click opens
- * the tool list seeded with this entity, middle-click opens it in a new tab. The
- * full label becomes the tooltip, since the content itself is likely truncated.
+ * the DOM, so publishing it here is most of the implementation: right-click opens
+ * the tool list seeded with this entity, middle-click opens it in a new tab. With
+ * `peek`, hovering it opens a peek onto the entity — for a pill that refers to
+ * something rather than standing for what is already on screen, as a tab does.
+ * The full label becomes the tooltip, since the content itself is likely
+ * truncated — except on a pill that peeks, where the peek says it better.
  */
 export function PillWrapper({
   id,
   title,
+  peek,
   className,
   children,
 }: {
   id: string
   title?: string
+  peek?: boolean
   className?: string
   children: React.ReactNode
 }): React.JSX.Element {
@@ -52,8 +58,9 @@ export function PillWrapper({
   return (
     <span
       data-entity-id={id}
-      title={title ?? label}
+      title={peek ? undefined : (title ?? label)}
       className={cn('inline-flex min-w-0 items-center', className)}
+      {...peekHandlers(peek ? { kind: 'entity', id } : null)}
     >
       {children}
     </span>
@@ -83,14 +90,14 @@ export function PillBackground({
   )
 }
 
-/** All three: the everyday pill. Button attributes reach the background. */
+/** All three: the everyday pill, which peeks. Button attributes reach the background. */
 export function EntityPill({
   id,
   className,
   ...rest
 }: { id: string } & ButtonHTMLAttributes<HTMLButtonElement>): React.JSX.Element {
   return (
-    <PillWrapper id={id} className={className}>
+    <PillWrapper id={id} peek className={className}>
       <PillBackground {...rest}>
         <PillContent id={id} />
       </PillBackground>

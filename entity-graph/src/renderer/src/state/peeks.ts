@@ -1,0 +1,127 @@
+import { v4 as uuid } from 'uuid'
+import {
+  last,
+  newTab,
+  peeksOf,
+  type LayoutState,
+  type PeekState,
+  type PeekTarget,
+  type Rect,
+} from './types'
+
+// Peeks, as pure LayoutState → LayoutState transforms. A peek is opened by
+// hovering, so most of what happens to one is about which of them the pointer is
+// still in or under: a transient peek lasts exactly as long as something keeps it
+// — the pointer, the keys, or a peek stacked on it — and a pinned one until its ×.
+//
+// An entity peek's frames live in `tabs` and `frames` like anyone's, under a tab
+// that belongs to no group, so closing a peek has to take them with it.
+
+export const sameTarget = (a: PeekTarget, b: PeekTarget): boolean =>
+  a.kind === b.kind && (a.kind === 'entity' ? a.id === (b as typeof a).id : a.url === (b as typeof a).url)
+
+/** The newest peek that isn't pinned — the one a hover would replace. */
+export const transientPeek = (s: LayoutState): PeekState | null =>
+  [...peeksOf(s)].reverse().find((p) => !p.pinned) ?? null
+
+/** A peek and every peek it was opened from, by key. */
+export function peekChain(s: LayoutState, key: string | null | undefined): Set<string> {
+  const chain = new Set<string>()
+  const peeks = peeksOf(s)
+  let current = key ?? null
+  while (current && !chain.has(current)) {
+    chain.add(current)
+    current = peeks.find((p) => p.key === current)?.parent ?? null
+  }
+  return chain
+}
+
+/** Keep only the peeks `keep` says, dropping the tabs and frames of the rest. */
+function keepPeeks(s: LayoutState, keep: (peek: PeekState) => boolean): LayoutState {
+  const peeks = peeksOf(s)
+  const gone = peeks.filter((p) => !keep(p))
+  if (!gone.length) return s
+  const tabs = { ...s.tabs }
+  const frames = { ...s.frames }
+  for (const peek of gone) {
+    const tab = peek.tabId ? tabs[peek.tabId] : null
+    if (!tab) continue
+    for (const id of [...tab.frameIds, ...tab.history]) delete frames[id]
+    delete tabs[tab.id]
+  }
+  const kept = peeks.filter(keep)
+  const peekFocus = kept.some((p) => p.key === s.peekFocus) ? s.peekFocus : null
+  return { ...s, tabs, frames, peeks: kept, peekFocus }
+}
+
+/**
+ * Open a transient peek, stacked on the one it came from. Every other transient
+ * peek goes, unless it is under this one, or under the peek holding the keys.
+ */
+export function showPeek(
+  s: LayoutState,
+  target: PeekTarget,
+  anchor: Rect,
+  parent: string | null,
+): LayoutState {
+  const keep = peekChain(s, parent)
+  for (const key of peekChain(s, s.peekFocus)) keep.add(key)
+  const pruned = keepPeeks(s, (p) => p.pinned || keep.has(p.key))
+  const key = uuid()
+  if (target.kind === 'url') {
+    const peek: PeekState = { key, target, tabId: null, anchor, rect: null, pinned: false, parent }
+    return { ...pruned, peeks: [...peeksOf(pruned), peek] }
+  }
+  const { tab, frame } = newTab(target.id)
+  const peek: PeekState = { key, target, tabId: tab.id, anchor, rect: null, pinned: false, parent }
+  return {
+    ...pruned,
+    tabs: { ...pruned.tabs, [tab.id]: tab },
+    frames: { ...pruned.frames, [frame.id]: frame },
+    peeks: [...peeksOf(pruned), peek],
+  }
+}
+
+/**
+ * Close the transient peeks the pointer is no longer in or under (`hovering` is
+ * the peek it is in, or null for the main view). One holding the keys stays
+ * until they leave it.
+ */
+export function keepHovered(s: LayoutState, hovering: string | null): LayoutState {
+  const keep = peekChain(s, hovering)
+  for (const key of peekChain(s, s.peekFocus)) keep.add(key)
+  return keepPeeks(s, (p) => p.pinned || keep.has(p.key))
+}
+
+/** Close one peek, and the transient ones stacked on it. Null closes the top transient one. */
+export function closePeek(s: LayoutState, key: string | null): LayoutState {
+  const target = key ?? transientPeek(s)?.key
+  if (!target) return s
+  return keepPeeks(s, (p) => p.key !== target && !(!p.pinned && peekChain(s, p.key).has(target)))
+}
+
+/** Moving or resizing pins a peek and brings it to the front. */
+export function placePeek(s: LayoutState, key: string, rect: Rect): LayoutState {
+  const peek = peeksOf(s).find((p) => p.key === key)
+  if (!peek) return s
+  return { ...s, peeks: [...peeksOf(s).filter((p) => p !== peek), { ...peek, rect, pinned: true }] }
+}
+
+export function raisePeek(s: LayoutState, key: string): LayoutState {
+  const peeks = peeksOf(s)
+  const peek = peeks.find((p) => p.key === key)
+  if (!peek || last(peeks) === peek) return s
+  return { ...s, peeks: [...peeks.filter((p) => p !== peek), peek] }
+}
+
+/** Give the keys to a peek, or back to the main view (null). */
+export function focusPeek(s: LayoutState, key: string | null): LayoutState {
+  const next = key && peeksOf(s).some((p) => p.key === key) ? key : null
+  return (s.peekFocus ?? null) === next ? s : { ...s, peekFocus: next }
+}
+
+/** What survives a reload: the pinned peeks, with the keys back in the main view. */
+export const settlePeeks = (s: LayoutState): LayoutState => {
+  const settled = keepPeeks(s, (p) => p.pinned)
+  return settled.peekFocus ? { ...settled, peekFocus: null } : settled
+}
