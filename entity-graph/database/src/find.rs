@@ -441,6 +441,12 @@ pub mod knobs {
     pub fn contains_fn() -> bool {
         NO_CONTAINS_FN.load(Ordering::Relaxed) == 0
     }
+    /// Sparse plans: 0: fetch twice the chunk and keep the rest for the
+    /// next chunk of the same call (default); 1: fetch one chunk.
+    pub static NO_OVERFETCH: AtomicU8 = AtomicU8::new(0);
+    pub fn overfetch() -> bool {
+        NO_OVERFETCH.load(Ordering::Relaxed) == 0
+    }
     pub fn intersect() -> bool {
         NO_INTERSECT.load(Ordering::Relaxed) == 0
     }
@@ -719,10 +725,35 @@ impl Store {
         };
         let mut rows = Vec::new();
         let mut scanned = 0usize;
+        // Sparse plans sort every candidate in SQL on each query, so a
+        // second query for the same page costs a whole scan again. Fetch
+        // twice the chunk and keep the rest for the next chunk of this call.
+        let overfetch = knobs::overfetch() && !probe && !matches!(plan, Plan::Everything);
+        let mut buf: std::collections::VecDeque<(i64, String)> = Default::default();
+        let mut fetch_after = None::<After>;
+        let mut exhausted = false;
         loop {
             let want = (options.limit - rows.len()).clamp(64, 2048);
             let chunk = want.min(options.scan_limit.saturating_sub(scanned).max(1));
-            let cands = self.candidates(&view, &plan, &options.order, probe, &after, chunk)?;
+            let cands = if overfetch {
+                if buf.len() < chunk && !exhausted {
+                    let fetch = (chunk * 2).min(4096);
+                    let from = fetch_after.as_ref().unwrap_or(&after);
+                    let got = self.candidates(&view, &plan, &options.order, probe, from, fetch)?;
+                    exhausted = got.len() < fetch;
+                    if let Some((e, id)) = got.last() {
+                        fetch_after = Some(match options.order {
+                            FindOrder::EntityId => After::Id(id.clone()),
+                            _ => After::Eid(*e),
+                        });
+                    }
+                    buf.extend(got);
+                }
+                let n = chunk.min(buf.len());
+                buf.drain(..n).collect::<Vec<_>>()
+            } else {
+                self.candidates(&view, &plan, &options.order, probe, &after, chunk)?
+            };
             if cands.is_empty() {
                 return Ok(Find {
                     rows,
