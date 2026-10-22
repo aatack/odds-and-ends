@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, ChevronRight, Loading02, Square } from '@untitledui/icons'
-import { TextEditor } from '../components/ui/TextEditor'
-import { kindOf } from '../components/kinds'
-import { TEXT, sectionStyle } from '../components/kinds/text'
+import { TypeCard } from '../components/types'
+import { TextEdit } from '../components/types/text'
 import { cn } from '../helpers/cn'
 import type { EntityRow, Row } from '../state/derive'
 
@@ -321,21 +320,6 @@ const RowView = React.memo(function RowView({
     return () => ro.disconnect()
   }, [measureKey, onMeasure])
 
-  // Enter commits, and is handled here rather than left to the key router since
-  // the textarea owns bare keys while it has focus.
-  //
-  // Escape is *not*, though it used to be. The router lets Escape through even in
-  // a text field, so cancelling here as well meant it was handled twice: this
-  // dropped the edit, and then `edit.cancel` found nothing left to cancel and the
-  // press fell through to the next Escape tool in the frame — which cleared the
-  // find text. One listener, at the top, as everywhere else.
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      onCommit()
-    }
-  }
-
   if (row.kind === 'input') {
     return (
       <div ref={ref} className="flex">
@@ -347,33 +331,19 @@ const RowView = React.memo(function RowView({
             <Mark open={row.open} />
           </span>
           <div className="flex-1 min-w-0">
-            <TextEditor
-              autoFocus
-              eager
+            <TextEdit
               value={row.draft}
-              setValue={onDraft}
-              onBlur={onCommit}
+              onDraft={onDraft}
+              onCommit={onCommit}
+              section={row.section}
+              depth={row.depth}
               placeholder={row.section ? 'New section…' : 'New entity…'}
-              onKeyDown={onKeyDown}
-              className={cn(
-                TEXT,
-                'text-gray-900',
-                row.section && 'font-semibold',
-              )}
-              style={row.section ? sectionStyle(row.depth) : undefined}
             />
           </div>
         </div>
       </div>
     )
   }
-
-  const kind = kindOf(row.type)
-  // The root of a frame is the entity with a page to itself: its focus, where the
-  // kind has one, and its card where it doesn't. Every row below it is a card.
-  const Body = (row.path.length === 1 && kind.Focus) || kind.Card
-  const cardProps = { row, highlight }
-  const heading = row.section ? sectionStyle(row.depth) : undefined
 
   const foldable = row.hasChildren
 
@@ -415,20 +385,8 @@ const RowView = React.memo(function RowView({
           )}
         </span>
         <div className="flex-1 min-w-0">
-          {row.editing ? (
-            <TextEditor
-              autoFocus
-              eager
-              value={row.draft ?? ''}
-              setValue={onDraft}
-              onBlur={onCommit}
-              onKeyDown={onKeyDown}
-              className={cn(TEXT, 'text-gray-900', row.section && 'font-semibold')}
-              style={heading}
-            />
-          ) : (
-            <Body {...cardProps} />
-          )}
+          {/* Every row is its type's card, which is also what it is edited with. */}
+          <TypeCard row={row} highlight={highlight} onDraft={onDraft} onCommit={onCommit} />
         </div>
       </div>
     </div>

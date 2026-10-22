@@ -1,10 +1,11 @@
 import React from 'react'
-import { File02 } from '@untitledui/icons'
+import { File02, Globe01 } from '@untitledui/icons'
 import { cn } from '../../helpers/cn'
-import { useEntityLabel, useLoadedFileName } from '../../state/hooks'
+import { useEntityLabel, useGetEntities, useLoadedFileName } from '../../state/hooks'
+import { str } from '../../state/derive'
 import { PILL_MAX_WIDTH, type PillProps } from './types'
 
-// Every kind's pill: the entity as small as it goes, inside a line of prose or
+// Every type's pill: the entity as small as it goes, inside a line of prose or
 // beside other things. A name and, where the kind has one, a mark in front of it
 // saying what sort of thing the name is — nothing a pill could be asked to fit.
 
@@ -48,4 +49,12 @@ export function FilePill({ id, className, bounded }: PillProps): React.JSX.Eleme
   const label = useEntityLabel(id)
   const name = useLoadedFileName(id)
   return <Marked icon={File02} label={name ?? label} className={className} bounded={bounded} />
+}
+
+/** A page: what it is called if the entity says, else where it is. */
+export function UrlPill({ id, className, bounded }: PillProps): React.JSX.Element {
+  const values = useGetEntities()([id])[id].values
+  const url = str(values.url)
+  const label = str(values.text) ?? (url ? url.replace(/^https?:\/\//i, '') : id)
+  return <Marked icon={Globe01} label={label} className={className} bounded={bounded} />
 }

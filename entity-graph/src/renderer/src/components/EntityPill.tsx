@@ -1,7 +1,7 @@
 import React, { type ButtonHTMLAttributes } from 'react'
 import { cn } from '../helpers/cn'
 import { useEntityLabel, useEntitySummary } from '../state/hooks'
-import { kindOf } from './kinds'
+import { viewsFor } from './types'
 import { peekHandlers } from './peekHover'
 
 // An entity referenced in passing: a tab's title, a crumb in the frame trail, a
@@ -11,8 +11,8 @@ import { peekHandlers } from './peekHover'
 //
 // Three parts, so each can be had without the others:
 //
-//   PillContent     what the entity looks like at this size, which is its kind's
-//                   pill (`./kinds`)
+//   PillContent     what the entity looks like at this size, which is its type's
+//                   pill (`./types`)
 //   PillWrapper     the entity gestures, around any child at all
 //   PillBackground  a surface, for a pill that has to be told apart from the text
 //                   around it
@@ -36,7 +36,7 @@ export function PillContent({
   /** Capped at a pill's maximum width; see `PillProps`. */
   bounded?: boolean
 }): React.JSX.Element {
-  const { Pill } = kindOf(useEntitySummary(id).type)
+  const { Pill } = viewsFor(useEntitySummary(id).type)
   return <Pill id={id} className={className} bounded={bounded} />
 }
 
