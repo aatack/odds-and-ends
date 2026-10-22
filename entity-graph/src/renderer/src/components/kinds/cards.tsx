@@ -1,7 +1,6 @@
 import React from 'react'
 import { Play, Stop } from '@untitledui/icons'
 import { CodeBlock } from '../ui/CodeBlock'
-import { DiagramView } from '../Diagram'
 import { ResourceView } from '../Resource'
 import { fieldsOf, schemaOf } from '../../../../core/schema'
 import { useGetEntities } from '../../state/hooks'
@@ -62,23 +61,6 @@ export function FileFocus({ row, highlight }: CardProps): React.JSX.Element {
     <>
       <ResourceView id={row.id} mimeType={row.mimeType} alt={row.text} size="focus" />
       <RowText row={row} highlight={highlight} muted />
-    </>
-  )
-}
-
-// --- Diagram ----------------------------------------------------------------
-
-/**
- * The canvas, and the note itself under it. A diagram with nothing written under
- * it says nothing rather than "Empty": the picture is the row. Folded, the canvas
- * is what is put away, which is how a page of diagrams is read as an outline
- * rather than as a wall of pictures.
- */
-export function DiagramCard({ row, highlight }: CardProps): React.JSX.Element {
-  return (
-    <>
-      {!row.collapsed && <DiagramView entityId={row.id} path={row.path} highlight={highlight} />}
-      <RowText row={row} highlight={highlight} />
     </>
   )
 }

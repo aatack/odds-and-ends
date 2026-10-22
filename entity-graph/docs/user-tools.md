@@ -215,7 +215,7 @@ this file rather than a retelling, so none of them goes stale on its own:
   two calls an agent reaches for when it has been asked to build something, and it
   should not have to have retained the instructions to be told where the note goes.
 - **This page, as a resource.** `docs://tools` on the MCP endpoint serves this file
-  from disk, alongside `docs://types` and `docs://diagrams`.
+  from disk, alongside `docs://types`.
   Nothing truncates a resource, so an agent that wants the whole story can fetch it.
 
 **New tool of your own** stamps `type: tool` on the stub it writes, so a definition

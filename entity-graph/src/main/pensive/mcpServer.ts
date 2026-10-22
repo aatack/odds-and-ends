@@ -9,7 +9,7 @@ import {
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
-import { DIAGRAM_ID, TOOL_ID, TYPE_ID } from '../../core/builtins'
+import { TOOL_ID, TYPE_ID } from '../../core/builtins'
 import { outlineMarkdown } from '../../core/markdown'
 import type { QueryPage } from '../../core/query'
 import { rowsOfPage } from '../../core/tree'
@@ -203,11 +203,10 @@ export const MCP_TOOLS: McpTool[] = [
       '`inboundLinks` — every entity in the store that links to this one, which is how ' +
       'to find where else a note is referenced. An id nothing has been written to comes ' +
       'back empty rather than missing.\n\n' +
-      'Three ids answer even in a store nobody has written to, because the store ' +
-      `supplies them: \`${TYPE_ID}\`, whose schema says what a type holds, ` +
+      'Two ids answer even in a store nobody has written to, because the store ' +
+      `supplies them: \`${TYPE_ID}\`, whose schema says what a type holds, and ` +
       `\`${TOOL_ID}\`, whose schema says what a tool holds — every value a definition can ` +
-      `carry and what each one does — and \`${DIAGRAM_ID}\`, whose schema says how a ` +
-      'note holds a drawing. **Asked to write a tool for the user, read ' +
+      'carry and what each one does. **Asked to write a tool for the user, read ' +
       `\`${TOOL_ID}\` first and create the note under \`${TOOLS_ID}\`;** the \`docs://tools\` ` +
       'resource is the same thing at length.',
     needs: 'readEntities',
@@ -443,16 +442,6 @@ const DOCS: Doc[] = [
       'that are read by name, and why nothing is inherited. The ' +
       `long version of \`get_details\` on \`${TYPE_ID}\`.`,
     path: 'docs/types.md',
-  },
-  {
-    uri: 'docs://diagrams',
-    name: 'Diagrams: a note that holds a drawing',
-    description:
-      `What a note saying \`type: ${DIAGRAM_ID}\` holds — one shape per value, under a key ` +
-      'beginning `diagram/` — with the fields of a rectangle, a text box and an arrow, ' +
-      'how an arrow names either another shape or a bare point, and what the canvas ' +
-      `over it does. The long version of \`get_details\` on \`${DIAGRAM_ID}\`.`,
-    path: 'docs/diagrams.md',
   },
   {
     uri: 'docs://sources',

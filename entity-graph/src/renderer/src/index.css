@@ -369,12 +369,12 @@ html.dark .markdown mark {
 }
 
 /*
- * The diagram canvas (components/Diagram.tsx). React Flow ships its own look; what
- * it actually owns once our nodes and edges are drawn by us is a handful of
- * surfaces — the dotted field, the zoom controls, the connection dots, the resize
- * handles — and each of them is re-pointed here at the same tokens as everything
- * else, so a diagram is light or dark with the rest of the app and nothing about it
- * is a second palette.
+ * The sources page's canvas (views/Sources.tsx). React Flow ships its own look;
+ * what it actually owns once our nodes and edges are drawn by us is a handful of
+ * surfaces — the dotted field, the zoom controls, the connection dots — and each
+ * of them is re-pointed here at the same tokens as everything else, so the canvas
+ * is light or dark with the rest of the app and nothing about it is a second
+ * palette.
  */
 .react-flow {
   /* No pane colour of its own: the canvas takes the tone of the surface it is on. */
@@ -413,8 +413,7 @@ html.dark .markdown mark {
 }
 
 /* The dots a connection is dragged from: out of the way until the pointer is on
- * the shape they belong to. A diagram is a picture, not a wiring panel, and four
- * dots on every rectangle read as part of the drawing. They stay grabbable while
+ * the node they belong to. They stay grabbable while
  * invisible, so reaching for one works the moment the shape is hovered. */
 .react-flow__handle {
   width: 8px;

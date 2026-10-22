@@ -48,9 +48,4 @@ export interface Kind {
    * can't flow around a float, so the pill sits beside the mark instead.
    */
   prose: boolean
-  /**
-   * Whether it folds when it has no children: what folding it puts away is part
-   * of the card itself, as a diagram's canvas is.
-   */
-  foldsItself?: boolean
 }

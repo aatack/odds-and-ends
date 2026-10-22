@@ -6,8 +6,7 @@ import type { ToolSpec } from './types'
 // typed into, a switch, a line dragged between two nodes — but deleting has to
 // be a key, and there is one key listener in this app, so it is a tool.
 //
-// It sits at the front of the registry for the same reason the diagram's
-// selection tools do: Backspace already means "take this row out of its parent",
+// It sits at the front of the registry because Backspace already means "take this row out of its parent",
 // and the router hands a press to the first tool that binds the key and says it
 // applies.
 

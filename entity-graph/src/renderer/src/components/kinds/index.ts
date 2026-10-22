@@ -1,8 +1,7 @@
-import { DIAGRAM_ID, TOOL_ID, TYPE_ID } from '../../../../core/builtins'
+import { TOOL_ID, TYPE_ID } from '../../../../core/builtins'
 import {
   CodeCard,
   CodeMark,
-  DiagramCard,
   FileCard,
   FileFocus,
   NoteCard,
@@ -11,13 +10,13 @@ import {
   TypeCard,
   TypeFocus,
 } from './cards'
-import { CodePill, DiagramPill, FilePill, NotePill, ToolPill, TypeKindPill } from './pills'
+import { CodePill, FilePill, NotePill, ToolPill, TypeKindPill } from './pills'
 import type { Kind } from './types'
 
 export type { CardProps, Kind, PillProps } from './types'
 
 // The kinds the app knows how to draw, by `type` value: the types the store
-// supplies (`type`, `tool`, `diagram`) and the two the app itself gives a body
+// supplies (`type`, `tool`) and the two the app itself gives a body
 // to (`code`, `file`). Anything else — a type the user wrote — is drawn as a
 // note, wearing its type as a pill.
 //
@@ -30,7 +29,6 @@ const NOTE: Kind = { Pill: NotePill, Card: NoteCard, prose: true }
 const KINDS: Record<string, Kind> = {
   code: { Pill: CodePill, Card: CodeCard, Mark: CodeMark, prose: false },
   file: { Pill: FilePill, Card: FileCard, Focus: FileFocus, prose: false },
-  [DIAGRAM_ID]: { Pill: DiagramPill, Card: DiagramCard, prose: false, foldsItself: true },
   [TYPE_ID]: { Pill: TypeKindPill, Card: TypeCard, Focus: TypeFocus, prose: true },
   [TOOL_ID]: { Pill: ToolPill, Card: ToolCard, Focus: ToolFocus, prose: true },
 }

@@ -427,10 +427,7 @@ const RowView = React.memo(function RowView({
   // those keep the pill beside the mark, where it lines up with the bullet.
   const prose = !row.editing && kind.prose
 
-  // A kind whose card has something to put away folds whether or not it has
-  // children, so it wears a chevron and answers to it like any other row that
-  // has something below the line.
-  const foldable = row.hasChildren || !!kind.foldsItself
+  const foldable = row.hasChildren
 
   return (
     <div
