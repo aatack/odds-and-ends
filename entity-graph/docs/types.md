@@ -44,9 +44,16 @@ Properties are read in the order written. A schema describes; it does not
 enforce. A value that does not fit is still written — the form marks its line and
 says why (`problemOf` in `components/schema/schema.ts`).
 
-One extension keyword: `"x-multiline": true` on a string draws it as a growing
-text box rather than one line. JSON Schema itself has no word for how a value is
-entered; to everything else it is an ordinary string.
+Two extension keywords say how a string is entered, which JSON Schema has no
+word for; to everything else it is an ordinary string:
+
+- `"x-multiline": true` draws it as a growing text box rather than one line.
+- `"x-monospace": true` sets it in monospace, for code.
+
+A field whose value is itself a schema says so in the standard way, with a
+`$ref` to the meta-schema: `{ "$ref": "https://json-schema.org/draft/2020-12/schema" }`.
+The form edits it with the schema builder. The `type` type's own `schema` field
+is one.
 
 ### `onLoad`
 

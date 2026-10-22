@@ -27,7 +27,8 @@ const EXAMPLE_SCHEMA: JsonSchema = {
         required: ['name'],
       },
     },
-    notes: {},
+    snippet: { type: 'string', 'x-multiline': true, 'x-monospace': true },
+    shape: { $ref: 'https://json-schema.org/draft/2020-12/schema', description: 'A schema of its own' },
   },
   required: ['title'],
 }

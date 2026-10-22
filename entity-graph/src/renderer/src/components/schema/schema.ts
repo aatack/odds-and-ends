@@ -11,6 +11,19 @@ export type JsonSchema = Record<string, unknown>
  */
 export const MULTILINE_KEYWORD = 'x-multiline'
 
+/** A string meant for code: the form sets it in monospace. An extension keyword. */
+export const MONOSPACE_KEYWORD = 'x-monospace'
+
+/**
+ * The JSON Schema meta-schema. A schema that refers to it (`$ref`) describes a
+ * value that is itself a schema — which the form edits with the schema builder.
+ */
+export const META_SCHEMA = 'https://json-schema.org/draft/2020-12/schema'
+
+/** Whether a schema says its value is a schema: a `$ref` to any draft's meta-schema. */
+export const isSchemaRef = (schema: JsonSchema | undefined): boolean =>
+  typeof schema?.$ref === 'string' && /^https?:\/\/json-schema\.org\/.*schema#?$/.test(schema.$ref)
+
 /** The kinds of value the form draws a control for, and the builder offers. */
 export const SCHEMA_TYPES = ['string', 'number', 'integer', 'boolean', 'null', 'object', 'array'] as const
 export type SchemaType = (typeof SCHEMA_TYPES)[number]
@@ -50,6 +63,7 @@ export const requiredOf = (schema: JsonSchema): string[] =>
 export function defaultFor(schema: JsonSchema): unknown {
   if ('default' in schema) return schema.default
   if ('const' in schema) return schema.const
+  if (isSchemaRef(schema)) return { type: 'string' }
   const variants = variantsOf(schema)
   if (variants) return variants.length ? defaultFor(variants[0]) : null
   switch (typeOf(schema)) {
@@ -101,6 +115,7 @@ const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.str
  */
 export function matches(schema: JsonSchema, value: unknown): boolean {
   if ('const' in schema) return same(schema.const, value)
+  if (isSchemaRef(schema)) return isObject(value) || typeof value === 'boolean'
   const variants = variantsOf(schema)
   if (variants) return variants.some((v) => matches(v, value))
   switch (typeOf(schema)) {
@@ -144,6 +159,7 @@ const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' 
 export function problemOf(schema: JsonSchema, value: unknown, required = false): string | null {
   if (value === undefined) return required ? 'Required' : null
   if ('const' in schema) return same(schema.const, value) ? null : `Must be ${JSON.stringify(schema.const)}`
+  if (isSchemaRef(schema)) return matches(schema, value) ? null : 'Not a schema'
   const variants = variantsOf(schema)
   if (variants) return variants.some((v) => matches(v, value)) ? null : 'Fits none of the options'
 

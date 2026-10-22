@@ -4,10 +4,13 @@ import { cn } from '../../helpers/cn'
 import { Switch } from '../ui/Switch'
 import { TextEditor } from '../ui/TextEditor'
 import { JsonEditor } from './JsonEditor'
+import { SchemaBuilder } from './SchemaBuilder'
 import {
   defaultFor,
   isObject,
+  MONOSPACE_KEYWORD,
   MULTILINE_KEYWORD,
+  isSchemaRef,
   matches,
   problemOf,
   propertiesOf,
@@ -242,6 +245,19 @@ function Entry({
 
   if ('const' in schema) return line(<span className={MUTED}>{JSON.stringify(schema.const)}</span>)
 
+  // A value that is itself a schema: written with the schema builder, on the
+  // lines below its own, one step in.
+  if (isSchemaRef(schema)) {
+    return (
+      <>
+        {line(<span className={MUTED}>schema</span>)}
+        <div className="py-2 pr-2" style={{ paddingLeft: 10 + (depth + 1) * INDENT }}>
+          <SchemaBuilder value={value} setValue={onChange} />
+        </div>
+      </>
+    )
+  }
+
   const variants = variantsOf(schema)
   if (variants) {
     // Every option a literal: a choice, drawn as one.
@@ -263,7 +279,10 @@ function Entry({
               eager
               value={typeof value === 'string' ? value : ''}
               setValue={onChange}
-              className="text-[13px] leading-5 text-gray-900"
+              className={cn(
+                'leading-5 text-gray-900',
+                schema[MONOSPACE_KEYWORD] === true ? 'font-mono text-[12.5px]' : 'text-[13px]',
+              )}
             />
           </div>,
           remove,
@@ -272,7 +291,7 @@ function Entry({
       }
       return line(
         <input
-          className={BARE}
+          className={schema[MONOSPACE_KEYWORD] === true ? BARE_MONO : BARE}
           value={typeof value === 'string' ? value : ''}
           placeholder={typeof schema.default === 'string' ? schema.default : undefined}
           onChange={(e) => onChange(e.target.value)}
@@ -368,7 +387,9 @@ function List({
 function variantLabel(variant: JsonSchema, i: number): string {
   if (typeof variant.title === 'string') return variant.title
   if ('const' in variant) return JSON.stringify(variant.const)
-  return typeOf(variant) ?? `Option ${i + 1}`
+  if (isSchemaRef(variant)) return 'Schema'
+  const type = typeOf(variant)
+  return type ? type.charAt(0).toUpperCase() + type.slice(1) : `Option ${i + 1}`
 }
 
 /**
@@ -441,7 +462,7 @@ function Inline({
     case 'string':
       return (
         <input
-          className={BARE}
+          className={schema[MONOSPACE_KEYWORD] === true ? BARE_MONO : BARE}
           value={typeof value === 'string' ? value : ''}
           onChange={(e) => onChange(e.target.value)}
         />

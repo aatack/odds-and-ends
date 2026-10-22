@@ -40,12 +40,12 @@ test('draws a union option by option, and a literal with its value', () => {
   )
   assert.match(html, /Option 1/)
   assert.match(html, /value="main"/)
-  assert.match(html, />integer</)
+  assert.match(html, />Integer</)
 })
 
 test('reads an enum as a union of literals', () => {
   const html = renderToStaticMarkup(h(SchemaBuilder, { value: { enum: ['a', 'b'] }, setValue: noop }))
-  assert.match(html, />union</)
+  assert.match(html, />Union</)
   assert.match(html, /value="b"/)
 })
 
@@ -60,7 +60,7 @@ test('picks the union option a value fits', () => {
   const html = renderToStaticMarkup(
     h(SchemaForm, { schema: { anyOf: [{ type: 'string' }, { type: 'integer' }] }, value: 4, setValue: noop }),
   )
-  assert.match(html, /<option value="1" selected="">integer<\/option>/)
+  assert.match(html, /<option value="1" selected="">Integer<\/option>/)
   assert.match(html, /value="4"/)
 })
 
@@ -72,7 +72,7 @@ test('puts the kind in the name box, and an extra under it once ticked', () => {
     }),
   )
   assert.match(html, /value="n"/)
-  assert.match(html, />number</)
+  assert.match(html, />Number</)
   assert.match(html, /Minimum/)
   assert.match(html, /value="2"/)
   assert.match(html, /value="How many"/)
@@ -126,6 +126,32 @@ test('marks a line whose value breaks its schema, and draws a multi-line string 
   )
   assert.match(html, /At least 1/)
   assert.match(html, /<textarea[^>]*>Boil\.<\/textarea>/)
+})
+
+test('draws a schema-valued field with the builder, and code in monospace', () => {
+  const html = renderToStaticMarkup(
+    h(SchemaForm, {
+      schema: {
+        type: 'object',
+        properties: {
+          shape: { $ref: 'https://json-schema.org/draft/2020-12/schema' },
+          code: { type: 'string', 'x-monospace': true },
+        },
+      },
+      value: { shape: { type: 'object', properties: { inner: { type: 'boolean' } } }, code: 'x = 1' },
+      setValue: noop,
+    }),
+  )
+  // The builder's own name box for the inner field, and its kind.
+  assert.match(html, /value="inner"/)
+  assert.match(html, />Boolean</)
+  assert.match(html, /font-mono[^"]*" value="x = 1"/)
+})
+
+test('offers no Any, and asks for a type where a schema says nothing', () => {
+  const html = renderToStaticMarkup(h(SchemaBuilder, { value: {}, setValue: noop }))
+  assert.match(html, />Choose type</)
+  assert.doesNotMatch(html, />any</i)
 })
 
 let failed = 0

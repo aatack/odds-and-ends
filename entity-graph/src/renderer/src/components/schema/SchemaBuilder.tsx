@@ -4,8 +4,11 @@ import { cn } from '../../helpers/cn'
 import { Button } from '../ui/Button'
 import { Dropdown, DropdownSeparator } from '../ui/Dropdown'
 import {
+  META_SCHEMA,
+  MONOSPACE_KEYWORD,
   MULTILINE_KEYWORD,
   SCHEMA_TYPES,
+  isSchemaRef,
   isObject,
   propertiesOf,
   requiredOf,
@@ -25,7 +28,8 @@ import {
 //   literal      exactly one value (`const`)
 //   union        any of several rows (`anyOf`) — a union of literals is a set
 //                of choices
-//   any          no constraint at all
+//   schema       a value that is itself a schema (a `$ref` to the meta-schema),
+//                which the form edits with this builder
 //
 // Beneath the kinds the same menu ticks the extras a kind can carry —
 // optional, a description, bounds, a format — and, last, removes the row. Each
@@ -44,14 +48,31 @@ export function SchemaBuilder({
   return <SchemaNode schema={isObject(value) ? value : {}} onChange={setValue} label="Schema" />
 }
 
-const KINDS = [...SCHEMA_TYPES, 'literal', 'union', 'any'] as const
-type Kind = (typeof KINDS)[number]
+/** The kinds the menu offers, in its order. */
+const KINDS = [...SCHEMA_TYPES, 'literal', 'union', 'schema'] as const
+/** A kind, or `unset`: a schema that says nothing yet, waiting for one to be chosen. */
+type Kind = (typeof KINDS)[number] | 'unset'
+
+const KIND_LABELS: Record<Kind, string> = {
+  string: 'String',
+  number: 'Number',
+  integer: 'Integer',
+  boolean: 'Boolean',
+  null: 'Null',
+  object: 'Object',
+  array: 'Array',
+  literal: 'Literal',
+  union: 'Union',
+  schema: 'Schema',
+  unset: 'Choose type',
+}
 
 /** Which kind a schema is, as the builder reads it. */
 function kindOf(schema: JsonSchema): Kind {
   if ('const' in schema) return 'literal'
+  if (isSchemaRef(schema)) return 'schema'
   if (variantsOf(schema)) return 'union'
-  return typeOf(schema) ?? 'any'
+  return typeOf(schema) ?? 'unset'
 }
 
 /**
@@ -107,6 +128,7 @@ const EXTRAS: Extra[] = [
     initial: 100,
   },
   { key: MULTILINE_KEYWORD, label: 'Multi-line', kinds: ['string'], initial: true },
+  { key: MONOSPACE_KEYWORD, label: 'Monospace', kinds: ['string'], initial: true },
   {
     key: 'pattern',
     label: 'Pattern',
@@ -162,6 +184,7 @@ const KIND_KEYS = [
   'const',
   'anyOf',
   'oneOf',
+  '$ref',
   ...EXTRAS.filter((e) => e.kinds !== 'all').map((e) => e.key),
 ]
 
@@ -169,8 +192,10 @@ function withKind(schema: JsonSchema, next: Kind): JsonSchema {
   const out: JsonSchema = { ...schema }
   for (const key of KIND_KEYS) delete out[key]
   switch (next) {
-    case 'any':
+    case 'unset':
       return out
+    case 'schema':
+      return { ...out, $ref: META_SCHEMA }
     case 'literal':
       return { ...out, const: '' }
     case 'union':
@@ -415,7 +440,7 @@ function KindMenu({
           className="flex h-6 items-center gap-0.5 rounded bg-gray-100 px-1.5 text-[12px] text-gray-600 hover:bg-gray-200 focus:outline-none"
           onClick={toggle}
         >
-          {kind}
+          {KIND_LABELS[kind]}
           {slot && !slot.required && <span className="text-gray-400">?</span>}
           <ChevronDown size={12} className="text-gray-400" />
         </button>
@@ -432,7 +457,7 @@ function KindMenu({
                 close()
               }}
             >
-              {k}
+              {KIND_LABELS[k]}
             </MenuItem>
           ))}
           <DropdownSeparator />

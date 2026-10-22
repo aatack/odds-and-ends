@@ -35,15 +35,19 @@ export const TYPE_SCHEMA: Record<string, unknown> = {
     'naming it in their own `type` value are instances of.',
   properties: {
     text: { type: 'string', description: 'What the type is called.' },
+    // A schema, so the form for a type writes it with the schema builder.
     schema: {
-      type: 'object',
+      $ref: 'https://json-schema.org/draft/2020-12/schema',
       description:
         'JSON Schema for the values an instance holds, usually an object with ' +
         '`properties`. Read as a form: the properties in the order written, each with a ' +
         '`type` and a `description`, and `required` naming the ones an instance needs.',
     },
+    // Code: a box of lines, in monospace (the app's two extension keywords).
     onLoad: {
       type: 'string',
+      'x-multiline': true,
+      'x-monospace': true,
       description:
         'A JavaScript function, as source: `(entity) => [...]`. Run in the app\'s ' +
         'sandbox, once per instance per session, when the instance is read into the ' +
