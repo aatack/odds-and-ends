@@ -103,10 +103,20 @@ is the long form; the rules that matter day to day:
   both clients have to agree on them — and in the markdown's case because the
   same outline goes to an agent over MCP; see
   [`mobile/AGENTS.md`](./mobile/AGENTS.md) for where that line is drawn.
-- **Types are defined in code.** An entity's `type` value is a name the app
-  knows, and how an entity of it is drawn is chosen in `components/kinds/`. The
-  store holds no types and no schemas: a `type` naming nothing the app knows is
-  an ordinary note.
+- **Custom types are entities.** An entity's `type` value names another
+  entity; one saying `type: type` is a custom type, its id is its name, and it
+  holds a `schema` (JSON Schema for its instances) and optionally an `onLoad` (a
+  function, as source, run in the sandbox once per instance per session as the
+  instance loads, returning events for the cache only — never the store).
+  `core/builtins.ts` serves the `type` entity itself, self-typed, whose schema
+  describes those fields; `core/cache.ts` runs `onLoad` (`startLazy`) through
+  `helpers/onLoad.ts`. [`docs/types.md`](./docs/types.md) is the long form, and
+  MCP serves it as `docs://types`. How a type is *drawn* is still chosen in code
+  (`components/kinds/`): a type it has no entry for draws as a note.
+- **Schema components** (`components/schema/`): `SchemaForm` (value, setValue,
+  schema) edits a value its schema describes; `SchemaBuilder` (value, setValue)
+  writes a schema. Both are home-made — the libraries that exist need React 19 or
+  their own markup — and fall back to a JSON box for anything they can't draw.
 - **`tools/` is the only way the user does anything.** Every command — moving the
   selection, opening a tab, writing a value — is one `ToolSpec` declaring its
   arguments, its scope, and how far it reaches. A tool is that and its `run`:
