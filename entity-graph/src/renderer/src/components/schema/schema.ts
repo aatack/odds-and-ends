@@ -1,6 +1,6 @@
-// The small part of JSON Schema the form and the builder agree on: what a
-// schema's type is, and what a fresh value of it looks like. Pure, so both
-// components and any test can use it.
+// The small part of JSON Schema the form and the builder agree on: what kind of
+// schema a schema is, what a fresh value of it looks like, and whether a value
+// fits it. Pure, so both components and any test can use it.
 
 export type JsonSchema = Record<string, unknown>
 
@@ -232,12 +232,38 @@ export function problemOf(schema: JsonSchema, value: unknown, required = false):
 
 const article = (type: string): string => (/^[aeiou]/.test(type) ? `an ${type}` : `a ${type}`)
 
-/** A type's name as the builder and the form show it: `String`, `Object`. */
-export function typeName(schema: JsonSchema): string {
-  if (isSchemaRef(schema)) return 'Schema'
-  const type = typeOf(schema)
-  // No one type: any JSON, which is what the form edits it as.
-  return type ? type.charAt(0).toUpperCase() + type.slice(1) : 'JSON'
+/**
+ * What kind of schema a schema is — the one reading both the form and the
+ * builder draw from. A type, or one of:
+ *
+ *   literal   exactly one value (`const`)
+ *   union     any of several schemas (`anyOf`, or `oneOf`, or an `enum` of literals)
+ *   schema    a value that is itself a schema (a `$ref` to the meta-schema)
+ *   json      no one type: any JSON value
+ */
+export const KINDS = [...SCHEMA_TYPES, 'literal', 'union', 'schema', 'json'] as const
+export type Kind = (typeof KINDS)[number]
+
+export function kindOf(schema: JsonSchema): Kind {
+  if ('const' in schema) return 'literal'
+  if (isSchemaRef(schema)) return 'schema'
+  if (variantsOf(schema)) return 'union'
+  return typeOf(schema) ?? 'json'
+}
+
+/** Each kind's name, as the builder and the form show it. */
+export const KIND_NAMES: Record<Kind, string> = {
+  string: 'String',
+  number: 'Number',
+  integer: 'Integer',
+  boolean: 'Boolean',
+  null: 'Null',
+  object: 'Object',
+  array: 'Array',
+  literal: 'Literal',
+  union: 'Union',
+  schema: 'Schema',
+  json: 'JSON',
 }
 
 /** A literal's value as a name: a string as itself, anything else as JSON. */
@@ -255,7 +281,7 @@ export function optionNames(variants: JsonSchema[]): string[] {
       ? { name: v.title, numbered: false }
       : 'const' in v
         ? { name: literalName(v.const), numbered: false }
-        : { name: typeName(v), numbered: true },
+        : { name: KIND_NAMES[kindOf(v)], numbered: true },
   )
   const seen = new Map<string, number>()
   return base.map(({ name, numbered }) => {

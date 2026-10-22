@@ -113,10 +113,14 @@ is the long form; the rules that matter day to day:
   `helpers/onLoad.ts`. [`docs/types.md`](./docs/types.md) is the long form, and
   MCP serves it as `docs://types`. How a type is *drawn* is still chosen in code
   (`components/kinds/`): a type it has no entry for draws as a note.
-- **Schema components** (`components/schema/`): `SchemaForm` (value, setValue,
-  schema) edits a value its schema describes; `SchemaBuilder` (value, setValue)
-  writes a schema. Both are home-made — the libraries that exist need React 19 or
-  their own markup — and fall back to a JSON box for anything they can't draw.
+- **Schema components** (`components/schema/`, imported through its
+  `index.ts`): `SchemaForm` (value, setValue, schema) edits a value its schema
+  describes; `SchemaBuilder` (value, setValue) writes a schema. Both draw lines
+  under hairlines and take `bare` inside another surface — only the outermost
+  draws a border. `kindOf` in `schema.ts` is the one reading of what a schema is,
+  and `parts.tsx` the pieces the two share. The folder depends on nothing of the
+  app but four `../ui` primitives (Dropdown, Modal, Switch, TextEditor); keep it
+  that way. Extension keywords: `x-multiline`, `x-monospace`, `x-popout`.
 - **`tools/` is the only way the user does anything.** Every command — moving the
   selection, opening a tab, writing a value — is one `ToolSpec` declaring its
   arguments, its scope, and how far it reaches. A tool is that and its `run`:

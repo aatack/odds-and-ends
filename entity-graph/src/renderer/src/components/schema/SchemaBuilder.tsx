@@ -1,45 +1,34 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, ChevronRight, Plus, Trash03 } from '@untitledui/icons'
-import { cn } from '../../helpers/cn'
+import { ChevronDown, ChevronRight, Trash03 } from '@untitledui/icons'
 import { Dropdown, DropdownSeparator } from '../ui/Dropdown'
-import { MenuChip, MenuItem } from './Menu'
+import { AddLine, BARE_MONO, MenuChip, MenuItem, cx } from './parts'
 import { SchemaForm } from './SchemaForm'
 import {
+  KINDS,
+  KIND_NAMES,
   META_SCHEMA,
   MONOSPACE_KEYWORD,
-  POPOUT_KEYWORD,
   MULTILINE_KEYWORD,
-  SCHEMA_TYPES,
-  isSchemaRef,
+  POPOUT_KEYWORD,
   isObject,
+  kindOf,
   optionNames,
   propertiesOf,
   requiredOf,
-  typeOf,
   variantsOf,
   type JsonSchema,
+  type Kind,
   type SchemaType,
 } from './schema'
 
-// A form for writing a JSON Schema, one row per schema. A row is a box holding
-// its name — a field's name, or what the schema is for — with a menu at its
-// right end saying what *kind* of schema it is:
+// A form for writing a JSON Schema, one row per schema: its name — a field's,
+// an option's, or what it is for — and at the right end a menu of the kinds a
+// schema can be (`kindOf`). Under a divider the same menu ticks the extras that
+// kind can carry, and removes the row. An object's fields, an array's items and
+// a union's options are rows of their own, a step in.
 //
-//   a type       string, number, integer, boolean, null
-//   object       named fields, each its own row, each required unless optional
-//   array        one row for its items
-//   literal      exactly one value (`const`)
-//   union        any of several rows (`anyOf`) — a union of literals is a set
-//                of choices
-//   schema       a value that is itself a schema (a `$ref` to the meta-schema),
-//                which the form edits with this builder
-//   json         no type at all: any JSON value, edited as JSON
-//
-// Beneath the kinds the same menu ticks the extras a kind can carry —
-// optional, a description, bounds, a format — and, last, removes the row. Each
-// ticked extra that takes a
-// value gets a box under the row. Objects, arrays and unions draw their own rows
-// in a panel one step in. Keys the builder has no control for are kept as they
+// The rows are lines under hairlines, as the schema form's are. Only the
+// outermost builder draws a border. Keys it has no control for are kept as they
 // were, so a schema written by hand survives being edited here.
 
 export function SchemaBuilder({
@@ -49,57 +38,19 @@ export function SchemaBuilder({
 }: {
   value: unknown
   setValue: (value: unknown) => void
-  /**
-   * Inside another surface — a line of the schema form — rather than on its own:
-   * the same lines, with no border of its own around them. The outermost builder
-   * draws the one border, as the outermost form does.
-   */
+  /** Inside another surface — a line of the schema form: no border of its own. */
   bare?: boolean
 }): React.JSX.Element {
-  // Its rows are lines under hairlines, filling the space they are given, the
-  // way the form's lines are — wherever it is drawn.
   return (
     <div
-      className={cn(
+      className={cx(
         'w-full divide-y divide-gray-100',
         !bare && 'overflow-hidden rounded-md border border-gray-200 bg-white shadow-xs',
       )}
     >
-      {/* Bare, the line it sits in already says what it is. */}
-      <SchemaNode
-        schema={isObject(value) ? value : {}}
-        onChange={setValue}
-        label={bare ? '' : 'Schema'}
-      />
+      <SchemaNode schema={isObject(value) ? value : {}} onChange={setValue} />
     </div>
   )
-}
-
-/** The kinds the menu offers, in its order. */
-const KINDS = [...SCHEMA_TYPES, 'literal', 'union', 'schema', 'json'] as const
-/** A kind. `json` is a schema with no type: any JSON value at all. */
-type Kind = (typeof KINDS)[number]
-
-const KIND_LABELS: Record<Kind, string> = {
-  string: 'String',
-  number: 'Number',
-  integer: 'Integer',
-  boolean: 'Boolean',
-  null: 'Null',
-  object: 'Object',
-  array: 'Array',
-  literal: 'Literal',
-  union: 'Union',
-  schema: 'Schema',
-  json: 'JSON',
-}
-
-/** Which kind a schema is, as the builder reads it. */
-function kindOf(schema: JsonSchema): Kind {
-  if ('const' in schema) return 'literal'
-  if (isSchemaRef(schema)) return 'schema'
-  if (variantsOf(schema)) return 'union'
-  return typeOf(schema) ?? 'json'
 }
 
 /**
@@ -243,36 +194,37 @@ function withKind(schema: JsonSchema, next: Kind): JsonSchema {
   }
 }
 
-/** How a field sits in the object holding it: its name, and whether it is required. */
+/** Set for a field of an object: whether it is required. */
 interface Slot {
-  name: string
-  taken: string[]
-  onRename: (name: string) => void
   required: boolean
   onRequired: (required: boolean) => void
-  onRemove: () => void
+}
+
+/**
+ * What a row's name box holds: a name to type, or (with no `onChange`) a fixed
+ * label. A name is written only while `check` finds nothing wrong with it.
+ */
+interface Name {
+  text: string
+  placeholder?: string
+  onChange?: (text: string) => void
+  check?: (text: string) => string | null
 }
 
 function SchemaNode({
   schema,
   onChange,
+  name,
   slot,
-  label,
-  named,
   onRemove,
 }: {
   schema: JsonSchema
   onChange: (schema: JsonSchema) => void
-  /** Set for a field of an object: the name box is its name. */
+  /** What the name box holds. Absent at the root, which the box around it names. */
+  name?: Name
+  /** Set for a field of an object: whether it is required. */
   slot?: Slot
-  /** What the box says when there is no name to edit — "Each item". */
-  label?: string
-  /**
-   * Set for a union's option: the box is its name in the form's picker, written
-   * as the schema's `title`, and `placeholder` is what it is called without one.
-   */
-  named?: { placeholder: string }
-  /** Set for a union's option, which can be taken out. */
+  /** Set where the row can be taken out: a field, or a union's option. */
   onRemove?: () => void
 }): React.JSX.Element {
   const kind = kindOf(schema)
@@ -283,7 +235,6 @@ function SchemaNode({
     onChange(out)
   }
   const shown = extrasFor(kind).filter((e) => e.field && e.key in schema)
-  const remove = slot?.onRemove ?? onRemove
   // Anything with more than its name line folds — the schemas it holds, and
   // the lines of its own options — so a deep schema reads as an outline. Open
   // to begin with: a fold is something done to it.
@@ -294,15 +245,7 @@ function SchemaNode({
   return (
     <div className="divide-y divide-gray-100">
       <NameBox
-        slot={slot}
-        label={label}
-        title={
-          named && {
-            value: typeof schema.title === 'string' ? schema.title : '',
-            placeholder: named.placeholder,
-            onChange: (title: string) => set('title', title || undefined),
-          }
-        }
+        name={name}
         fold={folds ? { open, toggle: () => setOpen((o) => !o) } : undefined}
         menu={
           <KindMenu
@@ -311,7 +254,7 @@ function SchemaNode({
             onKind={(next) => onChange(withKind(schema, next))}
             onExtra={set}
             slot={slot}
-            onRemove={remove}
+            onRemove={onRemove}
           />
         }
       >
@@ -326,7 +269,7 @@ function SchemaNode({
           <SchemaNode
             schema={isObject(schema.items) ? schema.items : {}}
             onChange={(items) => onChange({ ...schema, items })}
-            label="Each item"
+            name={{ text: 'Each item' }}
           />
         </Nested>
       )}
@@ -336,87 +279,63 @@ function SchemaNode({
 }
 
 /**
- * The row's box: a field's name, full width, typed into directly — or, for a
- * schema with no name, what it is for — with the kind menu inside it at the
- * right, and a fold at the left for a schema that holds others. The extras the
- * schema carries are lines of the same box, under a hairline each: one surface,
- * so all of it reads as the one field.
+ * The row's name line — its name, typed into directly, or a fixed label — with
+ * the kind menu at the right and a fold at the left for a row with more than
+ * this line. The lines of its extras follow in the same surface.
  */
 function NameBox({
-  slot,
-  label,
-  title,
+  name,
   menu,
   fold,
   children,
 }: {
-  slot?: Slot
-  label?: string
-  /** An editable name that isn't a field's: a union option's `title`. */
-  title?: { value: string; placeholder: string; onChange: (title: string) => void } | undefined
+  name?: Name
   menu: React.ReactNode
   fold?: { open: boolean; toggle: () => void }
   children?: React.ReactNode
 }): React.JSX.Element {
-  const [text, setText] = useState(slot?.name ?? '')
-  useEffect(() => setText(slot?.name ?? ''), [slot?.name])
-  const trimmed = text.trim()
-  const clash = !slot
-    ? null
-    : !trimmed
-      ? 'A field needs a name'
-      : slot.taken.includes(trimmed)
-        ? 'Already a field'
-        : null
+  // Held here, so a name that can't be written yet — empty, or taken — can still
+  // be typed, and says why it isn't one.
+  const [text, setText] = useState(name?.text ?? '')
+  useEffect(() => setText(name?.text ?? ''), [name?.text])
+  const problem = name?.check?.(text) ?? null
   return (
-    <div className="min-w-0 flex-1">
-      <div className="focus-within:bg-brand-50/40">
-        <div className="flex h-8 items-center">
-          {fold && (
-            <button
-              className="flex h-full shrink-0 items-center pl-1.5 text-gray-400 hover:text-gray-700 focus:outline-none"
-              title={fold.open ? 'Fold' : 'Unfold'}
-              onClick={fold.toggle}
-            >
-              {fold.open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            </button>
-          )}
-          {slot ? (
-            <input
-              className={BARE}
-              value={text}
-              placeholder="Field name"
-              onChange={(e) => {
-                setText(e.target.value)
-                const next = e.target.value.trim()
-                if (next && !slot.taken.includes(next)) slot.onRename(next)
-              }}
-            />
-          ) : title ? (
-            <input
-              className={BARE}
-              value={title.value}
-              placeholder={title.placeholder}
-              onChange={(e) => title.onChange(e.target.value)}
-            />
-          ) : (
-            <span className="min-w-0 flex-1 truncate px-2.5 text-[13px] text-gray-500">
-              {label}
-            </span>
-          )}
-          <div className="shrink-0 pr-1">{menu}</div>
-        </div>
-        {children}
+    <div className="min-w-0 flex-1 focus-within:bg-brand-50/40">
+      <div className="flex h-8 items-center">
+        {fold && (
+          <button
+            className="flex h-full shrink-0 items-center pl-1.5 text-gray-400 hover:text-gray-700 focus:outline-none"
+            title={fold.open ? 'Fold' : 'Unfold'}
+            onClick={fold.toggle}
+          >
+            {fold.open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+        )}
+        {name?.onChange ? (
+          <input
+            className={BARE}
+            value={text}
+            placeholder={name.placeholder}
+            onChange={(e) => {
+              setText(e.target.value)
+              if (!name.check?.(e.target.value)) name.onChange?.(e.target.value)
+            }}
+          />
+        ) : (
+          <span className="min-w-0 flex-1 truncate px-2.5 text-[13px] text-gray-500">
+            {name?.text}
+          </span>
+        )}
+        <div className="shrink-0 pr-1">{menu}</div>
       </div>
-      {clash && <p className="px-2.5 pb-1.5 text-[11px] text-error-600">{clash}</p>}
+      {problem && <p className="px-2.5 pb-1.5 text-[11px] text-error-600">{problem}</p>}
+      {children}
     </div>
   )
 }
 
-/** A text box with no surface of its own, for a line inside a name box. */
-const BARE =
-  'h-full min-w-0 flex-1 bg-transparent px-2.5 text-[13px] text-gray-900 placeholder:text-gray-400 focus:outline-none'
-const BARE_MONO = cn(BARE, 'font-mono text-[12.5px]')
+/** The name line's text box: the shared one, filling what the menu leaves. */
+const BARE = 'h-full min-w-0 flex-1 bg-transparent px-2.5 text-[13px] text-gray-900 placeholder:text-gray-400 focus:outline-none'
 
 /** One line of a name box under the name: a hairline, a label, and its control. */
 function BoxLine({
@@ -463,7 +382,7 @@ function KindMenu({
       align="right"
       trigger={({ toggle }) => (
         <MenuChip onClick={toggle}>
-          {KIND_LABELS[kind]}
+          {KIND_NAMES[kind]}
           {slot && !slot.required && <span className="text-gray-400">?</span>}
         </MenuChip>
       )}
@@ -479,7 +398,7 @@ function KindMenu({
                 close()
               }}
             >
-              {KIND_LABELS[k]}
+              {KIND_NAMES[k]}
             </MenuItem>
           ))}
           <DropdownSeparator />
@@ -570,23 +489,6 @@ function Nested({ children }: { children: React.ReactNode }): React.JSX.Element 
   return <div className="ml-4 divide-y divide-gray-100 border-l border-gray-100">{children}</div>
 }
 
-/** The last row of a nested run: adds another field or option. */
-function AddRow({
-  onClick,
-  children,
-}: {
-  onClick: () => void
-  children: React.ReactNode
-}): React.JSX.Element {
-  return (
-    <button
-      className="flex h-8 w-full items-center gap-1.5 px-2.5 text-[12px] text-gray-400 hover:bg-gray-50 hover:text-gray-700 focus:outline-none focus-visible:bg-gray-50"
-      onClick={onClick}
-    >
-      <Plus size={13} /> {children}
-    </button>
-  )
-}
 
 /**
  * A literal's value. What is typed is read as JSON where it parses — `3`,
@@ -651,12 +553,21 @@ function Variants({
         <SchemaNode
           key={i}
           schema={variant}
-          named={{ placeholder: defaults[i] }}
+          // Its name in the form's picker, written as its `title`.
+          name={{
+            text: typeof variant.title === 'string' ? variant.title : '',
+            placeholder: defaults[i],
+            onChange: (title) => {
+              const next: JsonSchema = { ...variant, title }
+              if (!title) delete next.title
+              write(variants.map((v, j) => (j === i ? next : v)))
+            },
+          }}
           onChange={(next) => write(variants.map((v, j) => (j === i ? next : v)))}
           onRemove={() => write(variants.filter((_, j) => j !== i))}
         />
       ))}
-      <AddRow onClick={() => write([...variants, { const: '' }])}>Add option</AddRow>
+      <AddLine onClick={() => write([...variants, { const: '' }])}>Add option</AddLine>
     </Nested>
   )
 }
@@ -698,33 +609,42 @@ function Properties({
               required,
             )
           }
-          slot={{
-            name: key,
-            taken: properties.filter((_, j) => j !== i).map(([k]) => k),
-            onRename: (name) =>
+          name={{
+            text: key,
+            placeholder: 'Field name',
+            check: (text) =>
+              !text.trim()
+                ? 'A field needs a name'
+                : properties.some(([k], j) => j !== i && k === text.trim())
+                  ? 'Already a field'
+                  : null,
+            onChange: (text) =>
               write(
-                properties.map(([k, p], j) => (j === i ? [name, p] : [k, p])),
-                required.map((r) => (r === key ? name : r)),
+                properties.map(([k, p], j) => (j === i ? [text.trim(), p] : [k, p])),
+                required.map((r) => (r === key ? text.trim() : r)),
               ),
+          }}
+          slot={{
             required: required.includes(key),
             onRequired: (on) =>
               write(properties, on ? [...required, key] : required.filter((r) => r !== key)),
-            onRemove: () =>
-              write(
-                properties.filter((_, j) => j !== i),
-                required,
-              ),
           }}
+          onRemove={() =>
+            write(
+              properties.filter((_, j) => j !== i),
+              required,
+            )
+          }
         />
       ))}
-      <AddRow
+      <AddLine
         // New fields are required: optional is the thing worth saying.
         onClick={() =>
           write([...properties, [fresh(), { type: 'string' }]], [...required, fresh()])
         }
       >
         Add field
-      </AddRow>
+      </AddLine>
     </Nested>
   )
 }

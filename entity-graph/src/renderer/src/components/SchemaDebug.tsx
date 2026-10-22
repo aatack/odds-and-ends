@@ -1,10 +1,7 @@
 import React, { useState } from 'react'
-import { CopyButton } from '../ui/CopyButton'
-import { Modal } from '../ui/Modal'
-import { JsonEditor } from './JsonEditor'
-import { SchemaBuilder } from './SchemaBuilder'
-import { SchemaForm } from './SchemaForm'
-import { isObject, pretty, type JsonSchema } from './schema'
+import { CopyButton } from './ui/CopyButton'
+import { Modal } from './ui/Modal'
+import { JsonEditor, SchemaBuilder, SchemaForm, isObject, pretty, type JsonSchema } from './schema'
 
 // Debug surfaces for the two schema components: each in a modal, with its input
 // and output as JSON beside it, both editable and both copyable, so a case can be

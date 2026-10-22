@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { cn } from '../../helpers/cn'
+import { cx } from './parts'
 import { TextEditor } from '../ui/TextEditor'
 import { pretty } from './schema'
 
@@ -63,7 +63,7 @@ export function JsonEditor({
           value={text}
           setValue={onText}
           placeholder={placeholder}
-          className={cn('font-mono text-[12.5px] leading-5 text-gray-900', 'px-2.5 py-1.5')}
+          className={cx('font-mono text-[12.5px] leading-5 text-gray-900', 'px-2.5 py-1.5')}
         />
       </div>
       {error && <p className="pt-1 text-[11px] text-error-600">{error}</p>}
