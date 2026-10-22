@@ -272,10 +272,25 @@ and scroll the backdrop; `large` is a panel — nearly the whole window, `flex`
 column, its body scrolling *inside* the card so whatever the child pins to the top
 stays there. `EntityInspector` is the one of those, and its tabs are why.
 
+**Every kind of entity has three views** (`components/kinds/`), by how much room
+it is given — 0-, 1- and 2-dimensional:
+
+- **Pill** — inline, in prose or beside other things: a name and a mark.
+- **Card** — a row to itself: the gist and its key action (a code row's run).
+- **Focus** — a page to itself, which is the root row of a frame. Optional, and a
+  note's is its card: its page is its text with its children as the rows below.
+  A file's focus is the whole file (a large image, text read out, media playing),
+  a type's its fields, a tool's its body.
+
+`kindOf(type)` in `components/kinds/index.ts` is the one place a kind's views are
+chosen — rows, pills and frame roots all ask there — and a type nothing is
+registered for is drawn as a note wearing its type pill. Adding a kind is adding
+an entry, not a branch in the editor.
+
 **Entity pills** (`components/EntityPill.tsx`) are how an entity appears anywhere
 it is referenced in passing rather than shown in full — a tab title, a crumb, a
 mention inside another entity's text. Three parts, usable separately:
-`PillContent` (the entity at pill size, by type), `PillWrapper` (the entity
+`PillContent` (the entity's kind's pill), `PillWrapper` (the entity
 gestures, around any child — it publishes `data-entity-id`, which is all the
 global right-click and middle-click handlers need), and `PillBackground` (a
 surface for a pill that has to be told apart from the text around it).

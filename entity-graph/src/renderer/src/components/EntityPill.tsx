@@ -1,7 +1,7 @@
 import React, { type ButtonHTMLAttributes } from 'react'
-import { File02 } from '@untitledui/icons'
 import { cn } from '../helpers/cn'
-import { useEntityLabel, useEntitySummary, useLoadedFileName } from '../state/hooks'
+import { useEntityLabel, useEntitySummary } from '../state/hooks'
+import { kindOf } from './kinds'
 
 // An entity referenced in passing: a tab's title, a crumb in the frame trail, a
 // mention inside another entity's text. Small enough to sit in a line of prose,
@@ -10,8 +10,8 @@ import { useEntityLabel, useEntitySummary, useLoadedFileName } from '../state/ho
 //
 // Three parts, so each can be had without the others:
 //
-//   PillContent     what the entity looks like at this size, which depends on
-//                   what kind of entity it is
+//   PillContent     what the entity looks like at this size, which is its kind's
+//                   pill (`./kinds`)
 //   PillWrapper     the entity gestures, around any child at all
 //   PillBackground  a surface, for a pill that has to be told apart from the text
 //                   around it
@@ -19,17 +19,7 @@ import { useEntityLabel, useEntitySummary, useLoadedFileName } from '../state/ho
 // `EntityPill` is the three together, which is what most callers want. Tabs take
 // the first two and put them on a background of their own.
 
-/**
- * How wide a pill may get before its content gives up and ellipses. A pill is a
- * reference, not the thing: past about this much it stops being glanceable.
- */
-const BOUND = 'max-w-[100px] truncate'
-
-/**
- * The entity, as small as it goes. Text ellipses; a file gives its name, which
- * is the one thing about a file worth reading at this size; code keeps its
- * monospace so it doesn't read as prose.
- */
+/** The entity, as small as it goes: whatever its kind draws a pill as. */
 export function PillContent({
   id,
   className,
@@ -37,26 +27,8 @@ export function PillContent({
   id: string
   className?: string
 }): React.JSX.Element {
-  const summary = useEntitySummary(id)
-  const label = useEntityLabel(id)
-  // Only ever the name of a file already on screen somewhere; `label` covers the
-  // rest with the file's kind.
-  const fileName = useLoadedFileName(id)
-
-  if (summary?.type === 'file') {
-    return (
-      <span className={cn(BOUND, 'inline-flex items-center gap-1', className)}>
-        <File02 size={11} className="shrink-0 text-gray-400" />
-        <span className="truncate">{fileName ?? label}</span>
-      </span>
-    )
-  }
-  if (summary?.type === 'code') {
-    return <span className={cn(BOUND, 'font-mono text-[0.9em]', className)}>{label}</span>
-  }
-  // Serif: the label is what the user typed, so a pill reads as the entity rather
-  // than as a caption the app wrote about it.
-  return <span className={cn(BOUND, 'font-serif', className)}>{label}</span>
+  const { Pill } = kindOf(useEntitySummary(id).type)
+  return <Pill id={id} className={className} />
 }
 
 /**

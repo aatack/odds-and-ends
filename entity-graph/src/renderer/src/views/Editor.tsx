@@ -1,13 +1,9 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, ChevronRight, Clock, Loading02, Play, Square, Stop } from '@untitledui/icons'
+import { Check, ChevronDown, ChevronRight, Clock, Loading02, Square } from '@untitledui/icons'
 import { TextEditor } from '../components/ui/TextEditor'
-import { Button } from '../components/ui/Button'
-import { CodeBlock } from '../components/ui/CodeBlock'
-import { DiagramView } from '../components/Diagram'
-import { EntityMarkdown } from '../components/EntityMarkdown'
-import { ResourceView } from '../components/Resource'
 import { TypePill } from '../components/TypePill'
-import { DIAGRAM_ID } from '../../../core/builtins'
+import { kindOf } from '../components/kinds'
+import { MONO, TEXT, sectionStyle } from '../components/kinds/text'
 import { cn } from '../helpers/cn'
 import type { CodeRunState } from '../helpers/codeRunner'
 import type { EntityRow, Row } from '../state/derive'
@@ -25,27 +21,9 @@ const ESTIMATE = 24 // assumed height of a not-yet-measured row, in px
 // rather than sitting on the boundary.
 const MARGIN = 0.3
 
-// User-written entity text — serif, matching the orchestrator's prose voice. It
-// wraps to show the whole value rather than truncating. `block` keeps the
-// editing textarea the same height as the static line (an inline-block textarea
-// leaves a descender gap below it) so pressing `e` doesn't shift the layout.
-// Colour is applied per-use so collapsed rows can read as muted.
-const TEXT = 'block font-serif text-[14px] leading-5'
-// Monospace counterpart for editing `type: code` entities in place.
-const MONO = 'block font-mono text-[12.5px] leading-5'
-
 // Row keys are not computed here. They come with the rows, index for index, and
 // stay the same while the tree does — which is what lets the measured heights and
 // the offsets built from them survive a cursor move untouched.
-
-// Section headings grow with prominence: ~1.5x at the top level, easing toward
-// ~1.1x as they nest deeper. Per-depth, so it can't be a static utility class.
-// Applied to the editing box as well as the static line, so a section reads as
-// one while it is being typed.
-const sectionStyle = (depth: number): React.CSSProperties => ({
-  fontSize: `${14 * Math.max(1.1, 1.5 - depth * 0.1)}px`,
-  lineHeight: 1.3,
-})
 
 /**
  * The glyph in front of a row: a checkbox when the row has one, otherwise a
@@ -434,47 +412,25 @@ const RowView = React.memo(function RowView({
     )
   }
 
-  const isCode = row.type === 'code'
-  const isDiagram = row.type === DIAGRAM_ID
-  const running = run?.status === 'running'
+  const kind = kindOf(row.type)
+  // The root of a frame is the entity with a page to itself: its focus, where the
+  // kind has one, and its card where it doesn't. Every row below it is a card.
+  const Body = (row.path.length === 1 && kind.Focus) || kind.Card
+  const cardProps = { row, highlight, run, onRunCode, onStopCode }
   const heading = row.section ? sectionStyle(row.depth) : undefined
-  const text = row.text ?? ''
 
   // Where a typed row's pill goes. A row drawing prose floats it into the text:
   // the first line starts after it and every line below runs the full width, so
   // it reads as the first word of the entity rather than as a column in front of
-  // it. Nothing else on a row can flow around a float — a code block, a file's
-  // bytes and a diagram's canvas are surfaces of their own, and a `w-full`
-  // textarea beside a float overflows its container instead of narrowing to fit —
-  // so those keep the pill beside the mark, where it lines up with the bullet.
-  const prose = !row.editing && !isCode && row.type !== 'file' && !isDiagram
+  // it. A surface of its own can't flow around a float, and a `w-full` textarea
+  // beside a float overflows its container instead of narrowing to fit — so
+  // those keep the pill beside the mark, where it lines up with the bullet.
+  const prose = !row.editing && kind.prose
 
-  // A diagram folds whether or not it has children: what folding one puts away is
-  // the canvas, so it wears a chevron and answers to it like any other row that
+  // A kind whose card has something to put away folds whether or not it has
+  // children, so it wears a chevron and answers to it like any other row that
   // has something below the line.
-  const foldable = row.hasChildren || isDiagram
-
-  // The row's own text, rendered. Named because three of the branches below draw
-  // it: a plain row, and the two that draw a surface above it.
-  const rendered = text ? (
-    // Rendered, not printed: a line with no markup in it comes out exactly as the
-    // plain text did, and the blocks are there for the rows that use them.
-    <EntityMarkdown
-      entityId={row.id}
-      path={row.path}
-      text={text}
-      highlight={highlight}
-      className={cn(
-        TEXT,
-        row.section && 'font-semibold',
-        // Muted because there is more here than is on screen — folded, filtered
-        // out, past a depth cap, or below where the walk stopped. The row is a
-        // door rather than the whole of it.
-        row.hidesChildren ? 'text-gray-400' : 'text-gray-900',
-      )}
-      style={heading}
-    />
-  ) : null
+  const foldable = row.hasChildren || !!kind.foldsItself
 
   return (
     <div
@@ -495,19 +451,8 @@ const RowView = React.memo(function RowView({
         )}
         style={{ paddingLeft: row.depth * INDENT + 4 }}
       >
-        {isCode ? (
-          // Code rows swap the chevron/bullet for a run/stop control.
-          <span
-            className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 select-none hover:text-gray-700"
-            title={running ? 'Stop' : 'Run'}
-            onClick={(e) => {
-              e.stopPropagation()
-              if (running) onStopCode()
-              else onRunCode(row.id, row.text ?? '', row.path)
-            }}
-          >
-            {running ? <Stop size={13} /> : <Play size={13} />}
-          </span>
+        {kind.Mark ? (
+          <kind.Mark {...cardProps} />
         ) : (
           <span
             className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 select-none"
@@ -541,43 +486,11 @@ const RowView = React.memo(function RowView({
               setValue={onDraft}
               onBlur={onCommit}
               onKeyDown={onKeyDown}
-              className={cn(isCode ? MONO : TEXT, 'text-gray-900', row.section && 'font-semibold')}
+              className={cn(row.type === 'code' ? MONO : TEXT, 'text-gray-900', row.section && 'font-semibold')}
               style={heading}
             />
-          ) : isCode ? (
-            <CodeBlock code={row.text ?? ''} run={run} />
-          ) : row.type === 'file' ? (
-            // The bytes, and whatever the user typed as a caption under them.
-            <>
-              <ResourceView id={row.id} mimeType={row.mimeType} alt={row.text} />
-              {text && (
-                <EntityMarkdown
-                  entityId={row.id}
-                  path={row.path}
-                  text={text}
-                  highlight={highlight}
-                  className={cn(TEXT, 'text-gray-500')}
-                />
-              )}
-            </>
-          ) : isDiagram ? (
-            // The canvas, and the note itself under it — which reads as any other
-            // row's text does, since that is what it is. A diagram with nothing
-            // written under it says nothing rather than "Empty": the picture is
-            // the row.
-            //
-            // Folded, the canvas is what is put away, and the row is left as the
-            // line of text it would have been. Folding one is therefore how a
-            // page of diagrams is read as an outline rather than as a wall of
-            // pictures.
-            <>
-              {!row.collapsed && (
-                <DiagramView entityId={row.id} path={row.path} highlight={highlight} />
-              )}
-              {rendered}
-            </>
           ) : (
-            (rendered ?? <span className={`${TEXT} italic text-gray-400`}>Empty</span>)
+            <Body {...cardProps} />
           )}
         </div>
       </div>

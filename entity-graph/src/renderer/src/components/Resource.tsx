@@ -1,13 +1,30 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { File02 } from '@untitledui/icons'
+import { cn } from '../helpers/cn'
 import { useResource } from '../state/hooks'
 import { updateUi } from '../state/ui'
 import { runTool } from '../tools/call'
 
+/** Whether a file's bytes are text worth reading as text, by what it says it is. */
+const textual = (mime: string): boolean =>
+  mime.startsWith('text/') || /^application\/(json|xml|javascript|x-yaml|yaml|toml)\b/.test(mime)
+
+/** How much of a text file a preview reads before saying there is more. */
+const TEXT_PREVIEW = 200_000
+
+/** A data URL's bytes, as text. */
+function decodeText(url: string): string {
+  const comma = url.indexOf(',')
+  const bytes = Uint8Array.from(atob(url.slice(comma + 1)), (c) => c.charCodeAt(0))
+  return new TextDecoder().decode(bytes)
+}
+
 /**
- * A `type: 'file'` entity's body: the bytes stored under its id. Images show
- * themselves, capped in height so a screenshot doesn't take over the tree;
- * anything else reads as a chip that saves the file when clicked.
+ * A `type: 'file'` entity's body: the bytes stored under its id, at one of two
+ * sizes. As a card, images show themselves capped in height so a screenshot
+ * doesn't take over the tree, and anything else reads as a chip that saves the
+ * file when clicked. As a focus — the file's own page — an image is as large as
+ * the page allows, a text file is read out in full, and audio and video play.
  *
  * The entity carries its own mime type, so a row knows whether it is about to be
  * a picture before the bytes arrive and doesn't change shape when they do.
@@ -16,10 +33,12 @@ export function ResourceView({
   id,
   mimeType,
   alt,
+  size = 'card',
 }: {
   id: string
   mimeType?: string
   alt?: string
+  size?: 'card' | 'focus'
 }): React.JSX.Element {
   const resource = useResource(id)
   const mime = resource.status === 'ready' ? resource.mimeType : mimeType
@@ -56,10 +75,22 @@ export function ResourceView({
         // Scaled to fit a box rather than to a width: the smaller of the two caps
         // wins, so a tall screenshot and a wide one both come out as large as they
         // can be without taking over the tree.
-        className="my-px max-h-96 max-w-full rounded-md shadow-xs"
+        className={cn(
+          'my-px max-w-full rounded-md shadow-xs',
+          size === 'focus' ? 'max-h-[70vh]' : 'max-h-48',
+        )}
         onClick={() => updateUi({ resourceId: id })}
       />
     )
+  }
+
+  if (size === 'focus') {
+    const mime = resource.mimeType
+    if (textual(mime)) return <TextPreview url={resource.url} />
+    if (mime.startsWith('video/')) {
+      return <video src={resource.url} controls className="my-1 max-h-[70vh] max-w-full rounded-md" />
+    }
+    if (mime.startsWith('audio/')) return <audio src={resource.url} controls className="my-1 w-full" />
   }
 
   return (
@@ -72,6 +103,18 @@ export function ResourceView({
       <File02 size={13} className="shrink-0 text-gray-400" />
       <span className="truncate">{resource.name || resource.mimeType}</span>
     </button>
+  )
+}
+
+/** A text file read out, as far as {@link TEXT_PREVIEW} goes. */
+function TextPreview({ url }: { url: string }): React.JSX.Element {
+  const text = useMemo(() => decodeText(url), [url])
+  const cut = text.length > TEXT_PREVIEW
+  return (
+    <pre className="my-1 max-h-[70vh] overflow-auto whitespace-pre-wrap break-words rounded-md bg-gray-50 p-3 font-mono text-[12.5px] leading-5 text-gray-800">
+      {cut ? text.slice(0, TEXT_PREVIEW) : text}
+      {cut && <span className="text-gray-400">{`\n… ${text.length - TEXT_PREVIEW} more characters`}</span>}
+    </pre>
   )
 }
 

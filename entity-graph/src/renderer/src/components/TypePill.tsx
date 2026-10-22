@@ -13,8 +13,8 @@ import { DOT_COLORS, type BadgeColor } from './ui/Badge'
 // A row's type is the reason it exists, but not the only thing it draws: the
 // `[@pill](text)` field puts the same shape in the middle of a sentence, for a
 // word the text wants to set apart when there is no value on the entity saying
-// so, and `[@tool:callId]` puts a call's status in one. Hence `label` rather than
-// `type` — the pill draws a word, and the type is one of them.
+// so. Hence `label` rather than `type` — the pill draws a word, and the type is
+// one of them.
 
 /**
  * A word, as a small pill: the tone of a secondary button with nothing to press.
