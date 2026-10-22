@@ -3,6 +3,7 @@ import { ChevronDown, Moon01, Sun } from '@untitledui/icons'
 import { Sources } from './views/Sources'
 import { SourceView } from './views/SourceView'
 import { Activity, cancelledCount } from './components/Activity'
+import { SchemaBuilderDebug, SchemaFormDebug } from './components/schema/SchemaDebug'
 import { CallGuide } from './components/CallGuide'
 import { CommandPalette } from './components/CommandPalette'
 import { Badge } from './components/ui/Badge'
@@ -128,6 +129,10 @@ export default function App(): React.JSX.Element | null {
       {/* Both are popups on the same layer, so the palette is drawn second: a
           command started while the activity log is open belongs on top of it. */}
       <Activity open={ui.activityOpen} />
+      {ui.debug === 'schemaForm' && <SchemaFormDebug onClose={() => updateUi({ debug: null })} />}
+      {ui.debug === 'schemaBuilder' && (
+        <SchemaBuilderDebug onClose={() => updateUi({ debug: null })} />
+      )}
       <CommandPalette />
       {/* One corner stack: transient messages above the pending-call guide. */}
       <div className="pointer-events-none fixed bottom-4 right-4 z-[70] flex w-72 flex-col gap-2">
@@ -153,6 +158,14 @@ export default function App(): React.JSX.Element | null {
         </div>
 
         <div className="flex-1" />
+
+        {/* Debug: the schema components, each in a modal of its own. */}
+        <Button variant="tertiary" size="sm" onClick={() => updateUi({ debug: 'schemaForm' })}>
+          Schema form
+        </Button>
+        <Button variant="tertiary" size="sm" onClick={() => updateUi({ debug: 'schemaBuilder' })}>
+          Schema builder
+        </Button>
 
         <Button variant="secondary" size="sm" onClick={togglePalette}>
           Actions

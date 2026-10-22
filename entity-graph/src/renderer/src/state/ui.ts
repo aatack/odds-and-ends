@@ -15,6 +15,8 @@ export interface UiState {
   inspectEntityId: string | null
   /** File entity being shown full size over the tree, if any. */
   resourceId: string | null
+  /** A debug surface open over everything, if any. */
+  debug: 'schemaForm' | 'schemaBuilder' | null
 }
 
 export const uiAtom = atom<UiState>({
@@ -22,6 +24,7 @@ export const uiAtom = atom<UiState>({
   activityOpen: false,
   inspectEntityId: null,
   resourceId: null,
+  debug: null,
 })
 
 export const updateUi = (patch: Partial<UiState>): void =>
