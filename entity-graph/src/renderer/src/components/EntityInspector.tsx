@@ -5,7 +5,6 @@ import { str } from '../../../core/entity'
 import {
   entitiesAtom,
   invalidateEntities,
-  refreshDerived,
   type LoadState,
 } from '../../../core/cache'
 import {
@@ -542,17 +541,11 @@ const STATE_NOTE: Record<LoadState, string> = {
 /**
  * What the *cache* holds for this entity, as against what the store does. The
  * other tabs read straight from the source; this one is the only place the
- * client's own picture is visible, which matters mostly for one thing: an
- * `events` script runs in the background, once a session, and until now failed
- * in complete silence.
+ * client's own picture is visible.
  */
 function Cached({ entityId }: { entityId: string }): React.JSX.Element {
   const cache = useAtomValue(entitiesAtom)
   const entry = cache[entityId]
-  // The script is the *type's*, run once for this entity with this entity as its
-  // context — so an entity of no type has none, however its own values read.
-  const typeId = str(entry?.entity.values.type)
-  const script = typeId ? cache[typeId]?.entity.values.events : undefined
 
   return (
     <>
@@ -560,38 +553,14 @@ function Cached({ entityId }: { entityId: string }): React.JSX.Element {
         {entry ? (
           <div className="min-w-0 flex-1 overflow-hidden rounded-md bg-gray-50 font-mono text-xs">
             <Fact label="events" value={`${entry.events.length} (${STATE_NOTE[entry.loaded]})`} />
-            <Fact
-              label="derived"
-              value={
-                script == null
-                  ? typeId
-                    ? `${typeId} has no events script`
-                    : 'no type, so no events script'
-                  : `${entry.derived.length} (${STATE_NOTE[entry.derivedState]})`
-              }
-            />
             {entry.error && <Fact label="read error" value={entry.error} bad />}
-            {entry.derivedError && <Fact label="script error" value={entry.derivedError} bad />}
           </div>
         ) : (
           <p className={cn('flex-1', EMPTY)}>
             Nothing here — the client has never had reason to read this entity.
           </p>
         )}
-        <Button variant="tertiary" size="sm" onClick={refreshDerived}>
-          Recompute derived
-        </Button>
       </div>
-      {entry?.derived.length ? (
-        <pre className="overflow-auto rounded-md bg-gray-50 p-3 font-mono text-xs">
-          {JSON.stringify(entry.derived, null, 2)}
-        </pre>
-      ) : null}
-      {script != null && entry?.derivedState === 'loaded' && !entry.derived.length && (
-        <p className={EMPTY}>
-          The script ran and returned no events. Anything it logged is in the devtools console.
-        </p>
-      )}
     </>
   )
 }

@@ -35,9 +35,7 @@ Object.defineProperty(globalThis, 'localStorage', {
 const {
   entitiesAtom,
   getEntity,
-  refreshDerived,
   refreshEntities,
-  setCodeEvaluator,
   setEntityFetcher,
 } = await import('../src/core/cache')
 const { PAGE_SIZE, loadMore, rowsOf } = await import('../src/renderer/src/state/query')
@@ -90,7 +88,6 @@ function open(): void {
     removed: removeEvents,
     touched: invalidateEntities,
   })
-  setCodeEvaluator(null)
   layoutAtom.set(defaultLayout('root'))
   // Stand in for the mounted frame. Reading is what asks the source for
   // anything missing, so without something re-reading when the cache changes
@@ -463,7 +460,7 @@ test('knows what a type is without anything having written it down', async () =>
   // the store serves it (`core/builtins`), so a schema can be written against it
   // on a store that is one entity old.
   const schema = getEntity('type').values.schema as { properties: Record<string, unknown> }
-  assert.deepEqual(Object.keys(schema.properties), ['schema', 'actions', 'events'])
+  assert.deepEqual(Object.keys(schema.properties), ['schema', 'actions'])
   assert.equal(getEntity('type').values.type, 'type', 'and it is its own type')
 })
 
@@ -481,167 +478,6 @@ test('lets the store overrule what it is served', async () => {
 
 
 // --- Derived events ---------------------------------------------------------
-
-test('runs a type’s events script once per instance, and lets it speak for others', async () => {
-  open()
-  source.tree({ root: ['repo'], repo: ['branch'] })
-  source.values({
-    repo: { text: 'Repo', type: 'repository' },
-    repository: { events: 'branches()' },
-  })
-
-  let ran = 0
-  setCodeEvaluator(async (entityId, code, values) => {
-    ran++
-    // The script is the type’s and the context is the instance’s: it is run for
-    // `repo`, with `repo`’s own values, which is what makes one script on one
-    // type serve every entity of it.
-    assert.equal(entityId, 'repo')
-    assert.equal(code, 'branches()')
-    assert.equal(values.text, 'Repo')
-    return [
-      { key: 'text', value: 'Repo (live)' },
-      { entityId: 'branch', key: 'text', value: 'main' },
-    ]
-  })
-
-  rowsOf(frameId())
-  await settle()
-  assert.equal(ran, 1)
-  // Timestamp 0 by default, so a derived value loses to a real one — `repo`
-  // already has text, and keeps it. `branch` has none, so it takes what it was given.
-  assert.equal(getEntity('repo').values.text, 'Repo')
-  assert.equal(getEntity('branch').values.text, 'main')
-
-  // A write invalidates the read events; the script is not run again for it.
-  refreshEntities()
-  await settle()
-  assert.equal(ran, 1)
-  assert.equal(getEntity('branch').values.text, 'main')
-})
-
-test('leaves an entity’s own events value alone — the script is the type’s', async () => {
-  open()
-  source.tree({ root: ['x'] })
-  source.values({ x: { text: 'X', events: 'mine()' } })
-
-  let ran = 0
-  setCodeEvaluator(async () => {
-    ran++
-    return [{ key: 'note', value: 'ran' }]
-  })
-
-  rowsOf(frameId())
-  await settle()
-  assert.equal(ran, 0, 'an entity of no type has no script, whatever it holds')
-  assert.equal(getEntity('x').values.note, undefined)
-})
-
-test('leaves the script of an entity nothing has read alone until something reads it', async () => {
-  open()
-  // `deep` is two levels down and folded away, so no row asks for it — but the
-  // overscan reads that far ahead, so its events arrive regardless.
-  source.tree({ root: ['a'], a: ['deep'] })
-  source.values({
-    root: { text: 'Root' },
-    a: { text: 'A' },
-    deep: { text: 'Deep', type: 'reacher' },
-    reacher: { events: 'reach()' },
-  })
-  const tabId = (): string => layoutAtom.get().frames[frameId()].tabId
-
-  let ran = 0
-  setCodeEvaluator(async () => {
-    ran++
-    return [{ key: 'note', value: 'reached out' }]
-  })
-
-  // Folded before the first read, so `deep` is never in view at any point.
-  A.toggleCollapse(tabId(), 'a')
-  rowsOf(frameId())
-  await settle()
-  assert.deepEqual(shape(), ['root', 'root/a'])
-  assert.equal(entitiesAtom.get().deep?.loaded, 'loaded', 'the overscan brought it in')
-  assert.equal(ran, 0, 'but nothing has looked at it, so its script has not run')
-
-  // Unfolding is what asks for it, and asking is what lets the script run. The
-  // read has to happen before the settle: nothing re-reads on a layout change,
-  // which in the app is the render that follows one.
-  A.toggleCollapse(tabId(), 'a')
-  rowsOf(frameId())
-  await settle()
-  assert.deepEqual(shape(), ['root', 'root/a', 'root/a/deep'])
-  assert.equal(ran, 1)
-  assert.equal(getEntity('deep').values.note, 'reached out')
-})
-
-test('records why a script failed, apart from why a read might have', async () => {
-  open()
-  source.tree({ root: ['x'] })
-  source.values({ x: { text: 'X', type: 'boomy' }, boomy: { events: 'boom()' } })
-  setCodeEvaluator(async () => {
-    throw new Error('boom is not a function')
-  })
-
-  rowsOf(frameId())
-  await settle()
-  const entry = entitiesAtom.get().x
-  assert.equal(entry.derivedState, 'error')
-  assert.equal(entry.derivedError, 'boom is not a function')
-  // A script that threw is not a row that can't be trusted: the entity's own
-  // events arrived, and the frame must not report itself as broken.
-  assert.equal(entry.error, undefined)
-  assert.equal(entry.loaded, 'loaded')
-  assert.equal(rowsOf(frameId()).error, null)
-})
-
-test('runs the scripts again on request, without duplicating what they made', async () => {
-  open()
-  source.tree({ root: ['r'] })
-  source.values({ r: { text: 'R', type: 'parent' }, parent: { events: 'children()' } })
-
-  let runs = 0
-  setCodeEvaluator(async () => {
-    runs++
-    return [
-      { type: 'link', sourceId: 'r', destinationId: 'c1' },
-      { entityId: 'c1', key: 'text', value: `run ${runs}` },
-    ]
-  })
-
-  rowsOf(frameId())
-  await settle()
-  assert.deepEqual(shape(), ['root', 'root/r', 'root/r/c1'])
-  assert.equal(getEntity('c1').values.text, 'run 1')
-
-  refreshDerived()
-  await settle()
-  assert.equal(runs, 2)
-  // One child, not two: the old derived events are cleared before the rerun,
-  // which is the whole reason this is all-or-nothing rather than per entity.
-  assert.deepEqual(shape(), ['root', 'root/r', 'root/r/c1'])
-  assert.equal(getEntity('c1').values.text, 'run 2')
-})
-
-test('waits for the type before running the script it holds', async () => {
-  open()
-  source.tree({ root: ['x'] })
-  source.values({ x: { type: 'scripted' }, scripted: { events: 'fromTheType()' } })
-
-  const seen: string[] = []
-  setCodeEvaluator(async (entityId, code) => {
-    seen.push(`${entityId}:${code}`)
-    return { key: 'note', value: 'from the type' }
-  })
-
-  rowsOf(frameId())
-  await settle()
-  // `scripted` is not linked from anything, so it is fetched only because `x`
-  // names it — and `x` waits for it rather than settling with no script. The
-  // type is not itself an instance of anything, so it runs nothing of its own.
-  assert.deepEqual(seen, ['x:fromTheType()'])
-  assert.equal(getEntity('x').values.note, 'from the type')
-})
 
 // --- Writing and undoing ----------------------------------------------------
 

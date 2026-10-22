@@ -440,9 +440,8 @@ const DOCS: Doc[] = [
     uri: 'docs://types',
     name: 'What a type is and how to write one',
     description:
-      'What a type says about the entities naming it in their `type`, the three keys ' +
-      'that are read by name, and why nothing is inherited. Includes what an `events` ' +
-      'script is handed and which fields of an event it may leave out. The ' +
+      'What a type says about the entities naming it in their `type`, the keys ' +
+      'that are read by name, and why nothing is inherited. The ' +
       `long version of \`get_details\` on \`${TYPE_ID}\`.`,
     path: 'docs/types.md',
   },

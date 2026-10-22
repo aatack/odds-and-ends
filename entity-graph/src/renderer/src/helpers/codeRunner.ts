@@ -8,7 +8,7 @@ import type {
   WorkerMessage,
 } from './codeRunner.worker'
 
-// Local execution of scripts — `type: code` entities, `events` keys, and the
+// Local execution of scripts — `type: code` entities and the
 // bodies of the tools the user wrote — in sandboxed QuickJS workers. A browser
 // service rather than state: the results are runtime-only and never written back,
 // and workers are made lazily and killed on Stop (terminating one is how a runaway
@@ -128,13 +128,12 @@ export function runCode(id: string, code: string, context: CallContext): void {
 }
 
 /**
- * Run a script for its value alone, with nothing shown for it. This is how an
- * entity's `events` field is evaluated: it is a property of the entity being
- * computed, not something the user asked to run, so it has no place in the run
- * state a row draws its play button from.
+ * Run a script for its value alone, with nothing shown for it — something
+ * computed about an entity rather than something the user asked to run, so it
+ * has no place in the run state a row draws its play button from.
  *
- * The id is namespaced away from the entity's own, so evaluating a `type: code`
- * entity's `events` can't be mistaken for running the code in it.
+ * The id is namespaced away from the entity's own, so evaluating a script on a
+ * `type: code` entity can't be mistaken for running the code in it.
  *
  * Nothing being *shown* is not the same as nothing being knowable: whatever the
  * script logged goes to the devtools console either way, since a script that
@@ -155,8 +154,8 @@ export async function evaluateCode(
     frameId: null,
     startedAt: Date.now(),
   }
-  const where = `events on ${entityId}`
-  const result = await execute(`events:${entityId}`, code, context)
+  const where = `script on ${entityId}`
+  const result = await execute(`eval:${entityId}`, code, context)
   for (const line of result.logs) console.log(`[${where}]`, line)
   if (!result.ok) {
     const error = result.error ?? 'Error'
@@ -180,8 +179,8 @@ let scriptRuns = 0
  * do should be recorded against the frame the user was looking at; a definition
  * sitting under `@tools` is not where any of it is happening.
  *
- * Logs are returned rather than printed, since unlike an `events` key this has a
- * caller to hand them to.
+ * Logs are returned rather than printed, since unlike {@link evaluateCode} this
+ * has a caller to hand them to.
  */
 export async function runToolScript(
   toolId: string,

@@ -92,8 +92,8 @@ is the long form; the rules that matter day to day:
   making, or failing that the ids it touched — so that is all that is read again,
   and what is marked keeps what it has (`stale`) rather than turning back into a
   loading row. Reading the whole cache again is for a change made where this side
-  cannot see it. See `docs/frontend-state.md` for the rest — types,
-  `events` scripts, and how writes and undo reach the cache.
+  cannot see it. See `docs/frontend-state.md` for the rest — types
+  and how writes and undo reach the cache.
 - **`src/core` is shared with the main process *and* the phone.** Anything put
   there is imported by three builds, so the parts the renderer and the phone
   reach must stay free of Electron, node and zod — which in practice means they
@@ -105,8 +105,7 @@ is the long form; the rules that matter day to day:
   [`mobile/AGENTS.md`](./mobile/AGENTS.md) for where that line is drawn.
 - **A type describes its instances; it does not lend them values.** An entity's
   `type` names another entity, whose `schema` says which values an entity of that
-  kind holds, whose `actions` name the tools every row of it wears as a button,
-  and whose `events` script is run once per instance. Nothing of it is inherited — what an
+  kind holds, and whose `actions` name the tools every row of it wears as a button. Nothing of it is inherited — what an
   entity holds is what was written to it. `core/schema.ts` is the reading of a
   type and `core/builtins.ts` the types the store supplies whether or not anybody
   wrote them — `type` itself, schema and all, plus `tool`, `diagram` and `chat`;

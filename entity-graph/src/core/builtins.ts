@@ -50,9 +50,8 @@ export const CHAT_OWNER_KEY = 'owner'
 const BUILTIN_AUTHOR = 'builtin'
 
 /**
- * What a type entity holds. Three keys, each of which is read by name somewhere:
- * the schema by the details panel, the actions by every row of that type, and
- * the events by the client's cache as it loads one.
+ * What a type entity holds. Two keys, each of which is read by name somewhere:
+ * the schema by the details panel, and the actions by every row of that type.
  */
 export const TYPE_SCHEMA: Schema = {
   type: 'object',
@@ -78,21 +77,6 @@ export const TYPE_SCHEMA: Schema = {
         'runs that tool along the row, so `context.entityId` is the row it was pressed on. ' +
         'Being ordinary tools, the same actions are in the palette and the right-click menu.',
       items: { type: 'string' },
-    },
-    events: {
-      type: 'string',
-      description:
-        'A script run once per instance as it loads, whose return value is a list of ' +
-        'events added to the client\'s cache and never written to the store — how an ' +
-        'entity shows something it does not hold. Statements rather than an ' +
-        'expression: the last one evaluated is what it returned, `tool.…` reaches the ' +
-        'whole registry synchronously, and `context` is the instance\'s own values with ' +
-        '`context.entityId` laid in on top. The events are the store\'s ordinary ones ' +
-        '— `{ type: \'value\', entityId, key, value }` and `{ type: \'link\', sourceId, ' +
-        'destinationId, action }`, `0` adding and `1` removing — and three of their ' +
-        'fields default, so a script leaves them out: `entityId` is the instance it ran ' +
-        'for, `author` is `derived`, and `timestamp` is 0, which keeps a derived value ' +
-        'behind every real edit rather than over one.',
     },
   },
 }

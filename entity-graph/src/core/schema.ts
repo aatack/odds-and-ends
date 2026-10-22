@@ -1,7 +1,7 @@
 // What a *type* says about its instances. An entity's `type` value names another
 // entity, and that entity — a type — describes the entities that name it: which
-// values they are expected to hold (`schema`), what can be done with them
-// (`actions`), and what is computed for them when they load (`events`).
+// values they are expected to hold (`schema`) and what can be done with them
+// (`actions`).
 //
 // Nothing here reads the store or the cache: these are pure readings of a type
 // entity's own values, so the desktop app, the phone and the server all agree

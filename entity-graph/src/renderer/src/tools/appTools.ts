@@ -1,5 +1,5 @@
 import { TOOL_ID } from '../../../core/builtins'
-import { refreshDerived, refreshEntities } from '../../../core/cache'
+import { refreshEntities } from '../../../core/cache'
 import { createEntity } from '../source/entity'
 import { openExternal, readClipboardText, revealPath } from '../source/files'
 import { copyText } from '../helpers/clipboard'
@@ -153,20 +153,6 @@ export const APP_TOOLS: ToolSpec[] = [
     run: () => {
       refreshEntities()
       return { message: 'Reading every entity again' }
-    },
-  },
-  {
-    // Not `mutates`: nothing is written. It only throws away what the scripts
-    // produced last time, which is why it doesn't strand the undo stack either.
-    id: 'derived.refresh',
-    label: 'Recompute derived events',
-    aliases: ['events', 'rerun', 'scripts', 'reload derived'],
-    hint: 'Shell',
-    scope: 'app',
-    reach: 'ui',
-    run: () => {
-      refreshDerived()
-      return { message: 'Running every events script again' }
     },
   },
   {

@@ -53,8 +53,8 @@ export function onCallSettled(listener: Listener): () => void {
 
 /**
  * Who asked for a call. `user` is a gesture — a hotkey, the palette, a
- * right-click, a button; `code` is a script's, whether a `type: code` entity the
- * user ran or an `events` key that ran itself.
+ * right-click, a button; `code` is a script's — a `type: code` entity the user
+ * ran, or the body of a tool they wrote.
  */
 type CallOrigin = 'user' | 'code'
 
@@ -79,9 +79,8 @@ interface Invocation {
  * results far too large, to persist.
  *
  * And nothing a script did is kept, however far it reached. The log answers "what
- * have I done?", and a script's calls are not that: one `events` key runs itself
- * every time an entity is read, so a single script left in the tree would fill
- * the log on its own and push the day's actual work off the end of it. What a
+ * have I done?", and a script's calls are not that: one loop in a script would
+ * fill the log on its own and push the day's actual work off the end of it. What a
  * script did is shown where it was run — the code entity's own output. It doesn't
  * toast either; `settle` says why.
  *
@@ -156,9 +155,7 @@ function markRunning(call: Invocation, tool: ToolSpec): void {
 function settle(call: Invocation, tool: ToolSpec, outcome: CallOutcome): void {
   const record = recordOf(call, bounded(outcome))
   // Announced only if the user asked for it — a toast is the app answering
-  // something you just did. A script's calls are not that, and an `events` key
-  // that fails would otherwise raise the same toast every time anything reads the
-  // entity it sits on. What a script did, and how it failed, is shown where the
+  // something you just did. A script's calls are not that. What a script did, and how it failed, is shown where the
   // script is: the code entity's own output.
   if (call.origin === 'user') listeners.forEach((l) => l(record))
   // Keyed by callId, so resuming and re-settling updates one entry in place

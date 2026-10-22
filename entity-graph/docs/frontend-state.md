@@ -138,7 +138,7 @@ made every caller pay for a full walk.
 An entity's `type` value names another entity, and that entity — a *type* —
 describes the entities that name it. It does not lend them anything: what an
 entity holds is what was written to it, and a type says what it *should* hold,
-what can be done with it, and what is computed for it. See
+and what can be done with it. See
 [`types.md`](./types.md) for the whole of it; what the cache does about it is:
 
 - **Naming a type is what fetches it.** Nothing else reads one, so `reconcile`
@@ -146,32 +146,7 @@ what can be done with it, and what is computed for it. See
   a type usually has no row of its own to be refetched by.
 - **The rollup is one level.** An entity's values are its own events, so a type
   arriving changes nothing about its instances' values; what it changes is the
-  rows built from them (a type's `actions` are buttons on every instance) and
-  whether their `events` script can run.
-
-### Derived events
-
-A type may carry an `events` value: a script, run once per session per instance
-in the same QuickJS sandbox a `type: code` entity runs in, with that instance as
-its context, whose return value is a list of events that are added to the cache
-but never written to the store. This is how an entity can show something it
-doesn't hold — the text of a Slack message, the branches on a repo.
-
-- They are timestamped 0 by default, so they sort behind every real edit and can
-  never overwrite one.
-- A script may return events **for entities other than its own**, which is how
-  one entity populates its children.
-- It runs only once the entity's own events are in *and its type has loaded*,
-  since the type is where the script is.
-- An entity of no type derives nothing, whatever it holds: an `events` value on
-  an ordinary entity is a value like any other.
-- It runs only for an entity something has **asked for**. The overscan reads two
-  layers past what was asked for, and that is a head start on scrolling rather
-  than a request — without this a page reaches out to Slack and GitHub on behalf
-  of rows nobody has looked at. Asking is what starts it, so an overscanned
-  entity's script waits until a row shows it.
-- A refresh does not re-run it. Once a session is the point: a script that
-  reaches out to GitHub on every keystroke would not do.
+  rows built from them (a type's `actions` are buttons on every instance).
 
 ## Vocabulary
 

@@ -3,13 +3,11 @@ import type { CurrentPensive } from '../../../core/client'
 import { Layout } from '../layout/Layout'
 import { EntityInspector } from '../components/EntityInspector'
 import { ResourceModal } from '../components/Resource'
-import { evaluateCode } from '../helpers/codeRunner'
 import {
   applyEvents,
   invalidateEntities,
   refreshEntities,
   removeEvents,
-  setCodeEvaluator,
   setEntityFetcher,
 } from '../../../core/cache'
 import { useUi } from '../state/hooks'
@@ -52,7 +50,6 @@ export function SourceView({
       removed: removeEvents,
       touched: invalidateEntities,
     })
-    setCodeEvaluator(evaluateCode)
     setResourceFetcher(readResource)
     // Whatever is cached was rolled up from a different store, so it is read
     // again rather than trusted — the rows keep what they have until it lands.
@@ -63,7 +60,6 @@ export function SourceView({
     return () => {
       setEntityFetcher(null)
       setWriteObserver(null)
-      setCodeEvaluator(null)
       setResourceFetcher(null)
       setSourceTransport(null)
       clearUserTools()

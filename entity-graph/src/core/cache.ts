@@ -28,7 +28,7 @@ import type { EntitySource } from './query'
 // loading state on every keystroke.
 
 /**
- * How far along an entity's events (or its derived events) are.
+ * How far along an entity's events are.
  *
  * `stale` is the one that isn't a step along that road: it means read in full
  * once and worth reading again — the store may have moved on. It is deliberately
@@ -46,22 +46,6 @@ export interface CachedEntity {
   loaded: LoadState
   /** Why the last read failed, so a row can say so rather than sitting blank. */
   error?: string
-  /**
-   * Events produced by a type's `events` script rather than read from the source,
-   * and never written back to it — the text of a Slack message, the branches on a
-   * repo. Kept apart from the real ones so a refetch can replace those without
-   * disturbing these.
-   */
-  derived: AppEvent[]
-  /** Whether this entity's type has had its `events` script run for it. */
-  derivedState: LoadState
-  /**
-   * Why that script failed, if it did. Kept apart from {@link error} because the
-   * two mean opposite things: a read that failed is a row that can't be trusted,
-   * while a script that threw is a row that is simply missing the extra its
-   * author hoped for. Conflating them made a bad script look like a bad store.
-   */
-  derivedError?: string
   /**
    * The events above, rolled up — the entity everything else reads. Derived, but
    * cached and recomputed only when the events it came from change, so a row
@@ -101,8 +85,6 @@ const unread = (state: LoadState): boolean => state === 'unloaded' || state === 
 const blank = (id: string): CachedEntity => ({
   events: [],
   loaded: 'unloaded',
-  derived: [],
-  derivedState: 'unloaded',
   entity: empty(id),
 })
 
@@ -126,12 +108,7 @@ export function entitiesFrom(cache: EntityCache): EntitySource {
     pending: (id) => {
       const entry = cache[id]
       if (!entry) return true
-      // The derived events count too: an entity whose type has a script is not
-      // finished arriving until the script has run for it. They only start once
-      // the real events are in, though, so a read that failed leaves their state
-      // at `unloaded` for good — that row is not waiting on anything.
-      if (waiting(entry.loaded)) return true
-      return complete(entry.loaded) && waiting(entry.derivedState)
+      return waiting(entry.loaded)
     },
     error: (id) => cache[id]?.error ?? null,
   }
@@ -182,16 +159,6 @@ const trustworthy = (id: string, at: number): boolean => (writtenAt.get(id) ?? 0
 
 /** Ids asked for since the last flush. */
 const wanted = new Set<string>()
-/**
- * Every id anything has ever asked for, as opposed to every id that has arrived.
- * The two differ because a read fetches a couple of layers past what it was asked
- * for, and the overscan is a head start on scrolling rather than a request: an
- * entity that came back that way is cached but unasked-for, and running its
- * `events` script would mean a page reaching out to Slack or GitHub on behalf of
- * rows nobody has looked at. Kept apart from {@link wanted}, which empties on
- * every flush and only ever holds what is still outstanding.
- */
-const asked = new Set<string>()
 let flushing = false
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
@@ -202,26 +169,15 @@ const stateOf = (cache: EntityCache, id: string): LoadState => cache[id]?.loaded
  * Ask for entities. Idempotent and cheap enough to call on every render: one
  * already loaded, in flight, or known to have failed is not asked for again, and
  * everything asked for within a tick goes out as a single request.
- *
- * Asking is also what lets an entity's `events` script run, so an id already
- * cached is still recorded here even though there is nothing to fetch — that is
- * how an overscanned entity's script starts when a row finally shows it.
  */
 export function requestEntities(ids: readonly string[]): void {
   const cache = entitiesAtom.get()
   let added = false
-  let newlyAsked = false
   for (const id of ids) {
-    if (!asked.has(id)) {
-      asked.add(id)
-      newlyAsked = true
-    }
     if (!unread(stateOf(cache, id)) || wanted.has(id)) continue
     wanted.add(id)
     added = true
   }
-  // Deferred for the same reason the fetch is: this reads during render.
-  if (newlyAsked) queueMicrotask(() => startDerivations([...ids]))
   if (!added || flushing) return
   flushing = true
   // Deferred, and not only to batch: reading happens during render, and writing
@@ -327,7 +283,6 @@ export function setEntityFetcher(next: EntityFetcher | null): void {
   writtenAt.clear()
   // Nothing has been asked of *this* source yet. Unlike `refreshEntities`, which
   // keeps what the rows still want, everything here belonged to the last one.
-  asked.clear()
   entitiesAtom.set({})
 }
 
@@ -506,36 +461,27 @@ function reconcile(before: EntityCache, draft: EntityCache): EntityCache {
 
   for (const [id, entry] of Object.entries(draft)) {
     const prior = before[id]
-    if (prior && prior.events === entry.events && prior.derived === entry.derived) {
+    if (prior && prior.events === entry.events) {
       next[id] = entry
       continue
     }
     // Only the rolled-up entity is recomputed here; everything else about the
     // entry is whatever the change being reconciled left it as.
-    next[id] = { ...entry, entity: rollupEntity(id, [...entry.events, ...entry.derived]) }
+    next[id] = { ...entry, entity: rollupEntity(id, entry.events) }
   }
 
   /** Types nothing has read, or has read but since invalidated. */
   const staleTypes = new Set<string>()
-  /** Entities whose events are in and whose derived events have yet to be. */
-  const candidates: string[] = []
 
   for (const [id, entry] of Object.entries(next)) {
     const typeId = typeIdOf(entry.entity.values)
     // Naming a type is what asks for it — nothing else reads one, so without
     // this a type would never load at all, and never reload after a write.
     if (typeId && unread(stateOf(next, typeId))) staleTypes.add(typeId)
-
-    // Only what was asked for: see `asked`. An overscanned entity is left alone
-    // until something reads it, and picked up by `requestEntities` when it does.
-    if (asked.has(id) && complete(entry.loaded) && entry.derivedState === 'unloaded') {
-      candidates.push(id)
-    }
   }
 
-  // Both of these write back here, so neither may run inside the update.
+  // It writes back here, so it may not run inside the update.
   if (staleTypes.size) queueMicrotask(() => requestEntities([...staleTypes]))
-  if (candidates.length) queueMicrotask(() => startDerivations(candidates))
 
   return same(before, next) ? before : next
 }
@@ -545,168 +491,4 @@ function same(before: EntityCache, next: EntityCache): boolean {
   const keys = Object.keys(next)
   if (keys.length !== Object.keys(before).length) return false
   return keys.every((id) => before[id] === next[id])
-}
-
-// --- Derived events ---------------------------------------------------------
-
-/**
- * Run a type's `events` script for one of its instances and hand back what it
- * returned. Injected rather than imported: running code needs a worker, and this
- * layer has no business knowing that.
- */
-export type CodeEvaluator = (
-  entityId: string,
-  code: string,
-  values: Record<string, unknown>,
-) => Promise<unknown>
-
-let evaluator: CodeEvaluator | null = null
-export const setCodeEvaluator = (next: CodeEvaluator | null): void => {
-  evaluator = next
-}
-
-/** The author on an event a script made up, rather than a person writing one. */
-const DERIVED_AUTHOR = 'derived'
-
-/**
- * Decide what, if anything, is left to compute for entities whose events have
- * arrived. The script is the *type's*: an entity of no type, or of a type that
- * defines no `events`, has nothing to compute and is settled on the spot, which
- * is what keeps this from reconsidering the whole cache every time anything
- * changes.
- *
- * The script therefore cannot run until the type has loaded — an entity waiting
- * on its type is left for now and picked up when the type lands. The type is
- * asked for as soon as its id is known, so the wait always ends.
- */
-function startDerivations(ids: readonly string[]): void {
-  const cache = entitiesAtom.get()
-  const ready: { id: string; code: string }[] = []
-  const settled: string[] = []
-
-  for (const id of ids) {
-    const entry = cache[id]
-    if (!entry || !complete(entry.loaded) || entry.derivedState !== 'unloaded') continue
-
-    const typeId = typeIdOf(entry.entity.values)
-    if (!typeId) {
-      settled.push(id)
-      continue
-    }
-    if (!complete(stateOf(cache, typeId))) {
-      requestEntities([typeId])
-      continue
-    }
-
-    const code = cache[typeId]?.entity.values.events
-    if (typeof code === 'string' && code.trim()) ready.push({ id, code })
-    else settled.push(id)
-  }
-
-  if (settled.length) {
-    update((next) => {
-      for (const id of settled) next[id] = { ...next[id], derivedState: 'loaded' }
-    })
-  }
-  if (!ready.length) return
-  update((next) => {
-    for (const { id } of ready) next[id] = { ...next[id], derivedState: 'loading' }
-  })
-  for (const { id, code } of ready) void derive(id, code)
-}
-
-/**
- * Scripts run one at a time. There is a single sandbox behind the evaluator, and
- * a page's worth of entities all reaching out at once is not something to
- * inflict on whatever they are reaching.
- */
-let queue: Promise<unknown> = Promise.resolve()
-
-function derive(id: string, code: string): Promise<void> {
-  const run = queue.then(async () => {
-    const evaluate = evaluator
-    const entry = entitiesAtom.get()[id]
-    if (!evaluate || !entry) return
-    try {
-      const events = derivedEvents(id, await evaluate(id, code, entry.entity.values))
-      update((next) => {
-        // A script may speak for entities other than its own — a repo giving its
-        // branches their text — so each event is filed under whichever entity it
-        // is about.
-        for (const [target, added] of byEntity(events)) {
-          const held = next[target] ?? blank(target)
-          next[target] = { ...held, derived: [...held.derived, ...added] }
-        }
-        next[id] = { ...next[id], derivedState: 'loaded' }
-      })
-    } catch (e) {
-      update((next) => {
-        next[id] = { ...next[id], derivedState: 'error', derivedError: message(e) }
-      })
-    }
-  })
-  queue = run
-  return run
-}
-
-/**
- * Run every `events` script again. The one affordance for iterating on one:
- * scripts are otherwise computed once a session, so without this the only way to
- * see a change is to reload the app.
- *
- * All of them, not one — a script may write events onto entities other than its
- * own, and nothing records which script put what where, so there is no honest
- * way to undo just one. Clearing the lot and recomputing is both simpler and
- * what you want while you are working on one.
- */
-export function refreshDerived(): void {
-  entitiesAtom.set((cache) => {
-    const draft: EntityCache = {}
-    for (const [id, entry] of Object.entries(cache)) {
-      draft[id] =
-        entry.derived.length === 0 && entry.derivedState === 'unloaded'
-          ? entry
-          : { ...entry, derived: [], derivedState: 'unloaded', derivedError: undefined }
-    }
-    return reconcile(cache, draft)
-  })
-}
-
-/**
- * What a script returned, as events. A bare object counts as one event, and a
- * value event that names no entity is about the entity that produced it — which
- * is the common case by far. The timestamp defaults to 0, so a derived value
- * sorts behind every real edit and can never overwrite one.
- *
- * Anything unrecognisable is dropped rather than thrown over: a script that logs
- * and returns nothing has still done its job.
- */
-export function derivedEvents(id: string, returned: unknown): AppEvent[] {
-  const list = Array.isArray(returned) ? returned : returned == null ? [] : [returned]
-  const out: AppEvent[] = []
-  for (const raw of list) {
-    if (!raw || typeof raw !== 'object') continue
-    const e = raw as Record<string, unknown>
-    const base = { timestamp: Number(e.timestamp ?? 0) || 0, author: String(e.author ?? DERIVED_AUTHOR) }
-    if (e.type === 'link' || e.sourceId != null || e.destinationId != null) {
-      if (e.sourceId == null || e.destinationId == null) continue
-      out.push({
-        ...base,
-        type: 'link',
-        sourceId: String(e.sourceId),
-        destinationId: String(e.destinationId),
-        action: ((Number(e.action ?? 0) || 0) as 0 | 1 | 2 | 3),
-      })
-      continue
-    }
-    if (typeof e.key !== 'string') continue
-    out.push({
-      ...base,
-      type: 'value',
-      entityId: e.entityId == null ? id : String(e.entityId),
-      key: e.key,
-      value: e.value ?? null,
-    })
-  }
-  return out
 }
