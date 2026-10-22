@@ -11,6 +11,15 @@ import {
   type JsonSchema,
 } from './schema'
 
+/** Black or white, whichever reads on a background of `hex` (by its luminance). */
+function inkOn(hex: string): string {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.179 ? '#000000' : '#ffffff'
+}
+
 /**
  * Editors to try the hook with: a control drawn in place (colour), one built of
  * buttons (stars), and one that runs code and hands a value back (roll).
@@ -19,17 +28,26 @@ const EDITORS: Editors = {
   colour: {
     name: 'Colour picker',
     kinds: ['string'],
-    render: ({ value, onChange }) => (
-      <div className="flex items-center gap-2 px-2.5">
-        <input
-          type="color"
-          className="h-6 w-8 bg-transparent"
-          value={typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : '#000000'}
-          onChange={(e) => onChange(e.target.value)}
-        />
-        <span className="font-mono text-[12.5px] text-gray-500">{String(value ?? '')}</span>
-      </div>
-    ),
+    // The whole box is the colour, with its hex on top in whichever of black or
+    // white reads on it. The native picker lies invisibly over all of it, so a
+    // press anywhere opens it.
+    render: ({ value, onChange }) => {
+      const hex = typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : null
+      return (
+        <label
+          className="relative flex h-8 w-full items-center px-2.5 font-mono text-[12.5px]"
+          style={{ background: hex ?? undefined, color: hex ? inkOn(hex) : undefined }}
+        >
+          <span className={hex ? undefined : 'text-gray-400'}>{hex ?? 'Pick a colour'}</span>
+          <input
+            type="color"
+            className="absolute inset-0 h-full w-full opacity-0"
+            value={hex ?? '#000000'}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        </label>
+      )
+    },
   },
   stars: {
     name: 'Stars',
