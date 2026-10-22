@@ -937,7 +937,7 @@ Query time, first page / all pages, CPU ms (wall within 1%), `instr` scan → tr
 - Short strings (1–2 characters) and dense strings cannot use it.
 - Fuzzy with pieces: `managment` at 1M 4.1× (first page) and 4.3× (all pages) faster on `base`, 5× on `top_frozen`; `zepelin` 4.6× / 4.1×. The q-gram count filter (names with at least `trigrams − 3k` query trigrams, FTS only) found candidates in 99 ms (`managment`) and 29 ms (`zepelin`) at 1M, not better than the pieces, and for k = 2 on an 8-letter word the threshold is 0 (no filter).
 
-### Optimisations measured (not committed)
+### Optimisations measured (committed later: 243bd73, ccc445f, 733a675, 6a7952b; see "Search: the committed find optimisations")
 
 Two changes in a copy of `find.rs`, interface unchanged; `cargo test --release` passed (72 tests) and the differential model test passed with `EGDB_DIFF_CASES=3000`:
 
@@ -1017,4 +1017,182 @@ A third, measured with the existing planner knobs only (no code written): the de
 - Exact `type` and `Prefix` are fine at 1M (index seeks; cost follows matches). Contains at 1M costs about 0.1 s on one layer and 0.3–0.5 s on a 3-layer stack per call, and every further page of a sparse result scans again; that is the limit of the scan design.
 - Fuzzy: do not add a fuzzy filter to the core yet. A caller can do typo-tolerant search now with `Custom` behind a pigeonhole `ContainsIgnoreCase` pre-filter: it never loses matches, and it is about 6× faster than `Custom` alone up to 100k entities when the pieces are 4+ letters and not common. At 1M it gains little today (1.6× with optimisations 1 and 2), and it is slower than the plain `Custom` scan when a piece is short or common, so a caller should only use pieces of 4+ letters that are not common words. Expect 0.4–0.6 s per first page and 6–12 s for a full fuzzy read at 1M without an index.
 - If fuzzy or rare-substring search on millions of names becomes a product need, the trigram index is the right tool for rare strings (1.2–20× faster; ignore case 6–20×; fuzzy with pieces 4–5× faster at 1M), but it costs about +24% of the file, +25–85 µs per text event written (+15–40 µs per event of a mixed workload), a second candidate path with history, and it is slower than the scan for medium-frequency strings. If built: make it opt-in per key, index current rows and frozen-range history only, encode the entity in the index row (to drop the event lookup), and keep the scan for short and dense strings.
-- Worth doing first, low risk: optimisation 1 and 2 above (up to 3–4× on stacks), and the `Eq` dense-threshold change (2.5–3× on 5–10% types).
+- Worth doing first, low risk: optimisation 1 and 2 above (up to 3–4× on stacks), and the `Eq` dense-threshold change (2.5–3× on 5–10% types). (Done: see the next section.)
+
+## Search: the committed find optimisations (fe9ea95 → 6a7952b)
+
+What changed (interfaces unchanged; each has a knob in `egdb::find_knobs` that restores the old path, and the differential test flips them):
+
+1. 243bd73: `ContainsIgnoreCase` uses the Rust SQL function `egdb_contains(value, needle, 1)` in place of `instr(lower(value), needle) > 0` (`NO_CONTAINS_FN`). Same results: ASCII-only folding, as before (DESIGN.md, find semantics 4).
+2. ccc445f + 6a7952b: sparse plans fetch two chunks per query when the check can reject candidates: several layers, history, or a compound filter (`NO_OVERFETCH`). One indexed term on one current layer fetches one chunk, as before.
+3. 733a675: a lone `Eq` is dense from `sqrt(6 × limit × entities)` candidates, not `sqrt(limit × entities)` (`EQ_CAP`).
+
+Method: `bench_search run` with the binary of fe9ea95 ("before") and of the new code ("after"), each with the same example (`--limit` and the query `t6 type = "person"` were added for this run). Same data files as above, warm, ids only. First page = median of 7 calls at 100k and 5 at 1M; all pages = median of 3 full reads. CPU = thread CPU time, ms per query. The two binaries ran one after the other on the same box, so the usual ±10–15% noise applies between cells. Single cells that moved by more than that with no code-path change (for example `base` prefix "Weekly" at 1M: 39.7 → 33.8 → 48.1 ms in three runs) are noise.
+
+**Name text, pages of 1000** (`base` rows: `textbase` run of 6a7952b; stack rows: 544c9a2, same code path on stacks)
+
+| entities | branch | query | matches | first page CPU ms: before → after | all pages CPU ms: before → after |
+| ---: | --- | --- | ---: | ---: | ---: |
+| 100,000 | base | name contains "Zeppelin" | 188 | 14.1 → 13.7 (-3%) | 16.2 → 13.0 (-20%) |
+| 100,000 | base | name contains "Budget" | 1,873 | 21.4 → 20.1 (-6%) | 38.8 → 39.1 (+1%) |
+| 100,000 | base | name contains-ignore-case "zeppelin" | 265 | 20.1 → 15.0 (-26%) | 21.3 → 14.1 (-34%) |
+| 100,000 | base | name contains-ignore-case "budget" | 2,792 | 29.1 → 22.4 (-23%) | 82.6 → 65.1 (-21%) |
+| 100,000 | base | name prefix "Weekly" | 1,615 | 6.09 → 6.14 (+1%) | 10.4 → 10.5 (+1%) |
+| 100,000 | base | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 1,574 | 50.6 → 38.4 (-24%) | 94.6 → 71.3 (-25%) |
+| 100,000 | base | name fuzzy "zepelin" <= 1, pre-filter pieces ["zep", "elin"] | 265 | 98.4 → 42.8 (-57%) | 97.3 → 50.1 (-49%) |
+| 100,000 | top_open | name contains "Zeppelin" | 187 | 18.7 → 19.7 (+5%) | 18.2 → 19.2 (+5%) |
+| 100,000 | top_open | name contains "Budget" | 1,874 | 56.6 → 28.1 (-50%) | 87.6 → 50.2 (-43%) |
+| 100,000 | top_open | name contains-ignore-case "zeppelin" | 261 | 28.1 → 18.3 (-35%) | 27.1 → 19.2 (-29%) |
+| 100,000 | top_open | name contains-ignore-case "budget" | 2,791 | 83.4 → 30.4 (-64%) | 203 → 84.0 (-59%) |
+| 100,000 | top_open | name prefix "Weekly" | 1,605 | 19.0 → 9.85 (-48%) | 30.9 → 15.2 (-51%) |
+| 100,000 | top_open | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 1,563 | 144 → 47.4 (-67%) | 203 → 88.8 (-56%) |
+| 100,000 | top_open | name fuzzy "zepelin" <= 1, pre-filter pieces ["zep", "elin"] | 261 | 111 → 54.6 (-51%) | 112 → 53.7 (-52%) |
+| 100,000 | top_frozen | name contains "Zeppelin" | 192 | 24.2 → 23.8 (-2%) | 23.9 → 22.5 (-6%) |
+| 100,000 | top_frozen | name contains "Budget" | 1,875 | 73.0 → 34.1 (-53%) | 108 → 85.1 (-21%) |
+| 100,000 | top_frozen | name contains-ignore-case "zeppelin" | 270 | 36.0 → 28.3 (-21%) | 36.4 → 25.9 (-29%) |
+| 100,000 | top_frozen | name contains-ignore-case "budget" | 2,790 | 111 → 45.7 (-59%) | 260 → 121 (-53%) |
+| 100,000 | top_frozen | name prefix "Weekly" | 1,605 | 15.9 → 15.6 (-2%) | 24.5 → 25.6 (+4%) |
+| 100,000 | top_frozen | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 1,567 | 194 → 71.5 (-63%) | 261 → 146 (-44%) |
+| 100,000 | top_frozen | name fuzzy "zepelin" <= 1, pre-filter pieces ["zep", "elin"] | 270 | 144 → 73.0 (-49%) | 148 → 67.1 (-55%) |
+| 1,000,000 | base | name contains "Zeppelin" | 1,824 | 113 → 109 (-4%) | 222 → 241 (+9%) |
+| 1,000,000 | base | name contains "Budget" | 19,198 | 137 → 137 (-0%) | 2,766 → 2,667 (-4%) |
+| 1,000,000 | base | name contains-ignore-case "zeppelin" | 2,713 | 174 → 119 (-31%) | 537 → 395 (-26%) |
+| 1,000,000 | base | name contains-ignore-case "budget" | 28,544 | 102 → 108 (+5%) | 3,003 → 2,976 (-1%) |
+| 1,000,000 | base | name prefix "Weekly" | 16,008 | 39.7 → 48.1 (+21%) | 575 → 529 (-8%) |
+| 1,000,000 | base | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 15,488 | 419 → 240 (-43%) | 6,123 → 3,812 (-38%) |
+| 1,000,000 | base | name fuzzy "zepelin" <= 1, pre-filter pieces ["zep", "elin"] | 2,713 | 6,151 → 1,620 (-74%) | 15,359 → 4,133 (-73%) |
+| 1,000,000 | top_open | name contains "Zeppelin" | 1,782 | 339 → 125 (-63%) | 473 → 246 (-48%) |
+| 1,000,000 | top_open | name contains "Budget" | 18,976 | 417 → 147 (-65%) | 8,216 → 2,779 (-66%) |
+| 1,000,000 | top_open | name contains-ignore-case "zeppelin" | 2,638 | 567 → 140 (-75%) | 1,318 → 393 (-70%) |
+| 1,000,000 | top_open | name contains-ignore-case "budget" | 28,237 | 221 → 204 (-8%) | 6,366 → 5,879 (-8%) |
+| 1,000,000 | top_open | name prefix "Weekly" | 15,935 | 79.3 → 40.2 (-49%) | 1,253 → 726 (-42%) |
+| 1,000,000 | top_open | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 15,218 | 1,173 → 302 (-74%) | 18,698 → 4,536 (-76%) |
+| 1,000,000 | top_open | name fuzzy "zepelin" <= 1, pre-filter pieces ["zep", "elin"] | 2,638 | 8,146 → 2,443 (-70%) | 18,753 → 5,936 (-68%) |
+| 1,000,000 | top_frozen | name contains "Zeppelin" | 1,773 | 464 → 184 (-60%) | 636 → 355 (-44%) |
+| 1,000,000 | top_frozen | name contains "Budget" | 19,019 | 530 → 211 (-60%) | 11,793 → 4,130 (-65%) |
+| 1,000,000 | top_frozen | name contains-ignore-case "zeppelin" | 2,626 | 755 → 194 (-74%) | 1,880 → 590 (-69%) |
+| 1,000,000 | top_frozen | name contains-ignore-case "budget" | 28,284 | 525 → 458 (-13%) | 13,495 → 13,937 (+3%) |
+| 1,000,000 | top_frozen | name prefix "Weekly" | 15,933 | 86.0 → 48.4 (-44%) | 1,354 → 771 (-43%) |
+| 1,000,000 | top_frozen | name fuzzy "managment" <= 1, pre-filter pieces ["mana", "gment"] | 15,221 | 1,644 → 404 (-75%) | 27,906 → 6,308 (-77%) |
+| 1,000,000 | top_frozen | name fuzzy "zepelin" <= 1, pre-filter pieces ["zep", "elin"] | 2,626 | 11,505 → 3,597 (-69%) | 26,812 → 7,933 (-70%) |
+
+**Lone `type` Eq, pages of 1000** (544c9a2)
+
+| entities | branch | query | matches | first page CPU ms: before → after | all pages CPU ms: before → after |
+| ---: | --- | --- | ---: | ---: | ---: |
+| 100,000 | base | type = "task" | 50,278 | 10.1 → 8.76 (-13%) | 529 → 445 (-16%) |
+| 100,000 | base | type = "project" | 9,988 | 24.2 → 11.6 (-52%) | 207 → 116 (-44%) |
+| 100,000 | base | type = "doc" | 4,800 | 10.2 → 9.51 (-7%) | 46.8 → 45.4 (-3%) |
+| 100,000 | base | type = "person" | 9,975 | 22.1 → 18.4 (-17%) | 206 → 162 (-22%) |
+| 100,000 | base | type = "invoice" | 120 | 0.29 → 0.32 (+10%) | 0.30 → 0.30 (+0%) |
+| 100,000 | top_open | type = "task" | 49,582 | 14.0 → 15.5 (+10%) | 738 → 750 (+2%) |
+| 100,000 | top_open | type = "project" | 9,842 | 37.9 → 17.3 (-54%) | 386 → 203 (-48%) |
+| 100,000 | top_open | type = "doc" | 4,728 | 17.1 → 17.5 (+2%) | 76.9 → 72.7 (-5%) |
+| 100,000 | top_open | type = "person" | 9,818 | 38.0 → 17.3 (-54%) | 376 → 159 (-58%) |
+| 100,000 | top_open | type = "invoice" | 122 | 0.40 → 0.42 (+5%) | 0.40 → 0.40 (+0%) |
+| 100,000 | top_frozen | type = "task" | 49,582 | 18.1 → 18.3 (+1%) | 945 → 896 (-5%) |
+| 100,000 | top_frozen | type = "project" | 9,842 | 59.3 → 26.7 (-55%) | 577 → 273 (-53%) |
+| 100,000 | top_frozen | type = "doc" | 4,728 | 17.2 → 23.5 (+36%) | 82.9 → 111 (+34%) |
+| 100,000 | top_frozen | type = "person" | 9,818 | 57.8 → 18.4 (-68%) | 574 → 186 (-67%) |
+| 100,000 | top_frozen | type = "invoice" | 122 | 1.11 → 1.11 (+0%) | 1.00 → 1.10 (+10%) |
+| 1,000,000 | base | type = "task" | 500,076 | 11.0 → 10.6 (-4%) | 6,253 → 6,260 (+0%) |
+| 1,000,000 | base | type = "project" | 99,875 | 31.4 → 29.4 (-6%) | 3,231 → 3,245 (+0%) |
+| 1,000,000 | base | type = "doc" | 49,466 | 54.0 → 34.9 (-35%) | 2,779 → 1,623 (-42%) |
+| 1,000,000 | base | type = "person" | 99,028 | 28.2 → 27.6 (-2%) | 3,261 → 3,099 (-5%) |
+| 1,000,000 | base | type = "invoice" | 1,006 | 5.09 → 4.93 (-3%) | 6.20 → 6.00 (-3%) |
+| 1,000,000 | top_open | type = "task" | 492,688 | 22.4 → 20.4 (-9%) | 10,251 → 10,877 (+6%) |
+| 1,000,000 | top_open | type = "project" | 98,400 | 58.4 → 64.3 (+10%) | 6,271 → 6,376 (+2%) |
+| 1,000,000 | top_open | type = "doc" | 48,755 | 118 → 46.2 (-61%) | 5,681 → 2,360 (-58%) |
+| 1,000,000 | top_open | type = "person" | 97,520 | 61.6 → 61.9 (+0%) | 6,402 → 6,451 (+1%) |
+| 1,000,000 | top_open | type = "invoice" | 998 | 8.36 → 7.27 (-13%) | 8.40 → 7.40 (-12%) |
+| 1,000,000 | top_frozen | type = "task" | 492,688 | 27.7 → 26.9 (-3%) | 14,402 → 13,751 (-5%) |
+| 1,000,000 | top_frozen | type = "project" | 98,400 | 86.3 → 93.7 (+9%) | 9,329 → 9,449 (+1%) |
+| 1,000,000 | top_frozen | type = "doc" | 48,755 | 176 → 61.4 (-65%) | 8,588 → 2,658 (-69%) |
+| 1,000,000 | top_frozen | type = "person" | 97,520 | 88.8 → 92.3 (+4%) | 8,961 → 9,307 (+4%) |
+| 1,000,000 | top_frozen | type = "invoice" | 998 | 11.3 → 10.0 (-12%) | 10.8 → 10.1 (-6%) |
+
+**Lone `type` Eq, pages of 100** (544c9a2)
+
+| entities | branch | query | matches | first page CPU ms: before → after | all pages CPU ms: before → after |
+| ---: | --- | --- | ---: | ---: | ---: |
+| 100,000 | base | type = "project" | 9,988 | 4.81 → 4.37 (-9%) | 474 → 467 (-2%) |
+| 100,000 | base | type = "doc" | 4,800 | 5.78 → 5.14 (-11%) | 302 → 264 (-13%) |
+| 100,000 | base | type = "person" | 9,975 | 4.79 → 4.75 (-1%) | 559 → 469 (-16%) |
+| 100,000 | top_open | type = "project" | 9,842 | 9.83 → 9.45 (-4%) | 953 → 907 (-5%) |
+| 100,000 | top_open | type = "doc" | 4,728 | 15.0 → 8.09 (-46%) | 669 → 374 (-44%) |
+| 100,000 | top_open | type = "person" | 9,818 | 9.81 → 9.86 (+1%) | 933 → 899 (-4%) |
+| 100,000 | top_frozen | type = "project" | 9,842 | 12.7 → 11.7 (-8%) | 1,245 → 1,194 (-4%) |
+| 100,000 | top_frozen | type = "doc" | 4,728 | 21.8 → 8.22 (-62%) | 967 → 403 (-58%) |
+| 100,000 | top_frozen | type = "person" | 9,818 | 13.0 → 12.2 (-6%) | 1,249 → 1,193 (-4%) |
+| 1,000,000 | base | type = "project" | – | 6.04 → 6.23 (+3%) | not run |
+| 1,000,000 | base | type = "doc" | – | 8.25 → 8.38 (+2%) | not run |
+| 1,000,000 | base | type = "person" | – | 5.56 → 5.99 (+8%) | not run |
+| 1,000,000 | top_open | type = "project" | – | 14.9 → 14.5 (-3%) | not run |
+| 1,000,000 | top_open | type = "doc" | – | 24.7 → 26.2 (+6%) | not run |
+| 1,000,000 | top_open | type = "person" | – | 14.7 → 15.3 (+4%) | not run |
+| 1,000,000 | top_frozen | type = "project" | – | 20.9 → 20.5 (-2%) | not run |
+| 1,000,000 | top_frozen | type = "doc" | – | 34.9 → 33.4 (-4%) | not run |
+| 1,000,000 | top_frozen | type = "person" | – | 19.7 → 19.9 (+1%) | not run |
+
+
+**Small pages, lone `type` Eq** (the shape where a higher dense cap could hurt: 5–10% types on 3-layer stacks with history). First page CPU ms, 31 calls per median, three runs alternating before and after (6a7952b):
+
+| entities | limit | branch | query | first page CPU ms, before (3 runs) | after (3 runs) | median change |
+| ---: | ---: | --- | --- | --- | --- | ---: |
+| 100,000 | 10 | base | type = "project" | 4.05 / 4.48 / 3.98 | 4.05 / 5.90 / 3.87 | +0% |
+| 100,000 | 10 | base | type = "doc" | 4.84 / 4.91 / 4.88 | 5.08 / 6.81 / 4.55 | +4% |
+| 100,000 | 10 | base | type = "person" | 3.91 / 4.77 / 3.92 | 4.02 / 4.06 / 3.96 | +3% |
+| 100,000 | 10 | base | type = "invoice" | 0.17 / 0.20 / 0.19 | 0.21 / 0.19 / 0.20 | +5% |
+| 100,000 | 10 | top_open | type = "project" | 6.67 / 7.05 / 6.18 | 7.00 / 6.30 / 6.17 | -6% |
+| 100,000 | 10 | top_open | type = "doc" | 8.50 / 9.03 / 8.13 | 8.53 / 7.90 / 7.89 | -7% |
+| 100,000 | 10 | top_open | type = "person" | 6.40 / 8.03 / 6.31 | 6.51 / 6.19 / 6.13 | -3% |
+| 100,000 | 10 | top_open | type = "invoice" | 0.26 / 0.39 / 0.29 | 0.29 / 0.28 / 0.30 | +0% |
+| 100,000 | 10 | top_frozen | type = "project" | 7.42 / 9.83 / 7.43 | 7.93 / 7.39 / 7.46 | +0% |
+| 100,000 | 10 | top_frozen | type = "doc" | 10.7 / 13.0 / 10.4 | 10.5 / 10.1 / 10.3 | -4% |
+| 100,000 | 10 | top_frozen | type = "person" | 8.10 / 9.31 / 7.87 | 7.48 / 7.63 / 7.39 | -8% |
+| 100,000 | 10 | top_frozen | type = "invoice" | 0.34 / 0.45 / 0.31 | 0.34 / 0.34 / 0.33 | +0% |
+| 100,000 | 100 | base | type = "project" | 4.46 / 5.12 / 4.37 | 4.35 / 4.80 / 4.13 | -2% |
+| 100,000 | 100 | base | type = "doc" | 5.71 / 6.42 / 5.77 | 5.17 / 5.18 / 4.91 | -10% |
+| 100,000 | 100 | base | type = "person" | 4.38 / 4.74 / 4.75 | 4.67 / 4.89 / 4.35 | -1% |
+| 100,000 | 100 | base | type = "invoice" | 0.25 / 0.25 / 0.25 | 0.25 / 0.24 / 0.22 | -4% |
+| 100,000 | 100 | top_open | type = "project" | 9.48 / 10.3 / 8.86 | 9.12 / 9.84 / 8.89 | -4% |
+| 100,000 | 100 | top_open | type = "doc" | 14.1 / 14.8 / 13.8 | 8.03 / 7.95 / 7.68 | -44% |
+| 100,000 | 100 | top_open | type = "person" | 9.33 / 9.52 / 9.87 | 9.96 / 9.50 / 9.27 | -0% |
+| 100,000 | 100 | top_open | type = "invoice" | 0.34 / 0.37 / 0.56 | 0.40 / 0.35 / 0.38 | +3% |
+| 100,000 | 100 | top_frozen | type = "project" | 12.5 / 13.0 / 12.7 | 13.0 / 12.1 / 11.6 | -5% |
+| 100,000 | 100 | top_frozen | type = "doc" | 20.4 / 21.1 / 20.2 | 8.75 / 8.36 / 8.35 | -59% |
+| 100,000 | 100 | top_frozen | type = "person" | 13.1 / 13.6 / 12.2 | 17.4 / 12.8 / 12.7 | -2% |
+| 100,000 | 100 | top_frozen | type = "invoice" | 0.93 / 1.18 / 0.90 | 0.95 / 0.94 / 0.94 | +1% |
+| 1,000,000 | 10 | base | type = "project" | 5.39 / 6.01 / 4.95 | 5.62 / 5.98 / 5.49 | +4% |
+| 1,000,000 | 10 | base | type = "doc" | 6.85 / 7.56 / 6.59 | 6.99 / 7.56 / 6.83 | +2% |
+| 1,000,000 | 10 | base | type = "person" | 4.94 / 4.98 / 5.19 | 5.00 / 5.05 / 4.84 | +0% |
+| 1,000,000 | 10 | base | type = "invoice" | 1.50 / 1.45 / 1.38 | 1.51 / 1.40 / 1.50 | +3% |
+| 1,000,000 | 10 | top_open | type = "project" | 10.6 / 10.6 / 10.1 | 10.7 / 10.1 / 12.4 | +1% |
+| 1,000,000 | 10 | top_open | type = "doc" | 14.4 / 14.2 / 14.5 | 15.3 / 13.9 / 15.8 | +6% |
+| 1,000,000 | 10 | top_open | type = "person" | 9.90 / 9.53 / 9.48 | 10.1 / 9.56 / 10.6 | +6% |
+| 1,000,000 | 10 | top_open | type = "invoice" | 1.78 / 1.76 / 1.83 | 1.89 / 1.80 / 1.90 | +6% |
+| 1,000,000 | 10 | top_frozen | type = "project" | 13.3 / 12.2 / 13.3 | 13.7 / 12.2 / 13.4 | +1% |
+| 1,000,000 | 10 | top_frozen | type = "doc" | 19.1 / 18.8 / 18.5 | 18.5 / 17.4 / 18.8 | -2% |
+| 1,000,000 | 10 | top_frozen | type = "person" | 11.8 / 11.4 / 11.0 | 11.6 / 12.2 / 11.7 | +3% |
+| 1,000,000 | 10 | top_frozen | type = "invoice" | 2.13 / 2.09 / 2.02 | 2.05 / 2.11 / 2.05 | -2% |
+| 1,000,000 | 100 | base | type = "project" | 6.28 / 6.46 / 5.98 | 7.13 / 6.22 / 6.08 | -1% |
+| 1,000,000 | 100 | base | type = "doc" | 8.29 / 8.55 / 8.05 | 9.69 / 8.19 / 8.06 | -1% |
+| 1,000,000 | 100 | base | type = "person" | 6.12 / 6.07 / 5.81 | 5.98 / 6.10 / 5.94 | -1% |
+| 1,000,000 | 100 | base | type = "invoice" | 1.60 / 1.62 / 1.50 | 1.68 / 1.59 / 1.56 | -1% |
+| 1,000,000 | 100 | top_open | type = "project" | 16.1 / 15.8 / 15.6 | 16.6 / 17.1 / 15.8 | +5% |
+| 1,000,000 | 100 | top_open | type = "doc" | 26.0 / 25.5 / 25.5 | 26.3 / 29.1 / 25.7 | +3% |
+| 1,000,000 | 100 | top_open | type = "person" | 16.4 / 15.7 / 16.2 | 15.6 / 17.7 / 16.1 | -1% |
+| 1,000,000 | 100 | top_open | type = "invoice" | 1.97 / 1.91 / 2.00 | 2.12 / 2.12 / 2.19 | +8% |
+| 1,000,000 | 100 | top_frozen | type = "project" | 22.2 / 20.9 / 21.6 | 21.1 / 22.1 / 22.3 | +2% |
+| 1,000,000 | 100 | top_frozen | type = "doc" | 40.1 / 36.3 / 36.3 | 35.5 / 35.8 / 35.9 | -1% |
+| 1,000,000 | 100 | top_frozen | type = "person" | 21.2 / 21.4 / 21.3 | 20.6 / 20.6 / 20.7 | -3% |
+| 1,000,000 | 100 | top_frozen | type = "invoice" | 2.33 / 2.38 / 2.34 | 2.59 / 2.57 / 2.63 | +11% |
+
+Findings:
+
+- Ignore-case contains: 1.3–1.5× faster on one layer (1M `base` "zeppelin" 174 → 119 ms per first page) and up to 4× on stacks, where overfetch also helps (1M `top_frozen` "zeppelin" 755 → 194 ms). The medium-frequency "budget" on `top_frozen` at 1M is unchanged, because its plan is the dictionary scan.
+- Overfetch on stacks: case-sensitive "Zeppelin" and "Budget" 2.5–3× faster at 1M (`top_open` 339 → 125 ms and 417 → 147 ms per first page). Fuzzy with pieces is 3–4× faster on stacks (1M `top_frozen` "managment" 1,644 → 404 ms per first page, 27.9 → 6.3 s for all pages). On `base`, one indexed term is unchanged within noise.
+- Lone `Eq`: types of 5–10% that are now sparse are 2–3× faster: 100k `project` and `person` at pages of 1000 (`top_frozen` 59 → 27 ms and 58 → 18 ms), and 1M `doc` (`top_frozen` 176 → 61 ms; all pages 8.6 → 2.7 s). At pages of 100, 100k `doc` is 1.8–2.7× faster on stacks. Types that stay dense (`task` 50%, `project`/`person` 10% at 1M), rare types, and every page of 10 are unchanged within noise.
+- Small measured cost: a sparse lone `Eq` on a stack now overfetches. 1M `invoice` (1k matches) at pages of 100 went 2.0 → 2.1 ms (`top_open`) and 2.3 → 2.6 ms (`top_frozen`), +8–11% in all three runs.
+- A first version of the `Eq` change counted the candidates twice when the plan was dense (once against each cap): +50–80% CPU on pages of 10. It was fixed before the commit; the tables above are the fixed code.
+
