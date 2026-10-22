@@ -201,7 +201,7 @@ test('puts a union picker where its option needs it', () => {
   assert.match(list, /text-gray-900">Array<\/span>[\s\S]*value="a"/)
 })
 
-test('draws a builder inside a form with no boxes of its own', () => {
+test('draws a builder as lines, with a border only when it is outermost', () => {
   const schema = { type: 'object', properties: { shape: { $ref: 'https://json-schema.org/draft/2020-12/schema' } } }
   const value = { shape: { type: 'object', properties: { inner: { type: 'string' } } } }
   const html = renderToStaticMarkup(h(SchemaForm, { schema, value, setValue: noop }))
@@ -209,9 +209,9 @@ test('draws a builder inside a form with no boxes of its own', () => {
   assert.equal((html.match(/border-gray-200/g) ?? []).length, 1)
   assert.match(html, /value="inner"/)
   assert.match(html, /> Add field</)
-  // On its own, the builder keeps its boxes.
+  // On its own, the builder draws the same lines, inside one border of its own.
   const alone = renderToStaticMarkup(h(SchemaBuilder, { value: value.shape, setValue: noop }))
-  assert.ok((alone.match(/border-gray-200/g) ?? []).length >= 2)
+  assert.equal((alone.match(/border-gray-200/g) ?? []).length, 1)
 })
 
 test('draws a lone value with no label column', () => {
