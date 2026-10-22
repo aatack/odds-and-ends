@@ -52,6 +52,9 @@ impl Store {
             .map(|e| ((*e).to_owned(), BTreeMap::new()))
             .collect();
         let keys: Vec<i64> = eids.keys().copied().collect();
+        if !keys.is_empty() {
+            self.note_sql(interval_count(view));
+        }
         for ((eid, key), c) in resolve_values(&self.conn, view, &keys, None)? {
             if !c.data.is_null() {
                 out.get_mut(&eids[&eid])
@@ -60,6 +63,21 @@ impl Store {
             }
         }
         Ok(out)
+    }
+
+    /// The non-null `type` value of each of `eids` on a resolved view, keyed
+    /// by interned key. Entities with no type (or a null type) are absent.
+    /// Counts its SQL for [`Store::prove`] stats.
+    pub(crate) fn resolve_types(&self, view: &View, eids: &[i64]) -> Result<HashMap<i64, Value>> {
+        if eids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        self.note_sql(interval_count(view));
+        Ok(resolve_values_of(&self.conn, view, eids, &[TYPE_KEY])?
+            .into_iter()
+            .filter(|(_, c)| !c.data.is_null())
+            .map(|((eid, _), c)| (eid, c.data))
+            .collect())
     }
 
     /// One value of one entity: a thin helper. `None` when the key was never
@@ -156,6 +174,7 @@ impl Store {
             if types.is_empty() || keys.is_empty() {
                 continue;
             }
+            self.note_sql(interval_count(view));
             for ((eid, ty, other_eid), c) in
                 resolve_links(&self.conn, view, &keys, direction, &types, typed_only)?
             {
@@ -285,6 +304,12 @@ impl Store {
             .collect::<rusqlite::Result<_>>()?;
         Ok(eids)
     }
+}
+
+/// The number of `(layer, interval)` queries one roll-up read runs over a
+/// view: one SQL statement per source interval. Used to count SQL queries.
+pub(crate) fn interval_count(view: &View) -> u64 {
+    view.sources.iter().map(|s| s.intervals.len() as u64).sum()
 }
 
 /// A JSON array of interned keys, bound as one parameter.

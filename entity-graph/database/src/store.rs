@@ -1,6 +1,6 @@
 //! Opening a store, and the branch operations.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -21,6 +21,10 @@ pub struct Store {
     /// Flattened views per branch row. Cleared when a parent list changes on
     /// this handle, or when another connection commits (`PRAGMA data_version`).
     views: RefCell<(i64, HashMap<i64, View>)>,
+    /// A monotonic count of roll-up SQL statements this handle has run (one per
+    /// (layer, interval) query). Used by [`Store::prove`] for its stats; it
+    /// changes nothing. Snapshot it with [`Store::sql_queries`].
+    pub(crate) sql_counter: Cell<u64>,
 }
 
 fn system_clock() -> Timestamp {
@@ -67,7 +71,20 @@ impl Store {
             conn,
             clock: Box::new(system_clock),
             views: RefCell::new((-1, HashMap::new())),
+            sql_counter: Cell::new(0),
         })
+    }
+
+    /// The number of roll-up SQL statements this handle has run so far. A
+    /// monotonic counter; take the difference across a call to count its
+    /// queries. Bumped once per (layer, interval) query in the read path.
+    pub(crate) fn sql_queries(&self) -> u64 {
+        self.sql_counter.get()
+    }
+
+    /// Add `n` to the roll-up SQL counter.
+    pub(crate) fn note_sql(&self, n: u64) {
+        self.sql_counter.set(self.sql_counter.get() + n);
     }
 
     /// Step 1 of every read: the flattened view of a branch row, cached.

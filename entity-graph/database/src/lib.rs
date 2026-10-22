@@ -13,6 +13,7 @@
 mod codec;
 mod error;
 mod find;
+mod prove;
 mod read;
 mod schema;
 mod store;
@@ -27,6 +28,7 @@ pub use error::{Error, Result};
 #[doc(hidden)]
 pub use find::knobs as find_knobs;
 pub use find::{Filter, Find, FindOptions, FindOrder, FindRow, Predicate};
+pub use prove::{Proof, Prove, ProveOptions, ProveOutcome, ProveStats, ProveStrategy};
 pub use read::LinkGroups;
 pub use schema::SCHEMA_VERSION;
 pub use store::Store;
@@ -39,6 +41,8 @@ mod find_tests;
 mod history_tests;
 #[cfg(test)]
 mod model_tests;
+#[cfg(test)]
+mod prove_tests;
 #[cfg(test)]
 mod robust_tests;
 #[cfg(test)]
