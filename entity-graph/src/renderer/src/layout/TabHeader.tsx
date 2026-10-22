@@ -72,9 +72,8 @@ export function TabTitle({
  * each of which pops everything above it when clicked — which the frame history
  * can then undo. Only the ones you came through; where you are now is the frame
  * below it, and the trailing chevron is what says you are inside. Each crumb is
- * a bare pill — no surface, capped in width — that previews on hover, since it
- * refers to somewhere other than where you are. With nothing to put in it, no
- * bar.
+ * a bare pill — no surface, capped in width, and no preview on hover. With
+ * nothing to put in it, no bar.
  */
 export function TabContent({
   tabId,
@@ -88,7 +87,9 @@ export function TabContent({
   const top = layout.tabs[tabId]?.top
   const crumbs = useCrumbs(tabId).slice(0, -1)
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    // Its own background, so the bar is the same grey wherever it is drawn rather
+    // than whatever happens to be behind it.
+    <div className="flex h-full min-h-0 flex-col bg-gray-50">
       {(crumbs.length > 0 || peek) && (
         <div
           {...{ [TAB_BAR_ATTRIBUTE]: '' }}
@@ -101,7 +102,6 @@ export function TabContent({
                   id={crumb.rootId}
                   bare
                   bounded
-                  peek
                   className="shrink-0"
                   onClick={() => A.popToFrame(tabId, crumb.frameId)}
                 />

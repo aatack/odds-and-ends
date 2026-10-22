@@ -330,7 +330,7 @@ group. A link's peek is its URL entity's, so the page is in a locked-down
 `<webview>` (no preload, no node, its own partition; see `will-attach-webview` in
 `src/main/index.ts`), and its Open button opens the page in the browser. A tab's content — its bar of crumbs and its top frame — is one component,
 `TabContent` (`layout/TabHeader.tsx`), drawn the same in a group and as the whole
-of a peek; `peek` is the only difference, adding Open and × to the bar, which
+of a peek — its own background included; `peek` is the only difference, adding Open and × to the bar, which
 is also what a peek is dragged by. Peeks stack: hovering inside one opens another on top, and
 leaving closes everything above where the pointer went. Only pinned peeks survive
 a reload. No key opens or closes one; "Open in peek" (`entity.peek`, from the
