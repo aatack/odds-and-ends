@@ -3,7 +3,7 @@
 //   npm test
 
 import assert from 'node:assert/strict'
-import { defaultFor, problemOf, propertiesOf, typeOf } from '../src/renderer/src/components/schema/schema'
+import { defaultFor, optionNames, problemOf, propertiesOf, typeOf } from '../src/renderer/src/components/schema/schema'
 
 const tests: [string, () => void][] = []
 const test = (name: string, run: () => void): void => void tests.push([name, run])
@@ -50,6 +50,20 @@ test('says why a value does not fit, and says nothing when it does', () => {
   // Absent is fine unless it is required.
   assert.equal(problemOf({ type: 'string' }, undefined), null)
   assert.equal(problemOf({ type: 'string' }, undefined, true), 'Required')
+})
+
+test('names union options by title, then literal value, then numbered type', () => {
+  assert.deepEqual(
+    optionNames([
+      { const: 'main' },
+      { const: 3 },
+      { type: 'string' },
+      { type: 'string' },
+      { type: 'integer' },
+      { type: 'string', title: 'Code' },
+    ]),
+    ['main', '3', 'String 1', 'String 2', 'Integer', 'Code'],
+  )
 })
 
 let failed = 0

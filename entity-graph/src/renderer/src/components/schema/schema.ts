@@ -224,3 +224,38 @@ export function problemOf(schema: JsonSchema, value: unknown, required = false):
 }
 
 const article = (type: string): string => (/^[aeiou]/.test(type) ? `an ${type}` : `a ${type}`)
+
+/** A type's name as the builder and the form show it: `String`, `Object`. */
+export function typeName(schema: JsonSchema): string | null {
+  if (isSchemaRef(schema)) return 'Schema'
+  const type = typeOf(schema)
+  return type ? type.charAt(0).toUpperCase() + type.slice(1) : null
+}
+
+/** A literal's value as a name: a string as itself, anything else as JSON. */
+const literalName = (value: unknown): string =>
+  typeof value === 'string' ? value : JSON.stringify(value)
+
+/**
+ * What a union's options are called, in its picker. An option's `title` if it
+ * has one; else a literal's value; else its type's name, numbered where two
+ * options would otherwise share it (`String 1`, `String 2`).
+ */
+export function optionNames(variants: JsonSchema[]): string[] {
+  const base = variants.map((v) =>
+    typeof v.title === 'string' && v.title.trim()
+      ? { name: v.title, numbered: false }
+      : 'const' in v
+        ? { name: literalName(v.const), numbered: false }
+        : { name: typeName(v) ?? 'Option', numbered: true },
+  )
+  const seen = new Map<string, number>()
+  return base.map(({ name, numbered }) => {
+    if (!numbered) return name
+    const total = base.filter((b) => b.numbered && b.name === name).length
+    if (total < 2) return name
+    const n = (seen.get(name) ?? 0) + 1
+    seen.set(name, n)
+    return `${name} ${n}`
+  })
+}

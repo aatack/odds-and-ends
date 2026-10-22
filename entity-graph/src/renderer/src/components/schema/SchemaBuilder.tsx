@@ -3,6 +3,7 @@ import { Check, ChevronDown, ChevronRight, Plus, Trash03 } from '@untitledui/ico
 import { cn } from '../../helpers/cn'
 import { Button } from '../ui/Button'
 import { Dropdown, DropdownSeparator } from '../ui/Dropdown'
+import { MenuChip, MenuItem } from './Menu'
 import {
   META_SCHEMA,
   MONOSPACE_KEYWORD,
@@ -10,6 +11,7 @@ import {
   SCHEMA_TYPES,
   isSchemaRef,
   isObject,
+  optionNames,
   propertiesOf,
   requiredOf,
   typeOf,
@@ -224,14 +226,20 @@ function SchemaNode({
   onChange,
   slot,
   label,
+  named,
   onRemove,
 }: {
   schema: JsonSchema
   onChange: (schema: JsonSchema) => void
   /** Set for a field of an object: the name box is its name. */
   slot?: Slot
-  /** What the box says when there is no name to edit — "Each item", "Option 2". */
+  /** What the box says when there is no name to edit — "Each item". */
   label?: string
+  /**
+   * Set for a union's option: the box is its name in the form's picker, written
+   * as the schema's `title`, and `placeholder` is what it is called without one.
+   */
+  named?: { placeholder: string }
   /** Set for a union's option, which can be taken out. */
   onRemove?: () => void
 }): React.JSX.Element {
@@ -254,6 +262,13 @@ function SchemaNode({
       <NameBox
         slot={slot}
         label={label}
+        title={
+          named && {
+            value: typeof schema.title === 'string' ? schema.title : '',
+            placeholder: named.placeholder,
+            onChange: (title: string) => set('title', title || undefined),
+          }
+        }
         fold={nests ? { open, toggle: () => setOpen((o) => !o) } : undefined}
         menu={
           <KindMenu
@@ -301,12 +316,15 @@ function SchemaNode({
 function NameBox({
   slot,
   label,
+  title,
   menu,
   fold,
   children,
 }: {
   slot?: Slot
   label?: string
+  /** An editable name that isn't a field's: a union option's `title`. */
+  title?: { value: string; placeholder: string; onChange: (title: string) => void } | undefined
   menu: React.ReactNode
   fold?: { open: boolean; toggle: () => void }
   children?: React.ReactNode
@@ -350,6 +368,13 @@ function NameBox({
                 if (next && !slot.taken.includes(next)) slot.onRename(next)
               }}
             />
+          ) : title ? (
+            <input
+              className={BARE}
+              value={title.value}
+              placeholder={title.placeholder}
+              onChange={(e) => title.onChange(e.target.value)}
+            />
           ) : (
             <span className="min-w-0 flex-1 truncate px-2.5 text-[13px] text-gray-500">
               {label}
@@ -392,29 +417,6 @@ function BoxLine({
   )
 }
 
-/** One line of the menu, with a tick where it is on. */
-function MenuItem({
-  on,
-  onClick,
-  children,
-}: {
-  on: boolean
-  onClick: () => void
-  children: React.ReactNode
-}): React.JSX.Element {
-  return (
-    <button
-      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-gray-700 hover:bg-gray-100/70 focus:outline-none"
-      onClick={onClick}
-    >
-      <span className="flex size-3.5 shrink-0 items-center justify-center text-brand-600">
-        {on && <Check size={13} />}
-      </span>
-      {children}
-    </button>
-  )
-}
-
 /** The kinds, then — under a divider — the extras this kind can carry. */
 function KindMenu({
   schema,
@@ -436,14 +438,10 @@ function KindMenu({
     <Dropdown
       align="right"
       trigger={({ toggle }) => (
-        <button
-          className="flex h-6 items-center gap-0.5 rounded bg-gray-100 px-1.5 text-[12px] text-gray-600 hover:bg-gray-200 focus:outline-none"
-          onClick={toggle}
-        >
+        <MenuChip onClick={toggle}>
           {KIND_LABELS[kind]}
           {slot && !slot.required && <span className="text-gray-400">?</span>}
-          <ChevronDown size={12} className="text-gray-400" />
-        </button>
+        </MenuChip>
       )}
     >
       {(close) => (
@@ -617,6 +615,8 @@ function Variants({
   onChange: (schema: JsonSchema) => void
 }): React.JSX.Element {
   const variants = variantsOf(schema) ?? []
+  // What each is called without a name of its own — so the box shows it.
+  const defaults = optionNames(variants.map(({ title: _, ...rest }) => rest))
   // Written back as `anyOf`, whichever of the three it was read from.
   const write = (next: JsonSchema[]): void => {
     const out: JsonSchema = { ...schema, anyOf: next }
@@ -630,7 +630,7 @@ function Variants({
         <SchemaNode
           key={i}
           schema={variant}
-          label={`Option ${i + 1}`}
+          named={{ placeholder: defaults[i] }}
           onChange={(next) => write(variants.map((v, j) => (j === i ? next : v)))}
           onRemove={() => write(variants.filter((_, j) => j !== i))}
         />

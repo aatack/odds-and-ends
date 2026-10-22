@@ -28,7 +28,10 @@ const EXAMPLE_SCHEMA: JsonSchema = {
       },
     },
     snippet: { type: 'string', 'x-multiline': true, 'x-monospace': true },
-    shape: { $ref: 'https://json-schema.org/draft/2020-12/schema', description: 'A schema of its own' },
+    shape: {
+      $ref: 'https://json-schema.org/draft/2020-12/schema',
+      description: 'A schema of its own',
+    },
   },
   required: ['title'],
 }
@@ -46,7 +49,9 @@ function Pane({
   return (
     <div className="min-w-0 flex-1">
       <div className="flex items-center justify-between pb-1">
-        <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-gray-500">{label}</span>
+        <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-gray-500">
+          {label}
+        </span>
         <CopyButton value={pretty(value)} title={`Copy ${label.toLowerCase()}`} />
       </div>
       <JsonEditor value={value} setValue={setValue} />

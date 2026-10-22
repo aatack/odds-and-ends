@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Plus, XClose } from '@untitledui/icons'
+import { ChevronDown, Plus, XClose } from '@untitledui/icons'
 import { cn } from '../../helpers/cn'
+import { Dropdown } from '../ui/Dropdown'
 import { Switch } from '../ui/Switch'
 import { TextEditor } from '../ui/TextEditor'
 import { JsonEditor } from './JsonEditor'
+import { MenuChip, MenuItem } from './Menu'
 import { SchemaBuilder } from './SchemaBuilder'
 import {
   MONOSPACE_KEYWORD,
@@ -12,6 +14,7 @@ import {
   isObject,
   isSchemaRef,
   matches,
+  optionNames,
   problemOf,
   propertiesOf,
   requiredOf,
@@ -266,7 +269,7 @@ function Control({
   if (variants) {
     // Every option a literal: a choice, drawn as one.
     if (variants.every((v) => 'const' in v)) {
-      return <Choice options={variants.map((v) => v.const)} value={value} onChange={onChange} />
+      return <Choice variants={variants} value={value} onChange={onChange} />
     }
     return <Union variants={variants} value={value} onChange={onChange} label={label} />
   }
@@ -283,7 +286,9 @@ function Control({
               value={typeof value === 'string' ? value : ''}
               setValue={onChange}
               className={cn(
-                'leading-5 text-gray-900',
+                // `block`: an inline textarea keeps room under its last line
+                // for descenders, which reads as padding nobody asked for.
+                'block leading-5 text-gray-900',
                 mono ? 'font-mono text-[12.5px]' : 'text-[13px]',
               )}
             />
@@ -363,15 +368,6 @@ function List({
   )
 }
 
-/** How an option of a union is named in its picker. */
-function variantLabel(variant: JsonSchema, i: number): string {
-  if (typeof variant.title === 'string') return variant.title
-  if ('const' in variant) return JSON.stringify(variant.const)
-  if (isSchemaRef(variant)) return 'Schema'
-  const type = typeOf(variant)
-  return type ? type.charAt(0).toUpperCase() + type.slice(1) : `Option ${i + 1}`
-}
-
 /**
  * One of several schemas: a picker for which, and that option's control — beside
  * the picker where it is a single value, under it where it holds others. The
@@ -392,18 +388,16 @@ function Union({
   const fitted = variants.findIndex((v) => matches(v, value))
   const at = fitted < 0 ? 0 : fitted
   const variant = variants[at]
+  const names = optionNames(variants)
   const picker = (
-    <select
-      className={cn(BARE, 'w-28 shrink-0 pr-2 text-gray-500')}
-      value={String(at)}
-      onChange={(e) => onChange(defaultFor(variants[Number(e.target.value)]))}
-    >
-      {variants.map((v, i) => (
-        <option key={i} value={i}>
-          {variantLabel(v, i)}
-        </option>
-      ))}
-    </select>
+    <div className="flex h-8 max-w-48 shrink-0 items-center px-1.5">
+      <Picker
+        names={names}
+        at={at}
+        onPick={(i) => onChange(defaultFor(variants[i]))}
+        trigger={(toggle) => <MenuChip onClick={toggle}>{names[at]}</MenuChip>}
+      />
+    </div>
   )
   const control = <Control schema={variant} value={value} onChange={onChange} label={label} />
   if (compound(variant)) {
@@ -424,30 +418,72 @@ function Union({
   )
 }
 
+/** A menu of named options, the same one the schema builder uses. */
+function Picker({
+  names,
+  at,
+  onPick,
+  trigger,
+}: {
+  names: string[]
+  /** The option chosen now, or -1 for none. */
+  at: number
+  onPick: (index: number) => void
+  trigger: (toggle: () => void) => React.ReactNode
+}): React.JSX.Element {
+  return (
+    <Dropdown trigger={({ toggle }) => trigger(toggle)}>
+      {(close) =>
+        names.map((name, i) => (
+          <MenuItem
+            key={i}
+            on={i === at}
+            onClick={() => {
+              if (i !== at) onPick(i)
+              close()
+            }}
+          >
+            {name}
+          </MenuItem>
+        ))
+      }
+    </Dropdown>
+  )
+}
+
+/** A union of literals: the line shows the one chosen, and opens the menu of all. */
 function Choice({
-  options,
+  variants,
   value,
   onChange,
 }: {
-  options: unknown[]
+  variants: JsonSchema[]
   value: unknown
   onChange: (value: unknown) => void
 }): React.JSX.Element {
-  // Options can be any JSON, so the select works on their indices.
-  const at = options.findIndex((o) => JSON.stringify(o) === JSON.stringify(value))
+  const names = optionNames(variants)
+  const at = variants.findIndex((v) => JSON.stringify(v.const) === JSON.stringify(value))
   return (
-    <select
-      className={cn(BARE, 'pr-2')}
-      value={at < 0 ? '' : String(at)}
-      onChange={(e) => onChange(options[Number(e.target.value)])}
-    >
-      {at < 0 && <option value="">Choose…</option>}
-      {options.map((o, i) => (
-        <option key={i} value={i}>
-          {typeof o === 'string' ? o : JSON.stringify(o)}
-        </option>
-      ))}
-    </select>
+    <div className="w-full">
+      <Picker
+        names={names}
+        at={at}
+        onPick={(i) => onChange(variants[i].const)}
+        trigger={(toggle) => (
+          <button
+            className="flex h-8 w-full items-center gap-1 px-2.5 text-left text-[13px] focus:outline-none"
+            onClick={toggle}
+          >
+            <span
+              className={cn('min-w-0 flex-1 truncate', at < 0 ? 'text-gray-400' : 'text-gray-900')}
+            >
+              {at < 0 ? 'Choose…' : names[at]}
+            </span>
+            <ChevronDown size={12} className="shrink-0 text-gray-400" />
+          </button>
+        )}
+      />
+    </div>
   )
 }
 

@@ -38,7 +38,7 @@ test('draws a union option by option, and a literal with its value', () => {
   const html = renderToStaticMarkup(
     h(SchemaBuilder, { value: { anyOf: [{ const: 'main' }, { type: 'integer' }] }, setValue: noop }),
   )
-  assert.match(html, /Option 1/)
+  assert.match(html, /placeholder="main"/)
   assert.match(html, /value="main"/)
   assert.match(html, />Integer</)
 })
@@ -53,14 +53,14 @@ test('draws a union of literals in the form as one choice', () => {
   const html = renderToStaticMarkup(
     h(SchemaForm, { schema: { anyOf: [{ const: 'x' }, { const: 'y' }] }, value: 'y', setValue: noop }),
   )
-  assert.match(html, /<option value="1" selected="">y<\/option>/)
+  assert.match(html, /<span class="min-w-0 flex-1 truncate text-gray-900">y<\/span>/)
 })
 
 test('picks the union option a value fits', () => {
   const html = renderToStaticMarkup(
     h(SchemaForm, { schema: { anyOf: [{ type: 'string' }, { type: 'integer' }] }, value: 4, setValue: noop }),
   )
-  assert.match(html, /<option value="1" selected="">Integer<\/option>/)
+  assert.match(html, /<span class="truncate">Integer<\/span>/)
   assert.match(html, /value="4"/)
 })
 
@@ -157,6 +157,25 @@ test('offers no Any, and asks for a type where a schema says nothing', () => {
   const html = renderToStaticMarkup(h(SchemaBuilder, { value: {}, setValue: noop }))
   assert.match(html, />Choose type</)
   assert.doesNotMatch(html, />any</i)
+})
+
+test('draws a multi-line box as a block, with no gap under its last line', () => {
+  const html = renderToStaticMarkup(
+    h(SchemaForm, { schema: { type: 'string', 'x-multiline': true }, value: 'a', setValue: noop }),
+  )
+  assert.match(html, /<textarea[^>]*class="[^"]*\bblock\b/)
+})
+
+test('lets a union option be named in the builder, showing its default until it is', () => {
+  const html = renderToStaticMarkup(
+    h(SchemaBuilder, {
+      value: { anyOf: [{ type: 'string' }, { type: 'string', title: 'Code' }, { const: 'none' }] },
+      setValue: noop,
+    }),
+  )
+  assert.match(html, /placeholder="String 1"/)
+  assert.match(html, /value="Code"/)
+  assert.match(html, /placeholder="none"/)
 })
 
 let failed = 0
