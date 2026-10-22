@@ -42,7 +42,7 @@ function textIn(text: string, types: readonly string[]): string {
   return parts.join('')
 }
 
-const KNOWN = ['entity', 'codeEditor', 'pill']
+const KNOWN = ['entity', 'pill']
 
 const tests: [string, () => void][] = []
 const test = (name: string, run: () => void): void => void tests.push([name, run])
@@ -65,8 +65,8 @@ test('keeps the arg when there is one', () => {
   assert.deepEqual(fieldsIn('[@entity:abc-123](Look)', KNOWN), [
     { 'data-field-type': 'entity', 'data-field-arg': 'abc-123', 'data-field-text': 'Look' },
   ])
-  assert.deepEqual(fieldsIn('[@codeEditor:body](a hint)', KNOWN), [
-    { 'data-field-type': 'codeEditor', 'data-field-arg': 'body', 'data-field-text': 'a hint' },
+  assert.deepEqual(fieldsIn('[@entity:abc-123](a label)', KNOWN), [
+    { 'data-field-type': 'entity', 'data-field-arg': 'abc-123', 'data-field-text': 'a label' },
   ])
 })
 

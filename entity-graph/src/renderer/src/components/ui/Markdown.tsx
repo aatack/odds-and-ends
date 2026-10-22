@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react'
-import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown'
+import ReactMarkdown, { type Components } from 'react-markdown'
 import rehypeKatex from 'rehype-katex'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -56,13 +56,6 @@ const COMPONENTS: Components = {
   // when it is clicked is an app-wide gesture, decided in `App`.
   a: ({ href, children }) => <a href={href}>{children}</a>,
 }
-
-/**
- * Links that survive the renderer's sanitising. Its own rules, plus `entity:`,
- * which names an entity in this store rather than anywhere on the web.
- */
-const urlTransform = (url: string): string =>
-  url.startsWith('entity:') ? url : defaultUrlTransform(url)
 
 /** How a caller draws a link, given where it goes and what it says. */
 export type LinkRenderer = (props: { href: string; children: React.ReactNode }) => React.ReactNode
@@ -140,7 +133,6 @@ export function Markdown({
         remarkPlugins={remark}
         rehypePlugins={REHYPE}
         components={components}
-        urlTransform={urlTransform}
       >
         {text}
       </ReactMarkdown>

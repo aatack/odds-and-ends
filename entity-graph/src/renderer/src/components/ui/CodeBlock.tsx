@@ -16,10 +16,7 @@ function useIsDark(): boolean {
   return dark
 }
 
-// The three things that make a code surface look like one. Pulled out as
-// constants because the editable counterpart (`CodeEditor`) lays a textarea
-// *over* the highlighted text, and the two only line up if they are set in the
-// same type at the same padding — one place to change, so they can't drift.
+// The three things that make a code surface look like one.
 
 /** The faint ground code sits on. */
 export const CODE_GROUND = 'rounded-md bg-gray-100 shadow-xs'

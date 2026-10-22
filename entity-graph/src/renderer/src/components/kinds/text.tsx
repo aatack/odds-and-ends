@@ -47,8 +47,6 @@ export function RowText({
   if (!row.text) return null
   return (
     <EntityMarkdown
-      entityId={row.id}
-      path={row.path}
       text={row.text}
       highlight={highlight}
       className={cn(

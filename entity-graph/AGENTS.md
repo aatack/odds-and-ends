@@ -293,8 +293,8 @@ a reload. No key opens or closes one.
 
 **Links are pills.** A link in an entity's text is drawn as `LinkPill` — its
 words behind a globe — and hovering a web page peeks at it; a plain click still
-does nothing and ⌘/Ctrl-click opens it in the browser. A link to `entity:<id>` is
-that entity's pill, exactly as `[@entity:id](label)` is. `peekHandlers` in
+does nothing and ⌘/Ctrl-click opens it in the browser. Another entity is
+mentioned as `[@entity:id](label)`, which draws that entity's pill. `peekHandlers` in
 `components/peekHover.ts` is what anything peekable spreads on; `PillWrapper`
 takes `peek` to do so (`EntityPill` always does; a tab doesn't, being what is
 already on screen).
@@ -323,19 +323,11 @@ the same shape mid-sentence, for a word no value on the entity accounts for.
 
 **Custom fields** (`components/ui/markdownFields.ts`) are how a row's text holds
 something other than text: `[@type:arg](text)` renders as a component instead of
-as markup — `[@codeEditor:key](hint)` a code box over one of the entity's values,
-`[@entity:id](label)` another entity as a pill mid-sentence — the label a fallback
-for while that entity has no text of its own —
-and `[@pill](text)` the type pill's shape around a word the sentence wants set
-apart. The `:arg` is optional, as the pill shows: a form that
-points at nothing is written without one. A link is still a link; only that label
-shape, and only for a type the caller can render, is taken. `Markdown` takes the
-renderers and knows nothing else about them;
-`EntityMarkdown` is where they meet the app, and is what the outliner renders a
-row with. A field acts on the entity whose text it appears in and not on the
-selection: its calls are born along that row's path (`runTool`'s `within`, the
-gesture counterpart of `contextWithin`), so a code box in a row's prose writes to
-*that* row wherever the cursor happens to be.
+as markup. There is one: `[@entity:id](label)`, another entity as a pill
+mid-sentence — the label a fallback for while that entity has no text of its own.
+A link is still a link; only that label shape, and only for a type the caller can
+render, is taken. `Markdown` takes the renderers and knows nothing else about
+them; `EntityMarkdown` is where they meet the app.
 
 ## Layout
 
