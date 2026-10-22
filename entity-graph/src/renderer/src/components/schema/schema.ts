@@ -15,6 +15,13 @@ export const MULTILINE_KEYWORD = 'x-multiline'
 export const MONOSPACE_KEYWORD = 'x-monospace'
 
 /**
+ * A value that holds others, edited in a dialog of its own rather than in place:
+ * the form shows one line for it, saying what it holds, which opens the rest.
+ * An extension keyword, like the two above.
+ */
+export const POPOUT_KEYWORD = 'x-popout'
+
+/**
  * The JSON Schema meta-schema. A schema that refers to it (`$ref`) describes a
  * value that is itself a schema — which the form edits with the schema builder.
  */

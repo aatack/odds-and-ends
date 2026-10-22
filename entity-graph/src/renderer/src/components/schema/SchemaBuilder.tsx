@@ -8,6 +8,7 @@ import { SchemaForm } from './SchemaForm'
 import {
   META_SCHEMA,
   MONOSPACE_KEYWORD,
+  POPOUT_KEYWORD,
   MULTILINE_KEYWORD,
   SCHEMA_TYPES,
   isSchemaRef,
@@ -155,6 +156,12 @@ const EXTRAS: Extra[] = [
   },
   { key: MULTILINE_KEYWORD, label: 'Multi-line', kinds: ['string'], initial: true },
   { key: MONOSPACE_KEYWORD, label: 'Monospace', kinds: ['string'], initial: true },
+  {
+    key: POPOUT_KEYWORD,
+    label: 'Pop out',
+    kinds: ['object', 'array', 'union', 'schema', 'json'],
+    initial: true,
+  },
   {
     key: 'pattern',
     label: 'Pattern',

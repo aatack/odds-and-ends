@@ -50,6 +50,10 @@ word for; to everything else it is an ordinary string:
 - `"x-multiline": true` draws it as a growing text box rather than one line.
 - `"x-monospace": true` sets it in monospace, for code.
 
+And one says how a value that holds others is edited: `"x-popout": true` on an
+object, a list, a union, a schema or a JSON value shows it as one line saying
+what it holds, which opens the whole form for it in a dialog.
+
 A field whose value is itself a schema says so in the standard way, with a
 `$ref` to the meta-schema: `{ "$ref": "https://json-schema.org/draft/2020-12/schema" }`.
 The form edits it with the schema builder. The `type` type's own `schema` field

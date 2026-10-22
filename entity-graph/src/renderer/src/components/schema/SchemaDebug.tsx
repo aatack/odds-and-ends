@@ -30,6 +30,7 @@ const EXAMPLE_SCHEMA: JsonSchema = {
     snippet: { type: 'string', 'x-multiline': true, 'x-monospace': true },
     shape: {
       $ref: 'https://json-schema.org/draft/2020-12/schema',
+      'x-popout': true,
       description: 'A schema of its own',
     },
   },

@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { ChevronDown, Plus, XClose } from '@untitledui/icons'
+import { ChevronDown, Expand01, Plus, XClose } from '@untitledui/icons'
 import { cn } from '../../helpers/cn'
 import { Dropdown } from '../ui/Dropdown'
+import { Modal } from '../ui/Modal'
 import { Switch } from '../ui/Switch'
 import { TextEditor } from '../ui/TextEditor'
 import { JsonEditor } from './JsonEditor'
@@ -10,6 +11,7 @@ import { SchemaBuilder } from './SchemaBuilder'
 import {
   MONOSPACE_KEYWORD,
   MULTILINE_KEYWORD,
+  POPOUT_KEYWORD,
   defaultFor,
   isObject,
   isSchemaRef,
@@ -18,6 +20,7 @@ import {
   problemOf,
   propertiesOf,
   requiredOf,
+  typeName,
   typeOf,
   variantsOf,
   type JsonSchema,
@@ -242,17 +245,75 @@ function Entry({
   /** Set for a list's item, which can be taken out. */
   onRemove?: () => void
 }): React.JSX.Element {
+  const popped = schema[POPOUT_KEYWORD] === true
   return (
     <Line
       label={label}
       required={required}
       description={descriptionOf(schema)}
       problem={problemOf(schema, value, required)}
-      tall={compound(schema)}
+      tall={compound(schema) && !popped}
       onRemove={onRemove}
     >
-      <Control schema={schema} value={value} onChange={onChange} label={label} />
+      {popped ? (
+        <PopOut schema={schema} value={value} onChange={onChange} label={label} />
+      ) : (
+        <Control schema={schema} value={value} onChange={onChange} label={label} />
+      )}
     </Line>
+  )
+}
+
+/** What a popped-out value holds, in a few words, for the line that opens it. */
+function summaryOf(schema: JsonSchema, value: unknown): string {
+  if (value === undefined) return 'Empty'
+  if (isSchemaRef(schema)) return isObject(value) ? `${typeName(value)} schema` : 'Schema'
+  if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? '' : 's'}`
+  if (isObject(value)) {
+    const keys = Object.keys(value)
+    if (!keys.length) return 'No fields'
+    const shown = keys.slice(0, 3).join(', ')
+    return keys.length > 3 ? `${shown} and ${keys.length - 3} more` : shown
+  }
+  const text = JSON.stringify(value) ?? ''
+  return text.length > 60 ? `${text.slice(0, 60)}…` : text
+}
+
+/**
+ * A value edited in a dialog: one line saying what it holds, which opens the
+ * whole form for it. The dialog edits the value in place, so there is nothing
+ * to save or cancel — closing it is all there is.
+ */
+function PopOut({
+  schema,
+  value,
+  onChange,
+  label,
+}: {
+  schema: JsonSchema
+  value: unknown
+  onChange: (value: unknown) => void
+  label?: string
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  // Without the keyword, so the dialog draws it in place rather than popping
+  // out again.
+  const { [POPOUT_KEYWORD]: _, ...inner } = schema
+  return (
+    <>
+      <button
+        className="flex h-8 w-full items-center gap-1.5 px-2.5 text-left text-[13px] focus:outline-none focus-visible:bg-brand-50/40"
+        onClick={() => setOpen(true)}
+      >
+        <span className="min-w-0 flex-1 truncate text-gray-500">{summaryOf(schema, value)}</span>
+        <Expand01 size={12} className="shrink-0 text-gray-400" />
+      </button>
+      {open && (
+        <Modal title={label ?? titleOf(schema, 'Edit')} size="wide" onClose={() => setOpen(false)}>
+          <SchemaForm schema={inner} value={value} setValue={onChange} />
+        </Modal>
+      )}
+    </>
   )
 }
 

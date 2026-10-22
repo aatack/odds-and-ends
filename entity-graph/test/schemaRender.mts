@@ -221,6 +221,24 @@ test('draws a lone value with no label column', () => {
   assert.doesNotMatch(html, />Value</)
 })
 
+test('draws a popped-out value as one line that opens it', () => {
+  const html = renderToStaticMarkup(
+    h(SchemaForm, {
+      schema: {
+        type: 'object',
+        properties: {
+          ingredients: { type: 'array', 'x-popout': true, items: { type: 'string' } },
+        },
+      },
+      value: { ingredients: ['leek', 'potato'] },
+      setValue: noop,
+    }),
+  )
+  assert.match(html, />2 items</)
+  // Its items are in the dialog, not on the page.
+  assert.doesNotMatch(html, /value="leek"/)
+})
+
 let failed = 0
 for (const [name, run] of tests) {
   try {
