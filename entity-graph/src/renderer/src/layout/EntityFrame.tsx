@@ -3,6 +3,7 @@ import { viewsFor } from '../components/types'
 import { useEntitySummary, useLayoutState } from '../state/hooks'
 import type { FrameState } from '../state/types'
 import { DefaultFocus } from './DefaultFocus'
+import { ChatView } from './ChatView'
 import { DetailView } from './DetailView'
 
 /**
@@ -17,6 +18,8 @@ export function EntityFrame({ frameId }: { frameId: string }): React.JSX.Element
       return <Focused frameId={frameId} entityId={frame.rootId} />
     case 'detail':
       return <DetailView frameId={frameId} />
+    case 'chat':
+      return <ChatView frameId={frameId} />
   }
 }
 

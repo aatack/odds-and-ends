@@ -200,8 +200,16 @@ export interface DetailFrame extends FrameBase {
   draft: Record<string, unknown> | null
 }
 
+/**
+ * The chat view: the root's children, in order, as the messages of a
+ * conversation. It holds nothing of its own — no selection, no draft.
+ */
+export interface ChatFrame extends FrameBase {
+  type: 'chat'
+}
+
 /** Every frame type. Narrow on `type`; {@link focusFrame} does it for the focus view. */
-export type FrameState = FocusFrame | DetailFrame
+export type FrameState = FocusFrame | DetailFrame | ChatFrame
 
 export type FrameType = FrameState['type']
 
@@ -220,6 +228,10 @@ export const FRAME_TYPES: {
   detail: {
     label: 'Detail',
     create: (tabId, rootId, below) => ({ id: uuid(), type: 'detail', tabId, rootId, below, draft: null }),
+  },
+  chat: {
+    label: 'Chat',
+    create: (tabId, rootId, below) => ({ id: uuid(), type: 'chat', tabId, rootId, below }),
   },
 }
 

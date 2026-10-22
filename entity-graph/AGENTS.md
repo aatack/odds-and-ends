@@ -307,7 +307,11 @@ its own state: the `focus` frame holds the default focus's selection, find,
 filters, depth, direction and edit; the `detail` frame (`layout/DetailView.tsx`,
 the root's values as a `SchemaForm` from its type's schema, or a text box
 without one) holds only its draft, written by `detail.commit` a moment after the
-typing stops and on blur, as one step to undo. Another view of the same entity is
+typing stops and on blur, as one step to undo; the `chat` frame
+(`layout/ChatView.tsx`) holds nothing, and draws the root's children in order
+as bubbles, each its card — the current user's on the right in a slight blue,
+the rest on the left — with no selection, each bubble publishing its entity for
+the right-click tool list. Another view of the same entity is
 pushed as a new frame, not switched to in place. `FRAME_TYPES` in
 `state/types.ts` lists them; each has an "Open in … view" tool
 (`entity.open.<type>`, made from that list — only focus has a key, `d`), and

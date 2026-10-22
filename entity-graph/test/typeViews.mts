@@ -28,6 +28,8 @@ const { OWN_FOCUS_TYPES, defaultLayout } = await import('../src/renderer/src/sta
 const { layoutAtom } = await import('../src/renderer/src/state/store')
 const R = await import('../src/renderer/src/state/reducers')
 const { DetailView } = await import('../src/renderer/src/layout/DetailView')
+const { ChatView } = await import('../src/renderer/src/layout/ChatView')
+const { applyEvents } = await import('../src/core/cache')
 
 const tests: [string, () => void][] = []
 const test = (name: string, run: () => void): void => void tests.push([name, run])
@@ -84,6 +86,32 @@ test('draws a detail frame as a form, a text box for an entity with no schema', 
   layoutAtom.set(R.setDetailDraft(s, frameId, { text: 'typing' }))
   const html = renderToStaticMarkup(h(DetailView, { frameId }))
   assert.match(html, /<textarea[^>]*>typing<\/textarea>/)
+})
+
+test('draws a chat frame as the root’s children in order, mine on the right in blue', () => {
+  const value = (entityId: string, text: string, author: string, timestamp: number) =>
+    ({ type: 'value', entityId, key: 'text', value: text, author, timestamp }) as const
+  const link = (sourceId: string, destinationId: string, timestamp: number) =>
+    ({ type: 'link', sourceId, destinationId, action: 0, author: 'x', timestamp }) as const
+  applyEvents([
+    value('c', 'The chat', 'anonymous', 1),
+    value('m1', 'Hello from them', 'someone', 2),
+    value('m2', 'Hello from me', 'anonymous', 3),
+    link('c', 'm1', 4),
+    link('c', 'm2', 5),
+  ] as never)
+  let s = defaultLayout('root')
+  const tabId = Object.keys(s.tabs)[0]
+  s = R.pushFrame(s, tabId, 'c', 'chat')
+  layoutAtom.set(s)
+  const html = renderToStaticMarkup(h(ChatView, { frameId: s.tabs[tabId].top }))
+  const them = html.indexOf('Hello from them')
+  const me = html.indexOf('Hello from me')
+  assert.ok(them > 0 && me > them, 'in order')
+  const bubble = (at: number) => html.slice(html.lastIndexOf('data-entity-id', at), at)
+  assert.match(bubble(them), /self-start bg-gray-100/)
+  assert.match(bubble(me), /self-end bg-brand-50/)
+  assert.match(bubble(me), /data-parent-id="c"/)
 })
 
 let failed = 0

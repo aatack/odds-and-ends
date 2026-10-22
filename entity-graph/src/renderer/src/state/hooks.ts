@@ -67,7 +67,7 @@ export function useFocus(): Focus {
 }
 
 /** The cache as the derivations read it: entities, plus how they are getting on. */
-function useEntitySource(): EntitySource {
+export function useEntitySource(): EntitySource {
   const cache = useAtomValue(entitiesAtom)
   return useMemo(() => entitiesFrom(cache), [cache])
 }
