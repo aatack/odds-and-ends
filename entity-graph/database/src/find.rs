@@ -447,6 +447,15 @@ pub mod knobs {
     pub fn overfetch() -> bool {
         NO_OVERFETCH.load(Ordering::Relaxed) == 0
     }
+    /// The dense cap of a lone `Eq` is `sqrt(f × limit × entities)`:
+    /// 0: f = 6 (default); n: f = n (1 is the cap of other plans).
+    pub static EQ_CAP: AtomicU8 = AtomicU8::new(0);
+    pub fn eq_cap_factor() -> f64 {
+        match EQ_CAP.load(Ordering::Relaxed) {
+            0 => super::EQ_CAP_FACTOR,
+            n => f64::from(n),
+        }
+    }
     pub fn intersect() -> bool {
         NO_INTERSECT.load(Ordering::Relaxed) == 0
     }
@@ -647,6 +656,14 @@ fn sample_eids(total: i64) -> Vec<i64> {
     out
 }
 
+/// The dense cap of a lone `Eq` is `sqrt(EQ_CAP_FACTOR)` times the cap of
+/// other plans. Its sorted plan is one index seek per layer, cheaper per
+/// candidate than a range or an `instr` scan, while each probe of the
+/// dense plan costs about the same; measured, the sorted plan stays faster
+/// up to about 2.5 × `sqrt(limit × entities)` candidates (BENCHMARKS.md,
+/// "Search").
+const EQ_CAP_FACTOR: f64 = 6.0;
+
 /// `And` terms with fewer candidates than this are used alone.
 const AND_COUNT_CAP: i64 = 2048;
 
@@ -661,6 +678,7 @@ impl Store {
         }
         let view = self.branch_view(branch)?;
         let cap = self.dense_cap(options.limit)?;
+        let eq_cap = (cap as f64 * knobs::eq_cap_factor().sqrt()) as i64;
         match &options.order {
             FindOrder::ValueAsc(k) => {
                 return self.find_by_value(&view, filter, &options, k, false, cap)
@@ -701,10 +719,15 @@ impl Store {
         // view reads no history or the plan is one `Eq`, else by checking
         // every entity after the roll-up (measured faster than probes that
         // must also search history, BENCHMARKS.md).
+        let sparse_cap = if matches!(plan, Plan::Term(_, Cond::Eq(_))) {
+            eq_cap
+        } else {
+            cap
+        };
         let (plan, probe) = match (&plan, knobs::probe()) {
             (Plan::Everything, _) => (plan, false),
             (_, Some(forced)) => (plan, forced),
-            (_, None) if self.count(&view, &plan, cap)? < cap => (plan, false),
+            (_, None) if self.count(&view, &plan, sparse_cap)? < sparse_cap => (plan, false),
             (_, None)
                 if (knobs::dense() == 1
                     || (knobs::dense() == 0

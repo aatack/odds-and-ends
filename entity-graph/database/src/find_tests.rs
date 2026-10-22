@@ -580,3 +580,78 @@ fn sparse_overfetch_pages_are_the_same_as_one_chunk_pages() {
         }
     }
 }
+
+#[test]
+fn lone_eq_gives_the_same_pages_at_every_dense_cap() {
+    // About 8% `doc` on a 3-branch stack with history (frozen fork, open
+    // pull) and retypes in every layer, so the count falls between the
+    // general cap and the `Eq` cap for small and large pages.
+    use crate::find::knobs::{EQ_CAP, PROBE};
+    let (mut s, base) = store();
+    let id = |i: u32| format!("{:08x}", i.wrapping_mul(2_654_435_761));
+    let ty = |i: u32| match i % 25 {
+        0 | 1 => "doc",
+        2..=12 => "task",
+        _ => "note",
+    };
+    let ops = (0..2000u32)
+        .map(|i| Op::set(id(i).as_str(), TYPE_KEY, ty(i)))
+        .collect();
+    w(&mut s, base, ops);
+    let ops = (0..2000u32)
+        .filter(|i| i % 7 == 0)
+        .map(|i| Op::set(id(i).as_str(), TYPE_KEY, "doc"))
+        .collect();
+    w(&mut s, base, ops);
+    let mid = s.fork(base, "mid").unwrap();
+    let ops = (0..2000u32)
+        .filter(|i| i % 5 == 0)
+        .map(|i| Op::set(id(i).as_str(), TYPE_KEY, "task"))
+        .collect();
+    w(&mut s, base, ops); // after the fork: mid must not see these
+    let ops = (0..2000u32)
+        .filter(|i| i % 11 == 0)
+        .map(|i| Op::clear(id(i).as_str(), TYPE_KEY))
+        .collect();
+    w(&mut s, mid, ops);
+    let top = s
+        .create_branch("top", &[ParentRef::new(mid, SeqRange::new(1, None))])
+        .unwrap();
+    let ops = (0..2000u32)
+        .filter(|i| i % 13 == 0)
+        .map(|i| Op::set(id(i).as_str(), TYPE_KEY, "doc"))
+        .collect();
+    w(&mut s, top, ops);
+    let f = Filter::eq(TYPE_KEY, "doc");
+    for b in [base, mid, top] {
+        let want: Vec<String> = {
+            let ids: Vec<String> = (0..2000u32).map(id).collect();
+            let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+            let vals = s.values(b, &refs).unwrap();
+            let mut v: Vec<String> = ids
+                .iter()
+                .filter(|e| vals[e.as_str()].get(TYPE_KEY) == Some(&Value::Text("doc".into())))
+                .cloned()
+                .collect();
+            v.sort();
+            v
+        };
+        assert!(want.len() > 100, "{}", want.len());
+        for order in [FindOrder::EntityId, FindOrder::Insertion] {
+            for limit in [1, 5, 50, 1000] {
+                for (cap, probe) in [(0, 0), (1, 0), (50, 0), (0, 1), (0, 2)] {
+                    EQ_CAP.store(cap, Ordering::Relaxed);
+                    PROBE.store(probe, Ordering::Relaxed);
+                    let mut got = all_pages(&s, b, &f, limit, usize::MAX, &order);
+                    EQ_CAP.store(0, Ordering::Relaxed);
+                    PROBE.store(0, Ordering::Relaxed);
+                    let n = got.len();
+                    got.sort();
+                    got.dedup();
+                    assert_eq!(got.len(), n, "duplicates {order:?} {limit} {cap} {probe}");
+                    assert_eq!(got, want, "{order:?} limit {limit} cap {cap} probe {probe}");
+                }
+            }
+        }
+    }
+}
