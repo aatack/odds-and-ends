@@ -1,27 +1,18 @@
-import {
-  Check,
-  CodeSquare01,
-  CpuChip01,
-  GitPullRequest,
-  LayersThree01,
-  Link01,
-  MessageChatCircle,
-  Settings01,
-  User01,
-} from '@untitledui/icons'
-import type { ComponentType, SVGProps } from 'react'
+// Lucide (lucide.dev, ISC): its robot is what a bot looks like here, and the
+// rest come from it too so that they match.
+import { Bot, Check, GitPullRequest, Layers, Link, MessageCircle, Settings, SquareCode, User, type LucideIcon } from 'lucide-react'
 import type { HandoffKind, Item } from '../../shared/types'
 
-type Icon = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>
+type Icon = LucideIcon
 
 /** One icon a handoff type: what the item waits for, at a glance. */
 export const TYPE_ICON: Record<HandoffKind, Icon> = {
-  human: User01,
-  bot: CpuChip01,
+  human: User,
+  bot: Bot,
   github: GitPullRequest,
-  slack: MessageChatCircle,
-  items: LayersThree01,
-  script: CodeSquare01,
+  slack: MessageCircle,
+  items: Layers,
+  script: SquareCode,
 }
 
 const TYPE_NAME: Record<HandoffKind, string> = {
@@ -55,20 +46,20 @@ export function TypeIcon({ type }: { type: HandoffKind }) {
 export function Avatar({ createdBy }: { createdBy: string }) {
   const [Icon, name]: [Icon, string] =
     createdBy === 'bot'
-      ? [CpuChip01, 'Bot']
+      ? [Bot, 'Bot']
       : createdBy.startsWith('script')
-        ? [CodeSquare01, 'Script']
+        ? [SquareCode, 'Script']
         : createdBy === 'system'
-          ? [Settings01, 'Workflows']
+          ? [Settings, 'Workflows']
           : createdBy === 'mcp'
-            ? [Link01, 'MCP client']
+            ? [Link, 'MCP client']
             : createdBy.startsWith('github')
               ? [GitPullRequest, createdBy]
               : createdBy.startsWith('slack')
-                ? [MessageChatCircle, createdBy]
+                ? [MessageCircle, createdBy]
                 : createdBy === 'human'
-                  ? [User01, 'You']
-                  : [Settings01, createdBy]
+                  ? [User, 'You']
+                  : [Settings, createdBy]
   return (
     <span className="avatar" title={name}>
       <Icon className="icon" />
