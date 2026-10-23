@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import type { Catalog, ItemDetail, ItemEvent } from '../../shared/types'
 import { minutes } from './Chat'
 import { Form, withHints } from './forms'
+import { useEventMenu } from './EventMenu'
 import { TypeIcon } from './icons'
 import { api } from './useWorkflows'
 
@@ -31,6 +32,7 @@ export function Blockers({ detail, catalog, act, onOpen }: { detail: ItemDetail;
 
 function Row(props: { b: ItemEvent; detail: ItemDetail; catalog: Catalog; act: Act; now: number; onOpen: (id: string) => void }) {
   const { b, detail, catalog, act, now, onOpen } = props
+  const menu = useEventMenu()
   const running = b.type === 'bot' && detail.item.worker !== null
   const status =
     b.type === 'bot'
@@ -45,7 +47,7 @@ function Row(props: { b: ItemEvent; detail: ItemDetail; catalog: Catalog; act: A
           ? `next check ${shortTime(b.nextCheckAt)}`
           : ''
   return (
-    <div className="blocker">
+    <div className="blocker" {...menu(b.id)}>
       <div className="blocker-line">
         <TypeIcon type={b.type} />
         {b.type === 'item' ? (
@@ -68,7 +70,7 @@ function Row(props: { b: ItemEvent; detail: ItemDetail; catalog: Catalog; act: A
   )
 }
 
-function Approval({ b, catalog, act }: { b: ItemEvent; catalog: Catalog; act: Act }) {
+export function Approval({ b, catalog, act }: { b: ItemEvent; catalog: Catalog; act: Act }) {
   const name = String(b.params.action)
   const action = catalog.actions.find((a) => a.name === name)
   const [inputs, setInputs] = useState<Record<string, unknown>>((b.params.inputs as Record<string, unknown>) ?? {})

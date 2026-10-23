@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { z } from 'zod'
-import type { BotRun, EventSpec, EventTimes, Item, ItemDetail, ItemEvent, Overview, TraceEntry } from '../shared/types'
+import type { BotRun, EventDetail, EventSpec, EventTimes, Item, ItemDetail, ItemEvent, Overview, TraceEntry } from '../shared/types'
 import { itemActions } from './actions'
 import { migrate, transaction, type Db } from './db'
 import { EVENT_TYPES } from './eventTypes'
@@ -274,6 +274,25 @@ export class Engine extends EventEmitter {
       events: this.children(id),
       runs: (this.db.prepare('SELECT * FROM runs WHERE item_id = ? ORDER BY started_at').all(id) as Row[]).map(toRun),
       trace: this.trace(id),
+    }
+  }
+
+  /** Any event, item or not, with what its views need. */
+  eventDetail(id: string): EventDetail | null {
+    const event = this.event(id)
+    if (!event) return null
+    const parent = event.parentId ? this.get(event.parentId) : null
+    const runs = (
+      this.db
+        .prepare('SELECT * FROM runs WHERE item_id = ? OR ? IN (SELECT value FROM json_each(event_ids)) ORDER BY started_at')
+        .all(id, id) as Row[]
+    ).map(toRun)
+    return {
+      event,
+      parent: parent && { id: parent.id, title: parent.title },
+      runs,
+      trace: (this.db.prepare('SELECT * FROM trace WHERE event_id = ? ORDER BY id').all(id) as Row[]).map(toTrace),
+      item: event.type === 'item' ? this.detail(id) : null,
     }
   }
 

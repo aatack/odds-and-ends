@@ -42,6 +42,7 @@ async function main(): Promise<void> {
     ipcMain.handle(name, (_e, ...args) => fn(...(args as never[])))
   handle('overview', () => engine.overview(pool.status()))
   handle('detail', (id: string) => engine.detail(id))
+  handle('eventDetail', (id: string) => engine.eventDetail(id))
   handle('catalog', () => catalog(engine))
   handle('next', (skip: string[]) => engine.next(skip))
   handle('viewed', (id: string) => engine.viewed(id))

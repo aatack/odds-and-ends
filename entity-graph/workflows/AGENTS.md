@@ -94,6 +94,14 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   components' utilities win over it. Its buttons are `button[data-ui]`, so it
   never styles the components' buttons.
 
+- **The content pane is a stack of views** (`views.ts`, a Jotai atom kept in
+  local storage). The list and Next replace the stack; Open, Debug and links push
+  onto it; Back pops it. A view is `{ kind, id }`: `event` shows an event as its
+  type is shown (an item as its chat, any other event as `EventView`); `debug`
+  shows its whole state as JSON. A new kind of view is a new `kind`.
+- **Every event has a right-click menu** (`useEventMenu`): Open and Debug. Spread
+  it on anything that stands for an event. Clicking an event does nothing else.
+
 ## Rules
 
 - **The engine is the only writer.** Every change goes through `Engine` and emits

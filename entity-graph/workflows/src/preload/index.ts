@@ -6,6 +6,7 @@ const call = (name: string) => (...args: unknown[]) => ipcRenderer.invoke(name, 
 const api: WorkflowsAPI = {
   overview: call('overview') as WorkflowsAPI['overview'],
   detail: call('detail') as WorkflowsAPI['detail'],
+  eventDetail: call('eventDetail') as WorkflowsAPI['eventDetail'],
   catalog: call('catalog') as WorkflowsAPI['catalog'],
   next: call('next') as WorkflowsAPI['next'],
   viewed: call('viewed') as WorkflowsAPI['viewed'],

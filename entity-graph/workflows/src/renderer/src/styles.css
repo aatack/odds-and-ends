@@ -157,4 +157,16 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .blocker-cancel .icon { width: 13px; height: 13px; }
 .blocker-error { font-size: 12px; }
 .blockers .approval { background: var(--panel); }
+.main { position: relative; }
+.back { position: absolute; top: 14px; left: 8px; z-index: 1; display: flex; padding: 4px; background: none; color: var(--muted); }
+.back:hover { color: var(--ink); }
+.back .icon { width: 16px; height: 16px; }
+.menu { position: fixed; z-index: 50; min-width: 140px; padding: 4px; border-radius: 8px; background: var(--color-gray-100); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; }
+.menu button { text-align: left; padding: 6px 10px; border: none; border-radius: 5px; background: none; color: var(--ink); font: inherit; cursor: default; }
+.menu button:hover { background: var(--color-gray-200); }
+.event-view header h1 { display: flex; align-items: center; gap: 8px; }
+.event-view header h1 .type-icon .icon { width: 18px; height: 18px; }
+.event-message { white-space: pre-wrap; }
+.value { white-space: pre-wrap; }
+.debug-json { width: 100%; overflow-x: auto; white-space: pre; user-select: text; }
 }

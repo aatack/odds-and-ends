@@ -1,5 +1,7 @@
+import { useAtom } from 'jotai'
 import { useCallback, useEffect, useState } from 'react'
-import type { Catalog, ItemDetail, Overview, WorkflowsAPI } from '../../shared/types'
+import type { Catalog, EventDetail, Overview, WorkflowsAPI } from '../../shared/types'
+import { viewsAtom, type View } from './views'
 
 declare global {
   interface Window {
@@ -12,8 +14,10 @@ export const api = (): WorkflowsAPI => window.workflows
 /** Everything the app shows, kept in step with the main process. */
 export function useWorkflows() {
   const [overview, setOverview] = useState<Overview>({ items: [], workers: [] })
-  const [selected, setSelected] = useState<string | null>(null)
-  const [detail, setDetail] = useState<ItemDetail | null>(null)
+  const [views, setViews] = useAtom(viewsAtom)
+  const view = views[views.length - 1] ?? null
+  const selected = view?.id ?? null
+  const [detail, setDetail] = useState<EventDetail | null>(null)
   const [skipped, setSkipped] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [empty, setEmpty] = useState(false)
@@ -22,7 +26,7 @@ export function useWorkflows() {
 
   const refresh = useCallback(async () => {
     setOverview(await api().overview())
-    setDetail(selected ? await api().detail(selected) : null)
+    setDetail(selected ? await api().eventDetail(selected) : null)
   }, [selected])
 
   useEffect(() => {
@@ -40,11 +44,27 @@ export function useWorkflows() {
     }
   }, [])
 
-  const select = useCallback((id: string | null) => {
-    setError(null)
-    setEmpty(false)
-    setSelected(id)
-  }, [])
+  /** Shows an item (or any event) afresh: the stack is just it. From the list and from Next. */
+  const select = useCallback(
+    (id: string | null) => {
+      setError(null)
+      setEmpty(false)
+      setViews(id ? [{ kind: 'event', id }] : [])
+    },
+    [setViews],
+  )
+
+  /** Puts a view on top of the stack. */
+  const open = useCallback(
+    (v: View) => {
+      setError(null)
+      setViews([...views, v])
+    },
+    [views, setViews],
+  )
+
+  /** Takes the top view off the stack. */
+  const back = useCallback(() => setViews(views.slice(0, -1)), [views, setViews])
 
   const next = useCallback(
     async (skip: string[] = skipped) => {
@@ -66,5 +86,5 @@ export function useWorkflows() {
     [skipped, next],
   )
 
-  return { overview, detail, catalog, selected, select, next, skip, act, error, empty }
+  return { overview, view, views, detail, catalog, selected, select, open, back, next, skip, act, error, empty }
 }

@@ -1,7 +1,11 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { Catalog, Item, ItemDetail } from '../../shared/types'
 import { Blockers } from './Blockers'
+import { ArrowLeft } from 'lucide-react'
 import { Chat } from './Chat'
+import { DebugView } from './DebugView'
+import { EventMenu, useEventMenu } from './EventMenu'
+import { EventView } from './EventView'
 import { Composer } from './Composer'
 import { ItemIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
@@ -45,6 +49,7 @@ export function App() {
           {page === 'mcp' && <McpPage />}
         </main>
       </div>
+      <EventMenu />
     </ItemsContext.Provider>
   )
 }
@@ -91,21 +96,33 @@ function ItemsSidebar() {
 
 function ItemsMain() {
   const w = useItems()
-  return (
-    <>
-      {w.error && <div className="error">{w.error}</div>}
-      {w.detail && w.catalog ? (
+  const openEvent = (id: string) => w.open({ kind: 'event', id })
+  const body = () => {
+    if (!w.detail || !w.catalog || !w.view)
+      return <div className="empty">{w.empty ? 'Nothing needs you right now.' : 'Press Next for the next thing that needs you.'}</div>
+    if (w.view.kind === 'debug') return <DebugView detail={w.detail} />
+    if (w.detail.item)
+      return (
         <ItemView
-          key={w.detail.item.id}
-          detail={w.detail}
+          key={w.detail.event.id}
+          detail={w.detail.item}
           catalog={w.catalog}
           act={w.act}
-          onSkip={() => w.skip(w.detail!.item.id)}
-          onOpen={w.select}
+          onSkip={() => w.skip(w.detail!.event.id)}
+          onOpen={openEvent}
         />
-      ) : (
-        <div className="empty">{w.empty ? 'Nothing needs you right now.' : 'Press Next for the next thing that needs you.'}</div>
+      )
+    return <EventView detail={w.detail} catalog={w.catalog} act={w.act} onOpen={openEvent} />
+  }
+  return (
+    <>
+      {w.views.length > 1 && (
+        <button data-ui className="back" title="Back" aria-label="Back" onClick={w.back}>
+          <ArrowLeft className="icon" />
+        </button>
       )}
+      {w.error && <div className="error">{w.error}</div>}
+      {body()}
     </>
   )
 }
@@ -143,6 +160,7 @@ function NewItem({ onCreate }: { onCreate: (title: string, instructions: string)
 }
 
 function ItemList(props: { label: string; items: Item[]; selected: string | null; onSelect: (id: string) => void }) {
+  const menu = useEventMenu()
   if (!props.items.length) return null
   return (
     <section className="list">
@@ -150,7 +168,7 @@ function ItemList(props: { label: string; items: Item[]; selected: string | null
         {props.label} <span className="count">{props.items.length}</span>
       </h3>
       {props.items.map((i) => (
-        <div key={i.id} className={`row ${i.id === props.selected ? 'selected' : ''}`} onClick={() => props.onSelect(i.id)}>
+        <div key={i.id} className={`row ${i.id === props.selected ? 'selected' : ''}`} onClick={() => props.onSelect(i.id)} {...menu(i.id)}>
           <ItemIcon item={i} />
           <span className="row-title">{i.title}</span>
           {i.worker !== null && <span className="dot" title="A bot is running" />}
@@ -202,7 +220,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onSki
         )}
       </header>
       <div className="chat-scroll" ref={scroller}>
-        <Chat detail={detail} onOpen={onOpen} />
+        <Chat detail={detail} />
       </div>
       <div className="composer">
         <Blockers detail={detail} catalog={catalog} act={act} onOpen={onOpen} />

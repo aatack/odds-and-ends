@@ -128,6 +128,18 @@ export interface ItemDetail {
   trace: TraceEntry[]
 }
 
+/** Any event, with what its views need: the item it sits in, its runs, its trace, and (for an item) the item in full. */
+export interface EventDetail {
+  event: ItemEvent
+  parent: { id: string; title: string } | null
+  /** The bot runs that answered it (for an item, every run on it). */
+  runs: BotRun[]
+  /** Every trace row about it. */
+  trace: TraceEntry[]
+  /** For an item event: the item in full. */
+  item: ItemDetail | null
+}
+
 export interface Overview {
   items: Item[]
   workers: { id: number; itemId: string | null }[]
@@ -205,6 +217,8 @@ export interface McpView {
 export interface WorkflowsAPI {
   overview: () => Promise<Overview>
   detail: (id: string) => Promise<ItemDetail | null>
+  /** Any event, item or not, with what its views need. */
+  eventDetail: (id: string) => Promise<EventDetail | null>
   catalog: () => Promise<Catalog>
   /** The item that has waited longest for the human, or null. */
   next: (skip: string[]) => Promise<string | null>
