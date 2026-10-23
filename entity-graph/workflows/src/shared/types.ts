@@ -200,7 +200,7 @@ export interface WorkflowsAPI {
   takeOver: (id: string) => Promise<void>
   pollSources: () => Promise<void>
   integrations: () => Promise<IntegrationsView>
-  addSlack: (name: string, token: string) => Promise<void>
+  addSlack: (token: string) => Promise<void>
   removeSlack: (id: string) => Promise<void>
   mcp: () => Promise<McpView>
   regenerateMcpToken: () => Promise<void>

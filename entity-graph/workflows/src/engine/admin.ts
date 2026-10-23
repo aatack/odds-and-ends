@@ -35,11 +35,12 @@ export class Admin {
   }
 
   /** Checks the token with Slack before keeping it. */
-  async addSlack(name: string, token: string): Promise<void> {
+  /** Slack says which workspace the token is for, so the token is all it needs. */
+  async addSlack(token: string): Promise<void> {
     token = token.trim()
     if (!token.startsWith('xoxp-')) throw new Error('That is not a Slack user token: they start with xoxp-.')
     const { team, user, userId } = await slackAuthTest(token, this.fetchFn)
-    this.engine.settings.addSlackWorkspace({ name: name.trim() || team, team, user, userId, token })
+    this.engine.settings.addSlackWorkspace({ name: team, team, user, userId, token })
   }
 
   removeSlack(id: string): void {

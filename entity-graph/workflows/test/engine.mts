@@ -376,8 +376,10 @@ assert.match(engine.transcript(engine.detail(id)!.runs[0].id)!, /Thinking out lo
 // ---- 16. Integrations and the catalog ----
 const admin = new Admin(engine, mcp, 2, fakeFetch)
 assert.equal((await admin.integrations()).github.detail, 'Signed in as octocat')
-await assert.rejects(admin.addSlack('', 'nope'), /xoxp-/)
-await assert.rejects(admin.addSlack('', 'xoxp-bad'), /invalid_auth/)
+await assert.rejects(admin.addSlack('nope'), /xoxp-/)
+await assert.rejects(admin.addSlack('xoxp-bad'), /invalid_auth/)
+await admin.addSlack('xoxp-good-1234')
+assert.equal(engine.settings.slackWorkspaces().at(-1)!.name, 'Acme')
 const cat = catalog(engine)
 assert.ok(cat.actions.find((a) => a.name === 'slack_post')!.unsafe)
 assert.ok(!engine.actions.some((a) => ['set_state', 'note'].includes(a.name)))

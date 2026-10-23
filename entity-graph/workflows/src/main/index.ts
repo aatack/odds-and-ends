@@ -55,7 +55,7 @@ async function main(): Promise<void> {
   handle('takeOver', (id: string) => engine.takeOver(id))
   handle('pollSources', () => engine.pollSources(true))
   handle('integrations', () => admin.integrations())
-  handle('addSlack', (name: string, token: string) => admin.addSlack(name, token))
+  handle('addSlack', (token: string) => admin.addSlack(token))
   handle('removeSlack', (id: string) => admin.removeSlack(id))
   handle('mcp', () => admin.mcpView())
   handle('regenerateMcpToken', () => admin.regenerateMcpToken())

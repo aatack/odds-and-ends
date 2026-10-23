@@ -56,13 +56,12 @@ const SLACK_WORKSPACE = {
   type: 'object',
   properties: {
     token: { type: 'string', 'x-editor': 'secret', description: 'The User OAuth Token: it starts with xoxp-.' },
-    name: { type: 'string', description: "Optional; the workspace's own name by default." },
   },
   required: ['token'],
 }
 
 function Slack({ view, act }: { view: IntegrationsView; act: (fn: () => Promise<unknown>) => Promise<void> }) {
-  const [value, setValue] = useState<{ name?: string; token?: string }>({})
+  const [value, setValue] = useState<{ token?: string }>({})
   return (
     <section className="card">
       <h2>Slack</h2>
@@ -105,7 +104,7 @@ function Slack({ view, act }: { view: IntegrationsView; act: (fn: () => Promise<
           disabled={!value.token?.trim()}
           onClick={() =>
             act(async () => {
-              await api().addSlack(value.name ?? '', value.token ?? '')
+              await api().addSlack(value.token ?? '')
               setValue({})
             })
           }
