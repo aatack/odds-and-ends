@@ -174,6 +174,9 @@ code { font-family: var(--font-mono); font-size: 12px; }
 .menu { position: fixed; z-index: 50; min-width: 140px; padding: 4px; border-radius: 8px; background: var(--color-gray-100); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; }
 .menu button { text-align: left; padding: 6px 10px; border: none; border-radius: 5px; background: none; color: var(--ink); font: inherit; cursor: default; }
 .menu button:hover { background: var(--color-gray-200); }
+.menu .menu-action { display: flex; align-items: center; gap: 8px; }
+.menu button:not(.menu-action) + .menu-action { margin-top: 4px; }
+.menu-action .icon { width: 14px; height: 14px; flex: none; }
 .event-view header h1 { display: flex; align-items: center; gap: 8px; }
 .event-view header h1 .type-icon .icon { width: 18px; height: 18px; }
 .event-message { white-space: pre-wrap; }

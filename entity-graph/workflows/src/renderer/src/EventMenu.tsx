@@ -1,5 +1,8 @@
 import { useAtom, useSetAtom } from 'jotai'
-import { useEffect, type MouseEvent } from 'react'
+import { useEffect, useState, type MouseEvent } from 'react'
+import type { ItemEvent } from '../../shared/types'
+import { attachingAtom, eventActions } from './eventActions'
+import { api } from './useWorkflows'
 import { menuAtom, sameView, viewsAtom, type View } from './views'
 
 /** What to spread on anything standing for an event, so a right-click on it opens the event menu. */
@@ -14,10 +17,21 @@ export function useEventMenu() {
   })
 }
 
-/** The right-click menu on an event: Open it, or Debug it. Each puts a view on top of the stack. */
-export function EventMenu() {
+/**
+ * The right-click menu on an event: Open it, or Debug it (each puts a view on
+ * top of the stack), and below, what can be done to it (`eventActions`), as its
+ * view's header offers.
+ */
+export function EventMenu({ act, skip }: { act: (fn: () => Promise<unknown>) => Promise<void>; skip: (id: string) => void }) {
   const [menu, setMenu] = useAtom(menuAtom)
   const [views, setViews] = useAtom(viewsAtom)
+  const attach = useSetAtom(attachingAtom)
+  // The event itself, read as the menu opens, for which actions it has.
+  const [event, setEvent] = useState<ItemEvent | null>(null)
+  useEffect(() => {
+    setEvent(null)
+    if (menu) void api().eventDetail(menu.id).then((d) => setEvent(d?.event ?? null))
+  }, [menu])
   useEffect(() => {
     if (!menu) return
     const close = () => setMenu(null)
@@ -40,6 +54,21 @@ export function EventMenu() {
     <div className="menu" style={{ left: menu.x, top: menu.y }} onMouseDown={(e) => e.stopPropagation()}>
       <button onClick={() => push({ kind: 'event', id: menu.id })}>Open</button>
       <button onClick={() => push({ kind: 'debug', id: menu.id })}>Debug</button>
+      {event?.id === menu.id &&
+        eventActions(event, { act, skip, attach }).map((a) => (
+          <button
+            key={a.id}
+            className="menu-action"
+            title={a.title}
+            onClick={() => {
+              setMenu(null)
+              a.run()
+            }}
+          >
+            <a.icon className={`icon ${a.tone}`} />
+            {a.label}
+          </button>
+        ))}
     </div>
   )
 }

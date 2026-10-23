@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import type { Catalog, ItemDetail, ItemEvent } from '../../shared/types'
 import { Blockers } from './Blockers'
 import { useAtom, useSetAtom } from 'jotai'
-import { ArrowRight, ChevronLeft, CircleCheck, CircleX, ExternalLink, Menu, Paperclip, SkipForward } from 'lucide-react'
+import { ArrowRight, ChevronLeft, Menu } from 'lucide-react'
+import { attachingAtom, eventActions } from './eventActions'
 import { IconButton } from './components/ui/IconButton'
 import { appearanceAtom, applyAppearance, SERIFS, THEMES } from './appearance'
 import { Chat } from './Chat'
@@ -72,8 +73,34 @@ export function App() {
           <ArrowRight className="icon" />
         </button>
       </div>
-      <EventMenu />
+      <EventMenu act={items.act} skip={items.skip} />
+      <AttachPicker />
     </ItemsContext.Provider>
+  )
+}
+
+/** Attaching an event to a task, from its header or its right-click menu: pick the task, or make one. */
+function AttachPicker() {
+  const w = useItems()
+  const [attaching, setAttaching] = useAtom(attachingAtom)
+  if (!attaching) return null
+  const { id, summary } = attaching
+  return (
+    <ItemPicker
+      title={`Attach “${summary}” to a task`}
+      // Any open item but this one can take it.
+      items={w.overview.items.filter((i) => !i.closed && i.id !== id)}
+      verb="Attach"
+      onPick={(target) => {
+        setAttaching(null)
+        void w.act(() => api().attach(id, target))
+      }}
+      onCreate={(title) => {
+        setAttaching(null)
+        void w.act(async () => api().attach(id, await api().create(title, null)))
+      }}
+      onClose={() => setAttaching(null)}
+    />
   )
 }
 
@@ -150,8 +177,7 @@ function AppMenu() {
  */
 function ItemsMain() {
   const w = useItems()
-  // The event being attached to another item, while the picker is up; it goes with the view it was opened on.
-  const [attaching, setAttaching] = useState<string | null>(null)
+  const setAttaching = useSetAtom(attachingAtom)
   const openEvent = (id: string) => w.open({ kind: 'event', id })
   // What the items view opens takes its place, so Back goes to where you were before it.
   const openFromItems = (id: string) => w.open({ kind: 'event', id }, { replace: w.view?.kind === 'items' })
@@ -188,43 +214,15 @@ function ItemsMain() {
     )
   const e = d.event
   const debug = w.view.kind === 'debug'
-  // What can be done to it, by its type; and, for every event, attaching it to another item.
-  const own =
-    e.type === 'item'
-      ? !e.resolved && (
-          <>
-            <IconButton title="Resolve" className="text-success-600 hover:text-success-600" onClick={() => w.act(() => api().close(e.id))}>
-              <CircleCheck className="size-[17px]" />
-            </IconButton>
-            <IconButton
-              title="Done outside: you did it yourself, outside this tool."
-              className="text-brand-600 hover:text-brand-600"
-              onClick={() => w.act(() => api().handledOutside(e.id))}
-            >
-              <ExternalLink className="size-[17px]" />
-            </IconButton>
-            <IconButton title="Skip" className="text-warning-700 hover:text-warning-700" onClick={() => w.skip(e.id)}>
-              <SkipForward className="size-[17px]" />
-            </IconButton>
-          </>
-        )
-      : !e.resolved && (
-          <IconButton title="Cancel" className="text-error-600 hover:text-error-600" onClick={() => w.act(() => api().cancel(e.id))}>
-            <CircleX className="size-[17px]" />
-          </IconButton>
-        )
   const actions = debug ? null : (
     <>
-      {own}
-      <IconButton title="Attach to a task" onClick={() => setAttaching(e.id)}>
-        <Paperclip className="size-[17px]" />
-      </IconButton>
+      {eventActions(e, { act: w.act, skip: w.skip, attach: setAttaching }).map((a) => (
+        <IconButton key={a.id} title={a.title ?? a.label} className={a.tone} onClick={a.run}>
+          <a.icon className="size-[17px]" />
+        </IconButton>
+      ))}
     </>
   )
-  const attach = (target: string) => {
-    setAttaching(null)
-    void w.act(() => api().attach(e.id, target))
-  }
   return (
     <div className="view">
       <ViewHeader
@@ -244,20 +242,6 @@ function ItemsMain() {
           <EventView detail={d} catalog={w.catalog} act={w.act} onOpen={openEvent} />
         )}
       </div>
-      {attaching === e.id && (
-        <ItemPicker
-          title={`Attach “${e.summary}” to a task`}
-          // Any open item but this one can take it.
-          items={w.overview.items.filter((i) => !i.closed && i.id !== e.id)}
-          verb="Attach"
-          onPick={attach}
-          onCreate={(title) => {
-            setAttaching(null)
-            void w.act(async () => api().attach(e.id, await api().create(title, null)))
-          }}
-          onClose={() => setAttaching(null)}
-        />
-      )}
     </div>
   )
 }
