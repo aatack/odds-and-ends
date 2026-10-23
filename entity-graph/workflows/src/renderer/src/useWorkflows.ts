@@ -48,11 +48,12 @@ export function useWorkflows() {
 
   const next = useCallback(
     async (skip: string[] = skipped) => {
-      const id = await api().next(skip)
+      // Next moves on from what is on screen; it comes back to it only when nothing else needs the human.
+      const id = (selected && (await api().next([...skip, selected]))) || (await api().next(skip))
       select(id)
       setEmpty(id === null)
     },
-    [skipped, select],
+    [skipped, selected, select],
   )
 
   const skip = useCallback(
