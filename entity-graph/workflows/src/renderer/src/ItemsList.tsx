@@ -96,9 +96,11 @@ export function ItemsList(props: { items: Item[]; onOpen: (id: string) => void; 
           <span className="key-pill">
             <kbd>Enter</kbd> Open
           </span>
-          <span className="key-pill">
-            <kbd>Tab</kbd> New
-          </span>
+          {text.trim() && (
+            <span className="key-pill">
+              <kbd>Tab</kbd> New
+            </span>
+          )}
         </span>
       </div>
 
