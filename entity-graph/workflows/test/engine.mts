@@ -521,6 +521,8 @@ const onHuman = JSON.parse(await outside.call('items_waiting_on', { on: 'human' 
 assert.deepEqual(onHuman.map((i: { id: string }) => i.id).sort(), engine.overview().items.filter((i) => !i.closed && i.withHuman).map((i) => i.id).sort())
 await assert.rejects(outside.call('items_waiting_on', { on: 'nobody' }), /One of: human/)
 assert.equal(JSON.parse(await outside.call('next_for_human'))?.id ?? null, engine.next())
+assert.match(await outside.call('paradigm'), /An item is a thing to be done/)
+assert.match(outside.client.getInstructions() ?? '', /blocker/i, 'the server says how it works as it connects')
 const types = JSON.parse(await outside.call('event_types'))
 assert.deepEqual(types.map((t: { type: string }) => t.type), engine.eventTypes.map((t) => t.type))
 await outside.client.close()

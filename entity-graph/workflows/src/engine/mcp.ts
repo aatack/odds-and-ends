@@ -15,13 +15,14 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { Catalog } from '../shared/types'
 import type { Engine } from './engine'
 import type { ActionContext } from './integrations'
+import { PARADIGM } from './paradigm'
 import { objectSchema } from './schema'
 
 export type Scope = { kind: 'run'; runId: string } | { kind: 'operator' }
 
 
 export function makeServer(engine: Engine, scope: Scope): McpServer {
-  const server = new McpServer({ name: 'workflows', version: '0.1.0' })
+  const server = new McpServer({ name: 'workflows', version: '0.1.0' }, { instructions: PARADIGM })
   const ctx = (): ActionContext => {
     if (scope.kind === 'operator') return { engine, author: 'bot', actor: 'mcp', itemId: null, runId: null }
     const run = engine.activeRun(scope.runId)

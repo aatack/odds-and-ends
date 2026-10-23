@@ -4,6 +4,7 @@
 import { z } from 'zod'
 import type { EventSpec } from '../shared/types'
 import type { Action } from './integrations'
+import { PARADIGM } from './paradigm'
 import { objectSchema } from './schema'
 
 const itemId = z.string().describe('The id of the item.')
@@ -13,6 +14,13 @@ const spec = z
 
 
 export const itemActions: Action[] = [
+  {
+    name: 'paradigm',
+    unsafe: false,
+    description: 'How items, events and blockers work, in a few lines: read it first.',
+    input: {},
+    run: async () => PARADIGM,
+  },
   {
     name: 'event_types',
     unsafe: false,
