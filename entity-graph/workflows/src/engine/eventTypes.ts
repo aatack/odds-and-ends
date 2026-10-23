@@ -174,4 +174,66 @@ export const after: EventType = {
   },
 }
 
-export const EVENT_TYPES: EventType[] = [item, message, action, approval, bot, github, slack, after]
+/** What a script's run answers, read loosely: anything but `{ done: true }` means not yet. */
+const scriptResult = z.union([
+  z.null(),
+  z.object({ done: z.literal(false), state: z.unknown().optional() }).passthrough(),
+  z.object({ done: z.literal(true), data: z.unknown().optional(), message: z.string().optional() }).passthrough(),
+])
+
+export const script: EventType = {
+  type: 'script',
+  description:
+    'A script that runs on a schedule until it says it is done, and blocks until then. Use it to wait for anything the other ' +
+    'types do not cover, by checking with the actions. `source` is a JavaScript function expression, ' +
+    '`async (ctx, actions) => result`:\n' +
+    '- ctx is { item: { id, title }, event: { id, description, createdAt, runs }, now (ISO time), state }: where it runs, how many ' +
+    'times it has run before, and the state its last run handed on (null the first time).\n' +
+    "- actions.<name>(args) calls any action (see the MCP tools) and resolves to its result; a script a bot wrote gets no unsafe ones.\n" +
+    '- It returns null or { done: false, state } to keep waiting (state is handed to the next run), or ' +
+    '{ done: true, data, message } to finish: data is what the event resolves with, and message, if given, is what the chat says.\n' +
+    '- console.log is kept. A run that throws ends the event with the error.\n' +
+    'Example, waiting for a PR to get two approvals: async (ctx, actions) => { const pr = await actions.github_pr_view({ repo: "o/r", ' +
+    'number: 7 }); const n = pr.reviews.filter((r) => r.state === "APPROVED").length; return n >= 2 ? { done: true, data: { approvals: n }, ' +
+    'message: "o/r#7 has two approvals" } : { done: false } }',
+  params: {
+    source: z.string().describe('async (ctx, actions) => null | { done: false, state? } | { done: true, data?, message? }'),
+    description: z.string().optional().describe('What it waits for, in a line: the blocker row says this.'),
+    schedule: z
+      .array(z.number().min(0))
+      .optional()
+      .describe('Seconds to wait before the first run, then between each run, the last repeating; e.g. [1, 5, 10]. Runs are at least a second apart. Default [1, 5, 10, 30, 60].'),
+    ...timeout,
+  },
+  data: '{ result: the data it finished with, message?, runs } or { error, logs }',
+  blocking: true,
+  bots: true,
+  describe: (p) => String(p.description ?? 'Script'),
+  said: (p, d) => (d.error ? `The script failed: ${d.error}` : String(d.message ?? `${p.description ?? 'Script'}: done`)),
+  schedule: (p) => (p.schedule as number[] | undefined) ?? [1, 5, 10, 30, 60],
+  check: async (p, { engine, item, event, author, memo, setMemo }) => {
+    const runs = event.times.checks
+    const ctx = {
+      item: { id: item.id, title: item.title },
+      event: { id: event.id, description: p.description ?? null, createdAt: new Date(event.createdAt).toISOString(), runs },
+      now: new Date(engine.now()).toISOString(),
+      state: memo ?? null,
+    }
+    let ran: { value: unknown; logs: string[] }
+    try {
+      ran = await runScript(String(p.source), ctx, (name, args) =>
+        engine.callAction(name, args, { engine, author, actor: 'script', itemId: item.id, runId: null }),
+      )
+    } catch (e) {
+      return { error: (e as Error).message }
+    }
+    const parsed = scriptResult.safeParse(ran.value)
+    if (!parsed.success) return { error: `It returned ${JSON.stringify(ran.value)?.slice(0, 200)}, not null, { done: false } or { done: true, data }.`, logs: ran.logs }
+    const result = parsed.data
+    if (result?.done) return { result: result.data ?? null, ...(result.message ? { message: result.message } : {}), runs: runs + 1, logs: ran.logs }
+    if (result && 'state' in result) setMemo(result.state)
+    return null
+  },
+}
+
+export const EVENT_TYPES: EventType[] = [item, message, action, approval, bot, github, slack, after, script]

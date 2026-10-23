@@ -8,7 +8,7 @@
  * stay open until something happens (a bot replies, CI finishes, an approval is
  * given, a child item closes).
  */
-export type EventKind = 'item' | 'message' | 'action' | 'approval' | 'bot' | 'github' | 'slack' | 'after'
+export type EventKind = 'item' | 'message' | 'action' | 'approval' | 'bot' | 'github' | 'slack' | 'after' | 'script'
 
 /** An event as it is added. `ref` names it, so an `after` added alongside can point at it. */
 export interface EventSpec {

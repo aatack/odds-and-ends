@@ -353,6 +353,61 @@ await settle()
 assert.equal(ghCalls.filter((c) => c[1] === 'merge').length, merges)
 assert.match(String(last(sneaky, 'after').data!.error), /unsafe/)
 
+// ---- 10b. Script events run on their schedule, carry state between runs, and finish when they say so ----
+{
+  const counting = (await engine.create('Counting'))!
+  const [sid] = await engine.addEvents(counting, [
+    {
+      type: 'script',
+      params: {
+        description: 'Count to two',
+        schedule: [1, 5, 10],
+        source: `async (ctx, actions) => {
+          const items = await actions.list_items({})
+          console.log('run', ctx.event.runs, 'items', items.length)
+          const n = (ctx.state ?? 0) + 1
+          return n > 2 ? { done: true, data: { n: ctx.state, item: ctx.item.title }, message: 'Counted to two' } : { done: false, state: n }
+        }`,
+      },
+    },
+  ])
+  const at = (s: number) => engine.event(sid)!.nextCheckAt! - clock === s * 1000
+  assert.ok(at(1), 'first run after a second')
+  assert.equal(engine.event(sid)!.summary, 'Count to two')
+  for (const gap of [1, 5, 10]) {
+    clock = engine.event(sid)!.nextCheckAt!
+    await tick()
+    if (gap < 10) assert.ok(at([1, 5, 10][[1, 5, 10].indexOf(gap) + 1]), `then ${gap}`)
+  }
+  const done = engine.event(sid)!
+  assert.ok(done.resolved)
+  assert.deepEqual(done.data!.result, { n: 2, item: 'Counting' })
+  assert.equal(done.message, 'Counted to two')
+  assert.equal(done.data!.runs, 3)
+  assert.match((done.data!.logs as string[])[0], /^run 2 items \d+$/)
+  assert.ok(item(counting).withHuman, 'nothing blocks it once the script is done')
+
+  // A script that returns something else, or throws, ends with the error.
+  const [bad1] = await engine.addEvents(counting, [{ type: 'script', params: { source: 'async () => 42', schedule: [0] } }])
+  const [bad2] = await engine.addEvents(counting, [{ type: 'script', params: { source: 'async () => { throw new Error("nope") }', schedule: [0] } }])
+  await tick()
+  assert.match(engine.event(bad1)!.message!, /The script failed: It returned 42/)
+  assert.match(engine.event(bad2)!.message!, /The script failed: .*nope/)
+
+  // Two looks for due checks at once run a script once: a run never starts while the last is going.
+  const [slowpoke] = await engine.addEvents(counting, [{ type: 'script', params: { source: 'async () => null', schedule: [5] } }])
+  clock = engine.event(slowpoke)!.nextCheckAt!
+  await Promise.all([engine.checkDue(), engine.checkDue(), engine.checkDue()])
+  assert.equal(engine.event(slowpoke)!.times.checks, 1)
+  await engine.cancel(slowpoke)
+
+  // A bot's script gets no unsafe actions.
+  behaviours.push(async () => ({ events: [{ type: 'script', params: { source: `async (ctx, a) => { await a.github_pr_merge({ repo: 'o/r', number: 7, method: 'squash' }); return { done: true } }`, schedule: [0] } }] }))
+  await engine.send(counting, 'bot', 'merge it')
+  await tick()
+  assert.match(last(counting, 'script').message!, /unsafe/)
+}
+
 // ---- 11. A wait with a timeout resolves as timed_out ----
 checks = 'pending'
 const slow = (await engine.create('Slow'))!

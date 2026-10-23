@@ -28,6 +28,7 @@ export const TYPE_ICON: Record<EventKind, LucideIcon> = {
   github: GitPullRequest,
   slack: MessageCircle,
   after: Workflow,
+  script: SquareCode,
 }
 
 export const TYPE_NAME: Record<EventKind, string> = {
@@ -39,6 +40,7 @@ export const TYPE_NAME: Record<EventKind, string> = {
   github: 'GitHub',
   slack: 'Slack',
   after: 'After',
+  script: 'Script',
 }
 
 /** What an item waits on: a bot, else its first other blocker, else the human; a tick once closed. */

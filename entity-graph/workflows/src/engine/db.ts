@@ -34,7 +34,10 @@ CREATE TABLE IF NOT EXISTS events (
   -- Its type's start hook has run (or it has none).
   started INTEGER NOT NULL DEFAULT 0,
   data TEXT,
-  check_step INTEGER NOT NULL DEFAULT -1,
+  -- Which delay of its type's schedule comes next.
+  check_step INTEGER NOT NULL DEFAULT 0,
+  -- What a script handed on to its next run.
+  memo TEXT,
   next_check_at INTEGER,
   last_error TEXT
 );
@@ -78,6 +81,9 @@ CREATE INDEX IF NOT EXISTS runs_item ON runs (item_id, started_at);
 
 export function migrate(db: Db): void {
   db.exec(SCHEMA)
+  // Stores made before scripts lack their memo column.
+  const columns = db.prepare('PRAGMA table_info(events)').all() as { name: string }[]
+  if (!columns.some((c) => c.name === 'memo')) db.exec('ALTER TABLE events ADD COLUMN memo TEXT')
 }
 
 export function transaction<T>(db: Db, fn: () => T): T {

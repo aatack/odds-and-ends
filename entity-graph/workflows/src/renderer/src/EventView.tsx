@@ -95,11 +95,18 @@ function Special({ detail }: { detail: EventDetail }) {
         )}
       </section>
     )
-  if (e.type === 'after' && e.params.script)
+  const code = e.type === 'after' ? e.params.script : e.type === 'script' ? e.params.source : undefined
+  if (code)
     return (
       <section className="card">
         <h2>Script</h2>
-        <pre className="output mono">{String(e.params.script)}</pre>
+        {e.type === 'script' && (
+          <p className="muted">
+            {e.times.checks} run(s){e.params.schedule ? `, on [${(e.params.schedule as number[]).join(', ')}] seconds` : ''}
+            {!e.resolved && e.nextCheckAt && `; next at ${new Date(e.nextCheckAt).toLocaleTimeString()}`}
+          </p>
+        )}
+        <pre className="output mono">{String(code)}</pre>
         {Array.isArray(e.data?.logs) && (e.data!.logs as string[]).length > 0 && (
           <pre className="output">{(e.data!.logs as string[]).join('\n')}</pre>
         )}

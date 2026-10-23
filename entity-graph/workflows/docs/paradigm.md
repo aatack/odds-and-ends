@@ -35,6 +35,7 @@ The text uses ASD-STE100 Simplified Technical English.
 | Item | An item inside this item to close. |
 | Approval | You to approve an action. |
 | After | Another event to be complete. Then it adds more events. |
+| Script | A condition that a small program checks at set times. |
 
 ## Chains
 

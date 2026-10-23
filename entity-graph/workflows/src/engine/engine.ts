@@ -11,9 +11,10 @@ import { PRESETS, type Preset } from './presets'
 import { plainSecrets, Settings, type Secrets } from './settings'
 import { slackActions } from './slack'
 
-/** How long a blocker sleeps between checks: at once, then a minute, then longer, up to the last. */
+/** How long a blocker sleeps between checks, by default: at once, then a minute, then longer, up to the last. */
 export const BACKOFF_MINUTES = [1, 2, 5, 10]
 const MINUTE = 60_000
+const DEFAULT_SCHEDULE = [0, ...BACKOFF_MINUTES.map((m) => m * 60)]
 
 /** What a bot's run returns, as its structured output. */
 export interface BotOutput {
@@ -105,6 +106,8 @@ export class Engine extends EventEmitter {
   /** The items a bot is running on, and its worker. In memory only: a crash leaves nothing behind. */
   private running = new Map<string, number>()
   private lastPoll = new Map<string, number>()
+  /** The events being checked right now: a check never starts while the last is still going. */
+  private checking = new Set<string>()
   private queues = new Map<string, Promise<unknown>>()
 
   constructor(opts: EngineOptions) {
@@ -467,7 +470,8 @@ export class Engine extends EventEmitter {
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(id, parentId, Number(seq) + i + 1, spec.type, JSON.stringify(params), createdBy, at,
-          type.blocking ? 0 : 1, type.blocking ? null : at, type.blocking ? null : createdBy, type.start ? 0 : 1, type.check ? at : null)
+          type.blocking ? 0 : 1, type.blocking ? null : at, type.blocking ? null : createdBy, type.start ? 0 : 1,
+          type.check ? at + this.scheduleOf(type, params)[0] * 1000 : null)
       const where = parentId ?? id
       this.mark(where, 'event_added', { eventId: id, runId, actor: createdBy, data: { type: spec.type } })
       if (!type.blocking) this.mark(where, 'event_resolved', { eventId: id, runId, actor: createdBy })
@@ -488,7 +492,7 @@ export class Engine extends EventEmitter {
       for (const event of pending) {
         this.db.prepare('UPDATE events SET started = 1 WHERE id = ?').run(event.id)
         try {
-          const ctx = { engine: this, item: this.must(event.parentId ?? event.id), event, author: authorOf(event.createdBy) }
+          const ctx = { engine: this, item: this.must(event.parentId ?? event.id), event, author: authorOf(event.createdBy), memo: null, setMemo: () => {} }
           const out = await this.type(event.type).start!(event.params, ctx)
           if (out?.params) this.db.prepare('UPDATE events SET params = ? WHERE id = ?').run(JSON.stringify(out.params), event.id)
           if (out?.resolve) this.resolve(event.id, out.resolve, 'system')
@@ -515,6 +519,13 @@ export class Engine extends EventEmitter {
   private wake(): void {
     this.db.prepare("UPDATE events SET next_check_at = ? WHERE resolved = 0 AND type = 'after'").run(this.now())
     queueMicrotask(() => void this.checkDue())
+  }
+
+  /** An event's check schedule, in seconds: its type's, never under a second apart after the first, or the default. */
+  private scheduleOf(type: EventType, params: Record<string, unknown>): number[] {
+    const s = type.schedule?.(params) ?? DEFAULT_SCHEDULE
+    const delays = s.length ? s : DEFAULT_SCHEDULE
+    return delays.map((d, i) => (i === 0 ? Math.max(0, d) : Math.max(1, d)))
   }
 
   /** Writes one param of an event: for the app's own bookkeeping, such as an item's session. */
@@ -748,19 +759,27 @@ export class Engine extends EventEmitter {
     const due = this.db
       .prepare('SELECT id, parent_id FROM events WHERE resolved = 0 AND started = 1 AND next_check_at IS NOT NULL AND next_check_at <= ?')
       .all(this.now()) as Row[]
-    await Promise.all(due.map((r) => this.checkOne(r.parent_id as string, r.id as string)))
+    await Promise.all(due.filter((r) => !this.checking.has(r.id as string)).map((r) => this.checkOne(r.parent_id as string, r.id as string)))
   }
 
   private checkOne(itemId: string, eventId: string): Promise<void> {
+    this.checking.add(eventId)
     return this.serial(itemId, async () => {
       const row = this.db.prepare('SELECT * FROM events WHERE id = ? AND resolved = 0').get(eventId) as Row | undefined
       if (!row || (row.next_check_at as number) > this.now()) return
-      const event = this.toEvent(row)
+      const event = this.toEvent(row, this.times([eventId]).get(eventId))
       const type = this.type(event.type)
       let data: Record<string, unknown> | null = null
       let error: string | null = null
       try {
-        data = await type.check!(event.params, { engine: this, item: this.must(itemId), event, author: authorOf(event.createdBy) })
+        data = await type.check!(event.params, {
+          engine: this,
+          item: this.must(itemId),
+          event,
+          author: authorOf(event.createdBy),
+          memo: json(row.memo),
+          setMemo: (value) => this.db.prepare('UPDATE events SET memo = ? WHERE id = ?').run(JSON.stringify(value ?? null), eventId),
+        })
       } catch (e) {
         error = (e as Error).message
       }
@@ -772,12 +791,13 @@ export class Engine extends EventEmitter {
         data: data ? { result: 'resolved', outcome: data.outcome ?? null } : error ? { result: 'error', error } : { result: 'pending' },
       })
       if (data) return this.resolve(eventId, data, 'system')
-      const step = Math.min((row.check_step as number) + 1, BACKOFF_MINUTES.length - 1)
+      const schedule = this.scheduleOf(type, event.params)
+      const step = Math.min((row.check_step as number) + 1, schedule.length - 1)
       this.db
         .prepare('UPDATE events SET check_step = ?, next_check_at = ?, last_error = ? WHERE id = ?')
-        .run(step, this.now() + BACKOFF_MINUTES[step] * MINUTE, error, eventId)
+        .run(step, this.now() + schedule[step] * 1000, error, eventId)
       this.emit('change')
-    })
+    }).finally(() => this.checking.delete(eventId))
   }
 
   async pollSources(force: boolean): Promise<void> {

@@ -61,6 +61,9 @@ export interface EventContext {
   /** The item the event sits in; for an item event with no parent, the item itself. */
   item: Item
   event: ItemEvent
+  /** What the event's last check handed on (a script's `state`), and how to hand something on to the next. */
+  memo: unknown
+  setMemo: (value: unknown) => void
   /** Whoever added this event, as an author. */
   author: Author
 }
@@ -104,8 +107,15 @@ export interface EventType {
     params: Record<string, unknown>,
     ctx: EventContext,
   ) => Promise<{ params?: Record<string, unknown>; resolve?: Record<string, unknown> } | void>
-  /** Polled by the loop, with backoff: the data once it has happened, null while it hasn't. */
+  /** Polled by the loop on its schedule: the data once it has happened, null while it hasn't. */
   check?: (params: Record<string, unknown>, ctx: EventContext) => Promise<Record<string, unknown> | null>
+  /**
+   * When `check` runs, as seconds to wait: before the first check, then between
+   * each, the last repeating. Left out, the default backoff: at once, then 1, 2,
+   * 5 and then every 10 minutes. Checks run at most once a second, and one check
+   * of an event never starts before the last has finished.
+   */
+  schedule?: (params: Record<string, unknown>) => number[]
 }
 
 /** Where new items come from. Polled from the central loop; what it answers is added in no parent. */

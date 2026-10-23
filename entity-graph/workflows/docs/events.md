@@ -90,6 +90,7 @@ the chat input should offer it, add a preset in `presets.ts`.
 | `github` | yes | `repo`+`number`, or `query`; `until`: `checks` \| `activity` \| `merged`; `timeout_minutes?` | `{ outcome, detail, failed? }` |
 | `slack` | yes | `channel`, `workspace?`, `message?`, `thread_ts?`, `thread_of?`, `timeout_minutes?` | `{ outcome, replies, detail }` |
 | `after` | yes | `event`, then `then` or `script` | `{ added, logs? }` or `{ error }` |
+| `script` | yes | `source`, `description?`, `schedule?` (seconds), `timeout_minutes?` | `{ result, message?, runs, logs }` or `{ error, logs }` |
 
 - **`after`** is how events chain. It waits for one event to resolve, then adds
   `then`, or whatever its `script` returns.
@@ -97,6 +98,22 @@ the chat input should offer it, add a preset in `presets.ts`.
     `{ item, event }`: the event it waited for, with its data.
   - The script runs in QuickJS, with no access to anything but `actions` and
     `console.log`.
+- **`script`** waits for anything the other types don't cover. Its `source` is
+  `async (ctx, actions) => result`, run on its `schedule`.
+  - The schedule is seconds: the wait before the first run, then between runs,
+    with the last repeating. `[1, 5, 10]` runs after 1 second, then 5 more, then
+    every 10. The default is `[1, 5, 10, 30, 60]`.
+  - Runs are at least a second apart. A run never starts while the last is still
+    going. Every blocker's checks work this way; each type has a schedule, and
+    the default is at once, then 1, 2, 5 and then every 10 minutes.
+  - `ctx` is `{ item, event: { id, description, createdAt, runs }, now, state }`.
+  - It returns `null` or `{ done: false, state? }` to keep blocking. The `state`
+    is handed to its next run.
+  - It returns `{ done: true, data?, message? }` to finish. It resolves with
+    `{ result: data, message, runs }`, and `message` (if given) is what the chat says.
+  - A run that throws, or returns anything else, ends it with `{ error }`.
+  - Like an `after`'s script, it runs in QuickJS. A script a bot wrote gets no
+    unsafe actions.
 - **A `slack` event with a message that a bot adds** becomes an approval of
   `slack_post`, followed by an after that starts the wait in the thread the
   message posted.

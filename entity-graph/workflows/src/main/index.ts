@@ -36,6 +36,8 @@ async function main(): Promise<void> {
   const tick = () => engine.tick().catch((e) => console.error('loop:', e))
   void tick()
   setInterval(tick, LOOP_MS)
+  // Checks come due by the second (scripts can run that often); this only looks for them.
+  setInterval(() => void engine.checkDue().catch((e) => console.error('checks:', e)), 1000)
   pool.fill()
 
   const handle = (name: string, fn: (...args: never[]) => unknown) =>
