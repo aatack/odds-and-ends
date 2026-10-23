@@ -139,8 +139,9 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .list { user-select: none; }
 .builder-row input, .builder-row textarea, .builder-row select { border: none; background: transparent; padding: 4px 0; }
 .builder-row textarea.growing { resize: none; line-height: 20px; overflow-y: auto; }
-.builder-send { position: absolute; right: 8px; bottom: 8px; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: none; border-radius: 14px; background: var(--accent); color: var(--accent-ink); cursor: default; }
-.builder-send .icon { width: 15px; height: 15px; }
+.builder-send { position: absolute; right: 12px; bottom: 13px; display: flex; padding: 0; border: none; background: none; color: var(--color-gray-600); cursor: default; }
+.builder-send:hover { color: var(--ink); }
+.builder-send .icon { width: 14px; height: 14px; }
 /* The box is the field: no ring around the text inside it. */
 .builder-row :focus, .builder-row :focus-visible { outline: none; box-shadow: none; }
 }
