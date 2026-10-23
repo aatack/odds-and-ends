@@ -1,7 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { Catalog, HandoffKind, HandoffSpec, Item, ItemDetail } from '../../shared/types'
 import { Chat, HandoffBuilder } from './Handoffs'
-import { SendHorizontal } from 'lucide-react'
 import { ItemIcon } from './icons'
 import { Form, withHints } from './forms'
 import { IntegrationsPage } from './IntegrationsPage'
@@ -260,9 +259,6 @@ function Decide({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalog:
               Continue
             </button>
           )}
-          <button data-ui className="primary send" title="Send (Enter)" aria-label="Send" onClick={send}>
-            <SendHorizontal className="icon" />
-          </button>
         </div>
       </div>
     </>

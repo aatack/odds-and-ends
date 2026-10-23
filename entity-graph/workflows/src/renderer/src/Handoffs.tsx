@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Catalog, Handoff, HandoffKind, HandoffSpec, ItemDetail } from '../../shared/types'
 import { CompactForm } from './CompactForm'
+import { SendHorizontal } from 'lucide-react'
 import { Avatar, TypeIcon } from './icons'
 
 const time = (ms: number) => new Date(ms).toLocaleString()
@@ -74,6 +75,14 @@ export function HandoffBuilder(props: {
             key={i}
             ref={(el) => (rows.current[i] = el)}
             className="builder-row compact"
+            onMouseDown={(e) => {
+              // Anywhere in the box that isn't a control puts the cursor in its text.
+              if ((e.target as HTMLElement).closest('input, textarea, select, button')) return
+              e.preventDefault()
+              const box = rows.current[i]
+              const words = WORDS[h.type] && box?.querySelector<HTMLElement>(`[aria-label^="${WORDS[h.type]}"]`)
+              ;(words || box?.querySelector<HTMLElement>('textarea, input, select'))?.focus()
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
@@ -93,6 +102,11 @@ export function HandoffBuilder(props: {
             {value.length > 1 && (
               <button data-ui className="link builder-remove" title="Remove" onClick={() => onChange(value.filter((_, j) => j !== i))}>
                 ×
+              </button>
+            )}
+            {i === value.length - 1 && (
+              <button data-ui className="builder-send" title="Send (Enter)" aria-label="Send" onClick={onSend}>
+                <SendHorizontal className="icon" />
               </button>
             )}
           </div>

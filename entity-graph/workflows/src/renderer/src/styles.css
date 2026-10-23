@@ -130,13 +130,15 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .avatar .icon { width: 15px; height: 15px; }
 .type-icon { display: inline-flex; vertical-align: -2px; margin-right: 6px; color: var(--muted); }
 .type-icon .icon { width: 14px; height: 14px; }
-.builder-row { position: relative; width: 100%; padding: 8px 28px 8px 34px; border-radius: 8px; }
+.builder-row { position: relative; width: 100%; padding: 8px 40px 8px 34px; border-radius: 8px; cursor: text; }
 .builder-icon { position: absolute; top: 13px; left: 12px; }
 .builder-icon .type-icon { margin: 0; color: var(--color-gray-600); }
 .builder-remove { position: absolute; top: 8px; right: 10px; }
 .builder-fields { width: 100%; }
 .compact ::placeholder { color: var(--color-gray-400); opacity: 1; }
 .list { user-select: none; }
-button[data-ui].send { display: inline-flex; align-items: center; justify-content: center; padding: 6px 10px; }
-button[data-ui].send .icon { width: 16px; height: 16px; }
+.builder-row input, .builder-row textarea, .builder-row select { border: none; background: transparent; padding: 4px 0; }
+.builder-row textarea.growing { resize: none; line-height: 20px; overflow-y: auto; }
+.builder-send { position: absolute; right: 8px; bottom: 8px; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: none; border-radius: 14px; background: var(--accent); color: var(--accent-ink); cursor: default; }
+.builder-send .icon { width: 15px; height: 15px; }
 }

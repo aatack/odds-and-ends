@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState, type TextareaHTMLAttributes } from 'react'
 import type { ObjectSchema, PropertySchema } from '../../shared/types'
 
 /** Fields that take prose, and so a text box rather than a line. */
@@ -76,11 +76,10 @@ function Field(props: { name: string; label: string; schema: PropertySchema; val
     const text = value === undefined ? '' : String(value)
     const set = (s: string) => onChange(s === '' ? undefined : s)
     return LONG.has(name) ? (
-      <textarea
+      <GrowingTextarea
         {...named}
         placeholder={label}
         className={name === 'source' ? 'mono' : ''}
-        rows={name === 'source' ? 6 : 2}
         value={text}
         onChange={(e) => set(e.target.value)}
       />
@@ -113,4 +112,21 @@ function JsonField({ label, title, value, onChange }: { label: string; title: st
       }}
     />
   )
+}
+
+/** Most lines a text box grows to before it scrolls. */
+const MAX_LINES = 8
+
+/** A text box one line tall that grows with its text, up to MAX_LINES, with no handle to drag. */
+export function GrowingTextarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const ref = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const line = parseFloat(getComputedStyle(el).lineHeight) || 20
+    const pad = el.offsetHeight - el.clientHeight + parseFloat(getComputedStyle(el).paddingTop) + parseFloat(getComputedStyle(el).paddingBottom)
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, line * MAX_LINES + pad)}px`
+  }, [props.value])
+  return <textarea {...props} ref={ref} rows={1} className={`growing ${props.className ?? ''}`} />
 }
