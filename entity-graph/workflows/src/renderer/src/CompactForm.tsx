@@ -18,13 +18,15 @@ export function CompactForm(props: {
   onChange: (value: Record<string, unknown>) => void
   /** Shown in place of `hinted`'s placeholder while it is empty; that field comes first. */
   hint?: { field: string; content: ReactNode }
+  /** Show only the field at this place in the order, so the form is one row high. */
+  only?: number
 }) {
-  const { schema, value, onChange, hint } = props
-  const fields = Object.entries(schema.properties ?? {})
-  if (hint) fields.sort(([a], [b]) => Number(b === hint.field) - Number(a === hint.field))
+  const { schema, value, onChange, hint, only } = props
+  const fields = fieldOrder(schema, hint?.field)
+  const shown = only === undefined ? fields : fields.slice(only, only + 1)
   return (
     <div className="compact">
-      {fields.map(([name, p]) => {
+      {shown.map(([name, p]) => {
         const label = `${name}${schema.required?.includes(name) ? '' : ' (optional)'}`
         const field = (
           <Field
@@ -48,6 +50,13 @@ export function CompactForm(props: {
       })}
     </div>
   )
+}
+
+/** The form's fields in the order they are shown: `first`, if given, then the rest as the schema has them. */
+export function fieldOrder(schema: ObjectSchema, first?: string): [string, PropertySchema][] {
+  const fields = Object.entries(schema.properties ?? {})
+  if (first) fields.sort(([a], [b]) => Number(b === first) - Number(a === first))
+  return fields
 }
 
 function Field(props: {

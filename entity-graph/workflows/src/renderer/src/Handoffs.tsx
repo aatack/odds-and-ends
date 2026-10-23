@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Catalog, Handoff, HandoffKind, HandoffSpec, ItemDetail } from '../../shared/types'
-import { CompactForm } from './CompactForm'
+import { CompactForm, fieldOrder } from './CompactForm'
 import { SendHorizontal } from 'lucide-react'
 import { Avatar, TypeIcon } from './icons'
 
@@ -66,6 +66,8 @@ export function HandoffBuilder(props: {
   // A box's fields are replaced when its type changes; the focus goes to the new first field.
   const rows = useRef<(HTMLDivElement | null)[]>([])
   const [refocus, setRefocus] = useState<number | null>(null)
+  // A box shows one field at a time, so it stays one row high whatever its type: which one, by box.
+  const [at, setAt] = useState<Record<number, number>>({})
   useEffect(() => {
     if (refocus === null) return
     rows.current[refocus]?.querySelector<HTMLElement>('input, textarea, select')?.focus()
@@ -76,6 +78,7 @@ export function HandoffBuilder(props: {
     const type = types[(types.indexOf(h.type) + by + types.length) % types.length]
     const words = WORDS[h.type] && h.params[WORDS[h.type]!]
     set(i, { type, params: words !== undefined && WORDS[type] ? { [WORDS[type]!]: words } : {} })
+    setAt({ ...at, [i]: 0 })
     setRefocus(i)
   }
   return (
@@ -104,8 +107,11 @@ export function HandoffBuilder(props: {
               e.preventDefault()
               // An empty box steps through the types; once something is in it, Tab moves between its fields.
               if (!Object.values(h.params).some(filled)) return step(i, e.shiftKey ? -1 : 1)
-              const fields = [...(rows.current[i]?.querySelectorAll<HTMLElement>('.builder-fields input, .builder-fields textarea, .builder-fields select') ?? [])]
-              fields[fields.indexOf(document.activeElement as HTMLElement) + (e.shiftKey ? -1 : 1)]?.focus()
+              const count = fieldOrder(type.params, HINTS[h.type].field).length
+              const to = (at[i] ?? 0) + (e.shiftKey ? -1 : 1)
+              if (to < 0 || to >= count) return
+              setAt({ ...at, [i]: to })
+              setRefocus(i)
             }}
           >
             <span className="builder-icon" title={`${h.type}: ${type.description} (Tab to change)`}>
@@ -117,6 +123,7 @@ export function HandoffBuilder(props: {
                 schema={type.params}
                 value={h.params}
                 onChange={(params) => set(i, { ...h, params })}
+                only={at[i] ?? 0}
                 hint={{
                   field: HINTS[h.type].field,
                   content: (
