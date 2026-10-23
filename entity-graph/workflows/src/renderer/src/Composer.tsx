@@ -19,7 +19,7 @@ export function Composer({ catalog, onSend }: { catalog: Catalog; onSend: (prese
     if (await onSend(preset.id, text)) setText('')
   }
   return (
-    <div className="builder-row" onMouseDown={(e) => {
+    <div className="builder-row compact" onMouseDown={(e) => {
       if ((e.target as HTMLElement).closest('textarea, button, [role=button]')) return
       e.preventDefault()
       box.current?.focus()
