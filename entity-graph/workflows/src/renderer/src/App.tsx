@@ -6,6 +6,8 @@ import { Chat } from './Chat'
 import { DebugView } from './DebugView'
 import { EventMenu, useEventMenu } from './EventMenu'
 import { EventView } from './EventView'
+import { GROUPS } from './groups'
+import { ItemsList } from './ItemsList'
 import { Composer } from './Composer'
 import { EventIcon, ItemIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
@@ -19,17 +21,21 @@ const PAGES: { page: Page; label: string }[] = [
   { page: 'mcp', label: 'MCP' },
 ]
 
-/** The sidebar's groups: the human's turn, a bot's, waiting on something else, done. */
-const GROUPS: { label: string; has: (i: Item) => boolean }[] = [
-  { label: 'Needs you', has: (i) => i.withHuman },
-  { label: 'With bots', has: (i) => !i.withHuman && !i.closed && i.blockers.some((b) => b.type === 'bot') },
-  { label: 'Waiting', has: (i) => !i.withHuman && !i.closed && !i.blockers.some((b) => b.type === 'bot') },
-  { label: 'Closed today', has: (i) => i.closed },
-]
-
 export function App() {
   const [page, setPage] = useState<Page>('items')
   const items = useWorkflows()
+  // Ctrl+L puts the items view on top of the stack.
+  const { open } = items
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || e.altKey || e.shiftKey || e.metaKey || e.key.toLowerCase() !== 'l') return
+      e.preventDefault()
+      setPage('items')
+      open({ kind: 'items' })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
   return (
     <ItemsContext.Provider value={items}>
       <div className="app">
@@ -105,12 +111,27 @@ function ItemsMain() {
   const w = useItems()
   const openEvent = (id: string) => w.open({ kind: 'event', id })
   const d = w.detail
-  if (!d || !w.catalog || !w.view)
+  // With nothing on the stack, every item.
+  if (!w.view || w.view.kind === 'items')
+    return (
+      <div className="view">
+        <ViewHeader canGoBack={w.views.length > 1} onBack={w.back} title="Items" />
+        {w.error && <div className="error">{w.error}</div>}
+        {w.empty && <p className="muted view-note">Nothing needs you right now.</p>}
+        <div className="view-body">
+          <ItemsList
+            items={w.overview.items}
+            onOpen={openEvent}
+            onCreate={(title) => w.act(async () => openEvent(await api().create(title, null)))}
+          />
+        </div>
+      </div>
+    )
+  if (!d || !w.catalog)
     return (
       <div className="view">
         <ViewHeader canGoBack={w.views.length > 1} onBack={w.back} />
-        {w.error && <div className="error">{w.error}</div>}
-        <div className="empty">{w.empty ? 'Nothing needs you right now.' : 'Press Next for the next thing that needs you.'}</div>
+        <div className="empty">That event is not there any more.</div>
       </div>
     )
   const e = d.event

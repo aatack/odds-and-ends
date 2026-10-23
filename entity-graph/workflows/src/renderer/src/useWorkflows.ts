@@ -16,7 +16,7 @@ export function useWorkflows() {
   const [overview, setOverview] = useState<Overview>({ items: [], workers: [] })
   const [views, setViews] = useAtom(viewsAtom)
   const view = views[views.length - 1] ?? null
-  const selected = view?.id ?? null
+  const selected = view && 'id' in view ? view.id : null
   const [detail, setDetail] = useState<EventDetail | null>(null)
   const [skipped, setSkipped] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)

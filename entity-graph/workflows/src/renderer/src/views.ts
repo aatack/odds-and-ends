@@ -5,11 +5,12 @@ import { atom } from 'jotai'
 import { atomWithStorage, createJSONStorage } from 'jotai/utils'
 
 /**
- * One view of one event. `event` shows it as its type is shown (an item as its
+ * A view. `items` is every item, to filter, open or add to: what shows when the
+ * stack is empty. `event` shows one event as its type is shown (an item as its
  * chat, anything else as its details); `debug` shows its whole state as JSON.
  * More kinds of view go here.
  */
-export type View = { kind: 'event'; id: string } | { kind: 'debug'; id: string }
+export type View = { kind: 'items' } | { kind: 'event'; id: string } | { kind: 'debug'; id: string }
 
 // Storage can throw (a private window, cleared site data): then the stack just isn't kept.
 const storage = createJSONStorage<View[]>(() => {
