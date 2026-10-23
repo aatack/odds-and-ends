@@ -83,12 +83,15 @@ function reply(h: Handoff): string | null {
   return null
 }
 
+const WAITS = ['github', 'slack', 'items']
+
 const shortTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
 type Entry =
   | { at: number; order: number; kind: 'handoff'; handoff: Handoff }
   | { at: number; order: number; kind: 'reply'; handoff: Handoff; text: string }
   | { at: number; order: number; kind: 'event'; event: ItemDetail['events'][number] }
+  | { at: number; order: number; kind: 'note'; text: string }
 
 /**
  * The item's history as a chat: every handoff a bubble, from whoever set it.
@@ -102,8 +105,16 @@ export function Chat({ detail }: { detail: ItemDetail }) {
   const entries: Entry[] = []
   shown.forEach((h, order) => {
     entries.push({ at: h.createdAt, order, kind: 'handoff', handoff: h })
-    const text = h.type === 'human' && h.resolvedBy === 'human' ? reply(h) : null
+    const text =
+      h.resolution?.outcome === 'taken_over' && h.resolvedBy === 'human'
+        ? 'Took over'
+        : h.type === 'human' && h.resolvedBy === 'human'
+          ? reply(h)
+          : null
     if (text) entries.push({ at: h.resolvedAt!, order, kind: 'reply', handoff: h, text })
+    // What a wait came to is news in itself: nothing after it may say so.
+    if (WAITS.includes(h.type) && h.status === 'resolved' && h.resolvedBy === 'system')
+      entries.push({ at: h.resolvedAt!, order, kind: 'note', text: outcome(h) })
   })
   detail.events
     .filter((e) => !['created', 'handled_outside'].includes(e.kind))
@@ -120,6 +131,10 @@ export function Chat({ detail }: { detail: ItemDetail }) {
               {e.text}
               <span className="bubble-time">{shortTime(e.at)}</span>
             </div>
+          </div>
+        ) : e.kind === 'note' ? (
+          <div key={i} className="chat-note" title={time(e.at)}>
+            {e.text}
           </div>
         ) : (
           <div key={i} className="chat-note" title={time(e.event.at)}>

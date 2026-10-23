@@ -5,7 +5,8 @@ what has to happen to it next, and so who does it.
 
 The first handoff in the queue is **active**: it is what the item waits for.
 When it **resolves**, it keeps its **resolution**, and the next one becomes active.
-When nothing is queued, a human handoff is added that says what just resolved.
+An item with no active handoff, because none was ever set or the queue has run
+out, is with the human. Nothing is asked: it is simply theirs until they send it on.
 The item's history is its handoffs in order, with the actions run and checks
 failed between them. Underneath, the **trace** records every moment: each
 handoff set, started, viewed, skipped, checked, resolved or cancelled, each bot

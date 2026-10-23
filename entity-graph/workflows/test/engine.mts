@@ -117,9 +117,10 @@ const route = `async ({ previous }) => previous.resolution.outcome === 'failed'
   ? { type: 'bot', params: { instructions: 'Fix the failing checks: ' + previous.resolution.failed.join(', ') } }
   : { type: 'human', params: { needed: 'Merge o/r#7?', approval: { action: 'github_pr_merge', inputs: { repo: 'o/r', number: 7, method: 'squash' } } } }`
 
-// ---- 1. A new item goes to the human, and Next finds it ----
+// ---- 1. A new item has no handoffs, so it is with the human, and Next finds it ----
 const id = (await engine.create('Answer the PR'))!
-assert.equal(current(id)!.type, 'human')
+assert.equal(current(id), null)
+assert.equal(engine.handoffs(id).length, 0)
 assert.equal(engine.next(), id)
 assert.equal(engine.next([id]), null)
 
@@ -175,8 +176,8 @@ for (const minutes of [1, 2, 5, 10, 10]) {
 
 // The trace has every moment: when each handoff was set, started, seen, run, checked and resolved.
 {
-  const [ask, bot, , wait] = engine.handoffs(id)
-  assert.ok(ask.times.set && ask.times.started && ask.times.resolved)
+  const [bot, , wait] = engine.handoffs(id)
+  assert.ok(bot.times.set && bot.times.started && bot.times.resolved)
   const human = engine.handoffs(id).find((h) => h.params.needed === 'Post this reply?')!
   assert.equal(human.times.views, 2)
   assert.equal(human.times.skips, 1)
@@ -216,13 +217,14 @@ assert.equal(current(id)!.type, 'human')
 assert.equal(current(id)!.params.needed, 'Merge o/r#7?')
 await engine.approve(id, { repo: 'o/r', number: 7, method: 'squash' })
 assert.deepEqual(ghCalls.at(-1), ['pr', 'merge', '7', '-R', 'o/r', '--squash'])
-assert.match(String(current(id)!.params.needed), /approved\. What next\?/)
+assert.equal(current(id), null, 'with nothing queued, the item is back with the human, and nothing is asked')
+assert.equal(engine.next(engine.overview().items.filter((i) => i.id !== id).map((i) => i.id)), id)
 await engine.close(id)
 assert.ok(engine.get(id)!.closed)
 assert.equal(current(id), null)
 assert.deepEqual(
   engine.handoffs(id).map((h) => h.type),
-  ['human', 'bot', 'human', 'github', 'script', 'bot', 'github', 'script', 'human', 'human'],
+  ['bot', 'human', 'github', 'script', 'bot', 'github', 'script', 'human'],
 )
 
 // ---- 6. Slack: a bot's message goes to the human first, then the wait takes its thread ----
@@ -241,7 +243,7 @@ assert.equal(current(chase)!.type, 'slack', 'my own message is not a reply')
 thread.push({ ts: '100.2', user: 'USAM', text: 'Done!' })
 clock = current(chase)!.nextCheckAt!
 await tick()
-assert.match(String(current(chase)!.params.needed), /1 reply\(s\) on Slack/)
+assert.equal(current(chase), null)
 const replied = engine.handoffs(chase).find((h) => h.type === 'slack')!
 assert.deepEqual((replied.resolution!.replies as { text: string }[]).map((r) => r.text), ['Done!'])
 await engine.close(chase)
@@ -302,7 +304,8 @@ const slow = (await engine.create('Slow', { next: [{ type: 'github', params: { r
 await tick()
 clock += 3 * MINUTE
 await tick()
-assert.match(String(current(slow)!.params.needed), /Nothing after 3 minutes/)
+assert.equal(current(slow), null)
+assert.equal(engine.handoffs(slow)[0].resolution!.outcome, 'timed_out')
 
 // Closing cancels what was queued, and says when.
 const dropped = (await engine.create('Dropped', { next: [{ type: 'human', params: { needed: 'x?' } }, { type: 'bot', params: { instructions: 'y' } }] }))!
@@ -329,19 +332,22 @@ while (!pool.status().some((w) => w.itemId === taken)) await new Promise((r) => 
 await engine.takeOver(taken)
 release()
 await settle()
-assert.equal(current(taken)!.type, 'human')
+assert.equal(current(taken), null)
+assert.equal(engine.handoffs(taken)[0].resolution!.outcome, 'taken_over')
+assert.ok(engine.next([]) !== null)
 assert.equal(engine.get(taken)!.closed, false, "a run that was taken over doesn't land")
 
 // ---- 13. The rule on unsafe actions: every action says which it is, and a bot's MCP offers none of the unsafe ones ----
 assert.ok(engine.actions.every((a) => typeof a.unsafe === 'boolean'))
-const runId = engine.startRun(engine.get(taken)!, engine.get(taken)!.current!, 9, 'probe')
+const probe = (await engine.create('Probe', { next: [{ type: 'human', params: { needed: 'Probe?' } }] }))!
+const runId = engine.startRun(engine.get(probe)!, engine.get(probe)!.current!, 9, 'probe')
 const asBot = await connect(mcp.runUrl(runId))
 const botTools = (await asBot.client.listTools()).tools.map((t) => t.name)
 assert.deepEqual(botTools, engine.actions.filter((a) => !a.unsafe).map((a) => a.name))
 await asBot.client.close()
 await engine.endRun(runId, { exitCode: 0, error: 'probe' })
 for (const a of engine.actions.filter((a) => a.unsafe))
-  await assert.rejects(engine.callAction(a.name, {}, { engine, author: 'bot', actor: 'script', itemId: taken, runId: null }), /unsafe/)
+  await assert.rejects(engine.callAction(a.name, {}, { engine, author: 'bot', actor: 'script', itemId: probe, runId: null }), /unsafe/)
 
 // ---- 14. The operator's endpoint: every action, as the human ----
 const { url } = mcp.operator()

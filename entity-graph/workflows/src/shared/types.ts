@@ -70,12 +70,14 @@ export interface Item {
   source: string
   url: string | null
   closed: boolean
-  /** The active handoff; null once closed. */
+  /** The active handoff. Null when closed, or when the item is with the human with nothing asked. */
   current: Handoff | null
   /** How many handoffs wait behind the current one. */
   queued: number
   /** The worker running the item, while one is. */
   worker: number | null
+  /** Since when it has waited on what it waits on now. */
+  since: number
   createdAt: number
   updatedAt: number
 }

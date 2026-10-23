@@ -78,6 +78,9 @@ const toRun = (r: Row): BotRun => ({
   result: (r.result as string) ?? null,
 })
 
+/** An open item is with the human when its handoff is a human one, or it has none. */
+export const withHuman = (i: Item): boolean => !i.closed && (!i.current || i.current.type === 'human')
+
 /** A human set it, or the system did on their behalf; anything else is a bot's. */
 const authorOf = (createdBy: string): Author => (createdBy === 'bot' || createdBy === 'script:bot' ? 'bot' : 'human')
 
@@ -219,15 +222,18 @@ export class Engine extends EventEmitter {
 
   private toItem(r: Row): Item {
     const queued = this.db.prepare("SELECT COUNT(*) AS n FROM handoffs WHERE item_id = ? AND status = 'queued'").get(r.id) as Row
+    const last = this.db.prepare('SELECT MAX(resolved_at) AS at FROM handoffs WHERE item_id = ?').get(r.id) as Row
+    const current = this.active(r.id as string)
     return {
       id: r.id as string,
       title: r.title as string,
       source: r.source as string,
       url: (r.url as string) ?? null,
       closed: Boolean(r.closed),
-      current: this.active(r.id as string),
+      current,
       queued: Number(queued.n),
       worker: (r.worker as number) ?? null,
+      since: current?.startedAt ?? (last.at as number) ?? (r.created_at as number),
       createdAt: r.created_at as number,
       updatedAt: r.updated_at as number,
     }
@@ -249,7 +255,7 @@ export class Engine extends EventEmitter {
       .prepare('SELECT * FROM items WHERE closed = 0 OR updated_at > ? ORDER BY created_at')
       .all(this.now() - 24 * 60 * MINUTE) as Row[]
     const items = rows.map((r) => this.toItem(r))
-    items.sort((a, b) => (a.current?.startedAt ?? Infinity) - (b.current?.startedAt ?? Infinity))
+    items.sort((a, b) => a.since - b.since)
     return { items, workers }
   }
 
@@ -269,12 +275,19 @@ export class Engine extends EventEmitter {
     }
   }
 
-  /** The item whose human handoff has waited longest, leaving out `skip`. */
+  /**
+   * The item that has waited longest for the human, leaving out `skip`. An open
+   * item waits for the human when its handoff is a human one, or when it has no
+   * handoff at all: nothing else is doing anything with it.
+   */
   next(skip: string[] = []): string | null {
-    const rows = this.db
-      .prepare("SELECT item_id FROM handoffs WHERE status = 'active' AND type = 'human' ORDER BY started_at")
-      .all() as Row[]
-    return rows.map((r) => r.item_id as string).find((id) => !skip.includes(id)) ?? null
+    const rows = this.db.prepare('SELECT * FROM items WHERE closed = 0').all() as Row[]
+    return (
+      rows
+        .map((r) => this.toItem(r))
+        .filter((i) => withHuman(i) && !skip.includes(i.id))
+        .sort((a, b) => a.since - b.since)[0]?.id ?? null
+    )
   }
 
   // ---- history ----
@@ -438,11 +451,7 @@ export class Engine extends EventEmitter {
         let row = this.db
           .prepare("SELECT * FROM handoffs WHERE item_id = ? AND status = 'queued' ORDER BY seq LIMIT 1")
           .get(itemId) as Row | undefined
-        if (!row) {
-          const last = this.handoffs(itemId).filter((h) => h.status === 'resolved').at(-1)
-          this.enqueue(itemId, [{ type: 'human', params: { needed: `${last ? describeResolution(last) : 'Nothing is queued.'} What next?` } }], 'system')
-          continue
-        }
+        if (!row) break // nothing queued: the item is with the human
         const handoff = toHandoff(row)
         const type = this.handoffTypes.find((t) => t.type === handoff.type)!
         this.db
@@ -485,9 +494,8 @@ export class Engine extends EventEmitter {
     const id = randomUUID()
     const at = this.now()
     const actor = opts.actor ?? 'human'
-    // With no handoffs, the app asks the human what to do: that question is the app's, not whoever made the item.
-    const asked = !opts.next?.length
-    const next = this.prepare(asked ? [{ type: 'human', params: { needed: 'What should happen with this?' } }] : opts.next!, opts.author ?? 'human')
+    // With no handoffs, the item is with the human.
+    const next = this.prepare(opts.next ?? [], opts.author ?? 'human')
     const created = transaction(this.db, () => {
       const r = this.db
         .prepare(
@@ -497,7 +505,7 @@ export class Engine extends EventEmitter {
       if (Number(r.changes) === 0) return false
       this.record(id, actor, 'created', title, { source: opts.source ?? 'manual', url: opts.url ?? null })
       this.mark(id, 'item_created', { actor, data: { title, source: opts.source ?? 'manual', ref: opts.ref ?? null } })
-      this.enqueue(id, next, asked ? 'system' : opts.author === 'bot' ? 'bot' : actor)
+      this.enqueue(id, next, opts.author === 'bot' ? 'bot' : actor)
       return true
     })
     if (!created) return null
@@ -572,8 +580,16 @@ export class Engine extends EventEmitter {
   }
 
   /** Brings an item back to the human, stopping any run on it. */
-  takeOver(id: string): Promise<void> {
-    return this.handOff(id, { next: [{ type: 'human', params: { needed: 'You took this over. What next?' } }] })
+  async takeOver(id: string): Promise<void> {
+    // The current handoff ends and nothing starts: the item is with the human until they send it on
+    // (or Continue with what was queued).
+    await this.serial(id, async () => {
+      const item = this.must(id)
+      if (!item.current || item.closed) return
+      this.resolve(item.current.id, { outcome: 'taken_over' }, 'human')
+      if (item.current.type === 'bot' && item.worker !== null) this.onCancel(id)
+    })
+    this.emit('change')
   }
 
   // ---- bots ----

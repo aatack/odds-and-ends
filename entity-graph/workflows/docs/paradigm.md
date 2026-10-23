@@ -25,7 +25,8 @@ The text uses ASD-STE100 Simplified Technical English.
   handoff becomes active.
 - The next handoff can use the result of the one before it. This is how you chain
   handoffs.
-- If the queue is empty, the item comes back to you.
+- If an item has no handoffs, it is with you. This is true for a new item, and
+  for an item at the end of its queue. The app does not ask you a question about it.
 
 There are six types of handoff:
 

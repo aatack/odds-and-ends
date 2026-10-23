@@ -24,7 +24,9 @@ an in-memory store; it costs a run, so use it only when the bot wiring changes.
 - The first handoff is what the item waits for. When it resolves, its resolution
   is kept and the next one starts. That is how handoffs chain.
 - Types: `human`, `bot`, `github`, `slack`, `items`, `script`.
-- **Next** shows the item whose human handoff has waited longest.
+- An open item with no active handoff is with the human; nothing is asked.
+- **Next** shows the item that has waited longest for the human (a human
+  handoff, or no handoff at all), moving on from the one on screen.
 - A bot's run ends by returning `{ next, close? }` as structured
   output. It has no tool for ending a run.
 - A human handoff's `needed` is one direct question. A bot gets an unsafe action

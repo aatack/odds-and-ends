@@ -15,7 +15,7 @@ const PAGES: { page: Page; label: string }[] = [
 
 /** The sidebar's groups, by what the item waits for now. */
 const GROUPS: { label: string; has: (i: Item) => boolean }[] = [
-  { label: 'Needs you', has: (i) => i.current?.type === 'human' },
+  { label: 'Needs you', has: (i) => !i.closed && (!i.current || i.current.type === 'human') },
   { label: 'With bots', has: (i) => i.current?.type === 'bot' },
   { label: 'Waiting', has: (i) => ['github', 'slack', 'items'].includes(i.current?.type ?? '') },
   { label: 'Closed today', has: (i) => i.closed },
@@ -187,7 +187,9 @@ function ItemView({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalo
         <Chat detail={detail} />
       </div>
       <div className="composer">
-        {current?.type === 'human' && <Decide key={current.id} detail={detail} catalog={catalog} act={act} onSkip={onSkip} />}
+        {!item.closed && (!current || current.type === 'human') && (
+          <Decide key={current?.id ?? 'with-human'} detail={detail} catalog={catalog} act={act} onSkip={onSkip} />
+        )}
         {current?.type === 'bot' && (
           <div className="composer-bar">
             <span className="muted">{item.worker !== null ? 'A bot is on it.' : 'Waiting for a free bot.'}</span>
@@ -208,17 +210,17 @@ function ItemView({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalo
             </button>
           </div>
         )}
-        {!current && <div className="composer-bar muted">Closed.</div>}
+        {item.closed && <div className="composer-bar muted">Closed.</div>}
       </div>
     </div>
   )
 }
 
-/** The human's turn: approve what is asked, hand the item on, or close it. Their question is the last message above. */
+/** The human's turn: approve what is asked, hand the item on, or close it. Any question is the last message above. */
 function Decide({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalog: Catalog; act: Act; onSkip: () => void }) {
   const { item } = detail
-  const current = item.current!
-  const approval = current.params.approval as { action: string; inputs: Record<string, unknown> } | undefined
+  const current = item.current
+  const approval = current?.params.approval as { action: string; inputs: Record<string, unknown> } | undefined
   const action = approval && catalog.actions.find((a) => a.name === approval.action)
   const [inputs, setInputs] = useState<Record<string, unknown>>(approval?.inputs ?? {})
   const [next, setNext] = useState<HandoffSpec[]>([{ type: 'bot', params: {} }])
