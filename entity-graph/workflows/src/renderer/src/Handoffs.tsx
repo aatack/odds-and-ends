@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Catalog, Handoff, HandoffKind, HandoffSpec, ItemDetail } from '../../shared/types'
 import { CompactForm } from './CompactForm'
 import { Avatar, TypeIcon } from './icons'
@@ -32,28 +32,57 @@ export function outcome(h: Handoff): string {
   return String(r.error ? `failed: ${r.error}` : (r.detail ?? r.decision ?? r.outcome ?? ''))
 }
 
-/** A list of handoffs to put at the front of the queue: a type and its fields each, as tight as it will go. */
+/** The field that holds a type's words, carried over when the type changes so nothing typed is lost. */
+const WORDS: Partial<Record<HandoffKind, string>> = { bot: 'instructions', human: 'needed', slack: 'message', script: 'source' }
+
+/**
+ * A list of handoffs to put at the front of the queue. Each is a box with its
+ * type's icon in the corner; Tab and Shift+Tab in a box step through the types.
+ */
 export function HandoffBuilder({ catalog, value, onChange }: { catalog: Catalog; value: HandoffSpec[]; onChange: (v: HandoffSpec[]) => void }) {
   const set = (i: number, h: HandoffSpec) => onChange(value.map((x, j) => (j === i ? h : x)))
+  const types = catalog.handoffs.map((t) => t.type)
+  // A box's fields are replaced when its type changes; the focus goes to the new first field.
+  const rows = useRef<(HTMLDivElement | null)[]>([])
+  const [refocus, setRefocus] = useState<number | null>(null)
+  useEffect(() => {
+    if (refocus === null) return
+    rows.current[refocus]?.querySelector<HTMLElement>('input, textarea, select')?.focus()
+    setRefocus(null)
+  }, [refocus, value])
+  const step = (i: number, by: number) => {
+    const h = value[i]
+    const type = types[(types.indexOf(h.type) + by + types.length) % types.length]
+    const words = WORDS[h.type] && h.params[WORDS[h.type]!]
+    set(i, { type, params: words !== undefined && WORDS[type] ? { [WORDS[type]!]: words } : {} })
+    setRefocus(i)
+  }
   return (
     <div className="builder">
       {value.map((h, i) => {
         const type = catalog.handoffs.find((t) => t.type === h.type)!
         return (
-          <div key={i} className="builder-row compact">
-            <div className="row-inline">
-              <select title={type.description} value={h.type} onChange={(e) => set(i, { type: e.target.value as HandoffKind, params: {} })}>
-                {catalog.handoffs.map((t) => (
-                  <option key={t.type}>{t.type}</option>
-                ))}
-              </select>
-              {value.length > 1 && (
-                <button data-ui className="link" title="Remove" onClick={() => onChange(value.filter((_, j) => j !== i))}>
-                  ×
-                </button>
-              )}
+          <div
+            key={i}
+            ref={(el) => (rows.current[i] = el)}
+            className="builder-row compact"
+            onKeyDown={(e) => {
+              if (e.key !== 'Tab') return
+              e.preventDefault()
+              step(i, e.shiftKey ? -1 : 1)
+            }}
+          >
+            <span className="builder-icon" title={`${h.type}: ${type.description} (Tab to change)`}>
+              <TypeIcon type={h.type} />
+            </span>
+            <div className="builder-fields">
+              <CompactForm key={h.type} schema={type.params} value={h.params} onChange={(params) => set(i, { ...h, params })} />
             </div>
-            <CompactForm schema={type.params} value={h.params} onChange={(params) => set(i, { ...h, params })} />
+            {value.length > 1 && (
+              <button data-ui className="link builder-remove" title="Remove" onClick={() => onChange(value.filter((_, j) => j !== i))}>
+                ×
+              </button>
+            )}
           </div>
         )
       })}

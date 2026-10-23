@@ -105,8 +105,6 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .compact .check input { width: auto; }
 .compact .bad { outline: 1px solid var(--danger); }
 .builder { width: 100%; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
-.builder-row { width: 100%; padding: 8px; background: var(--bg); border-radius: 8px; }
-.builder-row .row-inline { justify-content: space-between; }
 .chat { display: flex; flex-direction: column; gap: 6px; width: 100%; }
 .bubble-row { display: flex; }
 .bubble-row.mine { justify-content: flex-end; }
@@ -132,4 +130,11 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .avatar .icon { width: 15px; height: 15px; }
 .type-icon { display: inline-flex; vertical-align: -2px; margin-right: 6px; color: var(--muted); }
 .type-icon .icon { width: 14px; height: 14px; }
+.builder-row { position: relative; width: 100%; padding: 8px 28px 8px 34px; border-radius: 8px; }
+.builder-icon { position: absolute; top: 13px; left: 12px; }
+.builder-icon .type-icon { margin: 0; color: var(--color-gray-600); }
+.builder-remove { position: absolute; top: 8px; right: 10px; }
+.builder-fields { width: 100%; }
+.compact ::placeholder { color: var(--color-gray-400); opacity: 1; }
+.list { user-select: none; }
 }
