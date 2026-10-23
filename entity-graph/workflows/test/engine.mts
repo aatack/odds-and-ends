@@ -138,8 +138,9 @@ let session = ''
 behaviours.push(async ({ call, prompt, schema, sessionId, resume }) => {
   session = sessionId
   assert.equal(resume, false)
-  assert.match(prompt, /Item .*: Answer the PR/)
-  assert.match(prompt, /human message .*: Reply to the PR, please/)
+  assert.ok(prompt.startsWith(`[current item ID: ${id}]\n\n[new item: Answer the PR]`))
+  assert.match(prompt, /^Reply to the PR, please$/m, "the human's words as they are")
+  assert.doesNotMatch(prompt, /\d{4}-\d\d-\d\dT/, 'no timestamps')
   assert.ok(JSON.stringify(schema).includes('"after"'))
   assert.ok(JSON.stringify(schema).includes('"enum":["item"]'), 'a bot may add child items')
   assert.equal(JSON.parse(await call('get_item', { item_id: id })).item.id, id)
@@ -196,8 +197,9 @@ for (const minutes of BACKOFF_MINUTES.concat([10])) {
 behaviours.push(async ({ prompt, sessionId, resume }) => {
   assert.equal(resume, true)
   assert.equal(sessionId, session)
-  assert.match(prompt, /Since your last turn/)
-  assert.match(prompt, /"outcome":"failed"/)
+  assert.doesNotMatch(prompt, /new item/)
+  assert.match(prompt, /^\[o\/r#7: 1 of 2 checks failed: e2e\]$/m)
+  assert.doesNotMatch(prompt, /: done\]/, 'an after that ran says nothing: what it added speaks for it')
   assert.match(prompt, /Fix the failing checks: e2e/)
   assert.doesNotMatch(prompt, /Reply to the PR, please/, 'what the session has seen is not sent again')
   checks = 'pending' // it pushed a fix, so CI runs again

@@ -30,7 +30,8 @@ an in-memory store; it costs a run, so use it only when the bot wiring changes.
   steps through them.
 - Each item has its own Claude session, kept in its params; a child item's
   first session is forked from its parent's. A bot is told what is new since it
-  was last prompted, and answers with `{ message?, events?, close? }` as structured output.
+  was last prompted, with little direction (the human's messages as written, anything else in [brackets], the
+  item's id every ten lines; `promptFor` in `workers.ts`), and answers with `{ message?, events?, close? }` as structured output.
 - Nothing about the running app is stored: what is running is held in memory.
 
 ## The unsafe rule

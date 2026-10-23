@@ -70,12 +70,6 @@ function resolveRefs(value: unknown, ids: Map<string, string>, key?: string): un
   return value
 }
 
-/** An event as a prompt line: when, who, what it is, and (once resolved) what it came to, with its data for the details. */
-export function describeEvent(e: ItemEvent): string {
-  const when = new Date(e.createdAt).toISOString()
-  const came = !e.resolved || e.type === 'message' ? '' : ` → ${e.message ?? 'done'}${e.data ? ` ${JSON.stringify({ ...e.data, output: undefined })}` : ''}`
-  return `${when} ${e.createdBy} ${e.type} [${e.id}]: ${e.summary}${e.resolved ? '' : ' (open)'}${came}`
-}
 
 export interface EngineOptions {
   db: Db

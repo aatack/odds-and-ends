@@ -8,7 +8,7 @@ import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Item, ItemEvent } from '../shared/types'
-import { describeEvent, type Engine } from './engine'
+import type { Engine } from './engine'
 import { botOutputSchema } from './schema'
 
 export interface BotProcess {
@@ -48,6 +48,7 @@ export const SYSTEM = `You are a bot in the operator's workflow system. You work
 
 - The "workflows" MCP server is the system: items, events, and the integrations. event_types describes every kind of event. Its tools take item ids: yours is in the prompt, and you may act on other items too.
 - You also have the usual tools (a shell, files). Your working folder is your own scratch space, shared with nobody else's run at the same time. To work on a repository, make a git worktree of it under your folder and work there (a shell's cd only lasts inside your folder; elsewhere, use absolute paths and git -C). Read the repository's AGENTS.md or CLAUDE.md first, since you were not started in it. Clean up worktrees you no longer need.
+- Each prompt is what is new in your item: the operator's messages as they wrote them, and anything else (other events, results, instructions) in [square brackets]. get_item has the full history.
 - Do what the operator's latest messages ask, as far as you can without them.
 - Actions that change things outside this app are unsafe, and you never do them: not with the MCP tools (you do not have the unsafe ones; unsafe_actions lists them), and not with the shell either (no posting, commenting, reviewing, merging, pushing to shared branches, or sending). To get one done, add an approval event, filled in as far as you can.
 - When you stop, return your output: a message to the operator if there is something to say, the blockers to add, and whether the item is done. Chain blockers with after events: e.g. a github wait, then an after whose script adds a bot if the checks failed.
@@ -79,24 +80,41 @@ export const spawnClaude: SpawnBot = ({ prompt, system, schema, mcpUrl, sessionI
   }
 }
 
+/** How often the prompt reminds the bot which item it is on: every this many lines, starting with the first. */
+const ID_EVERY = 10
+
+/** The human, or an outside client acting as them: their words go to the bot as they are. */
+const HUMAN = new Set(['human', 'mcp'])
+
 /**
- * The run's prompt: the item, the first time (a new item split off from the one
- * above, when the session was forked from it); what is new since it was last
- * prompted, after that.
+ * One event as a line of the prompt: what the human said, as they said it;
+ * anything else in square brackets. A bare bot event (the "a bot, please" that
+ * comes with a message) and an after that ran say nothing.
  */
-export function promptFor(engine: Engine, item: Item, bots: ItemEvent[], resume: boolean, forked: boolean): string {
-  const lines = engine.newSinceLastRun(item.id).map((e) => `- ${describeEvent(e)}`)
-  const asks = bots.map((b) => b.params.instructions).filter(Boolean)
-  const intro = resume
-    ? `Since your last turn on item ${item.id} (${item.title}):`
-    : `${forked ? 'You are now on a new item, split off from the one above. This conversation is its own from here on.\n\n' : ''}Item ${item.id}: ${item.title}\n\nIts events so far:`
-  return [
-    intro,
-    lines.join('\n') || '- (nothing new)',
-    asks.length && `Instructions:\n${asks.map((a) => `- ${a}`).join('\n')}`,
-    'get_item has the full history.',
-  ]
-    .filter(Boolean)
+export function promptLine(e: ItemEvent): string | null {
+  if (e.type === 'message') return HUMAN.has(e.createdBy) ? String(e.params.text ?? '') : `[${e.createdBy}: ${e.params.text ?? ''}]`
+  if (e.type === 'bot') return e.params.instructions ? `[instructions: ${e.params.instructions}]` : null
+  // An after that ran says nothing of its own: what it added is in the prompt too.
+  if (e.type === 'after' && e.resolved && !e.cancelled && !e.data?.error) return null
+  if (e.cancelled) return `[${e.message ?? `Cancelled: ${e.summary}`}]`
+  if (!e.resolved) return `[${e.type} added by ${e.createdBy}: ${e.summary}]`
+  return `[${e.message ?? `${e.summary}: done`}]`
+}
+
+/**
+ * The run's prompt: what is new since the bot was last prompted, with little
+ * direction — the human's messages as they are, anything else in brackets — and,
+ * every ID_EVERY lines from the first, which item it is on. The first time, the
+ * item's title (and, when the session was forked from the item above, that it
+ * is a new one) comes first.
+ */
+export function promptFor(engine: Engine, item: Item, _bots: ItemEvent[], resume: boolean, forked: boolean): string {
+  const events = engine.newSinceLastRun(item.id).map(promptLine).filter((l): l is string => l !== null)
+  const head = resume ? [] : [forked ? `[new item, split off from the one above (this conversation is its own from here on): ${item.title}]` : `[new item: ${item.title}]`]
+  const lines = [...head, ...events]
+  if (!events.length) lines.push('[nothing new]')
+  return lines
+    .flatMap((l, i) => (i % ID_EVERY === 0 ? [`[current item ID: ${item.id}]`, l] : [l]))
     .join('\n\n')
 }
 
