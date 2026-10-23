@@ -111,8 +111,9 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   bottom-right button is Next.
 - **The items view** (`ItemsList`) is what shows when the stack is empty, and
   Ctrl+L puts it on top (or, when it is already showing, puts the cursor in its
-  search line); a view is never pushed onto an identical one; Ctrl+W and Alt+Left take the top view off (the main process
-  catches them in `before-input-event`, so the window's menu doesn't close the window). Typing filters titles fuzzily; the arrows
+  search line); a view is never pushed onto an identical one; Ctrl+W and Alt+Left take the top view off, and Alt+Right puts the
+  last one taken off back on (`forwardAtom`, cleared by going anywhere new); the main process catches them in
+  `before-input-event`, so the window's menu doesn't close the window. Typing filters titles fuzzily; the arrows
   move; Enter opens; Tab makes a new item with the typed title. What the items view opens *replaces* it on the stack
   (`open(view, { replace: true })`), so Back goes to where you were before it rather than to the list.
 - **Text is markdown.** Messages, descriptions and code samples all go through `Markdown` (`components/ui/`, react-markdown

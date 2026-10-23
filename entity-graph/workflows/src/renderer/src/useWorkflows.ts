@@ -1,7 +1,7 @@
 import { useAtom } from 'jotai'
 import { useCallback, useEffect, useState } from 'react'
 import type { Catalog, EventDetail, Overview, WorkflowsAPI } from '../../shared/types'
-import { sameView, viewsAtom, type View } from './views'
+import { forwardAtom, sameView, viewsAtom, type View } from './views'
 
 declare global {
   interface Window {
@@ -15,6 +15,7 @@ export const api = (): WorkflowsAPI => window.workflows
 export function useWorkflows() {
   const [overview, setOverview] = useState<Overview>({ items: [], workers: [] })
   const [views, setViews] = useAtom(viewsAtom)
+  const [forwards, setForwards] = useAtom(forwardAtom)
   const view = views[views.length - 1] ?? null
   const selected = view && 'id' in view ? view.id : null
   const [detail, setDetail] = useState<EventDetail | null>(null)
@@ -50,8 +51,9 @@ export function useWorkflows() {
       setError(null)
       setEmpty(false)
       setViews(id ? [{ kind: 'event', id }] : [])
+      setForwards([])
     },
-    [setViews],
+    [setViews, setForwards],
   )
 
   /**
@@ -65,12 +67,25 @@ export function useWorkflows() {
       const below = replace ? views.slice(0, -1) : views
       if (!sameView(below[below.length - 1], v)) setViews([...below, v])
       else if (replace) setViews(below)
+      // Somewhere new: what Back took off is no longer ahead.
+      setForwards([])
     },
-    [views, setViews],
+    [views, setViews, setForwards],
   )
 
-  /** Takes the top view off the stack. */
-  const back = useCallback(() => setViews(views.slice(0, -1)), [views, setViews])
+  /** Takes the top view off the stack, keeping it for Forward. */
+  const back = useCallback(() => {
+    if (!views.length) return
+    setViews(views.slice(0, -1))
+    setForwards([...forwards, views[views.length - 1]])
+  }, [views, setViews, forwards, setForwards])
+
+  /** Puts the view Back last took off on top of the stack again. */
+  const forward = useCallback(() => {
+    if (!forwards.length) return
+    setViews([...views, forwards[forwards.length - 1]])
+    setForwards(forwards.slice(0, -1))
+  }, [views, setViews, forwards, setForwards])
 
   const next = useCallback(
     async (skip: string[] = skipped) => {
@@ -92,5 +107,5 @@ export function useWorkflows() {
     [skipped, next],
   )
 
-  return { overview, view, views, detail, catalog, selected, select, open, back, next, skip, act, error, empty }
+  return { overview, view, views, detail, catalog, selected, select, open, back, forward, next, skip, act, error, empty }
 }

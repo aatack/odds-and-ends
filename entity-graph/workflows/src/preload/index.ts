@@ -29,6 +29,11 @@ const api: WorkflowsAPI = {
     ipcRenderer.on('back', listener)
     return () => ipcRenderer.removeListener('back', listener)
   },
+  onForward: (cb) => {
+    const listener = () => cb()
+    ipcRenderer.on('forward', listener)
+    return () => ipcRenderer.removeListener('forward', listener)
+  },
   onChange: (cb) => {
     const listener = () => cb()
     ipcRenderer.on('changed', listener)

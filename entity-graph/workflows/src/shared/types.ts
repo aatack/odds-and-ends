@@ -247,4 +247,6 @@ export interface WorkflowsAPI {
   onChange: (cb: () => void) => () => void
   /** Ctrl+W, caught before the window's menu can close the window: take the top view off the stack. */
   onBack: (cb: () => void) => () => void
+  /** Alt+Right: put the view last taken off the stack back on. */
+  onForward: (cb: () => void) => () => void
 }

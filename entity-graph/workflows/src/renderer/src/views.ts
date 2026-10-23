@@ -28,6 +28,12 @@ const storage = createJSONStorage<View[]>(() => {
 
 export const viewsAtom = atomWithStorage<View[]>('workflows.views', [], storage, { getOnInit: true })
 
+/**
+ * The views Back took off, the most recent last: Forward puts them back on, as a
+ * browser's history does. Going anywhere new clears it.
+ */
+export const forwardAtom = atomWithStorage<View[]>('workflows.forward', [], storage, { getOnInit: true })
+
 /** Two views are the same view: the same kind, of the same event. */
 export const sameView = (a: View | undefined, b: View): boolean =>
   !!a && a.kind === b.kind && ('id' in a ? a.id : null) === ('id' in b ? b.id : null)

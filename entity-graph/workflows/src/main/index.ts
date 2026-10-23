@@ -73,14 +73,16 @@ async function main(): Promise<void> {
     if (/^https?:/.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
-  // Ctrl+W (rather than closing the window, as the default menu would) and Alt+Left take the top view off the stack.
+  // Ctrl+W (rather than closing the window, as the default menu would) and Alt+Left take the top view off the stack;
+  // Alt+Right puts the last one taken off back on.
   win.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown' || input.shift || input.meta) return
     const ctrlW = input.control && !input.alt && input.key.toLowerCase() === 'w'
     const altLeft = input.alt && !input.control && input.key === 'ArrowLeft'
-    if (!ctrlW && !altLeft) return
+    const altRight = input.alt && !input.control && input.key === 'ArrowRight'
+    if (!ctrlW && !altLeft && !altRight) return
     event.preventDefault()
-    win.webContents.send('back')
+    win.webContents.send(altRight ? 'forward' : 'back')
   })
   engine.on('change', () => win.isDestroyed() || win.webContents.send('changed'))
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)

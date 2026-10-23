@@ -17,9 +17,10 @@ import { searchFocusAtom, type View } from './views'
 
 export function App() {
   const items = useWorkflows()
-  // Ctrl+W and Alt+Left (sent by the main process) take the top view off the stack.
-  const { back, open } = items
+  // Ctrl+W and Alt+Left (sent by the main process) take the top view off the stack; Alt+Right puts it back.
+  const { back, forward, open } = items
   useEffect(() => api().onBack(back), [back])
+  useEffect(() => api().onForward(forward), [forward])
   // Ctrl+L puts the items view on top of the stack; if it is already showing, it puts the cursor in its search line.
   const focusSearch = useSetAtom(searchFocusAtom)
   const showingItems = !items.view || items.view.kind === 'items'
