@@ -193,7 +193,8 @@ button[data-ui].blocker-text { text-align: left; padding: 0; overflow: hidden; t
 .key-pill kbd { font: inherit; font-size: 10px; padding: 1px 5px; border-radius: 6px; background: var(--color-gray-300); color: var(--ink); }
 /* No sidebar: the content fills the window, in a centred column that stays readable on a wide screen. */
 .app { display: block; height: 100vh; }
-.main { height: 100vh; padding: 0; display: flex; flex-direction: row; justify-content: center; overflow: hidden; }
+/* The gutters keep the corner buttons (52px and 64px from the edges) clear of the column when the window is narrow. */
+.main { height: 100vh; padding: 0 72px; display: flex; flex-direction: row; justify-content: center; overflow: hidden; }
 .content { width: 100%; max-width: 920px; height: 100%; display: flex; flex-direction: column; }
 .view { margin: 0; }
 .corner-button, .next-button { position: fixed; bottom: 16px; display: flex; align-items: center; justify-content: center; z-index: 20; }
