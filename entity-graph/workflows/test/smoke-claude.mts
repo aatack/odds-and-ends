@@ -12,7 +12,7 @@ const pool = new WorkerPool(engine, mcp.runUrl, 1)
 const id = (await engine.create('Smoke test', {
   next: [
     {
-      type: 'agent',
+      type: 'bot',
       params: {
         instructions:
           'Read this item with get_item. Then set the state to "smoke ok" and hand it to the human to choose between red and blue, ' +
@@ -21,7 +21,7 @@ const id = (await engine.create('Smoke test', {
     },
   ],
 }))!
-const busy = () => engine.get(id)!.current?.type === 'agent' || pool.status().some((w) => w.itemId)
+const busy = () => engine.get(id)!.current?.type === 'bot' || pool.status().some((w) => w.itemId)
 for (let i = 0; i < 300 && busy(); i++) await new Promise((r) => setTimeout(r, 1000))
 await engine.idle()
 const d = engine.detail(id)!

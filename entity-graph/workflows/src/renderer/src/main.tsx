@@ -6,4 +6,7 @@ import '@fontsource-variable/fira-code/index.css'
 import './index.css'
 import './styles.css'
 
+// Always dark: entity-graph's tokens redefine themselves under html.dark.
+document.documentElement.classList.add('dark')
+
 createRoot(document.getElementById('root')!).render(<App />)

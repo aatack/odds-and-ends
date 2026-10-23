@@ -9,15 +9,15 @@ import { objectSchema } from './schema'
 const itemId = z.string().describe('The id of the item.')
 const spec = z.object({ type: z.string(), params: z.record(z.unknown()) }).describe('A handoff: see handoff_types.')
 
-/** An agent, or a script an agent wrote, may change only the item it works on. */
+/** A bot, or a script a bot wrote, may change only the item it works on. */
 export function assertMayChange(ctx: ActionContext, id: string): void {
-  if (ctx.author === 'agent' && ctx.itemId !== id) throw new Error('An agent may only change the item it is working on.')
+  if (ctx.author === 'bot' && ctx.itemId !== id) throw new Error('A bot may only change the item it is working on.')
 }
 
-/** Handing on and closing are the human's: an agent or a script returns its handoffs instead. */
+/** Handing on and closing are the human's: a bot or a script returns its handoffs instead. */
 function assertHuman(ctx: ActionContext): void {
   if (ctx.author !== 'human')
-    throw new Error('Only a human hands an item on or closes it directly. An agent returns its next handoffs as its output; a script returns them.')
+    throw new Error('Only a human hands an item on or closes it directly. A bot returns its next handoffs as its output; a script returns them.')
 }
 
 export const itemActions: Action[] = [
@@ -40,7 +40,7 @@ export const itemActions: Action[] = [
   },
   {
     name: 'get_item',
-    description: 'An item in full: its state, every handoff with its resolution, the events between them, and its agent runs.',
+    description: 'An item in full: its state, every handoff with its resolution, the events between them, and its bot runs.',
     input: { item_id: itemId },
     run: async (a, { engine }) => {
       const d = engine.detail(String(a.item_id))
@@ -51,14 +51,14 @@ export const itemActions: Action[] = [
   {
     name: 'recent_items',
     description:
-      'Items touched in the last `days`, for looking back at how the work went: time spent on each kind of handoff, agent runs and cost, ' +
+      'Items touched in the last `days`, for looking back at how the work went: time spent on each kind of handoff, bot runs and cost, ' +
       'human decisions, approvals the human changed, waits that timed out, and what was handled outside the tool.',
     input: { days: z.number().default(7) },
     run: async (a, { engine }) => engine.recent(Number(a.days)),
   },
   {
     name: 'run_transcript',
-    description: "One agent run's prompt and whole transcript.",
+    description: "One bot run's prompt and whole transcript.",
     input: { run_id: z.string() },
     run: async (a, { engine }) => {
       const t = engine.transcript(String(a.run_id))

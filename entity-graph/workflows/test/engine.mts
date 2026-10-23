@@ -1,5 +1,5 @@
 // The engine, the MCP server and the worker pool, end to end, against an
-// in-memory node:sqlite store, stand-ins for gh and Slack, and stand-in agents
+// in-memory node:sqlite store, stand-ins for gh and Slack, and stand-in bots
 // that call the real MCP server over HTTP and return structured output.
 
 import assert from 'node:assert/strict'
@@ -7,10 +7,10 @@ import { DatabaseSync } from 'node:sqlite'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { Admin } from '../src/engine/admin.ts'
-import { Engine, type AgentOutput } from '../src/engine/engine.ts'
+import { Engine, type BotOutput } from '../src/engine/engine.ts'
 import { catalog, startMcp } from '../src/engine/mcp.ts'
-import { agentOutputSchema } from '../src/engine/schema.ts'
-import { WorkerPool, type SpawnAgent } from '../src/engine/workers.ts'
+import { botOutputSchema } from '../src/engine/schema.ts'
+import { WorkerPool, type SpawnBot } from '../src/engine/workers.ts'
 
 const MINUTE = 60_000
 let clock = 1_000_000
@@ -66,9 +66,9 @@ const engine = new Engine({ db: new DatabaseSync(':memory:'), exec, fetch: fakeF
 engine.settings.set('mcp.port', 0)
 const mcp = await startMcp(engine)
 
-// ---- agents: each run plays the next behaviour over MCP and returns its output ----
+// ---- bots: each run plays the next behaviour over MCP and returns its output ----
 type Call = (name: string, args?: Record<string, unknown>) => Promise<string>
-type Behaviour = (call: Call, prompt: string, schema: Record<string, unknown>) => Promise<AgentOutput | null>
+type Behaviour = (call: Call, prompt: string, schema: Record<string, unknown>) => Promise<BotOutput | null>
 const behaviours: Behaviour[] = []
 const connect = async (url: string, headers: Record<string, string> = {}) => {
   const client = new Client({ name: 'test', version: '0' })
@@ -80,9 +80,9 @@ const connect = async (url: string, headers: Record<string, string> = {}) => {
   }
   return { client, call }
 }
-const spawnFake: SpawnAgent = ({ prompt, schema, mcpUrl, onOutput }) => {
+const spawnFake: SpawnBot = ({ prompt, schema, mcpUrl, onOutput }) => {
   const behaviour = behaviours.shift()
-  assert.ok(behaviour, `an agent ran that no test expected:\n${prompt}`)
+  assert.ok(behaviour, `a bot ran that no test expected:\n${prompt}`)
   const done = (async () => {
     const { client, call } = await connect(mcpUrl)
     const out = await behaviour(call, prompt, schema)
@@ -99,7 +99,7 @@ const settle = async () => {
   for (let i = 0; i < 300; i++) {
     await engine.idle()
     await new Promise((r) => setTimeout(r, 5))
-    if (pool.status().every((w) => w.itemId === null) && !engine.overview().items.some((i) => i.current?.type === 'agent')) {
+    if (pool.status().every((w) => w.itemId === null) && !engine.overview().items.some((i) => i.current?.type === 'bot')) {
       await engine.idle()
       return
     }
@@ -112,9 +112,9 @@ const tick = async () => {
   await settle()
 }
 
-// The script an agent leaves behind a CI wait: fix on failure, ask to merge on success.
+// The script a bot leaves behind a CI wait: fix on failure, ask to merge on success.
 const route = `async ({ previous }) => previous.resolution.outcome === 'failed'
-  ? { type: 'agent', params: { instructions: 'Fix the failing checks: ' + previous.resolution.failed.join(', ') } }
+  ? { type: 'bot', params: { instructions: 'Fix the failing checks: ' + previous.resolution.failed.join(', ') } }
   : { type: 'human', params: { needed: 'Merge o/r#7?', approval: { action: 'github_pr_merge', inputs: { repo: 'o/r', number: 7, method: 'squash' } } } }`
 
 // ---- 1. A new item goes to the human, and Next finds it ----
@@ -123,7 +123,7 @@ assert.equal(current(id)!.type, 'human')
 assert.equal(engine.next(), id)
 assert.equal(engine.next([id]), null)
 
-// ---- 2. Human → agent. The agent can't act outward or hand off itself; it returns a chain ----
+// ---- 2. Human → bot. The bot can't act outward or hand off itself; it returns a chain ----
 behaviours.push(async (call, prompt, schema) => {
   assert.match(prompt, /Your instructions: Reply on the PR/)
   assert.ok(JSON.stringify(schema).includes('"needed"'))
@@ -142,16 +142,16 @@ behaviours.push(async (call, prompt, schema) => {
     ],
   }
 })
-await engine.handOff(id, { next: [{ type: 'agent', params: { instructions: 'Reply on the PR' } }] })
+await engine.handOff(id, { next: [{ type: 'bot', params: { instructions: 'Reply on the PR' } }] })
 await settle()
 assert.equal(engine.get(id)!.state, 'Reply drafted.')
 assert.equal(current(id)!.type, 'human')
 assert.equal(current(id)!.params.needed, 'Post this reply?')
 assert.equal(engine.get(id)!.queued, 2)
-const agentDone = engine.handoffs(id).find((h) => h.type === 'agent')!
-assert.equal(agentDone.resolution!.output, 'Thinking out loud.')
-assert.equal(agentDone.resolution!.state, 'Reply drafted.')
-assert.equal(agentDone.stateAtStart, '')
+const botDone = engine.handoffs(id).find((h) => h.type === 'bot')!
+assert.equal(botDone.resolution!.output, 'Thinking out loud.')
+assert.equal(botDone.resolution!.state, 'Reply drafted.')
+assert.equal(botDone.stateAtStart, '')
 
 // ---- 3. The human changes the reply and approves it; the chain goes on to the CI wait ----
 await engine.approve(id, { repo: 'o/r', number: 7, body: 'Thanks a lot!' })
@@ -173,7 +173,7 @@ for (const minutes of [1, 2, 5, 10, 10]) {
   await tick()
 }
 
-// ---- 4. Checks fail: the script hands to an agent, which fixes and chains the same again ----
+// ---- 4. Checks fail: the script hands to a bot, which fixes and chains the same again ----
 behaviours.push(async (_call, prompt) => {
   assert.match(prompt, /Fix the failing checks: e2e/)
   assert.match(prompt, /"outcome":"failed"/)
@@ -204,13 +204,13 @@ assert.ok(engine.get(id)!.closed)
 assert.equal(current(id), null)
 assert.deepEqual(
   engine.handoffs(id).map((h) => h.type),
-  ['human', 'agent', 'human', 'github', 'script', 'agent', 'github', 'script', 'human', 'human'],
+  ['human', 'bot', 'human', 'github', 'script', 'bot', 'github', 'script', 'human', 'human'],
 )
 
-// ---- 6. Slack: an agent's message goes to the human first, then the wait takes its thread ----
+// ---- 6. Slack: a bot's message goes to the human first, then the wait takes its thread ----
 engine.settings.addSlackWorkspace({ name: 'Acme', team: 'Acme', user: 'alex', userId: 'UME', token: 'xoxp-good-1234' })
 behaviours.push(async () => ({ state: 'Asking Sam.', next: [{ type: 'slack', params: { channel: 'C1', message: 'Any update, Sam?' } }] }))
-const chase = (await engine.create('Chase Sam', { next: [{ type: 'agent', params: { instructions: 'Ask Sam for an update' } }] }))!
+const chase = (await engine.create('Chase Sam', { next: [{ type: 'bot', params: { instructions: 'Ask Sam for an update' } }] }))!
 await settle()
 assert.equal(current(chase)!.type, 'human')
 assert.equal((current(chase)!.params.approval as { action: string }).action, 'slack_post')
@@ -228,36 +228,36 @@ const replied = engine.handoffs(chase).find((h) => h.type === 'slack')!
 assert.deepEqual((replied.resolution!.replies as { text: string }[]).map((r) => r.text), ['Done!'])
 await engine.close(chase, {})
 
-// ---- 7. Items: an agent splits off a sub-item and waits on it, then wraps up ----
+// ---- 7. Items: a bot splits off a sub-item and waits on it, then wraps up ----
 let child = ''
 behaviours.push(async (call) => {
-  child = JSON.parse(await call('create_item', { title: 'Child', next: [{ type: 'agent', params: { instructions: 'Do the child' } }] })).id
-  return { state: 'Waiting on the child.', next: [{ type: 'items', params: { item_ids: [child] } }, { type: 'agent', params: { instructions: 'Wrap up' } }] }
+  child = JSON.parse(await call('create_item', { title: 'Child', next: [{ type: 'bot', params: { instructions: 'Do the child' } }] })).id
+  return { state: 'Waiting on the child.', next: [{ type: 'items', params: { item_ids: [child] } }, { type: 'bot', params: { instructions: 'Wrap up' } }] }
 })
 behaviours.push(async () => ({ state: 'Child done.', next: [], close: true }))
 behaviours.push(async (_call, prompt) => {
   assert.match(prompt, /Child done/)
   return { state: 'All done.', next: [], close: true }
 })
-const parent = (await engine.create('Parent', { next: [{ type: 'agent', params: { instructions: 'Split it' } }] }))!
+const parent = (await engine.create('Parent', { next: [{ type: 'bot', params: { instructions: 'Split it' } }] }))!
 await settle()
 await settle()
 assert.ok(engine.get(child)!.closed)
 assert.ok(engine.get(parent)!.closed)
 assert.equal(engine.get(parent)!.state, 'All done.')
 
-// ---- 8. An agent whose output is unusable hands the item to the human, saying why ----
+// ---- 8. A bot whose output is unusable hands the item to the human, saying why ----
 behaviours.push(async () => ({ state: 's', next: [] }))
-const bad = (await engine.create('Bad', { next: [{ type: 'agent', params: { instructions: 'x' } }] }))!
+const bad = (await engine.create('Bad', { next: [{ type: 'bot', params: { instructions: 'x' } }] }))!
 await settle()
 assert.match(String(current(bad)!.params.needed), /no handoffs and did not close/)
 behaviours.push(async () => ({ state: 's', next: [{ type: 'human', params: { question: 'wrong field' } }] }))
-const typo = (await engine.create('Typo', { next: [{ type: 'agent', params: { instructions: 'x' } }] }))!
+const typo = (await engine.create('Typo', { next: [{ type: 'bot', params: { instructions: 'x' } }] }))!
 await settle()
 assert.match(String(current(typo)!.params.needed), /needed: Required/)
 await engine.handledOutside(typo, 'Did it by hand')
 
-// ---- 9. Scripts reach the actions; an agent's script can't act outward ----
+// ---- 9. Scripts reach the actions; a bot's script can't act outward ----
 const scripted = (await engine.create('Scripted', {
   next: [
     {
@@ -275,7 +275,7 @@ behaviours.push(async () => ({
   state: 's',
   next: [{ type: 'script', params: { source: `async (i, actions) => { await actions.github_pr_merge({ repo: 'o/r', number: 7, method: 'squash' }); return null }` } }],
 }))
-const sneaky = (await engine.create('Sneaky', { next: [{ type: 'agent', params: { instructions: 'x' } }] }))!
+const sneaky = (await engine.create('Sneaky', { next: [{ type: 'bot', params: { instructions: 'x' } }] }))!
 await settle()
 assert.equal(ghCalls.filter((c) => c[1] === 'merge').length, merges)
 assert.match(String(current(sneaky)!.params.needed), /script handoff failed: .*outward/)
@@ -293,14 +293,14 @@ await engine.pollSources(true)
 await engine.pollSources(true)
 assert.equal(engine.overview().items.filter((i) => i.source === 'github.review-requests').length, 1)
 
-// ---- 12. Taking over an agent's item brings it back to the human ----
+// ---- 12. Taking over a bot's item brings it back to the human ----
 let release = () => {}
 const held = new Promise<void>((r) => (release = r))
 behaviours.push(async () => {
   await held
   return { state: 'late', next: [], close: true }
 })
-const taken = (await engine.create('Take me', { next: [{ type: 'agent', params: { instructions: 'x' } }] }))!
+const taken = (await engine.create('Take me', { next: [{ type: 'bot', params: { instructions: 'x' } }] }))!
 while (!pool.status().some((w) => w.itemId === taken)) await new Promise((r) => setTimeout(r, 5))
 await engine.takeOver(taken)
 release()
@@ -319,17 +319,17 @@ await outside.call('hand_off', { item_id: taken, next: [{ type: 'human', params:
 assert.equal(current(taken)!.params.needed, 'Still there?')
 assert.match(await outside.call('github_pr_comment', { repo: 'o/r', number: 7, body: 'From outside' }), /pull\/7/)
 const types = JSON.parse(await outside.call('handoff_types'))
-assert.deepEqual(types.map((t: { type: string }) => t.type), ['human', 'agent', 'github', 'slack', 'items', 'script'])
+assert.deepEqual(types.map((t: { type: string }) => t.type), ['human', 'bot', 'github', 'slack', 'items', 'script'])
 await outside.client.close()
 
 // ---- 14. The history is there to look back on ----
 const recent = engine.recent(7)
 const first = recent.find((r) => r.id === id)!
-assert.equal(first.agentRuns, 2)
+assert.equal(first.botRuns, 2)
 assert.equal(first.approvalsChanged, 1)
 assert.ok(first.minutesOn.github >= 28, JSON.stringify(first.minutesOn))
 assert.deepEqual(recent.find((r) => r.id === typo)!.handledOutside, ['Did it by hand'])
-assert.equal(recent.find((r) => r.id === typo)!.agentFailures, 1)
+assert.equal(recent.find((r) => r.id === typo)!.botFailures, 1)
 assert.equal(recent.find((r) => r.id === slow)!.timedOut, 1)
 assert.match(engine.transcript(engine.detail(id)!.runs[0].id)!, /Thinking out loud/)
 
@@ -342,7 +342,7 @@ const cat = catalog(engine)
 assert.ok(cat.actions.find((a) => a.name === 'slack_post')!.outward)
 assert.ok(!cat.actions.find((a) => a.name === 'slack_thread')!.outward)
 assert.ok(cat.handoffs.find((h) => h.type === 'human')!.params.required!.includes('needed'))
-assert.equal((agentOutputSchema(engine.handoffTypes).required as string[]).join(), 'state,next')
+assert.equal((botOutputSchema(engine.handoffTypes).required as string[]).join(), 'state,next')
 
 assert.equal(behaviours.length, 0)
 mcp.close()

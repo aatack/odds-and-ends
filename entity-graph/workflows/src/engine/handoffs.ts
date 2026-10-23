@@ -31,11 +31,11 @@ export const human: HandoffType = {
     '{ decision: "handed_off" | "approved" | "closed" | "handled_outside", note?: string, action?: { name, proposed, inputs, changed, output } }',
 }
 
-export const agent: HandoffType = {
-  type: 'agent',
+export const bot: HandoffType = {
+  type: 'bot',
   description: 'A worker: claude -p with this MCP server. It works the item and returns the next handoffs.',
-  params: { instructions: z.string().describe('What the agent is to do: the goal, and anything it needs to know that the state does not say.') },
-  resolution: '{ state: string, output: string (what the agent said on the way, which nobody reads by default), runId, costUsd? }',
+  params: { instructions: z.string().describe('What the bot is to do: the goal, and anything it needs to know that the state does not say.') },
+  resolution: '{ state: string, output: string (what the bot said on the way, which nobody reads by default), runId, costUsd? }',
 }
 
 export const github: HandoffType = {
@@ -54,7 +54,7 @@ export const slack: HandoffType = {
   resolution: '{ outcome: "replied" | "timed_out", channel, thread_ts, replies?: { user, text, ts }[], detail }',
   expand: (p, author) => {
     if (!p.message || author === 'human') return [{ type: 'slack', params: p }]
-    // An agent's message is outward: a human approves it first, and the wait
+    // A bot's message is outward: a human approves it first, and the wait
     // then takes the thread from what was posted.
     const { message, ...rest } = p
     return [
@@ -88,7 +88,7 @@ export const script: HandoffType = {
   type: 'script',
   description:
     'Route by what came before. Runs at once, in a sandbox, and puts what it returns at the front of the queue. ' +
-    'The usual use is after a wait: e.g. after a github handoff, hand to an agent if checks failed and to the human if they passed.',
+    'The usual use is after a wait: e.g. after a github handoff, hand to a bot if checks failed and to the human if they passed.',
   params: {
     source: z
       .string()
@@ -115,4 +115,4 @@ export const script: HandoffType = {
   },
 }
 
-export const HANDOFF_TYPES: HandoffType[] = [human, agent, github, slack, items, script]
+export const HANDOFF_TYPES: HandoffType[] = [human, bot, github, slack, items, script]

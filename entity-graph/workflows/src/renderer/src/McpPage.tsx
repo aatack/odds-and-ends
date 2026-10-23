@@ -74,8 +74,8 @@ export function McpPage() {
           Actions <span className="count">{catalog.actions.length}</span>
         </h2>
         <p className="muted">
-          The same list for agents, for clients connected above, and for scripts (as <code>actions.name(args)</code>). What a caller may do
-          depends on who it is: an agent, or a script an agent wrote, changes only its own item and runs nothing outward, and hands items on by
+          The same list for bots, for clients connected above, and for scripts (as <code>actions.name(args)</code>). What a caller may do
+          depends on who it is: a bot, or a script a bot wrote, changes only its own item and runs nothing outward, and hands items on by
           returning handoffs.
         </p>
         {catalog.actions.map((a) => (
@@ -95,7 +95,7 @@ export function McpPage() {
           Handoffs <span className="count">{catalog.handoffs.length}</span>
         </h2>
         <p className="muted">
-          What an item can wait for. An agent returns a list of these as its output; the first is what the item waits for, and each resolves
+          What an item can wait for. A bot returns a list of these as its output; the first is what the item waits for, and each resolves
           into the next.
         </p>
         {catalog.handoffs.map((h) => (

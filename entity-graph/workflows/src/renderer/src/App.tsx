@@ -16,7 +16,7 @@ const PAGES: { page: Page; label: string }[] = [
 /** The sidebar's groups, by what the item waits for now. */
 const GROUPS: { label: string; has: (i: Item) => boolean }[] = [
   { label: 'Needs you', has: (i) => i.current?.type === 'human' },
-  { label: 'With agents', has: (i) => i.current?.type === 'agent' },
+  { label: 'With bots', has: (i) => i.current?.type === 'bot' },
   { label: 'Waiting', has: (i) => ['github', 'slack', 'items'].includes(i.current?.type ?? '') },
   { label: 'Closed today', has: (i) => i.closed },
 ]
@@ -70,7 +70,7 @@ function ItemsSidebar() {
       <NewItem
         onCreate={(title, instructions) =>
           w.act(async () =>
-            w.select(await api().create(title, instructions ? [{ type: 'agent', params: { instructions } }] : [])),
+            w.select(await api().create(title, instructions ? [{ type: 'bot', params: { instructions } }] : [])),
           )
         }
       />
@@ -111,7 +111,7 @@ const NEW_ITEM = {
   type: 'object',
   properties: {
     title: { type: 'string' },
-    instructions: { type: 'string', 'x-multiline': true, description: 'For an agent. Without them, the item comes to you.' },
+    instructions: { type: 'string', 'x-multiline': true, description: 'For a bot. Without them, the item comes to you.' },
   },
   required: ['title'],
 }
@@ -146,7 +146,7 @@ function ItemList(props: { label: string; items: Item[]; selected: string | null
       </h3>
       {props.items.map((i) => (
         <div key={i.id} className={`row ${i.id === props.selected ? 'selected' : ''}`} onClick={() => props.onSelect(i.id)}>
-          {i.worker !== null && <span className="dot" title="An agent is running" />}
+          {i.worker !== null && <span className="dot" title="A bot is running" />}
           {i.title}
         </div>
       ))}
@@ -179,7 +179,7 @@ function ItemView({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalo
       <StateEditor key={item.state} state={item.state} onSave={(s) => act(() => api().setState(item.id, s))} />
 
       {current?.type === 'human' && <Decide key={current.id} detail={detail} catalog={catalog} act={act} onSkip={onSkip} />}
-      {current?.type === 'agent' && (
+      {current?.type === 'bot' && (
         <section className="panel">
           <p className="muted">{item.worker !== null ? `Worker ${item.worker} is on it.` : 'Queued for the next free worker.'}</p>
           <p className="quote">{String(current.params.instructions)}</p>
@@ -239,7 +239,7 @@ function Decide({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalog:
   const approval = current.params.approval as { action: string; inputs: Record<string, unknown> } | undefined
   const action = approval && catalog.actions.find((a) => a.name === approval.action)
   const [inputs, setInputs] = useState<Record<string, unknown>>(approval?.inputs ?? {})
-  const [next, setNext] = useState<HandoffSpec[]>([{ type: 'agent', params: { instructions: '' } }])
+  const [next, setNext] = useState<HandoffSpec[]>([{ type: 'bot', params: { instructions: '' } }])
   const [note, setNote] = useState('')
   useEffect(() => setInputs(approval?.inputs ?? {}), [approval])
   const queued = item.queued > 0

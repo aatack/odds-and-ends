@@ -10,8 +10,8 @@ export function summary(h: HandoffSpec): string {
   switch (h.type) {
     case 'human':
       return `You: ${p.needed}${p.approval ? ` (approve ${(p.approval as { action: string }).action})` : ''}`
-    case 'agent':
-      return `Agent: ${p.instructions}`
+    case 'bot':
+      return `Bot: ${p.instructions}`
     case 'github':
       return `GitHub: ${p.repo}#${p.number} until ${p.until}`
     case 'slack':
@@ -30,7 +30,7 @@ export function outcome(h: Handoff): string {
   return String(r.error ? `failed: ${r.error}` : (r.detail ?? r.decision ?? r.outcome ?? r.state ?? ''))
 }
 
-/** Every handoff resolved so far, with the notes and changes between them. Agent output is hidden until asked for. */
+/** Every handoff resolved so far, with the notes and changes between them. Bot output is hidden until asked for. */
 export function History({ detail }: { detail: ItemDetail }) {
   const done = detail.handoffs.filter((h) => h.status === 'resolved' || h.status === 'cancelled')
   const entries = [

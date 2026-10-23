@@ -97,7 +97,7 @@ export const slackHandoffParams = {
   message: z
     .string()
     .optional()
-    .describe('Posted as the operator as the handoff starts. One an agent sets goes to a human for approval first.'),
+    .describe('Posted as the operator as the handoff starts. One a bot sets goes to a human for approval first.'),
   thread_ts: z.string().optional().describe('The thread to wait in. Left out, it is the message just posted.'),
   timeout_minutes: z.number().optional().describe('Resolve as timed_out after this long.'),
 }

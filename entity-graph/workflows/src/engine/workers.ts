@@ -1,25 +1,25 @@
 // A fixed number of workers, each running one `claude -p` at a time on the
-// agent handoff that has waited longest. A run ends by returning its next
+// bot handoff that has waited longest. A run ends by returning its next
 // handoffs as structured output, which `Engine.endRun` takes from there.
 
 import { spawn } from 'node:child_process'
 import type { Handoff, Item } from '../shared/types'
 import { describeResolution, type Engine } from './engine'
-import { agentOutputSchema } from './schema'
+import { botOutputSchema } from './schema'
 
-export interface AgentProcess {
+export interface BotProcess {
   done: Promise<{ exitCode: number | null }>
   kill: () => void
 }
 
-/** Starts one agent; `onOutput` gets its stdout (stream-json) as it comes. Handed in, so the tests needn't run claude. */
-export type SpawnAgent = (args: {
+/** Starts one bot; `onOutput` gets its stdout (stream-json) as it comes. Handed in, so the tests needn't run claude. */
+export type SpawnBot = (args: {
   prompt: string
   system: string
   schema: Record<string, unknown>
   mcpUrl: string
   onOutput: (chunk: string) => void
-}) => AgentProcess
+}) => BotProcess
 
 const RUN_LIMIT_MS = 30 * 60_000
 
@@ -31,7 +31,7 @@ export const SYSTEM = `You are one of several workers in the operator's workflow
 - When you stop, return your output: the item's new state, and the handoffs that come next, in order. Chain them: e.g. a github wait, then a script that routes on its result.
 - Hand to the human only what nobody else can do. Their "needed" is one direct question or request: no preamble, no summary, no waffle. The state holds the context.`
 
-export const spawnClaude: SpawnAgent = ({ prompt, system, schema, mcpUrl, onOutput }) => {
+export const spawnClaude: SpawnBot = ({ prompt, system, schema, mcpUrl, onOutput }) => {
   const mcp = JSON.stringify({ mcpServers: { workflows: { type: 'http', url: mcpUrl } } })
   const child = spawn(
     'claude',
@@ -55,8 +55,8 @@ export const spawnClaude: SpawnAgent = ({ prompt, system, schema, mcpUrl, onOutp
 export function promptFor(engine: Engine, item: Item, handoff: Handoff): string {
   const all = engine.handoffs(item.id)
   const resolved = all.filter((h) => h.status === 'resolved')
-  // Back to the last time a person or an agent had it: the waits and scripts since are why this run is happening.
-  const lastHand = resolved.findLastIndex((h) => h.type === 'human' || h.type === 'agent')
+  // Back to the last time a person or a bot had it: the waits and scripts since are why this run is happening.
+  const lastHand = resolved.findLastIndex((h) => h.type === 'human' || h.type === 'bot')
   const since = resolved.slice(Math.max(lastHand, 0))
   const queued = all.filter((h) => h.status === 'queued')
   const brief = (h: Handoff) => {
@@ -101,7 +101,7 @@ export class WorkerPool {
     private engine: Engine,
     private mcpUrl: (runId: string) => string,
     readonly size = 4,
-    private spawnAgent: SpawnAgent = spawnClaude,
+    private spawnBot: SpawnBot = spawnClaude,
   ) {
     engine.on('change', () => this.schedule())
     engine.onCancel = (itemId) => {
@@ -154,9 +154,9 @@ export class WorkerPool {
         turns: result?.num_turns as number | undefined,
       })
     }
-    let proc: AgentProcess
+    let proc: BotProcess
     try {
-      proc = this.spawnAgent({ prompt, system: SYSTEM, schema: agentOutputSchema(this.engine.handoffTypes), mcpUrl: this.mcpUrl(runId), onOutput })
+      proc = this.spawnBot({ prompt, system: SYSTEM, schema: botOutputSchema(this.engine.handoffTypes), mcpUrl: this.mcpUrl(runId), onOutput })
     } catch (e) {
       void end(null, (e as Error).message)
       return

@@ -1,7 +1,7 @@
 // The app's MCP server. Both scopes serve the same list of actions; what
 // differs is who is calling, which the actions check for themselves:
 //
-// - run: a worker's agent, at /mcp/<runId> on a free loopback port. It may
+// - run: a worker's bot, at /mcp/<runId> on a free loopback port. It may
 //   change only its own item and run no outward action.
 // - operator: anything else the user connects, at /mcp on a fixed loopback
 //   port, behind a bearer token. It acts as the human.
@@ -19,7 +19,7 @@ import { handoffSchema, objectSchema } from './schema'
 
 export type Scope = { kind: 'run'; runId: string } | { kind: 'operator' }
 
-const OUTWARD = ' OUTWARD: others see it, so only a human may run it; an agent asks for it as a human handoff\'s approval.'
+const OUTWARD = ' OUTWARD: others see it, so only a human may run it; a bot asks for it as a human handoff\'s approval.'
 
 export function makeServer(engine: Engine, scope: Scope): McpServer {
   const server = new McpServer({ name: 'workflows', version: '0.1.0' })
@@ -27,7 +27,7 @@ export function makeServer(engine: Engine, scope: Scope): McpServer {
     if (scope.kind === 'operator') return { engine, author: 'human', actor: 'mcp', itemId: null, runId: null }
     const run = engine.activeRun(scope.runId)
     if (!run) throw new Error('This run has ended.')
-    return { engine, author: 'agent', actor: 'agent', itemId: run.itemId, runId: scope.runId }
+    return { engine, author: 'bot', actor: 'bot', itemId: run.itemId, runId: scope.runId }
   }
   for (const action of engine.actions)
     server.registerTool(
@@ -99,7 +99,7 @@ const listen = (server: Server, port: number) =>
   })
 
 export interface Mcp {
-  /** Where a run's agent reaches its scope. */
+  /** Where a run's bot reaches its scope. */
   runUrl: (runId: string) => string
   /** Where anything else reaches the operator scope, or why it can't. */
   operator: () => { url: string; error: string | null }
@@ -108,7 +108,7 @@ export interface Mcp {
   close: () => void
 }
 
-/** Starts the agents' server on a free port, and the operator's on the configured one. */
+/** Starts the bots' server on a free port, and the operator's on the configured one. */
 export async function startMcp(engine: Engine): Promise<Mcp> {
   const settings = engine.settings
   const runs = createServer(

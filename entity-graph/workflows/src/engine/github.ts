@@ -10,7 +10,7 @@ const prArgs = (p: Record<string, unknown>) => [String(p.number), '-R', String(p
 const view = async (exec: Exec, p: Record<string, unknown>, fields: string) =>
   JSON.parse(await exec('gh', ['pr', 'view', ...prArgs(p), '--json', fields]))
 
-/** Long output is cut, so one diff can't fill an agent's context. */
+/** Long output is cut, so one diff can't fill a bot's context. */
 export const cap = (s: string, n = 60_000) => (s.length > n ? `${s.slice(0, n)}\n… (${s.length - n} more characters)` : s)
 
 export const githubActions: Action[] = [

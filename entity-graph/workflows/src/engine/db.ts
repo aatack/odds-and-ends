@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS handoffs (
 CREATE INDEX IF NOT EXISTS handoffs_item ON handoffs (item_id, seq);
 CREATE INDEX IF NOT EXISTS handoffs_active ON handoffs (status, type, started_at);
 
--- What happened between handoffs. Append-only: it is what the agents read back
+-- What happened between handoffs. Append-only: it is what the bots read back
 -- to find what could have gone better.
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,6 +82,14 @@ CREATE INDEX IF NOT EXISTS runs_item ON runs (item_id, started_at);
 
 export function migrate(db: Db): void {
   db.exec(SCHEMA)
+  // Agents were renamed bots; rows written before that say 'agent'.
+  db.exec(`
+    UPDATE handoffs SET type = 'bot' WHERE type = 'agent';
+    UPDATE handoffs SET created_by = 'bot' WHERE created_by = 'agent';
+    UPDATE handoffs SET created_by = 'script:bot' WHERE created_by = 'script:agent';
+    UPDATE handoffs SET resolved_by = 'bot' WHERE resolved_by = 'agent';
+    UPDATE events SET actor = 'bot' WHERE actor = 'agent';
+  `)
 }
 
 export function transaction<T>(db: Db, fn: () => T): T {

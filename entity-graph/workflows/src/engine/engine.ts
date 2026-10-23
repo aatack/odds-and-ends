@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { z } from 'zod'
-import type { AgentRun, Handoff, HandoffSpec, Item, ItemDetail, ItemEvent, Overview } from '../shared/types'
+import type { BotRun, Handoff, HandoffSpec, Item, ItemDetail, ItemEvent, Overview } from '../shared/types'
 import { itemActions } from './actions'
 import { migrate, transaction, type Db } from './db'
 import { githubActions, githubSources } from './github'
@@ -14,8 +14,8 @@ import { slackActions } from './slack'
 export const BACKOFF_MINUTES = [1, 2, 5, 10]
 const MINUTE = 60_000
 
-/** What an agent's run returns, as its structured output. */
-export interface AgentOutput {
+/** What a bot's run returns, as its structured output. */
+export interface BotOutput {
   state: string
   next: HandoffSpec[]
   close?: boolean
@@ -51,7 +51,7 @@ const toEvent = (r: Row): ItemEvent => ({
   data: json(r.data),
 })
 
-const toRun = (r: Row): AgentRun => ({
+const toRun = (r: Row): BotRun => ({
   id: r.id as string,
   itemId: r.item_id as string,
   handoffId: r.handoff_id as string,
@@ -63,8 +63,8 @@ const toRun = (r: Row): AgentRun => ({
   result: (r.result as string) ?? null,
 })
 
-/** A human set it, or the system did on their behalf; anything else is an agent's. */
-const authorOf = (createdBy: string): Author => (createdBy === 'agent' || createdBy === 'script:agent' ? 'agent' : 'human')
+/** A human set it, or the system did on their behalf; anything else is a bot's. */
+const authorOf = (createdBy: string): Author => (createdBy === 'bot' || createdBy === 'script:bot' ? 'bot' : 'human')
 
 /** A line saying how a handoff resolved, for the history and the default handoff. */
 export function describeResolution(h: Handoff): string {
@@ -232,12 +232,12 @@ export class Engine extends EventEmitter {
         state: item.state,
         handoffs: handoffs.map((h) => h.type),
         minutesOn: Object.fromEntries(Object.entries(minutes).map(([k, v]) => [k, Math.round(v)])),
-        agentRuns: Number(runs.n),
+        botRuns: Number(runs.n),
         costUsd: (runs.cost as number) ?? 0,
         humanDecisions: handoffs.filter((h) => h.type === 'human' && h.resolvedBy === 'human').length,
         approvalsChanged: handoffs.filter((h) => ((h.resolution?.action as { changed?: string[] })?.changed ?? []).length).length,
         timedOut: handoffs.filter((h) => h.resolution?.outcome === 'timed_out').length,
-        agentFailures: handoffs.filter((h) => h.type === 'agent' && h.resolution?.error).length,
+        botFailures: handoffs.filter((h) => h.type === 'bot' && h.resolution?.error).length,
         handledOutside: events.filter((e) => e.kind === 'handled_outside').map((e) => e.text),
       }
     })
@@ -351,7 +351,7 @@ export class Engine extends EventEmitter {
             const prepared = this.prepare(next, ctx.author)
             transaction(this.db, () => {
               this.resolve(handoff.id, resolution, 'system')
-              this.enqueue(itemId, prepared, handoff.createdBy === 'agent' ? 'script:agent' : 'script')
+              this.enqueue(itemId, prepared, handoff.createdBy === 'bot' ? 'script:bot' : 'script')
             })
           }
         } catch (e) {
@@ -387,7 +387,7 @@ export class Engine extends EventEmitter {
         .run(id, title, opts.source ?? 'manual', opts.ref ?? null, opts.url ?? null, opts.state ?? '', at, at) as { changes: number | bigint }
       if (Number(r.changes) === 0) return false
       this.record(id, actor, 'created', title, { source: opts.source ?? 'manual', url: opts.url ?? null })
-      this.enqueue(id, next, opts.author === 'agent' ? 'agent' : actor)
+      this.enqueue(id, next, opts.author === 'bot' ? 'bot' : actor)
       return true
     })
     if (!created) return null
@@ -418,7 +418,7 @@ export class Engine extends EventEmitter {
         if (opts.replaceQueue) this.cancelQueue(itemId)
         this.enqueue(itemId, next, actor)
       })
-      if (item.current?.type === 'agent' && item.worker !== null) this.onCancel(itemId)
+      if (item.current?.type === 'bot' && item.worker !== null) this.onCancel(itemId)
     })
     await this.advance(itemId)
   }
@@ -457,7 +457,7 @@ export class Engine extends EventEmitter {
         this.cancelQueue(itemId)
         this.db.prepare('UPDATE items SET closed = 1, updated_at = ? WHERE id = ?').run(this.now(), itemId)
       })
-      if (item.current?.type === 'agent' && item.worker !== null) this.onCancel(itemId)
+      if (item.current?.type === 'bot' && item.worker !== null) this.onCancel(itemId)
     })
     // Items waiting on this one are checked at once rather than at their next turn.
     this.db.prepare("UPDATE handoffs SET next_check_at = ? WHERE status = 'active' AND type = 'items'").run(this.now())
@@ -489,14 +489,14 @@ export class Engine extends EventEmitter {
     return this.handOff(id, { next: [{ type: 'human', params: { needed: 'You took this over. What next?' } }] })
   }
 
-  // ---- agents ----
+  // ---- bots ----
 
-  /** Gives `worker` the agent handoff that has waited longest, or null. */
+  /** Gives `worker` the bot handoff that has waited longest, or null. */
   claim(worker: number): { item: Item; handoff: Handoff } | null {
     const r = this.db
       .prepare(
         `SELECT h.item_id FROM handoffs h JOIN items i ON i.id = h.item_id
-         WHERE h.status = 'active' AND h.type = 'agent' AND i.worker IS NULL ORDER BY h.started_at LIMIT 1`,
+         WHERE h.status = 'active' AND h.type = 'bot' AND i.worker IS NULL ORDER BY h.started_at LIMIT 1`,
       )
       .get() as Row | undefined
     if (!r) return null
@@ -546,34 +546,34 @@ export class Engine extends EventEmitter {
       return // the human took it back while it ran
     }
 
-    let out: AgentOutput | null = null
+    let out: BotOutput | null = null
     let error = end.error ?? null
     let next: HandoffSpec[] = []
     if (!error) {
       try {
         out = z
           .object({ state: z.string(), next: z.array(z.object({ type: z.string(), params: z.record(z.unknown()) })), close: z.boolean().optional() })
-          .parse(end.structured) as AgentOutput
+          .parse(end.structured) as BotOutput
         if (!out.close && !out.next.length) throw new Error('It returned no handoffs and did not close the item.')
-        next = this.prepare(out.next, 'agent')
+        next = this.prepare(out.next, 'bot')
       } catch (e) {
-        error = `The agent's output was not usable: ${(e as Error).message}`
+        error = `The bot's output was not usable: ${(e as Error).message}`
       }
     }
     const base = { output: end.output ?? '', runId, ...(end.costUsd !== undefined ? { costUsd: end.costUsd } : {}) }
     await this.serial(itemId, async () => {
       transaction(this.db, () => {
         if (error || !out) {
-          this.resolve(item.current!.id, { ...base, error }, 'agent')
+          this.resolve(item.current!.id, { ...base, error }, 'bot')
           this.enqueue(itemId, [{ type: 'human', params: { needed: `${error} What next?` } }], 'system')
           return
         }
-        if (out.state !== item.state) this.setStateRow(itemId, out.state, 'agent')
-        this.resolve(item.current!.id, { ...base, state: out.state }, 'agent')
+        if (out.state !== item.state) this.setStateRow(itemId, out.state, 'bot')
+        this.resolve(item.current!.id, { ...base, state: out.state }, 'bot')
         if (out.close) {
           this.cancelQueue(itemId)
           this.db.prepare('UPDATE items SET closed = 1, updated_at = ? WHERE id = ?').run(this.now(), itemId)
-        } else this.enqueue(itemId, next, 'agent')
+        } else this.enqueue(itemId, next, 'bot')
       })
     })
     if (out?.close) {

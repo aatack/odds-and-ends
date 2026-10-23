@@ -26,8 +26,8 @@ interface HandoffType {                                     // src/engine/integr
 }
 ```
 
-Human and agent handoffs have no hooks. They resolve when the human acts, or when
-the agent's run ends. A wait resolves on `check`, or as `{ outcome: 'timed_out' }`
+Human and bot handoffs have no hooks. They resolve when the human acts, or when
+the bot's run ends. A wait resolves on `check`, or as `{ outcome: 'timed_out' }`
 after `timeout_minutes`. Waits are checked as they start, then after 1, 2, 5, then
 every 10 minutes.
 
@@ -39,13 +39,13 @@ already. That is how a chain is built and then extended.
 | type | params | resolves | resolution |
 | --- | --- | --- | --- |
 | `human` | `needed`: one direct question or request; `approval?`: `{ action, inputs }` | when the human hands off, approves, or closes | `{ decision: handed_off \| approved \| closed \| handled_outside, note?, action?: { name, proposed, inputs, changed, output } }` |
-| `agent` | `instructions` | when its `claude -p` run ends | `{ state, output, runId, costUsd }`, or `{ error, output }` |
+| `bot` | `instructions` | when its `claude -p` run ends | `{ state, output, runId, costUsd }`, or `{ error, output }` |
 | `github` | `repo`, `number`, `until`: `checks \| activity \| closed`, `timeout_minutes?` | on `check` | `{ outcome: passed \| failed \| activity \| merged \| closed \| timed_out, detail, failed? }` |
 | `slack` | `channel`, `workspace?`, `message?`, `thread_ts?`, `timeout_minutes?` | on somebody else's reply in the thread | `{ outcome: replied \| timed_out, channel, thread_ts, replies, detail }` |
 | `items` | `item_ids` | when every one has closed | `{ outcome: closed \| timed_out, items: { id, title, state }[] }` |
 | `script` | `source`, `description?` | at once | `{ next, logs }` |
 
-- **A slack handoff with a message that an agent sets** is expanded into a human
+- **A slack handoff with a message that a bot sets** is expanded into a human
   approval of `slack_post`, then the wait. The wait takes its thread from what was posted.
 - **A script** is a function expression, `async (input, actions) => handoffs`:
   - `input` is `{ item, previous, history }`. `previous` is the handoff resolved
@@ -60,22 +60,22 @@ There is one list of **actions** (`src/engine/actions.ts`, `github.ts`,
 through `Engine.callAction`. Each action checks who is calling:
 
 - An **outward** action is one other people see. Only a human may run one. An
-  agent asks for one as a human handoff's `approval`.
-- An **agent**, or a script an agent wrote, may change only the item it is
+  bot asks for one as a human handoff's `approval`.
+- An **bot**, or a script a bot wrote, may change only the item it is
   working on.
-- `hand_off` and `close_item` are only for a human. An agent hands an item on by
+- `hand_off` and `close_item` are only for a human. A bot hands an item on by
   returning `{ state, next, close? }` as its structured output. The schema it is
   given is every handoff type's params, so it cannot return one that doesn't
   exist. A script hands on by returning handoffs.
 
 ## Example
 
-An agent pushes a fix and returns:
+A bot pushes a fix and returns:
 
 ```json
 { "state": "Fixed e2e; CI running.",
   "next": [
     { "type": "github", "params": { "repo": "o/r", "number": 7, "until": "checks" } },
-    { "type": "script", "params": { "source": "async ({ previous }) => previous.resolution.outcome === 'failed' ? { type: 'agent', params: { instructions: 'Fix: ' + previous.resolution.failed.join(', ') } } : { type: 'human', params: { needed: 'Merge o/r#7?', approval: { action: 'github_pr_merge', inputs: { repo: 'o/r', number: 7, method: 'squash' } } } }" } }
+    { "type": "script", "params": { "source": "async ({ previous }) => previous.resolution.outcome === 'failed' ? { type: 'bot', params: { instructions: 'Fix: ' + previous.resolution.failed.join(', ') } } : { type: 'human', params: { needed: 'Merge o/r#7?', approval: { action: 'github_pr_merge', inputs: { repo: 'o/r', number: 7, method: 'squash' } } } }" } }
   ] }
 ```

@@ -1,4 +1,4 @@
-// JSON Schema from the zod shapes: for the forms, the docs, and the agents'
+// JSON Schema from the zod shapes: for the forms, the docs, and the bots'
 // structured output.
 
 import { z } from 'zod'
@@ -20,7 +20,7 @@ function clean(node: unknown): unknown {
 export const objectSchema = (shape: z.ZodRawShape): ObjectSchema =>
   clean(zodToJsonSchema(z.object(shape), { $refStrategy: 'none' })) as ObjectSchema
 
-/** One handoff of any type, as the agents return them. */
+/** One handoff of any type, as the bots return them. */
 export function handoffSchema(types: HandoffType[]): Record<string, unknown> {
   return {
     anyOf: types.map((t) => ({
@@ -34,8 +34,8 @@ export function handoffSchema(types: HandoffType[]): Record<string, unknown> {
   }
 }
 
-/** What an agent's run must return. */
-export function agentOutputSchema(types: HandoffType[]): Record<string, unknown> {
+/** What a bot's run must return. */
+export function botOutputSchema(types: HandoffType[]): Record<string, unknown> {
   return {
     type: 'object',
     properties: {

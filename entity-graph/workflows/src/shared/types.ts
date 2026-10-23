@@ -1,7 +1,7 @@
 // The shapes the main process and the renderer both read. docs/handoffs.md is
 // the long form of what a handoff is.
 
-export type HandoffKind = 'human' | 'agent' | 'github' | 'slack' | 'items' | 'script'
+export type HandoffKind = 'human' | 'bot' | 'github' | 'slack' | 'items' | 'script'
 
 /** A handoff as it is set: what is to happen next, and so who does it. */
 export interface HandoffSpec {
@@ -20,7 +20,7 @@ export interface Handoff extends HandoffSpec {
   id: string
   itemId: string
   status: HandoffStatus
-  /** Who set it: 'human', 'agent', 'system', or a source's id. */
+  /** Who set it: 'human', 'bot', 'system', or a source's id. */
   createdBy: string
   createdAt: number
   startedAt: number | null
@@ -63,7 +63,7 @@ export interface ItemEvent {
   data: Record<string, unknown> | null
 }
 
-export interface AgentRun {
+export interface BotRun {
   id: string
   itemId: string
   handoffId: string
@@ -80,7 +80,7 @@ export interface ItemDetail {
   /** Every handoff, in order: resolved, active, queued. */
   handoffs: Handoff[]
   events: ItemEvent[]
-  runs: AgentRun[]
+  runs: BotRun[]
 }
 
 export interface Overview {
@@ -110,7 +110,7 @@ export interface ToolInfo {
 }
 
 export interface ActionInfo extends ToolInfo {
-  /** Seen by other people: an agent, or an agent's script, must hand off for approval instead. */
+  /** Seen by other people: a bot, or a bot's script, must hand off for approval instead. */
   outward: boolean
 }
 
