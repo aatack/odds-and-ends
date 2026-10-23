@@ -31,23 +31,6 @@ const NO_TIMES: EventTimes = {
   added: null, firstChecked: null, lastChecked: null, checks: 0, firstRunStarted: null, firstRunEnded: null, runs: 0, resolved: null,
 }
 
-const toEvent = (r: Row, times: EventTimes = NO_TIMES): ItemEvent => ({
-  id: r.id as string,
-  itemId: r.item_id as string,
-  type: r.type as ItemEvent['type'],
-  params: json(r.params) ?? {},
-  createdBy: r.created_by as string,
-  createdAt: r.created_at as number,
-  resolved: Boolean(r.resolved),
-  resolvedAt: (r.resolved_at as number) ?? null,
-  resolvedBy: (r.resolved_by as string) ?? null,
-  cancelled: Boolean(r.cancelled),
-  data: json(r.data),
-  nextCheckAt: (r.next_check_at as number) ?? null,
-  lastError: (r.last_error as string) ?? null,
-  times,
-})
-
 const toTrace = (r: Row): TraceEntry => ({
   id: r.id as number,
   at: r.at as number,
@@ -86,12 +69,11 @@ function resolveRefs(value: unknown, ids: Map<string, string>, key?: string): un
   return value
 }
 
-/** A line saying what an event is or came to, for prompts. */
+/** An event as a prompt line: when, who, what it is, and (once resolved) what it came to, with its data for the details. */
 export function describeEvent(e: ItemEvent): string {
-  const d = e.data ?? {}
-  const what = e.type === 'message' ? String(e.params.text) : JSON.stringify(e.params)
-  const came = e.resolved && e.type !== 'message' ? ` → ${e.cancelled ? 'cancelled' : JSON.stringify({ ...d, output: undefined })}` : ''
-  return `${new Date(e.createdAt).toISOString()} ${e.createdBy} ${e.type} [${e.id}]: ${what}${came}`
+  const when = new Date(e.createdAt).toISOString()
+  const came = !e.resolved || e.type === 'message' ? '' : ` → ${e.message ?? 'done'}${e.data ? ` ${JSON.stringify({ ...e.data, output: undefined })}` : ''}`
+  return `${when} ${e.createdBy} ${e.type} [${e.id}]: ${e.summary}${e.resolved ? '' : ' (open)'}${came}`
 }
 
 export interface EngineOptions {
@@ -159,15 +141,44 @@ export class Engine extends EventEmitter {
 
   // ---- reads ----
 
+  /** A row as the shared event shape, its text filled in by its type. */
+  private toEvent(r: Row, times: EventTimes = NO_TIMES): ItemEvent {
+    const type = this.type(r.type as string)
+    const params: Record<string, unknown> = json(r.params) ?? {}
+    const data: Record<string, unknown> | null = json(r.data)
+    const resolved = Boolean(r.resolved)
+    const cancelled = Boolean(r.cancelled)
+    const summary = type.describe(params)
+    return {
+      id: r.id as string,
+      itemId: r.item_id as string,
+      type: type.type,
+      params,
+      createdBy: r.created_by as string,
+      createdAt: r.created_at as number,
+      resolved,
+      resolvedAt: (r.resolved_at as number) ?? null,
+      resolvedBy: (r.resolved_by as string) ?? null,
+      cancelled,
+      data,
+      actor: (type.blocking ? (r.resolved_by as string) : null) ?? (r.created_by as string),
+      summary,
+      message: !resolved ? null : cancelled ? `Cancelled: ${summary}` : type.said ? type.said(params, data ?? {}) : summary,
+      nextCheckAt: (r.next_check_at as number) ?? null,
+      lastError: (r.last_error as string) ?? null,
+      times,
+    }
+  }
+
   event(id: string): ItemEvent | null {
     const r = this.db.prepare('SELECT * FROM events WHERE id = ?').get(id) as Row | undefined
-    return r ? toEvent(r, this.times(r.item_id as string).get(id)) : null
+    return r ? this.toEvent(r, this.times(r.item_id as string).get(id)) : null
   }
 
   events(itemId: string): ItemEvent[] {
     const times = this.times(itemId)
     return (this.db.prepare('SELECT * FROM events WHERE item_id = ? ORDER BY seq').all(itemId) as Row[]).map((r) =>
-      toEvent(r, times.get(r.id as string)),
+      this.toEvent(r, times.get(r.id as string)),
     )
   }
 
@@ -196,7 +207,7 @@ export class Engine extends EventEmitter {
   private toItem(r: Row): Item {
     const times = this.times(r.id as string)
     const blockers = (this.db.prepare('SELECT * FROM events WHERE item_id = ? AND resolved = 0 ORDER BY seq').all(r.id) as Row[]).map((e) =>
-      toEvent(e, times.get(e.id as string)),
+      this.toEvent(e, times.get(e.id as string)),
     )
     const last = this.db
       .prepare('SELECT MAX(MAX(created_at), COALESCE(MAX(resolved_at), 0)) AS at FROM events WHERE item_id = ?')
@@ -423,7 +434,7 @@ export class Engine extends EventEmitter {
   /** Runs the start hooks of the item's new blockers. */
   private startPending(itemId: string): Promise<void> {
     return this.serial(itemId, async () => {
-      const pending = (this.db.prepare('SELECT * FROM events WHERE item_id = ? AND started = 0 AND resolved = 0').all(itemId) as Row[]).map((r) => toEvent(r))
+      const pending = (this.db.prepare('SELECT * FROM events WHERE item_id = ? AND started = 0 AND resolved = 0').all(itemId) as Row[]).map((r) => this.toEvent(r))
       for (const event of pending) {
         this.db.prepare('UPDATE events SET started = 1 WHERE id = ?').run(event.id)
         try {
@@ -431,7 +442,7 @@ export class Engine extends EventEmitter {
           if (out?.params) this.db.prepare('UPDATE events SET params = ? WHERE id = ?').run(JSON.stringify(out.params), event.id)
           if (out?.resolve) this.resolve(event.id, out.resolve, 'system')
         } catch (e) {
-          this.resolve(event.id, { error: (e as Error).message, detail: `Could not start: ${(e as Error).message}` }, 'system')
+          this.resolve(event.id, { outcome: 'error', error: (e as Error).message, detail: `Could not start: ${(e as Error).message}` }, 'system')
         }
       }
       this.emit('change')
@@ -506,7 +517,7 @@ export class Engine extends EventEmitter {
     const changed = Object.keys({ ...proposed, ...inputs }).filter((k) => String(inputs[k] ?? '') !== String(proposed[k] ?? ''))
     const name = String(event.params.action)
     const output = await this.callAction(name, inputs, { engine: this, author: 'human', actor: 'human', itemId: event.itemId, runId: null, approving: true })
-    this.resolve(eventId, { ran: true, action: name, inputs, changed, output, detail: `Ran ${name}${changed.length ? ` (changed ${changed.join(', ')})` : ''}` }, 'human')
+    this.resolve(eventId, { ran: true, inputs, changed, output }, 'human')
     this.emit('change')
     await this.idle()
   }
@@ -650,8 +661,7 @@ export class Engine extends EventEmitter {
     const base = { runId, output: end.output ?? '', ...(end.costUsd !== undefined ? { costUsd: end.costUsd } : {}) }
     transaction(this.db, () => {
       if (error || !out) {
-        for (const id of open) this.resolve(id, { ...base, error, detail: error }, 'bot')
-        this.add(itemId, [{ type: 'message', params: { text: error ?? 'The bot failed.' } }], 'system')
+        for (const id of open) this.resolve(id, { ...base, error: error ?? 'The bot failed.' }, 'bot')
         return
       }
       if (out.message) this.add(itemId, [{ type: 'message', params: { text: out.message } }], 'bot')
@@ -682,7 +692,7 @@ export class Engine extends EventEmitter {
     return this.serial(itemId, async () => {
       const row = this.db.prepare('SELECT * FROM events WHERE id = ? AND resolved = 0').get(eventId) as Row | undefined
       if (!row || (row.next_check_at as number) > this.now()) return
-      const event = toEvent(row)
+      const event = this.toEvent(row)
       const type = this.type(event.type)
       let data: Record<string, unknown> | null = null
       let error: string | null = null

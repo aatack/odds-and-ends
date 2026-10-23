@@ -65,17 +65,33 @@ export interface EventContext {
 }
 
 /**
- * One kind of event. A plain one (`blocking: false`) resolves as it is added. A
- * blocker stays unresolved until `check` answers its data, or something resolves
- * it from outside: a bot's run ending, the human approving, a cancel.
+ * One kind of event: everything that differs from one kind to the next. The
+ * rest (who, when, resolved or not) is the same for all; see ItemEvent.
+ *
+ * A plain type (`blocking: false`) resolves as it is added. A blocker stays
+ * open until `check` answers its data, or something resolves it from outside:
+ * a bot's run ending, the human approving, a cancel.
+ *
+ * To add one: write it in eventTypes.ts, add its name to EventKind, give it an
+ * icon in the renderer's icons.tsx, and a row in docs/events.md.
  */
 export interface EventType {
   type: EventKind
+  /** What it is for, for the bots (event_types) and the MCP page. */
   description: string
+  /** What it takes. Checked as it is added. */
   params: z.ZodRawShape
-  /** What it resolves with, for the docs and the bots. */
+  /** What it resolves with, in words, for the docs and the bots. */
   data: string
   blocking: boolean
+  /** One line saying what it is, from its params: the row in the blockers panel, and how a prompt names it. */
+  describe: (params: Record<string, unknown>) => string
+  /**
+   * What it says in the chat once it has resolved (not called when cancelled:
+   * a cancel reads the same for every type). Null to say nothing, as a bot event
+   * does, whose reply is a message event of its own. Left out, it says `describe`.
+   */
+  said?: (params: Record<string, unknown>, data: Record<string, unknown>) => string | null
   /** A blocker the human resolves (an approval): while only these are open, the item is still the human's. */
   human?: boolean
   /** May a bot add it, in its output? */

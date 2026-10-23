@@ -1,7 +1,7 @@
 import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { Catalog, ItemDetail, ItemEvent } from '../../shared/types'
-import { minutes, summary } from './Chat'
+import { minutes } from './Chat'
 import { Form, withHints } from './forms'
 import { TypeIcon } from './icons'
 import { api } from './useWorkflows'
@@ -45,7 +45,7 @@ function Row({ b, detail, catalog, act, now }: { b: ItemEvent; detail: ItemDetai
     <div className="blocker">
       <div className="blocker-line">
         <TypeIcon type={b.type} />
-        <span className="blocker-text">{summary(b)}</span>
+        <span className="blocker-text">{b.summary}</span>
         <span className="muted blocker-age" title={new Date(b.createdAt).toLocaleString()}>
           {status && `${status} · `}for {minutes(Math.max(0, now - b.createdAt))}
         </span>

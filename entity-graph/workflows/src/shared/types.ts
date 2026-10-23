@@ -15,23 +15,44 @@ export interface EventSpec {
   ref?: string
 }
 
+/**
+ * One event on one item: the interface every type shares. docs/events.md has
+ * the table. What an event *is* (its params, data, and how it reads) depends
+ * on its type; everything else here is the same for all of them.
+ */
 export interface ItemEvent {
   id: string
+  /** The item it belongs to. */
   itemId: string
   type: EventKind
+  /** What it was given, as its type's params schema says. */
   params: Record<string, unknown>
-  /** Who added it: 'human', 'bot', 'system', 'script', 'mcp', or a source's id. */
+
+  /** Who added it: 'human', 'bot', 'system', 'script', 'script:bot', 'mcp', or a source's id. */
   createdBy: string
   createdAt: number
+
+  /** It has happened (or was cancelled). A plain event is resolved as it is added. */
   resolved: boolean
   resolvedAt: number | null
+  /** Who resolved it: the human (approving), a bot (its run ending), 'system' (a check), or as createdBy for a plain event. */
   resolvedBy: string | null
+  /** Resolved without happening. */
   cancelled: boolean
-  /** What it resolved with. */
+  /** What it resolved with, as its type's data says; null while open. */
   data: Record<string, unknown> | null
-  /** For the blockers the loop checks. */
+
+  /** Who made it happen: resolvedBy for a blocker, createdBy for a plain event. The chat puts the human's on the right. */
+  actor: string
+  /** One line saying what it is, from its type's `describe`: a blocker's row while open, and how prompts name it. */
+  summary: string
+  /** What it says in the chat once resolved, from its type's `said`; null while open, or when it says nothing. */
+  message: string | null
+
+  /** For the blockers the loop checks: when next, and what went wrong last. */
   nextCheckAt: number | null
   lastError: string | null
+  /** Its timeline, read from the trace. */
   times: EventTimes
 }
 

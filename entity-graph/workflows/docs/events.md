@@ -16,22 +16,52 @@ When it resolves, it keeps its **data**.
 
 ## The interface
 
-```ts
-interface EventSpec { type: EventKind; params: Record<string, unknown>; ref?: string }  // what is added
+Every event has the same shape, whatever its type: `ItemEvent`, in
+`src/shared/types.ts`. A type decides only what its `params` and `data` hold,
+how it reads (`summary`, `message`), and whether and how it waits.
 
-interface EventType {                                      // src/engine/integrations.ts
-  type; description; params: ZodRawShape; data: string
-  blocking: boolean                                        // false: resolves as it is added
-  human?: boolean                                          // a blocker the human resolves
-  bots?: boolean                                           // a bot may add it
-  expand?(params, author): EventSpec[]                     // as it is added, e.g. an approval in front
-  start?(params, ctx): Promise<{ params?, resolve? }>      // as it is added: may change params, or resolve
-  check?(params, ctx): Promise<data | null>                // a wait: polled with backoff
-}
-```
+### Every event (`ItemEvent`)
 
-`ref` names an event within the list it is added with. An `after` in the same list
-can then wait for it, using the ref in place of an id.
+| field | what it is |
+| --- | --- |
+| `id` | Its id. `after` events and the trace refer to it. |
+| `itemId` | The item it belongs to. |
+| `type` | Its type: one of the table below. |
+| `params` | What it was given, as its type's params schema says. |
+| `createdBy`, `createdAt` | Who added it, and when: `human`, `bot`, `system`, `script`, `script:bot`, `mcp`, or a source's id. |
+| `resolved`, `resolvedAt`, `resolvedBy` | Whether it has happened, when, and who resolved it. A plain event is resolved by whoever added it, as it is added. |
+| `cancelled` | Resolved without happening. |
+| `data` | What it resolved with, as its type's data says. Null while it is open. |
+| `actor` | Who made it happen: `resolvedBy` for a blocker, `createdBy` for a plain event. The chat puts the human's (and an MCP client's) on the right. |
+| `summary` | One line saying what it is, from its type's `describe`. This is a blocker's row while it is open, and how prompts name it. |
+| `message` | What it says in the chat once resolved, from its type's `said`, or `Cancelled: …` when cancelled. Null while open, or when it says nothing. |
+| `nextCheckAt`, `lastError` | For blockers the loop checks: when the next check is, and what went wrong on the last one. |
+| `times` | Its timeline from the trace: added, first and last checked, bot run started and finished, resolved. |
+
+Events are ordered within their item by when they were added. Events added
+together keep the order they were given in.
+
+### Every type (`EventType`)
+
+Defined in `src/engine/integrations.ts` and written in `src/engine/eventTypes.ts`.
+
+| member | what it is |
+| --- | --- |
+| `type`, `description` | Its name, and what it is for (shown to bots by `event_types`, and on the MCP page). |
+| `params` | A zod shape. Params are checked against it as the event is added. |
+| `data` | What it resolves with, in words. |
+| `blocking` | False: it resolves as it is added. True: it is a blocker. |
+| `human` | A blocker the human resolves. While only these are open (and afters waiting on them), it is the human's turn. |
+| `bots` | A bot may add it in its output. |
+| `describe(params)` | Its `summary`. |
+| `said(params, data)` | Its `message` once resolved; null for nothing. Left out, it says its summary. Not called when the event is cancelled. |
+| `expand(params, author)` | Optional: turns it into the events actually added. For example, a bot's Slack message becomes an approval and a wait. |
+| `start(params, ctx)` | Optional: runs as it is added. It may change the params (such as finding a PR by its title), or resolve the event at once. |
+| `check(params, ctx)` | Optional, for waits: answers the data once the event has happened, or null while it hasn't. Polled with backoff. |
+
+**To add a type:** write it in `eventTypes.ts` and add its name to `EventKind`.
+Give it an icon in the renderer's `icons.tsx`, and a row in the table below. If
+the chat input should offer it, add a preset in `presets.ts`.
 
 ## Types
 

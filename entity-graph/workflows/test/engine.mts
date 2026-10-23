@@ -172,6 +172,8 @@ const approval = item(id).blockers.find((b) => b.type === 'approval')!
 await engine.approve(approval.id, { repo: 'o/r', number: 7, body: 'Thanks a lot!' })
 assert.deepEqual(ghCalls.at(-1), ['pr', 'comment', '7', '-R', 'o/r', '--body', 'Thanks a lot!'])
 assert.deepEqual(engine.event(approval.id)!.data!.changed, ['body'])
+assert.equal(engine.event(approval.id)!.message, 'Ran github_pr_comment (changed body)')
+assert.equal(engine.event(approval.id)!.actor, 'human')
 await settle()
 assert.deepEqual(blockers(id), ['github', 'after'])
 assert.ok(!item(id).withHuman)
@@ -209,6 +211,22 @@ await tick()
 assert.deepEqual(blockers(id), [])
 assert.ok(item(id).withHuman)
 assert.equal(engine.next(engine.overview().items.filter((i) => i.id !== id).map((i) => i.id)), id)
+
+// Every event reads the same way, whatever its type: a summary always, a message once resolved.
+{
+  const all = engine.events(id)
+  assert.ok(all.every((e) => typeof e.summary === 'string' && e.summary.length))
+  assert.ok(all.filter((e) => !e.resolved).every((e) => e.message === null))
+  const ci = all.find((e) => e.type === 'github')!
+  assert.equal(ci.summary, 'o/r#7: until checks')
+  assert.match(ci.message!, /1 of 2 checks failed: e2e/)
+  assert.equal(ci.actor, 'system')
+  assert.equal(all.find((e) => e.type === 'bot')!.message, null, "a bot's reply is its own message")
+  assert.deepEqual(
+    all.filter((e) => e.type === 'message').map((e) => [e.actor, e.message]),
+    [['human', 'Reply to the PR, please'], ['bot', 'Drafted a reply. Post it?'], ['bot', 'Fixed e2e.']],
+  )
+}
 
 // The trace has every moment.
 {
@@ -292,8 +310,7 @@ const bad = (await engine.create('Bad'))!
 behaviours.push(async () => ({ events: [{ type: 'message', params: { text: 'not allowed' } }] }) as BotOutput)
 await engine.send(bad, 'bot', 'x')
 await settle()
-assert.match(String(last(bad, 'message').params.text), /may not add a message/)
-assert.equal(last(bad, 'message').createdBy, 'system')
+assert.match(last(bad, 'bot').message!, /^The bot failed: .*may not add a message/)
 assert.ok(last(bad, 'bot').data!.error)
 await engine.handledOutside(bad)
 
@@ -349,6 +366,7 @@ await engine.cancel(last(taken, 'bot').id)
 release()
 await settle()
 assert.ok(last(taken, 'bot').cancelled)
+assert.equal(last(taken, 'bot').message, 'Cancelled: A bot takes it up')
 assert.ok(!item(taken).closed, "a run that was cancelled doesn't land")
 assert.ok(item(taken).withHuman)
 

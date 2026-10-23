@@ -16,6 +16,7 @@ export const message: EventType = {
   params: { text: z.string() },
   data: '{}',
   blocking: false,
+  describe: (p) => String(p.text),
 }
 
 export const action: EventType = {
@@ -24,6 +25,7 @@ export const action: EventType = {
   params: { name: z.string(), inputs: z.record(z.unknown()), output: z.unknown().optional() },
   data: '{}',
   blocking: false,
+  describe: (p) => `Ran ${p.name}`,
 }
 
 export const closed: EventType = {
@@ -32,6 +34,7 @@ export const closed: EventType = {
   params: { how: z.enum(['closed', 'handled_outside']) },
   data: '{}',
   blocking: false,
+  describe: (p) => (p.how === 'handled_outside' ? 'Done outside the tool' : 'Closed'),
 }
 
 export const approval: EventType = {
@@ -43,10 +46,12 @@ export const approval: EventType = {
     inputs: z.record(z.unknown()).describe('Its inputs, filled in as far as you can. The human may change them.'),
     reason: z.string().optional().describe('Why, in a line.'),
   },
-  data: '{ ran: true, inputs, changed: string[], output } or { cancelled: true }',
+  data: '{ ran: true, inputs, changed: string[], output }',
   blocking: true,
   human: true,
   bots: true,
+  describe: (p) => String(p.reason ?? `Run ${p.action}?`),
+  said: (p, d) => `Ran ${p.action}${(d.changed as string[] | undefined)?.length ? ` (changed ${(d.changed as string[]).join(', ')})` : ''}`,
 }
 
 export const bot: EventType = {
@@ -57,6 +62,9 @@ export const bot: EventType = {
   data: '{ runId, message?, costUsd?, output } or { error }',
   blocking: true,
   bots: true,
+  describe: (p) => String(p.instructions ?? 'A bot takes it up'),
+  // Its reply is a message event of its own; only a failure needs saying here.
+  said: (_p, d) => (d.error ? `The bot failed: ${d.error}` : null),
 }
 
 export const github: EventType = {
@@ -66,6 +74,9 @@ export const github: EventType = {
   data: '{ outcome: "passed" | "failed" | "activity" | "merged" | "closed" | "not_found" | "timed_out", detail, failed? }',
   blocking: true,
   bots: true,
+  describe: (p) =>
+    p.repo && p.number ? `${p.repo}#${p.number}${p.title ? ` ${p.title}` : ''}: until ${p.until}` : `“${p.query}”: until ${p.until}`,
+  said: (p, d) => String(d.detail ?? d.outcome),
   start: (p, { engine }) => startPr(p, engine.exec),
   check: (p, { engine }) => checkPr(p, engine.exec),
 }
@@ -87,6 +98,8 @@ export const slack: EventType = {
       { type: 'after', params: { event: ref, then: [{ type: 'slack', params: { ...rest, thread_of: ref } }] } },
     ]
   },
+  describe: (p) => `${p.message ? `Post “${p.message}”, then w` : 'W'}ait for a reply in ${p.channel}`,
+  said: (_p, d) => String(d.detail ?? d.outcome),
   start: async (p, { engine, item }) => startSlack(p, engine, item.id),
   check: (p, { engine }) => checkSlack(p, engine),
 }
@@ -98,6 +111,8 @@ export const items: EventType = {
   data: '{ outcome: "closed" | "timed_out", items: { id, title }[] }',
   blocking: true,
   bots: true,
+  describe: (p) => `${(p.item_ids as string[]).length} item(s) to close`,
+  said: (_p, d) => String(d.detail ?? d.outcome),
   check: async (p, { engine }) => {
     const found = (p.item_ids as string[]).map((id) => engine.get(id))
     if (found.some((i) => !i || !i.closed)) return null
@@ -123,9 +138,12 @@ export const after: EventType = {
       ),
     description: z.string().optional().describe('What it does, in a line.'),
   },
-  data: '{ added: string[] (ids), logs?: string[] } or { skipped: true } when the event was cancelled',
+  data: '{ added: string[] (ids), logs?: string[] }, { skipped: true } when the event was cancelled, or { error }',
   blocking: true,
   bots: true,
+  describe: (p) => String(p.description ?? 'Then what comes next'),
+  // What it added says itself; only a failed script needs saying.
+  said: (_p, d) => (d.error ? `A script failed: ${d.error}` : null),
   check: async (p, { engine, item, author }) => {
     const waited = engine.event(String(p.event))
     if (!waited) throw new Error(`No event ${p.event}.`)
@@ -146,7 +164,7 @@ export const after: EventType = {
       }
       next = engine.prepare(next, author)
     } catch (e) {
-      return { error: (e as Error).message, detail: (e as Error).message, ...(logs ? { logs } : {}) }
+      return { error: (e as Error).message, ...(logs ? { logs } : {}) }
     }
     const added = engine.add(item.id, next, author === 'bot' ? 'script:bot' : 'script')
     return { added, ...(logs ? { logs } : {}), detail: p.description ? String(p.description) : undefined }
