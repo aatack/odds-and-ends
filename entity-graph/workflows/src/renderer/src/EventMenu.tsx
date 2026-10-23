@@ -1,3 +1,4 @@
+import { autoUpdate, flip, offset, shift, useFloating } from '@floating-ui/react-dom'
 import { useAtom, useSetAtom } from 'jotai'
 import { useEffect, useState, type MouseEvent } from 'react'
 import type { ItemEvent } from '../../shared/types'
@@ -28,6 +29,21 @@ export function EventMenu({ act, skip }: { act: (fn: () => Promise<unknown>) => 
   const attach = useSetAtom(attachingAtom)
   // The event itself, read as the menu opens, for which actions it has.
   const [event, setEvent] = useState<ItemEvent | null>(null)
+  // Placed by Floating UI at the cursor: flipped above it, or shifted along, so it always stays in the window,
+  // and placed again as it grows (its actions come in a moment after it opens).
+  const { refs, floatingStyles } = useFloating({
+    strategy: 'fixed',
+    placement: 'bottom-start',
+    middleware: [offset(2), flip({ padding: 8 }), shift({ padding: 8 })],
+    whileElementsMounted: autoUpdate,
+  })
+  useEffect(() => {
+    if (!menu) return
+    const { x, y } = menu
+    refs.setPositionReference({
+      getBoundingClientRect: () => ({ x, y, left: x, top: y, right: x, bottom: y, width: 0, height: 0 }),
+    })
+  }, [menu, refs])
   useEffect(() => {
     setEvent(null)
     if (menu) void api().eventDetail(menu.id).then((d) => setEvent(d?.event ?? null))
@@ -51,7 +67,7 @@ export function EventMenu({ act, skip }: { act: (fn: () => Promise<unknown>) => 
     setMenu(null)
   }
   return (
-    <div className="menu" style={{ left: menu.x, top: menu.y }} onMouseDown={(e) => e.stopPropagation()}>
+    <div className="menu" ref={refs.setFloating} style={floatingStyles} onMouseDown={(e) => e.stopPropagation()}>
       <button onClick={() => push({ kind: 'event', id: menu.id })}>Open</button>
       <button onClick={() => push({ kind: 'debug', id: menu.id })}>Debug</button>
       {event?.id === menu.id &&
