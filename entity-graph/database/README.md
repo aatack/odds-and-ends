@@ -80,6 +80,7 @@ let top = store.find(main, &Filter::Eq("type".into(), Value::Text("task".into())
   - Undo
 - **Walk:** `walk` is a paginated depth-first walk (type-based follow map, continue/include predicates, step limit, `next` path to resume, read-ahead, optional cache and visited set). See DESIGN.md section 11.1.
 - **Find:** `find` gives a paginated flat list of entities that match a `Filter` (Eq, ranges, contains, prefix, in, null, and/or/not, custom), ordered by entity id, insertion, or a value. See DESIGN.md section 11.2.
+- **Prove:** `prove` shows that an item is reachable from one of a set of roots through a type-keyed relationship map (for example, permissions). It does a backward BFS from the item, returns a shortest path with its links, and answers `Proved`, `NoPath` or `Unknown` (budget). It works on every view. See DESIGN.md section 11.3.
 
 ## Develop
 

@@ -777,6 +777,47 @@ fn find(&self, branch: BranchId, filter: &Filter, options: FindOptions) -> Resul
 
 ---
 
+### 11.3 Prove [CHOSEN, I21]
+
+"Can this person see this object?" Given an item, one or more roots for which permission is known, and the relationships that pass permission down, prove that the item is reachable from a root, and return the path.
+
+```rust
+pub enum ProveStrategy { Backward /* default */, Bidirectional, Walk }
+pub struct ProveOptions { pub max_depth: Option<usize>,   // most links in a proof; default None
+                          pub max_nodes: Option<usize>,   // budget of expanded entities; default None
+                          pub include_archived: bool,     // default false (R23)
+                          pub strategy: ProveStrategy }
+pub struct Proof { pub path: Vec<String>,   // path[0] is a root, the last is the item
+                   pub links: Vec<Link> }   // links[i] joins path[i] and path[i+1], as stored
+pub enum ProveOutcome { Proved(Proof), NoPath, Unknown }
+pub struct ProveStats { pub nodes_visited: usize, pub link_reads: usize, pub value_reads: usize,
+                        pub sql_queries: usize, pub depth_reached: usize }
+pub struct Prove { pub outcome: ProveOutcome, pub stats: ProveStats }
+
+fn prove(&self, branch: BranchId, item: &str, roots: &[&str],
+         relationships: &Follow, options: ProveOptions) -> Result<Prove>;
+```
+
+**Semantics.**
+
+1. **Relationships.** `relationships` has the shape of a walk `Follow` map, read downward from the root: an entity `u` of type `T` can step to `v` by each `(link type, direction)` in `relationships[T]` (`Outbound`: a link `u -> v`; `Inbound`: a link `v -> u`). A proof is `root = p0, p1, ..., pk = item`, where each step `p(i) -> p(i+1)` is a live link of a pair in `relationships[type(p(i))]`. The key is the type of the *upper* entity.
+2. **Backwards.** The search starts at the item and reverses each pair. A candidate parent `u`, found by `(lt, d)` reversed, counts only if `relationships[type(u)]` contains `(lt, d)`. So each layer reads the links of the frontier (one batch) and then the `type` of the new candidates (one batch).
+3. **Archived (R23).** By default every entity on the path must have a live non-null type, the same filter as `links`. So archived entities, and links to them, never form a proof. With `include_archived`, links use `links_including_archived` and the *item* may be archived or untyped. Roots and intermediates still need a type that the map can step from. So an archived root proves only itself.
+4. **Edge cases.** `item` in `roots` gives a depth-0 proof (`path = [item]`, no links) if the item passes rule 3 and the store knows the ID. Unknown IDs and an empty `roots` give `NoPath`, not an error.
+5. **Views.** The view is resolved once per call. All reads are the shared batch reads (`links_with`, a `type`-only `resolve_values_of`) and the shared roll-up, so there is no new SQL. Removed links do not count. A re-added link counts. A link that existed only in the past does not count at the head, but counts on a frozen view or a fork from that time. Branch stacks with open and frozen ranges, merge, pull, rebase, archive/restore and undo all behave as in every other read.
+6. **Shortest.** `Backward` and `Bidirectional` return a shortest proof (fewest links). Ties: the candidates of a layer are sorted by ID, and the smallest root wins. `Walk` returns the first proof that its depth-first search finds; it is valid but not always shortest.
+7. **Limits.** `max_depth`: proofs with more links are not found. When none is within the limit, the answer is `NoPath`, which means "no proof of at most `max_depth` links". `max_nodes`: the most entities whose links the search may read, in total. A layer that would go over the budget is not read. When the budget stops the search and no proof is in hand, the answer is `Unknown`, which is different from `NoPath`. When a proof is in hand (a `Bidirectional` meeting not yet shown to be shortest), that proof is returned. It is valid, but possibly not the shortest.
+8. **Cycles.** Each strategy keeps a visited set, so cycles cost nothing.
+9. **Stats.** `nodes_visited` = entities expanded; `link_reads` / `value_reads` = batch rounds; `sql_queries` = roll-up SQL statements (one per layer interval of the view; ID lookups in `entities` are not counted); `depth_reached` = the deepest layer.
+
+**Strategies.**
+
+- **Backward** (default): layered BFS from the item over the reversed pairs. One batch link read and one batch type read per layer. It never reads the subtrees under the roots.
+- **Bidirectional**: BFS forward from the roots and backward from the item. It expands the shallower side (on a tie, the smaller frontier) and stops when `best <= depth_fwd + depth_bwd`, or when `depth_fwd + depth_bwd >= max_depth`.
+- **Walk**: a depth-first search from the item that uses the walk's loader (`Walker`: per-call cache, read-ahead of 2 layers by 32). The follow map is reversed: each type that is a key of `relationships`, and the item's type, follows all reversed pairs. Walk's follow map is keyed by the type of the *visited* (lower) node, so it cannot express "only if the parent is of type T". The parent-type check therefore runs in prove's DFS loop, on the candidate's `type`, which the read-ahead already loaded. The public `walk` cannot do this: a node that was reached by an invalid step would go into the visited set and hide a valid path.
+
+**Choice of default (BENCHMARKS.md, "Prove").** Backward wins by CPU time in every scenario except one sub-millisecond case (a doc shared with 100 groups, with one group as the root). Bidirectional loses badly when a root has a large fan-out or there are many roots: it must expand the forward side at least once (1M: 11.4 ms vs 0.09 ms, and 51 ms vs 0.3 ms). Walk is never the fastest: it expands one node at a time, and on large no-path searches it costs about 2× Backward.
+
 ## 12. Migration from entity-graph SQLite
 
 1. Open the old file read-only. Write a new file. Do not overwrite a file.
@@ -852,6 +893,7 @@ fn find(&self, branch: BranchId, filter: &Filter, options: FindOptions) -> Resul
 | I20 | `find` (11.2) | Typed `Eq`, numbers and text compared within their kind, case-sensitive text, two-valued null, archived hidden, keyset pages by id. |
 | I16 | R23: entities with no type | Hidden, the same as archived entities. The filter checks the other end of each link. `links_including_archived` skips the filter. |
 | I15 | R4: live merges | `merge` is a frozen snapshot. To follow a branch live, use `pull` with an open range. |
+| I21 | Prove (11.3) | Relationships keyed by the upper entity's type, read downward; the search runs backward from the item. Archived entities never form a proof (`include_archived` relaxes this for the item only). Shortest proof by default. A budget gives `Unknown`, never a false `NoPath`. Default strategy Backward, chosen by measurement. |
 
 ---
 
