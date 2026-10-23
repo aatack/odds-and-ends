@@ -366,7 +366,7 @@ await engine.cancel(last(taken, 'bot').id)
 release()
 await settle()
 assert.ok(last(taken, 'bot').cancelled)
-assert.equal(last(taken, 'bot').message, 'Cancelled: A bot takes it up')
+assert.equal(last(taken, 'bot').message, 'Cancelled: Bot')
 assert.ok(!item(taken).closed, "a run that was cancelled doesn't land")
 assert.ok(item(taken).withHuman)
 

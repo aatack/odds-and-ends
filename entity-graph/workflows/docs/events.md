@@ -71,7 +71,7 @@ the chat input should offer it, add a preset in `presets.ts`.
 | `action` | no | `name`, `inputs`, `output` | — |
 | `closed` | no | `how`: `closed` \| `handled_outside` | — |
 | `approval` | the human's | `action` (unsafe), `inputs`, `reason?` | `{ ran, inputs, changed, output, detail }` |
-| `bot` | yes | `instructions?` | `{ runId, message?, costUsd?, output }` or `{ error }` |
+| `bot` | yes | `instructions?` (it reads as "Bot" without) | `{ runId, message?, costUsd?, output }` or `{ error }` |
 | `github` | yes | `repo`+`number`, or `query`; `until`: `checks` \| `activity` \| `merged`; `timeout_minutes?` | `{ outcome, detail, failed? }` |
 | `slack` | yes | `channel`, `workspace?`, `message?`, `thread_ts?`, `thread_of?`, `timeout_minutes?` | `{ outcome, replies, detail }` |
 | `items` | yes | `item_ids`, `timeout_minutes?` | `{ outcome, items }` |

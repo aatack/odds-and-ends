@@ -12,10 +12,10 @@ const shortTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2
 
 /** The item's open blockers, a row each, with how long each has held it. Above the chat input. */
 export function Blockers({ detail, catalog, act }: { detail: ItemDetail; catalog: Catalog; act: Act }) {
-  // The ages count up while the panel is open.
+  // The ages count up, by the second, while the panel is open.
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 15_000)
+    const t = setInterval(() => setNow(Date.now()), 1_000)
     return () => clearInterval(t)
   }, [])
   const open = detail.item.blockers

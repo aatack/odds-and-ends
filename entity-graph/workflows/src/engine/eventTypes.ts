@@ -62,7 +62,7 @@ export const bot: EventType = {
   data: '{ runId, message?, costUsd?, output } or { error }',
   blocking: true,
   bots: true,
-  describe: (p) => String(p.instructions ?? 'A bot takes it up'),
+  describe: (p) => String(p.instructions ?? 'Bot'),
   // Its reply is a message event of its own; only a failure needs saying here.
   said: (_p, d) => (d.error ? `The bot failed: ${d.error}` : null),
 }

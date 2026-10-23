@@ -4,7 +4,14 @@ import { Avatar } from './icons'
 
 const time = (ms: number) => new Date(ms).toLocaleString()
 const shortTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-export const minutes = (ms: number) => (ms < 60_000 ? `${Math.max(1, Math.round(ms / 1000))}s` : ms < 3_600_000 ? `${Math.round(ms / 60_000)}m` : `${(ms / 3_600_000).toFixed(1)}h`)
+/** A duration to the second: 45s, 3m 07s, 2h 05m. */
+export const minutes = (ms: number) => {
+  const s = Math.floor(ms / 1000)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  if (s < 60) return `${s}s`
+  if (s < 3600) return `${Math.floor(s / 60)}m ${pad(s % 60)}s`
+  return `${Math.floor(s / 3600)}h ${pad(Math.floor(s / 60) % 60)}m`
+}
 
 /** The human, or an outside client acting as them: their events are on the right. */
 const HUMAN = new Set(['human', 'mcp'])
