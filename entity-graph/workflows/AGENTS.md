@@ -8,11 +8,18 @@ building anything for it.
 
 ## Never run the app
 
-Do not start the app (`npm run dev`, `electron-vite`, `electron`) unless the user
-asks. It opens the user's store and starts bot workers that spend real money.
+Do not start the app (`npm start`, `npm run dev`, `electron-vite`, `electron`)
+unless the user asks. It opens the user's store and starts bot workers that spend real money.
 Check work with `npm run typecheck`, `npm run build` and `npm test`.
 `npx tsx test/smoke-claude.mts` does one real `claude -p` run, headless, against
 an in-memory store; it costs a run, so use it only when the bot wiring changes.
+
+## Running it (for the user)
+
+`npm start` builds once and runs the built app, watching nothing: bots can edit
+and build the code (in their worktrees) without restarting the app under
+themselves. `npm run dev` hot-reloads, and restarts the app, and every bot in
+it, when main-process code changes.
 
 ## The paradigm
 
