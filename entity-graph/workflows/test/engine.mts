@@ -8,6 +8,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { BACKOFF_MINUTES, Engine, defaultRegistry } from '../src/engine/engine.ts'
 import { startMcp } from '../src/engine/mcp.ts'
+import { Settings } from '../src/engine/settings.ts'
+import { Admin } from '../src/engine/admin.ts'
 import { WorkerPool, type SpawnAgent } from '../src/engine/workers.ts'
 
 const MINUTE = 60_000
@@ -15,7 +17,9 @@ let clock = 1_000_000
 const ghCalls: string[][] = []
 let checksPending = true
 const exec = async (cmd: string, args: string[]) => {
+  if (cmd === 'claude') return '2.1.309 (Claude Code)\n'
   assert.equal(cmd, 'gh')
+  if (args[0] === 'api' && args[1] === 'user') return 'octocat\n'
   ghCalls.push(args)
   if (args[0] === 'pr' && args[1] === 'view' && args.includes('statusCheckRollup'))
     return JSON.stringify({
@@ -28,7 +32,9 @@ const exec = async (cmd: string, args: string[]) => {
 }
 
 const engine = new Engine(new DatabaseSync(':memory:'), defaultRegistry, exec, () => clock)
-const mcp = await startMcp(engine)
+const settings = new Settings(engine.db)
+settings.set('mcp.port', 0)
+const mcp = await startMcp(engine, settings)
 
 // Each agent run takes the next behaviour off this queue and plays it over MCP.
 type Call = (name: string, args?: Record<string, unknown>) => Promise<string>
@@ -53,7 +59,7 @@ const spawnFake: SpawnAgent = ({ prompt, mcpUrl, onOutput }) => {
   })()
   return { done, kill: () => {} }
 }
-const pool = new WorkerPool(engine, mcp.url, 2, spawnFake)
+const pool = new WorkerPool(engine, mcp.runUrl, 2, spawnFake)
 
 const until = async (what: string, ok: () => boolean) => {
   for (let i = 0; i < 200; i++) {
@@ -186,5 +192,48 @@ engine.takeOver(taken)
 assert.equal(blocker(taken), 'operator')
 assert.equal(behaviours.length, 0)
 
-mcp.server.close()
+// The operator's endpoint wants the token, names items, and ends no runs.
+const { url } = mcp.operator()
+const operatorClient = async (token: string) => {
+  const client = new Client({ name: 'outside', version: '0' })
+  await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }))
+  return client
+}
+await assert.rejects(operatorClient('wrong'), (e: { code?: number }) => e.code === 401)
+const outside = await operatorClient(settings.mcpToken())
+const listed = await outside.callTool({ name: 'list_items', arguments: { blocker: 'operator' } })
+assert.ok(JSON.parse((listed.content as { text: string }[])[0].text).some((i: { id: string }) => i.id === taken))
+await outside.callTool({ name: 'set_state', arguments: { item_id: taken, state: 'Set from outside.' } })
+assert.equal(engine.get(taken)!.state, 'Set from outside.')
+await outside.close()
+
+// The MCP page lists both scopes' tools as a client sees them.
+let slackToken = ''
+const fakeFetch = (async (_url: string, init: { headers: { Authorization: string } }) => {
+  slackToken = init.headers.Authorization
+  return { status: 200, json: async () => (slackToken === 'Bearer xoxp-good-1234' ? { ok: true, team: 'Acme', user: 'alex' } : { ok: false, error: 'invalid_auth' }) }
+}) as unknown as typeof fetch
+const admin = new Admin(engine, settings, mcp, 2, fakeFetch)
+const view = await admin.mcpView()
+const names = (tools: { name: string }[]) => tools.map((t) => t.name)
+assert.ok(names(view.runTools).includes('close_item'))
+assert.ok(!names(view.operatorTools).includes('close_item'))
+assert.ok(names(view.operatorTools).includes('list_items'))
+assert.ok(view.operatorTools.find((t) => t.name === 'get_item')!.inputSchema.required!.includes('item_id'))
+assert.ok(view.runTools.find((t) => t.name === 'github_pr_view'))
+
+// Integrations: gh and claude are checked; a Slack token is checked with Slack before it is kept.
+const integrations = await admin.integrations()
+assert.equal(integrations.github.detail, 'Signed in as octocat')
+assert.ok(integrations.claude.ok)
+await assert.rejects(admin.addSlack('', 'nope'), /xoxp-/)
+await assert.rejects(admin.addSlack('', 'xoxp-bad'), /invalid_auth/)
+await admin.addSlack('', 'xoxp-good-1234')
+const [workspace] = (await admin.integrations()).slack
+assert.deepEqual([workspace.name, workspace.team, workspace.user, workspace.tokenHint], ['Acme', 'Acme', 'alex', 'xoxp-…1234'])
+assert.equal(settings.slackWorkspaces()[0].token, 'xoxp-good-1234')
+admin.removeSlack(workspace.id)
+assert.equal(settings.slackWorkspaces().length, 0)
+
+mcp.close()
 console.log('engine: ok')

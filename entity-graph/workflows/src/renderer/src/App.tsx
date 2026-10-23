@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import type { Blocker, Item, ItemDetail } from '../../shared/types'
+import { IntegrationsPage } from './IntegrationsPage'
+import { McpPage } from './McpPage'
 import { api, useWorkflows } from './useWorkflows'
 
 const BLOCKERS: { blocker: Blocker; label: string }[] = [
@@ -20,41 +22,82 @@ const BLOCKER_LABEL: Record<Blocker, string> = {
 
 const time = (ms: number) => new Date(ms).toLocaleString()
 
+type Page = 'items' | 'integrations' | 'mcp'
+const PAGES: { page: Page; label: string }[] = [
+  { page: 'items', label: 'Items' },
+  { page: 'integrations', label: 'Integrations' },
+  { page: 'mcp', label: 'MCP' },
+]
+
 export function App() {
-  const w = useWorkflows()
+  const [page, setPage] = useState<Page>('items')
+  const items = useWorkflows()
+  return (
+    <ItemsContext.Provider value={items}>
+      <div className="app">
+        <aside className="sidebar">
+          <nav className="nav">
+            {PAGES.map((p) => (
+              <button key={p.page} className={p.page === page ? 'active' : ''} onClick={() => setPage(p.page)}>
+                {p.label}
+              </button>
+            ))}
+          </nav>
+          {page === 'items' && <ItemsSidebar />}
+        </aside>
+        <main className="main">
+          {page === 'items' && <ItemsMain />}
+          {page === 'integrations' && <IntegrationsPage />}
+          {page === 'mcp' && <McpPage />}
+        </main>
+      </div>
+    </ItemsContext.Provider>
+  )
+}
+
+/** The items page's state, shared by its sidebar and its main panel. */
+const ItemsContext = createContext<ReturnType<typeof useWorkflows> | null>(null)
+const useItems = () => useContext(ItemsContext)!
+
+function ItemsSidebar() {
+  const w = useItems()
   const busy = w.overview.workers.filter((x) => x.itemId).length
   return (
-    <div className="app">
-      <aside className="sidebar">
-        <button className="primary next" onClick={() => void w.next()}>
-          Next
-        </button>
-        <NewItem onCreate={(title, instruction) => w.act(async () => w.select(await api().create(title, instruction)))} />
-        {BLOCKERS.map(({ blocker, label }) => (
-          <ItemList
-            key={blocker}
-            label={label}
-            items={w.overview.items.filter((i) => i.blocker === blocker)}
-            selected={w.selected}
-            onSelect={w.select}
-          />
-        ))}
-        <div className="footer">
-          <span>
-            Workers: {busy}/{w.overview.workers.length} busy
-          </span>
-          <button onClick={() => void w.act(() => api().pollSources())}>Poll sources</button>
-        </div>
-      </aside>
-      <main className="main">
-        {w.error && <div className="error">{w.error}</div>}
-        {w.detail ? (
-          <ItemView key={w.detail.item.id} detail={w.detail} act={w.act} onSkip={() => w.skip(w.detail!.item.id)} />
-        ) : (
-          <div className="empty">{w.empty ? 'Nothing needs you right now.' : 'Press Next for the next thing that needs you.'}</div>
-        )}
-      </main>
-    </div>
+    <>
+      <button className="primary next" onClick={() => void w.next()}>
+        Next
+      </button>
+      <NewItem onCreate={(title, instruction) => w.act(async () => w.select(await api().create(title, instruction)))} />
+      {BLOCKERS.map(({ blocker, label }) => (
+        <ItemList
+          key={blocker}
+          label={label}
+          items={w.overview.items.filter((i) => i.blocker === blocker)}
+          selected={w.selected}
+          onSelect={w.select}
+        />
+      ))}
+      <div className="footer">
+        <span>
+          Workers: {busy}/{w.overview.workers.length} busy
+        </span>
+        <button onClick={() => void w.act(() => api().pollSources())}>Poll sources</button>
+      </div>
+    </>
+  )
+}
+
+function ItemsMain() {
+  const w = useItems()
+  return (
+    <>
+      {w.error && <div className="error">{w.error}</div>}
+      {w.detail ? (
+        <ItemView key={w.detail.item.id} detail={w.detail} act={w.act} onSkip={() => w.skip(w.detail!.item.id)} />
+      ) : (
+        <div className="empty">{w.empty ? 'Nothing needs you right now.' : 'Press Next for the next thing that needs you.'}</div>
+      )}
+    </>
   )
 }
 
@@ -202,7 +245,11 @@ function Decide({ detail, act, onSkip }: { detail: ItemDetail; act: Act; onSkip:
                   ))}
                 </select>
               ) : f.kind === 'multiline' ? (
-                <textarea rows={5} value={inputs[f.name] ?? ''} onChange={(e) => setInputs({ ...inputs, [f.name]: e.target.value })} />
+                <textarea
+                  rows={5}
+                  value={inputs[f.name] ?? ''}
+                  onChange={(e) => setInputs({ ...inputs, [f.name]: e.target.value })}
+                />
               ) : (
                 <input value={inputs[f.name] ?? ''} onChange={(e) => setInputs({ ...inputs, [f.name]: e.target.value })} />
               )}
@@ -220,7 +267,11 @@ function Decide({ detail, act, onSkip }: { detail: ItemDetail; act: Act; onSkip:
         onChange={(e) => setInstruction(e.target.value)}
       />
       <div className="buttons">
-        <button className={approval ? '' : 'primary'} disabled={!instruction.trim()} onClick={() => act(() => api().dispatch(item.id, instruction.trim()))}>
+        <button
+          className={approval ? '' : 'primary'}
+          disabled={!instruction.trim()}
+          onClick={() => act(() => api().dispatch(item.id, instruction.trim()))}
+        >
           Dispatch to agent
         </button>
         <button onClick={() => act(() => api().close(item.id, instruction.trim()))}>Close</button>

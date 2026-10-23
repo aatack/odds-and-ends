@@ -83,6 +83,35 @@ export interface Overview {
   workers: { id: number; itemId: string | null }[]
 }
 
+/** One MCP tool, as a client lists it. */
+export interface ToolInfo {
+  name: string
+  description: string
+  inputSchema: { properties?: Record<string, { type?: string; description?: string; enum?: string[] }>; required?: string[] }
+}
+
+export interface Check {
+  ok: boolean
+  detail: string
+}
+
+export interface IntegrationsView {
+  github: Check
+  claude: Check & { workers: number }
+  slack: { id: string; name: string; team: string; user: string; tokenHint: string }[]
+}
+
+export interface McpView {
+  url: string
+  token: string
+  port: number
+  error: string | null
+  /** What an agent running an item sees. */
+  runTools: ToolInfo[]
+  /** What anything connected at `url` sees. */
+  operatorTools: ToolInfo[]
+}
+
 /** The renderer's whole view of the main process. */
 export interface WorkflowsAPI {
   overview: () => Promise<Overview>
@@ -98,5 +127,11 @@ export interface WorkflowsAPI {
   setState: (id: string, state: string) => Promise<void>
   takeOver: (id: string) => Promise<void>
   pollSources: () => Promise<void>
+  integrations: () => Promise<IntegrationsView>
+  addSlack: (name: string, token: string) => Promise<void>
+  removeSlack: (id: string) => Promise<void>
+  mcp: () => Promise<McpView>
+  regenerateMcpToken: () => Promise<void>
+  setMcpPort: (port: number) => Promise<void>
   onChange: (cb: () => void) => () => void
 }

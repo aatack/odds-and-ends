@@ -15,6 +15,12 @@ const api: WorkflowsAPI = {
   setState: call('setState') as WorkflowsAPI['setState'],
   takeOver: call('takeOver') as WorkflowsAPI['takeOver'],
   pollSources: call('pollSources') as WorkflowsAPI['pollSources'],
+  integrations: call('integrations') as WorkflowsAPI['integrations'],
+  addSlack: call('addSlack') as WorkflowsAPI['addSlack'],
+  removeSlack: call('removeSlack') as WorkflowsAPI['removeSlack'],
+  mcp: call('mcp') as WorkflowsAPI['mcp'],
+  regenerateMcpToken: call('regenerateMcpToken') as WorkflowsAPI['regenerateMcpToken'],
+  setMcpPort: call('setMcpPort') as WorkflowsAPI['setMcpPort'],
   onChange: (cb) => {
     const listener = () => cb()
     ipcRenderer.on('changed', listener)

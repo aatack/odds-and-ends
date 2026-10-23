@@ -37,7 +37,9 @@ an in-memory store; it costs a run, so use it only when the agent wiring changes
 ```
 src/engine     everything but the window; plain Node, so the tests drive it headlessly
   engine.ts      items, blockers, history, waits with backoff, the central loop
-  mcp.ts         the MCP server the agents use, one URL per run (/mcp/<runId>)
+  mcp.ts         the MCP server, in two scopes (below)
+  settings.ts    configuration in the store: Slack workspaces (tokens encrypted), the MCP port and token
+  admin.ts       what the Integrations and MCP pages show and change
   workers.ts     the pool of `claude -p` workers
   github.ts      GitHub via the gh CLI: reads, actions, waits, a source
   integrations.ts  the four kinds of integration: read, action, wait, source
@@ -63,6 +65,14 @@ test/          engine.mts: the whole engine with a fake gh and fake agents
   `node:sqlite`. `db.ts` uses only the API both share, with positional parameters.
 - **One process.** The Electron main process holds the store, the loop (every
   minute), the worker pool (four workers) and the MCP server (loopback, a free port).
+- **The MCP server has two scopes**, and `makeServer` builds both from one list:
+  - `run`: a worker's agent, at `/mcp/<runId>` on a free port. Item tools act on
+    the run's item, and the run ends with one of the END YOUR RUN tools.
+  - `operator`: anything else the user connects, at `/mcp` on a fixed port (47390
+    by default), with a bearer token. Item tools take `item_id`, and no tool ends
+    a run. Both listeners bind to loopback only.
+  The MCP page lists both scopes as a client sees them (`describeTools`), so a new
+  tool appears there with no other change.
 - **Agents get only the MCP server.** Workers run `claude -p` with built-in tools
   off and only `mcp__workflows` allowed. A new capability for agents is a tool in
   `mcp.ts`, or an integration in the registry. Never add it to the agent's command line.
