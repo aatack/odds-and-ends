@@ -40,7 +40,7 @@ export function EventMenu({ act, skip }: { act: (fn: () => Promise<unknown>) => 
   useEffect(() => {
     if (!menu) return
     const { x, y } = menu
-    refs.setPositionReference({
+    refs.setReference({
       getBoundingClientRect: () => ({ x, y, left: x, top: y, right: x, bottom: y, width: 0, height: 0 }),
     })
   }, [menu, refs])
