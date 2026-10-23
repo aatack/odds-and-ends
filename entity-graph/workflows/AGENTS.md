@@ -1,43 +1,75 @@
 # Workflows — agent & contributor guide
 
-An Electron + React + TypeScript app for managing a handful of recurring
-workflows: meetings, programming, reviewing and Slack. What each workflow needs
-to achieve is written in [`workflow-descriptions/`](./workflow-descriptions) —
-read the relevant one before building anything for it.
+An Electron + React + TypeScript app that gives the operator, at the press of a
+button, the next thing that needs their decision, and hands everything else to
+agents. What each workflow must achieve is in
+[`workflow-descriptions/`](./workflow-descriptions): read the relevant one before
+building anything for it.
 
-## Data store: the Rust database
+## Never run the app
 
-All data lives in **`egdb`**, the Rust crate in [`../database`](../database).
-Don't add another store (no separate SQLite schema, JSON files or
-localStorage for real data).
+Do not start the app (`npm run dev`, `electron-vite`, `electron`) unless the user
+asks. It opens the user's store and starts agent workers that spend real money.
+Check work with `npm run typecheck`, `npm run build` and `npm test`.
+`npx tsx test/smoke-claude.mts` does one real `claude -p` run, headless, against
+an in-memory store; it costs a run, so use it only when the agent wiring changes.
 
-- **Use it in place.** Depend on the crate by path (`../database`); don't copy or
-  fork it. If it lacks something, change it there, with its tests.
-- **Reach it from the main process only.** The renderer talks to the main process
-  over IPC; the main process calls `egdb` through a native binding. Keep the
-  binding thin: it exposes store operations, not workflow logic.
-- **Read its docs first:** `README.md` (the model and API in brief), `DESIGN.md`
-  (the detail), `ARCHITECTURE.md` (the reasons).
+## The paradigm
 
-### The model in brief
+- An **item** is one thing that must be done. A **source** gives items.
+- An open item always has exactly one **blocker**:
+  - `operator`: it waits for the operator's decision.
+  - `agent`: it is in the agent queue, or a worker runs it.
+  - `external`: it waits for something outside the tool (a CI run, a reply, a time).
+  - `items`: it waits for other items to close.
+- Otherwise it is `closed`.
+- **Next** shows the operator-blocked item that has waited longest.
+- The operator dispatches it with an instruction, closes it, or records that they
+  handled it outside the tool.
+- A worker runs the item and must end its run by saying what blocks it now.
+- An agent never does what other people can see. It asks for an **action**
+  instead. The operator sees the form filled in, and then runs it, changes it, or
+  does something else.
+- Every item has a **state**: a short text, always kept current.
 
-- A store is one SQLite file: `Store::open(path)`.
-- Everything is an **entity** with an id. An entity has **values**
-  (`key → JSON`) and **links** to other entities (`source → destination`, with a
-  link type and a sort order).
-- Nothing is changed in place: every write is an event. Write with
-  `store.write(WriteBatch::new(branch, author, ops))`, using `Op::set(id, key,
-  value)` and `Op::link(src, dst, type, SortOrder::…)`. Setting a value to null
-  clears it; `SortOrder::Removed` removes a link.
-- An entity exists once it has events. Give every entity a `type` value;
-  `archive_entity` sets it to null, and archived entities drop out of reads.
-- **Branches.** Every read and write names a branch. Use one main branch for
-  the user's data; let agents work on a `fork` and `merge` it back when accepted.
-- **Reads.** `values` / `links` take a batch of ids; `children` / `parents` for
-  one entity; `find` for a filtered, paginated list (e.g. all entities of
-  `type: meeting`); `walk` for a paginated depth-first traversal.
-- **Undo** is per branch and per author, for batches from the last five minutes.
+## Layout
 
-## Develop
+```
+src/engine     everything but the window; plain Node, so the tests drive it headlessly
+  engine.ts      items, blockers, history, waits with backoff, the central loop
+  mcp.ts         the MCP server the agents use, one URL per run (/mcp/<runId>)
+  workers.ts     the pool of `claude -p` workers
+  github.ts      GitHub via the gh CLI: reads, actions, waits, a source
+  integrations.ts  the four kinds of integration: read, action, wait, source
+  db.ts          the SQLite schema
+src/main       Electron main: opens the store, starts the loop, pool and MCP, IPC
+src/preload    the renderer's API (WorkflowsAPI in src/shared/types.ts)
+src/renderer   the React UI
+test/          engine.mts: the whole engine with a fake gh and fake agents
+```
 
-Check the database with `cargo test` in `../database`.
+## Rules
+
+- **The engine is the only writer.** Every change goes through `Engine`, which
+  records an event for it and emits `change`. A blocker changes only in
+  `setBlocker`.
+- **Keep the whole history.** The `events` table is append-only, and `runs` keeps
+  every run's prompt and full stream-json transcript. Agents read it back
+  (`recent_items`, `item_history`, `run_transcript`) to find what to improve:
+  slow steps, approvals the operator changed, work handled outside the tool.
+  Record anything new that a review would want, and never delete or rewrite events.
+- **The store is SQLite**, in `userData/workflows.db`. The app uses
+  `better-sqlite3`, which is rebuilt for Electron on `postinstall`. The tests use
+  `node:sqlite`. `db.ts` uses only the API both share, with positional parameters.
+- **One process.** The Electron main process holds the store, the loop (every
+  minute), the worker pool (four workers) and the MCP server (loopback, a free port).
+- **Agents get only the MCP server.** Workers run `claude -p` with built-in tools
+  off and only `mcp__workflows` allowed. A new capability for agents is a tool in
+  `mcp.ts`, or an integration in the registry. Never add it to the agent's command line.
+- **Adding an integration** means adding entries to the registry in `engine.ts`:
+  - a read (an agent may call it at any time),
+  - an action (needs the operator's approval),
+  - a wait kind (`check` answers null while still waiting),
+  - a source (polled every `everyMinutes`).
+  Run CLIs through the `Exec` you are handed, so the tests can stand in for them.
+- **Waits back off**: 1, 2, 5, then 10 minutes between checks.

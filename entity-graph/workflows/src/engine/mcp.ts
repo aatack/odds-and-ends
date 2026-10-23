@@ -1,0 +1,152 @@
+// What an agent sees: one MCP server on loopback, reached at /mcp/<runId>, so
+// every call knows which run, and so which item, it is for. Stateless: a fresh
+// server and transport per request.
+
+import { createServer, type IncomingMessage, type Server } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import { z } from 'zod'
+import type { AgentOutcome, Engine } from './engine'
+
+const text = (s: string) => ({ content: [{ type: 'text' as const, text: s }] })
+const fail = (e: unknown) => ({ content: [{ type: 'text' as const, text: (e as Error).message }], isError: true })
+
+const state = z.string().describe('The current state of the item, in a few lines: where it is and what is left. Replaces the last one.')
+
+function makeServer(engine: Engine, runId: string): McpServer {
+  const server = new McpServer({ name: 'workflows', version: '0.1.0' })
+  const itemId = () => {
+    const run = engine.activeRun(runId)
+    if (!run) throw new Error('This run has ended.')
+    return run.itemId
+  }
+  const tool = <S extends z.ZodRawShape>(
+    name: string,
+    description: string,
+    input: S,
+    run: (args: z.objectOutputType<S, z.ZodTypeAny>) => Promise<string> | string,
+  ) =>
+    server.registerTool(name, { description, inputSchema: input }, (async (args: z.objectOutputType<S, z.ZodTypeAny>) => {
+      try {
+        return text(await run(args))
+      } catch (e) {
+        return fail(e)
+      }
+    }) as never)
+
+  const end = (outcome: AgentOutcome) => engine.agentBlock(runId, outcome)
+
+  // ---- this item ----
+
+  tool('get_item', 'Your item: its state, the instruction, what woke it, and its full history.', {}, () => {
+    const detail = engine.detail(itemId())
+    return JSON.stringify(detail && { ...detail, runs: detail.runs.map(({ result: _, ...r }) => r) }, null, 1)
+  })
+  tool('set_state', 'Record the current state of the item, while you work. Do this whenever it changes.', { state }, ({ state }) => {
+    engine.setState(itemId(), state, 'agent')
+    return 'Recorded.'
+  })
+  tool('note', "Add a line to the item's history: something done or found worth keeping.", { text: z.string() }, ({ text }) => {
+    engine.note(itemId(), text, 'agent')
+    return 'Recorded.'
+  })
+  tool(
+    'create_item',
+    'Create another item. With an instruction it goes straight to an agent; without one, to the operator. Answers its id.',
+    { title: z.string(), state: z.string().optional(), instruction: z.string().optional() },
+    ({ title, state, instruction }) => {
+      const id = engine.create(title, { state, instruction, actor: 'agent', source: `item:${itemId()}` })
+      engine.note(itemId(), `Created item ${id}: ${title}`, 'agent')
+      return id ?? 'Not created.'
+    },
+  )
+
+  // ---- reads ----
+
+  for (const read of engine.registry.reads)
+    tool(read.name, read.description, read.input, (args) => read.run(args as Record<string, unknown>, engine.exec))
+
+  // ---- history, for looking back at how the work went ----
+
+  tool(
+    'recent_items',
+    'Items touched in the last `days`: minutes spent on each blocker, agent runs and their cost, operator decisions, approvals the operator changed, and what was handled outside the tool.',
+    { days: z.number().default(7) },
+    ({ days }) => JSON.stringify(engine.recent(days), null, 1),
+  )
+  tool('item_history', "Any item's full history: every event, wait and run.", { item_id: z.string() }, ({ item_id }) =>
+    JSON.stringify(engine.detail(item_id), null, 1),
+  )
+  tool('run_transcript', "One agent run's prompt and whole transcript.", { run_id: z.string() }, ({ run_id }) => {
+    const t = engine.transcript(run_id)
+    if (!t) throw new Error(`No run ${run_id}.`)
+    return t.length > 200_000 ? `${t.slice(0, 200_000)}\n… (cut)` : t
+  })
+
+  // ---- ending the run: exactly one of these ----
+
+  tool('ask_operator', 'END YOUR RUN: the item needs a decision or information from the operator.', { state, question: z.string() }, (a) =>
+    end({ kind: 'ask', ...a }),
+  )
+  const actions = engine.registry.actions
+    .map((a) => `- ${a.id}: ${a.description} Inputs: ${a.fields.map((f) => f.name + (f.options ? ` (${f.options.join('|')})` : '')).join(', ')}`)
+    .join('\n')
+  tool(
+    'request_approval',
+    `END YOUR RUN: ask the operator to run an action other people will see. Fill in every input you can; the operator may change them. Actions:\n${actions}`,
+    { state, action: z.string(), inputs: z.record(z.string()), reason: z.string().describe('Why, in a line or two.') },
+    (a) => end({ kind: 'approval', ...a }),
+  )
+  const waits = engine.registry.waits
+    .map((w) => `- ${w.id}: ${w.description} Params: ${Object.keys(w.input).join(', ')}`)
+    .join('\n')
+  tool(
+    'wait_for',
+    `END YOUR RUN: the item waits for something outside the tool. It comes back to an agent when that happens, or to the operator after timeout_minutes. Kinds:\n${waits}`,
+    { state, kind: z.string(), params: z.record(z.unknown()), timeout_minutes: z.number().optional() },
+    ({ state, kind, params, timeout_minutes }) => end({ kind: 'wait', state, wait: kind, params, timeoutMinutes: timeout_minutes }),
+  )
+  tool(
+    'wait_for_items',
+    'END YOUR RUN: the item waits for other items to close. It comes back to an agent when they all have.',
+    { state, item_ids: z.array(z.string()).min(1) },
+    ({ state, item_ids }) => end({ kind: 'items', state, itemIds: item_ids }),
+  )
+  tool('close_item', 'END YOUR RUN: the item is done.', { state }, (a) => end({ kind: 'close', ...a }))
+
+  return server
+}
+
+async function readBody(req: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = []
+  for await (const c of req) chunks.push(c as Buffer)
+  const raw = Buffer.concat(chunks).toString('utf8')
+  return raw ? JSON.parse(raw) : undefined
+}
+
+/** Starts the server on a free loopback port. */
+export async function startMcp(engine: Engine): Promise<{ url: (runId: string) => string; server: Server }> {
+  const http = createServer(async (req, res) => {
+    const match = /^\/mcp\/([\w-]+)$/.exec(req.url ?? '')
+    if (!match || !engine.activeRun(match[1])) {
+      res.writeHead(404).end()
+      return
+    }
+    try {
+      const server = makeServer(engine, match[1])
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
+      res.on('close', () => {
+        void transport.close()
+        void server.close()
+      })
+      await server.connect(transport)
+      await transport.handleRequest(req, res, req.method === 'POST' ? await readBody(req) : undefined)
+    } catch (e) {
+      if (!res.headersSent) res.writeHead(500).end((e as Error).message)
+    }
+  })
+  await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve))
+  const port = (http.address() as AddressInfo).port
+  return { url: (runId) => `http://127.0.0.1:${port}/mcp/${runId}`, server: http }
+}
