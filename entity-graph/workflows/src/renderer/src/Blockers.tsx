@@ -42,7 +42,7 @@ function Row(props: { b: ItemEvent; detail: ItemDetail; catalog: Catalog; act: A
       : b.type === 'approval'
         ? 'waiting for you'
         : b.type === 'item'
-          ? 'a sub-item'
+          ? 'a sub-task'
         : b.nextCheckAt
           ? `next check ${shortTime(b.nextCheckAt)}`
           : ''

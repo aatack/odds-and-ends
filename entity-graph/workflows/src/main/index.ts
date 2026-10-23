@@ -73,9 +73,12 @@ async function main(): Promise<void> {
     if (/^https?:/.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
-  // Ctrl+W takes the top view off the stack, rather than closing the window as the default menu would.
+  // Ctrl+W (rather than closing the window, as the default menu would) and Alt+Left take the top view off the stack.
   win.webContents.on('before-input-event', (event, input) => {
-    if (input.type !== 'keyDown' || !input.control || input.alt || input.shift || input.meta || input.key.toLowerCase() !== 'w') return
+    if (input.type !== 'keyDown' || input.shift || input.meta) return
+    const ctrlW = input.control && !input.alt && input.key.toLowerCase() === 'w'
+    const altLeft = input.alt && !input.control && input.key === 'ArrowLeft'
+    if (!ctrlW && !altLeft) return
     event.preventDefault()
     win.webContents.send('back')
   })

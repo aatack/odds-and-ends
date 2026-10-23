@@ -54,11 +54,17 @@ export function useWorkflows() {
     [setViews],
   )
 
-  /** Puts a view on top of the stack, unless it is the one already on top. */
+  /**
+   * Puts a view on top of the stack, unless it is the one already on top. With
+   * `replace`, it takes the top view's place instead (if there is one), so Back
+   * goes past it.
+   */
   const open = useCallback(
-    (v: View) => {
+    (v: View, { replace = false }: { replace?: boolean } = {}) => {
       setError(null)
-      if (!sameView(views[views.length - 1], v)) setViews([...views, v])
+      const below = replace ? views.slice(0, -1) : views
+      if (!sameView(below[below.length - 1], v)) setViews([...below, v])
+      else if (replace) setViews(below)
     },
     [views, setViews],
   )

@@ -56,6 +56,42 @@ export const itemActions: Action[] = [
       })),
   },
   {
+    name: 'items_waiting_on',
+    unsafe: false,
+    description:
+      "The open items waiting on one thing: `human` (the human's turn: nothing blocks them but approvals), `bot` (a bot is " +
+      'working on them or will be), or any blocking event type (`github`, `slack`, `script`, `after`, `approval`, `item` for a ' +
+      "child item, …: see event_types). Each with the blockers that match, longest-waiting first.",
+    input: { on: z.string().describe('human, bot, or a blocking event type.') },
+    run: async (a, { engine }) => {
+      const on = String(a.on)
+      const types: string[] = engine.eventTypes.filter((t) => t.blocking).map((t) => t.type)
+      if (on !== 'human' && !types.includes(on)) throw new Error(`Waiting on what? One of: human, ${types.join(', ')}.`)
+      return engine
+        .overview()
+        .items.filter((i) => !i.closed && (on === 'human' ? i.withHuman : i.blockers.some((b) => b.type === on)))
+        .map((i) => ({
+          id: i.id,
+          title: i.title,
+          parentId: i.parentId,
+          since: new Date(i.since).toISOString(),
+          blockers: i.blockers.filter((b) => on === 'human' || b.type === on).map((b) => ({ id: b.id, type: b.type, summary: b.summary })),
+        }))
+    },
+  },
+  {
+    name: 'next_for_human',
+    unsafe: false,
+    description:
+      "The item the human's Next button would show them now: the one that has been their turn longest. Null when nothing needs them.",
+    input: {},
+    run: async (_a, { engine }) => {
+      const id = engine.next()
+      const item = id ? engine.overview().items.find((i) => i.id === id) : null
+      return item ? { id: item.id, title: item.title, since: new Date(item.since).toISOString() } : null
+    },
+  },
+  {
     name: 'get_item',
     unsafe: false,
     description:

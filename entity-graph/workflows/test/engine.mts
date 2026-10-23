@@ -481,6 +481,13 @@ await assert.rejects(outside.call('github_pr_comment', { repo: 'o/r', number: 7,
 // An outside agent's Slack message gets an approval before it, as a bot's does.
 await outside.call('add_events', { item_id: taken, events: [{ type: 'slack', params: { channel: 'C1', message: 'hi' } }] })
 assert.ok(item(taken).blockers.some((b) => b.type === 'approval' && b.params.action === 'slack_post'))
+// Items listed by what they wait on.
+const onApproval = JSON.parse(await outside.call('items_waiting_on', { on: 'approval' }))
+assert.ok(onApproval.some((i: { id: string; blockers: { type: string }[] }) => i.id === taken && i.blockers.every((b) => b.type === 'approval')))
+const onHuman = JSON.parse(await outside.call('items_waiting_on', { on: 'human' }))
+assert.deepEqual(onHuman.map((i: { id: string }) => i.id).sort(), engine.overview().items.filter((i) => !i.closed && i.withHuman).map((i) => i.id).sort())
+await assert.rejects(outside.call('items_waiting_on', { on: 'nobody' }), /One of: human/)
+assert.equal(JSON.parse(await outside.call('next_for_human'))?.id ?? null, engine.next())
 const types = JSON.parse(await outside.call('event_types'))
 assert.deepEqual(types.map((t: { type: string }) => t.type), engine.eventTypes.map((t) => t.type))
 await outside.client.close()

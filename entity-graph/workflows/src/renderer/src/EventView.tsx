@@ -2,6 +2,7 @@ import type { Catalog, EventDetail, ItemEvent } from '../../shared/types'
 import { Approval } from './Blockers'
 import { minutes, time } from './Chat'
 import { TYPE_NAME } from './icons'
+import { fenced, Markdown } from './components/ui/Markdown'
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
@@ -34,7 +35,7 @@ export function EventView({
 
       <section className="card">
         <p>{status(e)}</p>
-        {e.message && !e.cancelled && <p className="event-message">{e.message}</p>}
+        {e.message && !e.cancelled && <Markdown className="event-message" text={e.message} />}
         {e.lastError && <p className="error-text">{e.lastError}</p>}
       </section>
 
@@ -90,7 +91,7 @@ function Special({ detail }: { detail: EventDetail }) {
         {typeof output === 'string' && output && (
           <>
             <h2>What it said on the way</h2>
-            <pre className="output">{output}</pre>
+            <Markdown text={output} />
           </>
         )}
       </section>
@@ -106,7 +107,7 @@ function Special({ detail }: { detail: EventDetail }) {
             {!e.resolved && e.nextCheckAt && `; next at ${new Date(e.nextCheckAt).toLocaleTimeString()}`}
           </p>
         )}
-        <pre className="output mono">{String(code)}</pre>
+        <Markdown text={fenced(String(code), 'js')} />
         {Array.isArray(e.data?.logs) && (e.data!.logs as string[]).length > 0 && (
           <pre className="output">{(e.data!.logs as string[]).join('\n')}</pre>
         )}
@@ -135,7 +136,7 @@ function Values({ values }: { values: Record<string, unknown> }) {
             <td className="muted">{k}</td>
             <td>
               {typeof v === 'string' ? (
-                <span className="value">{v}</span>
+                <Markdown className="value" text={v} />
               ) : (
                 <pre className="output">{JSON.stringify(v, null, 2)}</pre>
               )}

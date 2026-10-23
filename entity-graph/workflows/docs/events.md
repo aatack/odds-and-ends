@@ -54,7 +54,9 @@ turn, and its Claude session. Which worker is running a bot on it is held in
 memory, not stored, so a crash leaves nothing to clean up.
 
 **Reads:** `get_item` (an item in full), `get_children` (the events in an item;
-with `open`, its blockers), `list_items` (every item).
+with `open`, its blockers), `list_items` (every item), `items_waiting_on`
+(the open items waiting on the human, a bot, or one blocking type), and
+`next_for_human` (what Next would show).
 
 ### Every type (`EventType`)
 

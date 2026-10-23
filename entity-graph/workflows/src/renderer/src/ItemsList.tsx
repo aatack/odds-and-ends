@@ -72,7 +72,7 @@ export function ItemsList(props: { items: Item[]; onOpen: (id: string) => void; 
           <input
             ref={box}
             value={text}
-            aria-label="Search items"
+            aria-label="Search tasks"
             onChange={(e) => {
               setText(e.target.value)
               setAt(0)
@@ -128,7 +128,7 @@ export function ItemsList(props: { items: Item[]; onOpen: (id: string) => void; 
           ))}
         </section>
       ))}
-      {!flat.length && <p className="muted">{text.trim() ? 'Nothing matches. Tab makes it a new item.' : 'No items yet.'}</p>}
+      {!flat.length && <p className="muted">{text.trim() ? 'Nothing matches. Tab makes it a new task.' : 'No tasks yet.'}</p>}
     </div>
   )
 }

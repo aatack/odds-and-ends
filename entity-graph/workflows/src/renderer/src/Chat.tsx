@@ -1,6 +1,7 @@
 import type { ItemDetail, ItemEvent } from '../../shared/types'
 import { useEventMenu } from './EventMenu'
 import { Avatar } from './icons'
+import { Markdown } from './components/ui/Markdown'
 
 export const time = (ms: number) => new Date(ms).toLocaleString()
 const shortTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -48,7 +49,7 @@ function Message({ event: e }: { event: ItemEvent }) {
     <div className={`bubble-row ${mine ? 'mine' : 'theirs'}`}>
       {!mine && <Avatar event={e} />}
       <div className="bubble" title={time(e.resolvedAt ?? e.createdAt)} {...menu(e.id)}>
-        {e.message}
+        <Markdown text={e.message ?? ''} />
         <span className="bubble-time">{shortTime(e.resolvedAt ?? e.createdAt)}</span>
       </div>
     </div>

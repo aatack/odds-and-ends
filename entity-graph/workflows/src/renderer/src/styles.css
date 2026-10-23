@@ -77,7 +77,7 @@ button[data-ui].link { background: none; color: var(--muted); padding: 0; }
 .copyable { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .copyable code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .copyable.block { align-items: flex-start; width: 100%; }
-.copyable.block code { flex: 1; white-space: pre-wrap; word-break: break-all; background: var(--panel); padding: 8px 10px; border-radius: 6px; }
+.copyable.block .markdown { flex: 1; }
 code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; }
 .kv { display: grid; grid-template-columns: 60px 1fr; gap: 8px 12px; align-items: center; }
 .kv > span { color: var(--muted); font-size: 12px; }
@@ -116,7 +116,7 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .bubble-meta button[data-ui].link { font-size: 11px; }
 .chat-note { align-self: center; font-size: 11px; color: var(--muted); padding: 2px 10px; border-radius: 10px; background: var(--color-gray-100); }
 .bubble { position: relative; cursor: default; }
-.bubble-time { float: right; margin: 6px 0 -4px 10px; font-size: 10px; color: var(--muted); }
+.bubble-time { display: block; text-align: right; margin: 2px 0 -4px 10px; font-size: 10px; color: var(--muted); }
 .bubble.open { max-width: 90%; }
 .bubble .more { clear: both; padding-top: 6px; }
 .bubble-row.queued .bubble { opacity: 0.5; }
@@ -205,4 +205,25 @@ button[data-ui].next-button { right: 16px; width: 48px; height: 48px; padding: 0
 .busy { position: absolute; top: -3px; right: -3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font-size: 10px; display: flex; align-items: center; justify-content: center; }
 .app-menu-list { position: fixed; left: 16px; bottom: 60px; }
 .menu-note { padding: 6px 10px; font-size: 12px; color: var(--muted); }
+/* Rendered text (components/ui/Markdown.tsx), as entity-graph sets it: one line of
+ * plain prose looks as it would as a span; the block constructs keep their spacing. */
+.markdown { min-width: 0; }
+.markdown > :not(:first-child) { margin-top: 0.5em; }
+.markdown p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.markdown h1, .markdown h2, .markdown h3, .markdown h4, .markdown h5, .markdown h6 { margin: 0; font-weight: 600; letter-spacing: -0.01em; font-size: 1em; }
+.markdown h1 { font-size: 1.3em; }
+.markdown h2 { font-size: 1.15em; }
+.markdown ul, .markdown ol { margin: 0; padding-left: 1.4em; }
+.markdown ul { list-style: disc; }
+.markdown ol { list-style: decimal; }
+.markdown li::marker { color: var(--color-gray-400); }
+.markdown li + li { margin-top: 0.15em; }
+.markdown blockquote { margin: 0; border-left: 2px solid var(--color-gray-200); padding-left: 0.75em; color: var(--color-gray-500); }
+.markdown code { font-family: var(--font-mono); font-size: 0.9em; background: var(--color-gray-100); border-radius: 0.25rem; padding: 0.1em 0.3em; }
+.markdown pre code { background: transparent; padding: 0; font-size: inherit; }
+.markdown a { color: var(--color-brand-600); text-decoration: underline; text-underline-offset: 2px; }
+.markdown hr { border: 0; border-top: 1px solid var(--color-gray-100); }
+.markdown table { border-collapse: collapse; font-size: 0.95em; }
+.markdown th, .markdown td { border: 1px solid var(--color-gray-100); padding: 0.15em 0.5em; text-align: left; }
+.markdown th { font-weight: 600; }
 }

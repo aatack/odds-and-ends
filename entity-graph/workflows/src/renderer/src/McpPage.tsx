@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Catalog, McpView, ObjectSchema } from '../../shared/types'
 import { Copyable } from './Copy'
 import { Form } from './forms'
+import { fenced, Markdown } from './components/ui/Markdown'
 import { api } from './useWorkflows'
 
 export function McpPage() {
@@ -63,27 +64,26 @@ export function McpPage() {
           </div>
         </div>
         <h3>Claude Code</h3>
-        <Copyable value={cli} block />
+        <Copyable value={cli} block language="bash" />
         <h3>JSON config</h3>
-        <Copyable value={json} block />
+        <Copyable value={json} block language="json" />
       </section>
 
       <section className="card">
         <h2>
           Actions <span className="count">{catalog.actions.length}</span>
         </h2>
-        <p className="muted">
-          Everything clients connected above and your scripts (as <code>actions.name(args)</code>) can do. Unsafe actions change things
-          outside this app: bots, and scripts bots wrote, never get them, and ask you for them as an approval instead. A bot also changes
-          only its own item, and adds blockers by returning them.
-        </p>
+        <Markdown
+          className="muted"
+          text="Everything clients connected above and your scripts (as `actions.name(args)`) can do. Unsafe actions change things outside this app: no agent, nor any script an agent wrote, is given them; they ask you for one as an approval instead."
+        />
         {catalog.actions.map((a) => (
           <div key={a.name} className="tool">
             <div className="row-inline">
               <code className="tool-name">{a.name}</code>
               {a.unsafe && <span className="badge">unsafe</span>}
             </div>
-            <div className="tool-description">{a.description}</div>
+            <Markdown className="tool-description" text={a.description} />
             <Params schema={a.inputSchema} />
           </div>
         ))}
@@ -93,17 +93,17 @@ export function McpPage() {
         <h2>
           Events <span className="count">{catalog.events.length}</span>
         </h2>
-        <p className="muted">
-          What can happen to an item. A blocker stays open until what it waits for happens; the rest resolve as they are added. A bot
-          adds blockers in its output, and an after chains one onto another.
-        </p>
+        <Markdown
+          className="muted"
+          text="What can happen to a task. A blocker stays open until what it waits for happens; the rest resolve as they are added. A bot adds blockers in its output, and an after chains one onto another."
+        />
         {catalog.events.map((h) => (
           <div key={h.type} className="tool">
             <div className="row-inline">
               <code className="tool-name">{h.type}</code>
               {h.blocking && <span className="badge">blocker</span>}
             </div>
-            <div className="tool-description">{h.description}</div>
+            <Markdown className="tool-description" text={h.description} />
             <Params schema={h.params} />
             <div className="muted">
               Resolves with <code>{h.data}</code>
@@ -128,7 +128,7 @@ function Params({ schema }: { schema: ObjectSchema }) {
               {schema.required?.includes(name) ? '' : '?'}
             </td>
             <td className="muted">{p.enum ? p.enum.join(' | ') : Array.isArray(p.type) ? p.type.join(' | ') : (p.type ?? 'any')}</td>
-            <td>{p.description}</td>
+            <td>{p.description && <Markdown text={p.description} />}</td>
           </tr>
         ))}
       </tbody>

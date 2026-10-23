@@ -82,6 +82,8 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
 
 ## UI
 
+- **The UI says *task*; everything else says *item*.** The words on screen call an item a task. The code, the
+  store, the event type and the MCP tools (`list_items`, `get_item`, …) keep `item`.
 - **Two kinds of form.**
   - The forms used all day are condensed: the new-item form, and the chat input
     (`Composer`: one growing line, its preset's icon and hint, Tab between presets,
@@ -104,14 +106,17 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   type is shown (an item as its chat, any other event as `EventView`); `debug`
   shows its whole state as JSON. A new kind of view is a new `kind`.
 - **There is no sidebar.** The content fills the window in a centred column.
-  The bottom-left button opens the menu (bots busy; Items, Integrations, MCP,
+  The bottom-left button opens the menu (bots busy; Tasks, Integrations, MCP,
   which are views on the stack like any other; poll sources), and the round
   bottom-right button is Next.
 - **The items view** (`ItemsList`) is what shows when the stack is empty, and
   Ctrl+L puts it on top (or, when it is already showing, puts the cursor in its
-  search line); a view is never pushed onto an identical one; Ctrl+W takes the top view off (the main process catches
-  it in `before-input-event`, so the window's menu doesn't close the window). Typing filters titles fuzzily; the arrows move; Enter
-  opens; Tab makes a new item with the typed title.
+  search line); a view is never pushed onto an identical one; Ctrl+W and Alt+Left take the top view off (the main process
+  catches them in `before-input-event`, so the window's menu doesn't close the window). Typing filters titles fuzzily; the arrows
+  move; Enter opens; Tab makes a new item with the typed title. What the items view opens *replaces* it on the stack
+  (`open(view, { replace: true })`), so Back goes to where you were before it rather than to the list.
+- **Text is markdown.** Messages, descriptions and code samples all go through `Markdown` (`components/ui/`, react-markdown
+  with GFM; fences drawn by `CodeBlock`). Code that is not inside prose goes in as `fenced(code, language)`.
 - **Every event has a right-click menu** (`useEventMenu`): Open and Debug. Spread
   it on anything that stands for an event. Clicking an event does nothing else.
 

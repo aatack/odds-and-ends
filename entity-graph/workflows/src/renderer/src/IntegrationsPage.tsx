@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Check, IntegrationsView } from '../../shared/types'
 import { Form } from './forms'
+import { Markdown } from './components/ui/Markdown'
 import { api } from './useWorkflows'
 
 export function IntegrationsPage() {
@@ -27,17 +28,13 @@ export function IntegrationsPage() {
       <section className="card">
         <h2>GitHub</h2>
         <Status check={view.github} />
-        <p className="muted">
-          Through the <code>gh</code> CLI, as whoever it is signed in as. To change that, run <code>gh auth login</code>.
-        </p>
+        <Markdown className="muted" text="Through the `gh` CLI, as whoever it is signed in as. To change that, run `gh auth login`." />
       </section>
 
       <section className="card">
         <h2>Claude</h2>
         <Status check={view.claude} />
-        <p className="muted">
-          {view.claude.workers} workers, each running <code>claude -p</code> with only this app's MCP tools.
-        </p>
+        <Markdown className="muted" text={`${view.claude.workers} workers, each running \`claude -p\` in auto mode, with a shell and this app's MCP tools.`} />
       </section>
 
       <Slack view={view} act={act} />
@@ -50,6 +47,10 @@ export function IntegrationsPage() {
 function Status({ check }: { check: Check }) {
   return <p className={check.ok ? '' : 'error-text'}>{check.ok ? `✓ ${check.detail}` : `✗ ${check.detail}`}</p>
 }
+
+const SLACK_STEPS = `1. Create an app for the workspace on [Slack's apps page](https://api.slack.com/apps).
+2. Under OAuth & Permissions, add the User Token Scopes the workflows need, then install it to the workspace. Reading and waiting need \`channels:history\`, \`groups:history\`, \`im:history\` and \`mpim:history\`; posting needs \`chat:write\`; searching needs \`search:read\`.
+3. Paste the User OAuth Token below.`
 
 const SLACK_WORKSPACE = {
   type: 'object',
@@ -81,21 +82,7 @@ function Slack({ view, act }: { view: IntegrationsView; act: (fn: () => Promise<
       ))}
       <div className="add">
         <h3>Add a workspace</h3>
-        <ol className="muted">
-          <li>
-            Create an app for the workspace on{' '}
-            <a href="https://api.slack.com/apps" target="_blank" rel="noreferrer">
-              Slack's apps page
-            </a>
-            .
-          </li>
-          <li>
-            Under OAuth &amp; Permissions, add the User Token Scopes the workflows need, then install it to the workspace. Reading
-            and waiting need <code>channels:history</code>, <code>groups:history</code>, <code>im:history</code> and{' '}
-            <code>mpim:history</code>; posting needs <code>chat:write</code>; searching needs <code>search:read</code>.
-          </li>
-          <li>Paste the User OAuth Token below.</li>
-        </ol>
+        <Markdown className="muted" text={SLACK_STEPS} />
         <Form schema={SLACK_WORKSPACE} value={value} setValue={(v) => setValue(v as typeof value)} />
         <button
           data-ui
@@ -111,7 +98,7 @@ function Slack({ view, act }: { view: IntegrationsView; act: (fn: () => Promise<
           Check and add
         </button>
       </div>
-      <p className="muted">The token is checked with Slack before it is kept, and stored encrypted with your system keyring.</p>
+      <Markdown className="muted" text="The token is checked with Slack before it is kept, and stored encrypted with your system keyring." />
     </section>
   )
 }

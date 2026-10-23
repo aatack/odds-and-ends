@@ -32,7 +32,7 @@ export const TYPE_ICON: Record<EventKind, LucideIcon> = {
 }
 
 export const TYPE_NAME: Record<EventKind, string> = {
-  item: 'Item',
+  item: 'Task',
   message: 'Message',
   action: 'Action',
   approval: 'Approval',

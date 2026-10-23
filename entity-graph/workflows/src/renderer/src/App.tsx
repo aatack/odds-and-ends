@@ -17,7 +17,7 @@ import { searchFocusAtom, type View } from './views'
 
 export function App() {
   const items = useWorkflows()
-  // Ctrl+W (sent by the main process) takes the top view off the stack.
+  // Ctrl+W and Alt+Left (sent by the main process) take the top view off the stack.
   const { back, open } = items
   useEffect(() => api().onBack(back), [back])
   // Ctrl+L puts the items view on top of the stack; if it is already showing, it puts the cursor in its search line.
@@ -77,7 +77,7 @@ function AppMenu() {
           <div className="menu-note">
             Bots: {busy} of {w.overview.workers.length} busy
           </div>
-          <button onClick={() => go({ kind: 'items' })}>Items</button>
+          <button onClick={() => go({ kind: 'items' })}>Tasks</button>
           <button onClick={() => go({ kind: 'integrations' })}>Integrations</button>
           <button onClick={() => go({ kind: 'mcp' })}>MCP</button>
           <button
@@ -106,6 +106,8 @@ function AppMenu() {
 function ItemsMain() {
   const w = useItems()
   const openEvent = (id: string) => w.open({ kind: 'event', id })
+  // What the items view opens takes its place, so Back goes to where you were before it.
+  const openFromItems = (id: string) => w.open({ kind: 'event', id }, { replace: w.view?.kind === 'items' })
   const d = w.detail
   if (w.view?.kind === 'integrations' || w.view?.kind === 'mcp')
     return (
@@ -118,14 +120,14 @@ function ItemsMain() {
   if (!w.view || w.view.kind === 'items')
     return (
       <div className="view">
-        <ViewHeader canGoBack={w.views.length > 0} onBack={w.back} title="Items" />
+        <ViewHeader canGoBack={w.views.length > 0} onBack={w.back} title="Tasks" />
         {w.error && <div className="error">{w.error}</div>}
         {w.empty && <p className="muted view-note">Nothing needs you right now.</p>}
         <div className="view-body">
           <ItemsList
             items={w.overview.items}
-            onOpen={openEvent}
-            onCreate={(title) => w.act(async () => openEvent(await api().create(title, null)))}
+            onOpen={openFromItems}
+            onCreate={(title) => w.act(async () => openFromItems(await api().create(title, null)))}
           />
         </div>
       </div>
