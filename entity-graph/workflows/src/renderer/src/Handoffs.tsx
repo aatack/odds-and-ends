@@ -105,9 +105,12 @@ export function HandoffBuilder(props: {
               </button>
             )}
             {i === value.length - 1 && (
-              <button data-ui className="builder-send" title="Send (Enter)" aria-label="Send" onClick={onSend}>
-                <SendHorizontal className="icon" />
-              </button>
+              // The type icon's twin, in the other corner.
+              <span className="builder-icon right" title="Send (Enter)" role="button" aria-label="Send" onClick={onSend}>
+                <span className="type-icon">
+                  <SendHorizontal className="icon" />
+                </span>
+              </span>
             )}
           </div>
         )
