@@ -34,8 +34,8 @@ button[data-ui].link { background: none; color: var(--muted); padding: 0; }
 .empty { color: var(--muted); margin-top: 30vh; text-align: center; }
 .error { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); padding: 8px 12px; border-radius: 6px; margin-bottom: 16px; white-space: pre-wrap; }
 .error-text { color: var(--danger); }
-.item { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; margin: -24px -32px; padding: 20px 0 0; }
-.item header { padding: 0 32px; }
+.item { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+.item-parent { padding: 0 32px; }
 .chat-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 32px; display: flex; flex-direction: column; }
 .chat-scroll .chat { margin-top: auto; padding-bottom: 8px; }
 .composer { padding: 12px 32px 16px; background: var(--bg); display: flex; flex-direction: column; gap: 8px; }
@@ -142,7 +142,6 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .builder-row textarea.growing { resize: none; line-height: 20px; overflow-y: auto; }
 /* The box is the field: no ring around the text inside it. */
 .builder-row :focus, .builder-row :focus-visible { outline: none; box-shadow: none; }
-.item-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .hinted { position: relative; }
 .hint { position: absolute; top: 4px; left: 0; right: 0; pointer-events: none; color: var(--color-gray-400); line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hint b { color: var(--color-gray-600); font-weight: 600; }
@@ -157,10 +156,6 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .blocker-cancel .icon { width: 13px; height: 13px; }
 .blocker-error { font-size: 12px; }
 .blockers .approval { background: var(--panel); }
-.main { position: relative; }
-.back { position: absolute; top: 14px; left: 8px; z-index: 1; display: flex; padding: 4px; background: none; color: var(--muted); }
-.back:hover { color: var(--ink); }
-.back .icon { width: 16px; height: 16px; }
 .menu { position: fixed; z-index: 50; min-width: 140px; padding: 4px; border-radius: 8px; background: var(--color-gray-100); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; }
 .menu button { text-align: left; padding: 6px 10px; border: none; border-radius: 5px; background: none; color: var(--ink); font: inherit; cursor: default; }
 .menu button:hover { background: var(--color-gray-200); }
@@ -169,4 +164,16 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .event-message { white-space: pre-wrap; }
 .value { white-space: pre-wrap; }
 .debug-json { width: 100%; overflow-x: auto; white-space: pre; user-select: text; }
+/* The content pane: a header line that is always there, then the view. */
+.view { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: -24px -32px; }
+.view-header { display: flex; align-items: center; gap: 8px; padding: 12px 24px 12px 12px; min-height: 52px; }
+.view-title { flex: 1; min-width: 0; margin: 0; font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.view-header .type-icon { margin: 0; }
+.view-header .type-icon .icon { width: 16px; height: 16px; }
+button[data-ui].back { display: flex; padding: 4px; background: none; color: var(--muted); }
+button[data-ui].back:hover { color: var(--ink); filter: none; }
+.back .icon { width: 18px; height: 18px; }
+.view-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 32px 24px; }
+.view-body.fill { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.view > .error { margin: 0 32px 12px; }
 }

@@ -1,13 +1,13 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import type { Catalog, Item, ItemDetail } from '../../shared/types'
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import type { Catalog, EventKind, Item, ItemDetail } from '../../shared/types'
 import { Blockers } from './Blockers'
-import { ArrowLeft } from 'lucide-react'
+import { ChevronLeft } from 'lucide-react'
 import { Chat } from './Chat'
 import { DebugView } from './DebugView'
 import { EventMenu, useEventMenu } from './EventMenu'
 import { EventView } from './EventView'
 import { Composer } from './Composer'
-import { ItemIcon } from './icons'
+import { ItemIcon, TypeIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
 import { api, useWorkflows } from './useWorkflows'
@@ -88,42 +88,100 @@ function ItemsSidebar() {
         <span>
           Workers: {busy}/{w.overview.workers.length} busy
         </span>
-        <button data-ui onClick={() => void w.act(() => api().pollSources())}>Poll sources</button>
+        <button data-ui onClick={() => void w.act(() => api().pollSources())}>
+          Poll sources
+        </button>
       </div>
     </>
   )
 }
 
+/**
+ * The content pane: the top view on the stack. Its first line is always the
+ * same: Back, the event as text, and what can be done to it, on the right.
+ * Below is the view itself, which depends on the event's type.
+ */
 function ItemsMain() {
   const w = useItems()
   const openEvent = (id: string) => w.open({ kind: 'event', id })
-  const body = () => {
-    if (!w.detail || !w.catalog || !w.view)
-      return <div className="empty">{w.empty ? 'Nothing needs you right now.' : 'Press Next for the next thing that needs you.'}</div>
-    if (w.view.kind === 'debug') return <DebugView detail={w.detail} />
-    if (w.detail.item)
-      return (
-        <ItemView
-          key={w.detail.event.id}
-          detail={w.detail.item}
-          catalog={w.catalog}
-          act={w.act}
-          onSkip={() => w.skip(w.detail!.event.id)}
-          onOpen={openEvent}
-        />
-      )
-    return <EventView detail={w.detail} catalog={w.catalog} act={w.act} onOpen={openEvent} />
-  }
+  const d = w.detail
+  if (!d || !w.catalog || !w.view)
+    return (
+      <div className="view">
+        <ViewHeader canGoBack={w.views.length > 1} onBack={w.back} />
+        {w.error && <div className="error">{w.error}</div>}
+        <div className="empty">{w.empty ? 'Nothing needs you right now.' : 'Press Next for the next thing that needs you.'}</div>
+      </div>
+    )
+  const e = d.event
+  const debug = w.view.kind === 'debug'
+  const actions = debug
+    ? null
+    : e.type === 'item'
+      ? !e.resolved && (
+          <>
+            <button data-ui onClick={() => w.act(() => api().close(e.id))}>
+              Close
+            </button>
+            <button
+              data-ui
+              title="You did it yourself, outside this tool."
+              onClick={() => w.act(() => api().handledOutside(e.id))}
+            >
+              Done outside
+            </button>
+            <button data-ui onClick={() => w.skip(e.id)}>
+              Skip
+            </button>
+          </>
+        )
+      : !e.resolved && (
+          <button data-ui onClick={() => w.act(() => api().cancel(e.id))}>
+            Cancel
+          </button>
+        )
   return (
-    <>
-      {w.views.length > 1 && (
-        <button data-ui className="back" title="Back" aria-label="Back" onClick={w.back}>
-          <ArrowLeft className="icon" />
-        </button>
-      )}
+    <div className="view">
+      <ViewHeader
+        canGoBack={w.views.length > 1}
+        onBack={w.back}
+        title={`${debug ? 'Debug: ' : ''}${e.summary}`}
+        type={e.type}
+        actions={actions}
+      />
       {w.error && <div className="error">{w.error}</div>}
-      {body()}
-    </>
+      <div className={`view-body ${d.item && !debug ? 'fill' : ''}`}>
+        {debug ? (
+          <DebugView detail={d} />
+        ) : d.item ? (
+          <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.act} onOpen={openEvent} />
+        ) : (
+          <EventView detail={d} catalog={w.catalog} act={w.act} onOpen={openEvent} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Back (its place kept even with nowhere to go back to), the event as text, and its actions on the right. */
+function ViewHeader(props: { canGoBack: boolean; onBack: () => void; title?: string; type?: EventKind; actions?: ReactNode }) {
+  return (
+    <header className="view-header">
+      <button
+        data-ui
+        className="back"
+        title="Back"
+        aria-label="Back"
+        disabled={!props.canGoBack}
+        style={{ visibility: props.canGoBack ? 'visible' : 'hidden' }}
+        onClick={props.onBack}
+      >
+        <ChevronLeft className="icon" />
+      </button>
+      {props.type && props.type !== 'item' && <TypeIcon type={props.type} />}
+      <h1 className="view-title">{props.title}</h1>
+      {props.actions && <div className="buttons">{props.actions}</div>}
+    </header>
   )
 }
 
@@ -168,7 +226,12 @@ function ItemList(props: { label: string; items: Item[]; selected: string | null
         {props.label} <span className="count">{props.items.length}</span>
       </h3>
       {props.items.map((i) => (
-        <div key={i.id} className={`row ${i.id === props.selected ? 'selected' : ''}`} onClick={() => props.onSelect(i.id)} {...menu(i.id)}>
+        <div
+          key={i.id}
+          className={`row ${i.id === props.selected ? 'selected' : ''}`}
+          onClick={() => props.onSelect(i.id)}
+          {...menu(i.id)}
+        >
           <ItemIcon item={i} />
           <span className="row-title">{i.title}</span>
           {i.worker !== null && <span className="dot" title="A bot is running" />}
@@ -180,8 +243,8 @@ function ItemList(props: { label: string; items: Item[]; selected: string | null
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
-function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onSkip: () => void; onOpen: (id: string) => void }) {
-  const { detail, catalog, act, onSkip, onOpen } = props
+function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpen: (id: string) => void }) {
+  const { detail, catalog, act, onOpen } = props
   const { item } = detail
   const scroller = useRef<HTMLDivElement>(null)
   // Every time the human sees an item is in its trace.
@@ -195,30 +258,14 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onSki
   }, [resolved])
   return (
     <div className="item">
-      <header className="item-header">
-        <div>
-          <h1>{item.title}</h1>
-          {detail.parent && (
-            <div className="meta">
-              in{' '}
-              <button data-ui className="link" onClick={() => onOpen(detail.parent!.id)}>
-                {detail.parent.title}
-              </button>
-            </div>
-          )}
+      {detail.parent && (
+        <div className="meta item-parent">
+          in{' '}
+          <button data-ui className="link" onClick={() => onOpen(detail.parent!.id)}>
+            {detail.parent.title}
+          </button>
         </div>
-        {!item.closed && (
-          <div className="buttons">
-            <button data-ui onClick={() => act(() => api().close(item.id))}>
-              Close
-            </button>
-            <button data-ui title="You did it yourself, outside this tool." onClick={() => act(() => api().handledOutside(item.id))}>
-              Done outside
-            </button>
-            <button data-ui onClick={onSkip}>Skip</button>
-          </div>
-        )}
-      </header>
+      )}
       <div className="chat-scroll" ref={scroller}>
         <Chat detail={detail} />
       </div>

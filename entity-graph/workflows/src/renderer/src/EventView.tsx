@@ -1,44 +1,41 @@
 import type { Catalog, EventDetail, ItemEvent } from '../../shared/types'
 import { Approval } from './Blockers'
 import { minutes, time } from './Chat'
-import { TypeIcon, TYPE_NAME } from './icons'
-import { api } from './useWorkflows'
+import { TYPE_NAME } from './icons'
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 /** Any event but an item, on its own: what it is, where it stands, and what its type has to show. */
-export function EventView({ detail, catalog, act, onOpen }: { detail: EventDetail; catalog: Catalog; act: Act; onOpen: (id: string) => void }) {
+export function EventView({
+  detail,
+  catalog,
+  act,
+  onOpen,
+}: {
+  detail: EventDetail
+  catalog: Catalog
+  act: Act
+  onOpen: (id: string) => void
+}) {
   const e = detail.event
   return (
     <div className="page event-view">
-      <header>
-        <h1>
-          <TypeIcon type={e.type} /> {e.summary}
-        </h1>
-        <div className="meta">
-          {TYPE_NAME[e.type]}
-          {detail.parent && (
-            <>
-              {' in '}
-              <button data-ui className="link" onClick={() => onOpen(detail.parent!.id)}>
-                {detail.parent.title}
-              </button>
-            </>
-          )}
-        </div>
-      </header>
+      <div className="meta">
+        {TYPE_NAME[e.type]}
+        {detail.parent && (
+          <>
+            {' in '}
+            <button data-ui className="link" onClick={() => onOpen(detail.parent!.id)}>
+              {detail.parent.title}
+            </button>
+          </>
+        )}
+      </div>
 
       <section className="card">
         <p>{status(e)}</p>
         {e.message && !e.cancelled && <p className="event-message">{e.message}</p>}
         {e.lastError && <p className="error-text">{e.lastError}</p>}
-        {!e.resolved && (
-          <div className="buttons">
-            <button data-ui onClick={() => act(() => api().cancel(e.id))}>
-              Cancel
-            </button>
-          </div>
-        )}
       </section>
 
       {e.type === 'approval' && !e.resolved && (
@@ -103,7 +100,9 @@ function Special({ detail }: { detail: EventDetail }) {
       <section className="card">
         <h2>Script</h2>
         <pre className="output mono">{String(e.params.script)}</pre>
-        {Array.isArray(e.data?.logs) && (e.data!.logs as string[]).length > 0 && <pre className="output">{(e.data!.logs as string[]).join('\n')}</pre>}
+        {Array.isArray(e.data?.logs) && (e.data!.logs as string[]).length > 0 && (
+          <pre className="output">{(e.data!.logs as string[]).join('\n')}</pre>
+        )}
       </section>
     )
   if (e.type === 'github' && e.params.url)
@@ -127,7 +126,13 @@ function Values({ values }: { values: Record<string, unknown> }) {
         {rows.map(([k, v]) => (
           <tr key={k}>
             <td className="muted">{k}</td>
-            <td>{typeof v === 'string' ? <span className="value">{v}</span> : <pre className="output">{JSON.stringify(v, null, 2)}</pre>}</td>
+            <td>
+              {typeof v === 'string' ? (
+                <span className="value">{v}</span>
+              ) : (
+                <pre className="output">{JSON.stringify(v, null, 2)}</pre>
+              )}
+            </td>
           </tr>
         ))}
       </tbody>
