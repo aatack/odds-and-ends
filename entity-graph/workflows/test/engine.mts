@@ -73,7 +73,7 @@ const mcp = await startMcp(engine)
 
 // ---- bots: each run plays the next behaviour over MCP and returns its output ----
 type Call = (name: string, args?: Record<string, unknown>) => Promise<string>
-type Run = { call: Call; prompt: string; schema: Record<string, unknown>; sessionId: string; resume: boolean }
+type Run = { call: Call; prompt: string; schema: Record<string, unknown>; sessionId: string; resume: boolean; forkFrom: string | null }
 const behaviours: ((run: Run) => Promise<BotOutput | null>)[] = []
 const connect = async (url: string, headers: Record<string, string> = {}) => {
   const client = new Client({ name: 'test', version: '0' })
@@ -85,12 +85,12 @@ const connect = async (url: string, headers: Record<string, string> = {}) => {
   }
   return { client, call }
 }
-const spawnFake: SpawnBot = ({ prompt, schema, mcpUrl, sessionId, resume, onOutput }) => {
+const spawnFake: SpawnBot = ({ prompt, schema, mcpUrl, sessionId, resume, forkFrom, onOutput }) => {
   const behaviour = behaviours.shift()
   assert.ok(behaviour, `a bot ran that no test expected:\n${prompt}`)
   const done = (async () => {
     const { client, call } = await connect(mcpUrl)
-    const out = await behaviour({ call, prompt, schema, sessionId, resume })
+    const out = await behaviour({ call, prompt, schema, sessionId, resume, forkFrom })
     await client.close()
     onOutput(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Thinking out loud.' }] } }) + '\n')
     onOutput(JSON.stringify({ type: 'result', total_cost_usd: 0.01, num_turns: 3, structured_output: out ?? undefined }) + '\n')
@@ -115,7 +115,7 @@ const tick = async () => {
 }
 const item = (id: string) => engine.get(id)!
 const blockers = (id: string) => item(id).blockers.map((b) => b.type)
-const last = (id: string, type: string) => engine.events(id).filter((e) => e.type === type).at(-1)!
+const last = (id: string, type: string) => engine.children(id).filter((e) => e.type === type).at(-1)!
 
 // The script a bot leaves behind a CI wait: another bot if it failed; nothing (so the human's turn) if it passed.
 const route = `async ({ event }) => event.data.outcome === 'failed'
@@ -128,7 +128,7 @@ const ciThenRoute: EventSpec[] = [
 
 // ---- 1. A new item has no events, so it is the human's turn ----
 const id = (await engine.create('Answer the PR'))!
-assert.deepEqual(engine.events(id), [])
+assert.deepEqual(engine.children(id), [])
 assert.ok(item(id).withHuman)
 assert.equal(engine.next(), id)
 assert.equal(engine.next([id]), null)
@@ -141,7 +141,7 @@ behaviours.push(async ({ call, prompt, schema, sessionId, resume }) => {
   assert.match(prompt, /Item .*: Answer the PR/)
   assert.match(prompt, /human message .*: Reply to the PR, please/)
   assert.ok(JSON.stringify(schema).includes('"after"'))
-  assert.ok(!JSON.stringify(schema).includes('"enum":["message"]'), 'a bot answers with a message field, not message events')
+  assert.ok(JSON.stringify(schema).includes('"enum":["item"]'), 'a bot may add child items')
   assert.equal(JSON.parse(await call('get_item', { item_id: id })).item.id, id)
   await assert.rejects(call('github_pr_comment', { repo: 'o/r', number: 7, body: 'x' }), /not found/i)
   await assert.rejects(call('add_events', { item_id: id, events: [] }), /Only a human/)
@@ -154,14 +154,14 @@ behaviours.push(async ({ call, prompt, schema, sessionId, resume }) => {
   }
 })
 await engine.send(id, 'bot', 'Reply to the PR, please')
-assert.deepEqual(engine.events(id).slice(0, 2).map((e) => [e.type, e.createdBy]), [['message', 'human'], ['bot', 'human']])
+assert.deepEqual(engine.children(id).slice(0, 2).map((e) => [e.type, e.createdBy]), [['message', 'human'], ['bot', 'human']])
 assert.ok(!item(id).withHuman, 'a bot blocker is waiting')
 await settle()
 assert.deepEqual(blockers(id), ['approval', 'after'])
 assert.ok(item(id).withHuman, 'an approval, and an after waiting on it, are the human\'s turn')
 assert.equal(last(id, 'message').params.text, 'Drafted a reply. Post it?')
 assert.equal(last(id, 'message').createdBy, 'bot')
-const firstBot = engine.events(id).find((e) => e.type === 'bot')!
+const firstBot = engine.children(id).find((e) => e.type === 'bot')!
 assert.ok(firstBot.resolved)
 assert.equal(firstBot.data!.output, 'Thinking out loud.')
 
@@ -214,7 +214,7 @@ assert.equal(engine.next(engine.overview().items.filter((i) => i.id !== id).map(
 
 // Every event reads the same way, whatever its type: a summary always, a message once resolved.
 {
-  const all = engine.events(id)
+  const all = engine.children(id)
   assert.ok(all.every((e) => typeof e.summary === 'string' && e.summary.length))
   assert.ok(all.filter((e) => !e.resolved).every((e) => e.message === null))
   const ci = all.find((e) => e.type === 'github')!
@@ -230,7 +230,7 @@ assert.equal(engine.next(engine.overview().items.filter((i) => i.id !== id).map(
 
 // The trace has every moment.
 {
-  const ci = engine.events(id).find((e) => e.type === 'github')!
+  const ci = engine.children(id).find((e) => e.type === 'github')!
   assert.equal(ci.times.checks, 7)
   assert.ok(ci.times.added && ci.times.resolved && ci.times.firstChecked! < ci.times.lastChecked!)
   assert.ok(firstBot.times.firstRunStarted && firstBot.times.firstRunEnded)
@@ -259,7 +259,8 @@ assert.deepEqual(blockers(id), [], 'both waits resolved: checks passed, and merg
 await assert.rejects(engine.send(id, 'message', '  '), /Nothing to send/)
 await engine.close(id)
 assert.ok(item(id).closed)
-assert.equal(last(id, 'closed').params.how, 'closed')
+assert.equal(item(id).how, 'closed')
+assert.match(engine.event(id)!.message!, /Answer the PR: closed/)
 
 // ---- 7. Slack: a bot's message becomes an approval, and the wait takes the thread it posted ----
 engine.settings.addSlackWorkspace({ name: 'Acme', team: 'Acme', user: 'alex', userId: 'UME', token: 'xoxp-good-1234' })
@@ -283,34 +284,50 @@ assert.deepEqual(blockers(chase), [])
 assert.match(String(last(chase, 'slack').data!.detail), /Done!/)
 await engine.close(chase)
 
-// ---- 8. Items: a bot splits off a sub-item and waits on it, then takes it up again ----
-let child = ''
+// ---- 8. Items are events: a bot splits off a child item, which blocks its parent and forks its session ----
 const parent = (await engine.create('Parent'))!
-behaviours.push(async ({ call }) => {
-  child = JSON.parse(await call('create_item', { title: 'Child', events: [{ type: 'bot', params: { instructions: 'Do the child' } }] })).id
-  return { events: [{ type: 'items', ref: 'kids', params: { item_ids: [child] } }, { type: 'after', params: { event: 'kids', then: [{ type: 'bot', params: { instructions: 'Wrap up' } }] } }] }
+let parentSession = ''
+behaviours.push(async ({ sessionId }) => {
+  parentSession = sessionId
+  return {
+    events: [
+      { type: 'item', ref: 'kid', params: { title: 'Child', events: [{ type: 'message', params: { text: 'Do the child' } }, { type: 'bot', params: {} }] } },
+      { type: 'after', params: { event: 'kid', then: [{ type: 'bot', params: { instructions: 'Wrap up' } }] } },
+    ],
+  }
 })
-behaviours.push(async ({ prompt }) => {
+behaviours.push(async ({ prompt, forkFrom, resume, sessionId }) => {
+  assert.equal(forkFrom, parentSession, "a child's first run forks its parent's session")
+  assert.equal(resume, false)
+  assert.notEqual(sessionId, parentSession)
+  assert.match(prompt, /split off from the one above/)
   assert.match(prompt, /Do the child/)
   return { message: 'Child done.', close: true }
 })
-behaviours.push(async ({ prompt }) => {
+behaviours.push(async ({ prompt, resume, sessionId }) => {
+  assert.equal(resume, true)
+  assert.equal(sessionId, parentSession)
   assert.match(prompt, /Wrap up/)
-  assert.match(prompt, /item\(s\) closed/)
+  assert.match(prompt, /Child: closed/)
   return { message: 'All done.', close: true }
 })
 await engine.send(parent, 'bot', 'Split it')
 await settle()
+const child = engine.children(parent).find((e) => e.type === 'item')!.id
 await settle()
 assert.ok(item(child).closed)
+assert.equal(item(child).parentId, parent)
+assert.ok(item(child).sessionId && item(child).sessionId !== parentSession, "the child's session is its own, and kept")
+assert.equal(engine.event(child)!.params.events, undefined, 'its first events are in it, not in its params')
+assert.deepEqual(engine.children(child).map((e) => e.type), ['message', 'bot', 'message'])
 assert.ok(item(parent).closed)
 
 // ---- 9. A bot whose output is unusable leaves a message saying why ----
 const bad = (await engine.create('Bad'))!
-behaviours.push(async () => ({ events: [{ type: 'message', params: { text: 'not allowed' } }] }) as BotOutput)
+behaviours.push(async () => ({ events: [{ type: 'action', params: { name: 'github_pr_merge', inputs: {} } }] }) as BotOutput)
 await engine.send(bad, 'bot', 'x')
 await settle()
-assert.match(last(bad, 'bot').message!, /^The bot failed: .*may not add a message/)
+assert.match(last(bad, 'bot').message!, /^The bot failed: .*may not add a action/)
 assert.ok(last(bad, 'bot').data!.error)
 await engine.handledOutside(bad)
 
@@ -327,7 +344,7 @@ const sneaky = (await engine.create('Sneaky'))!
 const merges = ghCalls.filter((c) => c[1] === 'merge').length
 behaviours.push(async () => ({
   events: [
-    { type: 'items', ref: 'w', params: { item_ids: [parent] } },
+    { type: 'github', ref: 'w', params: { query: 'nothing like this', until: 'merged' } },
     { type: 'after', params: { event: 'w', script: `async (i, actions) => { await actions.github_pr_merge({ repo: 'o/r', number: 7, method: 'squash' }); return null }` } },
   ],
 }))
@@ -348,9 +365,9 @@ assert.equal(last(slow, 'github').data!.outcome, 'timed_out')
 // ---- 12. Sources create items once ----
 await engine.pollSources(true)
 await engine.pollSources(true)
-const reviews = engine.overview().items.filter((i) => i.source === 'github.review-requests')
+const reviews = engine.overview().items.filter((i) => i.title.startsWith('Review '))
 assert.equal(reviews.length, 1)
-assert.match(String(engine.events(reviews[0].id)[0].params.text), /review is requested/)
+assert.match(String(engine.children(reviews[0].id)[0].params.text), /review is requested/)
 
 // ---- 13. Cancelling a bot that is running: what it returns doesn't land ----
 let release = () => {}

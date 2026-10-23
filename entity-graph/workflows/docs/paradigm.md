@@ -16,19 +16,23 @@ The text uses ASD-STE100 Simplified Technical English.
 
 - An **item** is one task.
 - An item has a list of **events**. The list is the history of the item.
+- An item is also an event. Thus an item can contain other items. A bot can
+  split a task into smaller items in this way.
 - Some events are complete when they occur. Examples: a message, or an action.
 - Other events are **blockers**. A blocker waits until a condition occurs.
   Examples: a bot replies, CI finishes, or a person replies on Slack.
 - When a blocker is complete, it records its result.
 - An item can have more than one blocker at the same time.
 - If an item has no blockers, it waits for you.
+- An item that contains an open item is blocked by it. Thus you do the smaller
+  items before the item that contains them.
 
 | Blocker | It waits for |
 | --- | --- |
 | Bot | A bot to read the item and reply. |
 | GitHub | An event on a pull request, for example the end of the checks. |
 | Slack | A reply to a message. |
-| Items | Other items to close. |
+| Item | An item inside this item to close. |
 | Approval | You to approve an action. |
 | After | Another event to be complete. Then it adds more events. |
 
@@ -57,6 +61,8 @@ Example:
 ## Bots
 
 - Each item has its own bot conversation. The bot remembers the item.
+- A new item inside an item starts with a copy of the conversation of the item
+  that contains it. Thus its bot knows why the item exists.
 - When a bot starts again, it gets all events that occurred after its last start.
 - A bot can reply to you, add blockers, or close the item.
 - When a bot asks you a question, the question must be short and direct.

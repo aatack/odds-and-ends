@@ -11,7 +11,7 @@ type Act = (fn: () => Promise<unknown>) => Promise<void>
 const shortTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
 /** The item's open blockers, a row each, with how long each has held it. Above the chat input. */
-export function Blockers({ detail, catalog, act }: { detail: ItemDetail; catalog: Catalog; act: Act }) {
+export function Blockers({ detail, catalog, act, onOpen }: { detail: ItemDetail; catalog: Catalog; act: Act; onOpen: (id: string) => void }) {
   // The ages count up, by the second, while the panel is open.
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
@@ -23,13 +23,14 @@ export function Blockers({ detail, catalog, act }: { detail: ItemDetail; catalog
   return (
     <section className="blockers">
       {open.map((b) => (
-        <Row key={b.id} b={b} detail={detail} catalog={catalog} act={act} now={now} />
+        <Row key={b.id} b={b} detail={detail} catalog={catalog} act={act} now={now} onOpen={onOpen} />
       ))}
     </section>
   )
 }
 
-function Row({ b, detail, catalog, act, now }: { b: ItemEvent; detail: ItemDetail; catalog: Catalog; act: Act; now: number }) {
+function Row(props: { b: ItemEvent; detail: ItemDetail; catalog: Catalog; act: Act; now: number; onOpen: (id: string) => void }) {
+  const { b, detail, catalog, act, now, onOpen } = props
   const running = b.type === 'bot' && detail.item.worker !== null
   const status =
     b.type === 'bot'
@@ -38,6 +39,8 @@ function Row({ b, detail, catalog, act, now }: { b: ItemEvent; detail: ItemDetai
         : 'waiting for a free bot'
       : b.type === 'approval'
         ? 'waiting for you'
+        : b.type === 'item'
+          ? 'a sub-item'
         : b.nextCheckAt
           ? `next check ${shortTime(b.nextCheckAt)}`
           : ''
@@ -45,7 +48,13 @@ function Row({ b, detail, catalog, act, now }: { b: ItemEvent; detail: ItemDetai
     <div className="blocker">
       <div className="blocker-line">
         <TypeIcon type={b.type} />
-        <span className="blocker-text">{b.summary}</span>
+        {b.type === 'item' ? (
+          <button data-ui className="link blocker-text" title="Open it" onClick={() => onOpen(b.id)}>
+            {b.summary}
+          </button>
+        ) : (
+          <span className="blocker-text">{b.summary}</span>
+        )}
         <span className="muted blocker-age" title={new Date(b.createdAt).toLocaleString()}>
           {status && `${status} · `}for {minutes(Math.max(0, now - b.createdAt))}
         </span>

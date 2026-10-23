@@ -14,26 +14,14 @@ export interface Db {
 }
 
 const SCHEMA = `
-CREATE TABLE IF NOT EXISTS items (
-  id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  source TEXT NOT NULL,
-  source_ref TEXT UNIQUE,
-  url TEXT,
-  closed INTEGER NOT NULL DEFAULT 0,
-  worker INTEGER,
-  -- The item's own Claude session: every bot run on it continues the one conversation.
-  session_id TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
--- An item's events, oldest first. One that resolves as it is added is a plain
--- event; one that does not is a blocker until it resolves. Rows are added and
--- resolved, never deleted.
+-- Every event, items included: a tree, each event in the item it belongs to
+-- (parent_id). One that resolves as it is added is a plain event; one that
+-- does not is a blocker until it resolves. Rows are added and resolved, never
+-- deleted. Nothing about the running app is kept here: what is running is in
+-- memory, so a crash leaves nothing to clean up.
 CREATE TABLE IF NOT EXISTS events (
   id TEXT PRIMARY KEY,
-  item_id TEXT NOT NULL,
+  parent_id TEXT,
   seq INTEGER NOT NULL,
   type TEXT NOT NULL,
   params TEXT NOT NULL,
@@ -50,7 +38,7 @@ CREATE TABLE IF NOT EXISTS events (
   next_check_at INTEGER,
   last_error TEXT
 );
-CREATE INDEX IF NOT EXISTS events_item ON events (item_id, seq);
+CREATE INDEX IF NOT EXISTS events_parent ON events (parent_id, seq);
 CREATE INDEX IF NOT EXISTS events_open ON events (resolved, type, created_at);
 
 -- Everything that happened, when, and who did it: one row a moment, never
@@ -69,7 +57,7 @@ CREATE INDEX IF NOT EXISTS trace_item ON trace (item_id, id);
 CREATE INDEX IF NOT EXISTS trace_event ON trace (event_id, kind);
 
 -- Every claude -p run, with its whole transcript. A run answers every bot
--- blocker on its item that was waiting as it started.
+-- blocker in its item that was waiting as it started.
 CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY,
   item_id TEXT NOT NULL,

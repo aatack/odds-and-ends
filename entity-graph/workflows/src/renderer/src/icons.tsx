@@ -20,26 +20,24 @@ import type { EventKind, Item } from '../../shared/types'
 
 /** One icon an event type. */
 export const TYPE_ICON: Record<EventKind, LucideIcon> = {
+  item: Layers,
   message: MessageSquare,
   action: Play,
-  closed: Check,
   approval: ShieldCheck,
   bot: Bot,
   github: GitPullRequest,
   slack: MessageCircle,
-  items: Layers,
   after: Workflow,
 }
 
 export const TYPE_NAME: Record<EventKind, string> = {
+  item: 'Item',
   message: 'Message',
   action: 'Action',
-  closed: 'Closed',
   approval: 'Approval',
   bot: 'Bot',
   github: 'GitHub',
   slack: 'Slack',
-  items: 'Other items',
   after: 'After',
 }
 

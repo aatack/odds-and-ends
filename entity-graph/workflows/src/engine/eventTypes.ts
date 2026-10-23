@@ -10,12 +10,40 @@ import { checkSlack, slackEventParams, startSlack } from './slack'
 
 const timeout = { timeout_minutes: z.number().optional().describe('Resolve as timed_out after this long.') }
 
+export const item: EventType = {
+  type: 'item',
+  description:
+    'An item: a thing to be done. Its events sit in it, child items included, and it blocks the item it sits in until it closes. ' +
+    'Add one to split work off: give it its first events (e.g. a message and a bot) in `events`.',
+  params: {
+    title: z.string(),
+    events: z
+      .array(z.object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional() }))
+      .optional()
+      .describe('Events to put in it as it is created. They are added in it, and not kept in its params.'),
+    key: z.string().optional().describe('Identifies it, so a source polling again adds it only once.'),
+    sessionId: z.string().optional().describe("Its Claude session, set by the app once its bot first runs. Don't set it."),
+  },
+  data: '{ how: "closed" | "handled_outside" | "cancelled" }',
+  blocking: true,
+  bots: true,
+  describe: (p) => String(p.title),
+  said: (p, d) => `${p.title}: ${d.how === 'handled_outside' ? 'done outside the tool' : d.how === 'cancelled' ? 'cancelled' : 'closed'}`,
+  start: async (p, { engine, event, author }) => {
+    const { events, ...params } = p
+    if (Array.isArray(events) && events.length) engine.add(event.id, engine.prepare(events as EventSpec[], author), event.createdBy)
+    return { params }
+  },
+}
+
 export const message: EventType = {
   type: 'message',
   description: 'Something said in the item: by the human, a bot, or a source.',
   params: { text: z.string() },
   data: '{}',
   blocking: false,
+  // A bot speaks to the human through its output's message; it adds message events to brief a child item.
+  bots: true,
   describe: (p) => String(p.text),
 }
 
@@ -26,15 +54,6 @@ export const action: EventType = {
   data: '{}',
   blocking: false,
   describe: (p) => `Ran ${p.name}`,
-}
-
-export const closed: EventType = {
-  type: 'closed',
-  description: 'The item closed: done, or done outside the tool.',
-  params: { how: z.enum(['closed', 'handled_outside']) },
-  data: '{}',
-  blocking: false,
-  describe: (p) => (p.how === 'handled_outside' ? 'Done outside the tool' : 'Closed'),
 }
 
 export const approval: EventType = {
@@ -104,27 +123,11 @@ export const slack: EventType = {
   check: (p, { engine }) => checkSlack(p, engine),
 }
 
-export const items: EventType = {
-  type: 'items',
-  description: 'Wait for every one of a list of items to close.',
-  params: { item_ids: z.array(z.string()).min(1), ...timeout },
-  data: '{ outcome: "closed" | "timed_out", items: { id, title }[] }',
-  blocking: true,
-  bots: true,
-  describe: (p) => `${(p.item_ids as string[]).length} item(s) to close`,
-  said: (_p, d) => String(d.detail ?? d.outcome),
-  check: async (p, { engine }) => {
-    const found = (p.item_ids as string[]).map((id) => engine.get(id))
-    if (found.some((i) => !i || !i.closed)) return null
-    return { outcome: 'closed', detail: `${found.length} item(s) closed.`, items: found.map((i) => ({ id: i!.id, title: i!.title })) }
-  },
-}
-
 export const after: EventType = {
   type: 'after',
   description:
     'Wait for another event to resolve, then add events: `then` as given, or what `script` returns. This is how events chain, ' +
-    'e.g. wait on CI, then hand to a bot if it failed and leave it with the human if it passed.',
+    'e.g. wait on CI, then hand to a bot if it failed and leave it with the human if it passed; or wait for a child item to close.',
   params: {
     event: z.string().describe("The event to wait for: an id, or the ref of an event added alongside this one."),
     then: z.array(z.object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional() })).optional(),
@@ -171,4 +174,4 @@ export const after: EventType = {
   },
 }
 
-export const EVENT_TYPES: EventType[] = [message, action, closed, approval, bot, github, slack, items, after]
+export const EVENT_TYPES: EventType[] = [item, message, action, approval, bot, github, slack, after]

@@ -19,16 +19,19 @@ an in-memory store; it costs a run, so use it only when the bot wiring changes.
 [`docs/paradigm.md`](./docs/paradigm.md) is the idea, in a page.
 [`docs/events.md`](./docs/events.md) is how it is built; read it before changing the engine.
 
-- An **item** is a list of **events**. Some resolve as they are added (a
-  message); **blockers** wait until something happens (a bot answers, CI finishes).
+- Everything is an **event**, items included: one tree. An item's children are
+  its history. Some events resolve as they are added (a message); **blockers**
+  wait until something happens (a bot answers, CI finishes, a child item closes).
 - An item can have many blockers at once. It is the human's turn when nothing
   blocks it but approvals.
 - `after` events chain: they wait for one event, then add others, as given or as
   a script decides.
 - The chat input sends through presets (a message plus a bot, by default); Tab
   steps through them.
-- Each item has its own Claude session. A bot is told what is new since it was
-  last prompted, and answers with `{ message?, events?, close? }` as structured output.
+- Each item has its own Claude session, kept in its params; a child item's
+  first session is forked from its parent's. A bot is told what is new since it
+  was last prompted, and answers with `{ message?, events?, close? }` as structured output.
+- Nothing about the running app is stored: what is running is held in memory.
 
 ## The unsafe rule
 
@@ -111,7 +114,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   - Anything new that changes, starts, ends or is seen goes through
     `Engine.mark`. Bots read the trace back (`recent_items`, `get_item`,
     `run_transcript`) to find what to improve.
-- **The store is SQLite**, in `userData/workflows-v3.db`. The app uses
+- **The store is SQLite**, in `userData/workflows-v4.db`. The app uses
   `better-sqlite3`, which is rebuilt for Electron on `postinstall`. The tests use
   `node:sqlite`. `db.ts` uses only the API both share, with positional parameters.
 - **One process.** The Electron main process holds the store, the loop (every

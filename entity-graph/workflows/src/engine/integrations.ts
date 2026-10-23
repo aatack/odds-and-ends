@@ -58,6 +58,7 @@ export interface Action {
 
 export interface EventContext {
   engine: Engine
+  /** The item the event sits in; for an item event with no parent, the item itself. */
   item: Item
   event: ItemEvent
   /** Whoever added this event, as an author. */
@@ -107,9 +108,10 @@ export interface EventType {
   check?: (params: Record<string, unknown>, ctx: EventContext) => Promise<Record<string, unknown> | null>
 }
 
-/** Where new items come from. Polled from the central loop. */
+/** Where new items come from. Polled from the central loop; what it answers is added in no parent. */
 export interface Source {
   id: string
   everyMinutes: number
-  poll: (engine: Engine) => Promise<{ ref: string; title: string; url: string | null; events: EventSpec[] }[]>
+  /** Item events to add, each with a `key` so that polling again adds none twice. */
+  poll: (engine: Engine) => Promise<EventSpec[]>
 }

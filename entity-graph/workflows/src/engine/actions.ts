@@ -47,28 +47,38 @@ export const itemActions: Action[] = [
   {
     name: 'list_items',
     unsafe: false,
-    description: 'The open items, and those closed in the last day, with what blocks each and whether it is the human\'s turn.',
+    description:
+      "Every open item, at any depth, and those closed in the last day: whether it is the human's turn, and what blocks it.",
     input: {},
     run: async (_a, { engine }) =>
       engine.overview().items.map((i) => ({
         id: i.id,
         title: i.title,
+        parentId: i.parentId,
         closed: i.closed,
         withHuman: i.withHuman,
-        blockers: i.blockers.map((b) => ({ id: b.id, type: b.type, params: b.params })),
-        url: i.url,
+        blockers: i.blockers.map((b) => ({ id: b.id, type: b.type, summary: b.summary })),
       })),
   },
   {
     name: 'get_item',
     unsafe: false,
-    description: 'An item in full: every event (resolved or not) with its data and timeline, its bot runs, and its trace: every thing that happened to it, when, and by whom.',
+    description:
+      'An item in full: its children (every event in it, with its data and timeline, child items included), its bot runs, and its ' +
+      'trace: every thing that happened in it, when, and by whom.',
     input: { item_id: itemId },
     run: async (a, { engine }) => {
       const d = engine.detail(String(a.item_id))
       if (!d) throw new Error(`No item ${a.item_id}.`)
       return d
     },
+  },
+  {
+    name: 'get_children',
+    unsafe: false,
+    description: "The events in an item, oldest first. With open, only those still open: the item's blockers.",
+    input: { item_id: itemId, open: z.boolean().optional() },
+    run: async (a, { engine }) => engine.children(String(a.item_id), Boolean(a.open)),
   },
   {
     name: 'recent_items',
@@ -91,35 +101,20 @@ export const itemActions: Action[] = [
     },
   },
   {
-    name: 'create_item',
-    unsafe: false,
-    description: 'Create an item, with events to start it off. Answers its id. With no blockers, it is the human\'s turn.',
-    input: { title: z.string(), events: z.array(spec).optional() },
-    run: async (a, ctx) => {
-      const id = await ctx.engine.create(String(a.title), {
-        events: a.events as EventSpec[] | undefined,
-        actor: ctx.actor,
-        author: ctx.author,
-        source: ctx.itemId ? `item:${ctx.itemId}` : ctx.actor,
-      })
-      if (ctx.itemId) ctx.engine.mark(ctx.itemId, 'item_spawned', { actor: ctx.actor, runId: ctx.runId, data: { id, title: a.title } })
-      return { id }
-    },
-  },
-  {
     name: 'add_events',
     unsafe: false,
-    description: 'Add events to an item: messages, blockers, approvals, afters. Human only.',
-    input: { item_id: itemId, events: z.array(spec) },
+    description:
+      'Add events in an item: messages, blockers, approvals, afters, child items. With no item_id, add items that sit in none. Human only.',
+    input: { item_id: itemId.optional(), events: z.array(spec) },
     run: async (a, ctx) => {
       assertHuman(ctx)
-      return { ids: await ctx.engine.addEvents(String(a.item_id), a.events as EventSpec[], ctx.actor) }
+      return { ids: await ctx.engine.addEvents(a.item_id ? String(a.item_id) : null, a.events as EventSpec[], ctx.actor) }
     },
   },
   {
     name: 'cancel_event',
     unsafe: false,
-    description: 'End a blocker without it happening. Human only.',
+    description: 'End a blocker without it happening (a child item is closed as cancelled). Human only.',
     input: { event_id: z.string() },
     run: async (a, ctx) => {
       assertHuman(ctx)
@@ -130,7 +125,7 @@ export const itemActions: Action[] = [
   {
     name: 'close_item',
     unsafe: false,
-    description: 'Close an item, cancelling its blockers. Human only.',
+    description: 'Close an item: its open children are cancelled, child items closed, all the way down. Human only.',
     input: { item_id: itemId },
     run: async (a, ctx) => {
       assertHuman(ctx)

@@ -1,13 +1,20 @@
 # Events
 
-An **item** is one thing that must be done. Its history is a list of **events**.
+Everything is an **event**, items included.
 
-- A plain event resolves as it is added: a message, an action run, the item closing.
+- An **item** is an event that stands for one thing to be done. Other events sit
+  **in** it (their parent), and so can other items: the events form one tree.
+  Its children are its history.
+- A plain event resolves as it is added: a message, an action run.
 - A **blocker** is an event that stays unresolved until something happens: a bot
-  answers, CI finishes, somebody replies, the human approves.
-- An item can have any number of blockers at once.
+  answers, CI finishes, somebody replies, the human approves, a child item closes.
+- An item is itself a blocker: it blocks the item it sits in until it closes.
+  So the deepest items are dealt with before the items they sit in.
+- An item can have any number of blockers at once: its open children.
 - An open item is **the human's turn** when nothing blocks it, or only things the
   human resolves do: approvals, and afters waiting on them.
+- There are no top-level items as such. An item may sit in none, but every list
+  shows every item, at any depth.
 
 A blocker either resolves itself, because the loop runs its `check` with
 backoff (at once, then after 1, 2, 5 and then every 10 minutes), or is resolved
@@ -25,7 +32,7 @@ how it reads (`summary`, `message`), and whether and how it waits.
 | field | what it is |
 | --- | --- |
 | `id` | Its id. `after` events and the trace refer to it. |
-| `itemId` | The item it belongs to. |
+| `parentId` | The item it sits in. Null only for an item that sits in none. |
 | `type` | Its type: one of the table below. |
 | `params` | What it was given, as its type's params schema says. |
 | `createdBy`, `createdAt` | Who added it, and when: `human`, `bot`, `system`, `script`, `script:bot`, `mcp`, or a source's id. |
@@ -40,6 +47,14 @@ how it reads (`summary`, `message`), and whether and how it waits.
 
 Events are ordered within their item by when they were added. Events added
 together keep the order they were given in.
+
+An item's view of itself (`Item`) is read from its event: its title, whether it
+has closed and how, its open children (`blockers`), whether it is the human's
+turn, and its Claude session. Which worker is running a bot on it is held in
+memory, not stored, so a crash leaves nothing to clean up.
+
+**Reads:** `get_item` (an item in full), `get_children` (the events in an item;
+with `open`, its blockers), `list_items` (every item).
 
 ### Every type (`EventType`)
 
@@ -67,14 +82,13 @@ the chat input should offer it, add a preset in `presets.ts`.
 
 | type | blocks | params | data |
 | --- | --- | --- | --- |
+| `item` | yes | `title`, `events?` (its first children, added in it), `key?` (so a source adds it once), `sessionId` (set by the app) | `{ how: closed \| handled_outside \| cancelled }` |
 | `message` | no | `text` | — |
 | `action` | no | `name`, `inputs`, `output` | — |
-| `closed` | no | `how`: `closed` \| `handled_outside` | — |
 | `approval` | the human's | `action` (unsafe), `inputs`, `reason?` | `{ ran, inputs, changed, output, detail }` |
 | `bot` | yes | `instructions?` (it reads as "Bot" without) | `{ runId, message?, costUsd?, output }` or `{ error }` |
 | `github` | yes | `repo`+`number`, or `query`; `until`: `checks` \| `activity` \| `merged`; `timeout_minutes?` | `{ outcome, detail, failed? }` |
 | `slack` | yes | `channel`, `workspace?`, `message?`, `thread_ts?`, `thread_of?`, `timeout_minutes?` | `{ outcome, replies, detail }` |
-| `items` | yes | `item_ids`, `timeout_minutes?` | `{ outcome, items }` |
 | `after` | yes | `event`, then `then` or `script` | `{ added, logs? }` or `{ error }` |
 
 - **`after`** is how events chain. It waits for one event to resolve, then adds
@@ -89,18 +103,24 @@ the chat input should offer it, add a preset in `presets.ts`.
 
 ## Bots
 
-- Every item has **its own Claude session**. The first bot run on the item starts
-  it (`--session-id`), and every later run resumes it (`--resume`), so a bot
+- Every item has **its own Claude session**, its id kept in the item's params
+  (`sessionId`) once made. Every later run resumes it (`--resume`), so a bot
   remembers the item.
+- An item's first run starts a new session. If an item it sits in (at any depth)
+  has a session, the new one is **forked** from the nearest such session
+  (`--resume <it> --fork-session --session-id <new>`). The new session is the
+  item's own from then on, and its bot knows how the item came about.
 - At most four bots run at once, and only one runs on an item at a time.
 - A run answers every bot blocker that was waiting on its item when it started.
 - **Prompt:** the item and its events on the first run. After that, every event
   added or resolved since the bot was last prompted. Each run keeps its place in
-  the trace (`trace_mark`) to know what is new. What the bot's own runs did is
-  left out, because the session already holds it.
+  the trace (`trace_mark`) to know what is new. What this item's own runs did is
+  left out, because the session already holds it. What other bots did, including
+  a child item's, is included.
 - **Output:** `{ message?, events?, close? }`, as structured output.
   - `message` is to the human: what the bot did, or one direct question.
-  - `events` are blockers to add.
+  - `events` are events to add in the item: blockers, and child items to split
+    work off (briefed with their first `events`).
   - With no events, and the item still open, it is the human's turn.
   - Whatever the bot wrote along the way is kept in its bot event's data, as `output`.
 
@@ -126,3 +146,5 @@ There is one list of **actions**, and every call goes through `Engine.callAction
   event. See the unsafe rule in AGENTS.md.
 - `add_events`, `cancel_event` and `close_item` are only for a human. A bot adds
   events through its output, and a script by what it returns.
+- Closing an item cancels its open children, closing child items as cancelled,
+  all the way down.

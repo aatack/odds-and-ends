@@ -19,9 +19,10 @@ export type SpawnBot = (args: {
   system: string
   schema: Record<string, unknown>
   mcpUrl: string
-  /** The item's session: started with this id when `resume` is false, resumed when it is true. */
+  /** The item's session: resumed when `resume` is true; otherwise started with this id, forked from `forkFrom` if given. */
   sessionId: string
   resume: boolean
+  forkFrom: string | null
   onOutput: (chunk: string) => void
 }) => BotProcess
 
@@ -39,13 +40,15 @@ export const SYSTEM = `You are a bot in the operator's workflow system. You work
 - Do what the operator's latest messages ask, as far as you can without them.
 - Actions that change things outside this app are unsafe, and you do not have them. unsafe_actions lists them. To get one done, add an approval event, filled in as far as you can.
 - When you stop, return your output: a message to the operator if there is something to say, the blockers to add, and whether the item is done. Chain blockers with after events: e.g. a github wait, then an after whose script adds a bot if the checks failed.
+- To split work off, add a child item with its first events (e.g. a message and a bot). It blocks this item until it closes, and its bot starts from this conversation.
 - Ask the operator only what nobody else can answer, as one direct question: no preamble, no summary, no waffle.`
 
-export const spawnClaude: SpawnBot = ({ prompt, system, schema, mcpUrl, sessionId, resume, onOutput }) => {
+export const spawnClaude: SpawnBot = ({ prompt, system, schema, mcpUrl, sessionId, resume, forkFrom, onOutput }) => {
   const mcp = JSON.stringify({ mcpServers: { workflows: { type: 'http', url: mcpUrl } } })
   const child = spawn(
     'claude',
-    ['-p', prompt, ...(resume ? ['--resume', sessionId] : ['--session-id', sessionId]),
+    ['-p', prompt,
+      ...(resume ? ['--resume', sessionId] : forkFrom ? ['--resume', forkFrom, '--fork-session', '--session-id', sessionId] : ['--session-id', sessionId]),
       '--append-system-prompt', system, '--mcp-config', mcp, '--strict-mcp-config',
       '--tools', '', '--allowedTools', 'mcp__workflows', '--permission-mode', 'dontAsk',
       '--json-schema', JSON.stringify(schema), '--output-format', 'stream-json', '--verbose'],
@@ -63,12 +66,19 @@ export const spawnClaude: SpawnBot = ({ prompt, system, schema, mcpUrl, sessionI
   }
 }
 
-/** The run's prompt: the item, the first time; what is new since the last run, after that. */
-export function promptFor(engine: Engine, item: Item, bots: ItemEvent[], resume: boolean): string {
+/**
+ * The run's prompt: the item, the first time (a new item split off from the one
+ * above, when the session was forked from it); what is new since it was last
+ * prompted, after that.
+ */
+export function promptFor(engine: Engine, item: Item, bots: ItemEvent[], resume: boolean, forked: boolean): string {
   const lines = engine.newSinceLastRun(item.id).map((e) => `- ${describeEvent(e)}`)
   const asks = bots.map((b) => b.params.instructions).filter(Boolean)
+  const intro = resume
+    ? `Since your last turn on this item:`
+    : `${forked ? 'You are now on a new item, split off from the one above. This conversation is its own from here on.\n\n' : ''}Item ${item.id}: ${item.title}\n\nIts events so far:`
   return [
-    resume ? `Since your last turn on this item:` : `Item ${item.id}: ${item.title}${item.url ? `\nLink: ${item.url}` : ''}\n\nIts events so far:`,
+    intro,
     lines.join('\n') || '- (nothing new)',
     asks.length && `Instructions:\n${asks.map((a) => `- ${a}`).join('\n')}`,
     'get_item has the full history.',
@@ -128,12 +138,12 @@ export class WorkerPool {
       if (this.running.has(w)) continue
       const claimed = this.engine.claim(w)
       if (!claimed) return
-      this.run(w, claimed.item, claimed.events, claimed.sessionId, claimed.resume)
+      this.run(w, claimed.item, claimed.events, claimed.sessionId, claimed.resume, claimed.forkFrom)
     }
   }
 
-  private run(worker: number, item: Item, bots: ItemEvent[], sessionId: string, resume: boolean): void {
-    const prompt = promptFor(this.engine, item, bots, resume)
+  private run(worker: number, item: Item, bots: ItemEvent[], sessionId: string, resume: boolean, forkFrom: string | null): void {
+    const prompt = promptFor(this.engine, item, bots, resume, forkFrom !== null)
     const runId = this.engine.startRun(item, bots, worker, prompt)
     const lines: string[] = []
     let buffer = ''
@@ -157,7 +167,7 @@ export class WorkerPool {
     }
     let proc: BotProcess
     try {
-      proc = this.spawnBot({ prompt, system: SYSTEM, schema: botOutputSchema(this.engine.eventTypes), mcpUrl: this.mcpUrl(runId), sessionId, resume, onOutput })
+      proc = this.spawnBot({ prompt, system: SYSTEM, schema: botOutputSchema(this.engine.eventTypes), mcpUrl: this.mcpUrl(runId), sessionId, resume, forkFrom, onOutput })
     } catch (e) {
       void end(null, (e as Error).message)
       return

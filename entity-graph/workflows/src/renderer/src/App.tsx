@@ -64,7 +64,7 @@ function ItemsSidebar() {
       <NewItem
         onCreate={(title, message) =>
           w.act(async () => {
-            const id = await api().create(title)
+            const id = await api().create(title, null)
             if (message) await api().send(id, 'bot', message)
             w.select(id)
           })
@@ -95,7 +95,14 @@ function ItemsMain() {
     <>
       {w.error && <div className="error">{w.error}</div>}
       {w.detail && w.catalog ? (
-        <ItemView key={w.detail.item.id} detail={w.detail} catalog={w.catalog} act={w.act} onSkip={() => w.skip(w.detail!.item.id)} />
+        <ItemView
+          key={w.detail.item.id}
+          detail={w.detail}
+          catalog={w.catalog}
+          act={w.act}
+          onSkip={() => w.skip(w.detail!.item.id)}
+          onOpen={w.select}
+        />
       ) : (
         <div className="empty">{w.empty ? 'Nothing needs you right now.' : 'Press Next for the next thing that needs you.'}</div>
       )}
@@ -155,7 +162,8 @@ function ItemList(props: { label: string; items: Item[]; selected: string | null
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
-function ItemView({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalog: Catalog; act: Act; onSkip: () => void }) {
+function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onSkip: () => void; onOpen: (id: string) => void }) {
+  const { detail, catalog, act, onSkip, onOpen } = props
   const { item } = detail
   const scroller = useRef<HTMLDivElement>(null)
   // Every time the human sees an item is in its trace.
@@ -172,11 +180,12 @@ function ItemView({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalo
       <header className="item-header">
         <div>
           <h1>{item.title}</h1>
-          {item.url && (
+          {detail.parent && (
             <div className="meta">
-              <a href={item.url} target="_blank" rel="noreferrer">
-                {item.url}
-              </a>
+              in{' '}
+              <button data-ui className="link" onClick={() => onOpen(detail.parent!.id)}>
+                {detail.parent.title}
+              </button>
             </div>
           )}
         </div>
@@ -193,10 +202,10 @@ function ItemView({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalo
         )}
       </header>
       <div className="chat-scroll" ref={scroller}>
-        <Chat detail={detail} />
+        <Chat detail={detail} onOpen={onOpen} />
       </div>
       <div className="composer">
-        <Blockers detail={detail} catalog={catalog} act={act} />
+        <Blockers detail={detail} catalog={catalog} act={act} onOpen={onOpen} />
         {item.closed ? (
           <div className="composer-bar muted">Closed.</div>
         ) : (

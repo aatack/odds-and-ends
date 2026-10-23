@@ -154,10 +154,12 @@ export const githubSources: Source[] = [
         await engine.exec('gh', ['search', 'prs', '--review-requested=@me', '--state=open', '--json', 'number,title,url,repository']),
       )
       return prs.map((p) => ({
-        ref: `github:review:${p.url}`,
-        title: `Review ${p.repository.nameWithOwner}#${p.number}: ${p.title}`,
-        url: p.url,
-        events: [{ type: 'message', params: { text: `Your review is requested on ${p.repository.nameWithOwner}#${p.number}.` } }],
+        type: 'item' as const,
+        params: {
+          title: `Review ${p.repository.nameWithOwner}#${p.number}: ${p.title}`,
+          key: `github:review:${p.url}`,
+          events: [{ type: 'message', params: { text: `Your review is requested on ${p.repository.nameWithOwner}#${p.number}: ${p.url}` } }],
+        },
       }))
     },
   },

@@ -2,11 +2,13 @@
 // long form of what an event is.
 
 /**
- * An item's history is its events. Some resolve as they are added (a message, an
- * action run); the rest are **blockers**, which stay unresolved until something
- * happens (a bot replies, CI finishes, an approval is given).
+ * Everything is an event, items included. Every event but an item sits in an
+ * item (its parent), and an item may sit in another. Some events resolve as
+ * they are added (a message, an action run); the rest are **blockers**, which
+ * stay open until something happens (a bot replies, CI finishes, an approval is
+ * given, a child item closes).
  */
-export type EventKind = 'message' | 'action' | 'closed' | 'approval' | 'bot' | 'github' | 'slack' | 'items' | 'after'
+export type EventKind = 'item' | 'message' | 'action' | 'approval' | 'bot' | 'github' | 'slack' | 'after'
 
 /** An event as it is added. `ref` names it, so an `after` added alongside can point at it. */
 export interface EventSpec {
@@ -22,8 +24,8 @@ export interface EventSpec {
  */
 export interface ItemEvent {
   id: string
-  /** The item it belongs to. */
-  itemId: string
+  /** The item it sits in; null only for an item that sits in none. */
+  parentId: string | null
   type: EventKind
   /** What it was given, as its type's params schema says. */
   params: Record<string, unknown>
@@ -32,7 +34,7 @@ export interface ItemEvent {
   createdBy: string
   createdAt: number
 
-  /** It has happened (or was cancelled). A plain event is resolved as it is added. */
+  /** It has happened (or was cancelled; for an item, closed). A plain event is resolved as it is added. */
   resolved: boolean
   resolvedAt: number | null
   /** Who resolved it: the human (approving), a bot (its run ending), 'system' (a check), or as createdBy for a plain event. */
@@ -68,28 +70,34 @@ export interface EventTimes {
   resolved: number | null
 }
 
+/** An item event, as the lists and the item view read it. */
 export interface Item {
   id: string
   title: string
-  source: string
-  url: string | null
+  /** The item it sits in, if any. It blocks that item until it closes. */
+  parentId: string | null
   closed: boolean
-  /** Its unresolved events, oldest first. */
+  /** How it closed: 'closed', 'handled_outside', or 'cancelled'. */
+  how: string | null
+  /** Its open children, oldest first. */
   blockers: ItemEvent[]
   /** Open, and blocked by nothing but the human's own approvals: it is the human's turn. */
   withHuman: boolean
-  /** The worker running a bot on it, while one is. */
+  /** The worker running a bot on it, while one is. Held in memory only. */
   worker: number | null
-  /** Since when it has been as it is: the last event added or resolved. */
+  /** Its Claude session, once it has one. */
+  sessionId: string | null
+  /** Since when it has been as it is: the last child added or resolved. */
   since: number
   createdAt: number
-  updatedAt: number
+  closedAt: number | null
 }
 
 /** One row of the trace: one thing that happened. */
 export interface TraceEntry {
   id: number
   at: number
+  /** The item it happened in (for an item's own creation and closing, the item itself). */
   itemId: string
   eventId: string | null
   runId: string | null
@@ -112,7 +120,9 @@ export interface BotRun {
 
 export interface ItemDetail {
   item: Item
-  /** Every event, oldest first. */
+  /** The item it sits in, if any. */
+  parent: { id: string; title: string } | null
+  /** Its children, oldest first: every event in it, child items included. */
   events: ItemEvent[]
   runs: BotRun[]
   trace: TraceEntry[]
@@ -202,7 +212,8 @@ export interface WorkflowsAPI {
   viewed: (id: string) => Promise<void>
   /** The human passed over the item for now. */
   skipped: (id: string) => Promise<void>
-  create: (title: string) => Promise<string>
+  /** A new item, in `parentId` or in none. */
+  create: (title: string, parentId: string | null) => Promise<string>
   /** Sends from the chat input: `text` through a preset. */
   send: (id: string, preset: string, text: string) => Promise<void>
   /** Runs an approval blocker's action with the human's inputs. */

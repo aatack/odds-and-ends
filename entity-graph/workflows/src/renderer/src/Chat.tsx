@@ -22,7 +22,7 @@ const HUMAN = new Set(['human', 'mcp'])
  * with who it came from as its picture. Cancelled blockers are small notes in
  * the middle. A message shows its words and the time; pressing it shows the rest.
  */
-export function Chat({ detail }: { detail: ItemDetail }) {
+export function Chat({ detail, onOpen }: { detail: ItemDetail; onOpen: (id: string) => void }) {
   const done = detail.events.filter((e) => e.resolved && e.message !== null).sort((a, b) => a.resolvedAt! - b.resolvedAt!)
   return (
     <section className="chat">
@@ -32,14 +32,14 @@ export function Chat({ detail }: { detail: ItemDetail }) {
             {e.message}
           </div>
         ) : (
-          <Message key={e.id} event={e} detail={detail} />
+          <Message key={e.id} event={e} detail={detail} onOpen={onOpen} />
         ),
       )}
     </section>
   )
 }
 
-function Message({ event: e, detail }: { event: ItemEvent; detail: ItemDetail }) {
+function Message({ event: e, detail, onOpen }: { event: ItemEvent; detail: ItemDetail; onOpen: (id: string) => void }) {
   const [open, setOpen] = useState(false)
   const mine = HUMAN.has(e.actor)
   const run = detail.runs.find((r) => r.eventIds.includes(e.id))
@@ -53,6 +53,14 @@ function Message({ event: e, detail }: { event: ItemEvent; detail: ItemDetail })
         {open && (
           <div className="more" onClick={(ev) => ev.stopPropagation()}>
             <div className="bubble-meta">
+              {e.type === 'item' && (
+                <>
+                  <button data-ui className="link" onClick={() => onOpen(e.id)}>
+                    Open it
+                  </button>
+                  {' · '}
+                </>
+              )}
               {e.type}: {e.summary} · added by {e.createdBy}
               {e.resolvedAt !== e.createdAt && ` · blocked for ${minutes(e.resolvedAt! - e.createdAt)}`}
               {run?.costUsd != null && ` · $${run.costUsd.toFixed(2)}`}
