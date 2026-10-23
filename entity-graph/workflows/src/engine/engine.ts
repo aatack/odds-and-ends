@@ -458,6 +458,16 @@ export class Engine extends EventEmitter {
     specs = specs.filter((s) => !keyed(s))
     if (!parentId && specs.some((s) => s.type !== 'item')) throw new Error('Only an item can sit in no item.')
     const ids = new Map<string, string>()
+    // A bot already queued in the item (open, and no run has it yet) will be told
+    // everything new when it runs, so another with nothing more to ask is left out:
+    // its ref stands for the queued one. One that is running doesn't count.
+    const queued = parentId ? this.queuedBot(parentId) : null
+    if (queued)
+      specs = specs.filter((s) => {
+        const same = s.type === 'bot' && (!s.params.instructions || s.params.instructions === queued.params.instructions)
+        if (same && s.ref) ids.set(s.ref, queued.id)
+        return !same
+      })
     const rows = specs.map((s) => {
       const id = randomUUID()
       if (s.ref) ids.set(s.ref, id)
@@ -663,6 +673,14 @@ export class Engine extends EventEmitter {
     }
     this.emit('change')
     return { item, events: item.blockers.filter((b) => b.type === 'bot'), sessionId: item.sessionId!, resume, forkFrom }
+  }
+
+  /** An open bot blocker in the item that no run has taken up yet, or null. */
+  queuedBot(itemId: string): ItemEvent | null {
+    const taken = new Set(
+      (this.db.prepare('SELECT event_ids FROM runs WHERE item_id = ? AND ended_at IS NULL').all(itemId) as Row[]).flatMap((r) => json<string[]>(r.event_ids) ?? []),
+    )
+    return this.children(itemId).find((e) => e.type === 'bot' && !e.resolved && !taken.has(e.id)) ?? null
   }
 
   /**

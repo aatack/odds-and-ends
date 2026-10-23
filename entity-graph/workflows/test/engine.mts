@@ -459,6 +459,37 @@ assert.equal(last(taken, 'bot').message, 'Cancelled: Bot')
 assert.ok(!item(taken).closed, "a run that was cancelled doesn't land")
 assert.ok(item(taken).withHuman)
 
+// ---- 13b. Messages sent while a bot runs queue behind it: one more bot, which is told all of them ----
+let releaseFirst = () => {}
+const firstHeld = new Promise<void>((r) => (releaseFirst = r))
+const prompts: string[] = []
+behaviours.push(async ({ prompt }) => {
+  prompts.push(prompt)
+  await firstHeld
+  return { message: 'first' }
+})
+behaviours.push(async ({ prompt }) => {
+  prompts.push(prompt)
+  return { message: 'second' }
+})
+const queue = (await engine.create('Queue me'))!
+await engine.send(queue, 'bot', 'one')
+while (!pool.status().some((w) => w.itemId === queue)) await new Promise((r) => setTimeout(r, 5))
+await engine.send(queue, 'bot', 'two')
+await engine.send(queue, 'bot', 'three')
+await engine.addEvents(queue, [{ type: 'bot', params: {} }], 'bot', 'bot')
+assert.equal(engine.children(queue).filter((e) => e.type === 'bot').length, 2, 'a running bot queues one more; a queued one takes no other')
+assert.equal(pool.status().filter((w) => w.itemId === queue).length, 1, "the queued bot doesn't start while one runs")
+await engine.addEvents(queue, [{ type: 'bot', params: { instructions: 'And tidy up' } }], 'bot', 'bot')
+assert.equal(engine.children(queue).filter((e) => e.type === 'bot').length, 3, 'a bot with something new to ask is still added')
+releaseFirst()
+await settle()
+assert.equal(prompts.length, 2, 'the queued bots are answered by one run')
+assert.match(prompts[1], /two[\s\S]*three/)
+assert.match(prompts[1], /And tidy up/)
+assert.doesNotMatch(prompts[1], /\bone\b/)
+assert.equal(last(queue, 'message').params.text, 'second')
+
 // ---- 14. The unsafe rule: every action says which it is, and a bot's MCP offers none of the unsafe ones ----
 assert.ok(engine.actions.every((a) => typeof a.unsafe === 'boolean'))
 const probe = (await engine.create('Probe'))!

@@ -136,6 +136,10 @@ the chat input should offer it, add a preset in `presets.ts`.
   item's own from then on, and its bot knows how the item came about.
 - At most four bots run at once, and only one runs on an item at a time.
 - A run answers every bot blocker that was waiting on its item when it started.
+- A bot added while one runs on its item waits for that run to end, then is told
+  everything since it started: messages can be queued freely. While a bot is
+  queued (open, not yet taken up by a run), another bot with no new
+  instructions is not added in its item; a ref to it stands for the queued one.
 - **Prompt:** the item and its events on the first run. After that, every event
   added or resolved since the bot was last prompted. Each run keeps its place in
   the trace (`trace_mark`) to know what is new. What this item's own runs did is
