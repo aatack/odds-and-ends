@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type TextareaHTMLAttributes } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode, type TextareaHTMLAttributes } from 'react'
 import type { ObjectSchema, PropertySchema } from '../../shared/types'
 
 /** Fields that take prose, and so a text box rather than a line. */
@@ -16,28 +16,53 @@ export function CompactForm(props: {
   schema: ObjectSchema
   value: Record<string, unknown>
   onChange: (value: Record<string, unknown>) => void
+  /** Shown in place of `hinted`'s placeholder while it is empty; that field comes first. */
+  hint?: { field: string; content: ReactNode }
 }) {
-  const { schema, value, onChange } = props
+  const { schema, value, onChange, hint } = props
+  const fields = Object.entries(schema.properties ?? {})
+  if (hint) fields.sort(([a], [b]) => Number(b === hint.field) - Number(a === hint.field))
   return (
     <div className="compact">
-      {Object.entries(schema.properties ?? {}).map(([name, p]) => (
-        <Field
-          key={name}
-          name={name}
-          label={`${name}${schema.required?.includes(name) ? '' : ' (optional)'}`}
-          schema={p}
-          value={value[name]}
-          onChange={(v) => onChange({ ...value, [name]: v })}
-        />
-      ))}
+      {fields.map(([name, p]) => {
+        const label = `${name}${schema.required?.includes(name) ? '' : ' (optional)'}`
+        const field = (
+          <Field
+            key={name}
+            name={name}
+            label={label}
+            placeholder={hint?.field === name ? '' : undefined}
+            schema={p}
+            value={value[name]}
+            onChange={(v) => onChange({ ...value, [name]: v })}
+          />
+        )
+        if (hint?.field !== name) return field
+        const empty = value[name] === undefined || value[name] === '' || (Array.isArray(value[name]) && !(value[name] as unknown[]).length)
+        return (
+          <div key={name} className="hinted">
+            {field}
+            {empty && <span className="hint">{hint.content}</span>}
+          </div>
+        )
+      })}
     </div>
   )
 }
 
-function Field(props: { name: string; label: string; schema: PropertySchema; value: unknown; onChange: (v: unknown) => void }) {
-  const { name, label, schema, value, onChange } = props
+function Field(props: {
+  name: string
+  label: string
+  /** In place of the label as placeholder; '' for none. */
+  placeholder?: string
+  schema: PropertySchema
+  value: unknown
+  onChange: (v: unknown) => void
+}) {
+  const { name, schema, value, onChange } = props
+  const label = props.placeholder ?? props.label
   const type = typeOf(schema)
-  const named = { title: schema.description ? `${label}: ${schema.description}` : label, 'aria-label': label }
+  const named = { title: schema.description ? `${props.label}: ${schema.description}` : props.label, 'aria-label': props.label }
   if (schema.enum)
     return (
       <select {...named} value={value === undefined ? '' : String(value)} onChange={(e) => onChange(e.target.value || undefined)}>

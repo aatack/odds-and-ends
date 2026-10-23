@@ -36,6 +36,18 @@ export function outcome(h: Handoff): string {
 /** The field that holds a type's words, carried over when the type changes so nothing typed is lost. */
 const WORDS: Partial<Record<HandoffKind, string>> = { bot: 'instructions', human: 'needed', slack: 'message', script: 'source' }
 
+/** What an empty box says: its type, and what should happen. In the type's main field, which comes first. */
+const HINTS: Record<HandoffKind, { field: string; name: string; text: string }> = {
+  human: { field: 'needed', name: 'Human', text: 'what is needed from you' },
+  bot: { field: 'instructions', name: 'Bot', text: 'what the bot should do' },
+  github: { field: 'repo', name: 'GitHub', text: 'the repository (owner/name) of the pull request to wait on' },
+  slack: { field: 'message', name: 'Slack', text: 'a message to post, then wait for a reply' },
+  items: { field: 'item_ids', name: 'Items', text: 'the items to wait for, comma separated' },
+  script: { field: 'source', name: 'Script', text: 'code that decides what happens next' },
+}
+
+const filled = (v: unknown) => v !== undefined && v !== '' && !(Array.isArray(v) && !v.length)
+
 /**
  * A list of handoffs to put at the front of the queue. Each is a box with its
  * type's icon in the corner; Tab and Shift+Tab in a box step through the types,
@@ -90,14 +102,30 @@ export function HandoffBuilder(props: {
               }
               if (e.key !== 'Tab') return
               e.preventDefault()
-              step(i, e.shiftKey ? -1 : 1)
+              // An empty box steps through the types; once something is in it, Tab moves between its fields.
+              if (!Object.values(h.params).some(filled)) return step(i, e.shiftKey ? -1 : 1)
+              const fields = [...(rows.current[i]?.querySelectorAll<HTMLElement>('.builder-fields input, .builder-fields textarea, .builder-fields select') ?? [])]
+              fields[fields.indexOf(document.activeElement as HTMLElement) + (e.shiftKey ? -1 : 1)]?.focus()
             }}
           >
             <span className="builder-icon" title={`${h.type}: ${type.description} (Tab to change)`}>
               <TypeIcon type={h.type} />
             </span>
             <div className="builder-fields">
-              <CompactForm key={h.type} schema={type.params} value={h.params} onChange={(params) => set(i, { ...h, params })} />
+              <CompactForm
+                key={h.type}
+                schema={type.params}
+                value={h.params}
+                onChange={(params) => set(i, { ...h, params })}
+                hint={{
+                  field: HINTS[h.type].field,
+                  content: (
+                    <>
+                      <b>{HINTS[h.type].name}</b> — {HINTS[h.type].text}
+                    </>
+                  ),
+                }}
+              />
             </div>
             {value.length > 1 && (
               <button data-ui className="link builder-remove" title="Remove" onClick={() => onChange(value.filter((_, j) => j !== i))}>
@@ -115,9 +143,6 @@ export function HandoffBuilder(props: {
           </div>
         )
       })}
-      <button data-ui className="link" onClick={() => onChange([...value, { type: 'bot', params: {} }])}>
-        + then…
-      </button>
     </div>
   )
 }

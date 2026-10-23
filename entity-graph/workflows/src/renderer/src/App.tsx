@@ -164,6 +164,7 @@ function ItemView({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalo
   const { item } = detail
   const current = item.current
   const scroller = useRef<HTMLDivElement>(null)
+  const withHuman = !item.closed && (!current || current.type === 'human')
   // Every time the human sees an item, or sees it move on, is in its trace.
   useEffect(() => {
     void api().viewed(item.id)
@@ -174,24 +175,34 @@ function ItemView({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalo
   }, [detail.handoffs.length, current?.id])
   return (
     <div className="item">
-      <header>
-        <h1>{item.title}</h1>
-        <div className="meta">
-          <span>{item.source}</span>
+      <header className="item-header">
+        <div>
+          <h1>{item.title}</h1>
           {item.url && (
-            <a href={item.url} target="_blank" rel="noreferrer">
-              {item.url}
-            </a>
+            <div className="meta">
+              <a href={item.url} target="_blank" rel="noreferrer">
+                {item.url}
+              </a>
+            </div>
           )}
         </div>
+        {withHuman && (
+          <div className="buttons">
+            <button data-ui onClick={() => act(() => api().close(item.id))}>
+              Close
+            </button>
+            <button data-ui title="You did it yourself, outside this tool." onClick={() => act(() => api().handledOutside(item.id))}>
+              Done outside
+            </button>
+            <button data-ui onClick={onSkip}>Skip</button>
+          </div>
+        )}
       </header>
       <div className="chat-scroll" ref={scroller}>
         <Chat detail={detail} />
       </div>
       <div className="composer">
-        {!item.closed && (!current || current.type === 'human') && (
-          <Decide key={current?.id ?? 'with-human'} detail={detail} catalog={catalog} act={act} onSkip={onSkip} />
-        )}
+        {withHuman && <Decide key={current?.id ?? 'with-human'} detail={detail} catalog={catalog} act={act} />}
         {current?.type === 'bot' && (
           <div className="composer-bar">
             <span className="muted">{item.worker !== null ? 'A bot is on it.' : 'Waiting for a free bot.'}</span>
@@ -219,7 +230,7 @@ function ItemView({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalo
 }
 
 /** The human's turn: approve what is asked, hand the item on, or close it. Any question is the last message above. */
-function Decide({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalog: Catalog; act: Act; onSkip: () => void }) {
+function Decide({ detail, catalog, act }: { detail: ItemDetail; catalog: Catalog; act: Act }) {
   const { item } = detail
   const current = item.current
   const approval = current?.params.approval as { action: string; inputs: Record<string, unknown> } | undefined
@@ -243,24 +254,14 @@ function Decide({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalog:
         </div>
       )}
       <HandoffBuilder catalog={catalog} value={next} onChange={setNext} onSend={send} />
-      <div className="composer-bar">
-        <div className="buttons">
-          <button data-ui onClick={() => act(() => api().close(item.id))}>
-            Close
+      {item.queued > 0 && (
+        <div className="composer-bar">
+          <span />
+          <button data-ui title="Go on with the queued handoffs" onClick={() => act(() => api().handOff(item.id, []))}>
+            Continue
           </button>
-          <button data-ui title="You did it yourself, outside this tool." onClick={() => act(() => api().handledOutside(item.id))}>
-            Done outside
-          </button>
-          <button data-ui onClick={onSkip}>Skip</button>
         </div>
-        <div className="buttons">
-          {item.queued > 0 && (
-            <button data-ui title="Go on with the queued handoffs" onClick={() => act(() => api().handOff(item.id, []))}>
-              Continue
-            </button>
-          )}
-        </div>
-      </div>
+      )}
     </>
   )
 }
