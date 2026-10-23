@@ -185,4 +185,6 @@ button[data-ui].blocker-text { text-align: left; padding: 0; overflow: hidden; t
 .row-status { flex: none; max-width: 40%; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row-age { flex: none; width: 64px; text-align: right; font-size: 12px; }
 .view-note { margin: 0 32px 8px; }
+.items-view .row:hover { background: none; }
+.items-view .row.selected { background: var(--color-gray-100); box-shadow: none; }
 }

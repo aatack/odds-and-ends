@@ -43,10 +43,15 @@ export function ItemsList(props: { items: Item[]; onOpen: (id: string) => void; 
   }, [items, text])
   const flat = groups.flatMap((g) => g.items)
   const current = Math.min(at, Math.max(flat.length - 1, 0))
+  // The highlighted row stays in sight as the arrows move it.
+  const list = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    list.current?.querySelector('.row.selected')?.scrollIntoView({ block: 'nearest' })
+  }, [current, text])
   const now = Date.now()
 
   return (
-    <div className="items-view">
+    <div className="items-view" ref={list}>
       <div
         className="builder-row compact search"
         onMouseDown={(e) => {
