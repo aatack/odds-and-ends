@@ -17,6 +17,7 @@ export interface SlackWorkspace {
   name: string
   team: string
   user: string
+  userId: string
   token: string
 }
 
@@ -78,12 +79,15 @@ export class Settings {
 }
 
 /** Checks a Slack user token and answers whose it is. */
-export async function slackAuthTest(token: string, fetchFn: typeof fetch = fetch): Promise<{ team: string; user: string }> {
+export async function slackAuthTest(
+  token: string,
+  fetchFn: typeof fetch = fetch,
+): Promise<{ team: string; user: string; userId: string }> {
   const res = await fetchFn('https://slack.com/api/auth.test', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
   })
-  const body = (await res.json()) as { ok: boolean; error?: string; team?: string; user?: string }
+  const body = (await res.json()) as { ok: boolean; error?: string; team?: string; user?: string; user_id?: string }
   if (!body.ok) throw new Error(`Slack refused the token: ${body.error ?? res.status}`)
-  return { team: body.team ?? '', user: body.user ?? '' }
+  return { team: body.team ?? '', user: body.user ?? '', userId: body.user_id ?? '' }
 }

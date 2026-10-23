@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { ItemDetail, Overview, WorkflowsAPI } from '../../shared/types'
+import type { Catalog, ItemDetail, Overview, WorkflowsAPI } from '../../shared/types'
 
 declare global {
   interface Window {
@@ -17,6 +17,8 @@ export function useWorkflows() {
   const [skipped, setSkipped] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [empty, setEmpty] = useState(false)
+  const [catalog, setCatalog] = useState<Catalog | null>(null)
+  useEffect(() => void api().catalog().then(setCatalog), [])
 
   const refresh = useCallback(async () => {
     setOverview(await api().overview())
@@ -62,5 +64,5 @@ export function useWorkflows() {
     [skipped, next],
   )
 
-  return { overview, detail, selected, select, next, skip, act, error, empty }
+  return { overview, detail, catalog, selected, select, next, skip, act, error, empty }
 }

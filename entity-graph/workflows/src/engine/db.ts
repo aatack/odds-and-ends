@@ -21,18 +21,37 @@ CREATE TABLE IF NOT EXISTS items (
   source_ref TEXT UNIQUE,
   url TEXT,
   state TEXT NOT NULL DEFAULT '',
-  blocker TEXT NOT NULL,
-  request TEXT,
-  instruction TEXT,
+  closed INTEGER NOT NULL DEFAULT 0,
   worker INTEGER,
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  blocked_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS items_blocker ON items (blocker, blocked_at);
 
--- The full history of every item. Nothing is deleted or rewritten here: it is
--- what the agents read back to find what could have gone better.
+-- Each item's handoffs: a queue, in seq order. One is active while the item is
+-- open; resolved ones keep their resolution, which is what chains them.
+CREATE TABLE IF NOT EXISTS handoffs (
+  id TEXT PRIMARY KEY,
+  item_id TEXT NOT NULL,
+  seq REAL NOT NULL,
+  status TEXT NOT NULL,
+  type TEXT NOT NULL,
+  params TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  started_at INTEGER,
+  resolved_at INTEGER,
+  state_at_start TEXT,
+  resolution TEXT,
+  resolved_by TEXT,
+  check_step INTEGER NOT NULL DEFAULT 0,
+  next_check_at INTEGER,
+  last_error TEXT
+);
+CREATE INDEX IF NOT EXISTS handoffs_item ON handoffs (item_id, seq);
+CREATE INDEX IF NOT EXISTS handoffs_active ON handoffs (status, type, started_at);
+
+-- What happened between handoffs. Append-only: it is what the agents read back
+-- to find what could have gone better.
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   item_id TEXT NOT NULL,
@@ -43,35 +62,15 @@ CREATE TABLE IF NOT EXISTS events (
   data TEXT
 );
 CREATE INDEX IF NOT EXISTS events_item ON events (item_id, id);
-CREATE INDEX IF NOT EXISTS events_at ON events (at);
-
--- One row per external wait, while the item waits.
-CREATE TABLE IF NOT EXISTS waits (
-  item_id TEXT PRIMARY KEY,
-  kind TEXT NOT NULL,
-  description TEXT NOT NULL,
-  params TEXT NOT NULL,
-  step INTEGER NOT NULL DEFAULT 0,
-  next_check_at INTEGER NOT NULL,
-  deadline INTEGER,
-  last_error TEXT
-);
-
--- Items waiting for other items to close.
-CREATE TABLE IF NOT EXISTS deps (
-  item_id TEXT NOT NULL,
-  depends_on TEXT NOT NULL,
-  PRIMARY KEY (item_id, depends_on)
-);
 
 -- Every claude -p run, with its whole transcript.
 CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY,
   item_id TEXT NOT NULL,
+  handoff_id TEXT NOT NULL,
   worker INTEGER NOT NULL,
   started_at INTEGER NOT NULL,
   ended_at INTEGER,
-  outcome TEXT,
   cost_usd REAL,
   turns INTEGER,
   result TEXT,

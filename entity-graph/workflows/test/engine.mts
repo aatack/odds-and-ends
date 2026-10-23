@@ -1,239 +1,349 @@
 // The engine, the MCP server and the worker pool, end to end, against an
-// in-memory node:sqlite store, a stand-in for gh and stand-in agents that call
-// the real MCP server over HTTP.
+// in-memory node:sqlite store, stand-ins for gh and Slack, and stand-in agents
+// that call the real MCP server over HTTP and return structured output.
 
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { BACKOFF_MINUTES, Engine, defaultRegistry } from '../src/engine/engine.ts'
-import { startMcp } from '../src/engine/mcp.ts'
-import { Settings } from '../src/engine/settings.ts'
 import { Admin } from '../src/engine/admin.ts'
+import { Engine, type AgentOutput } from '../src/engine/engine.ts'
+import { catalog, startMcp } from '../src/engine/mcp.ts'
+import { agentOutputSchema } from '../src/engine/schema.ts'
 import { WorkerPool, type SpawnAgent } from '../src/engine/workers.ts'
 
 const MINUTE = 60_000
 let clock = 1_000_000
+
+// ---- gh ----
 const ghCalls: string[][] = []
-let checksPending = true
+let checks: 'pending' | 'failed' | 'passed' = 'pending'
 const exec = async (cmd: string, args: string[]) => {
   if (cmd === 'claude') return '2.1.309 (Claude Code)\n'
   assert.equal(cmd, 'gh')
-  if (args[0] === 'api' && args[1] === 'user') return 'octocat\n'
   ghCalls.push(args)
+  if (args[0] === 'api' && args[1] === 'user') return 'octocat\n'
   if (args[0] === 'pr' && args[1] === 'view' && args.includes('statusCheckRollup'))
     return JSON.stringify({
-      statusCheckRollup: [{ __typename: 'CheckRun', name: 'ci', status: checksPending ? 'IN_PROGRESS' : 'COMPLETED', conclusion: checksPending ? '' : 'SUCCESS' }],
+      statusCheckRollup: [
+        { __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'SUCCESS' },
+        {
+          __typename: 'CheckRun',
+          name: 'e2e',
+          status: checks === 'pending' ? 'IN_PROGRESS' : 'COMPLETED',
+          conclusion: checks === 'failed' ? 'FAILURE' : checks === 'passed' ? 'SUCCESS' : '',
+        },
+      ],
     })
-  if (args[0] === 'pr' && args[1] === 'comment') return 'https://github.com/o/r/pull/7#comment\n'
+  if (args[0] === 'pr' && ['comment', 'merge'].includes(args[1])) return 'https://github.com/o/r/pull/7\n'
   if (args[0] === 'search')
     return JSON.stringify([{ number: 7, title: 'Fix it', url: 'https://github.com/o/r/pull/7', repository: { nameWithOwner: 'o/r' } }])
   throw new Error(`unexpected gh ${args.join(' ')}`)
 }
 
-const engine = new Engine(new DatabaseSync(':memory:'), defaultRegistry, exec, () => clock)
-const settings = new Settings(engine.db)
-settings.set('mcp.port', 0)
-const mcp = await startMcp(engine, settings)
+// ---- Slack ----
+const slackCalls: { method: string; body: Record<string, unknown> }[] = []
+let thread: { ts: string; user: string; text: string }[] = []
+const fakeFetch = (async (url: string, init: { headers: Record<string, string>; body?: string }) => {
+  const u = new URL(url)
+  const method = u.pathname.replace('/api/', '')
+  const body = init.body ? JSON.parse(init.body) : Object.fromEntries(u.searchParams)
+  slackCalls.push({ method, body })
+  const ok = (r: Record<string, unknown>) => ({ status: 200, json: async () => ({ ok: true, ...r }) })
+  if (method === 'auth.test')
+    return init.headers.Authorization === 'Bearer xoxp-good-1234'
+      ? ok({ team: 'Acme', user: 'alex', user_id: 'UME' })
+      : { status: 200, json: async () => ({ ok: false, error: 'invalid_auth' }) }
+  if (method === 'chat.postMessage') {
+    thread = [{ ts: '100.1', user: 'UME', text: String(body.text) }]
+    return ok({ channel: body.channel, ts: '100.1' })
+  }
+  if (method === 'conversations.replies') return ok({ messages: thread })
+  throw new Error(`unexpected Slack ${method}`)
+}) as unknown as typeof fetch
 
-// Each agent run takes the next behaviour off this queue and plays it over MCP.
+const engine = new Engine({ db: new DatabaseSync(':memory:'), exec, fetch: fakeFetch, now: () => clock })
+engine.settings.set('mcp.port', 0)
+const mcp = await startMcp(engine)
+
+// ---- agents: each run plays the next behaviour over MCP and returns its output ----
 type Call = (name: string, args?: Record<string, unknown>) => Promise<string>
-const behaviours: ((call: Call, prompt: string) => Promise<void>)[] = []
-const prompts: string[] = []
-const spawnFake: SpawnAgent = ({ prompt, mcpUrl, onOutput }) => {
-  prompts.push(prompt)
+type Behaviour = (call: Call, prompt: string, schema: Record<string, unknown>) => Promise<AgentOutput | null>
+const behaviours: Behaviour[] = []
+const connect = async (url: string, headers: Record<string, string> = {}) => {
+  const client = new Client({ name: 'test', version: '0' })
+  await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers } }))
+  const call: Call = async (name, args = {}) => {
+    const r = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean }
+    if (r.isError) throw new Error(r.content[0].text)
+    return r.content[0].text
+  }
+  return { client, call }
+}
+const spawnFake: SpawnAgent = ({ prompt, schema, mcpUrl, onOutput }) => {
   const behaviour = behaviours.shift()
-  assert.ok(behaviour, 'an agent ran that no test expected')
+  assert.ok(behaviour, `an agent ran that no test expected:\n${prompt}`)
   const done = (async () => {
-    const client = new Client({ name: 'fake-agent', version: '0' })
-    await client.connect(new StreamableHTTPClientTransport(new URL(mcpUrl)))
-    const call: Call = async (name, args = {}) => {
-      const r = (await client.callTool({ name, arguments: args })) as { content: { text: string }[]; isError?: boolean }
-      if (r.isError) throw new Error(r.content[0].text)
-      return r.content[0].text
-    }
-    await behaviour(call, prompt)
+    const { client, call } = await connect(mcpUrl)
+    const out = await behaviour(call, prompt, schema)
     await client.close()
-    onOutput(JSON.stringify({ type: 'result', total_cost_usd: 0.01, num_turns: 3, result: 'finished' }) + '\n')
+    onOutput(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Thinking out loud.' }] } }) + '\n')
+    onOutput(JSON.stringify({ type: 'result', total_cost_usd: 0.01, num_turns: 3, structured_output: out ?? undefined }) + '\n')
     return { exitCode: 0 }
   })()
   return { done, kill: () => {} }
 }
 const pool = new WorkerPool(engine, mcp.runUrl, 2, spawnFake)
 
-const until = async (what: string, ok: () => boolean) => {
-  for (let i = 0; i < 200; i++) {
-    if (ok() && pool.status().every((w) => w.itemId === null)) return
-    await new Promise((r) => setTimeout(r, 10))
+const settle = async () => {
+  for (let i = 0; i < 300; i++) {
+    await engine.idle()
+    await new Promise((r) => setTimeout(r, 5))
+    if (pool.status().every((w) => w.itemId === null) && !engine.overview().items.some((i) => i.current?.type === 'agent')) {
+      await engine.idle()
+      return
+    }
   }
-  throw new Error(`timed out waiting for ${what}`)
+  throw new Error(`still busy: ${JSON.stringify(pool.status())}`)
 }
-const blocker = (id: string) => engine.get(id)!.blocker
+const current = (id: string) => engine.get(id)!.current
+const tick = async () => {
+  await engine.tick()
+  await settle()
+}
 
-// A new item waits for the operator, and Next finds it.
-const id = engine.create('Answer the PR')!
-assert.equal(blocker(id), 'operator')
+// The script an agent leaves behind a CI wait: fix on failure, ask to merge on success.
+const route = `async ({ previous }) => previous.resolution.outcome === 'failed'
+  ? { type: 'agent', params: { instructions: 'Fix the failing checks: ' + previous.resolution.failed.join(', ') } }
+  : { type: 'human', params: { needed: 'Merge o/r#7?', approval: { action: 'github_pr_merge', inputs: { repo: 'o/r', number: 7, method: 'squash' } } } }`
+
+// ---- 1. A new item goes to the human, and Next finds it ----
+const id = (await engine.create('Answer the PR'))!
+assert.equal(current(id)!.type, 'human')
 assert.equal(engine.next(), id)
 assert.equal(engine.next([id]), null)
 
-// Dispatched, an agent reads it, records state and asks for an approval.
-behaviours.push(async (call) => {
-  const item = JSON.parse(await call('get_item'))
-  assert.equal(item.item.instruction, 'Reply on the PR')
-  await call('set_state', { state: 'Drafted a reply.' })
-  await call('request_approval', {
-    state: 'Reply drafted; needs posting.',
-    action: 'github.pr.comment',
-    inputs: { repo: 'o/r', number: '7', body: 'Thanks!' },
-    reason: 'Post the reply.',
-  })
-  // A second ending is refused.
-  await assert.rejects(call('close_item', { state: 'x' }), /already recorded/)
+// ---- 2. Human → agent. The agent can't act outward or hand off itself; it returns a chain ----
+behaviours.push(async (call, prompt, schema) => {
+  assert.match(prompt, /Your instructions: Reply on the PR/)
+  assert.ok(JSON.stringify(schema).includes('"needed"'))
+  const item = JSON.parse(await call('get_item', { item_id: id }))
+  assert.equal(item.item.id, id)
+  await assert.rejects(call('github_pr_comment', { repo: 'o/r', number: 7, body: 'x' }), /outward/)
+  await assert.rejects(call('hand_off', { item_id: id, next: [] }), /returns its next handoffs/)
+  await assert.rejects(call('set_state', { item_id: 'someone-else', state: 'x' }), /only change the item/)
+  await call('note', { item_id: id, text: 'Read the thread.' })
+  return {
+    state: 'Reply drafted.',
+    next: [
+      { type: 'human', params: { needed: 'Post this reply?', approval: { action: 'github_pr_comment', inputs: { repo: 'o/r', number: 7, body: 'Thanks!' } } } },
+      { type: 'github', params: { repo: 'o/r', number: 7, until: 'checks' } },
+      { type: 'script', params: { source: route, description: 'Fix on failure, merge on success' } },
+    ],
+  }
 })
-engine.dispatch(id, 'Reply on the PR')
-await until('the approval', () => blocker(id) === 'operator')
-const asked = engine.get(id)!
-assert.equal(asked.state, 'Reply drafted; needs posting.')
-assert.equal(asked.request?.approval?.action, 'github.pr.comment')
-assert.equal(asked.request?.approval?.inputs.body, 'Thanks!')
+await engine.handOff(id, { next: [{ type: 'agent', params: { instructions: 'Reply on the PR' } }] })
+await settle()
+assert.equal(engine.get(id)!.state, 'Reply drafted.')
+assert.equal(current(id)!.type, 'human')
+assert.equal(current(id)!.params.needed, 'Post this reply?')
+assert.equal(engine.get(id)!.queued, 2)
+const agentDone = engine.handoffs(id).find((h) => h.type === 'agent')!
+assert.equal(agentDone.resolution!.output, 'Thinking out loud.')
+assert.equal(agentDone.resolution!.state, 'Reply drafted.')
+assert.equal(agentDone.stateAtStart, '')
 
-// The operator changes the body and runs it; the change is recorded, and the item goes back to an agent.
-behaviours.push(async (call, prompt) => {
-  assert.match(prompt, /Ran Comment on a pull request/)
-  await call('wait_for', { state: 'Posted; waiting for CI.', kind: 'github.pr.checks', params: { repo: 'o/r', number: 7 } })
-})
-await engine.execute(id, { repo: 'o/r', number: '7', body: 'Thanks a lot!' })
+// ---- 3. The human changes the reply and approves it; the chain goes on to the CI wait ----
+await engine.approve(id, { repo: 'o/r', number: 7, body: 'Thanks a lot!' })
 assert.deepEqual(ghCalls.at(-1), ['pr', 'comment', '7', '-R', 'o/r', '--body', 'Thanks a lot!'])
-const run = engine.events(id).find((e) => e.kind === 'action_run')!
-assert.deepEqual(run.data?.changed, ['body'])
-await until('the wait', () => blocker(id) === 'external')
+const approved = engine.handoffs(id).find((h) => h.resolution?.decision === 'approved')!
+assert.deepEqual((approved.resolution!.action as { changed: string[] }).changed, ['body'])
+assert.equal(current(id)!.type, 'github')
+assert.equal(current(id)!.stateAtStart, 'Reply drafted.')
 
-// The wait backs off: 1, 2, 5, 10, 10 minutes between checks.
-for (const step of [1, 2, 3, 3]) {
-  const wait = engine.wait(id)!
-  clock = wait.nextCheckAt - 1
-  await engine.tick()
-  assert.equal(engine.wait(id)!.step, wait.step, 'not checked before it is due')
-  clock = wait.nextCheckAt
-  await engine.tick()
-  assert.equal(engine.wait(id)!.step, step)
-  assert.equal(engine.wait(id)!.nextCheckAt, clock + BACKOFF_MINUTES[step] * MINUTE)
+// The wait is checked at once, then backs off: 1, 2, 5, 10, 10 minutes.
+await tick()
+for (const minutes of [1, 2, 5, 10, 10]) {
+  const due = current(id)!.nextCheckAt!
+  assert.equal(due, clock + minutes * MINUTE)
+  clock = due - 1
+  await tick()
+  assert.equal(current(id)!.nextCheckAt, due, 'not checked before it is due')
+  clock = due
+  await tick()
 }
 
-// Once the checks finish, it goes back to an agent, which splits off a sub-item and waits on it.
-let child = ''
-behaviours.push(async (call, prompt) => {
-  assert.match(prompt, /all 1 passed/)
-  child = await call('create_item', { title: 'Follow-up', instruction: 'Do the follow-up' })
-  await call('wait_for_items', { state: 'Waiting on the follow-up.', item_ids: [child] })
+// ---- 4. Checks fail: the script hands to an agent, which fixes and chains the same again ----
+behaviours.push(async (_call, prompt) => {
+  assert.match(prompt, /Fix the failing checks: e2e/)
+  assert.match(prompt, /"outcome":"failed"/)
+  return {
+    state: 'Fixed e2e; CI running again.',
+    next: [
+      { type: 'github', params: { repo: 'o/r', number: 7, until: 'checks' } },
+      { type: 'script', params: { source: route } },
+    ],
+  }
 })
-behaviours.push(async (call) => call('close_item', { state: 'Follow-up done.' }).then(() => {}))
-behaviours.push(async (call, prompt) => {
-  assert.match(prompt, /have closed/)
-  await call('close_item', { state: 'All done.' })
-})
-checksPending = false
-clock = engine.wait(id)!.nextCheckAt
-await engine.tick()
-await until('everything to close', () => blocker(id) === 'closed')
-assert.equal(blocker(child), 'closed')
-assert.equal(engine.get(id)!.state, 'All done.')
+checks = 'failed'
+clock = current(id)!.nextCheckAt!
+await tick()
+assert.equal(current(id)!.type, 'github')
+assert.equal(engine.get(id)!.state, 'Fixed e2e; CI running again.')
 
-// An agent that stops without saying what blocks the item hands it to the operator.
-const quiet = engine.create('Quiet one', { instruction: 'Do something' })!
-behaviours.push(async () => {})
-await until('the quiet run', () => blocker(quiet) === 'operator')
-assert.match(engine.get(quiet)!.request!.question, /stopped without saying/)
-engine.handledOutside(quiet, 'Did it by hand in the GitHub UI')
-
-// A wait with a deadline comes back to the operator once it passes.
-const slow = engine.create('Slow', { instruction: 'Wait for CI' })!
-checksPending = true
-behaviours.push(async (call) =>
-  call('wait_for', { state: 's', kind: 'github.pr.checks', params: { repo: 'o/r', number: 7 }, timeout_minutes: 3 }).then(() => {}),
+// ---- 5. Checks pass: the script asks the human to merge; after that, the queue is empty ----
+checks = 'passed'
+await tick()
+assert.equal(current(id)!.type, 'human')
+assert.equal(current(id)!.params.needed, 'Merge o/r#7?')
+await engine.approve(id, { repo: 'o/r', number: 7, method: 'squash' })
+assert.deepEqual(ghCalls.at(-1), ['pr', 'merge', '7', '-R', 'o/r', '--squash'])
+assert.match(String(current(id)!.params.needed), /approved\. What next\?/)
+await engine.close(id, { state: 'Merged.' })
+assert.ok(engine.get(id)!.closed)
+assert.equal(current(id), null)
+assert.deepEqual(
+  engine.handoffs(id).map((h) => h.type),
+  ['human', 'agent', 'human', 'github', 'script', 'agent', 'github', 'script', 'human', 'human'],
 )
-await until('the slow wait', () => blocker(slow) === 'external')
+
+// ---- 6. Slack: an agent's message goes to the human first, then the wait takes its thread ----
+engine.settings.addSlackWorkspace({ name: 'Acme', team: 'Acme', user: 'alex', userId: 'UME', token: 'xoxp-good-1234' })
+behaviours.push(async () => ({ state: 'Asking Sam.', next: [{ type: 'slack', params: { channel: 'C1', message: 'Any update, Sam?' } }] }))
+const chase = (await engine.create('Chase Sam', { next: [{ type: 'agent', params: { instructions: 'Ask Sam for an update' } }] }))!
+await settle()
+assert.equal(current(chase)!.type, 'human')
+assert.equal((current(chase)!.params.approval as { action: string }).action, 'slack_post')
+assert.equal(slackCalls.filter((c) => c.method === 'chat.postMessage').length, 0)
+await engine.approve(chase, { channel: 'C1', text: 'Any update, Sam?' })
+assert.equal(current(chase)!.type, 'slack')
+assert.equal(current(chase)!.params.thread_ts, '100.1')
+await tick()
+assert.equal(current(chase)!.type, 'slack', 'my own message is not a reply')
+thread.push({ ts: '100.2', user: 'USAM', text: 'Done!' })
+clock = current(chase)!.nextCheckAt!
+await tick()
+assert.match(String(current(chase)!.params.needed), /1 reply\(s\) on Slack/)
+const replied = engine.handoffs(chase).find((h) => h.type === 'slack')!
+assert.deepEqual((replied.resolution!.replies as { text: string }[]).map((r) => r.text), ['Done!'])
+await engine.close(chase, {})
+
+// ---- 7. Items: an agent splits off a sub-item and waits on it, then wraps up ----
+let child = ''
+behaviours.push(async (call) => {
+  child = JSON.parse(await call('create_item', { title: 'Child', next: [{ type: 'agent', params: { instructions: 'Do the child' } }] })).id
+  return { state: 'Waiting on the child.', next: [{ type: 'items', params: { item_ids: [child] } }, { type: 'agent', params: { instructions: 'Wrap up' } }] }
+})
+behaviours.push(async () => ({ state: 'Child done.', next: [], close: true }))
+behaviours.push(async (_call, prompt) => {
+  assert.match(prompt, /Child done/)
+  return { state: 'All done.', next: [], close: true }
+})
+const parent = (await engine.create('Parent', { next: [{ type: 'agent', params: { instructions: 'Split it' } }] }))!
+await settle()
+await settle()
+assert.ok(engine.get(child)!.closed)
+assert.ok(engine.get(parent)!.closed)
+assert.equal(engine.get(parent)!.state, 'All done.')
+
+// ---- 8. An agent whose output is unusable hands the item to the human, saying why ----
+behaviours.push(async () => ({ state: 's', next: [] }))
+const bad = (await engine.create('Bad', { next: [{ type: 'agent', params: { instructions: 'x' } }] }))!
+await settle()
+assert.match(String(current(bad)!.params.needed), /no handoffs and did not close/)
+behaviours.push(async () => ({ state: 's', next: [{ type: 'human', params: { question: 'wrong field' } }] }))
+const typo = (await engine.create('Typo', { next: [{ type: 'agent', params: { instructions: 'x' } }] }))!
+await settle()
+assert.match(String(current(typo)!.params.needed), /needed: Required/)
+await engine.handledOutside(typo, 'Did it by hand')
+
+// ---- 9. Scripts reach the actions; an agent's script can't act outward ----
+const scripted = (await engine.create('Scripted', {
+  next: [
+    {
+      type: 'script',
+      params: {
+        source: `async (input, actions) => { const all = await actions.list_items({}); console.log('saw', all.length); return { type: 'human', params: { needed: 'Saw ' + all.length + ' items' } } }`,
+      },
+    },
+  ],
+}))!
+assert.match(String(current(scripted)!.params.needed), /^Saw \d+ items$/)
+assert.equal((engine.handoffs(scripted)[0].resolution!.logs as string[])[0].split(' ')[0], 'saw')
+const merges = ghCalls.filter((c) => c[1] === 'merge').length
+behaviours.push(async () => ({
+  state: 's',
+  next: [{ type: 'script', params: { source: `async (i, actions) => { await actions.github_pr_merge({ repo: 'o/r', number: 7, method: 'squash' }); return null }` } }],
+}))
+const sneaky = (await engine.create('Sneaky', { next: [{ type: 'agent', params: { instructions: 'x' } }] }))!
+await settle()
+assert.equal(ghCalls.filter((c) => c[1] === 'merge').length, merges)
+assert.match(String(current(sneaky)!.params.needed), /script handoff failed: .*outward/)
+
+// ---- 10. A wait with a timeout resolves as timed_out ----
+checks = 'pending'
+const slow = (await engine.create('Slow', { next: [{ type: 'github', params: { repo: 'o/r', number: 7, until: 'checks', timeout_minutes: 3 } }] }))!
+await tick()
 clock += 3 * MINUTE
-await engine.tick()
-assert.equal(blocker(slow), 'operator')
-assert.match(engine.get(slow)!.request!.question, /Gave up/)
+await tick()
+assert.match(String(current(slow)!.params.needed), /Nothing after 3 minutes/)
 
-// Sources create items once.
+// ---- 11. Sources create items once ----
 await engine.pollSources(true)
 await engine.pollSources(true)
-const reviews = engine.overview().items.filter((i) => i.source === 'github.review-requests')
-assert.equal(reviews.length, 1)
-assert.equal(reviews[0].blocker, 'operator')
+assert.equal(engine.overview().items.filter((i) => i.source === 'github.review-requests').length, 1)
 
-// The history is there to look back on: time per blocker, runs, changes, work done outside.
+// ---- 12. Taking over an agent's item brings it back to the human ----
+let release = () => {}
+const held = new Promise<void>((r) => (release = r))
+behaviours.push(async () => {
+  await held
+  return { state: 'late', next: [], close: true }
+})
+const taken = (await engine.create('Take me', { next: [{ type: 'agent', params: { instructions: 'x' } }] }))!
+while (!pool.status().some((w) => w.itemId === taken)) await new Promise((r) => setTimeout(r, 5))
+await engine.takeOver(taken)
+release()
+await settle()
+assert.equal(current(taken)!.type, 'human')
+assert.equal(engine.get(taken)!.closed, false, "a run that was taken over doesn't land")
+
+// ---- 13. The operator's endpoint: the same actions, as the human ----
+const { url } = mcp.operator()
+await assert.rejects(connect(url, { Authorization: 'Bearer wrong' }), (e: { code?: number }) => e.code === 401)
+const outside = await connect(url, { Authorization: `Bearer ${engine.settings.mcpToken()}` })
+const names = (await outside.client.listTools()).tools.map((t) => t.name)
+assert.deepEqual(names, engine.actions.map((a) => a.name))
+await outside.call('set_state', { item_id: taken, state: 'Set from outside.' })
+await outside.call('hand_off', { item_id: taken, next: [{ type: 'human', params: { needed: 'Still there?' } }] })
+assert.equal(current(taken)!.params.needed, 'Still there?')
+assert.match(await outside.call('github_pr_comment', { repo: 'o/r', number: 7, body: 'From outside' }), /pull\/7/)
+const types = JSON.parse(await outside.call('handoff_types'))
+assert.deepEqual(types.map((t: { type: string }) => t.type), ['human', 'agent', 'github', 'slack', 'items', 'script'])
+await outside.client.close()
+
+// ---- 14. The history is there to look back on ----
 const recent = engine.recent(7)
 const first = recent.find((r) => r.id === id)!
-assert.equal(first.agentRuns, 4)
+assert.equal(first.agentRuns, 2)
 assert.equal(first.approvalsChanged, 1)
-assert.ok(first.minutesOn.external >= 18, JSON.stringify(first.minutesOn))
-assert.deepEqual(recent.find((r) => r.id === quiet)!.handledOutside, ['Did it by hand in the GitHub UI'])
-const firstRun = engine.detail(id)!.runs[0]
-assert.match(engine.transcript(firstRun.id)!, /"total_cost_usd":0.01/)
+assert.ok(first.minutesOn.github >= 28, JSON.stringify(first.minutesOn))
+assert.deepEqual(recent.find((r) => r.id === typo)!.handledOutside, ['Did it by hand'])
+assert.equal(recent.find((r) => r.id === typo)!.agentFailures, 1)
+assert.equal(recent.find((r) => r.id === slow)!.timedOut, 1)
+assert.match(engine.transcript(engine.detail(id)!.runs[0].id)!, /Thinking out loud/)
 
-// And an agent can read it all over MCP.
-const reviewer = engine.create('Review the week', { instruction: 'Look back' })!
-behaviours.push(async (call) => {
-  const items = JSON.parse(await call('recent_items', { days: 7 }))
-  assert.ok(items.some((i: { handledOutside: string[] }) => i.handledOutside.length))
-  assert.match(await call('run_transcript', { run_id: firstRun.id }), /PROMPT:/)
-  assert.match(await call('item_history', { item_id: id }), /action_run/)
-  await call('close_item', { state: 'Reviewed.' })
-})
-await until('the review', () => blocker(reviewer) === 'closed')
-
-// Taking an item over brings it back to the operator.
-const taken = engine.create('Take me', { instruction: 'x' })!
-engine.takeOver(taken)
-assert.equal(blocker(taken), 'operator')
-assert.equal(behaviours.length, 0)
-
-// The operator's endpoint wants the token, names items, and ends no runs.
-const { url } = mcp.operator()
-const operatorClient = async (token: string) => {
-  const client = new Client({ name: 'outside', version: '0' })
-  await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }))
-  return client
-}
-await assert.rejects(operatorClient('wrong'), (e: { code?: number }) => e.code === 401)
-const outside = await operatorClient(settings.mcpToken())
-const listed = await outside.callTool({ name: 'list_items', arguments: { blocker: 'operator' } })
-assert.ok(JSON.parse((listed.content as { text: string }[])[0].text).some((i: { id: string }) => i.id === taken))
-await outside.callTool({ name: 'set_state', arguments: { item_id: taken, state: 'Set from outside.' } })
-assert.equal(engine.get(taken)!.state, 'Set from outside.')
-await outside.close()
-
-// The MCP page lists both scopes' tools as a client sees them.
-let slackToken = ''
-const fakeFetch = (async (_url: string, init: { headers: { Authorization: string } }) => {
-  slackToken = init.headers.Authorization
-  return { status: 200, json: async () => (slackToken === 'Bearer xoxp-good-1234' ? { ok: true, team: 'Acme', user: 'alex' } : { ok: false, error: 'invalid_auth' }) }
-}) as unknown as typeof fetch
-const admin = new Admin(engine, settings, mcp, 2, fakeFetch)
-const view = await admin.mcpView()
-const names = (tools: { name: string }[]) => tools.map((t) => t.name)
-assert.ok(names(view.runTools).includes('close_item'))
-assert.ok(!names(view.operatorTools).includes('close_item'))
-assert.ok(names(view.operatorTools).includes('list_items'))
-assert.ok(view.operatorTools.find((t) => t.name === 'get_item')!.inputSchema.required!.includes('item_id'))
-assert.ok(view.runTools.find((t) => t.name === 'github_pr_view'))
-
-// Integrations: gh and claude are checked; a Slack token is checked with Slack before it is kept.
-const integrations = await admin.integrations()
-assert.equal(integrations.github.detail, 'Signed in as octocat')
-assert.ok(integrations.claude.ok)
+// ---- 15. Integrations and the catalog ----
+const admin = new Admin(engine, mcp, 2, fakeFetch)
+assert.equal((await admin.integrations()).github.detail, 'Signed in as octocat')
 await assert.rejects(admin.addSlack('', 'nope'), /xoxp-/)
 await assert.rejects(admin.addSlack('', 'xoxp-bad'), /invalid_auth/)
-await admin.addSlack('', 'xoxp-good-1234')
-const [workspace] = (await admin.integrations()).slack
-assert.deepEqual([workspace.name, workspace.team, workspace.user, workspace.tokenHint], ['Acme', 'Acme', 'alex', 'xoxp-…1234'])
-assert.equal(settings.slackWorkspaces()[0].token, 'xoxp-good-1234')
-admin.removeSlack(workspace.id)
-assert.equal(settings.slackWorkspaces().length, 0)
+const cat = catalog(engine)
+assert.ok(cat.actions.find((a) => a.name === 'slack_post')!.outward)
+assert.ok(!cat.actions.find((a) => a.name === 'slack_thread')!.outward)
+assert.ok(cat.handoffs.find((h) => h.type === 'human')!.params.required!.includes('needed'))
+assert.equal((agentOutputSchema(engine.handoffTypes).required as string[]).join(), 'state,next')
 
+assert.equal(behaviours.length, 0)
 mcp.close()
 console.log('engine: ok')

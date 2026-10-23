@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { McpView, ToolInfo } from '../../shared/types'
+import type { Catalog, McpView, ObjectSchema } from '../../shared/types'
 import { Copyable } from './Copy'
 import { api } from './useWorkflows'
 
 export function McpPage() {
   const [view, setView] = useState<McpView | null>(null)
+  const [catalog, setCatalog] = useState<Catalog | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [port, setPort] = useState('')
   const [showToken, setShowToken] = useState(false)
   const refresh = useCallback(async () => {
-    const v = await api().mcp()
+    const [v, c] = await Promise.all([api().mcp(), api().catalog()])
     setView(v)
+    setCatalog(c)
     setPort(String(v.port))
   }, [])
   useEffect(() => void refresh(), [refresh])
@@ -25,9 +27,8 @@ export function McpPage() {
     }
   }
 
-  if (!view) return <div className="muted">Loading…</div>
-  const header = `Authorization: Bearer ${view.token}`
-  const cli = `claude mcp add --transport http workflows ${view.url} --header "${header}"`
+  if (!view || !catalog) return <div className="muted">Loading…</div>
+  const cli = `claude mcp add --transport http workflows ${view.url} --header "Authorization: Bearer ${view.token}"`
   const json = JSON.stringify(
     { mcpServers: { workflows: { type: 'http', url: view.url, headers: { Authorization: `Bearer ${view.token}` } } } },
     null,
@@ -41,8 +42,7 @@ export function McpPage() {
       <section className="card">
         <h2>Connect</h2>
         <p className="muted">
-          Connect anything else to this app, e.g. a Claude Code session. It reaches the tools below for outside clients,
-          on this machine only, while the app is open.
+          Connect anything else to this app, e.g. a Claude Code session. It acts as you: on this machine only, while the app is open.
         </p>
         {view.error && <p className="error-text">{view.error}</p>}
         <div className="kv">
@@ -66,52 +66,67 @@ export function McpPage() {
         <Copyable value={json} block />
       </section>
 
-      <Tools
-        title="Tools for outside clients"
-        note="What a client connected at the URL above sees. Item tools name their item."
-        tools={view.operatorTools}
-      />
-      <Tools
-        title="Tools for agents"
-        note="What a worker's claude -p sees while it runs one item. Item tools act on that item, and the run ends with one of the END YOUR RUN tools."
-        tools={view.runTools}
-      />
+      <section className="card">
+        <h2>
+          Actions <span className="count">{catalog.actions.length}</span>
+        </h2>
+        <p className="muted">
+          The same list for agents, for clients connected above, and for scripts (as <code>actions.name(args)</code>). What a caller may do
+          depends on who it is: an agent, or a script an agent wrote, changes only its own item and runs nothing outward, and hands items on by
+          returning handoffs.
+        </p>
+        {catalog.actions.map((a) => (
+          <div key={a.name} className="tool">
+            <div className="row-inline">
+              <code className="tool-name">{a.name}</code>
+              {a.outward && <span className="badge">outward</span>}
+            </div>
+            <div className="tool-description">{a.description}</div>
+            <Params schema={a.inputSchema} />
+          </div>
+        ))}
+      </section>
+
+      <section className="card">
+        <h2>
+          Handoffs <span className="count">{catalog.handoffs.length}</span>
+        </h2>
+        <p className="muted">
+          What an item can wait for. An agent returns a list of these as its output; the first is what the item waits for, and each resolves
+          into the next.
+        </p>
+        {catalog.handoffs.map((h) => (
+          <div key={h.type} className="tool">
+            <code className="tool-name">{h.type}</code>
+            <div className="tool-description">{h.description}</div>
+            <Params schema={h.params} />
+            <div className="muted">
+              Resolves with <code>{h.resolution}</code>
+            </div>
+          </div>
+        ))}
+      </section>
     </div>
   )
 }
 
-function Tools({ title, note, tools }: { title: string; note: string; tools: ToolInfo[] }) {
+function Params({ schema }: { schema: ObjectSchema }) {
+  const params = Object.entries(schema.properties ?? {})
+  if (!params.length) return null
   return (
-    <section className="card">
-      <h2>
-        {title} <span className="count">{tools.length}</span>
-      </h2>
-      <p className="muted">{note}</p>
-      {tools.map((t) => {
-        const params = Object.entries(t.inputSchema.properties ?? {})
-        return (
-          <div key={t.name} className="tool">
-            <code className="tool-name">{t.name}</code>
-            <div className="tool-description">{t.description}</div>
-            {params.length > 0 && (
-              <table className="params">
-                <tbody>
-                  {params.map(([name, p]) => (
-                    <tr key={name}>
-                      <td>
-                        <code>{name}</code>
-                        {t.inputSchema.required?.includes(name) ? '' : '?'}
-                      </td>
-                      <td className="muted">{p.enum ? p.enum.join(' | ') : p.type ?? 'any'}</td>
-                      <td>{p.description}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        )
-      })}
-    </section>
+    <table className="params">
+      <tbody>
+        {params.map(([name, p]) => (
+          <tr key={name}>
+            <td>
+              <code>{name}</code>
+              {schema.required?.includes(name) ? '' : '?'}
+            </td>
+            <td className="muted">{p.enum ? p.enum.join(' | ') : Array.isArray(p.type) ? p.type.join(' | ') : (p.type ?? 'any')}</td>
+            <td>{p.description}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   )
 }

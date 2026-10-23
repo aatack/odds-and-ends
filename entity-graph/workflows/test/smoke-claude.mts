@@ -1,21 +1,33 @@
-// One real claude -p run against the MCP server. Not part of npm test: it costs a run.
+// One real claude -p run against the MCP server, with the handoff schema as its
+// structured output. Not part of npm test: it costs a run.
 import { DatabaseSync } from 'node:sqlite'
 import { Engine } from '../src/engine/engine.ts'
 import { startMcp } from '../src/engine/mcp.ts'
-import { Settings } from '../src/engine/settings.ts'
 import { WorkerPool } from '../src/engine/workers.ts'
 
-const engine = new Engine(new DatabaseSync(':memory:'))
-const settings = new Settings(engine.db)
-settings.set('mcp.port', 0)
-const mcp = await startMcp(engine, settings)
-new WorkerPool(engine, mcp.runUrl, 1)
-const id = engine.create('Smoke test', { instruction: 'Set the state to "smoke ok", then close the item.' })!
-for (let i = 0; i < 180 && engine.get(id)!.worker === null && engine.get(id)!.blocker === 'agent'; i++) await new Promise((r) => setTimeout(r, 1000))
-while (engine.get(id)!.worker !== null) await new Promise((r) => setTimeout(r, 1000))
+const engine = new Engine({ db: new DatabaseSync(':memory:') })
+engine.settings.set('mcp.port', 0)
+const mcp = await startMcp(engine)
+const pool = new WorkerPool(engine, mcp.runUrl, 1)
+const id = (await engine.create('Smoke test', {
+  next: [
+    {
+      type: 'agent',
+      params: {
+        instructions:
+          'Read this item with get_item. Then set the state to "smoke ok" and hand it to the human to choose between red and blue, ' +
+          'followed by a script that closes nothing and returns null.',
+      },
+    },
+  ],
+}))!
+const busy = () => engine.get(id)!.current?.type === 'agent' || pool.status().some((w) => w.itemId)
+for (let i = 0; i < 300 && busy(); i++) await new Promise((r) => setTimeout(r, 1000))
+await engine.idle()
 const d = engine.detail(id)!
-console.log(d.item.blocker, '|', d.item.state, '|', d.item.request?.question ?? '')
-console.log(d.events.map((e) => `${e.actor} ${e.kind}: ${e.text}`).join('\n'))
-console.log(d.runs)
+console.log('state:', d.item.state)
+console.log('current:', JSON.stringify(d.item.current && { type: d.item.current.type, params: d.item.current.params }))
+for (const h of d.handoffs) console.log('-', h.status, h.type, JSON.stringify(h.params).slice(0, 120), JSON.stringify(h.resolution)?.slice(0, 300))
+console.log(d.runs.map((r) => ({ cost: r.costUsd, turns: r.turns })))
 mcp.close()
 process.exit(0)

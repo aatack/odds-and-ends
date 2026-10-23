@@ -1,10 +1,11 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, safeStorage, shell } from 'electron'
 import Database from 'better-sqlite3'
+import type { HandoffSpec } from '../shared/types'
 import { Admin } from '../engine/admin'
 import { Engine } from '../engine/engine'
-import { startMcp } from '../engine/mcp'
-import { plainSecrets, Settings, type Secrets } from '../engine/settings'
+import { catalog, startMcp } from '../engine/mcp'
+import { plainSecrets, type Secrets } from '../engine/settings'
 import { WorkerPool } from '../engine/workers'
 
 const LOOP_MS = 60_000
@@ -23,16 +24,16 @@ function secrets(): Secrets {
 async function main(): Promise<void> {
   await app.whenReady()
 
-  const db = new Database(join(app.getPath('userData'), 'workflows.db'))
+  // v2: items as queues of handoffs. The first version's file is left as it was.
+  const db = new Database(join(app.getPath('userData'), 'workflows-v2.db'))
   db.pragma('journal_mode = WAL')
-  const engine = new Engine(db)
-  const settings = new Settings(db, secrets())
-  const mcp = await startMcp(engine, settings)
+  const engine = new Engine({ db, secrets: secrets() })
+  const mcp = await startMcp(engine)
   const pool = new WorkerPool(engine, mcp.runUrl, WORKERS)
-  const admin = new Admin(engine, settings, mcp, WORKERS)
+  const admin = new Admin(engine, mcp, WORKERS)
   engine.on('sourceError', (message: string) => console.error(message))
 
-  // The central loop: every wait that is due, every finished dependency, every source.
+  // The central loop: every wait that is due, then every source.
   const tick = () => engine.tick().catch((e) => console.error('loop:', e))
   void tick()
   setInterval(tick, LOOP_MS)
@@ -42,11 +43,14 @@ async function main(): Promise<void> {
     ipcMain.handle(name, (_e, ...args) => fn(...(args as never[])))
   handle('overview', () => engine.overview(pool.status()))
   handle('detail', (id: string) => engine.detail(id))
+  handle('catalog', () => catalog(engine))
   handle('next', (skip: string[]) => engine.next(skip))
-  handle('create', (title: string, instruction: string) => engine.create(title, { instruction: instruction || undefined }))
-  handle('dispatch', (id: string, instruction: string) => engine.dispatch(id, instruction))
-  handle('execute', (id: string, inputs: Record<string, string>) => engine.execute(id, inputs))
-  handle('close', (id: string, note: string) => engine.close(id, note))
+  handle('create', (title: string, next: HandoffSpec[]) => engine.create(title, { next }))
+  handle('handOff', (id: string, state: string | null, next: HandoffSpec[], note: string) =>
+    engine.handOff(id, { state, next, note: note || undefined }),
+  )
+  handle('approve', (id: string, inputs: Record<string, unknown>) => engine.approve(id, inputs))
+  handle('close', (id: string, state: string | null, note: string) => engine.close(id, { state, note: note || undefined }))
   handle('handledOutside', (id: string, note: string) => engine.handledOutside(id, note))
   handle('setState', (id: string, state: string) => engine.setState(id, state))
   handle('takeOver', (id: string) => engine.takeOver(id))
