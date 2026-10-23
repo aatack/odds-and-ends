@@ -1,39 +1,59 @@
 // Lucide (lucide.dev, ISC): its robot is what a bot looks like here, and the
 // rest come from it too so that they match.
-import { Bot, Check, GitPullRequest, Layers, Link, MessageCircle, Settings, SquareCode, User, type LucideIcon } from 'lucide-react'
-import type { HandoffKind, Item } from '../../shared/types'
+import {
+  Bot,
+  Check,
+  GitPullRequest,
+  Layers,
+  Link,
+  MessageCircle,
+  MessageSquare,
+  Play,
+  Settings,
+  ShieldCheck,
+  SquareCode,
+  User,
+  Workflow,
+  type LucideIcon,
+} from 'lucide-react'
+import type { EventKind, Item } from '../../shared/types'
 
-type Icon = LucideIcon
-
-/** One icon a handoff type: what the item waits for, at a glance. */
-export const TYPE_ICON: Record<HandoffKind, Icon> = {
-  human: User,
+/** One icon an event type. */
+export const TYPE_ICON: Record<EventKind, LucideIcon> = {
+  message: MessageSquare,
+  action: Play,
+  closed: Check,
+  approval: ShieldCheck,
   bot: Bot,
   github: GitPullRequest,
   slack: MessageCircle,
   items: Layers,
-  script: SquareCode,
+  after: Workflow,
 }
 
-const TYPE_NAME: Record<HandoffKind, string> = {
-  human: 'You',
+export const TYPE_NAME: Record<EventKind, string> = {
+  message: 'Message',
+  action: 'Action',
+  closed: 'Closed',
+  approval: 'Approval',
   bot: 'Bot',
   github: 'GitHub',
   slack: 'Slack',
   items: 'Other items',
-  script: 'Script',
+  after: 'After',
 }
 
-/** What an item waits for now: its handoff's type, the human's when it has none, or done. */
+/** What an item waits on: a bot, else its first other blocker, else the human; a tick once closed. */
 export function ItemIcon({ item }: { item: Item }) {
   if (item.closed) return <Check className="icon" aria-label="Closed" />
-  const type = item.current?.type ?? 'human'
-  const Icon = TYPE_ICON[type]
-  return <Icon className="icon" aria-label={TYPE_NAME[type]} />
+  if (item.withHuman) return <User className="icon" aria-label="You" />
+  const waiting = item.blockers.find((b) => b.type === 'bot') ?? item.blockers.find((b) => b.type !== 'after') ?? item.blockers[0]
+  const Icon = TYPE_ICON[waiting.type]
+  return <Icon className="icon" aria-label={TYPE_NAME[waiting.type]} />
 }
 
-/** A handoff type's icon, named for whoever hovers it. */
-export function TypeIcon({ type }: { type: HandoffKind }) {
+/** An event type's icon, named for whoever hovers it. */
+export function TypeIcon({ type }: { type: EventKind }) {
   const Icon = TYPE_ICON[type]
   return (
     <span className="type-icon" title={TYPE_NAME[type]}>
@@ -42,24 +62,24 @@ export function TypeIcon({ type }: { type: HandoffKind }) {
   )
 }
 
-/** Whoever set a handoff, as a profile picture: bots, scripts, the app, a source or an outside client. */
-export function Avatar({ createdBy }: { createdBy: string }) {
-  const [Icon, name]: [Icon, string] =
-    createdBy === 'bot'
+/** Whoever added an event, as a profile picture: bots, scripts, the app, a source or an outside client. */
+export function Avatar({ by, type }: { by: string; type?: EventKind }) {
+  const [Icon, name]: [LucideIcon, string] =
+    by === 'bot'
       ? [Bot, 'Bot']
-      : createdBy.startsWith('script')
+      : by.startsWith('script')
         ? [SquareCode, 'Script']
-        : createdBy === 'system'
-          ? [Settings, 'Workflows']
-          : createdBy === 'mcp'
-            ? [Link, 'MCP client']
-            : createdBy.startsWith('github')
-              ? [GitPullRequest, createdBy]
-              : createdBy.startsWith('slack')
-                ? [MessageCircle, createdBy]
-                : createdBy === 'human'
-                  ? [User, 'You']
-                  : [Settings, createdBy]
+        : by === 'mcp'
+          ? [Link, 'MCP client']
+          : by.startsWith('github')
+            ? [GitPullRequest, by]
+            : by.startsWith('slack')
+              ? [MessageCircle, by]
+              : by === 'human'
+                ? [User, 'You']
+                : type
+                  ? [TYPE_ICON[type], TYPE_NAME[type]]
+                  : [Settings, 'Workflows']
   return (
     <span className="avatar" title={name}>
       <Icon className="icon" />

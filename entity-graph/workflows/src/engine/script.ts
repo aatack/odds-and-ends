@@ -1,4 +1,4 @@
-// Script handoffs run here: JavaScript in QuickJS, so a script a bot wrote
+// After events' scripts run here: JavaScript in QuickJS, so a script a bot wrote
 // can reach nothing but the actions it is handed, and those through the same
 // gate as any other call.
 
@@ -48,7 +48,7 @@ export async function runScript(
       globalThis.console = { log: (...a) => __log(...a.map(show)), error: (...a) => __log(...a.map(show)) }
       const actions = new Proxy({}, { get: (_, name) => async (args) => JSON.parse(await __call(String(name), JSON.stringify(args ?? {}))) })
       const fn = (${source})
-      if (typeof fn !== 'function') throw new Error('A script is a function expression: (input, actions) => handoffs')
+      if (typeof fn !== 'function') throw new Error('A script is a function expression: (input, actions) => events')
       return JSON.stringify((await fn(${JSON.stringify(input)}, actions)) ?? null)
     })()`
     const handle = vm.unwrapResult(vm.evalCode(code, 'script.js'))

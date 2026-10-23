@@ -81,10 +81,12 @@ export const githubActions: Action[] = [
   },
 ]
 
-export const githubHandoffParams = {
-  ...pr,
-  until: z.enum(['checks', 'activity', 'closed']).describe(
-    'checks: every check has finished. activity: a new comment or review. closed: merged or closed.',
+export const githubEventParams = {
+  repo: z.string().optional().describe('owner/name. With number, the pull request; or give query instead.'),
+  number: z.coerce.number().int().optional().describe('The pull request number.'),
+  query: z.string().optional().describe("Words from the pull request's title, to find it with, instead of repo and number."),
+  until: z.enum(['checks', 'activity', 'merged']).describe(
+    'checks: every check has finished. activity: a new comment or review. merged: merged or closed.',
   ),
   timeout_minutes: z.number().optional().describe('Resolve as timed_out after this long.'),
 }
@@ -96,12 +98,28 @@ const activity = async (exec: Exec, p: Record<string, unknown>) => {
   return (v.comments?.length ?? 0) + (v.reviews?.length ?? 0)
 }
 
-/** A baseline to compare later checks with. */
-export async function startPr(p: Record<string, unknown>, exec: Exec): Promise<Record<string, unknown> | void> {
-  if (p.until === 'activity') return { baseline: await activity(exec, p) }
+/**
+ * Finds the pull request a query names, and takes a baseline to compare later
+ * checks with. Resolves at once if there is no such pull request.
+ */
+export async function startPr(
+  p: Record<string, unknown>,
+  exec: Exec,
+): Promise<{ params?: Record<string, unknown>; resolve?: Record<string, unknown> } | void> {
+  let params = p
+  if (!p.repo || !p.number) {
+    if (!p.query) return { resolve: { outcome: 'not_found', detail: 'Give repo and number, or a query.' } }
+    const found: { number: number; title: string; url: string; repository: { nameWithOwner: string } }[] = JSON.parse(
+      await exec('gh', ['search', 'prs', String(p.query), '--json', 'number,title,url,repository', '--limit', '1', '--sort', 'updated']),
+    )
+    if (!found.length) return { resolve: { outcome: 'not_found', detail: `No pull request matches “${p.query}”.` } }
+    params = { ...p, repo: found[0].repository.nameWithOwner, number: found[0].number, title: found[0].title, url: found[0].url }
+  }
+  if (params.until === 'activity') params = { ...params, baseline: await activity(exec, params) }
+  return { params }
 }
 
-/** The resolution once what the handoff waits for has happened; null until then. */
+/** The data once what the event waits for has happened; null until then. */
 export async function checkPr(p: Record<string, unknown>, exec: Exec): Promise<Record<string, unknown> | null> {
   if (p.until === 'checks') {
     const checks: Check[] = (await view(exec, p, 'statusCheckRollup')).statusCheckRollup ?? []
@@ -115,16 +133,16 @@ export async function checkPr(p: Record<string, unknown>, exec: Exec): Promise<R
       )
       .map((c) => c.name ?? c.context ?? '?')
     return failed.length
-      ? { outcome: 'failed', failed, detail: `${failed.length} of ${checks.length} checks failed: ${failed.join(', ')}` }
-      : { outcome: 'passed', failed, detail: `All ${checks.length} checks passed.` }
+      ? { outcome: 'failed', failed, detail: `${p.repo}#${p.number}: ${failed.length} of ${checks.length} checks failed: ${failed.join(', ')}` }
+      : { outcome: 'passed', failed, detail: `${p.repo}#${p.number}: all ${checks.length} checks passed.` }
   }
   if (p.until === 'activity') {
     const n = await activity(exec, p)
     const added = n - Number(p.baseline ?? 0)
-    return added > 0 ? { outcome: 'activity', detail: `${added} new comment(s) or review(s).` } : null
+    return added > 0 ? { outcome: 'activity', detail: `${p.repo}#${p.number}: ${added} new comment(s) or review(s).` } : null
   }
   const { state } = await view(exec, p, 'state')
-  return state === 'OPEN' ? null : { outcome: String(state).toLowerCase(), detail: `The pull request is ${String(state).toLowerCase()}.` }
+  return state === 'OPEN' ? null : { outcome: String(state).toLowerCase(), detail: `${p.repo}#${p.number} is ${String(state).toLowerCase()}.` }
 }
 
 export const githubSources: Source[] = [
@@ -139,7 +157,7 @@ export const githubSources: Source[] = [
         ref: `github:review:${p.url}`,
         title: `Review ${p.repository.nameWithOwner}#${p.number}: ${p.title}`,
         url: p.url,
-        next: [{ type: 'human', params: { needed: `Your review is requested on ${p.repository.nameWithOwner}#${p.number}. How should it be reviewed?` } }],
+        events: [{ type: 'message', params: { text: `Your review is requested on ${p.repository.nameWithOwner}#${p.number}.` } }],
       }))
     },
   },

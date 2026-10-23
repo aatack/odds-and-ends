@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import type { Catalog, HandoffKind, HandoffSpec, Item, ItemDetail } from '../../shared/types'
-import { Chat, HandoffBuilder } from './Handoffs'
+import type { Catalog, Item, ItemDetail } from '../../shared/types'
+import { Blockers } from './Blockers'
+import { Chat } from './Chat'
+import { Composer } from './Composer'
 import { ItemIcon } from './icons'
-import { Form, withHints } from './forms'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
 import { api, useWorkflows } from './useWorkflows'
@@ -14,21 +15,13 @@ const PAGES: { page: Page; label: string }[] = [
   { page: 'mcp', label: 'MCP' },
 ]
 
-/** The sidebar's groups, by what the item waits for now. */
+/** The sidebar's groups: the human's turn, a bot's, waiting on something else, done. */
 const GROUPS: { label: string; has: (i: Item) => boolean }[] = [
-  { label: 'Needs you', has: (i) => !i.closed && (!i.current || i.current.type === 'human') },
-  { label: 'With bots', has: (i) => i.current?.type === 'bot' },
-  { label: 'Waiting', has: (i) => ['github', 'slack', 'items'].includes(i.current?.type ?? '') },
+  { label: 'Needs you', has: (i) => i.withHuman },
+  { label: 'With bots', has: (i) => !i.withHuman && !i.closed && i.blockers.some((b) => b.type === 'bot') },
+  { label: 'Waiting', has: (i) => !i.withHuman && !i.closed && !i.blockers.some((b) => b.type === 'bot') },
   { label: 'Closed today', has: (i) => i.closed },
 ]
-
-const WAITING: Partial<Record<HandoffKind, string>> = {
-  github: 'Waiting on GitHub',
-  slack: 'Waiting on Slack',
-  items: 'Waiting on other items',
-}
-
-const shortTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
 export function App() {
   const [page, setPage] = useState<Page>('items')
@@ -69,10 +62,12 @@ function ItemsSidebar() {
         Next
       </button>
       <NewItem
-        onCreate={(title, instructions) =>
-          w.act(async () =>
-            w.select(await api().create(title, instructions ? [{ type: 'bot', params: { instructions } }] : [])),
-          )
+        onCreate={(title, message) =>
+          w.act(async () => {
+            const id = await api().create(title)
+            if (message) await api().send(id, 'bot', message)
+            w.select(id)
+          })
         }
       />
       {GROUPS.map((g) => (
@@ -126,7 +121,7 @@ function NewItem({ onCreate }: { onCreate: (title: string, instructions: string)
       {title && (
         <>
           <textarea
-            placeholder="Instructions for a bot (optional; without them it comes to you)"
+            placeholder="A message for a bot (optional; without one it is yours)"
             value={instructions}
             onChange={(e) => setInstructions(e.target.value)}
             rows={2}
@@ -162,17 +157,16 @@ type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 function ItemView({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalog: Catalog; act: Act; onSkip: () => void }) {
   const { item } = detail
-  const current = item.current
   const scroller = useRef<HTMLDivElement>(null)
-  const withHuman = !item.closed && (!current || current.type === 'human')
-  // Every time the human sees an item, or sees it move on, is in its trace.
+  // Every time the human sees an item is in its trace.
   useEffect(() => {
     void api().viewed(item.id)
-  }, [item.id, current?.id])
+  }, [item.id, item.withHuman])
   // New messages arrive at the bottom, as in any chat.
+  const resolved = detail.events.filter((e) => e.resolved).length
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight })
-  }, [detail.handoffs.length, current?.id])
+  }, [resolved])
   return (
     <div className="item">
       <header className="item-header">
@@ -186,7 +180,7 @@ function ItemView({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalo
             </div>
           )}
         </div>
-        {withHuman && (
+        {!item.closed && (
           <div className="buttons">
             <button data-ui onClick={() => act(() => api().close(item.id))}>
               Close
@@ -202,66 +196,24 @@ function ItemView({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalo
         <Chat detail={detail} />
       </div>
       <div className="composer">
-        {withHuman && <Decide key={current?.id ?? 'with-human'} detail={detail} catalog={catalog} act={act} />}
-        {current?.type === 'bot' && (
-          <div className="composer-bar">
-            <span className="muted">{item.worker !== null ? 'A bot is on it.' : 'Waiting for a free bot.'}</span>
-            <button data-ui onClick={() => act(() => api().takeOver(item.id))}>
-              Take over
-            </button>
-          </div>
+        <Blockers detail={detail} catalog={catalog} act={act} />
+        {item.closed ? (
+          <div className="composer-bar muted">Closed.</div>
+        ) : (
+          <Composer
+            key={item.id}
+            catalog={catalog}
+            onSend={async (preset, text) => {
+              let ok = false
+              await act(async () => {
+                await api().send(item.id, preset, text)
+                ok = true
+              })
+              return ok
+            }}
+          />
         )}
-        {current && WAITING[current.type] && (
-          <div className="composer-bar">
-            <span className="muted">
-              {WAITING[current.type]}
-              {current.nextCheckAt && ` · next check ${shortTime(current.nextCheckAt)}`}
-              {current.lastError && <span className="error-text"> · {current.lastError}</span>}
-            </span>
-            <button data-ui onClick={() => act(() => api().takeOver(item.id))}>
-              Take over
-            </button>
-          </div>
-        )}
-        {item.closed && <div className="composer-bar muted">Closed.</div>}
       </div>
     </div>
-  )
-}
-
-/** The human's turn: approve what is asked, hand the item on, or close it. Any question is the last message above. */
-function Decide({ detail, catalog, act }: { detail: ItemDetail; catalog: Catalog; act: Act }) {
-  const { item } = detail
-  const current = item.current
-  const approval = current?.params.approval as { action: string; inputs: Record<string, unknown> } | undefined
-  const action = approval && catalog.actions.find((a) => a.name === approval.action)
-  const [inputs, setInputs] = useState<Record<string, unknown>>(approval?.inputs ?? {})
-  const [next, setNext] = useState<HandoffSpec[]>([{ type: 'bot', params: {} }])
-  useEffect(() => setInputs(approval?.inputs ?? {}), [approval])
-  const send = () => void act(() => api().handOff(item.id, next))
-  return (
-    <>
-      {approval && (
-        <div className="approval">
-          {action ? (
-            <Form schema={withHints(action.inputSchema)} value={inputs} setValue={(v) => setInputs(v as Record<string, unknown>)} />
-          ) : (
-            <p className="error-text">No action {approval.action}.</p>
-          )}
-          <button data-ui className="primary" title={action?.description} onClick={() => act(() => api().approve(item.id, inputs))}>
-            Run {approval.action}
-          </button>
-        </div>
-      )}
-      <HandoffBuilder catalog={catalog} value={next} onChange={setNext} onSend={send} />
-      {item.queued > 0 && (
-        <div className="composer-bar">
-          <span />
-          <button data-ui title="Go on with the queued handoffs" onClick={() => act(() => api().handOff(item.id, []))}>
-            Continue
-          </button>
-        </div>
-      )}
-    </>
   )
 }

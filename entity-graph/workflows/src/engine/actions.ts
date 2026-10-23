@@ -2,34 +2,44 @@
 // the one list both MCP scopes serve and scripts are handed.
 
 import { z } from 'zod'
-import type { HandoffSpec } from '../shared/types'
+import type { EventSpec } from '../shared/types'
 import type { Action, ActionContext } from './integrations'
 import { objectSchema } from './schema'
 
 const itemId = z.string().describe('The id of the item.')
-const spec = z.object({ type: z.string(), params: z.record(z.unknown()) }).describe('A handoff: see handoff_types.')
+const spec = z
+  .object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional() })
+  .describe('An event: see event_types. ref names it, so an after in the same list can wait for it.')
 
-/** Handing on and closing are the human's: a bot or a script returns its handoffs instead. */
+/** Adding events directly, cancelling and closing are the human's: a bot returns its events as output, a script returns them. */
 function assertHuman(ctx: ActionContext): void {
   if (ctx.author !== 'human')
-    throw new Error('Only a human hands an item on or closes it directly. A bot returns its next handoffs as its output; a script returns them.')
+    throw new Error('Only a human adds events directly, cancels or closes. A bot returns its events as its output; a script returns them.')
 }
 
 export const itemActions: Action[] = [
   {
-    name: 'handoff_types',
+    name: 'event_types',
     unsafe: false,
-    description: 'Every kind of handoff: what it is for, the params it takes (as JSON Schema), and what it resolves with.',
+    description:
+      'Every kind of event: what it is for, whether it blocks, the params it takes (as JSON Schema), and what it resolves with.',
     input: {},
     run: async (_a, { engine }) =>
-      engine.handoffTypes.map((t) => ({ type: t.type, description: t.description, params: objectSchema(t.params), resolution: t.resolution })),
+      engine.eventTypes.map((t) => ({
+        type: t.type,
+        description: t.description,
+        blocking: t.blocking,
+        botsMayAdd: Boolean(t.bots),
+        params: objectSchema(t.params),
+        resolvesWith: t.data,
+      })),
   },
   {
     name: 'unsafe_actions',
     unsafe: false,
     description:
       'The unsafe actions: those that change things outside this app, which only a human may run. ' +
-      'A bot can not call them; it asks for one with a human handoff whose approval names it and fills in its inputs.',
+      'A bot can not call them; it asks for one by adding an approval event that names it and fills in its inputs.',
     input: {},
     run: async (_a, { engine }) =>
       engine.actions.filter((a) => a.unsafe).map((a) => ({ name: a.name, description: a.description, inputs: objectSchema(a.input) })),
@@ -37,18 +47,22 @@ export const itemActions: Action[] = [
   {
     name: 'list_items',
     unsafe: false,
-    description: 'The open items, and those closed in the last day, with what each waits for.',
-    input: { type: z.string().optional().describe('Only items whose current handoff is of this type.') },
-    run: async (a, { engine }) =>
-      engine
-        .overview()
-        .items.filter((i) => !a.type || i.current?.type === a.type)
-        .map((i) => ({ id: i.id, title: i.title, closed: i.closed, current: i.current && { type: i.current.type, params: i.current.params }, url: i.url })),
+    description: 'The open items, and those closed in the last day, with what blocks each and whether it is the human\'s turn.',
+    input: {},
+    run: async (_a, { engine }) =>
+      engine.overview().items.map((i) => ({
+        id: i.id,
+        title: i.title,
+        closed: i.closed,
+        withHuman: i.withHuman,
+        blockers: i.blockers.map((b) => ({ id: b.id, type: b.type, params: b.params })),
+        url: i.url,
+      })),
   },
   {
     name: 'get_item',
     unsafe: false,
-    description: 'An item in full: every handoff with its resolution and timeline, the events between them, its bot runs, and its trace: every thing that happened to it, when, and by whom.',
+    description: 'An item in full: every event (resolved or not) with its data and timeline, its bot runs, and its trace: every thing that happened to it, when, and by whom.',
     input: { item_id: itemId },
     run: async (a, { engine }) => {
       const d = engine.detail(String(a.item_id))
@@ -60,9 +74,8 @@ export const itemActions: Action[] = [
     name: 'recent_items',
     unsafe: false,
     description:
-      'Items touched in the last `days`, for looking back at how the work went: time spent on each kind of handoff, bot runs and cost, ' +
-      'human decisions, approvals the human changed, waits that timed out, what was handled outside the tool, how long the human took ' +
-      'to see and to answer each question, and how long bot handoffs waited for a free worker.',
+      'Items touched in the last `days`, for looking back at how the work went: how long each kind of blocker held them, bot runs and cost, ' +
+      'human messages, approvals the human changed, cancels, timeouts, bot failures, views and skips, and what was handled outside the tool.',
     input: { days: z.number().default(7) },
     run: async (a, { engine }) => engine.recent(Number(a.days)),
   },
@@ -80,46 +93,44 @@ export const itemActions: Action[] = [
   {
     name: 'create_item',
     unsafe: false,
-    description: "Create an item. Answers its id. Without handoffs it goes to the human to decide what happens.",
-    input: {
-      title: z.string(),
-      next: z.array(spec).optional().describe('Its handoffs, in order.'),
-    },
+    description: 'Create an item, with events to start it off. Answers its id. With no blockers, it is the human\'s turn.',
+    input: { title: z.string(), events: z.array(spec).optional() },
     run: async (a, ctx) => {
       const id = await ctx.engine.create(String(a.title), {
-        next: a.next as HandoffSpec[] | undefined,
+        events: a.events as EventSpec[] | undefined,
         actor: ctx.actor,
         author: ctx.author,
         source: ctx.itemId ? `item:${ctx.itemId}` : ctx.actor,
       })
-      if (ctx.itemId) ctx.engine.record(ctx.itemId, ctx.actor, 'created_item', String(a.title), { id })
+      if (ctx.itemId) ctx.engine.mark(ctx.itemId, 'item_spawned', { actor: ctx.actor, runId: ctx.runId, data: { id, title: a.title } })
       return { id }
     },
   },
   {
-    name: 'hand_off',
+    name: 'add_events',
     unsafe: false,
-    description:
-      "Resolve an item's current handoff and put `next` at the front of its queue (or in place of it, with replace_queue). Human only.",
-    input: {
-      item_id: itemId,
-      next: z.array(spec).describe('The handoffs, in order.'),
-      replace_queue: z.boolean().optional().describe('Drop the handoffs already queued.'),
-    },
+    description: 'Add events to an item: messages, blockers, approvals, afters. Human only.',
+    input: { item_id: itemId, events: z.array(spec) },
     run: async (a, ctx) => {
       assertHuman(ctx)
-      await ctx.engine.handOff(String(a.item_id), {
-        next: a.next as HandoffSpec[],
-        replaceQueue: Boolean(a.replace_queue),
-        actor: ctx.actor,
-      })
-      return 'Handed off.'
+      return { ids: await ctx.engine.addEvents(String(a.item_id), a.events as EventSpec[], ctx.actor) }
+    },
+  },
+  {
+    name: 'cancel_event',
+    unsafe: false,
+    description: 'End a blocker without it happening. Human only.',
+    input: { event_id: z.string() },
+    run: async (a, ctx) => {
+      assertHuman(ctx)
+      await ctx.engine.cancel(String(a.event_id), ctx.actor)
+      return 'Cancelled.'
     },
   },
   {
     name: 'close_item',
     unsafe: false,
-    description: 'Close an item: resolve its current handoff and drop the rest. Human only.',
+    description: 'Close an item, cancelling its blockers. Human only.',
     input: { item_id: itemId },
     run: async (a, ctx) => {
       assertHuman(ctx)

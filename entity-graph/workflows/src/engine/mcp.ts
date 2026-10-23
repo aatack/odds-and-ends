@@ -14,7 +14,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { Catalog } from '../shared/types'
 import type { Engine } from './engine'
 import type { ActionContext } from './integrations'
-import { handoffSchema, objectSchema } from './schema'
+import { objectSchema } from './schema'
 
 export type Scope = { kind: 'run'; runId: string } | { kind: 'operator' }
 
@@ -46,7 +46,7 @@ export function makeServer(engine: Engine, scope: Scope): McpServer {
   return server
 }
 
-/** Every action and handoff type, for the MCP page and the forms. */
+/** Every action, event type and preset, for the MCP page and the chat input. */
 export function catalog(engine: Engine): Catalog {
   return {
     actions: engine.actions.map((a) => ({
@@ -55,8 +55,8 @@ export function catalog(engine: Engine): Catalog {
       inputSchema: objectSchema(a.input),
       unsafe: a.unsafe,
     })),
-    handoffs: engine.handoffTypes.map((t) => ({ type: t.type, description: t.description, params: objectSchema(t.params), resolution: t.resolution })),
-    handoffList: { type: 'array', items: handoffSchema(engine.handoffTypes) },
+    events: engine.eventTypes.map((t) => ({ type: t.type, description: t.description, params: objectSchema(t.params), data: t.data, blocking: t.blocking })),
+    presets: engine.presets.map(({ id, name, hint, icon }) => ({ id, name, hint, icon })),
   }
 }
 

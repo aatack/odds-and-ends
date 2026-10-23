@@ -1,67 +1,50 @@
-// The shapes the main process and the renderer both read. docs/handoffs.md is
-// the long form of what a handoff is.
-
-export type HandoffKind = 'human' | 'bot' | 'github' | 'slack' | 'items' | 'script'
-
-/** A handoff as it is set: what is to happen next, and so who does it. */
-export interface HandoffSpec {
-  type: HandoffKind
-  params: Record<string, unknown>
-}
-
-export type HandoffStatus = 'queued' | 'active' | 'resolved' | 'cancelled'
+// The shapes the main process and the renderer both read. docs/events.md is the
+// long form of what an event is.
 
 /**
- * One handoff on one item. An item's handoffs are a queue: the active one is
- * what it waits for, and resolving it starts the next. A resolved handoff keeps
- * its resolution, which is what the next one reads.
+ * An item's history is its events. Some resolve as they are added (a message, an
+ * action run); the rest are **blockers**, which stay unresolved until something
+ * happens (a bot replies, CI finishes, an approval is given).
  */
-export interface Handoff extends HandoffSpec {
-  id: string
-  itemId: string
-  status: HandoffStatus
-  /** Who set it: 'human', 'bot', 'system', or a source's id. */
-  createdBy: string
-  createdAt: number
-  startedAt: number | null
-  resolvedAt: number | null
-  resolution: Record<string, unknown> | null
-  resolvedBy: string | null
-  /** For the ones the loop checks. */
-  nextCheckAt: number | null
-  lastError: string | null
-  /** When each thing happened to it, from the trace. */
-  times: HandoffTimes
+export type EventKind = 'message' | 'action' | 'closed' | 'approval' | 'bot' | 'github' | 'slack' | 'items' | 'after'
+
+/** An event as it is added. `ref` names it, so an `after` added alongside can point at it. */
+export interface EventSpec {
+  type: EventKind
+  params: Record<string, unknown>
+  ref?: string
 }
 
-/** A handoff's timeline: the first (and where it matters, last) time of each thing, and how often. */
-export interface HandoffTimes {
-  set: number | null
-  started: number | null
-  firstViewed: number | null
-  lastViewed: number | null
-  views: number
-  skips: number
-  firstRunStarted: number | null
-  firstRunEnded: number | null
-  runs: number
+export interface ItemEvent {
+  id: string
+  itemId: string
+  type: EventKind
+  params: Record<string, unknown>
+  /** Who added it: 'human', 'bot', 'system', 'script', 'mcp', or a source's id. */
+  createdBy: string
+  createdAt: number
+  resolved: boolean
+  resolvedAt: number | null
+  resolvedBy: string | null
+  cancelled: boolean
+  /** What it resolved with. */
+  data: Record<string, unknown> | null
+  /** For the blockers the loop checks. */
+  nextCheckAt: number | null
+  lastError: string | null
+  times: EventTimes
+}
+
+/** An event's timeline, read from the trace. */
+export interface EventTimes {
+  added: number | null
   firstChecked: number | null
   lastChecked: number | null
   checks: number
+  firstRunStarted: number | null
+  firstRunEnded: number | null
+  runs: number
   resolved: number | null
-  cancelled: number | null
-}
-
-/** One row of the trace: one thing that happened. */
-export interface TraceEntry {
-  id: number
-  at: number
-  itemId: string
-  handoffId: string | null
-  runId: string | null
-  actor: string
-  kind: string
-  data: Record<string, unknown> | null
 }
 
 export interface Item {
@@ -70,33 +53,34 @@ export interface Item {
   source: string
   url: string | null
   closed: boolean
-  /** The active handoff. Null when closed, or when the item is with the human with nothing asked. */
-  current: Handoff | null
-  /** How many handoffs wait behind the current one. */
-  queued: number
-  /** The worker running the item, while one is. */
+  /** Its unresolved events, oldest first. */
+  blockers: ItemEvent[]
+  /** Open, and blocked by nothing but the human's own approvals: it is the human's turn. */
+  withHuman: boolean
+  /** The worker running a bot on it, while one is. */
   worker: number | null
-  /** Since when it has waited on what it waits on now. */
+  /** Since when it has been as it is: the last event added or resolved. */
   since: number
   createdAt: number
   updatedAt: number
 }
 
-/** Something that happened between handoffs: an action run, a check that failed, an item created. */
-export interface ItemEvent {
+/** One row of the trace: one thing that happened. */
+export interface TraceEntry {
   id: number
-  itemId: string
   at: number
+  itemId: string
+  eventId: string | null
+  runId: string | null
   actor: string
   kind: string
-  text: string
   data: Record<string, unknown> | null
 }
 
 export interface BotRun {
   id: string
   itemId: string
-  handoffId: string
+  eventIds: string[]
   worker: number
   startedAt: number
   endedAt: number | null
@@ -107,11 +91,9 @@ export interface BotRun {
 
 export interface ItemDetail {
   item: Item
-  /** Every handoff, in order: resolved, active, queued. */
-  handoffs: Handoff[]
+  /** Every event, oldest first. */
   events: ItemEvent[]
   runs: BotRun[]
-  /** Everything that happened to the item, in order. */
   trace: TraceEntry[]
 }
 
@@ -142,22 +124,32 @@ export interface ToolInfo {
 }
 
 export interface ActionInfo extends ToolInfo {
-  /** Seen by other people: a bot, or a bot's script, must hand off for approval instead. */
+  /** Changes things outside this app: bots, and scripts bots wrote, never get it. */
   unsafe: boolean
 }
 
-export interface HandoffTypeInfo {
-  type: HandoffKind
+export interface EventTypeInfo {
+  type: EventKind
   description: string
   params: ObjectSchema
-  resolution: string
+  data: string
+  blocking: boolean
+}
+
+/** A way to send from the chat input: what the typed text becomes. */
+export interface PresetInfo {
+  id: string
+  name: string
+  /** What happens, after the name, in the empty input. */
+  hint: string
+  /** The event type whose icon stands for it. */
+  icon: EventKind
 }
 
 export interface Catalog {
   actions: ActionInfo[]
-  handoffs: HandoffTypeInfo[]
-  /** A list of handoffs of any type, as a JSON Schema: what the forms edit a queue with. */
-  handoffList: Record<string, unknown>
+  events: EventTypeInfo[]
+  presets: PresetInfo[]
 }
 
 export interface Check {
@@ -183,21 +175,22 @@ export interface WorkflowsAPI {
   overview: () => Promise<Overview>
   detail: (id: string) => Promise<ItemDetail | null>
   catalog: () => Promise<Catalog>
-  /** The human has the item on screen: recorded against its current handoff. */
+  /** The item that has waited longest for the human, or null. */
+  next: (skip: string[]) => Promise<string | null>
+  /** The human has the item on screen. */
   viewed: (id: string) => Promise<void>
   /** The human passed over the item for now. */
   skipped: (id: string) => Promise<void>
-  /** The item whose human handoff has waited longest, or null. */
-  next: (skip: string[]) => Promise<string | null>
-  create: (title: string, next: HandoffSpec[]) => Promise<string>
-  /** Resolves the current handoff and puts `next` at the front of the queue. */
-  handOff: (id: string, next: HandoffSpec[]) => Promise<void>
-  /** Runs the action the current human handoff asks approval for, with the human's inputs. */
-  approve: (id: string, inputs: Record<string, unknown>) => Promise<void>
+  create: (title: string) => Promise<string>
+  /** Sends from the chat input: `text` through a preset. */
+  send: (id: string, preset: string, text: string) => Promise<void>
+  /** Runs an approval blocker's action with the human's inputs. */
+  approve: (eventId: string, inputs: Record<string, unknown>) => Promise<void>
+  /** Ends a blocker without it happening. */
+  cancel: (eventId: string) => Promise<void>
   close: (id: string) => Promise<void>
   /** The human did it outside the tool. Recorded, so reviews can find it. */
   handledOutside: (id: string) => Promise<void>
-  takeOver: (id: string) => Promise<void>
   pollSources: () => Promise<void>
   integrations: () => Promise<IntegrationsView>
   addSlack: (token: string) => Promise<void>

@@ -76,7 +76,7 @@ export function McpPage() {
         <p className="muted">
           Everything clients connected above and your scripts (as <code>actions.name(args)</code>) can do. Unsafe actions change things
           outside this app: bots, and scripts bots wrote, never get them, and ask you for them as an approval instead. A bot also changes
-          only its own item, and hands items on by returning handoffs.
+          only its own item, and adds blockers by returning them.
         </p>
         {catalog.actions.map((a) => (
           <div key={a.name} className="tool">
@@ -92,19 +92,22 @@ export function McpPage() {
 
       <section className="card">
         <h2>
-          Handoffs <span className="count">{catalog.handoffs.length}</span>
+          Events <span className="count">{catalog.events.length}</span>
         </h2>
         <p className="muted">
-          What an item can wait for. A bot returns a list of these as its output; the first is what the item waits for, and each resolves
-          into the next.
+          What can happen to an item. A blocker stays open until what it waits for happens; the rest resolve as they are added. A bot
+          adds blockers in its output, and an after chains one onto another.
         </p>
-        {catalog.handoffs.map((h) => (
+        {catalog.events.map((h) => (
           <div key={h.type} className="tool">
-            <code className="tool-name">{h.type}</code>
+            <div className="row-inline">
+              <code className="tool-name">{h.type}</code>
+              {h.blocking && <span className="badge">blocker</span>}
+            </div>
             <div className="tool-description">{h.description}</div>
             <Params schema={h.params} />
             <div className="muted">
-              Resolves with <code>{h.resolution}</code>
+              Resolves with <code>{h.data}</code>
             </div>
           </div>
         ))}

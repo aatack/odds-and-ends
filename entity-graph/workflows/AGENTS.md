@@ -17,21 +17,18 @@ an in-memory store; it costs a run, so use it only when the bot wiring changes.
 ## The paradigm
 
 [`docs/paradigm.md`](./docs/paradigm.md) is the idea, in a page.
-[`docs/handoffs.md`](./docs/handoffs.md) is how it is built; read it before changing the engine.
+[`docs/events.md`](./docs/events.md) is how it is built; read it before changing the engine.
 
-- An **item** has a **queue of handoffs** (what happens next, and so who does it).
-  It has no state or notes for now: that idea is being rethought.
-- The first handoff is what the item waits for. When it resolves, its resolution
-  is kept and the next one starts. That is how handoffs chain.
-- Types: `human`, `bot`, `github`, `slack`, `items`, `script`.
-- An open item with no active handoff is with the human; nothing is asked.
-- **Next** shows the item that has waited longest for the human (a human
-  handoff, or no handoff at all), moving on from the one on screen.
-- A bot's run ends by returning `{ next, close? }` as structured
-  output. It has no tool for ending a run.
-- A human handoff's `needed` is one direct question. A bot gets an unsafe action
-  done by putting it in a human handoff's `approval`, which the human runs, changes,
-  or turns down.
+- An **item** is a list of **events**. Some resolve as they are added (a
+  message); **blockers** wait until something happens (a bot answers, CI finishes).
+- An item can have many blockers at once. It is the human's turn when nothing
+  blocks it but approvals.
+- `after` events chain: they wait for one event, then add others, as given or as
+  a script decides.
+- The chat input sends through presets (a message plus a bot, by default); Tab
+  steps through them.
+- Each item has its own Claude session. A bot is told what is new since it was
+  last prompted, and answers with `{ message?, events?, close? }` as structured output.
 
 ## The unsafe rule
 
@@ -44,11 +41,11 @@ deploying and deleting, in any integration.
 - Bots, and scripts that bots wrote, never get an unsafe action. The run-scope MCP
   server leaves them out, and `Engine.callAction` refuses them to any caller that
   is not a human.
-- A bot asks for an unsafe action as the `approval` on a human handoff.
+- A bot asks for an unsafe action by adding an `approval` event.
   `unsafe_actions` tells it what it can ask for.
 - Nothing may give a bot another way round this: no shell, no HTTP tool, no
-  built-in Claude Code tools, and no handoff that acts outside the app when a bot
-  set it. The `slack` handoff's message is an example: when a bot sets one, an
+  built-in Claude Code tools, and no event that acts outside the app when a bot
+  adds it. The `slack` event's message is an example: when a bot adds one, an
   approval goes in front of it.
 - `test/engine.mts` checks the rule. Keep those checks passing; never loosen them.
 
@@ -56,18 +53,19 @@ deploying and deleting, in any integration.
 
 ```
 src/engine     everything but the window; plain Node, so the tests drive it headlessly
-  engine.ts      items, their queues of handoffs, history, the loop, bot output
-  handoffs.ts    the handoff types
+  engine.ts      items, their events and blockers, the trace, the loop, bot output
+  eventTypes.ts  the event types
+  presets.ts     what the chat input can send
   actions.ts     the actions on items (github.ts and slack.ts add theirs)
-  script.ts      script handoffs, in QuickJS
+  script.ts      after events' scripts, in QuickJS
   schema.ts      JSON Schema from the zod shapes: forms, docs, the bots' output schema
   mcp.ts         the MCP server: the actions, in two scopes
   settings.ts    configuration in the store: Slack workspaces (tokens encrypted), the MCP port and token
   admin.ts       what the Integrations and MCP pages show and change
   workers.ts     the pool of `claude -p` workers
-  github.ts      GitHub via the gh CLI: actions, the github handoff, a source
-  slack.ts       Slack via the user tokens: actions, the slack handoff
-  integrations.ts  the interfaces: Action, HandoffType, Source
+  github.ts      GitHub via the gh CLI: actions, the github event, a source
+  slack.ts       Slack via the user tokens: actions, the slack event
+  integrations.ts  the interfaces: Action, EventType, Source
   db.ts          the SQLite schema
 src/main       Electron main: opens the store, starts the loop, pool and MCP, IPC
 src/preload    the renderer's API (WorkflowsAPI in src/shared/types.ts)
@@ -78,8 +76,9 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
 ## UI
 
 - **Two kinds of form.**
-  - The forms used all day, a new item and a handoff, are condensed: `CompactForm`
-    (one control per field, named by its placeholder) and `HandoffBuilder`. Keep them tight.
+  - The forms used all day are condensed: the new-item form, and the chat input
+    (`Composer`: one growing line, its preset's icon and hint, Tab between presets,
+    Enter to send). Keep them tight.
   - Everything else (approvals, settings) uses `SchemaForm`, through
     `Form` in `forms.tsx`, which adds the app's own editors (`secret` for tokens).
     `withHints` gives the engine's schemas text boxes for prose fields.
@@ -95,22 +94,24 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
 ## Rules
 
 - **The engine is the only writer.** Every change goes through `Engine` and emits
-  `change`. Handoffs start in `advance`, and changes to one item run one at a time (`serial`).
+  `change`. Events are added in `add` and resolved in `resolve`, and checks and
+  starts on one item run one at a time (`serial`).
 - **Trace everything.** The aim is complete traceability: what happened, when,
   and who or what did it.
-  - The `trace` table records every moment, one row each: an item created; a
-    handoff set, started, viewed, skipped, checked, resolved or cancelled; a bot
+  - The `trace` table records every moment, one row each: an item created; an
+    event added, checked, resolved or cancelled; a view or skip; a bot
     run started and ended; every action called, by whom, in which run, with its
     arguments, its result (ok or error) and how long it took.
-  - `Handoff.times` is read from the trace, never stored apart from it.
-  - The `events` table holds what the chat shows. `runs` keeps every run's
-    prompt and full stream-json transcript. Resolved handoffs keep their
-    resolutions, with the bot's own words in `output`.
-  - All of these are append-only: never update or delete a row.
+  - `ItemEvent.times` is read from the trace, never stored apart from it.
+  - The `events` table is each item's history: rows are added and resolved,
+    never otherwise changed or deleted, and a resolved event keeps its data (a
+    bot's own words in `output`). `runs` keeps every run's prompt and full
+    stream-json transcript.
+  - The trace and the runs are append-only: never update or delete a row.
   - Anything new that changes, starts, ends or is seen goes through
     `Engine.mark`. Bots read the trace back (`recent_items`, `get_item`,
     `run_transcript`) to find what to improve.
-- **The store is SQLite**, in `userData/workflows-v2.db`. The app uses
+- **The store is SQLite**, in `userData/workflows-v3.db`. The app uses
   `better-sqlite3`, which is rebuilt for Electron on `postinstall`. The tests use
   `node:sqlite`. `db.ts` uses only the API both share, with positional parameters.
 - **One process.** The Electron main process holds the store, the loop (every
@@ -124,9 +125,11 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   `operator` (anything the user connects, at `/mcp` on port 47390 by default,
   with a bearer token, acting as the human). Both bind to loopback only.
 - **Bots get only the MCP server.** Workers run `claude -p` with built-in tools
-  off, only `mcp__workflows` allowed, and the handoff schema as `--json-schema`.
+  off, only `mcp__workflows` allowed, the output schema as `--json-schema`, and
+  the item's own session (`--session-id`, then `--resume`), always from the same directory.
   A new capability for bots is an action. Never add it to the bot's command line.
-- **Adding an integration** means adding its actions (each declaring `unsafe`), a handoff type if it can be waited on, and a source if it
-  produces items. Update `docs/handoffs.md` when a type changes. Run CLIs and
+- **Adding an integration** means adding its actions (each declaring `unsafe`), an event type if it can be waited on, a preset if the chat
+  input should offer it, and a source if it produces items. Update `docs/events.md`
+  when a type changes. Run CLIs and
   HTTP through `engine.exec` and `engine.fetch`, so the tests can stand in for them.
 - **Waits back off**: 1, 2, 5, then 10 minutes between checks.

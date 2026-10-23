@@ -1,7 +1,6 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, safeStorage, shell } from 'electron'
 import Database from 'better-sqlite3'
-import type { HandoffSpec } from '../shared/types'
 import { Admin } from '../engine/admin'
 import { Engine } from '../engine/engine'
 import { catalog, startMcp } from '../engine/mcp'
@@ -24,8 +23,8 @@ function secrets(): Secrets {
 async function main(): Promise<void> {
   await app.whenReady()
 
-  // v2: items as queues of handoffs. The first version's file is left as it was.
-  const db = new Database(join(app.getPath('userData'), 'workflows-v2.db'))
+  // v3: items as events and blockers. The earlier versions' files are left as they were.
+  const db = new Database(join(app.getPath('userData'), 'workflows-v3.db'))
   db.pragma('journal_mode = WAL')
   const engine = new Engine({ db, secrets: secrets() })
   const mcp = await startMcp(engine)
@@ -47,12 +46,12 @@ async function main(): Promise<void> {
   handle('next', (skip: string[]) => engine.next(skip))
   handle('viewed', (id: string) => engine.viewed(id))
   handle('skipped', (id: string) => engine.skipped(id))
-  handle('create', (title: string, next: HandoffSpec[]) => engine.create(title, { next }))
-  handle('handOff', (id: string, next: HandoffSpec[]) => engine.handOff(id, { next }))
-  handle('approve', (id: string, inputs: Record<string, unknown>) => engine.approve(id, inputs))
+  handle('create', (title: string) => engine.create(title))
+  handle('send', (id: string, preset: string, text: string) => engine.send(id, preset, text))
+  handle('approve', (eventId: string, inputs: Record<string, unknown>) => engine.approve(eventId, inputs))
+  handle('cancel', (eventId: string) => engine.cancel(eventId))
   handle('close', (id: string) => engine.close(id))
   handle('handledOutside', (id: string) => engine.handledOutside(id))
-  handle('takeOver', (id: string) => engine.takeOver(id))
   handle('pollSources', () => engine.pollSources(true))
   handle('integrations', () => admin.integrations())
   handle('addSlack', (token: string) => admin.addSlack(token))

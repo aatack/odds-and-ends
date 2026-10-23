@@ -95,31 +95,31 @@ export const slackActions: Action[] = [
   },
 ]
 
-export const slackHandoffParams = {
+export const slackEventParams = {
   workspace,
   channel: z.string().describe('The channel id.'),
   message: z
     .string()
     .optional()
-    .describe('Posted as the operator as the handoff starts. One a bot sets goes to a human for approval first.'),
+    .describe('Posted as the operator as the wait starts. One a bot sets gets an approval before it instead.'),
   thread_ts: z.string().optional().describe('The thread to wait in. Left out, it is the message just posted.'),
+  thread_of: z.string().optional().describe('An approval event whose slack_post started the thread to wait in.'),
   timeout_minutes: z.number().optional().describe('Resolve as timed_out after this long.'),
 }
 
 /** Posts the message if there is one, and remembers what the thread already holds. */
-export async function startSlack(p: Record<string, unknown>, engine: Engine, itemId: string, previous: Record<string, unknown> | null) {
+export async function startSlack(p: Record<string, unknown>, engine: Engine, itemId: string) {
   let thread = p.thread_ts as string | undefined
   if (p.message) {
     const posted = await slackCall(engine, p.workspace, 'chat.postMessage', { channel: p.channel, text: p.message, thread_ts: thread }, true)
     thread ??= posted.ts as string
-    engine.record(itemId, 'system', 'action_run', `Posted on Slack: ${p.message}`, { action: 'slack_post', output: { channel: posted.channel, ts: posted.ts } })
+    engine.mark(itemId, 'action_called', { actor: 'human', data: { action: 'slack_post', ok: true, output: { channel: posted.channel, ts: posted.ts } } })
   }
-  // An approved slack_post just before this one names the thread.
-  const ran = previous?.action as { name?: string; output?: { ts?: string } } | undefined
-  if (!thread && ran?.name === 'slack_post') thread = ran.output?.ts
-  if (!thread) throw new Error('A Slack handoff needs a message to post, a thread_ts, or an approved slack_post just before it.')
+  // An approved slack_post started the thread.
+  if (!thread && p.thread_of) thread = ((engine.event(String(p.thread_of))?.data?.output ?? {}) as { ts?: string }).ts
+  if (!thread) throw new Error('A Slack wait needs a message to post, a thread_ts, or an approved slack_post to follow.')
   const messages = (await slackCall(engine, p.workspace, 'conversations.replies', { channel: p.channel, ts: thread })).messages as Message[]
-  return { thread_ts: thread, since: messages.at(-1)?.ts ?? thread }
+  return { params: { ...p, message: undefined, thread_ts: thread, since: messages.at(-1)?.ts ?? thread } }
 }
 
 /** Resolved by the first reply from anybody but the operator. */
@@ -128,6 +128,6 @@ export async function checkSlack(p: Record<string, unknown>, engine: Engine): Pr
   const messages = (await slackCall(engine, p.workspace, 'conversations.replies', { channel: p.channel, ts: p.thread_ts })).messages as Message[]
   const replies = messages.filter((m) => Number(m.ts) > Number(p.since) && m.user !== me)
   return replies.length
-    ? { outcome: 'replied', channel: p.channel, thread_ts: p.thread_ts, replies: replies.map(brief), detail: `${replies.length} reply(s) on Slack.` }
+    ? { outcome: 'replied', channel: p.channel, thread_ts: p.thread_ts, replies: replies.map(brief), detail: `${replies.length} reply(s) on Slack: ${replies.map((r) => r.text).join(' / ').slice(0, 200)}` }
     : null
 }

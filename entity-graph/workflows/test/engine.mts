@@ -7,7 +7,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { Admin } from '../src/engine/admin.ts'
-import { Engine, type BotOutput } from '../src/engine/engine.ts'
+import type { EventSpec } from '../src/shared/types.ts'
+import { BACKOFF_MINUTES, Engine, type BotOutput } from '../src/engine/engine.ts'
 import { catalog, startMcp } from '../src/engine/mcp.ts'
 import { botOutputSchema } from '../src/engine/schema.ts'
 import { WorkerPool, type SpawnBot } from '../src/engine/workers.ts'
@@ -18,6 +19,7 @@ let clock = 1_000_000
 // ---- gh ----
 const ghCalls: string[][] = []
 let checks: 'pending' | 'failed' | 'passed' = 'pending'
+let prState = 'OPEN'
 const exec = async (cmd: string, args: string[]) => {
   if (cmd === 'claude') return '2.1.309 (Claude Code)\n'
   assert.equal(cmd, 'gh')
@@ -35,9 +37,12 @@ const exec = async (cmd: string, args: string[]) => {
         },
       ],
     })
+  if (args[0] === 'pr' && args[1] === 'view' && args.at(-1) === 'state') return JSON.stringify({ state: prState })
   if (args[0] === 'pr' && ['comment', 'merge'].includes(args[1])) return 'https://github.com/o/r/pull/7\n'
-  if (args[0] === 'search')
+  if (args[0] === 'search' && args.includes('--review-requested=@me'))
     return JSON.stringify([{ number: 7, title: 'Fix it', url: 'https://github.com/o/r/pull/7', repository: { nameWithOwner: 'o/r' } }])
+  if (args[0] === 'search')
+    return args[2] === 'nothing like this' ? '[]' : JSON.stringify([{ number: 7, title: 'Fix the flaky test', url: 'https://github.com/o/r/pull/7', repository: { nameWithOwner: 'o/r' } }])
   throw new Error(`unexpected gh ${args.join(' ')}`)
 }
 
@@ -68,8 +73,8 @@ const mcp = await startMcp(engine)
 
 // ---- bots: each run plays the next behaviour over MCP and returns its output ----
 type Call = (name: string, args?: Record<string, unknown>) => Promise<string>
-type Behaviour = (call: Call, prompt: string, schema: Record<string, unknown>) => Promise<BotOutput | null>
-const behaviours: Behaviour[] = []
+type Run = { call: Call; prompt: string; schema: Record<string, unknown>; sessionId: string; resume: boolean }
+const behaviours: ((run: Run) => Promise<BotOutput | null>)[] = []
 const connect = async (url: string, headers: Record<string, string> = {}) => {
   const client = new Client({ name: 'test', version: '0' })
   await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers } }))
@@ -80,12 +85,12 @@ const connect = async (url: string, headers: Record<string, string> = {}) => {
   }
   return { client, call }
 }
-const spawnFake: SpawnBot = ({ prompt, schema, mcpUrl, onOutput }) => {
+const spawnFake: SpawnBot = ({ prompt, schema, mcpUrl, sessionId, resume, onOutput }) => {
   const behaviour = behaviours.shift()
   assert.ok(behaviour, `a bot ran that no test expected:\n${prompt}`)
   const done = (async () => {
     const { client, call } = await connect(mcpUrl)
-    const out = await behaviour(call, prompt, schema)
+    const out = await behaviour({ call, prompt, schema, sessionId, resume })
     await client.close()
     onOutput(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Thinking out loud.' }] } }) + '\n')
     onOutput(JSON.stringify({ type: 'result', total_cost_usd: 0.01, num_turns: 3, structured_output: out ?? undefined }) + '\n')
@@ -99,293 +104,298 @@ const settle = async () => {
   for (let i = 0; i < 300; i++) {
     await engine.idle()
     await new Promise((r) => setTimeout(r, 5))
-    if (pool.status().every((w) => w.itemId === null) && !engine.overview().items.some((i) => i.current?.type === 'bot')) {
-      await engine.idle()
-      return
-    }
+    const busy = pool.status().some((w) => w.itemId) || engine.overview().items.some((i) => i.blockers.some((b) => b.type === 'bot'))
+    if (!busy) return engine.idle()
   }
   throw new Error(`still busy: ${JSON.stringify(pool.status())}`)
 }
-const current = (id: string) => engine.get(id)!.current
 const tick = async () => {
   await engine.tick()
   await settle()
 }
+const item = (id: string) => engine.get(id)!
+const blockers = (id: string) => item(id).blockers.map((b) => b.type)
+const last = (id: string, type: string) => engine.events(id).filter((e) => e.type === type).at(-1)!
 
-// The script a bot leaves behind a CI wait: fix on failure, ask to merge on success.
-const route = `async ({ previous }) => previous.resolution.outcome === 'failed'
-  ? { type: 'bot', params: { instructions: 'Fix the failing checks: ' + previous.resolution.failed.join(', ') } }
-  : { type: 'human', params: { needed: 'Merge o/r#7?', approval: { action: 'github_pr_merge', inputs: { repo: 'o/r', number: 7, method: 'squash' } } } }`
+// The script a bot leaves behind a CI wait: another bot if it failed; nothing (so the human's turn) if it passed.
+const route = `async ({ event }) => event.data.outcome === 'failed'
+  ? { type: 'bot', params: { instructions: 'Fix the failing checks: ' + event.data.failed.join(', ') } }
+  : null`
+const ciThenRoute: EventSpec[] = [
+  { type: 'github', ref: 'ci', params: { repo: 'o/r', number: 7, until: 'checks' } },
+  { type: 'after', params: { event: 'ci', script: route, description: 'A bot if CI failed' } },
+]
 
-// ---- 1. A new item has no handoffs, so it is with the human, and Next finds it ----
+// ---- 1. A new item has no events, so it is the human's turn ----
 const id = (await engine.create('Answer the PR'))!
-assert.equal(current(id), null)
-assert.equal(engine.handoffs(id).length, 0)
+assert.deepEqual(engine.events(id), [])
+assert.ok(item(id).withHuman)
 assert.equal(engine.next(), id)
 assert.equal(engine.next([id]), null)
 
-// ---- 2. Human → bot. The bot has no unsafe actions and can't hand off itself; it returns a chain ----
-behaviours.push(async (call, prompt, schema) => {
-  assert.match(prompt, /Your instructions: Reply on the PR/)
-  assert.ok(JSON.stringify(schema).includes('"needed"'))
-  const item = JSON.parse(await call('get_item', { item_id: id }))
-  assert.equal(item.item.id, id)
+// ---- 2. The human sends a message for a bot; the bot asks to post a reply and chains a CI wait behind it ----
+let session = ''
+behaviours.push(async ({ call, prompt, schema, sessionId, resume }) => {
+  session = sessionId
+  assert.equal(resume, false)
+  assert.match(prompt, /Item .*: Answer the PR/)
+  assert.match(prompt, /human message .*: Reply to the PR, please/)
+  assert.ok(JSON.stringify(schema).includes('"after"'))
+  assert.ok(!JSON.stringify(schema).includes('"enum":["message"]'), 'a bot answers with a message field, not message events')
+  assert.equal(JSON.parse(await call('get_item', { item_id: id })).item.id, id)
   await assert.rejects(call('github_pr_comment', { repo: 'o/r', number: 7, body: 'x' }), /not found/i)
-  const unsafe = JSON.parse(await call('unsafe_actions')).map((a: { name: string }) => a.name)
-  assert.deepEqual(unsafe.sort(), ['github_pr_comment', 'github_pr_merge', 'github_pr_review', 'slack_post'])
-  await assert.rejects(call('hand_off', { item_id: id, next: [] }), /returns its next handoffs/)
+  await assert.rejects(call('add_events', { item_id: id, events: [] }), /Only a human/)
   return {
-    next: [
-      { type: 'human', params: { needed: 'Post this reply?', approval: { action: 'github_pr_comment', inputs: { repo: 'o/r', number: 7, body: 'Thanks!' } } } },
-      { type: 'github', params: { repo: 'o/r', number: 7, until: 'checks' } },
-      { type: 'script', params: { source: route, description: 'Fix on failure, merge on success' } },
+    message: 'Drafted a reply. Post it?',
+    events: [
+      { type: 'approval', ref: 'post', params: { action: 'github_pr_comment', inputs: { repo: 'o/r', number: 7, body: 'Thanks!' } } },
+      { type: 'after', params: { event: 'post', then: ciThenRoute } },
     ],
   }
 })
-await engine.handOff(id, { next: [{ type: 'bot', params: { instructions: 'Reply on the PR' } }] })
+await engine.send(id, 'bot', 'Reply to the PR, please')
+assert.deepEqual(engine.events(id).slice(0, 2).map((e) => [e.type, e.createdBy]), [['message', 'human'], ['bot', 'human']])
+assert.ok(!item(id).withHuman, 'a bot blocker is waiting')
 await settle()
-assert.equal(current(id)!.type, 'human')
-assert.equal(current(id)!.params.needed, 'Post this reply?')
-assert.equal(engine.get(id)!.queued, 2)
-const botDone = engine.handoffs(id).find((h) => h.type === 'bot')!
-assert.equal(botDone.resolution!.output, 'Thinking out loud.')
+assert.deepEqual(blockers(id), ['approval', 'after'])
+assert.ok(item(id).withHuman, 'an approval, and an after waiting on it, are the human\'s turn')
+assert.equal(last(id, 'message').params.text, 'Drafted a reply. Post it?')
+assert.equal(last(id, 'message').createdBy, 'bot')
+const firstBot = engine.events(id).find((e) => e.type === 'bot')!
+assert.ok(firstBot.resolved)
+assert.equal(firstBot.data!.output, 'Thinking out loud.')
 
-// ---- 3. The human changes the reply and approves it; the chain goes on to the CI wait ----
+// ---- 3. The human changes the reply and approves it; the CI wait starts and backs off ----
 clock += 2 * MINUTE
 engine.viewed(id)
-clock += MINUTE
-engine.skipped(id)
-engine.viewed(id)
-await engine.approve(id, { repo: 'o/r', number: 7, body: 'Thanks a lot!' })
+const approval = item(id).blockers.find((b) => b.type === 'approval')!
+await engine.approve(approval.id, { repo: 'o/r', number: 7, body: 'Thanks a lot!' })
 assert.deepEqual(ghCalls.at(-1), ['pr', 'comment', '7', '-R', 'o/r', '--body', 'Thanks a lot!'])
-const approved = engine.handoffs(id).find((h) => h.resolution?.decision === 'approved')!
-assert.deepEqual((approved.resolution!.action as { changed: string[] }).changed, ['body'])
-assert.equal(current(id)!.type, 'github')
-
-// The wait is checked at once, then backs off: 1, 2, 5, 10, 10 minutes.
+assert.deepEqual(engine.event(approval.id)!.data!.changed, ['body'])
+await settle()
+assert.deepEqual(blockers(id), ['github', 'after'])
+assert.ok(!item(id).withHuman)
 await tick()
-for (const minutes of [1, 2, 5, 10, 10]) {
-  const due = current(id)!.nextCheckAt!
-  assert.equal(due, clock + minutes * MINUTE)
-  clock = due - 1
+for (const minutes of BACKOFF_MINUTES.concat([10])) {
+  const ci = item(id).blockers[0]
+  assert.equal(ci.nextCheckAt, clock + minutes * MINUTE)
+  clock = ci.nextCheckAt! - 1
   await tick()
-  assert.equal(current(id)!.nextCheckAt, due, 'not checked before it is due')
-  clock = due
+  assert.equal(item(id).blockers[0].nextCheckAt, ci.nextCheckAt, 'not checked before it is due')
+  clock = ci.nextCheckAt!
   await tick()
 }
 
-// The trace has every moment: when each handoff was set, started, seen, run, checked and resolved.
+// ---- 4. CI fails: the after's script adds a bot, which resumes the item's session and chains the same again ----
+behaviours.push(async ({ prompt, sessionId, resume }) => {
+  assert.equal(resume, true)
+  assert.equal(sessionId, session)
+  assert.match(prompt, /Since your last turn/)
+  assert.match(prompt, /"outcome":"failed"/)
+  assert.match(prompt, /Fix the failing checks: e2e/)
+  assert.doesNotMatch(prompt, /Reply to the PR, please/, 'what the session has seen is not sent again')
+  checks = 'pending' // it pushed a fix, so CI runs again
+  return { message: 'Fixed e2e.', events: ciThenRoute }
+})
+checks = 'failed'
+clock = item(id).blockers[0].nextCheckAt!
+await tick()
+assert.deepEqual(blockers(id), ['github', 'after'])
+
+// ---- 5. CI passes: the script adds nothing, so it is the human's turn, and nothing is asked ----
+checks = 'passed'
+clock = item(id).blockers[0].nextCheckAt!
+await tick()
+assert.deepEqual(blockers(id), [])
+assert.ok(item(id).withHuman)
+assert.equal(engine.next(engine.overview().items.filter((i) => i.id !== id).map((i) => i.id)), id)
+
+// The trace has every moment.
 {
-  const [bot, , wait] = engine.handoffs(id)
-  assert.ok(bot.times.set && bot.times.started && bot.times.resolved)
-  const human = engine.handoffs(id).find((h) => h.params.needed === 'Post this reply?')!
-  assert.equal(human.times.views, 2)
-  assert.equal(human.times.skips, 1)
-  assert.equal(human.times.firstViewed! - human.times.started!, 2 * MINUTE)
-  assert.equal(human.times.resolved! - human.times.lastViewed!, 0)
-  assert.ok(bot.times.firstRunStarted && bot.times.firstRunEnded && bot.times.runs === 1)
-  assert.equal(wait.times.checks, 6)
-  assert.ok(wait.times.firstChecked! < wait.times.lastChecked!)
+  const ci = engine.events(id).find((e) => e.type === 'github')!
+  assert.equal(ci.times.checks, 7)
+  assert.ok(ci.times.added && ci.times.resolved && ci.times.firstChecked! < ci.times.lastChecked!)
+  assert.ok(firstBot.times.firstRunStarted && firstBot.times.firstRunEnded)
   const trace = engine.trace(id)
-  const botCalls = trace.filter((t) => t.kind === 'action_called' && t.actor === 'bot')
-  assert.ok(botCalls.some((t) => t.data!.action === 'get_item' && t.data!.ok && t.runId === bot.resolution!.runId))
-  assert.ok(botCalls.some((t) => t.data!.action === 'github_pr_comment' && !t.data!.ok) === false, 'a tool a bot was never given is not called')
+  assert.ok(trace.some((t) => t.kind === 'viewed'))
+  assert.ok(trace.some((t) => t.kind === 'action_called' && t.actor === 'bot' && t.data!.action === 'get_item' && t.runId))
   assert.ok(trace.some((t) => t.kind === 'action_called' && t.actor === 'human' && t.data!.action === 'github_pr_comment' && t.data!.ok))
   assert.ok(trace.every((t, i) => i === 0 || t.at >= trace[i - 1].at))
 }
 
-// ---- 4. Checks fail: the script hands to a bot, which fixes and chains the same again ----
-behaviours.push(async (_call, prompt) => {
-  assert.match(prompt, /Fix the failing checks: e2e/)
-  assert.match(prompt, /"outcome":"failed"/)
-  return {
-    next: [
-      { type: 'github', params: { repo: 'o/r', number: 7, until: 'checks' } },
-      { type: 'script', params: { source: route } },
-    ],
-  }
-})
-checks = 'failed'
-clock = current(id)!.nextCheckAt!
-await tick()
-assert.equal(current(id)!.type, 'github')
-
-// ---- 5. Checks pass: the script asks the human to merge; after that, the queue is empty ----
-checks = 'passed'
-await tick()
-assert.equal(current(id)!.type, 'human')
-assert.equal(current(id)!.params.needed, 'Merge o/r#7?')
-await engine.approve(id, { repo: 'o/r', number: 7, method: 'squash' })
-assert.deepEqual(ghCalls.at(-1), ['pr', 'merge', '7', '-R', 'o/r', '--squash'])
-assert.equal(current(id), null, 'with nothing queued, the item is back with the human, and nothing is asked')
-assert.equal(engine.next(engine.overview().items.filter((i) => i.id !== id).map((i) => i.id)), id)
-await engine.close(id)
-assert.ok(engine.get(id)!.closed)
-assert.equal(current(id), null)
-assert.deepEqual(
-  engine.handoffs(id).map((h) => h.type),
-  ['bot', 'human', 'github', 'script', 'bot', 'github', 'script', 'human'],
-)
-
-// ---- 6. Slack: a bot's message goes to the human first, then the wait takes its thread ----
-engine.settings.addSlackWorkspace({ name: 'Acme', team: 'Acme', user: 'alex', userId: 'UME', token: 'xoxp-good-1234' })
-behaviours.push(async () => ({ next: [{ type: 'slack', params: { channel: 'C1', message: 'Any update, Sam?' } }] }))
-const chase = (await engine.create('Chase Sam', { next: [{ type: 'bot', params: { instructions: 'Ask Sam for an update' } }] }))!
+// ---- 6. Presets that wait on a PR found by its title; several blockers at once ----
+checks = 'pending'
+await engine.send(id, 'pr-checks', 'flaky test')
+await engine.send(id, 'pr-merged', 'flaky test')
 await settle()
-assert.equal(current(chase)!.type, 'human')
-assert.equal((current(chase)!.params.approval as { action: string }).action, 'slack_post')
+assert.deepEqual(blockers(id), ['github', 'github'])
+assert.equal(item(id).blockers[0].params.number, 7)
+await engine.send(id, 'pr-merged', 'nothing like this')
+await settle()
+assert.equal(last(id, 'github').data!.outcome, 'not_found')
+prState = 'MERGED'
+checks = 'passed'
+clock = Math.max(...item(id).blockers.map((b) => b.nextCheckAt!))
+await tick()
+assert.deepEqual(blockers(id), [], 'both waits resolved: checks passed, and merged')
+await assert.rejects(engine.send(id, 'message', '  '), /Nothing to send/)
+await engine.close(id)
+assert.ok(item(id).closed)
+assert.equal(last(id, 'closed').params.how, 'closed')
+
+// ---- 7. Slack: a bot's message becomes an approval, and the wait takes the thread it posted ----
+engine.settings.addSlackWorkspace({ name: 'Acme', team: 'Acme', user: 'alex', userId: 'UME', token: 'xoxp-good-1234' })
+const chase = (await engine.create('Chase Sam'))!
+behaviours.push(async () => ({ events: [{ type: 'slack', params: { channel: 'C1', message: 'Any update, Sam?' } }] }))
+await engine.send(chase, 'bot', 'Ask Sam for an update')
+await settle()
+assert.deepEqual(blockers(chase), ['approval', 'after'])
+assert.equal(item(chase).blockers[0].params.action, 'slack_post')
 assert.equal(slackCalls.filter((c) => c.method === 'chat.postMessage').length, 0)
-await engine.approve(chase, { channel: 'C1', text: 'Any update, Sam?' })
-assert.equal(current(chase)!.type, 'slack')
-assert.equal(current(chase)!.params.thread_ts, '100.1')
+await engine.approve(item(chase).blockers[0].id, { channel: 'C1', text: 'Any update, Sam?' })
+await settle()
+assert.deepEqual(blockers(chase), ['slack'])
+assert.equal(item(chase).blockers[0].params.thread_ts, '100.1')
 await tick()
-assert.equal(current(chase)!.type, 'slack', 'my own message is not a reply')
+assert.deepEqual(blockers(chase), ['slack'], 'my own message is not a reply')
 thread.push({ ts: '100.2', user: 'USAM', text: 'Done!' })
-clock = current(chase)!.nextCheckAt!
+clock = item(chase).blockers[0].nextCheckAt!
 await tick()
-assert.equal(current(chase), null)
-const replied = engine.handoffs(chase).find((h) => h.type === 'slack')!
-assert.deepEqual((replied.resolution!.replies as { text: string }[]).map((r) => r.text), ['Done!'])
+assert.deepEqual(blockers(chase), [])
+assert.match(String(last(chase, 'slack').data!.detail), /Done!/)
 await engine.close(chase)
 
-// ---- 7. Items: a bot splits off a sub-item and waits on it, then wraps up ----
+// ---- 8. Items: a bot splits off a sub-item and waits on it, then takes it up again ----
 let child = ''
-behaviours.push(async (call) => {
-  child = JSON.parse(await call('create_item', { title: 'Child', next: [{ type: 'bot', params: { instructions: 'Do the child' } }] })).id
-  return { next: [{ type: 'items', params: { item_ids: [child] } }, { type: 'bot', params: { instructions: 'Wrap up' } }] }
+const parent = (await engine.create('Parent'))!
+behaviours.push(async ({ call }) => {
+  child = JSON.parse(await call('create_item', { title: 'Child', events: [{ type: 'bot', params: { instructions: 'Do the child' } }] })).id
+  return { events: [{ type: 'items', ref: 'kids', params: { item_ids: [child] } }, { type: 'after', params: { event: 'kids', then: [{ type: 'bot', params: { instructions: 'Wrap up' } }] } }] }
 })
-behaviours.push(async () => ({ next: [], close: true }))
-behaviours.push(async (_call, prompt) => {
-  assert.match(prompt, /"title":"Child"/)
-  return { next: [], close: true }
+behaviours.push(async ({ prompt }) => {
+  assert.match(prompt, /Do the child/)
+  return { message: 'Child done.', close: true }
 })
-const parent = (await engine.create('Parent', { next: [{ type: 'bot', params: { instructions: 'Split it' } }] }))!
+behaviours.push(async ({ prompt }) => {
+  assert.match(prompt, /Wrap up/)
+  assert.match(prompt, /item\(s\) closed/)
+  return { message: 'All done.', close: true }
+})
+await engine.send(parent, 'bot', 'Split it')
 await settle()
 await settle()
-assert.ok(engine.get(child)!.closed)
-assert.ok(engine.get(parent)!.closed)
+assert.ok(item(child).closed)
+assert.ok(item(parent).closed)
 
-// ---- 8. A bot whose output is unusable hands the item to the human, saying why ----
-behaviours.push(async () => ({ next: [] }))
-const bad = (await engine.create('Bad', { next: [{ type: 'bot', params: { instructions: 'x' } }] }))!
+// ---- 9. A bot whose output is unusable leaves a message saying why ----
+const bad = (await engine.create('Bad'))!
+behaviours.push(async () => ({ events: [{ type: 'message', params: { text: 'not allowed' } }] }) as BotOutput)
+await engine.send(bad, 'bot', 'x')
 await settle()
-assert.match(String(current(bad)!.params.needed), /no handoffs and did not close/)
-behaviours.push(async () => ({ next: [{ type: 'human', params: { question: 'wrong field' } }] }))
-const typo = (await engine.create('Typo', { next: [{ type: 'bot', params: { instructions: 'x' } }] }))!
-await settle()
-assert.match(String(current(typo)!.params.needed), /needed: Required/)
-await engine.handledOutside(typo)
+assert.match(String(last(bad, 'message').params.text), /may not add a message/)
+assert.equal(last(bad, 'message').createdBy, 'system')
+assert.ok(last(bad, 'bot').data!.error)
+await engine.handledOutside(bad)
 
-// ---- 9. Scripts reach the actions; a bot's script gets no unsafe ones ----
-const scripted = (await engine.create('Scripted', {
-  next: [
-    {
-      type: 'script',
-      params: {
-        source: `async (input, actions) => { const all = await actions.list_items({}); console.log('saw', all.length); return { type: 'human', params: { needed: 'Saw ' + all.length + ' items' } } }`,
-      },
-    },
-  ],
-}))!
-assert.match(String(current(scripted)!.params.needed), /^Saw \d+ items$/)
-assert.equal((engine.handoffs(scripted)[0].resolution!.logs as string[])[0].split(' ')[0], 'saw')
+// ---- 10. Scripts reach the actions; a bot's script gets no unsafe ones ----
+const scripted = (await engine.create('Scripted'))!
+await engine.addEvents(scripted, [
+  { type: 'message', ref: 'hello', params: { text: 'hello' } },
+  { type: 'after', params: { event: 'hello', script: `async (input, actions) => { const all = await actions.list_items({}); console.log('saw', all.length); return { type: 'message', params: { text: 'Saw ' + all.length } } }` } },
+])
+await settle()
+assert.match(String(last(scripted, 'message').params.text), /^Saw \d+$/)
+assert.deepEqual((last(scripted, 'after').data!.logs as string[])[0].split(' ')[0], 'saw')
+const sneaky = (await engine.create('Sneaky'))!
 const merges = ghCalls.filter((c) => c[1] === 'merge').length
 behaviours.push(async () => ({
-  next: [{ type: 'script', params: { source: `async (i, actions) => { await actions.github_pr_merge({ repo: 'o/r', number: 7, method: 'squash' }); return null }` } }],
+  events: [
+    { type: 'items', ref: 'w', params: { item_ids: [parent] } },
+    { type: 'after', params: { event: 'w', script: `async (i, actions) => { await actions.github_pr_merge({ repo: 'o/r', number: 7, method: 'squash' }); return null }` } },
+  ],
 }))
-const sneaky = (await engine.create('Sneaky', { next: [{ type: 'bot', params: { instructions: 'x' } }] }))!
+await engine.send(sneaky, 'bot', 'x')
 await settle()
 assert.equal(ghCalls.filter((c) => c[1] === 'merge').length, merges)
-assert.match(String(current(sneaky)!.params.needed), /script handoff failed: .*unsafe/)
+assert.match(String(last(sneaky, 'after').data!.error), /unsafe/)
 
-// ---- 10. A wait with a timeout resolves as timed_out ----
+// ---- 11. A wait with a timeout resolves as timed_out ----
 checks = 'pending'
-const slow = (await engine.create('Slow', { next: [{ type: 'github', params: { repo: 'o/r', number: 7, until: 'checks', timeout_minutes: 3 } }] }))!
+const slow = (await engine.create('Slow'))!
+await engine.addEvents(slow, [{ type: 'github', params: { repo: 'o/r', number: 7, until: 'checks', timeout_minutes: 3 } }])
 await tick()
 clock += 3 * MINUTE
 await tick()
-assert.equal(current(slow), null)
-assert.equal(engine.handoffs(slow)[0].resolution!.outcome, 'timed_out')
+assert.equal(last(slow, 'github').data!.outcome, 'timed_out')
 
-// Closing cancels what was queued, and says when.
-const dropped = (await engine.create('Dropped', { next: [{ type: 'human', params: { needed: 'x?' } }, { type: 'bot', params: { instructions: 'y' } }] }))!
-await engine.close(dropped)
-const [, cancelled] = engine.handoffs(dropped)
-assert.equal(cancelled.status, 'cancelled')
-assert.ok(cancelled.times.cancelled)
-assert.ok(engine.trace(dropped).some((t) => t.kind === 'item_closed'))
-
-// ---- 11. Sources create items once ----
+// ---- 12. Sources create items once ----
 await engine.pollSources(true)
 await engine.pollSources(true)
-assert.equal(engine.overview().items.filter((i) => i.source === 'github.review-requests').length, 1)
+const reviews = engine.overview().items.filter((i) => i.source === 'github.review-requests')
+assert.equal(reviews.length, 1)
+assert.match(String(engine.events(reviews[0].id)[0].params.text), /review is requested/)
 
-// ---- 12. Taking over a bot's item brings it back to the human ----
+// ---- 13. Cancelling a bot that is running: what it returns doesn't land ----
 let release = () => {}
 const held = new Promise<void>((r) => (release = r))
 behaviours.push(async () => {
   await held
-  return { next: [], close: true }
+  return { message: 'late', close: true }
 })
-const taken = (await engine.create('Take me', { next: [{ type: 'bot', params: { instructions: 'x' } }] }))!
+const taken = (await engine.create('Take me'))!
+await engine.send(taken, 'bot', 'x')
 while (!pool.status().some((w) => w.itemId === taken)) await new Promise((r) => setTimeout(r, 5))
-await engine.takeOver(taken)
+await engine.cancel(last(taken, 'bot').id)
 release()
 await settle()
-assert.equal(current(taken), null)
-assert.equal(engine.handoffs(taken)[0].resolution!.outcome, 'taken_over')
-assert.ok(engine.next([]) !== null)
-assert.equal(engine.get(taken)!.closed, false, "a run that was taken over doesn't land")
+assert.ok(last(taken, 'bot').cancelled)
+assert.ok(!item(taken).closed, "a run that was cancelled doesn't land")
+assert.ok(item(taken).withHuman)
 
-// ---- 13. The rule on unsafe actions: every action says which it is, and a bot's MCP offers none of the unsafe ones ----
+// ---- 14. The unsafe rule: every action says which it is, and a bot's MCP offers none of the unsafe ones ----
 assert.ok(engine.actions.every((a) => typeof a.unsafe === 'boolean'))
-const probe = (await engine.create('Probe', { next: [{ type: 'human', params: { needed: 'Probe?' } }] }))!
-const runId = engine.startRun(engine.get(probe)!, engine.get(probe)!.current!, 9, 'probe')
+const probe = (await engine.create('Probe'))!
+const runId = engine.startRun(item(probe), [], 9, 'probe')
 const asBot = await connect(mcp.runUrl(runId))
-const botTools = (await asBot.client.listTools()).tools.map((t) => t.name)
-assert.deepEqual(botTools, engine.actions.filter((a) => !a.unsafe).map((a) => a.name))
+assert.deepEqual((await asBot.client.listTools()).tools.map((t) => t.name), engine.actions.filter((a) => !a.unsafe).map((a) => a.name))
 await asBot.client.close()
 await engine.endRun(runId, { exitCode: 0, error: 'probe' })
 for (const a of engine.actions.filter((a) => a.unsafe))
   await assert.rejects(engine.callAction(a.name, {}, { engine, author: 'bot', actor: 'script', itemId: probe, runId: null }), /unsafe/)
 
-// ---- 14. The operator's endpoint: every action, as the human ----
+// ---- 15. The operator's endpoint: every action, as the human ----
 const { url } = mcp.operator()
 await assert.rejects(connect(url, { Authorization: 'Bearer wrong' }), (e: { code?: number }) => e.code === 401)
 const outside = await connect(url, { Authorization: `Bearer ${engine.settings.mcpToken()}` })
-const names = (await outside.client.listTools()).tools.map((t) => t.name)
-assert.deepEqual(names, engine.actions.map((a) => a.name))
-await outside.call('hand_off', { item_id: taken, next: [{ type: 'human', params: { needed: 'Still there?' } }] })
-assert.equal(current(taken)!.params.needed, 'Still there?')
-assert.match(await outside.call('github_pr_comment', { repo: 'o/r', number: 7, body: 'From outside' }), /pull\/7/)
-const types = JSON.parse(await outside.call('handoff_types'))
-assert.deepEqual(types.map((t: { type: string }) => t.type), ['human', 'bot', 'github', 'slack', 'items', 'script'])
+assert.deepEqual((await outside.client.listTools()).tools.map((t) => t.name), engine.actions.map((a) => a.name))
+await outside.call('add_events', { item_id: taken, events: [{ type: 'message', params: { text: 'From outside' } }] })
+assert.equal(last(taken, 'message').createdBy, 'mcp')
+assert.match(await outside.call('github_pr_comment', { repo: 'o/r', number: 7, body: 'Hi' }), /pull\/7/)
+const types = JSON.parse(await outside.call('event_types'))
+assert.deepEqual(types.map((t: { type: string }) => t.type), engine.eventTypes.map((t) => t.type))
 await outside.client.close()
 
-// ---- 15. The history is there to look back on ----
+// ---- 16. The history is there to look back on ----
 const recent = engine.recent(7)
 const first = recent.find((r) => r.id === id)!
 assert.equal(first.botRuns, 2)
 assert.equal(first.approvalsChanged, 1)
-assert.ok(first.minutesOn.github >= 28, JSON.stringify(first.minutesOn))
-assert.deepEqual(recent.find((r) => r.id === typo)!.handledOutside, ['Handled outside the tool.'])
-assert.equal(recent.find((r) => r.id === typo)!.botFailures, 1)
+assert.ok(first.minutesBlockedBy.github >= 28, JSON.stringify(first.minutesBlockedBy))
+assert.ok(recent.find((r) => r.id === bad)!.handledOutside)
+assert.equal(recent.find((r) => r.id === bad)!.botFailures, 1)
 assert.equal(recent.find((r) => r.id === slow)!.timedOut, 1)
 assert.match(engine.transcript(engine.detail(id)!.runs[0].id)!, /Thinking out loud/)
 
-// ---- 16. Integrations and the catalog ----
+// ---- 17. Integrations and the catalog ----
 const admin = new Admin(engine, mcp, 2, fakeFetch)
 assert.equal((await admin.integrations()).github.detail, 'Signed in as octocat')
 await assert.rejects(admin.addSlack('nope'), /xoxp-/)
 await assert.rejects(admin.addSlack('xoxp-bad'), /invalid_auth/)
 await admin.addSlack('xoxp-good-1234')
-assert.equal(engine.settings.slackWorkspaces().at(-1)!.name, 'Acme')
 const cat = catalog(engine)
 assert.ok(cat.actions.find((a) => a.name === 'slack_post')!.unsafe)
-assert.ok(!engine.actions.some((a) => ['set_state', 'note'].includes(a.name)))
-assert.ok(!cat.actions.find((a) => a.name === 'slack_thread')!.unsafe)
-assert.ok(cat.handoffs.find((h) => h.type === 'human')!.params.required!.includes('needed'))
-assert.equal((botOutputSchema(engine.handoffTypes).required as string[]).join(), 'next')
+assert.deepEqual(cat.presets.map((p) => p.id), ['bot', 'message', 'pr-merged', 'pr-checks'])
+assert.ok(!(botOutputSchema(engine.eventTypes).required))
 
 assert.equal(behaviours.length, 0)
 mcp.close()

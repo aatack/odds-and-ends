@@ -1,10 +1,11 @@
-// A fixed number of workers, each running one `claude -p` at a time on the
-// bot handoff that has waited longest. A run ends by returning its next
-// handoffs as structured output, which `Engine.endRun` takes from there.
+// A fixed number of workers, each running one `claude -p` at a time. Every item
+// has a Claude session of its own: its first run starts it, and each later run
+// resumes it, so a bot remembers the item. A run answers the item's bot
+// blockers with structured output, which `Engine.endRun` takes from there.
 
 import { spawn } from 'node:child_process'
-import type { Handoff, Item } from '../shared/types'
-import { describeResolution, type Engine } from './engine'
+import type { Item, ItemEvent } from '../shared/types'
+import { describeEvent, type Engine } from './engine'
 import { botOutputSchema } from './schema'
 
 export interface BotProcess {
@@ -18,27 +19,37 @@ export type SpawnBot = (args: {
   system: string
   schema: Record<string, unknown>
   mcpUrl: string
+  /** The item's session: started with this id when `resume` is false, resumed when it is true. */
+  sessionId: string
+  resume: boolean
   onOutput: (chunk: string) => void
 }) => BotProcess
 
 const RUN_LIMIT_MS = 30 * 60_000
 
-export const SYSTEM = `You are one of several workers in the operator's workflow system. You work one handoff on one item.
+/**
+ * Where every bot runs. Claude keeps sessions by directory, so it must be the
+ * same for every run of an item: the directory the app started in.
+ */
+const CWD = process.cwd()
 
-- Use the tools of the "workflows" MCP server. They are all you have. handoff_types describes every kind of handoff.
-- Do what your instructions ask, as far as you can without the human.
-- Actions that change things outside this app are unsafe, and you do not have them. unsafe_actions lists them. To get one done, return a human handoff with an approval, filled in as far as you can.
-- When you stop, return your output: the handoffs that come next, in order. Chain them: e.g. a github wait, then a script that routes on its result.
-- Hand to the human only what nobody else can do. Their "needed" is one direct question or request: no preamble, no summary, no waffle.`
+export const SYSTEM = `You are a bot in the operator's workflow system. You work on one item, in a session of its own: you have seen it before if this conversation has.
 
-export const spawnClaude: SpawnBot = ({ prompt, system, schema, mcpUrl, onOutput }) => {
+- Use the tools of the "workflows" MCP server. They are all you have. event_types describes every kind of event.
+- Do what the operator's latest messages ask, as far as you can without them.
+- Actions that change things outside this app are unsafe, and you do not have them. unsafe_actions lists them. To get one done, add an approval event, filled in as far as you can.
+- When you stop, return your output: a message to the operator if there is something to say, the blockers to add, and whether the item is done. Chain blockers with after events: e.g. a github wait, then an after whose script adds a bot if the checks failed.
+- Ask the operator only what nobody else can answer, as one direct question: no preamble, no summary, no waffle.`
+
+export const spawnClaude: SpawnBot = ({ prompt, system, schema, mcpUrl, sessionId, resume, onOutput }) => {
   const mcp = JSON.stringify({ mcpServers: { workflows: { type: 'http', url: mcpUrl } } })
   const child = spawn(
     'claude',
-    ['-p', prompt, '--append-system-prompt', system, '--mcp-config', mcp, '--strict-mcp-config',
+    ['-p', prompt, ...(resume ? ['--resume', sessionId] : ['--session-id', sessionId]),
+      '--append-system-prompt', system, '--mcp-config', mcp, '--strict-mcp-config',
       '--tools', '', '--allowedTools', 'mcp__workflows', '--permission-mode', 'dontAsk',
       '--json-schema', JSON.stringify(schema), '--output-format', 'stream-json', '--verbose'],
-    { stdio: ['ignore', 'pipe', 'pipe'] },
+    { cwd: CWD, stdio: ['ignore', 'pipe', 'pipe'] },
   )
   child.stdout.setEncoding('utf8').on('data', onOutput)
   let stderr = ''
@@ -52,23 +63,14 @@ export const spawnClaude: SpawnBot = ({ prompt, system, schema, mcpUrl, onOutput
   }
 }
 
-export function promptFor(engine: Engine, item: Item, handoff: Handoff): string {
-  const all = engine.handoffs(item.id)
-  const resolved = all.filter((h) => h.status === 'resolved')
-  // Back to the last time a person or a bot had it: the waits and scripts since are why this run is happening.
-  const lastHand = resolved.findLastIndex((h) => h.type === 'human' || h.type === 'bot')
-  const since = resolved.slice(Math.max(lastHand, 0))
-  const queued = all.filter((h) => h.status === 'queued')
-  const brief = (h: Handoff) => {
-    const { source: _, ...params } = h.params
-    return JSON.stringify({ type: h.type, params, resolution: h.resolution && { ...h.resolution, output: undefined } })
-  }
+/** The run's prompt: the item, the first time; what is new since the last run, after that. */
+export function promptFor(engine: Engine, item: Item, bots: ItemEvent[], resume: boolean): string {
+  const lines = engine.newSinceLastRun(item.id).map((e) => `- ${describeEvent(e)}`)
+  const asks = bots.map((b) => b.params.instructions).filter(Boolean)
   return [
-    `Item ${item.id}: ${item.title}`,
-    item.url && `Link: ${item.url}`,
-    `Your instructions: ${String(handoff.params.instructions)}`,
-    since.length && `What came before, oldest first:\n${since.map((h) => `- ${describeResolution(h)} ${brief(h)}`).join('\n')}`,
-    queued.length && `Already queued after you (your handoffs go in front of these):\n${queued.map((h) => JSON.stringify({ type: h.type, params: h.params })).join('\n')}`,
+    resume ? `Since your last turn on this item:` : `Item ${item.id}: ${item.title}${item.url ? `\nLink: ${item.url}` : ''}\n\nIts events so far:`,
+    lines.join('\n') || '- (nothing new)',
+    asks.length && `Instructions:\n${asks.map((a) => `- ${a}`).join('\n')}`,
     'get_item has the full history.',
   ]
     .filter(Boolean)
@@ -126,13 +128,13 @@ export class WorkerPool {
       if (this.running.has(w)) continue
       const claimed = this.engine.claim(w)
       if (!claimed) return
-      this.run(w, claimed.item, claimed.handoff)
+      this.run(w, claimed.item, claimed.events, claimed.sessionId, claimed.resume)
     }
   }
 
-  private run(worker: number, item: Item, handoff: Handoff): void {
-    const prompt = promptFor(this.engine, item, handoff)
-    const runId = this.engine.startRun(item, handoff, worker, prompt)
+  private run(worker: number, item: Item, bots: ItemEvent[], sessionId: string, resume: boolean): void {
+    const prompt = promptFor(this.engine, item, bots, resume)
+    const runId = this.engine.startRun(item, bots, worker, prompt)
     const lines: string[] = []
     let buffer = ''
     const onOutput = (chunk: string) => {
@@ -155,7 +157,7 @@ export class WorkerPool {
     }
     let proc: BotProcess
     try {
-      proc = this.spawnBot({ prompt, system: SYSTEM, schema: botOutputSchema(this.engine.handoffTypes), mcpUrl: this.mcpUrl(runId), onOutput })
+      proc = this.spawnBot({ prompt, system: SYSTEM, schema: botOutputSchema(this.engine.eventTypes), mcpUrl: this.mcpUrl(runId), sessionId, resume, onOutput })
     } catch (e) {
       void end(null, (e as Error).message)
       return

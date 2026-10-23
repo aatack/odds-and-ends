@@ -4,7 +4,7 @@
 import { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
 import type { ObjectSchema } from '../shared/types'
-import type { HandoffType } from './integrations'
+import type { EventType } from './integrations'
 
 /** Drops what structured output and the forms don't want. */
 function clean(node: unknown): unknown {
@@ -20,35 +20,44 @@ function clean(node: unknown): unknown {
 export const objectSchema = (shape: z.ZodRawShape): ObjectSchema =>
   clean(zodToJsonSchema(z.object(shape), { $refStrategy: 'none' })) as ObjectSchema
 
-/** One handoff of any type, as the bots return them. */
-export function handoffSchema(types: HandoffType[]): Record<string, unknown> {
+/** One event of any type a bot may add, as the bots return them. */
+export function eventSchema(types: EventType[]): Record<string, unknown> {
   return {
-    anyOf: types.map((t) => ({
-      title: t.type,
-      type: 'object',
-      description: t.description,
-      properties: { type: { type: 'string', enum: [t.type] }, params: objectSchema(t.params) },
-      required: ['type', 'params'],
-      additionalProperties: false,
-    })),
+    anyOf: types
+      .filter((t) => t.bots)
+      .map((t) => ({
+        title: t.type,
+        type: 'object',
+        description: t.description,
+        properties: {
+          type: { type: 'string', enum: [t.type] },
+          params: objectSchema(t.params),
+          ref: { type: 'string', description: 'A name for this event, so an after in the same list can wait for it.' },
+        },
+        required: ['type', 'params'],
+        additionalProperties: false,
+      })),
   }
 }
 
 /** What a bot's run must return. */
-export function botOutputSchema(types: HandoffType[]): Record<string, unknown> {
+export function botOutputSchema(types: EventType[]): Record<string, unknown> {
   return {
     type: 'object',
     properties: {
-      next: {
+      message: {
+        type: 'string',
+        description:
+          'To the human: what you did, in a line or two, or one direct question. No preamble and no waffle. Leave it out if there is nothing to say.',
+      },
+      events: {
         type: 'array',
         description:
-          'What happens next, in order: the first is what the item waits for now, and each resolves into the one after. ' +
-          'Empty only with close.',
-        items: handoffSchema(types),
+          'Blockers to add to the item: waits, approvals, more bots, afters. With none, and the item not closed, it is the human\'s turn.',
+        items: eventSchema(types),
       },
-      close: { type: 'boolean', description: 'The item is done. next must then be empty.' },
+      close: { type: 'boolean', description: 'The item is done.' },
     },
-    required: ['next'],
     additionalProperties: false,
   }
 }

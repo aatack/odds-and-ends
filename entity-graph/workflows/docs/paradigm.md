@@ -1,7 +1,7 @@
 # The paradigm
 
 This page gives the idea of the app. It does not give the implementation.
-For the implementation, see [`handoffs.md`](./handoffs.md).
+For the implementation, see [`events.md`](./events.md).
 The text uses ASD-STE100 Simplified Technical English.
 
 ## Purpose
@@ -9,51 +9,57 @@ The text uses ASD-STE100 Simplified Technical English.
 - You have many tasks. They come from different sources, for example Slack, the
   calendar and GitHub.
 - Bots can do much of this work.
-- You push one button. The app shows the next task that needs your decision.
+- You push one button. The app shows the next task that needs you.
 - Bots do all the other work.
 
-## Items
+## Items and events
 
 - An **item** is one task.
+- An item has a list of **events**. The list is the history of the item.
+- Some events are complete when they occur. Examples: a message, or an action.
+- Other events are **blockers**. A blocker waits until a condition occurs.
+  Examples: a bot replies, CI finishes, or a person replies on Slack.
+- When a blocker is complete, it records its result.
+- An item can have more than one blocker at the same time.
+- If an item has no blockers, it waits for you.
 
-## Handoffs
-
-- An item has a **queue of handoffs**.
-- A handoff tells what must occur next. It also tells who or what does it.
-- The first handoff in the queue is active. The item waits for it.
-- When the active handoff is complete, it records its **result**. Then the next
-  handoff becomes active.
-- The next handoff can use the result of the one before it. This is how you chain
-  handoffs.
-- If an item has no handoffs, it is with you. This is true for a new item, and
-  for an item at the end of its queue. The app does not ask you a question about it.
-
-There are six types of handoff:
-
-| Type | The item waits for |
+| Blocker | It waits for |
 | --- | --- |
-| Human | Your decision. The handoff asks one direct question. |
-| Bot | A bot to do the work in its instructions. |
+| Bot | A bot to read the item and reply. |
 | GitHub | An event on a pull request, for example the end of the checks. |
 | Slack | A reply to a message. |
 | Items | Other items to close. |
-| Script | Nothing. A script reads the result before it and selects the next handoffs. |
+| Approval | You to approve an action. |
+| After | Another event to be complete. Then it adds more events. |
 
-## Example
+## Chains
 
-1. A bot changes some code. It cannot continue until the checks are complete.
-2. The bot sets three handoffs: a GitHub wait, then a script, then nothing more.
-3. The GitHub wait records the result of the checks.
-4. If the checks failed, the script gives the item to a bot to repair the code.
-5. If the checks passed, the script asks you: "Merge this pull request?"
+- An "after" blocker waits for a different event. Then it adds new events.
+- It can use a script to select the new events from the result of that event.
+
+Example:
+
+1. A bot changes some code. Then it adds a GitHub blocker for the checks.
+2. The bot also adds an "after" blocker for the GitHub blocker.
+3. If the checks fail, the "after" blocker adds a bot blocker, and a bot repairs the code.
+4. If the checks pass, the "after" blocker adds nothing. The item then waits for you.
+
+## The chat
+
+- The app shows the events of an item as a chat. Your messages are on the right.
+  Messages from bots and other sources are on the left.
+- The app shows blockers that are not complete above the chat input. Each blocker
+  shows how long it has blocked the item.
+- When you send a message, a bot replies by default. Push Tab to select a
+  different action. For example, you can send only a message, or wait for a pull
+  request to merge.
 
 ## Bots
 
-- A bot works on one item at a time.
-- When it stops, it gives the next handoffs.
-- A bot gives you an item only when nobody else can do the work.
-- When a bot gives you an item, it asks one direct question with no unnecessary words.
-- The app keeps the text that the bot writes, but does not show it unless you ask.
+- Each item has its own bot conversation. The bot remembers the item.
+- When a bot starts again, it gets all events that occurred after its last start.
+- A bot can reply to you, add blockers, or close the item.
+- When a bot asks you a question, the question must be short and direct.
 
 ## Safety
 
@@ -62,16 +68,11 @@ There are six types of handoff:
 - Bots cannot use unsafe actions.
 - Scripts that bots write cannot use unsafe actions.
 - To do an unsafe action, a bot asks you for approval. You can do the action,
-  change it first, or do a different thing.
+  change it first, or cancel it.
 
 ## History
 
-- The app keeps the full history of each item: every handoff, its result, and the
-  actions between them.
-- The app records the time of each event. For example: when a handoff was set,
-  when it started, when a bot started and stopped, when you first saw it, and
-  when it was complete. It also records who or what did each thing.
-- The app shows the history as a chat. What you typed is on the right. What other
-  persons, bots and scripts set is on the left.
+- The app keeps the full history of each item: every event and its result.
+- The app records the time of each event, and who or what did it.
 - Bots can read this history. They use it to find which processes are slow, where
   you had to change their work, and where you did work outside the app.
