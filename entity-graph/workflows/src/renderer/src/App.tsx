@@ -20,7 +20,9 @@ import { searchFocusAtom, type View } from './views'
 
 /** On the phone, the token gates everything: Login first, until a call proves the token works. */
 export function App() {
-  const [authed, setAuthed] = useState(!isPhone || !!getToken())
+  // A connect link (token in the hash) replaces a stale stored token: show Login so it is used.
+  const linkToken = isPhone && location.hash.includes('token=')
+  const [authed, setAuthed] = useState(!isPhone || (!!getToken() && !linkToken))
   // A 401 anywhere (a stale or regenerated token) clears it and brings Login back.
   useEffect(() => {
     if (isPhone) setOnUnauthorized(() => setAuthed(false))

@@ -1,5 +1,5 @@
 import { useAtom } from 'jotai'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Catalog, EventDetail, Overview, WorkflowsAPI } from '../../shared/types'
 import { httpApi } from './transport/http'
 import { sameView, viewsAtom, type View } from './views'
@@ -70,6 +70,37 @@ export function useWorkflows() {
 
   /** Takes the top view off the stack. */
   const back = useCallback(() => setViews(views.slice(0, -1)), [views, setViews])
+
+  // On the phone the system Back must not leave the app while the stack has views, but the stack is
+  // persisted so it can outlive the history. We keep ONE guard history entry while the stack is
+  // non-empty: in-app Back pops the stack directly (above); a system Back consumes the guard instead
+  // of leaving, and we pop a view and re-arm. When the stack is empty there is no guard, so Back leaves.
+  // Unarmed at start: a reload with a persisted stack arms the guard in the effect below.
+  const armed = useRef(false)
+  useEffect(() => {
+    if (!isPhone) return
+    if (views.length > 0 && !armed.current) {
+      history.pushState(null, '')
+      armed.current = true
+    }
+  }, [views.length])
+  useEffect(() => {
+    if (!isPhone) return
+    const onPop = () => {
+      armed.current = false // the guard entry was just consumed
+      setViews((v) => {
+        if (v.length === 0) return v
+        const next = v.slice(0, -1)
+        if (next.length > 0) {
+          history.pushState(null, '')
+          armed.current = true
+        }
+        return next
+      })
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [setViews])
 
   const next = useCallback(
     async (skip: string[] = skipped) => {
