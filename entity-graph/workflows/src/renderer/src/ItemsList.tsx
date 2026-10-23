@@ -90,12 +90,16 @@ export function ItemsList(props: { items: Item[]; onOpen: (id: string) => void; 
               if (e.key === 'Escape') setText('')
             }}
           />
-          {!text && (
-            <span className="hint">
-              <b>Items</b> — type to find one; Enter opens it, Tab makes a new item with this title
-            </span>
-          )}
+          {!text && <span className="hint">Search</span>}
         </div>
+        <span className="keys">
+          <span className="key-pill">
+            <kbd>Enter</kbd> Open
+          </span>
+          <span className="key-pill">
+            <kbd>Tab</kbd> New
+          </span>
+        </span>
       </div>
 
       {groups.map((g) => (

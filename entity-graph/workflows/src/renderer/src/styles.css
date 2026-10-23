@@ -187,4 +187,8 @@ button[data-ui].blocker-text { text-align: left; padding: 0; overflow: hidden; t
 .view-note { margin: 0 32px 8px; }
 .items-view .row:hover { background: none; }
 .items-view .row.selected { background: var(--color-gray-100); box-shadow: none; }
+.items-view .search { padding-right: 150px; }
+.keys { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: flex; gap: 6px; pointer-events: none; }
+.key-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px 2px 3px; border-radius: 10px; background: var(--color-gray-200); color: var(--color-gray-600); font-size: 11px; }
+.key-pill kbd { font: inherit; font-size: 10px; padding: 1px 5px; border-radius: 6px; background: var(--color-gray-300); color: var(--ink); }
 }
