@@ -118,7 +118,7 @@ function ItemsMain() {
   if (!w.view || w.view.kind === 'items')
     return (
       <div className="view">
-        <ViewHeader canGoBack={w.views.length > 1} onBack={w.back} title="Items" />
+        <ViewHeader canGoBack={w.views.length > 0} onBack={w.back} title="Items" />
         {w.error && <div className="error">{w.error}</div>}
         {w.empty && <p className="muted view-note">Nothing needs you right now.</p>}
         <div className="view-body">
@@ -133,7 +133,7 @@ function ItemsMain() {
   if (!d || !w.catalog)
     return (
       <div className="view">
-        <ViewHeader canGoBack={w.views.length > 1} onBack={w.back} />
+        <ViewHeader canGoBack={w.views.length > 0} onBack={w.back} />
         <div className="empty">That event is not there any more.</div>
       </div>
     )
@@ -167,7 +167,7 @@ function ItemsMain() {
   return (
     <div className="view">
       <ViewHeader
-        canGoBack={w.views.length > 1}
+        canGoBack={w.views.length > 0}
         onBack={w.back}
         title={`${debug ? 'Debug: ' : ''}${e.summary}`}
         event={e}
@@ -187,7 +187,7 @@ function ItemsMain() {
   )
 }
 
-/** Back (its place kept even with nowhere to go back to), the event as text, and its actions on the right. */
+/** Back (to the items view, at the bottom of every stack; its place kept on the items view itself), the event as text, and its actions on the right. */
 function ViewHeader(props: { canGoBack: boolean; onBack: () => void; title?: string; event?: ItemEvent; actions?: ReactNode }) {
   return (
     <header className="view-header">
