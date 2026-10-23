@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import type { Catalog, ItemDetail, ItemEvent } from '../../shared/types'
 import { Blockers } from './Blockers'
 import { useSetAtom } from 'jotai'
-import { ArrowRight, ChevronLeft, Menu } from 'lucide-react'
+import { ArrowRight, ChevronLeft, CircleCheck, CircleX, ExternalLink, Menu, SkipForward } from 'lucide-react'
+import { IconButton } from './components/ui/IconButton'
 import { Chat } from './Chat'
 import { DebugView } from './DebugView'
 import { EventMenu } from './EventMenu'
@@ -155,25 +156,25 @@ function ItemsMain() {
     : e.type === 'item'
       ? !e.resolved && (
           <>
-            <button data-ui onClick={() => w.act(() => api().close(e.id))}>
-              Close
-            </button>
-            <button
-              data-ui
-              title="You did it yourself, outside this tool."
+            <IconButton title="Resolve" className="text-success-600 hover:text-success-600" onClick={() => w.act(() => api().close(e.id))}>
+              <CircleCheck className="size-[17px]" />
+            </IconButton>
+            <IconButton
+              title="Done outside: you did it yourself, outside this tool."
+              className="text-brand-600 hover:text-brand-600"
               onClick={() => w.act(() => api().handledOutside(e.id))}
             >
-              Done outside
-            </button>
-            <button data-ui onClick={() => w.skip(e.id)}>
-              Skip
-            </button>
+              <ExternalLink className="size-[17px]" />
+            </IconButton>
+            <IconButton title="Skip" className="text-warning-700 hover:text-warning-700" onClick={() => w.skip(e.id)}>
+              <SkipForward className="size-[17px]" />
+            </IconButton>
           </>
         )
       : !e.resolved && (
-          <button data-ui onClick={() => w.act(() => api().cancel(e.id))}>
-            Cancel
-          </button>
+          <IconButton title="Cancel" className="text-error-600 hover:text-error-600" onClick={() => w.act(() => api().cancel(e.id))}>
+            <CircleX className="size-[17px]" />
+          </IconButton>
         )
   return (
     <div className="view">
