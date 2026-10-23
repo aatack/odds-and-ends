@@ -4,6 +4,7 @@ import Database from 'better-sqlite3'
 import { Admin } from '../engine/admin'
 import { Engine } from '../engine/engine'
 import { startMcp } from '../engine/mcp'
+import { startPhoneServer } from '../engine/server'
 import { plainSecrets, type Secrets } from '../engine/settings'
 import { WorkerPool } from '../engine/workers'
 import { makeHandlers } from './handlers'
@@ -44,6 +45,12 @@ async function main(): Promise<void> {
   const handlers = makeHandlers(engine, admin, pool)
   for (const [name, fn] of Object.entries(handlers))
     ipcMain.handle(name, (_e, ...args) => fn(...(args as never[])))
+
+  // The phone server serves the built renderer as the PWA shell; it listens only when enabled.
+  // admin.setPhoneEnabled / setPhonePort call phone.restart(), so a toggle or port change takes effect.
+  const phone = await startPhoneServer(engine, handlers, { staticDir: join(__dirname, '../renderer') })
+  admin.attachPhone(phone)
+  app.on('will-quit', () => phone.close())
 
   const win = new BrowserWindow({
     width: 1200,

@@ -24,6 +24,11 @@ const api: WorkflowsAPI = {
   mcp: call('mcp') as WorkflowsAPI['mcp'],
   regenerateMcpToken: call('regenerateMcpToken') as WorkflowsAPI['regenerateMcpToken'],
   setMcpPort: call('setMcpPort') as WorkflowsAPI['setMcpPort'],
+  phone: call('phone') as WorkflowsAPI['phone'],
+  setPhoneEnabled: call('setPhoneEnabled') as WorkflowsAPI['setPhoneEnabled'],
+  setPhonePort: call('setPhonePort') as WorkflowsAPI['setPhonePort'],
+  regeneratePhoneToken: call('regeneratePhoneToken') as WorkflowsAPI['regeneratePhoneToken'],
+  runTailscaleServe: call('runTailscaleServe') as WorkflowsAPI['runTailscaleServe'],
   onBack: (cb) => {
     const listener = () => cb()
     ipcRenderer.on('back', listener)

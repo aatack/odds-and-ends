@@ -43,6 +43,9 @@ async function callMethod(name: string, args: unknown[]): Promise<unknown> {
 
 const call = (name: string) => (...args: unknown[]) => callMethod(name, args)
 
+/** Methods the phone cannot have: they change its own access or run a CLI. */
+const desktopOnly = (): Promise<never> => Promise.reject(new Error('Desktop only'))
+
 /** The push channel: read /api/events as a stream, reconnecting on drop. No token in the URL. */
 function openEvents(cb: () => void): () => void {
   let closed = false
@@ -53,6 +56,8 @@ function openEvents(cb: () => void): () => void {
       const res = await fetch('/api/events', { headers: authHeaders(), signal: controller.signal })
       if (res.status === 401) return unauthorized()
       if (!res.ok || !res.body) throw new Error(`events HTTP ${res.status}`)
+      // Fetch once on every (re)connect, so changes missed while disconnected are not lost.
+      cb()
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       // Any non-empty data line means "something changed"; SSE framing is otherwise ignored.
@@ -95,6 +100,12 @@ export const httpApi: WorkflowsAPI = {
   mcp: call('mcp') as WorkflowsAPI['mcp'],
   regenerateMcpToken: call('regenerateMcpToken') as WorkflowsAPI['regenerateMcpToken'],
   setMcpPort: call('setMcpPort') as WorkflowsAPI['setMcpPort'],
+  // The phone-admin methods are desktop-only: a remote client can neither run a CLI nor change its own access.
+  phone: desktopOnly as WorkflowsAPI['phone'],
+  setPhoneEnabled: desktopOnly as WorkflowsAPI['setPhoneEnabled'],
+  setPhonePort: desktopOnly as WorkflowsAPI['setPhonePort'],
+  regeneratePhoneToken: desktopOnly as WorkflowsAPI['regeneratePhoneToken'],
+  runTailscaleServe: desktopOnly as WorkflowsAPI['runTailscaleServe'],
   onChange: (cb) => openEvents(cb),
   // On the phone the browser's own history drives Back; there is no desktop Ctrl+W channel.
   onBack: () => () => {},

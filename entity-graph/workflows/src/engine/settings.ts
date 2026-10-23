@@ -22,6 +22,7 @@ export interface SlackWorkspace {
 }
 
 export const DEFAULT_MCP_PORT = 47390
+export const DEFAULT_PHONE_PORT = 47391
 
 export class Settings {
   constructor(
@@ -75,6 +76,35 @@ export class Settings {
 
   mcpPort(): number {
     return this.get('mcp.port', DEFAULT_MCP_PORT)
+  }
+
+  // ---- the phone (mobile PWA) endpoint; its token is distinct from the MCP one ----
+
+  phoneEnabled(): boolean {
+    return this.get('phone.enabled', false)
+  }
+
+  setPhoneEnabled(on: boolean): void {
+    this.set('phone.enabled', on)
+  }
+
+  phonePort(): number {
+    return this.get('phone.port', DEFAULT_PHONE_PORT)
+  }
+
+  setPhonePort(port: number): void {
+    this.set('phone.port', port)
+  }
+
+  phoneToken(): string {
+    const token = this.get<string | null>('phone.token', null)
+    return token ?? this.regeneratePhoneToken()
+  }
+
+  regeneratePhoneToken(): string {
+    const token = randomBytes(24).toString('base64url')
+    this.set('phone.token', token)
+    return token
   }
 }
 

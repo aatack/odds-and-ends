@@ -1,11 +1,10 @@
 import type { Admin } from '../engine/admin'
 import type { Engine } from '../engine/engine'
 import { catalog } from '../engine/mcp'
+import type { Handlers } from '../engine/server'
 import type { WorkerPool } from '../engine/workers'
 
-/** One named entry in the API surface: the renderer (IPC) and the phone server (HTTP) share it. */
-export type Handler = (...args: never[]) => unknown
-export type Handlers = Record<string, Handler>
+export type { Handler, Handlers } from '../engine/server'
 
 /** The whole WorkflowsAPI as a name → fn table, so both transports dispatch the same surface. */
 export function makeHandlers(engine: Engine, admin: Admin, pool: WorkerPool): Handlers {
@@ -30,5 +29,12 @@ export function makeHandlers(engine: Engine, admin: Admin, pool: WorkerPool): Ha
     mcp: () => admin.mcpView(),
     regenerateMcpToken: () => admin.regenerateMcpToken(),
     setMcpPort: (port: number) => admin.setMcpPort(port),
+    // Phone-admin methods: in the IPC table for the desktop window, but NOT in the
+    // HTTP allowlist (server.ts PHONE_METHODS) — a remote client may not change its own access.
+    phone: () => admin.phoneView(),
+    setPhoneEnabled: (on: boolean) => admin.setPhoneEnabled(on),
+    setPhonePort: (port: number) => admin.setPhonePort(port),
+    regeneratePhoneToken: () => admin.regeneratePhoneToken(),
+    runTailscaleServe: () => admin.runTailscaleServe(),
   }
 }
