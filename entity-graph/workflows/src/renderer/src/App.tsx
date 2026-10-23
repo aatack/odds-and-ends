@@ -162,6 +162,10 @@ function ItemView({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalo
   const { item } = detail
   const current = item.current
   const scroller = useRef<HTMLDivElement>(null)
+  // Every time the human sees an item, or sees it move on, is in its trace.
+  useEffect(() => {
+    void api().viewed(item.id)
+  }, [item.id, current?.id])
   // New messages arrive at the bottom, as in any chat.
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight })

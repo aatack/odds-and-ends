@@ -150,6 +150,11 @@ const botDone = engine.handoffs(id).find((h) => h.type === 'bot')!
 assert.equal(botDone.resolution!.output, 'Thinking out loud.')
 
 // ---- 3. The human changes the reply and approves it; the chain goes on to the CI wait ----
+clock += 2 * MINUTE
+engine.viewed(id)
+clock += MINUTE
+engine.skipped(id)
+engine.viewed(id)
 await engine.approve(id, { repo: 'o/r', number: 7, body: 'Thanks a lot!' })
 assert.deepEqual(ghCalls.at(-1), ['pr', 'comment', '7', '-R', 'o/r', '--body', 'Thanks a lot!'])
 const approved = engine.handoffs(id).find((h) => h.resolution?.decision === 'approved')!
@@ -166,6 +171,26 @@ for (const minutes of [1, 2, 5, 10, 10]) {
   assert.equal(current(id)!.nextCheckAt, due, 'not checked before it is due')
   clock = due
   await tick()
+}
+
+// The trace has every moment: when each handoff was set, started, seen, run, checked and resolved.
+{
+  const [ask, bot, , wait] = engine.handoffs(id)
+  assert.ok(ask.times.set && ask.times.started && ask.times.resolved)
+  const human = engine.handoffs(id).find((h) => h.params.needed === 'Post this reply?')!
+  assert.equal(human.times.views, 2)
+  assert.equal(human.times.skips, 1)
+  assert.equal(human.times.firstViewed! - human.times.started!, 2 * MINUTE)
+  assert.equal(human.times.resolved! - human.times.lastViewed!, 0)
+  assert.ok(bot.times.firstRunStarted && bot.times.firstRunEnded && bot.times.runs === 1)
+  assert.equal(wait.times.checks, 6)
+  assert.ok(wait.times.firstChecked! < wait.times.lastChecked!)
+  const trace = engine.trace(id)
+  const botCalls = trace.filter((t) => t.kind === 'action_called' && t.actor === 'bot')
+  assert.ok(botCalls.some((t) => t.data!.action === 'get_item' && t.data!.ok && t.runId === bot.resolution!.runId))
+  assert.ok(botCalls.some((t) => t.data!.action === 'github_pr_comment' && !t.data!.ok) === false, 'a tool a bot was never given is not called')
+  assert.ok(trace.some((t) => t.kind === 'action_called' && t.actor === 'human' && t.data!.action === 'github_pr_comment' && t.data!.ok))
+  assert.ok(trace.every((t, i) => i === 0 || t.at >= trace[i - 1].at))
 }
 
 // ---- 4. Checks fail: the script hands to a bot, which fixes and chains the same again ----
@@ -278,6 +303,14 @@ await tick()
 clock += 3 * MINUTE
 await tick()
 assert.match(String(current(slow)!.params.needed), /Nothing after 3 minutes/)
+
+// Closing cancels what was queued, and says when.
+const dropped = (await engine.create('Dropped', { next: [{ type: 'human', params: { needed: 'x?' } }, { type: 'bot', params: { instructions: 'y' } }] }))!
+await engine.close(dropped)
+const [, cancelled] = engine.handoffs(dropped)
+assert.equal(cancelled.status, 'cancelled')
+assert.ok(cancelled.times.cancelled)
+assert.ok(engine.trace(dropped).some((t) => t.kind === 'item_closed'))
 
 // ---- 11. Sources create items once ----
 await engine.pollSources(true)

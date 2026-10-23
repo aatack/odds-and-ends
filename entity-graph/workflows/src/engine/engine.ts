@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { z } from 'zod'
-import type { BotRun, Handoff, HandoffSpec, Item, ItemDetail, ItemEvent, Overview } from '../shared/types'
+import type { BotRun, Handoff, HandoffSpec, HandoffTimes, Item, ItemDetail, ItemEvent, Overview, TraceEntry } from '../shared/types'
 import { itemActions } from './actions'
 import { migrate, transaction, type Db } from './db'
 import { githubActions, githubSources } from './github'
@@ -23,7 +23,23 @@ export interface BotOutput {
 type Row = Record<string, unknown>
 const json = <T>(s: unknown): T | null => (typeof s === 'string' && s ? (JSON.parse(s) as T) : null)
 
-const toHandoff = (r: Row): Handoff => ({
+const NO_TIMES: HandoffTimes = {
+  set: null, started: null, firstViewed: null, lastViewed: null, views: 0, skips: 0, firstRunStarted: null, firstRunEnded: null,
+  runs: 0, firstChecked: null, lastChecked: null, checks: 0, resolved: null, cancelled: null,
+}
+
+const toTrace = (r: Row): TraceEntry => ({
+  id: r.id as number,
+  at: r.at as number,
+  itemId: r.item_id as string,
+  handoffId: (r.handoff_id as string) ?? null,
+  runId: (r.run_id as string) ?? null,
+  actor: r.actor as string,
+  kind: r.kind as string,
+  data: json(r.data),
+})
+
+const toHandoff = (r: Row, times: HandoffTimes = NO_TIMES): Handoff => ({
   id: r.id as string,
   itemId: r.item_id as string,
   status: r.status as Handoff['status'],
@@ -37,6 +53,7 @@ const toHandoff = (r: Row): Handoff => ({
   resolvedBy: (r.resolved_by as string) ?? null,
   nextCheckAt: (r.next_check_at as number) ?? null,
   lastError: (r.last_error as string) ?? null,
+  times,
 })
 
 const toEvent = (r: Row): ItemEvent => ({
@@ -131,7 +148,68 @@ export class Engine extends EventEmitter {
   // ---- reads ----
 
   handoffs(itemId: string): Handoff[] {
-    return (this.db.prepare('SELECT * FROM handoffs WHERE item_id = ? ORDER BY seq').all(itemId) as Row[]).map(toHandoff)
+    const times = this.times(itemId)
+    return (this.db.prepare('SELECT * FROM handoffs WHERE item_id = ? ORDER BY seq').all(itemId) as Row[]).map((r) =>
+      toHandoff(r, times.get(r.id as string)),
+    )
+  }
+
+  /** Each handoff's timeline, read from the trace. */
+  private times(itemId: string): Map<string, HandoffTimes> {
+    const rows = this.db
+      .prepare(
+        `SELECT handoff_id, kind, MIN(at) AS first, MAX(at) AS last, COUNT(*) AS n FROM trace
+         WHERE item_id = ? AND handoff_id IS NOT NULL GROUP BY handoff_id, kind`,
+      )
+      .all(itemId) as Row[]
+    const out = new Map<string, HandoffTimes>()
+    for (const r of rows) {
+      const t = out.get(r.handoff_id as string) ?? { ...NO_TIMES }
+      const first = r.first as number
+      const last = r.last as number
+      const n = Number(r.n)
+      switch (r.kind) {
+        case 'handoff_set': t.set = first; break
+        case 'handoff_started': t.started = first; break
+        case 'handoff_viewed': Object.assign(t, { firstViewed: first, lastViewed: last, views: n }); break
+        case 'handoff_skipped': t.skips = n; break
+        case 'run_started': Object.assign(t, { firstRunStarted: first, runs: n }); break
+        case 'run_ended': t.firstRunEnded = first; break
+        case 'check': Object.assign(t, { firstChecked: first, lastChecked: last, checks: n }); break
+        case 'handoff_resolved': t.resolved = first; break
+        case 'handoff_cancelled': t.cancelled = first; break
+      }
+      out.set(r.handoff_id as string, t)
+    }
+    return out
+  }
+
+  /** Everything that happened to an item, in order. */
+  trace(itemId: string): TraceEntry[] {
+    return (this.db.prepare('SELECT * FROM trace WHERE item_id = ? ORDER BY id').all(itemId) as Row[]).map(toTrace)
+  }
+
+  /** Records one thing that happened. Every change, view and check comes through here. */
+  private mark(
+    itemId: string,
+    kind: string,
+    opts: { handoffId?: string | null; runId?: string | null; actor?: string; data?: Record<string, unknown> } = {},
+  ): void {
+    this.db
+      .prepare('INSERT INTO trace (at, item_id, handoff_id, run_id, actor, kind, data) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(this.now(), itemId, opts.handoffId ?? null, opts.runId ?? null, opts.actor ?? 'system', kind, opts.data ? JSON.stringify(opts.data) : null)
+  }
+
+  /** The human has the item on screen. */
+  viewed(itemId: string): void {
+    const item = this.must(itemId)
+    this.mark(itemId, 'handoff_viewed', { handoffId: item.current?.id, actor: 'human' })
+  }
+
+  /** The human passed over the item for now. */
+  skipped(itemId: string): void {
+    const item = this.must(itemId)
+    this.mark(itemId, 'handoff_skipped', { handoffId: item.current?.id, actor: 'human' })
   }
 
   private active(itemId: string): Handoff | null {
@@ -186,6 +264,7 @@ export class Engine extends EventEmitter {
       item,
       handoffs: this.handoffs(id),
       events: this.events(id),
+      trace: this.trace(id),
       runs: (this.db.prepare('SELECT * FROM runs WHERE item_id = ? ORDER BY started_at').all(id) as Row[]).map(toRun),
     }
   }
@@ -234,6 +313,17 @@ export class Engine extends EventEmitter {
         approvalsChanged: handoffs.filter((h) => ((h.resolution?.action as { changed?: string[] })?.changed ?? []).length).length,
         timedOut: handoffs.filter((h) => h.resolution?.outcome === 'timed_out').length,
         botFailures: handoffs.filter((h) => h.type === 'bot' && h.resolution?.error).length,
+        // How long the human took: from a question appearing to first seeing it, and from seeing it to answering.
+        humanMinutesToView: handoffs
+          .filter((h) => h.type === 'human' && h.times.started && h.times.firstViewed)
+          .map((h) => Math.round((h.times.firstViewed! - h.times.started!) / MINUTE)),
+        humanMinutesToAnswer: handoffs
+          .filter((h) => h.type === 'human' && h.times.firstViewed && h.times.resolved)
+          .map((h) => Math.round((h.times.resolved! - h.times.firstViewed!) / MINUTE)),
+        // How long bot handoffs waited for a free worker.
+        botMinutesQueued: handoffs
+          .filter((h) => h.type === 'bot' && h.times.started && h.times.firstRunStarted)
+          .map((h) => Math.round((h.times.firstRunStarted! - h.times.started!) / MINUTE)),
         handledOutside: events.filter((e) => e.kind === 'handled_outside').map((e) => e.text),
       }
     })
@@ -258,8 +348,23 @@ export class Engine extends EventEmitter {
       )
     const parsed = z.object(action.input).safeParse(args ?? {})
     if (!parsed.success) throw new Error(`Bad arguments for ${name}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
-    const out = await action.run(parsed.data, ctx)
-    if (action.unsafe && ctx.itemId)
+    const started = this.now()
+    const traced = (ok: boolean, error?: string) =>
+      ctx.itemId &&
+      this.mark(ctx.itemId, 'action_called', {
+        runId: ctx.runId,
+        actor: ctx.actor,
+        data: { action: name, args: parsed.data, ok, ...(error ? { error } : {}), ms: this.now() - started },
+      })
+    let out: unknown
+    try {
+      out = await action.run(parsed.data, ctx)
+    } catch (e) {
+      traced(false, (e as Error).message)
+      throw e
+    }
+    traced(true)
+    if (action.unsafe && ctx.itemId && !ctx.approving)
       this.record(ctx.itemId, ctx.actor, 'action_run', name, { action: name, inputs: parsed.data, output: out as Record<string, unknown> })
     return out
   }
@@ -297,21 +402,27 @@ export class Engine extends EventEmitter {
     const lo = (bounds.lo as number) ?? 0
     const hi = (bounds.hi as number) ?? lo + specs.length + 1
     const step = (hi - lo) / (specs.length + 1)
-    specs.forEach((s, i) =>
+    specs.forEach((s, i) => {
+      const id = randomUUID()
       this.db
         .prepare('INSERT INTO handoffs (id, item_id, seq, status, type, params, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(randomUUID(), itemId, lo + step * (i + 1), 'queued', s.type, JSON.stringify(s.params), createdBy, this.now()),
-    )
+        .run(id, itemId, lo + step * (i + 1), 'queued', s.type, JSON.stringify(s.params), createdBy, this.now())
+      this.mark(itemId, 'handoff_set', { handoffId: id, actor: createdBy, data: { type: s.type } })
+    })
   }
 
   private resolve(handoffId: string, resolution: Record<string, unknown>, by: string): void {
     this.db
       .prepare("UPDATE handoffs SET status = 'resolved', resolution = ?, resolved_by = ?, resolved_at = ? WHERE id = ?")
       .run(JSON.stringify(resolution), by, this.now(), handoffId)
+    const { item_id } = this.db.prepare('SELECT item_id FROM handoffs WHERE id = ?').get(handoffId) as Row
+    this.mark(item_id as string, 'handoff_resolved', { handoffId, actor: by })
   }
 
-  private cancelQueue(itemId: string): void {
+  private cancelQueue(itemId: string, actor: string): void {
+    const queued = this.db.prepare("SELECT id FROM handoffs WHERE item_id = ? AND status = 'queued'").all(itemId) as Row[]
     this.db.prepare("UPDATE handoffs SET status = 'cancelled' WHERE item_id = ? AND status = 'queued'").run(itemId)
+    for (const { id } of queued) this.mark(itemId, 'handoff_cancelled', { handoffId: id as string, actor })
   }
 
   /**
@@ -337,6 +448,7 @@ export class Engine extends EventEmitter {
         this.db
           .prepare("UPDATE handoffs SET status = 'active', started_at = ?, next_check_at = ? WHERE id = ?")
           .run(this.now(), type.check ? this.now() : null, handoff.id)
+        this.mark(itemId, 'handoff_started', { handoffId: handoff.id })
         const previous = this.handoffs(itemId).filter((h) => h.status === 'resolved').at(-1) ?? null
         const ctx = { engine: this, item, handoff, previous, author: authorOf(handoff.createdBy) }
         try {
@@ -384,6 +496,7 @@ export class Engine extends EventEmitter {
         .run(id, title, opts.source ?? 'manual', opts.ref ?? null, opts.url ?? null, at, at) as { changes: number | bigint }
       if (Number(r.changes) === 0) return false
       this.record(id, actor, 'created', title, { source: opts.source ?? 'manual', url: opts.url ?? null })
+      this.mark(id, 'item_created', { actor, data: { title, source: opts.source ?? 'manual', ref: opts.ref ?? null } })
       this.enqueue(id, next, asked ? 'system' : opts.author === 'bot' ? 'bot' : actor)
       return true
     })
@@ -405,7 +518,7 @@ export class Engine extends EventEmitter {
       transaction(this.db, () => {
         if (item.current)
           this.resolve(item.current.id, item.current.type === 'human' ? { decision: 'handed_off' } : { outcome: 'taken_over' }, 'human')
-        if (opts.replaceQueue) this.cancelQueue(itemId)
+        if (opts.replaceQueue) this.cancelQueue(itemId, actor)
         this.enqueue(itemId, next, actor)
       })
       if (item.current?.type === 'bot' && item.worker !== null) this.onCancel(itemId)
@@ -423,7 +536,7 @@ export class Engine extends EventEmitter {
     )
     let output: unknown
     try {
-      output = await this.callAction(approval.action, inputs, { engine: this, author: 'human', actor: 'human', itemId: null, runId: null })
+      output = await this.callAction(approval.action, inputs, { engine: this, author: 'human', actor: 'human', itemId, runId: null, approving: true })
     } catch (e) {
       this.record(itemId, 'human', 'action_failed', (e as Error).message, { action: approval.action, inputs })
       this.emit('change')
@@ -442,8 +555,9 @@ export class Engine extends EventEmitter {
         if (kind === 'handled_outside') this.record(itemId, actor, 'handled_outside', 'Handled outside the tool.')
         if (item.current)
           this.resolve(item.current.id, item.current.type === 'human' ? { decision: kind } : { outcome: 'taken_over', decision: kind }, actor)
-        this.cancelQueue(itemId)
+        this.cancelQueue(itemId, actor)
         this.db.prepare('UPDATE items SET closed = 1, updated_at = ? WHERE id = ?').run(this.now(), itemId)
+        this.mark(itemId, 'item_closed', { actor, data: { kind } })
       })
       if (item.current?.type === 'bot' && item.worker !== null) this.onCancel(itemId)
     })
@@ -484,6 +598,7 @@ export class Engine extends EventEmitter {
     this.db
       .prepare('INSERT INTO runs (id, item_id, handoff_id, worker, started_at, prompt) VALUES (?, ?, ?, ?, ?, ?)')
       .run(id, item.id, handoff.id, worker, this.now(), prompt)
+    this.mark(item.id, 'run_started', { handoffId: handoff.id, runId: id, actor: 'bot', data: { worker } })
     return id
   }
 
@@ -512,6 +627,12 @@ export class Engine extends EventEmitter {
     this.db
       .prepare('UPDATE runs SET ended_at = ?, cost_usd = ?, turns = ?, result = ? WHERE id = ?')
       .run(this.now(), end.costUsd ?? null, end.turns ?? null, end.output ?? end.error ?? null, runId)
+    this.mark(itemId, 'run_ended', {
+      handoffId: run.handoff_id as string,
+      runId,
+      actor: 'bot',
+      data: { exitCode: end.exitCode, costUsd: end.costUsd ?? null, turns: end.turns ?? null, error: end.error ?? null },
+    })
     this.db.prepare('UPDATE items SET worker = NULL WHERE id = ? AND worker = ?').run(itemId, run.worker)
     const item = this.must(itemId)
     if (item.current?.id !== run.handoff_id) {
@@ -543,8 +664,9 @@ export class Engine extends EventEmitter {
         }
         this.resolve(item.current!.id, { ...base, ...(out.close ? { closed: true } : {}) }, 'bot')
         if (out.close) {
-          this.cancelQueue(itemId)
+          this.cancelQueue(itemId, 'bot')
           this.db.prepare('UPDATE items SET closed = 1, updated_at = ? WHERE id = ?').run(this.now(), itemId)
+          this.mark(itemId, 'item_closed', { actor: 'bot', runId, data: { kind: 'closed' } })
         } else this.enqueue(itemId, next, 'bot')
       })
     })
@@ -585,6 +707,10 @@ export class Engine extends EventEmitter {
       } catch (e) {
         error = (e as Error).message
       }
+      this.mark(itemId, 'check', {
+        handoffId: h.id,
+        data: resolution ? { result: 'resolved', outcome: resolution.outcome ?? null } : error ? { result: 'error', error } : { result: 'pending' },
+      })
       const timeout = Number(h.params.timeout_minutes ?? 0)
       if (!resolution && timeout && this.now() >= h.startedAt! + timeout * MINUTE)
         resolution = { outcome: 'timed_out', detail: `Nothing after ${timeout} minutes.` }

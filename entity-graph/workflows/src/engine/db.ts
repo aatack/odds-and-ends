@@ -63,6 +63,23 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS events_item ON events (item_id, id);
 
+-- Everything that happened, when, and who did it: one row a moment, never
+-- changed or deleted. The rest of the store says where things are; this says
+-- how they got there. Handoffs' timelines (Handoff.times) are read from it.
+CREATE TABLE IF NOT EXISTS trace (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at INTEGER NOT NULL,
+  item_id TEXT NOT NULL,
+  handoff_id TEXT,
+  run_id TEXT,
+  actor TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  data TEXT
+);
+CREATE INDEX IF NOT EXISTS trace_item ON trace (item_id, id);
+CREATE INDEX IF NOT EXISTS trace_handoff ON trace (handoff_id, kind);
+CREATE INDEX IF NOT EXISTS trace_at ON trace (at);
+
 -- Every claude -p run, with its whole transcript.
 CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY,

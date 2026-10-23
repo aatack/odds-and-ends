@@ -8,6 +8,8 @@ const api: WorkflowsAPI = {
   detail: call('detail') as WorkflowsAPI['detail'],
   catalog: call('catalog') as WorkflowsAPI['catalog'],
   next: call('next') as WorkflowsAPI['next'],
+  viewed: call('viewed') as WorkflowsAPI['viewed'],
+  skipped: call('skipped') as WorkflowsAPI['skipped'],
   create: call('create') as WorkflowsAPI['create'],
   handOff: call('handOff') as WorkflowsAPI['handOff'],
   approve: call('approve') as WorkflowsAPI['approve'],

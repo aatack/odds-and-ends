@@ -57,6 +57,7 @@ export function useWorkflows() {
 
   const skip = useCallback(
     (id: string) => {
+      void api().skipped(id)
       const all = [...skipped, id]
       setSkipped(all)
       void next(all)

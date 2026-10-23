@@ -30,6 +30,38 @@ export interface Handoff extends HandoffSpec {
   /** For the ones the loop checks. */
   nextCheckAt: number | null
   lastError: string | null
+  /** When each thing happened to it, from the trace. */
+  times: HandoffTimes
+}
+
+/** A handoff's timeline: the first (and where it matters, last) time of each thing, and how often. */
+export interface HandoffTimes {
+  set: number | null
+  started: number | null
+  firstViewed: number | null
+  lastViewed: number | null
+  views: number
+  skips: number
+  firstRunStarted: number | null
+  firstRunEnded: number | null
+  runs: number
+  firstChecked: number | null
+  lastChecked: number | null
+  checks: number
+  resolved: number | null
+  cancelled: number | null
+}
+
+/** One row of the trace: one thing that happened. */
+export interface TraceEntry {
+  id: number
+  at: number
+  itemId: string
+  handoffId: string | null
+  runId: string | null
+  actor: string
+  kind: string
+  data: Record<string, unknown> | null
 }
 
 export interface Item {
@@ -77,6 +109,8 @@ export interface ItemDetail {
   handoffs: Handoff[]
   events: ItemEvent[]
   runs: BotRun[]
+  /** Everything that happened to the item, in order. */
+  trace: TraceEntry[]
 }
 
 export interface Overview {
@@ -147,6 +181,10 @@ export interface WorkflowsAPI {
   overview: () => Promise<Overview>
   detail: (id: string) => Promise<ItemDetail | null>
   catalog: () => Promise<Catalog>
+  /** The human has the item on screen: recorded against its current handoff. */
+  viewed: (id: string) => Promise<void>
+  /** The human passed over the item for now. */
+  skipped: (id: string) => Promise<void>
   /** The item whose human handoff has waited longest, or null. */
   next: (skip: string[]) => Promise<string | null>
   create: (title: string, next: HandoffSpec[]) => Promise<string>

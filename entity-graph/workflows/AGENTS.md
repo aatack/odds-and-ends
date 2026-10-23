@@ -94,12 +94,20 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
 
 - **The engine is the only writer.** Every change goes through `Engine` and emits
   `change`. Handoffs start in `advance`, and changes to one item run one at a time (`serial`).
-- **Keep the whole history.** The `events` table is append-only, and `runs` keeps
-  every run's prompt and full stream-json transcript. Resolved handoffs keep
-  their resolutions, and the bot's own words are kept in the resolution's `output`. Bots read it back
-  (`recent_items`, `get_item`, `run_transcript`) to find what to improve:
-  slow steps, approvals the operator changed, work handled outside the tool.
-  Record anything new that a review would want, and never delete or rewrite events.
+- **Trace everything.** The aim is complete traceability: what happened, when,
+  and who or what did it.
+  - The `trace` table records every moment, one row each: an item created; a
+    handoff set, started, viewed, skipped, checked, resolved or cancelled; a bot
+    run started and ended; every action called, by whom, in which run, with its
+    arguments, its result (ok or error) and how long it took.
+  - `Handoff.times` is read from the trace, never stored apart from it.
+  - The `events` table holds what the chat shows. `runs` keeps every run's
+    prompt and full stream-json transcript. Resolved handoffs keep their
+    resolutions, with the bot's own words in `output`.
+  - All of these are append-only: never update or delete a row.
+  - Anything new that changes, starts, ends or is seen goes through
+    `Engine.mark`. Bots read the trace back (`recent_items`, `get_item`,
+    `run_transcript`) to find what to improve.
 - **The store is SQLite**, in `userData/workflows-v2.db`. The app uses
   `better-sqlite3`, which is rebuilt for Electron on `postinstall`. The tests use
   `node:sqlite`. `db.ts` uses only the API both share, with positional parameters.

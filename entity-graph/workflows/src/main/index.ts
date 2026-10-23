@@ -45,6 +45,8 @@ async function main(): Promise<void> {
   handle('detail', (id: string) => engine.detail(id))
   handle('catalog', () => catalog(engine))
   handle('next', (skip: string[]) => engine.next(skip))
+  handle('viewed', (id: string) => engine.viewed(id))
+  handle('skipped', (id: string) => engine.skipped(id))
   handle('create', (title: string, next: HandoffSpec[]) => engine.create(title, { next }))
   handle('handOff', (id: string, next: HandoffSpec[]) => engine.handOff(id, { next }))
   handle('approve', (id: string, inputs: Record<string, unknown>) => engine.approve(id, inputs))

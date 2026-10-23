@@ -156,14 +156,45 @@ function Bubble({ h, detail }: { h: Handoff; detail: ItemDetail }) {
         {open && (
           <div className="more" onClick={(e) => e.stopPropagation()}>
             <div className="bubble-meta">
-              {time(h.createdAt)} · set by {sender(h.createdBy).toLowerCase()} · {status}
+              Set by {sender(h.createdBy).toLowerCase()} · {status}
               {run?.costUsd != null && ` · $${run.costUsd.toFixed(2)}`}
             </div>
+            <Timeline times={h.times} />
             {output && <pre className="output">{output}</pre>}
             <pre className="output">{JSON.stringify({ params: h.params, resolution: h.resolution && { ...h.resolution, output: undefined } }, null, 2)}</pre>
           </div>
         )}
       </div>
     </div>
+  )
+}
+
+/** When each thing happened to a handoff, as far as it has got. */
+function Timeline({ times: t }: { times: Handoff['times'] }) {
+  const rows: [string, number | null, string?][] = [
+    ['Set', t.set],
+    ['Started', t.started],
+    ['First seen', t.firstViewed, t.views > 1 ? `seen ${t.views} times, last ${time(t.lastViewed!)}` : undefined],
+    ['Skipped', t.skips ? t.lastViewed : null, t.skips ? `${t.skips} times` : undefined],
+    ['Bot started', t.firstRunStarted, t.runs > 1 ? `${t.runs} runs` : undefined],
+    ['Bot finished', t.firstRunEnded],
+    ['First checked', t.firstChecked, t.checks > 1 ? `checked ${t.checks} times, last ${time(t.lastChecked!)}` : undefined],
+    ['Resolved', t.resolved],
+    ['Cancelled', t.cancelled],
+  ]
+  return (
+    <table className="timeline">
+      <tbody>
+        {rows
+          .filter(([, at]) => at !== null)
+          .map(([label, at, extra]) => (
+            <tr key={label}>
+              <td className="muted">{label}</td>
+              <td>{time(at!)}</td>
+              <td className="muted">{extra}</td>
+            </tr>
+          ))}
+      </tbody>
+    </table>
   )
 }

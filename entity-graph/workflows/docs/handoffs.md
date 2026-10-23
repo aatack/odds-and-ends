@@ -7,7 +7,9 @@ The first handoff in the queue is **active**: it is what the item waits for.
 When it **resolves**, it keeps its **resolution**, and the next one becomes active.
 When nothing is queued, a human handoff is added that says what just resolved.
 The item's history is its handoffs in order, with the actions run and checks
-failed between them. The app draws it as a chat: what the human set or did on
+failed between them. Underneath, the **trace** records every moment: each
+handoff set, started, viewed, skipped, checked, resolved or cancelled, each bot
+run, and every action called. Each handoff's `times` are read from it. The app draws it as a chat: what the human set or did on
 the right, everything else on the left.
 
 ## The interface

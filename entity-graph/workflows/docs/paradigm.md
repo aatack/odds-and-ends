@@ -67,6 +67,9 @@ There are six types of handoff:
 
 - The app keeps the full history of each item: every handoff, its result, and the
   actions between them.
+- The app records the time of each event. For example: when a handoff was set,
+  when it started, when a bot started and stopped, when you first saw it, and
+  when it was complete. It also records who or what did each thing.
 - The app shows the history as a chat. What you typed is on the right. What other
   persons, bots and scripts set is on the left.
 - Bots can read this history. They use it to find which processes are slow, where

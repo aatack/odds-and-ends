@@ -48,7 +48,7 @@ export const itemActions: Action[] = [
   {
     name: 'get_item',
     unsafe: false,
-    description: 'An item in full: every handoff with its resolution, the events between them, and its bot runs.',
+    description: 'An item in full: every handoff with its resolution and timeline, the events between them, its bot runs, and its trace: every thing that happened to it, when, and by whom.',
     input: { item_id: itemId },
     run: async (a, { engine }) => {
       const d = engine.detail(String(a.item_id))
@@ -61,7 +61,8 @@ export const itemActions: Action[] = [
     unsafe: false,
     description:
       'Items touched in the last `days`, for looking back at how the work went: time spent on each kind of handoff, bot runs and cost, ' +
-      'human decisions, approvals the human changed, waits that timed out, and what was handled outside the tool.',
+      'human decisions, approvals the human changed, waits that timed out, what was handled outside the tool, how long the human took ' +
+      'to see and to answer each question, and how long bot handoffs waited for a free worker.',
     input: { days: z.number().default(7) },
     run: async (a, { engine }) => engine.recent(Number(a.days)),
   },

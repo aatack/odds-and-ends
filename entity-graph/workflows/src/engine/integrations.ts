@@ -32,6 +32,8 @@ export interface ActionContext {
   itemId: string | null
   /** The bot run making the call, if one is. */
   runId: string | null
+  /** The human is running what a handoff asked them to approve: the resolution records it, not an event. */
+  approving?: boolean
 }
 
 /**
