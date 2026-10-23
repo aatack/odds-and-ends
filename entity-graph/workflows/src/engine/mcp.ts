@@ -1,9 +1,10 @@
-// The app's MCP server, in two scopes:
-//
-// - run: a worker's bot, at /mcp/<runId> on a free loopback port. It gets every
-//   action but the unsafe ones, and may change only its own item.
-// - operator: anything else the user connects, at /mcp on a fixed loopback
-//   port, behind a bearer token. It acts as the human.
+// The app's MCP server. Whoever connects is an agent: a worker's bot, at
+// /mcp/<runId> on a free loopback port, or anything else (Claude Code, say), at
+// /mcp on a fixed loopback port behind a bearer token. Both get the same tools:
+// every action but the unsafe ones, which no agent is ever given (they are the
+// human's, through approvals). A tool that is about an item takes its id, so an
+// agent may work on any item, its own included. The run scope differs only in
+// tying each call to its run, for the trace.
 //
 // Stateless: a fresh server and transport per request.
 
@@ -18,22 +19,21 @@ import { objectSchema } from './schema'
 
 export type Scope = { kind: 'run'; runId: string } | { kind: 'operator' }
 
-const UNSAFE = ' UNSAFE: it changes things outside this app, so only a human may run it.'
 
 export function makeServer(engine: Engine, scope: Scope): McpServer {
   const server = new McpServer({ name: 'workflows', version: '0.1.0' })
   const ctx = (): ActionContext => {
-    if (scope.kind === 'operator') return { engine, author: 'human', actor: 'mcp', itemId: null, runId: null }
+    if (scope.kind === 'operator') return { engine, author: 'bot', actor: 'mcp', itemId: null, runId: null }
     const run = engine.activeRun(scope.runId)
     if (!run) throw new Error('This run has ended.')
     return { engine, author: 'bot', actor: 'bot', itemId: run.itemId, runId: scope.runId }
   }
-  // Unsafe actions are not offered to a bot at all.
-  const offered = scope.kind === 'run' ? engine.actions.filter((a) => !a.unsafe) : engine.actions
+  // The unsafe rule: no agent is given an unsafe action.
+  const offered = engine.actions.filter((a) => !a.unsafe)
   for (const action of offered)
     server.registerTool(
       action.name,
-      { description: action.description + (action.unsafe ? UNSAFE : ''), inputSchema: action.input },
+      { description: action.description, inputSchema: action.input },
       (async (args: Record<string, unknown>) => {
         try {
           const out = await engine.callAction(action.name, args, ctx())

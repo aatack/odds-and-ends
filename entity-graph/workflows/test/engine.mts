@@ -144,7 +144,11 @@ behaviours.push(async ({ call, prompt, schema, sessionId, resume }) => {
   assert.ok(JSON.stringify(schema).includes('"enum":["item"]'), 'a bot may add child items')
   assert.equal(JSON.parse(await call('get_item', { item_id: id })).item.id, id)
   await assert.rejects(call('github_pr_comment', { repo: 'o/r', number: 7, body: 'x' }), /not found/i)
-  await assert.rejects(call('add_events', { item_id: id, events: [] }), /Only a human/)
+  // It has the same tools as anyone connected, so it may act on other items too, as a bot.
+  const other = (await engine.create('Elsewhere'))!
+  await call('add_events', { item_id: other, events: [{ type: 'message', params: { text: 'from a bot' } }] })
+  assert.equal(engine.children(other)[0].createdBy, 'bot')
+  await engine.close(other)
   return {
     message: 'Drafted a reply. Post it?',
     events: [
@@ -466,14 +470,17 @@ await engine.endRun(runId, { exitCode: 0, error: 'probe' })
 for (const a of engine.actions.filter((a) => a.unsafe))
   await assert.rejects(engine.callAction(a.name, {}, { engine, author: 'bot', actor: 'script', itemId: probe, runId: null }), /unsafe/)
 
-// ---- 15. The operator's endpoint: every action, as the human ----
+// ---- 15. The fixed endpoint, for any other agent: the same tools as a bot, and so no unsafe ones ----
 const { url } = mcp.operator()
 await assert.rejects(connect(url, { Authorization: 'Bearer wrong' }), (e: { code?: number }) => e.code === 401)
 const outside = await connect(url, { Authorization: `Bearer ${engine.settings.mcpToken()}` })
-assert.deepEqual((await outside.client.listTools()).tools.map((t) => t.name), engine.actions.map((a) => a.name))
+assert.deepEqual((await outside.client.listTools()).tools.map((t) => t.name), engine.actions.filter((a) => !a.unsafe).map((a) => a.name))
 await outside.call('add_events', { item_id: taken, events: [{ type: 'message', params: { text: 'From outside' } }] })
 assert.equal(last(taken, 'message').createdBy, 'mcp')
-assert.match(await outside.call('github_pr_comment', { repo: 'o/r', number: 7, body: 'Hi' }), /pull\/7/)
+await assert.rejects(outside.call('github_pr_comment', { repo: 'o/r', number: 7, body: 'Hi' }), /not found/i)
+// An outside agent's Slack message gets an approval before it, as a bot's does.
+await outside.call('add_events', { item_id: taken, events: [{ type: 'slack', params: { channel: 'C1', message: 'hi' } }] })
+assert.ok(item(taken).blockers.some((b) => b.type === 'approval' && b.params.action === 'slack_post'))
 const types = JSON.parse(await outside.call('event_types'))
 assert.deepEqual(types.map((t: { type: string }) => t.type), engine.eventTypes.map((t) => t.type))
 await outside.client.close()

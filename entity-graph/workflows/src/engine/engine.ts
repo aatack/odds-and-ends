@@ -563,10 +563,10 @@ export class Engine extends EventEmitter {
     await this.idle()
   }
 
-  /** Adds events in an item (or items in none) as the human, or an outside client acting as them. */
-  async addEvents(parentId: string | null, specs: EventSpec[], actor = 'human'): Promise<string[]> {
+  /** Adds events in an item (or items in none): from the human, or from an agent through MCP (author 'bot', so its rules apply). */
+  async addEvents(parentId: string | null, specs: EventSpec[], actor = 'human', author: Author = 'human', runId: string | null = null): Promise<string[]> {
     if (parentId && this.must(parentId).closed) throw new Error('This item is closed.')
-    const ids = this.add(parentId, this.prepare(specs, 'human'), actor)
+    const ids = this.add(parentId, this.prepare(specs, author), actor, runId)
     await this.idle()
     return ids
   }

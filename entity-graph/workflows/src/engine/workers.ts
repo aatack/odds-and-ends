@@ -4,6 +4,9 @@
 // blockers with structured output, which `Engine.endRun` takes from there.
 
 import { spawn } from 'node:child_process'
+import { mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { Item, ItemEvent } from '../shared/types'
 import { describeEvent, type Engine } from './engine'
 import { botOutputSchema } from './schema'
@@ -23,38 +26,46 @@ export type SpawnBot = (args: {
   sessionId: string
   resume: boolean
   forkFrom: string | null
+  /** The worker's own folder, to run in. */
+  cwd: string
   onOutput: (chunk: string) => void
 }) => BotProcess
 
 const RUN_LIMIT_MS = 30 * 60_000
 
 /**
- * Where every bot runs. Claude keeps sessions by directory, so it must be the
- * same for every run of an item: the directory the app started in.
+ * Each worker's own folder, in which its bots run and make their worktrees.
+ * Sessions are found by id from any folder, so an item's session survives
+ * moving between workers.
  */
-const CWD = process.cwd()
+export function workerFolder(worker: number): string {
+  const dir = join(tmpdir(), 'workflows-bots', `worker-${worker}`)
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
 
 export const SYSTEM = `You are a bot in the operator's workflow system. You work on one item, in a session of its own: you have seen it before if this conversation has.
 
-- Use the tools of the "workflows" MCP server. They are all you have. event_types describes every kind of event.
+- The "workflows" MCP server is the system: items, events, and the integrations. event_types describes every kind of event. Its tools take item ids: yours is in the prompt, and you may act on other items too.
+- You also have the usual tools (a shell, files). Your working folder is your own scratch space, shared with nobody else's run at the same time. To work on a repository, make a git worktree of it (under your folder, or beside the repository) and work there; read its AGENTS.md or CLAUDE.md first, since you were not started in it. Clean up worktrees you no longer need.
 - Do what the operator's latest messages ask, as far as you can without them.
-- Actions that change things outside this app are unsafe, and you do not have them. unsafe_actions lists them. To get one done, add an approval event, filled in as far as you can.
+- Actions that change things outside this app are unsafe, and you never do them: not with the MCP tools (you do not have the unsafe ones; unsafe_actions lists them), and not with the shell either (no posting, commenting, reviewing, merging, pushing to shared branches, or sending). To get one done, add an approval event, filled in as far as you can.
 - When you stop, return your output: a message to the operator if there is something to say, the blockers to add, and whether the item is done. Chain blockers with after events: e.g. a github wait, then an after whose script adds a bot if the checks failed.
 - To wait for something no other event type covers, add a script event: a function the app runs on a schedule, which checks with the actions and says when it is done. event_types shows how to write one.
 - To split work off, add a child item with its first events (e.g. a message and a bot). It blocks this item until it closes, and its bot starts from this conversation.
 - For work unrelated to this item, add an item with detached: true. It sits in no item and blocks nothing.
 - Ask the operator only what nobody else can answer, as one direct question: no preamble, no summary, no waffle.`
 
-export const spawnClaude: SpawnBot = ({ prompt, system, schema, mcpUrl, sessionId, resume, forkFrom, onOutput }) => {
+export const spawnClaude: SpawnBot = ({ prompt, system, schema, mcpUrl, sessionId, resume, forkFrom, cwd, onOutput }) => {
   const mcp = JSON.stringify({ mcpServers: { workflows: { type: 'http', url: mcpUrl } } })
   const child = spawn(
     'claude',
     ['-p', prompt,
       ...(resume ? ['--resume', sessionId] : forkFrom ? ['--resume', forkFrom, '--fork-session', '--session-id', sessionId] : ['--session-id', sessionId]),
       '--append-system-prompt', system, '--mcp-config', mcp, '--strict-mcp-config',
-      '--tools', '', '--allowedTools', 'mcp__workflows', '--permission-mode', 'dontAsk',
+      '--allowedTools', 'mcp__workflows', '--permission-mode', 'auto',
       '--json-schema', JSON.stringify(schema), '--output-format', 'stream-json', '--verbose'],
-    { cwd: CWD, stdio: ['ignore', 'pipe', 'pipe'] },
+    { cwd, stdio: ['ignore', 'pipe', 'pipe'] },
   )
   child.stdout.setEncoding('utf8').on('data', onOutput)
   let stderr = ''
@@ -77,7 +88,7 @@ export function promptFor(engine: Engine, item: Item, bots: ItemEvent[], resume:
   const lines = engine.newSinceLastRun(item.id).map((e) => `- ${describeEvent(e)}`)
   const asks = bots.map((b) => b.params.instructions).filter(Boolean)
   const intro = resume
-    ? `Since your last turn on this item:`
+    ? `Since your last turn on item ${item.id} (${item.title}):`
     : `${forked ? 'You are now on a new item, split off from the one above. This conversation is its own from here on.\n\n' : ''}Item ${item.id}: ${item.title}\n\nIts events so far:`
   return [
     intro,
@@ -169,7 +180,7 @@ export class WorkerPool {
     }
     let proc: BotProcess
     try {
-      proc = this.spawnBot({ prompt, system: SYSTEM, schema: botOutputSchema(this.engine.eventTypes), mcpUrl: this.mcpUrl(runId), sessionId, resume, forkFrom, onOutput })
+      proc = this.spawnBot({ prompt, system: SYSTEM, schema: botOutputSchema(this.engine.eventTypes), mcpUrl: this.mcpUrl(runId), sessionId, resume, forkFrom, cwd: workerFolder(worker), onOutput })
     } catch (e) {
       void end(null, (e as Error).message)
       return

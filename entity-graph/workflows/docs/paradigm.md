@@ -72,10 +72,12 @@ Example:
 
 - Some actions change things outside the app. For example, they send a message
   or merge a pull request. These actions are **unsafe**.
-- Bots cannot use unsafe actions.
-- Scripts that bots write cannot use unsafe actions.
-- To do an unsafe action, a bot asks you for approval. You can do the action,
+- Bots and other agents cannot use unsafe actions.
+- Scripts that agents write cannot use unsafe actions.
+- To do an unsafe action, an agent asks you for approval. You can do the action,
   change it first, or cancel it.
+- Bots can also use a shell. Their instructions tell them not to do unsafe
+  things with it.
 
 ## History
 

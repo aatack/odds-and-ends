@@ -157,11 +157,12 @@ What the human types goes through a **preset**, which turns the text into events
 
 There is one list of **actions**, and every call goes through `Engine.callAction`.
 
-- **Unsafe** actions change something outside this app, and only a human may run
-  one. Bots, and scripts that bots wrote, do not get them: their MCP tools leave
-  them out, and `callAction` refuses them. A bot asks for one with an `approval`
-  event. See the unsafe rule in AGENTS.md.
-- `add_events`, `cancel_event` and `close_item` are only for a human. A bot adds
-  events through its output, and a script by what it returns.
+- **Unsafe** actions change something outside this app, and only the human runs
+  one, through an `approval` event. No agent gets them: both MCP endpoints leave
+  them out, scripts an agent wrote get none, and `callAction` refuses them to
+  anyone but the human. See the unsafe rule in AGENTS.md.
+- Every other action is the same for every agent, a bot or anything connected:
+  `add_events`, `cancel_event` and `close_item` included, on any item. A bot can
+  also add events through its output, and a script by what it returns.
 - Closing an item cancels its open children, closing child items as cancelled,
   all the way down.

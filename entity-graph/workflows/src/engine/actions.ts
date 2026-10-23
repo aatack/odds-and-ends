@@ -3,7 +3,7 @@
 
 import { z } from 'zod'
 import type { EventSpec } from '../shared/types'
-import type { Action, ActionContext } from './integrations'
+import type { Action } from './integrations'
 import { objectSchema } from './schema'
 
 const itemId = z.string().describe('The id of the item.')
@@ -11,11 +11,6 @@ const spec = z
   .object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional() })
   .describe('An event: see event_types. ref names it, so an after in the same list can wait for it.')
 
-/** Adding events directly, cancelling and closing are the human's: a bot returns its events as output, a script returns them. */
-function assertHuman(ctx: ActionContext): void {
-  if (ctx.author !== 'human')
-    throw new Error('Only a human adds events directly, cancels or closes. A bot returns its events as its output; a script returns them.')
-}
 
 export const itemActions: Action[] = [
   {
@@ -104,20 +99,18 @@ export const itemActions: Action[] = [
     name: 'add_events',
     unsafe: false,
     description:
-      'Add events in an item: messages, blockers, approvals, afters, child items. With no item_id, add items that sit in none. Human only.',
+      'Add events in an item (your own or any other): messages, blockers, approvals, afters, child items. With no item_id, add items that sit in none.',
     input: { item_id: itemId.optional(), events: z.array(spec) },
     run: async (a, ctx) => {
-      assertHuman(ctx)
-      return { ids: await ctx.engine.addEvents(a.item_id ? String(a.item_id) : null, a.events as EventSpec[], ctx.actor) }
+      return { ids: await ctx.engine.addEvents(a.item_id ? String(a.item_id) : null, a.events as EventSpec[], ctx.actor, ctx.author, ctx.runId) }
     },
   },
   {
     name: 'cancel_event',
     unsafe: false,
-    description: 'End a blocker without it happening (a child item is closed as cancelled). Human only.',
+    description: 'End a blocker without it happening (a child item is closed as cancelled).',
     input: { event_id: z.string() },
     run: async (a, ctx) => {
-      assertHuman(ctx)
       await ctx.engine.cancel(String(a.event_id), ctx.actor)
       return 'Cancelled.'
     },
@@ -125,10 +118,9 @@ export const itemActions: Action[] = [
   {
     name: 'close_item',
     unsafe: false,
-    description: 'Close an item: its open children are cancelled, child items closed, all the way down. Human only.',
+    description: 'Close an item: its open children are cancelled, child items closed, all the way down.',
     input: { item_id: itemId },
     run: async (a, ctx) => {
-      assertHuman(ctx)
       await ctx.engine.close(String(a.item_id), { actor: ctx.actor })
       return 'Closed.'
     },

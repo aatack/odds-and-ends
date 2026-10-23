@@ -35,21 +35,25 @@ an in-memory store; it costs a run, so use it only when the bot wiring changes.
 
 ## The unsafe rule
 
-**An action that changes anything outside this app is `unsafe: true`, and bots
-never get it.** That covers posting, commenting, reviewing, merging, sending,
-deploying and deleting, in any integration.
+**An action that changes anything outside this app is `unsafe: true`, and no
+agent is ever given one.** That covers posting, commenting, reviewing, merging,
+sending, deploying and deleting, in any integration.
 
 - `unsafe` is a required field on `Action`, so every new action has to declare it.
   If in doubt, it is unsafe.
-- Bots, and scripts that bots wrote, never get an unsafe action. The run-scope MCP
-  server leaves them out, and `Engine.callAction` refuses them to any caller that
-  is not a human.
-- A bot asks for an unsafe action by adding an `approval` event.
-  `unsafe_actions` tells it what it can ask for.
-- Nothing may give a bot another way round this: no shell, no HTTP tool, no
-  built-in Claude Code tools, and no event that acts outside the app when a bot
-  adds it. The `slack` event's message is an example: when a bot adds one, an
-  approval goes in front of it.
+- Unsafe actions are part of the toolset, but whenever an agent is given the
+  tools they are left out: both MCP endpoints (a bot's, and the fixed one any
+  other agent connects to) offer every action but the unsafe ones. Scripts that
+  an agent wrote get none either. `Engine.callAction` refuses them to any caller
+  that is not the human.
+- Only the human runs one: through an `approval` event, in the app. An agent asks
+  for one by adding an approval; `unsafe_actions` tells it what it can ask for.
+- No event may act outside the app when an agent adds it. The `slack` event's
+  message is an example: when an agent adds one, an approval goes in front of it.
+- **Bots have a shell** (auto mode), and `gh` is logged in. The rule binds them
+  there too: their instructions forbid doing anything unsafe with it, and the
+  auto-mode classifier stands between them and it. That is a weaker guarantee
+  than the MCP's, so give bots no new credentials lightly.
 - `test/engine.mts` checks the rule. Keep those checks passing; never loosen them.
 
 ## Layout
@@ -136,18 +140,19 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   `node:sqlite`. `db.ts` uses only the API both share, with positional parameters.
 - **One process.** The Electron main process holds the store, the loop (every
   minute), the worker pool (four workers) and the MCP server (loopback, a free port).
-- **One list of actions** for both MCP scopes and for scripts. Every call goes
-  through `Engine.callAction`, and an action checks who is calling:
-  - Unsafe actions are for a human only (see the unsafe rule above).
-  - A bot, or a bot's script, changes only its own item.
-  - `hand_off` and `close_item` are for a human only.
-  The scopes are `run` (a worker's bot, at `/mcp/<runId>` on a free port, with no unsafe actions) and
-  `operator` (anything the user connects, at `/mcp` on port 47390 by default,
-  with a bearer token, acting as the human). Both bind to loopback only.
-- **Bots get only the MCP server.** Workers run `claude -p` with built-in tools
-  off, only `mcp__workflows` allowed, the output schema as `--json-schema`, and
-  the item's own session (`--session-id`, then `--resume`), always from the same directory.
-  A new capability for bots is an action. Never add it to the bot's command line.
+- **One toolset for every agent.** Both MCP endpoints serve every action but the
+  unsafe ones, and every call goes through `Engine.callAction`. Tools about an
+  item take its id, so an agent may act on any item, its own included. Agents
+  are author `bot`, so the bots' rules (which event types, Slack approvals) apply.
+  The endpoints are `run` (a worker's bot, at `/mcp/<runId>` on a free port; it
+  only ties calls to the run, for the trace) and `operator` (any other agent, at
+  `/mcp` on port 47390 by default, with a bearer token). Both bind to loopback only.
+- **Bots run in auto mode, each worker in its own folder.** Workers run
+  `claude -p --permission-mode auto` with the usual tools and the workflows MCP
+  server, the output schema as `--json-schema`, and the item's own session
+  (`--session-id`, then `--resume`; sessions are found by id from any folder).
+  Each worker runs in `<tmpdir>/workflows-bots/worker-N` and makes git worktrees
+  as it needs them. A new capability for bots that touches this app is an action.
 - **Adding an integration** means adding its actions (each declaring `unsafe`), an event type if it can be waited on, a preset if the chat
   input should offer it, and a source if it produces items. Update `docs/events.md`
   when a type changes. Run CLIs and
