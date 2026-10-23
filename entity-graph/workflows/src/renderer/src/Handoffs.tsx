@@ -79,9 +79,11 @@ function reply(h: Handoff): string | null {
   if (r.decision === 'approved' && action)
     return `Ran ${action.name}${action.changed.length ? ` (changed ${action.changed.join(', ')})` : ''}`
   if (r.decision === 'closed') return 'Closed'
-  if (r.decision === 'handled_outside') return 'Handled outside the tool'
+  if (r.decision === 'handled_outside') return 'Done outside the tool'
   return null
 }
+
+const shortTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
 type Entry =
   | { at: number; order: number; kind: 'handoff'; handoff: Handoff }
@@ -91,11 +93,12 @@ type Entry =
 /**
  * The item's history as a chat: every handoff a bubble, from whoever set it.
  * What the human set or did is on the right; everything else, on the left.
- * Events between them are small notes in the middle. A bot's own words are
- * kept behind "More".
+ * Events between them are small notes in the middle, and what is queued comes
+ * last, faded. A bubble shows its words and the time; pressing it shows the rest.
  */
 export function Chat({ detail }: { detail: ItemDetail }) {
   const shown = detail.handoffs.filter((h) => h.status !== 'queued')
+  const queued = detail.handoffs.filter((h) => h.status === 'queued')
   const entries: Entry[] = []
   shown.forEach((h, order) => {
     entries.push({ at: h.createdAt, order, kind: 'handoff', handoff: h })
@@ -114,16 +117,19 @@ export function Chat({ detail }: { detail: ItemDetail }) {
         ) : e.kind === 'reply' ? (
           <div key={i} className="bubble-row mine">
             <div className="bubble">
-              <div>{e.text}</div>
-              <div className="bubble-meta">{time(e.at)}</div>
+              {e.text}
+              <span className="bubble-time">{shortTime(e.at)}</span>
             </div>
           </div>
         ) : (
-          <div key={i} className="chat-note">
-            {e.event.text} · {time(e.event.at)}
+          <div key={i} className="chat-note" title={time(e.event.at)}>
+            {e.event.text}
           </div>
         ),
       )}
+      {queued.map((h) => (
+        <Bubble key={h.id} h={h} detail={detail} />
+      ))}
     </section>
   )
 }
@@ -135,25 +141,24 @@ function Bubble({ h, detail }: { h: Handoff; detail: ItemDetail }) {
   const output = h.resolution?.output as string | undefined
   const status =
     h.status === 'active'
-      ? 'now'
-      : h.status === 'cancelled'
-        ? 'cancelled'
-        : `→ ${outcome(h) || 'done'}${h.startedAt && h.resolvedAt ? ` · ${minutes(h.resolvedAt - h.startedAt)}` : ''}`
+      ? 'waiting on this now'
+      : h.status === 'queued'
+        ? 'queued'
+        : h.status === 'cancelled'
+          ? 'cancelled'
+          : `${outcome(h) || 'done'}${h.startedAt && h.resolvedAt ? ` · took ${minutes(h.resolvedAt - h.startedAt)}` : ''}`
   return (
-    <div className={`bubble-row ${mine ? 'mine' : 'theirs'}`}>
-      <div className={`bubble ${h.status === 'active' ? 'active' : ''}`}>
+    <div className={`bubble-row ${mine ? 'mine' : 'theirs'} ${h.status}`}>
+      <div className={`bubble ${open ? 'open' : ''}`} onClick={() => setOpen(!open)}>
         {!mine && <div className="bubble-sender">{sender(h.createdBy)}</div>}
-        <div>{summary(h)}</div>
-        <div className="bubble-meta">
-          {time(h.createdAt)} · {status}
-          {run?.costUsd != null && ` · $${run.costUsd.toFixed(2)}`}
-          {' · '}
-          <button data-ui className="link" onClick={() => setOpen(!open)}>
-            {open ? 'less' : 'more'}
-          </button>
-        </div>
+        {summary(h)}
+        <span className="bubble-time">{shortTime(h.createdAt)}</span>
         {open && (
-          <div className="more">
+          <div className="more" onClick={(e) => e.stopPropagation()}>
+            <div className="bubble-meta">
+              {time(h.createdAt)} · set by {sender(h.createdBy).toLowerCase()} · {status}
+              {run?.costUsd != null && ` · $${run.costUsd.toFixed(2)}`}
+            </div>
             {output && <pre className="output">{output}</pre>}
             <pre className="output">{JSON.stringify({ params: h.params, resolution: h.resolution && { ...h.resolution, output: undefined } }, null, 2)}</pre>
           </div>

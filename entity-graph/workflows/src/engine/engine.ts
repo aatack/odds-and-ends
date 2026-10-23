@@ -373,10 +373,9 @@ export class Engine extends EventEmitter {
     const id = randomUUID()
     const at = this.now()
     const actor = opts.actor ?? 'human'
-    const next = this.prepare(
-      opts.next?.length ? opts.next : [{ type: 'human', params: { needed: 'What should happen with this?' } }],
-      opts.author ?? 'human',
-    )
+    // With no handoffs, the app asks the human what to do: that question is the app's, not whoever made the item.
+    const asked = !opts.next?.length
+    const next = this.prepare(asked ? [{ type: 'human', params: { needed: 'What should happen with this?' } }] : opts.next!, opts.author ?? 'human')
     const created = transaction(this.db, () => {
       const r = this.db
         .prepare(
@@ -385,7 +384,7 @@ export class Engine extends EventEmitter {
         .run(id, title, opts.source ?? 'manual', opts.ref ?? null, opts.url ?? null, at, at) as { changes: number | bigint }
       if (Number(r.changes) === 0) return false
       this.record(id, actor, 'created', title, { source: opts.source ?? 'manual', url: opts.url ?? null })
-      this.enqueue(id, next, opts.author === 'bot' ? 'bot' : actor)
+      this.enqueue(id, next, asked ? 'system' : opts.author === 'bot' ? 'bot' : actor)
       return true
     })
     if (!created) return null
