@@ -4,6 +4,7 @@ import { Avatar } from './icons'
 import { useAtomValue } from 'jotai'
 import { Markdown, shows } from './components/ui/Markdown'
 import { findAtom } from './views'
+import { TaskCard } from './TaskCard'
 
 export const time = (ms: number) => new Date(ms).toLocaleString()
 const shortTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -24,6 +25,8 @@ const HUMAN = new Set(['human', 'mcp'])
  * did. What the human said or did is on the right; everything else on the left,
  * with who it came from as its picture. Cancelled blockers are small notes in
  * the middle. A message shows its words and the time; pressing it shows the rest.
+ * A child task, once it has closed, is a bubble like any other, holding its card
+ * (while open it is among the blockers instead).
  * While Ctrl+F's find line has a phrase in it, only what shows the phrase is
  * left, with the phrase marked.
  */
@@ -31,13 +34,13 @@ export function Chat({ detail }: { detail: ItemDetail }) {
   const menu = useEventMenu()
   const find = useAtomValue(findAtom)?.trim() ?? ''
   const done = detail.events
-    .filter((e) => e.resolved && e.message !== null && (!find || shows(e.message, find)))
+    .filter((e) => e.resolved && e.message !== null && (!find || shows(e.type === 'item' ? e.summary : e.message, find)))
     .sort((a, b) => a.resolvedAt! - b.resolvedAt!)
   return (
     <section className="chat">
       {find && !done.length && <div className="chat-note">Nothing here says “{find}”.</div>}
       {done.map((e) =>
-        e.cancelled ? (
+        e.cancelled && e.type !== 'item' ? (
           <div key={e.id} className="chat-note" title={time(e.resolvedAt!)} {...menu(e.id)}>
             {e.message}
           </div>
@@ -57,7 +60,7 @@ function Message({ event: e, find }: { event: ItemEvent; find: string }) {
     <div className={`bubble-row ${mine ? 'mine' : 'theirs'}`}>
       {!mine && <Avatar event={e} />}
       <div className="bubble" title={time(e.resolvedAt ?? e.createdAt)} {...menu(e.id)}>
-        <Markdown text={e.message ?? ''} highlight={find} />
+        {e.type === 'item' ? <TaskCard event={e} /> : <Markdown text={e.message ?? ''} highlight={find} />}
         <span className="bubble-time">{shortTime(e.resolvedAt ?? e.createdAt)}</span>
       </div>
     </div>

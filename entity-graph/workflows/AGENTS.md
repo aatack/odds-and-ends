@@ -138,6 +138,8 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
 - **Ctrl+F finds in the view.** On the items view it is the search line; over a chat it opens `FindLine`, and the
   chat keeps only the events whose *displayed* text (`shows`, markdown stripped) has the phrase, marked in yellow
   (`Markdown`'s `highlight`). The phrase (`findAtom`) belongs to the view and is cleared when the view changes.
+- **A child task is a card** (`TaskCard`): its title, with a tick once resolved, a cross if cancelled, a pending
+  ring while open. While open it is among the blockers; once closed it is a chat bubble like any other event.
 - **Every event has a right-click menu** (`useEventMenu`): Open and Debug. Spread
   it on anything that stands for an event. Clicking an event does nothing else.
 

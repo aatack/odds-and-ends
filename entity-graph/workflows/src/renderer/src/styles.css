@@ -144,6 +144,14 @@ code { font-family: var(--font-mono); font-size: 12px; }
 .builder-row :focus, .builder-row :focus-visible { outline: none; box-shadow: none; }
 .hinted { position: relative; }
 .hint { position: absolute; top: 4px; left: 0; right: 0; pointer-events: none; color: var(--color-gray-400); line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A task where another mentions it: its title, and how it stands. */
+.task-card { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--ink); }
+.task-card .icon { width: 15px; height: 15px; flex: none; }
+.task-card.resolved .icon { color: var(--color-success-600); }
+.task-card.cancelled .icon { color: var(--muted); }
+.task-card.cancelled .task-card-title { color: var(--muted); text-decoration: line-through; }
+.task-card.pending .icon { color: var(--muted); }
+.task-card-title { overflow: hidden; text-overflow: ellipsis; }
 /* Ctrl+F's phrase, wherever rendered text shows it. */
 .markdown mark { background: rgb(250 204 21 / 0.35); color: inherit; border-radius: 0.125rem; }
 .find-line { flex: none; margin: 0 32px; width: auto; background: var(--color-gray-100); border-radius: 18px; }
