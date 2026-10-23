@@ -22,18 +22,26 @@ export function App() {
   useEffect(() => api().onBack(back), [back])
   useEffect(() => api().onForward(forward), [forward])
   // Ctrl+L puts the items view on top of the stack; if it is already showing, it puts the cursor in its search line.
+  // Ctrl+D is the Next button.
   const focusSearch = useSetAtom(searchFocusAtom)
   const showingItems = !items.view || items.view.kind === 'items'
+  const { next } = items
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!e.ctrlKey || e.altKey || e.shiftKey || e.metaKey || e.key.toLowerCase() !== 'l') return
-      e.preventDefault()
-      if (showingItems) focusSearch((n) => n + 1)
-      else open({ kind: 'items' })
+      if (!e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return
+      const key = e.key.toLowerCase()
+      if (key === 'l') {
+        e.preventDefault()
+        if (showingItems) focusSearch((n) => n + 1)
+        else open({ kind: 'items' })
+      } else if (key === 'd') {
+        e.preventDefault()
+        void next()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, showingItems, focusSearch])
+  }, [open, next, showingItems, focusSearch])
   return (
     <ItemsContext.Provider value={items}>
       <div className="app">

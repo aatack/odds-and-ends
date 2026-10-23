@@ -108,7 +108,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
 - **There is no sidebar.** The content fills the window in a centred column.
   The bottom-left button opens the menu (bots busy; Tasks, Integrations, MCP,
   which are views on the stack like any other; poll sources), and the round
-  bottom-right button is Next.
+  bottom-right button is Next (Ctrl+D).
 - **The items view** (`ItemsList`) is what shows when the stack is empty, and
   Ctrl+L puts it on top (or, when it is already showing, puts the cursor in its
   search line); a view is never pushed onto an identical one; Ctrl+W and Alt+Left take the top view off, and Alt+Right puts the
