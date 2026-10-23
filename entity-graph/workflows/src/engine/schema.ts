@@ -24,6 +24,7 @@ export const objectSchema = (shape: z.ZodRawShape): ObjectSchema =>
 export function handoffSchema(types: HandoffType[]): Record<string, unknown> {
   return {
     anyOf: types.map((t) => ({
+      title: t.type,
       type: 'object',
       description: t.description,
       properties: { type: { type: 'string', enum: [t.type] }, params: objectSchema(t.params) },

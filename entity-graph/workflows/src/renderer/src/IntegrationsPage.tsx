@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Check, IntegrationsView } from '../../shared/types'
+import { Form } from './forms'
 import { api } from './useWorkflows'
 
 export function IntegrationsPage() {
@@ -42,7 +43,7 @@ export function IntegrationsPage() {
 
       <Slack view={view} act={act} />
 
-      <button onClick={() => void refresh()}>Check again</button>
+      <button data-ui onClick={() => void refresh()}>Check again</button>
     </div>
   )
 }
@@ -51,9 +52,17 @@ function Status({ check }: { check: Check }) {
   return <p className={check.ok ? '' : 'error-text'}>{check.ok ? `✓ ${check.detail}` : `✗ ${check.detail}`}</p>
 }
 
+const SLACK_WORKSPACE = {
+  type: 'object',
+  properties: {
+    token: { type: 'string', 'x-editor': 'secret', description: 'The User OAuth Token: it starts with xoxp-.' },
+    name: { type: 'string', description: "Optional; the workspace's own name by default." },
+  },
+  required: ['token'],
+}
+
 function Slack({ view, act }: { view: IntegrationsView; act: (fn: () => Promise<unknown>) => Promise<void> }) {
-  const [name, setName] = useState('')
-  const [token, setToken] = useState('')
+  const [value, setValue] = useState<{ name?: string; token?: string }>({})
   return (
     <section className="card">
       <h2>Slack</h2>
@@ -67,20 +76,12 @@ function Slack({ view, act }: { view: IntegrationsView; act: (fn: () => Promise<
               {w.team} · as {w.user} · <code>{w.tokenHint}</code>
             </span>
           </div>
-          <button onClick={() => act(() => api().removeSlack(w.id))}>Remove</button>
+          <button data-ui onClick={() => act(() => api().removeSlack(w.id))}>
+            Remove
+          </button>
         </div>
       ))}
-      <form
-        className="add"
-        onSubmit={(e) => {
-          e.preventDefault()
-          void act(async () => {
-            await api().addSlack(name, token)
-            setName('')
-            setToken('')
-          })
-        }}
-      >
+      <div className="add">
         <h3>Add a workspace</h3>
         <ol className="muted">
           <li>
@@ -90,16 +91,29 @@ function Slack({ view, act }: { view: IntegrationsView; act: (fn: () => Promise<
             </a>
             .
           </li>
-          <li>Under OAuth &amp; Permissions, add the User Token Scopes the workflows need, then install it to the workspace.</li>
-          <li>Paste the User OAuth Token (it starts with xoxp-) below.</li>
+          <li>
+            Under OAuth &amp; Permissions, add the User Token Scopes the workflows need, then install it to the workspace. Reading
+            and waiting need <code>channels:history</code>, <code>groups:history</code>, <code>im:history</code> and{' '}
+            <code>mpim:history</code>; posting needs <code>chat:write</code>; searching needs <code>search:read</code>.
+          </li>
+          <li>Paste the User OAuth Token below.</li>
         </ol>
-        <input placeholder="Name (optional; the workspace's own by default)" value={name} onChange={(e) => setName(e.target.value)} />
-        <input placeholder="xoxp-…" value={token} onChange={(e) => setToken(e.target.value)} type="password" />
-        <button className="primary" disabled={!token.trim()}>
+        <Form schema={SLACK_WORKSPACE} value={value} setValue={(v) => setValue(v as typeof value)} />
+        <button
+          data-ui
+          className="primary"
+          disabled={!value.token?.trim()}
+          onClick={() =>
+            act(async () => {
+              await api().addSlack(value.name ?? '', value.token ?? '')
+              setValue({})
+            })
+          }
+        >
           Check and add
         </button>
-      </form>
-      <p className="muted">The token is checked with Slack before it is kept, and stored encrypted with your system keyring. Agents have no Slack tools yet.</p>
+      </div>
+      <p className="muted">The token is checked with Slack before it is kept, and stored encrypted with your system keyring.</p>
     </section>
   )
 }

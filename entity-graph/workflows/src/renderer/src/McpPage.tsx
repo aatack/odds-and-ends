@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Catalog, McpView, ObjectSchema } from '../../shared/types'
 import { Copyable } from './Copy'
+import { Form } from './forms'
 import { api } from './useWorkflows'
 
 export function McpPage() {
@@ -51,13 +52,15 @@ export function McpPage() {
           <span>Token</span>
           <div className="row-inline">
             <Copyable value={view.token} display={showToken ? view.token : '•'.repeat(24)} />
-            <button onClick={() => setShowToken(!showToken)}>{showToken ? 'Hide' : 'Show'}</button>
-            <button onClick={() => act(() => api().regenerateMcpToken())}>Regenerate</button>
+            <button data-ui onClick={() => setShowToken(!showToken)}>{showToken ? 'Hide' : 'Show'}</button>
+            <button data-ui onClick={() => act(() => api().regenerateMcpToken())}>Regenerate</button>
           </div>
           <span>Port</span>
           <div className="row-inline">
-            <input className="port" value={port} onChange={(e) => setPort(e.target.value)} />
-            {port !== String(view.port) && <button onClick={() => act(() => api().setMcpPort(Number(port)))}>Save</button>}
+            <div className="port">
+              <Form schema={{ type: 'string' }} value={port} setValue={(v) => setPort(typeof v === 'string' ? v : '')} />
+            </div>
+            {port !== String(view.port) && <button data-ui onClick={() => act(() => api().setMcpPort(Number(port)))}>Save</button>}
           </div>
         </div>
         <h3>Claude Code</h3>

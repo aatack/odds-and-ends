@@ -15,7 +15,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { Catalog } from '../shared/types'
 import type { Engine } from './engine'
 import type { ActionContext } from './integrations'
-import { objectSchema } from './schema'
+import { handoffSchema, objectSchema } from './schema'
 
 export type Scope = { kind: 'run'; runId: string } | { kind: 'operator' }
 
@@ -55,6 +55,7 @@ export function catalog(engine: Engine): Catalog {
       outward: Boolean(a.outward),
     })),
     handoffs: engine.handoffTypes.map((t) => ({ type: t.type, description: t.description, params: objectSchema(t.params), resolution: t.resolution })),
+    handoffList: { type: 'array', items: handoffSchema(engine.handoffTypes) },
   }
 }
 

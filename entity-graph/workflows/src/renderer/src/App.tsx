@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { Catalog, HandoffKind, HandoffSpec, Item, ItemDetail } from '../../shared/types'
-import { HandoffBuilder, History, summary } from './Handoffs'
+import { History, summary } from './Handoffs'
+import { Form, MULTILINE, withHints } from './forms'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
-import { SchemaForm } from './SchemaForm'
 import { api, useWorkflows } from './useWorkflows'
 
 type Page = 'items' | 'integrations' | 'mcp'
@@ -38,7 +38,7 @@ export function App() {
         <aside className="sidebar">
           <nav className="nav">
             {PAGES.map((p) => (
-              <button key={p.page} className={p.page === page ? 'active' : ''} onClick={() => setPage(p.page)}>
+              <button data-ui key={p.page} className={p.page === page ? 'active' : ''} onClick={() => setPage(p.page)}>
                 {p.label}
               </button>
             ))}
@@ -64,7 +64,7 @@ function ItemsSidebar() {
   const busy = w.overview.workers.filter((x) => x.itemId).length
   return (
     <>
-      <button className="primary next" onClick={() => void w.next()}>
+      <button data-ui className="primary next" onClick={() => void w.next()}>
         Next
       </button>
       <NewItem
@@ -87,7 +87,7 @@ function ItemsSidebar() {
         <span>
           Workers: {busy}/{w.overview.workers.length} busy
         </span>
-        <button onClick={() => void w.act(() => api().pollSources())}>Poll sources</button>
+        <button data-ui onClick={() => void w.act(() => api().pollSources())}>Poll sources</button>
       </div>
     </>
   )
@@ -107,33 +107,33 @@ function ItemsMain() {
   )
 }
 
+const NEW_ITEM = {
+  type: 'object',
+  properties: {
+    title: { type: 'string' },
+    instructions: { type: 'string', 'x-multiline': true, description: 'For an agent. Without them, the item comes to you.' },
+  },
+  required: ['title'],
+}
+
 function NewItem({ onCreate }: { onCreate: (title: string, instructions: string) => void }) {
-  const [title, setTitle] = useState('')
-  const [instructions, setInstructions] = useState('')
+  const [value, setValue] = useState<{ title?: string; instructions?: string }>({})
+  const title = value.title?.trim() ?? ''
   return (
-    <form
-      className="new-item"
-      onSubmit={(e) => {
-        e.preventDefault()
-        if (!title.trim()) return
-        onCreate(title.trim(), instructions.trim())
-        setTitle('')
-        setInstructions('')
-      }}
-    >
-      <input placeholder="New item" value={title} onChange={(e) => setTitle(e.target.value)} />
+    <div className="new-item">
+      <Form schema={NEW_ITEM} value={value} setValue={(v) => setValue(v as typeof value)} />
       {title && (
-        <>
-          <textarea
-            placeholder="Instructions for an agent (optional; without them it comes to you)"
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-            rows={3}
-          />
-          <button type="submit">Add</button>
-        </>
+        <button
+          data-ui
+          onClick={() => {
+            onCreate(title, value.instructions?.trim() ?? '')
+            setValue({})
+          }}
+        >
+          Add
+        </button>
       )}
-    </form>
+    </div>
   )
 }
 
@@ -183,7 +183,7 @@ function ItemView({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalo
         <section className="panel">
           <p className="muted">{item.worker !== null ? `Worker ${item.worker} is on it.` : 'Queued for the next free worker.'}</p>
           <p className="quote">{String(current.params.instructions)}</p>
-          <button onClick={() => act(() => api().takeOver(item.id))}>Take over</button>
+          <button data-ui onClick={() => act(() => api().takeOver(item.id))}>Take over</button>
         </section>
       )}
       {current && WAITING[current.type] && (
@@ -194,7 +194,7 @@ function ItemView({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalo
             {current.nextCheckAt && ` · next check ${time(current.nextCheckAt)}`}
           </p>
           {current.lastError && <p className="error-text">{current.lastError}</p>}
-          <button onClick={() => act(() => api().takeOver(item.id))}>Take over</button>
+          <button data-ui onClick={() => act(() => api().takeOver(item.id))}>Take over</button>
         </section>
       )}
 
@@ -209,7 +209,7 @@ function ItemView({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalo
         </section>
       )}
 
-      <button className="link" onClick={() => setShowHistory(!showHistory)}>
+      <button data-ui className="link" onClick={() => setShowHistory(!showHistory)}>
         {showHistory ? 'Hide history' : 'Show history'}
       </button>
       {showHistory && <History detail={detail} />}
@@ -222,8 +222,12 @@ function StateEditor({ state, onSave }: { state: string; onSave: (s: string) => 
   return (
     <section className="state">
       <h3>State</h3>
-      <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={3} placeholder="No state recorded yet." />
-      {draft !== state && <button onClick={() => onSave(draft)}>Save state</button>}
+      <Form schema={MULTILINE} value={draft} setValue={(v) => setDraft(typeof v === 'string' ? v : '')} />
+      {draft !== state && (
+        <button data-ui onClick={() => onSave(draft)}>
+          Save state
+        </button>
+      )}
     </section>
   )
 }
@@ -235,7 +239,7 @@ function Decide({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalog:
   const approval = current.params.approval as { action: string; inputs: Record<string, unknown> } | undefined
   const action = approval && catalog.actions.find((a) => a.name === approval.action)
   const [inputs, setInputs] = useState<Record<string, unknown>>(approval?.inputs ?? {})
-  const [next, setNext] = useState<HandoffSpec[]>([{ type: 'agent', params: {} }])
+  const [next, setNext] = useState<HandoffSpec[]>([{ type: 'agent', params: { instructions: '' } }])
   const [note, setNote] = useState('')
   useEffect(() => setInputs(approval?.inputs ?? {}), [approval])
   const queued = item.queued > 0
@@ -248,32 +252,37 @@ function Decide({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalog:
             {approval.action}
             {action && <span className="muted"> — {action.description}</span>}
           </h3>
-          {action ? <SchemaForm schema={action.inputSchema} value={inputs} onChange={setInputs} /> : <p className="error-text">No action {approval.action}.</p>}
-          <button className="primary" onClick={() => act(() => api().approve(item.id, inputs))}>
+          {action ? (
+            <Form schema={withHints(action.inputSchema)} value={inputs} setValue={(v) => setInputs(v as Record<string, unknown>)} />
+          ) : (
+            <p className="error-text">No action {approval.action}.</p>
+          )}
+          <button data-ui className="primary" onClick={() => act(() => api().approve(item.id, inputs))}>
             Run
           </button>
         </div>
       )}
       {queued && !approval && (
-        <button className="primary" onClick={() => act(() => api().handOff(item.id, null, [], note))}>
+        <button data-ui className="primary" onClick={() => act(() => api().handOff(item.id, null, [], note))}>
           Continue with the queue
         </button>
       )}
       <h3>{approval ? 'Or hand off' : 'Hand off'}</h3>
-      <HandoffBuilder catalog={catalog} value={next} onChange={setNext} />
-      <textarea rows={2} placeholder="Note (optional): kept in the history" value={note} onChange={(e) => setNote(e.target.value)} />
+      <Form schema={withHints(catalog.handoffList)} value={next} setValue={(v) => setNext(v as HandoffSpec[])} />
+      <h3>Note (optional; kept in the history)</h3>
+      <Form schema={MULTILINE} value={note} setValue={(v) => setNote(typeof v === 'string' ? v : '')} />
       <div className="buttons">
-        <button className={approval || queued ? '' : 'primary'} onClick={() => act(() => api().handOff(item.id, null, next, note))}>
+        <button data-ui className={approval || queued ? '' : 'primary'} onClick={() => act(() => api().handOff(item.id, null, next, note))}>
           Hand off{queued ? ' (in front of the queue)' : ''}
         </button>
-        <button onClick={() => act(() => api().close(item.id, null, note))}>Close</button>
-        <button
+        <button data-ui onClick={() => act(() => api().close(item.id, null, note))}>Close</button>
+        <button data-ui
           title="You did it yourself, outside this tool. The note says what and why, so reviews can find it."
           onClick={() => act(() => api().handledOutside(item.id, note))}
         >
           Handled outside
         </button>
-        <button onClick={onSkip}>Skip</button>
+        <button data-ui onClick={onSkip}>Skip</button>
       </div>
     </section>
   )

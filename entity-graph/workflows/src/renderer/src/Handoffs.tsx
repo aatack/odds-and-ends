@@ -1,6 +1,5 @@
 import { Fragment, useState } from 'react'
-import type { Catalog, Handoff, HandoffKind, HandoffSpec, ItemDetail } from '../../shared/types'
-import { SchemaForm } from './SchemaForm'
+import type { Handoff, HandoffSpec, ItemDetail } from '../../shared/types'
 
 const time = (ms: number) => new Date(ms).toLocaleString()
 const minutes = (ms: number) => (ms < 60_000 ? `${Math.round(ms / 1000)}s` : `${Math.round(ms / 60_000)}m`)
@@ -29,36 +28,6 @@ export function outcome(h: Handoff): string {
   const r = h.resolution ?? {}
   if (h.status === 'cancelled') return 'cancelled'
   return String(r.error ? `failed: ${r.error}` : (r.detail ?? r.decision ?? r.outcome ?? r.state ?? ''))
-}
-
-/** A list of handoffs to put at the front of the queue, each a type and its params. */
-export function HandoffBuilder({ catalog, value, onChange }: { catalog: Catalog; value: HandoffSpec[]; onChange: (v: HandoffSpec[]) => void }) {
-  const set = (i: number, h: HandoffSpec) => onChange(value.map((x, j) => (j === i ? h : x)))
-  return (
-    <div className="builder">
-      {value.map((h, i) => {
-        const type = catalog.handoffs.find((t) => t.type === h.type)!
-        return (
-          <div key={i} className="builder-row">
-            <div className="row-inline">
-              <span className="muted">{i + 1}.</span>
-              <select value={h.type} onChange={(e) => set(i, { type: e.target.value as HandoffKind, params: {} })}>
-                {catalog.handoffs.map((t) => (
-                  <option key={t.type}>{t.type}</option>
-                ))}
-              </select>
-              <span className="muted grow">{type.description}</span>
-              {value.length > 1 && <button onClick={() => onChange(value.filter((_, j) => j !== i))}>Remove</button>}
-            </div>
-            <SchemaForm schema={type.params} value={h.params} onChange={(params) => set(i, { ...h, params })} />
-          </div>
-        )
-      })}
-      <button className="link" onClick={() => onChange([...value, { type: 'agent', params: {} }])}>
-        + then…
-      </button>
-    </div>
-  )
 }
 
 /** Every handoff resolved so far, with the notes and changes between them. Agent output is hidden until asked for. */
@@ -94,7 +63,7 @@ function HandoffEntry({ h, detail }: { h: Handoff; detail: ItemDetail }) {
       </div>
       <div className="event-text">→ {outcome(h)}</div>
       {(output || h.stateAtStart) && (
-        <button className="link" onClick={() => setOpen(!open)}>
+        <button data-ui className="link" onClick={() => setOpen(!open)}>
           {open ? 'Less' : 'More'}
         </button>
       )}

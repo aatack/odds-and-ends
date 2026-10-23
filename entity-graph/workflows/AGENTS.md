@@ -52,6 +52,20 @@ src/renderer   the React UI
 test/          engine.mts: the whole engine with a fake gh and fake agents
 ```
 
+## UI
+
+- **Every input is a `SchemaForm`.** It and `SchemaBuilder` are copied from
+  entity-graph (`src/renderer/src/components/schema/`, with the `ui/` primitives
+  they need and its `index.css` tokens). Keep them in step with entity-graph rather
+  than editing them here. Use `Form` in `forms.tsx`, which adds the app's own
+  editors (`secret` for tokens). Use `withHints` to give the engine's schemas
+  text boxes for prose fields. A new kind of control is an editor, not a raw `<input>`.
+- **The same design rules as entity-graph:** no motion, no pointer cursor,
+  restrained colour, tone rather than borders. Tailwind v4 provides the tokens.
+  The app's own CSS (`styles.css`) sits in `@layer components`, so the
+  components' utilities win over it. Its buttons are `button[data-ui]`, so it
+  never styles the components' buttons.
+
 ## Rules
 
 - **The engine is the only writer.** Every change goes through `Engine` and emits

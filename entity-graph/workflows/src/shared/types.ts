@@ -124,6 +124,8 @@ export interface HandoffTypeInfo {
 export interface Catalog {
   actions: ActionInfo[]
   handoffs: HandoffTypeInfo[]
+  /** A list of handoffs of any type, as a JSON Schema: what the forms edit a queue with. */
+  handoffList: Record<string, unknown>
 }
 
 export interface Check {

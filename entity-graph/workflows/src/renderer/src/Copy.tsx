@@ -6,7 +6,7 @@ export function Copyable({ value, display, block }: { value: string; display?: s
   return (
     <div className={`copyable ${block ? 'block' : ''}`}>
       <code>{display ?? value}</code>
-      <button
+      <button data-ui
         onClick={() => {
           void navigator.clipboard.writeText(value)
           setCopied(true)
