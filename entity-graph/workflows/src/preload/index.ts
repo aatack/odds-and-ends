@@ -24,6 +24,11 @@ const api: WorkflowsAPI = {
   mcp: call('mcp') as WorkflowsAPI['mcp'],
   regenerateMcpToken: call('regenerateMcpToken') as WorkflowsAPI['regenerateMcpToken'],
   setMcpPort: call('setMcpPort') as WorkflowsAPI['setMcpPort'],
+  onBack: (cb) => {
+    const listener = () => cb()
+    ipcRenderer.on('back', listener)
+    return () => ipcRenderer.removeListener('back', listener)
+  },
   onChange: (cb) => {
     const listener = () => cb()
     ipcRenderer.on('changed', listener)

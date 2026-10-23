@@ -73,6 +73,12 @@ async function main(): Promise<void> {
     if (/^https?:/.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
+  // Ctrl+W takes the top view off the stack, rather than closing the window as the default menu would.
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || !input.control || input.alt || input.shift || input.meta || input.key.toLowerCase() !== 'w') return
+    event.preventDefault()
+    win.webContents.send('back')
+  })
   engine.on('change', () => win.isDestroyed() || win.webContents.send('changed'))
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else void win.loadFile(join(__dirname, '../renderer/index.html'))

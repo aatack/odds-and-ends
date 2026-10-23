@@ -100,7 +100,8 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   type is shown (an item as its chat, any other event as `EventView`); `debug`
   shows its whole state as JSON. A new kind of view is a new `kind`.
 - **The items view** (`ItemsList`) is what shows when the stack is empty, and
-  Ctrl+L puts it on top. Typing filters titles fuzzily; the arrows move; Enter
+  Ctrl+L puts it on top; Ctrl+W takes the top view off (the main process catches
+  it in `before-input-event`, so the window's menu doesn't close the window). Typing filters titles fuzzily; the arrows move; Enter
   opens; Tab makes a new item with the typed title.
 - **Every event has a right-click menu** (`useEventMenu`): Open and Debug. Spread
   it on anything that stands for an event. Clicking an event does nothing else.

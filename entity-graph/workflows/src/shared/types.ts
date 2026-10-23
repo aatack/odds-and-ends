@@ -245,4 +245,6 @@ export interface WorkflowsAPI {
   regenerateMcpToken: () => Promise<void>
   setMcpPort: (port: number) => Promise<void>
   onChange: (cb: () => void) => () => void
+  /** Ctrl+W, caught before the window's menu can close the window: take the top view off the stack. */
+  onBack: (cb: () => void) => () => void
 }

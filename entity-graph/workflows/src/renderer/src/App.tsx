@@ -24,6 +24,9 @@ const PAGES: { page: Page; label: string }[] = [
 export function App() {
   const [page, setPage] = useState<Page>('items')
   const items = useWorkflows()
+  // Ctrl+W (sent by the main process) takes the top view off the stack.
+  const { back } = items
+  useEffect(() => api().onBack(back), [back])
   // Ctrl+L puts the items view on top of the stack.
   const { open } = items
   useEffect(() => {
