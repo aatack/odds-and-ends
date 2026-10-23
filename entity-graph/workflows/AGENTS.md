@@ -99,6 +99,10 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   onto it; Back pops it. A view is `{ kind, id }`: `event` shows an event as its
   type is shown (an item as its chat, any other event as `EventView`); `debug`
   shows its whole state as JSON. A new kind of view is a new `kind`.
+- **There is no sidebar.** The content fills the window in a centred column.
+  The bottom-left button opens the menu (bots busy; Items, Integrations, MCP,
+  which are views on the stack like any other; poll sources), and the round
+  bottom-right button is Next.
 - **The items view** (`ItemsList`) is what shows when the stack is empty, and
   Ctrl+L puts it on top; Ctrl+W takes the top view off (the main process catches
   it in `before-input-event`, so the window's menu doesn't close the window). Typing filters titles fuzzily; the arrows move; Enter

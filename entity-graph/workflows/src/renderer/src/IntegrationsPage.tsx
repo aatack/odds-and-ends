@@ -22,7 +22,6 @@ export function IntegrationsPage() {
   if (!view) return <div className="muted">Checking…</div>
   return (
     <div className="page">
-      <h1>Integrations</h1>
       {error && <div className="error">{error}</div>}
 
       <section className="card">

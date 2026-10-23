@@ -1,39 +1,29 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { Catalog, Item, ItemDetail, ItemEvent } from '../../shared/types'
+import type { Catalog, ItemDetail, ItemEvent } from '../../shared/types'
 import { Blockers } from './Blockers'
-import { ChevronLeft } from 'lucide-react'
+import { ArrowRight, ChevronLeft, Menu } from 'lucide-react'
 import { Chat } from './Chat'
 import { DebugView } from './DebugView'
-import { EventMenu, useEventMenu } from './EventMenu'
+import { EventMenu } from './EventMenu'
 import { EventView } from './EventView'
-import { GROUPS } from './groups'
 import { ItemsList } from './ItemsList'
 import { Composer } from './Composer'
-import { EventIcon, ItemIcon } from './icons'
+import { EventIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
 import { api, useWorkflows } from './useWorkflows'
-
-type Page = 'items' | 'integrations' | 'mcp'
-const PAGES: { page: Page; label: string }[] = [
-  { page: 'items', label: 'Items' },
-  { page: 'integrations', label: 'Integrations' },
-  { page: 'mcp', label: 'MCP' },
-]
+import type { View } from './views'
 
 export function App() {
-  const [page, setPage] = useState<Page>('items')
   const items = useWorkflows()
   // Ctrl+W (sent by the main process) takes the top view off the stack.
-  const { back } = items
+  const { back, open } = items
   useEffect(() => api().onBack(back), [back])
   // Ctrl+L puts the items view on top of the stack.
-  const { open } = items
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!e.ctrlKey || e.altKey || e.shiftKey || e.metaKey || e.key.toLowerCase() !== 'l') return
       e.preventDefault()
-      setPage('items')
       open({ kind: 'items' })
     }
     window.addEventListener('keydown', onKey)
@@ -42,66 +32,65 @@ export function App() {
   return (
     <ItemsContext.Provider value={items}>
       <div className="app">
-        <aside className="sidebar">
-          <nav className="nav">
-            {PAGES.map((p) => (
-              <button data-ui key={p.page} className={p.page === page ? 'active' : ''} onClick={() => setPage(p.page)}>
-                {p.label}
-              </button>
-            ))}
-          </nav>
-          {page === 'items' && <ItemsSidebar />}
-        </aside>
         <main className="main">
-          {page === 'items' && <ItemsMain />}
-          {page === 'integrations' && <IntegrationsPage />}
-          {page === 'mcp' && <McpPage />}
+          <div className="content">
+            <ItemsMain />
+          </div>
         </main>
+        <AppMenu />
+        <button data-ui className="next-button" title="Next: what needs you" aria-label="Next" onClick={() => void items.next()}>
+          <ArrowRight className="icon" />
+        </button>
       </div>
       <EventMenu />
     </ItemsContext.Provider>
   )
 }
 
-/** The items page's state, shared by its sidebar and its main panel. */
+/** The app's state, shared by the content pane and the corner buttons. */
 const ItemsContext = createContext<ReturnType<typeof useWorkflows> | null>(null)
 const useItems = () => useContext(ItemsContext)!
 
-function ItemsSidebar() {
+/** The button in the bottom left: the workers, and the way to Integrations and MCP. */
+function AppMenu() {
   const w = useItems()
+  const [open, setOpen] = useState(false)
   const busy = w.overview.workers.filter((x) => x.itemId).length
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    window.addEventListener('mousedown', close)
+    return () => window.removeEventListener('mousedown', close)
+  }, [open])
+  const go = (view: View) => {
+    w.open(view)
+    setOpen(false)
+  }
   return (
-    <>
-      <button data-ui className="primary next" onClick={() => void w.next()}>
-        Next
+    <div className="app-menu" onMouseDown={(e) => e.stopPropagation()}>
+      {open && (
+        <div className="menu app-menu-list">
+          <div className="menu-note">
+            Bots: {busy} of {w.overview.workers.length} busy
+          </div>
+          <button onClick={() => go({ kind: 'items' })}>Items</button>
+          <button onClick={() => go({ kind: 'integrations' })}>Integrations</button>
+          <button onClick={() => go({ kind: 'mcp' })}>MCP</button>
+          <button
+            onClick={() => {
+              setOpen(false)
+              void w.act(() => api().pollSources())
+            }}
+          >
+            Poll sources
+          </button>
+        </div>
+      )}
+      <button data-ui className="corner-button" title="Menu" aria-label="Menu" onClick={() => setOpen(!open)}>
+        <Menu className="icon" />
+        {busy > 0 && <span className="busy">{busy}</span>}
       </button>
-      <NewItem
-        onCreate={(title, message) =>
-          w.act(async () => {
-            const id = await api().create(title, null)
-            if (message) await api().send(id, 'bot', message)
-            w.select(id)
-          })
-        }
-      />
-      {GROUPS.map((g) => (
-        <ItemList
-          key={g.label}
-          label={g.label}
-          items={w.overview.items.filter(g.has)}
-          selected={w.selected}
-          onSelect={w.select}
-        />
-      ))}
-      <div className="footer">
-        <span>
-          Workers: {busy}/{w.overview.workers.length} busy
-        </span>
-        <button data-ui onClick={() => void w.act(() => api().pollSources())}>
-          Poll sources
-        </button>
-      </div>
-    </>
+    </div>
   )
 }
 
@@ -114,6 +103,13 @@ function ItemsMain() {
   const w = useItems()
   const openEvent = (id: string) => w.open({ kind: 'event', id })
   const d = w.detail
+  if (w.view?.kind === 'integrations' || w.view?.kind === 'mcp')
+    return (
+      <div className="view">
+        <ViewHeader canGoBack onBack={w.back} title={w.view.kind === 'mcp' ? 'MCP' : 'Integrations'} />
+        <div className="view-body">{w.view.kind === 'mcp' ? <McpPage /> : <IntegrationsPage />}</div>
+      </div>
+    )
   // With nothing on the stack, every item.
   if (!w.view || w.view.kind === 'items')
     return (
@@ -206,62 +202,6 @@ function ViewHeader(props: { canGoBack: boolean; onBack: () => void; title?: str
       <h1 className="view-title">{props.title}</h1>
       {props.actions && <div className="buttons">{props.actions}</div>}
     </header>
-  )
-}
-
-function NewItem({ onCreate }: { onCreate: (title: string, instructions: string) => void }) {
-  const [title, setTitle] = useState('')
-  const [instructions, setInstructions] = useState('')
-  return (
-    <form
-      className="new-item compact"
-      onSubmit={(e) => {
-        e.preventDefault()
-        if (!title.trim()) return
-        onCreate(title.trim(), instructions.trim())
-        setTitle('')
-        setInstructions('')
-      }}
-    >
-      <input placeholder="New item" value={title} onChange={(e) => setTitle(e.target.value)} />
-      {title && (
-        <>
-          <textarea
-            placeholder="A message for a bot (optional; without one it is yours)"
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-            rows={2}
-          />
-          <button data-ui type="submit">
-            Add
-          </button>
-        </>
-      )}
-    </form>
-  )
-}
-
-function ItemList(props: { label: string; items: Item[]; selected: string | null; onSelect: (id: string) => void }) {
-  const menu = useEventMenu()
-  if (!props.items.length) return null
-  return (
-    <section className="list">
-      <h3>
-        {props.label} <span className="count">{props.items.length}</span>
-      </h3>
-      {props.items.map((i) => (
-        <div
-          key={i.id}
-          className={`row ${i.id === props.selected ? 'selected' : ''}`}
-          onClick={() => props.onSelect(i.id)}
-          {...menu(i.id)}
-        >
-          <ItemIcon item={i} />
-          <span className="row-title">{i.title}</span>
-          {i.worker !== null && <span className="dot" title="A bot is running" />}
-        </div>
-      ))}
-    </section>
   )
 }
 

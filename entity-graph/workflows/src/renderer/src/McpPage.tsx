@@ -37,7 +37,6 @@ export function McpPage() {
   )
   return (
     <div className="page">
-      <h1>MCP</h1>
       {error && <div className="error">{error}</div>}
 
       <section className="card">
