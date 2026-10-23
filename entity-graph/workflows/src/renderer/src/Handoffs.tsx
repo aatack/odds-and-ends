@@ -37,9 +37,17 @@ const WORDS: Partial<Record<HandoffKind, string>> = { bot: 'instructions', human
 
 /**
  * A list of handoffs to put at the front of the queue. Each is a box with its
- * type's icon in the corner; Tab and Shift+Tab in a box step through the types.
+ * type's icon in the corner; Tab and Shift+Tab in a box step through the types,
+ * and Enter sends.
  */
-export function HandoffBuilder({ catalog, value, onChange }: { catalog: Catalog; value: HandoffSpec[]; onChange: (v: HandoffSpec[]) => void }) {
+export function HandoffBuilder(props: {
+  catalog: Catalog
+  value: HandoffSpec[]
+  onChange: (v: HandoffSpec[]) => void
+  /** Enter sends, as in any chat; Shift+Enter is a new line. */
+  onSend: () => void
+}) {
+  const { catalog, value, onChange, onSend } = props
   const set = (i: number, h: HandoffSpec) => onChange(value.map((x, j) => (j === i ? h : x)))
   const types = catalog.handoffs.map((t) => t.type)
   // A box's fields are replaced when its type changes; the focus goes to the new first field.
@@ -67,6 +75,10 @@ export function HandoffBuilder({ catalog, value, onChange }: { catalog: Catalog;
             ref={(el) => (rows.current[i] = el)}
             className="builder-row compact"
             onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                onSend()
+              }
               if (e.key !== 'Tab') return
               e.preventDefault()
               step(i, e.shiftKey ? -1 : 1)

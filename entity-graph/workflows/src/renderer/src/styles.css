@@ -137,4 +137,6 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .builder-fields { width: 100%; }
 .compact ::placeholder { color: var(--color-gray-400); opacity: 1; }
 .list { user-select: none; }
+button[data-ui].send { display: inline-flex; align-items: center; justify-content: center; padding: 6px 10px; }
+button[data-ui].send .icon { width: 16px; height: 16px; }
 }

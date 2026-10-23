@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { Catalog, HandoffKind, HandoffSpec, Item, ItemDetail } from '../../shared/types'
 import { Chat, HandoffBuilder } from './Handoffs'
+import { SendHorizontal } from 'lucide-react'
 import { ItemIcon } from './icons'
 import { Form, withHints } from './forms'
 import { IntegrationsPage } from './IntegrationsPage'
@@ -227,6 +228,7 @@ function Decide({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalog:
   const [inputs, setInputs] = useState<Record<string, unknown>>(approval?.inputs ?? {})
   const [next, setNext] = useState<HandoffSpec[]>([{ type: 'bot', params: {} }])
   useEffect(() => setInputs(approval?.inputs ?? {}), [approval])
+  const send = () => void act(() => api().handOff(item.id, next))
   return (
     <>
       {approval && (
@@ -241,7 +243,7 @@ function Decide({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalog:
           </button>
         </div>
       )}
-      <HandoffBuilder catalog={catalog} value={next} onChange={setNext} />
+      <HandoffBuilder catalog={catalog} value={next} onChange={setNext} onSend={send} />
       <div className="composer-bar">
         <div className="buttons">
           <button data-ui onClick={() => act(() => api().close(item.id))}>
@@ -258,8 +260,8 @@ function Decide({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalog:
               Continue
             </button>
           )}
-          <button data-ui className="primary" onClick={() => act(() => api().handOff(item.id, next))}>
-            Send
+          <button data-ui className="primary send" title="Send (Enter)" aria-label="Send" onClick={send}>
+            <SendHorizontal className="icon" />
           </button>
         </div>
       </div>
