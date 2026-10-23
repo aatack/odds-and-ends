@@ -56,12 +56,13 @@ already. That is how a chain is built and then extended.
 ## Who may do what
 
 There is one list of **actions** (`src/engine/actions.ts`, `github.ts`,
-`slack.ts`). Both MCP scopes and scripts get the same list, and every call goes
-through `Engine.callAction`. Each action checks who is calling:
+`slack.ts`), and every call goes through `Engine.callAction`.
 
-- An **outward** action is one other people see. Only a human may run one. An
-  bot asks for one as a human handoff's `approval`.
-- An **bot**, or a script a bot wrote, may change only the item it is
+- An **unsafe** action changes something outside this app. Only a human may run
+  one. Bots, and scripts that bots wrote, do not get it at all: their MCP tools
+  leave it out, and `callAction` refuses it. A bot asks for one as a human
+  handoff's `approval`; `unsafe_actions` lists them. See the unsafe rule in AGENTS.md.
+- A **bot**, or a script a bot wrote, may change only the item it is
   working on.
 - `hand_off` and `close_item` are only for a human. A bot hands an item on by
   returning `{ state, next, close? }` as its structured output. The schema it is

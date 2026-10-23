@@ -16,7 +16,8 @@ an in-memory store; it costs a run, so use it only when the bot wiring changes.
 
 ## The paradigm
 
-[`docs/handoffs.md`](./docs/handoffs.md) is the long form; read it before changing the engine.
+[`docs/paradigm.md`](./docs/paradigm.md) is the idea, in a page.
+[`docs/handoffs.md`](./docs/handoffs.md) is how it is built; read it before changing the engine.
 
 - An **item** has a **state** (where it is, amended by whoever last worked on it)
   and a **queue of handoffs** (what happens next, and so who does it).
@@ -26,8 +27,28 @@ an in-memory store; it costs a run, so use it only when the bot wiring changes.
 - **Next** shows the item whose human handoff has waited longest.
 - A bot's run ends by returning `{ state, next, close? }` as structured
   output. It has no tool for ending a run.
-- A human handoff's `needed` is one direct question. An outward action is a human
-  handoff's `approval`, which the human runs, changes, or turns down.
+- A human handoff's `needed` is one direct question. A bot gets an unsafe action
+  done by putting it in a human handoff's `approval`, which the human runs, changes,
+  or turns down.
+
+## The unsafe rule
+
+**An action that changes anything outside this app is `unsafe: true`, and bots
+never get it.** That covers posting, commenting, reviewing, merging, sending,
+deploying and deleting, in any integration.
+
+- `unsafe` is a required field on `Action`, so every new action has to declare it.
+  If in doubt, it is unsafe.
+- Bots, and scripts that bots wrote, never get an unsafe action. The run-scope MCP
+  server leaves them out, and `Engine.callAction` refuses them to any caller that
+  is not a human.
+- A bot asks for an unsafe action as the `approval` on a human handoff.
+  `unsafe_actions` tells it what it can ask for.
+- Nothing may give a bot another way round this: no shell, no HTTP tool, no
+  built-in Claude Code tools, and no handoff that acts outside the app when a bot
+  set it. The `slack` handoff's message is an example: when a bot sets one, an
+  approval goes in front of it.
+- `test/engine.mts` checks the rule. Keep those checks passing; never loosen them.
 
 ## Layout
 
@@ -86,17 +107,16 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   minute), the worker pool (four workers) and the MCP server (loopback, a free port).
 - **One list of actions** for both MCP scopes and for scripts. Every call goes
   through `Engine.callAction`, and an action checks who is calling:
-  - Outward actions are for a human only.
+  - Unsafe actions are for a human only (see the unsafe rule above).
   - A bot, or a bot's script, changes only its own item.
   - `hand_off` and `close_item` are for a human only.
-  The scopes are `run` (a worker's bot, at `/mcp/<runId>` on a free port) and
+  The scopes are `run` (a worker's bot, at `/mcp/<runId>` on a free port, with no unsafe actions) and
   `operator` (anything the user connects, at `/mcp` on port 47390 by default,
   with a bearer token, acting as the human). Both bind to loopback only.
 - **Bots get only the MCP server.** Workers run `claude -p` with built-in tools
   off, only `mcp__workflows` allowed, and the handoff schema as `--json-schema`.
   A new capability for bots is an action. Never add it to the bot's command line.
-- **Adding an integration** means adding its actions (with `outward` where others
-  will see them), a handoff type if it can be waited on, and a source if it
+- **Adding an integration** means adding its actions (each declaring `unsafe`), a handoff type if it can be waited on, and a source if it
   produces items. Update `docs/handoffs.md` when a type changes. Run CLIs and
   HTTP through `engine.exec` and `engine.fetch`, so the tests can stand in for them.
 - **Waits back off**: 1, 2, 5, then 10 minutes between checks.

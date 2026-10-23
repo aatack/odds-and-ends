@@ -254,14 +254,16 @@ export class Engine extends EventEmitter {
   async callAction(name: string, args: Record<string, unknown>, ctx: ActionContext): Promise<unknown> {
     const action = this.actions.find((a) => a.name === name)
     if (!action) throw new Error(`No action ${name}.`)
+    // The rule on unsafe actions (see Action in integrations.ts), checked here
+    // too, whatever the caller was shown.
+    if (action.unsafe && ctx.author !== 'human')
+      throw new Error(
+        `${name} is unsafe, so bots, and scripts bots wrote, may not run it. Ask a human: a human handoff with approval { action: "${name}", inputs }.`,
+      )
     const parsed = z.object(action.input).safeParse(args ?? {})
     if (!parsed.success) throw new Error(`Bad arguments for ${name}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
-    if (action.outward && ctx.author !== 'human')
-      throw new Error(
-        `${name} is outward: others will see it, so a human has to approve it. Hand off to a human with approval: { action: "${name}", inputs }.`,
-      )
     const out = await action.run(parsed.data, ctx)
-    if (action.outward && ctx.itemId)
+    if (action.unsafe && ctx.itemId)
       this.record(ctx.itemId, ctx.actor, 'action_run', name, { action: name, inputs: parsed.data, output: out as Record<string, unknown> })
     return out
   }
@@ -280,7 +282,7 @@ export class Engine extends EventEmitter {
       if (s.type === 'human' && params.approval) {
         const { action } = params.approval as { action: string }
         const known = this.actions.find((a) => a.name === action)
-        if (!known?.outward) throw new Error(`${action} is not an outward action, so it needs no approval.`)
+        if (!known?.unsafe) throw new Error(`${action} is not an unsafe action, so it needs no approval: a bot runs it itself.`)
       }
       const expanded = type.expand ? type.expand(params, author) : [{ type: s.type, params }]
       return expanded.map((e) => ({ type: e.type, params: e.params }))

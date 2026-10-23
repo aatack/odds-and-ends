@@ -16,6 +16,7 @@ export const cap = (s: string, n = 60_000) => (s.length > n ? `${s.slice(0, n)}\
 export const githubActions: Action[] = [
   {
     name: 'github_pr_view',
+    unsafe: false,
     description: 'A pull request: title, body, author, state, review decision, checks, reviews, comments and files.',
     input: pr,
     run: (a, { engine }) =>
@@ -23,12 +24,14 @@ export const githubActions: Action[] = [
   },
   {
     name: 'github_pr_diff',
+    unsafe: false,
     description: "A pull request's diff.",
     input: pr,
     run: async (a, { engine }) => cap(await engine.exec('gh', ['pr', 'diff', ...prArgs(a)])),
   },
   {
     name: 'github_search_prs',
+    unsafe: false,
     description: 'Search pull requests with GitHub search syntax, e.g. "is:open author:@me" or "review-requested:@me".',
     input: { query: z.string() },
     run: async (a, { engine }) =>
@@ -41,6 +44,7 @@ export const githubActions: Action[] = [
   },
   {
     name: 'github_api_get',
+    unsafe: false,
     description: 'A GET on the GitHub REST API, e.g. "repos/owner/name/pulls/12/comments". Read-only.',
     input: { path: z.string() },
     run: async (a, { engine }) => {
@@ -54,15 +58,15 @@ export const githubActions: Action[] = [
   },
   {
     name: 'github_pr_comment',
+    unsafe: true,
     description: 'Post a comment on a pull request.',
-    outward: true,
     input: { ...pr, body: z.string().describe('The comment, in markdown.') },
     run: async (a, { engine }) => ({ url: (await engine.exec('gh', ['pr', 'comment', ...prArgs(a), '--body', String(a.body)])).trim() }),
   },
   {
     name: 'github_pr_review',
+    unsafe: true,
     description: 'Submit a review on a pull request: approve, comment, or request changes.',
-    outward: true,
     input: { ...pr, event: z.enum(['approve', 'comment', 'request-changes']), body: z.string().optional().describe('The review, in markdown.') },
     run: async (a, { engine }) => ({
       output: (await engine.exec('gh', ['pr', 'review', ...prArgs(a), `--${a.event}`, ...(a.body ? ['--body', String(a.body)] : [])])).trim(),
@@ -70,8 +74,8 @@ export const githubActions: Action[] = [
   },
   {
     name: 'github_pr_merge',
+    unsafe: true,
     description: 'Merge a pull request.',
-    outward: true,
     input: { ...pr, method: z.enum(['squash', 'merge', 'rebase']) },
     run: async (a, { engine }) => ({ output: (await engine.exec('gh', ['pr', 'merge', ...prArgs(a), `--${a.method}`])).trim() }),
   },

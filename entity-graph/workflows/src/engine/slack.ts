@@ -45,12 +45,14 @@ const brief = (m: Message) => ({ user: m.user, text: m.text, ts: m.ts, thread_ts
 export const slackActions: Action[] = [
   {
     name: 'slack_workspaces',
+    unsafe: false,
     description: 'The Slack workspaces set up, and who the operator is in each.',
     input: {},
     run: async (_a, { engine }) => engine.settings.slackWorkspaces().map(({ token: _, ...w }) => w),
   },
   {
     name: 'slack_channel_history',
+    unsafe: false,
     description: 'The latest messages in a channel or DM, newest first.',
     input: { workspace, channel: z.string().describe('The channel id, e.g. C0123.'), limit: z.number().int().default(30) },
     run: async (a, { engine }) =>
@@ -58,6 +60,7 @@ export const slackActions: Action[] = [
   },
   {
     name: 'slack_thread',
+    unsafe: false,
     description: 'A thread: its first message and every reply.',
     input: { workspace, channel: z.string(), ts: z.string().describe("The thread's first message's ts.") },
     run: async (a, { engine }) =>
@@ -65,6 +68,7 @@ export const slackActions: Action[] = [
   },
   {
     name: 'slack_search',
+    unsafe: false,
     description: "Search messages with Slack's search syntax, e.g. \"from:@sam in:#eng deploy\". Needs the search:read scope.",
     input: { workspace, query: z.string(), count: z.number().int().default(20) },
     run: async (a, { engine }) => {
@@ -76,8 +80,8 @@ export const slackActions: Action[] = [
   },
   {
     name: 'slack_post',
+    unsafe: true,
     description: 'Post a message as the operator, in a channel or a thread. Answers its channel and ts.',
-    outward: true,
     input: {
       workspace,
       channel: z.string().describe('The channel id.'),

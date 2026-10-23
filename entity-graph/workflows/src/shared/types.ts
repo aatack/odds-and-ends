@@ -111,7 +111,7 @@ export interface ToolInfo {
 
 export interface ActionInfo extends ToolInfo {
   /** Seen by other people: a bot, or a bot's script, must hand off for approval instead. */
-  outward: boolean
+  unsafe: boolean
 }
 
 export interface HandoffTypeInfo {

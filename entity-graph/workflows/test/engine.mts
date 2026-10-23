@@ -123,13 +123,15 @@ assert.equal(current(id)!.type, 'human')
 assert.equal(engine.next(), id)
 assert.equal(engine.next([id]), null)
 
-// ---- 2. Human → bot. The bot can't act outward or hand off itself; it returns a chain ----
+// ---- 2. Human → bot. The bot has no unsafe actions and can't hand off itself; it returns a chain ----
 behaviours.push(async (call, prompt, schema) => {
   assert.match(prompt, /Your instructions: Reply on the PR/)
   assert.ok(JSON.stringify(schema).includes('"needed"'))
   const item = JSON.parse(await call('get_item', { item_id: id }))
   assert.equal(item.item.id, id)
-  await assert.rejects(call('github_pr_comment', { repo: 'o/r', number: 7, body: 'x' }), /outward/)
+  await assert.rejects(call('github_pr_comment', { repo: 'o/r', number: 7, body: 'x' }), /not found/i)
+  const unsafe = JSON.parse(await call('unsafe_actions')).map((a: { name: string }) => a.name)
+  assert.deepEqual(unsafe.sort(), ['github_pr_comment', 'github_pr_merge', 'github_pr_review', 'slack_post'])
   await assert.rejects(call('hand_off', { item_id: id, next: [] }), /returns its next handoffs/)
   await assert.rejects(call('set_state', { item_id: 'someone-else', state: 'x' }), /only change the item/)
   await call('note', { item_id: id, text: 'Read the thread.' })
@@ -257,7 +259,7 @@ await settle()
 assert.match(String(current(typo)!.params.needed), /needed: Required/)
 await engine.handledOutside(typo, 'Did it by hand')
 
-// ---- 9. Scripts reach the actions; a bot's script can't act outward ----
+// ---- 9. Scripts reach the actions; a bot's script gets no unsafe ones ----
 const scripted = (await engine.create('Scripted', {
   next: [
     {
@@ -278,7 +280,7 @@ behaviours.push(async () => ({
 const sneaky = (await engine.create('Sneaky', { next: [{ type: 'bot', params: { instructions: 'x' } }] }))!
 await settle()
 assert.equal(ghCalls.filter((c) => c[1] === 'merge').length, merges)
-assert.match(String(current(sneaky)!.params.needed), /script handoff failed: .*outward/)
+assert.match(String(current(sneaky)!.params.needed), /script handoff failed: .*unsafe/)
 
 // ---- 10. A wait with a timeout resolves as timed_out ----
 checks = 'pending'
@@ -308,7 +310,18 @@ await settle()
 assert.equal(current(taken)!.type, 'human')
 assert.equal(engine.get(taken)!.closed, false, "a run that was taken over doesn't land")
 
-// ---- 13. The operator's endpoint: the same actions, as the human ----
+// ---- 13. The rule on unsafe actions: every action says which it is, and a bot's MCP offers none of the unsafe ones ----
+assert.ok(engine.actions.every((a) => typeof a.unsafe === 'boolean'))
+const runId = engine.startRun(engine.get(taken)!, engine.get(taken)!.current!, 9, 'probe')
+const asBot = await connect(mcp.runUrl(runId))
+const botTools = (await asBot.client.listTools()).tools.map((t) => t.name)
+assert.deepEqual(botTools, engine.actions.filter((a) => !a.unsafe).map((a) => a.name))
+await asBot.client.close()
+await engine.endRun(runId, { exitCode: 0, error: 'probe' })
+for (const a of engine.actions.filter((a) => a.unsafe))
+  await assert.rejects(engine.callAction(a.name, {}, { engine, author: 'bot', actor: 'script', itemId: taken, runId: null }), /unsafe/)
+
+// ---- 14. The operator's endpoint: every action, as the human ----
 const { url } = mcp.operator()
 await assert.rejects(connect(url, { Authorization: 'Bearer wrong' }), (e: { code?: number }) => e.code === 401)
 const outside = await connect(url, { Authorization: `Bearer ${engine.settings.mcpToken()}` })
@@ -322,7 +335,7 @@ const types = JSON.parse(await outside.call('handoff_types'))
 assert.deepEqual(types.map((t: { type: string }) => t.type), ['human', 'bot', 'github', 'slack', 'items', 'script'])
 await outside.client.close()
 
-// ---- 14. The history is there to look back on ----
+// ---- 15. The history is there to look back on ----
 const recent = engine.recent(7)
 const first = recent.find((r) => r.id === id)!
 assert.equal(first.botRuns, 2)
@@ -333,14 +346,14 @@ assert.equal(recent.find((r) => r.id === typo)!.botFailures, 1)
 assert.equal(recent.find((r) => r.id === slow)!.timedOut, 1)
 assert.match(engine.transcript(engine.detail(id)!.runs[0].id)!, /Thinking out loud/)
 
-// ---- 15. Integrations and the catalog ----
+// ---- 16. Integrations and the catalog ----
 const admin = new Admin(engine, mcp, 2, fakeFetch)
 assert.equal((await admin.integrations()).github.detail, 'Signed in as octocat')
 await assert.rejects(admin.addSlack('', 'nope'), /xoxp-/)
 await assert.rejects(admin.addSlack('', 'xoxp-bad'), /invalid_auth/)
 const cat = catalog(engine)
-assert.ok(cat.actions.find((a) => a.name === 'slack_post')!.outward)
-assert.ok(!cat.actions.find((a) => a.name === 'slack_thread')!.outward)
+assert.ok(cat.actions.find((a) => a.name === 'slack_post')!.unsafe)
+assert.ok(!cat.actions.find((a) => a.name === 'slack_thread')!.unsafe)
 assert.ok(cat.handoffs.find((h) => h.type === 'human')!.params.required!.includes('needed'))
 assert.equal((botOutputSchema(engine.handoffTypes).required as string[]).join(), 'state,next')
 

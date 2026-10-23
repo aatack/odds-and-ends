@@ -35,15 +35,21 @@ export interface ActionContext {
 }
 
 /**
- * One thing anyone can do: the same list in both MCP scopes and in scripts.
- * An outward action is seen by other people, so only a human may run one; an
- * bot hands off to a human with the action as an approval instead.
+ * One thing anyone can do: the same list for people and scripts, less the unsafe
+ * ones for bots.
+ *
+ * RULE: an action that changes anything outside this app (posts, comments,
+ * reviews, merges, sends, deploys, deletes) is `unsafe: true`. Bots, and scripts
+ * a bot wrote, never get one: it is left out of their MCP tools, and
+ * `Engine.callAction` refuses it. A bot asks for one as the approval on a human
+ * handoff, and the human runs it. Every action must say which it is: `unsafe` is
+ * required so that the choice is never left to a default.
  */
 export interface Action {
   name: string
   description: string
   input: z.ZodRawShape
-  outward?: boolean
+  unsafe: boolean
   run: (args: Record<string, unknown>, ctx: ActionContext) => Promise<unknown>
 }
 

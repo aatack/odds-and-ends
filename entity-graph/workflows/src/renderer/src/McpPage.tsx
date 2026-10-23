@@ -74,15 +74,15 @@ export function McpPage() {
           Actions <span className="count">{catalog.actions.length}</span>
         </h2>
         <p className="muted">
-          The same list for bots, for clients connected above, and for scripts (as <code>actions.name(args)</code>). What a caller may do
-          depends on who it is: a bot, or a script a bot wrote, changes only its own item and runs nothing outward, and hands items on by
-          returning handoffs.
+          Everything clients connected above and your scripts (as <code>actions.name(args)</code>) can do. Unsafe actions change things
+          outside this app: bots, and scripts bots wrote, never get them, and ask you for them as an approval instead. A bot also changes
+          only its own item, and hands items on by returning handoffs.
         </p>
         {catalog.actions.map((a) => (
           <div key={a.name} className="tool">
             <div className="row-inline">
               <code className="tool-name">{a.name}</code>
-              {a.outward && <span className="badge">outward</span>}
+              {a.unsafe && <span className="badge">unsafe</span>}
             </div>
             <div className="tool-description">{a.description}</div>
             <Params schema={a.inputSchema} />

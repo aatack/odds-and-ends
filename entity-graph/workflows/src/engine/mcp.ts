@@ -1,8 +1,7 @@
-// The app's MCP server. Both scopes serve the same list of actions; what
-// differs is who is calling, which the actions check for themselves:
+// The app's MCP server, in two scopes:
 //
-// - run: a worker's bot, at /mcp/<runId> on a free loopback port. It may
-//   change only its own item and run no outward action.
+// - run: a worker's bot, at /mcp/<runId> on a free loopback port. It gets every
+//   action but the unsafe ones, and may change only its own item.
 // - operator: anything else the user connects, at /mcp on a fixed loopback
 //   port, behind a bearer token. It acts as the human.
 //
@@ -19,7 +18,7 @@ import { handoffSchema, objectSchema } from './schema'
 
 export type Scope = { kind: 'run'; runId: string } | { kind: 'operator' }
 
-const OUTWARD = ' OUTWARD: others see it, so only a human may run it; a bot asks for it as a human handoff\'s approval.'
+const UNSAFE = ' UNSAFE: it changes things outside this app, so only a human may run it.'
 
 export function makeServer(engine: Engine, scope: Scope): McpServer {
   const server = new McpServer({ name: 'workflows', version: '0.1.0' })
@@ -29,10 +28,12 @@ export function makeServer(engine: Engine, scope: Scope): McpServer {
     if (!run) throw new Error('This run has ended.')
     return { engine, author: 'bot', actor: 'bot', itemId: run.itemId, runId: scope.runId }
   }
-  for (const action of engine.actions)
+  // Unsafe actions are not offered to a bot at all.
+  const offered = scope.kind === 'run' ? engine.actions.filter((a) => !a.unsafe) : engine.actions
+  for (const action of offered)
     server.registerTool(
       action.name,
-      { description: action.description + (action.outward ? OUTWARD : ''), inputSchema: action.input },
+      { description: action.description + (action.unsafe ? UNSAFE : ''), inputSchema: action.input },
       (async (args: Record<string, unknown>) => {
         try {
           const out = await engine.callAction(action.name, args, ctx())
@@ -52,7 +53,7 @@ export function catalog(engine: Engine): Catalog {
       name: a.name,
       description: a.description,
       inputSchema: objectSchema(a.input),
-      outward: Boolean(a.outward),
+      unsafe: a.unsafe,
     })),
     handoffs: engine.handoffTypes.map((t) => ({ type: t.type, description: t.description, params: objectSchema(t.params), resolution: t.resolution })),
     handoffList: { type: 'array', items: handoffSchema(engine.handoffTypes) },

@@ -11,7 +11,7 @@ import { checkSlack, slackHandoffParams, startSlack } from './slack'
 export const human: HandoffType = {
   type: 'human',
   description:
-    'The human. Hand off here only for what nobody else can do: a decision, information only they have, or approval of an outward action.',
+    'The human. Hand off here only for what nobody else can do: a decision, information only they have, or approval of an unsafe action.',
   params: {
     needed: z
       .string()
@@ -21,11 +21,11 @@ export const human: HandoffType = {
       ),
     approval: z
       .object({
-        action: z.string().describe('The outward action to run, by name.'),
+        action: z.string().describe('The unsafe action to run, by name: see unsafe_actions.'),
         inputs: z.record(z.unknown()).describe("The action's inputs, filled in as far as you can. The human may change them."),
       })
       .optional()
-      .describe('An outward action for the human to approve, change, or turn down.'),
+      .describe('An unsafe action for the human to approve, change, or turn down.'),
   },
   resolution:
     '{ decision: "handed_off" | "approved" | "closed" | "handled_outside", note?: string, action?: { name, proposed, inputs, changed, output } }',
@@ -54,7 +54,7 @@ export const slack: HandoffType = {
   resolution: '{ outcome: "replied" | "timed_out", channel, thread_ts, replies?: { user, text, ts }[], detail }',
   expand: (p, author) => {
     if (!p.message || author === 'human') return [{ type: 'slack', params: p }]
-    // A bot's message is outward: a human approves it first, and the wait
+    // Posting is unsafe, so a bot's message goes to a human first, and the wait
     // then takes the thread from what was posted.
     const { message, ...rest } = p
     return [
@@ -95,7 +95,7 @@ export const script: HandoffType = {
       .describe(
         'A JavaScript function expression: async (input, actions) => handoffs. ' +
           'input is { item: { id, title, state }, previous: { type, params, resolution } | null, history: the item\'s handoffs so far }. ' +
-          'actions.<name>(args) calls any action and resolves to its result; an outward one only runs if a human wrote the script. ' +
+          'actions.<name>(args) calls an action and resolves to its result. A script a bot wrote gets no unsafe actions. ' +
           'Return a handoff ({ type, params }), a list of them, or null to carry on with the queue. console.log is kept.',
       ),
     description: z.string().optional().describe('What it does, in a line, for the history.'),
