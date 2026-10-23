@@ -1,8 +1,12 @@
 import React, { useMemo } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
+import { fromMarkdown } from 'mdast-util-from-markdown'
+import { toString } from 'mdast-util-to-string'
+import type { PluggableList } from 'unified'
 import remarkGfm from 'remark-gfm'
 import { cn } from '../../helpers/cn'
 import { CodeBlock } from './CodeBlock'
+import { markdownHighlightPlugin } from './markdownHighlight'
 
 // Text, rendered: every message, description and code sample in the app goes
 // through here. A line of prose with no markup in it comes out as it would as a
@@ -37,15 +41,16 @@ const COMPONENTS: Components = {
 
 const REMARK = [remarkGfm]
 
-export function Markdown({ text, className }: { text: string; className?: string }): React.JSX.Element {
-  const tree = useMemo(
-    () => (
-      <ReactMarkdown remarkPlugins={REMARK} components={COMPONENTS}>
+/** `highlight` is a phrase to mark in yellow wherever it appears in the rendered text (Ctrl+F's). */
+export function Markdown({ text, className, highlight }: { text: string; className?: string; highlight?: string }): React.JSX.Element {
+  const tree = useMemo(() => {
+    const remark: PluggableList = highlight?.trim() ? [...REMARK, markdownHighlightPlugin(highlight)] : REMARK
+    return (
+      <ReactMarkdown remarkPlugins={remark} components={COMPONENTS}>
         {text}
       </ReactMarkdown>
-    ),
-    [text],
-  )
+    )
+  }, [text, highlight])
   return <div className={cn('markdown', className)}>{tree}</div>
 }
 
@@ -54,3 +59,10 @@ export const fenced = (code: string, language = ''): string => {
   const ticks = '`'.repeat(Math.max(3, ...[...code.matchAll(/`+/g)].map((m) => m[0].length + 1)))
   return `${ticks}${language}\n${code}\n${ticks}`
 }
+
+/** The text markdown shows, without its markup: what Ctrl+F looks through. */
+export const displayText = (markdown: string): string => toString(fromMarkdown(markdown))
+
+/** Whether what `markdown` shows has `phrase` in it, as the highlight matches: case-insensitive, trimmed. */
+export const shows = (markdown: string, phrase: string): boolean =>
+  displayText(markdown).toLowerCase().includes(phrase.trim().toLowerCase())

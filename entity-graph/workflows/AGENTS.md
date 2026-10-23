@@ -123,6 +123,9 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
 - **Picking an item** is `ItemPicker`: the items view itself in a `Modal` over the blurred window, calling back with
   the item picked (Enter or a click) or made (Tab). The paperclip at the top right of every event's view uses it to
   attach that event, whatever it is, to a task (`Engine.attach`, an `attachment` event in the task).
+- **Ctrl+F finds in the view.** On the items view it is the search line; over a chat it opens `FindLine`, and the
+  chat keeps only the events whose *displayed* text (`shows`, markdown stripped) has the phrase, marked in yellow
+  (`Markdown`'s `highlight`). The phrase (`findAtom`) belongs to the view and is cleared when the view changes.
 - **Every event has a right-click menu** (`useEventMenu`): Open and Debug. Spread
   it on anything that stands for an event. Clicking an event does nothing else.
 

@@ -15,7 +15,8 @@ import { EventIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
 import { api, useWorkflows } from './useWorkflows'
-import { searchFocusAtom, type View } from './views'
+import { findAtom, findFocusAtom, searchFocusAtom, type View } from './views'
+import { FindLine } from './FindLine'
 
 export function App() {
   const items = useWorkflows()
@@ -24,8 +25,14 @@ export function App() {
   useEffect(() => api().onBack(back), [back])
   useEffect(() => api().onForward(forward), [forward])
   // Ctrl+L puts the items view on top of the stack; if it is already showing, it puts the cursor in its search line.
-  // Ctrl+D is the Next button.
+  // Ctrl+D is the Next button. Ctrl+F finds in the view: the items view's own search line, or a find line over a chat.
   const focusSearch = useSetAtom(searchFocusAtom)
+  const setFind = useSetAtom(findAtom)
+  const focusFind = useSetAtom(findFocusAtom)
+  const canFind = !!items.detail?.item && items.view?.kind === 'event'
+  // A find belongs to the view it was made in.
+  const viewKey = JSON.stringify(items.view)
+  useEffect(() => setFind(null), [viewKey, setFind])
   const showingItems = !items.view || items.view.kind === 'items'
   const { next } = items
   useEffect(() => {
@@ -39,11 +46,18 @@ export function App() {
       } else if (key === 'd') {
         e.preventDefault()
         void next()
+      } else if (key === 'f') {
+        e.preventDefault()
+        if (showingItems) focusSearch((n) => n + 1)
+        else if (canFind) {
+          setFind((f) => f ?? '')
+          focusFind((n) => n + 1)
+        }
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, next, showingItems, focusSearch])
+  }, [open, next, showingItems, focusSearch, canFind, setFind, focusFind])
   return (
     <ItemsContext.Provider value={items}>
       <div className="app">
@@ -275,6 +289,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
           </button>
         </div>
       )}
+      <FindLine />
       <div className="chat-scroll" ref={scroller}>
         <Chat detail={detail} />
       </div>

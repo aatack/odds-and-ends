@@ -144,6 +144,10 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .builder-row :focus, .builder-row :focus-visible { outline: none; box-shadow: none; }
 .hinted { position: relative; }
 .hint { position: absolute; top: 4px; left: 0; right: 0; pointer-events: none; color: var(--color-gray-400); line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Ctrl+F's phrase, wherever rendered text shows it. */
+.markdown mark { background: rgb(250 204 21 / 0.35); color: inherit; border-radius: 0.125rem; }
+.find-line { flex: none; margin: 0 32px; width: auto; background: var(--color-gray-100); border-radius: 18px; }
+.find-line input { width: 100%; font: inherit; color: var(--ink); line-height: 20px; }
 /* Under what is typed, rather than over it: Ctrl+Enter's question, while there is text. */
 .hint.below { position: static; display: block; padding-bottom: 4px; }
 /* The preset's name: the hint's own type, only bolder. */

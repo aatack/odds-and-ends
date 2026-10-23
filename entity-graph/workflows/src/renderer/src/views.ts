@@ -57,3 +57,9 @@ export const withoutEmpty = (drafts: Record<string, string>): Record<string, str
   Object.values(drafts).every((t) => t.trim())
     ? drafts
     : Object.fromEntries(Object.entries(drafts).filter(([, t]) => t.trim()))
+
+/** Ctrl+F's phrase in the view on screen, while its find line is open; null while it is closed. */
+export const findAtom = atom<string | null>(null)
+
+/** Bumped to put the cursor in the find line (Ctrl+F, when it is already open). */
+export const findFocusAtom = atom(0)
