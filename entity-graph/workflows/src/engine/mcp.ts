@@ -57,7 +57,7 @@ export function catalog(engine: Engine): Catalog {
       unsafe: a.unsafe,
     })),
     events: engine.eventTypes.map((t) => ({ type: t.type, description: t.description, params: objectSchema(t.params), data: t.data, blocking: t.blocking })),
-    presets: engine.presets.map(({ id, name, hint, icon }) => ({ id, name, hint, icon })),
+    presets: engine.presets.map(({ id, name, hint, icon, whenEmpty }) => ({ id, name, hint, icon, whenEmpty })),
   }
 }
 

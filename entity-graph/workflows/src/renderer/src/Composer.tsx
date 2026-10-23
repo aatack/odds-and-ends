@@ -7,8 +7,9 @@ import { TypeIcon } from './icons'
 import { draftsAtom, withoutEmpty } from './views'
 
 /**
- * The chat input. What is typed goes through a preset (a message for a bot, a
- * plain message, a PR to wait on…): its icon is in the top left, Tab and
+ * The chat input. What is typed goes through a preset (a plain message by
+ * default, which runs a bot when sent empty; a message for a bot; a PR to wait
+ * on…): its icon, for what Enter would do now, is in the top left, Tab and
  * Shift+Tab step through them, and Enter sends. Ctrl+Enter twice resolves the
  * item: the first press only asks, in the hint, and any other key takes it back.
  * What is typed is kept, by `draftKey`, until it is sent.
@@ -38,6 +39,8 @@ export function Composer({
   const [resolving, setResolving] = useState(false)
   const box = useRef<HTMLTextAreaElement>(null)
   const preset = catalog.presets[at]
+  // What Enter would do now: some presets do something else with nothing typed.
+  const shown = !text.trim() && preset.whenEmpty ? preset.whenEmpty : preset
   useEffect(() => box.current?.focus(), [at])
   const send = async () => {
     if (await onSend(preset.id, text)) setText('')
@@ -48,8 +51,8 @@ export function Composer({
       e.preventDefault()
       box.current?.focus()
     }}>
-      <span className="builder-icon" title={`${preset.name} (Tab to change)`}>
-        <TypeIcon type={preset.icon} />
+      <span className="builder-icon" title={`${shown.name} (Tab to change)`}>
+        <TypeIcon type={shown.icon} />
       </span>
       <div className="builder-fields hinted">
         <GrowingTextarea
@@ -83,7 +86,7 @@ export function Composer({
         ) : (
           !text && (
             <span className="hint">
-              <b>{preset.name}</b> — {preset.hint}
+              <b>{shown.name}</b> — {shown.hint}
             </span>
           )
         )}

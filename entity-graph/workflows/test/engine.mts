@@ -262,7 +262,7 @@ checks = 'passed'
 clock = Math.max(...item(id).blockers.map((b) => b.nextCheckAt!))
 await tick()
 assert.deepEqual(blockers(id), [], 'both waits resolved: checks passed, and merged')
-await assert.rejects(engine.send(id, 'message', '  '), /Nothing to send/)
+await assert.rejects(engine.send(id, 'nope', 'x'), /No preset nope/)
 await engine.close(id)
 assert.ok(item(id).closed)
 assert.equal(item(id).how, 'closed')
@@ -546,7 +546,22 @@ await assert.rejects(admin.addSlack('xoxp-bad'), /invalid_auth/)
 await admin.addSlack('xoxp-good-1234')
 const cat = catalog(engine)
 assert.ok(cat.actions.find((a) => a.name === 'slack_post')!.unsafe)
-assert.deepEqual(cat.presets.map((p) => p.id), ['bot', 'message', 'pr-merged', 'pr-checks'])
+assert.deepEqual(cat.presets.map((p) => p.id), ['message', 'bot', 'pr-merged', 'pr-checks'])
+// The default preset only says what is typed; with nothing typed, it runs a bot.
+{
+  const quiet = (await engine.create('Quiet'))!
+  await engine.send(quiet, 'message', 'Just noting this')
+  assert.deepEqual(engine.children(quiet).map((e) => e.type), ['message'])
+  assert.ok(item(quiet).withHuman, 'a message alone leaves it with the human')
+  behaviours.push(async ({ prompt }) => {
+    assert.match(prompt, /^Just noting this$/m, 'the bot gets what was said before it')
+    return { message: 'Noted.' }
+  })
+  await engine.send(quiet, 'message', '  ')
+  assert.deepEqual(engine.children(quiet).map((e) => e.type), ['message', 'bot'], 'sent empty, it runs a bot')
+  await settle()
+  await engine.close(quiet)
+}
 assert.ok(!(botOutputSchema(engine.eventTypes).required))
 
 // ---- 18. Attaching gathers any event in another item, and leaves it where it was ----

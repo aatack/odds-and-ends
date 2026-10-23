@@ -33,7 +33,8 @@ it, when main-process code changes.
   blocks it but approvals.
 - `after` events chain: they wait for one event, then add others, as given or as
   a script decides.
-- The chat input sends through presets (a message plus a bot, by default); Tab
+- The chat input sends through presets (a plain message by default, and a bot when sent empty; its icon and hint
+  show which); Tab
   steps through them.
 - Each item has its own Claude session, kept in its params; a child item's
   first session is forked from its parent's. A bot is told what is new since it

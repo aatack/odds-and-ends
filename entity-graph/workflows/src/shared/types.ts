@@ -187,6 +187,8 @@ export interface PresetInfo {
   hint: string
   /** The event type whose icon stands for it. */
   icon: EventKind
+  /** What it does instead with nothing typed, if that differs: the input shows this while it is empty. */
+  whenEmpty?: { name: string; hint: string; icon: EventKind }
 }
 
 export interface Catalog {
