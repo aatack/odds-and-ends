@@ -1,4 +1,5 @@
 import fuzzysort from 'fuzzysort'
+import { useAtomValue } from 'jotai'
 import { Search } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Item } from '../../shared/types'
@@ -6,6 +7,7 @@ import { minutes } from './Chat'
 import { useEventMenu } from './EventMenu'
 import { GROUPS } from './groups'
 import { ItemIcon } from './icons'
+import { searchFocusAtom } from './views'
 
 /** What an item is waiting on, in a few words. */
 function status(i: Item): string {
@@ -27,7 +29,8 @@ export function ItemsList(props: { items: Item[]; onOpen: (id: string) => void; 
   const [at, setAt] = useState(0)
   const box = useRef<HTMLInputElement>(null)
   const menu = useEventMenu()
-  useEffect(() => box.current?.focus(), [])
+  const focusAsked = useAtomValue(searchFocusAtom)
+  useEffect(() => box.current?.focus(), [focusAsked])
 
   // The groups, each filtered (best match first) when something is typed; and the rows in order, for the arrow keys.
   const groups = useMemo(() => {

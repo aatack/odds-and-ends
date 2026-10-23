@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Catalog, ItemDetail, ItemEvent } from '../../shared/types'
 import { Blockers } from './Blockers'
+import { useSetAtom } from 'jotai'
 import { ArrowRight, ChevronLeft, Menu } from 'lucide-react'
 import { Chat } from './Chat'
 import { DebugView } from './DebugView'
@@ -12,23 +13,26 @@ import { EventIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
 import { api, useWorkflows } from './useWorkflows'
-import type { View } from './views'
+import { searchFocusAtom, type View } from './views'
 
 export function App() {
   const items = useWorkflows()
   // Ctrl+W (sent by the main process) takes the top view off the stack.
   const { back, open } = items
   useEffect(() => api().onBack(back), [back])
-  // Ctrl+L puts the items view on top of the stack.
+  // Ctrl+L puts the items view on top of the stack; if it is already showing, it puts the cursor in its search line.
+  const focusSearch = useSetAtom(searchFocusAtom)
+  const showingItems = !items.view || items.view.kind === 'items'
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!e.ctrlKey || e.altKey || e.shiftKey || e.metaKey || e.key.toLowerCase() !== 'l') return
       e.preventDefault()
-      open({ kind: 'items' })
+      if (showingItems) focusSearch((n) => n + 1)
+      else open({ kind: 'items' })
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open])
+  }, [open, showingItems, focusSearch])
   return (
     <ItemsContext.Provider value={items}>
       <div className="app">

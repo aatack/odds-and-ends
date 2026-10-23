@@ -104,7 +104,8 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   which are views on the stack like any other; poll sources), and the round
   bottom-right button is Next.
 - **The items view** (`ItemsList`) is what shows when the stack is empty, and
-  Ctrl+L puts it on top; Ctrl+W takes the top view off (the main process catches
+  Ctrl+L puts it on top (or, when it is already showing, puts the cursor in its
+  search line); a view is never pushed onto an identical one; Ctrl+W takes the top view off (the main process catches
   it in `before-input-event`, so the window's menu doesn't close the window). Typing filters titles fuzzily; the arrows move; Enter
   opens; Tab makes a new item with the typed title.
 - **Every event has a right-click menu** (`useEventMenu`): Open and Debug. Spread

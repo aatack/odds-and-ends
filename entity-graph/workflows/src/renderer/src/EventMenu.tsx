@@ -1,6 +1,6 @@
 import { useAtom, useSetAtom } from 'jotai'
 import { useEffect, type MouseEvent } from 'react'
-import { menuAtom, viewsAtom, type View } from './views'
+import { menuAtom, sameView, viewsAtom, type View } from './views'
 
 /** What to spread on anything standing for an event, so a right-click on it opens the event menu. */
 export function useEventMenu() {
@@ -33,7 +33,7 @@ export function EventMenu() {
   }, [menu, setMenu])
   if (!menu) return null
   const push = (view: View) => {
-    setViews([...views, view])
+    if (!sameView(views[views.length - 1], view)) setViews([...views, view])
     setMenu(null)
   }
   return (

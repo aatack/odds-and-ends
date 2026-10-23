@@ -1,7 +1,7 @@
 import { useAtom } from 'jotai'
 import { useCallback, useEffect, useState } from 'react'
 import type { Catalog, EventDetail, Overview, WorkflowsAPI } from '../../shared/types'
-import { viewsAtom, type View } from './views'
+import { sameView, viewsAtom, type View } from './views'
 
 declare global {
   interface Window {
@@ -54,11 +54,11 @@ export function useWorkflows() {
     [setViews],
   )
 
-  /** Puts a view on top of the stack. */
+  /** Puts a view on top of the stack, unless it is the one already on top. */
   const open = useCallback(
     (v: View) => {
       setError(null)
-      setViews([...views, v])
+      if (!sameView(views[views.length - 1], v)) setViews([...views, v])
     },
     [views, setViews],
   )

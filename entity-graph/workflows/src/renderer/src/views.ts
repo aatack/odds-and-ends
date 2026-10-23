@@ -28,5 +28,12 @@ const storage = createJSONStorage<View[]>(() => {
 
 export const viewsAtom = atomWithStorage<View[]>('workflows.views', [], storage, { getOnInit: true })
 
+/** Two views are the same view: the same kind, of the same event. */
+export const sameView = (a: View | undefined, b: View): boolean =>
+  !!a && a.kind === b.kind && ('id' in a ? a.id : null) === ('id' in b ? b.id : null)
+
+/** Bumped to put the cursor in the items view's search line (Ctrl+L, when that view is already showing). */
+export const searchFocusAtom = atom(0)
+
 /** The right-click menu on an event, while it is open: where, and for which event. */
 export const menuAtom = atom<{ x: number; y: number; id: string } | null>(null)
