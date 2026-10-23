@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { Catalog, HandoffKind, HandoffSpec, Item, ItemDetail } from '../../shared/types'
 import { Chat, HandoffBuilder } from './Handoffs'
+import { ItemIcon } from './icons'
 import { Form, withHints } from './forms'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
@@ -148,8 +149,9 @@ function ItemList(props: { label: string; items: Item[]; selected: string | null
       </h3>
       {props.items.map((i) => (
         <div key={i.id} className={`row ${i.id === props.selected ? 'selected' : ''}`} onClick={() => props.onSelect(i.id)}>
+          <ItemIcon item={i} />
+          <span className="row-title">{i.title}</span>
           {i.worker !== null && <span className="dot" title="A bot is running" />}
-          {i.title}
         </div>
       ))}
     </section>

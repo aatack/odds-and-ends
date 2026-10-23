@@ -1,26 +1,27 @@
 import { useState } from 'react'
 import type { Catalog, Handoff, HandoffKind, HandoffSpec, ItemDetail } from '../../shared/types'
 import { CompactForm } from './CompactForm'
+import { Avatar, TypeIcon } from './icons'
 
 const time = (ms: number) => new Date(ms).toLocaleString()
 const minutes = (ms: number) => (ms < 60_000 ? `${Math.round(ms / 1000)}s` : `${Math.round(ms / 60_000)}m`)
 
-/** One line saying what a handoff is for. */
+/** One line saying what a handoff is for. Its type is its icon, so the line doesn't say it. */
 export function summary(h: HandoffSpec): string {
   const p = h.params
   switch (h.type) {
     case 'human':
       return `${p.needed}${p.approval ? ` (approve ${(p.approval as { action: string }).action})` : ''}`
     case 'bot':
-      return `Bot: ${p.instructions}`
+      return String(p.instructions)
     case 'github':
-      return `GitHub: ${p.repo}#${p.number} until ${p.until}`
+      return `${p.repo}#${p.number}: until ${p.until}`
     case 'slack':
-      return `Slack: ${p.message ? `post “${p.message}”, then ` : ''}wait for a reply in ${p.channel}`
+      return `${p.message ? `Post “${p.message}”, then w` : 'W'}ait for a reply in ${p.channel}`
     case 'items':
-      return `Items: wait for ${(p.item_ids as string[]).length} to close`
+      return `Wait for ${(p.item_ids as string[]).length} item(s) to close`
     case 'script':
-      return `Script${p.description ? `: ${p.description}` : ''}`
+      return String(p.description ?? 'Route on what came before')
   }
 }
 
@@ -63,12 +64,13 @@ export function HandoffBuilder({ catalog, value, onChange }: { catalog: Catalog;
   )
 }
 
-/** Who set a handoff, as the chat names them. */
+/** Who set a handoff, in words, for the details. */
 function sender(createdBy: string): string {
-  if (createdBy === 'bot') return 'Bot'
-  if (createdBy === 'script' || createdBy === 'script:bot') return 'Script'
-  if (createdBy === 'system') return 'Workflows'
-  if (createdBy === 'mcp') return 'MCP client'
+  if (createdBy === 'bot') return 'a bot'
+  if (createdBy === 'script' || createdBy === 'script:bot') return 'a script'
+  if (createdBy === 'system') return 'the app'
+  if (createdBy === 'mcp') return 'an MCP client'
+  if (createdBy === 'human') return 'you'
   return createdBy
 }
 
@@ -164,14 +166,15 @@ function Bubble({ h, detail }: { h: Handoff; detail: ItemDetail }) {
           : `${outcome(h) || 'done'}${h.startedAt && h.resolvedAt ? ` · took ${minutes(h.resolvedAt - h.startedAt)}` : ''}`
   return (
     <div className={`bubble-row ${mine ? 'mine' : 'theirs'} ${h.status}`}>
+      {!mine && <Avatar createdBy={h.createdBy} />}
       <div className={`bubble ${open ? 'open' : ''}`} onClick={() => setOpen(!open)}>
-        {!mine && <div className="bubble-sender">{sender(h.createdBy)}</div>}
+        {h.type !== 'human' && <TypeIcon type={h.type} />}
         {summary(h)}
         <span className="bubble-time">{shortTime(h.createdAt)}</span>
         {open && (
           <div className="more" onClick={(e) => e.stopPropagation()}>
             <div className="bubble-meta">
-              Set by {sender(h.createdBy).toLowerCase()} · {status}
+              Set by {sender(h.createdBy)} · {status}
               {run?.costUsd != null && ` · $${run.costUsd.toFixed(2)}`}
             </div>
             <Timeline times={h.times} />
