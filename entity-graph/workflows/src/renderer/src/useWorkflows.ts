@@ -1,15 +1,20 @@
 import { useAtom } from 'jotai'
 import { useCallback, useEffect, useState } from 'react'
 import type { Catalog, EventDetail, Overview, WorkflowsAPI } from '../../shared/types'
+import { httpApi } from './transport/http'
 import { sameView, viewsAtom, type View } from './views'
 
 declare global {
   interface Window {
-    workflows: WorkflowsAPI
+    workflows?: WorkflowsAPI
   }
 }
 
-export const api = (): WorkflowsAPI => window.workflows
+/** No preload (window.workflows) means we are the phone build, reached over HTTP. */
+export const isPhone = !window.workflows
+
+/** The single place the whole renderer reaches the main process: IPC on desktop, HTTP on the phone. */
+export const api = (): WorkflowsAPI => window.workflows ?? httpApi
 
 /** Everything the app shows, kept in step with the main process. */
 export function useWorkflows() {
