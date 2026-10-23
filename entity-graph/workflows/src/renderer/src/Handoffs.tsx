@@ -1,5 +1,6 @@
 import { Fragment, useState } from 'react'
-import type { Handoff, HandoffSpec, ItemDetail } from '../../shared/types'
+import type { Catalog, Handoff, HandoffKind, HandoffSpec, ItemDetail } from '../../shared/types'
+import { CompactForm } from './CompactForm'
 
 const time = (ms: number) => new Date(ms).toLocaleString()
 const minutes = (ms: number) => (ms < 60_000 ? `${Math.round(ms / 1000)}s` : `${Math.round(ms / 60_000)}m`)
@@ -28,6 +29,38 @@ export function outcome(h: Handoff): string {
   const r = h.resolution ?? {}
   if (h.status === 'cancelled') return 'cancelled'
   return String(r.error ? `failed: ${r.error}` : (r.detail ?? r.decision ?? r.outcome ?? r.state ?? ''))
+}
+
+/** A list of handoffs to put at the front of the queue: a type and its fields each, as tight as it will go. */
+export function HandoffBuilder({ catalog, value, onChange }: { catalog: Catalog; value: HandoffSpec[]; onChange: (v: HandoffSpec[]) => void }) {
+  const set = (i: number, h: HandoffSpec) => onChange(value.map((x, j) => (j === i ? h : x)))
+  return (
+    <div className="builder">
+      {value.map((h, i) => {
+        const type = catalog.handoffs.find((t) => t.type === h.type)!
+        return (
+          <div key={i} className="builder-row compact">
+            <div className="row-inline">
+              <select title={type.description} value={h.type} onChange={(e) => set(i, { type: e.target.value as HandoffKind, params: {} })}>
+                {catalog.handoffs.map((t) => (
+                  <option key={t.type}>{t.type}</option>
+                ))}
+              </select>
+              {value.length > 1 && (
+                <button data-ui className="link" title="Remove" onClick={() => onChange(value.filter((_, j) => j !== i))}>
+                  ×
+                </button>
+              )}
+            </div>
+            <CompactForm schema={type.params} value={h.params} onChange={(params) => set(i, { ...h, params })} />
+          </div>
+        )
+      })}
+      <button data-ui className="link" onClick={() => onChange([...value, { type: 'bot', params: {} }])}>
+        + then…
+      </button>
+    </div>
+  )
 }
 
 /** Every handoff resolved so far, with the notes and changes between them. Bot output is hidden until asked for. */

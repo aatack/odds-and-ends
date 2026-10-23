@@ -54,12 +54,15 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
 
 ## UI
 
-- **Every input is a `SchemaForm`.** It and `SchemaBuilder` are copied from
-  entity-graph (`src/renderer/src/components/schema/`, with the `ui/` primitives
-  they need and its `index.css` tokens). Keep them in step with entity-graph rather
-  than editing them here. Use `Form` in `forms.tsx`, which adds the app's own
-  editors (`secret` for tokens). Use `withHints` to give the engine's schemas
-  text boxes for prose fields. A new kind of control is an editor, not a raw `<input>`.
+- **Two kinds of form.**
+  - The forms used all day, a new item and a handoff, are condensed: `CompactForm`
+    (one control per field, named by its placeholder) and `HandoffBuilder`. Keep them tight.
+  - Everything else (approvals, the state, settings) uses `SchemaForm`, through
+    `Form` in `forms.tsx`, which adds the app's own editors (`secret` for tokens).
+    `withHints` gives the engine's schemas text boxes for prose fields.
+  - `SchemaForm` and `SchemaBuilder` are copied from entity-graph
+    (`components/schema/`, with the `ui/` primitives they need and its `index.css`
+    tokens). Keep them in step with entity-graph rather than editing them here.
 - **The same design rules as entity-graph:** no motion, no pointer cursor,
   restrained colour, tone rather than borders. Tailwind v4 provides the tokens.
   The app's own CSS (`styles.css`) sits in `@layer components`, so the

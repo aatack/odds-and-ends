@@ -90,4 +90,14 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; 
 .more p { margin: 0; }
 .output { white-space: pre-wrap; font-size: 12px; background: var(--bg); padding: 8px 10px; border-radius: 6px; margin: 0; }
 
+.compact { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.compact input, .compact textarea, .compact select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; width: 100%; }
+.compact textarea { resize: vertical; }
+.compact select { width: auto; }
+.compact .check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.compact .check input { width: auto; }
+.compact .bad { outline: 1px solid var(--danger); }
+.builder { width: 100%; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.builder-row { width: 100%; padding: 8px; background: var(--bg); border-radius: 8px; }
+.builder-row .row-inline { justify-content: space-between; }
 }

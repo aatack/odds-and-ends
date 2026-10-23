@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { Catalog, HandoffKind, HandoffSpec, Item, ItemDetail } from '../../shared/types'
-import { History, summary } from './Handoffs'
+import { HandoffBuilder, History, summary } from './Handoffs'
 import { Form, MULTILINE, withHints } from './forms'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
@@ -107,33 +107,35 @@ function ItemsMain() {
   )
 }
 
-const NEW_ITEM = {
-  type: 'object',
-  properties: {
-    title: { type: 'string' },
-    instructions: { type: 'string', 'x-multiline': true, description: 'For a bot. Without them, the item comes to you.' },
-  },
-  required: ['title'],
-}
-
 function NewItem({ onCreate }: { onCreate: (title: string, instructions: string) => void }) {
-  const [value, setValue] = useState<{ title?: string; instructions?: string }>({})
-  const title = value.title?.trim() ?? ''
+  const [title, setTitle] = useState('')
+  const [instructions, setInstructions] = useState('')
   return (
-    <div className="new-item">
-      <Form schema={NEW_ITEM} value={value} setValue={(v) => setValue(v as typeof value)} />
+    <form
+      className="new-item compact"
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (!title.trim()) return
+        onCreate(title.trim(), instructions.trim())
+        setTitle('')
+        setInstructions('')
+      }}
+    >
+      <input placeholder="New item" value={title} onChange={(e) => setTitle(e.target.value)} />
       {title && (
-        <button
-          data-ui
-          onClick={() => {
-            onCreate(title, value.instructions?.trim() ?? '')
-            setValue({})
-          }}
-        >
-          Add
-        </button>
+        <>
+          <textarea
+            placeholder="Instructions for a bot (optional; without them it comes to you)"
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value)}
+            rows={2}
+          />
+          <button data-ui type="submit">
+            Add
+          </button>
+        </>
       )}
-    </div>
+    </form>
   )
 }
 
@@ -239,7 +241,7 @@ function Decide({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalog:
   const approval = current.params.approval as { action: string; inputs: Record<string, unknown> } | undefined
   const action = approval && catalog.actions.find((a) => a.name === approval.action)
   const [inputs, setInputs] = useState<Record<string, unknown>>(approval?.inputs ?? {})
-  const [next, setNext] = useState<HandoffSpec[]>([{ type: 'bot', params: { instructions: '' } }])
+  const [next, setNext] = useState<HandoffSpec[]>([{ type: 'bot', params: {} }])
   const [note, setNote] = useState('')
   useEffect(() => setInputs(approval?.inputs ?? {}), [approval])
   const queued = item.queued > 0
@@ -268,9 +270,10 @@ function Decide({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalog:
         </button>
       )}
       <h3>{approval ? 'Or hand off' : 'Hand off'}</h3>
-      <Form schema={withHints(catalog.handoffList)} value={next} setValue={(v) => setNext(v as HandoffSpec[])} />
-      <h3>Note (optional; kept in the history)</h3>
-      <Form schema={MULTILINE} value={note} setValue={(v) => setNote(typeof v === 'string' ? v : '')} />
+      <HandoffBuilder catalog={catalog} value={next} onChange={setNext} />
+      <div className="compact">
+        <textarea rows={1} placeholder="Note (optional; kept in the history)" value={note} onChange={(e) => setNote(e.target.value)} />
+      </div>
       <div className="buttons">
         <button data-ui className={approval || queued ? '' : 'primary'} onClick={() => act(() => api().handOff(item.id, null, next, note))}>
           Hand off{queued ? ' (in front of the queue)' : ''}
