@@ -1,26 +1,40 @@
 import { SendHorizontal } from 'lucide-react'
+import { useAtom } from 'jotai'
 import { useEffect, useRef, useState } from 'react'
 import type { Catalog } from '../../shared/types'
 import { GrowingTextarea } from './GrowingTextarea'
 import { TypeIcon } from './icons'
+import { draftsAtom, withoutEmpty } from './views'
 
 /**
  * The chat input. What is typed goes through a preset (a message for a bot, a
  * plain message, a PR to wait on…): its icon is in the top left, Tab and
  * Shift+Tab step through them, and Enter sends. Ctrl+Enter twice resolves the
  * item: the first press only asks, in the hint, and any other key takes it back.
+ * What is typed is kept, by `draftKey`, until it is sent.
  */
 export function Composer({
   catalog,
+  draftKey,
   onSend,
   onResolve,
 }: {
   catalog: Catalog
+  draftKey: string
   onSend: (preset: string, text: string) => Promise<boolean>
   onResolve: () => void
 }) {
   const [at, setAt] = useState(0)
-  const [text, setText] = useState('')
+  const [drafts, setDrafts] = useAtom(draftsAtom)
+  const text = drafts[draftKey] ?? ''
+  const setText = (t: string) => setDrafts((d) => withoutEmpty({ ...d, [draftKey]: t }))
+  // Empty drafts are dropped as they empty; this sweeps up any left behind, every minute.
+  useEffect(() => {
+    const sweep = () => setDrafts((d) => withoutEmpty(d))
+    sweep()
+    const t = setInterval(sweep, 60_000)
+    return () => clearInterval(t)
+  }, [setDrafts])
   const [resolving, setResolving] = useState(false)
   const box = useRef<HTMLTextAreaElement>(null)
   const preset = catalog.presets[at]

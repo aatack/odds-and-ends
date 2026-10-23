@@ -88,7 +88,8 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
 - **Two kinds of form.**
   - The forms used all day are condensed: the new-item form, and the chat input
     (`Composer`: one growing line, its preset's icon and hint, Tab between presets,
-    Enter to send, Ctrl+Enter twice to resolve the task). Keep them tight.
+    Enter to send, Ctrl+Enter twice to resolve the task; what is typed is kept per item in
+    `draftsAtom`, in local storage, until it is sent). Keep them tight.
   - Everything else (approvals, settings) uses `SchemaForm`, through
     `Form` in `forms.tsx`, which adds the app's own editors (`secret` for tokens).
     `withHints` gives the engine's schemas text boxes for prose fields.

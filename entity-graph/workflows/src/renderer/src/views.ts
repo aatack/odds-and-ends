@@ -43,3 +43,17 @@ export const searchFocusAtom = atom(0)
 
 /** The right-click menu on an event, while it is open: where, and for which event. */
 export const menuAtom = atom<{ x: number; y: number; id: string } | null>(null)
+
+/**
+ * What is typed in each item's chat input and not yet sent, by item id: kept so
+ * that going to another view mid-sentence loses nothing. Sending clears it.
+ */
+export const draftsAtom = atomWithStorage<Record<string, string>>('workflows.drafts', {}, createJSONStorage(() => localStorage), {
+  getOnInit: true,
+})
+
+/** The drafts without the empty ones, or the same object when there are none to drop. */
+export const withoutEmpty = (drafts: Record<string, string>): Record<string, string> =>
+  Object.values(drafts).every((t) => t.trim())
+    ? drafts
+    : Object.fromEntries(Object.entries(drafts).filter(([, t]) => t.trim()))

@@ -285,6 +285,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
         ) : (
           <Composer
             key={item.id}
+            draftKey={item.id}
             catalog={catalog}
             onResolve={() => void act(() => api().close(item.id))}
             onSend={async (preset, text) => {
