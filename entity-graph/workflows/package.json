@@ -26,9 +26,13 @@
     "typescript": "^5.5.4"
   },
   "dependencies": {
+    "@fontsource-variable/crimson-pro": "^5.3.0",
     "@fontsource-variable/fira-code": "^5.3.0",
     "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/literata": "^5.3.0",
     "@fontsource-variable/lora": "^5.3.0",
+    "@fontsource-variable/newsreader": "^5.3.0",
+    "@fontsource-variable/source-serif-4": "^5.3.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^11.1.2",
     "fuzzysort": "^3.1.0",

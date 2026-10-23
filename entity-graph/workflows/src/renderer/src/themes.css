@@ -1,0 +1,68 @@
+/* The styles to try, switched in the menu (appearance.ts sets data-theme and data-serif on <html>).
+ * Linear is the default: the tokens as index.css has them, dark. Outside any layer, so they win over the tokens. */
+
+/* ---- Serifs for what the human typed ---- */
+html[data-serif='lora'] { --font-serif: 'Lora Variable', Georgia, serif; --serif-weight: 400; }
+html[data-serif='source-serif'] { --font-serif: 'Source Serif 4 Variable', Georgia, serif; --serif-weight: 380; }
+html[data-serif='newsreader'] { --font-serif: 'Newsreader Variable', Georgia, serif; --serif-weight: 380; }
+html[data-serif='literata'] { --font-serif: 'Literata Variable', Georgia, serif; --serif-weight: 350; }
+html[data-serif='crimson'] { --font-serif: 'Crimson Pro Variable', Georgia, serif; --serif-weight: 400; }
+html[data-serif='crimson'] .mine .bubble .markdown, html[data-serif='crimson'] .composer textarea, html[data-serif='crimson'] .row-title { font-size: 1.08em; }
+
+/* ---- Terminal: dark, set in Fira Code, square-ish, a soft green; not a green screen ---- */
+html[data-theme='terminal'] {
+  --font-sans: 'Fira Code Variable', ui-monospace, monospace;
+  --color-white: #131614;
+  --color-gray-25: #0c0e0d;
+  --color-gray-50: #0f1210;
+  --color-gray-100: #1b1f1c;
+  --color-gray-200: #262b27;
+  --color-gray-300: #39403b;
+  --color-gray-400: #5a645d;
+  --color-gray-500: #86918a;
+  --color-gray-600: #a7b1aa;
+  --color-gray-700: #c7cfc9;
+  --color-gray-900: #dfe5e0;
+  --color-brand-500: #7fae8a;
+  --color-brand-600: #6f9f7b;
+  --color-brand-700: #9cc7a6;
+}
+html[data-theme='terminal'] body { font-size: 13px; letter-spacing: 0; font-weight: 380; }
+html[data-theme='terminal'] .bubble { border-radius: 4px; }
+html[data-theme='terminal'] .theirs .bubble, html[data-theme='terminal'] .mine .bubble { border-radius: 4px; }
+html[data-theme='terminal'] .mine .bubble { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
+html[data-theme='terminal'] .composer .builder-row,
+html[data-theme='terminal'] .items-view .search,
+html[data-theme='terminal'] .find-line { border-radius: 4px; }
+html[data-theme='terminal'] .row,
+html[data-theme='terminal'] .card,
+html[data-theme='terminal'] button[data-ui] { border-radius: 3px; }
+html[data-theme='terminal'] .view-title { font-size: 15px; }
+
+/* ---- Notebook: light warm paper, soft corners, a sepia accent ---- */
+html[data-theme='notebook'] {
+  color-scheme: light;
+  --color-white: #fffdf8;
+  --color-gray-25: #fbf9f4;
+  --color-gray-50: #f6f3ec;
+  --color-gray-100: #eeeae1;
+  --color-gray-200: #e3ddd1;
+  --color-gray-300: #cdc5b7;
+  --color-gray-400: #a69d8e;
+  --color-gray-500: #80776a;
+  --color-gray-600: #61594e;
+  --color-gray-700: #4a4339;
+  --color-gray-800: #37312a;
+  --color-gray-900: #2f2b26;
+  --color-gray-950: #1d1a16;
+  --color-brand-50: #f6efe8;
+  --color-brand-500: #a98468;
+  --color-brand-600: #93705a;
+  --color-brand-700: #7a5c49;
+}
+html[data-theme='notebook'] .bubble { border-radius: 18px; }
+html[data-theme='notebook'] .mine .bubble { background: color-mix(in srgb, var(--accent) 16%, var(--panel)); }
+html[data-theme='notebook'] .theirs .bubble { background: var(--color-gray-100); }
+html[data-theme='notebook'] .card { border-radius: 14px; }
+html[data-theme='notebook'] .row { border-radius: 10px; }
+html[data-theme='notebook'] .composer .builder-row { border-radius: 22px; box-shadow: var(--shadow-sm); }

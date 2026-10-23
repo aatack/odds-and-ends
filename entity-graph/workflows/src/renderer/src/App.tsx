@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Catalog, ItemDetail, ItemEvent } from '../../shared/types'
 import { Blockers } from './Blockers'
-import { useSetAtom } from 'jotai'
+import { useAtom, useSetAtom } from 'jotai'
 import { ArrowRight, ChevronLeft, CircleCheck, CircleX, ExternalLink, Menu, Paperclip, SkipForward } from 'lucide-react'
 import { IconButton } from './components/ui/IconButton'
+import { appearanceAtom, applyAppearance, SERIFS, THEMES } from './appearance'
 import { Chat } from './Chat'
 import { DebugView } from './DebugView'
 import { EventMenu } from './EventMenu'
@@ -85,6 +86,8 @@ function AppMenu() {
   const w = useItems()
   const [open, setOpen] = useState(false)
   const busy = w.overview.workers.filter((x) => x.itemId).length
+  const [look, setLook] = useAtom(appearanceAtom)
+  useEffect(() => applyAppearance(look), [look])
   useEffect(() => {
     if (!open) return
     const close = () => setOpen(false)
@@ -113,6 +116,23 @@ function AppMenu() {
           >
             Poll sources
           </button>
+          {/* For now, while a style is chosen. */}
+          <div className="menu-note">Style</div>
+          <div className="menu-choices">
+            {THEMES.map((t) => (
+              <button key={t.id} className={look.theme === t.id ? 'chosen' : ''} onClick={() => setLook({ ...look, theme: t.id })}>
+                {t.name}
+              </button>
+            ))}
+          </div>
+          <div className="menu-note">Serif</div>
+          <div className="menu-choices">
+            {SERIFS.map((f) => (
+              <button key={f.id} className={look.serif === f.id ? 'chosen' : ''} onClick={() => setLook({ ...look, serif: f.id })}>
+                {f.name}
+              </button>
+            ))}
+          </div>
         </div>
       )}
       <button data-ui className="corner-button" title="Menu" aria-label="Menu" onClick={() => setOpen(!open)}>
