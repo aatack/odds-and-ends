@@ -1196,3 +1196,98 @@ Findings:
 - Small measured cost: a sparse lone `Eq` on a stack now overfetches. 1M `invoice` (1k matches) at pages of 100 went 2.0 → 2.1 ms (`top_open`) and 2.3 → 2.6 ms (`top_frozen`), +8–11% in all three runs.
 - A first version of the `Eq` change counted the candidates twice when the plan was dense (once against each cap): +50–80% CPU on pages of 10. It was fixed before the commit; the tables above are the fixed code.
 
+
+## Prove (`examples/bench_prove.rs`)
+
+`Store::prove` (DESIGN.md 11.3) on a permission graph. Question: how long does it take to prove that an item is reachable from a root, by strategy, scenario and size?
+
+### How to run
+
+```
+cargo run --release --example bench_prove -- --size 1000000 [--reps 11] [--cold] [--only SCENARIO] [--strategy backward|bidirectional|walk]
+```
+
+The store is built once per size in `--data` (default `/workspace/egdb-perm/data`) and reused. Do not commit the database files.
+
+### Graph
+
+- Seeded SplitMix64; the graph is the same on every run. Types `org`, `team`, `folder`, `doc`, `group`, `user`. Relationships (keyed by the upper entity's type): `org/team/folder --child(Out)-->`, `group --child(Out)--> group`, `group --grant(Out)--> folder|doc`, `group --shared_with(In)--> doc` (stored `doc -> group`), `user --member(Out)--> group`.
+- Shapes: a chain of 11 nested folders (proofs of 1, 3, 6 and 13 links); one "huge" org with thousands of teams directly below it (3000; 400 at 10k); a doc shared with 100 groups; a "popular" doc shared with 3000 groups (1500 at 10k), which gives the large ancestor set for the no-path cases; a forest of normal orgs (5–20 teams, folders with 3–10 children, depth 2–4); a few archived folders.
+- A 3-branch stack on top: `grand` reads `child` open, and `child` reads `main` open. On it, a folder is renamed, doc D is moved from folder F to folder G (the link is removed and added elsewhere), and the `team -> F` link is removed and added again. A frozen fork is taken before the move. The bench checks that the answers differ: at the `grand` head, D is reachable from G and not from F; on the frozen fork, it is reachable from F and not from G.
+- Build time (5000-op batches, WAL): 10k 0.0 s (reused file), 100k 1.7 s, 1M 29.1 s. Files: 3.2 MB, 33 MB, 337 MB.
+
+### Method
+
+- Each (size, scenario, strategy) runs 11 warm repeats or 5 cold repeats. The tables show the median. Times are **µs per proof**.
+- CPU is `CLOCK_THREAD_CPUTIME_ID`. On this VM that clock ticks in about 1 ms steps, so a warm repeat calls `prove` in a loop until it has used at least 20 ms of CPU, and divides. The box is noisy, so **decisions use CPU time**. Warm wall time is about the same as CPU time (the work is CPU-bound).
+- Cold: before each repeat, a new `Store` (empty SQLite cache) and `posix_fadvise(DONTNEED)` on the db and `-wal` files. The disk is a virtio device (about 20 µs per random 4 KiB read), so "cold" is optimistic compared with a real disk.
+- The bench asserts every outcome (`Proved` / `NoPath` / `Unknown`). For Backward and Bidirectional it also asserts the exact shortest path length. A wrong answer fails the run.
+- Counts: `nodes visited` = entities whose links were read. `link-read rounds` / `type-read rounds` = batch reads. `SQL queries` = roll-up statements (one per layer interval of the view).
+- Scenarios: `depthN`: proof of N links up the folder chain (`depth10plus` = 13). `fanin100`: a doc shared with 100 groups, with one group as the root. `fanout_root`: an item under the huge org, with the org as the root. `nopath`: the popular doc with roots that cannot reach it, so the whole ancestor set (about 3000 groups) is read. `nopath_depth`: the same with `max_depth = 4`. `nopath_budget`: the same with `max_nodes = 1000`, which gives `Unknown`. `roots1` / `roots100`: a 13-link proof with 1 root or with 100 roots (99 of them other orgs). `stack_head` / `stack_frozen`: depth-1 proof on the stack, at the `grand` head and on the frozen fork. `*_nof` / `*_nog`: the root that must *not* prove access on that view (`NoPath`).
+
+### Results
+
+Machine: 8 vCPU Intel Xeon, 15 GB RAM, release build, bundled SQLite, WAL. Full tables per size, with wall times, are in the bench output.
+
+| scenario | strategy | outcome | path len (links) | CPU µs 10k warm | CPU µs 100k warm | CPU µs 1M warm | CPU µs 1M cold | wall µs 1M cold | nodes visited (1M, count) | link-read rounds (1M) | type-read rounds (1M) | SQL queries (1M) |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| depth1 | backward | Proved | 1 | 35.5 | 36.1 | 34.0 | 358.8 | 548.5 | 1 | 1 | 2 | 4 |
+| depth1 | bidirectional | Proved | 1 | 43.2 | 43.0 | 44.4 | 387.1 | 598.9 | 1 | 1 | 3 | 5 |
+| depth1 | walk | Proved | 1 | 91.2 | 89.5 | 101.5 | 549.6 | 772.6 | 1 | 3 | 5 | 11 |
+| depth3 | backward | Proved | 3 | 83.8 | 77.0 | 94.4 | 493.3 | 723.2 | 3 | 3 | 4 | 10 |
+| depth3 | bidirectional | Proved | 3 | 84.5 | 88.8 | 99.4 | 517.4 | 742.7 | 3 | 3 | 5 | 11 |
+| depth3 | walk | Proved | 3 | 154.0 | 157.2 | 195.1 | 637.4 | 846.8 | 3 | 6 | 8 | 20 |
+| depth6 | backward | Proved | 6 | 133.6 | 139.9 | 161.3 | 578.1 | 793.0 | 6 | 6 | 7 | 19 |
+| depth6 | bidirectional | Proved | 6 | 147.5 | 156.8 | 180.6 | 641.6 | 900.0 | 6 | 6 | 8 | 20 |
+| depth6 | walk | Proved | 6 | 229.1 | 227.7 | 261.1 | 733.1 | 952.4 | 6 | 9 | 11 | 29 |
+| depth10plus | backward | Proved | 13 | 299.9 | 320.3 | 338.8 | 801.9 | 1020.7 | 13 | 13 | 14 | 40 |
+| depth10plus | bidirectional | Proved | 13 | 337.4 | 308.5 | 355.9 | 832.0 | 1075.8 | 13 | 13 | 15 | 41 |
+| depth10plus | walk | Proved | 13 | 332.2 | 358.4 | 396.8 | 893.8 | 1104.8 | 13 | 14 | 16 | 44 |
+| fanin100 | backward | Proved | 1 | 311.3 | 341.1 | 379.3 | 825.2 | 1074.8 | 1 | 1 | 2 | 4 |
+| fanin100 | bidirectional | Proved | 1 | 47.8 | 47.3 | 49.4 | 474.1 | 706.0 | 1 | 1 | 3 | 5 |
+| fanin100 | walk | Proved | 1 | 834.4 | 841.2 | 907.0 | 1470.4 | 1714.1 | 25 | 4 | 6 | 14 |
+| fanout_root | backward | Proved | 3 | 84.2 | 77.3 | 92.8 | 507.2 | 773.4 | 3 | 3 | 4 | 10 |
+| fanout_root | bidirectional | Proved | 3 | 1344.7 | 10604.9 | 11357.3 | 12019.0 | 13707.1 | 3 | 3 | 5 | 11 |
+| fanout_root | walk | Proved | 3 | 113.4 | 109.6 | 111.5 | 561.8 | 791.0 | 3 | 4 | 6 | 14 |
+| nopath | backward | NoPath | - | 7567.4 | 16557.6 | 18767.5 | 17968.8 | 20165.7 | 3001 | 2 | 3 | 6 |
+| nopath | bidirectional | NoPath | - | 15394.1 | 25144.0 | 26115.2 | 29156.7 | 33983.8 | 4562 | 8 | 10 | 24 |
+| nopath | walk | NoPath | - | 12525.5 | 33500.8 | 34893.7 | 36783.0 | 38658.5 | 3001 | 3 | 5 | 11 |
+| nopath_depth | backward | NoPath | - | 7331.1 | 16133.6 | 17128.4 | 17733.5 | 19222.9 | 3001 | 2 | 3 | 6 |
+| nopath_depth | bidirectional | NoPath | - | 8779.3 | 18209.3 | 20088.6 | 21539.4 | 22831.1 | 3021 | 4 | 6 | 13 |
+| nopath_depth | walk | NoPath | - | 12375.9 | 31388.5 | 33024.2 | 32679.7 | 33471.5 | 3001 | 3 | 5 | 11 |
+| nopath_budget | backward | Unknown | - | 4277.2 | 9659.2 | 9469.7 | 11620.4 | 12421.2 | 1 | 1 | 2 | 4 |
+| nopath_budget | bidirectional | Unknown | - | 4901.7 | 11094.9 | 10397.4 | 13264.3 | 15060.7 | 21 | 3 | 5 | 11 |
+| nopath_budget | walk | Unknown | - | 12363.1 | 31074.6 | 33986.7 | 35175.7 | 35779.9 | 1000 | 3 | 5 | 11 |
+| roots100 | backward | Proved | 13 | 297.6 | 294.8 | 297.6 | 823.4 | 1038.1 | 13 | 13 | 14 | 40 |
+| roots100 | bidirectional | Proved | 13 | 45575.1 | 47919.0 | 51323.1 | 57339.8 | 64477.2 | 8368 | 13 | 15 | 41 |
+| roots100 | walk | Proved | 13 | 352.6 | 351.8 | 391.1 | 845.0 | 1115.2 | 13 | 14 | 16 | 44 |
+| roots1 | backward | Proved | 13 | 280.8 | 293.2 | 318.1 | 598.6 | 781.4 | 13 | 13 | 14 | 40 |
+| roots1 | bidirectional | Proved | 13 | 328.3 | 315.3 | 314.1 | 691.9 | 904.8 | 13 | 13 | 15 | 41 |
+| roots1 | walk | Proved | 13 | 345.2 | 345.2 | 362.6 | 757.4 | 954.1 | 13 | 14 | 16 | 44 |
+| stack_head | backward | Proved | 1 | 79.8 | 75.6 | 77.6 | 499.9 | 759.1 | 1 | 1 | 2 | 12 |
+| stack_head | bidirectional | Proved | 1 | 95.8 | 88.9 | 104.7 | 530.9 | 831.1 | 1 | 1 | 3 | 15 |
+| stack_head | walk | Proved | 1 | 187.1 | 188.5 | 255.2 | 648.2 | 967.3 | 1 | 3 | 5 | 33 |
+| stack_head_nof | backward | NoPath | - | 202.1 | 217.0 | 284.6 | 659.1 | 884.6 | 4 | 4 | 5 | 36 |
+| stack_head_nof | bidirectional | NoPath | - | 258.2 | 277.1 | 318.9 | 731.7 | 986.0 | 5 | 5 | 7 | 45 |
+| stack_head_nof | walk | NoPath | - | 242.4 | 242.5 | 274.4 | 815.2 | 1059.2 | 4 | 4 | 6 | 42 |
+| stack_frozen | backward | Proved | 1 | 115.3 | 110.9 | 137.0 | 916.0 | 1129.3 | 1 | 1 | 2 | 12 |
+| stack_frozen | bidirectional | Proved | 1 | 137.9 | 136.6 | 156.0 | 1339.2 | 1570.7 | 1 | 1 | 3 | 15 |
+| stack_frozen | walk | Proved | 1 | 301.1 | 284.7 | 358.1 | 1229.9 | 1546.2 | 1 | 3 | 5 | 33 |
+| stack_frozen_nog | backward | NoPath | - | 325.7 | 328.8 | 397.9 | 1212.2 | 1531.4 | 4 | 4 | 5 | 36 |
+| stack_frozen_nog | bidirectional | NoPath | - | 409.9 | 419.6 | 463.0 | 1644.1 | 2095.3 | 5 | 5 | 7 | 45 |
+| stack_frozen_nog | walk | NoPath | - | 352.1 | 378.0 | 362.6 | 1800.9 | 2164.7 | 4 | 4 | 6 | 42 |
+
+At 10k, the huge org has 400 teams and the popular doc has 1500 groups, so the 10k `fanout_root`, `nopath*` rows are smaller cases than at 100k and 1M.
+
+### Strategy decision: Backward (the default)
+
+- **Backward is fastest by CPU time in every scenario but one, at every size, warm and cold.** The ranking does not change with size, so no size-dependent heuristic is needed.
+- **Bidirectional** is slow when the root side is large. It must expand the forward side at least once. At 1M: `fanout_root` takes 11,357 µs, against 93 µs for Backward (3000 teams below the root). `roots100` takes 51,323 µs, against 298 µs (8,368 nodes expanded, against 13). Its only win is `fanin100` (49 against 379 µs): the group root reaches the doc in one forward hop, but Backward must read the type of all 100 candidate groups. That case is below a millisecond either way.
+- **Walk** (the walk loader with read-ahead) is never fastest. On short proofs its read-ahead issues 2–3× the rounds and SQL of Backward (depth1: 11 SQL against 4; 102 against 34 µs). On large no-path searches it is about 2× Backward (`nopath` 34.9 against 18.8 ms). With a budget, it uses the whole budget one node at a time (`nopath_budget` 34.0 ms). Backward refuses the 3000-node layer before it reads it (9.5 ms, all of it the type read of the candidates). Walk also does not return the shortest proof.
+- **Cost model of Backward:** one link round plus one type round per proof link. The cost is about 25 µs per link warm, and it does not depend on graph size (10k ≈ 100k ≈ 1M). Cold adds about 300–500 µs per proof at 1M (a few random page reads). The worst case is a large ancestor set with no path. At 1M, 3001 ancestors cost about 18 ms (about 6 µs per ancestor), warm or cold. `max_depth` does not help when the large layer is near the item. `max_nodes` stops the search early and answers `Unknown`.
+- Frozen views and stacks cost more SQL per round (12 statements for a depth-1 proof, against 4 on `main`, because the view has more layers). They stay below 0.4 ms warm and at most about 1.2 ms cold (1M).
+
+### Optimisations considered, not built
+
+- Skip the type read of the candidates when a reversed pair can only come from one type. This would help only `fanin100`-like cases, and in this map `child` is valid from three types. Not measured.
+- Split very large frontiers into smaller `json_each` batches. This reads the same rows, so it can only lower peak memory. Not measured.

@@ -209,6 +209,15 @@ The walk reads `root, a, a1, a2, b, c`, one node at a time.
 - **No new indexes.** Find uses the value indexes that already exist (two gained a column, schema V2 and V3, so checks read the index alone). Why: a full text index costs build time, space and work on each write, and the scan is fast enough at this size (BENCHMARKS.md).
 - **Plan choices use estimates; results never do.** Why: a wrong estimate must only cost time.
 
+## 12b. Prove
+
+- **Prove searches from the item up, not from the root down.** Why: in a permission graph, the ancestors of one item are few, and the descendants of a root are many (an org has thousands of folders). The search reverses each relationship. The root's subtree is never read.
+- **Breadth-first, one batch per layer.** Each layer is one batch link read and one batch type read. Why: the round trips are the proof depth, not the number of nodes. The first layer with a root gives a shortest proof, so the shortest audit trail.
+- **The parent's type decides if a link counts.** The relationship map is keyed by the upper entity's type, as in the walk. So each candidate parent's `type` is read before the step is accepted. Why: the same link type (`child`) can mean "grants access" from a folder and nothing from a note.
+- **Same reads as everything else.** One view per call, the shared batch reads and the roll-up. Why: branches, frozen views, history, archive and undo are then right with no extra code. A link removed today does not prove access today, but it proves access on a view from before.
+- **Unknown is not No.** A node budget can stop the search. It then answers `Unknown`, never a false `NoPath`. Why: a permission check must not deny or grant by accident when it ran out of budget.
+- **Bidirectional and walk-based searches are options, not the default.** Why: they were measured. Both lose when roots have a large fan-out or there are many roots (BENCHMARKS.md, "Prove").
+
 ## 13. Undo
 
 - Undo removes the newest batch of one user on one branch. The batch must be less than five minutes old.
