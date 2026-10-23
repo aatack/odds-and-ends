@@ -207,7 +207,9 @@ button[data-ui].next-button { right: 16px; width: 48px; height: 48px; padding: 0
 .menu-note { padding: 6px 10px; font-size: 12px; color: var(--muted); }
 /* Rendered text (components/ui/Markdown.tsx), as entity-graph sets it: one line of
  * plain prose looks as it would as a span; the block constructs keep their spacing. */
-.markdown { min-width: 0; }
+/* Normal, not the pre-wrap of what holds it (a bubble): the renderer leaves newlines between blocks and list items as
+ * text, which pre-wrap would draw as blank lines. A paragraph keeps its own line breaks. */
+.markdown { min-width: 0; white-space: normal; }
 .markdown > :not(:first-child) { margin-top: 0.5em; }
 .markdown p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .markdown h1, .markdown h2, .markdown h3, .markdown h4, .markdown h5, .markdown h6 { margin: 0; font-weight: 600; letter-spacing: -0.01em; font-size: 1em; }
