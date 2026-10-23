@@ -60,24 +60,39 @@ export function TypeIcon({ type }: { type: EventKind }) {
   )
 }
 
-/** Whoever added an event, as a profile picture: bots, scripts, the app, a source or an outside client. */
-export function Avatar({ by, type }: { by: string; type?: EventKind }) {
-  const [Icon, name]: [LucideIcon, string] =
-    by === 'bot'
-      ? [Bot, 'Bot']
-      : by.startsWith('script')
-        ? [SquareCode, 'Script']
-        : by === 'mcp'
-          ? [Link, 'MCP client']
-          : by.startsWith('github')
-            ? [GitPullRequest, by]
-            : by.startsWith('slack')
-              ? [MessageCircle, by]
-              : by === 'human'
-                ? [User, 'You']
-                : type
-                  ? [TYPE_ICON[type], TYPE_NAME[type]]
-                  : [Settings, 'Workflows']
+/** Who someone is, as an icon: the human, a bot, a script, an outside client, a source, or the app. */
+function whoIcon(by: string): [LucideIcon, string] {
+  if (by === 'human') return [User, 'You']
+  if (by === 'bot') return [Bot, 'Bot']
+  if (by.startsWith('script')) return [SquareCode, 'Script']
+  if (by === 'mcp') return [Link, 'MCP client']
+  if (by.startsWith('github')) return [GitPullRequest, by]
+  if (by.startsWith('slack')) return [MessageCircle, by]
+  return [Settings, 'Workflows']
+}
+
+/**
+ * The one icon for an event, wherever it is drawn: a message (or an action) is
+ * whoever said (or ran) it; anything else is its type. The chat's pictures, the
+ * blocker rows and the view header all use this.
+ */
+export function eventIcon(e: { type: EventKind; createdBy: string }): [LucideIcon, string] {
+  return e.type === 'message' || e.type === 'action' ? whoIcon(e.createdBy) : [TYPE_ICON[e.type], TYPE_NAME[e.type]]
+}
+
+/** An event's icon, inline. */
+export function EventIcon({ event }: { event: { type: EventKind; createdBy: string } }) {
+  const [Icon, name] = eventIcon(event)
+  return (
+    <span className="type-icon" title={name}>
+      <Icon className="icon" />
+    </span>
+  )
+}
+
+/** An event's icon as a profile picture, beside its message in the chat. */
+export function Avatar({ event }: { event: { type: EventKind; createdBy: string } }) {
+  const [Icon, name] = eventIcon(event)
   return (
     <span className="avatar" title={name}>
       <Icon className="icon" />

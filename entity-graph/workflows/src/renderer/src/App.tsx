@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { Catalog, EventKind, Item, ItemDetail } from '../../shared/types'
+import type { Catalog, Item, ItemDetail, ItemEvent } from '../../shared/types'
 import { Blockers } from './Blockers'
 import { ChevronLeft } from 'lucide-react'
 import { Chat } from './Chat'
@@ -7,7 +7,7 @@ import { DebugView } from './DebugView'
 import { EventMenu, useEventMenu } from './EventMenu'
 import { EventView } from './EventView'
 import { Composer } from './Composer'
-import { ItemIcon, TypeIcon } from './icons'
+import { EventIcon, ItemIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
 import { api, useWorkflows } from './useWorkflows'
@@ -146,7 +146,7 @@ function ItemsMain() {
         canGoBack={w.views.length > 1}
         onBack={w.back}
         title={`${debug ? 'Debug: ' : ''}${e.summary}`}
-        type={e.type}
+        event={e}
         actions={actions}
       />
       {w.error && <div className="error">{w.error}</div>}
@@ -164,7 +164,7 @@ function ItemsMain() {
 }
 
 /** Back (its place kept even with nowhere to go back to), the event as text, and its actions on the right. */
-function ViewHeader(props: { canGoBack: boolean; onBack: () => void; title?: string; type?: EventKind; actions?: ReactNode }) {
+function ViewHeader(props: { canGoBack: boolean; onBack: () => void; title?: string; event?: ItemEvent; actions?: ReactNode }) {
   return (
     <header className="view-header">
       <button
@@ -178,7 +178,7 @@ function ViewHeader(props: { canGoBack: boolean; onBack: () => void; title?: str
       >
         <ChevronLeft className="icon" />
       </button>
-      {props.type && props.type !== 'item' && <TypeIcon type={props.type} />}
+      {props.event && props.event.type !== 'item' && <EventIcon event={props.event} />}
       <h1 className="view-title">{props.title}</h1>
       {props.actions && <div className="buttons">{props.actions}</div>}
     </header>

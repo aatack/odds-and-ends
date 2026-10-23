@@ -46,7 +46,7 @@ function Message({ event: e }: { event: ItemEvent }) {
   const mine = HUMAN.has(e.actor)
   return (
     <div className={`bubble-row ${mine ? 'mine' : 'theirs'}`}>
-      {!mine && <Avatar by={e.actor} type={e.type} />}
+      {!mine && <Avatar event={e} />}
       <div className="bubble" title={time(e.resolvedAt ?? e.createdAt)} {...menu(e.id)}>
         {e.message}
         <span className="bubble-time">{shortTime(e.resolvedAt ?? e.createdAt)}</span>

@@ -4,7 +4,7 @@ import type { Catalog, ItemDetail, ItemEvent } from '../../shared/types'
 import { minutes } from './Chat'
 import { Form, withHints } from './forms'
 import { useEventMenu } from './EventMenu'
-import { TypeIcon } from './icons'
+import { EventIcon } from './icons'
 import { api } from './useWorkflows'
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
@@ -49,7 +49,7 @@ function Row(props: { b: ItemEvent; detail: ItemDetail; catalog: Catalog; act: A
   return (
     <div className="blocker" {...menu(b.id)}>
       <div className="blocker-line">
-        <TypeIcon type={b.type} />
+        <EventIcon event={b} />
         {b.type === 'item' ? (
           <button data-ui className="link blocker-text" title="Open it" onClick={() => onOpen(b.id)}>
             {b.summary}
