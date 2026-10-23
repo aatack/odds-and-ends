@@ -176,4 +176,5 @@ button[data-ui].back:hover { color: var(--ink); filter: none; }
 .view-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 32px 24px; }
 .view-body.fill { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
 .view > .error { margin: 0 32px 12px; }
+button[data-ui].blocker-text { text-align: left; padding: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }

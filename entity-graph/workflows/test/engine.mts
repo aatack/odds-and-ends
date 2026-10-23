@@ -322,6 +322,19 @@ assert.equal(engine.event(child)!.params.events, undefined, 'its first events ar
 assert.deepEqual(engine.children(child).map((e) => e.type), ['message', 'bot', 'message'])
 assert.ok(item(parent).closed)
 
+// A bot can also add an item that sits in no item, for unrelated work: it blocks nothing.
+{
+  const host = (await engine.create('Host'))!
+  behaviours.push(async () => ({ events: [{ type: 'item', params: { title: 'Unrelated', detached: true } }] }))
+  await engine.send(host, 'bot', 'x')
+  await settle()
+  const loose = engine.overview().items.find((i) => i.title === 'Unrelated')!
+  assert.equal(loose.parentId, null)
+  assert.ok(item(host).withHuman, 'a detached item blocks nothing')
+  await engine.close(host)
+  await engine.close(loose.id)
+}
+
 // ---- 9. A bot whose output is unusable leaves a message saying why ----
 const bad = (await engine.create('Bad'))!
 behaviours.push(async () => ({ events: [{ type: 'action', params: { name: 'github_pr_merge', inputs: {} } }] }) as BotOutput)

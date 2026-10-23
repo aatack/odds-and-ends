@@ -448,6 +448,10 @@ export class Engine extends EventEmitter {
    * right after. An item whose key is already taken is left out. Answers the ids added.
    */
   add(parentId: string | null, specs: EventSpec[], createdBy: string, runId: string | null = null): string[] {
+    // A detached item sits in no item, wherever it is added.
+    const detached = parentId ? specs.filter((s) => s.type === 'item' && s.params.detached) : []
+    if (detached.length)
+      return [...this.add(parentId, specs.filter((s) => !detached.includes(s)), createdBy, runId), ...this.add(null, detached, createdBy, runId)]
     const keyed = (s: EventSpec) =>
       s.type === 'item' && s.params.key &&
       this.db.prepare("SELECT 1 FROM events WHERE type = 'item' AND json_extract(params, '$.key') = ?").get(s.params.key)

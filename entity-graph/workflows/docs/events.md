@@ -82,7 +82,7 @@ the chat input should offer it, add a preset in `presets.ts`.
 
 | type | blocks | params | data |
 | --- | --- | --- | --- |
-| `item` | yes | `title`, `events?` (its first children, added in it), `key?` (so a source adds it once), `sessionId` (set by the app) | `{ how: closed \| handled_outside \| cancelled }` |
+| `item` | yes | `title`, `events?` (its first children, added in it), `detached?` (sits in no item, wherever it is added), `key?` (so a source adds it once), `sessionId` (set by the app) | `{ how: closed \| handled_outside \| cancelled }` |
 | `message` | no | `text` | — |
 | `action` | no | `name`, `inputs`, `output` | — |
 | `approval` | the human's | `action` (unsafe), `inputs`, `reason?` | `{ ran, inputs, changed, output, detail }` |

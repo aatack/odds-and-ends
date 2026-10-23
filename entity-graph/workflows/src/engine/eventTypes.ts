@@ -22,6 +22,10 @@ export const item: EventType = {
       .optional()
       .describe('Events to put in it as it is created. They are added in it, and not kept in its params.'),
     key: z.string().optional().describe('Identifies it, so a source polling again adds it only once.'),
+    detached: z
+      .boolean()
+      .optional()
+      .describe('Put it in no item, rather than the one it is added in: for work unrelated to this item, which should not block it.'),
     sessionId: z.string().optional().describe("Its Claude session, set by the app once its bot first runs. Don't set it."),
   },
   data: '{ how: "closed" | "handled_outside" | "cancelled" }',
