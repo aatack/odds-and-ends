@@ -139,8 +139,7 @@ export const githubSources: Source[] = [
         ref: `github:review:${p.url}`,
         title: `Review ${p.repository.nameWithOwner}#${p.number}: ${p.title}`,
         url: p.url,
-        state: `Your review is requested on ${p.repository.nameWithOwner}#${p.number}.`,
-        next: [{ type: 'human', params: { needed: 'How should this be reviewed?' } }],
+        next: [{ type: 'human', params: { needed: `Your review is requested on ${p.repository.nameWithOwner}#${p.number}. How should it be reviewed?` } }],
       }))
     },
   },

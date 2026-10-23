@@ -46,13 +46,10 @@ async function main(): Promise<void> {
   handle('catalog', () => catalog(engine))
   handle('next', (skip: string[]) => engine.next(skip))
   handle('create', (title: string, next: HandoffSpec[]) => engine.create(title, { next }))
-  handle('handOff', (id: string, state: string | null, next: HandoffSpec[], note: string) =>
-    engine.handOff(id, { state, next, note: note || undefined }),
-  )
+  handle('handOff', (id: string, next: HandoffSpec[]) => engine.handOff(id, { next }))
   handle('approve', (id: string, inputs: Record<string, unknown>) => engine.approve(id, inputs))
-  handle('close', (id: string, state: string | null, note: string) => engine.close(id, { state, note: note || undefined }))
-  handle('handledOutside', (id: string, note: string) => engine.handledOutside(id, note))
-  handle('setState', (id: string, state: string) => engine.setState(id, state))
+  handle('close', (id: string) => engine.close(id))
+  handle('handledOutside', (id: string) => engine.handledOutside(id))
   handle('takeOver', (id: string) => engine.takeOver(id))
   handle('pollSources', () => engine.pollSources(true))
   handle('integrations', () => admin.integrations())

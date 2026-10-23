@@ -1,16 +1,14 @@
 # Handoffs
 
-An **item** is one thing that must be done. It has:
-
-- a **state**: where it is now, in a few lines. Whoever last worked on it amends it.
-- a **queue of handoffs**: what has to happen to it next, and so who does it.
+An **item** is one thing that must be done. It has a **queue of handoffs**:
+what has to happen to it next, and so who does it.
 
 The first handoff in the queue is **active**: it is what the item waits for.
 When it **resolves**, it keeps its **resolution**, and the next one becomes active.
 When nothing is queued, a human handoff is added that says what just resolved.
-The item's history is its handoffs in order, with the notes, state changes and
-actions recorded between them. Each handoff also keeps the state the item had
-when it became active.
+The item's history is its handoffs in order, with the actions run and checks
+failed between them. The app draws it as a chat: what the human set or did on
+the right, everything else on the left.
 
 ## The interface
 
@@ -38,11 +36,11 @@ already. That is how a chain is built and then extended.
 
 | type | params | resolves | resolution |
 | --- | --- | --- | --- |
-| `human` | `needed`: one direct question or request; `approval?`: `{ action, inputs }` | when the human hands off, approves, or closes | `{ decision: handed_off \| approved \| closed \| handled_outside, note?, action?: { name, proposed, inputs, changed, output } }` |
-| `bot` | `instructions` | when its `claude -p` run ends | `{ state, output, runId, costUsd }`, or `{ error, output }` |
+| `human` | `needed`: one direct question or request; `approval?`: `{ action, inputs }` | when the human hands off, approves, or closes | `{ decision: handed_off \| approved \| closed \| handled_outside, action?: { name, proposed, inputs, changed, output } }` |
+| `bot` | `instructions` | when its `claude -p` run ends | `{ output, runId, costUsd, closed? }`, or `{ error, output }` |
 | `github` | `repo`, `number`, `until`: `checks \| activity \| closed`, `timeout_minutes?` | on `check` | `{ outcome: passed \| failed \| activity \| merged \| closed \| timed_out, detail, failed? }` |
 | `slack` | `channel`, `workspace?`, `message?`, `thread_ts?`, `timeout_minutes?` | on somebody else's reply in the thread | `{ outcome: replied \| timed_out, channel, thread_ts, replies, detail }` |
-| `items` | `item_ids` | when every one has closed | `{ outcome: closed \| timed_out, items: { id, title, state }[] }` |
+| `items` | `item_ids` | when every one has closed | `{ outcome: closed \| timed_out, items: { id, title }[] }` |
 | `script` | `source`, `description?` | at once | `{ next, logs }` |
 
 - **A slack handoff with a message that a bot sets** is expanded into a human
@@ -65,7 +63,7 @@ There is one list of **actions** (`src/engine/actions.ts`, `github.ts`,
 - A **bot**, or a script a bot wrote, may change only the item it is
   working on.
 - `hand_off` and `close_item` are only for a human. A bot hands an item on by
-  returning `{ state, next, close? }` as its structured output. The schema it is
+  returning `{ next, close? }` as its structured output. The schema it is
   given is every handoff type's params, so it cannot return one that doesn't
   exist. A script hands on by returning handoffs.
 
@@ -74,8 +72,7 @@ There is one list of **actions** (`src/engine/actions.ts`, `github.ts`,
 A bot pushes a fix and returns:
 
 ```json
-{ "state": "Fixed e2e; CI running.",
-  "next": [
+{ "next": [
     { "type": "github", "params": { "repo": "o/r", "number": 7, "until": "checks" } },
     { "type": "script", "params": { "source": "async ({ previous }) => previous.resolution.outcome === 'failed' ? { type: 'bot', params: { instructions: 'Fix: ' + previous.resolution.failed.join(', ') } } : { type: 'human', params: { needed: 'Merge o/r#7?', approval: { action: 'github_pr_merge', inputs: { repo: 'o/r', number: 7, method: 'squash' } } } }" } }
   ] }

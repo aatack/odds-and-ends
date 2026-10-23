@@ -15,7 +15,7 @@ const id = (await engine.create('Smoke test', {
       type: 'bot',
       params: {
         instructions:
-          'Read this item with get_item. Then set the state to "smoke ok" and hand it to the human to choose between red and blue, ' +
+          'Read this item with get_item. Then hand it to the human to choose between red and blue, ' +
           'followed by a script that closes nothing and returns null.',
       },
     },
@@ -25,7 +25,6 @@ const busy = () => engine.get(id)!.current?.type === 'bot' || pool.status().some
 for (let i = 0; i < 300 && busy(); i++) await new Promise((r) => setTimeout(r, 1000))
 await engine.idle()
 const d = engine.detail(id)!
-console.log('state:', d.item.state)
 console.log('current:', JSON.stringify(d.item.current && { type: d.item.current.type, params: d.item.current.params }))
 for (const h of d.handoffs) console.log('-', h.status, h.type, JSON.stringify(h.params).slice(0, 120), JSON.stringify(h.resolution)?.slice(0, 300))
 console.log(d.runs.map((r) => ({ cost: r.costUsd, turns: r.turns })))

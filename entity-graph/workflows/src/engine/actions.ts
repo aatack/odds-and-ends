@@ -9,11 +9,6 @@ import { objectSchema } from './schema'
 const itemId = z.string().describe('The id of the item.')
 const spec = z.object({ type: z.string(), params: z.record(z.unknown()) }).describe('A handoff: see handoff_types.')
 
-/** A bot, or a script a bot wrote, may change only the item it works on. */
-export function assertMayChange(ctx: ActionContext, id: string): void {
-  if (ctx.author === 'bot' && ctx.itemId !== id) throw new Error('A bot may only change the item it is working on.')
-}
-
 /** Handing on and closing are the human's: a bot or a script returns its handoffs instead. */
 function assertHuman(ctx: ActionContext): void {
   if (ctx.author !== 'human')
@@ -48,12 +43,12 @@ export const itemActions: Action[] = [
       engine
         .overview()
         .items.filter((i) => !a.type || i.current?.type === a.type)
-        .map((i) => ({ id: i.id, title: i.title, state: i.state, closed: i.closed, current: i.current && { type: i.current.type, params: i.current.params }, url: i.url })),
+        .map((i) => ({ id: i.id, title: i.title, closed: i.closed, current: i.current && { type: i.current.type, params: i.current.params }, url: i.url })),
   },
   {
     name: 'get_item',
     unsafe: false,
-    description: 'An item in full: its state, every handoff with its resolution, the events between them, and its bot runs.',
+    description: 'An item in full: every handoff with its resolution, the events between them, and its bot runs.',
     input: { item_id: itemId },
     run: async (a, { engine }) => {
       const d = engine.detail(String(a.item_id))
@@ -87,41 +82,17 @@ export const itemActions: Action[] = [
     description: "Create an item. Answers its id. Without handoffs it goes to the human to decide what happens.",
     input: {
       title: z.string(),
-      state: z.string().optional(),
       next: z.array(spec).optional().describe('Its handoffs, in order.'),
     },
     run: async (a, ctx) => {
       const id = await ctx.engine.create(String(a.title), {
-        state: a.state as string | undefined,
         next: a.next as HandoffSpec[] | undefined,
         actor: ctx.actor,
         author: ctx.author,
         source: ctx.itemId ? `item:${ctx.itemId}` : ctx.actor,
       })
-      if (ctx.itemId) ctx.engine.note(ctx.itemId, `Created item ${id}: ${a.title}`, ctx.actor)
+      if (ctx.itemId) ctx.engine.record(ctx.itemId, ctx.actor, 'created_item', String(a.title), { id })
       return { id }
-    },
-  },
-  {
-    name: 'set_state',
-    unsafe: false,
-    description: "Replace an item's state: where it is now, in a few lines.",
-    input: { item_id: itemId, state: z.string() },
-    run: async (a, ctx) => {
-      assertMayChange(ctx, String(a.item_id))
-      ctx.engine.setState(String(a.item_id), String(a.state), ctx.actor)
-      return 'Recorded.'
-    },
-  },
-  {
-    name: 'note',
-    unsafe: false,
-    description: "Add a line to an item's history: something done or found worth keeping.",
-    input: { item_id: itemId, text: z.string() },
-    run: async (a, ctx) => {
-      assertMayChange(ctx, String(a.item_id))
-      ctx.engine.note(String(a.item_id), String(a.text), ctx.actor)
-      return 'Recorded.'
     },
   },
   {
@@ -132,16 +103,12 @@ export const itemActions: Action[] = [
     input: {
       item_id: itemId,
       next: z.array(spec).describe('The handoffs, in order.'),
-      state: z.string().optional(),
-      note: z.string().optional(),
       replace_queue: z.boolean().optional().describe('Drop the handoffs already queued.'),
     },
     run: async (a, ctx) => {
       assertHuman(ctx)
       await ctx.engine.handOff(String(a.item_id), {
         next: a.next as HandoffSpec[],
-        state: a.state as string | undefined,
-        note: a.note as string | undefined,
         replaceQueue: Boolean(a.replace_queue),
         actor: ctx.actor,
       })
@@ -152,10 +119,10 @@ export const itemActions: Action[] = [
     name: 'close_item',
     unsafe: false,
     description: 'Close an item: resolve its current handoff and drop the rest. Human only.',
-    input: { item_id: itemId, state: z.string().optional(), note: z.string().optional() },
+    input: { item_id: itemId },
     run: async (a, ctx) => {
       assertHuman(ctx)
-      await ctx.engine.close(String(a.item_id), { state: a.state as string | undefined, note: a.note as string | undefined, actor: ctx.actor })
+      await ctx.engine.close(String(a.item_id), { actor: ctx.actor })
       return 'Closed.'
     },
   },

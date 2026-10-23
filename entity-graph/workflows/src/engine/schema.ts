@@ -39,10 +39,6 @@ export function botOutputSchema(types: HandoffType[]): Record<string, unknown> {
   return {
     type: 'object',
     properties: {
-      state: {
-        type: 'string',
-        description: 'Where the item is now, in a few lines: what is done and what is left. Replaces the last state.',
-      },
       next: {
         type: 'array',
         description:
@@ -52,7 +48,7 @@ export function botOutputSchema(types: HandoffType[]): Record<string, unknown> {
       },
       close: { type: 'boolean', description: 'The item is done. next must then be empty.' },
     },
-    required: ['state', 'next'],
+    required: ['next'],
     additionalProperties: false,
   }
 }

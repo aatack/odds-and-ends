@@ -96,5 +96,5 @@ export interface Source {
   everyMinutes: number
   poll: (
     engine: Engine,
-  ) => Promise<{ ref: string; title: string; url: string | null; state: string; next: HandoffSpec[] }[]>
+  ) => Promise<{ ref: string; title: string; url: string | null; next: HandoffSpec[] }[]>
 }

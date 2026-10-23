@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react'
+import { useState } from 'react'
 import type { Catalog, Handoff, HandoffKind, HandoffSpec, ItemDetail } from '../../shared/types'
 import { CompactForm } from './CompactForm'
 
@@ -10,7 +10,7 @@ export function summary(h: HandoffSpec): string {
   const p = h.params
   switch (h.type) {
     case 'human':
-      return `You: ${p.needed}${p.approval ? ` (approve ${(p.approval as { action: string }).action})` : ''}`
+      return `${p.needed}${p.approval ? ` (approve ${(p.approval as { action: string }).action})` : ''}`
     case 'bot':
       return `Bot: ${p.instructions}`
     case 'github':
@@ -28,7 +28,7 @@ export function summary(h: HandoffSpec): string {
 export function outcome(h: Handoff): string {
   const r = h.resolution ?? {}
   if (h.status === 'cancelled') return 'cancelled'
-  return String(r.error ? `failed: ${r.error}` : (r.detail ?? r.decision ?? r.outcome ?? r.state ?? ''))
+  return String(r.error ? `failed: ${r.error}` : (r.detail ?? r.decision ?? r.outcome ?? ''))
 }
 
 /** A list of handoffs to put at the front of the queue: a type and its fields each, as tight as it will go. */
@@ -63,66 +63,102 @@ export function HandoffBuilder({ catalog, value, onChange }: { catalog: Catalog;
   )
 }
 
-/** Every handoff resolved so far, with the notes and changes between them. Bot output is hidden until asked for. */
-export function History({ detail }: { detail: ItemDetail }) {
-  const done = detail.handoffs.filter((h) => h.status === 'resolved' || h.status === 'cancelled')
-  const entries = [
-    ...done.map((h) => ({ at: h.resolvedAt ?? h.createdAt, handoff: h })),
-    ...detail.events.filter((e) => e.kind !== 'created').map((e) => ({ at: e.at, event: e })),
-  ].sort((a, b) => a.at - b.at)
+/** Who set a handoff, as the chat names them. */
+function sender(createdBy: string): string {
+  if (createdBy === 'bot') return 'Bot'
+  if (createdBy === 'script' || createdBy === 'script:bot') return 'Script'
+  if (createdBy === 'system') return 'Workflows'
+  if (createdBy === 'mcp') return 'MCP client'
+  return createdBy
+}
+
+/** What the human did with a human handoff, as their reply; null when the handoffs they set say it. */
+function reply(h: Handoff): string | null {
+  const r = h.resolution ?? {}
+  const action = r.action as { name: string; changed: string[] } | undefined
+  if (r.decision === 'approved' && action)
+    return `Ran ${action.name}${action.changed.length ? ` (changed ${action.changed.join(', ')})` : ''}`
+  if (r.decision === 'closed') return 'Closed'
+  if (r.decision === 'handled_outside') return 'Handled outside the tool'
+  return null
+}
+
+type Entry =
+  | { at: number; order: number; kind: 'handoff'; handoff: Handoff }
+  | { at: number; order: number; kind: 'reply'; handoff: Handoff; text: string }
+  | { at: number; order: number; kind: 'event'; event: ItemDetail['events'][number] }
+
+/**
+ * The item's history as a chat: every handoff a bubble, from whoever set it.
+ * What the human set or did is on the right; everything else, on the left.
+ * Events between them are small notes in the middle. A bot's own words are
+ * kept behind "More".
+ */
+export function Chat({ detail }: { detail: ItemDetail }) {
+  const shown = detail.handoffs.filter((h) => h.status !== 'queued')
+  const entries: Entry[] = []
+  shown.forEach((h, order) => {
+    entries.push({ at: h.createdAt, order, kind: 'handoff', handoff: h })
+    const text = h.type === 'human' && h.resolvedBy === 'human' ? reply(h) : null
+    if (text) entries.push({ at: h.resolvedAt!, order, kind: 'reply', handoff: h, text })
+  })
+  detail.events
+    .filter((e) => !['created', 'handled_outside'].includes(e.kind))
+    .forEach((e) => entries.push({ at: e.at, order: shown.length, kind: 'event', event: e }))
+  entries.sort((a, b) => a.at - b.at || a.order - b.order)
   return (
-    <section className="history">
-      {entries.map((e, i) => (
-        <Fragment key={i}>{'handoff' in e ? <HandoffEntry h={e.handoff!} detail={detail} /> : <EventEntry e={e.event!} />}</Fragment>
-      ))}
-      {!entries.length && <p className="muted">Nothing yet.</p>}
+    <section className="chat">
+      {entries.map((e, i) =>
+        e.kind === 'handoff' ? (
+          <Bubble key={i} h={e.handoff} detail={detail} />
+        ) : e.kind === 'reply' ? (
+          <div key={i} className="bubble-row mine">
+            <div className="bubble">
+              <div>{e.text}</div>
+              <div className="bubble-meta">{time(e.at)}</div>
+            </div>
+          </div>
+        ) : (
+          <div key={i} className="chat-note">
+            {e.event.text} · {time(e.event.at)}
+          </div>
+        ),
+      )}
     </section>
   )
 }
 
-function HandoffEntry({ h, detail }: { h: Handoff; detail: ItemDetail }) {
+function Bubble({ h, detail }: { h: Handoff; detail: ItemDetail }) {
   const [open, setOpen] = useState(false)
+  const mine = h.createdBy === 'human'
   const run = detail.runs.find((r) => r.handoffId === h.id)
   const output = h.resolution?.output as string | undefined
+  const status =
+    h.status === 'active'
+      ? 'now'
+      : h.status === 'cancelled'
+        ? 'cancelled'
+        : `→ ${outcome(h) || 'done'}${h.startedAt && h.resolvedAt ? ` · ${minutes(h.resolvedAt - h.startedAt)}` : ''}`
   return (
-    <div className="event handoff-entry">
-      <div>
-        <b>{summary(h)}</b>
-      </div>
-      <div className="muted">
-        set by {h.createdBy}
-        {h.startedAt && h.resolvedAt && ` · ${minutes(h.resolvedAt - h.startedAt)}`}
-        {run?.costUsd != null && ` · $${run.costUsd.toFixed(2)}`} · {h.resolvedAt ? time(h.resolvedAt) : ''}
-      </div>
-      <div className="event-text">→ {outcome(h)}</div>
-      {(output || h.stateAtStart) && (
-        <button data-ui className="link" onClick={() => setOpen(!open)}>
-          {open ? 'Less' : 'More'}
-        </button>
-      )}
-      {open && (
-        <div className="more">
-          {h.stateAtStart !== null && (
-            <p>
-              <span className="muted">State as it started: </span>
-              {h.stateAtStart || '(none)'}
-            </p>
-          )}
-          {output && <pre className="output">{output}</pre>}
-          <pre className="output">{JSON.stringify({ params: h.params, resolution: { ...h.resolution, output: undefined } }, null, 2)}</pre>
+    <div className={`bubble-row ${mine ? 'mine' : 'theirs'}`}>
+      <div className={`bubble ${h.status === 'active' ? 'active' : ''}`}>
+        {!mine && <div className="bubble-sender">{sender(h.createdBy)}</div>}
+        <div>{summary(h)}</div>
+        <div className="bubble-meta">
+          {time(h.createdAt)} · {status}
+          {run?.costUsd != null && ` · $${run.costUsd.toFixed(2)}`}
+          {' · '}
+          <button data-ui className="link" onClick={() => setOpen(!open)}>
+            {open ? 'less' : 'more'}
+          </button>
         </div>
-      )}
-    </div>
-  )
-}
-
-function EventEntry({ e }: { e: ItemDetail['events'][number] }) {
-  return (
-    <div className="event">
-      <span className="muted">
-        {time(e.at)} · {e.actor} · {e.kind}
-      </span>
-      <div className="event-text">{e.text}</div>
+        {open && (
+          <div className="more">
+            {output && <pre className="output">{output}</pre>}
+            <pre className="output">{JSON.stringify({ params: h.params, resolution: h.resolution && { ...h.resolution, output: undefined } }, null, 2)}</pre>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

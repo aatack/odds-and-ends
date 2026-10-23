@@ -28,8 +28,8 @@ export const SYSTEM = `You are one of several workers in the operator's workflow
 - Use the tools of the "workflows" MCP server. They are all you have. handoff_types describes every kind of handoff.
 - Do what your instructions ask, as far as you can without the human.
 - Actions that change things outside this app are unsafe, and you do not have them. unsafe_actions lists them. To get one done, return a human handoff with an approval, filled in as far as you can.
-- When you stop, return your output: the item's new state, and the handoffs that come next, in order. Chain them: e.g. a github wait, then a script that routes on its result.
-- Hand to the human only what nobody else can do. Their "needed" is one direct question or request: no preamble, no summary, no waffle. The state holds the context.`
+- When you stop, return your output: the handoffs that come next, in order. Chain them: e.g. a github wait, then a script that routes on its result.
+- Hand to the human only what nobody else can do. Their "needed" is one direct question or request: no preamble, no summary, no waffle.`
 
 export const spawnClaude: SpawnBot = ({ prompt, system, schema, mcpUrl, onOutput }) => {
   const mcp = JSON.stringify({ mcpServers: { workflows: { type: 'http', url: mcpUrl } } })
@@ -66,7 +66,6 @@ export function promptFor(engine: Engine, item: Item, handoff: Handoff): string 
   return [
     `Item ${item.id}: ${item.title}`,
     item.url && `Link: ${item.url}`,
-    `State: ${item.state || '(none yet)'}`,
     `Your instructions: ${String(handoff.params.instructions)}`,
     since.length && `What came before, oldest first:\n${since.map((h) => `- ${describeResolution(h)} ${brief(h)}`).join('\n')}`,
     queued.length && `Already queued after you (your handoffs go in front of these):\n${queued.map((h) => JSON.stringify({ type: h.type, params: h.params })).join('\n')}`,

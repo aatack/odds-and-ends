@@ -19,13 +19,13 @@ an in-memory store; it costs a run, so use it only when the bot wiring changes.
 [`docs/paradigm.md`](./docs/paradigm.md) is the idea, in a page.
 [`docs/handoffs.md`](./docs/handoffs.md) is how it is built; read it before changing the engine.
 
-- An **item** has a **state** (where it is, amended by whoever last worked on it)
-  and a **queue of handoffs** (what happens next, and so who does it).
+- An **item** has a **queue of handoffs** (what happens next, and so who does it).
+  It has no state or notes for now: that idea is being rethought.
 - The first handoff is what the item waits for. When it resolves, its resolution
   is kept and the next one starts. That is how handoffs chain.
 - Types: `human`, `bot`, `github`, `slack`, `items`, `script`.
 - **Next** shows the item whose human handoff has waited longest.
-- A bot's run ends by returning `{ state, next, close? }` as structured
+- A bot's run ends by returning `{ next, close? }` as structured
   output. It has no tool for ending a run.
 - A human handoff's `needed` is one direct question. A bot gets an unsafe action
   done by putting it in a human handoff's `approval`, which the human runs, changes,
@@ -78,7 +78,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
 - **Two kinds of form.**
   - The forms used all day, a new item and a handoff, are condensed: `CompactForm`
     (one control per field, named by its placeholder) and `HandoffBuilder`. Keep them tight.
-  - Everything else (approvals, the state, settings) uses `SchemaForm`, through
+  - Everything else (approvals, settings) uses `SchemaForm`, through
     `Form` in `forms.tsx`, which adds the app's own editors (`secret` for tokens).
     `withHints` gives the engine's schemas text boxes for prose fields.
   - `SchemaForm` and `SchemaBuilder` are copied from entity-graph

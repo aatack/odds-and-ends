@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { Catalog, HandoffKind, HandoffSpec, Item, ItemDetail } from '../../shared/types'
-import { HandoffBuilder, History, summary } from './Handoffs'
-import { Form, MULTILINE, withHints } from './forms'
+import { Chat, HandoffBuilder, summary } from './Handoffs'
+import { Form, withHints } from './forms'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
 import { api, useWorkflows } from './useWorkflows'
@@ -161,7 +161,6 @@ type Act = (fn: () => Promise<unknown>) => Promise<void>
 function ItemView({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalog: Catalog; act: Act; onSkip: () => void }) {
   const { item } = detail
   const current = item.current
-  const [showHistory, setShowHistory] = useState(false)
   const queued = detail.handoffs.filter((h) => h.status === 'queued')
   return (
     <div className="item">
@@ -178,7 +177,7 @@ function ItemView({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalo
         </div>
       </header>
 
-      <StateEditor key={item.state} state={item.state} onSave={(s) => act(() => api().setState(item.id, s))} />
+      <Chat detail={detail} />
 
       {current?.type === 'human' && <Decide key={current.id} detail={detail} catalog={catalog} act={act} onSkip={onSkip} />}
       {current?.type === 'bot' && (
@@ -211,26 +210,7 @@ function ItemView({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalo
         </section>
       )}
 
-      <button data-ui className="link" onClick={() => setShowHistory(!showHistory)}>
-        {showHistory ? 'Hide history' : 'Show history'}
-      </button>
-      {showHistory && <History detail={detail} />}
     </div>
-  )
-}
-
-function StateEditor({ state, onSave }: { state: string; onSave: (s: string) => void }) {
-  const [draft, setDraft] = useState(state)
-  return (
-    <section className="state">
-      <h3>State</h3>
-      <Form schema={MULTILINE} value={draft} setValue={(v) => setDraft(typeof v === 'string' ? v : '')} />
-      {draft !== state && (
-        <button data-ui onClick={() => onSave(draft)}>
-          Save state
-        </button>
-      )}
-    </section>
   )
 }
 
@@ -242,7 +222,6 @@ function Decide({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalog:
   const action = approval && catalog.actions.find((a) => a.name === approval.action)
   const [inputs, setInputs] = useState<Record<string, unknown>>(approval?.inputs ?? {})
   const [next, setNext] = useState<HandoffSpec[]>([{ type: 'bot', params: {} }])
-  const [note, setNote] = useState('')
   useEffect(() => setInputs(approval?.inputs ?? {}), [approval])
   const queued = item.queued > 0
   return (
@@ -265,23 +244,20 @@ function Decide({ detail, catalog, act, onSkip }: { detail: ItemDetail; catalog:
         </div>
       )}
       {queued && !approval && (
-        <button data-ui className="primary" onClick={() => act(() => api().handOff(item.id, null, [], note))}>
+        <button data-ui className="primary" onClick={() => act(() => api().handOff(item.id, []))}>
           Continue with the queue
         </button>
       )}
       <h3>{approval ? 'Or hand off' : 'Hand off'}</h3>
       <HandoffBuilder catalog={catalog} value={next} onChange={setNext} />
-      <div className="compact">
-        <textarea rows={1} placeholder="Note (optional; kept in the history)" value={note} onChange={(e) => setNote(e.target.value)} />
-      </div>
       <div className="buttons">
-        <button data-ui className={approval || queued ? '' : 'primary'} onClick={() => act(() => api().handOff(item.id, null, next, note))}>
+        <button data-ui className={approval || queued ? '' : 'primary'} onClick={() => act(() => api().handOff(item.id, next))}>
           Hand off{queued ? ' (in front of the queue)' : ''}
         </button>
-        <button data-ui onClick={() => act(() => api().close(item.id, null, note))}>Close</button>
+        <button data-ui onClick={() => act(() => api().close(item.id))}>Close</button>
         <button data-ui
-          title="You did it yourself, outside this tool. The note says what and why, so reviews can find it."
-          onClick={() => act(() => api().handledOutside(item.id, note))}
+          title="You did it yourself, outside this tool. Recorded, so reviews can find it."
+          onClick={() => act(() => api().handledOutside(item.id))}
         >
           Handled outside
         </button>

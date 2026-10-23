@@ -17,7 +17,7 @@ export const human: HandoffType = {
       .string()
       .describe(
         'Exactly what is needed from the human, as one direct question or request they can act on at once. ' +
-          'No preamble, no summary of the work, no options they did not ask for: the state already says where things are.',
+          'No preamble, no summary of the work, no options they did not ask for.',
       ),
     approval: z
       .object({
@@ -28,14 +28,14 @@ export const human: HandoffType = {
       .describe('An unsafe action for the human to approve, change, or turn down.'),
   },
   resolution:
-    '{ decision: "handed_off" | "approved" | "closed" | "handled_outside", note?: string, action?: { name, proposed, inputs, changed, output } }',
+    '{ decision: "handed_off" | "approved" | "closed" | "handled_outside", action?: { name, proposed, inputs, changed, output } }',
 }
 
 export const bot: HandoffType = {
   type: 'bot',
   description: 'A worker: claude -p with this MCP server. It works the item and returns the next handoffs.',
-  params: { instructions: z.string().describe('What the bot is to do: the goal, and anything it needs to know that the state does not say.') },
-  resolution: '{ state: string, output: string (what the bot said on the way, which nobody reads by default), runId, costUsd? }',
+  params: { instructions: z.string().describe('What the bot is to do: the goal, and anything it needs to know.') },
+  resolution: '{ output: string (what the bot said on the way, which nobody reads by default), runId, costUsd?, closed?: true }',
 }
 
 export const github: HandoffType = {
@@ -76,11 +76,11 @@ export const items: HandoffType = {
   type: 'items',
   description: 'Wait for every one of a list of items to close.',
   params: { item_ids: z.array(z.string()).min(1) },
-  resolution: '{ outcome: "closed" | "timed_out", items: { id, title, state }[] (each final state) }',
+  resolution: '{ outcome: "closed" | "timed_out", items: { id, title }[] }',
   check: async (p, { engine }) => {
     const found = (p.item_ids as string[]).map((id) => engine.get(id))
     if (found.some((i) => !i || !i.closed)) return null
-    return { outcome: 'closed', items: found.map((i) => ({ id: i!.id, title: i!.title, state: i!.state })) }
+    return { outcome: 'closed', items: found.map((i) => ({ id: i!.id, title: i!.title })) }
   },
 }
 
@@ -94,7 +94,7 @@ export const script: HandoffType = {
       .string()
       .describe(
         'A JavaScript function expression: async (input, actions) => handoffs. ' +
-          'input is { item: { id, title, state }, previous: { type, params, resolution } | null, history: the item\'s handoffs so far }. ' +
+          'input is { item: { id, title }, previous: { type, params, resolution } | null, history: the item\'s handoffs so far }. ' +
           'actions.<name>(args) calls an action and resolves to its result. A script a bot wrote gets no unsafe actions. ' +
           'Return a handoff ({ type, params }), a list of them, or null to carry on with the queue. console.log is kept.',
       ),
@@ -103,7 +103,7 @@ export const script: HandoffType = {
   resolution: '{ next: handoffs it returned, logs: string[] }',
   run: async (p, { engine, item, previous, author }) => {
     const input = {
-      item: { id: item.id, title: item.title, state: item.state },
+      item: { id: item.id, title: item.title },
       previous: previous && { type: previous.type, params: previous.params, resolution: previous.resolution },
       history: engine.handoffs(item.id).filter((h) => h.status === 'resolved').map((h) => ({ type: h.type, params: h.params, resolution: h.resolution })),
     }

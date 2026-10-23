@@ -2,7 +2,7 @@ import { SchemaForm, type Editors, type JsonSchema } from './components/schema'
 import { isObject } from './components/schema'
 
 /** Fields that hold prose, and so get a growing text box; `source` is code. */
-const LONG = new Set(['needed', 'instructions', 'message', 'text', 'body', 'source', 'state', 'note'])
+const LONG = new Set(['needed', 'instructions', 'message', 'text', 'body', 'source'])
 
 /**
  * A schema from the engine, with the form's keywords added by field name: the

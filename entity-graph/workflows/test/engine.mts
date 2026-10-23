@@ -133,10 +133,7 @@ behaviours.push(async (call, prompt, schema) => {
   const unsafe = JSON.parse(await call('unsafe_actions')).map((a: { name: string }) => a.name)
   assert.deepEqual(unsafe.sort(), ['github_pr_comment', 'github_pr_merge', 'github_pr_review', 'slack_post'])
   await assert.rejects(call('hand_off', { item_id: id, next: [] }), /returns its next handoffs/)
-  await assert.rejects(call('set_state', { item_id: 'someone-else', state: 'x' }), /only change the item/)
-  await call('note', { item_id: id, text: 'Read the thread.' })
   return {
-    state: 'Reply drafted.',
     next: [
       { type: 'human', params: { needed: 'Post this reply?', approval: { action: 'github_pr_comment', inputs: { repo: 'o/r', number: 7, body: 'Thanks!' } } } },
       { type: 'github', params: { repo: 'o/r', number: 7, until: 'checks' } },
@@ -146,14 +143,11 @@ behaviours.push(async (call, prompt, schema) => {
 })
 await engine.handOff(id, { next: [{ type: 'bot', params: { instructions: 'Reply on the PR' } }] })
 await settle()
-assert.equal(engine.get(id)!.state, 'Reply drafted.')
 assert.equal(current(id)!.type, 'human')
 assert.equal(current(id)!.params.needed, 'Post this reply?')
 assert.equal(engine.get(id)!.queued, 2)
 const botDone = engine.handoffs(id).find((h) => h.type === 'bot')!
 assert.equal(botDone.resolution!.output, 'Thinking out loud.')
-assert.equal(botDone.resolution!.state, 'Reply drafted.')
-assert.equal(botDone.stateAtStart, '')
 
 // ---- 3. The human changes the reply and approves it; the chain goes on to the CI wait ----
 await engine.approve(id, { repo: 'o/r', number: 7, body: 'Thanks a lot!' })
@@ -161,7 +155,6 @@ assert.deepEqual(ghCalls.at(-1), ['pr', 'comment', '7', '-R', 'o/r', '--body', '
 const approved = engine.handoffs(id).find((h) => h.resolution?.decision === 'approved')!
 assert.deepEqual((approved.resolution!.action as { changed: string[] }).changed, ['body'])
 assert.equal(current(id)!.type, 'github')
-assert.equal(current(id)!.stateAtStart, 'Reply drafted.')
 
 // The wait is checked at once, then backs off: 1, 2, 5, 10, 10 minutes.
 await tick()
@@ -180,7 +173,6 @@ behaviours.push(async (_call, prompt) => {
   assert.match(prompt, /Fix the failing checks: e2e/)
   assert.match(prompt, /"outcome":"failed"/)
   return {
-    state: 'Fixed e2e; CI running again.',
     next: [
       { type: 'github', params: { repo: 'o/r', number: 7, until: 'checks' } },
       { type: 'script', params: { source: route } },
@@ -191,7 +183,6 @@ checks = 'failed'
 clock = current(id)!.nextCheckAt!
 await tick()
 assert.equal(current(id)!.type, 'github')
-assert.equal(engine.get(id)!.state, 'Fixed e2e; CI running again.')
 
 // ---- 5. Checks pass: the script asks the human to merge; after that, the queue is empty ----
 checks = 'passed'
@@ -201,7 +192,7 @@ assert.equal(current(id)!.params.needed, 'Merge o/r#7?')
 await engine.approve(id, { repo: 'o/r', number: 7, method: 'squash' })
 assert.deepEqual(ghCalls.at(-1), ['pr', 'merge', '7', '-R', 'o/r', '--squash'])
 assert.match(String(current(id)!.params.needed), /approved\. What next\?/)
-await engine.close(id, { state: 'Merged.' })
+await engine.close(id)
 assert.ok(engine.get(id)!.closed)
 assert.equal(current(id), null)
 assert.deepEqual(
@@ -211,7 +202,7 @@ assert.deepEqual(
 
 // ---- 6. Slack: a bot's message goes to the human first, then the wait takes its thread ----
 engine.settings.addSlackWorkspace({ name: 'Acme', team: 'Acme', user: 'alex', userId: 'UME', token: 'xoxp-good-1234' })
-behaviours.push(async () => ({ state: 'Asking Sam.', next: [{ type: 'slack', params: { channel: 'C1', message: 'Any update, Sam?' } }] }))
+behaviours.push(async () => ({ next: [{ type: 'slack', params: { channel: 'C1', message: 'Any update, Sam?' } }] }))
 const chase = (await engine.create('Chase Sam', { next: [{ type: 'bot', params: { instructions: 'Ask Sam for an update' } }] }))!
 await settle()
 assert.equal(current(chase)!.type, 'human')
@@ -228,36 +219,35 @@ await tick()
 assert.match(String(current(chase)!.params.needed), /1 reply\(s\) on Slack/)
 const replied = engine.handoffs(chase).find((h) => h.type === 'slack')!
 assert.deepEqual((replied.resolution!.replies as { text: string }[]).map((r) => r.text), ['Done!'])
-await engine.close(chase, {})
+await engine.close(chase)
 
 // ---- 7. Items: a bot splits off a sub-item and waits on it, then wraps up ----
 let child = ''
 behaviours.push(async (call) => {
   child = JSON.parse(await call('create_item', { title: 'Child', next: [{ type: 'bot', params: { instructions: 'Do the child' } }] })).id
-  return { state: 'Waiting on the child.', next: [{ type: 'items', params: { item_ids: [child] } }, { type: 'bot', params: { instructions: 'Wrap up' } }] }
+  return { next: [{ type: 'items', params: { item_ids: [child] } }, { type: 'bot', params: { instructions: 'Wrap up' } }] }
 })
-behaviours.push(async () => ({ state: 'Child done.', next: [], close: true }))
+behaviours.push(async () => ({ next: [], close: true }))
 behaviours.push(async (_call, prompt) => {
-  assert.match(prompt, /Child done/)
-  return { state: 'All done.', next: [], close: true }
+  assert.match(prompt, /"title":"Child"/)
+  return { next: [], close: true }
 })
 const parent = (await engine.create('Parent', { next: [{ type: 'bot', params: { instructions: 'Split it' } }] }))!
 await settle()
 await settle()
 assert.ok(engine.get(child)!.closed)
 assert.ok(engine.get(parent)!.closed)
-assert.equal(engine.get(parent)!.state, 'All done.')
 
 // ---- 8. A bot whose output is unusable hands the item to the human, saying why ----
-behaviours.push(async () => ({ state: 's', next: [] }))
+behaviours.push(async () => ({ next: [] }))
 const bad = (await engine.create('Bad', { next: [{ type: 'bot', params: { instructions: 'x' } }] }))!
 await settle()
 assert.match(String(current(bad)!.params.needed), /no handoffs and did not close/)
-behaviours.push(async () => ({ state: 's', next: [{ type: 'human', params: { question: 'wrong field' } }] }))
+behaviours.push(async () => ({ next: [{ type: 'human', params: { question: 'wrong field' } }] }))
 const typo = (await engine.create('Typo', { next: [{ type: 'bot', params: { instructions: 'x' } }] }))!
 await settle()
 assert.match(String(current(typo)!.params.needed), /needed: Required/)
-await engine.handledOutside(typo, 'Did it by hand')
+await engine.handledOutside(typo)
 
 // ---- 9. Scripts reach the actions; a bot's script gets no unsafe ones ----
 const scripted = (await engine.create('Scripted', {
@@ -274,7 +264,6 @@ assert.match(String(current(scripted)!.params.needed), /^Saw \d+ items$/)
 assert.equal((engine.handoffs(scripted)[0].resolution!.logs as string[])[0].split(' ')[0], 'saw')
 const merges = ghCalls.filter((c) => c[1] === 'merge').length
 behaviours.push(async () => ({
-  state: 's',
   next: [{ type: 'script', params: { source: `async (i, actions) => { await actions.github_pr_merge({ repo: 'o/r', number: 7, method: 'squash' }); return null }` } }],
 }))
 const sneaky = (await engine.create('Sneaky', { next: [{ type: 'bot', params: { instructions: 'x' } }] }))!
@@ -300,7 +289,7 @@ let release = () => {}
 const held = new Promise<void>((r) => (release = r))
 behaviours.push(async () => {
   await held
-  return { state: 'late', next: [], close: true }
+  return { next: [], close: true }
 })
 const taken = (await engine.create('Take me', { next: [{ type: 'bot', params: { instructions: 'x' } }] }))!
 while (!pool.status().some((w) => w.itemId === taken)) await new Promise((r) => setTimeout(r, 5))
@@ -327,7 +316,6 @@ await assert.rejects(connect(url, { Authorization: 'Bearer wrong' }), (e: { code
 const outside = await connect(url, { Authorization: `Bearer ${engine.settings.mcpToken()}` })
 const names = (await outside.client.listTools()).tools.map((t) => t.name)
 assert.deepEqual(names, engine.actions.map((a) => a.name))
-await outside.call('set_state', { item_id: taken, state: 'Set from outside.' })
 await outside.call('hand_off', { item_id: taken, next: [{ type: 'human', params: { needed: 'Still there?' } }] })
 assert.equal(current(taken)!.params.needed, 'Still there?')
 assert.match(await outside.call('github_pr_comment', { repo: 'o/r', number: 7, body: 'From outside' }), /pull\/7/)
@@ -341,7 +329,7 @@ const first = recent.find((r) => r.id === id)!
 assert.equal(first.botRuns, 2)
 assert.equal(first.approvalsChanged, 1)
 assert.ok(first.minutesOn.github >= 28, JSON.stringify(first.minutesOn))
-assert.deepEqual(recent.find((r) => r.id === typo)!.handledOutside, ['Did it by hand'])
+assert.deepEqual(recent.find((r) => r.id === typo)!.handledOutside, ['Handled outside the tool.'])
 assert.equal(recent.find((r) => r.id === typo)!.botFailures, 1)
 assert.equal(recent.find((r) => r.id === slow)!.timedOut, 1)
 assert.match(engine.transcript(engine.detail(id)!.runs[0].id)!, /Thinking out loud/)
@@ -353,9 +341,10 @@ await assert.rejects(admin.addSlack('', 'nope'), /xoxp-/)
 await assert.rejects(admin.addSlack('', 'xoxp-bad'), /invalid_auth/)
 const cat = catalog(engine)
 assert.ok(cat.actions.find((a) => a.name === 'slack_post')!.unsafe)
+assert.ok(!engine.actions.some((a) => ['set_state', 'note'].includes(a.name)))
 assert.ok(!cat.actions.find((a) => a.name === 'slack_thread')!.unsafe)
 assert.ok(cat.handoffs.find((h) => h.type === 'human')!.params.required!.includes('needed'))
-assert.equal((botOutputSchema(engine.handoffTypes).required as string[]).join(), 'state,next')
+assert.equal((botOutputSchema(engine.handoffTypes).required as string[]).join(), 'next')
 
 assert.equal(behaviours.length, 0)
 mcp.close()

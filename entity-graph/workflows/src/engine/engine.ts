@@ -16,7 +16,6 @@ const MINUTE = 60_000
 
 /** What a bot's run returns, as its structured output. */
 export interface BotOutput {
-  state: string
   next: HandoffSpec[]
   close?: boolean
 }
@@ -34,7 +33,6 @@ const toHandoff = (r: Row): Handoff => ({
   createdAt: r.created_at as number,
   startedAt: (r.started_at as number) ?? null,
   resolvedAt: (r.resolved_at as number) ?? null,
-  stateAtStart: (r.state_at_start as string) ?? null,
   resolution: json(r.resolution),
   resolvedBy: (r.resolved_by as string) ?? null,
   nextCheckAt: (r.next_check_at as number) ?? null,
@@ -69,7 +67,7 @@ const authorOf = (createdBy: string): Author => (createdBy === 'bot' || createdB
 /** A line saying how a handoff resolved, for the history and the default handoff. */
 export function describeResolution(h: Handoff): string {
   const r = h.resolution ?? {}
-  const what = r.detail ?? r.decision ?? r.outcome ?? r.state ?? r.error
+  const what = r.detail ?? r.decision ?? r.outcome ?? r.error
   const line = what ? `: ${String(what).trim()}` : ''
   return `The ${h.type} handoff resolved${line}${/[.?!]$/.test(line) ? '' : '.'}`
 }
@@ -148,7 +146,6 @@ export class Engine extends EventEmitter {
       title: r.title as string,
       source: r.source as string,
       url: (r.url as string) ?? null,
-      state: r.state as string,
       closed: Boolean(r.closed),
       current: this.active(r.id as string),
       queued: Number(queued.n),
@@ -229,7 +226,6 @@ export class Engine extends EventEmitter {
         title: item.title,
         source: item.source,
         closed: item.closed,
-        state: item.state,
         handoffs: handoffs.map((h) => h.type),
         minutesOn: Object.fromEntries(Object.entries(minutes).map(([k, v]) => [k, Math.round(v)])),
         botRuns: Number(runs.n),
@@ -339,8 +335,8 @@ export class Engine extends EventEmitter {
         const handoff = toHandoff(row)
         const type = this.handoffTypes.find((t) => t.type === handoff.type)!
         this.db
-          .prepare("UPDATE handoffs SET status = 'active', started_at = ?, state_at_start = ?, next_check_at = ? WHERE id = ?")
-          .run(this.now(), item.state, type.check ? this.now() : null, handoff.id)
+          .prepare("UPDATE handoffs SET status = 'active', started_at = ?, next_check_at = ? WHERE id = ?")
+          .run(this.now(), type.check ? this.now() : null, handoff.id)
         const previous = this.handoffs(itemId).filter((h) => h.status === 'resolved').at(-1) ?? null
         const ctx = { engine: this, item, handoff, previous, author: authorOf(handoff.createdBy) }
         try {
@@ -372,7 +368,7 @@ export class Engine extends EventEmitter {
 
   async create(
     title: string,
-    opts: { source?: string; ref?: string; url?: string | null; state?: string; next?: HandoffSpec[]; actor?: string; author?: Author } = {},
+    opts: { source?: string; ref?: string; url?: string | null; next?: HandoffSpec[]; actor?: string; author?: Author } = {},
   ): Promise<string | null> {
     const id = randomUUID()
     const at = this.now()
@@ -384,9 +380,9 @@ export class Engine extends EventEmitter {
     const created = transaction(this.db, () => {
       const r = this.db
         .prepare(
-          `INSERT OR IGNORE INTO items (id, title, source, source_ref, url, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT OR IGNORE INTO items (id, title, source, source_ref, url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(id, title, opts.source ?? 'manual', opts.ref ?? null, opts.url ?? null, opts.state ?? '', at, at) as { changes: number | bigint }
+        .run(id, title, opts.source ?? 'manual', opts.ref ?? null, opts.url ?? null, at, at) as { changes: number | bigint }
       if (Number(r.changes) === 0) return false
       this.record(id, actor, 'created', title, { source: opts.source ?? 'manual', url: opts.url ?? null })
       this.enqueue(id, next, opts.author === 'bot' ? 'bot' : actor)
@@ -400,7 +396,7 @@ export class Engine extends EventEmitter {
   /** A human resolves the current handoff, whatever it is, and puts `next` in front of the queue. */
   async handOff(
     itemId: string,
-    opts: { next: HandoffSpec[]; state?: string | null; note?: string; replaceQueue?: boolean; actor?: string },
+    opts: { next: HandoffSpec[]; replaceQueue?: boolean; actor?: string },
   ): Promise<void> {
     const actor = opts.actor ?? 'human'
     const next = this.prepare(opts.next, 'human')
@@ -408,15 +404,8 @@ export class Engine extends EventEmitter {
       const item = this.must(itemId)
       if (item.closed) throw new Error('This item is closed.')
       transaction(this.db, () => {
-        if (opts.state !== undefined && opts.state !== null && opts.state !== item.state) this.setStateRow(itemId, opts.state, actor)
         if (item.current)
-          this.resolve(
-            item.current.id,
-            item.current.type === 'human'
-              ? { decision: 'handed_off', ...(opts.note ? { note: opts.note } : {}) }
-              : { outcome: 'taken_over', ...(opts.note ? { note: opts.note } : {}) },
-            'human',
-          )
+          this.resolve(item.current.id, item.current.type === 'human' ? { decision: 'handed_off' } : { outcome: 'taken_over' }, 'human')
         if (opts.replaceQueue) this.cancelQueue(itemId)
         this.enqueue(itemId, next, actor)
       })
@@ -445,15 +434,13 @@ export class Engine extends EventEmitter {
     await this.advance(itemId)
   }
 
-  async close(itemId: string, opts: { state?: string | null; note?: string; actor?: string; kind?: 'closed' | 'handled_outside' } = {}): Promise<void> {
+  async close(itemId: string, opts: { actor?: string; kind?: 'closed' | 'handled_outside' } = {}): Promise<void> {
     const actor = opts.actor ?? 'human'
     const kind = opts.kind ?? 'closed'
     await this.serial(itemId, async () => {
       const item = this.must(itemId)
       transaction(this.db, () => {
-        if (opts.state && opts.state !== item.state) this.setStateRow(itemId, opts.state, actor)
-        if (kind === 'handled_outside') this.record(itemId, actor, 'handled_outside', opts.note || '(no note)')
-        else if (opts.note) this.record(itemId, actor, 'note', opts.note)
+        if (kind === 'handled_outside') this.record(itemId, actor, 'handled_outside', 'Handled outside the tool.')
         if (item.current)
           this.resolve(item.current.id, item.current.type === 'human' ? { decision: kind } : { outcome: 'taken_over', decision: kind }, actor)
         this.cancelQueue(itemId)
@@ -467,23 +454,8 @@ export class Engine extends EventEmitter {
     void this.checkDue()
   }
 
-  handledOutside(itemId: string, note: string): Promise<void> {
-    return this.close(itemId, { note, kind: 'handled_outside' })
-  }
-
-  private setStateRow(id: string, state: string, actor: string): void {
-    this.db.prepare('UPDATE items SET state = ? WHERE id = ?').run(state, id)
-    this.record(id, actor, 'state', state)
-  }
-
-  setState(id: string, state: string, actor = 'human'): void {
-    this.setStateRow(id, state, actor)
-    this.emit('change')
-  }
-
-  note(id: string, text: string, actor: string): void {
-    this.record(id, actor, 'note', text)
-    this.emit('change')
+  handledOutside(itemId: string): Promise<void> {
+    return this.close(itemId, { kind: 'handled_outside' })
   }
 
   /** Brings an item back to the human, stopping any run on it. */
@@ -528,7 +500,7 @@ export class Engine extends EventEmitter {
 
   /**
    * A run is over. If its handoff is still the item's, the run's output resolves
-   * it: the state it returned, the handoffs it returned queued in front, and what
+   * it: the handoffs it returned queued in front, and what
    * it said on the way kept in the resolution. Anything wrong goes to the human.
    */
   async endRun(
@@ -554,7 +526,7 @@ export class Engine extends EventEmitter {
     if (!error) {
       try {
         out = z
-          .object({ state: z.string(), next: z.array(z.object({ type: z.string(), params: z.record(z.unknown()) })), close: z.boolean().optional() })
+          .object({ next: z.array(z.object({ type: z.string(), params: z.record(z.unknown()) })), close: z.boolean().optional() })
           .parse(end.structured) as BotOutput
         if (!out.close && !out.next.length) throw new Error('It returned no handoffs and did not close the item.')
         next = this.prepare(out.next, 'bot')
@@ -570,8 +542,7 @@ export class Engine extends EventEmitter {
           this.enqueue(itemId, [{ type: 'human', params: { needed: `${error} What next?` } }], 'system')
           return
         }
-        if (out.state !== item.state) this.setStateRow(itemId, out.state, 'bot')
-        this.resolve(item.current!.id, { ...base, state: out.state }, 'bot')
+        this.resolve(item.current!.id, { ...base, ...(out.close ? { closed: true } : {}) }, 'bot')
         if (out.close) {
           this.cancelQueue(itemId)
           this.db.prepare('UPDATE items SET closed = 1, updated_at = ? WHERE id = ?').run(this.now(), itemId)
@@ -646,7 +617,7 @@ export class Engine extends EventEmitter {
       this.lastPoll.set(source.id, this.now())
       try {
         for (const found of await source.poll(this))
-          await this.create(found.title, { source: source.id, ref: found.ref, url: found.url, state: found.state, next: found.next, actor: source.id })
+          await this.create(found.title, { source: source.id, ref: found.ref, url: found.url, next: found.next, actor: source.id })
       } catch (e) {
         this.emit('sourceError', `${source.id}: ${(e as Error).message}`)
       }

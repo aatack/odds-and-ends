@@ -13,7 +13,6 @@ const api: WorkflowsAPI = {
   approve: call('approve') as WorkflowsAPI['approve'],
   close: call('close') as WorkflowsAPI['close'],
   handledOutside: call('handledOutside') as WorkflowsAPI['handledOutside'],
-  setState: call('setState') as WorkflowsAPI['setState'],
   takeOver: call('takeOver') as WorkflowsAPI['takeOver'],
   pollSources: call('pollSources') as WorkflowsAPI['pollSources'],
   integrations: call('integrations') as WorkflowsAPI['integrations'],

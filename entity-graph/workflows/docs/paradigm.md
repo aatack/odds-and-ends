@@ -15,8 +15,6 @@ The text uses ASD-STE100 Simplified Technical English.
 ## Items
 
 - An **item** is one task.
-- An item has a **state**. The state tells where the item is now, in a few lines.
-- The person or the bot that last worked on the item updates the state.
 
 ## Handoffs
 
@@ -51,7 +49,7 @@ There are six types of handoff:
 ## Bots
 
 - A bot works on one item at a time.
-- When it stops, it gives the new state and the next handoffs.
+- When it stops, it gives the next handoffs.
 - A bot gives you an item only when nobody else can do the work.
 - When a bot gives you an item, it asks one direct question with no unnecessary words.
 - The app keeps the text that the bot writes, but does not show it unless you ask.
@@ -68,7 +66,8 @@ There are six types of handoff:
 ## History
 
 - The app keeps the full history of each item: every handoff, its result, and the
-  notes between them.
-- Each handoff records the state of the item when it became active.
+  actions between them.
+- The app shows the history as a chat. What you typed is on the right. What other
+  persons, bots and scripts set is on the left.
 - Bots can read this history. They use it to find which processes are slow, where
   you had to change their work, and where you did work outside the app.

@@ -25,8 +25,6 @@ export interface Handoff extends HandoffSpec {
   createdAt: number
   startedAt: number | null
   resolvedAt: number | null
-  /** The item's state as this handoff became active. */
-  stateAtStart: string | null
   resolution: Record<string, unknown> | null
   resolvedBy: string | null
   /** For the ones the loop checks. */
@@ -39,8 +37,6 @@ export interface Item {
   title: string
   source: string
   url: string | null
-  /** Where the item is now, in a few lines; amended by whoever last worked on it. */
-  state: string
   closed: boolean
   /** The active handoff; null once closed. */
   current: Handoff | null
@@ -52,7 +48,7 @@ export interface Item {
   updatedAt: number
 }
 
-/** Something that happened between handoffs: a note, a state change, an action. */
+/** Something that happened between handoffs: an action run, a check that failed, an item created. */
 export interface ItemEvent {
   id: number
   itemId: string
@@ -155,13 +151,12 @@ export interface WorkflowsAPI {
   next: (skip: string[]) => Promise<string | null>
   create: (title: string, next: HandoffSpec[]) => Promise<string>
   /** Resolves the current handoff and puts `next` at the front of the queue. */
-  handOff: (id: string, state: string | null, next: HandoffSpec[], note: string) => Promise<void>
+  handOff: (id: string, next: HandoffSpec[]) => Promise<void>
   /** Runs the action the current human handoff asks approval for, with the human's inputs. */
   approve: (id: string, inputs: Record<string, unknown>) => Promise<void>
-  close: (id: string, state: string | null, note: string) => Promise<void>
+  close: (id: string) => Promise<void>
   /** The human did it outside the tool. Recorded, so reviews can find it. */
-  handledOutside: (id: string, note: string) => Promise<void>
-  setState: (id: string, state: string) => Promise<void>
+  handledOutside: (id: string) => Promise<void>
   takeOver: (id: string) => Promise<void>
   pollSources: () => Promise<void>
   integrations: () => Promise<IntegrationsView>
