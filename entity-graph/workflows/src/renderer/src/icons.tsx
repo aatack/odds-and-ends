@@ -8,6 +8,7 @@ import {
   Link,
   MessageCircle,
   MessageSquare,
+  Paperclip,
   Play,
   Settings,
   ShieldCheck,
@@ -22,6 +23,7 @@ import type { EventKind, Item } from '../../shared/types'
 export const TYPE_ICON: Record<EventKind, LucideIcon> = {
   item: Layers,
   message: MessageSquare,
+  attachment: Paperclip,
   action: Play,
   approval: ShieldCheck,
   bot: Bot,
@@ -34,6 +36,7 @@ export const TYPE_ICON: Record<EventKind, LucideIcon> = {
 export const TYPE_NAME: Record<EventKind, string> = {
   item: 'Task',
   message: 'Message',
+  attachment: 'Attachment',
   action: 'Action',
   approval: 'Approval',
   bot: 'Bot',

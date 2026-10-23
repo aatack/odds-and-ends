@@ -51,6 +51,23 @@ export const message: EventType = {
   describe: (p) => String(p.text),
 }
 
+export const attachment: EventType = {
+  type: 'attachment',
+  description:
+    'Another event, attached to this item so that it is gathered here: an idea to build with others, say. It points at the event; ' +
+    'the event itself stays where it was. Add one with the attach_event action, which fills in the params.',
+  params: {
+    event: z.string().describe('The id of the event attached.'),
+    title: z.string().describe('What it was as it was attached: its title, for an item; its summary otherwise.'),
+    item: z.string().describe('The item to read it in: the event itself, for an item; the item it sits in otherwise.'),
+  },
+  data: '{}',
+  blocking: false,
+  bots: true,
+  describe: (p) => `Attached: ${p.title} [${p.item === p.event ? p.event : `${p.event} in ${p.item}`}]`,
+  said: (p) => `Attached: ${p.title}`,
+}
+
 export const action: EventType = {
   type: 'action',
   description: 'An action run on the item, with what it was given and what it answered.',
@@ -240,4 +257,4 @@ export const script: EventType = {
   },
 }
 
-export const EVENT_TYPES: EventType[] = [item, message, action, approval, bot, github, slack, after, script]
+export const EVENT_TYPES: EventType[] = [item, message, attachment, action, approval, bot, github, slack, after, script]

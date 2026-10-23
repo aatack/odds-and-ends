@@ -54,6 +54,7 @@ async function main(): Promise<void> {
   handle('approve', (eventId: string, inputs: Record<string, unknown>) => engine.approve(eventId, inputs))
   handle('cancel', (eventId: string) => engine.cancel(eventId))
   handle('close', (id: string) => engine.close(id))
+  handle('attach', (eventId: string, targetId: string) => engine.attach(eventId, targetId))
   handle('handledOutside', (id: string) => engine.handledOutside(id))
   handle('pollSources', () => engine.pollSources(true))
   handle('integrations', () => admin.integrations())

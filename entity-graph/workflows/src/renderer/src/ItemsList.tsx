@@ -21,10 +21,11 @@ function status(i: Item): string {
 /**
  * Every item, grouped, under a search line like the chat input: typing filters
  * the titles fuzzily, the arrow keys move through what is left, Enter opens one,
- * and Tab makes a new item with what was typed as its title.
+ * and Tab makes a new item with what was typed as its title. The item picker is
+ * this too, with Enter (and a click) picking instead: `verb` says which.
  */
-export function ItemsList(props: { items: Item[]; onOpen: (id: string) => void; onCreate: (title: string) => void }) {
-  const { items, onOpen, onCreate } = props
+export function ItemsList(props: { items: Item[]; onOpen: (id: string) => void; onCreate: (title: string) => void; verb?: string }) {
+  const { items, onOpen, onCreate, verb = 'Open' } = props
   const [text, setText] = useState('')
   const [at, setAt] = useState(0)
   const box = useRef<HTMLInputElement>(null)
@@ -97,7 +98,7 @@ export function ItemsList(props: { items: Item[]; onOpen: (id: string) => void; 
         </div>
         <span className="keys">
           <span className="key-pill">
-            <kbd>Enter</kbd> Open
+            <kbd>Enter</kbd> {verb}
           </span>
           {text.trim() && (
             <span className="key-pill">

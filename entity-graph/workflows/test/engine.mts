@@ -514,6 +514,26 @@ assert.ok(cat.actions.find((a) => a.name === 'slack_post')!.unsafe)
 assert.deepEqual(cat.presets.map((p) => p.id), ['bot', 'message', 'pr-merged', 'pr-checks'])
 assert.ok(!(botOutputSchema(engine.eventTypes).required))
 
+// ---- 18. Attaching gathers any event in another item, and leaves it where it was ----
+const collector = (await engine.create('Build the ideas'))!
+const idea = (await engine.create('An idea'))!
+const [said] = await engine.addEvents(idea, [{ type: 'message', params: { text: 'Do it this way' } }])
+await engine.attach(idea, collector)
+await engine.callAction('attach_event', { event_id: said, item_id: collector }, { engine, author: 'bot', actor: 'bot', itemId: collector, runId: null })
+const gathered = engine.children(collector).filter((e) => e.type === 'attachment')
+assert.deepEqual(gathered.map((e) => e.params), [
+  { event: idea, title: 'An idea', item: idea },
+  { event: said, title: 'Do it this way', item: idea },
+])
+assert.equal(gathered[0].message, 'Attached: An idea')
+assert.ok(gathered.every((e) => e.resolved))
+assert.equal(engine.event(idea)!.parentId, null)
+assert.equal(engine.children(idea).length, 1)
+await assert.rejects(engine.attach(collector, collector), /itself/)
+await assert.rejects(engine.attach(idea, said), /No item/)
+await engine.close(collector)
+await assert.rejects(engine.attach(idea, collector), /closed/)
+
 assert.equal(behaviours.length, 0)
 mcp.close()
 console.log('engine: ok')

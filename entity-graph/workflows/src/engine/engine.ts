@@ -571,6 +571,20 @@ export class Engine extends EventEmitter {
     return ids
   }
 
+  /**
+   * Attaches an event (any, items included) to an item, to gather it there: an
+   * attachment event in the item points at it. The event stays where it was.
+   */
+  async attach(eventId: string, targetId: string, actor = 'human', author: Author = 'human', runId: string | null = null): Promise<string> {
+    const e = this.event(eventId)
+    if (!e) throw new Error(`No event ${eventId}.`)
+    if (this.event(targetId)?.type !== 'item') throw new Error(`No item ${targetId}.`)
+    if (eventId === targetId) throw new Error('An item can not be attached to itself.')
+    const params = { event: e.id, title: e.summary, item: e.type === 'item' ? e.id : e.parentId }
+    const [id] = await this.addEvents(targetId, [{ type: 'attachment', params }], actor, author, runId)
+    return id
+  }
+
   /** Runs an approval's action with the human's inputs, which resolves it. */
   async approve(eventId: string, inputs: Record<string, unknown>): Promise<void> {
     const event = this.event(eventId)

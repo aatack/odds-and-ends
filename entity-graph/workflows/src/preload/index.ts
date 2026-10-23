@@ -16,6 +16,7 @@ const api: WorkflowsAPI = {
   approve: call('approve') as WorkflowsAPI['approve'],
   cancel: call('cancel') as WorkflowsAPI['cancel'],
   close: call('close') as WorkflowsAPI['close'],
+  attach: call('attach') as WorkflowsAPI['attach'],
   handledOutside: call('handledOutside') as WorkflowsAPI['handledOutside'],
   pollSources: call('pollSources') as WorkflowsAPI['pollSources'],
   integrations: call('integrations') as WorkflowsAPI['integrations'],

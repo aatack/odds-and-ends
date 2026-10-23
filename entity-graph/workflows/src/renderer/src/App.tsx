@@ -2,12 +2,13 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import type { Catalog, ItemDetail, ItemEvent } from '../../shared/types'
 import { Blockers } from './Blockers'
 import { useSetAtom } from 'jotai'
-import { ArrowRight, ChevronLeft, CircleCheck, CircleX, ExternalLink, Menu, SkipForward } from 'lucide-react'
+import { ArrowRight, ChevronLeft, CircleCheck, CircleX, ExternalLink, Menu, Paperclip, SkipForward } from 'lucide-react'
 import { IconButton } from './components/ui/IconButton'
 import { Chat } from './Chat'
 import { DebugView } from './DebugView'
 import { EventMenu } from './EventMenu'
 import { EventView } from './EventView'
+import { ItemPicker } from './ItemPicker'
 import { ItemsList } from './ItemsList'
 import { Composer } from './Composer'
 import { EventIcon } from './icons'
@@ -115,6 +116,8 @@ function AppMenu() {
  */
 function ItemsMain() {
   const w = useItems()
+  // The event being attached to another item, while the picker is up; it goes with the view it was opened on.
+  const [attaching, setAttaching] = useState<string | null>(null)
   const openEvent = (id: string) => w.open({ kind: 'event', id })
   // What the items view opens takes its place, so Back goes to where you were before it.
   const openFromItems = (id: string) => w.open({ kind: 'event', id }, { replace: w.view?.kind === 'items' })
@@ -151,9 +154,9 @@ function ItemsMain() {
     )
   const e = d.event
   const debug = w.view.kind === 'debug'
-  const actions = debug
-    ? null
-    : e.type === 'item'
+  // What can be done to it, by its type; and, for every event, attaching it to another item.
+  const own =
+    e.type === 'item'
       ? !e.resolved && (
           <>
             <IconButton title="Resolve" className="text-success-600 hover:text-success-600" onClick={() => w.act(() => api().close(e.id))}>
@@ -176,6 +179,18 @@ function ItemsMain() {
             <CircleX className="size-[17px]" />
           </IconButton>
         )
+  const actions = debug ? null : (
+    <>
+      {own}
+      <IconButton title="Attach to a task" onClick={() => setAttaching(e.id)}>
+        <Paperclip className="size-[17px]" />
+      </IconButton>
+    </>
+  )
+  const attach = (target: string) => {
+    setAttaching(null)
+    void w.act(() => api().attach(e.id, target))
+  }
   return (
     <div className="view">
       <ViewHeader
@@ -195,6 +210,20 @@ function ItemsMain() {
           <EventView detail={d} catalog={w.catalog} act={w.act} onOpen={openEvent} />
         )}
       </div>
+      {attaching === e.id && (
+        <ItemPicker
+          title={`Attach “${e.summary}” to a task`}
+          // Any open item but this one can take it.
+          items={w.overview.items.filter((i) => !i.closed && i.id !== e.id)}
+          verb="Attach"
+          onPick={attach}
+          onCreate={(title) => {
+            setAttaching(null)
+            void w.act(async () => api().attach(e.id, await api().create(title, null)))
+          }}
+          onClose={() => setAttaching(null)}
+        />
+      )}
     </div>
   )
 }

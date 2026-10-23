@@ -86,6 +86,7 @@ the chat input should offer it, add a preset in `presets.ts`.
 | --- | --- | --- | --- |
 | `item` | yes | `title`, `events?` (its first children, added in it), `detached?` (sits in no item, wherever it is added), `key?` (so a source adds it once), `sessionId` (set by the app) | `{ how: closed \| handled_outside \| cancelled }` |
 | `message` | no | `text` | — |
+| `attachment` | no | `event`, `title`, `item` (filled in by `attach_event`) | — |
 | `action` | no | `name`, `inputs`, `output` | — |
 | `approval` | the human's | `action` (unsafe), `inputs`, `reason?` | `{ ran, inputs, changed, output, detail }` |
 | `bot` | yes | `instructions?` (it reads as "Bot" without) | `{ runId, message?, costUsd?, output }` or `{ error }` |
@@ -116,6 +117,10 @@ the chat input should offer it, add a preset in `presets.ts`.
   - A run that throws, or returns anything else, ends it with `{ error }`.
   - Like an `after`'s script, it runs in QuickJS. A script a bot wrote gets no
     unsafe actions.
+- **`attachment`** gathers another event in an item, wherever that event sits:
+  ideas to build together, say. It only points at it (`event`, and `item`, the
+  item to read it in); the event stays where it was. The human attaches from the
+  paperclip at the top right of any event's view; agents use `attach_event`.
 - **A `slack` event with a message that a bot adds** becomes an approval of
   `slack_post`, followed by an after that starts the wait in the thread the
   message posted.

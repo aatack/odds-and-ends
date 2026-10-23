@@ -142,6 +142,15 @@ export const itemActions: Action[] = [
     },
   },
   {
+    name: 'attach_event',
+    unsafe: false,
+    description:
+      'Attach any event (an item, a message, anything) to an item, to gather it there: an attachment event in the item points at it. ' +
+      'The event itself stays where it was.',
+    input: { event_id: z.string().describe('The event to attach.'), item_id: itemId.describe('The item to attach it to.') },
+    run: async (a, ctx) => ({ id: await ctx.engine.attach(String(a.event_id), String(a.item_id), ctx.actor, ctx.author, ctx.runId) }),
+  },
+  {
     name: 'cancel_event',
     unsafe: false,
     description: 'End a blocker without it happening (a child item is closed as cancelled).',

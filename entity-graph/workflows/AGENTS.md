@@ -118,6 +118,9 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   (`open(view, { replace: true })`), so Back goes to where you were before it rather than to the list.
 - **Text is markdown.** Messages, descriptions and code samples all go through `Markdown` (`components/ui/`, react-markdown
   with GFM; fences drawn by `CodeBlock`). Code that is not inside prose goes in as `fenced(code, language)`.
+- **Picking an item** is `ItemPicker`: the items view itself in a `Modal` over the blurred window, calling back with
+  the item picked (Enter or a click) or made (Tab). The paperclip at the top right of every event's view uses it to
+  attach that event, whatever it is, to a task (`Engine.attach`, an `attachment` event in the task).
 - **Every event has a right-click menu** (`useEventMenu`): Open and Debug. Spread
   it on anything that stands for an event. Clicking an event does nothing else.
 

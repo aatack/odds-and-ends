@@ -44,7 +44,7 @@ export function EventView({
           <Approval b={e} catalog={catalog} act={act} />
         </section>
       )}
-      <Special detail={detail} />
+      <Special detail={detail} onOpen={onOpen} />
 
       <section className="card">
         <h2>What it was given</h2>
@@ -74,8 +74,16 @@ function status(e: ItemEvent): string {
 }
 
 /** What only some types have to show. */
-function Special({ detail }: { detail: EventDetail }) {
+function Special({ detail, onOpen }: { detail: EventDetail; onOpen: (id: string) => void }) {
   const e = detail.event
+  if (e.type === 'attachment')
+    return (
+      <section className="card">
+        <button data-ui className="link" onClick={() => onOpen(String(e.params.event))}>
+          {String(e.params.title)}
+        </button>
+      </section>
+    )
   const output = e.data?.output
   if (e.type === 'bot')
     return (

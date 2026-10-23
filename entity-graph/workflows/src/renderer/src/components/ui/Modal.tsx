@@ -33,11 +33,14 @@ export function Modal({
   title,
   onClose,
   size = 'md',
+  blur = false,
   children,
 }: {
   title: ReactNode
   onClose: () => void
   size?: ModalSize
+  /** Blurs what is behind the backdrop, as well as dimming it. */
+  blur?: boolean
   children: ReactNode
 }): React.JSX.Element {
   const large = size === 'large'
@@ -61,7 +64,10 @@ export function Modal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-gray-950/30 p-6"
+      className={cn(
+        'fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-gray-950/30 p-6',
+        blur && 'backdrop-blur-sm',
+      )}
       onClick={onClose}
     >
       <div

@@ -8,7 +8,7 @@
  * stay open until something happens (a bot replies, CI finishes, an approval is
  * given, a child item closes).
  */
-export type EventKind = 'item' | 'message' | 'action' | 'approval' | 'bot' | 'github' | 'slack' | 'after' | 'script'
+export type EventKind = 'item' | 'message' | 'attachment' | 'action' | 'approval' | 'bot' | 'github' | 'slack' | 'after' | 'script'
 
 /** An event as it is added. `ref` names it, so an `after` added alongside can point at it. */
 export interface EventSpec {
@@ -235,6 +235,8 @@ export interface WorkflowsAPI {
   /** Ends a blocker without it happening. */
   cancel: (eventId: string) => Promise<void>
   close: (id: string) => Promise<void>
+  /** Attaches any event to an item (`targetId`), as an attachment event in it. */
+  attach: (eventId: string, targetId: string) => Promise<void>
   /** The human did it outside the tool. Recorded, so reviews can find it. */
   handledOutside: (id: string) => Promise<void>
   pollSources: () => Promise<void>
