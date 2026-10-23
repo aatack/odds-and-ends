@@ -76,6 +76,8 @@ function AppMenu() {
   const w = useItems()
   const [open, setOpen] = useState(false)
   const busy = w.overview.workers.filter((x) => x.itemId).length
+  // Close the menu whenever the view stack changes (Back, Next, Ctrl+W, the phone's system Back).
+  useEffect(() => setOpen(false), [w.views])
   useEffect(() => {
     if (!open) return
     const close = () => setOpen(false)

@@ -227,6 +227,10 @@ button[data-ui].next-button { right: calc(16px + env(safe-area-inset-right)); wi
   .chat-scroll, .item-parent { padding-left: 16px; padding-right: 16px; }
   .composer { padding-left: 16px; padding-right: 16px; padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
   .view-header { padding-left: max(8px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+  /* Let the header wrap: the title keeps the first line next to Back, and the
+   * action buttons drop to a second, right-aligned line rather than cutting the title. */
+  .view-header { flex-wrap: wrap; }
+  .view-header .buttons { flex-basis: 100%; justify-content: flex-end; }
   .view > .error { margin-left: 16px; margin-right: 16px; }
   .view-note { margin-left: 16px; margin-right: 16px; }
   .items-view .search { padding-right: 12px; }
