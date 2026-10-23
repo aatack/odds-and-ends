@@ -1,5 +1,5 @@
 import {
-  CheckCircle,
+  Check,
   CodeSquare01,
   CpuChip01,
   GitPullRequest,
@@ -35,7 +35,7 @@ const TYPE_NAME: Record<HandoffKind, string> = {
 
 /** What an item waits for now: its handoff's type, the human's when it has none, or done. */
 export function ItemIcon({ item }: { item: Item }) {
-  if (item.closed) return <CheckCircle className="icon" aria-label="Closed" />
+  if (item.closed) return <Check className="icon" aria-label="Closed" />
   const type = item.current?.type ?? 'human'
   const Icon = TYPE_ICON[type]
   return <Icon className="icon" aria-label={TYPE_NAME[type]} />
