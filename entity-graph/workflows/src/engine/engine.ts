@@ -70,7 +70,6 @@ function resolveRefs(value: unknown, ids: Map<string, string>, key?: string): un
   return value
 }
 
-
 export interface EngineOptions {
   db: Db
   secrets?: Secrets

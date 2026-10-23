@@ -286,6 +286,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
           <Composer
             key={item.id}
             catalog={catalog}
+            onResolve={() => void act(() => api().close(item.id))}
             onSend={async (preset, text) => {
               let ok = false
               await act(async () => {
