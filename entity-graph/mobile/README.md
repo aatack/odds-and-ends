@@ -278,9 +278,32 @@ downwards. What changed is everything above one view, and the gestures.
 - **Ordering is done in one write.** Adding a line below a row, indenting, outdenting
   and reordering all go out as a single `writeEvents` batch, so one undo takes the
   whole action back rather than half of it.
-- **No integrations, no code entities, no admin.** A code entity is shown as code but
-  not run; the server's GitHub/Slack/Claude tools aren't fetched; sources are not
-  configured from here. The app reads and writes one source and does nothing else.
+- **A row is drawn by its type.** A plain note renders as markdown; a `file` shows its
+  image or a download; a `url` — the `url:<address>` entities the store serves — shows
+  its page's address as a link rather than an empty line. Each is one entry in a small
+  registry (`views/types.tsx`), so a new type is a case there rather than a branch in
+  the outline. There is no `code` type any more — a fenced block in a note is how code
+  reads now, in plain monospace.
+- **Links are pills, and a tap leaves.** A link in entity text draws as a pill behind a
+  globe, and tapping it opens the page in a new tab — on the desktop hovering a link
+  peeks at the page, which a phone has no way to do. Only `http(s)` and
+  `mailto` links are followable; anything else draws as a pill with nowhere to go.
+- **Details edits a typed entity's values.** The action sheet's *Details* draws an
+  entity's values as a form from its type's `schema` — a field per property, scalar
+  widgets only (a text box, a number, yes/no, a choice list), and the keys that changed
+  written as one undoable save. Anything a phone can't edit in a line — an object, a
+  list, a union — is shown as read-only JSON and left to the desktop, which has the full
+  schema form and a detail view of its own.
+- **No integrations, no admin.** The server's GitHub/Slack/Claude tools aren't fetched;
+  sources are not configured from here. The app reads and writes one source and does
+  nothing else.
+- **Some of the desktop stays on the desktop.** A type's `onLoad` doesn't run here: the
+  lazy events it returns need the desktop's QuickJS worker calling tools synchronously
+  over a `SharedArrayBuffer`, which needs cross-origin isolation — a secure-context
+  feature this app can't rely on, since the plain-LAN fallback has no HTTPS. So an
+  instance shows what is written to it, not what `onLoad` would add. The chat view,
+  peeks, tabs and the schema builder stay there too: a phone reads and writes one
+  outline, and that is the whole of it.
 - **Markdown renders, less maths and highlighting.** Bold, links, lists, quotes and
   tables come out as they do on the desktop, through the same stylesheet written the
   other way up (a line with no markup in it is indistinguishable from plain text).
@@ -299,10 +322,13 @@ npm test        # two headless runs, no browser
   real HTTP, with nothing stubbed but `localStorage`. That it runs at all is the
   architecture's claim (no React, no DOM below the views); what it checks is where a
   new line lands, that chained entry keeps its order, that indent and outdent move
-  what they say, and that one undo is one action.
+  what they say, that one undo is one action, and that saving a detail form writes the
+  keys that changed and one undo takes the whole save back.
 - `test/render.tsx` renders the whole view layer to a string and asserts the outline,
   the header, the bar and each sheet say what they should — including that undo
-  disappears on a source that can't pop events.
+  disappears on a source that can't pop events, that a `url` row draws its address
+  rather than "Empty", that a link renders as a pill with no `javascript:` href, and
+  that the detail form draws the right widget per schema property.
 
 ```sh
 npm run typecheck

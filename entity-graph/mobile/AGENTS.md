@@ -140,6 +140,20 @@ the reason `npm test` can drive the app in node.
   from a prose stylesheet — no typography by default — so a line with no markup in it
   comes out identical to a plain span. Maths and syntax highlighting are deliberately
   not loaded; don't add them back without a reason bigger than parity.
+- **A row's body is chosen by its type**, in `views/types.tsx`: a note is markdown, a
+  `file` is its bytes, a `url` is its address. Adding a type is an entry in that
+  registry, not another branch in `Outline`. Links in markdown draw as pills, and only
+  `http(s)` and `mailto` ones are given a destination — any other href (a
+  `javascript:`, say) draws a pill with nowhere to go. The desktop's `Markdown` and
+  `LinkPill` are read for behaviour, not imported: nothing of the renderer is in this
+  build.
+- **`setOnLoadRunner` is deliberately never called here.** A type's `onLoad` would fill
+  an instance's cache with lazy events, but running it needs the desktop's QuickJS
+  worker calling tools synchronously over a `SharedArrayBuffer` — so cross-origin
+  isolation, a secure-context feature the plain-LAN fallback can't guarantee. The cache
+  therefore carries only what is written, and an instance shows less than it would on
+  the desktop, on purpose. The custom-type surface that does work on a phone is the
+  detail form (`views/DetailsSheet.tsx`), which edits an instance from its type's schema.
 
 ## Layout
 
@@ -150,6 +164,7 @@ src/
   state/          latent state, pure derivations, how far a level is unrolled
   tools/          the registry, the dispatcher, the tool sets
   components/ui/  Button, Field, Sheet, TextEditor
-  views/          the shell, the outline, the sheets, the gestures
+  views/          the shell, the outline, the sheets (incl. DetailsSheet), the
+                  gestures, and types.tsx — a row's body per entity type
 test/             an in-memory source, and two headless runs over it
 ```
