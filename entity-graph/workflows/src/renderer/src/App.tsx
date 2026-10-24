@@ -8,7 +8,7 @@ import { Dropdown, DropdownItem } from './components/ui/Dropdown'
 import { TypesPage } from './TypesPage'
 import { DirectivesPage } from './DirectivesPage'
 import { IconButton } from './components/ui/IconButton'
-import { appearanceAtom, applyAppearance, SERIFS, THEMES } from './appearance'
+import { appearanceAtom, applyAppearance, MODES, SERIFS, THEMES } from './appearance'
 import { Chat } from './Chat'
 import { DebugView } from './DebugView'
 import { EventMenu } from './EventMenu'
@@ -194,6 +194,14 @@ function AppMenu() {
               </button>
             ))}
           </div>
+          <div className="menu-note">Mode</div>
+          <div className="menu-choices">
+            {MODES.map((m) => (
+              <button key={m.id} className={look.mode === m.id ? 'chosen' : ''} onClick={() => setLook({ ...look, mode: m.id })}>
+                {m.name}
+              </button>
+            ))}
+          </div>
           <div className="menu-note">Serif</div>
           <div className="menu-choices">
             {SERIFS.map((f) => (
@@ -323,6 +331,7 @@ function HeaderActions({ actions }: { actions: EventAction[] }) {
       {rest.length > 0 && (
         <Dropdown
           align="right"
+          menuClassName="popover"
           trigger={({ toggle }) => (
             <IconButton title="More" onClick={toggle}>
               <MoreHorizontal className="size-[17px]" />

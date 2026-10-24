@@ -119,7 +119,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
 
 - **Styles on trial.** For now the menu switches between three themes (Linear, the default, dark; Notebook, light
   and warm; Terminal, dark and in Fira Code) and five serifs (or none: the UI's own font) for what the human typed (their messages, the chat
-  input, task titles). `appearance.ts` keeps the choice and sets `data-theme`/`data-serif` on `<html>`;
+  input, task titles). each in a light or a dark mode. `appearance.ts` keeps the choice and sets `data-theme`/`data-serif`/`data-mode` (and `.dark`) on `<html>`;
   `themes.css` holds the overrides. Code is Fira Code everywhere; weights lean light.
 - **The content pane is a stack of views** (`views.ts`, a Jotai atom kept in
   local storage). The list and Next replace the stack; Open, Debug and links push

@@ -19,19 +19,25 @@ export const SERIFS = [
   { id: 'crimson', name: 'Crimson Pro' },
 ] as const
 
-export type Appearance = { theme: (typeof THEMES)[number]['id']; serif: (typeof SERIFS)[number]['id'] }
+export const MODES = [
+  { id: 'dark', name: 'Dark' },
+  { id: 'light', name: 'Light' },
+] as const
+
+export type Appearance = { theme: (typeof THEMES)[number]['id']; serif: (typeof SERIFS)[number]['id']; mode: (typeof MODES)[number]['id'] }
 
 const KEY = 'workflows.appearance'
-const DEFAULT: Appearance = { theme: 'linear', serif: 'lora' }
+const DEFAULT: Appearance = { theme: 'linear', serif: 'lora', mode: 'dark' }
 
 export const appearanceAtom = atomWithStorage<Appearance>(KEY, DEFAULT, createJSONStorage(() => localStorage), { getOnInit: true })
 
-/** Puts an appearance on the page. Notebook is the one light theme. */
+/** Puts an appearance on the page: every theme comes light or dark (`.dark` on <html>, as entity-graph's tokens expect). */
 export function applyAppearance(a: Appearance): void {
   const html = document.documentElement
   html.dataset.theme = a.theme
   html.dataset.serif = a.serif
-  html.classList.toggle('dark', a.theme !== 'notebook')
+  html.dataset.mode = a.mode
+  html.classList.toggle('dark', a.mode === 'dark')
 }
 
 /** The stored appearance, read before the first render so nothing flashes. */

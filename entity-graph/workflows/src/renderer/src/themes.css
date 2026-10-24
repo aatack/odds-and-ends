@@ -13,28 +13,54 @@ html[data-serif='none'] .mine .bubble .markdown, html[data-serif='none'] .compos
 }
 html[data-serif='crimson'] .mine .bubble .markdown, html[data-serif='crimson'] .composer textarea, html[data-serif='crimson'] .row-title { font-size: 1.08em; }
 
-/* ---- Terminal: dark, set in Fira Code, square-ish, a soft green; not a green screen ---- */
+/* The ⋯ menu in a header (a Dropdown), set like the right-click menu. Unlayered, so it wins over the Dropdown's utilities. */
+.popover { background: var(--color-gray-100); box-shadow: 0 0 0 1px var(--color-gray-200), var(--shadow-lg); }
+
+/* ---- Terminal: set in Fira Code, square-ish, a soft green; not a green screen. Dark or light. ---- */
 html[data-theme='terminal'] {
   --font-sans: 'Fira Code Variable', ui-monospace, monospace;
-  --color-white: #101311;
-  --color-gray-25: #090b0a;
-  --color-gray-50: #0b0d0c;
-  --color-gray-100: #1d221e;
-  --color-gray-200: #2a302b;
-  --color-gray-300: #39403b;
-  --color-gray-400: #687369;
-  --color-gray-500: #97a39a;
-  --color-gray-600: #b7c1ba;
-  --color-gray-700: #d4dbd6;
-  --color-gray-900: #eef2ef;
-  --color-brand-500: #7fae8a;
-  --color-brand-600: #6f9f7b;
-  --color-brand-700: #9cc7a6;
+}
+html[data-theme='terminal'][data-mode='dark'] {
+  --color-white: #121513;
+  --color-gray-25: #070908;
+  --color-gray-50: #090b0a;
+  --color-gray-100: #1f2521;
+  --color-gray-200: #2e3530;
+  --color-gray-300: #434c45;
+  --color-gray-400: #77837a;
+  --color-gray-500: #a8b4ab;
+  --color-gray-600: #c4cdc6;
+  --color-gray-700: #dde3de;
+  --color-gray-800: #ebf0ec;
+  --color-gray-900: #f6f9f6;
+  --color-brand-50: #172219;
+  --color-brand-500: #8cc199;
+  --color-brand-600: #7db58a;
+  --color-brand-700: #a9d6b3;
+}
+html[data-theme='terminal'][data-mode='light'] {
+  --color-white: #fcfdfb;
+  --color-gray-25: #f8faf7;
+  --color-gray-50: #f2f5f1;
+  --color-gray-100: #e4e9e3;
+  --color-gray-200: #d3dad2;
+  --color-gray-300: #b4beb4;
+  --color-gray-400: #7f8b80;
+  --color-gray-500: #546055;
+  --color-gray-600: #3d473e;
+  --color-gray-700: #2b332c;
+  --color-gray-800: #1c231d;
+  --color-gray-900: #111712;
+  --color-gray-950: #070a07;
+  --color-brand-50: #e8f1ea;
+  --color-brand-500: #468a57;
+  --color-brand-600: #3a7a4b;
+  --color-brand-700: #2c613a;
 }
 html[data-theme='terminal'] body { font-size: 13px; letter-spacing: 0; font-weight: 400; }
 html[data-theme='terminal'] .bubble { border-radius: 4px; }
 html[data-theme='terminal'] .theirs .bubble, html[data-theme='terminal'] .mine .bubble { border-radius: 4px; }
-html[data-theme='terminal'] .mine .bubble { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
+html[data-theme='terminal'] .mine .bubble { background: color-mix(in srgb, var(--accent) 22%, var(--panel)); }
 html[data-theme='terminal'] .composer .builder-row,
 html[data-theme='terminal'] .items-view .search,
 html[data-theme='terminal'] .find-line { border-radius: 4px; }
@@ -42,9 +68,42 @@ html[data-theme='terminal'] .row,
 html[data-theme='terminal'] .card,
 html[data-theme='terminal'] button[data-ui] { border-radius: 3px; }
 html[data-theme='terminal'] .view-title { font-size: 15px; }
+/* Menus stand clear of what is behind them: a raised surface, and a hairline round it. */
+html[data-theme='terminal'] .menu,
+html[data-theme='terminal'] .popover {
+  border-radius: 4px;
+  background: var(--color-gray-100);
+  box-shadow: 0 0 0 1px var(--color-gray-300), 0 12px 32px -8px rgb(0 0 0 / 0.55);
+}
+html[data-theme='terminal'][data-mode='light'] .menu,
+html[data-theme='terminal'][data-mode='light'] .popover {
+  background: var(--color-white);
+  box-shadow: 0 0 0 1px var(--color-gray-300), 0 12px 32px -8px rgb(0 0 0 / 0.18);
+}
+html[data-theme='terminal'] .menu button:hover,
+html[data-theme='terminal'] .popover button:hover { background: var(--color-gray-200); }
 
-/* ---- Notebook: light warm paper, soft corners, a sepia accent ---- */
-html[data-theme='notebook'] {
+/* ---- Notebook: warm paper, soft corners, a sepia accent. Light, or a warm dark. ---- */
+html[data-theme='notebook'][data-mode='dark'] {
+  --color-white: #201c18;
+  --color-gray-25: #12100e;
+  --color-gray-50: #171411;
+  --color-gray-100: #29241f;
+  --color-gray-200: #352f29;
+  --color-gray-300: #4a423a;
+  --color-gray-400: #766b5f;
+  --color-gray-500: #a5998d;
+  --color-gray-600: #c4b9ad;
+  --color-gray-700: #ddd3c8;
+  --color-gray-800: #ebe3d9;
+  --color-gray-900: #f4eee6;
+  --color-gray-950: #ffffff;
+  --color-brand-50: #2b2219;
+  --color-brand-500: #c9a588;
+  --color-brand-600: #bb987c;
+  --color-brand-700: #dabea4;
+}
+html[data-theme='notebook'][data-mode='light'] {
   color-scheme: light;
   --color-white: #fffdf8;
   --color-gray-25: #fbf9f4;
