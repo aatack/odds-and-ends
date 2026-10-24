@@ -8,7 +8,7 @@ import { atomWithStorage, createJSONStorage } from 'jotai/utils'
  * A view. `items` is every item, to filter, open or add to: what shows when the
  * stack is empty. `event` shows one event as its type is shown (an item as its
  * chat, anything else as its details); `debug` shows its whole state as JSON.
- * `integrations` and `mcp` are the app's settings pages. More kinds of view go here.
+ * `directives` is what the human is working on at the moment. `integrations` and `mcp` are the app's settings pages. More kinds of view go here.
  */
 export type View =
   | { kind: 'items' }
@@ -17,6 +17,7 @@ export type View =
   | { kind: 'integrations' }
   | { kind: 'mcp' }
   | { kind: 'types' }
+  | { kind: 'directives' }
 
 // Storage can throw (a private window, cleared site data): then the stack just isn't kept.
 const storage = createJSONStorage<View[]>(() => {

@@ -8,7 +8,7 @@
  * stay open until something happens (a bot replies, CI finishes, an approval is
  * given, a child item closes).
  */
-export type EventKind = 'item' | 'message' | 'attachment' | 'priority' | 'summary' | 'action' | 'approval' | 'bot' | 'github' | 'slack' | 'after' | 'script'
+export type EventKind = 'item' | 'message' | 'attachment' | 'priority' | 'summary' | 'action' | 'approval' | 'bot' | 'github' | 'slack' | 'after' | 'script' | 'directive'
 
 /** An event as it is added. `ref` names it, so an `after` added alongside can point at it. */
 export interface EventSpec {
@@ -250,6 +250,10 @@ export interface WorkflowsAPI {
   runCustomAction: (id: string, eventId: string) => Promise<void>
   /** Writes a custom action's code from its description and notes, with a model. */
   generateCustomAction: (a: { type: string; name: string; description: string; notes: string; source?: string }) => Promise<string>
+  /** The directives that hold (not yet deleted), the newest first. */
+  directives: () => Promise<ItemEvent[]>
+  /** A new directive: markdown on what the human is working on. */
+  addDirective: (text: string) => Promise<string>
   /** Marks an item as a priority, or not. */
   setPriority: (id: string, on: boolean) => Promise<void>
   /** The human did it outside the tool. Recorded, so reviews can find it. */

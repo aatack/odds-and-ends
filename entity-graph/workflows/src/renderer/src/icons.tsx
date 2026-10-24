@@ -3,6 +3,7 @@
 import {
   Bot,
   Check,
+  Compass,
   Flag,
   GitPullRequest,
   Layers,
@@ -35,6 +36,7 @@ export const TYPE_ICON: Record<EventKind, LucideIcon> = {
   after: Workflow,
   script: SquareCode,
   summary: ScrollText,
+  directive: Compass,
 }
 
 export const TYPE_NAME: Record<EventKind, string> = {
@@ -50,6 +52,7 @@ export const TYPE_NAME: Record<EventKind, string> = {
   after: 'After',
   script: 'Script',
   summary: 'Summary',
+  directive: 'Directive',
 }
 
 /** What an item waits on: a bot, else its first other blocker, else the human; a tick once closed. */

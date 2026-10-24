@@ -156,6 +156,12 @@ code { font-family: var(--font-mono); font-size: 12px; }
 .type-action.add { color: var(--muted); }
 .type-action:not(.builtin):hover { filter: brightness(0.96); }
 .type-editor { display: flex; flex-direction: column; gap: 10px; }
+/* The Directives page: the newest first, each with its age; those over a day old faded. */
+.directives-page { width: 100%; }
+.directive-input { width: 100%; }
+.directive-input textarea { width: 100%; font: inherit; color: var(--ink); }
+.directive-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin: -4px -6px -6px 0; }
+.directive.stale { opacity: 0.6; }
 /* A task where another mentions it: its title, and how it stands. */
 .task-card { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--ink); }
 .task-card .icon { width: 15px; height: 15px; flex: none; }

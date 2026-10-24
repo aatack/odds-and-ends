@@ -318,6 +318,20 @@ export class Engine extends EventEmitter {
     await this.addEvents(itemId, [{ type: 'summary', params: {} }], actor)
   }
 
+  /** The directives that hold (not yet deleted), the newest first. */
+  directives(): ItemEvent[] {
+    const rows = this.db.prepare("SELECT * FROM events WHERE type = 'directive' AND resolved = 0 ORDER BY created_at DESC, seq DESC").all() as Row[]
+    const times = this.times(rows.map((r) => r.id as string))
+    return rows.map((r) => this.toEvent(r, times.get(r.id as string)))
+  }
+
+  /** A new directive, in no item. Deleting it is cancelling it. */
+  async addDirective(text: string, actor = 'human', author: Author = 'human', runId: string | null = null): Promise<string> {
+    if (!text.trim()) throw new Error('A directive needs some text.')
+    const [id] = await this.addEvents(null, [{ type: 'directive', params: { text } }], actor, author, runId)
+    return id
+  }
+
   /** Marks an item as a priority, or not, with a priority event in it. */
   async setPriority(itemId: string, on: boolean, actor = 'human'): Promise<void> {
     if (this.must(itemId).priority === on) return
@@ -458,15 +472,15 @@ export class Engine extends EventEmitter {
    * right after. An item whose key is already taken is left out. Answers the ids added.
    */
   add(parentId: string | null, specs: EventSpec[], createdBy: string, runId: string | null = null): string[] {
-    // A detached item sits in no item, wherever it is added.
-    const detached = parentId ? specs.filter((s) => s.type === 'item' && s.params.detached) : []
+    // A detached item sits in no item, wherever it is added; so does a directive.
+    const detached = parentId ? specs.filter((s) => (s.type === 'item' && s.params.detached) || s.type === 'directive') : []
     if (detached.length)
       return [...this.add(parentId, specs.filter((s) => !detached.includes(s)), createdBy, runId), ...this.add(null, detached, createdBy, runId)]
     const keyed = (s: EventSpec) =>
       s.type === 'item' && s.params.key &&
       this.db.prepare("SELECT 1 FROM events WHERE type = 'item' AND json_extract(params, '$.key') = ?").get(s.params.key)
     specs = specs.filter((s) => !keyed(s))
-    if (!parentId && specs.some((s) => s.type !== 'item')) throw new Error('Only an item can sit in no item.')
+    if (!parentId && specs.some((s) => s.type !== 'item' && s.type !== 'directive')) throw new Error('Only an item or a directive can sit in no item.')
     const ids = new Map<string, string>()
     // A bot already queued in the item (open, and no run has it yet) will be told
     // everything new when it runs, so another with nothing more to ask is left out:

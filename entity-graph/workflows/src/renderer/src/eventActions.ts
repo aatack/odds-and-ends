@@ -2,7 +2,7 @@
 // view header (as icon buttons) and the right-click menu draw.
 
 import { atom } from 'jotai'
-import { CircleCheck, CircleX, ExternalLink, Flag, FlagOff, Paperclip, SkipForward, type LucideIcon } from 'lucide-react'
+import { CircleCheck, CircleX, ExternalLink, Flag, FlagOff, Paperclip, SkipForward, Trash2, type LucideIcon } from 'lucide-react'
 import type { CustomAction } from '../../shared/types'
 import { actionIcon } from './actionIcons'
 import { api } from './useWorkflows'
@@ -27,8 +27,8 @@ type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 /**
  * The actions on an event: an open task can be resolved, done outside,
- * skipped, or marked as a priority (`priority` is whether it is one); any other
- * open event cancelled; anything attached to a task. Then the human's own
+ * skipped, or marked as a priority (`priority` is whether it is one); a directive
+ * deleted; any other open event cancelled; anything attached to a task. Then the human's own
  * actions for its type (`custom`), from the Types page.
  */
 export function eventActions(
@@ -55,7 +55,9 @@ export function eventActions(
               ? { id: 'priority', label: 'Not a priority', important: false, icon: FlagOff, tone: '', run: () => void ctx.act(() => api().setPriority(e.id, false)) }
               : { id: 'priority', label: 'Mark as a priority', important: false, icon: Flag, tone: '', run: () => void ctx.act(() => api().setPriority(e.id, true)) },
           ]
-        : [{ id: 'cancel', label: 'Cancel', important: true, icon: CircleX, tone: 'text-error-600 hover:text-error-600', run: () => void ctx.act(() => api().cancel(e.id)) }]
+        : e.type === 'directive'
+          ? [{ id: 'cancel', label: 'Delete', important: true, icon: Trash2, tone: 'text-error-600 hover:text-error-600', run: () => void ctx.act(() => api().cancel(e.id)) }]
+          : [{ id: 'cancel', label: 'Cancel', important: true, icon: CircleX, tone: 'text-error-600 hover:text-error-600', run: () => void ctx.act(() => api().cancel(e.id)) }]
   return [
     ...own,
     { id: 'attach', label: 'Attach to a task', icon: Paperclip, tone: '', important: false, run: () => ctx.attach({ id: e.id, summary: e.summary }) },

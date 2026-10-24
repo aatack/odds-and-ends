@@ -55,6 +55,8 @@ async function main(): Promise<void> {
   handle('cancel', (eventId: string) => engine.cancel(eventId))
   handle('close', (id: string) => engine.close(id))
   handle('attach', (eventId: string, targetId: string) => engine.attach(eventId, targetId))
+  handle('directives', () => engine.directives())
+  handle('addDirective', (text: string) => engine.addDirective(text))
   handle('setPriority', (id: string, on: boolean) => engine.setPriority(id, on))
   handle('summarise', (id: string) => engine.summarise(id))
   handle('customActions', () => engine.customActions.list())

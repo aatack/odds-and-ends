@@ -6,6 +6,7 @@ import { ArrowRight, ChevronLeft, Menu, MoreHorizontal } from 'lucide-react'
 import { attachingAtom, eventActions, type EventAction } from './eventActions'
 import { Dropdown, DropdownItem } from './components/ui/Dropdown'
 import { TypesPage } from './TypesPage'
+import { DirectivesPage } from './DirectivesPage'
 import { IconButton } from './components/ui/IconButton'
 import { appearanceAtom, applyAppearance, SERIFS, THEMES } from './appearance'
 import { Chat } from './Chat'
@@ -117,7 +118,7 @@ function AttachPicker() {
 const ItemsContext = createContext<ReturnType<typeof useWorkflows> | null>(null)
 const useItems = () => useContext(ItemsContext)!
 
-/** The button in the bottom left: the workers, and the way to Integrations and MCP. */
+/** The button in the bottom left: the workers, and the way to Directives, Integrations and MCP. */
 function AppMenu() {
   const w = useItems()
   const [open, setOpen] = useState(false)
@@ -142,6 +143,7 @@ function AppMenu() {
             Bots: {busy} of {w.overview.workers.length} busy
           </div>
           <button onClick={() => go({ kind: 'items' })}>Tasks</button>
+          <button onClick={() => go({ kind: 'directives' })}>Directives</button>
           <button onClick={() => go({ kind: 'integrations' })}>Integrations</button>
           <button onClick={() => go({ kind: 'types' })}>Types</button>
           <button onClick={() => go({ kind: 'mcp' })}>MCP</button>
@@ -198,6 +200,16 @@ function ItemsMain() {
         <ViewHeader canGoBack onBack={w.back} title="Types" />
         {w.error && <div className="error">{w.error}</div>}
         <div className="view-body">{w.catalog && <TypesPage catalog={w.catalog} custom={w.customActions} act={w.act} />}</div>
+      </div>
+    )
+  if (w.view?.kind === 'directives')
+    return (
+      <div className="view">
+        <ViewHeader canGoBack onBack={w.back} title="Directives" />
+        {w.error && <div className="error">{w.error}</div>}
+        <div className="view-body">
+          <DirectivesPage act={w.act} onOpen={openEvent} />
+        </div>
       </div>
     )
   if (w.view?.kind === 'integrations' || w.view?.kind === 'mcp')

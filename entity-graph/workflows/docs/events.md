@@ -106,7 +106,14 @@ the chat input should offer it, add a preset in `presets.ts`.
 | `after` | yes | `event`, then `then` or `script` | `{ added, logs? }` or `{ error }` |
 | `script` | yes | `source`, `description?`, `schedule?` (seconds), `timeout_minutes?` | `{ result, message?, runs, logs }` or `{ error, logs }` |
 | `summary` | yes (seconds) | — (Haiku summarises the item, in ASD-STE100) | `{ text }` or `{ error }` |
+| `directive` | while it holds (sits in no item, so blocks nothing) | `text` (markdown: what the operator is working on) | `{ cancelled }`, once deleted |
 
+- **`directive`** is the operator's note on what they are working on at the
+  moment. It sits in no item, wherever it is added, and holds until it is
+  cancelled (the Directives page's Delete). Bots are not told directives: their
+  instructions say to read the latest (the `directives` action) when they need
+  more context, and to add one (`add_directive`) when feedback should outlast
+  the item.
 - **`after`** is how events chain. It waits for one event to resolve, then adds
   `then`, or whatever its `script` returns.
   - A script is `async (input, actions) => events`, where `input` is

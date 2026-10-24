@@ -17,6 +17,8 @@ const api: WorkflowsAPI = {
   cancel: call('cancel') as WorkflowsAPI['cancel'],
   close: call('close') as WorkflowsAPI['close'],
   attach: call('attach') as WorkflowsAPI['attach'],
+  directives: call('directives') as WorkflowsAPI['directives'],
+  addDirective: call('addDirective') as WorkflowsAPI['addDirective'],
   setPriority: call('setPriority') as WorkflowsAPI['setPriority'],
   summarise: call('summarise') as WorkflowsAPI['summarise'],
   customActions: call('customActions') as WorkflowsAPI['customActions'],

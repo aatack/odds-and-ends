@@ -697,6 +697,31 @@ await assert.rejects(engine.attach(idea, said), /No item/)
 await engine.close(collector)
 await assert.rejects(engine.attach(idea, collector), /closed/)
 
+// ---- 19. Directives sit in no item, hold until deleted, and agents read and add them ----
+{
+  const bot = { engine, author: 'bot' as const, actor: 'bot', itemId: null, runId: null }
+  const first = await engine.addDirective('# Shipping the release\nNothing else this week.')
+  clock += 1000
+  const host = (await engine.create('Feedback'))!
+  // A bot adding one in its own item puts it in none, so it blocks nothing.
+  const [second] = await engine.addEvents(host, [{ type: 'directive', params: { text: 'Keep PRs small' } }], 'bot', 'bot')
+  assert.equal(engine.event(second)!.parentId, null)
+  assert.ok(item(host).withHuman, 'a directive blocks nothing')
+  assert.equal(engine.event(first)!.summary, 'Shipping the release')
+  const listed = (await engine.callAction('directives', {}, bot)) as { id: string; text: string; createdBy: string }[]
+  assert.deepEqual(listed.map((d) => [d.id, d.createdBy]), [[second, 'bot'], [first, 'human']], 'the newest first')
+  const { id: third } = (await engine.callAction('add_directive', { text: 'From feedback' }, bot)) as { id: string }
+  assert.equal(engine.directives()[0].id, third)
+  await assert.rejects(engine.addDirective('  '), /needs some text/)
+  // Deleting one cancels it: it is kept, and no longer listed.
+  await engine.cancel(second)
+  assert.deepEqual(engine.directives().map((d) => d.id), [third, first])
+  assert.ok(engine.event(second)!.cancelled)
+  assert.throws(() => engine.add(null, [{ type: 'message', params: { text: 'x' } }], 'human'), /Only an item or a directive/)
+  for (const d of [first, third]) await engine.cancel(d)
+  await engine.close(host)
+}
+
 assert.equal(behaviours.length, 0)
 mcp.close()
 console.log('engine: ok')

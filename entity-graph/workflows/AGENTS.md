@@ -159,6 +159,11 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   Agents list and run them with `custom_actions` and `run_custom_action`.
 - **Ctrl+S summarises the task on screen**: a `summary` event, which Haiku (no tools, no session) answers in a few
   seconds with where the task stands now, in ASD-STE100; it is said in the chat like any event. Bots' prompts skip it.
+- **Directives** (`DirectivesPage`, in the menu) are what the human is working on at the moment: `directive` events,
+  a bit of markdown each, in no item. The page lists those that hold, the newest first, with their age (faded after a
+  day); it adds them, and deletes them (cancels: the row is kept). They are not put in bots' prompts: `SYSTEM` tells
+  bots to read the latest with the `directives` action when they need context, and to add one (`add_directive`) when
+  the human's feedback should outlast the item.
 - **Priority items** (a `priority` event; `Item.priority`) come first in Next, the most recently active first. Mark
   one from its actions.
 - **Every event has a right-click menu** (`useEventMenu`): Open and Debug, then what can be done to it
