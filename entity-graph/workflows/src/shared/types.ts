@@ -243,6 +243,13 @@ export interface WorkflowsAPI {
   attach: (eventId: string, targetId: string) => Promise<void>
   /** Asks a cheap model where an item stands: a summary event in it, answered in its chat. */
   summarise: (id: string) => Promise<void>
+  customActions: () => Promise<CustomAction[]>
+  saveCustomAction: (a: Omit<CustomAction, 'id'> & { id?: string }) => Promise<CustomAction>
+  removeCustomAction: (id: string) => Promise<void>
+  /** Runs a custom action on an event. */
+  runCustomAction: (id: string, eventId: string) => Promise<void>
+  /** Writes a custom action's code from its description and notes, with a model. */
+  generateCustomAction: (a: { type: string; name: string; description: string; notes: string; source?: string }) => Promise<string>
   /** Marks an item as a priority, or not. */
   setPriority: (id: string, on: boolean) => Promise<void>
   /** The human did it outside the tool. Recorded, so reviews can find it. */
@@ -259,4 +266,22 @@ export interface WorkflowsAPI {
   onBack: (cb: () => void) => () => void
   /** Alt+Right: put the view last taken off the stack back on. */
   onForward: (cb: () => void) => () => void
+}
+
+/** One of the human's own actions, for events of one type: a script, usually written by a model from its description and notes. */
+export interface CustomAction {
+  id: string
+  /** The event type it is for. */
+  type: string
+  name: string
+  /** What it does: shown, and what its code is written from. */
+  description: string
+  /** More for the model writing its code; shown only on the Types page. */
+  notes: string
+  /** async (context, actions) => null | string | { message?, events? } */
+  source: string
+  /** A lucide icon, by its name in the Types page's list. */
+  icon: string
+  /** Shown as a button in an event's header; the rest are in the menu beside them. */
+  important: boolean
 }

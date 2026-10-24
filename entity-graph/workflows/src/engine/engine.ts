@@ -1,3 +1,4 @@
+import { CustomActions } from './customActions'
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { z } from 'zod'
@@ -94,6 +95,8 @@ export class Engine extends EventEmitter {
   readonly eventTypes: EventType[] = EVENT_TYPES
   readonly presets: Preset[] = PRESETS
   readonly sources: Source[]
+  /** The human's own actions, per event type (the Types page). */
+  readonly customActions: CustomActions
   /** Stops the bot running on an item. Set by the pool. */
   onCancel: (itemId: string) => void = () => {}
   /** The items a bot is running on, and its worker. In memory only: a crash leaves nothing behind. */
@@ -112,6 +115,7 @@ export class Engine extends EventEmitter {
     this.now = opts.now ?? Date.now
     this.sources = opts.sources ?? githubSources
     migrate(this.db)
+    this.customActions = new CustomActions(this, this.db)
     // A run the app was closed during is over; its bot blockers wait for a worker again.
     this.db.prepare('UPDATE runs SET ended_at = ? WHERE ended_at IS NULL').run(this.now())
   }

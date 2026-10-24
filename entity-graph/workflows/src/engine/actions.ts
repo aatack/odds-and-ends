@@ -100,6 +100,26 @@ export const itemActions: Action[] = [
     },
   },
   {
+    name: 'custom_actions',
+    unsafe: false,
+    description:
+      "The human's own actions, defined per event type on the Types page: each a script over the safe actions. With type, only " +
+      'those for that event type. Run one with run_custom_action.',
+    input: { type: z.string().optional().describe('An event type, e.g. item.') },
+    run: async (a, { engine }) =>
+      engine.customActions
+        .list()
+        .filter((c) => !a.type || c.type === a.type)
+        .map(({ id, type, name, description, important }) => ({ id, type, name, description, important })),
+  },
+  {
+    name: 'run_custom_action',
+    unsafe: false,
+    description: 'Run one of the custom actions on an event of its type: what it says is added in the item, as an action event.',
+    input: { action_id: z.string().describe('From custom_actions.'), event_id: z.string().describe('The event (an item, or one in it) to run it on.') },
+    run: async (a, ctx) => ctx.engine.customActions.run(String(a.action_id), String(a.event_id), ctx.actor, ctx.runId),
+  },
+  {
     name: 'get_item',
     unsafe: false,
     description:

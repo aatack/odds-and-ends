@@ -87,6 +87,11 @@ export const action: EventType = {
   data: '{}',
   blocking: false,
   describe: (p) => `Ran ${p.name}`,
+  // A custom action says what it returned; anything else that it ran.
+  said: (p) => {
+    const out = p.output as { message?: unknown } | undefined
+    return out && typeof out === 'object' && typeof out.message === 'string' && out.message ? out.message : `Ran ${p.name}`
+  },
 }
 
 export const approval: EventType = {

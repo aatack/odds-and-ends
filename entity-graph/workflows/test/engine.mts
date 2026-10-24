@@ -21,7 +21,12 @@ const ghCalls: string[][] = []
 let checks: 'pending' | 'failed' | 'passed' = 'pending'
 let prState = 'OPEN'
 let summaryArgs: string[] = []
+let generateArgs: string[] = []
 const exec = async (cmd: string, args: string[]) => {
+  if (cmd === 'claude' && args[0] === '-p' && args.includes('sonnet')) {
+    generateArgs = args
+    return '```js\nasync (context) => `Hello ${context.item.title}`\n```\n'
+  }
   if (cmd === 'claude' && args[0] === '-p') {
     summaryArgs = args
     return '- It is about the PR.\n'
@@ -596,6 +601,43 @@ assert.deepEqual(cat.presets.map((p) => p.id), ['message', 'bot', 'pr-merged', '
   assert.match(summaryArgs[1], /ship on Friday/)
   assert.ok(item(s).withHuman, 'once written, it is the human\'s turn again')
   await engine.close(s)
+}
+// Custom actions: defined per event type, run on an event with its context and the safe actions, said in the chat.
+{
+  const ca = engine.customActions
+  const task = (await engine.create('Custom'))!
+  assert.throws(() => ca.save({ type: 'nope', name: 'x', description: '', notes: '', source: '', icon: 'zap', important: false }), /No event type/)
+  const hello = ca.save({ type: 'item', name: 'Hello', description: 'Says hello', notes: '', source: '', icon: 'zap', important: true })
+  await assert.rejects(ca.run(hello.id, task), /no code yet/)
+  // Its code is written by a model from the description and notes, told the actions it may call.
+  const source = await ca.generate({ type: 'item', name: 'Hello', description: 'Says hello to the task', notes: 'Use its title' })
+  assert.equal(source, 'async (context) => `Hello ${context.item.title}`')
+  assert.match(generateArgs[1], /Says hello to the task/)
+  assert.match(generateArgs[1], /Use its title/)
+  const system = generateArgs[generateArgs.indexOf('--system-prompt') + 1]
+  assert.match(system, /add_events/)
+  assert.doesNotMatch(system.split('The unsafe actions are:')[0], /github_pr_merge/, 'it is offered no unsafe actions to call')
+  ca.save({ ...hello, source })
+  await ca.run(hello.id, task)
+  assert.equal(last(task, 'action').message, 'Hello Custom')
+  // It may add events, and call actions; an unsafe one is refused.
+  const flagger = ca.save({
+    type: 'message', name: 'Flag it', description: '', notes: '', icon: 'flag', important: false,
+    source: `async (context, actions) => { const all = await actions.list_items({}); return { message: 'Flagged ' + context.event.summary, events: [{ type: 'priority', params: { on: true } }] } }`,
+  })
+  await engine.send(task, 'message', 'This one')
+  const said = last(task, 'message').id
+  await assert.rejects(ca.run(flagger.id, task), /for message events/)
+  await ca.run(flagger.id, said)
+  assert.equal(last(task, 'action').message, 'Flagged This one')
+  assert.ok(item(task).priority)
+  const sneaky2 = ca.save({ type: 'item', name: 'Merge', description: '', notes: '', icon: 'zap', important: false, source: `async (c, actions) => actions.github_pr_merge({ repo: 'o/r', number: 7, method: 'squash' })` })
+  await assert.rejects(ca.run(sneaky2.id, task), /unsafe/)
+  assert.ok(engine.trace(task).some((t) => t.kind === 'custom_action_run'))
+  assert.deepEqual(ca.list().filter((c) => c.type === 'item').map((c) => c.name), ['Hello', 'Merge'], 'important first')
+  ca.remove(sneaky2.id)
+  assert.equal(ca.get(sneaky2.id), null)
+  await engine.close(task)
 }
 // Priority items come first in Next, the most recently active first; then the rest, the longest waiting first.
 {
