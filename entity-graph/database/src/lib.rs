@@ -42,6 +42,8 @@ mod find_tests;
 #[cfg(test)]
 mod history_tests;
 #[cfg(test)]
+mod middleware_tests;
+#[cfg(test)]
 mod model_tests;
 #[cfg(test)]
 mod prove_tests;

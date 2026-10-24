@@ -1,27 +1,5 @@
 //! Write middleware: a hook that transforms the ops of a batch before they
-//! are written.
-//!
-//! Middleware runs inside the write transaction (see [`crate::Store::write`]),
-//! after the branch check and the timestamp resolution, and before the ops are
-//! validated and written. Each registered middleware sees the batch's
-//! [`WriteContext`] and the ops as a `&mut Vec<Op>`: it may change, drop or add
-//! ops, or return an error to reject the whole batch. Several middleware run in
-//! registration order; each sees the output of the previous one.
-//!
-//! An error rejects the batch: the transaction rolls back, nothing is written,
-//! the branch head does not move and no `batches` row is inserted. Return
-//! [`crate::Error::Rejected`] for a plain refusal; any other error is passed
-//! through unchanged.
-//!
-//! If middleware drops every op, the write does nothing: no sequence ID is
-//! used, no `batches` row is inserted, and the returned [`crate::WriteResult`]
-//! has an empty range (`first_seq = head + 1`, `last_seq = head`).
-//!
-//! Only [`crate::Store::write`] (and [`crate::Store::archive_entity`] /
-//! [`crate::Store::restore_entity`], which call it) runs middleware. Branch
-//! operations (fork, merge, pull, set_parents) write no events and undo removes
-//! events, so middleware does not run for them. Middleware has no access to the
-//! store in this version: it cannot read.
+//! are written. See [`WriteMiddleware`] for the semantics.
 
 use std::sync::Arc;
 
@@ -44,7 +22,30 @@ pub struct WriteContext<'a> {
     pub head: Seq,
 }
 
-/// A transform on the ops of a write batch. See the [module docs](self).
+/// A transform on the ops of a write batch.
+///
+/// Middleware runs inside the write transaction (see [`crate::Store::write`]),
+/// after the branch check and the timestamp resolution, and before the ops are
+/// validated and written. Each registered middleware sees the batch's
+/// [`WriteContext`] and the ops as a `&mut Vec<Op>`: it may change, drop or add
+/// ops, or return an error to reject the whole batch. Several middleware run in
+/// registration order; each sees the output of the previous one. A plain
+/// closure `Fn(&WriteContext, &mut Vec<Op>) -> Result<()>` is a middleware too.
+///
+/// An error rejects the batch: the transaction rolls back, nothing is written,
+/// the branch head does not move and no `batches` row is inserted. Return
+/// [`crate::Error::Rejected`] for a plain refusal; any other error is passed
+/// through unchanged.
+///
+/// If middleware drops every op, the write does nothing: no sequence ID is
+/// used, no `batches` row is inserted, and the returned [`crate::WriteResult`]
+/// has an empty range (`first_seq = head + 1`, `last_seq = head`).
+///
+/// Only [`crate::Store::write`] (and [`crate::Store::archive_entity`] /
+/// [`crate::Store::restore_entity`], which call it) runs middleware. Branch
+/// operations (fork, merge, pull, set_parents) write no events and undo removes
+/// events, so middleware does not run for them. Middleware has no access to the
+/// store in this version: it cannot read.
 pub trait WriteMiddleware: Send + Sync {
     /// Transform `ops` in place, or return an error to reject the batch.
     fn on_write(&self, ctx: &WriteContext, ops: &mut Vec<Op>) -> Result<()>;

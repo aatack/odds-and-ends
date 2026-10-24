@@ -1314,8 +1314,25 @@ fn compare_proves(rig: &Rig, r: &mut Rng, ctx: &str) {
 }
 
 fn run_case(seed: u64) {
+    run_case_inner(seed, false);
+}
+
+/// Run a few seeds with an identity write middleware registered. Identity
+/// middleware changes nothing, so the store must still agree with the model
+/// exactly. Used by `middleware_tests`.
+pub(crate) fn run_with_identity_middleware() {
+    for seed in 1..=8 {
+        run_case_inner(seed, true);
+    }
+}
+
+fn run_case_inner(seed: u64, identity_middleware: bool) {
     let mut r = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
     let mut rig = Rig::new();
+    if identity_middleware {
+        rig.store
+            .add_middleware(|_: &WriteContext, _: &mut Vec<Op>| -> Result<()> { Ok(()) });
+    }
     let heavy = matches!(seed % 3, 0);
     HEAVY.with(|h| h.set(heavy));
     bump(&stats::CASES);
