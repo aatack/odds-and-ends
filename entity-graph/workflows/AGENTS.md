@@ -63,21 +63,33 @@ src/engine     everything but the window; plain Node, so the tests drive it head
   script.ts      after events' scripts, in QuickJS
   schema.ts      JSON Schema from the zod shapes: forms, docs, the bots' output schema
   mcp.ts         the MCP server: the actions, in two scopes
-  settings.ts    configuration in the store: Slack workspaces (tokens encrypted), the MCP port and token
-  admin.ts       what the Integrations and MCP pages show and change
+  settings.ts    configuration in the store: Slack workspaces (tokens encrypted), the MCP and phone ports and tokens
+  admin.ts       what the Integrations, MCP and Phone pages show and change
   workers.ts     the pool of `claude -p` workers
   github.ts      GitHub via the gh CLI: actions, the github event, a source
   slack.ts       Slack via the user tokens: actions, the slack event
   integrations.ts  the interfaces: Action, EventType, Source
+  server.ts      the phone server: the PWA shell + a JSON API + an SSE feed, on loopback; its allowlist (PHONE_METHODS)
   db.ts          the SQLite schema
-src/main       Electron main: opens the store, starts the loop, pool and MCP, IPC
+src/main       Electron main: opens the store, starts the loop, pool, MCP and the phone server
+  handlers.ts    one named table of API methods, shared by IPC and the phone server
 src/preload    the renderer's API (WorkflowsAPI in src/shared/types.ts)
 src/renderer   the React UI
-test/          engine.mts: the whole engine with a fake gh and fake bots
+  src/transport/  the phone's HTTP+SSE backing for WorkflowsAPI (when window.workflows is absent)
+  public/         the PWA shell copied verbatim: manifest, service worker, icons
+test/          engine.mts: the whole engine with a fake gh and fake bots; server.mts: the phone server, headless
 ```
 
 ## UI
 
+- **Every UI change must work on the phone too.** The phone PWA is this same
+  renderer (see [The phone](#the-phone-mobile-pwa)), so anything you add has to
+  hold up at phone widths (check ~375px) and by touch: no hover-only,
+  right-click-only or keyboard-only affordance without a touch equivalent; 16px
+  inputs on coarse pointers (so iOS does not zoom); safe-area insets on anything
+  pinned to an edge. **The UI is shared:** new UI goes in the shared renderer,
+  never a mobile-only copy. Branch on `isPhone` only for what truly differs —
+  login, the HTTP transport, the service worker, and desktop-only pages.
 - **Two kinds of form.**
   - The forms used all day are condensed: the new-item form, and the chat input
     (`Composer`: one growing line, its preset's icon and hint, Tab between presets,
@@ -96,7 +108,9 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
 
 - **The content pane is a stack of views** (`views.ts`, a Jotai atom kept in
   local storage). The list and Next replace the stack; Open, Debug and links push
-  onto it; Back pops it. A view is `{ kind, id }`: `event` shows an event as its
+  onto it; Back pops it. Back is a visible header button, so it works by touch;
+  on the phone the system Back pops the stack too (one guard history entry, armed
+  while the stack is non-empty, so Android's back gesture stays in the app). A view is `{ kind, id }`: `event` shows an event as its
   type is shown (an item as its chat, any other event as `EventView`); `debug`
   shows its whole state as JSON. A new kind of view is a new `kind`.
 - **There is no sidebar.** The content fills the window in a centred column.
@@ -106,10 +120,51 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
 - **The items view** (`ItemsList`) is what shows when the stack is empty, and
   Ctrl+L puts it on top (or, when it is already showing, puts the cursor in its
   search line); a view is never pushed onto an identical one; Ctrl+W takes the top view off (the main process catches
-  it in `before-input-event`, so the window's menu doesn't close the window). Typing filters titles fuzzily; the arrows move; Enter
+  it in `before-input-event`, so the window's menu doesn't close the window) — a desktop-only shortcut, since the phone uses Back. Typing filters titles fuzzily; the arrows move; Enter
   opens; Tab makes a new item with the typed title.
-- **Every event has a right-click menu** (`useEventMenu`): Open and Debug. Spread
-  it on anything that stands for an event. Clicking an event does nothing else.
+- **Every event has a menu** (`useEventMenu`): Open and Debug, opened by
+  right-click or, on touch, a long-press. Spread it on anything that stands for
+  an event. Clicking an event does nothing else.
+
+## The phone (mobile PWA)
+
+The phone is this **same renderer**, served over HTTP with an SSE change feed in
+place of IPC — no second app and no mobile-only copy. The main process serves it
+(`server.ts`) on `127.0.0.1:47391`, **off by default**; turn it on from the
+**Phone** page in the menu (desktop-only), which also shows the loopback URL, the
+tailnet URL, the token, and the exact `tailscale serve` command. The renderer
+picks the HTTP transport when `window.workflows` is absent, and `Login` collects
+the token (kept in `localStorage`; a connect link carries it in the fragment).
+
+Reached over Tailscale, which gives an HTTPS origin (so a secure context, so the
+service worker registers and the app is installable). Setup:
+
+- **On the laptop, once:** install Tailscale, `sudo tailscale up`, then
+  `sudo tailscale set --operator=$USER` (without it every serve command needs
+  `sudo` — reading the config never does, which is the confusing part). In the
+  admin console enable **MagicDNS** and **HTTPS Certificates**. Then turn **Phone**
+  on and run the shown `tailscale serve --bg --https=8443 http://127.0.0.1:47391`
+  (or press **Run it**).
+- **On the phone:** the Tailscale app, signed into the same account; open the
+  connect link, or `https://<host>.<tailnet>.ts.net:8443/` and paste the token;
+  then **Add to Home Screen** (iOS Safari) / **Install** (Android Chrome) —
+  **reload once first**, or the install criteria aren't yet met and nothing is
+  offered.
+
+Quirks, carried over from `entity-graph/mobile/README.md`:
+
+- Without the `--operator` setting, `tailscale serve status` works but every
+  change fails with `Access denied: serve config denied`.
+- The serve mount is its own HTTPS port (8443), so it sits beside entity-graph's
+  mobile mount at `/` rather than replacing it. `--bg` keeps it across reboots.
+- Turning Phone off stops the server; the mount stays and answers 502, which is
+  harmless. To remove it, `tailscale serve --https=8443 off`, then check
+  `tailscale serve status`: some versions ignore `off` and print their help.
+  If yours does, `tailscale serve reset` and add back any other mounts.
+- The service worker registers **only in a secure context**, so never under
+  Electron or over plain HTTP. It caches the shell only, never `/api`.
+- Regenerate the token on the Phone page to **cut a phone off**; it takes effect
+  at once.
 
 ## Rules
 
@@ -135,7 +190,19 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   `better-sqlite3`, which is rebuilt for Electron on `postinstall`. The tests use
   `node:sqlite`. `db.ts` uses only the API both share, with positional parameters.
 - **One process.** The Electron main process holds the store, the loop (every
-  minute), the worker pool (four workers) and the MCP server (loopback, a free port).
+  minute), the worker pool (four workers), the MCP server (loopback, a free port)
+  and the phone server (loopback, `47391` by default, off until turned on).
+- **The phone server is the window's surface, no more.** It binds `127.0.0.1`
+  only (reached from a phone over Tailscale, never bound beyond loopback), and
+  dispatches over an explicit allowlist (`PHONE_METHODS` in `server.ts`) — exactly
+  the `WorkflowsAPI` *data* methods the window already has, never a generic
+  action-calling endpoint. Its bearer token is distinct from the MCP one
+  (`phone.token`, not `mcp.token`), and a request that carries it acts as the
+  human, just as the desktop window does — intended, and the reason the data
+  methods are safe to expose. The phone-admin methods (`phone`,
+  `setPhoneEnabled`, `setPhonePort`, `regeneratePhoneToken`, `runTailscaleServe`)
+  are desktop-only: they are in the IPC handler table but NOT in the allowlist, so
+  a remote client can neither run a CLI nor change its own access.
 - **One list of actions** for both MCP scopes and for scripts. Every call goes
   through `Engine.callAction`, and an action checks who is calling:
   - Unsafe actions are for a human only (see the unsafe rule above).

@@ -12,10 +12,26 @@ import { Composer } from './Composer'
 import { EventIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
-import { api, useWorkflows } from './useWorkflows'
+import { PhonePage } from './PhonePage'
+import { Login } from './Login'
+import { api, isPhone, useWorkflows } from './useWorkflows'
+import { getToken, setOnUnauthorized } from './transport/http'
 import { searchFocusAtom, type View } from './views'
 
+/** On the phone, the token gates everything: Login first, until a call proves the token works. */
 export function App() {
+  // A connect link (token in the hash) replaces a stale stored token: show Login so it is used.
+  const linkToken = isPhone && location.hash.includes('token=')
+  const [authed, setAuthed] = useState(!isPhone || (!!getToken() && !linkToken))
+  // A 401 anywhere (a stale or regenerated token) clears it and brings Login back.
+  useEffect(() => {
+    if (isPhone) setOnUnauthorized(() => setAuthed(false))
+  }, [])
+  if (isPhone && !authed) return <Login onConnected={() => setAuthed(true)} />
+  return <Workspace />
+}
+
+function Workspace() {
   const items = useWorkflows()
   // Ctrl+W (sent by the main process) takes the top view off the stack.
   const { back, open } = items
@@ -60,6 +76,8 @@ function AppMenu() {
   const w = useItems()
   const [open, setOpen] = useState(false)
   const busy = w.overview.workers.filter((x) => x.itemId).length
+  // Close the menu whenever the view stack changes (Back, Next, Ctrl+W, the phone's system Back).
+  useEffect(() => setOpen(false), [w.views])
   useEffect(() => {
     if (!open) return
     const close = () => setOpen(false)
@@ -80,6 +98,8 @@ function AppMenu() {
           <button onClick={() => go({ kind: 'items' })}>Items</button>
           <button onClick={() => go({ kind: 'integrations' })}>Integrations</button>
           <button onClick={() => go({ kind: 'mcp' })}>MCP</button>
+          {/* The Phone page is desktop-only: it runs CLIs and changes the phone's own access. */}
+          {!isPhone && <button onClick={() => go({ kind: 'phone' })}>Phone</button>}
           <button
             onClick={() => {
               setOpen(false)
@@ -107,13 +127,17 @@ function ItemsMain() {
   const w = useItems()
   const openEvent = (id: string) => w.open({ kind: 'event', id })
   const d = w.detail
-  if (w.view?.kind === 'integrations' || w.view?.kind === 'mcp')
+  if (w.view?.kind === 'integrations' || w.view?.kind === 'mcp' || w.view?.kind === 'phone') {
+    const title = w.view.kind === 'mcp' ? 'MCP' : w.view.kind === 'phone' ? 'Phone' : 'Integrations'
     return (
       <div className="view">
-        <ViewHeader canGoBack onBack={w.back} title={w.view.kind === 'mcp' ? 'MCP' : 'Integrations'} />
-        <div className="view-body">{w.view.kind === 'mcp' ? <McpPage /> : <IntegrationsPage />}</div>
+        <ViewHeader canGoBack onBack={w.back} title={title} />
+        <div className="view-body">
+          {w.view.kind === 'mcp' ? <McpPage /> : w.view.kind === 'phone' ? <PhonePage /> : <IntegrationsPage />}
+        </div>
       </div>
     )
+  }
   // With nothing on the stack, every item.
   if (!w.view || w.view.kind === 'items')
     return (

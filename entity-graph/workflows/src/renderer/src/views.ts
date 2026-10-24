@@ -16,6 +16,7 @@ export type View =
   | { kind: 'debug'; id: string }
   | { kind: 'integrations' }
   | { kind: 'mcp' }
+  | { kind: 'phone' }
 
 // Storage can throw (a private window, cleared site data): then the stack just isn't kept.
 const storage = createJSONStorage<View[]>(() => {

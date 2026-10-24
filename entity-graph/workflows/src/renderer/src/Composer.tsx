@@ -18,13 +18,21 @@ export function Composer({ catalog, onSend }: { catalog: Catalog; onSend: (prese
   const send = async () => {
     if (await onSend(preset.id, text)) setText('')
   }
+  // Tapping the preset icon steps through presets, as Tab does, for touch.
+  const cyclePreset = () => setAt((at + 1) % catalog.presets.length)
   return (
     <div className="builder-row compact" onMouseDown={(e) => {
       if ((e.target as HTMLElement).closest('textarea, button, [role=button]')) return
       e.preventDefault()
       box.current?.focus()
     }}>
-      <span className="builder-icon" title={`${preset.name} (Tab to change)`}>
+      <span
+        className="builder-icon"
+        role="button"
+        aria-label={`${preset.name} (change preset)`}
+        title={`${preset.name} (Tab to change)`}
+        onClick={cyclePreset}
+      >
         <TypeIcon type={preset.icon} />
       </span>
       <div className="builder-fields hinted">

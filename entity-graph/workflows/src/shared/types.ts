@@ -213,6 +213,22 @@ export interface McpView {
   error: string | null
 }
 
+/** What the Phone page shows: the server, its token, and how to reach it over Tailscale. */
+export interface PhoneView {
+  enabled: boolean
+  port: number
+  token: string
+  /** The loopback URL the server listens on. */
+  loopbackUrl: string
+  /** The tailnet DNS name (trailing dot trimmed), or null if Tailscale is missing/not up. */
+  tailnetUrl: string | null
+  /** The exact command to expose it over Tailscale. */
+  serveCommand: string
+  /** The HTTPS URL the phone reaches once `tailscale serve` runs, when the DNS name is known. */
+  phoneUrl: string | null
+  error: string | null
+}
+
 /** The renderer's whole view of the main process. */
 export interface WorkflowsAPI {
   overview: () => Promise<Overview>
@@ -244,6 +260,13 @@ export interface WorkflowsAPI {
   mcp: () => Promise<McpView>
   regenerateMcpToken: () => Promise<void>
   setMcpPort: (port: number) => Promise<void>
+  /** The phone (mobile PWA) endpoint. Desktop-only: never reachable from the phone itself. */
+  phone: () => Promise<PhoneView>
+  setPhoneEnabled: (on: boolean) => Promise<void>
+  setPhonePort: (port: number) => Promise<void>
+  regeneratePhoneToken: () => Promise<void>
+  /** Runs the `tailscale serve` command and returns its output (or the error text). */
+  runTailscaleServe: () => Promise<string>
   onChange: (cb: () => void) => () => void
   /** Ctrl+W, caught before the window's menu can close the window: take the top view off the stack. */
   onBack: (cb: () => void) => () => void

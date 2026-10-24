@@ -95,12 +95,25 @@ export function ItemsList(props: { items: Item[]; onOpen: (id: string) => void; 
           />
           {!text && <span className="hint">Search</span>}
         </div>
+        {/* On touch there is no Enter/Tab: the pills do the same when tapped. */}
         <span className="keys">
-          <span className="key-pill">
+          <span
+            className="key-pill"
+            role="button"
+            aria-label="Open the highlighted item"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => flat[current] && onOpen(flat[current].id)}
+          >
             <kbd>Enter</kbd> Open
           </span>
           {text.trim() && (
-            <span className="key-pill">
+            <span
+              className="key-pill"
+              role="button"
+              aria-label="Create an item with the typed title"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => onCreate(text.trim())}
+            >
               <kbd>Tab</kbd> New
             </span>
           )}
