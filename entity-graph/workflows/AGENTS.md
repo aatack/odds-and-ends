@@ -166,6 +166,9 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   the human's feedback should outlast the item.
 - **Priority items** (a `priority` event; `Item.priority`) come first in Next, the most recently active first. Mark
   one from its actions.
+- **Snoozing** a task (a `snooze` event, checked every minute; `Item.snoozedUntil`) blocks it until a time, so Next
+  leaves it out. Snooze is among a task's actions and opens `SnoozePicker` (the usual times, or any other); a snoozed
+  task offers Wake now instead, which cancels it.
 - **Every event has a right-click menu** (`useEventMenu`): Open and Debug, then what can be done to it
   (`eventActions.ts`: Resolve, Done outside, Skip for an open task; Cancel for another open event; Attach). The view
   header draws the same list as icon buttons, so the two never differ. Spread

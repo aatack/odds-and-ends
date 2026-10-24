@@ -10,6 +10,7 @@ import {
   Link,
   MessageCircle,
   MessageSquare,
+  Moon,
   Paperclip,
   Play,
   ScrollText,
@@ -37,6 +38,7 @@ export const TYPE_ICON: Record<EventKind, LucideIcon> = {
   script: SquareCode,
   summary: ScrollText,
   directive: Compass,
+  snooze: Moon,
 }
 
 export const TYPE_NAME: Record<EventKind, string> = {
@@ -53,6 +55,7 @@ export const TYPE_NAME: Record<EventKind, string> = {
   script: 'Script',
   summary: 'Summary',
   directive: 'Directive',
+  snooze: 'Snooze',
 }
 
 /** What an item waits on: a bot, else its first other blocker, else the human; a tick once closed. */

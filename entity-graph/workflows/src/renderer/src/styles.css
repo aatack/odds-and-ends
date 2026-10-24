@@ -244,6 +244,11 @@ button[data-ui].next-button { right: 16px; width: 48px; height: 48px; padding: 0
 .menu-choices { display: flex; flex-wrap: wrap; gap: 2px; padding: 0 6px 4px; max-width: 260px; }
 .menu .menu-choices button { width: auto; padding: 3px 7px; font-size: 12px; border-radius: 5px; }
 .menu .menu-choices button.chosen { background: var(--color-gray-300); color: var(--ink); }
+.snooze-picker { display: flex; flex-direction: column; gap: 2px; }
+button[data-ui].snooze-choice { display: flex; justify-content: space-between; gap: 12px; text-align: left; background: none; padding: 7px 10px; }
+button[data-ui].snooze-choice:hover { background: var(--color-gray-100); filter: none; }
+.snooze-custom { display: flex; gap: 8px; margin-top: 8px; }
+.snooze-custom input { flex: 1; font: inherit; color: var(--ink); background: var(--panel); border: none; border-radius: 6px; padding: 5px 8px; }
 /* Rendered text (components/ui/Markdown.tsx), as entity-graph sets it: one line of
  * plain prose looks as it would as a span; the block constructs keep their spacing. */
 /* Normal, not the pre-wrap of what holds it (a bubble): the renderer leaves newlines between blocks and list items as

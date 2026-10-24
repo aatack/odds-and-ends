@@ -8,7 +8,7 @@
  * stay open until something happens (a bot replies, CI finishes, an approval is
  * given, a child item closes).
  */
-export type EventKind = 'item' | 'message' | 'attachment' | 'priority' | 'summary' | 'action' | 'approval' | 'bot' | 'github' | 'slack' | 'after' | 'script' | 'directive'
+export type EventKind = 'item' | 'message' | 'attachment' | 'priority' | 'summary' | 'action' | 'approval' | 'bot' | 'github' | 'slack' | 'after' | 'script' | 'directive' | 'snooze'
 
 /** An event as it is added. `ref` names it, so an `after` added alongside can point at it. */
 export interface EventSpec {
@@ -85,6 +85,8 @@ export interface Item {
   withHuman: boolean
   /** Marked as a priority (by its latest priority event): Next takes it before the rest. */
   priority: boolean
+  /** When it wakes, while a snooze blocks it (the latest, if several). */
+  snoozedUntil: number | null
   /** The worker running a bot on it, while one is. Held in memory only. */
   worker: number | null
   /** Its Claude session, once it has one. */
@@ -256,6 +258,10 @@ export interface WorkflowsAPI {
   addDirective: (text: string) => Promise<string>
   /** Marks an item as a priority, or not. */
   setPriority: (id: string, on: boolean) => Promise<void>
+  /** Puts an item away until a time (ms), with a snooze event in it. */
+  snooze: (id: string, until: number) => Promise<void>
+  /** Wakes a snoozed item now: its snoozes are cancelled. */
+  unsnooze: (id: string) => Promise<void>
   /** The human did it outside the tool. Recorded, so reviews can find it. */
   handledOutside: (id: string) => Promise<void>
   pollSources: () => Promise<void>

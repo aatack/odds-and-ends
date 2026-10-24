@@ -2,7 +2,7 @@
 // view header (as icon buttons) and the right-click menu draw.
 
 import { atom } from 'jotai'
-import { CircleCheck, CircleX, ExternalLink, Flag, FlagOff, Paperclip, SkipForward, Trash2, type LucideIcon } from 'lucide-react'
+import { CircleCheck, CircleX, ExternalLink, Flag, FlagOff, Moon, Paperclip, SkipForward, Sun, Trash2, type LucideIcon } from 'lucide-react'
 import type { CustomAction } from '../../shared/types'
 import { actionIcon } from './actionIcons'
 import { api } from './useWorkflows'
@@ -23,17 +23,27 @@ export interface EventAction {
 /** The event being attached to a task, while the picker for it is up. */
 export const attachingAtom = atom<{ id: string; summary: string } | null>(null)
 
+/** The task being snoozed, while the picker for when is up. */
+export const snoozingAtom = atom<{ id: string; summary: string } | null>(null)
+
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 /**
  * The actions on an event: an open task can be resolved, done outside,
- * skipped, or marked as a priority (`priority` is whether it is one); a directive
+ * skipped, snoozed (or woken, while `snoozedUntil` says it sleeps), or marked as
+ * a priority (`priority` is whether it is one); a directive
  * deleted; any other open event cancelled; anything attached to a task. Then the human's own
  * actions for its type (`custom`), from the Types page.
  */
 export function eventActions(
-  e: { id: string; type: string; resolved: boolean; summary: string; priority?: boolean },
-  ctx: { act: Act; skip: (id: string) => void; attach: (e: { id: string; summary: string }) => void; custom?: CustomAction[] },
+  e: { id: string; type: string; resolved: boolean; summary: string; priority?: boolean; snoozedUntil?: number | null },
+  ctx: {
+    act: Act
+    skip: (id: string) => void
+    attach: (e: { id: string; summary: string }) => void
+    snooze?: (e: { id: string; summary: string }) => void
+    custom?: CustomAction[]
+  },
 ): EventAction[] {
   const own: EventAction[] =
     e.resolved
@@ -51,6 +61,17 @@ export function eventActions(
               run: () => void ctx.act(() => api().handledOutside(e.id)),
             },
             { id: 'skip', label: 'Skip', important: true, icon: SkipForward, tone: 'text-warning-700 hover:text-warning-700', run: () => ctx.skip(e.id) },
+            e.snoozedUntil
+              ? {
+                  id: 'snooze',
+                  label: 'Wake now',
+                  title: `Snoozed until ${new Date(e.snoozedUntil).toLocaleString()}: wake it now.`,
+                  important: false,
+                  icon: Sun,
+                  tone: '',
+                  run: () => void ctx.act(() => api().unsnooze(e.id)),
+                }
+              : { id: 'snooze', label: 'Snooze', important: false, icon: Moon, tone: '', run: () => ctx.snooze?.({ id: e.id, summary: e.summary }) },
             e.priority
               ? { id: 'priority', label: 'Not a priority', important: false, icon: FlagOff, tone: '', run: () => void ctx.act(() => api().setPriority(e.id, false)) }
               : { id: 'priority', label: 'Mark as a priority', important: false, icon: Flag, tone: '', run: () => void ctx.act(() => api().setPriority(e.id, true)) },

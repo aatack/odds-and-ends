@@ -58,6 +58,8 @@ async function main(): Promise<void> {
   handle('directives', () => engine.directives())
   handle('addDirective', (text: string) => engine.addDirective(text))
   handle('setPriority', (id: string, on: boolean) => engine.setPriority(id, on))
+  handle('snooze', (id: string, until: number) => engine.snooze(id, until))
+  handle('unsnooze', (id: string) => engine.unsnooze(id))
   handle('summarise', (id: string) => engine.summarise(id))
   handle('customActions', () => engine.customActions.list())
   handle('saveCustomAction', (a: Parameters<typeof engine.customActions.save>[0]) => engine.customActions.save(a))

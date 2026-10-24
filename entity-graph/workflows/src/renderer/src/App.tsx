@@ -3,7 +3,7 @@ import type { Catalog, ItemDetail, ItemEvent } from '../../shared/types'
 import { Blockers } from './Blockers'
 import { useAtom, useSetAtom } from 'jotai'
 import { ArrowRight, ChevronLeft, Menu, MoreHorizontal } from 'lucide-react'
-import { attachingAtom, eventActions, type EventAction } from './eventActions'
+import { attachingAtom, eventActions, snoozingAtom, type EventAction } from './eventActions'
 import { Dropdown, DropdownItem } from './components/ui/Dropdown'
 import { TypesPage } from './TypesPage'
 import { DirectivesPage } from './DirectivesPage'
@@ -14,6 +14,7 @@ import { DebugView } from './DebugView'
 import { EventMenu } from './EventMenu'
 import { EventView } from './EventView'
 import { ItemPicker } from './ItemPicker'
+import { SnoozePicker } from './SnoozePicker'
 import { ItemsList } from './ItemsList'
 import { Composer } from './Composer'
 import { EventIcon } from './icons'
@@ -85,6 +86,7 @@ export function App() {
       </div>
       <EventMenu actOn={items.actOn} skip={items.skip} custom={items.customActions} />
       <AttachPicker />
+      <Snoozer />
     </ItemsContext.Provider>
   )
 }
@@ -110,6 +112,24 @@ function AttachPicker() {
         void w.act(async () => api().attach(id, await api().create(title, null)))
       }}
       onClose={() => setAttaching(null)}
+    />
+  )
+}
+
+/** Snoozing a task, from its header or its right-click menu: pick when it wakes. */
+function Snoozer() {
+  const w = useItems()
+  const [snoozing, setSnoozing] = useAtom(snoozingAtom)
+  if (!snoozing) return null
+  const { id, summary } = snoozing
+  return (
+    <SnoozePicker
+      title={`Snooze “${summary}”`}
+      onPick={(until) => {
+        setSnoozing(null)
+        void w.actOn(id)(() => api().snooze(id, until))
+      }}
+      onClose={() => setSnoozing(null)}
     />
   )
 }
@@ -190,6 +210,7 @@ function AppMenu() {
 function ItemsMain() {
   const w = useItems()
   const setAttaching = useSetAtom(attachingAtom)
+  const setSnoozing = useSetAtom(snoozingAtom)
   const openEvent = (id: string) => w.open({ kind: 'event', id })
   // What the items view opens takes its place, so Back goes to where you were before it.
   const openFromItems = (id: string) => w.open({ kind: 'event', id }, { replace: w.view?.kind === 'items' })
@@ -246,7 +267,10 @@ function ItemsMain() {
   const debug = w.view.kind === 'debug'
   const actions = debug ? null : (
     <HeaderActions
-      actions={eventActions({ ...e, priority: d.item?.item.priority }, { act: w.actOn(e.id), skip: w.skip, attach: setAttaching, custom: w.customActions })}
+      actions={eventActions(
+        { ...e, priority: d.item?.item.priority, snoozedUntil: d.item?.item.snoozedUntil },
+        { act: w.actOn(e.id), skip: w.skip, attach: setAttaching, snooze: setSnoozing, custom: w.customActions },
+      )}
     />
   )
   return (

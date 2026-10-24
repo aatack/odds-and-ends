@@ -106,6 +106,7 @@ the chat input should offer it, add a preset in `presets.ts`.
 | `after` | yes | `event`, then `then` or `script` | `{ added, logs? }` or `{ error }` |
 | `script` | yes | `source`, `description?`, `schedule?` (seconds), `timeout_minutes?` | `{ result, message?, runs, logs }` or `{ error, logs }` |
 | `summary` | yes (seconds) | — (Haiku summarises the item, in ASD-STE100) | `{ text }` or `{ error }` |
+| `snooze` | yes | `until` (an ISO time) | `{ woke }` (an ISO time) |
 | `directive` | while it holds (sits in no item, so blocks nothing) | `text` (markdown: what the operator is working on) | `{ cancelled }`, once deleted |
 
 - **`directive`** is the operator's note on what they are working on at the
@@ -114,6 +115,12 @@ the chat input should offer it, add a preset in `presets.ts`.
   instructions say to read the latest (the `directives` action) when they need
   more context, and to add one (`add_directive`) when feedback should outlast
   the item.
+- **`snooze`** puts an item away until `until`. It blocks the item, so Next
+  leaves it out, and is checked every minute: once the time comes it resolves
+  ("Woke up") and the item is the human's turn again. Cancelling it wakes the
+  item at once. `Item.snoozedUntil` is when the latest open one wakes. The human
+  snoozes from a task's actions (Snooze, then a time); `Engine.snooze` replaces
+  any snooze already open, and `Engine.unsnooze` (Wake now) cancels them.
 - **`after`** is how events chain. It waits for one event to resolve, then adds
   `then`, or whatever its `script` returns.
   - A script is `async (input, actions) => events`, where `input` is

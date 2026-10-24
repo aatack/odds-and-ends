@@ -292,6 +292,29 @@ export const directive: EventType = {
   describe: (p) => String(p.text).split('\n').find((l) => l.trim())?.replace(/^#+\s*/, '') ?? 'Directive',
 }
 
+/** When a snooze wakes, in ms: its `until`, an ISO time. */
+const wakesAt = (p: Record<string, unknown>) => Date.parse(String(p.until))
+
+export const snooze: EventType = {
+  type: 'snooze',
+  description:
+    'Puts the item away until a time: it blocks the item, so Next leaves it out, and resolves once the time comes (checked every ' +
+    'minute), when the item is the human\'s turn again. Cancelling it wakes the item at once.',
+  params: {
+    until: z
+      .string()
+      .refine((s) => !Number.isNaN(Date.parse(s)), 'An ISO time, such as 2026-10-24T09:00:00Z.')
+      .describe('When to wake the item: an ISO time, such as 2026-10-24T09:00:00Z.'),
+  },
+  data: '{ woke: ISO time }',
+  blocking: true,
+  bots: true,
+  describe: (p) => `Snoozed until ${new Date(wakesAt(p)).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`,
+  said: () => 'Woke up',
+  schedule: () => [0, 60],
+  check: async (p, { engine }) => (engine.now() >= wakesAt(p) ? { woke: new Date(engine.now()).toISOString() } : null),
+}
+
 /** How a summary is to be written: ASD-STE100, so it reads plainly. */
 const SUMMARY_SYSTEM = `You summarise one task for the person who owns it. Write in ASD-STE100 Simplified Technical English:
 - Use short sentences (20 words or fewer). Use one instruction or one statement in each sentence.
@@ -336,4 +359,4 @@ export const summary: EventType = {
   },
 }
 
-export const EVENT_TYPES: EventType[] = [item, message, attachment, priority, action, approval, bot, github, slack, after, script, summary, directive]
+export const EVENT_TYPES: EventType[] = [item, message, attachment, priority, action, approval, bot, github, slack, after, script, summary, directive, snooze]

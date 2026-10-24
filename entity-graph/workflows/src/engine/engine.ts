@@ -29,6 +29,12 @@ export interface BotOutput {
 type Row = Record<string, unknown>
 const json = <T>(s: unknown): T | null => (typeof s === 'string' && s ? (JSON.parse(s) as T) : null)
 
+/** When an item's snoozes wake it: the latest, or null when none blocks it. */
+const snoozedUntil = (blockers: ItemEvent[]): number | null => {
+  const times = blockers.filter((b) => b.type === 'snooze').map((b) => Date.parse(String(b.params.until)))
+  return times.length ? Math.max(...times) : null
+}
+
 const NO_TIMES: EventTimes = {
   added: null, firstChecked: null, lastChecked: null, checks: 0, firstRunStarted: null, firstRunEnded: null, runs: 0, resolved: null,
 }
@@ -233,6 +239,7 @@ export class Engine extends EventEmitter {
       blockers,
       withHuman: !closed && blockers.every((b) => this.waitsOnHuman(b, blockers)),
       priority: Boolean(marked && json<Record<string, unknown>>(marked.params)?.on),
+      snoozedUntil: snoozedUntil(blockers),
       worker: this.running.get(id) ?? null,
       sessionId: (params.sessionId as string) ?? null,
       since: Math.max((last.at as number) ?? 0, r.created_at as number),
@@ -336,6 +343,19 @@ export class Engine extends EventEmitter {
   async setPriority(itemId: string, on: boolean, actor = 'human'): Promise<void> {
     if (this.must(itemId).priority === on) return
     await this.addEvents(itemId, [{ type: 'priority', params: { on } }], actor)
+  }
+
+  /** Puts an item away until `until` (ms): a snooze event in it, which blocks it until then. */
+  async snooze(itemId: string, until: number, actor = 'human'): Promise<void> {
+    if (this.must(itemId).closed) throw new Error('That task is closed.')
+    if (!(until > this.now())) throw new Error('Snooze until a time to come.')
+    await this.unsnooze(itemId, actor)
+    await this.addEvents(itemId, [{ type: 'snooze', params: { until: new Date(until).toISOString() } }], actor)
+  }
+
+  /** Wakes an item now: every snooze in it is cancelled. */
+  async unsnooze(itemId: string, actor = 'human'): Promise<void> {
+    for (const b of this.must(itemId).blockers.filter((b) => b.type === 'snooze')) await this.cancel(b.id, actor)
   }
 
   // ---- the trace ----

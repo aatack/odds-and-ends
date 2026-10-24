@@ -20,6 +20,8 @@ const api: WorkflowsAPI = {
   directives: call('directives') as WorkflowsAPI['directives'],
   addDirective: call('addDirective') as WorkflowsAPI['addDirective'],
   setPriority: call('setPriority') as WorkflowsAPI['setPriority'],
+  snooze: call('snooze') as WorkflowsAPI['snooze'],
+  unsnooze: call('unsnooze') as WorkflowsAPI['unsnooze'],
   summarise: call('summarise') as WorkflowsAPI['summarise'],
   customActions: call('customActions') as WorkflowsAPI['customActions'],
   saveCustomAction: call('saveCustomAction') as WorkflowsAPI['saveCustomAction'],

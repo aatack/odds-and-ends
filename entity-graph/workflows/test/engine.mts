@@ -722,6 +722,43 @@ await assert.rejects(engine.attach(idea, collector), /closed/)
   await engine.close(host)
 }
 
+// ---- 20. A snooze puts a task away until its time, checked every minute; waking it cancels the snooze ----
+{
+  for (const i of engine.overview().items.filter((i) => !i.closed)) await engine.close(i.id)
+  const sleepy = (await engine.create('Sleepy'))!
+  await engine.snooze(sleepy, clock + 3 * MINUTE)
+  await tick()
+  assert.ok(!item(sleepy).withHuman, 'a snoozed task is not the human\'s turn')
+  assert.equal(item(sleepy).snoozedUntil, clock + 3 * MINUTE)
+  assert.equal(engine.next(), null)
+  const [z] = item(sleepy).blockers
+  assert.equal(z.type, 'snooze')
+  for (let i = 0; i < 3; i++) {
+    assert.ok(!engine.event(z.id)!.resolved, 'still asleep')
+    assert.equal(engine.event(z.id)!.nextCheckAt! - clock, MINUTE, 'checked every minute')
+    clock = engine.event(z.id)!.nextCheckAt!
+    await tick()
+  }
+  assert.ok(engine.event(z.id)!.resolved, 'awake once its time comes')
+  assert.equal(engine.event(z.id)!.message, 'Woke up')
+  assert.ok(item(sleepy).withHuman)
+  assert.equal(engine.next(), sleepy)
+  // Snoozing again replaces the snooze; waking it cancels it at once.
+  await engine.snooze(sleepy, clock + 60 * MINUTE)
+  await engine.snooze(sleepy, clock + 120 * MINUTE)
+  assert.equal(item(sleepy).blockers.length, 1)
+  assert.equal(item(sleepy).snoozedUntil, clock + 120 * MINUTE)
+  await engine.unsnooze(sleepy)
+  assert.ok(item(sleepy).withHuman)
+  assert.equal(item(sleepy).snoozedUntil, null)
+  await assert.rejects(engine.snooze(sleepy, clock - 1), /to come/)
+  // A bot may snooze its item too, with an ISO time; anything else is refused.
+  await engine.addEvents(sleepy, [{ type: 'snooze', params: { until: new Date(clock + MINUTE).toISOString() } }], 'bot', 'bot')
+  assert.ok(!item(sleepy).withHuman)
+  await assert.rejects(engine.addEvents(sleepy, [{ type: 'snooze', params: { until: 'soon' } }], 'bot', 'bot'))
+  await engine.close(sleepy)
+}
+
 assert.equal(behaviours.length, 0)
 mcp.close()
 console.log('engine: ok')
