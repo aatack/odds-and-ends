@@ -547,6 +547,27 @@ await admin.addSlack('xoxp-good-1234')
 const cat = catalog(engine)
 assert.ok(cat.actions.find((a) => a.name === 'slack_post')!.unsafe)
 assert.deepEqual(cat.presets.map((p) => p.id), ['message', 'bot', 'pr-merged', 'pr-checks'])
+// Priority items come first in Next, the most recently active first; then the rest, the longest waiting first.
+{
+  for (const i of engine.overview().items.filter((i) => !i.closed)) await engine.close(i.id)
+  const old = (await engine.create('Old'))!
+  clock += 1000
+  const p1 = (await engine.create('P1'))!
+  clock += 1000
+  const p2 = (await engine.create('P2'))!
+  assert.equal(engine.next(), old, 'the longest waiting, with no priorities')
+  await engine.setPriority(p1, true)
+  clock += 1000
+  await engine.setPriority(p2, true)
+  assert.ok(item(p2).priority)
+  assert.equal(engine.next(), p2, 'the most recently active priority')
+  assert.equal(engine.next([p2]), p1)
+  await engine.setPriority(p2, false)
+  assert.ok(!item(p2).priority)
+  assert.equal(engine.next(), p1)
+  assert.deepEqual(engine.children(p2).map((e) => e.message), ['Marked as a priority', 'No longer a priority'])
+  for (const i of [old, p1, p2]) await engine.close(i)
+}
 // The default preset only says what is typed; with nothing typed, it runs a bot.
 {
   const quiet = (await engine.create('Quiet'))!

@@ -2,7 +2,7 @@
 // view header (as icon buttons) and the right-click menu draw.
 
 import { atom } from 'jotai'
-import { CircleCheck, CircleX, ExternalLink, Paperclip, SkipForward, type LucideIcon } from 'lucide-react'
+import { CircleCheck, CircleX, ExternalLink, Flag, FlagOff, Paperclip, SkipForward, type LucideIcon } from 'lucide-react'
 import { api } from './useWorkflows'
 
 export interface EventAction {
@@ -22,11 +22,12 @@ export const attachingAtom = atom<{ id: string; summary: string } | null>(null)
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 /**
- * The actions on an event: an open task can be resolved, done outside or
- * skipped; any other open event cancelled; anything attached to a task.
+ * The actions on an event: an open task can be resolved, done outside,
+ * skipped, or marked as a priority (`priority` is whether it is one); any other
+ * open event cancelled; anything attached to a task.
  */
 export function eventActions(
-  e: { id: string; type: string; resolved: boolean; summary: string },
+  e: { id: string; type: string; resolved: boolean; summary: string; priority?: boolean },
   ctx: { act: Act; skip: (id: string) => void; attach: (e: { id: string; summary: string }) => void },
 ): EventAction[] {
   const own: EventAction[] =
@@ -44,6 +45,9 @@ export function eventActions(
               run: () => void ctx.act(() => api().handledOutside(e.id)),
             },
             { id: 'skip', label: 'Skip', icon: SkipForward, tone: 'text-warning-700 hover:text-warning-700', run: () => ctx.skip(e.id) },
+            e.priority
+              ? { id: 'priority', label: 'Not a priority', icon: FlagOff, tone: '', run: () => void ctx.act(() => api().setPriority(e.id, false)) }
+              : { id: 'priority', label: 'Mark as a priority', icon: Flag, tone: '', run: () => void ctx.act(() => api().setPriority(e.id, true)) },
           ]
         : [{ id: 'cancel', label: 'Cancel', icon: CircleX, tone: 'text-error-600 hover:text-error-600', run: () => void ctx.act(() => api().cancel(e.id)) }]
   return [

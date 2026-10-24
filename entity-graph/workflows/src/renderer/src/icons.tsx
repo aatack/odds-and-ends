@@ -3,6 +3,7 @@
 import {
   Bot,
   Check,
+  Flag,
   GitPullRequest,
   Layers,
   Link,
@@ -24,6 +25,7 @@ export const TYPE_ICON: Record<EventKind, LucideIcon> = {
   item: Layers,
   message: MessageSquare,
   attachment: Paperclip,
+  priority: Flag,
   action: Play,
   approval: ShieldCheck,
   bot: Bot,
@@ -37,6 +39,7 @@ export const TYPE_NAME: Record<EventKind, string> = {
   item: 'Task',
   message: 'Message',
   attachment: 'Attachment',
+  priority: 'Priority',
   action: 'Action',
   approval: 'Approval',
   bot: 'Bot',

@@ -59,7 +59,9 @@ server's instructions, and the `paradigm` action. Keep it that short.
 **Reads:** `get_item` (an item in full), `get_children` (the events in an item;
 with `open`, its blockers), `list_items` (every item), `items_waiting_on`
 (the open items waiting on the human, a bot, or one blocking type), and
-`next_for_human` (what Next would show).
+`next_for_human` (what Next would show: priority items first, the most recently
+active first, then the rest, the longest waiting first; an item is a priority while
+its latest `priority` event says so).
 
 ### Every type (`EventType`)
 

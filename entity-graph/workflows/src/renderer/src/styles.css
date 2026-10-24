@@ -27,6 +27,7 @@ button[data-ui].link { background: none; color: var(--muted); padding: 0; }
 .row { padding: 5px 8px; border-radius: 6px; display: flex; align-items: center; gap: 8px; }
 .row-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row .icon { width: 15px; height: 15px; flex: none; color: var(--muted); }
+.row .icon.priority-flag { color: var(--color-warning-700); }
 .row:hover { background: var(--line); }
 .row.selected { background: var(--panel); box-shadow: var(--shadow-xs); }
 .dot { flex: none; width: 6px; height: 6px; border-radius: 3px; background: var(--accent); }

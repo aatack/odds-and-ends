@@ -217,6 +217,9 @@ export class Engine extends EventEmitter {
       .prepare('SELECT MAX(MAX(created_at), COALESCE(MAX(resolved_at), 0)) AS at FROM events WHERE parent_id = ?')
       .get(id) as Row
     const closed = Boolean(r.resolved)
+    const marked = this.db
+      .prepare("SELECT params FROM events WHERE parent_id = ? AND type = 'priority' ORDER BY seq DESC LIMIT 1")
+      .get(id) as Row | undefined
     return {
       id,
       title: String(params.title),
@@ -225,6 +228,7 @@ export class Engine extends EventEmitter {
       how: (json<Record<string, unknown>>(r.data)?.how as string) ?? null,
       blockers,
       withHuman: !closed && blockers.every((b) => this.waitsOnHuman(b, blockers)),
+      priority: Boolean(marked && json<Record<string, unknown>>(marked.params)?.on),
       worker: this.running.get(id) ?? null,
       sessionId: (params.sessionId as string) ?? null,
       since: Math.max((last.at as number) ?? 0, r.created_at as number),
@@ -297,14 +301,18 @@ export class Engine extends EventEmitter {
    * item is the human's when nothing but its approvals blocks it, so a child
    * item comes before the item it blocks.
    */
+  /** What needs the human next: their priority items, the most recently active first; then the rest, the longest waiting first. */
   next(skip: string[] = []): string | null {
     const rows = this.db.prepare("SELECT * FROM events WHERE type = 'item' AND resolved = 0").all() as Row[]
-    return (
-      rows
-        .map((r) => this.toItem(r))
-        .filter((i) => i.withHuman && !skip.includes(i.id))
-        .sort((a, b) => a.since - b.since)[0]?.id ?? null
-    )
+    const open = rows.map((r) => this.toItem(r)).filter((i) => i.withHuman && !skip.includes(i.id))
+    const first = open.filter((i) => i.priority).sort((a, b) => b.since - a.since)[0] ?? open.sort((a, b) => a.since - b.since)[0]
+    return first?.id ?? null
+  }
+
+  /** Marks an item as a priority, or not, with a priority event in it. */
+  async setPriority(itemId: string, on: boolean, actor = 'human'): Promise<void> {
+    if (this.must(itemId).priority === on) return
+    await this.addEvents(itemId, [{ type: 'priority', params: { on } }], actor)
   }
 
   // ---- the trace ----

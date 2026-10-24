@@ -34,7 +34,7 @@ export function EventMenu({
   const [views, setViews] = useAtom(viewsAtom)
   const attach = useSetAtom(attachingAtom)
   // The event itself, read as the menu opens, for which actions it has.
-  const [event, setEvent] = useState<ItemEvent | null>(null)
+  const [event, setEvent] = useState<(ItemEvent & { priority?: boolean }) | null>(null)
   // Placed by Floating UI at the cursor: flipped above it, or shifted along, so it always stays in the window,
   // and placed again as it grows (its actions come in a moment after it opens).
   const { refs, floatingStyles } = useFloating({
@@ -52,7 +52,7 @@ export function EventMenu({
   }, [menu, refs])
   useEffect(() => {
     setEvent(null)
-    if (menu) void api().eventDetail(menu.id).then((d) => setEvent(d?.event ?? null))
+    if (menu) void api().eventDetail(menu.id).then((d) => setEvent(d ? { ...d.event, priority: d.item?.item.priority } : null))
   }, [menu])
   useEffect(() => {
     if (!menu) return

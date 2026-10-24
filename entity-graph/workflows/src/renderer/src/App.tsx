@@ -216,7 +216,7 @@ function ItemsMain() {
   const debug = w.view.kind === 'debug'
   const actions = debug ? null : (
     <>
-      {eventActions(e, { act: w.actOn(e.id), skip: w.skip, attach: setAttaching }).map((a) => (
+      {eventActions({ ...e, priority: d.item?.item.priority }, { act: w.actOn(e.id), skip: w.skip, attach: setAttaching }).map((a) => (
         <IconButton key={a.id} title={a.title ?? a.label} className={a.tone} onClick={a.run}>
           <a.icon className="size-[17px]" />
         </IconButton>

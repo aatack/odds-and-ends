@@ -8,7 +8,7 @@
  * stay open until something happens (a bot replies, CI finishes, an approval is
  * given, a child item closes).
  */
-export type EventKind = 'item' | 'message' | 'attachment' | 'action' | 'approval' | 'bot' | 'github' | 'slack' | 'after' | 'script'
+export type EventKind = 'item' | 'message' | 'attachment' | 'priority' | 'action' | 'approval' | 'bot' | 'github' | 'slack' | 'after' | 'script'
 
 /** An event as it is added. `ref` names it, so an `after` added alongside can point at it. */
 export interface EventSpec {
@@ -83,6 +83,8 @@ export interface Item {
   blockers: ItemEvent[]
   /** Open, and blocked by nothing but the human's own approvals: it is the human's turn. */
   withHuman: boolean
+  /** Marked as a priority (by its latest priority event): Next takes it before the rest. */
+  priority: boolean
   /** The worker running a bot on it, while one is. Held in memory only. */
   worker: number | null
   /** Its Claude session, once it has one. */
@@ -239,6 +241,8 @@ export interface WorkflowsAPI {
   close: (id: string) => Promise<void>
   /** Attaches any event to an item (`targetId`), as an attachment event in it. */
   attach: (eventId: string, targetId: string) => Promise<void>
+  /** Marks an item as a priority, or not. */
+  setPriority: (id: string, on: boolean) => Promise<void>
   /** The human did it outside the tool. Recorded, so reviews can find it. */
   handledOutside: (id: string) => Promise<void>
   pollSources: () => Promise<void>

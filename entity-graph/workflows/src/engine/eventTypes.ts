@@ -68,6 +68,18 @@ export const attachment: EventType = {
   said: (p) => `Attached: ${p.title}`,
 }
 
+export const priority: EventType = {
+  type: 'priority',
+  description:
+    "Marks the item as a priority, or not: its latest priority event says which. Next takes the human's priority items " +
+    'first (the most recently active first), then the rest (the longest waiting first).',
+  params: { on: z.boolean().describe('Whether it is a priority from now on.') },
+  data: '{}',
+  blocking: false,
+  bots: true,
+  describe: (p) => (p.on ? 'Marked as a priority' : 'No longer a priority'),
+}
+
 export const action: EventType = {
   type: 'action',
   description: 'An action run on the item, with what it was given and what it answered.',
@@ -257,4 +269,4 @@ export const script: EventType = {
   },
 }
 
-export const EVENT_TYPES: EventType[] = [item, message, attachment, action, approval, bot, github, slack, after, script]
+export const EVENT_TYPES: EventType[] = [item, message, attachment, priority, action, approval, bot, github, slack, after, script]

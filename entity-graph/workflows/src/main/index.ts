@@ -55,6 +55,7 @@ async function main(): Promise<void> {
   handle('cancel', (eventId: string) => engine.cancel(eventId))
   handle('close', (id: string) => engine.close(id))
   handle('attach', (eventId: string, targetId: string) => engine.attach(eventId, targetId))
+  handle('setPriority', (id: string, on: boolean) => engine.setPriority(id, on))
   handle('handledOutside', (id: string) => engine.handledOutside(id))
   handle('pollSources', () => engine.pollSources(true))
   handle('integrations', () => admin.integrations())

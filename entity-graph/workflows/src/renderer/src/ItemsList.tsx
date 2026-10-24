@@ -1,6 +1,6 @@
 import fuzzysort from 'fuzzysort'
 import { useAtomValue } from 'jotai'
-import { Search } from 'lucide-react'
+import { Flag, Search } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Item } from '../../shared/types'
 import { minutes } from './Chat'
@@ -123,6 +123,7 @@ export function ItemsList(props: { items: Item[]; onOpen: (id: string) => void; 
             >
               <ItemIcon item={i} />
               <span className="row-title">{i.title}</span>
+              {i.priority && !i.closed && <Flag className="icon priority-flag" aria-label="Priority" />}
               <span className="muted row-status">{status(i)}</span>
               <span className="muted row-age">{minutes(Math.max(0, now - i.since))}</span>
             </div>
