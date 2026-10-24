@@ -552,6 +552,33 @@ await admin.addSlack('xoxp-good-1234')
 const cat = catalog(engine)
 assert.ok(cat.actions.find((a) => a.name === 'slack_post')!.unsafe)
 assert.deepEqual(cat.presets.map((p) => p.id), ['message', 'bot', 'pr-merged', 'pr-checks'])
+// A loop: a script that adds a bot on every run and never finishes, until it is cancelled.
+{
+  const looping = (await engine.create('Looping'))!
+  const [loop] = await engine.addEvents(looping, [
+    {
+      type: 'script',
+      params: {
+        description: 'Every hour, a bot',
+        schedule: [3600],
+        source: `async (ctx, actions) => { await actions.add_events({ item_id: ctx.item.id, events: [{ type: 'bot', params: { instructions: 'Go round again' } }] }); return { done: false } }`,
+      },
+    },
+  ])
+  for (let round = 0; round < 2; round++) {
+    behaviours.push(async ({ prompt }) => {
+      assert.match(prompt, /\[instructions: Go round again\]/)
+      return {}
+    })
+    clock = engine.event(loop)!.nextCheckAt!
+    await tick()
+    await settle()
+  }
+  assert.equal(engine.children(looping).filter((e) => e.type === 'bot').length, 2)
+  assert.ok(!engine.event(loop)!.resolved, 'a loop runs until it is cancelled')
+  await engine.cancel(loop)
+  await engine.close(looping)
+}
 // Summarising: a cheap model, no tools, given the item; kept in the trace, not added to the item.
 {
   const s = (await engine.create('Summed up'))!

@@ -228,7 +228,11 @@ export const script: EventType = {
     '- console.log is kept. A run that throws ends the event with the error.\n' +
     'Example, waiting for a PR to get two approvals: async (ctx, actions) => { const pr = await actions.github_pr_view({ repo: "o/r", ' +
     'number: 7 }); const n = pr.reviews.filter((r) => r.state === "APPROVED").length; return n >= 2 ? { done: true, data: { approvals: n }, ' +
-    'message: "o/r#7 has two approvals" } : { done: false } }',
+    'message: "o/r#7 has two approvals" } : { done: false } }\n' +
+    'A loop is a script that never says it is done: it runs on its schedule (the last gap repeating) until it is cancelled. ' +
+    'To have an agent work on something every hour, say: schedule [3600], and a source that adds a bot each run, e.g. ' +
+    'async (ctx, actions) => { await actions.add_events({ item_id: ctx.item.id, events: [{ type: "bot", params: { instructions: ' +
+    '"Check the open PRs and fix any failing CI" } }] }); return { done: false } }',
   params: {
     source: z.string().describe('async (ctx, actions) => null | { done: false, state? } | { done: true, data?, message? }'),
     description: z.string().optional().describe('What it waits for, in a line: the blocker row says this.'),

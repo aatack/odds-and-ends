@@ -602,7 +602,8 @@ export class Engine extends EventEmitter {
   async addEvents(parentId: string | null, specs: EventSpec[], actor = 'human', author: Author = 'human', runId: string | null = null): Promise<string[]> {
     if (parentId && this.must(parentId).closed) throw new Error('This item is closed.')
     const ids = this.add(parentId, this.prepare(specs, author), actor, runId)
-    await this.idle()
+    // A script is run from inside an item's queue, so waiting for the queues to empty would wait for itself.
+    if (actor !== 'script') await this.idle()
     return ids
   }
 
@@ -641,7 +642,7 @@ export class Engine extends EventEmitter {
     this.resolve(eventId, { cancelled: true }, actor, true)
     if (event.type === 'bot' && event.parentId && this.running.has(event.parentId)) this.onCancel(event.parentId)
     this.emit('change')
-    await this.idle()
+    if (actor !== 'script') await this.idle()
   }
 
   /** Closes an item: its open children are cancelled (child items closed, all the way down), then it resolves. */
@@ -659,7 +660,7 @@ export class Engine extends EventEmitter {
     if (item.closed) return
     transaction(this.db, () => shut(itemId, opts.how ?? 'closed'))
     this.emit('change')
-    await this.idle()
+    if (actor !== 'script') await this.idle() // a script waiting on its own queue would wait for itself
   }
 
   handledOutside(itemId: string): Promise<void> {

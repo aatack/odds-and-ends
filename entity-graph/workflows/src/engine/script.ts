@@ -37,10 +37,10 @@ export async function runScript(
       const promise = vm.newPromise()
       call(vm.getString(nameH), JSON.parse(vm.getString(argsH)))
         .then(
-          (r) => settle(vm, (h) => promise.resolve(h), vm.newString(JSON.stringify(r ?? null))),
-          (e: Error) => settle(vm, (h) => promise.reject(h), vm.newError(e.message)),
+          (r) => settle(vm, (h) => promise.resolve(h), () => vm.newString(JSON.stringify(r ?? null))),
+          (e: Error) => settle(vm, (h) => promise.reject(h), () => vm.newError(e.message)),
         )
-      promise.settled.then(() => runtime.executePendingJobs())
+      promise.settled.then(() => runtime.alive && runtime.executePendingJobs())
       return promise.handle
     })
     const code = `(async () => {
@@ -74,8 +74,10 @@ export async function runScript(
   }
 }
 
-function settle(vm: QuickJSContext, to: (h: QuickJSHandle) => void, h: QuickJSHandle) {
+/** Settles a call's promise in the script, unless the script has ended (timed out, or failed) since it made the call. */
+function settle(vm: QuickJSContext, to: (h: QuickJSHandle) => void, make: () => QuickJSHandle) {
   if (!vm.alive) return
+  const h = make()
   to(h)
   h.dispose()
 }
