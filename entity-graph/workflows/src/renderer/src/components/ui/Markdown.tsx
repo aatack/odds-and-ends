@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { createContext, useContext, useMemo } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import { fromMarkdown } from 'mdast-util-from-markdown'
 import { toString } from 'mdast-util-to-string'
@@ -29,14 +29,26 @@ const fence: Components['pre'] = ({ children }) => {
   return <CodeBlock code={plainText(code?.props.children).replace(/\n$/, '')} language={language} />
 }
 
-const COMPONENTS: Components = {
-  pre: fence,
-  // Links open in the browser: the window's open handler sends http(s) there.
-  a: ({ href, children }) => (
+/** How a reference to an item, `[itemId]()`, is drawn: the app says, as the items are its. Without it, as a link. */
+export const ItemRefContext = createContext<((id: string) => React.ReactNode) | null>(null)
+
+const ITEM_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/** Links open in the browser: the window's open handler sends http(s) there. One to nowhere whose text is an item's id refers to that item. */
+function Link({ href, children }: { href?: string; children?: React.ReactNode }) {
+  const itemRef = useContext(ItemRefContext)
+  const text = plainText(children)
+  if (!href && itemRef && ITEM_ID.test(text)) return itemRef(text)
+  return (
     <a href={href} target="_blank" rel="noreferrer">
       {children}
     </a>
-  ),
+  )
+}
+
+const COMPONENTS: Components = {
+  pre: fence,
+  a: Link,
 }
 
 const REMARK = [remarkGfm]

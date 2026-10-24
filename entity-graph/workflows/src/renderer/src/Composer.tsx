@@ -1,9 +1,11 @@
 import { SendHorizontal } from 'lucide-react'
 import { useAtom } from 'jotai'
 import { useEffect, useRef, useState } from 'react'
-import type { Catalog } from '../../shared/types'
+import type { Catalog, Item } from '../../shared/types'
 import { GrowingTextarea } from './GrowingTextarea'
 import { TypeIcon } from './icons'
+import { ItemPicker } from './ItemPicker'
+import type { Recent } from './sections'
 import { draftsAtom, withoutEmpty } from './views'
 
 /**
@@ -12,18 +14,23 @@ import { draftsAtom, withoutEmpty } from './views'
  * on…): its icon, for what Enter would do now, is in the top left, Tab and
  * Shift+Tab step through them, and Enter sends. Ctrl+Enter twice resolves the
  * item: the first press only asks, in the hint, and any other key takes it back.
- * What is typed is kept, by `draftKey`, until it is sent.
+ * What is typed is kept, by `draftKey`, until it is sent. An `@` typed at the
+ * start of a word opens the finder; what is picked (or made, with Tab) takes
+ * the `@`'s place as a reference, `[itemId]()`. Escape leaves the `@` as typed.
  */
 export function Composer({
   catalog,
   draftKey,
   onSend,
   onResolve,
+  mention,
 }: {
   catalog: Catalog
   draftKey: string
   onSend: (preset: string, text: string) => Promise<boolean>
   onResolve: () => void
+  /** What `@` picks from, and how it makes a new item. */
+  mention: { items: Item[]; recent: Recent; create: (title: string) => Promise<string> }
 }) {
   const [at, setAt] = useState(0)
   const [drafts, setDrafts] = useAtom(draftsAtom)
@@ -42,6 +49,17 @@ export function Composer({
   // What Enter would do now: some presets do something else with nothing typed.
   const shown = !text.trim() && preset.whenEmpty ? preset.whenEmpty : preset
   useEffect(() => box.current?.focus(), [at])
+  // Where the `@` being completed is, while the finder is open for it.
+  const [mentionAt, setMentionAt] = useState<number | null>(null)
+  const insertRef = (id: string) => {
+    if (mentionAt === null) return
+    const ref = `[${id}]()`
+    setText(text.slice(0, mentionAt) + ref + text.slice(mentionAt + 1))
+    setMentionAt(null)
+    // The modal gives the cursor back to the text box as it closes; then it goes after the reference.
+    const caret = mentionAt + ref.length
+    requestAnimationFrame(() => box.current?.setSelectionRange(caret, caret))
+  }
   const send = async () => {
     if (await onSend(preset.id, text)) setText('')
   }
@@ -59,7 +77,14 @@ export function Composer({
           ref={box}
           value={text}
           aria-label={preset.name}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            const value = e.target.value
+            const caret = e.target.selectionStart
+            // One `@` typed at the start of a word: find what it refers to.
+            if (value.length === text.length + 1 && value[caret - 1] === '@' && /(^|\s)$/.test(value.slice(0, caret - 1)))
+              setMentionAt(caret - 1)
+            setText(value)
+          }}
           onBlur={() => setResolving(false)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
@@ -96,6 +121,17 @@ export function Composer({
           <SendHorizontal className="icon" />
         </span>
       </span>
+      {mentionAt !== null && (
+        <ItemPicker
+          title="Refer to a task"
+          items={mention.items}
+          recent={mention.recent}
+          verb="Insert"
+          onPick={insertRef}
+          onCreate={(title) => void mention.create(title).then(insertRef)}
+          onClose={() => setMentionAt(null)}
+        />
+      )}
     </div>
   )
 }

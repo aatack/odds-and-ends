@@ -148,6 +148,9 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
 - **Picking an item** is `ItemPicker`: the finder in a `Modal` over the blurred window, calling back with
   the item picked (Enter or a click) or made (Tab). The paperclip at the top right of every event's view uses it to
   attach that event, whatever it is, to a task (`Engine.attach`, an `attachment` event in the task).
+- **`@` in the chat input refers to a task**: typed at the start of a word, it opens the finder (`ItemPicker`), and
+  what is picked (or made, with Tab) takes its place as `[itemId]()`. `Markdown` draws such a link, to nowhere with an
+  item's id as its text, through `ItemRefContext`: the app gives `ItemRef`, the item's icon and title, which open it.
 - **Ctrl+F finds in the view.** On the items view it is the search line; over a chat it opens `FindLine`, and the
   chat keeps only the events whose *displayed* text (`shows`, markdown stripped) has the phrase, marked in yellow
   (`Markdown`'s `highlight`). The phrase (`findAtom`) belongs to the view and is cleared when the view changes.

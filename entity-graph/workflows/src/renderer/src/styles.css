@@ -280,3 +280,5 @@ button[data-ui].snooze-choice:hover { background: var(--color-gray-100); filter:
 .mine .bubble .markdown code, .mine .bubble .markdown pre { font-family: var(--font-mono); }
 }
 .items-view .row.more .row-title { font-size: 12px; }
+button[data-ui].link.item-ref { color: var(--ink); display: inline-flex; align-items: baseline; gap: 4px; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: center; color: var(--muted); }

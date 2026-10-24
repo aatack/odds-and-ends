@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Catalog, ItemDetail, ItemEvent } from '../../shared/types'
 import { Blockers } from './Blockers'
 import { useAtom, useSetAtom } from 'jotai'
@@ -18,6 +18,8 @@ import { SnoozePicker } from './SnoozePicker'
 import { ItemsList } from './ItemsList'
 import { TASKS_SECTIONS } from './sections'
 import { Composer } from './Composer'
+import { ItemRefContext } from './components/ui/Markdown'
+import { ItemRef } from './ItemRef'
 import { EventIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
@@ -72,22 +74,30 @@ export function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, next, showingItems, focusSearch, canFind, setFind, focusFind, act, items.selected])
+  // `[itemId]()` in any text is drawn as the item it refers to.
+  const byId = useMemo(() => new Map(items.overview.items.map((i) => [i.id, i])), [items.overview.items])
+  const itemRef = useCallback(
+    (id: string) => <ItemRef id={id} item={byId.get(id)} onOpen={(to) => open({ kind: 'event', id: to })} />,
+    [byId, open],
+  )
   return (
     <ItemsContext.Provider value={items}>
-      <div className="app">
-        <main className="main">
-          <div className="content">
-            <ItemsMain />
-          </div>
-        </main>
-        <AppMenu />
-        <button data-ui className="next-button" title="Next: what needs you" aria-label="Next" onClick={() => void items.next()}>
-          <ArrowRight className="icon" />
-        </button>
-      </div>
-      <EventMenu actOn={items.actOn} skip={items.skip} custom={items.customActions} />
-      <AttachPicker />
-      <Snoozer />
+      <ItemRefContext.Provider value={itemRef}>
+        <div className="app">
+          <main className="main">
+            <div className="content">
+              <ItemsMain />
+            </div>
+          </main>
+          <AppMenu />
+          <button data-ui className="next-button" title="Next: what needs you" aria-label="Next" onClick={() => void items.next()}>
+            <ArrowRight className="icon" />
+          </button>
+        </div>
+        <EventMenu actOn={items.actOn} skip={items.skip} custom={items.customActions} />
+        <AttachPicker />
+        <Snoozer />
+      </ItemRefContext.Provider>
     </ItemsContext.Provider>
   )
 }
@@ -370,6 +380,7 @@ type Act = (fn: () => Promise<unknown>) => Promise<void>
 function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpen: (id: string) => void }) {
   const { detail, catalog, act, onOpen } = props
   const { item } = detail
+  const w = useItems()
   const scroller = useRef<HTMLDivElement>(null)
   // Every time the human sees an item is in its trace.
   useEffect(() => {
@@ -404,6 +415,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
             draftKey={item.id}
             catalog={catalog}
             onResolve={() => void act(() => api().close(item.id))}
+            mention={{ items: w.overview.items.filter((i) => i.id !== item.id), recent: w.overview, create: (title) => api().create(title, null) }}
             onSend={async (preset, text) => {
               let ok = false
               await act(async () => {
