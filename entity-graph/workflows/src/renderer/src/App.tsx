@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { Catalog, ItemDetail, ItemEvent } from '../../shared/types'
 import { Blockers } from './Blockers'
 import { useAtom, useSetAtom } from 'jotai'
-import { ArrowRight, ChevronLeft, Menu, MoreHorizontal } from 'lucide-react'
+import { ChevronLeft, Menu, MoreHorizontal } from 'lucide-react'
 import { attachingAtom, eventActions, snoozingAtom, type EventAction } from './eventActions'
 import { Dropdown, DropdownItem } from './components/ui/Dropdown'
 import { TypesPage } from './TypesPage'
@@ -35,7 +35,7 @@ export function App() {
   useEffect(() => api().onBack(back), [back])
   useEffect(() => api().onForward(forward), [forward])
   // Ctrl+L puts the items view on top of the stack; if it is already showing, it puts the cursor in its search line.
-  // Ctrl+D is the Next button. Ctrl+F finds in the view: the items view's own search line, or a find line over a chat.
+  // Ctrl+D is Next. Ctrl+F finds in the view: the items view's own search line, or a find line over a chat.
   const focusSearch = useSetAtom(searchFocusAtom)
   const setFind = useSetAtom(findAtom)
   const focusFind = useSetAtom(findFocusAtom)
@@ -91,9 +91,6 @@ export function App() {
             </div>
           </main>
           <AppMenu />
-          <button data-ui className="next-button" title="Next: what needs you" aria-label="Next" onClick={() => void items.next()}>
-            <ArrowRight className="icon" />
-          </button>
         </div>
         <EventMenu actOn={items.actOn} skip={items.skip} custom={items.customActions} />
         <AttachPicker />

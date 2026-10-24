@@ -127,6 +127,8 @@ code { font-family: var(--font-mono); font-size: 12px; }
 .timeline { font-size: 11px; border-collapse: collapse; margin: 4px 0; }
 .timeline td { padding: 1px 10px 1px 0; white-space: nowrap; }
 .bubble-row.theirs { align-items: flex-end; gap: 8px; }
+/* A little more room where the speaker changes sides. */
+.bubble-row.mine + .bubble-row.theirs, .bubble-row.theirs + .bubble-row.mine { margin-top: 8px; }
 .avatar { flex: none; width: 28px; height: 28px; border-radius: 14px; display: flex; align-items: center; justify-content: center; background: var(--color-gray-200); color: var(--color-gray-700); }
 .avatar .icon { width: 15px; height: 15px; }
 .type-icon { display: inline-flex; vertical-align: -2px; margin-right: 6px; color: var(--muted); }
