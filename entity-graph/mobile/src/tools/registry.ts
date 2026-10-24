@@ -5,11 +5,9 @@ import type { ToolContext, ToolSpec } from './types'
 
 // The registry: every command the app has, in one list.
 //
-// The desktop app's registry is not a constant — the tools a store defines under
-// `@tools` are read when a source opens and folded in. There is none of that here
-// on purpose: this client reads and writes one source and does
-// nothing else, so the list is fixed at build time and `allTools()` is a function
-// only so the two call sites read the same either way.
+// This client reads and writes one source and does nothing else, so the list is
+// fixed at build time and `allTools()` is a function only so the two call sites
+// read the same either way.
 
 const TOOLS: ToolSpec[] = [...VIEW_TOOLS, ...ENTITY_TOOLS, ...APP_TOOLS]
 

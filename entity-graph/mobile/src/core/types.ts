@@ -19,12 +19,11 @@ export type { ResourceRecord } from '../../../src/core/pensive/types'
 /**
  * One entry of the source's tool list (`GET /:sourceId/tools`). Still this app's
  * own: the server derives it from zod, and pulling zod into a phone bundle to
- * name four strings would be a poor trade.
+ * name three strings would be a poor trade.
  */
 export interface ToolMeta {
   id: string
   name: string
   description: string
-  safety: string
   args: Record<string, unknown>
 }

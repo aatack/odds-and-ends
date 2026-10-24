@@ -123,7 +123,7 @@ export async function serve(source: MemorySource, token: string): Promise<Harnes
       return send(
         200,
         ['scanEvents', 'readEntities', 'writeValue', 'writeLink', 'writeEvents', 'popEvents'].map(
-          (id) => ({ id, name: id, description: '', safety: 'pure', args: {} }),
+          (id) => ({ id, name: id, description: '', args: {} }),
         ),
       )
     }
