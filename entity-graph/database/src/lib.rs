@@ -17,6 +17,8 @@ mod middleware;
 mod prove;
 mod read;
 mod schema;
+#[cfg(feature = "server")]
+pub mod server;
 mod store;
 mod types;
 mod undo;

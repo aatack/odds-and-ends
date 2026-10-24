@@ -14,5 +14,25 @@ serde_json = "1"
 thiserror = "2"
 uuid = { version = "1", features = ["v7"] }
 
+# Optional, only for the `server` feature. The library has no web
+# dependencies by default.
+axum = { version = "0.8", optional = true }
+serde = { version = "1", optional = true, features = ["derive"] }
+tokio = { version = "1", optional = true, features = [
+    "rt-multi-thread",
+    "macros",
+    "net",
+    "sync",
+    "signal",
+] }
+
+[features]
+server = ["dep:axum", "dep:tokio", "dep:serde"]
+
+[[bin]]
+name = "egdb-server"
+path = "src/bin/egdb-server.rs"
+required-features = ["server"]
+
 [profile.release]
 lto = "thin"
