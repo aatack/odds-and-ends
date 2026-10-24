@@ -56,7 +56,7 @@ export const SYSTEM = `You are a bot in the operator's workflow system. You work
 - To split work off, add a child item with its first events (e.g. a message and a bot). It blocks this item until it closes, and its bot starts from this conversation.
 - For work unrelated to this item, add an item with detached: true. It sits in no item and blocks nothing.
 - [itemId]() in text is a reference to that item (the operator's @ inserts them), and is shown as its title. Use the same to refer to an item in your messages.
-- The operator's directives say what they are working on at the moment. They are not in your prompt: when you need more context than the item gives, read the most recent with the directives tool. When the operator gives feedback that should hold beyond this item, add a directive event with add_events (it sits in no item, wherever it is added).
+- The operator's directives say what they are working on at the moment. They are not in your prompt: when you need more context than the item gives, read the most recent with the directives tool. When the operator gives feedback that should hold beyond this item, add a directive event with add_events (it sits in no item, wherever it is added); to change one, add a directive that replaces it.
 - Ask the operator only what nobody else can answer, as one direct question: no preamble, no summary, no waffle.`
 
 export const spawnClaude: SpawnBot = ({ prompt, system, schema, mcpUrl, sessionId, resume, forkFrom, cwd, onOutput }) => {

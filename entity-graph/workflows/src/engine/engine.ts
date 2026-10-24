@@ -365,6 +365,16 @@ export class Engine extends EventEmitter {
     return id
   }
 
+  /**
+   * Edits a directive: a new one replaces it (events are never changed), so
+   * its age starts again. The old one is kept, cancelled, pointing at the new.
+   */
+  async editDirective(id: string, text: string): Promise<string> {
+    if (!text.trim()) throw new Error('A directive needs some text.')
+    const [added] = await this.addEvents(null, [{ type: 'directive', params: { text, replaces: id } }])
+    return added
+  }
+
   /** Marks an item as a priority, or not, with a priority event in it. */
   async setPriority(itemId: string, on: boolean, actor = 'human'): Promise<void> {
     if (this.must(itemId).priority === on) return
@@ -527,6 +537,12 @@ export class Engine extends EventEmitter {
       this.db.prepare("SELECT 1 FROM events WHERE type = 'item' AND json_extract(params, '$.key') = ?").get(s.params.key)
     specs = specs.filter((s) => !keyed(s))
     if (!parentId && specs.some((s) => s.type !== 'item' && s.type !== 'directive')) throw new Error('Only an item or a directive can sit in no item.')
+    // An edit of a directive replaces one that still holds.
+    for (const s of specs)
+      if (s.type === 'directive' && s.params.replaces) {
+        const old = this.event(String(s.params.replaces))
+        if (old?.type !== 'directive' || old.resolved) throw new Error(`No directive ${s.params.replaces} holds, to replace.`)
+      }
     const ids = new Map<string, string>()
     // A bot already queued in the item (open, and no run has it yet) will be told
     // everything new when it runs, so another with nothing more to ask is left out:
@@ -559,6 +575,7 @@ export class Engine extends EventEmitter {
       const where = parentId ?? id
       this.mark(where, 'event_added', { eventId: id, runId, actor: createdBy, data: { type: spec.type } })
       if (!type.blocking) this.mark(where, 'event_resolved', { eventId: id, runId, actor: createdBy })
+      if (spec.type === 'directive' && params.replaces) this.resolve(String(params.replaces), { cancelled: true, replacedBy: id }, createdBy, true, runId)
     })
     for (const { id, spec } of rows) if (this.type(spec.type).start) void this.startPending(parentId ?? id)
     // New waits are checked at once; an after may already have what it waits for.

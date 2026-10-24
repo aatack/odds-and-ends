@@ -725,8 +725,17 @@ await assert.rejects(engine.attach(idea, collector), /closed/)
   await engine.cancel(second)
   assert.deepEqual(engine.directives().map((d) => d.id), [third, first])
   assert.ok(engine.event(second)!.cancelled)
+  // Editing one replaces it: the new one is added, the old one cancelled, pointing at it.
+  clock += 1000
+  const edited = await engine.editDirective(first, 'Shipping the release, then the docs')
+  assert.deepEqual(engine.directives().map((d) => d.id), [edited, third])
+  assert.deepEqual(engine.event(first)!.data, { cancelled: true, replacedBy: edited })
+  await assert.rejects(engine.editDirective(first, 'again'), /No directive .* holds/)
+  // A bot edits one the same way, through add_events.
+  const { ids: [byBot] } = (await engine.callAction('add_events', { events: [{ type: 'directive', params: { text: 'Keep PRs tiny', replaces: third } }] }, bot)) as { ids: string[] }
+  assert.deepEqual(engine.directives().map((d) => d.id), [byBot, edited])
   assert.throws(() => engine.add(null, [{ type: 'message', params: { text: 'x' } }], 'human'), /Only an item or a directive/)
-  for (const d of [first, third]) await engine.cancel(d)
+  for (const d of [byBot, edited]) await engine.cancel(d)
   await engine.close(host)
 }
 

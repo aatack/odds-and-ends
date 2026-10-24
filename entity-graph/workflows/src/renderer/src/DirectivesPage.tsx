@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react'
+import { Pencil, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import type { ItemEvent } from '../../shared/types'
 import { Markdown } from './components/ui/Markdown'
@@ -24,12 +24,12 @@ const age = (ms: number) => {
 /**
  * What the human is working on at the moment: every directive that holds, the
  * newest first, each with its age. Bots read the latest when they need the
- * broad picture. Add one at the top; deleting one cancels it.
+ * broad picture. Add one at the top; editing one replaces it with a new one;
+ * deleting one cancels it.
  */
 export function DirectivesPage({ act, onOpen }: { act: Act; onOpen: (id: string) => void }) {
   const [directives, setDirectives] = useState<ItemEvent[] | null>(null)
   const [text, setText] = useState('')
-  const menu = useEventMenu()
   const refresh = useCallback(async () => setDirectives(await api().directives()), [])
   useEffect(() => {
     void refresh()
@@ -69,19 +69,67 @@ export function DirectivesPage({ act, onOpen }: { act: Act; onOpen: (id: string)
       </section>
       {directives?.length === 0 && <p className="muted">No directives yet.</p>}
       {directives?.map((d) => (
-        <section key={d.id} className={`card directive ${now - d.createdAt > DAY ? 'stale' : ''}`} {...menu(d.id)}>
-          <div className="directive-head">
-            <button data-ui className="link" title={new Date(d.createdAt).toLocaleString()} onClick={() => onOpen(d.id)}>
-              {age(Math.max(0, now - d.createdAt))}
-              {d.createdBy !== 'human' && ` · from ${d.createdBy}`}
-            </button>
-            <IconButton title="Delete" className="text-error-600 hover:text-error-600" onClick={() => void act(() => api().cancel(d.id))}>
-              <Trash2 className="size-[15px]" />
-            </IconButton>
-          </div>
-          <Markdown text={String(d.params.text ?? '')} />
-        </section>
+        <Directive key={d.id} d={d} now={now} act={act} onOpen={onOpen} />
       ))}
     </div>
+  )
+}
+
+/** One directive: its age and who added it, then its text; the pencil turns the text into a box to edit it in. */
+function Directive({ d, now, act, onOpen }: { d: ItemEvent; now: number; act: Act; onOpen: (id: string) => void }) {
+  const menu = useEventMenu()
+  const text = String(d.params.text ?? '')
+  const [draft, setDraft] = useState<string | null>(null)
+  const save = () =>
+    draft !== null &&
+    act(async () => {
+      if (draft.trim() !== text.trim()) await api().editDirective(d.id, draft)
+      setDraft(null)
+    })
+  return (
+    <section className={`card directive ${now - d.createdAt > DAY ? 'stale' : ''}`} {...menu(d.id)}>
+      <div className="directive-head">
+        <button data-ui className="link" title={new Date(d.createdAt).toLocaleString()} onClick={() => onOpen(d.id)}>
+          {age(Math.max(0, now - d.createdAt))}
+          {d.createdBy !== 'human' && ` · from ${d.createdBy}`}
+          {d.params.replaces ? ' · edited' : ''}
+        </button>
+        <span className="row-inline">
+          <IconButton title="Edit" onClick={() => setDraft(draft === null ? text : null)}>
+            <Pencil className="size-[15px]" />
+          </IconButton>
+          <IconButton title="Delete" className="text-error-600 hover:text-error-600" onClick={() => void act(() => api().cancel(d.id))}>
+            <Trash2 className="size-[15px]" />
+          </IconButton>
+        </span>
+      </div>
+      {draft === null ? (
+        <Markdown text={text} />
+      ) : (
+        <>
+          <div className="builder-row directive-input">
+            <GrowingTextarea
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && e.ctrlKey) {
+                  e.preventDefault()
+                  void save()
+                } else if (e.key === 'Escape') setDraft(null)
+              }}
+            />
+          </div>
+          <span className="row-inline">
+            <button data-ui className="primary" disabled={!draft.trim()} onClick={() => void save()} title="Ctrl+Enter">
+              Save
+            </button>
+            <button data-ui onClick={() => setDraft(null)} title="Escape">
+              Cancel
+            </button>
+          </span>
+        </>
+      )}
+    </section>
   )
 }

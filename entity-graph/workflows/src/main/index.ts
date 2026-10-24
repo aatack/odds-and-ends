@@ -57,6 +57,7 @@ async function main(): Promise<void> {
   handle('attach', (eventId: string, targetId: string) => engine.attach(eventId, targetId))
   handle('directives', () => engine.directives())
   handle('addDirective', (text: string) => engine.addDirective(text))
+  handle('editDirective', (id: string, text: string) => engine.editDirective(id, text))
   handle('setPriority', (id: string, on: boolean) => engine.setPriority(id, on))
   handle('snooze', (id: string, until: number) => engine.snooze(id, until))
   handle('unsnooze', (id: string) => engine.unsnooze(id))

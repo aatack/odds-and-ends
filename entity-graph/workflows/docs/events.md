@@ -107,7 +107,7 @@ the chat input should offer it, add a preset in `presets.ts`.
 | `script` | yes | `source`, `description?`, `schedule?` (seconds), `timeout_minutes?` | `{ result, message?, runs, logs }` or `{ error, logs }` |
 | `summary` | yes (seconds) | — (Haiku summarises the item, in ASD-STE100) | `{ text }` or `{ error }` |
 | `snooze` | yes | `until` (an ISO time) | `{ woke }` (an ISO time) |
-| `directive` | while it holds (sits in no item, so blocks nothing) | `text` (markdown: what the operator is working on) | `{ cancelled }`, once deleted |
+| `directive` | while it holds (sits in no item, so blocks nothing) | `text` (markdown: what the operator is working on), `replaces?` (a directive it is an edit of, cancelled as it is added) | `{ cancelled }`, once deleted; `{ cancelled, replacedBy }`, once edited |
 
 - **`directive`** is the operator's note on what they are working on at the
   moment. It sits in no item, wherever it is added, and holds until it is

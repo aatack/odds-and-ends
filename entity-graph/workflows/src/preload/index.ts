@@ -19,6 +19,7 @@ const api: WorkflowsAPI = {
   attach: call('attach') as WorkflowsAPI['attach'],
   directives: call('directives') as WorkflowsAPI['directives'],
   addDirective: call('addDirective') as WorkflowsAPI['addDirective'],
+  editDirective: call('editDirective') as WorkflowsAPI['editDirective'],
   setPriority: call('setPriority') as WorkflowsAPI['setPriority'],
   snooze: call('snooze') as WorkflowsAPI['snooze'],
   unsnooze: call('unsnooze') as WorkflowsAPI['unsnooze'],

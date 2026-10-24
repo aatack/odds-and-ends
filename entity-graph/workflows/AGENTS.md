@@ -173,7 +173,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   seconds with where the task stands now, in ASD-STE100; it is said in the chat like any event. Bots' prompts skip it.
 - **Directives** (`DirectivesPage`, in the menu) are what the human is working on at the moment: `directive` events,
   a bit of markdown each, in no item. The page lists those that hold, the newest first, with their age (faded after a
-  day); it adds them, and deletes them (cancels: the row is kept). They are not put in bots' prompts: `SYSTEM` tells
+  day); it adds them, edits them (a new directive with `replaces`, which cancels the old: events are never changed, so the age starts again), and deletes them (cancels: the row is kept). They are not put in bots' prompts: `SYSTEM` tells
   bots to read the latest with the `directives` action when they need context, and to add one (a `directive` event, through `add_events`) when
   the human's feedback should outlast the item.
 - **Priority items** (a `priority` event; `Item.priority`) come first in Next, the most recently active first. Mark

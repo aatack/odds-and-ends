@@ -270,6 +270,8 @@ export interface WorkflowsAPI {
   directives: () => Promise<ItemEvent[]>
   /** A new directive: markdown on what the human is working on. */
   addDirective: (text: string) => Promise<string>
+  /** Edits a directive: a new one replaces it, and its age starts again. */
+  editDirective: (id: string, text: string) => Promise<string>
   /** Marks an item as a priority, or not. */
   setPriority: (id: string, on: boolean) => Promise<void>
   /** Puts an item away until a time (ms), with a snooze event in it. */
