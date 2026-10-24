@@ -2,8 +2,10 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import type { Catalog, ItemDetail, ItemEvent } from '../../shared/types'
 import { Blockers } from './Blockers'
 import { useAtom, useSetAtom } from 'jotai'
-import { ArrowRight, ChevronLeft, Menu } from 'lucide-react'
-import { attachingAtom, eventActions } from './eventActions'
+import { ArrowRight, ChevronLeft, Menu, MoreHorizontal } from 'lucide-react'
+import { attachingAtom, eventActions, type EventAction } from './eventActions'
+import { Dropdown, DropdownItem } from './components/ui/Dropdown'
+import { TypesPage } from './TypesPage'
 import { IconButton } from './components/ui/IconButton'
 import { appearanceAtom, applyAppearance, SERIFS, THEMES } from './appearance'
 import { Chat } from './Chat'
@@ -80,7 +82,7 @@ export function App() {
           <ArrowRight className="icon" />
         </button>
       </div>
-      <EventMenu actOn={items.actOn} skip={items.skip} />
+      <EventMenu actOn={items.actOn} skip={items.skip} custom={items.customActions} />
       <AttachPicker />
     </ItemsContext.Provider>
   )
@@ -141,6 +143,7 @@ function AppMenu() {
           </div>
           <button onClick={() => go({ kind: 'items' })}>Tasks</button>
           <button onClick={() => go({ kind: 'integrations' })}>Integrations</button>
+          <button onClick={() => go({ kind: 'types' })}>Types</button>
           <button onClick={() => go({ kind: 'mcp' })}>MCP</button>
           <button
             onClick={() => {
@@ -189,6 +192,14 @@ function ItemsMain() {
   // What the items view opens takes its place, so Back goes to where you were before it.
   const openFromItems = (id: string) => w.open({ kind: 'event', id }, { replace: w.view?.kind === 'items' })
   const d = w.detail
+  if (w.view?.kind === 'types')
+    return (
+      <div className="view">
+        <ViewHeader canGoBack onBack={w.back} title="Types" />
+        {w.error && <div className="error">{w.error}</div>}
+        <div className="view-body">{w.catalog && <TypesPage catalog={w.catalog} custom={w.customActions} act={w.act} />}</div>
+      </div>
+    )
   if (w.view?.kind === 'integrations' || w.view?.kind === 'mcp')
     return (
       <div className="view">
@@ -222,13 +233,9 @@ function ItemsMain() {
   const e = d.event
   const debug = w.view.kind === 'debug'
   const actions = debug ? null : (
-    <>
-      {eventActions({ ...e, priority: d.item?.item.priority }, { act: w.actOn(e.id), skip: w.skip, attach: setAttaching }).map((a) => (
-        <IconButton key={a.id} title={a.title ?? a.label} className={a.tone} onClick={a.run}>
-          <a.icon className="size-[17px]" />
-        </IconButton>
-      ))}
-    </>
+    <HeaderActions
+      actions={eventActions({ ...e, priority: d.item?.item.priority }, { act: w.actOn(e.id), skip: w.skip, attach: setAttaching, custom: w.customActions })}
+    />
   )
   return (
     <div className="view">
@@ -250,6 +257,49 @@ function ItemsMain() {
         )}
       </div>
     </div>
+  )
+}
+
+/** An event's actions in its header: the important ones as icon buttons, the rest in a menu beside them. */
+function HeaderActions({ actions }: { actions: EventAction[] }) {
+  const rest = actions.filter((a) => !a.important)
+  return (
+    <>
+      {actions
+        .filter((a) => a.important)
+        .map((a) => (
+          <IconButton key={a.id} title={a.title ?? a.label} className={a.tone} onClick={a.run}>
+            <a.icon className="size-[17px]" />
+          </IconButton>
+        ))}
+      {rest.length > 0 && (
+        <Dropdown
+          align="right"
+          trigger={({ toggle }) => (
+            <IconButton title="More" onClick={toggle}>
+              <MoreHorizontal className="size-[17px]" />
+            </IconButton>
+          )}
+        >
+          {(close) =>
+            rest.map((a) => (
+              <DropdownItem
+                key={a.id}
+                onClick={() => {
+                  close()
+                  a.run()
+                }}
+              >
+                <span className="flex items-center gap-2" title={a.title}>
+                  <a.icon className={`size-[14px] ${a.tone || 'text-gray-500'}`} />
+                  {a.label}
+                </span>
+              </DropdownItem>
+            ))
+          }
+        </Dropdown>
+      )}
+    </>
   )
 }
 

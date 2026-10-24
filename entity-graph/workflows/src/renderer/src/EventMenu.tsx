@@ -1,7 +1,7 @@
 import { autoUpdate, flip, offset, shift, useFloating } from '@floating-ui/react-dom'
 import { useAtom, useSetAtom } from 'jotai'
 import { useEffect, useState, type MouseEvent } from 'react'
-import type { ItemEvent } from '../../shared/types'
+import type { CustomAction, ItemEvent } from '../../shared/types'
 import { attachingAtom, eventActions } from './eventActions'
 import { api } from './useWorkflows'
 import { menuAtom, sameView, viewsAtom, type View } from './views'
@@ -26,7 +26,9 @@ export function useEventMenu() {
 export function EventMenu({
   actOn,
   skip,
+  custom,
 }: {
+  custom: CustomAction[]
   actOn: (id: string) => (fn: () => Promise<unknown>) => Promise<void>
   skip: (id: string) => void
 }) {
@@ -77,7 +79,7 @@ export function EventMenu({
       <button onClick={() => push({ kind: 'event', id: menu.id })}>Open</button>
       <button onClick={() => push({ kind: 'debug', id: menu.id })}>Debug</button>
       {event?.id === menu.id &&
-        eventActions(event, { act: actOn(event.id), skip, attach }).map((a) => (
+        eventActions(event, { act: actOn(event.id), skip, attach, custom }).map((a) => (
           <button
             key={a.id}
             className="menu-action"

@@ -1,6 +1,6 @@
 import { useAtom } from 'jotai'
 import { useCallback, useEffect, useState } from 'react'
-import type { Catalog, EventDetail, Overview, WorkflowsAPI } from '../../shared/types'
+import type { Catalog, CustomAction, EventDetail, Overview, WorkflowsAPI } from '../../shared/types'
 import { forwardAtom, sameView, viewsAtom, type View } from './views'
 
 declare global {
@@ -25,8 +25,10 @@ export function useWorkflows() {
   const [catalog, setCatalog] = useState<Catalog | null>(null)
   useEffect(() => void api().catalog().then(setCatalog), [])
 
+  const [customActions, setCustomActions] = useState<CustomAction[]>([])
   const refresh = useCallback(async () => {
     setOverview(await api().overview())
+    setCustomActions(await api().customActions())
     setDetail(selected ? await api().eventDetail(selected) : null)
   }, [selected])
 
@@ -137,5 +139,5 @@ export function useWorkflows() {
     [act, moveOn],
   )
 
-  return { overview, view, views, detail, catalog, selected, select, open, back, forward, next, skip, act, actOn, error, empty }
+  return { overview, view, views, detail, catalog, customActions, selected, select, open, back, forward, next, skip, act, actOn, error, empty }
 }

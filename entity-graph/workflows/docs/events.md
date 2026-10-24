@@ -56,6 +56,11 @@ memory, not stored, so a crash leaves nothing to clean up.
 **For agents:** `src/engine/paradigm.ts` is the paradigm in a few lines: the MCP
 server's instructions, and the `paradigm` action. Keep it that short.
 
+**Custom actions:** `src/engine/customActions.ts`. The human defines them per event
+type on the Types page; `custom_actions` lists them and `run_custom_action` runs
+one on an event. A run is recorded as an `action` event whose message is what
+the script returned.
+
 **Reads:** `get_item` (an item in full), `get_children` (the events in an item;
 with `open`, its blockers), `list_items` (every item), `items_waiting_on`
 (the open items waiting on the human, a bot, or one blocking type), and

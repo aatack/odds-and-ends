@@ -1,0 +1,45 @@
+// The icons a custom action may have, by the name it is stored under.
+import {
+  Archive,
+  Bell,
+  Bot,
+  Calendar,
+  Clock,
+  Flag,
+  GitMerge,
+  Mail,
+  MessageSquare,
+  RefreshCw,
+  Rocket,
+  Search,
+  Send,
+  Sparkles,
+  Star,
+  Tag,
+  Wrench,
+  Zap,
+  type LucideIcon,
+} from 'lucide-react'
+
+export const ACTION_ICONS: Record<string, LucideIcon> = {
+  zap: Zap,
+  sparkles: Sparkles,
+  star: Star,
+  send: Send,
+  bell: Bell,
+  flag: Flag,
+  tag: Tag,
+  search: Search,
+  wrench: Wrench,
+  'git-merge': GitMerge,
+  message: MessageSquare,
+  mail: Mail,
+  calendar: Calendar,
+  clock: Clock,
+  archive: Archive,
+  refresh: RefreshCw,
+  rocket: Rocket,
+  bot: Bot,
+}
+
+export const actionIcon = (name: string): LucideIcon => ACTION_ICONS[name] ?? Zap

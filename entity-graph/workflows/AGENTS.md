@@ -42,6 +42,13 @@ it, when main-process code changes.
   item's id every ten lines; `promptFor` in `workers.ts`), and answers with `{ message?, events?, close? }` as structured output.
 - Nothing about the running app is stored: what is running is held in memory.
 
+## Terminology
+
+- **Item** is the general word, for agents and in the code, for anything in the tree: every event is an item.
+  *Item* and *event* name the same thing; *item* usually means the parent in a given view, *event* one of its children.
+- **Task** is a particular kind of item, the `item` event type: a thing to be done, which is especially important.
+  The UI says *task* for these; the code, store and MCP tools keep `item`.
+
 ## The unsafe rule
 
 **An action that changes anything outside this app is `unsafe: true`, and no
@@ -143,6 +150,13 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
 - **When a task stops needing you, the app moves on.** Whatever the human does to the task on screen (sends, approves,
   resolves, from the chat, header or menu) goes through `actOn(id)`: afterwards, if the task is resolved or blocked by
   more than approvals, the next one that needs them is *pushed* (so Back returns). A plain message leaves it be.
+- **The Types page** (`TypesPage`) lists every event type with its actions. The app's own are in `eventActions.ts`;
+  the human's own are **custom actions** (`engine/customActions.ts`, the `custom_actions` table): per type, a name, a
+  description, hidden notes, an icon, *important* or not, and a script `async (context, actions) => null | string |
+  { message?, events? }` run in QuickJS with the event's context and only the safe actions. **Generate** has Sonnet write
+  the script from the description and notes. A run is an `action` event in the item, saying what it returned. Important
+  actions are buttons in an event's header; the rest are in the ⋯ menu beside them; all are in the right-click menu.
+  Agents list and run them with `custom_actions` and `run_custom_action`.
 - **Ctrl+S summarises the task on screen**: a `summary` event, which Haiku (no tools, no session) answers in a few
   seconds with where the task stands now, in ASD-STE100; it is said in the chat like any event. Bots' prompts skip it.
 - **Priority items** (a `priority` event; `Item.priority`) come first in Next, the most recently active first. Mark
