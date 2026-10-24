@@ -25,6 +25,8 @@ pub struct Store {
     /// (layer, interval) query). Used by [`Store::prove`] for its stats; it
     /// changes nothing. Snapshot it with [`Store::sql_queries`].
     pub(crate) sql_counter: Cell<u64>,
+    /// Write middleware, run in registration order on every [`Store::write`].
+    pub(crate) middleware: Vec<crate::middleware::Registered>,
 }
 
 fn system_clock() -> Timestamp {
@@ -72,7 +74,25 @@ impl Store {
             clock: Box::new(system_clock),
             views: RefCell::new((-1, HashMap::new())),
             sql_counter: Cell::new(0),
+            middleware: Vec::new(),
         })
+    }
+
+    /// Register a write middleware. It runs on every [`Store::write`] (and so
+    /// on [`Store::archive_entity`] and [`Store::restore_entity`]), after any
+    /// already registered, in registration order. See [`crate::WriteMiddleware`].
+    pub fn add_middleware(&mut self, m: impl crate::middleware::WriteMiddleware + 'static) {
+        self.middleware.push(std::sync::Arc::new(m));
+    }
+
+    /// Remove every registered write middleware.
+    pub fn clear_middleware(&mut self) {
+        self.middleware.clear();
+    }
+
+    /// The number of registered write middleware.
+    pub fn middleware_count(&self) -> usize {
+        self.middleware.len()
     }
 
     /// The number of roll-up SQL statements this handle has run so far. A

@@ -21,6 +21,9 @@ pub enum Error {
     #[error("invalid input: {0}")]
     Invalid(String),
 
+    #[error("write rejected: {0}")]
+    Rejected(String),
+
     #[error("stored data is corrupt: {0}")]
     Corrupt(String),
 

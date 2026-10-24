@@ -13,6 +13,7 @@
 mod codec;
 mod error;
 mod find;
+mod middleware;
 mod prove;
 mod read;
 mod schema;
@@ -28,6 +29,7 @@ pub use error::{Error, Result};
 #[doc(hidden)]
 pub use find::knobs as find_knobs;
 pub use find::{Filter, Find, FindOptions, FindOrder, FindRow, Predicate};
+pub use middleware::{WriteContext, WriteMiddleware};
 pub use prove::{Proof, Prove, ProveOptions, ProveOutcome, ProveStats, ProveStrategy};
 pub use read::LinkGroups;
 pub use schema::SCHEMA_VERSION;

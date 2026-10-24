@@ -13,12 +13,15 @@ use crate::types::{
 
 impl Store {
     /// Write a batch of events to one branch. All or nothing.
+    ///
+    /// Any registered [write middleware](crate::WriteMiddleware) transforms the
+    /// ops first, inside the same transaction; see [`Store::add_middleware`].
     pub fn write(&mut self, batch: WriteBatch) -> Result<WriteResult> {
         let now = self.now();
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let result = write_in(&tx, &batch, now)?;
+        let result = write_in(&tx, batch, now, &self.middleware)?;
         tx.commit()?;
         Ok(result)
     }
@@ -93,16 +96,18 @@ fn validate(op: &Op) -> Result<()> {
     Ok(())
 }
 
-/// The write path, inside a transaction the caller owns.
+/// The write path, inside a transaction the caller owns. Takes the batch by
+/// value so that middleware can transform its ops in place with no clone.
 pub(crate) fn write_in(
     conn: &Connection,
-    batch: &WriteBatch,
+    mut batch: WriteBatch,
     now: Timestamp,
+    middleware: &[crate::middleware::Registered],
 ) -> Result<WriteResult> {
+    // The input batch must have at least one op (checked before middleware).
     if batch.ops.is_empty() {
         return Err(Error::Invalid("a batch needs at least one op".into()));
     }
-    batch.ops.iter().try_for_each(validate)?;
 
     let row = branch_row(conn, batch.branch)?;
     if row.archived {
@@ -112,8 +117,37 @@ pub(crate) fn write_in(
     // (timestamp first) agrees with sequence-ID order on every branch.
     let ts = batch.timestamp.unwrap_or(now).max(row.last_ts);
     let first_seq = row.head + 1;
-    let mut seq = row.head;
 
+    // Middleware runs after the branch check and timestamp resolution, before
+    // validation and before any row is written. The fast path (none
+    // registered) builds no context and does not touch the ops.
+    if !middleware.is_empty() {
+        let ctx = crate::middleware::WriteContext {
+            branch: batch.branch,
+            author: &batch.author,
+            timestamp: ts,
+            now,
+            head: row.head,
+        };
+        for m in middleware {
+            m.on_write(&ctx, &mut batch.ops)?;
+        }
+    }
+
+    // Middleware may have dropped every op: write nothing. No sequence ID is
+    // used, no `batches` row is inserted; the result range is empty.
+    if batch.ops.is_empty() {
+        return Ok(WriteResult {
+            branch: batch.branch,
+            first_seq,
+            last_seq: row.head,
+            timestamp: ts,
+        });
+    }
+
+    batch.ops.iter().try_for_each(validate)?;
+
+    let mut seq = row.head;
     for op in &batch.ops {
         seq += 1;
         match op {
