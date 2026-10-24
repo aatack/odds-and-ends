@@ -273,4 +273,48 @@ export const script: EventType = {
   },
 }
 
-export const EVENT_TYPES: EventType[] = [item, message, attachment, priority, action, approval, bot, github, slack, after, script]
+/** How a summary is to be written: ASD-STE100, so it reads plainly. */
+const SUMMARY_SYSTEM = `You summarise one task for the person who owns it. Write in ASD-STE100 Simplified Technical English:
+- Use short sentences (20 words or fewer). Use one instruction or one statement in each sentence.
+- Use the active voice and simple verb tenses. Use the approved meanings of common words. Do not use idioms or slang.
+- Write only facts. Do not use filler, enthusiasm, hedges, or comments about the summary itself.
+
+Tell the current state, not the history. Do not tell who said what, or when. Give:
+- What the task is.
+- What is done or decided, if it is still important.
+- What is open, and who or what it waits for.
+- What the owner must do next, if anything.
+
+Use 2 to 5 markdown bullets. Use no headings and no other text.`
+
+export const summary: EventType = {
+  type: 'summary',
+  description:
+    'A summary of where the item stands now, from a cheap model (Haiku, no tools), in ASD-STE100. It blocks while it is written ' +
+    '(a few seconds), then says the summary in the chat. Ctrl+S adds one.',
+  params: {},
+  data: '{ text } or { error }',
+  blocking: true,
+  bots: true,
+  describe: () => 'Summary',
+  said: (_p, d) => (d.error ? `The summary failed: ${d.error}` : String(d.text ?? '')),
+  schedule: () => [0],
+  check: async (_p, { engine, item, event }) => {
+    const lines = engine
+      .children(item.id)
+      .filter((e) => e.type !== 'summary' && e.createdAt <= event.createdAt)
+      .map((e) => `- ${e.createdBy} ${e.type}${e.resolved ? '' : ' (still open)'}: ${e.type === 'message' ? String(e.params.text ?? '') : (e.message ?? e.summary)}`)
+    const state = item.closed ? 'resolved' : 'open'
+    const prompt = [`Task: ${item.title} (${state})`, 'Its events, oldest first:', ...lines].join('\n')
+    try {
+      const out = await engine.exec('claude', [
+        '-p', prompt, '--model', 'haiku', '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--system-prompt', SUMMARY_SYSTEM,
+      ])
+      return { text: out.trim() }
+    } catch (e) {
+      return { error: (e as Error).message }
+    }
+  },
+}
+
+export const EVENT_TYPES: EventType[] = [item, message, attachment, priority, action, approval, bot, github, slack, after, script, summary]

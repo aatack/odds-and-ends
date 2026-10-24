@@ -63,6 +63,3 @@ export const findAtom = atom<string | null>(null)
 
 /** Bumped to put the cursor in the find line (Ctrl+F, when it is already open). */
 export const findFocusAtom = atom(0)
-
-/** Ctrl+S's summary of a task, over its chat: while it is being made (`text` null), then made, until it is closed. */
-export const summaryAtom = atom<{ id: string; text: string | null } | null>(null)

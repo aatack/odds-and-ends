@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Paperclip,
   Play,
+  ScrollText,
   Settings,
   ShieldCheck,
   SquareCode,
@@ -33,6 +34,7 @@ export const TYPE_ICON: Record<EventKind, LucideIcon> = {
   slack: MessageCircle,
   after: Workflow,
   script: SquareCode,
+  summary: ScrollText,
 }
 
 export const TYPE_NAME: Record<EventKind, string> = {
@@ -47,6 +49,7 @@ export const TYPE_NAME: Record<EventKind, string> = {
   slack: 'Slack',
   after: 'After',
   script: 'Script',
+  summary: 'Summary',
 }
 
 /** What an item waits on: a bot, else its first other blocker, else the human; a tick once closed. */

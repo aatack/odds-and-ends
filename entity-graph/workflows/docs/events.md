@@ -92,6 +92,7 @@ the chat input should offer it, add a preset in `presets.ts`.
 | `item` | yes | `title`, `events?` (its first children, added in it), `detached?` (sits in no item, wherever it is added), `key?` (so a source adds it once), `sessionId` (set by the app) | `{ how: closed \| handled_outside \| cancelled }` |
 | `message` | no | `text` | — |
 | `attachment` | no | `event`, `title`, `item` (filled in by `attach_event`) | — |
+| `priority` | no | `on` (the latest one says whether the item is a priority) | — |
 | `action` | no | `name`, `inputs`, `output` | — |
 | `approval` | the human's | `action` (unsafe), `inputs`, `reason?` | `{ ran, inputs, changed, output, detail }` |
 | `bot` | yes | `instructions?` (it reads as "Bot" without) | `{ runId, message?, costUsd?, output }` or `{ error }` |
@@ -99,6 +100,7 @@ the chat input should offer it, add a preset in `presets.ts`.
 | `slack` | yes | `channel`, `workspace?`, `message?`, `thread_ts?`, `thread_of?`, `timeout_minutes?` | `{ outcome, replies, detail }` |
 | `after` | yes | `event`, then `then` or `script` | `{ added, logs? }` or `{ error }` |
 | `script` | yes | `source`, `description?`, `schedule?` (seconds), `timeout_minutes?` | `{ result, message?, runs, logs }` or `{ error, logs }` |
+| `summary` | yes (seconds) | — (Haiku summarises the item, in ASD-STE100) | `{ text }` or `{ error }` |
 
 - **`after`** is how events chain. It waits for one event to resolve, then adds
   `then`, or whatever its `script` returns.

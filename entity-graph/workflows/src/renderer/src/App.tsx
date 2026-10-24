@@ -17,8 +17,7 @@ import { EventIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
 import { api, useWorkflows } from './useWorkflows'
-import { findAtom, findFocusAtom, searchFocusAtom, summaryAtom, type View } from './views'
-import { Summary } from './Summary'
+import { findAtom, findFocusAtom, searchFocusAtom, type View } from './views'
 import { FindLine } from './FindLine'
 
 export function App() {
@@ -32,7 +31,6 @@ export function App() {
   const focusSearch = useSetAtom(searchFocusAtom)
   const setFind = useSetAtom(findAtom)
   const focusFind = useSetAtom(findFocusAtom)
-  const setSummary = useSetAtom(summaryAtom)
   const { act } = items
   const canFind = !!items.detail?.item && items.view?.kind === 'event'
   // A find belongs to the view it was made in.
@@ -52,20 +50,11 @@ export function App() {
         e.preventDefault()
         void next()
       } else if (key === 's') {
-        // Ctrl+S: where the task on screen stands, from a cheap model.
+        // Ctrl+S: a summary of where the task on screen stands, as an event in its chat.
         e.preventDefault()
         if (!canFind || !items.selected) return
         const id = items.selected
-        setSummary({ id, text: null })
-        void act(async () => {
-          try {
-            const text = await api().summarise(id)
-            setSummary((s) => (s?.id === id ? { id, text } : s))
-          } catch (err) {
-            setSummary((s) => (s?.id === id ? null : s))
-            throw err
-          }
-        })
+        void act(() => api().summarise(id))
       } else if (key === 'f') {
         e.preventDefault()
         if (showingItems) focusSearch((n) => n + 1)
@@ -77,7 +66,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, next, showingItems, focusSearch, canFind, setFind, focusFind, setSummary, act, items.selected])
+  }, [open, next, showingItems, focusSearch, canFind, setFind, focusFind, act, items.selected])
   return (
     <ItemsContext.Provider value={items}>
       <div className="app">
@@ -312,7 +301,6 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
         </div>
       )}
       <FindLine />
-      <Summary itemId={item.id} />
       <div className="chat-scroll" ref={scroller}>
         <Chat detail={detail} />
       </div>

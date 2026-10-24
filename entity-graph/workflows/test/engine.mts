@@ -579,17 +579,22 @@ assert.deepEqual(cat.presets.map((p) => p.id), ['message', 'bot', 'pr-merged', '
   await engine.cancel(loop)
   await engine.close(looping)
 }
-// Summarising: a cheap model, no tools, given the item; kept in the trace, not added to the item.
+// Summarising: a summary event, answered by a cheap model with no tools, in ASD-STE100; said in the chat.
 {
   const s = (await engine.create('Summed up'))!
   await engine.send(s, 'message', 'The plan is to ship on Friday')
-  assert.equal(await engine.summarise(s), '- It is about the PR.')
+  await engine.summarise(s)
+  clock += 1000
+  await tick()
+  const sum = last(s, 'summary')
+  assert.ok(sum.resolved)
+  assert.equal(sum.message, '- It is about the PR.')
   assert.equal(summaryArgs[summaryArgs.indexOf('--model') + 1], 'haiku')
   assert.equal(summaryArgs[summaryArgs.indexOf('--tools') + 1], '')
+  assert.match(summaryArgs[summaryArgs.indexOf('--system-prompt') + 1], /ASD-STE100/)
   assert.match(summaryArgs[1], /Task: Summed up/)
   assert.match(summaryArgs[1], /ship on Friday/)
-  assert.equal(engine.children(s).length, 1)
-  assert.ok(engine.trace(s).some((t) => t.kind === 'summarised'))
+  assert.ok(item(s).withHuman, 'once written, it is the human\'s turn again')
   await engine.close(s)
 }
 // Priority items come first in Next, the most recently active first; then the rest, the longest waiting first.

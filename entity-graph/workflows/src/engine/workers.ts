@@ -93,6 +93,8 @@ const HUMAN = new Set(['human', 'mcp'])
  */
 export function promptLine(e: ItemEvent): string | null {
   if (e.type === 'message') return HUMAN.has(e.createdBy) ? String(e.params.text ?? '') : `[${e.createdBy}: ${e.params.text ?? ''}]`
+  // A summary is for the human; the bot has the events themselves.
+  if (e.type === 'summary') return null
   if (e.type === 'bot') return e.params.instructions ? `[instructions: ${e.params.instructions}]` : null
   // An after that ran says nothing of its own: what it added is in the prompt too.
   if (e.type === 'after' && e.resolved && !e.cancelled && !e.data?.error) return null

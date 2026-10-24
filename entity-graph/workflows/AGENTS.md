@@ -143,8 +143,8 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
 - **When a task stops needing you, the app moves on.** Whatever the human does to the task on screen (sends, approves,
   resolves, from the chat, header or menu) goes through `actOn(id)`: afterwards, if the task is resolved or blocked by
   more than approvals, the next one that needs them is *pushed* (so Back returns). A plain message leaves it be.
-- **Ctrl+S summarises the task on screen** (`Engine.summarise`: `claude -p --model haiku`, no tools, no session):
-  where it stands now, not its history, shown over the chat (`Summary`) and kept in the trace, not in the item.
+- **Ctrl+S summarises the task on screen**: a `summary` event, which Haiku (no tools, no session) answers in a few
+  seconds with where the task stands now, in ASD-STE100; it is said in the chat like any event. Bots' prompts skip it.
 - **Priority items** (a `priority` event; `Item.priority`) come first in Next, the most recently active first. Mark
   one from its actions.
 - **Every event has a right-click menu** (`useEventMenu`): Open and Debug, then what can be done to it

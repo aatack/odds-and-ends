@@ -8,7 +8,7 @@
  * stay open until something happens (a bot replies, CI finishes, an approval is
  * given, a child item closes).
  */
-export type EventKind = 'item' | 'message' | 'attachment' | 'priority' | 'action' | 'approval' | 'bot' | 'github' | 'slack' | 'after' | 'script'
+export type EventKind = 'item' | 'message' | 'attachment' | 'priority' | 'summary' | 'action' | 'approval' | 'bot' | 'github' | 'slack' | 'after' | 'script'
 
 /** An event as it is added. `ref` names it, so an `after` added alongside can point at it. */
 export interface EventSpec {
@@ -241,8 +241,8 @@ export interface WorkflowsAPI {
   close: (id: string) => Promise<void>
   /** Attaches any event to an item (`targetId`), as an attachment event in it. */
   attach: (eventId: string, targetId: string) => Promise<void>
-  /** Where an item stands now, in a few lines, from a cheap model. */
-  summarise: (id: string) => Promise<string>
+  /** Asks a cheap model where an item stands: a summary event in it, answered in its chat. */
+  summarise: (id: string) => Promise<void>
   /** Marks an item as a priority, or not. */
   setPriority: (id: string, on: boolean) => Promise<void>
   /** The human did it outside the tool. Recorded, so reviews can find it. */
