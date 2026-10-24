@@ -1,7 +1,7 @@
 import { Star } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Catalog, CustomAction, EventKind } from '../../shared/types'
-import { ACTION_ICONS, actionIcon } from './actionIcons'
+import { actionIcon } from './actionIcons'
 import { Markdown } from './components/ui/Markdown'
 import { eventActions } from './eventActions'
 import { Form } from './forms'
@@ -18,7 +18,7 @@ const ACTION_FORM = {
     name: { type: 'string', title: 'Name' },
     description: { type: 'string', title: 'Description', 'x-multiline': true, description: 'What it does: shown on hover, and what its code is written from.' },
     notes: { type: 'string', title: 'Notes', 'x-multiline': true, description: 'More for the model writing its code: how, edge cases, which actions to use. Only shown here.' },
-    icon: { title: 'Icon', enum: Object.keys(ACTION_ICONS) },
+    icon: { type: 'string', title: 'Icon', 'x-editor': 'action-icon' },
     important: { type: 'boolean', title: 'Important', description: 'A button in the header, rather than in the menu beside the buttons.' },
     source: {
       type: 'string',
@@ -40,13 +40,58 @@ export function TypesPage({ catalog, custom, act }: { catalog: Catalog; custom: 
   const [draft, setDraft] = useState<Draft | null>(null)
   const [generating, setGenerating] = useState(false)
   const noop = () => {}
+
+  // Every change is saved as it is made, a moment after the typing stops. Saves
+  // go one at a time, so a new action is inserted once and then updated by the id
+  // it was given. `opened` counts the drafts opened, and `ids` holds the id each
+  // new one got, so a save that lands after another was opened goes to its own.
+  const latest = useRef<Draft | null>(null)
+  const opened = useRef(0)
+  const ids = useRef(new Map<number, string>())
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saving = useRef<Promise<unknown>>(Promise.resolve())
+  const save = () => {
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = null
+    const which = opened.current
+    const snapshot = latest.current
+    saving.current = saving.current.then(() => {
+      if (!snapshot?.name.trim()) return
+      const d = { ...snapshot, id: snapshot.id ?? ids.current.get(which) }
+      return act(async () => {
+        const { id } = await api().saveCustomAction(d)
+        if (d.id) return
+        ids.current.set(which, id)
+        if (which !== opened.current) return
+        latest.current = latest.current && { ...latest.current, id }
+        setDraft((now) => now && { ...now, id })
+      })
+    })
+    return saving.current
+  }
+  const edit = (d: Draft) => {
+    latest.current = d
+    setDraft(d)
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = setTimeout(() => void save(), 400)
+  }
+  /** Opens another action (or none), saving what was being edited first. */
+  const open = (d: Draft | null) => {
+    if (timer.current) void save()
+    opened.current++
+    latest.current = d
+    setDraft(d)
+  }
+  useEffect(() => () => void (timer.current && save()), [])
+
   const generate = () =>
     draft &&
     act(async () => {
       setGenerating(true)
       try {
+        const which = opened.current
         const source = await api().generateCustomAction(draft)
-        setDraft((d) => d && { ...d, source })
+        if (which === opened.current && latest.current) edit({ ...latest.current, source })
       } finally {
         setGenerating(false)
       }
@@ -75,7 +120,7 @@ export function TypesPage({ catalog, custom, act }: { catalog: Catalog; custom: 
               {mine.map((c) => {
                 const Icon = actionIcon(c.icon)
                 return (
-                  <button key={c.id} className={`type-action ${draft?.id === c.id ? 'editing' : ''}`} title={c.description} onClick={() => setDraft(c)}>
+                  <button key={c.id} className={`type-action ${draft?.id === c.id ? 'editing' : ''}`} title={c.description} onClick={() => open(c)}>
                     <Icon className="icon" />
                     <span>{c.name}</span>
                     {c.important && <Star className="icon important" aria-label="Important" />}
@@ -85,7 +130,7 @@ export function TypesPage({ catalog, custom, act }: { catalog: Catalog; custom: 
               {!editing && (
                 <button
                   className="type-action add"
-                  onClick={() => setDraft({ type: t.type, name: '', description: '', notes: '', source: '', icon: 'zap', important: false })}
+                  onClick={() => open({ type: t.type, name: '', description: '', notes: '', source: '', icon: 'zap', important: false })}
                 >
                   + New action
                 </button>
@@ -93,21 +138,8 @@ export function TypesPage({ catalog, custom, act }: { catalog: Catalog; custom: 
             </div>
             {editing && draft && (
               <div className="type-editor">
-                <Form schema={ACTION_FORM} value={draft} setValue={(v) => setDraft({ ...draft, ...(v as Draft) })} />
+                <Form schema={ACTION_FORM} value={draft} setValue={(v) => edit({ ...draft, ...(v as Draft) })} />
                 <div className="buttons">
-                  <button
-                    data-ui
-                    className="primary"
-                    disabled={!draft.name.trim()}
-                    onClick={() =>
-                      act(async () => {
-                        await api().saveCustomAction(draft)
-                        setDraft(null)
-                      })
-                    }
-                  >
-                    Save
-                  </button>
                   <button data-ui disabled={generating || !(draft.description.trim() || draft.notes.trim())} onClick={() => void generate()}>
                     {generating ? 'Generating…' : draft.source.trim() ? 'Regenerate code' : 'Generate code'}
                   </button>
@@ -116,17 +148,21 @@ export function TypesPage({ catalog, custom, act }: { catalog: Catalog; custom: 
                       data-ui
                       onClick={() =>
                         act(async () => {
-                          await api().removeCustomAction(draft.id!)
-                          setDraft(null)
+                          if (timer.current) clearTimeout(timer.current)
+                          timer.current = null
+                          await saving.current
+                          await api().removeCustomAction(latest.current?.id ?? draft.id!)
+                          open(null)
                         })
                       }
                     >
                       Delete
                     </button>
                   )}
-                  <button data-ui onClick={() => setDraft(null)}>
-                    Cancel
+                  <button data-ui onClick={() => open(null)}>
+                    Done
                   </button>
+                  {!draft.name.trim() && <span className="muted">Saved once it has a name.</span>}
                 </div>
               </div>
             )}
