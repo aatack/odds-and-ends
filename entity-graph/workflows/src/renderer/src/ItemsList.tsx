@@ -1,6 +1,6 @@
 import fuzzysort from 'fuzzysort'
 import { useAtomValue } from 'jotai'
-import { Flag, MoreHorizontal, Search } from 'lucide-react'
+import { Flag, Search } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Item } from '../../shared/types'
 import { minutes } from './Chat'
@@ -149,8 +149,7 @@ export function ItemsList(props: {
             if (!('item' in line))
               return (
                 <div key={line.key} className={`row more ${selected}`} onClick={() => choose(line)} onMouseMove={hover}>
-                  <MoreHorizontal className="icon" />
-                  <span className="row-title muted">{line.n} more</span>
+                  <span className="muted">…{line.n} more</span>
                 </div>
               )
             const i = line.item

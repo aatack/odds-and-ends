@@ -155,7 +155,8 @@ export class Engine extends EventEmitter {
     const data: Record<string, unknown> | null = json(r.data)
     const resolved = Boolean(r.resolved)
     const cancelled = Boolean(r.cancelled)
-    const summary = type.describe(params)
+    // An item reads by its latest title: its rename events', else the one it was made with.
+    const summary = type.type === 'item' ? this.title(r.id as string, params) : type.describe(params)
     return {
       id: r.id as string,
       parentId: (r.parent_id as string) ?? null,
@@ -219,6 +220,12 @@ export class Engine extends EventEmitter {
   }
 
   /** An item event as the lists and the item view read it. */
+  /** An item's title now: its latest rename event's, else the one it was made with. */
+  private title(id: string, params: Record<string, unknown>): string {
+    const r = this.db.prepare("SELECT params FROM events WHERE parent_id = ? AND type = 'rename' ORDER BY seq DESC LIMIT 1").get(id) as Row | undefined
+    return String((r && json<Record<string, unknown>>(r.params)?.title) ?? params.title)
+  }
+
   private toItem(r: Row): Item {
     const id = r.id as string
     const params: Record<string, unknown> = json(r.params) ?? {}
@@ -232,7 +239,7 @@ export class Engine extends EventEmitter {
       .get(id) as Row | undefined
     return {
       id,
-      title: String(params.title),
+      title: this.title(id, params),
       parentId: (r.parent_id as string) ?? null,
       closed,
       how: (json<Record<string, unknown>>(r.data)?.how as string) ?? null,
@@ -373,6 +380,13 @@ export class Engine extends EventEmitter {
     if (!text.trim()) throw new Error('A directive needs some text.')
     const [added] = await this.addEvents(null, [{ type: 'directive', params: { text, replaces: id } }])
     return added
+  }
+
+  /** Renames an item, with a rename event in it. */
+  async rename(itemId: string, title: string, actor = 'human'): Promise<void> {
+    const t = title.trim()
+    if (!t || this.must(itemId).title === t) return
+    await this.addEvents(itemId, [{ type: 'rename', params: { title: t } }], actor)
   }
 
   /** Marks an item as a priority, or not, with a priority event in it. */

@@ -97,6 +97,7 @@ the chat input should offer it, add a preset in `presets.ts`.
 | `item` | yes | `title`, `events?` (its first children, added in it), `detached?` (sits in no item, wherever it is added), `key?` (so a source adds it once), `sessionId` (set by the app) | `{ how: closed \| handled_outside \| cancelled }` |
 | `message` | no | `text` | — |
 | `attachment` | no | `event`, `title`, `item` (filled in by `attach_event`) | — |
+| `rename` | no | `title` (the item's title from then on) | — |
 | `priority` | no | `on` (the latest one says whether the item is a priority) | — |
 | `action` | no | `name`, `inputs`, `output` | — |
 | `approval` | the human's | `action` (unsafe), `inputs`, `reason?` | `{ ran, inputs, changed, output, detail }` |

@@ -21,6 +21,7 @@ const api: WorkflowsAPI = {
   addDirective: call('addDirective') as WorkflowsAPI['addDirective'],
   editDirective: call('editDirective') as WorkflowsAPI['editDirective'],
   setPriority: call('setPriority') as WorkflowsAPI['setPriority'],
+  rename: call('rename') as WorkflowsAPI['rename'],
   snooze: call('snooze') as WorkflowsAPI['snooze'],
   unsnooze: call('unsnooze') as WorkflowsAPI['unsnooze'],
   summarise: call('summarise') as WorkflowsAPI['summarise'],

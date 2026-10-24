@@ -8,7 +8,7 @@
  * stay open until something happens (a bot replies, CI finishes, an approval is
  * given, a child item closes).
  */
-export type EventKind = 'item' | 'message' | 'attachment' | 'priority' | 'summary' | 'action' | 'approval' | 'bot' | 'github' | 'slack' | 'after' | 'script' | 'directive' | 'snooze'
+export type EventKind = 'item' | 'message' | 'attachment' | 'priority' | 'rename' | 'summary' | 'action' | 'approval' | 'bot' | 'github' | 'slack' | 'after' | 'script' | 'directive' | 'snooze'
 
 /** An event as it is added. `ref` names it, so an `after` added alongside can point at it. */
 export interface EventSpec {
@@ -274,6 +274,8 @@ export interface WorkflowsAPI {
   editDirective: (id: string, text: string) => Promise<string>
   /** Marks an item as a priority, or not. */
   setPriority: (id: string, on: boolean) => Promise<void>
+  /** Renames an item. */
+  rename: (id: string, title: string) => Promise<void>
   /** Puts an item away until a time (ms), with a snooze event in it. */
   snooze: (id: string, until: number) => Promise<void>
   /** Wakes a snoozed item now: its snoozes are cancelled. */

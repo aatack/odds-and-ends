@@ -301,6 +301,7 @@ function ItemsMain() {
         title={`${debug ? 'Debug: ' : ''}${e.summary}`}
         event={e}
         actions={actions}
+        onRename={e.type === 'item' && !debug ? (title) => void w.act(() => api().rename(e.id, title)) : undefined}
       />
       {w.error && <div className="error">{w.error}</div>}
       <div className={`view-body ${d.item && !debug ? 'fill' : ''}`}>
@@ -361,7 +362,20 @@ function HeaderActions({ actions }: { actions: EventAction[] }) {
 }
 
 /** Back (to the items view, at the bottom of every stack; its place kept on the items view itself), the event as text, and its actions on the right. */
-function ViewHeader(props: { canGoBack: boolean; onBack: () => void; title?: string; event?: ItemEvent; actions?: ReactNode }) {
+function ViewHeader(props: {
+  canGoBack: boolean
+  onBack: () => void
+  title?: string
+  event?: ItemEvent
+  actions?: ReactNode
+  /** Given, the title can be edited: double-click it, then Enter (or leaving it) saves and Escape doesn't. */
+  onRename?: (title: string) => void
+}) {
+  const [editing, setEditing] = useState<string | null>(null)
+  const save = () => {
+    if (editing !== null && editing.trim() && editing.trim() !== props.title) props.onRename?.(editing.trim())
+    setEditing(null)
+  }
   return (
     <header className="view-header">
       <button
@@ -376,7 +390,32 @@ function ViewHeader(props: { canGoBack: boolean; onBack: () => void; title?: str
         <ChevronLeft className="icon" />
       </button>
       {props.event && props.event.type !== 'item' && <EventIcon event={props.event} />}
-      <h1 className="view-title">{props.title}</h1>
+      {editing !== null ? (
+        <input
+          className="view-title view-title-input"
+          autoFocus
+          value={editing}
+          aria-label="Title"
+          onChange={(e) => setEditing(e.target.value)}
+          onFocus={(e) => e.target.select()}
+          onBlur={save}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              save()
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault()
+              e.stopPropagation()
+              setEditing(null)
+            }
+          }}
+        />
+      ) : (
+        <h1 className="view-title" onDoubleClick={props.onRename && (() => setEditing(props.title ?? ''))}>
+          {props.title}
+        </h1>
+      )}
       {props.actions && <div className="buttons">{props.actions}</div>}
     </header>
   )

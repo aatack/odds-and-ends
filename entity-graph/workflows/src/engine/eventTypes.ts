@@ -68,6 +68,16 @@ export const attachment: EventType = {
   said: (p) => `Attached: ${p.title}`,
 }
 
+export const rename: EventType = {
+  type: 'rename',
+  description: "Renames the item: its latest rename event's title is its title from then on. The first title stays in the item's own params.",
+  params: { title: z.string().min(1).describe('The new title.') },
+  data: '{}',
+  blocking: false,
+  bots: true,
+  describe: (p) => `Renamed to “${p.title}”`,
+}
+
 export const priority: EventType = {
   type: 'priority',
   description:
@@ -362,4 +372,4 @@ export const summary: EventType = {
   },
 }
 
-export const EVENT_TYPES: EventType[] = [item, message, attachment, priority, action, approval, bot, github, slack, after, script, summary, directive, snooze]
+export const EVENT_TYPES: EventType[] = [item, message, attachment, rename, priority, action, approval, bot, github, slack, after, script, summary, directive, snooze]

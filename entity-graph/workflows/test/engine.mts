@@ -639,6 +639,17 @@ assert.deepEqual(cat.presets.map((p) => p.id), ['message', 'bot', 'pr-merged', '
   assert.equal(ca.get(sneaky2.id), null)
   await engine.close(task)
 }
+// Renaming: a rename event, whose title the item then reads by, everywhere.
+{
+  const r = (await engine.create('First name'))!
+  await engine.rename(r, '  Second name ')
+  assert.equal(item(r).title, 'Second name')
+  assert.equal(engine.event(r)!.summary, 'Second name')
+  assert.equal(last(r, 'rename').message, 'Renamed to “Second name”')
+  await engine.rename(r, 'Second name')
+  assert.equal(engine.children(r).filter((e) => e.type === 'rename').length, 1, 'the same title adds nothing')
+  await engine.close(r)
+}
 // Priority items come first in Next, the most recently active first; then the rest, the longest waiting first.
 {
   for (const i of engine.overview().items.filter((i) => !i.closed)) await engine.close(i.id)
