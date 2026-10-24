@@ -113,7 +113,7 @@ the chat input should offer it, add a preset in `presets.ts`.
   moment. It sits in no item, wherever it is added, and holds until it is
   cancelled (the Directives page's Delete). Bots are not told directives: their
   instructions say to read the latest (the `directives` action) when they need
-  more context, and to add one (`add_directive`) when feedback should outlast
+  more context, and to add one (a `directive` event, with `add_events`) when feedback should outlast
   the item.
 - **`snooze`** puts an item away until `until`. It blocks the item, so Next
   leaves it out, and is checked every minute: once the time comes it resolves

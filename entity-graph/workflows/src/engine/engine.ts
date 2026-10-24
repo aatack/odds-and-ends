@@ -346,17 +346,22 @@ export class Engine extends EventEmitter {
     await this.addEvents(itemId, [{ type: 'summary', params: {} }], actor)
   }
 
-  /** The directives that hold (not yet deleted), the newest first. */
-  directives(): ItemEvent[] {
-    const rows = this.db.prepare("SELECT * FROM events WHERE type = 'directive' AND resolved = 0 ORDER BY created_at DESC, seq DESC").all() as Row[]
+  /** The open events of one type, anywhere, the newest first. */
+  openOfType(type: string): ItemEvent[] {
+    const rows = this.db.prepare('SELECT * FROM events WHERE type = ? AND resolved = 0 ORDER BY created_at DESC, seq DESC').all(type) as Row[]
     const times = this.times(rows.map((r) => r.id as string))
     return rows.map((r) => this.toEvent(r, times.get(r.id as string)))
   }
 
-  /** A new directive, in no item. Deleting it is cancelling it. */
-  async addDirective(text: string, actor = 'human', author: Author = 'human', runId: string | null = null): Promise<string> {
+  /** The directives that hold (not yet deleted), the newest first. */
+  directives(): ItemEvent[] {
+    return this.openOfType('directive')
+  }
+
+  /** A new directive from the Directives page: a directive event, in no item. Deleting it is cancelling it. */
+  async addDirective(text: string): Promise<string> {
     if (!text.trim()) throw new Error('A directive needs some text.')
-    const [id] = await this.addEvents(null, [{ type: 'directive', params: { text } }], actor, author, runId)
+    const [id] = await this.addEvents(null, [{ type: 'directive', params: { text } }])
     return id
   }
 

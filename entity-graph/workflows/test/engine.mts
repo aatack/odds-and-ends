@@ -717,7 +717,8 @@ await assert.rejects(engine.attach(idea, collector), /closed/)
   assert.equal(engine.event(first)!.summary, 'Shipping the release')
   const listed = (await engine.callAction('directives', {}, bot)) as { id: string; text: string; createdBy: string }[]
   assert.deepEqual(listed.map((d) => [d.id, d.createdBy]), [[second, 'bot'], [first, 'human']], 'the newest first')
-  const { id: third } = (await engine.callAction('add_directive', { text: 'From feedback' }, bot)) as { id: string }
+  assert.deepEqual(await engine.callAction('list_items', { type: 'directive' }, bot), listed, 'directives is list_items for the type')
+  const { ids: [third] } = (await engine.callAction('add_events', { events: [{ type: 'directive', params: { text: 'From feedback' } }] }, bot)) as { ids: string[] }
   assert.equal(engine.directives()[0].id, third)
   await assert.rejects(engine.addDirective('  '), /needs some text/)
   // Deleting one cancels it: it is kept, and no longer listed.

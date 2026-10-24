@@ -51,17 +51,32 @@ export const itemActions: Action[] = [
     name: 'list_items',
     unsafe: false,
     description:
-      "Every open item, at any depth, and those closed in the last day: whether it is the human's turn, and what blocks it.",
-    input: {},
-    run: async (_a, { engine }) =>
-      engine.overview().items.map((i) => ({
+      "Every open item, at any depth, and those closed in the last day: whether it is the human's turn, and what blocks it. " +
+      'With type, the open events of that type instead, the newest first, with their params and age: e.g. directive.',
+    input: { type: z.string().optional().describe('An event type (see event_types); item by default.') },
+    run: async (a, { engine }) => {
+      if (a.type && a.type !== 'item') {
+        engine.type(String(a.type))
+        return engine.openOfType(String(a.type)).map((e) => ({
+          id: e.id,
+          type: e.type,
+          parentId: e.parentId,
+          summary: e.summary,
+          params: e.params,
+          createdBy: e.createdBy,
+          createdAt: new Date(e.createdAt).toISOString(),
+          ageHours: Math.round(((engine.now() - e.createdAt) / 3_600_000) * 10) / 10,
+        }))
+      }
+      return engine.overview().items.map((i) => ({
         id: i.id,
         title: i.title,
         parentId: i.parentId,
         closed: i.closed,
         withHuman: i.withHuman,
         blockers: i.blockers.map((b) => ({ id: b.id, type: b.type, summary: b.summary })),
-      })),
+      }))
+    },
   },
   {
     name: 'items_waiting_on',
@@ -104,25 +119,10 @@ export const itemActions: Action[] = [
     unsafe: false,
     description:
       "The operator's directives: short markdown notes on what they are working on at the moment, the newest first, with each one's " +
-      'age. They are not in your prompt: read the latest for the broad picture when an item needs more context.',
+      'age. They are not in your prompt: read the latest for the broad picture when an item needs more context. ' +
+      'The same as list_items with type directive. Add one as a directive event, with add_events.',
     input: {},
-    run: async (_a, { engine }) =>
-      engine.directives().map((d) => ({
-        id: d.id,
-        text: d.params.text,
-        createdBy: d.createdBy,
-        createdAt: new Date(d.createdAt).toISOString(),
-        ageHours: Math.round(((engine.now() - d.createdAt) / 3_600_000) * 10) / 10,
-      })),
-  },
-  {
-    name: 'add_directive',
-    unsafe: false,
-    description:
-      'Add a directive: a short markdown note on what the operator is working on, or how they want things done, for every agent to read. ' +
-      'Add one when the operator gives feedback that should hold beyond the item at hand. Delete one with cancel_event.',
-    input: { text: z.string().describe('Markdown.') },
-    run: async (a, ctx) => ({ id: await ctx.engine.addDirective(String(a.text), ctx.actor, ctx.author, ctx.runId) }),
+    run: (_a, ctx) => itemActions.find((x) => x.name === 'list_items')!.run({ type: 'directive' }, ctx),
   },
   {
     name: 'custom_actions',

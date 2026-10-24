@@ -283,7 +283,7 @@ export const directive: EventType = {
   description:
     "A note from the operator (or a bot, passing on their feedback) on what they are working on at the moment: a bit of markdown " +
     'that gives agents the broad picture. It sits in no item, wherever it is added, and holds until it is deleted (cancelled). ' +
-    'Nothing is told them: read the latest with the directives action when an item needs more context.',
+    'Nothing is told them: read the latest with the directives action (list_items with type directive) when an item needs more context.',
   params: { text: z.string().describe('Markdown: what the operator is working on, or how they want things done.') },
   data: '{ cancelled: true }, once deleted',
   // Open while it holds; deleting it is cancelling it. It blocks nothing, since it sits in no item.
