@@ -34,5 +34,10 @@ name = "egdb-server"
 path = "src/bin/egdb-server.rs"
 required-features = ["server"]
 
+# Only the `server` integration tests use these; the library has no web deps.
+[dev-dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
 [profile.release]
 lto = "thin"
