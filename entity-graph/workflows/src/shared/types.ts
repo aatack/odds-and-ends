@@ -151,6 +151,16 @@ export interface Overview {
   viewed: string[]
   /** Items the human attached something to, or attached, in the last week, the most recent first. */
   linked: string[]
+  /** What the human attached in the last week, and to which item (`target`), the most recent first: a new item suggests them. */
+  attachments: RecentAttachment[]
+}
+
+/** One of the human's recent attachments: the event attached (`event`, its `title`, the `item` to read it in) and where it went. */
+export interface RecentAttachment {
+  event: string
+  title: string
+  item: string
+  target: string
 }
 
 /** A JSON Schema for a flat object, as far as the forms read it. */

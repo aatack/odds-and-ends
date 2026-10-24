@@ -13,7 +13,7 @@ export const api = (): WorkflowsAPI => window.workflows
 
 /** Everything the app shows, kept in step with the main process. */
 export function useWorkflows() {
-  const [overview, setOverview] = useState<Overview>({ items: [], workers: [], viewed: [], linked: [] })
+  const [overview, setOverview] = useState<Overview>({ items: [], workers: [], viewed: [], linked: [], attachments: [] })
   const [views, setViews] = useAtom(viewsAtom)
   const [forwards, setForwards] = useAtom(forwardAtom)
   const view = views[views.length - 1] ?? null

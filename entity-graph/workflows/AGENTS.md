@@ -148,6 +148,9 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
 - **Picking an item** is `ItemPicker`: the finder in a `Modal` over the blurred window, calling back with
   the item picked (Enter or a click) or made (Tab). The paperclip at the top right of every event's view uses it to
   attach that event, whatever it is, to a task (`Engine.attach`, an `attachment` event in the task).
+- **A new task offers to gather** (`Gather`, above the chat input for its first hour, until it is attached either way):
+  the tasks the human attached things to lately (attach it there) and the things they attached (attach them here),
+  from `Overview.attachments`.
 - **`@` in the chat input refers to a task**: typed at the start of a word, it opens the finder (`ItemPicker`), and
   what is picked (or made, with Tab) takes its place as `[itemId]()`. `Markdown` draws such a link, to nowhere with an
   item's id as its text, through `ItemRefContext`: the app gives `ItemRef`, the item's icon and title, which open it.

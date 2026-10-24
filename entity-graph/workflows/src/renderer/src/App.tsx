@@ -26,6 +26,7 @@ import { McpPage } from './McpPage'
 import { api, useWorkflows } from './useWorkflows'
 import { findAtom, findFocusAtom, searchFocusAtom, type View } from './views'
 import { FindLine } from './FindLine'
+import { Gather } from './Gather'
 
 export function App() {
   const items = useWorkflows()
@@ -406,6 +407,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
         <Chat detail={detail} />
       </div>
       <div className="composer">
+        <Gather detail={detail} overview={w.overview} act={act} />
         <Blockers detail={detail} catalog={catalog} act={act} onOpen={onOpen} />
         {item.closed ? (
           <div className="composer-bar muted">Closed.</div>

@@ -280,7 +280,7 @@ export class Engine extends EventEmitter {
    * The items the human has had on screen, and those they have linked (attached
    * something to, or attached), in the last week: the most recent first, each once.
    */
-  inHand(): Pick<Overview, 'viewed' | 'linked'> {
+  inHand(): Pick<Overview, 'viewed' | 'linked' | 'attachments'> {
     const since = this.now() - 7 * 24 * 60 * MINUTE
     const viewed = this.db
       .prepare("SELECT item_id AS id, MAX(at) AS at FROM trace WHERE kind = 'viewed' AND at > ? GROUP BY item_id ORDER BY at DESC LIMIT 50")
@@ -292,7 +292,8 @@ export class Engine extends EventEmitter {
       const p = JSON.parse(r.params) as { event: string; item: string }
       return p.event === p.item ? [r.parent_id, p.event] : [r.parent_id]
     })
-    return { viewed: viewed.map((r) => r.id), linked: [...new Set(linked)] }
+    const attached = attachments.map((r) => ({ ...(JSON.parse(r.params) as { event: string; title: string; item: string }), target: r.parent_id }))
+    return { viewed: viewed.map((r) => r.id), linked: [...new Set(linked)], attachments: attached }
   }
 
   detail(id: string): ItemDetail | null {
