@@ -73,7 +73,7 @@ export function App() {
           <ArrowRight className="icon" />
         </button>
       </div>
-      <EventMenu act={items.act} skip={items.skip} />
+      <EventMenu actOn={items.actOn} skip={items.skip} />
       <AttachPicker />
     </ItemsContext.Provider>
   )
@@ -216,7 +216,7 @@ function ItemsMain() {
   const debug = w.view.kind === 'debug'
   const actions = debug ? null : (
     <>
-      {eventActions(e, { act: w.act, skip: w.skip, attach: setAttaching }).map((a) => (
+      {eventActions(e, { act: w.actOn(e.id), skip: w.skip, attach: setAttaching }).map((a) => (
         <IconButton key={a.id} title={a.title ?? a.label} className={a.tone} onClick={a.run}>
           <a.icon className="size-[17px]" />
         </IconButton>
@@ -237,7 +237,7 @@ function ItemsMain() {
         {debug ? (
           <DebugView detail={d} />
         ) : d.item ? (
-          <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.act} onOpen={openEvent} />
+          <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openEvent} />
         ) : (
           <EventView detail={d} catalog={w.catalog} act={w.act} onOpen={openEvent} />
         )}

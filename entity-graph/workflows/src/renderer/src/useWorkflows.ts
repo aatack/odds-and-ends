@@ -107,5 +107,35 @@ export function useWorkflows() {
     [skipped, next],
   )
 
-  return { overview, view, views, detail, catalog, selected, select, open, back, forward, next, skip, act, error, empty }
+  /**
+   * After the human has done something to the item on screen: if it no longer
+   * needs them (resolved, or something other than an approval now blocks it),
+   * goes on to the next that does. Pushed, not replacing the stack, so Back
+   * returns to it.
+   */
+  const moveOn = useCallback(
+    async (id: string) => {
+      if (selected !== id) return
+      const item = (await api().eventDetail(id))?.item?.item
+      if (item && !item.closed && item.withHuman) return
+      const to = await api().next([...skipped, id])
+      if (to) open({ kind: 'event', id: to })
+      else {
+        open({ kind: 'items' })
+        setEmpty(true)
+      }
+    },
+    [selected, skipped, open],
+  )
+
+  /** `act`, for something done to one item: then, if it no longer needs the human, on to the next (`moveOn`). */
+  const actOn = useCallback(
+    (id: string) => async (fn: () => Promise<unknown>) => {
+      await act(fn)
+      await moveOn(id)
+    },
+    [act, moveOn],
+  )
+
+  return { overview, view, views, detail, catalog, selected, select, open, back, forward, next, skip, act, actOn, error, empty }
 }

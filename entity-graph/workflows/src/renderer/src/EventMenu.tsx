@@ -23,7 +23,13 @@ export function useEventMenu() {
  * top of the stack), and below, what can be done to it (`eventActions`), as its
  * view's header offers.
  */
-export function EventMenu({ act, skip }: { act: (fn: () => Promise<unknown>) => Promise<void>; skip: (id: string) => void }) {
+export function EventMenu({
+  actOn,
+  skip,
+}: {
+  actOn: (id: string) => (fn: () => Promise<unknown>) => Promise<void>
+  skip: (id: string) => void
+}) {
   const [menu, setMenu] = useAtom(menuAtom)
   const [views, setViews] = useAtom(viewsAtom)
   const attach = useSetAtom(attachingAtom)
@@ -71,7 +77,7 @@ export function EventMenu({ act, skip }: { act: (fn: () => Promise<unknown>) => 
       <button onClick={() => push({ kind: 'event', id: menu.id })}>Open</button>
       <button onClick={() => push({ kind: 'debug', id: menu.id })}>Debug</button>
       {event?.id === menu.id &&
-        eventActions(event, { act, skip, attach }).map((a) => (
+        eventActions(event, { act: actOn(event.id), skip, attach }).map((a) => (
           <button
             key={a.id}
             className="menu-action"

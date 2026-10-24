@@ -140,6 +140,9 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   (`Markdown`'s `highlight`). The phrase (`findAtom`) belongs to the view and is cleared when the view changes.
 - **A child task is a card** (`TaskCard`): its title, with a tick once resolved, a cross if cancelled, a pending
   ring while open. While open it is among the blockers; once closed it is a chat bubble like any other event.
+- **When a task stops needing you, the app moves on.** Whatever the human does to the task on screen (sends, approves,
+  resolves, from the chat, header or menu) goes through `actOn(id)`: afterwards, if the task is resolved or blocked by
+  more than approvals, the next one that needs them is *pushed* (so Back returns). A plain message leaves it be.
 - **Every event has a right-click menu** (`useEventMenu`): Open and Debug, then what can be done to it
   (`eventActions.ts`: Resolve, Done outside, Skip for an open task; Cancel for another open event; Attach). The view
   header draws the same list as icon buttons, so the two never differ. Spread
