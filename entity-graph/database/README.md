@@ -67,6 +67,33 @@ let top = store.find(main, &Filter::Eq("type".into(), Value::Text("task".into())
     FindOptions { limit: 20, order: egdb::FindOrder::ValueDesc("score".into()), ..Default::default() })?;
 ```
 
+### Write middleware
+
+Register middleware to transform the ops of every write batch. It runs inside the write transaction: it can change, drop or add ops, or reject the whole batch. See DESIGN.md section 8.1.1.
+
+```rust
+use egdb::{Error, Op, WriteContext};
+
+// Stamp who last touched each entity.
+store.add_middleware(|ctx: &WriteContext, ops: &mut Vec<Op>| {
+    let touched: Vec<String> = ops.iter()
+        .filter_map(|op| match op { Op::SetValue { entity, .. } => Some(entity.clone()), _ => None })
+        .collect();
+    for e in touched {
+        ops.push(Op::set(e, "updated_by", ctx.author));
+    }
+    Ok(())
+});
+
+// Reject every write by an agent author.
+store.add_middleware(|ctx: &WriteContext, _ops: &mut Vec<Op>| {
+    if ctx.author.starts_with("agent-") {
+        return Err(Error::Rejected("agents may not write through this handle".into()));
+    }
+    Ok(())
+});
+```
+
 ## Status
 
 - **Implemented:**
@@ -78,6 +105,7 @@ let top = store.find(main, &Filter::Eq("type".into(), Value::Text("task".into())
   - Entity existence and archiving
   - Branches: create, fork, pull, merge, rebase, archive
   - Undo
+  - Write middleware
 - **Walk:** `walk` is a paginated depth-first walk (type-based follow map, continue/include predicates, step limit, `next` path to resume, read-ahead, optional cache and visited set). See DESIGN.md section 11.1.
 - **Find:** `find` gives a paginated flat list of entities that match a `Filter` (Eq, ranges, contains, prefix, in, null, and/or/not, custom), ordered by entity id, insertion, or a value. See DESIGN.md section 11.2.
 - **Prove:** `prove` shows that an item is reachable from one of a set of roots through a type-keyed relationship map (for example, permissions). It does a backward BFS from the item, returns a shortest path with its links, and answers `Proved`, `NoPath` or `Unknown` (budget). It works on every view. See DESIGN.md section 11.3.

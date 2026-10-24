@@ -383,23 +383,39 @@ The crate is not released. All changes so far are in version 1. There is no vers
 
 All steps run in one `BEGIN IMMEDIATE` transaction. If a step fails, the store writes nothing.
 
-1. **Validate.**
-   - A batch must have at least one op.
-   - IDs, keys and link types must not be empty.
-   - Floats must be finite.
+1. **Batch check.** A batch must have at least one op.
 2. **Branch check.** The branch must exist and must not be archived.
 3. **Timestamp.**
    - `ts = max(batch.timestamp or store clock, branch.last_ts)`.
    - Timestamps thus never go down on a branch [CHOSEN, I13]. The timestamp gives the default sort key. It does not order events.
-4. **For each op:**
+4. **Middleware.** Any registered write middleware transforms the ops (see 8.1.1). It runs here, inside the transaction, before validation.
+5. **Validate** the ops (the transformed ops).
+   - IDs, keys and link types must not be empty.
+   - Floats must be finite.
+   - Validation runs after the branch check now, not before it. So an invalid op on an unknown branch reports the unknown branch first.
+   - If middleware dropped every op, the store writes nothing and stops (see 8.1.1).
+6. **For each op:**
    1. Increment the branch's seq.
    2. Intern the entity IDs. For a link, replace `SortOrder` with the stored key: `Timestamp` becomes `ts` as `f64`, `Explicit(f)` becomes `f`, and `Removed` becomes NULL (R22).
    3. Copy the current row of the target to its history table, with `superseded_by = seq`.
    4. Upsert the new current row.
-5. **Finish.**
+7. **Finish.**
    - Update `branches.head_seq` and `last_ts`.
    - Insert the `batches` row.
-6. **COMMIT.** A reader sees the state before the commit or after it, never between.
+8. **COMMIT.** A reader sees the state before the commit or after it, never between.
+
+### 8.1.1 Write middleware
+
+Write middleware transforms the ops of a batch before the store writes them. It is a hook for the caller.
+
+- A middleware takes the batch context and the ops. It can change, drop or add ops, or return an error.
+- The context gives the branch, the author, the resolved timestamp, the store clock reading, and the branch head before the batch. It does not give the branch name. Middleware cannot read the store.
+- Middleware runs inside the write transaction, after the branch check and the timestamp resolution, and before validation. Validation and the write path then use the transformed ops.
+- Each store handle keeps its own list of middleware. They run in registration order. Each one sees the ops that the one before it left.
+- An error rejects the whole batch. The transaction rolls back, so the store writes nothing, the branch head does not move, and there is no `batches` row. `Error::Rejected` is the error for a plain refusal; any other error passes through.
+- If middleware drops every op, the write does nothing: no sequence ID is used and there is no `batches` row. The result has an empty range: `first_seq = head + 1` and `last_seq = head`.
+- Only `Store::write` runs middleware. `archive_entity` and `restore_entity` call `write`, so they run it too. Branch operations (`fork`, `merge`, `pull`, `set_parents`) write no events, and `undo` removes events, so middleware does not run for them.
+- When no middleware is registered, the write path does no extra work: it builds no context and does not touch the ops.
 
 ### 8.2 Order in a view [RULE R20, I1]
 
@@ -894,6 +910,7 @@ fn prove(&self, branch: BranchId, item: &str, roots: &[&str],
 | I16 | R23: entities with no type | Hidden, the same as archived entities. The filter checks the other end of each link. `links_including_archived` skips the filter. |
 | I15 | R4: live merges | `merge` is a frozen snapshot. To follow a branch live, use `pull` with an open range. |
 | I21 | Prove (11.3) | Relationships keyed by the upper entity's type, read downward; the search runs backward from the item. Archived entities never form a proof (`include_archived` relaxes this for the item only). Shortest proof by default. A budget gives `Unknown`, never a false `NoPath`. Default strategy Backward, chosen by measurement. |
+| I22 | Write middleware (8.1.1) | A hook transforms a batch's ops inside the write transaction, after the branch check and the timestamp resolution and before validation. It may change, drop or add ops, or reject the batch. Only `write`, `archive_entity` and `restore_entity` run it. Middleware cannot read the store. Registration is per store handle, in order. A batch dropped to empty writes nothing and returns an empty range. |
 
 ---
 
@@ -930,6 +947,12 @@ Still open:
 - **Q10. Value types.** Are the six `Value` variants sufficient?
 - **Q11. Live merge.** Must `merge` follow the other branch live, as an open range, and not freeze it (I15)?
 - **Q12. Authors.** Is a free author string sufficient for "one user" (I5)? Or is a user ID table necessary?
+
+- **Q18. Middleware store reads.** Write middleware (8.1.1) cannot read the store this version. Must it be able to, for example to look up the current value of a field it edits?
+
+- **Q19. Branch name in the context.** The middleware context does not give the branch name, only the branch ID, to keep the write path cheap. Must the name be added?
+
+- **Q20. Dropped-to-empty batch.** A middleware that drops every op writes nothing and returns an empty range. Must this be an error instead?
 
 ---
 

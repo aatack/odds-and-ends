@@ -30,6 +30,14 @@ flowchart LR
 - Why only two: a small model is easy to merge, to sync and to explain.
 - One write call is one batch. A batch is one transaction. All of its events are written, or none.
 
+## 2a. Write middleware
+
+- A caller can register middleware that transforms the ops of a batch before the store writes them.
+- It runs inside the write transaction, so a batch is still all or nothing: a middleware error rolls the whole batch back.
+- Why one transform point: every write goes through one path, so one hook covers them all. There is no second place to change the data.
+- Middleware changes ops only. It adds no new kind of event, and it does not touch the current and history tables itself. So the rest of the store is unchanged.
+- There is no cost when no middleware is registered. The write path then builds no context and does not touch the ops.
+
 ## 3. Entities
 
 - **An entity exists when it has events.** There is no "create" event and no "delete" event.

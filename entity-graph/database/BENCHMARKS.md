@@ -1291,3 +1291,18 @@ At 10k, the huge org has 400 teams and the popular doc has 1500 groups, so the 1
 
 - Skip the type read of the candidates when a reversed pair can only come from one type. This would help only `fanin100`-like cases, and in this map `child` is valid from three types. Not measured.
 - Split very large frontiers into smaller `json_each` batches. This reads the same rows, so it can only lower peak memory. Not measured.
+
+## Write middleware (`examples/bench_write.rs`)
+
+Run: `cargo run --release --example bench_write -- 5000 10 --runs 5`. It writes 5000 batches of 10 ops (a mix of values and links) on a fresh temp file, for 0, 1 and 3 identity middleware. Each figure is the median of 5 runs. The question is whether the middleware hook slows writes when it is unused or does nothing.
+
+The run was repeated three times, interleaved with `origin/master` (which has no middleware code), to show the noise. The numbers are process CPU seconds for the 5000 batches.
+
+| build | round 1 | round 2 | round 3 |
+| --- | ---: | ---: | ---: |
+| `origin/master` (no middleware code) | 1.151 | 1.058 | 1.215 |
+| this branch, 0 middleware | 1.177 | 1.238 | 1.086 |
+| this branch, 1 identity middleware | 1.102 | 1.273 | 1.071 |
+| this branch, 3 identity middleware | 1.098 | 1.073 | 1.081 |
+
+There is no measurable difference. The noise between rounds is about ±10%, larger than any gap between the builds. The fast path (no middleware) builds no context and does not touch the ops, so it matches `origin/master`; one or three identity middleware add no visible cost.
