@@ -137,9 +137,15 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   `before-input-event`, so the window's menu doesn't close the window. Typing filters titles fuzzily; the arrows
   move; Enter opens; Tab makes a new item with the typed title. What the items view opens *replaces* it on the stack
   (`open(view, { replace: true })`), so Back goes to where you were before it rather than to the list.
+- **The finder** (`ItemsList`) is the items view and every picker: items in **sections** (`sections.ts`: recently
+  viewed, recently linked, needs you, with bots, waiting, closed today), each instance choosing which, in what order,
+  and how many rows each shows before an "n more" row (Enter or a click shows the rest). The Tasks view shows 12 a
+  section; pickers in a modal, 6. Recently viewed and linked come from `Overview` (`Engine.inHand`: `viewed` trace
+  rows, the human's attachments). A row's grey text says only what its icon can't (a PR's title, what a script waits
+  for); "needs you" and "waits for a task" are the icon's job.
 - **Text is markdown.** Messages, descriptions and code samples all go through `Markdown` (`components/ui/`, react-markdown
   with GFM; fences drawn by `CodeBlock`). Code that is not inside prose goes in as `fenced(code, language)`.
-- **Picking an item** is `ItemPicker`: the items view itself in a `Modal` over the blurred window, calling back with
+- **Picking an item** is `ItemPicker`: the finder in a `Modal` over the blurred window, calling back with
   the item picked (Enter or a click) or made (Tab). The paperclip at the top right of every event's view uses it to
   attach that event, whatever it is, to a task (`Engine.attach`, an `attachment` event in the task).
 - **Ctrl+F finds in the view.** On the items view it is the search line; over a chat it opens `FindLine`, and the

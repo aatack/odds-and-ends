@@ -16,6 +16,7 @@ import { EventView } from './EventView'
 import { ItemPicker } from './ItemPicker'
 import { SnoozePicker } from './SnoozePicker'
 import { ItemsList } from './ItemsList'
+import { TASKS_SECTIONS } from './sections'
 import { Composer } from './Composer'
 import { EventIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
@@ -102,6 +103,7 @@ function AttachPicker() {
       title={`Attach “${summary}” to a task`}
       // Any open item but this one can take it.
       items={w.overview.items.filter((i) => !i.closed && i.id !== id)}
+      recent={w.overview}
       verb="Attach"
       onPick={(target) => {
         setAttaching(null)
@@ -250,6 +252,8 @@ function ItemsMain() {
         <div className="view-body">
           <ItemsList
             items={w.overview.items}
+            recent={w.overview}
+            sections={TASKS_SECTIONS}
             onOpen={openFromItems}
             onCreate={(title) => w.act(async () => openFromItems(await api().create(title, null)))}
           />

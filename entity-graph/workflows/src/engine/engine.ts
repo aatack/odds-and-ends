@@ -272,7 +272,27 @@ export class Engine extends EventEmitter {
     const rows = this.db
       .prepare("SELECT * FROM events WHERE type = 'item' AND (resolved = 0 OR resolved_at > ?) ORDER BY created_at")
       .all(this.now() - 24 * 60 * MINUTE) as Row[]
-    return { items: rows.map((r) => this.toItem(r)).sort((a, b) => a.since - b.since), workers }
+    const items = rows.map((r) => this.toItem(r)).sort((a, b) => a.since - b.since)
+    return { items, workers, ...this.inHand() }
+  }
+
+  /**
+   * The items the human has had on screen, and those they have linked (attached
+   * something to, or attached), in the last week: the most recent first, each once.
+   */
+  inHand(): Pick<Overview, 'viewed' | 'linked'> {
+    const since = this.now() - 7 * 24 * 60 * MINUTE
+    const viewed = this.db
+      .prepare("SELECT item_id AS id, MAX(at) AS at FROM trace WHERE kind = 'viewed' AND at > ? GROUP BY item_id ORDER BY at DESC LIMIT 50")
+      .all(since) as { id: string }[]
+    const attachments = this.db
+      .prepare("SELECT parent_id, params FROM events WHERE type = 'attachment' AND created_by = 'human' AND created_at > ? ORDER BY created_at DESC LIMIT 100")
+      .all(since) as { parent_id: string; params: string }[]
+    const linked = attachments.flatMap((r) => {
+      const p = JSON.parse(r.params) as { event: string; item: string }
+      return p.event === p.item ? [r.parent_id, p.event] : [r.parent_id]
+    })
+    return { viewed: viewed.map((r) => r.id), linked: [...new Set(linked)] }
   }
 
   detail(id: string): ItemDetail | null {

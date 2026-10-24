@@ -1,52 +1,82 @@
 import fuzzysort from 'fuzzysort'
 import { useAtomValue } from 'jotai'
-import { Flag, Search } from 'lucide-react'
+import { Flag, MoreHorizontal, Search } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Item } from '../../shared/types'
 import { minutes } from './Chat'
 import { useEventMenu } from './EventMenu'
-import { GROUPS } from './groups'
-import { ItemIcon } from './icons'
+import { ItemIcon, waitingOn } from './icons'
+import { SECTIONS, type Recent, type SectionId } from './sections'
 import { searchFocusAtom } from './views'
 
-/** What an item is waiting on, in a few words. */
-function status(i: Item): string {
-  if (i.closed) return i.how === 'handled_outside' ? 'done outside' : (i.how ?? 'closed')
-  if (i.withHuman) return 'needs you'
-  const b = i.blockers.find((b) => b.type === 'bot')
-  if (b) return i.worker !== null ? 'a bot is working' : 'waiting for a bot'
-  return i.blockers.map((b) => b.summary).join(', ')
+/**
+ * What a row says beside its icon: only what the icon can't. The PR a task
+ * waits on, what a script waits for, the approval the human is asked for; for
+ * a bot, a child task, or the human's turn alone, nothing.
+ */
+function detail(i: Item): string {
+  if (i.closed) return i.how === 'handled_outside' ? 'done outside' : i.how === 'cancelled' ? 'cancelled' : ''
+  if (i.withHuman) return i.blockers.find((b) => b.type === 'approval' && b.params.reason)?.summary ?? ''
+  const b = waitingOn(i)
+  if (b.type === 'github') return b.params.title ? String(b.params.title) : b.summary
+  if (b.type === 'slack' || b.type === 'snooze') return b.summary
+  if ((b.type === 'script' || b.type === 'after') && b.params.description) return b.summary
+  return ''
 }
 
+/** A line of the finder: an item in a section, or the "n more" a section ends with when it has more than it shows. */
+type Line = { key: string; item: Item } | { key: string; more: SectionId; n: number }
+
 /**
- * Every item, grouped, under a search line like the chat input: typing filters
- * the titles fuzzily, the arrow keys move through what is left, Enter opens one,
- * and Tab makes a new item with what was typed as its title. The item picker is
- * this too, with Enter (and a click) picking instead: `verb` says which.
+ * The finder: items in sections (`sections`, in order; see `SECTIONS`), under a
+ * search line like the chat input. Each section shows `perSection` rows, then
+ * "n more", which shows the rest. Typing filters the titles fuzzily (an item
+ * then shows in only the first section that has it); the arrow keys move through
+ * what is left, Enter opens one (or shows a section's rest), and Tab makes a new
+ * item with what was typed as its title. The pickers are this too, with Enter
+ * (and a click) picking instead: `verb` says which.
  */
-export function ItemsList(props: { items: Item[]; onOpen: (id: string) => void; onCreate: (title: string) => void; verb?: string }) {
-  const { items, onOpen, onCreate, verb = 'Open' } = props
+export function ItemsList(props: {
+  items: Item[]
+  recent: Recent
+  sections: SectionId[]
+  perSection?: number
+  onOpen: (id: string) => void
+  onCreate: (title: string) => void
+  verb?: string
+}) {
+  const { items, recent, sections, perSection = 12, onOpen, onCreate, verb = 'Open' } = props
   const [text, setText] = useState('')
   const [at, setAt] = useState(0)
+  const [expanded, setExpanded] = useState<SectionId[]>([])
   const box = useRef<HTMLInputElement>(null)
   const menu = useEventMenu()
   const focusAsked = useAtomValue(searchFocusAtom)
   useEffect(() => box.current?.focus(), [focusAsked])
 
-  // The groups, each filtered (best match first) when something is typed; and the rows in order, for the arrow keys.
+  // The sections, each filtered (best match first) when something is typed, and cut to `perSection` unless expanded.
   const groups = useMemo(() => {
     const matched = text.trim()
       ? new Map(fuzzysort.go(text, items, { key: 'title', threshold: 0.2 }).map((r, i) => [r.obj.id, i]))
       : null
-    return GROUPS.map((g) => ({
-      ...g,
-      items: items
-        .filter((i) => g.has(i) && (!matched || matched.has(i.id)))
-        .sort((a, b) => (matched ? matched.get(a.id)! - matched.get(b.id)! : 0)),
-    })).filter((g) => g.items.length)
-  }, [items, text])
-  const flat = groups.flatMap((g) => g.items)
+    const seen = new Set<string>()
+    return sections
+      .map((id) => {
+        let all = SECTIONS[id].items(items, recent)
+        if (matched) {
+          all = all.filter((i) => matched.has(i.id) && !seen.has(i.id)).sort((a, b) => matched.get(a.id)! - matched.get(b.id)!)
+          all.forEach((i) => seen.add(i.id))
+        }
+        const shown = expanded.includes(id) ? all : all.slice(0, perSection)
+        const lines: Line[] = shown.map((item) => ({ key: `${id}:${item.id}`, item }))
+        if (shown.length < all.length) lines.push({ key: `${id}:more`, more: id, n: all.length - shown.length })
+        return { id, label: SECTIONS[id].label, count: all.length, lines }
+      })
+      .filter((g) => g.count)
+  }, [items, recent, sections, perSection, expanded, text])
+  const flat = groups.flatMap((g) => g.lines)
   const current = Math.min(at, Math.max(flat.length - 1, 0))
+  const choose = (line: Line) => ('item' in line ? onOpen(line.item.id) : setExpanded([...expanded, line.more]))
   // The highlighted row stays in sight as the arrows move it.
   const list = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -85,7 +115,7 @@ export function ItemsList(props: { items: Item[]; onOpen: (id: string) => void; 
               }
               if (e.key === 'Enter' && flat[current]) {
                 e.preventDefault()
-                onOpen(flat[current].id)
+                choose(flat[current])
               }
               if (e.key === 'Tab') {
                 e.preventDefault()
@@ -109,25 +139,31 @@ export function ItemsList(props: { items: Item[]; onOpen: (id: string) => void; 
       </div>
 
       {groups.map((g) => (
-        <section key={g.label} className="list items-group">
+        <section key={g.id} className="list items-group">
           <h3>
-            {g.label} <span className="count">{g.items.length}</span>
+            {g.label} <span className="count">{g.count}</span>
           </h3>
-          {g.items.map((i) => (
-            <div
-              key={i.id}
-              className={`row ${flat[current]?.id === i.id ? 'selected' : ''}`}
-              onClick={() => onOpen(i.id)}
-              onMouseMove={() => setAt(flat.indexOf(i))}
-              {...menu(i.id)}
-            >
-              <ItemIcon item={i} />
-              <span className="row-title">{i.title}</span>
-              {i.priority && !i.closed && <Flag className="icon priority-flag" aria-label="Priority" />}
-              <span className="muted row-status">{status(i)}</span>
-              <span className="muted row-age">{minutes(Math.max(0, now - i.since))}</span>
-            </div>
-          ))}
+          {g.lines.map((line) => {
+            const selected = flat[current]?.key === line.key ? 'selected' : ''
+            const hover = () => setAt(flat.indexOf(line))
+            if (!('item' in line))
+              return (
+                <div key={line.key} className={`row more ${selected}`} onClick={() => choose(line)} onMouseMove={hover}>
+                  <MoreHorizontal className="icon" />
+                  <span className="row-title muted">{line.n} more</span>
+                </div>
+              )
+            const i = line.item
+            return (
+              <div key={line.key} className={`row ${selected}`} onClick={() => onOpen(i.id)} onMouseMove={hover} {...menu(i.id)}>
+                <ItemIcon item={i} />
+                <span className="row-title">{i.title}</span>
+                {i.priority && !i.closed && <Flag className="icon priority-flag" aria-label="Priority" />}
+                <span className="muted row-status">{detail(i)}</span>
+                <span className="muted row-age">{minutes(Math.max(0, now - i.since))}</span>
+              </div>
+            )
+          })}
         </section>
       ))}
       {!flat.length && <p className="muted">{text.trim() ? 'Nothing matches. Tab makes it a new task.' : 'No tasks yet.'}</p>}

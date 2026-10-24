@@ -21,7 +21,7 @@ import {
   Workflow,
   type LucideIcon,
 } from 'lucide-react'
-import type { EventKind, Item } from '../../shared/types'
+import type { EventKind, Item, ItemEvent } from '../../shared/types'
 
 /** One icon an event type. */
 export const TYPE_ICON: Record<EventKind, LucideIcon> = {
@@ -58,11 +58,15 @@ export const TYPE_NAME: Record<EventKind, string> = {
   snooze: 'Snooze',
 }
 
-/** What an item waits on: a bot, else its first other blocker, else the human; a tick once closed. */
+/** The blocker an open item that is not the human's turn is shown as waiting on: a bot, else its first other blocker. */
+export const waitingOn = (item: Item): ItemEvent =>
+  item.blockers.find((b) => b.type === 'bot') ?? item.blockers.find((b) => b.type !== 'after') ?? item.blockers[0]
+
+/** What an item waits on (`waitingOn`), else the human; a tick once closed. */
 export function ItemIcon({ item }: { item: Item }) {
   if (item.closed) return <Check className="icon" aria-label="Closed" />
   if (item.withHuman) return <User className="icon" aria-label="You" />
-  const waiting = item.blockers.find((b) => b.type === 'bot') ?? item.blockers.find((b) => b.type !== 'after') ?? item.blockers[0]
+  const waiting = waitingOn(item)
   const Icon = TYPE_ICON[waiting.type]
   return <Icon className="icon" aria-label={TYPE_NAME[waiting.type]} />
 }

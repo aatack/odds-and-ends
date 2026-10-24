@@ -147,6 +147,10 @@ export interface EventDetail {
 export interface Overview {
   items: Item[]
   workers: { id: number; itemId: string | null }[]
+  /** Items the human had on screen in the last week, the most recent first. */
+  viewed: string[]
+  /** Items the human attached something to, or attached, in the last week, the most recent first. */
+  linked: string[]
 }
 
 /** A JSON Schema for a flat object, as far as the forms read it. */

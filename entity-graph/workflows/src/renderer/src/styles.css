@@ -279,3 +279,4 @@ button[data-ui].snooze-choice:hover { background: var(--color-gray-100); filter:
 }
 .mine .bubble .markdown code, .mine .bubble .markdown pre { font-family: var(--font-mono); }
 }
+.items-view .row.more .row-title { font-size: 12px; }
