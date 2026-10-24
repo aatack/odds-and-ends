@@ -63,8 +63,18 @@ seed('shopping', 'Shopping', '@index', { section: true })
 seed('coffee', 'Coffee', 'shopping', { open: true })
 seed('oats', 'Oats', 'shopping', { open: false })
 seed('ideas', 'Ideas', '@index')
-seed('snippet', 'const x = 2', 'ideas', { type: 'code' })
+seed('snippet', 'A snippet:\n\n```\nconst x = 2\n```', 'ideas')
 seed('note', 'Some **bold** and [a link](https://example.com)', 'ideas')
+// A link whose protocol is not one a tap may follow: it draws as a pill, but with no
+// href to go to. react-markdown sanitises it too; the pill's own gate is the belt.
+seed('danger', 'A [bad link](javascript:alert(1)) in a note', 'ideas')
+// A url entity, as the store serves one: its id is `url:<address>`, `type: 'url'`,
+// the address in its `url` value, and nothing written as text — so it must draw its
+// address rather than "Empty".
+seed('url:https://example.org/page', '', 'ideas', {
+  type: 'url',
+  url: 'https://example.org/page',
+})
 
 const harness = await serve(source, 'tok')
 
@@ -108,20 +118,43 @@ capabilitiesAtom.set(['scanEvents', 'writeValue', 'writeLink', 'writeEvents', 'p
 startQueryEngine()
 await settle()
 
-check('the outline draws the tree, checkboxes and code and all', () => {
+check('the outline draws the tree, checkboxes and a fenced block and all', () => {
   const out = html()
   assert.match(out, /Shopping/)
   assert.match(out, /Coffee/)
   assert.match(out, /Oats/)
+  // A fenced code block in an ordinary note — the `code` type is gone, so this is
+  // how code reads now: plain monospace through the markdown, not a special row.
+  assert.match(out, /<pre><code/)
   assert.match(out, /const x = 2/)
 })
 
-check('entity text is rendered, and its links leave the app alone', () => {
+check('entity text is rendered, and a link is a pill that leaves the app alone', () => {
   const out = html()
   assert.match(out, /<strong>bold<\/strong>/)
-  assert.match(out, /href="https:\/\/example\.com"/)
+  // Drawn as a pill: an anchor with its own surface, not a bare underlined link.
+  assert.match(
+    out,
+    /<a href="https:\/\/example\.com" target="_blank" rel="noreferrer" class="[^"]*inline-flex[^"]*"/,
+  )
   // A link that navigated this tab would replace the app itself, once installed.
   assert.match(out, /target="_blank"/)
+})
+
+check('a dangerous link draws a pill with no javascript: href', () => {
+  const out = html()
+  // The pill is there (its words survive); the protocol never becomes something tappable.
+  assert.match(out, /bad link/)
+  assert.doesNotMatch(out, /href="javascript:/)
+})
+
+check('a url row draws its address rather than "Empty"', () => {
+  const out = html()
+  assert.match(out, /https:\/\/example\.org\/page/)
+  // The regression this guards: a url is textless, and used to fall through to the
+  // note placeholder. The url row is the only textless one seeded, so no "Empty"
+  // anywhere means the url drew its address instead.
+  assert.doesNotMatch(out, /Empty/)
 })
 
 check('the bar under the thumb offers the four writes and the menu', () => {

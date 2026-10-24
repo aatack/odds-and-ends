@@ -1,10 +1,9 @@
 import React from 'react'
 import { Check, ChevronDown, ChevronRight, Square } from '@untitledui/icons'
-import { Markdown } from '../components/ui/Markdown'
 import { TextEditor } from '../components/ui/TextEditor'
 import { cn } from '../helpers/cn'
 import type { EntityRow, Row } from '../state/derive'
-import { FileView } from './FileView'
+import { RowBody, TEXT } from './types'
 import { useLongPress } from './useLongPress'
 
 // Pure presentation: the flat row list as an indented set of wrapping bullets, with
@@ -14,11 +13,6 @@ import { useLongPress } from './useLongPress'
 /** Pixels of indent per level. Narrower than the desktop's 20: a phone has ~360 to
  * spend, and four levels of 20 is a fifth of the screen gone. */
 const INDENT = 15
-
-// User-written entity text, in the serif the desktop app uses for the same thing.
-// It wraps rather than truncating — a row is as tall as it needs to be.
-const TEXT = 'entity-text block font-serif text-[16px] leading-[1.45]'
-const MONO = 'entity-text block font-mono text-[13px] leading-[1.5]'
 
 /** Section headings grow with prominence, easing off as they nest. */
 const sectionStyle = (depth: number): React.CSSProperties => ({
@@ -165,7 +159,6 @@ const RowView = React.memo(function RowView({
   )
 
   const heading = row.section ? sectionStyle(row.depth) : undefined
-  const isCode = row.type === 'code'
   const pad = { paddingLeft: row.depth * INDENT + 4 }
 
   if (row.kind === 'input') {
@@ -181,7 +174,7 @@ const RowView = React.memo(function RowView({
             setValue={onDraft}
             onBlur={onCommit}
             placeholder={row.section ? 'New section…' : 'New line…'}
-            className={cn(isCode ? MONO : TEXT, 'text-gray-900', row.section && 'font-semibold')}
+            className={cn(TEXT, 'text-gray-900', row.section && 'font-semibold')}
             style={heading}
           />
         </div>
@@ -217,35 +210,21 @@ const RowView = React.memo(function RowView({
             value={row.draft ?? ''}
             setValue={onDraft}
             onBlur={onCommit}
-            className={cn(isCode ? MONO : TEXT, 'text-gray-900', row.section && 'font-semibold')}
+            className={cn(TEXT, 'text-gray-900', row.section && 'font-semibold')}
             style={heading}
           />
-        ) : isCode ? (
-          // Shown, not run: the desktop app runs a code entity in a QuickJS worker
-          // with the whole tool registry bound into it, and none of that belongs on
-          // a phone. It is still readable and editable here.
-          <pre className={cn(MONO, 'overflow-x-auto rounded-md bg-gray-100 px-2 py-1.5 text-gray-800')}>
-            {row.text ?? ''}
-          </pre>
-        ) : row.type === 'file' ? (
-          <>
-            <FileView id={row.id} mimeType={row.mimeType} alt={row.text} />
-            {row.text && <Markdown text={row.text} className={cn(TEXT, 'text-gray-500')} />}
-          </>
-        ) : row.text ? (
-          // Rendered, not printed: a line with no markup comes out exactly as the
-          // plain text did, and the blocks are there for the rows that use them.
-          <Markdown
-            text={row.text}
-            className={cn(
+        ) : (
+          // The body a row draws depends on its `type`; the outline knows none of
+          // them by name, only `RowBody`. See `./types`.
+          <RowBody
+            row={row}
+            headingStyle={heading}
+            textClass={cn(
               TEXT,
               row.section && 'font-semibold',
               row.collapsed && row.hasChildren ? 'text-gray-400' : 'text-gray-900',
             )}
-            style={heading}
           />
-        ) : (
-          <span className={cn(TEXT, 'text-gray-400 italic')}>Empty</span>
         )}
       </div>
     </div>
