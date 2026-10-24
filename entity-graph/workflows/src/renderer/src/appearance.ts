@@ -11,6 +11,7 @@ export const THEMES = [
 ] as const
 
 export const SERIFS = [
+  { id: 'none', name: 'None' },
   { id: 'lora', name: 'Lora' },
   { id: 'source-serif', name: 'Source Serif' },
   { id: 'newsreader', name: 'Newsreader' },

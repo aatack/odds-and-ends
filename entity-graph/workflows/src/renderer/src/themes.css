@@ -7,27 +7,31 @@ html[data-serif='source-serif'] { --font-serif: 'Source Serif 4 Variable', Georg
 html[data-serif='newsreader'] { --font-serif: 'Newsreader Variable', Georgia, serif; --serif-weight: 380; }
 html[data-serif='literata'] { --font-serif: 'Literata Variable', Georgia, serif; --serif-weight: 350; }
 html[data-serif='crimson'] { --font-serif: 'Crimson Pro Variable', Georgia, serif; --serif-weight: 400; }
+/* None: what the human typed is set like everything else (Fira Code, in Terminal). */
+html[data-serif='none'] .mine .bubble .markdown, html[data-serif='none'] .composer textarea, html[data-serif='none'] .row-title {
+  font-family: inherit; font-weight: inherit; letter-spacing: inherit;
+}
 html[data-serif='crimson'] .mine .bubble .markdown, html[data-serif='crimson'] .composer textarea, html[data-serif='crimson'] .row-title { font-size: 1.08em; }
 
 /* ---- Terminal: dark, set in Fira Code, square-ish, a soft green; not a green screen ---- */
 html[data-theme='terminal'] {
   --font-sans: 'Fira Code Variable', ui-monospace, monospace;
-  --color-white: #131614;
-  --color-gray-25: #0c0e0d;
-  --color-gray-50: #0f1210;
-  --color-gray-100: #1b1f1c;
-  --color-gray-200: #262b27;
+  --color-white: #101311;
+  --color-gray-25: #090b0a;
+  --color-gray-50: #0b0d0c;
+  --color-gray-100: #1d221e;
+  --color-gray-200: #2a302b;
   --color-gray-300: #39403b;
-  --color-gray-400: #5a645d;
-  --color-gray-500: #86918a;
-  --color-gray-600: #a7b1aa;
-  --color-gray-700: #c7cfc9;
-  --color-gray-900: #dfe5e0;
+  --color-gray-400: #687369;
+  --color-gray-500: #97a39a;
+  --color-gray-600: #b7c1ba;
+  --color-gray-700: #d4dbd6;
+  --color-gray-900: #eef2ef;
   --color-brand-500: #7fae8a;
   --color-brand-600: #6f9f7b;
   --color-brand-700: #9cc7a6;
 }
-html[data-theme='terminal'] body { font-size: 13px; letter-spacing: 0; font-weight: 380; }
+html[data-theme='terminal'] body { font-size: 13px; letter-spacing: 0; font-weight: 400; }
 html[data-theme='terminal'] .bubble { border-radius: 4px; }
 html[data-theme='terminal'] .theirs .bubble, html[data-theme='terminal'] .mine .bubble { border-radius: 4px; }
 html[data-theme='terminal'] .mine .bubble { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }

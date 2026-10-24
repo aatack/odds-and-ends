@@ -118,7 +118,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   never styles the components' buttons.
 
 - **Styles on trial.** For now the menu switches between three themes (Linear, the default, dark; Notebook, light
-  and warm; Terminal, dark and in Fira Code) and five serifs for what the human typed (their messages, the chat
+  and warm; Terminal, dark and in Fira Code) and five serifs (or none: the UI's own font) for what the human typed (their messages, the chat
   input, task titles). `appearance.ts` keeps the choice and sets `data-theme`/`data-serif` on `<html>`;
   `themes.css` holds the overrides. Code is Fira Code everywhere; weights lean light.
 - **The content pane is a stack of views** (`views.ts`, a Jotai atom kept in
@@ -128,8 +128,8 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   shows its whole state as JSON. A new kind of view is a new `kind`.
 - **There is no sidebar.** The content fills the window in a centred column.
   The bottom-left button opens the menu (bots busy; Tasks, Integrations, MCP,
-  which are views on the stack like any other; poll sources), and the round
-  bottom-right button is Next (Ctrl+D).
+  which are views on the stack like any other; poll sources). Next has no button: it is Ctrl+D, and the app moves on
+  by itself once the task on screen no longer needs you.
 - **The items view** (`ItemsList`) is what shows when the stack is empty, and
   Ctrl+L puts it on top (or, when it is already showing, puts the cursor in its
   search line); a view is never pushed onto an identical one; Ctrl+W and Alt+Left take the top view off, and Alt+Right puts the

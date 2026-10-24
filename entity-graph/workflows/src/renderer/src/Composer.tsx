@@ -48,7 +48,13 @@ export function Composer({
   const preset = catalog.presets[at]
   // What Enter would do now: some presets do something else with nothing typed.
   const shown = !text.trim() && preset.whenEmpty ? preset.whenEmpty : preset
-  useEffect(() => box.current?.focus(), [at])
+  // Focused as it opens (and as the preset changes), with the cursor after any draft rather than before it.
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    el.focus()
+    el.setSelectionRange(el.value.length, el.value.length)
+  }, [at])
   // Where the `@` being completed is, while the finder is open for it.
   const [mentionAt, setMentionAt] = useState<number | null>(null)
   const insertRef = (id: string) => {
