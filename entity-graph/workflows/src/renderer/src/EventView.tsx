@@ -65,12 +65,10 @@ export function EventView({
   )
 }
 
+/** Open or how it ended, by whom, and for how long: `Open · 4m 02s` or `Cancelled · human · 12s`. */
 function status(e: ItemEvent): string {
-  const by = `added by ${e.createdBy}, ${time(e.createdAt)}`
-  if (!e.resolved) return `Open for ${minutes(Date.now() - e.createdAt)}; ${by}.`
-  const how = e.cancelled ? 'Cancelled' : 'Resolved'
-  const took = e.resolvedAt! > e.createdAt ? ` after ${minutes(e.resolvedAt! - e.createdAt)}` : ''
-  return `${how} by ${e.resolvedBy}${took}; ${by}.`
+  if (!e.resolved) return `Open · ${e.createdBy} · ${minutes(Date.now() - e.createdAt)}`
+  return `${e.cancelled ? 'Cancelled' : 'Resolved'} · ${e.resolvedBy} · ${minutes(Math.max(0, e.resolvedAt! - e.createdAt))}`
 }
 
 /** What only some types have to show. */
@@ -91,14 +89,14 @@ function Special({ detail, onOpen }: { detail: EventDetail; onOpen: (id: string)
         <h2>Runs</h2>
         {detail.runs.map((r) => (
           <p key={r.id} className="muted">
-            {time(r.startedAt)} · {r.endedAt ? `took ${minutes(r.endedAt - r.startedAt)}` : 'running'}
+            {time(r.startedAt)} · {r.endedAt ? minutes(r.endedAt - r.startedAt) : 'running'}
             {r.costUsd != null && ` · $${r.costUsd.toFixed(2)}`}
             {r.turns != null && ` · ${r.turns} turns`}
           </p>
         ))}
         {typeof output === 'string' && output && (
           <>
-            <h2>What it said on the way</h2>
+            <h2>Output</h2>
             <Markdown text={output} />
           </>
         )}
@@ -111,8 +109,8 @@ function Special({ detail, onOpen }: { detail: EventDetail; onOpen: (id: string)
         <h2>Script</h2>
         {e.type === 'script' && (
           <p className="muted">
-            {e.times.checks} run(s){e.params.schedule ? `, on [${(e.params.schedule as number[]).join(', ')}] seconds` : ''}
-            {!e.resolved && e.nextCheckAt && `; next at ${new Date(e.nextCheckAt).toLocaleTimeString()}`}
+            {e.times.checks} runs{e.params.schedule ? ` · [${(e.params.schedule as number[]).join(', ')}]s` : ''}
+            {!e.resolved && e.nextCheckAt && ` · next ${new Date(e.nextCheckAt).toLocaleTimeString()}`}
           </p>
         )}
         <Markdown text={fenced(String(code), 'js')} />

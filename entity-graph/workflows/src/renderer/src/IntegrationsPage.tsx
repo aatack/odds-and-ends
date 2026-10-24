@@ -34,7 +34,6 @@ export function IntegrationsPage() {
       <section className="card">
         <h2>Claude</h2>
         <Status check={view.claude} />
-        <Markdown className="muted" text={`${view.claude.workers} workers, each running \`claude -p\` in auto mode, with a shell and this app's MCP tools.`} />
       </section>
 
       <Slack view={view} act={act} />
@@ -98,7 +97,6 @@ function Slack({ view, act }: { view: IntegrationsView; act: (fn: () => Promise<
           Check and add
         </button>
       </div>
-      <Markdown className="muted" text="The token is checked with Slack before it is kept, and stored encrypted with your system keyring." />
     </section>
   )
 }

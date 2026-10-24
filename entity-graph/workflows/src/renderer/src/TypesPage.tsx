@@ -53,10 +53,6 @@ export function TypesPage({ catalog, custom, act }: { catalog: Catalog; custom: 
     })
   return (
     <div className="page types-page">
-      <Markdown
-        className="muted"
-        text="Each type's actions show on its events: the important ones as buttons in the header, the rest in the menu beside them, and all of them on right-click. Your own run as a script with the event's `context` and the safe actions; describe one and **Generate** writes its code."
-      />
       {catalog.events.map((t) => {
         const builtIn = eventActions({ id: '', type: t.type, resolved: false, summary: '' }, { act: async () => {}, skip: noop, attach: noop })
         const mine = custom.filter((c) => c.type === t.type)

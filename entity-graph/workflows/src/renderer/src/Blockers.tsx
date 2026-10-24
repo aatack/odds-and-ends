@@ -10,7 +10,6 @@ import { TaskCard } from './TaskCard'
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
-const shortTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
 /** The item's open blockers, a row each, with how long each has held it. Above the chat input. */
 export function Blockers({ detail, catalog, act, onOpen }: { detail: ItemDetail; catalog: Catalog; act: Act; onOpen: (id: string) => void }) {
@@ -34,32 +33,19 @@ export function Blockers({ detail, catalog, act, onOpen }: { detail: ItemDetail;
 function Row(props: { b: ItemEvent; detail: ItemDetail; catalog: Catalog; act: Act; now: number; onOpen: (id: string) => void }) {
   const { b, detail, catalog, act, now, onOpen } = props
   const menu = useEventMenu()
-  const running = b.type === 'bot' && detail.item.worker !== null
-  const status =
-    b.type === 'bot'
-      ? running
-        ? 'a bot is working'
-        : 'waiting for a free bot'
-      : b.type === 'approval'
-        ? 'waiting for you'
-        : b.type === 'item'
-          ? 'a sub-task'
-        : b.nextCheckAt
-          ? `next check ${shortTime(b.nextCheckAt)}`
-          : ''
   return (
     <div className="blocker" {...menu(b.id)}>
       <div className="blocker-line">
         {b.type !== 'item' && <EventIcon event={b} />}
         {b.type === 'item' ? (
-          <button data-ui className="link blocker-text" title="Open it" onClick={() => onOpen(b.id)}>
+          <button data-ui className="link blocker-text" onClick={() => onOpen(b.id)}>
             <TaskCard event={b} />
           </button>
         ) : (
           <span className="blocker-text">{b.summary}</span>
         )}
         <span className="muted blocker-age" title={new Date(b.createdAt).toLocaleString()}>
-          {status && `${status} · `}for {minutes(Math.max(0, now - b.createdAt))}
+          {minutes(Math.max(0, now - b.createdAt))}
         </span>
         <button className="blocker-cancel" title="Cancel" aria-label="Cancel" onClick={() => act(() => api().cancel(b.id))}>
           <X className="icon" />

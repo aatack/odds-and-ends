@@ -173,7 +173,7 @@ function AppMenu() {
       {open && (
         <div className="menu app-menu-list">
           <div className="menu-note">
-            Bots: {busy} of {w.overview.workers.length} busy
+            Bots {busy}/{w.overview.workers.length}
           </div>
           <button onClick={() => go({ kind: 'items' })}>Tasks</button>
           <button onClick={() => go({ kind: 'directives' })}>Directives</button>
@@ -259,7 +259,7 @@ function ItemsMain() {
       <div className="view">
         <ViewHeader canGoBack={w.views.length > 0} onBack={w.back} title="Tasks" />
         {w.error && <div className="error">{w.error}</div>}
-        {w.empty && <p className="muted view-note">Nothing needs you right now.</p>}
+        {w.empty && <p className="muted view-note">Nothing needs you.</p>}
         <div className="view-body">
           <ItemsList
             items={w.overview.items}

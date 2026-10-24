@@ -42,9 +42,6 @@ export function McpPage() {
 
       <section className="card">
         <h2>Connect</h2>
-        <p className="muted">
-          Connect anything else to this app, e.g. a Claude Code session. It acts as you: on this machine only, while the app is open.
-        </p>
         {view.error && <p className="error-text">{view.error}</p>}
         <div className="kv">
           <span>URL</span>
@@ -73,10 +70,6 @@ export function McpPage() {
         <h2>
           Actions <span className="count">{catalog.actions.length}</span>
         </h2>
-        <Markdown
-          className="muted"
-          text="Everything clients connected above and your scripts (as `actions.name(args)`) can do. Unsafe actions change things outside this app: no agent, nor any script an agent wrote, is given them; they ask you for one as an approval instead."
-        />
         {catalog.actions.map((a) => (
           <div key={a.name} className="tool">
             <div className="row-inline">
@@ -93,10 +86,6 @@ export function McpPage() {
         <h2>
           Events <span className="count">{catalog.events.length}</span>
         </h2>
-        <Markdown
-          className="muted"
-          text="What can happen to a task. A blocker stays open until what it waits for happens; the rest resolve as they are added. A bot adds blockers in its output, and an after chains one onto another."
-        />
         {catalog.events.map((h) => (
           <div key={h.type} className="tool">
             <div className="row-inline">
@@ -105,9 +94,7 @@ export function McpPage() {
             </div>
             <Markdown className="tool-description" text={h.description} />
             <Params schema={h.params} />
-            <div className="muted">
-              Resolves with <code>{h.data}</code>
-            </div>
+            <code className="muted">→ {h.data}</code>
           </div>
         ))}
       </section>

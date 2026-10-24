@@ -166,7 +166,7 @@ export function ItemsList(props: {
           })}
         </section>
       ))}
-      {!flat.length && <p className="muted">{text.trim() ? 'Nothing matches. Tab makes it a new task.' : 'No tasks yet.'}</p>}
+      {!flat.length && <p className="muted">{text.trim() ? 'Nothing matches.' : 'No tasks.'}</p>}
     </div>
   )
 }

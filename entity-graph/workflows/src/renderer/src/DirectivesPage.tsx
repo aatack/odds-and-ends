@@ -49,10 +49,6 @@ export function DirectivesPage({ act, onOpen }: { act: Act; onOpen: (id: string)
     })
   return (
     <div className="page directives-page">
-      <Markdown
-        className="muted"
-        text="What you are working on at the moment, in a few lines of markdown. Bots are not told these: they read the latest when an item needs more context, and may add one when you give feedback."
-      />
       <section className="card add">
         <div className="builder-row directive-input">
           <GrowingTextarea
