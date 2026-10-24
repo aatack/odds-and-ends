@@ -241,6 +241,8 @@ export interface WorkflowsAPI {
   close: (id: string) => Promise<void>
   /** Attaches any event to an item (`targetId`), as an attachment event in it. */
   attach: (eventId: string, targetId: string) => Promise<void>
+  /** Where an item stands now, in a few lines, from a cheap model. */
+  summarise: (id: string) => Promise<string>
   /** Marks an item as a priority, or not. */
   setPriority: (id: string, on: boolean) => Promise<void>
   /** The human did it outside the tool. Recorded, so reviews can find it. */

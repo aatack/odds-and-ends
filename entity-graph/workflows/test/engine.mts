@@ -20,7 +20,12 @@ let clock = 1_000_000
 const ghCalls: string[][] = []
 let checks: 'pending' | 'failed' | 'passed' = 'pending'
 let prState = 'OPEN'
+let summaryArgs: string[] = []
 const exec = async (cmd: string, args: string[]) => {
+  if (cmd === 'claude' && args[0] === '-p') {
+    summaryArgs = args
+    return '- It is about the PR.\n'
+  }
   if (cmd === 'claude') return '2.1.309 (Claude Code)\n'
   assert.equal(cmd, 'gh')
   ghCalls.push(args)
@@ -547,6 +552,19 @@ await admin.addSlack('xoxp-good-1234')
 const cat = catalog(engine)
 assert.ok(cat.actions.find((a) => a.name === 'slack_post')!.unsafe)
 assert.deepEqual(cat.presets.map((p) => p.id), ['message', 'bot', 'pr-merged', 'pr-checks'])
+// Summarising: a cheap model, no tools, given the item; kept in the trace, not added to the item.
+{
+  const s = (await engine.create('Summed up'))!
+  await engine.send(s, 'message', 'The plan is to ship on Friday')
+  assert.equal(await engine.summarise(s), '- It is about the PR.')
+  assert.equal(summaryArgs[summaryArgs.indexOf('--model') + 1], 'haiku')
+  assert.equal(summaryArgs[summaryArgs.indexOf('--tools') + 1], '')
+  assert.match(summaryArgs[1], /Task: Summed up/)
+  assert.match(summaryArgs[1], /ship on Friday/)
+  assert.equal(engine.children(s).length, 1)
+  assert.ok(engine.trace(s).some((t) => t.kind === 'summarised'))
+  await engine.close(s)
+}
 // Priority items come first in Next, the most recently active first; then the rest, the longest waiting first.
 {
   for (const i of engine.overview().items.filter((i) => !i.closed)) await engine.close(i.id)

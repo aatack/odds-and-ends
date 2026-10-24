@@ -309,6 +309,30 @@ export class Engine extends EventEmitter {
     return first?.id ?? null
   }
 
+  /**
+   * Where an item stands now, in a few lines, from a cheap model (Haiku, with no
+   * tools and no session kept): what is current rather than its history. Kept
+   * in the trace; not added to the item.
+   */
+  async summarise(itemId: string, actor = 'human'): Promise<string> {
+    const item = this.must(itemId)
+    const lines = this.children(itemId).map(
+      (e) => `- ${e.createdBy} ${e.type}${e.resolved ? '' : ' (still open)'}: ${e.type === 'message' ? String(e.params.text ?? '') : (e.message ?? e.summary)}`,
+    )
+    const prompt = [`Task: ${item.title} (${item.closed ? 'resolved' : item.withHuman ? "the human's turn" : 'waiting on others'})`, 'Its history, oldest first:', ...lines].join('\n')
+    const started = this.now()
+    const out = await this.exec('claude', [
+      '-p', prompt, '--model', 'haiku', '--tools', '', '--strict-mcp-config', '--no-session-persistence',
+      '--system-prompt',
+      'Summarise where this task stands now for the person who owns it: what it is, what has been decided or done that still matters, ' +
+        'what is open or waiting and on whom, and what they need to do next, if anything. The current state, not the history: no ' +
+        'narration of who said what when. A few short markdown bullets, plain words, nothing else.',
+    ])
+    const summary = out.trim()
+    this.mark(itemId, 'summarised', { actor, data: { ms: this.now() - started, summary } })
+    return summary
+  }
+
   /** Marks an item as a priority, or not, with a priority event in it. */
   async setPriority(itemId: string, on: boolean, actor = 'human'): Promise<void> {
     if (this.must(itemId).priority === on) return
