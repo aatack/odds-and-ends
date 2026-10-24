@@ -1,7 +1,7 @@
 import type { EventScan } from '../../../src/core/pensive/types'
 import type { AppEvent, LinkAction, ResourceRecord } from '../core/types'
 import { uuid } from '../helpers/uuid'
-import { callSource, currentUser } from './connection'
+import { callSource, canCall, currentUser } from './connection'
 
 // Typed wrappers over the source's tools. Thin, except where a structural edit
 // needs several events to land together — see `writeEvents` below.
@@ -58,6 +58,37 @@ export function writeValue(entityId: string, key: string, value: unknown): Promi
     timestamp: Date.now(),
   }
   return write([{ type: 'value', ...written }], () => callSource('writeValue', written))
+}
+
+/**
+ * Write several values to one entity as a single batch — the detail form's save.
+ * One timestamp across the lot, so undo takes the whole save back rather than one
+ * field of it; a value of `null` clears its key, as `writeValue` does.
+ *
+ * A source that can't take a raw batch (`writeEvents`) gets one `writeValue` per key
+ * instead — the same way `resources` gates on `readResource`. They still land within
+ * the undo window in the ordinary case, so a save is usually still one step to undo.
+ */
+export async function writeValues(
+  entityId: string,
+  entries: Record<string, unknown>,
+): Promise<unknown> {
+  const pairs = Object.entries(entries)
+  if (!canCall('writeEvents')) {
+    for (const [key, value] of pairs) await writeValue(entityId, key, value ?? null)
+    return undefined
+  }
+  const at = Date.now()
+  const author = currentUser()
+  const events: AppEvent[] = pairs.map(([key, value]) => ({
+    type: 'value',
+    timestamp: at,
+    author,
+    entityId,
+    key,
+    value: value ?? null,
+  }))
+  return writeEvents(events)
 }
 
 /** Link actions, as the `writeLink` tool numbers them. */

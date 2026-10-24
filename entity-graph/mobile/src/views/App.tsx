@@ -7,6 +7,7 @@ import { ArgSheet } from './ArgSheet'
 import { BottomBar } from './BottomBar'
 import { Connect } from './Connect'
 import { CrumbSheet } from './CrumbSheet'
+import { DetailsSheet } from './DetailsSheet'
 import { Header } from './Header'
 import { Outline } from './Outline'
 import { SettingsSheet } from './SettingsSheet'
@@ -79,6 +80,8 @@ function Sheets({ sheet }: { sheet: Sheet | null }): React.JSX.Element | null {
       return <SettingsSheet />
     case 'args':
       return <ArgSheet toolId={sheet.toolId} args={sheet.args} />
+    case 'details':
+      return <DetailsSheet entityId={sheet.entityId} />
     case 'pick':
       return null
   }

@@ -11,6 +11,7 @@
 import assert from 'node:assert/strict'
 import React from 'react'
 import { renderToString } from 'react-dom/server'
+import { BUILTIN_VALUES, TYPE_ID } from '../../src/core/builtins'
 import { MemorySource, serve } from './source'
 
 // --- The browser bits the view layer expects --------------------------------
@@ -74,6 +75,35 @@ seed('danger', 'A [bad link](javascript:alert(1)) in a note', 'ideas')
 seed('url:https://example.org/page', '', 'ideas', {
   type: 'url',
   url: 'https://example.org/page',
+})
+// A custom type and one instance of it, as the store serves them: the type says
+// `type: type` and carries a schema; the detail form is drawn from that schema.
+seed('recipe', 'Recipe', '@index', {
+  type: 'type',
+  schema: {
+    type: 'object',
+    properties: {
+      source: { type: 'string', title: 'Source', description: 'Where it came from' },
+      servings: { type: 'integer', description: 'How many it feeds' },
+      vegetarian: { type: 'boolean', description: 'Meat-free?' },
+      nutrition: { type: 'object', properties: { calories: { type: 'integer' } } },
+    },
+    required: ['source'],
+  },
+})
+seed('pancakes', 'Pancakes', '@index', {
+  type: 'recipe',
+  source: 'Grandma',
+  servings: 4,
+  vegetarian: true,
+  nutrition: { calories: 300 },
+})
+// The store-served type of types, seeded here as the real store would serve it
+// (`core/builtins` BUILTIN_VALUES): its schema names `text`, `schema` and `onLoad`,
+// so its own detail form draws an `onLoad` code box and a read-only `schema`.
+seed(TYPE_ID, String(BUILTIN_VALUES[TYPE_ID].text ?? 'Type'), '@index', {
+  type: BUILTIN_VALUES[TYPE_ID].type,
+  schema: BUILTIN_VALUES[TYPE_ID].schema,
 })
 
 const harness = await serve(source, 'tok')
@@ -243,6 +273,31 @@ check('a tool that needs typing opens a form with every argument on it', () => {
   assert.match(out, /Set a value/)
   assert.match(out, /Key/)
   assert.match(out, /Value \(JSON\)/)
+})
+
+openSheet({ kind: 'details', entityId: 'pancakes' })
+check('the detail form draws a field per schema property, by widget', () => {
+  const out = html()
+  assert.match(out, /Pancakes/) // the sheet's title is the entity's label
+  assert.match(out, /Recipe/) // and its type's name beneath
+  assert.match(out, /Source/) // a property's `title`, with its description
+  assert.match(out, /Where it came from/)
+  assert.match(out, /servings/) // a property with no title shows its key
+  assert.match(out, /vegetarian/)
+  assert.match(out, /Yes/) // the boolean, true, as a word
+  assert.match(out, /nutrition/)
+  assert.match(out, /calories/) // the object property, as read-only JSON
+  assert.match(out, /desktop/) // and the note that it is edited there
+})
+
+openSheet({ kind: 'details', entityId: 'type' })
+check('a type entity edits onLoad as a monospace code box and schema read-only', () => {
+  const out = html()
+  assert.match(out, /onLoad/) // the field label
+  assert.match(out, /<textarea/) // drawn as a growing multi-line editor
+  assert.match(out, /font-mono/) // in monospace (x-monospace)
+  assert.match(out, /json-schema\.org/) // the schema field shown as read-only JSON
+  assert.match(out, /Edited on the desktop app/)
 })
 
 openSheet({ kind: 'pick', toolId: 'entity.move', args: {}, argName: 'toParentId', prompt: 'Tap the new parent' })

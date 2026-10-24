@@ -16,6 +16,8 @@ export type Sheet =
   | { kind: 'settings' }
   /** Prompting for a tool's remaining arguments. */
   | { kind: 'args'; toolId: string; args: Record<string, unknown> }
+  /** An entity's values as a form, drawn from its type's schema. */
+  | { kind: 'details'; entityId: string }
   /** Picking an entity by tapping a row — the far end of a move or a link. */
   | { kind: 'pick'; toolId: string; args: Record<string, unknown>; argName: string; prompt: string }
 

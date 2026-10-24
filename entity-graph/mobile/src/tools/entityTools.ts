@@ -4,7 +4,8 @@ import * as A from '../state/actions'
 import { childOrder } from '../state/query'
 import { getView } from '../state/store'
 import { last } from '../state/types'
-import { createEntity, link, nudge, reparent, unlink, writeValue } from '../source/entity'
+import { openSheet } from '../state/ui'
+import { createEntity, link, nudge, reparent, unlink, writeValue, writeValues } from '../source/entity'
 import { asId, previousSibling, requireId, rowAbove, siblingsUnder } from './context'
 import { commitEdit } from './edit'
 import { needsForward, needsParent, needsRow, type ArgSpec, type ToolSpec } from './types'
@@ -344,6 +345,34 @@ export const ENTITY_TOOLS: ToolSpec[] = [
     run: async ({ entityId, key, value }) => {
       await writeValue(requireId(entityId, 'Entity id'), String(key), value ?? null)
       return {}
+    },
+  },
+  {
+    id: 'entity.details',
+    label: 'Details',
+    aliases: ['form', 'fields', 'values', 'properties', 'schema', 'inspect'],
+    hint: 'Edit',
+    enabled: needsRow,
+    // The one tool whose run opens a sheet of its own rather than asking the
+    // dispatcher for arguments: the form is too much to express as `ArgSpec`s, and
+    // what it writes is a diff it computes itself. See `views/DetailsSheet`.
+    run: (_args, ctx) => {
+      openSheet({ kind: 'details', entityId: requireId(ctx.entityId, 'Entity id') })
+    },
+  },
+  {
+    id: 'entity.details.save',
+    label: 'Save details',
+    // Not in the palette: the detail form dispatches it with the keys that changed,
+    // as one batch so one undo takes the whole save back.
+    listed: false,
+    mutates: true,
+    args: [entityArg(), { name: 'values', label: 'Values', kind: 'json' }],
+    run: async ({ entityId, values }) => {
+      const changes = (values ?? {}) as Record<string, unknown>
+      if (!Object.keys(changes).length) return { mutated: false }
+      await writeValues(requireId(entityId, 'Entity id'), changes)
+      return { message: 'Saved' }
     },
   },
 

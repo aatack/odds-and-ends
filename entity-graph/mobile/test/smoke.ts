@@ -264,6 +264,22 @@ check('one undo takes a whole create back, values and link together', () => {
   assert.ok(!childTexts('@index').includes('Damsons'))
 })
 
+// The detail form saves the keys that changed, as one step one undo takes back.
+await pause()
+A.selectPath(['@index', 'b'])
+await runTool('entity.details.save', { entityId: 'b', values: { colour: 'yellow', ripe: true } })
+await settle()
+check('saving details writes the changed values', () => {
+  assert.equal(source.entity('b').values.colour, 'yellow')
+  assert.equal(source.entity('b').values.ripe, true)
+})
+await runTool('app.undo')
+await settle()
+check('one undo reverts a whole save at once', () => {
+  assert.equal(source.entity('b').values.colour, undefined)
+  assert.equal(source.entity('b').values.ripe, undefined)
+})
+
 // Removing a row from its parent leaves the selection where the eye is.
 A.selectPath(['@index', 'a'])
 await runTool('entity.unlink')
