@@ -242,6 +242,14 @@ The walk reads `root, a, a1, a2, b, c`, one node at a time.
 - The store is one SQLite file, embedded in the program.
 - Why: no server, simple setup, full transactions, and good indexes for many small reads and writes.
 
+## 14a. HTTP API
+
+- An optional HTTP API wraps the store. It is one JSON endpoint per store operation, with no logic of its own.
+- Why a separate cargo feature: the library gains no web dependencies when it is not used. The store itself still needs no server.
+- Why thin: the HTTP layer only maps JSON to store calls, so the store stays the one place with the rules.
+- The embedder registers write middleware on the store before it serves it, so the HTTP writes go through the same hook.
+- The store is not thread safe, so it sits behind one mutex and each call runs on a blocking task.
+
 ## 15. Out of scope and pending
 
 - Diffs between branches are out of scope for now.

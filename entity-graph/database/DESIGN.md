@@ -956,6 +956,19 @@ Still open:
 
 ---
 
+## 16. HTTP API
+
+An optional HTTP API wraps the store. It is behind the `server` cargo feature, so the library has no web dependencies by default.
+
+- It is a thin wrapper. There is one endpoint for each public store operation. The server holds no logic of its own: it parses JSON, calls one store method, and returns JSON.
+- The default bind address is loopback (`127.0.0.1`). A bearer token can protect it.
+- The store is not thread safe, so the server keeps it behind one mutex and runs each call on a blocking task. Calls do not run in parallel.
+- The library types keep no serde derives. The server has its own wire types that convert to and from them.
+- Closures cannot cross JSON, so `Filter::Custom` is not exposed. A `walk` takes its `descend` and `include` predicates as filters.
+- See `API.md` for every endpoint and `ARCHITECTURE.md` for the "why".
+
+---
+
 ## Appendix A. Alexander's rules, verbatim (2026-10-12)
 
 > - Each event has a per-branch sequence ID; unique on (branch ID, sequence ID). Sequence IDs order events even when merged out of order.
