@@ -121,6 +121,10 @@ When rows above the anchor change, the anchor's index is not the true number of 
 
 In both conditions, the hook changes every index by the same number (`shift`), so that the root is row 0. For rows above row 0, the hook first counts all the rows above the anchor (`countBefore`), so one shift is sufficient. (A shift for each window would cause one more shift for each window above it, one React update each.) It calls `onShift(shift)`. The table must then scroll by `shift` rows in the same frame. The rows thus stay at the same place on the screen.
 
+The hook calls `onShift` one render after it changes the numbers. Then the table's height already includes the new rows, and the browser does not cut the scroll short.
+
+**Too many rows above.** Sometimes many rows appear above row 0 at one time. Example: a filter showed one row deep in the tree, and the user clears the filter. If there are more than `maxShift` rows above (default 1000), or the browser cannot count them all yet, the hook does not keep the position. It moves the anchor to the root at row 0, and `onShift` scrolls the table to the top. A large change of the query is a new view, so the top is a good place to start.
+
 The table must turn off the browser's own scroll anchoring (`overflow-anchor: none`). The hook does this work. If the browser also does it, the two corrections add together.
 
 ### 6.5 The length of the table

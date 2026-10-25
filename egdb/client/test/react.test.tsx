@@ -140,13 +140,14 @@ describe.skipIf(!haveServer)('hooks', () => {
     const anchor = order[1500]!.split('/')
     // A table scrolls with each shift, as the demo does.
     let range = { start: 0, end: 30 }
-    const { result } = renderHook(
+    const { result, rerender } = renderHook(
       () =>
         useWalk({
           root: ['root'],
           follow: query.follow,
           range,
           initialAnchor: { path: anchor, index: 0 },
+          maxShift: 5000,
           onShift: (s) => {
             shifts.push(s)
             range = { start: range.start + s, end: range.end + s }
@@ -157,7 +158,61 @@ describe.skipIf(!haveServer)('hooks', () => {
     await waitFor(() => expect(shifts.length).toBeGreaterThan(0))
     expect(result.current.anchorIndex).toBe(1500)
     expect(shifts).toEqual([1500])
+    rerender()
     expect(result.current.rowAt(1500)?.path).toEqual(anchor)
+  })
+
+  it('goes back to the top when too many rows turn up above row 0', async () => {
+    const egdb = new Egdb({ client: server.client, branch, author: 'test', preloadSteps: 100_000 })
+    await egdb.preloadWalk(['root'], query, ['root'], 'forward')
+    const shifts: number[] = []
+    const { result } = renderHook(
+      () =>
+        useWalk({
+          root: ['root'],
+          follow: query.follow,
+          range: { start: 10, end: 40 },
+          initialAnchor: { path: order[1500]!.split('/'), index: 10 },
+          onShift: (s) => shifts.push(s),
+        }),
+      { wrapper: wrapper(egdb) },
+    )
+    await waitFor(() => expect(result.current.anchor).toEqual(['root']))
+    expect(result.current.anchorIndex).toBe(0)
+    expect(shifts).toEqual([-10])
+    expect(result.current.rowAt(10)?.path.join('/')).toBe(order[10])
+  })
+
+  it('clearing a filter keeps the row that was on top', async () => {
+    const egdb = new Egdb({ client: server.client, branch, author: 'test' })
+    const target = order[300]!.split('/')
+    await egdb.write(op.set(target.at(-1)!, 'text', 'giraffe'))
+    let include: ReturnType<typeof f.eq> | undefined = f.containsIgnoreCase('text', 'giraffe')
+    let range = { start: 0, end: 30 }
+    const shifts: number[] = []
+    const { result, rerender } = renderHook(
+      () =>
+        useWalk({
+          root: ['root'],
+          follow: query.follow,
+          include,
+          range,
+          onShift: (s) => {
+            shifts.push(s)
+            range = { start: range.start + s, end: range.end + s }
+          },
+        }),
+      { wrapper: wrapper(egdb) },
+    )
+    await waitFor(() => expect(result.current.rowAt(0)?.path).toEqual(target))
+    include = undefined
+    rerender()
+    await waitFor(() => expect(shifts.length).toBeGreaterThan(0))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    rerender()
+    expect(shifts).toEqual([300])
+    expect(range.start).toBe(300)
+    expect(result.current.rowAt(300)?.path).toEqual(target)
   })
 
   it('redo sends an undone batch again', async () => {
