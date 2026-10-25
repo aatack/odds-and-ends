@@ -306,7 +306,7 @@ curl -s -X POST $URL/find -H 'content-type: application/json' \
 
 ### POST /walk
 
-Request: `{branch, start, follow, descend?, include?, options?}`.
+Request: `{branch, start, follow, descend?, include?, collapsed?, options?}`.
 
 - `start` is a path; its last ID is the first node to visit.
 - `follow` maps an entity's type to the `[link_type, direction]` pairs to
@@ -315,8 +315,13 @@ Request: `{branch, start, follow, descend?, include?, options?}`.
   tested on each node's id and values. Absent means always true. `include`
   decides if a node is in the result; `descend` decides if the walk goes below
   it.
+- `collapsed` is a list of paths (each from `start[0]`) that the walk does not
+  go below, as if `descend` said no for them. A client uses it for the rows
+  that the user has folded.
 - `options` is `{steps?, read_ahead?: {depth?, width?}, return_cache?,
-  visited?}`.
+  visited?, direction?}`. `direction` is `"forward"` (the default) or
+  `"backward"`: a backward walk visits the same nodes in reverse order, from
+  `start` back to `start[0]`, nearest first. It cannot use `visited`.
 
 Response: `{rows, next, steps, loads}`, plus `cache` when `return_cache` is set
 and `visited` when a visited set is used. `next` is the path to resume from, or

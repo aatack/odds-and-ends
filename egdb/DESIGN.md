@@ -1,10 +1,9 @@
-# egdb (entity-graph database): design
+# egdb: design
 
 Status: draft 3, for review.
 Drafts 2 and 3 add Alexander's decisions of 2026-10-12 and 2026-10-13.
 This document is the design.
 The implementation is in this folder (Rust crate `egdb`).
-Source analysis of the old store: not in the repository.
 
 Writing rule:
 
@@ -14,7 +13,7 @@ Writing rule:
 Marks:
 
 - **[RULE]**: a decision from Alexander. Do not change it.
-- **[CHOSEN]**: an interpretation that we chose where a rule is not clear. Section 14 lists all of them.
+- **[CHOSEN]**: an interpretation that we chose where a rule is not clear. Section 13 lists all of them.
 - **[TBD: Alexander]**: a placeholder. Alexander will give the semantics later.
 
 ---
@@ -104,7 +103,7 @@ Later rules (2026-10-12). These rules replace parts of the rules above and of dr
 2. Keep one store in one file. Do not use a separate server.
 3. Make setup easy. `cargo add` must be sufficient.
 4. Make reads and writes fast.
-5. Keep the event model close to entity-graph. Value events and link events stay. Section 12 gives the migration.
+5. Keep the event model small: value events and link events only.
 6. Put only current events in the hot tables. Move superseded events to history tables, one for each event type. Keep history queryable.
 7. Support branches as agent sandboxes (R2 to R11).
 8. Make each write batch one transaction.
@@ -113,10 +112,9 @@ Later rules (2026-10-12). These rules replace parts of the rules above and of dr
 
 ## 3. Non-goals (for now)
 
-1. Bindings for the TypeScript app.
+1. Native bindings (napi-rs and the like).
    - The crate is a standalone database.
-   - The app does not call it.
-   - There is no napi-rs and no HTTP layer.
+   - Other languages reach it through the HTTP API (section 15) and the TypeScript client in `client/`.
 2. Diffs between branches (R18).
 3. Conflict resolution (R4).
 4. Sync between two store files. R9 prepares for it.
@@ -137,7 +135,6 @@ Later rules (2026-10-12). These rules replace parts of the rules above and of dr
 **Decision: SQLite via `rusqlite` with `bundled`.**
 
 - The workload is many small writes and many point and prefix reads. SQLite does this well.
-- The old store is SQLite, so migration is simple.
 - One writer is acceptable for a local, embedded store.
 
 ---
@@ -699,10 +696,12 @@ pub type Follow = HashMap<String, Vec<(String, Direction)>>; // source entity's 
 pub struct WalkNode { pub id: String, pub values: BTreeMap<String, Value> }
 pub struct WalkRow { pub path: Vec<String>, pub node: WalkNode }
 pub struct ReadAhead { pub depth: usize, pub width: usize }             // default 2, 32
+pub enum WalkDirection { Forward /* default */, Backward }
 pub struct WalkOptions { pub steps: usize,                              // default 1000
                          pub read_ahead: ReadAhead,
                          pub return_cache: bool,                        // default false
-                         pub visited: Option<HashSet<String>> }         // default None
+                         pub visited: Option<HashSet<String>>,          // default None
+                         pub direction: WalkDirection }                 // default Forward
 pub struct WalkCache { pub nodes: HashMap<String, WalkNode>, pub links: HashMap<String, LinkGroups> }
 pub struct Walk { pub rows: Vec<WalkRow>,
                   pub next: Option<Vec<String>>,   // path of the next node to visit; None = exhausted
@@ -715,7 +714,7 @@ fn walk(&self, branch: BranchId, start: &[&str], follow: &Follow,
         options: WalkOptions) -> Result<Walk>;
 ```
 
-The rules [CHOSEN, I19]. They follow the TS query walk (`src/core/query.ts`):
+The rules [CHOSEN, I19]:
 
 1. **Start path.** The last ID of `start` is the first node to visit. The earlier IDs are its ancestors. The walk never goes above `start[0]`.
 2. **Order.** The walk is depth-first. The next path is the first child. If there is no child, it is the next sibling of the deepest ancestor that has one.
@@ -728,8 +727,9 @@ The rules [CHOSEN, I19]. They follow the TS query walk (`src/core/query.ts`):
 9. **Cycles (always).** A node that is already on the current path is skipped completely. It is not visited, emitted, expanded or counted.
 10. **Visited set (option).** With `visited = Some(set)`, an entity in the set is skipped in the same way, on every path. "Visited" means visited (a step), not emitted. The walk adds each visited node to the set and returns it. Pass `next` and the set back together to resume. The start node is never skipped.
 11. **Cache (option).** With `return_cache`, the walk returns its cache: the values of each loaded entity, and its links for the followed pairs. Entities that read-ahead loaded are in it too.
+12. **Backward (option).** With `direction = Backward`, the walk visits the nodes of the forward order in reverse order. From a path, the next node is the last descendant of the previous sibling. If there is no previous sibling, it is the parent. The walk ends after `start[0]`. A path whose last ID is no longer a child of its parent goes to the parent. `descend`, the cycle rule and the step limit apply as in a forward walk. Read-ahead loads the last children first. A backward walk cannot use a visited set (`Error::Invalid`). Why: a client that shows rows from a point in the middle of a tree must also find the rows above that point (see `client/PARADIGM.md`).
 
-**Loading (R31).** This follows `scanEvents` in `src/core/pensive/tools.ts`:
+**Loading (R31).**
 
 - The walk resolves the flat view once.
 - A cache miss loads the missing entities. Then it loads up to `read_ahead.depth` layers of their followed targets. Each layer has at most `min(read_ahead.width, steps left)` entities.
@@ -834,33 +834,7 @@ fn prove(&self, branch: BranchId, item: &str, roots: &[&str],
 
 **Choice of default (BENCHMARKS.md, "Prove").** Backward wins by CPU time in every scenario except one sub-millisecond case (a doc shared with 100 groups, with one group as the root). Bidirectional loses badly when a root has a large fan-out or there are many roots: it must expand the forward side at least once (1M: 11.4 ms vs 0.09 ms, and 51 ms vs 0.3 ms). Walk is never the fastest: it expands one node at a time, and on large no-path searches it costs about 2× Backward.
 
-## 12. Migration from entity-graph SQLite
-
-1. Open the old file read-only. Write a new file. Do not overwrite a file.
-2. Make one branch, `main`.
-3. Read the old `value_events` and `link_events` in order `(timestamp, table, id)`.
-4. Make one batch for each `(author, timestamp)` group.
-   - Keep the author.
-   - Use the old timestamp as `WriteBatch.timestamp`.
-5. **Values.**
-   - An old value event becomes `SetValue` with a typed value.
-   - An old `null` stays `Null`. This is now "clear" (R13), the same meaning as before.
-6. **Links.**
-   - Use `link_type = "child"`.
-   - Replay the old ordering logic (`rollupEntity`) for each source.
-   - An old add with no moves becomes `SortOrder::Timestamp`. This gives the same order as the old append.
-   - An old remove becomes `Removed`.
-   - An old move (actions 2 and 3) becomes `Explicit(f)`. `f` is the midpoint of the new neighbours' sort keys.
-   - When a source gets its first explicit key, its links that use `Timestamp` keep their timestamp keys. Mixed keys therefore still sort correctly.
-7. **Duplicates.** Identical old events stay separate events. Each gets its own seq.
-8. **Builtins and resources.** These are not migrated (Q9).
-9. **Verify.**
-   - Compare the old rollup of each entity with the new `values` and `children`.
-   - Stop on the first difference. Write nothing.
-
----
-
-## 13. Performance notes
+## 12. Performance notes
 
 1. **Hot tables stay small.** They hold one row per target per branch. History does not slow normal reads. Undo removes events, so it does not add rows.
 2. **One B-tree search per point read.**
@@ -885,7 +859,7 @@ fn prove(&self, branch: BranchId, item: &str, roots: &[&str],
 
 ---
 
-## 14. Interpretations we chose [CHOSEN]
+## 13. Interpretations we chose [CHOSEN]
 
 | # | Where | Choice |
 | --- | --- | --- |
@@ -914,7 +888,7 @@ fn prove(&self, branch: BranchId, item: &str, roots: &[&str],
 
 ---
 
-## 15. Open questions
+## 14. Open questions
 
 Resolved from draft 1:
 
@@ -923,7 +897,7 @@ Resolved from draft 1:
 - **Q4** (edge properties): no. Links carry no data (R14).
 - **Q5 of draft 1** (link uniqueness): one link for each `(source, destination, type)` (R15).
 - **Q10** (undo scope): R8.
-- **Q12** (callers): standalone. The app does not call it.
+- **Q12** (callers): standalone. Clients use the HTTP API (section 15).
 - **Q16** (first appearance and wide ranges): **resolved by R28.**
 - **Q17** (follow wildcard): **resolved: no wildcard.** An entity whose type has no entry in the follow map follows nothing (Alexander, 2026-10-14).
 - **Q14 of draft 3** (history in frozen reads): **resolved by R25.** All reads use one roll-up. A bounded interval reads current and history.
@@ -956,7 +930,7 @@ Still open:
 
 ---
 
-## 16. HTTP API
+## 15. HTTP API
 
 An optional HTTP API wraps the store. It is behind the `server` cargo feature, so the library has no web dependencies by default.
 

@@ -193,7 +193,7 @@ fn walk_pages(w: &mut World, pages: usize, cold: bool) -> (usize, f64) {
                 &follow,
                 |_, _| true,
                 |_, _| true,
-                WalkOptions { steps: 1000, read_ahead: ReadAhead::default(), return_cache: false, visited: None },
+                WalkOptions { steps: 1000, read_ahead: ReadAhead::default(), return_cache: false, visited: None, ..WalkOptions::default() },
             )
             .unwrap();
         secs += t.elapsed().as_secs_f64();

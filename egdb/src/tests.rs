@@ -1450,6 +1450,104 @@ fn walk_continuation_round_trip_equals_one_long_walk() {
     );
 }
 
+fn walk_back(
+    f: &Fixture,
+    start: &[&str],
+    steps: usize,
+    descend: impl FnMut(&[String], &WalkNode) -> bool,
+) -> Walk {
+    f.store
+        .walk(
+            f.main,
+            start,
+            &follow_children(),
+            descend,
+            |_, _| true,
+            WalkOptions {
+                steps,
+                direction: WalkDirection::Backward,
+                ..WalkOptions::default()
+            },
+        )
+        .unwrap()
+}
+
+#[test]
+fn walk_backward_is_the_forward_order_reversed_from_any_row() {
+    let mut f = Fixture::new();
+    walk_tree(&mut f);
+    // c1 also links to a, so a subtree shows twice and a cycle back to root
+    // is skipped both ways.
+    f.write(
+        f.main,
+        "alex",
+        vec![
+            Op::link("c1", "a", "child", SortOrder::Explicit(100.0)),
+            Op::link("c1", "root", "child", SortOrder::Explicit(101.0)),
+        ],
+    );
+    let forward = walk_ids(&walk_all(&f, f.main, &["root"], 100));
+    for (at, path) in forward.iter().enumerate() {
+        let start: Vec<&str> = path.split('/').collect();
+        let back = walk_back(&f, &start, 100, |_, _| true);
+        let mut expected: Vec<String> = forward[..=at].to_vec();
+        expected.reverse();
+        assert_eq!(walk_ids(&back), expected, "from {path}");
+        assert_eq!(back.next, None);
+    }
+}
+
+#[test]
+fn walk_backward_pages_and_respects_descend() {
+    let mut f = Fixture::new();
+    walk_tree(&mut f);
+    let last = ["root", "c", "c1", "c2"];
+    let full = walk_back(&f, &last, 100, |_, _| true);
+    for page in 1..=3 {
+        let mut rows = Vec::new();
+        let mut start: Vec<String> = last.iter().map(|s| (*s).to_owned()).collect();
+        loop {
+            let refs: Vec<&str> = start.iter().map(String::as_str).collect();
+            let w = walk_back(&f, &refs, page, |_, _| true);
+            assert!(w.steps <= page);
+            rows.extend(w.rows);
+            match w.next {
+                Some(next) => start = next,
+                None => break,
+            }
+        }
+        assert_eq!(rows, full.rows, "page size {page}");
+    }
+    // Collapsing a: the walk back from b goes to a, not into a's children.
+    let collapsed = walk_back(&f, &["root", "b"], 100, |_, n| n.id != "a");
+    assert_eq!(walk_ids(&collapsed), ["root/b", "root/a", "root"]);
+    // A path that is no longer in the tree goes back to its parent.
+    let stale = walk_back(&f, &["root", "gone"], 100, |_, _| true);
+    assert_eq!(walk_ids(&stale), ["root/gone", "root"]);
+}
+
+#[test]
+fn walk_backward_refuses_a_visited_set() {
+    let mut f = Fixture::new();
+    walk_tree(&mut f);
+    let err = f
+        .store
+        .walk(
+            f.main,
+            &["root"],
+            &follow_children(),
+            |_, _| true,
+            |_, _| true,
+            WalkOptions {
+                visited: Some(HashSet::new()),
+                direction: WalkDirection::Backward,
+                ..WalkOptions::default()
+            },
+        )
+        .unwrap_err();
+    assert!(matches!(err, Error::Invalid(_)));
+}
+
 #[test]
 fn walk_does_not_revisit_the_path_but_repeats_other_paths() {
     let mut f = Fixture::new();

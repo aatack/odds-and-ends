@@ -1,8 +1,8 @@
-# entity-graph database (`egdb`)
+# egdb
 
 A standalone, event-sourced store of entities, values and links, with branches.
 It runs on SQLite (`rusqlite` with the `bundled` feature), so a store is one file and needs no server.
-The TypeScript app does not call it.
+An optional HTTP server exposes it, and [`client/`](client) is a TypeScript client with React hooks for it.
 
 The design is in [`DESIGN.md`](DESIGN.md).
 
@@ -107,7 +107,7 @@ store.add_middleware(|ctx: &WriteContext, _ops: &mut Vec<Op>| {
   - Undo
   - Write middleware
   - REST API (behind the `server` feature)
-- **Walk:** `walk` is a paginated depth-first walk (type-based follow map, continue/include predicates, step limit, `next` path to resume, read-ahead, optional cache and visited set). See DESIGN.md section 11.1.
+- **Walk:** `walk` is a paginated depth-first walk (type-based follow map, continue/include predicates, step limit, `next` path to resume, read-ahead, optional cache and visited set). It can also walk backward, in the reverse order. See DESIGN.md section 11.1.
 - **Find:** `find` gives a paginated flat list of entities that match a `Filter` (Eq, ranges, contains, prefix, in, null, and/or/not, custom), ordered by entity id, insertion, or a value. See DESIGN.md section 11.2.
 - **Prove:** `prove` shows that an item is reachable from one of a set of roots through a type-keyed relationship map (for example, permissions). It does a backward BFS from the item, returns a shortest path with its links, and answers `Proved`, `NoPath` or `Unknown` (budget). It works on every view. See DESIGN.md section 11.3.
 
@@ -120,6 +120,11 @@ cargo run --release --features server --bin egdb-server -- notes.db --addr 127.0
 ```
 
 An embedder can open a `Store`, register middleware, and serve it with `egdb::server::{router, serve}`. Every endpoint, its request and response, and curl examples are in [`API.md`](API.md).
+
+## TypeScript client and demo
+
+- [`client/`](client) is the `egdb-client` npm package: a typed client for every endpoint, and React hooks (`useWalk`, `useWalkViewport`, `useFind`, `useWrite`) over a browser cache with optimistic writes. [`client/PARADIGM.md`](client/PARADIGM.md) explains how it reads a large tree.
+- [`demo/`](demo) is an outline app on the hooks, to try them.
 
 ## Develop
 

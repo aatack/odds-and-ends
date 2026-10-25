@@ -413,6 +413,9 @@ struct WalkReq {
     descend: Option<FilterDto>,
     #[serde(default)]
     include: Option<FilterDto>,
+    /// Paths that the walk does not go below, as if `descend` said no.
+    #[serde(default)]
+    collapsed: Vec<Vec<String>>,
     #[serde(default)]
     options: Option<WalkOptionsDto>,
 }
@@ -426,6 +429,7 @@ async fn walk(
     let follow: Follow = body.follow.into();
     let descend = body.descend.map(Filter::from);
     let include = body.include.map(Filter::from);
+    let collapsed = body.collapsed.into_iter().collect();
     let options: WalkOptions = body.options.unwrap_or_default().into();
     let result = on_store(&state, move |s| {
         let refs: Vec<&str> = start.iter().map(String::as_str).collect();
@@ -433,8 +437,8 @@ async fn walk(
             id,
             &refs,
             &follow,
-            node_predicate(descend),
-            node_predicate(include),
+            node_predicate(descend, collapsed),
+            node_predicate(include, Default::default()),
             options,
         )
     })

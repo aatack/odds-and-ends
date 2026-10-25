@@ -354,6 +354,7 @@ fn run(store: &Store, branch: BranchId, read_ahead: ReadAhead) -> (usize, usize,
                     read_ahead,
                     return_cache: false,
                     visited: None,
+                    ..WalkOptions::default()
                 },
             )
             .expect("walk");
