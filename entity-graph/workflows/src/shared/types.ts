@@ -8,7 +8,12 @@
  * stay open until something happens (a bot replies, CI finishes, an approval is
  * given, a child item closes).
  */
-export type EventKind = 'item' | 'message' | 'attachment' | 'priority' | 'rename' | 'summary' | 'action' | 'approval' | 'bot' | 'github' | 'slack' | 'after' | 'script' | 'directive' | 'snooze'
+export type EventKind =
+  | 'item' | 'message' | 'attachment' | 'priority' | 'rename' | 'summary' | 'action' | 'approval' | 'bot' | 'github' | 'slack'
+  | 'after' | 'script' | 'directive' | 'snooze' | 'agent' | 'configure' | 'assign' | 'watch'
+
+/** The human, as an assignee. Every other assignee is a bot, by its id. */
+export const HUMAN = 'human'
 
 /** An event as it is added. `ref` names it, so an `after` added alongside can point at it. */
 export interface EventSpec {
@@ -81,15 +86,20 @@ export interface Item {
   how: string | null
   /** Its open children, oldest first. */
   blockers: ItemEvent[]
-  /** Open, and blocked by nothing but the human's own approvals: it is the human's turn. */
+  /**
+   * Who it is assigned to: 'human' and bots' ids, by the latest assign event for each. An item with no assignee is
+   * the human's.
+   */
+  assignees: string[]
+  /** Open, assigned to the human (or to nobody), and blocked by nothing but the human's own approvals: it is the human's turn. */
   withHuman: boolean
   /** Marked as a priority (by its latest priority event): Next takes it before the rest. */
   priority: boolean
   /** When it wakes, while a snooze blocks it (the latest, if several). */
   snoozedUntil: number | null
-  /** The worker running a bot on it, while one is. Held in memory only. */
-  worker: number | null
-  /** Its Claude session, once it has one. */
+  /** The bot running on it now, if one is. Held in memory only. */
+  bot: string | null
+  /** Its own Claude session, from before bots were their own items: kept for the record. */
   sessionId: string | null
   /** Since when it has been as it is: the last child added or resolved. */
   since: number
@@ -112,9 +122,11 @@ export interface TraceEntry {
 
 export interface BotRun {
   id: string
-  itemId: string
+  /** The bot that ran; null for a run from before bots were their own items. */
+  agentId: string | null
+  /** The items it was woken for. */
+  itemIds: string[]
   eventIds: string[]
-  worker: number
   startedAt: number
   endedAt: number | null
   costUsd: number | null
@@ -144,9 +156,52 @@ export interface EventDetail {
   item: ItemDetail | null
 }
 
+/**
+ * A bot: an `agent` event, in no item, configured by the `configure` events in it. It is assigned items (and may
+ * watch others), and wakes when anything happens in them. One bot runs one thing at a time, in one Claude session
+ * of its own, in a folder of its own.
+ */
+export interface Agent {
+  id: string
+  name: string
+  /** What it is for and how it works: given with every run, after the app's own instructions. */
+  instructions: string
+  /** Who runs it: 'claude' (Claude Code) for now. */
+  provider: string
+  /** The model, as the provider names it (for Claude: opus, sonnet, haiku or a full id); empty for the default. */
+  model: string
+  /** How long it waits after the last thing that happened in its items before it wakes, so a burst of work goes in one run. */
+  debounceMinutes: number
+  /** Where it runs: its own folder, which lasts, so it can keep repositories there. */
+  folder: string
+  /** Its Claude session, once it has run. */
+  sessionId: string | null
+  createdAt: number
+  /** Deleted (its agent event cancelled): it is assigned nothing more and never runs again. */
+  deleted: boolean
+  /** The run going now, if any. */
+  runId: string | null
+  /** When it wakes next, if something new is waiting for it (it may already be due). */
+  wakesAt: number | null
+  /** The open items assigned to it. */
+  assigned: string[]
+  /** The open items it watches. */
+  watching: string[]
+}
+
+/** An assign event, as the "recently assigned" lists read it. */
+export interface Assignment {
+  itemId: string
+  title: string
+  assignee: string
+  on: boolean
+  by: string
+  at: number
+}
+
 export interface Overview {
   items: Item[]
-  workers: { id: number; itemId: string | null }[]
+  bots: Agent[]
   /** Items the human had on screen in the last week, the most recent first. */
   viewed: string[]
   /** Items the human attached something to, or attached, in the last week, the most recent first. */
@@ -222,7 +277,7 @@ export interface Check {
 
 export interface IntegrationsView {
   github: Check
-  claude: Check & { workers: number }
+  claude: Check & { bots: number }
   slack: { id: string; name: string; team: string; user: string; tokenHint: string }[]
 }
 
@@ -283,6 +338,18 @@ export interface WorkflowsAPI {
   /** The human did it outside the tool. Recorded, so reviews can find it. */
   handledOutside: (id: string) => Promise<void>
   pollSources: () => Promise<void>
+  /** Makes a bot (no id) or changes one: a configure event in it. */
+  saveBot: (bot: { id?: string; name: string; instructions: string; provider: string; model: string; debounceMinutes: number; folder?: string }) => Promise<string>
+  /** Deletes a bot: what it was assigned goes back to the human. */
+  deleteBot: (id: string) => Promise<void>
+  /** Assigns an item to the human or a bot (on), or takes the assignment away (off). */
+  assign: (itemId: string, to: string, on: boolean) => Promise<void>
+  /** Assign events, the newest first: for one assignee (or anyone), in the last `days`. */
+  assignments: (assignee: string | null, days: number) => Promise<Assignment[]>
+  /** The open items the human owns or had assigned to them, untouched for `hours`, the longest untouched first. */
+  stale: (hours: number) => Promise<Item[]>
+  /** Wakes a bot now, whatever its debounce says. */
+  wakeBot: (id: string) => Promise<void>
   integrations: () => Promise<IntegrationsView>
   addSlack: (token: string) => Promise<void>
   removeSlack: (id: string) => Promise<void>
@@ -313,3 +380,15 @@ export interface CustomAction {
   /** Shown as a button in an event's header; the rest are in the menu beside them. */
   important: boolean
 }
+
+/** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
+export const API_METHODS = [
+  'overview', 'detail', 'eventDetail', 'catalog', 'next', 'viewed', 'skipped', 'create', 'send', 'approve', 'cancel', 'close', 'attach',
+  'summarise', 'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'directives',
+  'addDirective', 'editDirective', 'setPriority', 'rename', 'snooze', 'unsnooze', 'handledOutside', 'pollSources', 'saveBot', 'deleteBot',
+  'assign', 'assignments', 'stale', 'wakeBot', 'integrations', 'addSlack', 'removeSlack', 'mcp', 'regenerateMcpToken', 'setMcpPort',
+] as const satisfies readonly ApiMethod[]
+
+type ApiMethod = Exclude<keyof WorkflowsAPI, 'onChange' | 'onBack' | 'onForward'>
+/** Fails to compile while a call is left out of API_METHODS. */
+export const API_METHODS_COMPLETE: Exclude<ApiMethod, (typeof API_METHODS)[number]> extends never ? true : never = true

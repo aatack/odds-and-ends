@@ -40,23 +40,44 @@ export function eventSchema(types: EventType[]): Record<string, unknown> {
   }
 }
 
-/** What a bot's run must return. */
+/** What a bot's run must return: an update for each item it did something in. */
 export function botOutputSchema(types: EventType[]): Record<string, unknown> {
   return {
     type: 'object',
     properties: {
-      message: {
-        type: 'string',
-        description:
-          'To the human: what you did, in a line or two, or one direct question. No preamble and no waffle. Leave it out if there is nothing to say.',
-      },
-      events: {
+      updates: {
         type: 'array',
         description:
-          'Blockers to add to the item: waits, approvals, more bots, afters. With none, and the item not closed, it is the human\'s turn.',
-        items: eventSchema(types),
+          'One for each item you were woken for (and any other you did something in). An item you were woken for and say ' +
+          'nothing of goes back to the human.',
+        items: {
+          type: 'object',
+          properties: {
+            item: { type: 'string', description: "The item's id." },
+            message: {
+              type: 'string',
+              description:
+                'To the human, in the item: what you did, in a line or two, or one direct question. No preamble and no waffle. ' +
+                'Leave it out if there is nothing to say.',
+            },
+            events: {
+              type: 'array',
+              description: 'Events to add in the item: waits, approvals, afters, child items, assigns, watches.',
+              items: eventSchema(types),
+            },
+            assign: {
+              type: 'array',
+              items: { type: 'string' },
+              description:
+                "Who has the item from now on: 'human', and bots by name; yourself to keep it. Left out, the item goes back " +
+                'to the human, unless you added a blocker to it (a wait): then you keep it, and wake when it resolves.',
+            },
+            close: { type: 'boolean', description: 'The item is done.' },
+          },
+          required: ['item'],
+          additionalProperties: false,
+        },
       },
-      close: { type: 'boolean', description: 'The item is done.' },
     },
     additionalProperties: false,
   }

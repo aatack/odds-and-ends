@@ -1,4 +1,4 @@
-// The app's MCP server. Whoever connects is an agent: a worker's bot, at
+// The app's MCP server. Whoever connects is an agent: a bot's run, at
 // /mcp/<runId> on a free loopback port, or anything else (Claude Code, say), at
 // /mcp on a fixed loopback port behind a bearer token. Both get the same tools:
 // every action but the unsafe ones, which no agent is ever given (they are the
@@ -27,7 +27,8 @@ export function makeServer(engine: Engine, scope: Scope): McpServer {
     if (scope.kind === 'operator') return { engine, author: 'bot', actor: 'mcp', itemId: null, runId: null }
     const run = engine.activeRun(scope.runId)
     if (!run) throw new Error('This run has ended.')
-    return { engine, author: 'bot', actor: 'bot', itemId: run.itemId, runId: scope.runId }
+    // What a run does is recorded as its bot's, and its calls are traced in the bot (a run may span items).
+    return { engine, author: 'bot', actor: `bot:${run.agentId}`, itemId: run.agentId, runId: scope.runId }
   }
   // The unsafe rule: no agent is given an unsafe action.
   const offered = engine.actions.filter((a) => !a.unsafe)

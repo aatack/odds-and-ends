@@ -11,7 +11,6 @@ export class Admin {
   constructor(
     private engine: Engine,
     private mcp: Mcp,
-    private workers: number,
     private fetchFn: typeof fetch = fetch,
   ) {}
 
@@ -29,7 +28,7 @@ export class Admin {
     ])
     return {
       github,
-      claude: { ...claude, workers: this.workers },
+      claude: { ...claude, bots: this.engine.agents().length },
       slack: this.engine.settings.slackWorkspaces().map(({ token, ...w }) => ({ ...w, tokenHint: `${token.slice(0, 5)}…${token.slice(-4)}` })),
     }
   }

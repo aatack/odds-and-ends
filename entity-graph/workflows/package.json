@@ -8,8 +8,10 @@
     "start": "electron-vite build && electron . --no-sandbox",
     "build": "electron-vite build",
     "postinstall": "electron-builder install-app-deps",
-    "test": "tsx test/engine.mts",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
+    "test": "tsx test/engine.mts && tsx test/egdb.mts",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "backend": "electron-vite build && node out/main/backend.js",
+    "egdb:build": "cd ../../egdb && cargo build --release --features server --bin egdb-server"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -37,6 +39,7 @@
     "@fontsource-variable/source-serif-4": "^5.3.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^11.1.2",
+    "egdb-client": "file:../../egdb/client",
     "fuzzysort": "^3.1.0",
     "jotai": "^2.10.3",
     "lucide-react": "^0.468.0",
