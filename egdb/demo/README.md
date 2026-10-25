@@ -8,8 +8,7 @@ are calculated in the browser, data loads in batches, and writes show at once.
 # 1. the server (from egdb/)
 cargo run --release --features server --bin egdb-server -- demo.db
 
-# 2. the client package, then the demo (from egdb/demo/)
-(cd ../client && npm install)
+# 2. the demo (from egdb/demo/); this also builds ../client
 npm install
 npm run seed          # ~12k entities: node seed.mjs [url] [depth] [fanout]
 npm run dev           # proxies /api to EGDB_URL (default http://127.0.0.1:7878)
