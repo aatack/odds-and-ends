@@ -21,11 +21,12 @@
     "dist",
     "src",
     "README.md",
-    "PARADIGM.md"
+    "PARADIGM.md",
+    "scripts"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "prepare": "npm run build",
+    "build": "node scripts/build.mjs",
+    "prepare": "node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
