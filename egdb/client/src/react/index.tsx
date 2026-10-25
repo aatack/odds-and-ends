@@ -3,13 +3,13 @@
 // the load. See PARADIGM.md for the walk and its anchor.
 
 import { useAtomValue } from 'jotai/react'
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { EntityRecord, EntityView } from '../cache.js'
 import { localize, rowsOf, type FindRowView } from '../find.js'
 import { op } from '../ops.js'
 import { stableJson, queryKey, type Egdb, type FindQueryOptions } from '../store.js'
-import type { EntityId, Filter, LinkPair, Op, Path, Sort, Value, WriteResult } from '../types.js'
-import { computeWindow, pathKey, type TreeRow, type WalkQuery, type WalkWindow } from '../walk.js'
+import type { EntityId, Filter, Follow, LinkPair, Op, Path, Sort, Value, WriteResult } from '../types.js'
+import { computeWindow, pathKey, type TreeRow, type WalkQuery } from '../walk.js'
 
 export type { FindRowView } from '../find.js'
 
@@ -60,6 +60,8 @@ export interface Writer {
   archive(entity: EntityId): Promise<WriteResult>
   /** Undo this author's newest batch (not optimistic: it waits for the server). */
   undo(): ReturnType<Egdb['undo']>
+  /** Send the newest undone batch again (optimistic); `undefined` when there is none. */
+  redo(): ReturnType<Egdb['redo']>
 }
 
 export function useWrite(): Writer {
@@ -72,9 +74,16 @@ export function useWrite(): Writer {
       unlink: (source, destination, linkType) => egdb.write(op.unlink(source, destination, linkType)),
       archive: (entity) => egdb.write(op.archive(entity)),
       undo: () => egdb.undo(),
+      redo: () => egdb.redo(),
     }),
     [egdb],
   )
+}
+
+/** How many of this client's batches can be undone and redone. */
+export function useHistory(): { undo: number; redo: number } {
+  const egdb = useEgdb()
+  return useAtomValue(egdb.historyAtom, { store: egdb.store })
 }
 
 // --- walk --------------------------------------------------------------------
@@ -82,41 +91,115 @@ export function useWrite(): Writer {
 export interface UseWalkParams {
   /** The walk's root path. Rows are its last entity and that entity's subtree. */
   root: Path
-  /** Where rows are counted from. Default: the root. */
-  anchor?: Path
-  query: WalkQuery
-  /** First row wanted, relative to the anchor (may be negative). */
-  offset: number
-  /** Number of rows wanted. */
-  limit: number
+  /** Which links to follow out of an entity, by its type. */
+  follow: Follow
+  /** A node is a row only when it matches. */
+  include?: Filter
+  /** The walk goes below a node only when it matches. */
+  descend?: Filter
+  /** Rows not to go below (folded rows), by path. */
+  collapsed?: readonly Path[]
+  /** Without `range`: how many rows from the top. Default 500. */
+  limit?: number
+
+  // For a virtualized table:
+
+  /**
+   * The rows on screen, by absolute index (`end` exclusive). With it, rows
+   * are counted from an anchor near the screen, so only the rows near the
+   * screen are calculated, however far down the table is. See PARADIGM.md.
+   */
+  range?: { start: number; end: number }
+  /** Rows to calculate past each end of the range. Default 20. */
+  overscan?: number
+  /** The calculated window grows and moves in steps of this many rows. Default 50. */
+  chunk?: number
+  /** How far (in rows) the range may move from the anchor before the anchor moves to it. Default 100. */
+  reanchorAfter?: number
+  /** The anchor to start at. Default: the root, as row 0. */
+  initialAnchor?: { path: Path; index: number }
+  /**
+   * Rows were found or lost above the anchor, so every index moved by
+   * `shift`. Scroll by `shift` rows in the same frame to keep the view still.
+   */
+  onShift?: (shift: number) => void
   /** Rows past each end of the window to check for missing data. Default 50. */
   lookahead?: number
 }
 
-export interface UseWalkResult extends WalkWindow {
-  /** Some row in the window is loading, or has children loading. */
+export interface UseWalkResult {
+  /** The calculated rows, in order, from absolute index `first`. */
+  rows: TreeRow[]
+  first: number
+  /** The row at an absolute index, if it is calculated. */
+  rowAt(index: number): TreeRow | undefined
+  /** Rows for a virtualizer: the rows known so far plus a margin, until the walk ends. */
+  count: number
+  /** The walk has no rows after the last of `rows`. */
+  atEnd: boolean
+  /** Some row is loading, or has children loading. */
   loading: boolean
+  /** The anchor path (as it resolves now) and its absolute index. */
+  anchor: EntityId[]
+  anchorIndex: number
+  /** Move the anchor: `path` will be row `index`. For "reveal this row". */
+  reanchor(path: Path, index: number): void
 }
 
 /**
- * Rows [offset, offset + limit) of a walk, counted from `anchor`. The rows are
- * stepped out of the cache on every render, so writes, folding and filter
- * changes show at once; missing data shows as loading rows and is preloaded in
- * batches.
+ * A walk of the tree under `root`, calculated from the cache on every render,
+ * so writes, folding and filter changes show at once. Missing data shows as
+ * loading rows and is preloaded in batches.
+ *
+ * Plain use, `useWalk({ root, follow })`, gives the first `limit` rows. Give
+ * `range` (the rows on screen) for a virtualized table of any size.
  */
 export function useWalk(params: UseWalkParams): UseWalkResult {
   const egdb = useEgdb()
   const view = useEntityView()
-  const { root, anchor, query, offset, limit, lookahead } = params
-  const rootKey = pathKey(root)
-  const anchorKey = anchor ? pathKey(anchor) : ''
+  const { root, follow, include, descend, collapsed, range, onShift } = params
+  const virtual = range !== undefined
+  const overscan = virtual ? (params.overscan ?? 20) : 0
+  const chunk = virtual ? Math.max(1, params.chunk ?? 50) : 1
+  const reanchorAfter = params.reanchorAfter ?? 100
+  const lookahead = params.lookahead ?? 50
+  const visible = range ?? { start: 0, end: params.limit ?? 500 }
+
+  const query: WalkQuery = { follow, include, descend, collapsed }
   const key = queryKey(query)
+  const rootKey = pathKey(root)
+  const [state, setState] = useState(() => ({
+    rootKey,
+    anchor: [...(params.initialAnchor?.path ?? root)],
+    anchorIndex: params.initialAnchor?.index ?? 0,
+  }))
+  // A new root starts again at its top.
+  let current = state.rootKey === rootKey ? state : { rootKey, anchor: [...root], anchorIndex: 0 }
+  // A new query (filter, folding) unrolls from the first row on screen, so
+  // the table shows the new rows of the same place in the tree.
+  const last = useRef<{ key: string; rows: TreeRow[]; first: number } | null>(null)
+  if (virtual && last.current && last.current.key !== key) {
+    const top = last.current.rows[visible.start - last.current.first]
+    if (top && (top.key !== pathKey(current.anchor) || current.anchorIndex !== visible.start)) {
+      current = { ...current, anchor: top.path, anchorIndex: visible.start }
+    }
+  }
+  if (current !== state) setState(current)
+  const { anchor, anchorIndex } = current
+  const anchorKey = pathKey(anchor)
+
+  // The window, relative to the anchor, in whole chunks: scrolling inside a
+  // chunk asks for the same window, so nothing is calculated again.
+  const from = Math.floor((visible.start - overscan - anchorIndex) / chunk) * chunk
+  const to = Math.ceil((visible.end + overscan - anchorIndex) / chunk) * chunk
   const window = useMemo(
-    () => computeWindow(view, { root, anchor, query, offset, limit, lookahead }),
+    () => computeWindow(view, { root, anchor, query, offset: from, limit: Math.max(0, to - from), lookahead }),
     // The keys stand for root, anchor and query, which are often new objects with the same content.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [view, rootKey, anchorKey, key, offset, limit, lookahead],
+    [view, rootKey, anchorKey, key, from, to, lookahead],
   )
+
+  // Preload where the cache lacks data.
   const forward = window.missing.forward
   const backward = window.missing.backward
   const forwardKey = forward ? pathKey(forward) : null
@@ -126,84 +209,14 @@ export function useWalk(params: UseWalkParams): UseWalkResult {
     if (backward) void egdb.preloadWalk(root, query, backward, 'backward')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [egdb, rootKey, key, forwardKey, backwardKey])
-  const loading = window.rows.some((row) => row.status === 'loading' || row.childrenLoading)
-  return { ...window, loading }
-}
 
-export interface UseWalkViewportParams {
-  root: Path
-  query: WalkQuery
-  /** The rows on screen: absolute indices, `end` exclusive. */
-  range: { start: number; end: number }
-  /** Rows to compute past each end of the range. Default 20. */
-  overscan?: number
-  /**
-   * How far (in rows) the range may move from the anchor before the anchor
-   * moves to the first row on screen. Default 0: the anchor is always the
-   * first row on screen, so nothing that changes above the screen can move
-   * what is on it.
-   */
-  reanchorAfter?: number
-  /** The anchor to start at. Default: the root, as row 0. */
-  initialAnchor?: { path: Path; index: number }
-  /**
-   * Rows were found or lost above the anchor, so every index moved by
-   * `shift`. Scroll by `shift` rows in the same frame to keep the view still.
-   */
-  onShift?: (shift: number) => void
-}
-
-export interface WalkViewport {
-  /** Rows for the virtualizer. Grows as the user nears the end, until the walk ends. */
-  count: number
-  /** The row at an absolute index, if it is computed. */
-  rowAt(index: number): TreeRow | undefined
-  /** The computed rows, from absolute index `first`. */
-  rows: TreeRow[]
-  first: number
-  /** The anchor path and its absolute index. */
-  anchor: EntityId[]
-  anchorIndex: number
-  /** Move the anchor: `path` will be row `index`. For "reveal this row", or a new root. */
-  reanchor(path: Path, index: number): void
-  atEnd: boolean
-  loading: boolean
-}
-
-/**
- * `useWalk` for a virtualized table. The table says which rows are on screen;
- * this keeps the anchor near them, so that only a few hundred rows are ever
- * stepped, however far down the table is scrolled. See PARADIGM.md.
- */
-export function useWalkViewport(params: UseWalkViewportParams): WalkViewport {
-  const { root, query, range, onShift } = params
-  const overscan = params.overscan ?? 20
-  const reanchorAfter = params.reanchorAfter ?? 0
-  const rootKey = pathKey(root)
-  const [state, setState] = useState(() => ({
-    rootKey,
-    anchor: [...(params.initialAnchor?.path ?? root)],
-    anchorIndex: params.initialAnchor?.index ?? 0,
-  }))
-  // A new root starts again at its top.
-  const current = state.rootKey === rootKey ? state : { rootKey, anchor: [...root], anchorIndex: 0 }
-  if (current !== state) setState(current)
-  const { anchor, anchorIndex } = current
-
-  const walk = useWalk({
-    root,
-    anchor,
-    query,
-    offset: range.start - anchorIndex - overscan,
-    limit: Math.max(0, range.end - range.start) + 2 * overscan,
-    lookahead: overscan,
-  })
-  const first = anchorIndex + walk.first
-  const known = walk.rows.length > 0
+  const first = anchorIndex + window.first
+  const known = window.rows.length > 0
+  last.current = { key, rows: window.rows, first }
 
   // Rows above index 0, or a gap above the first row of the tree: move every
   // index so that the tree's first row is row 0.
-  const shift = known && (first < 0 || (walk.atStart && first > 0)) ? -first : 0
+  const shift = known && (first < 0 || (window.atStart && first > 0)) ? -first : 0
   useLayoutEffect(() => {
     if (shift === 0) return
     setState((s) => ({ ...s, anchorIndex: s.anchorIndex + shift }))
@@ -211,32 +224,41 @@ export function useWalkViewport(params: UseWalkViewportParams): WalkViewport {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shift, anchorIndex])
 
-  // The range has moved far from the anchor: move the anchor to the range.
-  const target = Math.abs(range.start - anchorIndex) > reanchorAfter ? walk.rows[range.start - first] : undefined
+  // The screen has moved far from the anchor: move the anchor to the screen.
+  const target =
+    virtual && Math.abs(visible.start - anchorIndex) > reanchorAfter ? window.rows[visible.start - first] : undefined
   useEffect(() => {
     if (shift !== 0 || !target) return
-    setState((s) => ({ ...s, anchor: target.path, anchorIndex: range.start }))
+    setState((s) => ({ ...s, anchor: target.path, anchorIndex: visible.start }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shift, target?.key, range.start])
+  }, [shift, target?.key, visible.start])
 
-  const end = first + walk.rows.length
-  const count = walk.atEnd ? end : Math.max(end, range.end) + Math.max(1, overscan)
-  const rows = walk.rows
-  const rowAt = useCallback((index: number) => rows[index - first], [rows, first])
+  // Without a range, the rows are exactly [0, limit).
+  const rows = useMemo(
+    () => (virtual ? window.rows : window.rows.slice(Math.max(0, -first), visible.end - first)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [window, virtual, first, visible.end],
+  )
+  const rowsFirst = virtual ? first : Math.max(0, first)
+  const end = rowsFirst + rows.length
+  const atEnd = window.atEnd && end >= first + window.rows.length
+  const count = atEnd || !virtual ? end : Math.max(end, visible.end) + Math.max(1, overscan)
+  const rowAt = useCallback((index: number) => rows[index - rowsFirst], [rows, rowsFirst])
   const reanchor = useCallback(
     (path: Path, index: number) => setState((s) => ({ ...s, anchor: [...path], anchorIndex: index })),
     [],
   )
+  const loading = rows.some((row) => row.status === 'loading' || row.childrenLoading)
   return {
-    count: Math.max(0, count),
-    rowAt,
     rows,
-    first,
-    anchor: walk.anchor,
+    first: rowsFirst,
+    rowAt,
+    count: Math.max(0, count),
+    atEnd,
+    loading,
+    anchor: window.anchor,
     anchorIndex,
     reanchor,
-    atEnd: walk.atEnd,
-    loading: walk.loading,
   }
 }
 

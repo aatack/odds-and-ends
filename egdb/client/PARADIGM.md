@@ -65,6 +65,14 @@ The same request is not sent two times. After a write, a preload can be sent aga
 4. If the server accepts the write, the browser reads the changed entities again. Then it replaces the pending write with the server's data in one update. Thus the screen does not flicker.
 5. A load that started before a write ends is not allowed to replace the data of that write. Each write increments a counter. Each entity keeps the counter of its last write. A load does not change an entity that has a later counter than the load.
 
+**Undo and redo.** The client keeps a list of the batches that it wrote, with the sequence IDs that the server gave them.
+
+1. `undo()` waits for the writes that are not confirmed. Then it asks the server to undo the author's newest batch. Undo is not optimistic: the browser does not know the values that the batch replaced.
+2. The server says which sequence IDs it removed. The client finds its batch with those IDs, reads its entities again, and keeps its ops on a redo list.
+3. `redo()` sends the newest ops on the redo list again, as a new write. This write is optimistic, like all writes.
+4. A new write (not a redo) clears the redo list.
+5. If the undone batch is not one that this client wrote (the same author on a different client), the client cannot redo it. It reads all cached entities again.
+
 A write to an entity that the cache does not know makes a new local entity. Its link groups are empty, not "not loaded". This is correct for a new entity. For an old entity that the browser did not load, the server's data replaces it when the write is confirmed.
 
 ## 6. The anchor
@@ -85,13 +93,18 @@ The problem also occurs in these conditions:
 - The rows are calculated from the anchor:
   - Forward steps give the rows at and below the anchor.
   - Backward steps give the rows above the anchor.
-- The browser calculates only the rows on the screen, plus some rows on each side (`overscan`). The cost does not change with the distance from the top of the tree.
+- The browser calculates only the rows near the screen. The cost does not change with the distance from the top of the tree.
 
-`useWalkViewport` moves the anchor with the table:
+When `useWalk` gets a `range`, it moves the anchor with the table:
 
 1. The table gives the range of rows on the screen (`range`).
-2. When the first row on the screen is not the anchor, the anchor moves to that row. The anchor's index becomes the index of that row. (The `reanchorAfter` option permits some distance first. The default is 0.)
-3. Thus the anchor is the first row on the screen. A change above the screen does not move the rows on the screen. The rows above the anchor are calculated again from the anchor when the user scrolls up.
+2. The hook calculates a **window** of rows around the range: the range, plus `overscan` rows on each side, extended to whole **chunks** of 50 rows (`chunk`). While the user scrolls inside the window, the window does not change. The hook does not calculate the rows again. It only gives other rows from the same window.
+3. When the screen is more than 100 rows (`reanchorAfter`) from the anchor, the anchor moves to the first row on the screen. The anchor's index becomes the index of that row.
+4. Thus the browser calculates rows only when the screen goes into a new chunk, or when the data or the query changes. The rows that it calculates are at most `reanchorAfter` + the window from the anchor.
+
+A change between the anchor and the screen moves the rows on the screen. Example: rows above the screen, but below the anchor, are expanded by another write. A smaller `reanchorAfter` keeps the anchor nearer to the screen and makes this less frequent. With `reanchorAfter: 0`, the anchor is always the first row on the screen, and a change above the screen never moves the rows on it. The cost is a new anchor (and a calculation) when the first row on the screen changes.
+
+Without a `range`, the anchor is the root at row 0, and `useWalk` gives the first `limit` rows: a plain walk.
 
 ### 6.3 Changes near the anchor
 
@@ -125,9 +138,11 @@ const ROW = 26
 const [range, setRange] = useState({ start: 0, end: 40 })
 const virtualizer = useRef<Virtualizer<HTMLDivElement, Element> | null>(null)
 
-const walk = useWalkViewport({
+const walk = useWalk({
   root: ['root'],
-  query: { follow: { list: [['child', 'outbound']] }, collapsed, include },
+  follow: { list: [['child', 'outbound']] },
+  collapsed,
+  include,
   range,
   // Rows were found or lost above the anchor: scroll with them.
   onShift: (shift) => {
@@ -147,7 +162,7 @@ virtualizer.current = useVirtualizer({
 // A row that is not calculated yet is undefined: draw a placeholder.
 ```
 
-`demo/src/App.tsx` is a full example: fold, filter, edit, add and archive.
+`demo/src/App.tsx` is a full example: fold, filter, edit, add, archive, undo and redo.
 
 ## 8. Find
 
