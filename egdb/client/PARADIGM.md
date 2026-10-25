@@ -47,9 +47,9 @@ Results:
 
 When the calculation finds that it needs data that is not in the cache:
 
-1. It marks the row as loading. It does not stop. It continues as if the row has no children.
+1. It marks the row as loading. It does not stop. It continues as if the row has no children. With an `include` filter, a row whose values are not loaded is not shown: the filter cannot test it, and most such rows go again when they load.
 2. It records the path of the first missing row, forward and backward from the anchor (`WalkWindow.missing`).
-3. The hook sends one `walk` request to the server from that path. The request has the same `follow`, `descend` and `collapsed` values as the calculation. It asks for about 200 steps (`preloadSteps`), in the same direction, and for the walk's cache (`return_cache`).
+3. The hook sends one `walk` request to the server from that path. The request has the same `follow`, `descend` and `collapsed` values as the calculation. It asks for about 200 steps (`preloadSteps`), in the same direction, and for the walk's cache (`return_cache`). With an `include` filter it asks for 10 times as many steps, because the browser steps over many nodes for each row that it shows.
 4. The server walk loads the nodes that the browser needs next, and about two layers of links below them, in batches.
 5. The browser puts the server's cache into its cache. The rows are calculated again and the loading rows fill in.
 
@@ -119,14 +119,15 @@ When rows above the anchor change, the anchor's index is not the true number of 
 - **Rows above row 0.** The backward steps find rows before index 0. Example: a large subtree above was expanded.
 - **A gap above the first row.** The backward steps reach the root, but the root's index is more than 0. Example: rows above were folded or filtered out.
 
-In both conditions, the hook changes every index by the same number (`shift`), so that the root is row 0. It calls `onShift(shift)`. The table must then scroll by `shift` rows in the same frame. The rows thus stay at the same place on the screen.
+In both conditions, the hook changes every index by the same number (`shift`), so that the root is row 0. For rows above row 0, the hook first counts all the rows above the anchor (`countBefore`), so one shift is sufficient. (A shift for each window would cause one more shift for each window above it, one React update each.) It calls `onShift(shift)`. The table must then scroll by `shift` rows in the same frame. The rows thus stay at the same place on the screen.
 
 The table must turn off the browser's own scroll anchoring (`overflow-anchor: none`). The hook does this work. If the browser also does it, the two corrections add together.
 
 ### 6.5 The length of the table
 
-- The hook does not know how many rows are below the screen. It gives `count` = the last calculated row + `overscan`, until the walk reaches the end.
-- When the user scrolls near `count`, the window moves, more rows are calculated, and `count` increases.
+- The hook does not know how many rows are below the screen. Until the walk reaches the end, it gives `count` = the last calculated row + `buffer` (200 rows), rounded up to a whole number of `buffer`s. Thus the scroll bar changes only after each 200 rows.
+- Until the end is known, `count` does not decrease. A new filter thus does not make the browser move the scroll position.
+- The walk reaches the end only when no data is missing. Data that is still loading can add rows.
 - When the walk reaches the end, `count` is the true end.
 
 ## 7. Use with a virtualizer
@@ -174,6 +175,6 @@ virtualizer.current = useVirtualizer({
 
 ## 9. Limits
 
-- The browser can step over at most 10 000 nodes in each direction for one window (`maxSteps`). A very narrow `include` filter on a very large tree can stop there. The window then shows fewer rows.
+- The browser can step over at most 100 000 nodes in each direction for one window (`maxSteps`). A very narrow `include` filter on a very large tree can stop there. The window then shows fewer rows.
 - The browser evaluates filters with the server's rules, but JSON has no integer type. `1` and `1.0` are the same number in the browser and different on the server.
 - The cache keeps every loaded entity until the page closes.

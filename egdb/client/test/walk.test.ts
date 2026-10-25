@@ -3,7 +3,7 @@ import { groupKey, viewOf, type CacheState, type EntityRecord } from '../src/cac
 import { f } from '../src/filter.js'
 import { op } from '../src/ops.js'
 import type { Path } from '../src/types.js'
-import { computeWindow, type WalkQuery } from '../src/walk.js'
+import { computeWindow, countBefore, type WalkQuery } from '../src/walk.js'
 
 const child = groupKey('child', 'outbound')
 const query: WalkQuery = { follow: { list: [['child', 'outbound']] } }
@@ -102,6 +102,24 @@ describe('computeWindow', () => {
     const back = computeWindow(view, { root: ['root'], anchor: ['root', 'b'], query, offset: -2, limit: 2 })
     expect(paths(back)).toEqual(['root', 'root/a'])
     expect(back.missing.backward).toEqual(['root', 'b'])
+  })
+
+  it('with a filter, waits for missing entities rather than showing them, and knows no end yet', () => {
+    const view = viewOf(cache(tree, ['a', 'c1']))
+    const w = computeWindow(view, { root: ['root'], query: { ...query, include: f.eq('type', 'task') }, offset: 0, limit: 100 })
+    expect(paths(w)).toEqual(['root/b'])
+    expect(w.atEnd).toBe(false)
+    expect(w.missing.forward).toEqual(['root', 'a'])
+    const plain = computeWindow(view, { root: ['root'], query, offset: 0, limit: 100 })
+    expect(plain.atEnd).toBe(false)
+  })
+
+  it('counts the rows before an anchor', () => {
+    const view = viewOf(cache(tree))
+    expect(countBefore(view, { root: ['root'], anchor: ['root', 'c', 'c1'], query })).toEqual({ count: 6, complete: true })
+    const tasks = { ...query, include: f.eq('type', 'task') }
+    expect(countBefore(view, { root: ['root'], anchor: ['root', 'c'], query: tasks })).toEqual({ count: 3, complete: true })
+    expect(countBefore(viewOf(cache(tree, ['a'])), { root: ['root'], anchor: ['root', 'b'], query }).complete).toBe(false)
   })
 
   it('applies pending writes at once', () => {

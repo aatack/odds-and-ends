@@ -17,6 +17,7 @@ export {
 } from './cache.js'
 export {
   computeWindow,
+  countBefore,
   pathKey,
   TreeStepper,
   type TreeRow,
