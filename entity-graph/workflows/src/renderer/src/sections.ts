@@ -1,4 +1,5 @@
 import type { Item, Overview } from '../../shared/types'
+import { withBot } from './icons'
 
 /**
  * The finder's sections: each a way to pick out items worth seeing first.
@@ -21,7 +22,6 @@ export interface Section {
 export type Recent = Pick<Overview, 'viewed' | 'linked'>
 
 const open = (i: Item) => !i.closed
-const withBot = (i: Item) => i.blockers.some((b) => b.type === 'bot')
 /** The items with these ids that the finder has, in the ids' order. */
 const byIds = (ids: string[], items: Item[]): Item[] => {
   const by = new Map(items.map((i) => [i.id, i]))

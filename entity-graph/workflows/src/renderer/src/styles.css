@@ -288,3 +288,15 @@ button[data-ui].snooze-choice:hover { background: var(--color-gray-100); filter:
 .view-title-input { border: none; background: transparent; color: inherit; font: inherit; padding: 0; outline: none; }
 button[data-ui].link.item-ref { color: var(--ink); display: inline-flex; align-items: baseline; gap: 4px; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
 button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: center; color: var(--muted); }
+
+/* ---- Bots, and who has what ---- */
+.choices { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.choices button[data-ui] { padding: 3px 9px; font-size: 12px; }
+.choices button[data-ui].chosen { background: var(--accent); color: var(--accent-ink); }
+.assignees { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.assignee { display: inline-flex; align-items: center; gap: 4px; padding: 1px 4px 1px 8px; border-radius: 10px; background: var(--bg); color: var(--ink); }
+.assignee .icon { width: 13px; height: 13px; }
+.assignee button { display: inline-flex; background: none; border: none; padding: 1px; color: var(--muted); }
+.assignee.working { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+.assignees .add-assignee { background: none; border: none; color: var(--muted); padding: 1px 4px; display: inline-flex; }
+.bot-ref { display: inline-flex; align-items: center; gap: 3px; }

@@ -9,17 +9,27 @@ building anything for it.
 ## Never run the app
 
 Do not start the app (`npm start`, `npm run dev`, `electron-vite`, `electron`)
-unless the user asks. It opens the user's store and starts bot workers that spend real money.
-Check work with `npm run typecheck`, `npm run build` and `npm test`.
-`npx tsx test/smoke-claude.mts` does one real `claude -p` run, headless, against
-an in-memory store; it costs a run, so use it only when the bot wiring changes.
+unless the user asks. It opens the user's store and starts bots that spend real money.
+The same goes for the backend on its own (`npm run backend`, `out/main/backend.js`)
+on the user's data folder; on a temporary `--data` folder it is safe.
+Check work with `npm run typecheck`, `npm run build` and `npm test` (`test/egdb.mts`
+needs the egdb-server binary: `npm run egdb:build`; it is skipped without it).
+`npx tsx test/smoke-claude.mts` does real `claude -p` runs, headless, against
+an in-memory store; it costs runs, so use it only when the bot wiring changes.
 
 ## Running it (for the user)
 
+Build egdb-server once (`npm run egdb:build`; or set `EGDB_SERVER` to a binary).
 `npm start` builds once and runs the built app, watching nothing: bots can edit
 and build the code (in their worktrees) without restarting the app under
-themselves. `npm run dev` hot-reloads, and restarts the app, and every bot in
-it, when main-process code changes.
+themselves. `npm run dev` hot-reloads the window.
+
+The backend is a process of its own. The app uses one already running on its
+data folder (`backend.json` there says where), or one at
+`WORKFLOWS_BACKEND_URL` (with `WORKFLOWS_BACKEND_TOKEN`); otherwise it starts
+one, with Electron's own Node, and stops it as it quits. `npm run backend` runs
+one on its own (`--data <folder>`, `--port <n>`), which lasts while apps come
+and go: then restarting the app restarts no bot.
 
 ## The paradigm
 
@@ -28,18 +38,22 @@ it, when main-process code changes.
 
 - Everything is an **event**, items included: one tree. An item's children are
   its history. Some events resolve as they are added (a message); **blockers**
-  wait until something happens (a bot answers, CI finishes, a child item closes).
-- An item can have many blockers at once. It is the human's turn when nothing
-  blocks it but approvals.
+  wait until something happens (CI finishes, an approval, a child item closes).
+- Items are **assigned** (`assign` events) to the human, to bots, or to nobody (then they are the human's).
+  An item can have many blockers at once. It is the human's turn when the human has it and nothing
+  blocks it but approvals. Next goes through those, the least recently touched first.
+- A **bot** is an item of its own (an `agent` event, in no item; `configure` events in it change it): a
+  name, instructions, a provider and model, a debounce, and a folder and Claude session of its own, which
+  last. It wakes when anything happens in an item it has, or watches (`Engine.wake`), and runs one thing
+  at a time: a run is told what is new in each of its items (`promptFor` in `workers.ts`: the human's
+  messages as written, anything else in [brackets], each item's id every ten lines) and answers with
+  `{ updates: [{ item, message?, events?, assign?, close? }] }` as structured output. An item it says
+  nothing of goes back to the human, unless it is left waiting on something (`Engine.settle`).
 - `after` events chain: they wait for one event, then add others, as given or as
   a script decides.
-- The chat input sends through presets (a plain message by default, and a bot when sent empty; its icon and hint
-  show which); Tab
-  steps through them.
-- Each item has its own Claude session, kept in its params; a child item's
-  first session is forked from its parent's. A bot is told what is new since it
-  was last prompted, with little direction (the human's messages as written, anything else in [brackets], the
-  item's id every ten lines; `promptFor` in `workers.ts`), and answers with `{ message?, events?, close? }` as structured output.
+- The chat input sends a note by default; `@` a bot in it to hand the bot the task (and take it off the
+  human). With nothing typed it offers "Assign to @bot", the likeliest bot first. Tab steps through the
+  choices; its icon and hint show which.
 - Nothing about the running app is stored: what is running is held in memory.
 
 ## Terminology
@@ -76,7 +90,9 @@ sending, deploying and deleting, in any integration.
 
 ```
 src/engine     everything but the window; plain Node, so the tests drive it headlessly
-  engine.ts      items, their events and blockers, the trace, the loop, bot output
+  engine.ts      items, their events and blockers, assignments, bots' wakes and output, the trace, the loop
+  store.ts       the store, in memory; every change goes on as egdb ops
+  egdb.ts        the store's home: writing to egdb, reading it back, running egdb-server
   eventTypes.ts  the event types
   presets.ts     what the chat input can send
   actions.ts     the actions on items (github.ts and slack.ts add theirs)
@@ -85,15 +101,17 @@ src/engine     everything but the window; plain Node, so the tests drive it head
   mcp.ts         the MCP server: the actions, in two scopes
   settings.ts    configuration in the store: Slack workspaces (tokens encrypted), the MCP port and token
   admin.ts       what the Integrations and MCP pages show and change
-  workers.ts     the pool of `claude -p` workers
+  workers.ts     the bots' runner: one run at a time per bot, by its provider (`claude -p`)
   github.ts      GitHub via the gh CLI: actions, the github event, a source
   slack.ts       Slack via the user tokens: actions, the slack event
   integrations.ts  the interfaces: Action, EventType, Source
-  db.ts          the SQLite schema
-src/main       Electron main: opens the store, starts the loop, pool and MCP, IPC
+src/backend    the backend as a process: an HTTP API (api.ts) and a change stream for the app,
+               the v4 import, secrets under a key of its own
+src/main       Electron main: finds or starts the backend, passes the renderer's calls to it
 src/preload    the renderer's API (WorkflowsAPI in src/shared/types.ts)
 src/renderer   the React UI
-test/          engine.mts: the whole engine with a fake gh and fake bots
+test/          engine.mts: the whole engine with a fake gh and fake bots;
+               egdb.mts: the store against a real egdb-server, the import, the backend process
 ```
 
 ## UI
@@ -127,7 +145,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   type is shown (an item as its chat, any other event as `EventView`); `debug`
   shows its whole state as JSON. A new kind of view is a new `kind`.
 - **There is no sidebar.** The content fills the window in a centred column.
-  The bottom-left button opens the menu (bots busy; Tasks, Integrations, MCP,
+  The bottom-left button opens the menu (bots working; Tasks, Bots, Handed lately, Lost track, Integrations, MCP,
   which are views on the stack like any other; poll sources). Next has no button: it is Ctrl+D, and the app moves on
   by itself once the task on screen no longer needs you.
 - **The items view** (`ItemsList`) is what shows when the stack is empty, and
@@ -176,6 +194,15 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   day); it adds them, edits them (a new directive with `replaces`, which cancels the old: events are never changed, so the age starts again), and deletes them (cancels: the row is kept). They are not put in bots' prompts: `SYSTEM` tells
   bots to read the latest with the `directives` action when they need context, and to add one (a `directive` event, through `add_events`) when
   the human's feedback should outlast the item.
+- **Bots** (`BotsPage`, in the menu) lists the bots, with what each has and whether it is working or when it
+  wakes, and makes new ones (a name is enough). A bot opens as an `event` view (`BotView`): its settings as a
+  `Form` (saving adds a `configure` event with what changed), what it has and watches, Wake now, Delete
+  (what it had goes back to the human), what it was handed this week, and its runs.
+- **Who has a task** is drawn above its blockers (`Assignees`): the human and bots, each to take off, and +
+  to add one. Assign and watch events are small notes in the chat, like cancels.
+- **Handed lately** (`AssignedPage`) is the assign events for you, one bot or anyone, over a day, a week or
+  a month. **Lost track** (`StalePage`) is the open tasks the human made or had at any time, untouched for
+  some hours (`Engine.stale`).
 - **Priority items** (a `priority` event; `Item.priority`) come first in Next, the most recently active first. Mark
   one from its actions.
 - **Snoozing** a task (a `snooze` event, checked every minute; `Item.snoozedUntil`) blocks it until a time, so Next
@@ -206,24 +233,33 @@ test/          engine.mts: the whole engine with a fake gh and fake bots
   - Anything new that changes, starts, ends or is seen goes through
     `Engine.mark`. Bots read the trace back (`recent_items`, `get_item`,
     `run_transcript`) to find what to improve.
-- **The store is SQLite**, in `userData/workflows-v4.db`. The app uses
-  `better-sqlite3`, which is rebuilt for Electron on `postinstall`. The tests use
-  `node:sqlite`. `db.ts` uses only the API both share, with positional parameters.
-- **One process.** The Electron main process holds the store, the loop (every
-  minute), the worker pool (four workers) and the MCP server (loopback, a free port).
+- **The store is egdb.** The backend runs an egdb-server of its own on
+  `<data>/workflows.egdb` (loopback, a token). The engine keeps the store in memory
+  (`store.ts`) and reads it synchronously; every change is also queued as egdb ops
+  and written in order (`EgdbSink`). The tests use the store with no sink. On the
+  first start, `workflows-v4.db` (the SQLite store from before) is imported;
+  `better-sqlite3` is kept for that alone.
+- **The backend is one process.** It holds the store, the loop (every minute),
+  the bots' runner and the MCP server; the app is a window onto it, over HTTP
+  (`/rpc/<method>` and `/events`, loopback, a token). Every call the renderer
+  makes is a WorkflowsAPI method listed in `API_METHODS` and answered in
+  `src/backend/api.ts`. Secrets are encrypted under `<data>/secret.key`;
+  Slack tokens an older app saved with safeStorage are handed back by the app.
 - **One toolset for every agent.** Both MCP endpoints serve every action but the
   unsafe ones, and every call goes through `Engine.callAction`. Tools about an
   item take its id, so an agent may act on any item, its own included. Agents
   are author `bot`, so the bots' rules (which event types, Slack approvals) apply.
-  The endpoints are `run` (a worker's bot, at `/mcp/<runId>` on a free port; it
-  only ties calls to the run, for the trace) and `operator` (any other agent, at
+  The endpoints are `run` (a bot's run, at `/mcp/<runId>` on a free port; it
+  ties calls to the run and its bot, traced in the bot, and records what it adds as `bot:<id>`) and `operator` (any other agent, at
   `/mcp` on port 47390 by default, with a bearer token). Both bind to loopback only.
-- **Bots run in auto mode, each worker in its own folder.** Workers run
+- **Bots run in auto mode, each in its own folder.** A Claude bot runs
   `claude -p --permission-mode auto` with the usual tools and the workflows MCP
-  server, the output schema as `--json-schema`, and the item's own session
-  (`--session-id`, then `--resume`; sessions are found by id from any folder).
-  Each worker runs in `<tmpdir>/workflows-bots/worker-N` and makes git worktrees
-  as it needs them. A new capability for bots that touches this app is an action.
+  server, the output schema as `--json-schema`, its model, its own session
+  (`--session-id`, then `--resume`), and the app's instructions and its own as
+  `--append-system-prompt` (with every request, so compaction keeps them; a
+  SessionStart `compact` hook says them again too). Its folder is
+  `<data>/bots/<name>-<id>` unless it says otherwise, and lasts. Another provider
+  is another `SpawnBot` in `PROVIDERS`. A new capability for bots that touches this app is an action.
 - **Adding an integration** means adding its actions (each declaring `unsafe`), an event type if it can be waited on, a preset if the chat
   input should offer it, and a source if it produces items. Update `docs/events.md`
   when a type changes. Run CLIs and

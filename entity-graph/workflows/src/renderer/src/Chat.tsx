@@ -17,6 +17,9 @@ export const minutes = (ms: number) => {
   return `${Math.floor(s / 3600)}h ${pad(Math.floor(s / 60) % 60)}m`
 }
 
+/** Who has the task, and who watches it: small notes in the middle, like a cancel. */
+const NOTES = new Set(['assign', 'watch'])
+
 /** The human, or an outside client acting as them: their events are on the right. */
 const HUMAN = new Set(['human', 'mcp'])
 
@@ -40,9 +43,10 @@ export function Chat({ detail }: { detail: ItemDetail }) {
     <section className="chat">
       {find && !done.length && <div className="chat-note">Nothing here says “{find}”.</div>}
       {done.map((e) =>
-        e.cancelled && e.type !== 'item' ? (
+        (e.cancelled && e.type !== 'item') || NOTES.has(e.type) ? (
           <div key={e.id} className="chat-note" title={time(e.resolvedAt!)} {...menu(e.id)}>
             {e.message}
+            {NOTES.has(e.type) && e.createdBy !== 'human' && ` (${e.createdBy.startsWith('bot:') ? 'by the bot' : `by ${e.createdBy}`})`}
           </div>
         ) : (
           <Message key={e.id} event={e} find={find} />

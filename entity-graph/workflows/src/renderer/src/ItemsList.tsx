@@ -1,6 +1,6 @@
 import fuzzysort from 'fuzzysort'
 import { useAtomValue } from 'jotai'
-import { Flag, Search } from 'lucide-react'
+import { Bot, Flag, Search } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Item } from '../../shared/types'
 import { minutes } from './Chat'
@@ -18,14 +18,15 @@ function detail(i: Item): string {
   if (i.closed) return i.how === 'handled_outside' ? 'done outside' : i.how === 'cancelled' ? 'cancelled' : ''
   if (i.withHuman) return i.blockers.find((b) => b.type === 'approval' && b.params.reason)?.summary ?? ''
   const b = waitingOn(i)
+  if (!b) return ''
   if (b.type === 'github') return b.params.title ? String(b.params.title) : b.summary
   if (b.type === 'slack' || b.type === 'snooze') return b.summary
   if ((b.type === 'script' || b.type === 'after') && b.params.description) return b.summary
   return ''
 }
 
-/** A line of the finder: an item in a section, or the "n more" a section ends with when it has more than it shows. */
-type Line = { key: string; item: Item } | { key: string; more: SectionId; n: number }
+/** A line of the finder: an item in a section, a bot, or the "n more" a section ends with when it has more than it shows. */
+type Line = { key: string; item: Item } | { key: string; bot: { id: string; name: string } } | { key: string; more: SectionId; n: number }
 
 /**
  * The finder: items in sections (`sections`, in order; see `SECTIONS`), under a
@@ -44,8 +45,10 @@ export function ItemsList(props: {
   onOpen: (id: string) => void
   onCreate: (title: string) => void
   verb?: string
+  /** Bots to offer too, first, in a section of their own (`@` in the chat input). */
+  bots?: { id: string; name: string }[]
 }) {
-  const { items, recent, sections, perSection = 12, onOpen, onCreate, verb = 'Open' } = props
+  const { items, recent, sections, perSection = 12, onOpen, onCreate, verb = 'Open', bots = [] } = props
   const [text, setText] = useState('')
   const [at, setAt] = useState(0)
   const [expanded, setExpanded] = useState<SectionId[]>([])
@@ -60,7 +63,12 @@ export function ItemsList(props: {
       ? new Map(fuzzysort.go(text, items, { key: 'title', threshold: 0.2 }).map((r, i) => [r.obj.id, i]))
       : null
     const seen = new Set<string>()
-    return sections
+    const botLines: Line[] = (text.trim() ? fuzzysort.go(text, bots, { key: 'name', threshold: 0.2 }).map((r) => r.obj) : bots).map((bot) => ({
+      key: `bot:${bot.id}`,
+      bot,
+    }))
+    const botGroup = botLines.length ? [{ id: 'bots', label: 'Bots', count: botLines.length, lines: botLines }] : []
+    return [...botGroup, ...sections
       .map((id) => {
         let all = SECTIONS[id].items(items, recent)
         if (matched) {
@@ -70,13 +78,13 @@ export function ItemsList(props: {
         const shown = expanded.includes(id) ? all : all.slice(0, perSection)
         const lines: Line[] = shown.map((item) => ({ key: `${id}:${item.id}`, item }))
         if (shown.length < all.length) lines.push({ key: `${id}:more`, more: id, n: all.length - shown.length })
-        return { id, label: SECTIONS[id].label, count: all.length, lines }
+        return { id: id as string, label: SECTIONS[id].label, count: all.length, lines }
       })
-      .filter((g) => g.count)
-  }, [items, recent, sections, perSection, expanded, text])
+      .filter((g) => g.count)]
+  }, [items, recent, sections, perSection, expanded, text, bots])
   const flat = groups.flatMap((g) => g.lines)
   const current = Math.min(at, Math.max(flat.length - 1, 0))
-  const choose = (line: Line) => ('item' in line ? onOpen(line.item.id) : setExpanded([...expanded, line.more]))
+  const choose = (line: Line) => ('item' in line ? onOpen(line.item.id) : 'bot' in line ? onOpen(line.bot.id) : setExpanded([...expanded, line.more]))
   // The highlighted row stays in sight as the arrows move it.
   const list = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -146,6 +154,14 @@ export function ItemsList(props: {
           {g.lines.map((line) => {
             const selected = flat[current]?.key === line.key ? 'selected' : ''
             const hover = () => setAt(flat.indexOf(line))
+            if ('bot' in line)
+              return (
+                <div key={line.key} className={`row ${selected}`} onClick={() => choose(line)} onMouseMove={hover}>
+                  <Bot className="icon" />
+                  <span className="row-title">@{line.bot.name}</span>
+                  <span className="muted row-status">hand it the task</span>
+                </div>
+              )
             if (!('item' in line))
               return (
                 <div key={line.key} className={`row more ${selected}`} onClick={() => choose(line)} onMouseMove={hover}>
