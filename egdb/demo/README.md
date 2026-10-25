@@ -14,6 +14,9 @@ npm run seed          # ~12k entities: node seed.mjs [url] [depth] [fanout]
 npm run dev           # proxies /api to EGDB_URL (default http://127.0.0.1:7878)
 ```
 
+The demo runs the client from its source (`../client/src`, by a Vite alias),
+so after a `git pull` there is nothing to rebuild.
+
 Try:
 
 - Scroll far down. The footer shows the anchor (the first row on screen) and
