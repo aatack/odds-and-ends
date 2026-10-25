@@ -9,7 +9,7 @@ A TypeScript client for the egdb HTTP API, and React hooks over it.
 
 ## Install
 
-The package builds on install (`prepare`). From another project:
+The package builds on install (`prepare`), and installs its own build tools first when they are missing. From another project:
 
 ```sh
 # a packed copy (recommended: one copy of react and jotai)
