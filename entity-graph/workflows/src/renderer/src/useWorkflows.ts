@@ -13,7 +13,16 @@ export const api = (): WorkflowsAPI => window.workflows
 
 /** Everything the app shows, kept in step with the main process. */
 export function useWorkflows() {
-  const [overview, setOverview] = useState<Overview>({ items: [], bots: [], viewed: [], linked: [], attachments: [], recentBots: [] })
+  const [overview, setOverview] = useState<Overview>({
+    me: { id: '', name: '' },
+    items: [],
+    bots: [],
+    users: [],
+    viewed: [],
+    linked: [],
+    attachments: [],
+    recentAssignees: [],
+  })
   const [views, setViews] = useAtom(viewsAtom)
   const [forwards, setForwards] = useAtom(forwardAtom)
   const view = views[views.length - 1] ?? null
@@ -119,7 +128,7 @@ export function useWorkflows() {
     async (id: string) => {
       if (selected !== id) return
       const item = (await api().eventDetail(id))?.item?.item
-      if (item && !item.closed && item.withHuman) return
+      if (item && !item.closed && item.withYou) return
       const to = await api().next([...skipped, id])
       if (to) open({ kind: 'event', id: to })
       else {

@@ -122,10 +122,18 @@ export async function loadStore(client: EgdbClient, onError?: (message: string) 
     }
   })
   await findAll(client, branch, { eq: { key: 'type', value: 'wf.custom_action' } }, (_id, x) => customActions.push(customActionFromValues(x)))
+  // Assignments are links from items: read for every item there is, a batch at a time.
+  const assigned: { item: string; to: string; at: number }[] = []
+  const items = events.filter((e) => e.type === 'item').map((e) => e.id)
+  for (let i = 0; i < items.length; i += 500) {
+    const got = await client.links(branch, items.slice(i, i + 500), [['assigned_to', 'outbound']])
+    for (const groups of Object.values(got))
+      for (const g of groups) for (const l of g.links) assigned.push({ item: l.source, to: l.destination, at: Number(l.sort ?? 0) })
+  }
   // The root is an entity too, so that the tree can be walked from it.
   const sink = new EgdbSink(client, branch, onError)
   const store = new Store(sink)
-  store.restore({ events, trace, runs, settings, customActions })
+  store.restore({ events, trace, runs, settings, customActions, assigned })
   if (!events.length) sink.write([{ set: { entity: '@root', key: 'type', value: 'wf.root' } }])
   return { store, sink }
 }

@@ -119,9 +119,9 @@ const file = join(dir, 'round-trip.egdb')
   `)
   old.close()
   const { egdb, store } = await open(join(dir, 'imported.egdb'))
-  const counts = await importV4(v4, store, 99)
+  const counts = await importV4(v4, store, 99, 'alex')
   assert.deepEqual(counts, { events: 4, trace: 3, runs: 1 })
-  await assert.rejects(importV4(v4, store, 99), /not empty/)
+  await assert.rejects(importV4(v4, store, 99, 'alex'), /not empty/)
   await store.flush()
   egdb.stop()
   await new Promise((r) => setTimeout(r, 300))
@@ -130,10 +130,13 @@ const file = join(dir, 'round-trip.egdb')
   const it = engine.get('item-1')!
   assert.equal(it.title, 'Old task')
   assert.deepEqual(it.blockers, [], 'an open bot blocker from before is cancelled')
-  assert.ok(it.withHuman, 'and the item, which nobody has, is the human\'s')
+  assert.deepEqual(it.assignees, ['alex'], 'the one person there was has every open item')
+  assert.ok(engine.get('item-1', 'alex')!.withYou)
+  assert.equal(engine.me(), 'alex')
+  assert.equal(engine.event('msg-1')!.createdBy, 'alex', 'what "human" did is theirs')
   assert.equal(engine.event('bot-2')!.cancelled, true)
   assert.equal(engine.event('bot-1')!.message, null, 'an old bot event that ran reads as it did')
-  assert.deepEqual(back.store.trace.map((t) => t.id), [1, 2, 5, 6], 'trace ids kept; the cancel traced after them')
+  assert.deepEqual(back.store.trace.map((t) => t.id).slice(0, 4), [1, 2, 5, 6], 'trace ids kept; the cancel traced after them')
   assert.deepEqual(engine.detail('item-1')!.runs.map((r) => [r.id, r.agentId, r.itemIds, r.costUsd]), [['run-1', null, ['item-1'], 0.25]])
   assert.match((await engine.transcript('run-1'))!, /"old":"transcript"/)
   assert.equal(engine.settings.mcpPort(), 4321)
@@ -154,7 +157,7 @@ const file = join(dir, 'round-trip.egdb')
 // ---- 4. The backend on its own: it imports, answers calls, and sends changes ----
 {
   const data = join(dir, 'backend')
-  const child = spawn(process.execPath, ['--import', 'tsx', 'src/backend/index.ts', '--data', data], { stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(process.execPath, ['--import', 'tsx', 'src/backend/index.ts', '--data', data, '--user', 'Tester'], { stdio: ['ignore', 'pipe', 'pipe'] })
   let output = ''
   child.stdout.on('data', (c) => (output += c))
   child.stderr.on('data', (c) => (output += c))
@@ -162,7 +165,11 @@ const file = join(dir, 'round-trip.egdb')
   assert.ok(existsSync(join(data, 'backend.json')), output)
   const info = JSON.parse(readFileSync(join(data, 'backend.json'), 'utf8')) as { url: string; token: string }
   const call = async (method: string, ...args: unknown[]) => {
-    const res = await fetch(`${info.url}/rpc/${method}`, { method: 'POST', headers: { authorization: `Bearer ${info.token}` }, body: JSON.stringify(args) })
+    const res = await fetch(`${info.url}/rpc/${method}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${info.token}`, 'x-workflows-user': 'tester' },
+      body: JSON.stringify(args),
+    })
     const out = (await res.json()) as { result?: unknown; error?: string }
     if (out.error) throw new Error(out.error)
     return out.result
@@ -174,8 +181,22 @@ const file = join(dir, 'round-trip.egdb')
   void (async () => {
     for (let c = await reader.read(); !c.done; c = await reader.read()) changes.push(new TextDecoder().decode(c.value))
   })()
-  const overview = (await call('overview')) as { bots: { name: string }[] }
+  const overview = (await call('overview')) as { bots: { name: string }[]; me: { id: string } }
   assert.deepEqual(overview.bots.map((b) => b.name), ['Claude'], 'the first start makes a bot')
+  assert.equal(overview.me.id, 'tester', 'and the first person, who signs in by their username')
+  // Signed in as nobody, or as nobody there is, only signing in works.
+  const as = async (user: string | null, method: string, ...args: unknown[]) =>
+    (await (
+      await fetch(`${info.url}/rpc/${method}`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${info.token}`, ...(user ? { 'x-workflows-user': user } : {}) },
+        body: JSON.stringify(args),
+      })
+    ).json()) as { result?: unknown; error?: string }
+  assert.match(String((await as(null, 'overview')).error), /Sign in first/)
+  assert.match(String((await as('nobody', 'overview')).error), /Nobody is called nobody/)
+  assert.deepEqual((await as(null, 'signIn', 'Tester')).result, { id: 'tester', name: 'tester' })
+  assert.match(String((await as(null, 'signIn', 'ghost')).error), /Nobody is called ghost/)
   const id = (await call('create', 'From the API', null)) as string
   await call('send', id, 'message', 'A note')
   for (let i = 0; i < 50 && !changes.some((c) => c.includes('event: change')); i++) await new Promise((r) => setTimeout(r, 50))
@@ -183,7 +204,7 @@ const file = join(dir, 'round-trip.egdb')
   await assert.rejects(call('send', id, 'nope', 'x'), /No preset nope/)
   await assert.rejects(call('nothing'), /No method/)
   // A second backend on the same data refuses to start.
-  const second = spawn(process.execPath, ['--import', 'tsx', 'src/backend/index.ts', '--data', data], { stdio: ['ignore', 'pipe', 'pipe'] })
+  const second = spawn(process.execPath, ['--import', 'tsx', 'src/backend/index.ts', '--data', data, '--user', 'Tester'], { stdio: ['ignore', 'pipe', 'pipe'] })
   let secondOut = ''
   second.stderr.on('data', (c) => (secondOut += c))
   assert.equal(await new Promise((r) => second.on('exit', r)), 1)
@@ -193,10 +214,10 @@ const file = join(dir, 'round-trip.egdb')
   await new Promise((r) => child.on('exit', r))
   assert.ok(!existsSync(join(data, 'backend.json')), 'it says it has gone')
   // What it wrote lasts: it starts again with the same items.
-  const again = spawn(process.execPath, ['--import', 'tsx', 'src/backend/index.ts', '--data', data], { stdio: ['ignore', 'pipe', 'pipe'] })
+  const again = spawn(process.execPath, ['--import', 'tsx', 'src/backend/index.ts', '--data', data, '--user', 'Tester'], { stdio: ['ignore', 'pipe', 'pipe'] })
   for (let i = 0; i < 200 && !existsSync(join(data, 'backend.json')); i++) await new Promise((r) => setTimeout(r, 100))
   const info2 = JSON.parse(readFileSync(join(data, 'backend.json'), 'utf8')) as { url: string; token: string }
-  const res = await fetch(`${info2.url}/rpc/detail`, { method: 'POST', headers: { authorization: `Bearer ${info2.token}` }, body: JSON.stringify([id]) })
+  const res = await fetch(`${info2.url}/rpc/detail`, { method: 'POST', headers: { authorization: `Bearer ${info2.token}`, 'x-workflows-user': 'tester' }, body: JSON.stringify([id]) })
   const detail = ((await res.json()) as { result: { events: { params: { text?: string } }[] } }).result
   assert.equal(detail.events[0].params.text, 'A note')
   again.kill('SIGTERM')

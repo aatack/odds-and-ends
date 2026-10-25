@@ -14,8 +14,8 @@ export const item: EventType = {
   type: 'item',
   description:
     'An item: a thing to be done. Its events sit in it, child items included, and it blocks the item it sits in until it closes. ' +
-    'Add one to split work off: give it its first events (e.g. a message and an assign) in `events`. With no assign among them, ' +
-    'it is the human\'s.',
+    'Add one to split work off: give it its first events (e.g. a message) in `events`, and who has it in `assignees`. With no ' +
+    'assignees, it is its maker\'s if a person made it; otherwise it goes to the person who has (or last had) the item it sits in.',
   params: {
     title: z.string(),
     events: z
@@ -27,7 +27,11 @@ export const item: EventType = {
       .boolean()
       .optional()
       .describe('Put it in no item, rather than the one it is added in: for work unrelated to this item, which should not block it.'),
-    sessionId: z.string().optional().describe("Its Claude session, set by the app once its bot first runs. Don't set it."),
+    assignees: z
+      .array(z.string())
+      .optional()
+      .describe("Who has it from the start: people by username, bots by name or id. Not kept in its params: they are links."),
+    sessionId: z.string().optional().describe('From before bots were their own items: the Claude session it had. Kept for the record.'),
   },
   data: '{ how: "closed" | "handled_outside" | "cancelled" }',
   blocking: true,
@@ -35,7 +39,7 @@ export const item: EventType = {
   describe: (p) => String(p.title),
   said: (p, d) => `${p.title}: ${d.how === 'handled_outside' ? 'done outside the tool' : d.how === 'cancelled' ? 'cancelled' : 'closed'}`,
   start: async (p, { engine, event, author }) => {
-    const { events, ...params } = p
+    const { events, assignees: _given, ...params } = p
     if (Array.isArray(events) && events.length) engine.add(event.id, engine.prepare(events as EventSpec[], author), event.createdBy)
     return { params }
   },
@@ -122,13 +126,10 @@ export const approval: EventType = {
   said: (p, d) => `Ran ${p.action}${(d.changed as string[] | undefined)?.length ? ` (changed ${(d.changed as string[]).join(', ')})` : ''}`,
 }
 
-/**
- * From before bots were their own items: a blocker that a worker answered. Kept so old items read as they did.
- * One added now becomes an assign to the default bot (see Engine.prepare), so old scripts still work.
- */
+/** From before bots were their own items: a blocker that a worker answered. Kept so old items read as they did; none is added now. */
 export const bot: EventType = {
   type: 'bot',
-  description: 'Old: assign the item to the default bot instead (an assign event). One added becomes that assign, and its instructions a message.',
+  description: 'Old, and not added any more: to hand an item to a bot, assign it to the bot (the assign action).',
   params: { instructions: z.string().optional().describe('What to do, when there is no message from the human to go on.') },
   data: '{ runId, message?, costUsd?, output } or { error }',
   blocking: true,
@@ -141,8 +142,9 @@ export const agent: EventType = {
   type: 'agent',
   description:
     'A bot: a name, instructions, and how it runs. It sits in no item, and is open while it lasts (cancelling it deletes it). ' +
-    'It is assigned items with assign events, and wakes whenever anything happens in an item it is assigned or watches. ' +
-    'Its settings change with configure events in it.',
+    'Items are assigned to it (the assign action). It wakes when something happens to it: an item is assigned to it, or its ' +
+    'settings change; and every 15 minutes while it has items that something happened in. Its settings change with configure ' +
+    'events in it.',
   params: {
     name: z.string().min(1).describe('What it is called: people @ it by this name.'),
     instructions: z.string().optional().describe('What it is for and how it works: given with every run.'),
@@ -154,8 +156,23 @@ export const agent: EventType = {
   },
   data: '{ cancelled: true }, once deleted',
   blocking: true,
-  // A bot may not make bots: the human does, on the Bots page.
+  bots: true,
   describe: (p) => `@${p.name}`,
+}
+
+export const user: EventType = {
+  type: 'user',
+  description:
+    'A person who uses the app: its id is their username, which they sign in with. It sits in no item, and is open while it lasts. ' +
+    'Items are assigned to people as to bots.',
+  params: {
+    username: z.string().regex(/^[a-z0-9][a-z0-9_.-]*$/, 'Lower-case letters, digits, dots, dashes and underscores.').describe('Their username: the id of this event.'),
+    name: z.string().optional().describe('What they are called, if not their username.'),
+  },
+  data: '{ cancelled: true }, once removed',
+  blocking: true,
+  bots: true,
+  describe: (p) => String(p.name || p.username),
 }
 
 export const configure: EventType = {
@@ -171,43 +188,10 @@ export const configure: EventType = {
   },
   data: '{}',
   blocking: false,
+  bots: true,
   describe: (p) => `Settings: ${Object.keys(p).join(', ')}`,
 }
 
-export const assign: EventType = {
-  type: 'assign',
-  description:
-    "Assigns the item to someone, or takes it off them (on: false): the human ('human') or a bot, by its id or its name. " +
-    "A bot wakes when it is assigned, and whenever anything happens in an item assigned to it. The human's Next shows the " +
-    'items assigned to them (or to nobody) that nothing else blocks.',
-  params: {
-    to: z.string().min(1).describe("'human', or a bot's id or name (see list_bots)."),
-    on: z.boolean().optional().describe('False takes the assignment away. True by default.'),
-  },
-  data: '{}',
-  blocking: false,
-  bots: true,
-  describe: (p) => {
-    const who = p.to === 'human' ? null : `@${p.name ?? p.to}`
-    if (p.on !== false) return `Assigned to ${who ?? 'you'}`
-    return who ? `${who} no longer has it` : 'You no longer have it'
-  },
-}
-
-export const watch: EventType = {
-  type: 'watch',
-  description:
-    'A bot watches the item (or stops, with on: false): it wakes whenever anything happens in it, as if it were assigned, ' +
-    "but the item is not the bot's to do.",
-  params: {
-    agent: z.string().min(1).describe("A bot's id or name."),
-    on: z.boolean().optional().describe('False stops watching. True by default.'),
-  },
-  data: '{}',
-  blocking: false,
-  bots: true,
-  describe: (p) => `${p.on === false ? 'Stopped watching' : 'Watching'}: @${p.name ?? p.agent}`,
-}
 
 export const github: EventType = {
   type: 'github',
@@ -448,6 +432,6 @@ export const summary: EventType = {
 }
 
 export const EVENT_TYPES: EventType[] = [
-  item, message, attachment, rename, priority, action, approval, assign, watch, github, slack, after, script, summary, directive, snooze, agent,
-  configure, bot,
+  item, message, attachment, rename, priority, action, approval, github, slack, after, script, summary, directive, snooze, agent, configure,
+  user, bot,
 ]

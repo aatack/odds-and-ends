@@ -48,8 +48,8 @@ export function botOutputSchema(types: EventType[]): Record<string, unknown> {
       updates: {
         type: 'array',
         description:
-          'One for each item you were woken for (and any other you did something in). An item you were woken for and say ' +
-          'nothing of goes back to the human.',
+          'One for each item you have (and any other you did something in). An item you have and say nothing of goes back ' +
+          'to the person who last had it, unless you added a wait to it.',
         items: {
           type: 'object',
           properties: {
@@ -57,20 +57,20 @@ export function botOutputSchema(types: EventType[]): Record<string, unknown> {
             message: {
               type: 'string',
               description:
-                'To the human, in the item: what you did, in a line or two, or one direct question. No preamble and no waffle. ' +
+                'To the people in the item: what you did, in a line or two, or one direct question. No preamble and no waffle. ' +
                 'Leave it out if there is nothing to say.',
             },
             events: {
               type: 'array',
-              description: 'Events to add in the item: waits, approvals, afters, child items, assigns, watches.',
+              description: 'Events to add in the item: waits, approvals, afters, child items.',
               items: eventSchema(types),
             },
             assign: {
               type: 'array',
               items: { type: 'string' },
               description:
-                "Who has the item from now on: 'human', and bots by name; yourself to keep it. Left out, the item goes back " +
-                'to the human, unless you added a blocker to it (a wait): then you keep it, and wake when it resolves.',
+                'Who has the item from now on: people by username, bots by name; yourself to keep it. Left out, the item goes back ' +
+                'to the person who last had it, unless you added a wait to it: then you keep it.',
             },
             close: { type: 'boolean', description: 'The item is done.' },
           },

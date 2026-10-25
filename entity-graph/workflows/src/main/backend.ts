@@ -11,7 +11,8 @@ export interface Backend {
   info: BackendInfo
   /** Started by the app, so stopped with it. */
   owned: boolean
-  call: (method: string, args: unknown[]) => Promise<unknown>
+  /** A call as `user` (the person signed in to the window), or as nobody. */
+  call: (method: string, args: unknown[], user?: string | null) => Promise<unknown>
   /** Calls `fn` on every change; again after a lost connection, since anything may have changed meanwhile. */
   onChange: (fn: () => void) => void
   stop: () => Promise<void>
@@ -51,8 +52,12 @@ function connect(info: BackendInfo, owned: boolean, stop: () => Promise<void>): 
     info,
     owned,
     stop,
-    call: async (method, args) => {
-      const res = await fetch(`${info.url}/rpc/${method}`, { method: 'POST', headers, body: JSON.stringify(args) })
+    call: async (method, args, user) => {
+      const res = await fetch(`${info.url}/rpc/${method}`, {
+        method: 'POST',
+        headers: { ...headers, ...(user ? { 'x-workflows-user': user } : {}) },
+        body: JSON.stringify(args),
+      })
       const out = (await res.json()) as { result?: unknown; error?: string }
       if (out.error) throw new Error(out.error)
       return out.result

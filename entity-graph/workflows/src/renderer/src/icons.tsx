@@ -4,7 +4,6 @@ import {
   Bot,
   Check,
   Compass,
-  Eye,
   Flag,
   GitPullRequest,
   Layers,
@@ -20,11 +19,10 @@ import {
   ShieldCheck,
   SquareCode,
   User,
-  UserPlus,
   Workflow,
   type LucideIcon,
 } from 'lucide-react'
-import { HUMAN, type EventKind, type Item, type ItemEvent } from '../../shared/types'
+import type { EventKind, Item, ItemEvent } from '../../shared/types'
 
 /** One icon an event type. */
 export const TYPE_ICON: Record<EventKind, LucideIcon> = {
@@ -45,8 +43,7 @@ export const TYPE_ICON: Record<EventKind, LucideIcon> = {
   snooze: Moon,
   agent: Bot,
   configure: Settings,
-  assign: UserPlus,
-  watch: Eye,
+  user: User,
 }
 
 export const TYPE_NAME: Record<EventKind, string> = {
@@ -67,20 +64,19 @@ export const TYPE_NAME: Record<EventKind, string> = {
   snooze: 'Snooze',
   agent: 'Bot',
   configure: 'Settings',
-  assign: 'Assign',
-  watch: 'Watch',
+  user: 'Person',
 }
 
 /** The blocker an open item that is not the human's turn is shown as waiting on: its first that is not an after, else its first; null when only a bot has it. */
 export const waitingOn = (item: Item): ItemEvent | null => item.blockers.find((b) => b.type !== 'after') ?? item.blockers[0] ?? null
 
-/** Whether a bot has the item (and so, with nothing else blocking it, it is the bot's to do). */
-export const withBot = (item: Item): boolean => item.assignees.some((a) => a !== HUMAN)
+/** Whether a bot has the item: anyone who has it who is not one of `people`. */
+export const withBot = (item: Item, people: { id: string }[]): boolean => item.assignees.some((a) => !people.some((p) => p.id === a))
 
 /** What an item waits on: a bot while one is on it, else its blocker (`waitingOn`), else the bot that has it; the human; a tick once closed. */
 export function ItemIcon({ item }: { item: Item }) {
   if (item.closed) return <Check className="icon" aria-label="Closed" />
-  if (item.withHuman) return <User className="icon" aria-label="You" />
+  if (item.withYou) return <User className="icon" aria-label="You" />
   const waiting = waitingOn(item)
   if (item.bot || !waiting) return <Bot className="icon" aria-label={item.bot ? 'A bot is on it' : 'With a bot'} />
   const Icon = TYPE_ICON[waiting.type]
@@ -99,13 +95,13 @@ export function TypeIcon({ type }: { type: EventKind }) {
 
 /** Who someone is, as an icon: the human, a bot, a script, an outside client, a source, or the app. */
 function whoIcon(by: string): [LucideIcon, string] {
-  if (by === 'human') return [User, 'You']
   if (by === 'bot' || by.startsWith('bot:')) return [Bot, 'Bot']
   if (by.startsWith('script')) return [SquareCode, 'Script']
   if (by === 'mcp') return [Link, 'MCP client']
   if (by.startsWith('github')) return [GitPullRequest, by]
   if (by.startsWith('slack')) return [MessageCircle, by]
-  return [Settings, 'Workflows']
+  if (by === 'system') return [Settings, 'Workflows']
+  return [User, by]
 }
 
 /**

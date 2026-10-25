@@ -7,22 +7,21 @@ Everything is an **event**, items included.
   Its children are its history.
 - A plain event resolves as it is added: a message, an action run.
 - A **blocker** is an event that stays unresolved until something happens: CI
-  finishes, somebody replies, the human approves, a child item closes.
-- An item is **assigned** to the human, to bots, or to nobody (`assign` events;
-  the latest for each assignee says whether they have it). A **bot** is an event
-  of its own (`agent`), in no item. See [Bots](#bots).
+  finishes, somebody replies, a person approves, a child item closes.
+- An item is **assigned** to people and to bots (`assigned_to` links, not events).
+  A person is a `user` event and a bot an `agent` event, each in no item. See
+  [People, and who has what](#people-and-who-has-what) and [Bots](#bots).
 - An item is itself a blocker: it blocks the item it sits in until it closes.
   So the deepest items are dealt with before the items they sit in.
 - An item can have any number of blockers at once: its open children.
-- An open item is **the human's turn** when it is assigned to the human (or to
-  nobody), and nothing blocks it, or only things the human resolves do:
-  approvals, and afters waiting on them.
+- An open item is **a person's turn** when it is assigned to them, and nothing
+  blocks it, or only things people resolve do: approvals, and afters waiting on them.
 - There are no top-level items as such. An item may sit in none, but every list
   shows every item, at any depth.
 
 A blocker either resolves itself, because the loop runs its `check` with
 backoff (at once, then after 1, 2, 5 and then every 10 minutes), or is resolved
-from outside: by the human approving, or by a cancel.
+from outside: by a person approving, or by a cancel.
 When it resolves, it keeps its **data**.
 
 ## The interface
@@ -39,11 +38,11 @@ how it reads (`summary`, `message`), and whether and how it waits.
 | `parentId` | The item it sits in. Null only for an item that sits in none. |
 | `type` | Its type: one of the table below. |
 | `params` | What it was given, as its type's params schema says. |
-| `createdBy`, `createdAt` | Who added it, and when: `human`, `bot:<id>` (a bot's run), `bot` (an agent acting as a bot), `system`, `script`, `script:bot`, `mcp`, or a source's id. |
+| `createdBy`, `createdAt` | Who added it, and when: a person's username, `bot:<id>` (a bot's run), `bot` (an agent acting as a bot), `system`, `script`, `script:bot`, `mcp`, or a source's id. |
 | `resolved`, `resolvedAt`, `resolvedBy` | Whether it has happened, when, and who resolved it. A plain event is resolved by whoever added it, as it is added. |
 | `cancelled` | Resolved without happening. |
 | `data` | What it resolved with, as its type's data says. Null while it is open. |
-| `actor` | Who made it happen: `resolvedBy` for a blocker, `createdBy` for a plain event. The chat puts the human's (and an MCP client's) on the right. |
+| `actor` | Who made it happen: `resolvedBy` for a blocker, `createdBy` for a plain event. The chat puts the signed-in person's on the right. |
 | `summary` | One line saying what it is, from its type's `describe`. This is a blocker's row while it is open, and how prompts name it. |
 | `message` | What it says in the chat once resolved, from its type's `said`, or `Cancelled: …` when cancelled. Null while open, or when it says nothing. |
 | `nextCheckAt`, `lastError` | For blockers the loop checks: when the next check is, and what went wrong on the last one. |
@@ -54,7 +53,7 @@ together keep the order they were given in.
 
 An item's view of itself (`Item`) is read from its event: its title, whether it
 has closed and how, its open children (`blockers`), who has it (`assignees`),
-and whether it is the human's turn. Which bot is running on it is held in
+and whether it is the turn of the person looking (`withYou`). Which bot is running on it is held in
 memory, not stored, so a crash leaves nothing to clean up.
 
 **For agents:** `src/engine/paradigm.ts` is the paradigm in a few lines: the MCP
@@ -67,12 +66,12 @@ the script returned.
 
 **Reads:** `get_item` (an item in full), `get_children` (the events in an item;
 with `open`, its blockers), `list_items` (every item), `items_waiting_on`
-(the open items waiting on the human, any bot, one bot, or one blocking type),
-`next_for_human` (what Next would show: of the items that are the human's turn,
+(the open items waiting on a person, any bot, one bot, or one blocking type),
+`next_for_human` (what a person's Next would show: of the items that are their turn,
 priority items first, the most recently active first, then the rest, the least
 recently touched first; an item is a priority while its latest `priority` event
-says so), `list_bots`, `recently_assigned` (assign events, for one assignee or
-any), and `stale_items` (open items the human made or had, untouched for a while).
+says so), `list_people`, `list_bots`, `recently_assigned` (assignments, for one
+assignee or any), and `stale_items` (open items a person made or had, untouched for a while).
 
 ### Every type (`EventType`)
 
@@ -84,7 +83,7 @@ Defined in `src/engine/integrations.ts` and written in `src/engine/eventTypes.ts
 | `params` | A zod shape. Params are checked against it as the event is added. |
 | `data` | What it resolves with, in words. |
 | `blocking` | False: it resolves as it is added. True: it is a blocker. |
-| `human` | A blocker the human resolves. While only these are open (and afters waiting on them), it is the human's turn. |
+| `human` | A blocker a person resolves. While only these are open (and afters waiting on them), it is the turn of whoever has the item. |
 | `bots` | A bot may add it in its output. |
 | `describe(params)` | Its `summary`. |
 | `said(params, data)` | Its `message` once resolved; null for nothing. Left out, it says its summary. Not called when the event is cancelled. |
@@ -100,18 +99,17 @@ the chat input should offer it, add a preset in `presets.ts`.
 
 | type | blocks | params | data |
 | --- | --- | --- | --- |
-| `item` | yes | `title`, `events?` (its first children, added in it), `detached?` (sits in no item, wherever it is added), `key?` (so a source adds it once), `sessionId` (set by the app) | `{ how: closed \| handled_outside \| cancelled }` |
+| `item` | yes | `title`, `events?` (its first children, added in it), `assignees?` (who has it from the start; links, not kept in its params), `detached?` (sits in no item, wherever it is added), `key?` (so a source adds it once), `sessionId` (set by the app) | `{ how: closed \| handled_outside \| cancelled }` |
 | `message` | no | `text` | — |
 | `attachment` | no | `event`, `title`, `item` (filled in by `attach_event`) | — |
 | `rename` | no | `title` (the item's title from then on) | — |
 | `priority` | no | `on` (the latest one says whether the item is a priority) | — |
 | `action` | no | `name`, `inputs`, `output` | — |
-| `approval` | the human's | `action` (unsafe), `inputs`, `reason?` | `{ ran, inputs, changed, output, detail }` |
-| `assign` | no | `to` (`human`, or a bot's id or name, kept as its id with its `name`), `on?` (false takes it off) | — |
-| `watch` | no | `agent` (a bot's id or name), `on?` | — |
+| `approval` | a person's | `action` (unsafe), `inputs`, `reason?` | `{ ran, inputs, changed, output, detail }` |
 | `agent` | while the bot lasts (sits in no item) | `name`, `instructions?`, `provider?`, `model?`, `debounce_minutes?`, `folder?`, `sessionId` (set by the app) | `{ cancelled }`, once deleted |
 | `configure` | no (only in an `agent`) | any of the `agent`'s settings: the latest wins | — |
-| `bot` | old | `instructions?`. One added now becomes an `assign` to the default bot (the `bots.default` setting, else the first), with the instructions as a message first | `{ runId, message?, costUsd?, output }` or `{ error }` |
+| `user` | while the person lasts (sits in no item) | `username` (its id), `name?` | `{ cancelled }`, once removed |
+| `bot` | old | `instructions?`. Kept so old items read as they did; none is added now | `{ runId, message?, costUsd?, output }` or `{ error }` |
 | `github` | yes | `repo`+`number`, or `query`; `until`: `checks` \| `activity` \| `merged`; `timeout_minutes?` | `{ outcome, detail, failed? }` |
 | `slack` | yes | `channel`, `workspace?`, `message?`, `thread_ts?`, `thread_of?`, `timeout_minutes?` | `{ outcome, replies, detail }` |
 | `after` | yes | `event`, then `then` or `script` | `{ added, logs? }` or `{ error }` |
@@ -162,6 +160,25 @@ the chat input should offer it, add a preset in `presets.ts`.
   `slack_post`, followed by an after that starts the wait in the thread the
   message posted.
 
+## People, and who has what
+
+- A **person** is a `user` event, in no item, whose id is their **username**.
+  People sign in to the app by typing it (no password: the app is local); every
+  call the app makes says who it is from (`x-workflows-user`). The backend makes
+  the first person on its first start (`--user`, else `WORKFLOWS_USER`, else the
+  system's username); the engine, given nobody, makes `human`.
+- **Assignment is a link, not an event**: an `assigned_to` link in egdb from the
+  item to the person or bot (`Store.setAssigned`), sorted by when; taking it off
+  removes the link. The items someone has are their `assigned_to` links followed
+  backwards (`Engine.assignedTo`). Each change is traced twice, as `assigned` or
+  `unassigned`: in the item (`data.to`) and in the assignee (`data.item`). The
+  chat shows them as notes, and "Handed lately" and `recently_assigned` read them.
+- A new item goes to its `assignees` param if it has one; else to the person who
+  made it; else (a bot or a source made it) to the **owner** of the item it sits
+  in, or to the default person. An item's owner (`Engine.owner`) is the person who
+  last had it, else the person who made it, else its parent's owner.
+- Agents assign with the `assign` action; a bot's update may say `assign` too.
+
 ## Bots
 
 - A **bot** is an `agent` event, in no item: a name (people `@` it by that),
@@ -169,36 +186,40 @@ the chat input should offer it, add a preset in `presets.ts`.
   another entry in `PROVIDERS`, `workers.ts`) and model, a debounce, and a folder
   and a Claude session of its own, which last. Its settings change with
   `configure` events in it; deleting it cancels it, and what it had goes back to
-  the human. The human makes and edits bots on the Bots page; agents can not.
-- **It wakes** when anything is added, resolved or cancelled in an item assigned
-  to it, or that it watches (`watch`), other than by its own runs: its debounce
-  after the last such thing (so a burst of work goes in one run), or at once when
-  woken by hand. Being taken off an item, and a summary, wake nobody.
-- **One run at a time**, for every item it woke for, in **one session**
-  (`--session-id`, then `--resume`), in its own folder. Its instructions go in
-  with every run (`--append-system-prompt`, sent with every request, so a
-  compaction keeps them), and a SessionStart hook on `compact` says them again
-  into the conversation.
-- **Prompt:** per item, the events new since the bot was last prompted (its
-  place in the trace is its last run's `trace_mark`), less what its own runs
-  did; the item's whole history the first time the bot sees it. Items are
-  separated by `---`, each led by its id.
+  each item's owner. People make and edit bots on the Bots page; agents may make
+  them too (`add_events`).
+- **It wakes when something happens to it** (`Engine.wake`), its debounce after:
+  an item is assigned to it (assigning one it has already writes the link again,
+  so it wakes), or its settings change; or at once when woken by hand. What its
+  own runs do is not something happening to it. And while something has
+  happened in the items it has since its last run (an event added, resolved or
+  cancelled, not by its own runs; a child item closing always counts), it wakes
+  every `PERIODIC_MINUTES` (15) after its last run. With no items, it never wakes.
+- **One run at a time**, for **every item it has**, in **one session**
+  (`--session-id`, then `--resume`), in its own folder. Its instructions are its
+  system prompt (`--append-system-prompt`), not part of any prompt; a
+  SessionStart hook on `compact` says them again into the conversation after a
+  compaction.
+- **Prompt:** "Please action your assigned items, and give each a new assignee
+  to carry it on", then per item the events new since the bot was last prompted
+  (its place in the trace is its last run's `trace_mark`), less what its own runs
+  did, or "nothing new"; the item's whole history the first time the bot sees it.
+  People's messages are given as they wrote them, after their name; anything else
+  in brackets. Items are separated by `---`, each led by its id.
 - **Output:** `{ updates: [{ item, message?, events?, assign?, close? }] }`, as
-  structured output: per item, what to say to the human, events to add, who has
-  it from now on (`human`, bots by name; itself to keep it), and whether it is
-  done.
-- **After a run**, each item it woke for that it still has, and said nothing of
-  who has, goes back to the human, unless the run left it waiting on something
-  that is not the human (a wait it added: it wakes when that resolves), or
-  something new came in while it ran (it wakes again for that). A run that fails
-  says so in each item, and gives each back to the human. A bot deleted while it
-  runs lands nothing.
+  structured output: per item, what to say, events to add, who has it from now on
+  (usernames, bots' names; itself to keep it), and whether it is done.
+- **After a run**, each item it has and said nothing of who has goes back to its
+  owner, unless the bot left it waiting on something that is not a person (a wait
+  it added, in this run or before), or something new came in while it ran. A run
+  that fails says so in each item it has, and gives each back to its owner. A bot
+  deleted while it runs lands nothing.
 - Runs (`runs`) keep the bot, the items, the prompt and, once over, the whole
   stream-json transcript.
 
 ## The chat input
 
-What the human types goes through a **preset**, which turns the text into events
+What a person types goes through a **preset**, which turns the text into events
 (`src/engine/presets.ts`). Tab steps through the presets.
 
 | preset | adds |
@@ -207,12 +228,11 @@ What the human types goes through a **preset**, which turns the text into events
 | PR merged | a `github` wait on the pull request the text names, until merged |
 | PR checks | a `github` wait on the pull request the text names, until its checks finish |
 
-- `@` refers to a bot (or an item): `[id]()`. A bot referred to in what is sent
-  is assigned the item, and the human is taken off it.
-- With nothing typed, the choices are "Assign to @bot" instead (preset
-  `assign:<id>`), the likeliest first: the bot that last had this item, then the
-  bots the human assigned things to last. Sent, it hands the item to that bot;
-  one that has it already is woken.
+- `@` refers to a bot, a person or an item: `[id]()`. A bot or person referred to
+  in what is sent is assigned the item, and the sender is taken off it.
+- With nothing typed, the choices are "Assign to @someone" instead (preset
+  `assign:<id>`), the likeliest first: whoever else had this item last, then
+  whoever the sender assigned things to last, then the bots, then the people.
 
 ## The store
 
@@ -221,13 +241,15 @@ What the human types goes through a **preset**, which turns the text into events
   egdb-server (`egdb.ts`, `EgdbSink`): an entity per event (its `type` the
   event type, linked as a `child` of its item, or of `@root`), per trace row
   (`trace:<n>`), run (`run:<id>`), setting and custom action, and per finished
-  transcript (`transcript:<id>`, in parts, read only when asked for). egdb keeps
-  every value an entity had, so nothing is lost by a change.
+  transcript (`transcript:<id>`, in parts, read only when asked for); and an
+  `assigned_to` link per assignment. egdb keeps every value an entity had, and
+  every state a link had, so nothing is lost by a change.
 - When a blocker is next checked, its backoff step and its last error are held
   in memory only: after a restart every wait is checked at once.
 - The first time the backend starts on a data folder, the store from before egdb
-  (`workflows-v4.db`, SQLite) is imported (`src/backend/importV4.ts`). Bot
-  blockers still open are cancelled, as bots are their own items now.
+  (`workflows-v4.db`, SQLite) is imported (`src/backend/importV4.ts`). The one
+  person there was ("human") becomes the first person, and has every open item.
+  Bot blockers still open are cancelled, as bots are their own items now.
 
 ## Who may do what
 

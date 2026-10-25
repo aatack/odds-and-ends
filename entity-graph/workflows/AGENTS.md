@@ -28,7 +28,7 @@ The backend is a process of its own. The app uses one already running on its
 data folder (`backend.json` there says where), or one at
 `WORKFLOWS_BACKEND_URL` (with `WORKFLOWS_BACKEND_TOKEN`); otherwise it starts
 one, with Electron's own Node, and stops it as it quits. `npm run backend` runs
-one on its own (`--data <folder>`, `--port <n>`), which lasts while apps come
+one on its own (`--data <folder>`, `--port <n>`, `--user <name>` for the first person), which lasts while apps come
 and go: then restarting the app restarts no bot.
 
 ## The paradigm
@@ -39,20 +39,24 @@ and go: then restarting the app restarts no bot.
 - Everything is an **event**, items included: one tree. An item's children are
   its history. Some events resolve as they are added (a message); **blockers**
   wait until something happens (CI finishes, an approval, a child item closes).
-- Items are **assigned** (`assign` events) to the human, to bots, or to nobody (then they are the human's).
-  An item can have many blockers at once. It is the human's turn when the human has it and nothing
-  blocks it but approvals. Next goes through those, the least recently touched first.
+- **People** are items too (`user` events, in no item, whose id is their username); they sign in to the
+  app by typing their username (no password: the app is local). Items are **assigned** to people and
+  bots: an `assigned_to` link from the item, not an event (`Engine.setAssignee`; the items someone has are
+  their links followed backwards). An item can have many blockers at once. It is a person's turn when they
+  have it and nothing blocks it but approvals. Next goes through those, the least recently touched first.
 - A **bot** is an item of its own (an `agent` event, in no item; `configure` events in it change it): a
   name, instructions, a provider and model, a debounce, and a folder and Claude session of its own, which
-  last. It wakes when anything happens in an item it has, or watches (`Engine.wake`), and runs one thing
-  at a time: a run is told what is new in each of its items (`promptFor` in `workers.ts`: the human's
-  messages as written, anything else in [brackets], each item's id every ten lines) and answers with
+  last. It wakes only when something happens to it: an item is assigned to it, or its settings change (its
+  debounce after); and every 15 minutes while its items have news (`Engine.wake`). It runs one thing at a
+  time: a run is asked to action every item it has and give each a new assignee, and told what is new in
+  each (`promptFor` in `workers.ts`: people's messages as written, after their name; anything else in
+  [brackets]; each item's id every ten lines). It answers with
   `{ updates: [{ item, message?, events?, assign?, close? }] }` as structured output. An item it says
-  nothing of goes back to the human, unless it is left waiting on something (`Engine.settle`).
+  nothing of who has goes back to its owner, unless it is left waiting on something (`Engine.settle`).
 - `after` events chain: they wait for one event, then add others, as given or as
   a script decides.
-- The chat input sends a note by default; `@` a bot in it to hand the bot the task (and take it off the
-  human). With nothing typed it offers "Assign to @bot", the likeliest bot first. Tab steps through the
+- The chat input sends a note by default; `@` a bot or a person in it to hand them the task (and take it
+  off the sender). With nothing typed it offers "Assign to @someone", the likeliest first. Tab steps through the
   choices; its icon and hint show which.
 - Nothing about the running app is stored: what is running is held in memory.
 
@@ -194,15 +198,18 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   day); it adds them, edits them (a new directive with `replaces`, which cancels the old: events are never changed, so the age starts again), and deletes them (cancels: the row is kept). They are not put in bots' prompts: `SYSTEM` tells
   bots to read the latest with the `directives` action when they need context, and to add one (a `directive` event, through `add_events`) when
   the human's feedback should outlast the item.
+- **Signing in** (`SignIn`, before anything else): a username, typed or picked, or a new person. The
+  username is kept in local storage (`userAtom`), and the preload sends it with every call; Sign out is in
+  the menu. Everything is as that person sees it: `withYou`, Next, the recent lists.
 - **Bots** (`BotsPage`, in the menu) lists the bots, with what each has and whether it is working or when it
   wakes, and makes new ones (a name is enough). A bot opens as an `event` view (`BotView`): its settings as a
-  `Form` (saving adds a `configure` event with what changed), what it has and watches, Wake now, Delete
-  (what it had goes back to the human), what it was handed this week, and its runs.
-- **Who has a task** is drawn above its blockers (`Assignees`): the human and bots, each to take off, and +
-  to add one. Assign and watch events are small notes in the chat, like cancels.
-- **Handed lately** (`AssignedPage`) is the assign events for you, one bot or anyone, over a day, a week or
-  a month. **Lost track** (`StalePage`) is the open tasks the human made or had at any time, untouched for
-  some hours (`Engine.stale`).
+  `Form` (saving adds a `configure` event with what changed, which wakes it), what it has, Wake now, Delete
+  (what it had goes back to each item's owner), what it was handed this week, and its runs.
+- **Who has a task** is drawn above its blockers (`Assignees`): people and bots, each to take off, and +
+  to add one. Assignments are small notes in the chat, like cancels (`ItemDetail.assignments`, from the trace).
+- **Handed lately** (`AssignedPage`) is the assignments to you, another person, a bot or anyone, over a day,
+  a week or a month. **Lost track** (`StalePage`) is the open tasks you made or had at any time, untouched
+  for some hours (`Engine.stale`).
 - **Priority items** (a `priority` event; `Item.priority`) come first in Next, the most recently active first. Mark
   one from its actions.
 - **Snoozing** a task (a `snooze` event, checked every minute; `Item.snoozedUntil`) blocks it until a time, so Next
@@ -243,7 +250,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   the bots' runner and the MCP server; the app is a window onto it, over HTTP
   (`/rpc/<method>` and `/events`, loopback, a token). Every call the renderer
   makes is a WorkflowsAPI method listed in `API_METHODS` and answered in
-  `src/backend/api.ts`. Secrets are encrypted under `<data>/secret.key`;
+  `src/backend/api.ts`, as the person in `x-workflows-user` (only signing in works without one). Secrets are encrypted under `<data>/secret.key`;
   Slack tokens an older app saved with safeStorage are handed back by the app.
 - **One toolset for every agent.** Both MCP endpoints serve every action but the
   unsafe ones, and every call goes through `Engine.callAction`. Tools about an
@@ -256,8 +263,8 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   `claude -p --permission-mode auto` with the usual tools and the workflows MCP
   server, the output schema as `--json-schema`, its model, its own session
   (`--session-id`, then `--resume`), and the app's instructions and its own as
-  `--append-system-prompt` (with every request, so compaction keeps them; a
-  SessionStart `compact` hook says them again too). Its folder is
+  its system prompt (`--append-system-prompt`), not in any prompt; a
+  SessionStart `compact` hook says them again after a compaction. Its folder is
   `<data>/bots/<name>-<id>` unless it says otherwise, and lasts. Another provider
   is another `SpawnBot` in `PROVIDERS`. A new capability for bots that touches this app is an action.
 - **Adding an integration** means adding its actions (each declaring `unsafe`), an event type if it can be waited on, a preset if the chat

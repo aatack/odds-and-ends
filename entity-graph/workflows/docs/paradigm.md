@@ -23,10 +23,11 @@ The text uses ASD-STE100 Simplified Technical English.
   Examples: CI finishes, or a person replies on Slack.
 - When a blocker is complete, it records its result.
 - An item can have more than one blocker at the same time.
-- You or a bot can **have** an item. An "assign" event gives an item to you or to a
-  bot, or takes it away.
-- If you have an item and it has no blockers, it waits for you. If nobody has an
-  item, you have it.
+- A person or a bot can **have** an item. To give an item to a person or to a bot
+  is to **assign** it. An assignment is a link from the item to the person or bot.
+  It is not an event in the item.
+- If you have an item and it has no blockers, it waits for you.
+- A new item that you make is yours.
 - An item that contains an open item is blocked by it. Thus you do the smaller
   items before the item that contains them.
 
@@ -58,11 +59,11 @@ Example:
 - The app shows who has the item, and the blockers that are not complete, above
   the chat input. Each blocker shows how long it has blocked the item.
 - When you send a message, it is a note in the item.
-- Type "@" and select a bot to give the item to the bot. When you send the
-  message, the bot gets the item and you do not have it.
-- When the chat input is empty, push Enter to give the item to a bot. The app
-  selects the bot that had the item last, or the bot that you used last. Push Tab
-  to select a different bot.
+- Type "@" and select a bot or a person to give the item to them. When you send
+  the message, they get the item and you do not have it.
+- When the chat input is empty, push Enter to give the item to a bot or a person.
+  The app selects who had the item last, or who you gave an item to last. Push
+  Tab to select a different bot or person.
 - When you type, push Tab to select a different action. For example, you can
   wait for a pull request to merge.
 
@@ -70,26 +71,36 @@ Example:
 
 - A bot is an item of its own. It has a name, instructions, a model and a folder.
   You make bots on the Bots page. Different bots can use different models.
-- A bot starts when an event occurs in an item that it has, or in an item that it
-  watches. It does one run at a time. Thus two bots do not work on the same
-  thing at the same time by accident.
+- A bot starts when an event occurs to the bot itself. Examples: somebody gives
+  it an item, or somebody changes its settings.
+- A bot also starts every 15 minutes, if events occurred in its items after its
+  last run.
+- A bot does one run at a time. Thus two bots do not work on the same thing at the
+  same time by accident.
 - A bot can wait for a short time after the last event before it starts. Thus
   you can give it many items quickly, and it does them all in one run.
 - A bot has one conversation, for all of its items. The bot remembers its work.
-  It gets its instructions again at each run.
-- In each run, the bot gets the events that occurred after its last run, for
-  each item. The first time that it sees an item, it gets all of the item.
-- For each item, a bot can reply to you, add blockers, give the item to you or to
-  a different bot, or close the item.
-- When the bot finishes, it gives the item back to you. If the bot added a wait,
-  it keeps the item and starts again when the wait is complete.
+  Its instructions are in its system prompt. After the conversation becomes
+  shorter (compaction), the bot gets its instructions again.
+- In each run, the bot gets all of its items. For each item, it gets the events
+  that occurred after its last run. The first time that it sees an item, it gets
+  all of the item.
+- The bot must do the work on its items, and then give each item to the next
+  person or bot. It can also keep an item.
+- For each item, a bot can reply, add blockers, give the item to a person or to a
+  different bot, or close the item.
+- If the bot does not give an item to somebody, the item goes back to the person
+  who had it last. If the bot added a wait, it keeps the item.
 - When a bot asks you a question, the question must be short and direct.
 
 ## Find work
 
+- When you start the app, you sign in with your username. There is no password,
+  because the app is on your computer. People are items too.
 - Next shows the items that you have, and that nothing blocks. The item that
   nobody touched for the longest time comes first.
-- "Handed lately" shows which items went to you or to a bot recently.
+- "Handed lately" shows which items went to you, to a different person, or to a
+  bot recently.
 - "Lost track" shows the items that you made or had, where nothing occurred for
   some hours. Use it to find items that you forgot.
 

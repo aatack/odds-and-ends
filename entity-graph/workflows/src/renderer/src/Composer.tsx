@@ -1,7 +1,8 @@
 import { SendHorizontal } from 'lucide-react'
 import { useAtom } from 'jotai'
 import { useEffect, useRef, useState } from 'react'
-import type { Agent, Catalog, Item, PresetInfo } from '../../shared/types'
+import type { Catalog, Item, PresetInfo } from '../../shared/types'
+import type { Someone } from './people'
 import { GrowingTextarea } from './GrowingTextarea'
 import { TypeIcon } from './icons'
 import { ItemPicker } from './ItemPicker'
@@ -27,7 +28,7 @@ export function Composer({
   onSend,
   onResolve,
   mention,
-  bots,
+  assignees,
 }: {
   catalog: Catalog
   draftKey: string
@@ -35,8 +36,8 @@ export function Composer({
   onResolve: () => void
   /** What `@` picks from, and how it makes a new item. */
   mention: { items: Item[]; recent: Recent; create: (title: string) => Promise<string> }
-  /** The bots to offer to hand the task to, the likeliest first. */
-  bots: Agent[]
+  /** Who to offer to hand the task to (bots and people), the likeliest first. */
+  assignees: Someone[]
 }) {
   const [atText, setAtText] = useState(0)
   const [atEmpty, setAtEmpty] = useState(0)
@@ -52,15 +53,20 @@ export function Composer({
   }, [setDrafts])
   const [resolving, setResolving] = useState(false)
   const box = useRef<HTMLTextAreaElement>(null)
-  // With nothing typed, the choices are the bots to hand the task to; else the presets.
-  const assigns: PresetInfo[] = bots.map((b) => ({ id: `assign:${b.id}`, name: `Assign to @${b.name}`, hint: `hand this task to @${b.name}`, icon: 'agent' }))
+  // With nothing typed, the choices are who to hand the task to; else the presets.
+  const assigns: PresetInfo[] = assignees.map((b) => ({
+    id: `assign:${b.id}`,
+    name: `Assign to @${b.name}`,
+    hint: `hand this task to @${b.name}`,
+    icon: b.bot ? 'agent' : 'user',
+  }))
   const empty = !text.trim() && assigns.length > 0
   const choices = empty ? assigns : catalog.presets
   const at = (empty ? atEmpty : atText) % choices.length
   const setAt = empty ? setAtEmpty : setAtText
   const preset = choices[at]
-  // What Enter would do now: a note that @s a bot hands it the task too.
-  const mentioned = bots.filter((b) => text.includes(`[${b.id}]()`))
+  // What Enter would do now: a note that @s someone hands them the task too.
+  const mentioned = assignees.filter((b) => text.includes(`[${b.id}]()`))
   const shown = mentioned.length && preset.id === 'message' ? { ...preset, name: `Note for @${mentioned.map((b) => b.name).join(', @')}` } : preset
   // Focused as it opens (and as the preset changes), with the cursor after any draft rather than before it.
   useEffect(() => {
@@ -143,8 +149,8 @@ export function Composer({
       </span>
       {mentionAt !== null && (
         <ItemPicker
-          title="Hand it to a bot, or refer to a task"
-          bots={bots}
+          title="Hand it to someone, or refer to a task"
+          bots={assignees}
           items={mention.items}
           recent={mention.recent}
           verb="Insert"
