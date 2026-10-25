@@ -118,6 +118,9 @@ export class Store {
   private transcripts = new Map<string, string>()
   readonly settings = new Map<string, unknown>()
   readonly customActions = new Map<string, CustomActionRow>()
+  /** `assigned_to` links: each item's assignees, with when each was assigned; and the other way, each assignee's items. */
+  private assigneesOf = new Map<string, Map<string, number>>()
+  private itemsOf = new Map<string, Set<string>>()
   /** Ops held back while a `batch` runs, so that they land as one write. */
   private held: Op[] | null = null
 
@@ -284,6 +287,38 @@ export class Store {
     return this.sink ? this.sink.transcript(runId) : null
   }
 
+  // ---- assignment links ----
+
+  /** Who an item is assigned to, the earliest assigned first. */
+  assignees(itemId: string): string[] {
+    return [...(this.assigneesOf.get(itemId) ?? new Map<string, number>())].sort((a, b) => a[1] - b[1]).map(([to]) => to)
+  }
+
+  /** The items assigned to someone: their `assigned_to` links, followed backwards. */
+  assignedTo(assignee: string): string[] {
+    return [...(this.itemsOf.get(assignee) ?? [])]
+  }
+
+  private link(itemId: string, to: string, at: number | null): void {
+    const mine = this.assigneesOf.get(itemId) ?? new Map<string, number>()
+    const theirs = this.itemsOf.get(to) ?? new Set<string>()
+    if (at === null) {
+      mine.delete(to)
+      theirs.delete(itemId)
+    } else {
+      mine.set(to, at)
+      theirs.add(itemId)
+    }
+    this.assigneesOf.set(itemId, mine)
+    this.itemsOf.set(to, theirs)
+  }
+
+  /** Assigns an item (an `assigned_to` link from it, sorted by when), or takes it off someone (the link removed). */
+  setAssigned(itemId: string, to: string, on: boolean, at: number): void {
+    this.link(itemId, to, on ? at : null)
+    this.out([{ link: { source: itemId, destination: to, link_type: 'assigned_to', sort: on ? { explicit: at } : 'removed' } }])
+  }
+
   // ---- settings and custom actions ----
 
   setSetting(key: string, value: unknown): void {
@@ -309,7 +344,15 @@ export class Store {
   // ---- loading ----
 
   /** Puts back rows read from egdb, without writing them again. */
-  restore(rows: { events: EventRow[]; trace: TraceRow[]; runs: RunRow[]; settings: [string, unknown][]; customActions: CustomActionRow[] }): void {
+  restore(rows: {
+    events: EventRow[]
+    trace: TraceRow[]
+    runs: RunRow[]
+    settings: [string, unknown][]
+    customActions: CustomActionRow[]
+    assigned?: { item: string; to: string; at: number }[]
+  }): void {
+    for (const a of rows.assigned ?? []) this.link(a.item, a.to, a.at)
     for (const r of [...rows.events].sort((a, b) => a.seq - b.seq)) this.index(r)
     for (const r of [...rows.trace].sort((a, b) => a.id - b.id)) this.indexTrace(r)
     for (const r of rows.runs) this.runs.set(r.id, r)

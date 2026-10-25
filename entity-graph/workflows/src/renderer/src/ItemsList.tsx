@@ -1,6 +1,6 @@
 import fuzzysort from 'fuzzysort'
 import { useAtomValue } from 'jotai'
-import { Bot, Flag, Search } from 'lucide-react'
+import { Bot, Flag, Search, User } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Item } from '../../shared/types'
 import { minutes } from './Chat'
@@ -16,7 +16,7 @@ import { searchFocusAtom } from './views'
  */
 function detail(i: Item): string {
   if (i.closed) return i.how === 'handled_outside' ? 'done outside' : i.how === 'cancelled' ? 'cancelled' : ''
-  if (i.withHuman) return i.blockers.find((b) => b.type === 'approval' && b.params.reason)?.summary ?? ''
+  if (i.withYou) return i.blockers.find((b) => b.type === 'approval' && b.params.reason)?.summary ?? ''
   const b = waitingOn(i)
   if (!b) return ''
   if (b.type === 'github') return b.params.title ? String(b.params.title) : b.summary
@@ -26,7 +26,7 @@ function detail(i: Item): string {
 }
 
 /** A line of the finder: an item in a section, a bot, or the "n more" a section ends with when it has more than it shows. */
-type Line = { key: string; item: Item } | { key: string; bot: { id: string; name: string } } | { key: string; more: SectionId; n: number }
+type Line = { key: string; item: Item } | { key: string; bot: { id: string; name: string; bot?: boolean } } | { key: string; more: SectionId; n: number }
 
 /**
  * The finder: items in sections (`sections`, in order; see `SECTIONS`), under a
@@ -45,8 +45,8 @@ export function ItemsList(props: {
   onOpen: (id: string) => void
   onCreate: (title: string) => void
   verb?: string
-  /** Bots to offer too, first, in a section of their own (`@` in the chat input). */
-  bots?: { id: string; name: string }[]
+  /** Bots and people to offer too, first, in a section of their own (`@` in the chat input). */
+  bots?: { id: string; name: string; bot?: boolean }[]
 }) {
   const { items, recent, sections, perSection = 12, onOpen, onCreate, verb = 'Open', bots = [] } = props
   const [text, setText] = useState('')
@@ -67,7 +67,7 @@ export function ItemsList(props: {
       key: `bot:${bot.id}`,
       bot,
     }))
-    const botGroup = botLines.length ? [{ id: 'bots', label: 'Bots', count: botLines.length, lines: botLines }] : []
+    const botGroup = botLines.length ? [{ id: 'bots', label: 'Hand it to', count: botLines.length, lines: botLines }] : []
     return [...botGroup, ...sections
       .map((id) => {
         let all = SECTIONS[id].items(items, recent)
@@ -157,9 +157,9 @@ export function ItemsList(props: {
             if ('bot' in line)
               return (
                 <div key={line.key} className={`row ${selected}`} onClick={() => choose(line)} onMouseMove={hover}>
-                  <Bot className="icon" />
+                  {line.bot.bot === false ? <User className="icon" /> : <Bot className="icon" />}
                   <span className="row-title">@{line.bot.name}</span>
-                  <span className="muted row-status">hand it the task</span>
+                  <span className="muted row-status">hand them the task</span>
                 </div>
               )
             if (!('item' in line))

@@ -39,12 +39,6 @@ export function BotView(props: { detail: EventDetail; bot: Agent | null; items: 
       <section className="card">
         <h2>Has</h2>
         <ItemRows items={bot.assigned.flatMap((id) => byId.get(id) ?? [])} onOpen={onOpen} empty="Nothing: @ it in a task to hand it one." />
-        {bot.watching.length > 0 && (
-          <>
-            <h3>Watches</h3>
-            <ItemRows items={bot.watching.flatMap((id) => byId.get(id) ?? [])} onOpen={onOpen} empty="" />
-          </>
-        )}
         <div className="buttons">
           <button data-ui disabled={!!bot.runId || !bot.assigned.length} onClick={() => void act(() => api().wakeBot(bot.id))} title="Run now, whatever the debounce says">
             Wake now

@@ -300,3 +300,6 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 .assignee.working { background: color-mix(in srgb, var(--accent) 15%, transparent); }
 .assignees .add-assignee { background: none; border: none; color: var(--muted); padding: 1px 4px; display: inline-flex; }
 .bot-ref { display: inline-flex; align-items: center; gap: 3px; }
+.sign-in { height: 100vh; display: flex; justify-content: center; padding-top: 20vh; background: var(--panel); }
+.sign-in .page { width: 420px; }
+.bubble-who { display: block; font-size: 11px; color: var(--muted); margin-bottom: 2px; }

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { HUMAN, type Agent, type Catalog, type ItemDetail, type ItemEvent, type Overview } from '../../shared/types'
+import type { Catalog, ItemDetail, ItemEvent, Overview } from '../../shared/types'
 import { Blockers } from './Blockers'
 import { useAtom, useSetAtom } from 'jotai'
 import { ChevronLeft, Menu, MoreHorizontal } from 'lucide-react'
@@ -32,7 +32,24 @@ import { AssignedPage } from './AssignedPage'
 import { BotsPage } from './BotsPage'
 import { BotView } from './BotView'
 import { StalePage } from './StalePage'
-import { Bot } from 'lucide-react'
+import { Bot, User as UserIcon } from 'lucide-react'
+import { everyone, nameOf, userAtom, type Someone } from './people'
+import { SignIn } from './SignIn'
+
+/** Sign in first; then the app, as whoever signed in. */
+export function Root() {
+  const [user, setUser] = useAtom(userAtom)
+  if (!user)
+    return (
+      <SignIn
+        onSignIn={(u) => {
+          api().setUser(u.id)
+          setUser(u.id)
+        }}
+      />
+    )
+  return <App key={user} />
+}
 
 export function App() {
   const items = useWorkflows()
@@ -81,21 +98,22 @@ export function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, next, showingItems, focusSearch, canFind, setFind, focusFind, act, items.selected])
-  // `[itemId]()` in any text is drawn as the item it refers to; `[botId]()` as the bot.
+  // `[itemId]()` in any text is drawn as the item it refers to; `[botId]()` and `[username]()` as the bot or person.
   const byId = useMemo(() => new Map(items.overview.items.map((i) => [i.id, i])), [items.overview.items])
-  const bots = items.overview.bots
+  const { bots, users } = items.overview
   const itemRef = useCallback(
     (id: string) => {
       const bot = bots.find((b) => b.id === id)
-      if (bot)
+      const person = users.find((u) => u.id === id)
+      if (bot || person)
         return (
-          <button data-ui className="link item-ref bot-ref" onClick={() => open({ kind: 'event', id })}>
-            <Bot className="icon" />@{bot.name}
+          <button data-ui className="link item-ref bot-ref" onClick={() => bot && open({ kind: 'event', id })}>
+            {bot ? <Bot className="icon" /> : <UserIcon className="icon" />}@{bot?.name ?? person!.name}
           </button>
         )
       return <ItemRef id={id} item={byId.get(id)} onOpen={(to) => open({ kind: 'event', id: to })} />
     },
-    [byId, bots, open],
+    [byId, bots, users, open],
   )
   return (
     <ItemsContext.Provider value={items}>
@@ -170,6 +188,7 @@ function AppMenu() {
   const [open, setOpen] = useState(false)
   const busy = w.overview.bots.filter((b) => b.runId).length
   const [look, setLook] = useAtom(appearanceAtom)
+  const setUser = useSetAtom(userAtom)
   useEffect(() => applyAppearance(look), [look])
   useEffect(() => {
     if (!open) return
@@ -186,16 +205,25 @@ function AppMenu() {
       {open && (
         <div className="menu app-menu-list">
           <div className="menu-note">
-            Bots working {busy}/{w.overview.bots.length}
+            Signed in as {w.overview.me.name} · Bots working {busy}/{w.overview.bots.length}
           </div>
           <button onClick={() => go({ kind: 'items' })}>Tasks</button>
           <button onClick={() => go({ kind: 'bots' })}>Bots</button>
-          <button onClick={() => go({ kind: 'assigned', to: HUMAN })}>Handed lately</button>
+          <button onClick={() => go({ kind: 'assigned', to: w.overview.me.id })}>Handed lately</button>
           <button onClick={() => go({ kind: 'stale' })}>Lost track</button>
           <button onClick={() => go({ kind: 'directives' })}>Directives</button>
           <button onClick={() => go({ kind: 'integrations' })}>Integrations</button>
           <button onClick={() => go({ kind: 'types' })}>Types</button>
           <button onClick={() => go({ kind: 'mcp' })}>MCP</button>
+          <button
+            onClick={() => {
+              setOpen(false)
+              api().setUser(null)
+              setUser(null)
+            }}
+          >
+            Sign out
+          </button>
           <button
             onClick={() => {
               setOpen(false)
@@ -286,7 +314,7 @@ function ItemsMain() {
       <div className="view">
         <ViewHeader canGoBack onBack={w.back} title="Handed lately" />
         <div className="view-body">
-          <AssignedPage to={to} bots={w.overview.bots} onOpen={openEvent} onPick={(next) => w.open({ kind: 'assigned', to: next }, { replace: true })} />
+          <AssignedPage to={to} overview={w.overview} onOpen={openEvent} onPick={(next) => w.open({ kind: 'assigned', to: next }, { replace: true })} />
         </div>
       </div>
     )
@@ -482,14 +510,15 @@ function ViewHeader(props: {
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
-/** The bots to offer for a task, the likeliest first: whoever else had it last, then those the human handed things to last, then the rest. */
-function likeliestBots(detail: ItemDetail, overview: Overview): Agent[] {
-  const here = detail.events
-    .filter((e) => e.type === 'assign' && e.params.to !== HUMAN && e.params.on !== false)
-    .map((e) => String(e.params.to))
-    .reverse()
-  const ids = [...new Set([...here, ...overview.recentBots, ...overview.bots.map((b) => b.id)])]
-  return ids.flatMap((id) => overview.bots.find((b) => b.id === id) ?? [])
+/**
+ * Who to offer to hand a task to, the likeliest first: whoever else had it last, then those the person signed in
+ * handed things to last, then the bots, then the other people. Never the person signed in.
+ */
+function likeliest(detail: ItemDetail, overview: Overview): Someone[] {
+  const here = detail.assignments.filter((a) => a.on).map((a) => a.assignee).reverse()
+  const all = everyone(overview)
+  const ids = [...new Set([...here, ...overview.recentAssignees, ...overview.bots.map((b) => b.id), ...overview.users.map((u) => u.id)])]
+  return ids.filter((id) => id !== overview.me.id).flatMap((id) => all.find((s) => s.id === id) ?? [])
 }
 
 function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpen: (id: string) => void }) {
@@ -500,7 +529,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
   // Every time the human sees an item is in its trace.
   useEffect(() => {
     void api().viewed(item.id)
-  }, [item.id, item.withHuman])
+  }, [item.id, item.withYou])
   // New messages arrive at the bottom, as in any chat.
   const resolved = detail.events.filter((e) => e.resolved).length
   useEffect(() => {
@@ -518,11 +547,11 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
       )}
       <FindLine />
       <div className="chat-scroll" ref={scroller}>
-        <Chat detail={detail} />
+        <Chat detail={detail} overview={w.overview} />
       </div>
       <div className="composer">
         <Gather detail={detail} overview={w.overview} act={act} />
-        {!item.closed && <Assignees item={item} bots={w.overview.bots} act={act} />}
+        {!item.closed && <Assignees item={item} overview={w.overview} act={act} />}
         <Blockers detail={detail} catalog={catalog} act={act} onOpen={onOpen} />
         {item.closed ? (
           <div className="composer-bar muted">Closed.</div>
@@ -533,7 +562,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
             catalog={catalog}
             onResolve={() => void act(() => api().close(item.id))}
             mention={{ items: w.overview.items.filter((i) => i.id !== item.id), recent: w.overview, create: (title) => api().create(title, null) }}
-            bots={likeliestBots(detail, w.overview)}
+            assignees={likeliest(detail, w.overview)}
             onSend={async (preset, text) => {
               let ok = false
               await act(async () => {

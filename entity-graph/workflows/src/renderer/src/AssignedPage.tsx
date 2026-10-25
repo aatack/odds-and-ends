@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
-import { HUMAN, type Agent, type Assignment } from '../../shared/types'
+import type { Assignment, Overview } from '../../shared/types'
 import { AssignmentRows } from './BotView'
+import { everyone, nameOf } from './people'
 import { api } from './useWorkflows'
 
 const DAYS = [1, 7, 30]
 
-/** What was handed to whom lately: to you, or to one bot, or to anyone; the newest first. */
-export function AssignedPage({ to, bots, onOpen, onPick }: { to: string; bots: Agent[]; onOpen: (id: string) => void; onPick: (to: string) => void }) {
+/** What was handed to whom lately: to you, another person, a bot, or anyone; the newest first. */
+export function AssignedPage({ to, overview, onOpen, onPick }: { to: string; overview: Overview; onOpen: (id: string) => void; onPick: (to: string) => void }) {
   const [days, setDays] = useState(7)
   const [rows, setRows] = useState<Assignment[] | null>(null)
   const refresh = useCallback(async () => setRows(await api().assignments(to === 'anyone' ? null : to, days)), [to, days])
@@ -14,13 +15,13 @@ export function AssignedPage({ to, bots, onOpen, onPick }: { to: string; bots: A
     void refresh()
     return api().onChange(() => void refresh())
   }, [refresh])
-  const who = (id: string) => (id === HUMAN ? 'you' : `@${bots.find((b) => b.id === id)?.name ?? 'a deleted bot'}`)
+  const who = (id: string) => nameOf(overview, id)
   return (
     <div className="page assigned-page">
       <div className="choices">
-        {[HUMAN, ...bots.map((b) => b.id), 'anyone'].map((id) => (
+        {[...everyone(overview).map((s) => s.id), 'anyone'].map((id) => (
           <button key={id} data-ui className={to === id ? 'chosen' : ''} onClick={() => onPick(id)}>
-            {id === 'anyone' ? 'Anyone' : id === HUMAN ? 'You' : who(id)}
+            {id === 'anyone' ? 'Anyone' : id === overview.me.id ? 'You' : who(id)}
           </button>
         ))}
       </div>

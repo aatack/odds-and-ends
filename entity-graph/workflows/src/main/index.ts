@@ -22,7 +22,7 @@ async function main(): Promise<void> {
     console.error('workflows: could not hand back the old secrets:', (e as Error).message)
   }
 
-  ipcMain.handle('rpc', (_e, method: string, args: unknown[]) => server.call(method, args))
+  ipcMain.handle('rpc', (_e, method: string, args: unknown[], user: string | null) => server.call(method, args, user))
 
   const win = new BrowserWindow({
     width: 1200,

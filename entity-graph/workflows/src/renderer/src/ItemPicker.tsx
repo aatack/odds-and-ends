@@ -19,8 +19,8 @@ export function ItemPicker(props: {
   onPick: (id: string) => void
   onCreate: (title: string) => void
   onClose: () => void
-  /** Bots to offer first, in a section of their own. */
-  bots?: { id: string; name: string }[]
+  /** Bots and people to offer first, in a section of their own. */
+  bots?: { id: string; name: string; bot?: boolean }[]
 }) {
   const { title, items, recent, sections = PICKER_SECTIONS, perSection = 6, verb, onPick, onCreate, onClose, bots } = props
   return (

@@ -1,7 +1,7 @@
 // Real claude -p runs, against the MCP server, with the event schema as
 // structured output: a bot splits off a child item and assigns it to itself;
-// its next run takes the child up in the same session, so it knows what it was
-// told for the parent. Not part of npm test: it costs a few runs.
+// its next run (woken by hand here, rather than in 15 minutes) takes the child up
+// in the same session, so it knows what it was told for the parent. Not part of npm test: it costs a few runs.
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -28,14 +28,15 @@ await engine.send(
   parent,
   `assign:${bot}`,
   'Remember the word "pelican", but do not write it anywhere. Then add a child item titled "Recall", whose first events are a ' +
-    'message "Say the word you were asked to remember, then close this item." and an assign to yourself. Send me no message.',
+    'message "Say the word you were asked to remember, then close this item.", and assign it to yourself. Keep the parent too.',
 )
 await wait()
+engine.wakeAgent(bot)
 await wait()
 
 const show = (id: string, depth = 0) => {
   const it = engine.get(id)!
-  console.log(`${'  '.repeat(depth)}# ${it.title} (${it.closed ? it.how : 'open'}) assigned ${it.assignees.map((a) => engine.actorName(`bot:${a}`)).join(', ')}`)
+  console.log(`${'  '.repeat(depth)}# ${it.title} (${it.closed ? it.how : 'open'}) assigned ${it.assignees.map((a) => engine.actorName(a)).join(', ')}`)
   for (const e of engine.children(id)) {
     console.log(`${'  '.repeat(depth)}- ${e.resolved ? 'done' : 'OPEN'} ${engine.actorName(e.createdBy).padEnd(10)} ${e.type.padEnd(8)} ${(e.message ?? e.summary).slice(0, 100)}`)
     if (e.type === 'item') show(e.id, depth + 1)

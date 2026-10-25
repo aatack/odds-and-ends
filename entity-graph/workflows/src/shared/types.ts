@@ -10,10 +10,7 @@
  */
 export type EventKind =
   | 'item' | 'message' | 'attachment' | 'priority' | 'rename' | 'summary' | 'action' | 'approval' | 'bot' | 'github' | 'slack'
-  | 'after' | 'script' | 'directive' | 'snooze' | 'agent' | 'configure' | 'assign' | 'watch'
-
-/** The human, as an assignee. Every other assignee is a bot, by its id. */
-export const HUMAN = 'human'
+  | 'after' | 'script' | 'directive' | 'snooze' | 'agent' | 'configure' | 'user'
 
 /** An event as it is added. `ref` names it, so an `after` added alongside can point at it. */
 export interface EventSpec {
@@ -87,12 +84,12 @@ export interface Item {
   /** Its open children, oldest first. */
   blockers: ItemEvent[]
   /**
-   * Who it is assigned to: 'human' and bots' ids, by the latest assign event for each. An item with no assignee is
-   * the human's.
+   * Who it is assigned to: people (their usernames) and bots (their ids), the earliest assigned first. These are
+   * `assigned_to` links from the item, not events in it.
    */
   assignees: string[]
-  /** Open, assigned to the human (or to nobody), and blocked by nothing but the human's own approvals: it is the human's turn. */
-  withHuman: boolean
+  /** Open, assigned to the person looking, and blocked by nothing but people's own approvals: it is their turn. */
+  withYou: boolean
   /** Marked as a priority (by its latest priority event): Next takes it before the rest. */
   priority: boolean
   /** When it wakes, while a snooze blocks it (the latest, if several). */
@@ -136,6 +133,8 @@ export interface BotRun {
 
 export interface ItemDetail {
   item: Item
+  /** Who it was assigned to, and taken off, and when: notes in the chat. */
+  assignments: Assignment[]
   /** The item it sits in, if any. */
   parent: { id: string; title: string } | null
   /** Its children, oldest first: every event in it, child items included. */
@@ -185,11 +184,15 @@ export interface Agent {
   wakesAt: number | null
   /** The open items assigned to it. */
   assigned: string[]
-  /** The open items it watches. */
-  watching: string[]
 }
 
-/** An assign event, as the "recently assigned" lists read it. */
+/** A person: a `user` event in no item, whose id is their username. */
+export interface User {
+  id: string
+  name: string
+}
+
+/** An assignment or its end, as the trace has it (the "handed lately" lists, and the notes in a chat). */
 export interface Assignment {
   itemId: string
   title: string
@@ -200,16 +203,19 @@ export interface Assignment {
 }
 
 export interface Overview {
+  /** Who is looking: `withYou` and the recent lists are theirs. */
+  me: User
   items: Item[]
   bots: Agent[]
+  users: User[]
   /** Items the human had on screen in the last week, the most recent first. */
   viewed: string[]
   /** Items the human attached something to, or attached, in the last week, the most recent first. */
   linked: string[]
   /** What the human attached in the last week, and to which item (`target`), the most recent first: a new item suggests them. */
   attachments: RecentAttachment[]
-  /** The bots the human handed something to, the most recent first: the chat input offers them first. */
-  recentBots: string[]
+  /** Whoever (people and bots) the person looking assigned things to, the most recent first: the chat input offers them first. */
+  recentAssignees: string[]
 }
 
 /** One of the human's recent attachments: the event attached (`event`, its `title`, the `item` to read it in) and where it went. */
@@ -344,8 +350,16 @@ export interface WorkflowsAPI {
   saveBot: (bot: { id?: string; name: string; instructions: string; provider: string; model: string; debounceMinutes: number; folder?: string }) => Promise<string>
   /** Deletes a bot: what it was assigned goes back to the human. */
   deleteBot: (id: string) => Promise<void>
-  /** Assigns an item to the human or a bot (on), or takes the assignment away (off). */
+  /** Assigns an item to a person or a bot (on), or takes the assignment away (off). */
   assign: (itemId: string, to: string, on: boolean) => Promise<void>
+  /** Every person. */
+  users: () => Promise<User[]>
+  /** Adds a person (or renames one): their username is their id. */
+  saveUser: (username: string, name: string) => Promise<User>
+  /** Checks a username, to sign in with: no password, as the app is local. */
+  signIn: (username: string) => Promise<User>
+  /** Who the calls from here on are made as (kept by the preload, sent with each call). */
+  setUser: (username: string | null) => void
   /** Assign events, the newest first: for one assignee (or anyone), in the last `days`. */
   assignments: (assignee: string | null, days: number) => Promise<Assignment[]>
   /** The open items the human owns or had assigned to them, untouched for `hours`, the longest untouched first. */
@@ -388,9 +402,9 @@ export const API_METHODS = [
   'overview', 'detail', 'eventDetail', 'catalog', 'next', 'viewed', 'skipped', 'create', 'send', 'approve', 'cancel', 'close', 'attach',
   'summarise', 'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'directives',
   'addDirective', 'editDirective', 'setPriority', 'rename', 'snooze', 'unsnooze', 'handledOutside', 'pollSources', 'saveBot', 'deleteBot',
-  'assign', 'assignments', 'stale', 'wakeBot', 'integrations', 'addSlack', 'removeSlack', 'mcp', 'regenerateMcpToken', 'setMcpPort',
+  'assign', 'assignments', 'stale', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'mcp', 'regenerateMcpToken', 'setMcpPort',
 ] as const satisfies readonly ApiMethod[]
 
-type ApiMethod = Exclude<keyof WorkflowsAPI, 'onChange' | 'onBack' | 'onForward'>
+type ApiMethod = Exclude<keyof WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser'>
 /** Fails to compile while a call is left out of API_METHODS. */
 export const API_METHODS_COMPLETE: Exclude<ApiMethod, (typeof API_METHODS)[number]> extends never ? true : never = true

@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client'
-import { App } from './App'
+import { Root } from './App'
 import '@fontsource-variable/geist/index.css'
 import '@fontsource-variable/lora/index.css'
 import '@fontsource-variable/source-serif-4/index.css'
@@ -15,4 +15,11 @@ import { applyAppearance, storedAppearance } from './appearance'
 // The chosen theme (dark but for Notebook: entity-graph's tokens redefine themselves under html.dark).
 applyAppearance(storedAppearance())
 
-createRoot(document.getElementById('root')!).render(<App />)
+// Who is signed in, from before: every call is made as them.
+try {
+  window.workflows.setUser(JSON.parse(localStorage.getItem('workflows.user') ?? 'null'))
+} catch {
+  // Nobody, then.
+}
+
+createRoot(document.getElementById('root')!).render(<Root />)

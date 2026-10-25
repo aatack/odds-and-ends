@@ -29,7 +29,7 @@ export function StalePage({ onOpen }: { onOpen: (id: string) => void }) {
         ))}
       </div>
       <section className="card">
-        {items && <ItemRows items={items} onOpen={onOpen} empty="Nothing: everything you have has moved lately." note={(i) => (i.withHuman ? 'yours' : '')} />}
+        {items && <ItemRows items={items} onOpen={onOpen} empty="Nothing: everything you have has moved lately." note={(i) => (i.withYou ? 'yours' : '')} />}
       </section>
     </div>
   )

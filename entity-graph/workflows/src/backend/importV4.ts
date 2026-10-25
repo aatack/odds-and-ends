@@ -3,10 +3,10 @@
 // with its ids; every run with its transcript; the settings and custom actions.
 // The old file is left as it was.
 //
-// What changes on the way: bots were per item then, and are their own items
-// now, so a `bot` blocker still open is cancelled (its item goes back to the
-// human, who has every item nobody is assigned), and a run is recorded as one
-// on its item, by no bot.
+// What changes on the way: there was one person ("human"), who becomes the
+// first person, by a username, and has every item still open; bots were per
+// item then, and are their own items now, so a `bot` blocker still open is
+// cancelled, and a run is recorded as one on its item, by no bot.
 
 import type { Store } from '../engine/store'
 
@@ -30,7 +30,12 @@ async function open(file: string): Promise<Sqlite> {
 const json = <T>(s: unknown): T | null => (typeof s === 'string' && s ? (JSON.parse(s) as T) : null)
 const n = (x: unknown): number | null => (x === null || x === undefined ? null : Number(x))
 
-export async function importV4(file: string, store: Store, now: number): Promise<{ events: number; trace: number; runs: number }> {
+/**
+ * `person` is who "human" was: the first person, by their username. What the human did is theirs from now on, and
+ * every item open as it comes in is assigned to them.
+ */
+export async function importV4(file: string, store: Store, now: number, person: string): Promise<{ events: number; trace: number; runs: number }> {
+  const who = (actor: unknown) => (actor === 'human' ? person : String(actor))
   if (store.events.size) throw new Error('The store is not empty: an import goes only into an empty one.')
   const db = await open(file)
   try {
@@ -48,11 +53,11 @@ export async function importV4(file: string, store: Store, now: number): Promise
           seq: Number(r.seq),
           type: String(r.type),
           params: json(r.params) ?? {},
-          created_by: String(r.created_by),
+          created_by: who(r.created_by),
           created_at: Number(r.created_at),
           resolved: legacyBot || Boolean(r.resolved),
           resolved_at: legacyBot ? now : n(r.resolved_at),
-          resolved_by: legacyBot ? 'system' : ((r.resolved_by as string) ?? null),
+          resolved_by: legacyBot ? 'system' : r.resolved_by ? who(r.resolved_by) : null,
           cancelled: legacyBot || Boolean(r.cancelled),
           started: Boolean(r.started),
           data: legacyBot ? { cancelled: true, detail: 'Bots are their own items now: assign the task to one.' } : json(r.data),
@@ -69,7 +74,7 @@ export async function importV4(file: string, store: Store, now: number): Promise
           item_id: String(t.item_id),
           event_id: (t.event_id as string) ?? null,
           run_id: (t.run_id as string) ?? null,
-          actor: String(t.actor),
+          actor: who(t.actor),
           kind: String(t.kind),
           data: json(t.data),
         })
@@ -112,6 +117,19 @@ export async function importV4(file: string, store: Store, now: number): Promise
             created_at: Number(a.created_at),
             updated_at: Number(a.updated_at),
           })
+      // The one person there was: made, and given every item still open.
+      store.insertEvent({
+        id: person, parent_id: null, seq: store.nextSeq(null), type: 'user', params: { username: person }, created_by: person, created_at: now,
+        resolved: false, resolved_at: null, resolved_by: null, cancelled: false, started: true, data: null, memo: null, check_step: 0,
+        next_check_at: null, last_error: null,
+      })
+      store.appendTrace({ at: now, item_id: person, event_id: person, run_id: null, actor: 'system', kind: 'event_added', data: { type: 'user' } })
+      for (const r of events)
+        if (r.type === 'item' && !r.resolved) {
+          store.setAssigned(String(r.id), person, true, now)
+          store.appendTrace({ at: now, item_id: String(r.id), event_id: null, run_id: null, actor: 'system', kind: 'assigned', data: { to: person } })
+          store.appendTrace({ at: now, item_id: person, event_id: null, run_id: null, actor: 'system', kind: 'assigned', data: { item: String(r.id) } })
+        }
     })
     return { events: events.length, trace: trace.length, runs: runs.length }
   } finally {

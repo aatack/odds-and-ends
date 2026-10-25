@@ -2,7 +2,7 @@
 // the one list both MCP scopes serve and scripts are handed.
 
 import { z } from 'zod'
-import { HUMAN, type EventSpec } from '../shared/types'
+import type { EventSpec } from '../shared/types'
 import type { Action } from './integrations'
 import { PARADIGM } from './paradigm'
 import { objectSchema } from './schema'
@@ -74,7 +74,7 @@ export const itemActions: Action[] = [
         parentId: i.parentId,
         closed: i.closed,
         assignees: i.assignees,
-        withHuman: i.withHuman,
+        withYou: i.withYou,
         blockers: i.blockers.map((b) => ({ id: b.id, type: b.type, summary: b.summary })),
       }))
     },
@@ -83,52 +83,72 @@ export const itemActions: Action[] = [
     name: 'items_waiting_on',
     unsafe: false,
     description:
-      "The open items waiting on one thing: `human` (the human's turn: assigned to them, and nothing blocks them but approvals), " +
-      '`bot` (assigned to any bot), a bot by its name, or any blocking event type (`github`, `slack`, `script`, `after`, ' +
-      "`approval`, `item` for a child item, …: see event_types). Each with the blockers that match, longest-waiting first.",
-    input: { on: z.string().describe("human, bot, a bot's name, or a blocking event type.") },
+      "The open items waiting on one thing: a person (by username: their turn, so assigned to them and blocked by nothing but " +
+      'approvals), `bot` (assigned to any bot), a bot by its name, or any blocking event type (`github`, `slack`, `script`, ' +
+      "`after`, `approval`, `item` for a child item, …: see event_types). Each with the blockers that match, longest-waiting first.",
+    input: { on: z.string().describe("A person's username, bot, a bot's name, or a blocking event type.") },
     run: async (a, { engine }) => {
       const on = String(a.on)
       const types: string[] = engine.eventTypes.filter((t) => t.blocking).map((t) => t.type)
-      const agent = on === 'bot' ? null : engine.findAgent(on)
-      if (on !== HUMAN && on !== 'bot' && !agent && !types.includes(on))
-        throw new Error(`Waiting on what? One of: human, bot, a bot's name, ${types.join(', ')}.`)
-      const waits = (i: { withHuman: boolean; assignees: string[]; blockers: { type: string }[] }) =>
-        on === HUMAN ? i.withHuman
-        : on === 'bot' ? i.assignees.some((x) => x !== HUMAN)
+      const person = engine.user(on.toLowerCase())
+      const agent = on === 'bot' || person ? null : engine.findAgent(on)
+      if (!person && on !== 'bot' && !agent && !types.includes(on))
+        throw new Error(`Waiting on what? One of: a person (${engine.users().map((u) => u.id).join(', ')}), bot, a bot's name, ${types.join(', ')}.`)
+      const items = engine.overview(person?.id).items.filter((i) => !i.closed)
+      const waits = (i: (typeof items)[number]) =>
+        person ? i.withYou
+        : on === 'bot' ? i.assignees.some((x) => !engine.isUser(x))
         : agent ? i.assignees.includes(agent.id)
         : i.blockers.some((b) => b.type === on)
-      return engine
-        .overview()
-        .items.filter((i) => !i.closed && waits(i))
-        .map((i) => ({
-          id: i.id,
-          title: i.title,
-          parentId: i.parentId,
-          since: new Date(i.since).toISOString(),
-          assignees: i.assignees,
-          blockers: i.blockers.filter((b) => !types.includes(on) || b.type === on).map((b) => ({ id: b.id, type: b.type, summary: b.summary })),
-        }))
+      return items.filter(waits).map((i) => ({
+        id: i.id,
+        title: i.title,
+        parentId: i.parentId,
+        since: new Date(i.since).toISOString(),
+        assignees: i.assignees,
+        blockers: i.blockers.filter((b) => !types.includes(on) || b.type === on).map((b) => ({ id: b.id, type: b.type, summary: b.summary })),
+      }))
     },
   },
   {
     name: 'next_for_human',
     unsafe: false,
     description:
-      "The item the human's Next button would show them now: the one that has been their turn longest. Null when nothing needs them.",
-    input: {},
-    run: async (_a, { engine }) => {
-      const id = engine.next()
-      const item = id ? engine.overview().items.find((i) => i.id === id) : null
+      "The item a person's Next would show them now (the default person's, without `username`): their priority items first, then " +
+      'the one least recently touched. Null when nothing needs them.',
+    input: { username: z.string().optional() },
+    run: async (a, { engine }) => {
+      const who = a.username ? engine.signIn(String(a.username)).id : engine.me()
+      const id = engine.next([], who)
+      const item = id ? engine.get(id, who) : null
       return item ? { id: item.id, title: item.title, since: new Date(item.since).toISOString() } : null
     },
+  },
+  {
+    name: 'assign',
+    unsafe: false,
+    description:
+      'Assign an item to a person (by username) or a bot (by name or id), or take it off them (on: false): an `assigned_to` link from ' +
+      'the item. Assigning a bot wakes it (its debounce after), even one that has the item already. Your updates can also say who ' +
+      'has an item, with `assign`.',
+    input: { item_id: itemId, to: z.string().describe("A person's username, or a bot's name or id."), on: z.boolean().optional() },
+    run: async (a, ctx) => {
+      await ctx.engine.assign(String(a.item_id), String(a.to), a.on !== false, ctx.actor, ctx.runId)
+      return { assignees: ctx.engine.assignees(String(a.item_id)) }
+    },
+  },
+  {
+    name: 'list_people',
+    unsafe: false,
+    description: 'The people who use the app: each with their username (assign or @ them by that) and name, and the open items they have.',
+    input: {},
+    run: async (_a, { engine }) => engine.users().map((u) => ({ ...u, assigned: engine.assignedTo(u.id) })),
   },
   {
     name: 'list_bots',
     unsafe: false,
     description:
-      'The bots: each with its name (assign or @ it by that), what it is for, whether it is running, and the open items assigned to it ' +
-      'and that it watches.',
+      'The bots: each with its name (assign or @ it by that), what it is for, whether it is running, and the open items assigned to it.',
     input: {},
     run: async (_a, { engine }) =>
       engine.agents().map((b) => ({
@@ -140,29 +160,27 @@ export const itemActions: Action[] = [
         debounceMinutes: b.debounceMinutes,
         running: b.runId !== null,
         assigned: b.assigned,
-        watching: b.watching,
       })),
   },
   {
     name: 'recently_assigned',
     unsafe: false,
-    description: "Assign events, the newest first, over the last `days`: to one assignee ('human' or a bot's name), or to anyone.",
-    input: { to: z.string().optional().describe("'human' or a bot's name; anyone if left out."), days: z.number().default(7) },
-    run: async (a, { engine }) => {
-      const to = a.to ? (a.to === HUMAN ? HUMAN : engine.findAgent(String(a.to))?.id) : null
-      if (a.to && !to) throw new Error(`No bot ${a.to}.`)
-      return engine.assignments(to ?? null, Number(a.days)).map((x) => ({ ...x, at: new Date(x.at).toISOString() }))
-    },
+    description: "Assignments and their ends, the newest first, over the last `days`: to one assignee (a username, or a bot's name), or to anyone.",
+    input: { to: z.string().optional().describe("A username or a bot's name; anyone if left out."), days: z.number().default(7) },
+    run: async (a, { engine }) =>
+      engine.assignments(a.to ? engine.resolveAssignee(String(a.to)) : null, Number(a.days)).map((x) => ({ ...x, at: new Date(x.at).toISOString() })),
   },
   {
     name: 'stale_items',
     unsafe: false,
     description:
-      'The open items the human made or was assigned at some time, in which nothing has happened for `hours`: those that may have ' +
-      'been lost track of, the longest untouched first.',
-    input: { hours: z.number().default(24) },
+      'The open items a person (the default person, without `username`) made or was assigned at some time, in which nothing has ' +
+      'happened for `hours`: those that may have been lost track of, the longest untouched first.',
+    input: { hours: z.number().default(24), username: z.string().optional() },
     run: async (a, { engine }) =>
-      engine.stale(Number(a.hours)).map((i) => ({ id: i.id, title: i.title, assignees: i.assignees, since: new Date(i.since).toISOString() })),
+      engine
+        .stale(Number(a.hours), a.username ? engine.signIn(String(a.username)).id : engine.me())
+        .map((i) => ({ id: i.id, title: i.title, assignees: i.assignees, since: new Date(i.since).toISOString() })),
   },
   {
     name: 'directives',
