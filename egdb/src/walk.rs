@@ -38,14 +38,16 @@ pub type Follow = HashMap<String, Vec<FollowRule>>;
 /// One relationship that a walk follows out of an entity: links of
 /// `link_type` in `direction`, to entities whose `type` value is
 /// `child_type`. Linked entities of any other type are not reached by it.
+/// A `child_type` of `None` is the wildcard: a child of any type.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FollowRule {
     pub link_type: String,
     pub direction: Direction,
-    pub child_type: String,
+    pub child_type: Option<String>,
 }
 
 impl FollowRule {
+    /// Follow links of `link_type` in `direction` to entities of `child_type`.
     pub fn new(
         link_type: impl Into<String>,
         direction: Direction,
@@ -54,18 +56,45 @@ impl FollowRule {
         Self {
             link_type: link_type.into(),
             direction,
-            child_type: child_type.into(),
+            child_type: Some(child_type.into()),
+        }
+    }
+
+    /// Follow links of `link_type` in `direction` to entities of any type.
+    pub fn any(link_type: impl Into<String>, direction: Direction) -> Self {
+        Self {
+            link_type: link_type.into(),
+            direction,
+            child_type: None,
+        }
+    }
+
+    /// Whether the rule accepts a child whose `type` text is `child`.
+    pub fn accepts(&self, child: Option<&str>) -> bool {
+        match &self.child_type {
+            None => true,
+            Some(c) => child == Some(c.as_str()),
         }
     }
 }
 
-/// [`Store::prove`]'s relationship map: the `(link type, direction)` pairs
-/// that an entity of the key's type steps down, to an entity of any type.
-pub type Relationships = HashMap<String, Vec<(String, Direction)>>;
-
 /// The rules of a [`Walker`]: per parent type, `(link type, direction, child
-/// type)`, where `None` accepts a child of any type ([`Store::prove`]).
+/// type)`, where `None` accepts a child of any type.
 pub(crate) type Rules = HashMap<String, Vec<(String, Direction, Option<String>)>>;
+
+/// A follow map as [`Walker`] rules.
+fn rules_of_follow(follow: &Follow) -> Rules {
+    follow
+        .iter()
+        .map(|(parent, rules)| {
+            let rules = rules
+                .iter()
+                .map(|r| (r.link_type.clone(), r.direction, r.child_type.clone()))
+                .collect();
+            (parent.clone(), rules)
+        })
+        .collect()
+}
 
 /// What a walk knows of one entity: its ID and all its (non-null) values.
 #[derive(Clone, Debug, PartialEq)]
@@ -168,12 +197,11 @@ impl Default for ReadAhead {
     }
 }
 
-/// The loading engine of a walk, shared with [`Store::prove`]'s `Walk`
-/// strategy: the per-call cache of values and followed links, with the batched
-/// read-ahead ([`Walker::ensure`]/`load`). It is `pub(crate)` so that `prove`
-/// can drive the same read-ahead over a reversed follow map; `prove` reads
-/// [`Walker::nodes`] and [`Walker::links`] after an [`Walker::ensure`], and
-/// does its own traversal and predecessor-type check.
+/// The loading engine of a walk, shared with [`Store::prove`]'s forward
+/// phase: the per-call cache of values and followed links, the child-type
+/// checks, and the batched read-ahead ([`Walker::ensure`]/`load`). `prove`
+/// reads [`Walker::nodes`], [`Walker::links`] and [`Walker::targets_of`]
+/// after an [`Walker::ensure`], and runs its own traversal.
 pub(crate) struct Walker<'a, D, I> {
     store: &'a Store,
     view: View,
@@ -182,9 +210,6 @@ pub(crate) struct Walker<'a, D, I> {
     /// Read ahead from the end of each child list, not its start: a backward
     /// walk goes to the last children first.
     backward: bool,
-    /// Link reads use the archived filter of [`Store::links`] when set (always
-    /// for `walk`; `!include_archived` for `prove`).
-    typed_only: bool,
     descend: D,
     include: I,
     /// Values of each loaded entity (its `type` included).
@@ -255,31 +280,10 @@ where
         Ok(())
     }
 
-    /// Make sure the links of `id` for `pairs` are cached, even when `id`'s
-    /// type selects no follow pairs. [`Store::prove`]'s `Walk` strategy needs
-    /// this for an untyped item (its type keys nothing in the reversed follow
-    /// map), so that the walk still reads its links. For a node whose type
-    /// does follow these pairs, [`Walker::ensure`] already cached them and this
-    /// is a no-op; otherwise it is one extra load round.
-    pub(crate) fn ensure_links(&mut self, id: &str, pairs: &[(String, Direction)]) -> Result<()> {
-        let owned = id.to_owned();
-        self.ensure(std::slice::from_ref(&owned), usize::MAX)?;
-        if self.links.contains_key(id) {
-            return Ok(());
-        }
-        self.loads += 1;
-        let eids = self.store.lookup(&[id])?;
-        let groups: Vec<(&str, Direction)> = pairs.iter().map(|(t, d)| (t.as_str(), *d)).collect();
-        let links = self.store.links_with(
-            &self.view,
-            &[id],
-            &eids,
-            &groups,
-            self.typed_only,
-            Some(&mut self.eid_of),
-        )?;
-        self.links.insert(owned, links[id].clone());
-        Ok(())
+    /// The followed targets of a loaded entity, in order, before path
+    /// filtering (cycles, `descend`). Empty for an entity that is not loaded.
+    pub(crate) fn targets_of(&self, id: &str) -> &[String] {
+        self.targets.get(id).map_or(&[], Vec::as_slice)
     }
 
     /// One load round: values of `ids`, then their followed links, grouped by
@@ -343,7 +347,7 @@ where
                 &members,
                 &mine,
                 &groups,
-                self.typed_only,
+                true,
                 Some(&mut self.eid_of),
             )?;
             for id in members {
@@ -630,19 +634,9 @@ impl Store {
         let mut w = Walker {
             store: self,
             view: self.branch_view(branch)?,
-            follow: follow
-                .iter()
-                .map(|(parent, rules)| {
-                    let rules = rules
-                        .iter()
-                        .map(|r| (r.link_type.clone(), r.direction, Some(r.child_type.clone())))
-                        .collect();
-                    (parent.clone(), rules)
-                })
-                .collect(),
+            follow: rules_of_follow(follow),
             read_ahead: options.read_ahead,
             backward,
-            typed_only: true,
             descend,
             include,
             nodes: HashMap::new(),
@@ -706,18 +700,17 @@ impl Store {
         })
     }
 
-    /// A bare [`Walker`] for [`Store::prove`]'s `Walk` strategy: the walk
-    /// cache and read-ahead over `follow`, with no descend/include predicate
-    /// and no visited set. `prove` calls [`Walker::ensure`] and reads the
-    /// loaded [`Walker::nodes`] and [`Walker::links`] itself. A child of any
-    /// type is followed.
+    /// A bare [`Walker`] for [`Store::prove`]: the walk's cache, read-ahead
+    /// and child-type checks over `follow`, with no descend/include predicate
+    /// and no visited set. `prove` calls [`Walker::ensure`] and reads
+    /// [`Walker::nodes`], [`Walker::links`] and [`Walker::targets_of`], and
+    /// runs the predicates in its own depth-first search.
     #[allow(clippy::type_complexity)]
     pub(crate) fn walk_loader<'a>(
         &'a self,
         view: View,
-        follow: &Relationships,
+        follow: &Follow,
         read_ahead: ReadAhead,
-        typed_only: bool,
     ) -> Walker<
         'a,
         impl FnMut(&[String], &WalkNode) -> bool,
@@ -726,16 +719,9 @@ impl Store {
         Walker {
             store: self,
             view,
-            follow: follow
-                .iter()
-                .map(|(parent, pairs)| {
-                    let rules = pairs.iter().map(|(t, d)| (t.clone(), *d, None)).collect();
-                    (parent.clone(), rules)
-                })
-                .collect(),
+            follow: rules_of_follow(follow),
             read_ahead,
             backward: false,
-            typed_only,
             descend: |_: &[String], _: &WalkNode| true,
             include: |_: &[String], _: &WalkNode| true,
             nodes: HashMap::new(),

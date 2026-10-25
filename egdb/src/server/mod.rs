@@ -26,10 +26,10 @@ use tokio::net::TcpListener;
 use crate::error::Result;
 use crate::store::Store;
 use crate::types::{Direction, ParentRef, SeqRange, WriteBatch};
-use crate::{Filter, FindOptions, Follow, ProveOptions, Relationships, WalkOptions};
+use crate::{Filter, FindOptions, Follow, ProveOptions, WalkOptions};
 use dto::query::{
     node_predicate, FilterDto, FindDto, FindOptionsDto, FollowDto, ProveDto, ProveOptionsDto,
-    RelationshipsDto, WalkDto, WalkOptionsDto,
+    WalkDto, WalkOptionsDto,
 };
 use dto::{
     link_groups_to_dto, parse_branch, value_map_to_json, value_to_json, BranchInfoDto,
@@ -449,9 +449,17 @@ async fn walk(
 #[derive(Deserialize)]
 struct ProveReq {
     branch: String,
+    /// The walk query: as in `/walk`.
+    start: Vec<String>,
+    follow: FollowDto,
+    #[serde(default)]
+    descend: Option<FilterDto>,
+    #[serde(default)]
+    include: Option<FilterDto>,
+    #[serde(default)]
+    collapsed: Vec<Vec<String>>,
+    /// The entity to prove the walk emits.
     item: String,
-    roots: Vec<String>,
-    relationships: RelationshipsDto,
     #[serde(default)]
     options: Option<ProveOptionsDto>,
 }
@@ -461,13 +469,24 @@ async fn prove(
     ApiJson(body): ApiJson<ProveReq>,
 ) -> ApiResult<ProveDto> {
     let id = parse_branch(&body.branch)?;
+    let start = body.start;
     let item = body.item;
-    let roots = body.roots;
-    let relationships: Relationships = body.relationships.into();
+    let follow: Follow = body.follow.into();
+    let descend = body.descend.map(Filter::from);
+    let include = body.include.map(Filter::from);
+    let collapsed = body.collapsed.into_iter().collect();
     let options: ProveOptions = body.options.unwrap_or_default().into();
     let result = on_store(&state, move |s| {
-        let refs: Vec<&str> = roots.iter().map(String::as_str).collect();
-        s.prove(id, &item, &refs, &relationships, options)
+        let refs: Vec<&str> = start.iter().map(String::as_str).collect();
+        s.prove(
+            id,
+            &refs,
+            &item,
+            &follow,
+            node_predicate(descend, collapsed),
+            node_predicate(include, Default::default()),
+            options,
+        )
     })
     .await?;
     Ok(Json(result.into()))

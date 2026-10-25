@@ -314,8 +314,9 @@ Request: `{branch, start, follow, descend?, include?, collapsed?, options?}`.
   entities whose `type` is `child_type` only. From a system, follow outbound
   `contains` links to requirements and outbound `verified by` links to tests:
   `{ "system": [["contains", "outbound", "requirement"], ["verified by", "outbound", "test"]] }`.
-  Children come link group by link group, in the order the rules first name
-  each `(link_type, direction)`, in link order within a group.
+  A `null` child type is the wildcard: children of any type. Children come
+  link group by link group, in the order the rules first name each
+  `(link_type, direction)`, in link order within a group.
 - `descend` and `include` are filters (the same shape as [`/find`](#post-find)),
   tested on each node's id and values. Absent means always true. `include`
   decides if a node is in the result; `descend` decides if the walk goes below
@@ -351,22 +352,24 @@ curl -s -X POST $URL/walk -H 'content-type: application/json' -d '{
 
 ### POST /prove
 
-Request: `{branch, item, roots, relationships, options?}`. `relationships` maps
-a type to the `[link_type, direction]` pairs that an entity of that type steps
-down, to a child of any type: `{ "list": [["child", "outbound"]] }`. `options` is `{max_depth?, max_nodes?,
-include_archived?, strategy?}`; `strategy` is `"backward"` (the default),
-`"bidirectional"` or `"walk"`. Response: `{outcome, stats}`. `outcome` is
-`{"proved": {path, links}}`, `"no_path"` or `"unknown"`.
+Request: `{branch, start, follow, descend?, include?, collapsed?, item,
+options?}`. The walk query fields are the same as for [`/walk`](#post-walk).
+The answer is whether that walk emits `item`, with the path it emits it on.
+`options` is `{max_depth?, max_nodes?}`: `max_depth` is the most links below
+the start; past `max_nodes` expanded entities the outcome is `"unknown"`.
+Response: `{outcome, stats}`. `outcome` is `{"proved": {path, links}}`,
+`"no_path"` or `"unknown"`. `path` is the walk's path to the item (the start
+path, then the steps); `links` holds the link of each step below the start.
 
 ```sh
 curl -s -X POST $URL/prove -H 'content-type: application/json' -d '{
-  "branch":"'$B'","item":"b","roots":["a"],
-  "relationships":{"task":[["child","outbound"]]}}'
+  "branch":"'$B'","start":["a"],"item":"b",
+  "follow":{"task":[["child","outbound",null]]}}'
 ```
 
 ```json
 { "outcome": { "proved": { "path": ["a", "b"], "links": [ ... ] } },
-  "stats": { "nodes_visited": 1, "link_reads": 1, "value_reads": 2, "sql_queries": 3, "depth_reached": 1 } }
+  "stats": { "nodes_visited": 3, "link_reads": 3, "value_reads": 4, "sql_queries": 7, "depth_reached": 1 } }
 ```
 
 ### GET /branches

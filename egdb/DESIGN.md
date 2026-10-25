@@ -693,7 +693,7 @@ Other reads: `branch`, `branches`.
 
 ```rust
 pub type Follow = HashMap<String, Vec<FollowRule>>; // source entity's `type` -> rules
-pub struct FollowRule { pub link_type: String, pub direction: Direction, pub child_type: String }
+pub struct FollowRule { pub link_type: String, pub direction: Direction, pub child_type: Option<String> } // None = any
 pub struct WalkNode { pub id: String, pub values: BTreeMap<String, Value> }
 pub struct ReadAhead { pub depth: usize, pub width: usize }             // default 2, 32
 pub enum WalkDirection { Forward /* default */, Backward }
@@ -718,7 +718,7 @@ The rules [CHOSEN, I19]:
 
 1. **Start path.** The last ID of `start` is the first node to visit. The earlier IDs are its ancestors. The walk never goes above `start[0]`.
 2. **Order.** The walk is depth-first. The next path is the first child. If there is no child, it is the next sibling of the deepest ancestor that has one.
-3. **Children.** The store reads the `type` of the node. It follows the rules of that type in `follow`. A rule `(link type, direction, child type)` follows the live links of that type and direction to entities whose `type` is the child type; a linked entity of another type is not a child. The children come link group by link group, in the order that the rules first name each `(link type, direction)`, and each group keeps its sort order: two rules on one group with different child types give one list, in link order (so manually sorted children stay in order). A child reached twice is kept once, at its first place. A type with no entry follows nothing. There is no wildcard key (Q17, resolved), and every rule names its child type. The types of linked entities that the walk has not loaded are read in one batch per load round.
+3. **Children.** The store reads the `type` of the node. It follows the rules of that type in `follow`. A rule `(link type, direction, child type)` follows the live links of that type and direction to entities whose `type` is the child type; a linked entity of another type is not a child. A child type of `None` is the wildcard: any typed child. The children come link group by link group, in the order that the rules first name each `(link type, direction)`, and each group keeps its sort order: two rules on one group with different child types give one list, in link order (so manually sorted children stay in order). A child reached twice is kept once, at its first place. A type with no entry follows nothing. There is no wildcard parent key (Q17, resolved). The types of linked entities that the walk has not loaded are read in one batch per load round.
 4. **Filter.** Links use the archived filter of `links` (R23). The start node is visited even if it has no type.
 5. **Steps.** Each visited node is one step. The start node is a step too, and `include` can emit it. A node that `include` refuses still costs a step.
 6. **Predicates.** `include` decides if the node is emitted. `descend` decides if the walk goes below it. Both get the path and the node's values. They do not get links. Each runs once for each path. A resumed walk also runs `descend` on the ancestors of the start, to find their later children.
@@ -795,44 +795,36 @@ fn find(&self, branch: BranchId, filter: &Filter, options: FindOptions) -> Resul
 
 ### 11.3 Prove [CHOSEN, I21]
 
-"Can this person see this object?" Given an item, one or more roots for which permission is known, and the relationships that pass permission down, prove that the item is reachable from a root, and return the path.
+"Would this walk show this entity?" Given a walk query (a start path, a follow map, `descend` and `include`) and an item, prove that the walk from the start emits the item, and return the path. For permissions: the walk from a user is "what this user can see", and `prove` checks one object without walking everything.
 
 ```rust
-pub enum ProveStrategy { Backward /* default */, Bidirectional, Walk }
-pub struct ProveOptions { pub max_depth: Option<usize>,   // most links in a proof; default None
-                          pub max_nodes: Option<usize>,   // budget of expanded entities; default None
-                          pub include_archived: bool,     // default false (R23)
-                          pub strategy: ProveStrategy }
-pub struct Proof { pub path: Vec<String>,   // path[0] is a root, the last is the item
-                   pub links: Vec<Link> }   // links[i] joins path[i] and path[i+1], as stored
+pub struct ProveOptions { pub max_depth: Option<usize>,   // most links below the start; default None
+                          pub max_nodes: Option<usize> }  // budget of expanded entities; default None
+pub struct Proof { pub path: Vec<String>,   // the walk's path to the item: the start path, then the steps
+                   pub links: Vec<Link> }   // the link of each step below the start, as stored
 pub enum ProveOutcome { Proved(Proof), NoPath, Unknown }
 pub struct ProveStats { pub nodes_visited: usize, pub link_reads: usize, pub value_reads: usize,
                         pub sql_queries: usize, pub depth_reached: usize }
 pub struct Prove { pub outcome: ProveOutcome, pub stats: ProveStats }
 
-fn prove(&self, branch: BranchId, item: &str, roots: &[&str],
-         relationships: &Relationships, options: ProveOptions) -> Result<Prove>;
+fn prove(&self, branch: BranchId, start: &[&str], item: &str, follow: &Follow,
+         descend: impl FnMut(&[String], &WalkNode) -> bool,
+         include: impl FnMut(&[String], &WalkNode) -> bool,
+         options: ProveOptions) -> Result<Prove>;
 ```
 
 **Semantics.**
 
-1. **Relationships.** `relationships` (`Relationships = HashMap<String, Vec<(String, Direction)>>`) is like a walk `Follow` map without child types, read downward from the root: an entity `u` of type `T` can step to `v` by each `(link type, direction)` in `relationships[T]` (`Outbound`: a link `u -> v`; `Inbound`: a link `v -> u`). A proof is `root = p0, p1, ..., pk = item`, where each step `p(i) -> p(i+1)` is a live link of a pair in `relationships[type(p(i))]`. The key is the type of the *upper* entity.
-2. **Backwards.** The search starts at the item and reverses each pair. A candidate parent `u`, found by `(lt, d)` reversed, counts only if `relationships[type(u)]` contains `(lt, d)`. So each layer reads the links of the frontier (one batch) and then the `type` of the new candidates (one batch).
-3. **Archived (R23).** By default every entity on the path must have a live non-null type, the same filter as `links`. So archived entities, and links to them, never form a proof. With `include_archived`, links use `links_including_archived` and the *item* may be archived or untyped. Roots and intermediates still need a type that the map can step from. So an archived root proves only itself.
-4. **Edge cases.** `item` in `roots` gives a depth-0 proof (`path = [item]`, no links) if the item passes rule 3 and the store knows the ID. Unknown IDs and an empty `roots` give `NoPath`, not an error.
-5. **Views.** The view is resolved once per call. All reads are the shared batch reads (`links_with`, a `type`-only `resolve_values_of`) and the shared roll-up, so there is no new SQL. Removed links do not count. A re-added link counts. A link that existed only in the past does not count at the head, but counts on a frozen view or a fork from that time. Branch stacks with open and frozen ranges, merge, pull, rebase, archive/restore and undo all behave as in every other read.
-6. **Shortest.** `Backward` and `Bidirectional` return a shortest proof (fewest links). Ties: the candidates of a layer are sorted by ID, and the smallest root wins. `Walk` returns the first proof that its depth-first search finds; it is valid but not always shortest.
-7. **Limits.** `max_depth`: proofs with more links are not found. When none is within the limit, the answer is `NoPath`, which means "no proof of at most `max_depth` links". `max_nodes`: the most entities whose links the search may read, in total. A layer that would go over the budget is not read. When the budget stops the search and no proof is in hand, the answer is `Unknown`, which is different from `NoPath`. When a proof is in hand (a `Bidirectional` meeting not yet shown to be shortest), that proof is returned. It is valid, but possibly not the shortest.
-8. **Cycles.** Each strategy keeps a visited set, so cycles cost nothing.
-9. **Stats.** `nodes_visited` = entities expanded; `link_reads` / `value_reads` = batch rounds; `sql_queries` = roll-up SQL statements (one per layer interval of the view; ID lookups in `entities` are not counted); `depth_reached` = the deepest layer.
+1. **Same query as walk.** `Proved` means that `walk` with the same `start`, `follow`, `descend` and `include` emits the item on `proof.path`. Every rule of 11.1 applies: steps follow the rules of the parent's type to children of the rule's child type (or any type, for the wildcard); links to archived or untyped entities are not followed; a node already on the path is not visited again; `descend` must accept every node above the item on the path, the start and its ancestors' paths included, and `include` must accept the item. The item may be the start (a path with no links). Paging (`steps`, `next`), the visited set and the direction do not change which paths exist, so they are not options.
+2. **Backward, then forward.** The search reads the item's ancestors one layer at a time: a layered BFS over the reversed rules, one batch link read and one batch type read per layer. A candidate parent `u`, found by a rule's link reversed, counts only if a rule of `type(u)` has that link type and direction and accepts the child's type. Each ancestor gets its exact distance to the item. When the start is among the ancestors, a forward depth-first search runs from the start with the walk's loader (`Walker`: its cache, read-ahead and child-type checks) and the predicates, and goes only into ancestors, within `max_depth`. If it finds no path, the backward search reads the next layer and the forward search runs again on the larger set, until the layers run out. Why: the predicates depend on the whole path from the start, so the backward search cannot test them; the forward search can, and the ancestors keep it small. Stopping the backward search as soon as it reaches the start keeps short proofs cheap.
+3. **Complete.** The forward search is the walk restricted to entities that can reach the item, so a walk that emits the item gives `Proved`, and `NoPath` means the walk does not emit it (within `max_depth`). The proof is one of the walk's paths to the item, short paths first; it is not always the walk's first one.
+4. **Edge cases.** An unknown start is visited, as by the walk, so it proves only itself. An empty start gives `NoPath`. An item with no (non-null) type has no ancestors, so only `item == start` can prove it.
+5. **Views.** The view is resolved once per call. All reads are the shared batch reads and the shared roll-up, so prove works on every view, as in every other read.
+6. **Limits.** `max_depth`: paths with more links below the start are not found; the forward search uses the distances to prune. `max_nodes`: the most entities that the two phases may expand, in total. When the budget stops the search before it decides, the answer is `Unknown`, which is different from `NoPath`.
+7. **Cost.** The forward search tries simple paths, so with path-dependent predicates on a graph with many paths between the start and the item it can repeat work; `max_nodes` bounds it.
+8. **Stats.** `nodes_visited` = entities expanded in both phases; `link_reads` / `value_reads` = batch rounds (the forward loader's rounds count in both); `sql_queries` = roll-up SQL statements; `depth_reached` = the deepest layer of either phase.
 
-**Strategies.**
-
-- **Backward** (default): layered BFS from the item over the reversed pairs. One batch link read and one batch type read per layer. It never reads the subtrees under the roots.
-- **Bidirectional**: BFS forward from the roots and backward from the item. It expands the shallower side (on a tie, the smaller frontier) and stops when `best <= depth_fwd + depth_bwd`, or when `depth_fwd + depth_bwd >= max_depth`.
-- **Walk**: a depth-first search from the item that uses the walk's loader (`Walker`: per-call cache, read-ahead of 2 layers by 32). The follow map is reversed: each type that is a key of `relationships`, and the item's type, follows all reversed pairs. Walk's follow map is keyed by the type of the *visited* (lower) node, so it cannot express "only if the parent is of type T". The parent-type check therefore runs in prove's DFS loop, on the candidate's `type`, which the read-ahead already loaded. The public `walk` cannot do this: a node that was reached by an invalid step would go into the visited set and hide a valid path.
-
-**Choice of default (BENCHMARKS.md, "Prove").** Backward wins by CPU time in every scenario except one sub-millisecond case (a doc shared with 100 groups, with one group as the root). Bidirectional loses badly when a root has a large fan-out or there are many roots: it must expand the forward side at least once (1M: 11.4 ms vs 0.09 ms, and 51 ms vs 0.3 ms). Walk is never the fastest: it expands one node at a time, and on large no-path searches it costs about 2× Backward.
+The earlier version took a set of roots and a pair-only relationship map, and had three strategies (Backward, Bidirectional, Walk). It was replaced so that prove answers exactly the question a walk answers (Alexander, 2026-10-25). BENCHMARKS.md, "Prove", still holds the measurements of that version.
 
 ## 12. Performance notes
 
@@ -883,7 +875,7 @@ fn prove(&self, branch: BranchId, item: &str, roots: &[&str],
 | I20 | `find` (11.2) | Typed `Eq`, numbers and text compared within their kind, case-sensitive text, two-valued null, archived hidden, keyset pages by id. |
 | I16 | R23: entities with no type | Hidden, the same as archived entities. The filter checks the other end of each link. `links_including_archived` skips the filter. |
 | I15 | R4: live merges | `merge` is a frozen snapshot. To follow a branch live, use `pull` with an open range. |
-| I21 | Prove (11.3) | Relationships keyed by the upper entity's type, read downward; the search runs backward from the item. Archived entities never form a proof (`include_archived` relaxes this for the item only). Shortest proof by default. A budget gives `Unknown`, never a false `NoPath`. Default strategy Backward, chosen by measurement. |
+| I21 | Prove (11.3) | Takes a walk query and an item: proved when the walk emits the item. Backward layers of ancestors from the item, then a forward search from the start through them with the walk's predicates, repeated until a proof or no more layers. A budget gives `Unknown`, never a false `NoPath`. |
 | I22 | Write middleware (8.1.1) | A hook transforms a batch's ops inside the write transaction, after the branch check and the timestamp resolution and before validation. It may change, drop or add ops, or reject the batch. Only `write`, `archive_entity` and `restore_entity` run it. Middleware cannot read the store. Registration is per store handle, in order. A batch dropped to empty writes nothing and returns an empty range. |
 
 ---
