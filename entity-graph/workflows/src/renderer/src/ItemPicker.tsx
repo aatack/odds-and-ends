@@ -19,12 +19,14 @@ export function ItemPicker(props: {
   onPick: (id: string) => void
   onCreate: (title: string) => void
   onClose: () => void
+  /** Bots to offer first, in a section of their own. */
+  bots?: { id: string; name: string }[]
 }) {
-  const { title, items, recent, sections = PICKER_SECTIONS, perSection = 6, verb, onPick, onCreate, onClose } = props
+  const { title, items, recent, sections = PICKER_SECTIONS, perSection = 6, verb, onPick, onCreate, onClose, bots } = props
   return (
     <Modal title={title} size="large" blur onClose={onClose}>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <ItemsList items={items} recent={recent} sections={sections} perSection={perSection} verb={verb} onOpen={onPick} onCreate={onCreate} />
+        <ItemsList items={items} recent={recent} sections={sections} perSection={perSection} verb={verb} onOpen={onPick} onCreate={onCreate} bots={bots} />
       </div>
     </Modal>
   )

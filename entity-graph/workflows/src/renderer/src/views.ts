@@ -8,7 +8,9 @@ import { atomWithStorage, createJSONStorage } from 'jotai/utils'
  * A view. `items` is every item, to filter, open or add to: what shows when the
  * stack is empty. `event` shows one event as its type is shown (an item as its
  * chat, anything else as its details); `debug` shows its whole state as JSON.
- * `directives` is what the human is working on at the moment. `integrations` and `mcp` are the app's settings pages. More kinds of view go here.
+ * `directives` is what the human is working on at the moment. `integrations` and `mcp` are the app's settings pages.
+ * `bots` lists the bots (each opens as an `event`, its settings and work); `assigned` is who was handed what lately;
+ * `stale` is what the human may have lost track of. More kinds of view go here.
  */
 export type View =
   | { kind: 'items' }
@@ -18,6 +20,9 @@ export type View =
   | { kind: 'mcp' }
   | { kind: 'types' }
   | { kind: 'directives' }
+  | { kind: 'bots' }
+  | { kind: 'assigned'; to: string }
+  | { kind: 'stale' }
 
 // Storage can throw (a private window, cleared site data): then the stack just isn't kept.
 const storage = createJSONStorage<View[]>(() => {
@@ -38,7 +43,7 @@ export const forwardAtom = atomWithStorage<View[]>('workflows.forward', [], stor
 
 /** Two views are the same view: the same kind, of the same event. */
 export const sameView = (a: View | undefined, b: View): boolean =>
-  !!a && a.kind === b.kind && ('id' in a ? a.id : null) === ('id' in b ? b.id : null)
+  !!a && a.kind === b.kind && ('id' in a ? a.id : null) === ('id' in b ? b.id : null) && ('to' in a ? a.to : null) === ('to' in b ? b.to : null)
 
 /** Bumped to put the cursor in the items view's search line (Ctrl+L, when that view is already showing). */
 export const searchFocusAtom = atom(0)

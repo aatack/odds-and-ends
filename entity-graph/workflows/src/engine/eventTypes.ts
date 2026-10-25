@@ -187,7 +187,11 @@ export const assign: EventType = {
   data: '{}',
   blocking: false,
   bots: true,
-  describe: (p) => `${p.on === false ? 'Unassigned' : 'Assigned to'} ${p.to === 'human' ? 'you' : `@${p.name ?? p.to}`}`,
+  describe: (p) => {
+    const who = p.to === 'human' ? null : `@${p.name ?? p.to}`
+    if (p.on !== false) return `Assigned to ${who ?? 'you'}`
+    return who ? `${who} no longer has it` : 'You no longer have it'
+  },
 }
 
 export const watch: EventType = {

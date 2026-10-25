@@ -208,6 +208,8 @@ export interface Overview {
   linked: string[]
   /** What the human attached in the last week, and to which item (`target`), the most recent first: a new item suggests them. */
   attachments: RecentAttachment[]
+  /** The bots the human handed something to, the most recent first: the chat input offers them first. */
+  recentBots: string[]
 }
 
 /** One of the human's recent attachments: the event attached (`event`, its `title`, the `item` to read it in) and where it went. */

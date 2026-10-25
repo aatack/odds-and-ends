@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { Catalog, ItemDetail, ItemEvent } from '../../shared/types'
+import { HUMAN, type Agent, type Catalog, type ItemDetail, type ItemEvent, type Overview } from '../../shared/types'
 import { Blockers } from './Blockers'
 import { useAtom, useSetAtom } from 'jotai'
 import { ChevronLeft, Menu, MoreHorizontal } from 'lucide-react'
@@ -27,6 +27,12 @@ import { api, useWorkflows } from './useWorkflows'
 import { findAtom, findFocusAtom, searchFocusAtom, type View } from './views'
 import { FindLine } from './FindLine'
 import { Gather } from './Gather'
+import { Assignees } from './Assignees'
+import { AssignedPage } from './AssignedPage'
+import { BotsPage } from './BotsPage'
+import { BotView } from './BotView'
+import { StalePage } from './StalePage'
+import { Bot } from 'lucide-react'
 
 export function App() {
   const items = useWorkflows()
@@ -75,11 +81,21 @@ export function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, next, showingItems, focusSearch, canFind, setFind, focusFind, act, items.selected])
-  // `[itemId]()` in any text is drawn as the item it refers to.
+  // `[itemId]()` in any text is drawn as the item it refers to; `[botId]()` as the bot.
   const byId = useMemo(() => new Map(items.overview.items.map((i) => [i.id, i])), [items.overview.items])
+  const bots = items.overview.bots
   const itemRef = useCallback(
-    (id: string) => <ItemRef id={id} item={byId.get(id)} onOpen={(to) => open({ kind: 'event', id: to })} />,
-    [byId, open],
+    (id: string) => {
+      const bot = bots.find((b) => b.id === id)
+      if (bot)
+        return (
+          <button data-ui className="link item-ref bot-ref" onClick={() => open({ kind: 'event', id })}>
+            <Bot className="icon" />@{bot.name}
+          </button>
+        )
+      return <ItemRef id={id} item={byId.get(id)} onOpen={(to) => open({ kind: 'event', id: to })} />
+    },
+    [byId, bots, open],
   )
   return (
     <ItemsContext.Provider value={items}>
@@ -148,11 +164,11 @@ function Snoozer() {
 const ItemsContext = createContext<ReturnType<typeof useWorkflows> | null>(null)
 const useItems = () => useContext(ItemsContext)!
 
-/** The button in the bottom left: the workers, and the way to Directives, Integrations and MCP. */
+/** The button in the bottom left: the bots, and the way to the other pages. */
 function AppMenu() {
   const w = useItems()
   const [open, setOpen] = useState(false)
-  const busy = w.overview.workers.filter((x) => x.itemId).length
+  const busy = w.overview.bots.filter((b) => b.runId).length
   const [look, setLook] = useAtom(appearanceAtom)
   useEffect(() => applyAppearance(look), [look])
   useEffect(() => {
@@ -170,9 +186,12 @@ function AppMenu() {
       {open && (
         <div className="menu app-menu-list">
           <div className="menu-note">
-            Bots {busy}/{w.overview.workers.length}
+            Bots working {busy}/{w.overview.bots.length}
           </div>
           <button onClick={() => go({ kind: 'items' })}>Tasks</button>
+          <button onClick={() => go({ kind: 'bots' })}>Bots</button>
+          <button onClick={() => go({ kind: 'assigned', to: HUMAN })}>Handed lately</button>
+          <button onClick={() => go({ kind: 'stale' })}>Lost track</button>
           <button onClick={() => go({ kind: 'directives' })}>Directives</button>
           <button onClick={() => go({ kind: 'integrations' })}>Integrations</button>
           <button onClick={() => go({ kind: 'types' })}>Types</button>
@@ -251,6 +270,36 @@ function ItemsMain() {
         </div>
       </div>
     )
+  if (w.view?.kind === 'bots')
+    return (
+      <div className="view">
+        <ViewHeader canGoBack onBack={w.back} title="Bots" />
+        {w.error && <div className="error">{w.error}</div>}
+        <div className="view-body">
+          <BotsPage bots={w.overview.bots} act={w.act} onOpen={openEvent} />
+        </div>
+      </div>
+    )
+  if (w.view?.kind === 'assigned') {
+    const to = w.view.to
+    return (
+      <div className="view">
+        <ViewHeader canGoBack onBack={w.back} title="Handed lately" />
+        <div className="view-body">
+          <AssignedPage to={to} bots={w.overview.bots} onOpen={openEvent} onPick={(next) => w.open({ kind: 'assigned', to: next }, { replace: true })} />
+        </div>
+      </div>
+    )
+  }
+  if (w.view?.kind === 'stale')
+    return (
+      <div className="view">
+        <ViewHeader canGoBack onBack={w.back} title="Lost track" />
+        <div className="view-body">
+          <StalePage onOpen={openEvent} />
+        </div>
+      </div>
+    )
   if (w.view?.kind === 'integrations' || w.view?.kind === 'mcp')
     return (
       <div className="view">
@@ -307,6 +356,16 @@ function ItemsMain() {
       <div className={`view-body ${d.item && !debug ? 'fill' : ''}`}>
         {debug ? (
           <DebugView detail={d} />
+        ) : e.type === 'agent' ? (
+          <BotView
+            key={e.id}
+            detail={d}
+            bot={w.overview.bots.find((b) => b.id === e.id) ?? null}
+            items={w.overview.items}
+            act={w.act}
+            onOpen={openEvent}
+            onAssigned={(to) => w.open({ kind: 'assigned', to })}
+          />
         ) : d.item ? (
           <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openEvent} />
         ) : (
@@ -423,6 +482,16 @@ function ViewHeader(props: {
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
+/** The bots to offer for a task, the likeliest first: whoever else had it last, then those the human handed things to last, then the rest. */
+function likeliestBots(detail: ItemDetail, overview: Overview): Agent[] {
+  const here = detail.events
+    .filter((e) => e.type === 'assign' && e.params.to !== HUMAN && e.params.on !== false)
+    .map((e) => String(e.params.to))
+    .reverse()
+  const ids = [...new Set([...here, ...overview.recentBots, ...overview.bots.map((b) => b.id)])]
+  return ids.flatMap((id) => overview.bots.find((b) => b.id === id) ?? [])
+}
+
 function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpen: (id: string) => void }) {
   const { detail, catalog, act, onOpen } = props
   const { item } = detail
@@ -453,6 +522,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
       </div>
       <div className="composer">
         <Gather detail={detail} overview={w.overview} act={act} />
+        {!item.closed && <Assignees item={item} bots={w.overview.bots} act={act} />}
         <Blockers detail={detail} catalog={catalog} act={act} onOpen={onOpen} />
         {item.closed ? (
           <div className="composer-bar muted">Closed.</div>
@@ -463,6 +533,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
             catalog={catalog}
             onResolve={() => void act(() => api().close(item.id))}
             mention={{ items: w.overview.items.filter((i) => i.id !== item.id), recent: w.overview, create: (title) => api().create(title, null) }}
+            bots={likeliestBots(detail, w.overview)}
             onSend={async (preset, text) => {
               let ok = false
               await act(async () => {

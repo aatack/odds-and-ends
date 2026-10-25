@@ -1,7 +1,7 @@
 import { SendHorizontal } from 'lucide-react'
 import { useAtom } from 'jotai'
 import { useEffect, useRef, useState } from 'react'
-import type { Catalog, Item } from '../../shared/types'
+import type { Agent, Catalog, Item, PresetInfo } from '../../shared/types'
 import { GrowingTextarea } from './GrowingTextarea'
 import { TypeIcon } from './icons'
 import { ItemPicker } from './ItemPicker'
@@ -9,14 +9,17 @@ import type { Recent } from './sections'
 import { draftsAtom, withoutEmpty } from './views'
 
 /**
- * The chat input. What is typed goes through a preset (a plain message by
- * default, which runs a bot when sent empty; a message for a bot; a PR to wait
- * on…): its icon, for what Enter would do now, is in the top left, Tab and
- * Shift+Tab step through them, and Enter sends. Ctrl+Enter twice resolves the
- * item: the first press only asks, in the hint, and any other key takes it back.
- * What is typed is kept, by `draftKey`, until it is sent. An `@` typed at the
- * start of a word opens the finder; what is picked (or made, with Tab) takes
- * the `@`'s place as a reference, `[itemId]()`. Escape leaves the `@` as typed.
+ * The chat input. What is typed goes through a preset (a note by default; a PR
+ * to wait on…); with nothing typed, the choices are instead to hand the task to
+ * a bot ("Assign to @Threepio"), the likeliest first: whoever else had it last,
+ * else the bot the human handed something to last. The icon, for what Enter
+ * would do now, is in the top left; Tab and Shift+Tab step through the choices,
+ * and Enter sends. Ctrl+Enter twice resolves the item: the first press only
+ * asks, in the hint, and any other key takes it back. What is typed is kept, by
+ * `draftKey`, until it is sent. An `@` typed at the start of a word opens the
+ * finder, bots first; what is picked (or made, with Tab) takes the `@`'s place
+ * as a reference, `[id]()`. A bot referred to in a note is handed the task as it
+ * is sent, and the human is taken off it. Escape leaves the `@` as typed.
  */
 export function Composer({
   catalog,
@@ -24,6 +27,7 @@ export function Composer({
   onSend,
   onResolve,
   mention,
+  bots,
 }: {
   catalog: Catalog
   draftKey: string
@@ -31,8 +35,11 @@ export function Composer({
   onResolve: () => void
   /** What `@` picks from, and how it makes a new item. */
   mention: { items: Item[]; recent: Recent; create: (title: string) => Promise<string> }
+  /** The bots to offer to hand the task to, the likeliest first. */
+  bots: Agent[]
 }) {
-  const [at, setAt] = useState(0)
+  const [atText, setAtText] = useState(0)
+  const [atEmpty, setAtEmpty] = useState(0)
   const [drafts, setDrafts] = useAtom(draftsAtom)
   const text = drafts[draftKey] ?? ''
   const setText = (t: string) => setDrafts((d) => withoutEmpty({ ...d, [draftKey]: t }))
@@ -45,9 +52,16 @@ export function Composer({
   }, [setDrafts])
   const [resolving, setResolving] = useState(false)
   const box = useRef<HTMLTextAreaElement>(null)
-  const preset = catalog.presets[at]
-  // What Enter would do now: some presets do something else with nothing typed.
-  const shown = !text.trim() && preset.whenEmpty ? preset.whenEmpty : preset
+  // With nothing typed, the choices are the bots to hand the task to; else the presets.
+  const assigns: PresetInfo[] = bots.map((b) => ({ id: `assign:${b.id}`, name: `Assign to @${b.name}`, hint: `hand this task to @${b.name}`, icon: 'agent' }))
+  const empty = !text.trim() && assigns.length > 0
+  const choices = empty ? assigns : catalog.presets
+  const at = (empty ? atEmpty : atText) % choices.length
+  const setAt = empty ? setAtEmpty : setAtText
+  const preset = choices[at]
+  // What Enter would do now: a note that @s a bot hands it the task too.
+  const mentioned = bots.filter((b) => text.includes(`[${b.id}]()`))
+  const shown = mentioned.length && preset.id === 'message' ? { ...preset, name: `Note for @${mentioned.map((b) => b.name).join(', @')}` } : preset
   // Focused as it opens (and as the preset changes), with the cursor after any draft rather than before it.
   useEffect(() => {
     const el = box.current
@@ -102,7 +116,7 @@ export function Composer({
             if (!['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) setResolving(false)
             if (e.key === 'Tab') {
               e.preventDefault()
-              setAt((at + (e.shiftKey ? -1 : 1) + catalog.presets.length) % catalog.presets.length)
+              setAt((at + (e.shiftKey ? -1 : 1) + choices.length) % choices.length)
             }
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault()
@@ -129,7 +143,8 @@ export function Composer({
       </span>
       {mentionAt !== null && (
         <ItemPicker
-          title="Refer to a task"
+          title="Hand it to a bot, or refer to a task"
+          bots={bots}
           items={mention.items}
           recent={mention.recent}
           verb="Insert"

@@ -330,7 +330,7 @@ export class Engine extends EventEmitter {
    * The items the human has had on screen, and those they have linked (attached
    * something to, or attached), in the last week: the most recent first, each once.
    */
-  inHand(): Pick<Overview, 'viewed' | 'linked' | 'attachments'> {
+  inHand(): Pick<Overview, 'viewed' | 'linked' | 'attachments' | 'recentBots'> {
     const since = this.now() - 7 * 24 * 60 * MINUTE
     const viewed: string[] = []
     for (let i = this.store.trace.length - 1; i >= 0 && viewed.length < 50; i--) {
@@ -350,7 +350,16 @@ export class Engine extends EventEmitter {
       item: String(r.params.item),
       target: r.parent_id!,
     }))
-    return { viewed, linked: [...new Set(linked)], attachments: attached }
+    const recentBots = [
+      ...new Set(
+        this.store
+          .ofType('assign')
+          .filter((r) => r.created_by === HUMAN && r.params.to !== HUMAN && r.params.on !== false)
+          .sort((a, b) => b.created_at - a.created_at || b.seq - a.seq)
+          .map((r) => String(r.params.to)),
+      ),
+    ]
+    return { viewed, linked: [...new Set(linked)], attachments: attached, recentBots }
   }
 
   private runsOf(pred: (r: RunRow) => boolean): BotRun[] {
