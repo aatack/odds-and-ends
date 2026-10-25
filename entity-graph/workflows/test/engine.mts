@@ -88,6 +88,8 @@ const mcp = await startMcp(engine)
 type Call = (name: string, args?: Record<string, unknown>) => Promise<string>
 type Run = { call: Call; prompt: string; system: string; schema: Record<string, unknown>; sessionId: string; resume: boolean; model: string; cwd: string }
 const behaviours: ((run: Run) => Promise<BotOutput | null>)[] = []
+/** Runs no test expected: their failure lands in an item, so they are checked for here too. */
+const unexpected: string[] = []
 const connect = async (url: string, headers: Record<string, string> = {}) => {
   const client = new Client({ name: 'test', version: '0' })
   await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers } }))
@@ -100,6 +102,7 @@ const connect = async (url: string, headers: Record<string, string> = {}) => {
 }
 const spawnFake: SpawnBot = ({ prompt, system, schema, mcpUrl, sessionId, resume, model, cwd, onOutput }) => {
   const behaviour = behaviours.shift()
+  if (!behaviour) unexpected.push(prompt)
   assert.ok(behaviour, `a bot ran that no test expected:\n${prompt}`)
   const done = (async () => {
     const { client, call } = await connect(mcpUrl)
@@ -383,7 +386,7 @@ const bad = (await engine.create('Bad'))!
 behaviours.push(async () => out({ item: bad, events: [{ type: 'action', params: { name: 'github_pr_merge', inputs: {} } }] }))
 await toBot(bad, 'x')
 await settle()
-assert.match(String(last(bad, 'message').params.text), /^@Threepio failed: The bot's output was not usable: .*may not add a action/)
+assert.match(String(last(bad, 'message').params.text), /^@Threepio failed: its update could not be applied: .*may not add a action/)
 assert.equal(last(bad, 'message').createdBy, 'system')
 assert.ok(item(bad).withHuman)
 await engine.handledOutside(bad)
@@ -929,9 +932,73 @@ await assert.rejects(engine.attach(idea, collector), /closed/)
   await engine.close(a)
 }
 
+// ---- 22. What the review found: runs cut short, updates that can't be applied, watchers failing, a bot's own doings ----
+{
+  // A run the app stopped during: its items go back to the human, saying so.
+  const e2 = new Engine({ now: () => clock, dataDir })
+  const b2 = await e2.saveAgent({ name: 'Cut', instructions: '', provider: 'claude', model: '', debounceMinutes: 0 })
+  const t2 = (await e2.create('Cut short'))!
+  await e2.assign(t2, b2, true)
+  e2.startRun(b2, [t2], 'p')
+  const e3 = new Engine({ store: e2.store, now: () => clock, dataDir })
+  assert.deepEqual(e3.get(t2)!.assignees, ['human'])
+  assert.match(String(e3.children(t2).at(-3)!.params.text), /was stopped/)
+  assert.equal(e3.wake(b2), null, 'and the bot does not wake for it')
+
+  // An update that can't be applied is said, and its item goes back; the others land.
+  const good = (await engine.create('Good'))!
+  const poor = (await engine.create('Poor'))!
+  await engine.send(good, 'message', `[${threepio}]() one`)
+  await engine.send(poor, 'message', `[${threepio}]() two`)
+  behaviours.push(async () =>
+    out({ item: good, message: 'Fine.' }, { item: poor, events: [{ type: 'message', params: { text: 'x' } }, { type: 'item', params: { title: 'y', key: 1 as unknown as string } }] }),
+  )
+  await settle()
+  assert.equal(last(good, 'message').params.text, 'Fine.')
+  assert.match(String(last(poor, 'message').params.text), /@Threepio failed/)
+  assert.deepEqual(item(poor).assignees, ['human'])
+  behaviours.push(async () => out({ item: poor, events: [{ type: 'directive', params: { text: 'x', replaces: 'nope' } }] }))
+  await engine.assign(poor, threepio, true)
+  await settle()
+  assert.match(String(last(poor, 'message').params.text), /No directive nope holds/)
+  assert.deepEqual(item(poor).assignees, ['human'])
+
+  // A watcher that fails says nothing in, and changes nothing of, the items it only watches.
+  const w = await engine.saveAgent({ name: 'Watcher', instructions: '', provider: 'claude', model: '', debounceMinutes: 0 })
+  await engine.addEvents(good, [{ type: 'watch', params: { agent: w } }, { type: 'message', params: { text: 'look' } }])
+  behaviours.push(async () => ({ updates: 'nonsense' }) as unknown as BotOutput)
+  await settle()
+  assert.deepEqual(item(good).assignees, ['human'])
+  assert.equal(last(good, 'message').params.text, 'look')
+  await engine.deleteAgent(w)
+
+  // A bot cancelling its own wait, or a wait of its own that resolves as it starts, does not wake it again.
+  const own = (await engine.create('Own doings'))!
+  behaviours.push(async ({ call }) => {
+    const { ids: [wait] } = JSON.parse(await call('add_events', { item_id: own, events: [{ type: 'snooze', params: { until: new Date(clock + 60 * MINUTE).toISOString() } }] }))
+    await call('cancel_event', { event_id: wait })
+    return out({ item: own, events: [{ type: 'github', params: { query: 'nothing like this', until: 'merged' } }] })
+  })
+  await engine.send(own, 'message', `[${threepio}]() go`)
+  await settle()
+  assert.equal(last(own, 'github').data!.outcome, 'not_found')
+  // (Had either woken it again, a run no test expected would have failed.)
+  // A wait from an earlier run still keeps the item when a later run says nothing of it.
+  checks = 'pending'
+  behaviours.push(async () => out({ item: own, events: [{ type: 'github', params: { repo: 'o/r', number: 7, until: 'checks' } }] }))
+  await engine.send(own, 'message', `[${threepio}]() and wait on CI`)
+  await settle()
+  behaviours.push(async () => out({ item: own, message: 'Still waiting.' }))
+  await engine.send(own, 'message', 'how is it going?')
+  await settle()
+  assert.deepEqual(item(own).assignees, [threepio])
+  for (const i of [good, poor, own]) await engine.close(i)
+}
+
 // The prompt, item by item.
 assert.equal(promptFor([]), '')
 
 assert.equal(behaviours.length, 0)
+assert.deepEqual(unexpected, [], 'no bot ran that no test expected')
 mcp.close()
 console.log('engine: ok')

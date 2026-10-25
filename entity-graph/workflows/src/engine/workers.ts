@@ -157,7 +157,8 @@ export function readStream(lines: string[]): { text: string[]; result: Record<st
 
 /** Runs the bots: each, when it is due and not running already. */
 export class BotRunner {
-  private running = new Map<string, { runId: string; kill: () => void }>()
+  private running = new Map<string, { runId: string; kill: () => void; ended: Promise<void> }>()
+  private stopped = false
   private timer: NodeJS.Timeout | null = null
   private ticker: NodeJS.Timeout | null = null
 
@@ -176,10 +177,14 @@ export class BotRunner {
     this.fill()
   }
 
-  stop(): void {
+  /** Stops every run, and settles once each has ended (its items handed on as any ended run's are). Starts no more. */
+  async stop(): Promise<void> {
+    this.stopped = true
     if (this.ticker) clearInterval(this.ticker)
     this.ticker = null
+    const ending = [...this.running.values()].map((r) => r.ended)
     for (const r of this.running.values()) r.kill()
+    await Promise.all(ending)
   }
 
   /** The bots running now. */
@@ -197,6 +202,7 @@ export class BotRunner {
   }
 
   fill(): void {
+    if (this.stopped) return
     for (const agent of this.engine.agents()) {
       if (this.running.has(agent.id)) continue
       const claimed = this.engine.claim(agent.id)
@@ -240,16 +246,17 @@ export class BotRunner {
       return
     }
     const limit = setTimeout(() => proc.kill(), RUN_LIMIT_MS)
-    this.running.set(agent.id, { runId, kill: proc.kill })
-    proc.done
+    const ended = proc.done
       .then(
         ({ exitCode }) => end(exitCode),
         (e: Error) => end(null, e.message),
       )
+      .catch((e: Error) => console.error(`@${agent.name}'s run ${runId} could not end cleanly:`, e))
       .finally(() => {
         clearTimeout(limit)
         this.running.delete(agent.id)
         this.schedule()
       })
+    this.running.set(agent.id, { runId, kill: proc.kill, ended })
   }
 }
