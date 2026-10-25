@@ -1,5 +1,7 @@
 // What the chat input can send. Each turns the typed text into events; Tab steps
-// through them in the input.
+// through them in the input. Bots `[id]()`-referred to in the text are assigned
+// the item as it is sent (Engine.send), and the input offers "assign to @bot"
+// in place of these while it is empty.
 
 import type { EventSpec, PresetInfo } from '../shared/types'
 
@@ -10,21 +12,13 @@ export interface Preset extends PresetInfo {
 const said = (text: string): EventSpec[] => (text.trim() ? [{ type: 'message', params: { text: text.trim() } }] : [])
 
 export const PRESETS: Preset[] = [
-  // The default: what is typed is only said; Enter with nothing typed asks a bot to take it from there.
+  // The default: a note in the item. @ a bot in it to hand the item to the bot.
   {
     id: 'message',
-    name: 'Message',
-    hint: 'just a message; Enter on an empty line runs a bot',
+    name: 'Note',
+    hint: 'a note in this task; @ a bot to hand it the task',
     icon: 'message',
-    whenEmpty: { name: 'Bot', hint: 'Enter runs a bot on everything new', icon: 'bot' },
-    build: (text) => (text.trim() ? said(text) : [{ type: 'bot', params: {} }]),
-  },
-  {
-    id: 'bot',
-    name: 'Bot',
-    hint: 'a message, then a bot takes it up',
-    icon: 'bot',
-    build: (text) => [...said(text), { type: 'bot', params: {} }],
+    build: said,
   },
   {
     id: 'pr-merged',

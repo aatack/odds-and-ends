@@ -7,39 +7,14 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type { CustomAction, EventSpec } from '../shared/types'
-import type { Db } from './db'
 import type { Engine } from './engine'
 import { objectSchema } from './schema'
 import { runScript } from './script'
+import type { CustomActionRow, Store } from './store'
 
-const SCHEMA = `
--- The human's own actions, per event type: configuration, like settings, so
--- edited in place. Running one is recorded as an action event in the item.
-CREATE TABLE IF NOT EXISTS custom_actions (
-  id TEXT PRIMARY KEY,
-  type TEXT NOT NULL,
-  name TEXT NOT NULL,
-  description TEXT NOT NULL DEFAULT '',
-  notes TEXT NOT NULL DEFAULT '',
-  source TEXT NOT NULL DEFAULT '',
-  icon TEXT NOT NULL DEFAULT 'zap',
-  important INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-`
-
-type Row = Record<string, unknown>
-const toAction = (r: Row): CustomAction => ({
-  id: String(r.id),
-  type: String(r.type),
-  name: String(r.name),
-  description: String(r.description),
-  notes: String(r.notes),
-  source: String(r.source),
-  icon: String(r.icon),
-  important: Boolean(r.important),
-})
+// The human's own actions, per event type: configuration, like settings, so
+// edited in place. Running one is recorded as an action event in the item.
+const toAction = ({ created_at: _c, updated_at: _u, ...a }: CustomActionRow): CustomAction => a
 
 /** What a custom action's function may return: nothing, a line for the chat, or that and events to add in the item. */
 const result = z.union([
@@ -54,17 +29,17 @@ const result = z.union([
 export class CustomActions {
   constructor(
     private engine: Engine,
-    private db: Db,
-  ) {
-    db.exec(SCHEMA)
-  }
+    private store: Store,
+  ) {}
 
   list(): CustomAction[] {
-    return (this.db.prepare('SELECT * FROM custom_actions ORDER BY type, important DESC, created_at').all() as Row[]).map(toAction)
+    return [...this.store.customActions.values()]
+      .sort((a, b) => a.type.localeCompare(b.type) || Number(b.important) - Number(a.important) || a.created_at - b.created_at)
+      .map(toAction)
   }
 
   get(id: string): CustomAction | null {
-    const r = this.db.prepare('SELECT * FROM custom_actions WHERE id = ?').get(id) as Row | undefined
+    const r = this.store.customActions.get(id)
     return r ? toAction(r) : null
   }
 
@@ -75,20 +50,16 @@ export class CustomActions {
     const now = this.engine.now()
     const id = a.id ?? randomUUID()
     if (a.id && !this.get(a.id)) throw new Error(`No custom action ${a.id}.`)
-    if (a.id)
-      this.db
-        .prepare('UPDATE custom_actions SET type = ?, name = ?, description = ?, notes = ?, source = ?, icon = ?, important = ?, updated_at = ? WHERE id = ?')
-        .run(a.type, a.name.trim(), a.description, a.notes, a.source, a.icon || 'zap', a.important ? 1 : 0, now, id)
-    else
-      this.db
-        .prepare('INSERT INTO custom_actions (id, type, name, description, notes, source, icon, important, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(id, a.type, a.name.trim(), a.description, a.notes, a.source, a.icon || 'zap', a.important ? 1 : 0, now, now)
+    this.store.putCustomAction({
+      id, type: a.type, name: a.name.trim(), description: a.description, notes: a.notes, source: a.source, icon: a.icon || 'zap',
+      important: Boolean(a.important), created_at: this.store.customActions.get(id)?.created_at ?? now, updated_at: now,
+    })
     this.engine.emit('change')
     return this.get(id)!
   }
 
   remove(id: string): void {
-    this.db.prepare('DELETE FROM custom_actions WHERE id = ?').run(id)
+    this.store.deleteCustomAction(id)
     this.engine.emit('change')
   }
 

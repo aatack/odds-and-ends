@@ -14,7 +14,8 @@ export const item: EventType = {
   type: 'item',
   description:
     'An item: a thing to be done. Its events sit in it, child items included, and it blocks the item it sits in until it closes. ' +
-    'Add one to split work off: give it its first events (e.g. a message and a bot) in `events`.',
+    'Add one to split work off: give it its first events (e.g. a message and an assign) in `events`. With no assign among them, ' +
+    'it is the human\'s.',
   params: {
     title: z.string(),
     events: z
@@ -121,17 +122,87 @@ export const approval: EventType = {
   said: (p, d) => `Ran ${p.action}${(d.changed as string[] | undefined)?.length ? ` (changed ${(d.changed as string[]).join(', ')})` : ''}`,
 }
 
+/**
+ * From before bots were their own items: a blocker that a worker answered. Kept so old items read as they did.
+ * One added now becomes an assign to the default bot (see Engine.prepare), so old scripts still work.
+ */
 export const bot: EventType = {
   type: 'bot',
-  description:
-    "A bot to take the item up: it reads what is new in the item's own Claude session, and answers with a message, an approval, more events, or closing it.",
+  description: 'Old: assign the item to the default bot instead (an assign event). One added becomes that assign, and its instructions a message.',
   params: { instructions: z.string().optional().describe('What to do, when there is no message from the human to go on.') },
   data: '{ runId, message?, costUsd?, output } or { error }',
   blocking: true,
-  bots: true,
   describe: (p) => String(p.instructions ?? 'Bot'),
   // Its reply is a message event of its own; only a failure needs saying here.
   said: (_p, d) => (d.error ? `The bot failed: ${d.error}` : null),
+}
+
+export const agent: EventType = {
+  type: 'agent',
+  description:
+    'A bot: a name, instructions, and how it runs. It sits in no item, and is open while it lasts (cancelling it deletes it). ' +
+    'It is assigned items with assign events, and wakes whenever anything happens in an item it is assigned or watches. ' +
+    'Its settings change with configure events in it.',
+  params: {
+    name: z.string().min(1).describe('What it is called: people @ it by this name.'),
+    instructions: z.string().optional().describe('What it is for and how it works: given with every run.'),
+    provider: z.string().optional().describe("Who runs it: 'claude' (the default)."),
+    model: z.string().optional().describe('The model, as the provider names it (e.g. opus, sonnet); the default if left out.'),
+    debounce_minutes: z.number().min(0).optional().describe('How long to wait after the last thing that happened before it wakes.'),
+    folder: z.string().optional().describe('Its working folder; its own, under the app\'s, if left out.'),
+    sessionId: z.string().optional().describe("Its Claude session, set by the app once it first runs. Don't set it."),
+  },
+  data: '{ cancelled: true }, once deleted',
+  blocking: true,
+  // A bot may not make bots: the human does, on the Bots page.
+  describe: (p) => `@${p.name}`,
+}
+
+export const configure: EventType = {
+  type: 'configure',
+  description: "Changes a bot's settings: the fields given replace its own, the latest configure event's winning.",
+  params: {
+    name: z.string().min(1).optional(),
+    instructions: z.string().optional(),
+    provider: z.string().optional(),
+    model: z.string().optional(),
+    debounce_minutes: z.number().min(0).optional(),
+    folder: z.string().optional(),
+  },
+  data: '{}',
+  blocking: false,
+  describe: (p) => `Settings: ${Object.keys(p).join(', ')}`,
+}
+
+export const assign: EventType = {
+  type: 'assign',
+  description:
+    "Assigns the item to someone, or takes it off them (on: false): the human ('human') or a bot, by its id or its name. " +
+    "A bot wakes when it is assigned, and whenever anything happens in an item assigned to it. The human's Next shows the " +
+    'items assigned to them (or to nobody) that nothing else blocks.',
+  params: {
+    to: z.string().min(1).describe("'human', or a bot's id or name (see list_bots)."),
+    on: z.boolean().optional().describe('False takes the assignment away. True by default.'),
+  },
+  data: '{}',
+  blocking: false,
+  bots: true,
+  describe: (p) => `${p.on === false ? 'Unassigned' : 'Assigned to'} ${p.to === 'human' ? 'you' : `@${p.name ?? p.to}`}`,
+}
+
+export const watch: EventType = {
+  type: 'watch',
+  description:
+    'A bot watches the item (or stops, with on: false): it wakes whenever anything happens in it, as if it were assigned, ' +
+    "but the item is not the bot's to do.",
+  params: {
+    agent: z.string().min(1).describe("A bot's id or name."),
+    on: z.boolean().optional().describe('False stops watching. True by default.'),
+  },
+  data: '{}',
+  blocking: false,
+  bots: true,
+  describe: (p) => `${p.on === false ? 'Stopped watching' : 'Watching'}: @${p.name ?? p.agent}`,
 }
 
 export const github: EventType = {
@@ -175,7 +246,7 @@ export const after: EventType = {
   type: 'after',
   description:
     'Wait for another event to resolve, then add events: `then` as given, or what `script` returns. This is how events chain, ' +
-    'e.g. wait on CI, then hand to a bot if it failed and leave it with the human if it passed; or wait for a child item to close.',
+    'e.g. wait on CI, then assign a bot if it failed and leave it with the human if it passed; or wait for a child item to close.',
   params: {
     event: z.string().describe("The event to wait for: an id, or the ref of an event added alongside this one."),
     then: z.array(z.object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional() })).optional(),
@@ -245,9 +316,9 @@ export const script: EventType = {
     'number: 7 }); const n = pr.reviews.filter((r) => r.state === "APPROVED").length; return n >= 2 ? { done: true, data: { approvals: n }, ' +
     'message: "o/r#7 has two approvals" } : { done: false } }\n' +
     'A loop is a script that never says it is done: it runs on its schedule (the last gap repeating) until it is cancelled. ' +
-    'To have an agent work on something every hour, say: schedule [3600], and a source that adds a bot each run, e.g. ' +
-    'async (ctx, actions) => { await actions.add_events({ item_id: ctx.item.id, events: [{ type: "bot", params: { instructions: ' +
-    '"Check the open PRs and fix any failing CI" } }] }); return { done: false } }',
+    'To have a bot work on something every hour, say: schedule [3600], and a source that adds a message for it each run (it wakes ' +
+    'on anything new in an item assigned to it), e.g. async (ctx, actions) => { await actions.add_events({ item_id: ctx.item.id, ' +
+    'events: [{ type: "message", params: { text: "Check the open PRs and fix any failing CI" } }] }); return { done: false } }',
   params: {
     source: z.string().describe('async (ctx, actions) => null | { done: false, state? } | { done: true, data?, message? }'),
     description: z.string().optional().describe('What it waits for, in a line: the blocker row says this.'),
@@ -372,4 +443,7 @@ export const summary: EventType = {
   },
 }
 
-export const EVENT_TYPES: EventType[] = [item, message, attachment, rename, priority, action, approval, bot, github, slack, after, script, summary, directive, snooze]
+export const EVENT_TYPES: EventType[] = [
+  item, message, attachment, rename, priority, action, approval, assign, watch, github, slack, after, script, summary, directive, snooze, agent,
+  configure, bot,
+]

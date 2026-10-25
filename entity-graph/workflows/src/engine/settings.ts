@@ -1,8 +1,8 @@
 // The app's configuration, kept in the store beside the items. Secrets go
-// through `Secrets`, which the app backs with Electron's safeStorage.
+// through `Secrets`, which the backend backs with a key of its own (keyFile.ts).
 
 import { randomBytes, randomUUID } from 'node:crypto'
-import type { Db } from './db'
+import type { Store } from './store'
 
 export interface Secrets {
   encrypt: (plain: string) => string
@@ -25,19 +25,16 @@ export const DEFAULT_MCP_PORT = 47390
 
 export class Settings {
   constructor(
-    private db: Db,
+    private store: Store,
     private secrets: Secrets = plainSecrets,
-  ) {
-    db.exec('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
-  }
+  ) {}
 
   get<T>(key: string, fallback: T): T {
-    const r = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
-    return r ? (JSON.parse(r.value) as T) : fallback
+    return this.store.settings.has(key) ? (this.store.settings.get(key) as T) : fallback
   }
 
   set(key: string, value: unknown): void {
-    this.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, JSON.stringify(value))
+    this.store.setSetting(key, value)
   }
 
   // ---- slack ----
@@ -45,8 +42,17 @@ export class Settings {
   slackWorkspaces(): SlackWorkspace[] {
     return this.get<(Omit<SlackWorkspace, 'token'> & { token: string })[]>('slack.workspaces', []).map((w) => ({
       ...w,
-      token: this.secrets.decrypt(w.token),
+      token: this.readSecret(w.token),
     }))
+  }
+
+  /** A secret as plain text; empty when it can't be read (one an older app saved, until the app hands it back). */
+  private readSecret(stored: string): string {
+    try {
+      return this.secrets.decrypt(stored)
+    } catch {
+      return ''
+    }
   }
 
   addSlackWorkspace(w: Omit<SlackWorkspace, 'id'>): SlackWorkspace {
@@ -54,6 +60,17 @@ export class Settings {
     const stored = this.get<SlackWorkspace[]>('slack.workspaces', []).filter((x) => x.team !== w.team)
     this.set('slack.workspaces', [...stored, { ...added, token: this.secrets.encrypt(w.token) }])
     return added
+  }
+
+  /** The Slack tokens saved by an older app with its safeStorage (`safe:`), which this backend can't read. */
+  legacySecrets(): string[] {
+    return this.get<{ token: string }[]>('slack.workspaces', []).map((w) => w.token).filter((t) => t.startsWith('safe:'))
+  }
+
+  /** Keeps those tokens anew, from the plain text the app read them as. */
+  replaceLegacySecrets(plain: Record<string, string>): void {
+    const stored = this.get<{ token: string }[]>('slack.workspaces', [])
+    this.set('slack.workspaces', stored.map((w) => (plain[w.token] ? { ...w, token: this.secrets.encrypt(plain[w.token]) } : w)))
   }
 
   removeSlackWorkspace(id: string): void {

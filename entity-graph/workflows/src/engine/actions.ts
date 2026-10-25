@@ -2,7 +2,7 @@
 // the one list both MCP scopes serve and scripts are handed.
 
 import { z } from 'zod'
-import type { EventSpec } from '../shared/types'
+import { HUMAN, type EventSpec } from '../shared/types'
 import type { Action } from './integrations'
 import { PARADIGM } from './paradigm'
 import { objectSchema } from './schema'
@@ -73,6 +73,7 @@ export const itemActions: Action[] = [
         title: i.title,
         parentId: i.parentId,
         closed: i.closed,
+        assignees: i.assignees,
         withHuman: i.withHuman,
         blockers: i.blockers.map((b) => ({ id: b.id, type: b.type, summary: b.summary })),
       }))
@@ -82,23 +83,31 @@ export const itemActions: Action[] = [
     name: 'items_waiting_on',
     unsafe: false,
     description:
-      "The open items waiting on one thing: `human` (the human's turn: nothing blocks them but approvals), `bot` (a bot is " +
-      'working on them or will be), or any blocking event type (`github`, `slack`, `script`, `after`, `approval`, `item` for a ' +
-      "child item, …: see event_types). Each with the blockers that match, longest-waiting first.",
-    input: { on: z.string().describe('human, bot, or a blocking event type.') },
+      "The open items waiting on one thing: `human` (the human's turn: assigned to them, and nothing blocks them but approvals), " +
+      '`bot` (assigned to any bot), a bot by its name, or any blocking event type (`github`, `slack`, `script`, `after`, ' +
+      "`approval`, `item` for a child item, …: see event_types). Each with the blockers that match, longest-waiting first.",
+    input: { on: z.string().describe("human, bot, a bot's name, or a blocking event type.") },
     run: async (a, { engine }) => {
       const on = String(a.on)
       const types: string[] = engine.eventTypes.filter((t) => t.blocking).map((t) => t.type)
-      if (on !== 'human' && !types.includes(on)) throw new Error(`Waiting on what? One of: human, ${types.join(', ')}.`)
+      const agent = on === 'bot' ? null : engine.findAgent(on)
+      if (on !== HUMAN && on !== 'bot' && !agent && !types.includes(on))
+        throw new Error(`Waiting on what? One of: human, bot, a bot's name, ${types.join(', ')}.`)
+      const waits = (i: { withHuman: boolean; assignees: string[]; blockers: { type: string }[] }) =>
+        on === HUMAN ? i.withHuman
+        : on === 'bot' ? i.assignees.some((x) => x !== HUMAN)
+        : agent ? i.assignees.includes(agent.id)
+        : i.blockers.some((b) => b.type === on)
       return engine
         .overview()
-        .items.filter((i) => !i.closed && (on === 'human' ? i.withHuman : i.blockers.some((b) => b.type === on)))
+        .items.filter((i) => !i.closed && waits(i))
         .map((i) => ({
           id: i.id,
           title: i.title,
           parentId: i.parentId,
           since: new Date(i.since).toISOString(),
-          blockers: i.blockers.filter((b) => on === 'human' || b.type === on).map((b) => ({ id: b.id, type: b.type, summary: b.summary })),
+          assignees: i.assignees,
+          blockers: i.blockers.filter((b) => !types.includes(on) || b.type === on).map((b) => ({ id: b.id, type: b.type, summary: b.summary })),
         }))
     },
   },
@@ -113,6 +122,47 @@ export const itemActions: Action[] = [
       const item = id ? engine.overview().items.find((i) => i.id === id) : null
       return item ? { id: item.id, title: item.title, since: new Date(item.since).toISOString() } : null
     },
+  },
+  {
+    name: 'list_bots',
+    unsafe: false,
+    description:
+      'The bots: each with its name (assign or @ it by that), what it is for, whether it is running, and the open items assigned to it ' +
+      'and that it watches.',
+    input: {},
+    run: async (_a, { engine }) =>
+      engine.agents().map((b) => ({
+        id: b.id,
+        name: b.name,
+        instructions: b.instructions,
+        provider: b.provider,
+        model: b.model || 'default',
+        debounceMinutes: b.debounceMinutes,
+        running: b.runId !== null,
+        assigned: b.assigned,
+        watching: b.watching,
+      })),
+  },
+  {
+    name: 'recently_assigned',
+    unsafe: false,
+    description: "Assign events, the newest first, over the last `days`: to one assignee ('human' or a bot's name), or to anyone.",
+    input: { to: z.string().optional().describe("'human' or a bot's name; anyone if left out."), days: z.number().default(7) },
+    run: async (a, { engine }) => {
+      const to = a.to ? (a.to === HUMAN ? HUMAN : engine.findAgent(String(a.to))?.id) : null
+      if (a.to && !to) throw new Error(`No bot ${a.to}.`)
+      return engine.assignments(to ?? null, Number(a.days)).map((x) => ({ ...x, at: new Date(x.at).toISOString() }))
+    },
+  },
+  {
+    name: 'stale_items',
+    unsafe: false,
+    description:
+      'The open items the human made or was assigned at some time, in which nothing has happened for `hours`: those that may have ' +
+      'been lost track of, the longest untouched first.',
+    input: { hours: z.number().default(24) },
+    run: async (a, { engine }) =>
+      engine.stale(Number(a.hours)).map((i) => ({ id: i.id, title: i.title, assignees: i.assignees, since: new Date(i.since).toISOString() })),
   },
   {
     name: 'directives',
@@ -179,7 +229,7 @@ export const itemActions: Action[] = [
     description: "One bot run's prompt and whole transcript.",
     input: { run_id: z.string() },
     run: async (a, { engine }) => {
-      const t = engine.transcript(String(a.run_id))
+      const t = await engine.transcript(String(a.run_id))
       if (!t) throw new Error(`No run ${a.run_id}.`)
       return t.length > 200_000 ? `${t.slice(0, 200_000)}\n… (cut)` : t
     },
