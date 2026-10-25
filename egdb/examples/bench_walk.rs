@@ -68,8 +68,8 @@ fn io_counters() -> (u64, u64) {
 }
 
 use egdb::{
-    BranchId, Direction, Follow, Op, ReadAhead, SortOrder, Store, Walk, WalkOptions, WriteBatch,
-    TYPE_KEY,
+    BranchId, Direction, Follow, FollowRule, Op, ReadAhead, SortOrder, Store, Walk, WalkOptions,
+    WriteBatch, TYPE_KEY,
 };
 
 const TYPES: [&str; 4] = ["list", "task", "note", "section"];
@@ -282,10 +282,18 @@ fn tune(store: &Store, cache_kib: Option<i64>) {
 }
 
 fn follow(cross: bool) -> Follow {
-    let mut pairs = vec![("child".to_owned(), Direction::Outbound)];
+    let mut links = vec!["child"];
     if cross {
-        pairs.push(("ref".to_owned(), Direction::Outbound));
+        links.push("ref");
     }
+    let pairs: Vec<FollowRule> = links
+        .iter()
+        .flat_map(|l| {
+            TYPES
+                .iter()
+                .map(|t| FollowRule::new(*l, Direction::Outbound, *t))
+        })
+        .collect();
     TYPES
         .iter()
         .map(|t| ((*t).to_owned(), pairs.clone()))
@@ -297,7 +305,6 @@ struct Scenario {
     page: Option<usize>,
     cross: bool,
     visited: bool,
-    cache: bool,
     read_ahead: ReadAhead,
     fork: bool,
 }
@@ -322,7 +329,6 @@ fn run(b: &Built, s: &Scenario) -> (usize, usize) {
                 WalkOptions {
                     steps: s.page.unwrap_or(usize::MAX),
                     read_ahead: s.read_ahead,
-                    return_cache: s.cache,
                     visited: visited_set.take(),
                     ..WalkOptions::default()
                 },
@@ -331,7 +337,7 @@ fn run(b: &Built, s: &Scenario) -> (usize, usize) {
         steps += w.steps;
         loads += w.loads;
         visited_set = w.visited;
-        std::hint::black_box(&w.rows);
+        std::hint::black_box(&w.paths);
         match w.next {
             Some(n) => start = n,
             None => return (steps, loads),
@@ -392,7 +398,6 @@ fn main() {
             page: Some(100),
             cross: false,
             visited: false,
-            cache: false,
             read_ahead: def,
             fork: false,
         },
@@ -401,7 +406,6 @@ fn main() {
             page: Some(1000),
             cross: false,
             visited: false,
-            cache: false,
             read_ahead: def,
             fork: false,
         },
@@ -410,7 +414,6 @@ fn main() {
             page: None,
             cross: false,
             visited: false,
-            cache: false,
             read_ahead: def,
             fork: false,
         },
@@ -419,7 +422,6 @@ fn main() {
             page: Some(1000),
             cross: false,
             visited: false,
-            cache: false,
             read_ahead: off,
             fork: false,
         },
@@ -428,7 +430,6 @@ fn main() {
             page: Some(1000),
             cross: false,
             visited: false,
-            cache: false,
             read_ahead: ReadAhead {
                 depth: 2,
                 width: 256,
@@ -436,20 +437,10 @@ fn main() {
             fork: false,
         },
         Scenario {
-            name: "tree, page 1000, return cache",
-            page: Some(1000),
-            cross: false,
-            visited: false,
-            cache: true,
-            read_ahead: def,
-            fork: false,
-        },
-        Scenario {
             name: "tree+cross, page 1000, visited set",
             page: Some(1000),
             cross: true,
             visited: true,
-            cache: false,
             read_ahead: def,
             fork: false,
         },
@@ -458,7 +449,6 @@ fn main() {
             page: Some(1000),
             cross: false,
             visited: false,
-            cache: false,
             read_ahead: def,
             fork: true,
         },

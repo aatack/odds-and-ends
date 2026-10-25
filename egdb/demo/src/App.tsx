@@ -1,10 +1,10 @@
 import { useVirtualizer, type Virtualizer } from '@tanstack/react-virtual'
-import { f, op, pathKey, type Path, type TreeRow } from 'egdb-client'
+import { f, op, pathKey, type Follow, type Path, type TreeRow } from 'egdb-client'
 import { useFind, useHistory, useWalk, useWrite } from 'egdb-client/react'
 import { useRef, useState } from 'react'
 
 const ROW = 26
-const FOLLOW = { list: [['child', 'outbound']] } as const
+const FOLLOW: Follow = { list: [['child', 'outbound', 'list'], ['child', 'outbound', 'task']] }
 const ROOT: Path = ['root']
 
 export function App() {

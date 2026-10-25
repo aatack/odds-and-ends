@@ -64,8 +64,8 @@ impl Fix {
 }
 
 /// Build a relationship map from `(upper type, link type, direction)` triples.
-fn rel(triples: &[(&str, &str, Direction)]) -> Follow {
-    let mut m: Follow = HashMap::new();
+fn rel(triples: &[(&str, &str, Direction)]) -> Relationships {
+    let mut m: Relationships = HashMap::new();
     for (ty, lt, d) in triples {
         m.entry((*ty).to_owned())
             .or_default()
@@ -80,7 +80,7 @@ fn prove1(
     branch: BranchId,
     item: &str,
     roots: &[&str],
-    relationships: &Follow,
+    relationships: &Relationships,
     strategy: ProveStrategy,
     opts: ProveOptions,
 ) -> Prove {
@@ -115,7 +115,7 @@ fn prove_all(
     branch: BranchId,
     item: &str,
     roots: &[&str],
-    relationships: &Follow,
+    relationships: &Relationships,
     opts: ProveOptions,
 ) -> ProveOutcome {
     let outs: Vec<(ProveStrategy, ProveOutcome)> = STRATEGIES
@@ -469,7 +469,7 @@ fn removed_link_then_readded() {
 
 // --- archiving ------------------------------------------------------------
 
-fn chain_rmi(f: &mut Fix) -> Follow {
+fn chain_rmi(f: &mut Fix) -> Relationships {
     let b = f.main;
     f.typ(b, "R", "org");
     f.typ(b, "M", "folder");

@@ -309,8 +309,13 @@ curl -s -X POST $URL/find -H 'content-type: application/json' \
 Request: `{branch, start, follow, descend?, include?, collapsed?, options?}`.
 
 - `start` is a path; its last ID is the first node to visit.
-- `follow` maps an entity's type to the `[link_type, direction]` pairs to
-  follow: `{ "list": [["child", "outbound"]] }`.
+- `follow` maps an entity's type to the `[link_type, direction, child_type]`
+  rules to follow. A rule follows the links of that type and direction to
+  entities whose `type` is `child_type` only. From a system, follow outbound
+  `contains` links to requirements and outbound `verified by` links to tests:
+  `{ "system": [["contains", "outbound", "requirement"], ["verified by", "outbound", "test"]] }`.
+  Children come link group by link group, in the order the rules first name
+  each `(link_type, direction)`, in link order within a group.
 - `descend` and `include` are filters (the same shape as [`/find`](#post-find)),
   tested on each node's id and values. Absent means always true. `include`
   decides if a node is in the result; `descend` decides if the walk goes below
@@ -318,31 +323,37 @@ Request: `{branch, start, follow, descend?, include?, collapsed?, options?}`.
 - `collapsed` is a list of paths (each from `start[0]`) that the walk does not
   go below, as if `descend` said no for them. A client uses it for the rows
   that the user has folded.
-- `options` is `{steps?, read_ahead?: {depth?, width?}, return_cache?,
-  visited?, direction?}`. `direction` is `"forward"` (the default) or
+- `options` is `{steps?, read_ahead?: {depth?, width?}, visited?,
+  direction?}`. `direction` is `"forward"` (the default) or
   `"backward"`: a backward walk visits the same nodes in reverse order, from
   `start` back to `start[0]`, nearest first. It cannot use `visited`.
 
-Response: `{rows, next, steps, loads}`, plus `cache` when `return_cache` is set
-and `visited` when a visited set is used. `next` is the path to resume from, or
-`null`.
+Response: `{paths, cache, next, steps, loads}`, plus `visited` when a visited
+set is used. `paths` are the paths of the emitted nodes, in visiting order.
+`cache` is `{nodes, links}` for the entities on those paths only: `nodes` maps
+each ID to `{id, values}`, and `links` maps each ID whose type follows rules
+to its link groups (every live link of each followed `(link_type, direction)`,
+as from `/links`). `next` is the path to resume from, or `null`.
 
 ```sh
 curl -s -X POST $URL/walk -H 'content-type: application/json' -d '{
   "branch":"'$B'","start":["a"],
-  "follow":{"task":[["child","outbound"]]},
+  "follow":{"task":[["child","outbound","task"]]},
   "include":{"eq":{"key":"type","value":"task"}}}'
 ```
 
 ```json
-{ "rows": [ { "path": ["a"], "node": { "id": "a", "values": { "type": "task" } } } ],
+{ "paths": [ ["a"] ],
+  "cache": { "nodes": { "a": { "id": "a", "values": { "type": "task" } } },
+             "links": { "a": [ { "link_type": "child", "direction": "outbound", "links": [] } ] } },
   "next": null, "steps": 1, "loads": 1 }
 ```
 
 ### POST /prove
 
-Request: `{branch, item, roots, relationships, options?}`. `relationships` is a
-follow map (as in [`/walk`](#post-walk)). `options` is `{max_depth?, max_nodes?,
+Request: `{branch, item, roots, relationships, options?}`. `relationships` maps
+a type to the `[link_type, direction]` pairs that an entity of that type steps
+down, to a child of any type: `{ "list": [["child", "outbound"]] }`. `options` is `{max_depth?, max_nodes?,
 include_archived?, strategy?}`; `strategy` is `"backward"` (the default),
 `"bidirectional"` or `"walk"`. Response: `{outcome, stats}`. `outcome` is
 `{"proved": {path, links}}`, `"no_path"` or `"unknown"`.

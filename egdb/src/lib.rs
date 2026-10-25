@@ -37,7 +37,10 @@ pub use read::LinkGroups;
 pub use schema::SCHEMA_VERSION;
 pub use store::Store;
 pub use types::*;
-pub use walk::{Follow, ReadAhead, Walk, WalkCache, WalkDirection, WalkNode, WalkOptions, WalkRow};
+pub use walk::{
+    Follow, FollowRule, ReadAhead, Relationships, Walk, WalkCache, WalkDirection, WalkNode,
+    WalkOptions,
+};
 
 #[cfg(test)]
 mod find_tests;

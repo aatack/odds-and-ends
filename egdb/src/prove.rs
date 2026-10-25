@@ -20,7 +20,7 @@ use crate::error::Result;
 use crate::store::Store;
 use crate::types::{BranchId, Direction, Link, Value, TYPE_KEY};
 use crate::view::View;
-use crate::walk::{Follow, ReadAhead, WalkNode, Walker};
+use crate::walk::{ReadAhead, Relationships, WalkNode, Walker};
 
 /// Which search a [`Store::prove`] call uses. All three return the same
 /// reachability answer; `Backward` and `Bidirectional` return a shortest
@@ -120,7 +120,7 @@ fn reverse(d: Direction) -> Direction {
 
 /// The distinct `(link type, direction)` pairs that occur anywhere in the
 /// relationship map, sorted for determinism.
-fn forward_pairs(relationships: &Follow) -> Vec<(String, Direction)> {
+fn forward_pairs(relationships: &Relationships) -> Vec<(String, Direction)> {
     let mut set: HashSet<(String, Direction)> = HashSet::new();
     for pairs in relationships.values() {
         for p in pairs {
@@ -138,7 +138,7 @@ fn forward_pairs(relationships: &Follow) -> Vec<(String, Direction)> {
 struct Ctx<'a> {
     store: &'a Store,
     view: View,
-    relationships: &'a Follow,
+    relationships: &'a Relationships,
     /// The distinct forward pairs, and the reversed pairs (for backward reads).
     forward: Vec<(String, Direction)>,
     reversed: Vec<(String, Direction)>,
@@ -154,7 +154,7 @@ impl<'a> Ctx<'a> {
         store: &'a Store,
         branch: BranchId,
         roots: &[&str],
-        relationships: &'a Follow,
+        relationships: &'a Relationships,
         include_archived: bool,
     ) -> Result<Self> {
         let forward = forward_pairs(relationships);
@@ -648,7 +648,7 @@ where
 fn walk_dfs<D, I>(
     ld: &mut Walker<'_, D, I>,
     roots: &HashSet<String>,
-    relationships: &Follow,
+    relationships: &Relationships,
     reversed: &[(String, Direction)],
     stats: &mut ProveStats,
     seen: &mut HashMap<String, usize>,
@@ -757,7 +757,7 @@ fn walk_prove(
     // The reversed follow map: any type that can be an upper node (a
     // relationships key) follows all reversed pairs; the item's own type is
     // added so the start node expands even if its type steps nowhere.
-    let mut rev_follow: Follow = ctx
+    let mut rev_follow: Relationships = ctx
         .relationships
         .keys()
         .map(|t| (t.clone(), reversed.clone()))
@@ -773,7 +773,7 @@ fn walk_prove(
         ctx.typed_only,
     );
     let roots = &ctx.roots;
-    let relationships: &Follow = ctx.relationships;
+    let relationships: &Relationships = ctx.relationships;
     let stats = &mut ctx.stats;
     let mut seen: HashMap<String, usize> = HashMap::new();
     let mut budget = false;
@@ -829,7 +829,7 @@ impl Store {
         branch: BranchId,
         item: &str,
         roots: &[&str],
-        relationships: &Follow,
+        relationships: &Relationships,
         options: ProveOptions,
     ) -> Result<Prove> {
         let sql0 = self.sql_queries();

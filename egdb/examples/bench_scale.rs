@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use egdb::{
-    BranchId, Direction, Follow, Op, ReadAhead, SortOrder, Store, WalkOptions, WriteBatch, TYPE_KEY,
+    BranchId, Direction, Follow, FollowRule, Op, ReadAhead, SortOrder, Store, WalkOptions, WriteBatch, TYPE_KEY,
 };
 
 extern "C" {
@@ -120,7 +120,10 @@ fn file_bytes(path: &Path) -> u64 {
 }
 
 fn follow() -> Follow {
-    let pairs = vec![("child".to_owned(), Direction::Outbound)];
+    let pairs: Vec<FollowRule> = TYPES
+        .iter()
+        .map(|t| FollowRule::new("child", Direction::Outbound, *t))
+        .collect();
     TYPES
         .iter()
         .map(|t| ((*t).to_owned(), pairs.clone()))
@@ -193,7 +196,7 @@ fn walk_pages(w: &mut World, pages: usize, cold: bool) -> (usize, f64) {
                 &follow,
                 |_, _| true,
                 |_, _| true,
-                WalkOptions { steps: 1000, read_ahead: ReadAhead::default(), return_cache: false, visited: None, ..WalkOptions::default() },
+                WalkOptions { steps: 1000, read_ahead: ReadAhead::default(), visited: None, ..WalkOptions::default() },
             )
             .unwrap();
         secs += t.elapsed().as_secs_f64();

@@ -11,13 +11,61 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::error::{Error, Result};
 use crate::read::LinkGroups;
 use crate::store::Store;
-use crate::types::{BranchId, Direction, Value, TYPE_KEY};
+use crate::types::{BranchId, Direction, Link, Value, TYPE_KEY};
 use crate::view::View;
 
 /// Which links to follow out of an entity, keyed by that entity's `type`
-/// value. The pairs are followed in the listed order. An entity whose type
-/// has no entry (or that has no type) is visited, but nothing is followed.
-pub type Follow = HashMap<String, Vec<(String, Direction)>>;
+/// value (the parent type). See [`Store::walk`] for the order of children. An
+/// entity whose type has no entry (or that has no type) is visited, but
+/// nothing is followed.
+///
+/// For example, "from a system, follow outbound `contains` links to
+/// requirements, then outbound `verified by` links to tests":
+///
+/// ```
+/// # use std::collections::HashMap;
+/// # use egdb::{Direction, Follow, FollowRule};
+/// let follow: Follow = HashMap::from([(
+///     "system".to_owned(),
+///     vec![
+///         FollowRule::new("contains", Direction::Outbound, "requirement"),
+///         FollowRule::new("verified by", Direction::Outbound, "test"),
+///     ],
+/// )]);
+/// ```
+pub type Follow = HashMap<String, Vec<FollowRule>>;
+
+/// One relationship that a walk follows out of an entity: links of
+/// `link_type` in `direction`, to entities whose `type` value is
+/// `child_type`. Linked entities of any other type are not reached by it.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct FollowRule {
+    pub link_type: String,
+    pub direction: Direction,
+    pub child_type: String,
+}
+
+impl FollowRule {
+    pub fn new(
+        link_type: impl Into<String>,
+        direction: Direction,
+        child_type: impl Into<String>,
+    ) -> Self {
+        Self {
+            link_type: link_type.into(),
+            direction,
+            child_type: child_type.into(),
+        }
+    }
+}
+
+/// [`Store::prove`]'s relationship map: the `(link type, direction)` pairs
+/// that an entity of the key's type steps down, to an entity of any type.
+pub type Relationships = HashMap<String, Vec<(String, Direction)>>;
+
+/// The rules of a [`Walker`]: per parent type, `(link type, direction, child
+/// type)`, where `None` accepts a child of any type ([`Store::prove`]).
+pub(crate) type Rules = HashMap<String, Vec<(String, Direction, Option<String>)>>;
 
 /// What a walk knows of one entity: its ID and all its (non-null) values.
 #[derive(Clone, Debug, PartialEq)]
@@ -26,24 +74,18 @@ pub struct WalkNode {
     pub values: BTreeMap<String, Value>,
 }
 
-/// One emitted row. The path runs from the walk's first starting entity to
-/// this one; it is the row's identity, because one entity can be reached by
-/// many paths.
-#[derive(Clone, Debug, PartialEq)]
-pub struct WalkRow {
-    pub path: Vec<String>,
-    pub node: WalkNode,
-}
-
-/// The data that a walk loaded: the values of each entity, and the links
-/// of the pairs that its type follows. Entities loaded by read-ahead are in
-/// it too.
+/// The data of the entities on a walk's returned paths: the values of each,
+/// and the links of the `(link type, direction)` pairs that its type follows.
+/// Entities that the walk loaded but that are on no returned path (skipped by
+/// `include`, or loaded by read-ahead) are left out.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WalkCache {
     pub nodes: HashMap<String, WalkNode>,
     /// Links per entity, grouped by the followed `(link type, direction)`
-    /// pairs, with the same filter and order as [`Store::links`]. An entity
-    /// whose type follows nothing has no entry.
+    /// pairs, with the same filter and order as [`Store::links`]: every live
+    /// link of the group, whatever the child's type, so that a group means
+    /// the same as one from [`Store::links`]. An entity whose type follows
+    /// nothing has no entry.
     pub links: HashMap<String, LinkGroups>,
 }
 
@@ -53,8 +95,6 @@ pub struct WalkOptions {
     /// Most nodes to visit on this page. Default 1000.
     pub steps: usize,
     pub read_ahead: ReadAhead,
-    /// Return the walk's cache in [`Walk::cache`]. Default false.
-    pub return_cache: bool,
     /// `Some(set)` turns on the global visited-set dedupe: an entity in the
     /// set is not visited again through any path. Pass back
     /// [`Walk::visited`] with [`Walk::next`] to resume. Default `None`.
@@ -81,7 +121,6 @@ impl Default for WalkOptions {
         Self {
             steps: 1000,
             read_ahead: ReadAhead::default(),
-            return_cache: false,
             visited: None,
             direction: WalkDirection::Forward,
         }
@@ -91,8 +130,10 @@ impl Default for WalkOptions {
 /// One page of a walk.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Walk {
-    /// The rows that `include` accepted, in depth-first order.
-    pub rows: Vec<WalkRow>,
+    /// The paths of the nodes that `include` accepted, in visiting order.
+    /// Each runs from the walk's first starting entity to the node; it is the
+    /// row's identity, because one entity can be reached by many paths.
+    pub paths: Vec<Vec<String>>,
     /// The path of the next node to visit. Pass it back as the starting path
     /// to resume exactly here. `None` when the walk is exhausted.
     pub next: Option<Vec<String>>,
@@ -100,8 +141,8 @@ pub struct Walk {
     pub steps: usize,
     /// Database load rounds on this page: one per read-ahead layer.
     pub loads: usize,
-    /// The cache, when [`WalkOptions::return_cache`] is set.
-    pub cache: Option<WalkCache>,
+    /// The values and links of every entity on [`Walk::paths`].
+    pub cache: WalkCache,
     /// The updated visited set, when [`WalkOptions::visited`] is set.
     pub visited: Option<HashSet<String>>,
 }
@@ -136,7 +177,7 @@ impl Default for ReadAhead {
 pub(crate) struct Walker<'a, D, I> {
     store: &'a Store,
     view: View,
-    follow: &'a Follow,
+    follow: Rules,
     read_ahead: ReadAhead,
     /// Read ahead from the end of each child list, not its start: a backward
     /// walk goes to the last children first.
@@ -153,6 +194,9 @@ pub(crate) struct Walker<'a, D, I> {
     visited: Option<HashSet<String>>,
     /// Followed link targets per entity, in order, before path filtering.
     targets: HashMap<String, Vec<String>>,
+    /// The `type` text of link targets that are not loaded, read to check a
+    /// rule's child type (`None`: no text type).
+    types: HashMap<String, Option<String>>,
     /// Children of each prefix of the current path, so that each predicate
     /// runs once per path. A stack, not a map: memory stays O(depth).
     stack_ids: Vec<String>,
@@ -264,14 +308,17 @@ where
         let mut values = self.store.values_with(&self.view, &refs, &eids)?;
         // Group by the followed pairs, not by type: types that follow the
         // same pairs share one batch read.
-        let mut by_pairs: HashMap<&[(String, Direction)], Vec<&str>> = HashMap::new();
+        let mut by_pairs: HashMap<Vec<(String, Direction)>, Vec<&str>> = HashMap::new();
         for id in &refs {
             let values = values.remove(*id).unwrap_or_default();
-            if let Some(pairs) = match values.get(TYPE_KEY) {
-                Some(Value::Text(t)) => self.follow.get(t),
-                _ => None,
-            } {
-                by_pairs.entry(pairs.as_slice()).or_default().push(id);
+            if let Some(rules) = self.rules_of(&values) {
+                let mut pairs: Vec<(String, Direction)> = Vec::new();
+                for (t, d, _) in rules {
+                    if !pairs.iter().any(|(pt, pd)| pt == t && pd == d) {
+                        pairs.push((t.clone(), *d));
+                    }
+                }
+                by_pairs.entry(pairs).or_default().push(id);
             }
             self.targets.insert((*id).to_owned(), Vec::new());
             self.nodes.insert(
@@ -282,6 +329,7 @@ where
                 },
             );
         }
+        let mut read: Vec<&str> = Vec::new();
         for (pairs, members) in by_pairs {
             let groups: Vec<(&str, Direction)> =
                 pairs.iter().map(|(t, d)| (t.as_str(), *d)).collect();
@@ -300,24 +348,128 @@ where
             )?;
             for id in members {
                 self.links.insert(id.to_owned(), links[id].clone());
-                let mut out = Vec::new();
-                let mut seen = HashSet::new();
-                let mine = &links[id];
-                for (t, d) in pairs {
-                    for link in &mine[&(t.clone(), *d)] {
-                        let other = match d {
-                            Direction::Outbound => &link.destination,
-                            Direction::Inbound => &link.source,
-                        };
-                        if seen.insert(other.clone()) {
-                            out.push(other.clone());
-                        }
+                read.push(id);
+            }
+        }
+        self.read_child_types(&read)?;
+        for id in read {
+            let targets = self.followed(id);
+            self.targets.insert(id.to_owned(), targets);
+        }
+        Ok(())
+    }
+
+    /// The rules that an entity with these values follows, by its type.
+    fn rules_of(
+        &self,
+        values: &BTreeMap<String, Value>,
+    ) -> Option<&Vec<(String, Direction, Option<String>)>> {
+        match values.get(TYPE_KEY) {
+            Some(Value::Text(t)) => self.follow.get(t),
+            _ => None,
+        }
+    }
+
+    /// The `type` text of an entity, from its loaded values or from
+    /// [`Walker::read_child_types`].
+    fn type_of(&self, id: &str) -> Option<&str> {
+        match self.nodes.get(id) {
+            Some(node) => match node.values.get(TYPE_KEY) {
+                Some(Value::Text(t)) => Some(t),
+                _ => None,
+            },
+            None => self.types.get(id).and_then(|t| t.as_deref()),
+        }
+    }
+
+    /// Read, in one batch, the types of the link targets of `ids` that a rule
+    /// with a child type needs and that are not known yet.
+    fn read_child_types(&mut self, ids: &[&str]) -> Result<()> {
+        let mut unknown: Vec<String> = Vec::new();
+        for id in ids {
+            let Some(rules) = self.rules_of(&self.nodes[*id].values) else {
+                continue;
+            };
+            let groups = &self.links[*id];
+            for (t, d, child) in rules {
+                if child.is_none() {
+                    continue;
+                }
+                for link in &groups[&(t.clone(), *d)] {
+                    let other = other_end(link, *d);
+                    if !self.nodes.contains_key(other) && !self.types.contains_key(other) {
+                        unknown.push(other.clone());
                     }
                 }
-                self.targets.insert(id.to_owned(), out);
+            }
+        }
+        if unknown.is_empty() {
+            return Ok(());
+        }
+        unknown.sort();
+        unknown.dedup();
+        let mut eids: HashMap<i64, String> = HashMap::new();
+        let mut lookup: Vec<&str> = Vec::new();
+        for id in &unknown {
+            match self.eid_of.get(id) {
+                Some(eid) => {
+                    eids.insert(*eid, id.clone());
+                }
+                None => lookup.push(id),
+            }
+        }
+        if !lookup.is_empty() {
+            for (eid, ext) in self.store.lookup(&lookup)? {
+                self.eid_of.insert(ext.clone(), eid);
+                eids.insert(eid, ext);
+            }
+        }
+        let keys: Vec<i64> = eids.keys().copied().collect();
+        let found = self.store.resolve_types(&self.view, &keys)?;
+        for id in unknown {
+            self.types.insert(id, None);
+        }
+        for (eid, value) in found {
+            if let Value::Text(t) = value {
+                self.types.insert(eids[&eid].clone(), Some(t));
             }
         }
         Ok(())
+    }
+
+    /// The targets of `id`'s rules: link group by link group, in the order
+    /// that the rules first name each `(link type, direction)`, and in link
+    /// order within a group. A link is followed when some rule of its group
+    /// accepts the child's type. A target reached twice is kept once, at its
+    /// first place.
+    fn followed(&self, id: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut seen = HashSet::new();
+        let Some(rules) = self.rules_of(&self.nodes[id].values) else {
+            return out;
+        };
+        let groups = &self.links[id];
+        let mut done: Vec<(&String, Direction)> = Vec::new();
+        for (t, d, _) in rules {
+            if done.contains(&(t, *d)) {
+                continue;
+            }
+            done.push((t, *d));
+            for link in &groups[&(t.clone(), *d)] {
+                let other = other_end(link, *d);
+                let accepted = rules.iter().any(|(rt, rd, child)| {
+                    rt == t
+                        && rd == d
+                        && child
+                            .as_deref()
+                            .is_none_or(|c| self.type_of(other) == Some(c))
+                });
+                if accepted && seen.insert(other.clone()) {
+                    out.push(other.clone());
+                }
+            }
+        }
+        out
     }
 
     /// The children of the node at the end of `path`: none when `descend`
@@ -427,9 +579,13 @@ impl Store {
     ///   subtree. A longer path (for example a returned `next`) resumes in the
     ///   middle of the tree; the walk then goes on to the later siblings of
     ///   the start and of its ancestors, but never above `start[0]`.
-    /// - `follow` maps the visited entity's `type` value to the
-    ///   `(link type, direction)` pairs to follow, in order. Children keep the
-    ///   sort order of each link group. A child reached by two pairs is kept
+    /// - `follow` maps the visited entity's `type` value to the rules to
+    ///   follow: each is a link type, a direction and the child type. A rule
+    ///   reaches only the linked entities whose `type` value is its child
+    ///   type. Children come link group by link group, in the order that the
+    ///   rules first name each `(link type, direction)`, and keep the group's
+    ///   sort order: two rules on one group with different child types give
+    ///   one list of children, in link order. A child reached twice is kept
     ///   once, at its first place.
     /// - Each visited node is a step, the start node too. `include` decides if
     ///   the node is emitted; a node that is not emitted still costs a step.
@@ -444,7 +600,8 @@ impl Store {
     ///   on this page or an earlier one) is skipped: it is not visited, not a
     ///   step, not emitted and not expanded. The start node is never skipped.
     ///
-    /// Returns the emitted rows and `next`: the path of the next node to
+    /// Returns the paths of the emitted nodes, the [`WalkCache`] of the
+    /// entities on them, and `next`: the path of the next node to
     /// visit, to pass back as `start` (with the returned `visited` set, if
     /// used). `None` when the walk is exhausted. With `steps == 0`, nothing
     /// is visited and `next` is `start`.
@@ -452,7 +609,7 @@ impl Store {
     /// With [`WalkDirection::Backward`], the walk visits the same nodes in the
     /// reverse order: from `start`, it goes to the last descendant of the
     /// previous sibling, else to the parent, and it ends after `start[0]`.
-    /// The rows are in visiting order (nearest first). A backward walk cannot
+    /// The paths are in visiting order (nearest first). A backward walk cannot
     /// use a visited set (`Error::Invalid`).
     pub fn walk(
         &self,
@@ -473,7 +630,16 @@ impl Store {
         let mut w = Walker {
             store: self,
             view: self.branch_view(branch)?,
-            follow,
+            follow: follow
+                .iter()
+                .map(|(parent, rules)| {
+                    let rules = rules
+                        .iter()
+                        .map(|r| (r.link_type.clone(), r.direction, Some(r.child_type.clone())))
+                        .collect();
+                    (parent.clone(), rules)
+                })
+                .collect(),
             read_ahead: options.read_ahead,
             backward,
             typed_only: true,
@@ -483,12 +649,13 @@ impl Store {
             links: HashMap::new(),
             visited: options.visited,
             targets: HashMap::new(),
+            types: HashMap::new(),
             stack_ids: Vec::new(),
             stack_kids: Vec::new(),
             loads: 0,
             eid_of: HashMap::new(),
         };
-        let mut rows = Vec::new();
+        let mut paths = Vec::new();
         let mut visited = 0;
         let mut path: Option<Vec<String>> = if start.is_empty() {
             None
@@ -508,24 +675,29 @@ impl Store {
             if let Some(v) = &mut w.visited {
                 v.insert(id.clone());
             }
-            let node = &w.nodes[id];
-            let emit = (w.include)(&p, node);
-            let node = emit.then(|| node.clone());
+            let emit = (w.include)(&p, &w.nodes[id]);
             path = if backward {
                 w.step_back(&p, remaining - 1)?
             } else {
                 w.step(&p, remaining - 1)?
             };
-            if let Some(node) = node {
-                rows.push(WalkRow { path: p, node });
+            if emit {
+                paths.push(p);
             }
         }
-        let cache = options.return_cache.then(|| WalkCache {
-            nodes: std::mem::take(&mut w.nodes),
-            links: std::mem::take(&mut w.links),
-        });
+        // Keep only the entities on the returned paths.
+        let on_paths: HashSet<&String> = paths.iter().flatten().collect();
+        let mut cache = WalkCache::default();
+        for id in on_paths {
+            if let Some(node) = w.nodes.remove(id) {
+                cache.nodes.insert(id.clone(), node);
+            }
+            if let Some(links) = w.links.remove(id) {
+                cache.links.insert(id.clone(), links);
+            }
+        }
         Ok(Walk {
-            rows,
+            paths,
             next: path,
             steps: visited,
             loads: w.loads,
@@ -537,12 +709,13 @@ impl Store {
     /// A bare [`Walker`] for [`Store::prove`]'s `Walk` strategy: the walk
     /// cache and read-ahead over `follow`, with no descend/include predicate
     /// and no visited set. `prove` calls [`Walker::ensure`] and reads the
-    /// loaded [`Walker::nodes`] and [`Walker::links`] itself.
+    /// loaded [`Walker::nodes`] and [`Walker::links`] itself. A child of any
+    /// type is followed.
     #[allow(clippy::type_complexity)]
     pub(crate) fn walk_loader<'a>(
         &'a self,
         view: View,
-        follow: &'a Follow,
+        follow: &Relationships,
         read_ahead: ReadAhead,
         typed_only: bool,
     ) -> Walker<
@@ -553,7 +726,13 @@ impl Store {
         Walker {
             store: self,
             view,
-            follow,
+            follow: follow
+                .iter()
+                .map(|(parent, pairs)| {
+                    let rules = pairs.iter().map(|(t, d)| (t.clone(), *d, None)).collect();
+                    (parent.clone(), rules)
+                })
+                .collect(),
             read_ahead,
             backward: false,
             typed_only,
@@ -563,10 +742,19 @@ impl Store {
             links: HashMap::new(),
             visited: None,
             targets: HashMap::new(),
+            types: HashMap::new(),
             stack_ids: Vec::new(),
             stack_kids: Vec::new(),
             loads: 0,
             eid_of: HashMap::new(),
         }
+    }
+}
+
+/// The entity at the other end of `link`, seen from `direction`.
+fn other_end(link: &Link, direction: Direction) -> &String {
+    match direction {
+        Direction::Outbound => &link.destination,
+        Direction::Inbound => &link.source,
     }
 }

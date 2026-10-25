@@ -19,8 +19,14 @@ export type Direction = 'outbound' | 'inbound'
 /** `[link_type, direction]`. */
 export type LinkPair = readonly [linkType: string, direction: Direction]
 
-/** Which links to follow out of an entity, keyed by that entity's `type`. */
-export type Follow = Readonly<Record<string, readonly LinkPair[]>>
+/** `[link_type, direction, child_type]`: follow these links to entities of `child_type` only. */
+export type FollowRule = readonly [linkType: string, direction: Direction, childType: string]
+
+/** Which links a walk follows out of an entity, keyed by that entity's `type`. */
+export type Follow = Readonly<Record<string, readonly FollowRule[]>>
+
+/** A prove relationship map: the pairs an entity of the key's type steps down, to a child of any type. */
+export type Relationships = Readonly<Record<string, readonly LinkPair[]>>
 
 /** How a link sorts: by the time it was written (default), by a number, or removed. */
 export type Sort = 'timestamp' | { explicit: number } | 'removed'
@@ -120,7 +126,6 @@ export type WalkDirection = 'forward' | 'backward'
 export interface WalkOptions {
   steps?: number
   read_ahead?: { depth?: number; width?: number }
-  return_cache?: boolean
   visited?: EntityId[]
   direction?: WalkDirection
 }
@@ -142,22 +147,19 @@ export interface WalkNode {
   values: Values
 }
 
-export interface WalkRow {
-  path: EntityId[]
-  node: WalkNode
-}
-
+/** The values and followed links of the entities on a walk's paths. */
 export interface WalkCache {
   nodes: Record<EntityId, WalkNode>
   links: Record<EntityId, LinkGroup[]>
 }
 
 export interface WalkPage {
-  rows: WalkRow[]
+  /** The paths of the nodes that `include` accepted, in visiting order. */
+  paths: EntityId[][]
+  cache: WalkCache
   next: EntityId[] | null
   steps: number
   loads: number
-  cache?: WalkCache
   visited?: EntityId[]
 }
 

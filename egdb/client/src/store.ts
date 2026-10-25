@@ -48,9 +48,6 @@ export interface FindState {
   since: number
 }
 
-/** A filter that matches nothing: a preload wants the cache, not rows. */
-const NO_ROWS: Filter = { not_null: { key: '\u0000' } }
-
 export class Egdb {
   readonly client: EgdbClient
   readonly branch: BranchId
@@ -121,6 +118,7 @@ export class Egdb {
    */
   async preloadWalk(root: Path, query: WalkQuery, from: Path, direction: 'forward' | 'backward') {
     // `include` only picks rows; a preload loads the same entities with or without it.
+    // The server returns only the entities on the paths it emits, so it emits them all.
     const key = JSON.stringify([pathKey(root), queryKey({ ...query, include: undefined }), pathKey(from), direction])
     if (this.preloads.has(key)) return
     this.preloads.set(key, 'running')
@@ -132,14 +130,27 @@ export class Egdb {
         start: from.slice(cut),
         follow: query.follow,
         descend: query.descend,
-        include: NO_ROWS,
         collapsed: (query.collapsed ?? [])
           .filter((p) => p.length >= root.length && root.every((id, i) => p[i] === id))
           .map((p) => p.slice(cut)),
         // A filter hides most nodes, so the browser steps over many per row: load more at once.
-        options: { steps: query.include ? this.preloadSteps * 10 : this.preloadSteps, return_cache: true, direction },
+        options: { steps: query.include ? this.preloadSteps * 10 : this.preloadSteps, direction },
       })
-      if (page.cache) this.merge(loadedFromWalk(page.cache), since)
+      this.merge(loadedFromWalk(page.cache), since)
+      // The linked entities that the walk did not reach (a child type that no
+      // rule follows, or past the end of the page) are not loaded: load their
+      // values, so that the browser can tell which ones to follow.
+      const view = this.view()
+      const unknown = new Set<EntityId>()
+      for (const groups of Object.values(page.cache.links)) {
+        for (const group of groups) {
+          for (const link of group.links) {
+            const other = group.direction === 'outbound' ? link.destination : link.source
+            if (!view.get(other)?.values) unknown.add(other)
+          }
+        }
+      }
+      if (unknown.size > 0) await this.load([...unknown])
       if (this.preloads.get(key) === 'running') this.preloads.set(key, 'done')
     } catch (error) {
       this.preloads.delete(key)

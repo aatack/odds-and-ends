@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{link_groups_to_dto, value_from_json, value_map_to_json, DirectionDto, LinkDto};
 use crate::types::Direction;
-use crate::walk::Follow;
+use crate::walk::{Follow, FollowRule, Relationships};
 use crate::{
     Filter, Find, FindOptions, FindOrder, Proof, Prove, ProveOptions, ProveOutcome, ProveStats,
     ProveStrategy, ReadAhead, Walk, WalkCache, WalkDirection, WalkNode, WalkOptions,
@@ -183,12 +183,30 @@ impl From<Find> for FindDto {
 
 // --- walk -----------------------------------------------------------------
 
-/// A follow map: `{ type: [[link_type, direction], ...] }`.
+/// A walk's follow map: `{ parent_type: [[link_type, direction, child_type], ...] }`.
 #[derive(Clone, Debug, Default, Deserialize)]
-pub(crate) struct FollowDto(pub HashMap<String, Vec<(String, DirectionDto)>>);
+pub(crate) struct FollowDto(pub HashMap<String, Vec<(String, DirectionDto, String)>>);
 
 impl From<FollowDto> for Follow {
     fn from(f: FollowDto) -> Self {
+        f.0.into_iter()
+            .map(|(ty, rules)| {
+                let rules: Vec<FollowRule> = rules
+                    .into_iter()
+                    .map(|(t, d, c)| FollowRule::new(t, d.into(), c))
+                    .collect();
+                (ty, rules)
+            })
+            .collect()
+    }
+}
+
+/// A prove relationship map: `{ type: [[link_type, direction], ...] }`.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub(crate) struct RelationshipsDto(pub HashMap<String, Vec<(String, DirectionDto)>>);
+
+impl From<RelationshipsDto> for Relationships {
+    fn from(f: RelationshipsDto) -> Self {
         f.0.into_iter()
             .map(|(ty, pairs)| {
                 let pairs: Vec<(String, Direction)> =
@@ -244,8 +262,6 @@ pub(crate) struct WalkOptionsDto {
     #[serde(default)]
     pub read_ahead: Option<ReadAheadDto>,
     #[serde(default)]
-    pub return_cache: Option<bool>,
-    #[serde(default)]
     pub visited: Option<Vec<String>>,
     #[serde(default)]
     pub direction: Option<WalkDirectionDto>,
@@ -257,7 +273,6 @@ impl From<WalkOptionsDto> for WalkOptions {
         WalkOptions {
             steps: d.steps.unwrap_or(def.steps),
             read_ahead: d.read_ahead.map(Into::into).unwrap_or(def.read_ahead),
-            return_cache: d.return_cache.unwrap_or(def.return_cache),
             visited: d.visited.map(|v| v.into_iter().collect()),
             direction: d.direction.map(Into::into).unwrap_or(def.direction),
         }
@@ -280,14 +295,7 @@ impl From<WalkNode> for WalkNodeDto {
     }
 }
 
-/// One emitted row: `{path, node}`.
-#[derive(Clone, Debug, Serialize)]
-pub(crate) struct WalkRowDto {
-    pub path: Vec<String>,
-    pub node: WalkNodeDto,
-}
-
-/// The walk cache: `{nodes, links}`. Only present when `return_cache` is set.
+/// The walk cache: `{nodes, links}` of the entities on the returned paths.
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct WalkCacheDto {
     pub nodes: HashMap<String, WalkNodeDto>,
@@ -307,15 +315,14 @@ impl From<WalkCache> for WalkCacheDto {
     }
 }
 
-/// A page of a walk: `{rows, next, steps, loads, cache?, visited?}`.
+/// A page of a walk: `{paths, cache, next, steps, loads, visited?}`.
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct WalkDto {
-    pub rows: Vec<WalkRowDto>,
+    pub paths: Vec<Vec<String>>,
+    pub cache: WalkCacheDto,
     pub next: Option<Vec<String>>,
     pub steps: usize,
     pub loads: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache: Option<WalkCacheDto>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visited: Option<Vec<String>>,
 }
@@ -329,18 +336,11 @@ impl From<Walk> for WalkDto {
             v
         });
         Self {
-            rows: w
-                .rows
-                .into_iter()
-                .map(|r| WalkRowDto {
-                    path: r.path,
-                    node: r.node.into(),
-                })
-                .collect(),
+            paths: w.paths,
+            cache: w.cache.into(),
             next: w.next,
             steps: w.steps,
             loads: w.loads,
-            cache: w.cache.map(Into::into),
             visited,
         }
     }

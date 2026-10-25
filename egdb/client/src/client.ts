@@ -10,13 +10,13 @@ import type {
   Filter,
   FindOptions,
   FindPage,
-  Follow,
   Link,
   LinkGroup,
   LinkPair,
   ParentRef,
   Prove,
   ProveOptions,
+  Relationships,
   SeqRange,
   UndoOutcome,
   Value,
@@ -158,7 +158,7 @@ export class EgdbClient {
     branch: BranchId,
     item: EntityId,
     roots: readonly EntityId[],
-    relationships: Follow,
+    relationships: Relationships,
     options?: ProveOptions,
   ): Promise<Prove> {
     return this.call('POST', '/prove', { branch, item, roots, relationships, options })
