@@ -324,6 +324,7 @@ fn run(b: &Built, s: &Scenario) -> (usize, usize) {
                     read_ahead: s.read_ahead,
                     return_cache: s.cache,
                     visited: visited_set.take(),
+                    ..WalkOptions::default()
                 },
             )
             .expect("walk");

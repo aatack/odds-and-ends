@@ -701,7 +701,7 @@ where
         }
     }
     // Load the fresh candidates as one batch, so each one's type is known
-    // without a read of its own (mirrors walk's children "settle").
+    // without a read of its own (as walk loads a node's children).
     let mut fresh: Vec<String> = cands
         .iter()
         .map(|c| c.0.clone())

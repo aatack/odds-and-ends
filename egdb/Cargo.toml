@@ -1,5 +1,5 @@
 [package]
-name = "entity-graph-database"
+name = "egdb"
 version = "0.1.0"
 edition = "2021"
 description = "Event-sourced node and link store with branches, on SQLite"

@@ -2,7 +2,7 @@
 //! structs expose every public field, with the library default when a field
 //! is absent.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +11,7 @@ use crate::types::Direction;
 use crate::walk::Follow;
 use crate::{
     Filter, Find, FindOptions, FindOrder, Proof, Prove, ProveOptions, ProveOutcome, ProveStats,
-    ProveStrategy, ReadAhead, Walk, WalkCache, WalkNode, WalkOptions,
+    ProveStrategy, ReadAhead, Walk, WalkCache, WalkDirection, WalkNode, WalkOptions,
 };
 
 // --- find -----------------------------------------------------------------
@@ -218,6 +218,24 @@ impl From<ReadAheadDto> for ReadAhead {
     }
 }
 
+/// The walk direction: `"forward"` (default) or `"backward"`.
+#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum WalkDirectionDto {
+    #[default]
+    Forward,
+    Backward,
+}
+
+impl From<WalkDirectionDto> for WalkDirection {
+    fn from(d: WalkDirectionDto) -> Self {
+        match d {
+            WalkDirectionDto::Forward => WalkDirection::Forward,
+            WalkDirectionDto::Backward => WalkDirection::Backward,
+        }
+    }
+}
+
 /// Walk options; each field falls back to the library default.
 #[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct WalkOptionsDto {
@@ -229,6 +247,8 @@ pub(crate) struct WalkOptionsDto {
     pub return_cache: Option<bool>,
     #[serde(default)]
     pub visited: Option<Vec<String>>,
+    #[serde(default)]
+    pub direction: Option<WalkDirectionDto>,
 }
 
 impl From<WalkOptionsDto> for WalkOptions {
@@ -239,6 +259,7 @@ impl From<WalkOptionsDto> for WalkOptions {
             read_ahead: d.read_ahead.map(Into::into).unwrap_or(def.read_ahead),
             return_cache: d.return_cache.unwrap_or(def.return_cache),
             visited: d.visited.map(|v| v.into_iter().collect()),
+            direction: d.direction.map(Into::into).unwrap_or(def.direction),
         }
     }
 }
@@ -326,11 +347,18 @@ impl From<Walk> for WalkDto {
 }
 
 /// Evaluate an optional filter as a walk predicate on a node's id and values.
-/// Absent is always true.
-pub(crate) fn node_predicate(filter: Option<Filter>) -> impl FnMut(&[String], &WalkNode) -> bool {
-    move |_path: &[String], node: &WalkNode| match &filter {
-        Some(f) => crate::find::matches(f, &node.id, &node.values),
-        None => true,
+/// Absent is always true. A path in `except` is always false: that is how a
+/// client says which rows it has collapsed.
+pub(crate) fn node_predicate(
+    filter: Option<Filter>,
+    except: HashSet<Vec<String>>,
+) -> impl FnMut(&[String], &WalkNode) -> bool {
+    move |path: &[String], node: &WalkNode| {
+        !except.contains(path)
+            && match &filter {
+                Some(f) => crate::find::matches(f, &node.id, &node.values),
+                None => true,
+            }
     }
 }
 

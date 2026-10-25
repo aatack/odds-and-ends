@@ -987,6 +987,7 @@ fn compare_walks(rig: &Rig, r: &mut Rng, ctx: &str) {
                                 read_ahead: ra,
                                 return_cache: false,
                                 visited: visited.take(),
+                                ..WalkOptions::default()
                             },
                         )
                         .unwrap();

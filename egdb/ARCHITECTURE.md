@@ -195,7 +195,7 @@ flowchart TD
 
 The walk reads `root, a, a1, a2, b, c`, one node at a time.
 
-- **Depth-first, in link order.** Why: this is the reading order of an outline. It is the same order as the old TypeScript walk.
+- **Depth-first, in link order.** Why: this is the reading order of an outline.
 - **The entity type decides which links to follow.** Why: a list and a task have different children. One map gives each kind its own links.
 - **Two questions for each node: "continue?" and "include?".** Why: "continue" stops the walk below a node (depth limits, closed nodes). "Include" only filters the output. A filter must not change where the walk goes.
 - **A step limit, and the path of the next node.** Why: a page has a fixed cost. The walk keeps no state between pages. The returned path is all that is necessary to go on from the same place.
@@ -205,6 +205,7 @@ The walk reads `root, a, a1, a2, b, c`, one node at a time.
 - **Optional visited set.** It skips an entity that the walk already visited on any path. Why: in a graph with many links, the same subtree would be read many times. The set goes back to the caller with the next path, so pages stay stateless.
 - **Read-ahead in batches.** On a miss, the walk loads the needed entities and about two layers below them, in batches. Why: fewer round trips to the database. The read-ahead is limited by the steps left, so a small page does not load the whole graph.
 - **Optional cache in the result.** Why: a frontend can show the rows without a second read of the same data.
+- **Backward walks.** A walk can go in reverse order, from a path back to the start. Why: a client that shows rows from a point in the middle of the tree must also find the rows above that point, without a walk from the top.
 
 ## 12a. Find
 

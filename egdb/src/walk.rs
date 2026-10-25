@@ -1,16 +1,14 @@
 //! `walk`: a depth-first reading of the graph from a starting path, one page
-//! at a time. It follows the TS query walk (`entity-graph/src/core/query.ts`):
-//! the next path is the first child, else the next sibling of the deepest
-//! ancestor that has one; a page stops after a number of steps and returns
-//! the path to resume from.
+//! at a time: the next path is the first child, else the next sibling of the
+//! deepest ancestor that has one; a page stops after a number of steps and
+//! returns the path to resume from.
 //!
-//! Loading borrows `scanEvents` (`src/core/pensive/tools.ts`): a cache miss
-//! loads the missing entities plus a few layers of the entities they link to,
-//! in batches, into a cache that lives for one walk.
+//! A cache miss loads the missing entities plus a few layers of the entities
+//! they link to, in batches, into a cache that lives for one walk.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::read::LinkGroups;
 use crate::store::Store;
 use crate::types::{BranchId, Direction, Value, TYPE_KEY};
@@ -60,7 +58,22 @@ pub struct WalkOptions {
     /// `Some(set)` turns on the global visited-set dedupe: an entity in the
     /// set is not visited again through any path. Pass back
     /// [`Walk::visited`] with [`Walk::next`] to resume. Default `None`.
+    /// Only a forward walk can use it.
     pub visited: Option<HashSet<String>>,
+    /// Which way the walk reads the tree. Default [`WalkDirection::Forward`].
+    pub direction: WalkDirection,
+}
+
+/// The order in which [`Store::walk`] visits nodes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WalkDirection {
+    /// Depth-first: a node, then its children, then its next sibling.
+    #[default]
+    Forward,
+    /// The forward order read in reverse: the previous sibling's last
+    /// descendant, else the parent. A backward walk from the path of a row
+    /// gives the rows above it, nearest first.
+    Backward,
 }
 
 impl Default for WalkOptions {
@@ -70,6 +83,7 @@ impl Default for WalkOptions {
             read_ahead: ReadAhead::default(),
             return_cache: false,
             visited: None,
+            direction: WalkDirection::Forward,
         }
     }
 }
@@ -104,7 +118,7 @@ pub struct ReadAhead {
 }
 
 impl Default for ReadAhead {
-    /// The TS defaults: `SCAN_DEPTH = 2`, `SCAN_OVERSCAN = 32`.
+    /// Two layers of 32 entities.
     fn default() -> Self {
         Self {
             depth: 2,
@@ -124,6 +138,9 @@ pub(crate) struct Walker<'a, D, I> {
     view: View,
     follow: &'a Follow,
     read_ahead: ReadAhead,
+    /// Read ahead from the end of each child list, not its start: a backward
+    /// walk goes to the last children first.
+    backward: bool,
     /// Link reads use the archived filter of [`Store::links`] when set (always
     /// for `walk`; `!include_archived` for `prove`).
     typed_only: bool,
@@ -174,7 +191,13 @@ where
             let mut next = Vec::new();
             let mut seen = HashSet::new();
             'outer: for id in &layer {
-                for t in &self.targets[id] {
+                let targets = &self.targets[id];
+                let ordered: Box<dyn Iterator<Item = &String>> = if self.backward {
+                    Box::new(targets.iter().rev())
+                } else {
+                    Box::new(targets.iter())
+                };
+                for t in ordered {
                     if next.len() >= cap {
                         break 'outer;
                     }
@@ -325,11 +348,16 @@ where
         } else {
             Vec::new()
         };
-        // Load the new frontier as one batch (the TS `settle` idea), capped by
+        // Load the new frontier as one batch, capped by
         // the steps left, so that each child is not a miss of its own.
         let take = kids.len().min(self.read_ahead.width.min(remaining.max(1)));
         if self.read_ahead.depth > 0 {
-            self.ensure(&kids[..take], remaining)?;
+            let batch = if self.backward {
+                &kids[kids.len() - take..]
+            } else {
+                &kids[..take]
+            };
+            self.ensure(batch, remaining)?;
         }
         self.stack_kids[path.len() - 1] = Some(kids.clone());
         Ok(kids)
@@ -361,6 +389,32 @@ where
             }
         }
         Ok(None)
+    }
+
+    /// The previous path in a depth-first reading, or `None` at `path[0]`:
+    /// the last descendant of the previous sibling, else the parent. A path
+    /// whose last ID is no longer a child of its parent goes to the parent.
+    fn step_back(&mut self, path: &[String], remaining: usize) -> Result<Option<Vec<String>>> {
+        let Some((last, parent)) = path.split_last() else {
+            return Ok(None);
+        };
+        if parent.is_empty() {
+            return Ok(None);
+        }
+        let siblings = self.children_of(parent, remaining)?;
+        let previous = match siblings.iter().position(|s| s == last) {
+            Some(at) if at > 0 => siblings[at - 1].clone(),
+            _ => return Ok(Some(parent.to_vec())),
+        };
+        let mut at = parent.to_vec();
+        at.push(previous);
+        loop {
+            let below = self.children_of(&at, remaining)?;
+            match below.last() {
+                Some(child) => at.push(child.clone()),
+                None => return Ok(Some(at)),
+            }
+        }
     }
 }
 
@@ -394,6 +448,12 @@ impl Store {
     /// visit, to pass back as `start` (with the returned `visited` set, if
     /// used). `None` when the walk is exhausted. With `steps == 0`, nothing
     /// is visited and `next` is `start`.
+    ///
+    /// With [`WalkDirection::Backward`], the walk visits the same nodes in the
+    /// reverse order: from `start`, it goes to the last descendant of the
+    /// previous sibling, else to the parent, and it ends after `start[0]`.
+    /// The rows are in visiting order (nearest first). A backward walk cannot
+    /// use a visited set (`Error::Invalid`).
     pub fn walk(
         &self,
         branch: BranchId,
@@ -404,11 +464,18 @@ impl Store {
         options: WalkOptions,
     ) -> Result<Walk> {
         let steps = options.steps;
+        let backward = options.direction == WalkDirection::Backward;
+        if backward && options.visited.is_some() {
+            return Err(Error::Invalid(
+                "a backward walk cannot use a visited set".into(),
+            ));
+        }
         let mut w = Walker {
             store: self,
             view: self.branch_view(branch)?,
             follow,
             read_ahead: options.read_ahead,
+            backward,
             typed_only: true,
             descend,
             include,
@@ -444,7 +511,11 @@ impl Store {
             let node = &w.nodes[id];
             let emit = (w.include)(&p, node);
             let node = emit.then(|| node.clone());
-            path = w.step(&p, remaining - 1)?;
+            path = if backward {
+                w.step_back(&p, remaining - 1)?
+            } else {
+                w.step(&p, remaining - 1)?
+            };
             if let Some(node) = node {
                 rows.push(WalkRow { path: p, node });
             }
@@ -484,6 +555,7 @@ impl Store {
             view,
             follow,
             read_ahead,
+            backward: false,
             typed_only,
             descend: |_: &[String], _: &WalkNode| true,
             include: |_: &[String], _: &WalkNode| true,

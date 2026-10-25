@@ -450,6 +450,33 @@ async fn walk_follow_predicates_and_paging() {
     .await;
     assert_eq!(p1["steps"], 1);
     assert!(p1["next"].is_array());
+
+    // backward from b: b, a, root. Collapsing root stops the forward walk.
+    let back = post_ok(
+        &s.base,
+        "/walk",
+        json!({
+            "branch": b, "start": ["root", "b"], "follow": follow,
+            "options": { "direction": "backward" }
+        }),
+    )
+    .await;
+    let ids: Vec<&str> = back["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["node"]["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, vec!["b", "a", "root"]);
+    let collapsed = post_ok(
+        &s.base,
+        "/walk",
+        json!({
+            "branch": b, "start": ["root"], "follow": follow, "collapsed": [["root"]]
+        }),
+    )
+    .await;
+    assert_eq!(collapsed["steps"], 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
