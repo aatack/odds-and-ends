@@ -56,7 +56,7 @@ function Outline() {
 
 | Hook | Arguments | Returns |
 | --- | --- | --- |
-| `useWalk` | `{ root: Path; follow: Follow; include?: Filter; descend?: Filter; collapsed?: Path[]; limit?: number }`, plus for a virtualized table `{ range?: { start; end }; overscan?; chunk?; reanchorAfter?; initialAnchor?: { path; index }; onShift?(shift); lookahead? }` | `{ rows: TreeRow[]; first; rowAt(index): TreeRow \| undefined; count; atEnd; loading; anchor; anchorIndex; reanchor(path, index) }` |
+| `useWalk` | `{ root: Path; follow: Follow; include?: Filter; descend?: Filter; collapsed?: Path[]; limit?: number }`, plus for a virtualized table `{ range?: { start; end }; overscan?; chunk?; buffer?; reanchorAfter?; initialAnchor?: { path; index }; onShift?(shift); lookahead? }` | `{ rows: TreeRow[]; first; rowAt(index): TreeRow \| undefined; count; atEnd; loading; anchor; anchorIndex; reanchor(path, index) }` |
 | `useFind` | `{ filter: Filter; order?: FindOrder; include_archived?; offset?; limit?; pageSize? }` | `{ rows: FindRowView[]; total; done; loading; error?; refresh() }` |
 | `useWrite` | none | `{ write(ops), set(entity, key, value), link(source, destination, type, sort?), unlink(...), archive(entity), undo(), redo() }`, each a `Promise` |
 | `useHistory` | none | `{ undo: number; redo: number }`: how many of this client's batches can be undone and redone |

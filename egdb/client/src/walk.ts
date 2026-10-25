@@ -57,7 +57,7 @@ export interface WindowRequest {
   limit: number
   /** Rows past each end of the window to check for missing data. Default 50. */
   lookahead?: number
-  /** Most nodes to step over in each direction. Default 10 000. */
+  /** Most nodes to step over in each direction. Default 100 000. */
   maxSteps?: number
 }
 
@@ -163,8 +163,15 @@ export class TreeStepper {
   emits(path: Path): boolean {
     const id = path[path.length - 1]!
     const values = this.view.get(id)?.values
-    // A loading node cannot be tested, so it shows (as loading).
-    return !values || passes(this.query.include, id, values)
+    // A loading node cannot be tested. With no filter it shows (as loading);
+    // with one it waits, rather than show a row that will likely go again.
+    if (!values) return !this.query.include
+    return passes(this.query.include, id, values)
+  }
+
+  /** Whether the node, or the links below it that the walk needs, are not loaded. */
+  lacks(path: Path): boolean {
+    return !this.view.get(path[path.length - 1]!)?.values || this.children(path).missing
   }
 
   /**
@@ -227,7 +234,7 @@ export class TreeStepper {
 export function computeWindow(view: EntityView, request: WindowRequest): WalkWindow {
   const { root, query, offset, limit } = request
   const lookahead = request.lookahead ?? 50
-  const maxSteps = request.maxSteps ?? 10_000
+  const maxSteps = request.maxSteps ?? 100_000
   const stepper = new TreeStepper(view, root, query)
   const missing: WalkWindow['missing'] = {}
   const resolved = stepper.resolve(request.anchor)
@@ -241,9 +248,8 @@ export function computeWindow(view: EntityView, request: WindowRequest): WalkWin
   if (offset + limit > 0) {
     let path: EntityId[] | null = anchor
     for (let steps = 0; path && after.length < wantAfter && steps < maxSteps; steps++) {
-      const row = stepper.row(path)
-      if ((row.status === 'loading' || row.childrenLoading) && !missing.forward) missing.forward = path
-      if (stepper.emits(path)) after.push(row)
+      if (!missing.forward && stepper.lacks(path)) missing.forward = path
+      if (stepper.emits(path)) after.push(stepper.row(path))
       const next: ReturnType<TreeStepper['next']> = stepper.next(path)
       if (next && !Array.isArray(next)) {
         missing.forward ??= path
@@ -271,9 +277,8 @@ export function computeWindow(view: EntityView, request: WindowRequest): WalkWin
         missing.backward ??= path
         break
       }
-      const row = stepper.row(previous.path)
-      if ((previous.incomplete || row.status === 'loading') && !missing.backward) missing.backward = path
-      if (stepper.emits(previous.path)) before.push(row)
+      if (!missing.backward && (previous.incomplete || stepper.lacks(previous.path))) missing.backward = path
+      if (stepper.emits(previous.path)) before.push(stepper.row(previous.path))
       path = previous.path
     }
   }
@@ -288,9 +293,35 @@ export function computeWindow(view: EntityView, request: WindowRequest): WalkWin
     rows,
     first: rows.length > 0 ? from : offset,
     anchor,
-    atStart: atStart && from <= lowest,
-    atEnd: atEnd && offset + limit >= after.length,
+    // Data still loading can add rows, so an end is only an end with nothing missing.
+    atStart: atStart && !missing.backward && from <= lowest,
+    atEnd: atEnd && !missing.forward && offset + limit >= after.length,
     counted: { before: before.length, after: after.length },
     missing,
+  }
+}
+
+/**
+ * The number of rows before the anchor, stepping back to the root. `complete`
+ * is false when data is missing or `maxSteps` ran out: then it is a lower
+ * bound. The viewport uses it to renumber the rows in one step.
+ */
+export function countBefore(
+  view: EntityView,
+  request: Pick<WindowRequest, 'root' | 'anchor' | 'query' | 'maxSteps'>,
+): { count: number; complete: boolean } {
+  const stepper = new TreeStepper(view, request.root, request.query)
+  const maxSteps = request.maxSteps ?? 100_000
+  let path: EntityId[] = stepper.resolve(request.anchor).path
+  let count = 0
+  let complete = true
+  for (let steps = 0; ; steps++) {
+    if (steps >= maxSteps) return { count, complete: false }
+    const previous = stepper.previous(path)
+    if (previous === null) return { count, complete }
+    if ('blocked' in previous) return { count, complete: false }
+    if (previous.incomplete || stepper.lacks(previous.path)) complete = false
+    if (stepper.emits(previous.path)) count++
+    path = previous.path
   }
 }

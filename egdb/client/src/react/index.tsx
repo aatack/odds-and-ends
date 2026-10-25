@@ -9,7 +9,7 @@ import { localize, rowsOf, type FindRowView } from '../find.js'
 import { op } from '../ops.js'
 import { stableJson, queryKey, type Egdb, type FindQueryOptions } from '../store.js'
 import type { EntityId, Filter, Follow, LinkPair, Op, Path, Sort, Value, WriteResult } from '../types.js'
-import { computeWindow, pathKey, type TreeRow, type WalkQuery } from '../walk.js'
+import { computeWindow, countBefore, pathKey, type TreeRow, type WalkQuery } from '../walk.js'
 
 export type { FindRowView } from '../find.js'
 
@@ -114,6 +114,12 @@ export interface UseWalkParams {
   overscan?: number
   /** The calculated window grows and moves in steps of this many rows. Default 50. */
   chunk?: number
+  /**
+   * Rows to add past the last known row while the end is not known, so the
+   * user can scroll on. The count never goes down until the end is known.
+   * Default 200.
+   */
+  buffer?: number
   /** How far (in rows) the range may move from the anchor before the anchor moves to it. Default 100. */
   reanchorAfter?: number
   /** The anchor to start at. Default: the root, as row 0. */
@@ -163,6 +169,7 @@ export function useWalk(params: UseWalkParams): UseWalkResult {
   const chunk = virtual ? Math.max(1, params.chunk ?? 50) : 1
   const reanchorAfter = params.reanchorAfter ?? 100
   const lookahead = params.lookahead ?? 50
+  const buffer = params.buffer ?? 200
   const visible = range ?? { start: 0, end: params.limit ?? 500 }
 
   const query: WalkQuery = { follow, include, descend, collapsed }
@@ -187,6 +194,8 @@ export function useWalk(params: UseWalkParams): UseWalkResult {
   if (current !== state) setState(current)
   const { anchor, anchorIndex } = current
   const anchorKey = pathKey(anchor)
+  const high = useRef({ rootKey, count: 0 })
+  if (high.current.rootKey !== rootKey) high.current = { rootKey, count: 0 }
 
   // The window, relative to the anchor, in whole chunks: scrolling inside a
   // chunk asks for the same window, so nothing is calculated again.
@@ -216,10 +225,18 @@ export function useWalk(params: UseWalkParams): UseWalkResult {
 
   // Rows above index 0, or a gap above the first row of the tree: move every
   // index so that the tree's first row is row 0.
-  const shift = known && (first < 0 || (window.atStart && first > 0)) ? -first : 0
+  // Rows above index 0: count all the rows above the anchor, so that one
+  // shift is enough (a shift per window could repeat past React's limit).
+  const shift = useMemo(() => {
+    if (!known) return 0
+    if (first < 0) return countBefore(view, { root, anchor, query }).count - anchorIndex
+    return window.atStart && first > 0 ? -first : 0
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [known, first, window, anchorIndex])
   useLayoutEffect(() => {
     if (shift === 0) return
     setState((s) => ({ ...s, anchorIndex: s.anchorIndex + shift }))
+    high.current.count += shift
     onShift?.(shift)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shift, anchorIndex])
@@ -242,7 +259,12 @@ export function useWalk(params: UseWalkParams): UseWalkResult {
   const rowsFirst = virtual ? first : Math.max(0, first)
   const end = rowsFirst + rows.length
   const atEnd = window.atEnd && end >= first + window.rows.length
-  const count = atEnd || !virtual ? end : Math.max(end, visible.end) + Math.max(1, overscan)
+  // The count only grows until the end is known, so the scroll bar does not
+  // jump as the window moves, and a new query does not clamp the scroll.
+  // While the end is not known, it grows in whole steps of `buffer` rows.
+  let count = atEnd || !virtual ? end : Math.ceil((Math.max(end, visible.end) + buffer) / buffer) * buffer
+  if (virtual && !atEnd) count = Math.max(count, high.current.count)
+  high.current.count = count
   const rowAt = useCallback((index: number) => rows[index - rowsFirst], [rows, rowsFirst])
   const reanchor = useCallback(
     (path: Path, index: number) => setState((s) => ({ ...s, anchor: [...path], anchorIndex: index })),

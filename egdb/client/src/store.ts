@@ -136,7 +136,8 @@ export class Egdb {
         collapsed: (query.collapsed ?? [])
           .filter((p) => p.length >= root.length && root.every((id, i) => p[i] === id))
           .map((p) => p.slice(cut)),
-        options: { steps: this.preloadSteps, return_cache: true, direction },
+        // A filter hides most nodes, so the browser steps over many per row: load more at once.
+        options: { steps: query.include ? this.preloadSteps * 10 : this.preloadSteps, return_cache: true, direction },
       })
       if (page.cache) this.merge(loadedFromWalk(page.cache), since)
       if (this.preloads.get(key) === 'running') this.preloads.set(key, 'done')

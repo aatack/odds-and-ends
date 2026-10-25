@@ -132,6 +132,34 @@ describe.skipIf(!haveServer)('hooks', () => {
     expect(shifts[0]).toBeLessThan(0)
   })
 
+  it('renumbers many rows above the anchor in one shift', async () => {
+    // Load the whole tree first, so every row above the anchor is known.
+    const egdb = new Egdb({ client: server.client, branch, author: 'test', preloadSteps: 100_000 })
+    await egdb.preloadWalk(['root'], query, ['root'], 'forward')
+    const shifts: number[] = []
+    const anchor = order[1500]!.split('/')
+    // A table scrolls with each shift, as the demo does.
+    let range = { start: 0, end: 30 }
+    const { result } = renderHook(
+      () =>
+        useWalk({
+          root: ['root'],
+          follow: query.follow,
+          range,
+          initialAnchor: { path: anchor, index: 0 },
+          onShift: (s) => {
+            shifts.push(s)
+            range = { start: range.start + s, end: range.end + s }
+          },
+        }),
+      { wrapper: wrapper(egdb) },
+    )
+    await waitFor(() => expect(shifts.length).toBeGreaterThan(0))
+    expect(result.current.anchorIndex).toBe(1500)
+    expect(shifts).toEqual([1500])
+    expect(result.current.rowAt(1500)?.path).toEqual(anchor)
+  })
+
   it('redo sends an undone batch again', async () => {
     const egdb = fresh()
     const { result } = renderHook(
