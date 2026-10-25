@@ -18,8 +18,8 @@ import type {
   EventRef,
   Filter,
   Follow,
+  FollowRule,
   LinkGroup,
-  LinkPair,
   Op,
   Values,
   WalkCache,
@@ -230,8 +230,8 @@ export function mergeLoaded(
 
 // --- reading -----------------------------------------------------------------
 
-/** The follow pairs of an entity, from its type. */
-export function pairsOf(follow: Follow, values: Values): readonly LinkPair[] {
+/** The follow rules of an entity, from its type. */
+export function rulesOf(follow: Follow, values: Values): readonly FollowRule[] {
   const type = values[TYPE_KEY]
   return typeof type === 'string' ? (follow[type] ?? []) : []
 }

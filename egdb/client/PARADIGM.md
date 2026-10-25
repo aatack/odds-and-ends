@@ -30,7 +30,7 @@ Thus each change on the screen is a calculation in memory. Only data that is not
 `computeWindow` (in `walk.ts`) uses the same rules as the server's `walk`:
 
 1. The walk is depth-first. Children are in link order.
-2. The entity's `type` selects the links to follow (the `follow` map).
+2. The entity's `type` selects the links to follow (the `follow` map). Each rule names a link type, a direction and a child type: a linked entity of another type is not followed.
 3. `descend` and `collapsed` stop the walk below a node. `include` removes a node from the rows, but the walk continues below it.
 4. The walk never goes through an entity that is already on the path (no cycles).
 5. The walk does not show an entity that has no type (an archived entity).
@@ -49,9 +49,9 @@ When the calculation finds that it needs data that is not in the cache:
 
 1. It marks the row as loading. It does not stop. It continues as if the row has no children. With an `include` filter, a row whose values are not loaded is not shown: the filter cannot test it, and most such rows go again when they load.
 2. It records the path of the first missing row, forward and backward from the anchor (`WalkWindow.missing`).
-3. The hook sends one `walk` request to the server from that path. The request has the same `follow`, `descend` and `collapsed` values as the calculation. It asks for about 200 steps (`preloadSteps`), in the same direction, and for the walk's cache (`return_cache`). With an `include` filter it asks for 10 times as many steps, because the browser steps over many nodes for each row that it shows.
+3. The hook sends one `walk` request to the server from that path. The request has the same `follow`, `descend` and `collapsed` values as the calculation. It asks for about 200 steps (`preloadSteps`), in the same direction, with no `include`: the server returns the values and links of the entities on the paths it emits, so it emits them all. With an `include` filter it asks for 10 times as many steps, because the browser steps over many nodes for each row that it shows.
 4. The server walk loads the nodes that the browser needs next, and about two layers of links below them, in batches.
-5. The browser puts the server's cache into its cache. The rows are calculated again and the loading rows fill in.
+5. The browser puts the server's cache into its cache. Linked entities that the server walk did not reach (a child type that no rule follows, or past the end of the page) are not in it, so the browser loads their values in one more request: it needs their types to know which ones to follow. The rows are calculated again and the loading rows fill in.
 
 One request thus fills about the next 200 rows. The calculation also looks 50 rows past each end of the window (`lookahead`), so the preload starts before the user sees a loading row.
 

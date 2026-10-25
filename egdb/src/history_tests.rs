@@ -250,16 +250,15 @@ fn check(t: &T, b: BranchId, exp: &Exp, ctx: &str) {
     }
 
     // Walk from every typed entity that has children, in pages of 1 and all.
-    let follow: Follow = HashMap::from([
-        (
-            "task".to_owned(),
-            vec![("child".to_owned(), Direction::Outbound)],
-        ),
-        (
-            "note".to_owned(),
-            vec![("child".to_owned(), Direction::Outbound)],
-        ),
-    ]);
+    let kinds = ["task", "note"];
+    let rules: Vec<FollowRule> = kinds
+        .iter()
+        .map(|k| FollowRule::new("child", Direction::Outbound, *k))
+        .collect();
+    let follow: Follow = kinds
+        .iter()
+        .map(|k| ((*k).to_owned(), rules.clone()))
+        .collect();
     for root in refs.iter().filter(|e| {
         !exp.links_of(e, "child", Direction::Outbound, true)
             .is_empty()
@@ -298,7 +297,10 @@ fn check(t: &T, b: BranchId, exp: &Exp, ctx: &str) {
                         },
                     )
                     .unwrap();
-                got.extend(w.rows.into_iter().map(|r| (r.path, r.node.values)));
+                for p in w.paths {
+                    let values = w.cache.nodes[p.last().unwrap()].values.clone();
+                    got.push((p, values));
+                }
                 match w.next {
                     Some(n) => path = n,
                     None => break,

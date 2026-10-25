@@ -12,8 +12,8 @@
 // shows as loading, the walk carries on past it, and the window says where a
 // preload must start (`missing`). See PARADIGM.md.
 
-import { isTyped, otherEnd, pairsOf, passes, groupKey, type EntityView } from './cache.js'
-import type { EntityId, Filter, Follow, Path, Values } from './types.js'
+import { isTyped, otherEnd, rulesOf, passes, groupKey, TYPE_KEY, type EntityView } from './cache.js'
+import type { Direction, EntityId, Filter, Follow, Path, Values } from './types.js'
 
 export interface WalkQuery {
   /** Which links to follow out of an entity, by its type. */
@@ -126,16 +126,25 @@ export class TreeStepper {
     const goes = !collapsed && passes(this.query.descend, id, values)
     const all: EntityId[] = []
     const seen = new Set<EntityId>()
-    for (const [linkType, direction] of pairsOf(this.query.follow, values)) {
-      const links = record.links[groupKey(linkType, direction)] ?? (record.local ? [] : undefined)
+    // Link group by link group, in the order the rules first name each; a
+    // link is followed when a rule of its group accepts the child's type.
+    const groups = new Map<string, { direction: Direction; types: Set<string> }>()
+    for (const [linkType, direction, childType] of rulesOf(this.query.follow, values)) {
+      const key = groupKey(linkType, direction)
+      if (!groups.has(key)) groups.set(key, { direction, types: new Set() })
+      groups.get(key)!.types.add(childType)
+    }
+    for (const [key, { direction, types }] of groups) {
+      const links = record.links[key] ?? (record.local ? [] : undefined)
       if (!links) return { kids: [], all: undefined, missing: goes, collapsed }
       for (const link of links) {
         const other = otherEnd(link, direction)
         if (seen.has(other) || path.includes(other)) continue
-        // The server hides untyped entities; the cache knows of a new one only
-        // when it is loaded, so an unloaded one is shown (and loads).
+        // The server hides untyped entities and follows only the rules' child
+        // types; the cache knows an entity's type only when it is loaded, so
+        // an unloaded one is shown (and loads).
         const values = this.view.get(other)?.values
-        if (values && !isTyped(values)) continue
+        if (values && (!isTyped(values) || !types.has(values[TYPE_KEY] as string))) continue
         seen.add(other)
         all.push(other)
       }

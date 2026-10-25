@@ -9,7 +9,7 @@ import { Egdb } from '../src/store.js'
 import type { WalkQuery } from '../src/walk.js'
 import { haveServer, startServer, treeOps, type Running } from './server.js'
 
-const query: WalkQuery = { follow: { list: [['child', 'outbound']] } }
+const query: WalkQuery = { follow: { list: [['child', 'outbound', 'list'], ['child', 'outbound', 'task']] } }
 
 describe.skipIf(!haveServer)('hooks', () => {
   let server: Running
@@ -21,7 +21,7 @@ describe.skipIf(!haveServer)('hooks', () => {
     branch = await server.client.createBranch('main')
     await server.client.write({ branch, author: 'test', ops: treeOps(5, 6) })
     const all = await server.client.walk(branch, { start: ['root'], follow: query.follow, options: { steps: 100_000 } })
-    order = all.rows.map((r) => r.path.join('/'))
+    order = all.paths.map((p) => p.join('/'))
     expect(order.length).toBeGreaterThan(1000)
   })
   afterAll(() => server?.stop())
@@ -69,8 +69,9 @@ describe.skipIf(!haveServer)('hooks', () => {
     rerender()
     expect(result.current.rows.map((r) => r.id).slice(0, 3)).toEqual(['root', 'root.0', 'root.1'])
     expect(result.current.rows[1]!.collapsed).toBe(true)
-    // The rows past the old window may need a preload; the fold itself did not.
-    expect(result.current.rows.length).toBe(30)
+    // The rows past the old window may need a preload (the walk's cache holds
+    // only the entities on its paths); the fold itself did not.
+    await waitFor(() => expect(result.current.rows.length).toBe(30))
     expect(calls).toBeLessThanOrEqual(1)
   })
 

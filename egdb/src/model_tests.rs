@@ -801,22 +801,29 @@ fn rename_burst(rig: &mut Rig, r: &mut Rng, b: usize, ctx: &str, tr: bool) {
 
 // --- comparing reads ----------------------------------------------------------------
 
+/// Some rules share a link group with others but want another child type,
+/// and some child types are never followed, so the child-type check matters.
 fn follow_map() -> Follow {
+    let rule = |t: &str, d: Direction, c: &str| FollowRule::new(t, d, c);
     HashMap::from([
         (
             "task".to_owned(),
-            vec![("child".to_owned(), Direction::Outbound)],
+            vec![
+                rule("child", Direction::Outbound, "note"),
+                rule("child", Direction::Outbound, "task"),
+            ],
         ),
         (
             "list".to_owned(),
             vec![
-                ("child".to_owned(), Direction::Outbound),
-                ("ref".to_owned(), Direction::Outbound),
+                rule("child", Direction::Outbound, "task"),
+                rule("ref", Direction::Outbound, "list"),
+                rule("child", Direction::Outbound, "list"),
             ],
         ),
         (
             "note".to_owned(),
-            vec![("child".to_owned(), Direction::Inbound)],
+            vec![rule("child", Direction::Inbound, "list")],
         ),
     ])
 }
@@ -862,19 +869,34 @@ fn model_walk(
         if !descend(&path, &node) {
             return;
         }
-        let pairs = match node.values.get(TYPE_KEY) {
+        let rules = match node.values.get(TYPE_KEY) {
             Some(Value::Text(t)) => follow.get(t).cloned().unwrap_or_default(),
             _ => vec![],
         };
+        // Group by group, in the order the rules first name each group; in
+        // link order within a group.
+        let mut groups: Vec<(String, Direction)> = Vec::new();
+        for rule in &rules {
+            let g = (rule.link_type.clone(), rule.direction);
+            if !groups.contains(&g) {
+                groups.push(g);
+            }
+        }
         let mut kids: Vec<String> = Vec::new();
-        for (ty, dir) in &pairs {
+        for (ty, dir) in &groups {
             for l in w.links(m, &id, ty, *dir, true) {
                 let other = if *dir == Direction::Outbound {
                     l.destination
                 } else {
                     l.source
                 };
-                if !kids.contains(&other) {
+                let child = w.type_of(&other);
+                let accepted = rules.iter().any(|r| {
+                    &r.link_type == ty
+                        && r.direction == *dir
+                        && child.as_deref() == Some(r.child_type.as_str())
+                });
+                if accepted && !kids.contains(&other) {
                     kids.push(other);
                 }
             }
@@ -985,7 +1007,6 @@ fn compare_walks(rig: &Rig, r: &mut Rng, ctx: &str) {
                             WalkOptions {
                                 steps: page,
                                 read_ahead: ra,
-                                return_cache: false,
                                 visited: visited.take(),
                                 ..WalkOptions::default()
                             },
@@ -1003,10 +1024,16 @@ fn compare_walks(rig: &Rig, r: &mut Rng, ctx: &str) {
                         .collect();
                     at += take;
                     let got_rows: Vec<(Vec<String>, WalkNode)> = got
-                        .rows
+                        .paths
                         .iter()
-                        .map(|x| (x.path.clone(), x.node.clone()))
+                        .map(|p| (p.clone(), got.cache.nodes[p.last().unwrap()].clone()))
                         .collect();
+                    let on_paths: HashSet<&String> = got.paths.iter().flatten().collect();
+                    assert!(
+                        got.cache.nodes.keys().all(|id| on_paths.contains(id))
+                            && on_paths.iter().all(|id| got.cache.nodes.contains_key(*id)),
+                        "{ctx}: cache nodes are the entities on the paths"
+                    );
                     assert_eq!(got_rows, page_rows, "{ctx}: rows, page {page} start {start} branch {b} visited={use_visited} ra={ra:?}");
                     if at == want.len() {
                         assert!(got.next.is_none(), "{ctx}: next should be None");
@@ -1046,7 +1073,7 @@ fn model_prove(
     w: &Winners,
     item: &str,
     roots: &[&str],
-    rel: &Follow,
+    rel: &Relationships,
     include_archived: bool,
     max_depth: Option<usize>,
 ) -> MProve {
@@ -1129,7 +1156,7 @@ fn model_validate(
     proof: &Proof,
     item: &str,
     roots: &[&str],
-    rel: &Follow,
+    rel: &Relationships,
     include_archived: bool,
     max_depth: Option<usize>,
     ctx: &str,
@@ -1194,8 +1221,8 @@ fn prove_id(r: &mut Rng) -> String {
 
 /// A random relationship map over the model's types and link types, with
 /// random directions; some types are left out (a type not in the map).
-fn rand_relationships(r: &mut Rng) -> Follow {
-    let mut m: Follow = HashMap::new();
+fn rand_relationships(r: &mut Rng) -> Relationships {
+    let mut m: Relationships = HashMap::new();
     for ty in ["task", "list", "note"] {
         if r.chance(2, 3) {
             let mut pairs: Vec<(String, Direction)> = Vec::new();

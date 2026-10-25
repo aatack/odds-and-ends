@@ -6,7 +6,7 @@ import type { WalkQuery } from '../src/walk.js'
 import { computeWindow } from '../src/walk.js'
 import { haveServer, startServer, treeOps, type Running } from './server.js'
 
-const query: WalkQuery = { follow: { list: [['child', 'outbound']] } }
+const query: WalkQuery = { follow: { list: [['child', 'outbound', 'list'], ['child', 'outbound', 'task']] } }
 
 describe.skipIf(!haveServer)('against egdb-server', () => {
   let server: Running
@@ -32,7 +32,7 @@ describe.skipIf(!haveServer)('against egdb-server', () => {
 
   it('gives the same rows as the server walk, forward and backward, in few round trips', async () => {
     const all = await server.client.walk(branch, { start: ['root'], follow: query.follow, options: { steps: 100_000 } })
-    const order = all.rows.map((r) => r.path.join('/'))
+    const order = all.paths.map((p) => p.join('/'))
     expect(order.length).toBeGreaterThan(300)
 
     const egdb = new Egdb({ client: server.client, branch, author: 'test' })
@@ -45,7 +45,7 @@ describe.skipIf(!haveServer)('against egdb-server', () => {
     const fresh = new Egdb({ client: server.client, branch, author: 'test' })
     const deep = await settle(fresh, {
       root: ['root'],
-      anchor: all.rows[at]!.path,
+      anchor: all.paths[at]!,
       query,
       offset: -60,
       limit: 120,
@@ -75,7 +75,7 @@ describe.skipIf(!haveServer)('against egdb-server', () => {
       limit: 100_000,
       lookahead: 0,
     })
-    expect(window.rows.map((r) => r.path.join('/'))).toEqual(all.rows.map((r) => r.path.join('/')))
+    expect(window.rows.map((r) => r.path.join('/'))).toEqual(all.paths.map((p) => p.join('/')))
   })
 
   it('shows a write at once, keeps it when the server confirms, and drops a refused one', async () => {

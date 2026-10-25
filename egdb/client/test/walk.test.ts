@@ -6,7 +6,7 @@ import type { Path } from '../src/types.js'
 import { computeWindow, countBefore, type WalkQuery } from '../src/walk.js'
 
 const child = groupKey('child', 'outbound')
-const query: WalkQuery = { follow: { list: [['child', 'outbound']] } }
+const query: WalkQuery = { follow: { list: [['child', 'outbound', 'list'], ['child', 'outbound', 'task']] } }
 
 /** A cache from `{ id: [type, ...children] }`; every entity fully loaded. */
 function cache(tree: Record<string, [string, ...string[]]>, skip: string[] = []): CacheState {
@@ -139,6 +139,26 @@ describe('computeWindow', () => {
     expect(paths(w)).toEqual(['root', 'root/a', 'root/a/a2', 'root/new', 'root/b', 'root/c', 'root/c/c1'])
     expect(w.rows.find((r) => r.id === 'b')?.values?.text).toBe('edited')
     expect(w.rows.find((r) => r.id === 'c1')?.hasChildren).toBe(false)
+  })
+
+  it('follows a link only to the child types of its rules, in link order per group', () => {
+    const typed = { ...tree, root: ['list', 'a', 'n', 'b', 'c'] as [string, ...string[]], n: ['note'] as [string, ...string[]] }
+    const view = viewOf(cache(typed))
+    const lists: WalkQuery = { follow: { list: [['child', 'outbound', 'list']] } }
+    expect(paths(computeWindow(view, { root: ['root'], query: lists, offset: 0, limit: 100 }))).toEqual([
+      'root',
+      'root/a',
+      'root/c',
+      'root/c/c1',
+    ])
+    // Two child types on one group keep the link order; the note is not followed.
+    const both: WalkQuery = { follow: { list: [['child', 'outbound', 'task'], ['child', 'outbound', 'list']] } }
+    expect(paths(computeWindow(view, { root: ['root'], query: both, offset: 0, limit: 100 }))).toEqual(order)
+    // A child that is not loaded may be of a followed type: it shows, and loads.
+    const partial = viewOf(cache(typed, ['n']))
+    const w = computeWindow(partial, { root: ['root'], query: both, offset: 0, limit: 100 })
+    expect(paths(w)).toContain('root/n')
+    expect(w.missing.forward).toEqual(['root', 'n'])
   })
 
   it('never walks through an entity already on the path', () => {

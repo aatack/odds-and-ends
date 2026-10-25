@@ -36,7 +36,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use egdb::{
-    BranchId, Direction, Follow, Op, ParentRef, ReadAhead, SeqRange, SortOrder, Store, Walk,
+    BranchId, Direction, Follow, FollowRule, Op, ParentRef, ReadAhead, SeqRange, SortOrder, Store, Walk,
     WalkOptions, WriteBatch, TYPE_KEY,
 };
 
@@ -330,7 +330,13 @@ fn branch_map(store: &Store) -> HashMap<&'static str, BranchId> {
 fn follow() -> Follow {
     TYPES
         .iter()
-        .map(|t| ((*t).to_owned(), vec![("child".to_owned(), Direction::Outbound)]))
+        .map(|t| {
+            let rules = TYPES
+                .iter()
+                .map(|c| FollowRule::new("child", Direction::Outbound, *c))
+                .collect();
+            ((*t).to_owned(), rules)
+        })
         .collect()
 }
 
@@ -352,7 +358,6 @@ fn run(store: &Store, branch: BranchId, read_ahead: ReadAhead) -> (usize, usize,
                 WalkOptions {
                     steps: 1000,
                     read_ahead,
-                    return_cache: false,
                     visited: None,
                     ..WalkOptions::default()
                 },
@@ -360,8 +365,8 @@ fn run(store: &Store, branch: BranchId, read_ahead: ReadAhead) -> (usize, usize,
             .expect("walk");
         steps += w.steps;
         loads += w.loads;
-        emitted += w.rows.len();
-        std::hint::black_box(&w.rows);
+        emitted += w.paths.len();
+        std::hint::black_box(&w.paths);
         match w.next {
             Some(n) => start = n,
             None => {

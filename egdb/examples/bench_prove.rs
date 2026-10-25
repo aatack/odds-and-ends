@@ -51,7 +51,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use egdb::{
-    BranchId, Direction, Follow, Op, ParentRef, ProveOptions, ProveOutcome, ProveStrategy,
+    BranchId, Direction, Op, ParentRef, ProveOptions, ProveOutcome, ProveStrategy, Relationships,
     SeqRange, SortOrder, Store, Value, WriteBatch, TYPE_KEY,
 };
 
@@ -122,9 +122,9 @@ const SHARED: &str = "shared_with";
 const MEMBER: &str = "member";
 
 /// The downward relationship map used for every proof in this benchmark.
-fn relationships() -> Follow {
+fn relationships() -> Relationships {
     use Direction::{Inbound, Outbound};
-    let mut f: Follow = HashMap::new();
+    let mut f: Relationships = HashMap::new();
     f.insert("org".into(), vec![(CHILD.into(), Outbound)]);
     f.insert("team".into(), vec![(CHILD.into(), Outbound)]);
     f.insert("folder".into(), vec![(CHILD.into(), Outbound)]);

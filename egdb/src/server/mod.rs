@@ -26,10 +26,10 @@ use tokio::net::TcpListener;
 use crate::error::Result;
 use crate::store::Store;
 use crate::types::{Direction, ParentRef, SeqRange, WriteBatch};
-use crate::{Filter, FindOptions, Follow, ProveOptions, WalkOptions};
+use crate::{Filter, FindOptions, Follow, ProveOptions, Relationships, WalkOptions};
 use dto::query::{
     node_predicate, FilterDto, FindDto, FindOptionsDto, FollowDto, ProveDto, ProveOptionsDto,
-    WalkDto, WalkOptionsDto,
+    RelationshipsDto, WalkDto, WalkOptionsDto,
 };
 use dto::{
     link_groups_to_dto, parse_branch, value_map_to_json, value_to_json, BranchInfoDto,
@@ -451,7 +451,7 @@ struct ProveReq {
     branch: String,
     item: String,
     roots: Vec<String>,
-    relationships: FollowDto,
+    relationships: RelationshipsDto,
     #[serde(default)]
     options: Option<ProveOptionsDto>,
 }
@@ -463,7 +463,7 @@ async fn prove(
     let id = parse_branch(&body.branch)?;
     let item = body.item;
     let roots = body.roots;
-    let relationships: Follow = body.relationships.into();
+    let relationships: Relationships = body.relationships.into();
     let options: ProveOptions = body.options.unwrap_or_default().into();
     let result = on_store(&state, move |s| {
         let refs: Vec<&str> = roots.iter().map(String::as_str).collect();

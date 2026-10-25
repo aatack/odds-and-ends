@@ -92,7 +92,7 @@ Later rules (2026-10-12). These rules replace parts of the rules above and of dr
     - A branch that the list reaches low and high stays at its first (low) position.
     - The greatest range spans the gaps between appearances.
 29. **R29 [RULE]. Batch reads.** Every low-level read takes a batch of entity IDs. It returns the results by ID. `values` returns all values of each entity.
-30. **R30 [RULE]. Walk.** `walk` takes a starting path, a map from the source entity's type to the links to follow, a "continue" predicate, an "include" predicate and a step limit. It returns rows and the path of the next node to visit (`None` when exhausted). It never allows cycles: a node already on the current path is skipped completely. Options: return the cache, and a global visited set.
+30. **R30 [RULE]. Walk.** `walk` takes a starting path, a map from the source entity's type to the links to follow (each a link type, a direction and a child type), a "continue" predicate, an "include" predicate and a step limit. It returns the paths of the emitted nodes, the cache of the entities on those paths, and the path of the next node to visit (`None` when exhausted). It never allows cycles: a node already on the current path is skipped completely. Option: a global visited set.
 31. **R31 [RULE]. Read-ahead.** On a cache miss, `walk` loads the needed entities plus about two layers of their followed links, in batches. The cache lives for one walk.
 
 ---
@@ -692,21 +692,21 @@ Other reads: `branch`, `branches`.
 ### 11.1 Walk (R30)
 
 ```rust
-pub type Follow = HashMap<String, Vec<(String, Direction)>>; // source entity's `type` -> pairs
+pub type Follow = HashMap<String, Vec<FollowRule>>; // source entity's `type` -> rules
+pub struct FollowRule { pub link_type: String, pub direction: Direction, pub child_type: String }
 pub struct WalkNode { pub id: String, pub values: BTreeMap<String, Value> }
-pub struct WalkRow { pub path: Vec<String>, pub node: WalkNode }
 pub struct ReadAhead { pub depth: usize, pub width: usize }             // default 2, 32
 pub enum WalkDirection { Forward /* default */, Backward }
 pub struct WalkOptions { pub steps: usize,                              // default 1000
                          pub read_ahead: ReadAhead,
-                         pub return_cache: bool,                        // default false
                          pub visited: Option<HashSet<String>>,          // default None
                          pub direction: WalkDirection }                 // default Forward
 pub struct WalkCache { pub nodes: HashMap<String, WalkNode>, pub links: HashMap<String, LinkGroups> }
-pub struct Walk { pub rows: Vec<WalkRow>,
+pub struct Walk { pub paths: Vec<Vec<String>>,    // paths of the emitted nodes
+                  pub cache: WalkCache,            // the entities on `paths` only
                   pub next: Option<Vec<String>>,   // path of the next node to visit; None = exhausted
                   pub steps: usize, pub loads: usize,
-                  pub cache: Option<WalkCache>, pub visited: Option<HashSet<String>> }
+                  pub visited: Option<HashSet<String>> }
 
 fn walk(&self, branch: BranchId, start: &[&str], follow: &Follow,
         descend: impl FnMut(&[String], &WalkNode) -> bool,
@@ -718,15 +718,15 @@ The rules [CHOSEN, I19]:
 
 1. **Start path.** The last ID of `start` is the first node to visit. The earlier IDs are its ancestors. The walk never goes above `start[0]`.
 2. **Order.** The walk is depth-first. The next path is the first child. If there is no child, it is the next sibling of the deepest ancestor that has one.
-3. **Children.** The store reads the `type` of the node. It follows the pairs of that type in `follow`, in the listed order. Each link group keeps its sort order. A child that two pairs reach is kept once, at its first place. A type with no entry follows nothing. There is no wildcard key (Q17, resolved).
+3. **Children.** The store reads the `type` of the node. It follows the rules of that type in `follow`. A rule `(link type, direction, child type)` follows the live links of that type and direction to entities whose `type` is the child type; a linked entity of another type is not a child. The children come link group by link group, in the order that the rules first name each `(link type, direction)`, and each group keeps its sort order: two rules on one group with different child types give one list, in link order (so manually sorted children stay in order). A child reached twice is kept once, at its first place. A type with no entry follows nothing. There is no wildcard key (Q17, resolved), and every rule names its child type. The types of linked entities that the walk has not loaded are read in one batch per load round.
 4. **Filter.** Links use the archived filter of `links` (R23). The start node is visited even if it has no type.
 5. **Steps.** Each visited node is one step. The start node is a step too, and `include` can emit it. A node that `include` refuses still costs a step.
 6. **Predicates.** `include` decides if the node is emitted. `descend` decides if the walk goes below it. Both get the path and the node's values. They do not get links. Each runs once for each path. A resumed walk also runs `descend` on the ancestors of the start, to find their later children.
-7. **Rows.** A row is `(path, node)`. The same entity on two paths gives two rows.
+7. **Paths.** The result is the list of the paths of the emitted nodes. The same entity on two paths gives two paths. The values of each are in the cache (rule 11).
 8. **Next.** When the page has used `steps` nodes, `next` is the path of the next node to visit. Pass it back as `start` to resume there. `next` is `None` when the walk is exhausted. With `steps = 0`, nothing is visited and `next` is `start`.
 9. **Cycles (always).** A node that is already on the current path is skipped completely. It is not visited, emitted, expanded or counted.
 10. **Visited set (option).** With `visited = Some(set)`, an entity in the set is skipped in the same way, on every path. "Visited" means visited (a step), not emitted. The walk adds each visited node to the set and returns it. Pass `next` and the set back together to resume. The start node is never skipped.
-11. **Cache (option).** With `return_cache`, the walk returns its cache: the values of each loaded entity, and its links for the followed pairs. Entities that read-ahead loaded are in it too.
+11. **Cache.** The walk returns the values of each entity on the returned paths (ancestors of the start included), and its links for the followed `(link type, direction)` groups. A group holds every live link, whatever the child's type, so it means the same as a group from `links`. Entities that the walk loaded but that are on no returned path (skipped by `include`, or loaded by read-ahead) are left out. A page that emits nothing returns an empty cache.
 12. **Backward (option).** With `direction = Backward`, the walk visits the nodes of the forward order in reverse order. From a path, the next node is the last descendant of the previous sibling. If there is no previous sibling, it is the parent. The walk ends after `start[0]`. A path whose last ID is no longer a child of its parent goes to the parent. `descend`, the cycle rule and the step limit apply as in a forward walk. Read-ahead loads the last children first. A backward walk cannot use a visited set (`Error::Invalid`). Why: a client that shows rows from a point in the middle of a tree must also find the rows above that point (see `client/PARADIGM.md`).
 
 **Loading (R31).**
@@ -811,12 +811,12 @@ pub struct ProveStats { pub nodes_visited: usize, pub link_reads: usize, pub val
 pub struct Prove { pub outcome: ProveOutcome, pub stats: ProveStats }
 
 fn prove(&self, branch: BranchId, item: &str, roots: &[&str],
-         relationships: &Follow, options: ProveOptions) -> Result<Prove>;
+         relationships: &Relationships, options: ProveOptions) -> Result<Prove>;
 ```
 
 **Semantics.**
 
-1. **Relationships.** `relationships` has the shape of a walk `Follow` map, read downward from the root: an entity `u` of type `T` can step to `v` by each `(link type, direction)` in `relationships[T]` (`Outbound`: a link `u -> v`; `Inbound`: a link `v -> u`). A proof is `root = p0, p1, ..., pk = item`, where each step `p(i) -> p(i+1)` is a live link of a pair in `relationships[type(p(i))]`. The key is the type of the *upper* entity.
+1. **Relationships.** `relationships` (`Relationships = HashMap<String, Vec<(String, Direction)>>`) is like a walk `Follow` map without child types, read downward from the root: an entity `u` of type `T` can step to `v` by each `(link type, direction)` in `relationships[T]` (`Outbound`: a link `u -> v`; `Inbound`: a link `v -> u`). A proof is `root = p0, p1, ..., pk = item`, where each step `p(i) -> p(i+1)` is a live link of a pair in `relationships[type(p(i))]`. The key is the type of the *upper* entity.
 2. **Backwards.** The search starts at the item and reverses each pair. A candidate parent `u`, found by `(lt, d)` reversed, counts only if `relationships[type(u)]` contains `(lt, d)`. So each layer reads the links of the frontier (one batch) and then the `type` of the new candidates (one batch).
 3. **Archived (R23).** By default every entity on the path must have a live non-null type, the same filter as `links`. So archived entities, and links to them, never form a proof. With `include_archived`, links use `links_including_archived` and the *item* may be archived or untyped. Roots and intermediates still need a type that the map can step from. So an archived root proves only itself.
 4. **Edge cases.** `item` in `roots` gives a depth-0 proof (`path = [item]`, no links) if the item passes rule 3 and the store knows the ID. Unknown IDs and an empty `roots` give `NoPath`, not an error.

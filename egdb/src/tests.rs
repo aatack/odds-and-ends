@@ -1295,7 +1295,10 @@ fn walk_tree(f: &mut Fixture) {
 fn follow_children() -> Follow {
     Follow::from([(
         "list".to_owned(),
-        vec![("child".to_owned(), Direction::Outbound)],
+        vec![
+            FollowRule::new("child", Direction::Outbound, "list"),
+            FollowRule::new("child", Direction::Outbound, "task"),
+        ],
     )])
 }
 
@@ -1308,7 +1311,7 @@ fn opts(steps: usize, read_ahead: ReadAhead) -> WalkOptions {
 }
 
 fn walk_ids(walk: &Walk) -> Vec<String> {
-    walk.rows.iter().map(|r| r.path.join("/")).collect()
+    walk.paths.iter().map(|p| p.join("/")).collect()
 }
 
 fn walk_all(f: &Fixture, b: BranchId, start: &[&str], steps: usize) -> Walk {
@@ -1344,7 +1347,7 @@ fn walk_is_depth_first_in_sort_order_and_follows_by_type() {
         ]
     );
     assert_eq!((w.steps, w.next.clone()), (8, None));
-    assert_eq!(w.rows[1].node.values[TYPE_KEY], Value::from("list"));
+    assert_eq!(w.cache.nodes["a"].values[TYPE_KEY], Value::from("list"));
 }
 
 #[test]
@@ -1435,17 +1438,17 @@ fn walk_continuation_round_trip_equals_one_long_walk() {
             let refs: Vec<&str> = start.iter().map(String::as_str).collect();
             let w = walk_all(&f, f.main, &refs, page);
             assert!(w.steps <= page);
-            rows.extend(w.rows);
+            rows.extend(w.paths);
             match w.next {
                 Some(next) => start = next,
                 None => break,
             }
         }
-        assert_eq!(rows, full.rows, "page size {page}");
+        assert_eq!(rows, full.paths, "page size {page}");
     }
     let none = walk_all(&f, f.main, &["root"], 0);
     assert_eq!(
-        (none.rows.len(), none.next),
+        (none.paths.len(), none.next),
         (0, Some(vec!["root".to_owned()]))
     );
 }
@@ -1510,13 +1513,13 @@ fn walk_backward_pages_and_respects_descend() {
             let refs: Vec<&str> = start.iter().map(String::as_str).collect();
             let w = walk_back(&f, &refs, page, |_, _| true);
             assert!(w.steps <= page);
-            rows.extend(w.rows);
+            rows.extend(w.paths);
             match w.next {
                 Some(next) => start = next,
                 None => break,
             }
         }
-        assert_eq!(rows, full.rows, "page size {page}");
+        assert_eq!(rows, full.paths, "page size {page}");
     }
     // Collapsing a: the walk back from b goes to a, not into a's children.
     let collapsed = walk_back(&f, &["root", "b"], 100, |_, n| n.id != "a");
@@ -1641,7 +1644,7 @@ fn walk_read_ahead_cuts_load_rounds() {
         width: 32,
     });
     let ahead = run(ReadAhead::default());
-    assert_eq!(none.rows, ahead.rows);
+    assert_eq!(none.paths, ahead.paths);
     assert_eq!(none.steps, 121);
     assert_eq!(none.loads, 121, "one round per node without read-ahead");
     assert!(
@@ -1699,6 +1702,34 @@ fn walk_skips_nodes_on_the_current_path_entirely() {
 fn walk_returns_its_cache_and_it_matches_separate_reads() {
     let mut f = Fixture::new();
     walk_tree(&mut f);
+    let w = walk_all(&f, f.main, &["root"], 100);
+    let mut on_paths: Vec<&str> = w.paths.iter().flatten().map(String::as_str).collect();
+    on_paths.sort();
+    on_paths.dedup();
+    let mut cached: Vec<&str> = w.cache.nodes.keys().map(String::as_str).collect();
+    cached.sort();
+    assert_eq!(cached, on_paths);
+    for id in on_paths {
+        assert_eq!(w.cache.nodes[id].values, f.values(f.main, id));
+        if w.cache.nodes[id].values[TYPE_KEY] == Value::from("list") {
+            let links = f
+                .store
+                .links(f.main, &[id], &[("child", Direction::Outbound)])
+                .unwrap()
+                .remove(id)
+                .unwrap();
+            assert_eq!(w.cache.links[id], links);
+        } else {
+            assert!(!w.cache.links.contains_key(id));
+        }
+    }
+}
+
+#[test]
+fn walk_cache_has_only_the_entities_on_the_returned_paths() {
+    let mut f = Fixture::new();
+    walk_tree(&mut f);
+    let is_task = |_: &[String], n: &WalkNode| n.values.get(TYPE_KEY) == Some(&Value::from("task"));
     let w = f
         .store
         .walk(
@@ -1706,31 +1737,109 @@ fn walk_returns_its_cache_and_it_matches_separate_reads() {
             &["root"],
             &follow_children(),
             |_, _| true,
-            |_, _| true,
-            WalkOptions {
-                return_cache: true,
-                ..WalkOptions::default()
-            },
+            is_task,
+            opts(100, ReadAhead::default()),
         )
         .unwrap();
-    let cache = w.cache.expect("asked for");
-    for row in &w.rows {
-        let id = row.node.id.as_str();
-        assert_eq!(cache.nodes[id].values, f.values(f.main, id));
-        if row.node.values[TYPE_KEY] == Value::from("list") {
-            let links = f
-                .store
-                .links(f.main, &[id], &[("child", Direction::Outbound)])
-                .unwrap()
-                .remove(id)
-                .unwrap();
-            assert_eq!(cache.links[id], links);
-        } else {
-            assert!(!cache.links.contains_key(id));
-        }
+    assert_eq!(
+        walk_ids(&w),
+        ["root/a/a1", "root/a/a2", "root/b", "root/c/c1/c2"]
+    );
+    // The ancestors on the paths are in; x (read ahead under b, never on a
+    // path) is not.
+    let mut cached: Vec<&str> = w.cache.nodes.keys().map(String::as_str).collect();
+    cached.sort();
+    assert_eq!(cached, ["a", "a1", "a2", "b", "c", "c1", "c2", "root"]);
+    let mut linked: Vec<&str> = w.cache.links.keys().map(String::as_str).collect();
+    linked.sort();
+    assert_eq!(linked, ["a", "c", "c1", "root"]);
+    // A page that emits nothing returns an empty cache.
+    let none = f
+        .store
+        .walk(
+            f.main,
+            &["root"],
+            &follow_children(),
+            |_, _| true,
+            |_, _| false,
+            opts(100, ReadAhead::default()),
+        )
+        .unwrap();
+    assert!(none.paths.is_empty() && none.cache == WalkCache::default());
+}
+
+#[test]
+fn walk_follows_only_links_to_the_rule_child_type() {
+    let mut f = Fixture::new();
+    let mut ops = Vec::new();
+    for (id, ty) in [
+        ("sys", "system"),
+        ("sub", "system"),
+        ("r1", "requirement"),
+        ("r2", "requirement"),
+        ("t1", "test"),
+        ("t2", "test"),
+        ("n1", "note"),
+    ] {
+        ops.push(Op::set(id, TYPE_KEY, ty));
     }
-    let plain = walk_all(&f, f.main, &["root"], 100);
-    assert_eq!(plain.cache, None);
+    for (i, (s, d, lt)) in [
+        ("sys", "r2", "contains"),
+        ("sys", "t2", "contains"),
+        ("sys", "sub", "contains"),
+        ("sys", "r1", "contains"),
+        ("sys", "n1", "contains"),
+        ("sys", "t1", "verified by"),
+        ("sys", "r1", "verified by"),
+        ("sub", "t2", "verified by"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        ops.push(Op::link(s, d, lt, SortOrder::Explicit(i as f64)));
+    }
+    f.write(f.main, "alex", ops);
+    let rules = |list: &[(&str, &str)]| -> Vec<FollowRule> {
+        list.iter()
+            .map(|(lt, c)| FollowRule::new(*lt, Direction::Outbound, *c))
+            .collect()
+    };
+    let walk = |follow: &Follow| {
+        let w = f
+            .store
+            .walk(
+                f.main,
+                &["sys"],
+                follow,
+                |_, _| true,
+                |_, _| true,
+                opts(100, ReadAhead::default()),
+            )
+            .unwrap();
+        walk_ids(&w)
+    };
+    // From a system: contains -> requirements, verified by -> tests. The test
+    // under contains, the note, the sub-system and the requirement under
+    // verified by are not followed.
+    let follow = Follow::from([(
+        "system".to_owned(),
+        rules(&[("contains", "requirement"), ("verified by", "test")]),
+    )]);
+    assert_eq!(walk(&follow), ["sys", "sys/r2", "sys/r1", "sys/t1"]);
+    // Two child types on one link group keep the group's link order; the
+    // groups come in the order the rules first name them.
+    let follow = Follow::from([(
+        "system".to_owned(),
+        rules(&[
+            ("verified by", "test"),
+            ("contains", "requirement"),
+            ("contains", "system"),
+        ]),
+    )]);
+    assert_eq!(
+        walk(&follow),
+        ["sys", "sys/t1", "sys/r2", "sys/sub", "sys/sub/t2", "sys/r1"]
+    );
 }
 
 #[test]
@@ -1773,14 +1882,14 @@ fn walk_visited_set_dedupes_across_pages_like_one_long_walk() {
         loop {
             let refs: Vec<&str> = start.iter().map(String::as_str).collect();
             let w = run(&refs, page, visited);
-            rows.extend(w.rows);
+            rows.extend(w.paths);
             visited = w.visited.expect("asked for");
             match w.next {
                 Some(next) => start = next,
                 None => break,
             }
         }
-        assert_eq!(rows, long.rows, "page size {page}");
+        assert_eq!(rows, long.paths, "page size {page}");
         assert_eq!(Some(visited), long.visited.clone());
     }
 }

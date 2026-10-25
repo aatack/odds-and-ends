@@ -400,11 +400,14 @@ async fn walk_follow_predicates_and_paging() {
         { "set": { "entity": "a", "key": "type", "value": "task" } },
         { "set": { "entity": "b", "key": "type", "value": "task" } },
         { "link": { "source": "root", "destination": "a", "link_type": "child" } },
-        { "link": { "source": "root", "destination": "b", "link_type": "child" } }
+        { "link": { "source": "root", "destination": "b", "link_type": "child" } },
+        { "set": { "entity": "n", "key": "type", "value": "note" } },
+        { "link": { "source": "root", "destination": "n", "link_type": "child" } }
     ] }),
     )
     .await;
-    let follow = json!({ "list": [["child", "outbound"]] });
+    // Children of type note are not followed.
+    let follow = json!({ "list": [["child", "outbound", "task"]] });
 
     // include only tasks: root is visited but not emitted.
     let w = post_ok(
@@ -416,15 +419,19 @@ async fn walk_follow_predicates_and_paging() {
         }),
     )
     .await;
-    let emitted: Vec<&str> = w["rows"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|r| r["node"]["id"].as_str().unwrap())
-        .collect();
-    assert_eq!(emitted, vec!["a", "b"]);
+    assert_eq!(w["paths"], json!([["root", "a"], ["root", "b"]]));
     assert_eq!(w["steps"], 3);
     assert_eq!(w["next"], Value::Null);
+    // The cache holds the entities on the paths, root included.
+    let mut cached: Vec<&str> = w["cache"]["nodes"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    cached.sort();
+    assert_eq!(cached, vec!["a", "b", "root"]);
+    assert_eq!(w["cache"]["nodes"]["a"]["values"]["type"], "task");
 
     // descend only where the absent key "never" is present (never) -> the walk
     // does not go below the start, so only the start is visited.
@@ -461,13 +468,7 @@ async fn walk_follow_predicates_and_paging() {
         }),
     )
     .await;
-    let ids: Vec<&str> = back["rows"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|r| r["node"]["id"].as_str().unwrap())
-        .collect();
-    assert_eq!(ids, vec!["b", "a", "root"]);
+    assert_eq!(back["paths"], json!([["root", "b"], ["root", "a"], ["root"]]));
     let collapsed = post_ok(
         &s.base,
         "/walk",

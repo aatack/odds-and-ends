@@ -39,7 +39,7 @@ root.render(<EgdbProvider egdb={egdb}><App /></EgdbProvider>)
 function Outline() {
   const { rows } = useWalk({
     root: ['root'],
-    follow: { list: [['child', 'outbound']] },
+    follow: { list: [['child', 'outbound', 'list'], ['child', 'outbound', 'task']] },
     include: f.containsIgnoreCase('text', 'plan'),
   })
   const { write } = useWrite()
@@ -69,8 +69,9 @@ The main types:
 ```ts
 type Path = readonly string[]
 
-// Which links to follow out of an entity, by its type.
-type Follow = Record<string, readonly [linkType: string, direction: 'outbound' | 'inbound'][]>
+// Which links to follow out of an entity, by its type: each rule follows the
+// links of one type and direction to children of one type.
+type Follow = Record<string, readonly [linkType: string, direction: 'outbound' | 'inbound', childType: string][]>
 
 interface TreeRow {
   key: string                   // the path as one string
