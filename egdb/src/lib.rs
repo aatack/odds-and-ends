@@ -32,13 +32,13 @@ pub use error::{Error, Result};
 pub use find::knobs as find_knobs;
 pub use find::{Filter, Find, FindOptions, FindOrder, FindRow, Predicate};
 pub use middleware::{WriteContext, WriteMiddleware};
-pub use prove::{Proof, Prove, ProveOptions, ProveOutcome, ProveStats, ProveStrategy};
+pub use prove::{Proof, Prove, ProveOptions, ProveOutcome, ProveStats};
 pub use read::LinkGroups;
 pub use schema::SCHEMA_VERSION;
 pub use store::Store;
 pub use types::*;
 pub use walk::{
-    Follow, FollowRule, ReadAhead, Relationships, Walk, WalkCache, WalkDirection, WalkNode,
+    Follow, FollowRule, ReadAhead, Walk, WalkCache, WalkDirection, WalkNode,
     WalkOptions,
 };
 

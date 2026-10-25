@@ -70,8 +70,8 @@ The main types:
 type Path = readonly string[]
 
 // Which links to follow out of an entity, by its type: each rule follows the
-// links of one type and direction to children of one type.
-type Follow = Record<string, readonly [linkType: string, direction: 'outbound' | 'inbound', childType: string][]>
+// links of one type and direction to children of one type (null: any type).
+type Follow = Record<string, readonly [linkType: string, direction: 'outbound' | 'inbound', childType: string | null][]>
 
 interface TreeRow {
   key: string                   // the path as one string

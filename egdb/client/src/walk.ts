@@ -128,13 +128,15 @@ export class TreeStepper {
     const seen = new Set<EntityId>()
     // Link group by link group, in the order the rules first name each; a
     // link is followed when a rule of its group accepts the child's type.
-    const groups = new Map<string, { direction: Direction; types: Set<string> }>()
+    const groups = new Map<string, { direction: Direction; types: Set<string>; any: boolean }>()
     for (const [linkType, direction, childType] of rulesOf(this.query.follow, values)) {
       const key = groupKey(linkType, direction)
-      if (!groups.has(key)) groups.set(key, { direction, types: new Set() })
-      groups.get(key)!.types.add(childType)
+      if (!groups.has(key)) groups.set(key, { direction, types: new Set(), any: false })
+      const group = groups.get(key)!
+      if (childType === null) group.any = true
+      else group.types.add(childType)
     }
-    for (const [key, { direction, types }] of groups) {
+    for (const [key, { direction, types, any }] of groups) {
       const links = record.links[key] ?? (record.local ? [] : undefined)
       if (!links) return { kids: [], all: undefined, missing: goes, collapsed }
       for (const link of links) {
@@ -144,7 +146,7 @@ export class TreeStepper {
         // types; the cache knows an entity's type only when it is loaded, so
         // an unloaded one is shown (and loads).
         const values = this.view.get(other)?.values
-        if (values && (!isTyped(values) || !types.has(values[TYPE_KEY] as string))) continue
+        if (values && (!isTyped(values) || !(any || types.has(values[TYPE_KEY] as string)))) continue
         seen.add(other)
         all.push(other)
       }

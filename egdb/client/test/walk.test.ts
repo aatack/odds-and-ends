@@ -154,6 +154,9 @@ describe('computeWindow', () => {
     // Two child types on one group keep the link order; the note is not followed.
     const both: WalkQuery = { follow: { list: [['child', 'outbound', 'task'], ['child', 'outbound', 'list']] } }
     expect(paths(computeWindow(view, { root: ['root'], query: both, offset: 0, limit: 100 }))).toEqual(order)
+    // The wildcard child type follows every typed child.
+    const any: WalkQuery = { follow: { list: [['child', 'outbound', null]] } }
+    expect(paths(computeWindow(view, { root: ['root'], query: any, offset: 0, limit: 100 }))).toContain('root/n')
     // A child that is not loaded may be of a followed type: it shows, and loads.
     const partial = viewOf(cache(typed, ['n']))
     const w = computeWindow(partial, { root: ['root'], query: both, offset: 0, limit: 100 })

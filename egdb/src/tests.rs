@@ -1840,6 +1840,15 @@ fn walk_follows_only_links_to_the_rule_child_type() {
         walk(&follow),
         ["sys", "sys/t1", "sys/r2", "sys/sub", "sys/sub/t2", "sys/r1"]
     );
+    // The wildcard child type follows every typed child of the group.
+    let follow = Follow::from([(
+        "system".to_owned(),
+        vec![FollowRule::any("contains", Direction::Outbound)],
+    )]);
+    assert_eq!(
+        walk(&follow),
+        ["sys", "sys/r2", "sys/t2", "sys/sub", "sys/r1", "sys/n1"]
+    );
 }
 
 #[test]

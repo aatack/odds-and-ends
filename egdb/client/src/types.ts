@@ -19,14 +19,14 @@ export type Direction = 'outbound' | 'inbound'
 /** `[link_type, direction]`. */
 export type LinkPair = readonly [linkType: string, direction: Direction]
 
-/** `[link_type, direction, child_type]`: follow these links to entities of `child_type` only. */
-export type FollowRule = readonly [linkType: string, direction: Direction, childType: string]
+/**
+ * `[link_type, direction, child_type]`: follow these links to entities of
+ * `child_type` only. A `null` child type is the wildcard: any type.
+ */
+export type FollowRule = readonly [linkType: string, direction: Direction, childType: string | null]
 
 /** Which links a walk follows out of an entity, keyed by that entity's `type`. */
 export type Follow = Readonly<Record<string, readonly FollowRule[]>>
-
-/** A prove relationship map: the pairs an entity of the key's type steps down, to a child of any type. */
-export type Relationships = Readonly<Record<string, readonly LinkPair[]>>
 
 /** How a link sorts: by the time it was written (default), by a number, or removed. */
 export type Sort = 'timestamp' | { explicit: number } | 'removed'
@@ -166,10 +166,22 @@ export interface WalkPage {
 // --- prove ------------------------------------------------------------------
 
 export interface ProveOptions {
+  /** The most links below the start that a proof may have. */
   max_depth?: number
+  /** The most entities the search may expand; past it the outcome is `unknown`. */
   max_nodes?: number
-  include_archived?: boolean
-  strategy?: 'backward' | 'bidirectional' | 'walk'
+}
+
+/** A walk query (as in `WalkRequest`, without paging options) and the entity it should emit. */
+export interface ProveRequest {
+  start: Path
+  follow: Follow
+  descend?: Filter
+  include?: Filter
+  collapsed?: readonly Path[]
+  /** The entity to prove that the walk emits. */
+  item: EntityId
+  options?: ProveOptions
 }
 
 export type ProveOutcome = { proved: { path: EntityId[]; links: Link[] } } | 'no_path' | 'unknown'

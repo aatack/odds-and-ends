@@ -7,11 +7,10 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use super::{link_groups_to_dto, value_from_json, value_map_to_json, DirectionDto, LinkDto};
-use crate::types::Direction;
-use crate::walk::{Follow, FollowRule, Relationships};
+use crate::walk::{Follow, FollowRule};
 use crate::{
     Filter, Find, FindOptions, FindOrder, Proof, Prove, ProveOptions, ProveOutcome, ProveStats,
-    ProveStrategy, ReadAhead, Walk, WalkCache, WalkDirection, WalkNode, WalkOptions,
+    ReadAhead, Walk, WalkCache, WalkDirection, WalkNode, WalkOptions,
 };
 
 // --- find -----------------------------------------------------------------
@@ -184,8 +183,9 @@ impl From<Find> for FindDto {
 // --- walk -----------------------------------------------------------------
 
 /// A walk's follow map: `{ parent_type: [[link_type, direction, child_type], ...] }`.
+/// A `null` child type is the wildcard: a child of any type.
 #[derive(Clone, Debug, Default, Deserialize)]
-pub(crate) struct FollowDto(pub HashMap<String, Vec<(String, DirectionDto, String)>>);
+pub(crate) struct FollowDto(pub HashMap<String, Vec<(String, DirectionDto, Option<String>)>>);
 
 impl From<FollowDto> for Follow {
     fn from(f: FollowDto) -> Self {
@@ -193,25 +193,13 @@ impl From<FollowDto> for Follow {
             .map(|(ty, rules)| {
                 let rules: Vec<FollowRule> = rules
                     .into_iter()
-                    .map(|(t, d, c)| FollowRule::new(t, d.into(), c))
+                    .map(|(t, d, c)| FollowRule {
+                        link_type: t,
+                        direction: d.into(),
+                        child_type: c,
+                    })
                     .collect();
                 (ty, rules)
-            })
-            .collect()
-    }
-}
-
-/// A prove relationship map: `{ type: [[link_type, direction], ...] }`.
-#[derive(Clone, Debug, Default, Deserialize)]
-pub(crate) struct RelationshipsDto(pub HashMap<String, Vec<(String, DirectionDto)>>);
-
-impl From<RelationshipsDto> for Relationships {
-    fn from(f: RelationshipsDto) -> Self {
-        f.0.into_iter()
-            .map(|(ty, pairs)| {
-                let pairs: Vec<(String, Direction)> =
-                    pairs.into_iter().map(|(t, d)| (t, d.into())).collect();
-                (ty, pairs)
             })
             .collect()
     }
@@ -364,26 +352,6 @@ pub(crate) fn node_predicate(
 
 // --- prove ----------------------------------------------------------------
 
-/// The search strategy: `"backward"` (default), `"bidirectional"` or `"walk"`.
-#[derive(Clone, Copy, Debug, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum ProveStrategyDto {
-    #[default]
-    Backward,
-    Bidirectional,
-    Walk,
-}
-
-impl From<ProveStrategyDto> for ProveStrategy {
-    fn from(s: ProveStrategyDto) -> Self {
-        match s {
-            ProveStrategyDto::Backward => ProveStrategy::Backward,
-            ProveStrategyDto::Bidirectional => ProveStrategy::Bidirectional,
-            ProveStrategyDto::Walk => ProveStrategy::Walk,
-        }
-    }
-}
-
 /// Prove options; each field falls back to the library default.
 #[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct ProveOptionsDto {
@@ -391,10 +359,6 @@ pub(crate) struct ProveOptionsDto {
     pub max_depth: Option<usize>,
     #[serde(default)]
     pub max_nodes: Option<usize>,
-    #[serde(default)]
-    pub include_archived: bool,
-    #[serde(default)]
-    pub strategy: ProveStrategyDto,
 }
 
 impl From<ProveOptionsDto> for ProveOptions {
@@ -402,8 +366,6 @@ impl From<ProveOptionsDto> for ProveOptions {
         ProveOptions {
             max_depth: d.max_depth,
             max_nodes: d.max_nodes,
-            include_archived: d.include_archived,
-            strategy: d.strategy.into(),
         }
     }
 }

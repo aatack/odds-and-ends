@@ -468,7 +468,10 @@ async fn walk_follow_predicates_and_paging() {
         }),
     )
     .await;
-    assert_eq!(back["paths"], json!([["root", "b"], ["root", "a"], ["root"]]));
+    assert_eq!(
+        back["paths"],
+        json!([["root", "b"], ["root", "a"], ["root"]])
+    );
     let collapsed = post_ok(
         &s.base,
         "/walk",
@@ -495,14 +498,13 @@ async fn prove_proved_and_no_path() {
     ] }),
     )
     .await;
-    let rel = json!({ "list": [["child", "outbound"]] });
+    // A wildcard child type (null) follows children of any type.
+    let follow = json!({ "list": [["child", "outbound", null]] });
 
     let proved = post_ok(
         &s.base,
         "/prove",
-        json!({
-            "branch": b, "item": "a", "roots": ["root"], "relationships": rel
-        }),
+        json!({ "branch": b, "start": ["root"], "follow": follow, "item": "a" }),
     )
     .await;
     assert_eq!(proved["outcome"]["proved"]["path"], json!(["root", "a"]));
@@ -511,12 +513,25 @@ async fn prove_proved_and_no_path() {
     let none = post_ok(
         &s.base,
         "/prove",
-        json!({
-            "branch": b, "item": "lonely", "roots": ["root"], "relationships": rel
-        }),
+        json!({ "branch": b, "start": ["root"], "follow": follow, "item": "lonely" }),
     )
     .await;
     assert_eq!(none["outcome"], json!("no_path"));
+
+    // The walk's filters apply: an include that rejects the item, or a
+    // descend that stops at the start, gives no path.
+    for extra in [
+        json!({ "include": { "eq": { "key": "type", "value": "list" } } }),
+        json!({ "descend": { "not_null": { "key": "never" } } }),
+        json!({ "collapsed": [["root"]] }),
+    ] {
+        let mut body = json!({ "branch": b, "start": ["root"], "follow": follow, "item": "a" });
+        body.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        let o = post_ok(&s.base, "/prove", body).await;
+        assert_eq!(o["outcome"], json!("no_path"), "{extra}");
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

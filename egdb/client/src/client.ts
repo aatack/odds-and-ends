@@ -15,8 +15,7 @@ import type {
   LinkPair,
   ParentRef,
   Prove,
-  ProveOptions,
-  Relationships,
+  ProveRequest,
   SeqRange,
   UndoOutcome,
   Value,
@@ -154,14 +153,9 @@ export class EgdbClient {
     return this.call('POST', '/walk', { branch, ...request })
   }
 
-  prove(
-    branch: BranchId,
-    item: EntityId,
-    roots: readonly EntityId[],
-    relationships: Relationships,
-    options?: ProveOptions,
-  ): Promise<Prove> {
-    return this.call('POST', '/prove', { branch, item, roots, relationships, options })
+  /** Whether the walk `request` describes would emit `request.item`, with the path. */
+  prove(branch: BranchId, request: ProveRequest): Promise<Prove> {
+    return this.call('POST', '/prove', { branch, ...request })
   }
 
   // --- branches -------------------------------------------------------------

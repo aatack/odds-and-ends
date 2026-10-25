@@ -2,23 +2,27 @@
 //!
 //! ```text
 //! cargo run --release --example bench_prove -- --size 100000 [--data DIR] \
-//!     [--reps N] [--cold] [--only SCENARIO] [--strategy backward|bidirectional|walk]
+//!     [--reps N] [--cold] [--only SCENARIO]
 //! ```
 //!
 //! Flags:
 //! - `--size N`: entity count target (10000 / 100000 / 1000000). The store is
 //!   built once per size under `--data` (default `/workspace/egdb-perm/data`)
 //!   and reused if a `__meta__/built = N` marker is present.
-//! - `--reps N`: repeats per (scenario, strategy). Default 11 warm, 5 cold.
+//! - `--reps N`: repeats per scenario. Default 11 warm, 5 cold.
 //! - `--cold`: before each rep, open a fresh `Store` (empty SQLite cache) and
 //!   `posix_fadvise(DONTNEED)` the db and `-wal` files (OS page cache dropped).
 //! - `--only SCENARIO`: run only the named scenario.
-//! - `--strategy S`: run only one strategy (default: all three).
+//!
+//! Each proof asks: would `walk` from the scenario's start, with the follow
+//! map below (every rule a wildcard child type) and no predicates, emit the
+//! item? Results are written to `results-SIZE[-cold].md` in `--data`.
 //!
 //! ## The graph (deterministic, seeded SplitMix64)
 //!
-//! Types: `org`, `team`, `folder`, `doc`, `group`, `user`. The downward
-//! relationship map used for every proof (keyed by the UPPER entity's type):
+//! Types: `org`, `team`, `folder`, `doc`, `group`, `user`. The follow map
+//! used for every proof (keyed by the UPPER entity's type; each rule takes a
+//! child of any type, `FollowRule::any`):
 //!
 //! ```text
 //! org    --child(Outbound)-->      team
@@ -33,9 +37,9 @@
 //! The `shared_with` pair is read Inbound: a doc stores a link `doc -> group`,
 //! so from a group (the upper node) the step is Inbound. This exercises an
 //! inbound-direction entry in the map. "Can user U see doc D" is modelled as a
-//! proof with `root = U`: `U --member--> group --shared_with(Inbound)--> D`, or
-//! with the groups as roots directly; we document the group-root form and use
-//! it for `fanin100`.
+//! proof with `start = U`: `U --member--> group --shared_with(Inbound)--> D`, or
+//! with a group as the start directly; we document the group form and use it
+//! for `fanin100`.
 //!
 //! Shapes: one deep `child` chain of 11 nested folders (proof depth up to 13);
 //! one "huge" org with thousands of teams directly under it (fan-out near the
@@ -51,8 +55,8 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use egdb::{
-    BranchId, Direction, Op, ParentRef, ProveOptions, ProveOutcome, ProveStrategy, Relationships,
-    SeqRange, SortOrder, Store, Value, WriteBatch, TYPE_KEY,
+    BranchId, Direction, Follow, FollowRule, Op, ParentRef, ProveOptions, ProveOutcome, SeqRange,
+    SortOrder, Store, Value, WriteBatch, TYPE_KEY,
 };
 
 #[repr(C)]
@@ -121,22 +125,24 @@ const GRANT: &str = "grant";
 const SHARED: &str = "shared_with";
 const MEMBER: &str = "member";
 
-/// The downward relationship map used for every proof in this benchmark.
-fn relationships() -> Relationships {
+/// The follow map used for every proof in this benchmark: each rule takes a
+/// child of any type, as the old pair-only relationship map did.
+fn follow() -> Follow {
     use Direction::{Inbound, Outbound};
-    let mut f: Relationships = HashMap::new();
-    f.insert("org".into(), vec![(CHILD.into(), Outbound)]);
-    f.insert("team".into(), vec![(CHILD.into(), Outbound)]);
-    f.insert("folder".into(), vec![(CHILD.into(), Outbound)]);
+    let any = FollowRule::any;
+    let mut f: Follow = HashMap::new();
+    f.insert("org".into(), vec![any(CHILD, Outbound)]);
+    f.insert("team".into(), vec![any(CHILD, Outbound)]);
+    f.insert("folder".into(), vec![any(CHILD, Outbound)]);
     f.insert(
         "group".into(),
         vec![
-            (CHILD.into(), Outbound),
-            (GRANT.into(), Outbound),
-            (SHARED.into(), Inbound),
+            any(CHILD, Outbound),
+            any(GRANT, Outbound),
+            any(SHARED, Inbound),
         ],
     );
-    f.insert("user".into(), vec![(MEMBER.into(), Outbound)]);
+    f.insert("user".into(), vec![any(MEMBER, Outbound)]);
     f.insert("doc".into(), vec![]);
     f
 }
@@ -159,7 +165,6 @@ struct Land {
     rp_doc_d: u64,
     rp_folder_g: u64,
     far_org: u64,
-    decoys: Vec<u64>,
     total: u64,
 }
 
@@ -364,7 +369,6 @@ fn generate(size: u64, store: Option<(&mut Store, BranchId)>) -> Land {
         rp_doc_d,
         rp_folder_g,
         far_org,
-        decoys,
         total,
     }
 }
@@ -447,7 +451,7 @@ struct Scenario {
     name: &'static str,
     br: Br,
     item: u64,
-    roots: Vec<u64>,
+    start: u64,
     max_depth: Option<usize>,
     max_nodes: Option<usize>,
     exp: Exp,
@@ -456,50 +460,27 @@ struct Scenario {
 fn scenarios(land: &Land) -> Vec<Scenario> {
     let c = &land.chain;
     let doc = c[13];
-    let mut roots100 = vec![c[0]];
-    roots100.extend(land.decoys.iter().copied().take(99));
-    let sc = |name, br, item, roots, max_depth, max_nodes, exp| Scenario {
+    // prove takes one start, not a set of roots, so the old `roots100` (one
+    // reachable root among 99 decoys) is gone, and `roots1` was the same query
+    // as `depth10plus`.
+    let sc = |name, br, item, start, max_depth, max_nodes, exp| Scenario {
         name,
         br,
         item,
-        roots,
+        start,
         max_depth,
         max_nodes,
         exp,
     };
     vec![
-        sc(
-            "depth1",
-            Br::Main,
-            doc,
-            vec![c[12]],
-            None,
-            None,
-            Exp::Proved(1),
-        ),
-        sc(
-            "depth3",
-            Br::Main,
-            doc,
-            vec![c[10]],
-            None,
-            None,
-            Exp::Proved(3),
-        ),
-        sc(
-            "depth6",
-            Br::Main,
-            doc,
-            vec![c[7]],
-            None,
-            None,
-            Exp::Proved(6),
-        ),
+        sc("depth1", Br::Main, doc, c[12], None, None, Exp::Proved(1)),
+        sc("depth3", Br::Main, doc, c[10], None, None, Exp::Proved(3)),
+        sc("depth6", Br::Main, doc, c[7], None, None, Exp::Proved(6)),
         sc(
             "depth10plus",
             Br::Main,
             doc,
-            vec![c[0]],
+            c[0],
             None,
             None,
             Exp::Proved(13),
@@ -508,7 +489,7 @@ fn scenarios(land: &Land) -> Vec<Scenario> {
             "fanin100",
             Br::Main,
             land.fanin_doc,
-            vec![land.fanin_group0],
+            land.fanin_group0,
             None,
             None,
             Exp::Proved(1),
@@ -517,7 +498,7 @@ fn scenarios(land: &Land) -> Vec<Scenario> {
             "fanout_root",
             Br::Main,
             land.huge_doc,
-            vec![land.huge_org],
+            land.huge_org,
             None,
             None,
             Exp::Proved(3),
@@ -526,7 +507,7 @@ fn scenarios(land: &Land) -> Vec<Scenario> {
             "nopath",
             Br::Main,
             land.popular_doc,
-            vec![land.far_org],
+            land.far_org,
             None,
             None,
             Exp::NoPath,
@@ -535,7 +516,7 @@ fn scenarios(land: &Land) -> Vec<Scenario> {
             "nopath_depth",
             Br::Main,
             land.popular_doc,
-            vec![land.far_org],
+            land.far_org,
             Some(4),
             None,
             Exp::NoPath,
@@ -544,34 +525,16 @@ fn scenarios(land: &Land) -> Vec<Scenario> {
             "nopath_budget",
             Br::Main,
             land.popular_doc,
-            vec![land.far_org],
+            land.far_org,
             None,
             Some(1000),
             Exp::Unknown,
         ),
         sc(
-            "roots100",
-            Br::Main,
-            doc,
-            roots100,
-            None,
-            None,
-            Exp::Proved(13),
-        ),
-        sc(
-            "roots1",
-            Br::Main,
-            doc,
-            vec![c[0]],
-            None,
-            None,
-            Exp::Proved(13),
-        ),
-        sc(
             "stack_head",
             Br::Grand,
             land.rp_doc_d,
-            vec![land.rp_folder_g],
+            land.rp_folder_g,
             None,
             None,
             Exp::Proved(1),
@@ -580,7 +543,7 @@ fn scenarios(land: &Land) -> Vec<Scenario> {
             "stack_head_nof",
             Br::Grand,
             land.rp_doc_d,
-            vec![land.rp_folder_f],
+            land.rp_folder_f,
             None,
             None,
             Exp::NoPath,
@@ -589,7 +552,7 @@ fn scenarios(land: &Land) -> Vec<Scenario> {
             "stack_frozen",
             Br::Frozen,
             land.rp_doc_d,
-            vec![land.rp_folder_f],
+            land.rp_folder_f,
             None,
             None,
             Exp::Proved(1),
@@ -598,7 +561,7 @@ fn scenarios(land: &Land) -> Vec<Scenario> {
             "stack_frozen_nog",
             Br::Frozen,
             land.rp_doc_d,
-            vec![land.rp_folder_g],
+            land.rp_folder_g,
             None,
             None,
             Exp::NoPath,
@@ -606,15 +569,8 @@ fn scenarios(land: &Land) -> Vec<Scenario> {
     ]
 }
 
-const STRATEGIES: [(&str, ProveStrategy); 3] = [
-    ("backward", ProveStrategy::Backward),
-    ("bidirectional", ProveStrategy::Bidirectional),
-    ("walk", ProveStrategy::Walk),
-];
-
 struct Row {
     scenario: &'static str,
-    strategy: &'static str,
     outcome: &'static str,
     pathlen: Option<usize>,
     wall_us: f64,
@@ -651,29 +607,19 @@ fn outcome_str(o: &ProveOutcome) -> &'static str {
     }
 }
 
-/// Assert the outcome matches the scenario's expectation; for the shortest
-/// strategies also assert the path length. A wrong answer fails the bench.
-fn check(sc: &Scenario, strategy: &str, o: &ProveOutcome) {
+/// Assert the outcome matches the scenario's expectation, and the path length:
+/// prove returns the first path in walk order, not always a shortest one, but
+/// each proved scenario here has exactly one path. A wrong answer fails the
+/// bench.
+fn check(sc: &Scenario, o: &ProveOutcome) {
     let want = match sc.exp {
         Exp::Proved(_) => "Proved",
         Exp::NoPath => "NoPath",
         Exp::Unknown => "Unknown",
     };
-    assert_eq!(
-        outcome_str(o),
-        want,
-        "{}/{strategy}: wrong outcome",
-        sc.name
-    );
+    assert_eq!(outcome_str(o), want, "{}: wrong outcome", sc.name);
     if let (Exp::Proved(len), ProveOutcome::Proved(p)) = (sc.exp, o) {
-        if strategy != "walk" {
-            assert_eq!(
-                p.links.len(),
-                len,
-                "{}/{strategy}: wrong path length",
-                sc.name
-            );
-        }
+        assert_eq!(p.links.len(), len, "{}: wrong path length", sc.name);
     }
 }
 
@@ -683,23 +629,28 @@ fn measure(
     warm_store: &Store,
     b: &Branches,
     sc: &Scenario,
-    strategy: (&'static str, ProveStrategy),
     reps: usize,
     cold: bool,
 ) -> Row {
     let branch = resolve(sc.br, b);
-    let rel = relationships();
+    let follow = follow();
     let item = id(sc.item);
-    let roots: Vec<String> = sc.roots.iter().map(|r| id(*r)).collect();
+    let start = id(sc.start);
     let opts = || ProveOptions {
         max_depth: sc.max_depth,
         max_nodes: sc.max_nodes,
-        include_archived: false,
-        strategy: strategy.1,
     };
     let call = |s: &Store| {
-        let rr: Vec<&str> = roots.iter().map(String::as_str).collect();
-        s.prove(branch, &item, &rr, &rel, opts()).unwrap()
+        s.prove(
+            branch,
+            &[start.as_str()],
+            &item,
+            &follow,
+            |_, _| true,
+            |_, _| true,
+            opts(),
+        )
+        .unwrap()
     };
     if !cold {
         std::hint::black_box(call(warm_store)); // prime
@@ -740,10 +691,9 @@ fn measure(
         }
     }
     let p = last.unwrap();
-    check(sc, strategy.0, &p.outcome);
+    check(sc, &p.outcome);
     Row {
         scenario: sc.name,
-        strategy: strategy.0,
         outcome: outcome_str(&p.outcome),
         pathlen: match &p.outcome {
             ProveOutcome::Proved(pf) => Some(pf.links.len()),
@@ -789,21 +739,13 @@ fn build(path: &Path, size: u64) -> (BranchId, Land, f64) {
 
 fn table(rows: &[Row]) -> String {
     let mut s = String::new();
-    s += "| scenario | strategy | outcome | path len (links) | wall µs (median) | CPU µs (median) | nodes visited | link-read rounds | type-read rounds | SQL queries |\n";
-    s += "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n";
+    s += "| scenario | outcome | path len (links) | wall µs (median) | CPU µs (median) | nodes visited | link-read rounds | type-read rounds | SQL queries |\n";
+    s += "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n";
     for r in rows {
         let pl = r.pathlen.map_or("-".to_string(), |n| n.to_string());
         s += &format!(
-            "| {} | {} | {} | {pl} | {:.1} | {:.1} | {} | {} | {} | {} |\n",
-            r.scenario,
-            r.strategy,
-            r.outcome,
-            r.wall_us,
-            r.cpu_us,
-            r.nodes,
-            r.link_reads,
-            r.value_reads,
-            r.sql,
+            "| {} | {} | {pl} | {:.1} | {:.1} | {} | {} | {} | {} |\n",
+            r.scenario, r.outcome, r.wall_us, r.cpu_us, r.nodes, r.link_reads, r.value_reads, r.sql,
         );
     }
     s
@@ -820,7 +762,6 @@ fn main() {
     let cold = flag("--cold");
     let reps = value("--reps").map_or(if cold { 5 } else { 11 }, |v| v.parse().unwrap());
     let only = value("--only");
-    let strat_filter = value("--strategy");
 
     // Build or reuse.
     let mut store = Store::open(&path).unwrap();
@@ -857,13 +798,8 @@ fn main() {
         if only.as_ref().is_some_and(|o| o != sc.name) {
             continue;
         }
-        for st in STRATEGIES {
-            if strat_filter.as_ref().is_some_and(|s| s != st.0) {
-                continue;
-            }
-            eprintln!("{} / {}", sc.name, st.0);
-            rows.push(measure(&path, &store, &b, sc, st, reps, cold));
-        }
+        eprintln!("{}", sc.name);
+        rows.push(measure(&path, &store, &b, sc, reps, cold));
     }
 
     let header = format!(
@@ -878,7 +814,7 @@ fn main() {
     );
     let body = table(&rows);
     print!("{header}{body}");
-    let out = PathBuf::from("/workspace/egdb-perm").join(format!(
+    let out = dir.join(format!(
         "results-{size}{}.md",
         if cold { "-cold" } else { "" }
     ));

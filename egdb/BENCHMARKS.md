@@ -1199,33 +1199,35 @@ Findings:
 
 ## Prove (`examples/bench_prove.rs`)
 
-`Store::prove` (DESIGN.md 11.3) on a permission graph. Question: how long does it take to prove that an item is reachable from a root, by strategy, scenario and size?
+`Store::prove` (DESIGN.md 11.3) on a permission graph. Question: how long does it take to prove that a walk from a start entity would emit an item, by scenario and size? Each proof is a walk query: the start, a follow map in which every rule takes a child of any type (`FollowRule::any`), and no `descend` or `include` filter.
 
 ### How to run
 
 ```
-cargo run --release --example bench_prove -- --size 1000000 [--reps 11] [--cold] [--only SCENARIO] [--strategy backward|bidirectional|walk]
+cargo run --release --example bench_prove -- --size 1000000 [--reps 11] [--cold] [--only SCENARIO] [--data DIR]
 ```
 
-The store is built once per size in `--data` (default `/workspace/egdb-perm/data`) and reused. Do not commit the database files.
+The store is built once per size in `--data` (default `/workspace/egdb-perm/data`) and reused. The results table is written to `results-SIZE[-cold].md` in the same folder. Do not commit the database files.
 
 ### Graph
 
-- Seeded SplitMix64; the graph is the same on every run. Types `org`, `team`, `folder`, `doc`, `group`, `user`. Relationships (keyed by the upper entity's type): `org/team/folder --child(Out)-->`, `group --child(Out)--> group`, `group --grant(Out)--> folder|doc`, `group --shared_with(In)--> doc` (stored `doc -> group`), `user --member(Out)--> group`.
+- Seeded SplitMix64; the graph is the same on every run. Types `org`, `team`, `folder`, `doc`, `group`, `user`. Follow map (keyed by the upper entity's type; every child type is the wildcard): `org/team/folder --child(Out)-->`, `group --child(Out)--> group`, `group --grant(Out)--> folder|doc`, `group --shared_with(In)--> doc` (stored `doc -> group`), `user --member(Out)--> group`.
 - Shapes: a chain of 11 nested folders (proofs of 1, 3, 6 and 13 links); one "huge" org with thousands of teams directly below it (3000; 400 at 10k); a doc shared with 100 groups; a "popular" doc shared with 3000 groups (1500 at 10k), which gives the large ancestor set for the no-path cases; a forest of normal orgs (5–20 teams, folders with 3–10 children, depth 2–4); a few archived folders.
 - A 3-branch stack on top: `grand` reads `child` open, and `child` reads `main` open. On it, a folder is renamed, doc D is moved from folder F to folder G (the link is removed and added elsewhere), and the `team -> F` link is removed and added again. A frozen fork is taken before the move. The bench checks that the answers differ: at the `grand` head, D is reachable from G and not from F; on the frozen fork, it is reachable from F and not from G.
 - Build time (5000-op batches, WAL): 10k 0.0 s (reused file), 100k 1.7 s, 1M 29.1 s. Files: 3.2 MB, 33 MB, 337 MB.
 
 ### Method
 
-- Each (size, scenario, strategy) runs 11 warm repeats or 5 cold repeats. The tables show the median. Times are **µs per proof**.
+- Each (size, scenario) runs 11 warm repeats or 5 cold repeats. The tables show the median. Times are **µs per proof**.
 - CPU is `CLOCK_THREAD_CPUTIME_ID`. On this VM that clock ticks in about 1 ms steps, so a warm repeat calls `prove` in a loop until it has used at least 20 ms of CPU, and divides. The box is noisy, so **decisions use CPU time**. Warm wall time is about the same as CPU time (the work is CPU-bound).
 - Cold: before each repeat, a new `Store` (empty SQLite cache) and `posix_fadvise(DONTNEED)` on the db and `-wal` files. The disk is a virtio device (about 20 µs per random 4 KiB read), so "cold" is optimistic compared with a real disk.
-- The bench asserts every outcome (`Proved` / `NoPath` / `Unknown`). For Backward and Bidirectional it also asserts the exact shortest path length. A wrong answer fails the run.
-- Counts: `nodes visited` = entities whose links were read. `link-read rounds` / `type-read rounds` = batch reads. `SQL queries` = roll-up statements (one per layer interval of the view).
-- Scenarios: `depthN`: proof of N links up the folder chain (`depth10plus` = 13). `fanin100`: a doc shared with 100 groups, with one group as the root. `fanout_root`: an item under the huge org, with the org as the root. `nopath`: the popular doc with roots that cannot reach it, so the whole ancestor set (about 3000 groups) is read. `nopath_depth`: the same with `max_depth = 4`. `nopath_budget`: the same with `max_nodes = 1000`, which gives `Unknown`. `roots1` / `roots100`: a 13-link proof with 1 root or with 100 roots (99 of them other orgs). `stack_head` / `stack_frozen`: depth-1 proof on the stack, at the `grand` head and on the frozen fork. `*_nof` / `*_nog`: the root that must *not* prove access on that view (`NoPath`).
+- The bench asserts every outcome (`Proved` / `NoPath` / `Unknown`) and the path length. `prove` does not promise a shortest path, but each proved scenario has exactly one path. A wrong answer fails the run.
+- Counts: `nodes visited` = entities expanded, in the backward phase (the item's ancestors) and the forward phase (the walk from the start through them). `link-read rounds` / `type-read rounds` = batch reads. `SQL queries` = roll-up statements (one per layer interval of the view).
+- Scenarios: `depthN`: proof of N links up the folder chain (`depth10plus` = 13). `fanin100`: a doc shared with 100 groups, with one group as the start. `fanout_root`: an item under the huge org, with the org as the start. `nopath`: the popular doc with a start that cannot reach it, so the whole ancestor set (about 3000 groups) is read. `nopath_depth`: the same with `max_depth = 4`. `nopath_budget`: the same with `max_nodes = 1000`, which gives `Unknown`. `stack_head` / `stack_frozen`: depth-1 proof on the stack, at the `grand` head and on the frozen fork. `*_nof` / `*_nog`: the start that must *not* prove access on that view (`NoPath`). The old `roots1` / `roots100` scenarios (one or 100 roots) are gone: `prove` now takes one start, and `roots1` was the same query as `depth10plus`.
 
 ### Results
+
+**These tables and the strategy decision below were measured with the old API, before `prove` took a walk query**: a set of roots, a pair-only relationship map, and three strategies (Backward, Bidirectional, Walk). The current `prove` is one search: the backward phase is like the old Backward search, and once it reaches the start, a forward walk from the start through the ancestors found so far follows (repeated with more layers if it finds no path). The tables need re-running with the current bench. A 10k warm run of the current bench gave, in CPU µs: depth1 136, depth10plus 920, fanin100 651, fanout_root 2176, nopath 13774, nopath_budget 8322.
 
 Machine: 8 vCPU Intel Xeon, 15 GB RAM, release build, bundled SQLite, WAL. Full tables per size, with wall times, are in the bench output.
 
@@ -1279,7 +1281,7 @@ Machine: 8 vCPU Intel Xeon, 15 GB RAM, release build, bundled SQLite, WAL. Full 
 
 At 10k, the huge org has 400 teams and the popular doc has 1500 groups, so the 10k `fanout_root`, `nopath*` rows are smaller cases than at 100k and 1M.
 
-### Strategy decision: Backward (the default)
+### Strategy decision: Backward (the default, old API)
 
 - **Backward is fastest by CPU time in every scenario but one, at every size, warm and cold.** The ranking does not change with size, so no size-dependent heuristic is needed.
 - **Bidirectional** is slow when the root side is large. It must expand the forward side at least once. At 1M: `fanout_root` takes 11,357 µs, against 93 µs for Backward (3000 teams below the root). `roots100` takes 51,323 µs, against 298 µs (8,368 nodes expanded, against 13). Its only win is `fanin100` (49 against 379 µs): the group root reaches the doc in one forward hop, but Backward must read the type of all 100 candidate groups. That case is below a millisecond either way.

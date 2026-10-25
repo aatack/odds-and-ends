@@ -55,6 +55,22 @@ describe.skipIf(!haveServer)('against egdb-server', () => {
     expect(deep.window.first).toBe(-60)
   })
 
+  it('proves an entity is in the walk exactly when the walk emits it', async () => {
+    const all = await server.client.walk(branch, { start: ['root'], follow: query.follow, options: { steps: 100_000 } })
+    const target = all.paths[all.paths.length - 1]!
+    const item = target[target.length - 1]!
+    const proved = await server.client.prove(branch, { start: ['root'], follow: query.follow, item })
+    expect(proved.outcome).toMatchObject({ proved: { path: target } })
+    expect((proved.outcome as { proved: { links: unknown[] } }).proved.links).toHaveLength(target.length - 1)
+    const filtered = await server.client.prove(branch, {
+      start: ['root'],
+      follow: query.follow,
+      item,
+      include: f.eq('type', 'nothing'),
+    })
+    expect(filtered.outcome).toBe('no_path')
+  })
+
   it('matches the server with collapsed rows and filters', async () => {
     const collapsed = [['root', 'root.0'], ['root', 'root.1', 'root.1.0']]
     const descend = f.ne('text', 'item root.3')
