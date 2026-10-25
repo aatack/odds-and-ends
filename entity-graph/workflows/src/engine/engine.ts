@@ -143,8 +143,17 @@ export class Engine extends EventEmitter {
     this.sources = opts.sources ?? githubSources
     this.dataDir = opts.dataDir ?? join(tmpdir(), 'workflows')
     this.customActions = new CustomActions(this, this.store)
-    // A run the app was closed during is over.
-    for (const r of this.store.runs.values()) if (r.ended_at === null) this.store.updateRun(r.id, { ended_at: this.now(), result: 'The app stopped during the run.' })
+    // A run the app was closed during is over; what it was on goes back to the human, saying so, since the bot
+    // counts what woke it as seen.
+    for (const r of [...this.store.runs.values()].filter((r) => r.ended_at === null)) {
+      this.store.updateRun(r.id, { ended_at: this.now(), result: 'The app stopped during the run.' })
+      if (!r.agent_id) continue
+      for (const itemId of r.item_ids)
+        if (this.get(itemId) && !this.get(itemId)!.closed && this.assignees(itemId).includes(r.agent_id)) {
+          this.add(itemId, [{ type: 'message', params: { text: `@${this.agentName(r.agent_id)} was stopped (the app stopped) before it finished.` } }], 'system', r.id)
+          this.handBack(itemId, r.agent_id, r.id)
+        }
+    }
     // Waits are checked at once after a start.
     for (const r of this.store.events.values()) if (!r.resolved && this.typeOrNull(r.type)?.check) r.next_check_at = this.now()
   }
@@ -665,7 +674,9 @@ export class Engine extends EventEmitter {
     const woken = this.woken.get(agentId)
     if (woken !== undefined) {
       for (const r of this.store.ofType('item')) if (!items.has(r.id) && !r.resolved && this.assignees(r.id).includes(agentId)) items.set(r.id, new Set())
-      return items.size ? { at: woken, items } : null
+      if (items.size) return { at: woken, items }
+      this.woken.delete(agentId)
+      return null
     }
     if (!items.size) return null
     const debounce = Number(this.agentParams(agentId).debounce_minutes ?? 0) * MINUTE
@@ -759,11 +770,7 @@ export class Engine extends EventEmitter {
           })
           .parse(end.structured ?? {})
         updates = (out.updates ?? []) as BotUpdate[]
-        for (const u of updates) {
-          if (!this.get(u.item)) throw new Error(`No item ${u.item}.`)
-          u.events = this.prepare(u.events ?? [], 'bot')
-          for (const to of u.assign ?? []) if (to !== HUMAN && !this.findAgent(to)) throw new Error(`No bot ${to}, to assign.`)
-        }
+        for (const u of updates) if (!this.get(u.item)) throw new Error(`No item ${u.item}.`)
       } catch (e) {
         error = `The bot's output was not usable: ${(e as Error).message}`
       }
@@ -775,28 +782,38 @@ export class Engine extends EventEmitter {
       return
     }
     this.store.batch(() => {
+      // A failure is said in each item the bot has (not those it only watches), which go back to the human.
+      const failed = (itemId: string, why: string) => {
+        if (this.get(itemId)?.closed || !this.assignees(itemId).includes(agentId)) return
+        this.add(itemId, [{ type: 'message', params: { text: `@${this.agentName(agentId)} failed: ${why}` } }], 'system', runId)
+        this.handBack(itemId, agentId, runId)
+      }
       if (error) {
-        for (const itemId of run.item_ids) {
-          if (this.get(itemId)?.closed) continue
-          this.add(itemId, [{ type: 'message', params: { text: `@${this.agentName(agentId)} failed: ${error}` } }], 'system', runId)
-          this.handBack(itemId, agentId, runId)
-        }
+        for (const itemId of run.item_ids) failed(itemId, error)
         return
       }
+      const broken = new Set<string>()
       for (const u of updates) {
         if (this.get(u.item)?.closed) continue
-        const events: EventSpec[] = [...(u.message ? [{ type: 'message' as const, params: { text: u.message } }] : []), ...(u.events ?? [])]
-        if (u.assign) {
-          const to = new Set(u.assign.map((a) => (a === HUMAN ? HUMAN : this.findAgent(a)!.id)))
-          const now = this.assignees(u.item)
-          for (const a of now) if (!to.has(a)) events.push(...this.prepare([{ type: 'assign', params: { to: a, on: false } }], 'bot'))
-          for (const a of to) if (!now.includes(a)) events.push(...this.prepare([{ type: 'assign', params: { to: a, on: true } }], 'bot'))
+        try {
+          // Each update is checked on its own: one that is wrong fails only its item.
+          for (const to of u.assign ?? []) if (to !== HUMAN && !this.findAgent(to)) throw new Error(`No bot ${to}, to assign.`)
+          const events: EventSpec[] = [...(u.message ? [{ type: 'message' as const, params: { text: u.message } }] : []), ...this.prepare(u.events ?? [], 'bot')]
+          if (u.assign) {
+            const to = new Set(u.assign.map((a) => (a === HUMAN ? HUMAN : this.findAgent(a)!.id)))
+            const now = this.assignees(u.item)
+            for (const a of now) if (!to.has(a)) events.push(...this.prepare([{ type: 'assign', params: { to: a, on: false } }], 'bot'))
+            for (const a of to) if (!now.includes(a)) events.push(...this.prepare([{ type: 'assign', params: { to: a, on: true } }], 'bot'))
+          }
+          if (events.length) this.add(u.item, events, actor, runId)
+          if (u.close) closing.push(u.item)
+        } catch (e) {
+          broken.add(u.item)
+          failed(u.item, `its update could not be applied: ${(e as Error).message}`)
         }
-        if (events.length) this.add(u.item, events, actor, runId)
-        if (u.close) closing.push(u.item)
       }
       // An item it said who has is settled; the rest are settled here.
-      const said = new Set(updates.filter((u) => u.assign).map((u) => u.item))
+      const said = new Set([...updates.filter((u) => u.assign).map((u) => u.item), ...broken])
       for (const itemId of run.item_ids) if (!closing.includes(itemId) && !said.has(itemId) && !this.get(itemId)?.closed) this.settle(itemId, agentId, runId)
     })
     for (const itemId of closing) await this.close(itemId, { actor, runId })
@@ -816,8 +833,11 @@ export class Engine extends EventEmitter {
       this.store.children(itemId).filter((r) => this.store.traceOfEvent(r.id).some((t) => t.kind === 'event_added' && t.run_id === runId)).map((r) => r.id),
     )
     if (this.store.children(itemId).some((r) => added.has(r.id) && r.type === 'assign')) return
+    // A wait it added, in this run or an earlier one, that does not wait on the human.
     const { blockers } = this.must(itemId)
-    if (blockers.some((b) => added.has(b.id) && !this.waitsOnHuman(b, blockers))) return
+    const own = new Set(this.agentRuns(agentId).map((r) => r.id))
+    const mine = (id: string) => added.has(id) || this.store.traceOfEvent(id).some((t) => t.kind === 'event_added' && t.run_id !== null && own.has(t.run_id))
+    if (blockers.some((b) => mine(b.id) && !this.waitsOnHuman(b, blockers))) return
     if (this.wake(agentId)?.items.has(itemId)) return
     this.handBack(itemId, agentId, runId)
   }
@@ -956,6 +976,8 @@ export class Engine extends EventEmitter {
       if (!parsed.success)
         throw new Error(`Bad params for a ${s.type} event: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
       const params = parsed.data as Record<string, unknown>
+      if (s.type === 'directive' && params.replaces && (this.row(String(params.replaces))?.type !== 'directive' || this.row(String(params.replaces))!.resolved))
+        throw new Error(`No directive ${params.replaces} holds, to replace.`)
       if (s.type === 'approval' && !this.actions.find((a) => a.name === params.action)?.unsafe)
         throw new Error(`${params.action} is not an unsafe action, so it needs no approval.`)
       // A bot is named by its id from here on; its name is kept beside it, for reading.
@@ -1036,13 +1058,15 @@ export class Engine extends EventEmitter {
       const pending = [this.row(itemId), ...this.store.children(itemId)].filter((r): r is EventRow => !!r && !r.started && !r.resolved).map((r) => this.toEvent(r))
       for (const event of pending) {
         this.store.updateEvent(event.id, { started: true })
+        // Resolving as it starts is part of whatever added it: a bot's run does not wake its bot again for that.
+        const runId = this.store.traceOfEvent(event.id).find((t) => t.kind === 'event_added')?.run_id ?? null
         try {
           const ctx = { engine: this, item: this.must(event.parentId ?? event.id), event, author: authorOf(event.createdBy), memo: null, setMemo: () => {} }
           const out = await this.type(event.type).start!(event.params, ctx)
           if (out?.params) this.store.updateEvent(event.id, { params: out.params })
-          if (out?.resolve) this.resolve(event.id, out.resolve, 'system')
+          if (out?.resolve) this.resolve(event.id, out.resolve, 'system', false, runId)
         } catch (e) {
-          this.resolve(event.id, { outcome: 'error', error: (e as Error).message, detail: `Could not start: ${(e as Error).message}` }, 'system')
+          this.resolve(event.id, { outcome: 'error', error: (e as Error).message, detail: `Could not start: ${(e as Error).message}` }, 'system', false, runId)
         }
       }
       this.emit('change')
@@ -1151,12 +1175,12 @@ export class Engine extends EventEmitter {
   }
 
   /** Ends a blocker without it happening; an item is closed as cancelled, and a bot deleted. */
-  async cancel(eventId: string, actor = HUMAN): Promise<void> {
+  async cancel(eventId: string, actor = HUMAN, runId: string | null = null): Promise<void> {
     const event = this.event(eventId)
     if (!event || event.resolved) throw new Error('That event is not waiting.')
-    if (event.type === 'item') return this.close(eventId, { actor, how: 'cancelled' })
+    if (event.type === 'item') return this.close(eventId, { actor, how: 'cancelled', runId: runId ?? undefined })
     if (event.type === 'agent') return this.deleteAgent(eventId, actor)
-    this.resolve(eventId, { cancelled: true }, actor, true)
+    this.resolve(eventId, { cancelled: true }, actor, true, runId)
     this.emit('change')
     if (actor !== 'script') await this.idle()
   }

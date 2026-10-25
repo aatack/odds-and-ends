@@ -39,19 +39,26 @@ async function main(): Promise<void> {
   mkdirSync(dir, { recursive: true })
   const already = await runningBackend(dir)
   if (already) throw new Error(`A backend is running on ${dir} already, at ${already.url} (pid ${already.pid}).`)
+  // One backend per data folder: a lock, held from before the store opens until it is let go.
+  const release = lock(join(dir, 'backend.lock'))
 
   const log = (...a: unknown[]) => console.log(new Date().toISOString(), ...a)
   const token = randomBytes(24).toString('base64url')
   const { store, sink, egdb } = await openStore(dir, randomBytes(24).toString('base64url'), (m) => log(m))
-  const engine = new Engine({ store, secrets: keyFileSecrets(dir), dataDir: dir })
 
-  // The first time, the store from before egdb comes in.
+  // The first time, the store from before egdb comes in; once it has, a setting says so.
   const v4 = join(dir, 'workflows-v4.db')
-  if (!store.events.size && existsSync(v4)) {
-    const counts = await importV4(v4, store, engine.now())
+  if (existsSync(v4) && !store.settings.has('import.v4')) {
+    if (store.events.size) {
+      egdb.stop()
+      throw new Error(`An import of ${v4} stopped part way. Remove ${join(dir, 'workflows.egdb')}* and start again to import it afresh.`)
+    }
+    const counts = await importV4(v4, store, Date.now())
+    store.setSetting('import.v4', { at: Date.now(), ...counts })
     await store.flush()
     log(`imported ${v4}:`, counts)
   }
+  const engine = new Engine({ store, secrets: keyFileSecrets(dir), dataDir: dir })
   if (!engine.agents().length) {
     await engine.saveAgent({ name: 'Claude', instructions: '', provider: 'claude', model: '', debounceMinutes: 0 })
     log('made the first bot, @Claude')
@@ -127,7 +134,8 @@ async function main(): Promise<void> {
     log('stopping')
     clearInterval(loop)
     clearInterval(checks)
-    runner.stop()
+    // The runs going end first (their items handed back), then what they wrote is flushed.
+    await Promise.race([runner.stop(), new Promise((r) => setTimeout(r, 10_000))])
     for (const res of listeners) res.end()
     server.close()
     mcp.close()
@@ -138,6 +146,7 @@ async function main(): Promise<void> {
     } catch {
       // Gone already.
     }
+    release()
     process.exit(0)
   }
   process.on('SIGINT', stop)
@@ -145,6 +154,28 @@ async function main(): Promise<void> {
   // Started by the app, it stops with the app.
   process.on('disconnect', stop)
   process.on('message', (m) => m === 'stop' && void stop())
+}
+
+/** Takes the lock file, or says who has it; one left by a process that is gone is taken over. */
+function lock(file: string): () => void {
+  for (let tries = 0; ; tries++) {
+    try {
+      writeFileSync(file, String(process.pid), { flag: 'wx' })
+      return () => rmSync(file, { force: true })
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST' || tries) throw e
+      const pid = Number(readFileSync(file, 'utf8'))
+      let alive = false
+      try {
+        process.kill(pid, 0)
+        alive = pid !== process.pid
+      } catch {
+        // No such process.
+      }
+      if (alive) throw new Error(`A backend (pid ${pid}) is starting or running on this data folder already.`)
+      rmSync(file, { force: true })
+    }
+  }
 }
 
 main().catch((e) => {

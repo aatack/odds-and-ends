@@ -259,7 +259,7 @@ export const itemActions: Action[] = [
     description: 'End a blocker without it happening (a child item is closed as cancelled).',
     input: { event_id: z.string() },
     run: async (a, ctx) => {
-      await ctx.engine.cancel(String(a.event_id), ctx.actor)
+      await ctx.engine.cancel(String(a.event_id), ctx.actor, ctx.runId)
       return 'Cancelled.'
     },
   },
@@ -269,7 +269,7 @@ export const itemActions: Action[] = [
     description: 'Close an item: its open children are cancelled, child items closed, all the way down.',
     input: { item_id: itemId },
     run: async (a, ctx) => {
-      await ctx.engine.close(String(a.item_id), { actor: ctx.actor })
+      await ctx.engine.close(String(a.item_id), { actor: ctx.actor, runId: ctx.runId ?? undefined })
       return 'Closed.'
     },
   },
