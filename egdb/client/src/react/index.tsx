@@ -125,8 +125,16 @@ export interface UseWalkParams {
   /** The anchor to start at. Default: the root, as row 0. */
   initialAnchor?: { path: Path; index: number }
   /**
-   * Rows were found or lost above the anchor, so every index moved by
-   * `shift`. Scroll by `shift` rows in the same frame to keep the view still.
+   * When more rows than this turn up above row 0 (for example when a filter
+   * that showed a few rows is cleared), or they cannot all be counted yet,
+   * the walk goes back to the top: the anchor becomes the root at row 0, and
+   * `onShift` asks the table to scroll there. Default 1000.
+   */
+  maxShift?: number
+  /**
+   * Every index moved by `shift`: rows were found or lost above the anchor
+   * (scroll by `shift` rows in the same frame to keep the view still), or
+   * the walk went back to the top (`maxShift`; then this scrolls to row 0).
    */
   onShift?: (shift: number) => void
   /** Rows past each end of the window to check for missing data. Default 50. */
@@ -170,6 +178,7 @@ export function useWalk(params: UseWalkParams): UseWalkResult {
   const reanchorAfter = params.reanchorAfter ?? 100
   const lookahead = params.lookahead ?? 50
   const buffer = params.buffer ?? 200
+  const maxShift = params.maxShift ?? 1000
   const visible = range ?? { start: 0, end: params.limit ?? 500 }
 
   const query: WalkQuery = { follow, include, descend, collapsed }
@@ -227,28 +236,55 @@ export function useWalk(params: UseWalkParams): UseWalkResult {
   // index so that the tree's first row is row 0.
   // Rows above index 0: count all the rows above the anchor, so that one
   // shift is enough (a shift per window could repeat past React's limit).
-  const shift = useMemo(() => {
-    if (!known) return 0
-    if (first < 0) return countBefore(view, { root, anchor, query }).count - anchorIndex
-    return window.atStart && first > 0 ? -first : 0
+  // Too many (or uncountable) rows above: go back to the top instead.
+  const { shift, reset } = useMemo(() => {
+    if (!known) return { shift: 0, reset: false }
+    if (first < 0) {
+      const above = countBefore(view, { root, anchor, query })
+      if (!above.complete || above.count - anchorIndex > maxShift) return { shift: -visible.start, reset: true }
+      return { shift: above.count - anchorIndex, reset: false }
+    }
+    return { shift: window.atStart && first > 0 ? -first : 0, reset: false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [known, first, window, anchorIndex])
+  }, [known, first, window, anchorIndex, maxShift])
+  // The range that was on screen when the table was asked to scroll: until
+  // the table reports a new range, the old one is stale and must not move the anchor.
+  const stale = useRef<number | null>(null)
+  if (stale.current !== null && stale.current !== visible.start) stale.current = null
   useLayoutEffect(() => {
-    if (shift === 0) return
-    setState((s) => ({ ...s, anchorIndex: s.anchorIndex + shift }))
-    high.current.count += shift
-    onShift?.(shift)
+    if (reset) {
+      setState({ rootKey, anchor: [...root], anchorIndex: 0 })
+      high.current.count = 0
+    } else if (shift !== 0) {
+      setState((s) => ({ ...s, anchorIndex: s.anchorIndex + shift }))
+      high.current.count += shift
+    } else return
+    if (shift !== 0) {
+      stale.current = visible.start
+      pending.current += shift
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shift, anchorIndex])
+  }, [shift, reset, anchorIndex])
+  // Ask the table to scroll one commit later, when its height already has
+  // the renumbered rows: a scroll past the old height would be cut short.
+  const pending = useRef(0)
+  useLayoutEffect(() => {
+    if (pending.current === 0 || shift !== 0 || reset) return
+    const by = pending.current
+    pending.current = 0
+    onShift?.(by)
+  })
 
   // The screen has moved far from the anchor: move the anchor to the screen.
   const target =
-    virtual && Math.abs(visible.start - anchorIndex) > reanchorAfter ? window.rows[visible.start - first] : undefined
+    virtual && stale.current === null && Math.abs(visible.start - anchorIndex) > reanchorAfter
+      ? window.rows[visible.start - first]
+      : undefined
   useEffect(() => {
-    if (shift !== 0 || !target) return
+    if (shift !== 0 || reset || !target) return
     setState((s) => ({ ...s, anchor: target.path, anchorIndex: visible.start }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shift, target?.key, visible.start])
+  }, [shift, reset, target?.key, visible.start])
 
   // Without a range, the rows are exactly [0, limit).
   const rows = useMemo(
