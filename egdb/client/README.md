@@ -39,9 +39,8 @@ root.render(<EgdbProvider egdb={egdb}><App /></EgdbProvider>)
 function Outline() {
   const { rows } = useWalk({
     root: ['root'],
-    query: { follow: { list: [['child', 'outbound']] }, include: f.containsIgnoreCase('text', 'plan') },
-    offset: 0,
-    limit: 50,
+    follow: { list: [['child', 'outbound']] },
+    include: f.containsIgnoreCase('text', 'plan'),
   })
   const { write } = useWrite()
   return rows.map((row) => (
@@ -57,10 +56,10 @@ function Outline() {
 
 | Hook | Arguments | Returns |
 | --- | --- | --- |
-| `useWalk` | `{ root: Path; anchor?: Path; query: WalkQuery; offset: number; limit: number; lookahead?: number }` | `{ rows: TreeRow[]; first; anchor; atStart; atEnd; loading; counted; missing }` |
-| `useWalkViewport` | `{ root: Path; query: WalkQuery; range: { start; end }; overscan?; reanchorAfter?; initialAnchor?: { path; index }; onShift?(shift) }` | `{ count; rowAt(index): TreeRow \| undefined; rows; first; anchor; anchorIndex; reanchor(path, index); atEnd; loading }` |
+| `useWalk` | `{ root: Path; follow: Follow; include?: Filter; descend?: Filter; collapsed?: Path[]; limit?: number }`, plus for a virtualized table `{ range?: { start; end }; overscan?; chunk?; reanchorAfter?; initialAnchor?: { path; index }; onShift?(shift); lookahead? }` | `{ rows: TreeRow[]; first; rowAt(index): TreeRow \| undefined; count; atEnd; loading; anchor; anchorIndex; reanchor(path, index) }` |
 | `useFind` | `{ filter: Filter; order?: FindOrder; include_archived?; offset?; limit?; pageSize? }` | `{ rows: FindRowView[]; total; done; loading; error?; refresh() }` |
-| `useWrite` | none | `{ write(ops), set(entity, key, value), link(source, destination, type, sort?), unlink(...), archive(entity), undo() }`, each a `Promise` |
+| `useWrite` | none | `{ write(ops), set(entity, key, value), link(source, destination, type, sort?), unlink(...), archive(entity), undo(), redo() }`, each a `Promise` |
+| `useHistory` | none | `{ undo: number; redo: number }`: how many of this client's batches can be undone and redone |
 | `useEntity` | `(id, groups?: LinkPair[])` | `EntityRecord & { status }` |
 | `useEntityView` | none | `EntityView`: `get(id)` of any cached entity |
 | `useEgdb` | none | the `Egdb` of the nearest `EgdbProvider` |
@@ -70,12 +69,8 @@ The main types:
 ```ts
 type Path = readonly string[]
 
-interface WalkQuery {
-  follow: Record<string, readonly [linkType: string, direction: 'outbound' | 'inbound'][]>
-  descend?: Filter              // go below a node only when it matches
-  include?: Filter              // a node is a row only when it matches
-  collapsed?: readonly Path[]   // do not go below these rows
-}
+// Which links to follow out of an entity, by its type.
+type Follow = Record<string, readonly [linkType: string, direction: 'outbound' | 'inbound'][]>
 
 interface TreeRow {
   key: string                   // the path as one string

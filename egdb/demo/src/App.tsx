@@ -1,7 +1,7 @@
 import { useVirtualizer, type Virtualizer } from '@tanstack/react-virtual'
-import { f, op, pathKey, type Path, type TreeRow, type WalkQuery } from 'egdb-client'
-import { useFind, useWalkViewport, useWrite } from 'egdb-client/react'
-import { useMemo, useRef, useState } from 'react'
+import { f, op, pathKey, type Path, type TreeRow } from 'egdb-client'
+import { useFind, useHistory, useWalk, useWrite } from 'egdb-client/react'
+import { useRef, useState } from 'react'
 
 const ROW = 26
 const FOLLOW = { list: [['child', 'outbound']] } as const
@@ -9,15 +9,21 @@ const ROOT: Path = ['root']
 
 export function App() {
   const [text, setText] = useState('')
+  const writer = useWrite()
+  const history = useHistory()
   return (
     <div style={{ display: 'flex', height: '100vh', font: '14px system-ui', color: '#292929' }}>
       <div style={{ flex: 2, display: 'flex', flexDirection: 'column', borderRight: '1px solid #eee' }}>
-        <input
-          placeholder="Show rows whose text contains…"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          style={{ margin: 8, padding: 6 }}
-        />
+        <div style={{ display: 'flex', gap: 6, margin: 8 }}>
+          <input
+            placeholder="Show rows whose text contains…"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            style={{ flex: 1, padding: 6 }}
+          />
+          <button disabled={history.undo === 0} onClick={() => void writer.undo()}>Undo</button>
+          <button disabled={history.redo === 0} onClick={() => void writer.redo()}>Redo</button>
+        </div>
         <Outline text={text} />
       </div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -29,16 +35,14 @@ export function App() {
 
 function Outline({ text }: { text: string }) {
   const [collapsed, setCollapsed] = useState<Path[]>([])
-  const query: WalkQuery = useMemo(
-    () => ({ follow: FOLLOW, collapsed, include: text ? f.containsIgnoreCase('text', text) : undefined }),
-    [collapsed, text],
-  )
   const scroller = useRef<HTMLDivElement>(null)
   const virtualizer = useRef<Virtualizer<HTMLDivElement, Element> | null>(null)
   const [range, setRange] = useState({ start: 0, end: 40 })
-  const walk = useWalkViewport({
+  const walk = useWalk({
     root: ROOT,
-    query,
+    follow: FOLLOW,
+    collapsed,
+    include: text ? f.containsIgnoreCase('text', text) : undefined,
     range,
     // Rows appeared or went above the anchor: scroll with them so nothing moves.
     onShift: (shift) => {

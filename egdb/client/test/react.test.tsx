@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { f } from '../src/filter.js'
 import { op } from '../src/ops.js'
-import { EgdbProvider, useFind, useWalk, useWalkViewport, useWrite } from '../src/react/index.js'
+import { EgdbProvider, useFind, useHistory, useWalk, useWrite } from '../src/react/index.js'
 import { Egdb } from '../src/store.js'
 import type { WalkQuery } from '../src/walk.js'
 import { haveServer, startServer, treeOps, type Running } from './server.js'
@@ -35,7 +35,7 @@ describe.skipIf(!haveServer)('hooks', () => {
   it('useWalk renders at once, fills in, and shows writes at once', async () => {
     const egdb = fresh()
     const { result } = renderHook(
-      () => ({ walk: useWalk({ root: ['root'], query, offset: 0, limit: 40 }), writer: useWrite() }),
+      () => ({ walk: useWalk({ root: ['root'], follow: query.follow, limit: 40 }), writer: useWrite() }),
       { wrapper: wrapper(egdb) },
     )
     expect(result.current.walk.rows[0]).toMatchObject({ id: 'root', status: 'loading' })
@@ -58,7 +58,7 @@ describe.skipIf(!haveServer)('hooks', () => {
     const egdb = fresh()
     let collapsed: string[][] = []
     const { result, rerender } = renderHook(
-      () => useWalk({ root: ['root'], query: { ...query, collapsed }, offset: 0, limit: 30 }),
+      () => useWalk({ root: ['root'], follow: query.follow, collapsed, limit: 30 }),
       { wrapper: wrapper(egdb) },
     )
     await waitFor(() => expect(result.current.loading).toBe(false))
@@ -74,18 +74,24 @@ describe.skipIf(!haveServer)('hooks', () => {
     expect(calls).toBeLessThanOrEqual(1)
   })
 
-  it('useWalkViewport keeps the anchor near the range and rebases at the top', async () => {
+  it('useWalk with a range keeps the anchor near the range and rebases at the top', async () => {
     const egdb = fresh()
     let range = { start: 0, end: 30 }
     const shifts: number[] = []
     const { result, rerender } = renderHook(
-      () => useWalkViewport({ root: ['root'], query, range, onShift: (s) => shifts.push(s) }),
+      () => useWalk({ root: ['root'], follow: query.follow, range, onShift: (s) => shifts.push(s) }),
       { wrapper: wrapper(egdb) },
     )
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.rowAt(0)!.id).toBe('root')
     const paths = (from: number, to: number) =>
       Array.from({ length: to - from }, (_, i) => result.current.rowAt(from + i)?.path.join('/'))
+
+    // Scrolling inside a chunk calculates nothing again.
+    const rows = result.current.rows
+    range = { start: 2, end: 30 }
+    rerender()
+    expect(result.current.rows).toBe(rows)
 
     // Scroll down in steps, as a table would.
     for (let start = 20; start <= 600; start += 20) {
@@ -101,7 +107,15 @@ describe.skipIf(!haveServer)('hooks', () => {
     const before = paths(600, 630)
     const anchorIndex = result.current.anchorIndex
     const { result: folded, rerender: refold } = renderHook(
-      () => useWalkViewport({ root: ['root'], query: { ...query, collapsed: [['root', 'root.0']] }, range, initialAnchor: { path: result.current.anchor, index: anchorIndex }, onShift: (s) => shifts.push(s) }),
+      () =>
+        useWalk({
+          root: ['root'],
+          follow: query.follow,
+          collapsed: [['root', 'root.0']],
+          range,
+          initialAnchor: { path: result.current.anchor, index: anchorIndex },
+          onShift: (s) => shifts.push(s),
+        }),
       { wrapper: wrapper(egdb) },
     )
     await waitFor(() => expect(folded.current.loading).toBe(false))
@@ -116,6 +130,37 @@ describe.skipIf(!haveServer)('hooks', () => {
     }
     expect(shifts.length).toBeGreaterThan(0)
     expect(shifts[0]).toBeLessThan(0)
+  })
+
+  it('redo sends an undone batch again', async () => {
+    const egdb = fresh()
+    const { result } = renderHook(
+      () => ({ walk: useWalk({ root: ['root'], follow: query.follow, limit: 3 }), writer: useWrite(), history: useHistory() }),
+      { wrapper: wrapper(egdb) },
+    )
+    await waitFor(() => expect(result.current.walk.loading).toBe(false))
+    const text = () => result.current.walk.rows[1]!.values?.text
+    const original = text()
+    await act(() => result.current.writer.set('root.0', 'text', 'v1'))
+    await act(() => result.current.writer.set('root.0', 'text', 'v2'))
+    expect(result.current.history).toEqual({ undo: 2, redo: 0 })
+    await act(() => result.current.writer.undo())
+    await act(() => result.current.writer.undo())
+    expect(text()).toBe(original)
+    expect(result.current.history).toEqual({ undo: 0, redo: 2 })
+    let redone!: Promise<unknown>
+    act(() => {
+      redone = result.current.writer.redo()!
+    })
+    expect(text()).toBe('v1') // optimistic
+    await act(() => redone)
+    await act(() => result.current.writer.redo()!)
+    expect(text()).toBe('v2')
+    expect(result.current.history).toEqual({ undo: 2, redo: 0 })
+    // A new write clears what can be redone.
+    await act(() => result.current.writer.undo())
+    await act(() => result.current.writer.set('root.0', 'text', original as string))
+    expect(result.current.history).toEqual({ undo: 2, redo: 0 })
   })
 
   it('useFind pages and takes in local writes', async () => {

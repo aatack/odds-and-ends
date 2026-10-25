@@ -64,6 +64,8 @@ export class Egdb {
   readonly findsAtom: PrimitiveAtom<ReadonlyMap<string, FindState>>
   /** The last load or write that failed. */
   readonly errorAtom: PrimitiveAtom<unknown>
+  /** How many of this client's batches can be undone and redone. */
+  readonly historyAtom: PrimitiveAtom<{ undo: number; redo: number }>
 
   private readonly preloadSteps: number
   private readonly onError?: (error: unknown) => void
@@ -73,6 +75,12 @@ export class Egdb {
   private readonly preloads = new Map<string, 'running' | 'done'>()
   private queued: { ids: Set<EntityId>; groups: Map<GroupKey, LinkPair> } | null = null
   private pendingId = 0
+  /** This client's confirmed batches, oldest first: the ops sent and their sequence IDs. */
+  private done: { ops: Op[]; first: number; last: number }[] = []
+  /** Batches that undo removed, newest last: redo sends them again. */
+  private undone: Op[][] = []
+  /** Writes not yet confirmed: undo waits for them, so it removes the right batch. */
+  private inflight = new Set<Promise<unknown>>()
 
   constructor(options: EgdbOptions) {
     this.client = options.client
@@ -85,6 +93,7 @@ export class Egdb {
     this.viewAtom = atom((get) => viewOf(get(this.cacheAtom)))
     this.findsAtom = atom<ReadonlyMap<string, FindState>>(new Map())
     this.errorAtom = atom<unknown>(undefined)
+    this.historyAtom = atom({ undo: 0, redo: 0 })
   }
 
   /** The cache as reads see it now. */
@@ -176,8 +185,26 @@ export class Egdb {
    * Write a batch. It shows in every view at once; the promise settles when
    * the server has it. If the server refuses it, it leaves the views again.
    */
-  async write(ops: Op | readonly Op[]): Promise<WriteResult> {
+  write(ops: Op | readonly Op[]): Promise<WriteResult> {
     const batch = Array.isArray(ops) ? [...ops] : [ops as Op]
+    // A new change makes the undone batches stale.
+    this.undone = []
+    return this.track(this.send(batch))
+  }
+
+  private track<T>(promise: Promise<T>): Promise<T> {
+    this.inflight.add(promise)
+    const forget = () => this.inflight.delete(promise)
+    promise.then(forget, forget)
+    this.syncHistory()
+    return promise
+  }
+
+  private syncHistory() {
+    this.store.set(this.historyAtom, { undo: this.done.length, redo: this.undone.length })
+  }
+
+  private async send(batch: Op[]): Promise<WriteResult> {
     const pending: PendingWrite = { id: ++this.pendingId, ops: batch, timestamp: Date.now() }
     const drop = (state: CacheState) => state.pending.filter((p) => p !== pending)
     this.store.set(this.cacheAtom, (state) => ({ ...state, pending: [...state.pending, pending] }))
@@ -189,11 +216,29 @@ export class Egdb {
       this.fail(error)
       throw error
     }
+    if (result.first_seq <= result.last_seq) {
+      this.done.push({ ops: batch, first: result.first_seq, last: result.last_seq })
+      this.syncHistory()
+    }
+    await this.readBack(batch, () => drop, pending.timestamp)
+    return result
+  }
+
+  /**
+   * After the server changed the entities of `batch`: read them again and
+   * merge them in, applying `update` to the pending list in the same step.
+   */
+  private async readBack(
+    batch: Op[],
+    update: () => (state: CacheState) => readonly PendingWrite[],
+    timestamp?: number,
+  ) {
     // Loads that started before now may hold the old state of these entities.
     const since = ++this.writes
     const ids = entitiesOf(batch)
     for (const id of ids) this.stamps.set(id, since)
     this.preloads.clear()
+    const drop = update()
     // Read back what the server made of it (middleware may have changed it),
     // then swap the guess for the answer in one update, so nothing flickers.
     try {
@@ -210,12 +255,11 @@ export class Egdb {
     } catch (error) {
       // The write is in; keep the guess as the cache's state.
       this.store.set(this.cacheAtom, (state) => ({
-        base: applyOps(state.base, batch, pending.timestamp),
+        base: timestamp === undefined ? state.base : applyOps(state.base, batch, timestamp),
         pending: drop(state),
       }))
       this.fail(error)
     }
-    return result
   }
 
   /** The link groups worth reading back after a write: the ones it touched and the ones loaded. */
@@ -230,11 +274,40 @@ export class Egdb {
     })
   }
 
-  /** Undo this author's newest batch on the server, then read back what it touched. */
+  /**
+   * Undo this author's newest batch on the server, then read back what it
+   * touched. It is not optimistic: the browser does not know the values the
+   * batch replaced. When the batch is one this client wrote, `redo` can send
+   * it again.
+   */
   async undo() {
+    await Promise.allSettled([...this.inflight])
     const outcome = await this.client.undo(this.branch, this.author)
-    if (outcome) await this.refresh()
+    if (!outcome) return outcome
+    const at = this.done.findIndex((d) => d.first === outcome.removed[0])
+    if (at < 0) {
+      // Another client's batch, with the same author: what it touched is not known here.
+      await this.refresh()
+      return outcome
+    }
+    const [batch] = this.done.splice(at, 1)
+    this.undone.push(batch!.ops)
+    this.syncHistory()
+    await this.readBack(batch!.ops, () => (state) => state.pending)
     return outcome
+  }
+
+  /** Send the newest undone batch again, as a new write (optimistic, like any write). */
+  redo(): Promise<WriteResult> | undefined {
+    const ops = this.undone.pop()
+    if (!ops) return undefined
+    const sent = this.send(ops)
+    // Refused: it can be redone again later.
+    sent.catch(() => {
+      this.undone.push(ops)
+      this.syncHistory()
+    })
+    return this.track(sent)
   }
 
   /** Forget what preloads have done and read every cached entity again. */
