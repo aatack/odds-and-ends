@@ -649,9 +649,11 @@ export class Engine extends EventEmitter {
       return has.get(itemId)!
     }
     for (const t of this.store.traceAfter(since)) {
-      if (!WAKING.has(t.kind) || !t.event_id || (t.run_id && own.has(t.run_id)) || !mine(t.item_id)) continue
+      if (!WAKING.has(t.kind) || !t.event_id || !mine(t.item_id)) continue
       const e = this.row(t.event_id)
       if (!e || QUIET.has(e.type) || e.id === t.item_id) continue
+      // What its own runs did, it knows; but a child item closing (even by its own hand) is news for the item it blocked.
+      if (t.run_id && own.has(t.run_id) && !(e.type === 'item' && t.kind !== 'event_added')) continue
       // Taking someone off an item is news only for whoever takes over.
       if (e.type === 'assign' && e.params.on === false) continue
       const set = items.get(t.item_id) ?? new Set()

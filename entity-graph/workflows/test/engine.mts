@@ -352,6 +352,7 @@ behaviours.push(async ({ prompt, resume, sessionId }) => {
 behaviours.push(async ({ prompt }) => {
   assert.match(prompt, /\[item: Parent\]/)
   assert.match(prompt, /Wrap up/)
+  assert.match(prompt, /\[Child: closed\]/, "a child closing is news for its parent, even when the bot closed it")
   return out({ item: parent, message: 'All done.', close: true })
 })
 await toBot(parent, 'Split it')
