@@ -3,7 +3,6 @@
 import type { IntegrationsView, McpView } from '../shared/types'
 import type { Engine } from './engine'
 import type { Mcp } from './mcp'
-import { slackAuthTest } from './settings'
 
 const firstLine = (s: string) => s.trim().split('\n')[0]
 
@@ -11,39 +10,16 @@ export class Admin {
   constructor(
     private engine: Engine,
     private mcp: Mcp,
-    private fetchFn: typeof fetch = fetch,
   ) {}
 
   async integrations(): Promise<IntegrationsView> {
-    const check = async (fn: () => Promise<string>) => {
-      try {
-        return { ok: true, detail: await fn() }
-      } catch (e) {
-        return { ok: false, detail: (e as Error).message }
-      }
+    let claude: { ok: boolean; detail: string }
+    try {
+      claude = { ok: true, detail: firstLine(await this.engine.exec('claude', ['--version'])) }
+    } catch (e) {
+      claude = { ok: false, detail: (e as Error).message }
     }
-    const [github, claude] = await Promise.all([
-      check(async () => `Signed in as ${firstLine(await this.engine.exec('gh', ['api', 'user', '--jq', '.login']))}`),
-      check(async () => firstLine(await this.engine.exec('claude', ['--version']))),
-    ])
-    return {
-      github,
-      claude: { ...claude, bots: this.engine.agents().length },
-      slack: this.engine.settings.slackWorkspaces().map(({ token, ...w }) => ({ ...w, tokenHint: `${token.slice(0, 5)}…${token.slice(-4)}` })),
-    }
-  }
-
-  /** Checks the token with Slack before keeping it. */
-  /** Slack says which workspace the token is for, so the token is all it needs. */
-  async addSlack(token: string): Promise<void> {
-    token = token.trim()
-    if (!token.startsWith('xoxp-')) throw new Error('That is not a Slack user token: they start with xoxp-.')
-    const { team, user, userId } = await slackAuthTest(token, this.fetchFn)
-    this.engine.settings.addSlackWorkspace({ name: team, team, user, userId, token })
-  }
-
-  removeSlack(id: string): void {
-    this.engine.settings.removeSlackWorkspace(id)
+    return { claude: { ...claude, bots: this.engine.agents().length } }
   }
 
   mcpView(): McpView {

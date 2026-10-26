@@ -2,7 +2,7 @@ import { autoUpdate, flip, offset, shift, useFloating } from '@floating-ui/react
 import { useAtom, useSetAtom } from 'jotai'
 import { useEffect, useState, type MouseEvent } from 'react'
 import type { CustomAction, ItemEvent } from '../../shared/types'
-import { attachingAtom, eventActions, snoozingAtom } from './eventActions'
+import { eventActions } from './eventActions'
 import { api } from './useWorkflows'
 import { menuAtom, sameView, viewsAtom, type View } from './views'
 
@@ -34,10 +34,8 @@ export function EventMenu({
 }) {
   const [menu, setMenu] = useAtom(menuAtom)
   const [views, setViews] = useAtom(viewsAtom)
-  const attach = useSetAtom(attachingAtom)
-  const snooze = useSetAtom(snoozingAtom)
   // The event itself, read as the menu opens, for which actions it has.
-  const [event, setEvent] = useState<(ItemEvent & { priority?: boolean; snoozedUntil?: number | null }) | null>(null)
+  const [event, setEvent] = useState<ItemEvent | null>(null)
   // Placed by Floating UI at the cursor: flipped above it, or shifted along, so it always stays in the window,
   // and placed again as it grows (its actions come in a moment after it opens).
   const { refs, floatingStyles } = useFloating({
@@ -55,7 +53,7 @@ export function EventMenu({
   }, [menu, refs])
   useEffect(() => {
     setEvent(null)
-    if (menu) void api().eventDetail(menu.id).then((d) => setEvent(d ? { ...d.event, priority: d.item?.item.priority, snoozedUntil: d.item?.item.snoozedUntil } : null))
+    if (menu) void api().eventDetail(menu.id).then((d) => setEvent(d?.event ?? null))
   }, [menu])
   useEffect(() => {
     if (!menu) return
@@ -80,7 +78,7 @@ export function EventMenu({
       <button onClick={() => push({ kind: 'event', id: menu.id })}>Open</button>
       <button onClick={() => push({ kind: 'debug', id: menu.id })}>Debug</button>
       {event?.id === menu.id &&
-        eventActions(event, { act: actOn(event.id), skip, attach, snooze, custom }).map((a) => (
+        eventActions(event, { act: actOn(event.id), skip, custom }).map((a) => (
           <button
             key={a.id}
             className="menu-action"

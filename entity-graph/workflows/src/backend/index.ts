@@ -25,7 +25,6 @@ import { startMcp } from '../engine/mcp'
 import { BotRunner } from '../engine/workers'
 import { handlers, OPEN_METHODS } from './api'
 import { dataDirOf, runningBackend, sourceFile, type BackendInfo } from './info'
-import { keyFileSecrets } from './secrets'
 
 const LOOP_MS = 60_000
 
@@ -49,7 +48,7 @@ async function main(): Promise<void> {
   const log = (...a: unknown[]) => console.log(new Date().toISOString(), ...a)
   const token = randomBytes(24).toString('base64url')
   const { store, sink, egdb } = await openStore(file, randomBytes(24).toString('base64url'), (m) => log(m))
-  const engine = new Engine({ store, secrets: keyFileSecrets(dir), dataDir: dir })
+  const engine = new Engine({ store, dataDir: dir })
 
   const mcp = await startMcp(engine)
   const runner = new BotRunner(engine, mcp.runUrl)

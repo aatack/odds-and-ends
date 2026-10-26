@@ -1,74 +1,29 @@
 // Lucide (lucide.dev, ISC): its robot is what a bot looks like here, and the
 // rest come from it too so that they match.
-import {
-  Bot,
-  Check,
-  Compass,
-  Flag,
-  GitPullRequest,
-  Layers,
-  Link,
-  MessageCircle,
-  MessageSquare,
-  Moon,
-  Paperclip,
-  PencilLine,
-  Play,
-  ScrollText,
-  Settings,
-  ShieldCheck,
-  SquareCode,
-  User,
-  Workflow,
-  type LucideIcon,
-} from 'lucide-react'
+import { Bot, Check, GitPullRequest, Layers, Link, MessageCircle, MessageSquare, Settings, ShieldCheck, SquareCode, User, type LucideIcon } from 'lucide-react'
 import type { EventKind, Item, ItemEvent } from '../../shared/types'
 
 /** One icon an event type. */
 export const TYPE_ICON: Record<EventKind, LucideIcon> = {
   item: Layers,
-  message: MessageSquare,
-  attachment: Paperclip,
-  rename: PencilLine,
-  priority: Flag,
-  action: Play,
+  note: MessageSquare,
   approval: ShieldCheck,
-  bot: Bot,
-  github: GitPullRequest,
-  slack: MessageCircle,
-  after: Workflow,
   script: SquareCode,
-  summary: ScrollText,
-  directive: Compass,
-  snooze: Moon,
-  agent: Bot,
-  configure: Settings,
+  bot: Bot,
   user: User,
 }
 
 export const TYPE_NAME: Record<EventKind, string> = {
   item: 'Task',
-  message: 'Message',
-  attachment: 'Attachment',
-  rename: 'Rename',
-  priority: 'Priority',
-  action: 'Action',
+  note: 'Note',
   approval: 'Approval',
-  bot: 'Bot',
-  github: 'GitHub',
-  slack: 'Slack',
-  after: 'After',
   script: 'Script',
-  summary: 'Summary',
-  directive: 'Directive',
-  snooze: 'Snooze',
-  agent: 'Bot',
-  configure: 'Settings',
+  bot: 'Bot',
   user: 'Person',
 }
 
-/** The blocker an open item that is not the human's turn is shown as waiting on: its first that is not an after, else its first; null when only a bot has it. */
-export const waitingOn = (item: Item): ItemEvent | null => item.blockers.find((b) => b.type !== 'after') ?? item.blockers[0] ?? null
+/** The blocker an open item that is not the human's turn is shown as waiting on: its first; null when only someone has it. */
+export const waitingOn = (item: Item): ItemEvent | null => item.blockers[0] ?? null
 
 /** Whether a bot has the item: anyone who has it who is not one of `people`. */
 export const withBot = (item: Item, people: { id: string }[]): boolean => item.assignees.some((a) => !people.some((p) => p.id === a))
@@ -105,12 +60,12 @@ function whoIcon(by: string): [LucideIcon, string] {
 }
 
 /**
- * The one icon for an event, wherever it is drawn: a message (or an action) is
+ * The one icon for an event, wherever it is drawn: a note is
  * whoever said (or ran) it; anything else is its type. The chat's pictures, the
  * blocker rows and the view header all use this.
  */
 export function eventIcon(e: { type: EventKind; createdBy: string }): [LucideIcon, string] {
-  return e.type === 'message' || e.type === 'action' ? whoIcon(e.createdBy) : [TYPE_ICON[e.type], TYPE_NAME[e.type]]
+  return e.type === 'note' ? whoIcon(e.createdBy) : [TYPE_ICON[e.type], TYPE_NAME[e.type]]
 }
 
 /** An event's icon, inline. */

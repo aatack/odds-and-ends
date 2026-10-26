@@ -2,7 +2,7 @@
 // one: shared by the backend and the app, which starts one when none is.
 //
 // A source is one file: the store (egdb's SQLite). Beside it, `<file>.data/`
-// holds the rest: the secrets' key, the bots' folders, and while a backend runs
+// holds the rest: the bots' folders, and while a backend runs
 // on it, its backend.json and lock.
 
 import { existsSync, readFileSync } from 'node:fs'

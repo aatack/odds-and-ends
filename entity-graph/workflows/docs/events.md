@@ -5,17 +5,17 @@ Everything is an **event**, items included.
 - An **item** is an event that stands for one thing to be done. Other events sit
   **in** it (their parent), and so can other items: the events form one tree.
   Its children are its history.
-- A plain event resolves as it is added: a message, an action run.
-- A **blocker** is an event that stays unresolved until something happens: CI
-  finishes, somebody replies, a person approves, a child item closes.
+- A plain event resolves as it is added: a note.
+- A **blocker** is an event that stays unresolved until something happens: a
+  script says it is done, a person approves, a child item closes.
 - An item is **assigned** to people and to bots (`assigned_to` links, not events).
-  A person is a `user` event and a bot an `agent` event, each in no item. See
+  A person is a `user` event and a bot a `bot` event, each in no item. See
   [People, and who has what](#people-and-who-has-what) and [Bots](#bots).
 - An item is itself a blocker: it blocks the item it sits in until it closes.
   So the deepest items are dealt with before the items they sit in.
 - An item can have any number of blockers at once: its open children.
 - An open item is **a person's turn** when it is assigned to them, and nothing
-  blocks it, or only things people resolve do: approvals, and afters waiting on them.
+  blocks it, or only things people resolve do: approvals.
 - There are no top-level items as such. An item may sit in none, but every list
   shows every item, at any depth.
 
@@ -34,11 +34,11 @@ how it reads (`summary`, `message`), and whether and how it waits.
 
 | field | what it is |
 | --- | --- |
-| `id` | Its id. `after` events and the trace refer to it. |
-| `parentId` | The item it sits in. Null only for an item that sits in none. |
+| `id` | Its id. The trace refers to it. |
+| `parentId` | The item (or bot) it sits in. Null for an item, a bot or a person that sits in none. |
 | `type` | Its type: one of the table below. |
 | `params` | What it was given, as its type's params schema says. |
-| `createdBy`, `createdAt` | Who added it, and when: a person's username, `bot:<id>` (a bot's run), `bot` (an agent acting as a bot), `system`, `script`, `script:bot`, `mcp`, or a source's id. |
+| `createdBy`, `createdAt` | Who added it, and when: a person's username, `bot:<id>` (a bot's run), `bot` (an agent acting as a bot), `system`, `script`, `script:bot`, or `mcp`. |
 | `resolved`, `resolvedAt`, `resolvedBy` | Whether it has happened, when, and who resolved it. A plain event is resolved by whoever added it, as it is added. |
 | `cancelled` | Resolved without happening. |
 | `data` | What it resolved with, as its type's data says. Null while it is open. |
@@ -59,19 +59,16 @@ memory, not stored, so a crash leaves nothing to clean up.
 **For agents:** `src/engine/paradigm.ts` is the paradigm in a few lines: the MCP
 server's instructions, and the `paradigm` action. Keep it that short.
 
-**Custom actions:** `src/engine/customActions.ts`. The human defines them per event
-type on the Types page; `custom_actions` lists them and `run_custom_action` runs
-one on an event. A run is recorded as an `action` event whose message is what
-the script returned.
+**Custom actions:** `src/engine/customActions.ts`. People define them per event
+type on the Types page: each a script. `custom_actions` lists them and
+`run_custom_action` runs one on an event. What a run says is a note in the item,
+by `script`; the trace has the run.
 
 **Reads:** `get_item` (an item in full), `get_children` (the events in an item;
 with `open`, its blockers), `list_items` (every item), `items_waiting_on`
 (the open items waiting on a person, any bot, one bot, or one blocking type),
-`next_for_human` (what a person's Next would show: of the items that are their turn,
-priority items first, the most recently active first, then the rest, the least
-recently touched first; an item is a priority while its latest `priority` event
-says so), `list_people`, `list_bots`, `recently_assigned` (assignments, for one
-assignee or any), and `stale_items` (open items a person made or had, untouched for a while).
+`next_for_human` (what a person's Next would show: of the items that are their
+turn, the least recently touched), `list_people` and `list_bots`.
 
 ### Every type (`EventType`)
 
@@ -83,12 +80,12 @@ Defined in `src/engine/integrations.ts` and written in `src/engine/eventTypes.ts
 | `params` | A zod shape. Params are checked against it as the event is added. |
 | `data` | What it resolves with, in words. |
 | `blocking` | False: it resolves as it is added. True: it is a blocker. |
-| `human` | A blocker a person resolves. While only these are open (and afters waiting on them), it is the turn of whoever has the item. |
+| `human` | A blocker a person resolves. While only these are open, it is the turn of whoever has the item. |
 | `bots` | A bot may add it in its output. |
 | `describe(params)` | Its `summary`. |
 | `said(params, data)` | Its `message` once resolved; null for nothing. Left out, it says its summary. Not called when the event is cancelled. |
-| `expand(params, author)` | Optional: turns it into the events actually added. For example, a bot's Slack message becomes an approval and a wait. |
-| `start(params, ctx)` | Optional: runs as it is added. It may change the params (such as finding a PR by its title), or resolve the event at once. |
+| `expand(params, author)` | Optional: turns it into the events actually added. |
+| `start(params, ctx)` | Optional: runs as it is added. It may change the params, or resolve the event at once. |
 | `check(params, ctx)` | Optional, for waits: answers the data once the event has happened, or null while it hasn't. Polled with backoff. |
 
 **To add a type:** write it in `eventTypes.ts` and add its name to `EventKind`.
@@ -99,44 +96,14 @@ the chat input should offer it, add a preset in `presets.ts`.
 
 | type | blocks | params | data |
 | --- | --- | --- | --- |
-| `item` | yes | `title`, `events?` (its first children, added in it), `assignees?` (who has it from the start; links, not kept in its params), `detached?` (sits in no item, wherever it is added), `key?` (so a source adds it once), `sessionId` (set by the app) | `{ how: closed \| handled_outside \| cancelled }` |
-| `message` | no | `text` | — |
-| `attachment` | no | `event`, `title`, `item` (filled in by `attach_event`) | — |
-| `rename` | no | `title` (the item's title from then on) | — |
-| `priority` | no | `on` (the latest one says whether the item is a priority) | — |
-| `action` | no | `name`, `inputs`, `output` | — |
-| `approval` | a person's | `action` (unsafe), `inputs`, `reason?` | `{ ran, inputs, changed, output, detail }` |
-| `agent` | while the bot lasts (sits in no item) | `name`, `instructions?`, `provider?`, `model?`, `debounce_minutes?`, `folder?`, `sessionId` (set by the app) | `{ cancelled }`, once deleted |
-| `configure` | no (only in an `agent`) | any of the `agent`'s settings: the latest wins | — |
-| `user` | while the person lasts (sits in no item) | `username` (its id), `name?` | `{ cancelled }`, once removed |
-| `bot` | old | `instructions?`. Kept so old items read as they did; none is added now | `{ runId, message?, costUsd?, output }` or `{ error }` |
-| `github` | yes | `repo`+`number`, or `query`; `until`: `checks` \| `activity` \| `merged`; `timeout_minutes?` | `{ outcome, detail, failed? }` |
-| `slack` | yes | `channel`, `workspace?`, `message?`, `thread_ts?`, `thread_of?`, `timeout_minutes?` | `{ outcome, replies, detail }` |
-| `after` | yes | `event`, then `then` or `script` | `{ added, logs? }` or `{ error }` |
+| `item` | yes | `title`, `events?` (its first children, added in it), `assignees?` (who has it from the start; links, not kept in its params), `detached?` (sits in no item, wherever it is added), `key?` (so it is added once) | `{ how: closed \| cancelled }` |
+| `note` | no | `text` | — |
+| `approval` | a person's | `action` (unsafe), `inputs`, `reason?` | `{ ran, inputs, changed, output }` |
 | `script` | yes | `source`, `description?`, `schedule?` (seconds), `timeout_minutes?` | `{ result, message?, runs, logs }` or `{ error, logs }` |
-| `summary` | yes (seconds) | — (Haiku summarises the item, in ASD-STE100) | `{ text }` or `{ error }` |
-| `snooze` | yes | `until` (an ISO time) | `{ woke }` (an ISO time) |
-| `directive` | while it holds (sits in no item, so blocks nothing) | `text` (markdown: what the operator is working on), `replaces?` (a directive it is an edit of, cancelled as it is added) | `{ cancelled }`, once deleted; `{ cancelled, replacedBy }`, once edited |
+| `bot` | while the bot lasts (sits in no item) | `name`, `instructions?`, `provider?`, `model?` (opus), `debounce_minutes?` (1), `folder?`, `sessionId` (set by the app) | `{ cancelled }`, once deleted |
+| `user` | while the person lasts (sits in no item) | `username` (its id), `name?` | `{ cancelled }`, once removed |
 
-- **`directive`** is the operator's note on what they are working on at the
-  moment. It sits in no item, wherever it is added, and holds until it is
-  cancelled (the Directives page's Delete). Bots are not told directives: their
-  instructions say to read the latest (the `directives` action) when they need
-  more context, and to add one (a `directive` event, with `add_events`) when feedback should outlast
-  the item.
-- **`snooze`** puts an item away until `until`. It blocks the item, so Next
-  leaves it out, and is checked every minute: once the time comes it resolves
-  ("Woke up") and the item is the human's turn again. Cancelling it wakes the
-  item at once. `Item.snoozedUntil` is when the latest open one wakes. The human
-  snoozes from a task's actions (Snooze, then a time); `Engine.snooze` replaces
-  any snooze already open, and `Engine.unsnooze` (Wake now) cancels them.
-- **`after`** is how events chain. It waits for one event to resolve, then adds
-  `then`, or whatever its `script` returns.
-  - A script is `async (input, actions) => events`, where `input` is
-    `{ item, event }`: the event it waited for, with its data.
-  - The script runs in QuickJS, with no access to anything but `actions` and
-    `console.log`.
-- **`script`** waits for anything the other types don't cover. Its `source` is
+- **`script`** waits for anything. Its `source` is
   `async (ctx, actions) => result`, run on its `schedule`.
   - The schedule is seconds: the wait before the first run, then between runs,
     with the last repeating. `[1, 5, 10]` runs after 1 second, then 5 more, then
@@ -150,16 +117,8 @@ the chat input should offer it, add a preset in `presets.ts`.
   - It returns `{ done: true, data?, message? }` to finish. It resolves with
     `{ result: data, message, runs }`, and `message` (if given) is what the chat says.
   - A run that throws, or returns anything else, ends it with `{ error }`.
-  - Like an `after`'s script, it runs in QuickJS. A script a bot wrote gets no
-    unsafe actions.
-- **`attachment`** gathers another event in an item, wherever that event sits:
-  ideas to build together, say. It only points at it (`event`, and `item`, the
-  item to read it in); the event stays where it was. The human attaches from the
-  paperclip at the top right of any event's view; agents use `attach_event`.
-- **A `slack` event with a message that a bot adds** becomes an approval of
-  `slack_post`, followed by an after that starts the wait in the thread the
-  message posted.
-
+  - It runs in QuickJS, with nothing but `actions` and `console.log`. A script a
+    bot wrote gets no unsafe actions.
 ## People, and who has what
 
 - A **person** is a `user` event, in no item, whose id is their **username**.
@@ -180,16 +139,18 @@ the chat input should offer it, add a preset in `presets.ts`.
 
 ## Bots
 
-- A **bot** is an `agent` event, in no item: a name (people `@` it by that),
+- A **bot** is a `bot` event, in no item: a name (people `@` it by that),
   instructions of its own, a provider (`claude`, Claude Code, for now: another is
-  another entry in `PROVIDERS`, `workers.ts`) and model, a debounce, and a folder
-  and a Claude session of its own, which last. Its settings change with
-  `configure` events in it; deleting it cancels it, and what it had goes back to
-  each item's owner. People make and edit bots on the Bots page; agents may make
+  another entry in `PROVIDERS`, `workers.ts`) and model (opus, unless it says
+  otherwise), a debounce (a minute), and a folder and a Claude session of its own,
+  which last. Its settings are its params: changing them writes them anew (egdb
+  keeps the old values) and traces `configured`. Notes in it are its **own chat**.
+  Deleting it cancels it, and what it had goes back to each item's owner. People make and edit bots on the Bots page; agents may make
   them too (`add_events`).
 - **It wakes when something happens to it** (`Engine.wake`), its debounce after:
   an item is assigned to it (assigning one it has already writes the link again,
-  so it wakes), or its settings change; or at once when woken by hand. What its
+  so it wakes), its settings change, or someone writes in its chat; or at once
+  when woken by hand. What its
   own runs do is not something happening to it. And while something has
   happened in the items it has since its last run (an event added, resolved or
   cancelled, not by its own runs; a child item closing always counts), it wakes
@@ -200,14 +161,16 @@ the chat input should offer it, add a preset in `presets.ts`.
   SessionStart hook on `compact` says them again into the conversation after a
   compaction.
 - **Prompt:** "Please action your assigned items, and give each a new assignee
-  to carry it on", then per item the events new since the bot was last prompted
+  to carry it on", then its own chat (when someone wrote in it), then per item the
+  events new since the bot was last prompted
   (its place in the trace is its last run's `trace_mark`), less what its own runs
   did, or "nothing new"; the item's whole history the first time the bot sees it.
-  People's messages are given as they wrote them, after their name; anything else
+  People's notes are given as they wrote them, after their name; anything else
   in brackets. Items are separated by `---`, each led by its id.
 - **Output:** `{ updates: [{ item, message?, events?, assign?, close? }] }`, as
   structured output: per item, what to say, events to add, who has it from now on
-  (usernames, bots' names; itself to keep it), and whether it is done.
+  (usernames, bots' names; itself to keep it), and whether it is done. An update
+  for its own id is its reply in its own chat.
 - **After a run**, each item it has and said nothing of who has goes back to its
   owner, unless the bot left it waiting on something that is not a person (a wait
   it added, in this run or before), or something new came in while it ran. A run
@@ -223,14 +186,12 @@ What a person types goes through a **preset**, which turns the text into events
 
 | preset | adds |
 | --- | --- |
-| Note (the default) | the message only |
-| PR merged | a `github` wait on the pull request the text names, until merged |
-| PR checks | a `github` wait on the pull request the text names, until its checks finish |
+| Note (the default) | the note |
 
 - `@` refers to a bot, a person or an item: `[id]()`. A bot or person referred to
   in what is sent is assigned the item, and the sender is taken off it.
 - With nothing typed, the choices are "Assign to @someone" instead (preset
-  `assign:<id>`), the likeliest first: whoever else had this item last, then
+  `assign:<id>`), the likeliest first: whoever else has this item, then
   whoever the sender assigned things to last, then the bots, then the people.
 
 ## The store

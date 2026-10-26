@@ -29,7 +29,7 @@ await engine.send(
   parent,
   `assign:${bot}`,
   'Remember the word "pelican", but do not write it anywhere. Then add a child item titled "Recall", whose first events are a ' +
-    'message "Say the word you were asked to remember, then close this item.", and assign it to yourself. Keep the parent too.',
+    'note "Say the word you were asked to remember, then close this item.", and assign it to yourself. Keep the parent too.',
 )
 await wait()
 engine.wakeAgent(bot)

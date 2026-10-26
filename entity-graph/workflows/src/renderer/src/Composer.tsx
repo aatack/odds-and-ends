@@ -58,7 +58,7 @@ export function Composer({
     id: `assign:${b.id}`,
     name: `Assign to @${b.name}`,
     hint: `hand this task to @${b.name}`,
-    icon: b.bot ? 'agent' : 'user',
+    icon: b.bot ? 'bot' : 'user',
   }))
   const empty = !text.trim() && assigns.length > 0
   const choices = empty ? assigns : catalog.presets
@@ -67,7 +67,7 @@ export function Composer({
   const preset = choices[at]
   // What Enter would do now: a note that @s someone hands them the task too.
   const mentioned = assignees.filter((b) => text.includes(`[${b.id}]()`))
-  const shown = mentioned.length && preset.id === 'message' ? { ...preset, name: `Note for @${mentioned.map((b) => b.name).join(', @')}` } : preset
+  const shown = mentioned.length && preset.id === 'note' ? { ...preset, name: `Note for @${mentioned.map((b) => b.name).join(', @')}` } : preset
   // Focused as it opens (and as the preset changes), with the cursor after any draft rather than before it.
   useEffect(() => {
     const el = box.current
@@ -77,14 +77,25 @@ export function Composer({
   }, [at])
   // Where the `@` being completed is, while the finder is open for it.
   const [mentionAt, setMentionAt] = useState<number | null>(null)
+  /** Puts the cursor back in the text box, at `caret` (else at the end), once a modal over it has closed. */
+  const refocus = (caret?: number) => {
+    const put = () => {
+      const el = box.current
+      if (!el) return
+      el.focus()
+      const at = caret ?? el.value.length
+      el.setSelectionRange(at, at)
+    }
+    requestAnimationFrame(put)
+    setTimeout(put, 50)
+  }
   const insertRef = (id: string) => {
     if (mentionAt === null) return
     const ref = `[${id}]()`
     setText(text.slice(0, mentionAt) + ref + text.slice(mentionAt + 1))
     setMentionAt(null)
-    // The modal gives the cursor back to the text box as it closes; then it goes after the reference.
-    const caret = mentionAt + ref.length
-    requestAnimationFrame(() => box.current?.setSelectionRange(caret, caret))
+    // The cursor goes back to the text box, after the reference, once the modal has closed (and whatever it does with focus).
+    refocus(mentionAt + ref.length)
   }
   const send = async () => {
     if (await onSend(preset.id, text)) setText('')
@@ -156,7 +167,10 @@ export function Composer({
           verb="Insert"
           onPick={insertRef}
           onCreate={(title) => void mention.create(title).then(insertRef)}
-          onClose={() => setMentionAt(null)}
+          onClose={() => {
+            setMentionAt(null)
+            refocus()
+          }}
         />
       )}
     </div>

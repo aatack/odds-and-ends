@@ -1,4 +1,4 @@
-import type { Assignment, ItemDetail, ItemEvent, Overview } from '../../shared/types'
+import type { ItemDetail, ItemEvent, Overview } from '../../shared/types'
 import { isPerson, nameOf } from './people'
 import { useEventMenu } from './EventMenu'
 import { Avatar } from './icons'
@@ -22,8 +22,7 @@ export const minutes = (ms: number) => {
  * The item's history as a chat: every event that has resolved, at the moment it
  * did. What the person looking said or did is on the right; everything else on
  * the left, with who it came from as its picture (and, for other people, their
- * name). Cancelled blockers, and who was handed the task or taken off it, are
- * small notes in the middle. A message shows its words and the time; pressing it
+ * name). Cancelled blockers are small notes in the middle. A message shows its words and the time; pressing it
  * shows the rest. A child task, once it has closed, is a bubble like any other,
  * holding its card (while open it is among the blockers instead).
  * While Ctrl+F's find line has a phrase in it, only what shows the phrase is
@@ -33,31 +32,19 @@ export function Chat({ detail, overview }: { detail: ItemDetail; overview: Overv
   const menu = useEventMenu()
   const find = useAtomValue(findAtom)?.trim() ?? ''
   const name = (id: string) => nameOf(overview, id)
-  const said = (a: Assignment) => {
-    const who = name(a.assignee)
-    const text = a.on ? `${name(a.by)} handed it to ${who}` : `${name(a.by)} took it off ${who}`
-    return text.charAt(0).toUpperCase() + text.slice(1)
-  }
-  const done: ({ at: number; event: ItemEvent } | { at: number; assignment: Assignment })[] = [
-    ...detail.events
-      .filter((e) => e.resolved && e.message !== null && (!find || shows(e.type === 'item' ? e.summary : e.message, find)))
-      .map((event) => ({ at: event.resolvedAt!, event })),
-    ...(find ? [] : detail.assignments.map((assignment) => ({ at: assignment.at, assignment }))),
-  ].sort((a, b) => a.at - b.at)
+  const done = detail.events
+    .filter((e) => e.resolved && e.message !== null && (!find || shows(e.type === 'item' ? e.summary : e.message, find)))
+    .sort((a, b) => a.resolvedAt! - b.resolvedAt!)
   return (
     <section className="chat">
       {find && !done.length && <div className="chat-note">Nothing here says “{find}”.</div>}
-      {done.map((d, i) =>
-        'assignment' in d ? (
-          <div key={`a${i}`} className="chat-note" title={time(d.at)}>
-            {said(d.assignment)}
-          </div>
-        ) : d.event.cancelled && d.event.type !== 'item' ? (
-          <div key={d.event.id} className="chat-note" title={time(d.at)} {...menu(d.event.id)}>
-            {d.event.message}
+      {done.map((e) =>
+        e.cancelled && e.type !== 'item' ? (
+          <div key={e.id} className="chat-note" title={time(e.resolvedAt!)} {...menu(e.id)}>
+            {e.message}
           </div>
         ) : (
-          <Message key={d.event.id} event={d.event} find={find} mine={d.event.actor === overview.me.id} who={isPerson(overview, d.event.actor) ? name(d.event.actor) : null} />
+          <Message key={e.id} event={e} find={find} mine={e.actor === overview.me.id} who={isPerson(overview, e.actor) ? name(e.actor) : null} />
         ),
       )}
     </section>
