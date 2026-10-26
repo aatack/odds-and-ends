@@ -24,7 +24,7 @@ type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 /**
  * The actions on an event: an open task can be resolved or skipped; any other
- * open event cancelled (a bot: deleted). Then the person's own actions for its
+ * open event cancelled (a bot is deleted from its settings, not here). Then the person's own actions for its
  * type (`custom`), from the Types page.
  */
 export function eventActions(
@@ -33,17 +33,17 @@ export function eventActions(
 ): EventAction[] {
   const own: EventAction[] = e.resolved
     ? []
-    : e.type === 'item'
+    : e.type === 'task'
       ? [
           { id: 'resolve', label: 'Resolve', important: true, icon: CircleCheck, tone: 'text-success-600 hover:text-success-600', run: () => void ctx.act(() => api().close(e.id)) },
           { id: 'skip', label: 'Skip', important: true, icon: SkipForward, tone: 'text-warning-700 hover:text-warning-700', run: () => ctx.skip(e.id) },
         ]
-      : e.type === 'user'
+      : e.type === 'user' || e.type === 'bot'
         ? []
         : [
             {
               id: 'cancel',
-              label: e.type === 'bot' ? 'Delete' : 'Cancel',
+              label: 'Cancel',
               important: true,
               icon: CircleX,
               tone: 'text-error-600 hover:text-error-600',

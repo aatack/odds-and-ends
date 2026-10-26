@@ -311,3 +311,6 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 .runs { font-size: 12px; border-collapse: collapse; }
 .runs td { padding: 2px 16px 2px 0; }
 .fields-toggle { margin-left: auto; font-size: 12px; font-weight: 400; }
+.bot-last-run { font-size: 12px; margin: 0; }
+.buttons .delete { margin-left: auto; color: var(--danger); }
+.menu-status { margin-left: 12px; float: right; color: var(--muted); font-size: 12px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

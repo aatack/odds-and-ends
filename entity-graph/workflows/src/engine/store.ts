@@ -3,17 +3,20 @@
 // (`EgdbSink`), which is where it lasts. On start the whole store is read back
 // from egdb (`loadStore`). The tests use it with no sink, in memory only.
 //
-// In egdb every row is an entity:
-//   - an event (an item included) is its own id, its `type` the event type, and
-//     its fields as values; it is the `child` link (sorted by seq) of the item it
-//     sits in, or of `@root` when it sits in none;
-//   - a trace row is `trace:<n>` (type `wf.trace`), a run `run:<id>` (`wf.run`),
-//     a setting `setting:<key>` (`wf.setting`), a custom action
-//     `custom-action:<id>` (`wf.custom_action`; deleting one archives it), and
-//     a finished run's transcript `transcript:<runId>` (`wf.transcript`), which
-//     is read only when asked for.
-// egdb keeps every value an entity ever had, so "never change a row" holds
-// there by construction: a change is a new event on top of the old.
+// In egdb every item is an entity, and nothing more is kept than it needs:
+//   - its `type`, and its params as values of their own (a note is `type` and
+//     `text`); a blocker, once resolved, also `resolved_at`, `resolved_by`,
+//     `cancelled` and `data`; a script, the `state` it hands on;
+//   - a `contains` link to it from the item it sits in (or from `@root`),
+//     sorted by its place there; who wrote that link, and when, is who made the
+//     item, and when (egdb keeps both with every write);
+//   - an `assigned_to` link from a task to each person or bot who has it.
+// Every write says who made it (its author) and when, and egdb keeps every value
+// and link an entity ever had: that is the history. There is no trace or run
+// table of the app's own.
+//
+// Settings and the people's custom actions are entities too: `setting:<key>`
+// and `custom-action:<id>`.
 //
 // What only the running app needs (when a blocker is next checked, its backoff
 // step, its last error) is held in memory and not written: after a restart
@@ -33,8 +36,6 @@ export interface EventRow {
   resolved_at: number | null
   resolved_by: string | null
   cancelled: boolean
-  /** Its type's start hook has run (or it has none). */
-  started: boolean
   data: Record<string, unknown> | null
   /** What a script handed on to its next run. */
   memo: unknown
@@ -42,35 +43,11 @@ export interface EventRow {
   check_step: number
   next_check_at: number | null
   last_error: string | null
-}
-
-export interface TraceRow {
-  id: number
-  at: number
-  item_id: string
-  event_id: string | null
-  run_id: string | null
-  actor: string
-  kind: string
-  data: Record<string, unknown> | null
-}
-
-export interface RunRow {
-  id: string
-  /** The bot that ran, or null for a run from before bots were their own items. */
-  agent_id: string | null
-  /** The items it was woken for. */
-  item_ids: string[]
-  /** The events it answered (older runs: the item's bot blockers). */
-  event_ids: string[]
-  started_at: number
-  /** The last trace row as the bot was prompted: the next run is told everything after it. */
-  trace_mark: number
-  ended_at: number | null
-  cost_usd: number | null
-  turns: number | null
-  result: string | null
-  prompt: string
+  /** How many times a script has run since the app started. */
+  runs: number
+  /** When it was added and resolved, as moments (`Store.moment`); 0 for what was loaded. Order, where times tie. */
+  added_n: number
+  resolved_n: number
 }
 
 export interface CustomActionRow {
@@ -86,67 +63,107 @@ export interface CustomActionRow {
   updated_at: number
 }
 
-/** Where the store's changes go to last. */
-export interface Sink {
-  write(ops: Op[]): void
-  /** Settles once everything written so far has landed. */
-  flush(): Promise<void>
-  /** A run's transcript, which is kept out of memory once the run is over. */
-  transcript(runId: string): Promise<string | null>
+/** One link, as the debug view shows it. */
+export interface LinkView {
+  type: string
+  direction: 'outbound' | 'inbound'
+  other: string
+  sort: number | null
+  at: number | null
+  by: string | null
 }
 
-const EVENT_KEYS = ['parent', 'seq', 'params', 'created_by', 'created_at', 'resolved', 'resolved_at', 'resolved_by', 'cancelled', 'started', 'data', 'memo'] as const
-const RUN_KEYS = ['agent', 'items', 'events', 'started_at', 'trace_mark', 'ended_at', 'cost_usd', 'turns', 'result', 'prompt'] as const
+/** An item as egdb holds it: its values and links, and who made it and when. */
+export interface Inspection {
+  id: string
+  values: Record<string, unknown>
+  links: LinkView[]
+  createdAt: number | null
+  createdBy: string | null
+}
+
+/** Where the store's changes go to last: ops, as written by `author` at `at`. */
+export interface Sink {
+  write(ops: Op[], author: string, at: number): void
+  /** Settles once everything written so far has landed. */
+  flush(): Promise<void>
+  /** An entity as egdb holds it. */
+  inspect(id: string): Promise<Inspection>
+}
+
 export const ROOT = '@root'
-/** Characters in each part of a transcript, as egdb keeps it. */
-export const TRANSCRIPT_PART = 256 * 1024
+/** The values an event keeps beside its params. */
+export const STATE_KEYS = new Set(['type', 'resolved_at', 'resolved_by', 'cancelled', 'data', 'state'])
 
 /** One value as egdb takes it: a JSON-ish value as is, anything else (undefined) as null, which clears the key. */
 const v = (x: unknown): Value => (x === undefined ? null : (x as Value))
 const set = (entity: string, key: string, value: unknown): Op => ({ set: { entity, key, value: v(value) } })
+
+/** One `assigned_to` link, as memory holds it. */
+export interface Assigned {
+  at: number
+  by: string
+  /** The moment it was written; 0 for one that was loaded. */
+  n: number
+}
+
+interface Held {
+  ops: Op[]
+  author: string
+  at: number
+}
 
 export class Store {
   readonly events = new Map<string, EventRow>()
   /** Each item's events by seq; the key null holds those that sit in none. */
   private kids = new Map<string | null, EventRow[]>()
   private byType = new Map<string, Set<string>>()
-  readonly trace: TraceRow[] = []
-  private traceByItem = new Map<string, TraceRow[]>()
-  private traceByEvent = new Map<string, TraceRow[]>()
-  readonly runs = new Map<string, RunRow>()
-  /** Transcripts of the runs still going (and, with no sink, of every run). */
-  private transcripts = new Map<string, string>()
   readonly settings = new Map<string, unknown>()
   readonly customActions = new Map<string, CustomActionRow>()
-  /** `assigned_to` links: each item's assignees, with when each was assigned; and the other way, each assignee's items. */
-  private assigneesOf = new Map<string, Map<string, number>>()
+  /** `assigned_to` links: each task's assignees, with when (and at which moment) and by whom; and each assignee's tasks. */
+  private assigneesOf = new Map<string, Map<string, Assigned>>()
   private itemsOf = new Map<string, Set<string>>()
-  /** Ops held back while a `batch` runs, so that they land as one write. */
-  private held: Op[] | null = null
+  /** Writes held back while a `batch` runs, so that they land together. */
+  private held: Held[] | null = null
+  /** The last moment handed out. */
+  private moments = 0
 
-  constructor(private sink: Sink | null = null) {}
+  constructor(
+    private sink: Sink | null = null,
+    /** What the app's own writes (settings) are written as. */
+    private now: () => number = Date.now,
+  ) {}
 
-  private out(ops: Op[]): void {
+  private out(ops: Op[], author: string, at: number): void {
     if (!ops.length) return
-    if (this.held) this.held.push(...ops)
-    else this.sink?.write(ops)
+    if (this.held) this.held.push({ ops, author, at })
+    else this.sink?.write(ops, author, at)
   }
 
-  /** Runs `fn`, writing what it changed to egdb as one batch. */
+  /** Runs `fn`, writing what it changed to egdb together. */
   batch<T>(fn: () => T): T {
     if (this.held) return fn()
     this.held = []
     try {
       return fn()
     } finally {
-      const ops = this.held
+      const held = this.held
       this.held = null
-      this.out(ops)
+      for (const h of held) this.sink?.write(h.ops, h.author, h.at)
     }
   }
 
   flush(): Promise<void> {
     return this.sink?.flush() ?? Promise.resolve()
+  }
+
+  /**
+   * A new moment: a number that only rises, given to each change as memory makes
+   * it, so that what came first is known even within one millisecond. Not
+   * written: what was loaded is moment 0, and is ordered by time.
+   */
+  moment(): number {
+    return ++this.moments
   }
 
   // ---- events ----
@@ -161,23 +178,43 @@ export class Store {
     this.byType.set(row.type, typed)
   }
 
+  /** Adds an event: its type and params as values, and the `contains` link to it, as its maker wrote them. */
   insertEvent(row: EventRow): void {
+    row.added_n = this.moment()
+    if (row.resolved) row.resolved_n = row.added_n
     this.index(row)
     const ops: Op[] = [set(row.id, 'type', row.type)]
-    for (const k of EVENT_KEYS) {
-      const value = eventValue(row, k)
-      if (value !== null && value !== undefined) ops.push(set(row.id, k, value))
-    }
-    ops.push({ link: { source: row.parent_id ?? ROOT, destination: row.id, link_type: 'child', sort: { explicit: row.seq } } })
-    this.out(ops)
+    for (const [k, value] of Object.entries(row.params)) if (value !== undefined && value !== null) ops.push(set(row.id, k, value))
+    ops.push({ link: { source: row.parent_id ?? ROOT, destination: row.id, link_type: 'contains', sort: { explicit: row.seq } } })
+    this.out(ops, row.created_by, row.created_at)
   }
 
-  /** Changes an event. Only the fields that last are written. */
-  updateEvent(id: string, patch: Partial<EventRow>): void {
+  /** Changes an event's params: the values that changed are written (a param gone is cleared), as `by` at `at`. */
+  setParams(id: string, params: Record<string, unknown>, by: string, at: number): void {
     const row = this.events.get(id)
     if (!row) throw new Error(`No event ${id}.`)
-    Object.assign(row, patch)
-    this.out(EVENT_KEYS.filter((k) => fieldOf(k) in patch).map((k) => set(id, k, eventValue(row, k))))
+    const keys = new Set([...Object.keys(row.params), ...Object.keys(params)])
+    const ops = [...keys]
+      .filter((k) => JSON.stringify(row.params[k] ?? null) !== JSON.stringify(params[k] ?? null))
+      .map((k) => set(id, k, params[k] ?? null))
+    row.params = params
+    this.out(ops, by, at)
+  }
+
+  /** Resolves a blocker: it keeps when, by whom, whether it was cancelled, and what it resolved with. */
+  resolveEvent(id: string, data: Record<string, unknown>, by: string, at: number, cancelled: boolean): void {
+    const row = this.events.get(id)
+    if (!row) throw new Error(`No event ${id}.`)
+    Object.assign(row, { resolved: true, resolved_at: at, resolved_by: by, cancelled, data, next_check_at: null, resolved_n: this.moment() })
+    this.out([set(id, 'resolved_at', at), set(id, 'resolved_by', by), ...(cancelled ? [set(id, 'cancelled', true)] : []), set(id, 'data', data)], by, at)
+  }
+
+  /** Keeps what a script hands on to its next run. */
+  setState(id: string, state: unknown, at: number): void {
+    const row = this.events.get(id)
+    if (!row) throw new Error(`No event ${id}.`)
+    row.memo = state ?? null
+    this.out([set(id, 'state', state ?? null)], 'system', at)
   }
 
   /** The events in an item (or, for null, those in none), by seq. */
@@ -193,130 +230,46 @@ export class Store {
     return (this.kids.get(parentId)?.at(-1)?.seq ?? 0) + 1
   }
 
-  // ---- the trace ----
-
-  /** Adds a trace row: the next id, or (importing) its own, which must come after the last. */
-  appendTrace(row: Omit<TraceRow, 'id'> & { id?: number }): TraceRow {
-    const id = row.id ?? (this.trace.at(-1)?.id ?? 0) + 1
-    if (id <= this.lastTraceId()) throw new Error(`Trace row ${id} is not after the last.`)
-    const full = { ...row, id }
-    this.indexTrace(full)
-    const e = `trace:${full.id}`
-    this.out([
-      set(e, 'type', 'wf.trace'), set(e, 'n', full.id), set(e, 'at', full.at), set(e, 'item', full.item_id), set(e, 'event', full.event_id),
-      set(e, 'run', full.run_id), set(e, 'actor', full.actor), set(e, 'kind', full.kind), set(e, 'data', full.data),
-    ].filter((op) => 'set' in op && op.set.value !== null))
-    return full
-  }
-
-  private indexTrace(row: TraceRow): void {
-    this.trace.push(row)
-    const add = (m: Map<string, TraceRow[]>, k: string | null) => {
-      if (!k) return
-      const list = m.get(k) ?? []
-      list.push(row)
-      m.set(k, list)
-    }
-    add(this.traceByItem, row.item_id)
-    add(this.traceByEvent, row.event_id)
-  }
-
-  traceOfItem(itemId: string): TraceRow[] {
-    return this.traceByItem.get(itemId) ?? []
-  }
-
-  traceOfEvent(eventId: string): TraceRow[] {
-    return this.traceByEvent.get(eventId) ?? []
-  }
-
-  lastTraceId(): number {
-    return this.trace.at(-1)?.id ?? 0
-  }
-
-  /** The trace rows after `mark`, oldest first. */
-  traceAfter(mark: number): TraceRow[] {
-    // Ids rise by one, so the rows after `mark` are a tail of the list.
-    let lo = 0
-    let hi = this.trace.length
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1
-      if (this.trace[mid].id <= mark) lo = mid + 1
-      else hi = mid
-    }
-    return this.trace.slice(lo)
-  }
-
-  // ---- runs ----
-
-  insertRun(row: RunRow, transcript = ''): void {
-    this.runs.set(row.id, row)
-    this.transcripts.set(row.id, transcript)
-    const e = `run:${row.id}`
-    this.out([set(e, 'type', 'wf.run'), ...RUN_KEYS.map((k) => set(e, k, runValue(row, k))).filter((op) => 'set' in op && op.set.value !== null)])
-  }
-
-  updateRun(id: string, patch: Partial<RunRow>): void {
-    const row = this.runs.get(id)
-    if (!row) throw new Error(`No run ${id}.`)
-    Object.assign(row, patch)
-    const e = `run:${id}`
-    this.out(RUN_KEYS.filter((k) => runField(k) in patch).map((k) => set(e, k, runValue(row, k))))
-  }
-
-  appendTranscript(runId: string, chunk: string): void {
-    this.transcripts.set(runId, (this.transcripts.get(runId) ?? '') + chunk)
-  }
-
-  /** Writes a finished run's transcript, once, and lets it go from memory. */
-  endTranscript(runId: string): void {
-    const text = this.transcripts.get(runId) ?? ''
-    // An entity of its own, so that loading the runs never reads the transcripts; in parts, since egdb takes a
-    // request of a few megabytes at most.
-    const e = `transcript:${runId}`
-    const parts = Math.max(1, Math.ceil(text.length / TRANSCRIPT_PART))
-    this.out([
-      set(e, 'type', 'wf.transcript'), set(e, 'parts', parts),
-      ...Array.from({ length: parts }, (_, i) => set(e, `part:${i}`, text.slice(i * TRANSCRIPT_PART, (i + 1) * TRANSCRIPT_PART))),
-    ])
-    if (this.sink) this.transcripts.delete(runId)
-  }
-
-  async transcript(runId: string): Promise<string | null> {
-    const held = this.transcripts.get(runId)
-    if (held !== undefined) return held
-    return this.sink ? this.sink.transcript(runId) : null
-  }
-
   // ---- assignment links ----
 
-  /** Who an item is assigned to, the earliest assigned first. */
+  /** Who a task is assigned to, the earliest assigned first. */
   assignees(itemId: string): string[] {
-    return [...(this.assigneesOf.get(itemId) ?? new Map<string, number>())].sort((a, b) => a[1] - b[1]).map(([to]) => to)
+    return [...(this.assigneesOf.get(itemId) ?? new Map<string, Assigned>())].sort((a, b) => a[1].at - b[1].at || a[1].n - b[1].n).map(([to]) => to)
   }
 
-  /** The items assigned to someone: their `assigned_to` links, followed backwards. */
+  /** When, and by whom, someone was given a task, while they have it. */
+  assignment(itemId: string, to: string): Assigned | null {
+    return this.assigneesOf.get(itemId)?.get(to) ?? null
+  }
+
+  /** Every `assigned_to` link there is, as memory holds it. */
+  allAssignments(): { item: string; to: string; given: Assigned }[] {
+    return [...this.assigneesOf].flatMap(([item, m]) => [...m].map(([to, given]) => ({ item, to, given })))
+  }
+
+  /** The tasks assigned to someone: their `assigned_to` links, followed backwards. */
   assignedTo(assignee: string): string[] {
     return [...(this.itemsOf.get(assignee) ?? [])]
   }
 
-  private link(itemId: string, to: string, at: number | null): void {
-    const mine = this.assigneesOf.get(itemId) ?? new Map<string, number>()
+  private link(itemId: string, to: string, given: Assigned | null): void {
+    const mine = this.assigneesOf.get(itemId) ?? new Map<string, Assigned>()
     const theirs = this.itemsOf.get(to) ?? new Set<string>()
-    if (at === null) {
+    if (given === null) {
       mine.delete(to)
       theirs.delete(itemId)
     } else {
-      mine.set(to, at)
+      mine.set(to, given)
       theirs.add(itemId)
     }
     this.assigneesOf.set(itemId, mine)
     this.itemsOf.set(to, theirs)
   }
 
-  /** Assigns an item (an `assigned_to` link from it, sorted by when), or takes it off someone (the link removed). */
-  setAssigned(itemId: string, to: string, on: boolean, at: number): void {
-    this.link(itemId, to, on ? at : null)
-    this.out([{ link: { source: itemId, destination: to, link_type: 'assigned_to', sort: on ? { explicit: at } : 'removed' } }])
+  /** Assigns a task (an `assigned_to` link from it, sorted by when), or takes it off someone (the link removed). */
+  setAssigned(itemId: string, to: string, on: boolean, by: string, at: number): void {
+    this.link(itemId, to, on ? { at, by, n: this.moment() } : null)
+    this.out([{ link: { source: itemId, destination: to, link_type: 'assigned_to', sort: on ? { explicit: at } : 'removed' } }], by, at)
   }
 
   // ---- settings and custom actions ----
@@ -324,7 +277,7 @@ export class Store {
   setSetting(key: string, value: unknown): void {
     this.settings.set(key, value)
     const e = `setting:${key}`
-    this.out([set(e, 'type', 'wf.setting'), set(e, 'key', key), set(e, 'value', JSON.stringify(value))])
+    this.out([set(e, 'type', 'wf.setting'), set(e, 'key', key), set(e, 'value', JSON.stringify(value))], 'system', this.now())
   }
 
   putCustomAction(row: CustomActionRow): void {
@@ -332,40 +285,47 @@ export class Store {
     const e = `custom-action:${row.id}`
     // `type` is egdb's own key, so the event type the action is for is `for_type`.
     const { type, ...rest } = row
-    this.out([set(e, 'type', 'wf.custom_action'), set(e, 'for_type', type), ...Object.entries(rest).map(([k, value]) => set(e, k, value))])
+    this.out([set(e, 'type', 'wf.custom_action'), set(e, 'for_type', type), ...Object.entries(rest).map(([k, value]) => set(e, k, value))], 'system', this.now())
   }
 
   deleteCustomAction(id: string): void {
     if (!this.customActions.delete(id)) return
     // A null type archives the entity in egdb: it is kept, and read no more.
-    this.out([set(`custom-action:${id}`, 'type', null)])
+    this.out([set(`custom-action:${id}`, 'type', null)], 'system', this.now())
+  }
+
+  // ---- inspecting ----
+
+  /** An item as egdb holds it; with no egdb (the tests), as memory has it. */
+  async inspect(id: string): Promise<Inspection> {
+    if (this.sink) return this.sink.inspect(id)
+    const row = this.events.get(id)
+    if (!row) throw new Error(`No item ${id}.`)
+    const values: Record<string, unknown> = { type: row.type, ...row.params }
+    if (row.resolved && row.resolved_at !== row.created_at) Object.assign(values, { resolved_at: row.resolved_at, resolved_by: row.resolved_by, data: row.data })
+    const links: LinkView[] = [
+      { type: 'contains', direction: 'inbound', other: row.parent_id ?? ROOT, sort: row.seq, at: row.created_at, by: row.created_by },
+      ...this.children(id).map((k) => ({ type: 'contains', direction: 'outbound' as const, other: k.id, sort: k.seq, at: k.created_at, by: k.created_by })),
+      ...this.assignees(id).map((to) => ({ type: 'assigned_to', direction: 'outbound' as const, other: to, sort: null, at: this.assignment(id, to)!.at, by: this.assignment(id, to)!.by })),
+    ]
+    return { id, values, links, createdAt: row.created_at, createdBy: row.created_by }
   }
 
   // ---- loading ----
 
-  /** Puts back rows read from egdb, without writing them again. */
+  /** Puts back what was read from egdb, without writing it again. */
   restore(rows: {
     events: EventRow[]
-    trace: TraceRow[]
-    runs: RunRow[]
     settings: [string, unknown][]
     customActions: CustomActionRow[]
-    assigned?: { item: string; to: string; at: number }[]
+    assigned?: { item: string; to: string; at: number; by: string }[]
   }): void {
-    for (const a of rows.assigned ?? []) this.link(a.item, a.to, a.at)
+    for (const a of rows.assigned ?? []) this.link(a.item, a.to, { at: a.at, by: a.by, n: 0 })
     for (const r of [...rows.events].sort((a, b) => a.seq - b.seq)) this.index(r)
-    for (const r of [...rows.trace].sort((a, b) => a.id - b.id)) this.indexTrace(r)
-    for (const r of rows.runs) this.runs.set(r.id, r)
     for (const [k, value] of rows.settings) this.settings.set(k, value)
     for (const r of rows.customActions) this.customActions.set(r.id, r)
   }
 }
-
-const fieldOf = (k: (typeof EVENT_KEYS)[number]): keyof EventRow => (k === 'parent' ? 'parent_id' : k)
-const eventValue = (row: EventRow, k: (typeof EVENT_KEYS)[number]): unknown => row[fieldOf(k)]
-const runField = (k: (typeof RUN_KEYS)[number]): keyof RunRow =>
-  k === 'agent' ? 'agent_id' : k === 'items' ? 'item_ids' : k === 'events' ? 'event_ids' : k
-const runValue = (row: RunRow, k: (typeof RUN_KEYS)[number]): unknown => row[runField(k)]
 
 // ---- reading egdb back ----
 
@@ -374,55 +334,40 @@ const num = (x: unknown): number | null => (typeof x === 'number' ? x : null)
 const str = (x: unknown): string | null => (typeof x === 'string' ? x : null)
 const obj = <T>(x: unknown): T | null => (x && typeof x === 'object' && !Array.isArray(x) ? (x as T) : null)
 
-export function eventFromValues(id: string, type: string, x: Values): EventRow {
+/**
+ * An event from its values and the `contains` link to it (where it sits, its
+ * place, and who made it when). A plain event (`blocking` false) is resolved as
+ * it was made; a blocker is resolved once it has a `resolved_at`.
+ */
+export function eventFromValues(
+  id: string,
+  x: Values,
+  made: { parent: string | null; seq: number; at: number; by: string },
+  blocking: boolean,
+): EventRow {
+  const params = Object.fromEntries(Object.entries(x).filter(([k]) => !STATE_KEYS.has(k)))
+  const resolvedAt = num(x.resolved_at)
   return {
     id,
-    parent_id: str(x.parent),
-    seq: num(x.seq) ?? 0,
-    type,
-    params: obj(x.params) ?? {},
-    created_by: str(x.created_by) ?? 'system',
-    created_at: num(x.created_at) ?? 0,
-    resolved: x.resolved === true,
-    resolved_at: num(x.resolved_at),
-    resolved_by: str(x.resolved_by),
+    parent_id: made.parent,
+    seq: made.seq,
+    type: String(x.type),
+    params,
+    created_by: made.by,
+    created_at: made.at,
+    resolved: !blocking || resolvedAt !== null,
+    resolved_at: blocking ? resolvedAt : made.at,
+    resolved_by: blocking ? str(x.resolved_by) : made.by,
     cancelled: x.cancelled === true,
-    started: x.started === true,
     data: obj(x.data),
-    memo: x.memo ?? null,
+    memo: x.state ?? null,
     check_step: 0,
     // Waits are checked at once after a restart.
     next_check_at: null,
     last_error: null,
-  }
-}
-
-export function traceFromValues(x: Values): TraceRow {
-  return {
-    id: num(x.n) ?? 0,
-    at: num(x.at) ?? 0,
-    item_id: str(x.item) ?? '',
-    event_id: str(x.event),
-    run_id: str(x.run),
-    actor: str(x.actor) ?? 'system',
-    kind: str(x.kind) ?? '',
-    data: obj(x.data),
-  }
-}
-
-export function runFromValues(id: string, x: Values): RunRow {
-  return {
-    id,
-    agent_id: str(x.agent),
-    item_ids: Array.isArray(x.items) ? (x.items as string[]) : [],
-    event_ids: Array.isArray(x.events) ? (x.events as string[]) : [],
-    started_at: num(x.started_at) ?? 0,
-    trace_mark: num(x.trace_mark) ?? 0,
-    ended_at: num(x.ended_at),
-    cost_usd: num(x.cost_usd),
-    turns: num(x.turns),
-    result: str(x.result),
-    prompt: str(x.prompt) ?? '',
+    runs: 0,
+    added_n: 0,
+    resolved_n: 0,
   }
 }
 

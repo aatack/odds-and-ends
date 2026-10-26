@@ -64,6 +64,8 @@ export interface EventContext {
   /** What the event's last check handed on (a script's `state`), and how to hand something on to the next. */
   memo: unknown
   setMemo: (value: unknown) => void
+  /** How many times it has been checked since the app started. */
+  runs: number
   /** Whoever added this event, as an author. */
   author: Author
 }

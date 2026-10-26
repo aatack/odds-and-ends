@@ -66,3 +66,6 @@ export const findAtom = atom<string | null>(null)
 
 /** Bumped to put the cursor in the find line (Ctrl+F, when it is already open). */
 export const findFocusAtom = atom(0)
+
+/** The tasks the person here has had on screen lately, the most recent first: the finder's "Recently viewed". Kept here, not in the store. */
+export const viewedAtom = atomWithStorage<string[]>('workflows.viewed', [], createJSONStorage(() => localStorage), { getOnInit: true })

@@ -21,6 +21,6 @@ for (let i = 0; i < 300 && (runner.busy().length || engine.get(id)!.assignees.in
 }
 await engine.idle()
 for (const e of engine.children(id)) console.log('-', engine.actorName(e.createdBy).padEnd(8), e.type.padEnd(8), (e.message ?? e.summary).slice(0, 160))
-console.log(engine.detail(id)!.runs.map((r) => ({ cost: r.costUsd, turns: r.turns })))
+console.log(engine.agent(bot)!.lastRun)
 mcp.close()
 process.exit(0)

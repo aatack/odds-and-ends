@@ -75,7 +75,7 @@ export class CustomActions {
     if (!event) throw new Error(`No event ${eventId}.`)
     if (event.type !== action.type) throw new Error(`${action.name} is for ${action.type} events, not ${event.type}.`)
     if (!action.source.trim()) throw new Error(`${action.name} has no code yet: write or generate it on the Types page.`)
-    const itemId = event.type === 'item' ? event.id : event.parentId
+    const itemId = event.type === 'task' ? event.id : event.parentId
     const item = itemId ? this.engine.get(itemId) : null
     if (!item) throw new Error('That event is in no item.')
     const context = {
@@ -83,29 +83,19 @@ export class CustomActions {
       event: { id: event.id, type: event.type, summary: event.summary, params: event.params, data: event.data, resolved: event.resolved, parentId: event.parentId },
       now: new Date(this.engine.now()).toISOString(),
     }
-    const started = this.engine.now()
-    let message: string | null = null
-    let events: EventSpec[] = []
-    try {
-      const ran = await runScript(action.source, context, (name, args) =>
-        this.engine.callAction(name, args, { engine: this.engine, author: 'bot', actor: 'script', itemId: item.id, runId }),
-      )
-      const parsed = result.safeParse(ran.value ?? null)
-      if (!parsed.success) throw new Error(`It returned ${JSON.stringify(ran.value)?.slice(0, 200)}, not null, a string, or { message?, events? }.`)
-      const out = parsed.data
-      message = typeof out === 'string' ? out : (out?.message ?? null)
-      events = typeof out === 'object' && out ? ((out.events ?? []) as EventSpec[]) : []
-      // Its events are held to the bots' rules, and checked before anything is added.
-      this.engine.prepare(events, 'bot')
-      if (ran.logs.length) this.engine.mark(item.id, 'custom_action_logs', { eventId, actor, data: { action: action.name, logs: ran.logs } })
-    } catch (e) {
-      this.engine.mark(item.id, 'custom_action_run', { eventId, actor, runId, data: { action: action.name, id, ok: false, error: (e as Error).message, ms: this.engine.now() - started } })
-      throw e
-    }
-    this.engine.mark(item.id, 'custom_action_run', { eventId, actor, runId, data: { action: action.name, id, ok: true, ms: this.engine.now() - started } })
-    // What it said is a note in the item, by the script (the trace has the run itself); what it returned, a bot's.
-    if (message) await this.engine.addEvents(item.id, [{ type: 'note', params: { text: message } }], 'script', 'human', runId)
-    if (events.length) await this.engine.addEvents(item.id, events, actor, 'bot', runId)
+    const ran = await runScript(action.source, context, (name, args) =>
+      this.engine.callAction(name, args, { engine: this.engine, author: 'bot', actor: 'script', itemId: item.id, runId }),
+    )
+    const parsed = result.safeParse(ran.value ?? null)
+    if (!parsed.success) throw new Error(`It returned ${JSON.stringify(ran.value)?.slice(0, 200)}, not null, a string, or { message?, events? }.`)
+    const out = parsed.data
+    const message = typeof out === 'string' ? out : (out?.message ?? null)
+    const events = typeof out === 'object' && out ? ((out.events ?? []) as EventSpec[]) : []
+    // Its events are held to the bots' rules, and checked before anything is added.
+    this.engine.prepare(events, 'bot')
+    // What it said is a note in the task, by the script; what it returned, a bot's (held to the bots' rules).
+    if (message) await this.engine.addEvents(item.id, [{ type: 'note', params: { text: message } }], 'script', 'human')
+    if (events.length) await this.engine.addEvents(item.id, events, actor, 'bot')
     return { message }
   }
 

@@ -145,7 +145,7 @@ export function TypesPage({ catalog, custom, act }: { catalog: Catalog; custom: 
                   className="type-action add"
                   onClick={() => open({ type: t.type, name: '', description: '', notes: '', source: '', icon: 'zap', important: false })}
                 >
-                  + New action
+                  + New
                 </button>
               )}
             </div>

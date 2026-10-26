@@ -1,10 +1,11 @@
 # Events
 
-Everything is an **event**, items included.
+Everything is an **event**, tasks included. Each is an item in egdb (an entity),
+and *item* is the general word for one.
 
-- An **item** is an event that stands for one thing to be done. Other events sit
-  **in** it (their parent), and so can other items: the events form one tree.
-  Its children are its history.
+- A **task** is an event that stands for one thing to be done. Other events sit
+  **in** it (their parent, a `contains` link), and so can other tasks: the events
+  form one tree. Its children are its history.
 - A plain event resolves as it is added: a note.
 - A **blocker** is an event that stays unresolved until something happens: a
   script says it is done, a person approves, a child item closes.
@@ -34,11 +35,11 @@ how it reads (`summary`, `message`), and whether and how it waits.
 
 | field | what it is |
 | --- | --- |
-| `id` | Its id. The trace refers to it. |
+| `id` | Its id: its egdb entity. |
 | `parentId` | The item (or bot) it sits in. Null for an item, a bot or a person that sits in none. |
 | `type` | Its type: one of the table below. |
 | `params` | What it was given, as its type's params schema says. |
-| `createdBy`, `createdAt` | Who added it, and when: a person's username, `bot:<id>` (a bot's run), `bot` (an agent acting as a bot), `system`, `script`, `script:bot`, or `mcp`. |
+| `createdBy`, `createdAt` | Who added it, and when (the author and time of the `contains` link to it): a person's username, `bot:<id>` (a bot's run), `bot` (an agent acting as a bot), `system`, `script`, `script:bot`, or `mcp`. |
 | `resolved`, `resolvedAt`, `resolvedBy` | Whether it has happened, when, and who resolved it. A plain event is resolved by whoever added it, as it is added. |
 | `cancelled` | Resolved without happening. |
 | `data` | What it resolved with, as its type's data says. Null while it is open. |
@@ -46,7 +47,6 @@ how it reads (`summary`, `message`), and whether and how it waits.
 | `summary` | One line saying what it is, from its type's `describe`. This is a blocker's row while it is open, and how prompts name it. |
 | `message` | What it says in the chat once resolved, from its type's `said`, or `Cancelled: …` when cancelled. Null while open, or when it says nothing. |
 | `nextCheckAt`, `lastError` | For blockers the loop checks: when the next check is, and what went wrong on the last one. |
-| `times` | Its timeline from the trace: added, first and last checked, bot run started and finished, resolved. |
 
 Events are ordered within their item by when they were added. Events added
 together keep the order they were given in.
@@ -62,7 +62,7 @@ server's instructions, and the `paradigm` action. Keep it that short.
 **Custom actions:** `src/engine/customActions.ts`. People define them per event
 type on the Types page: each a script. `custom_actions` lists them and
 `run_custom_action` runs one on an event. What a run says is a note in the item,
-by `script`; the trace has the run.
+by `script`.
 
 **Reads:** `get_item` (an item in full), `get_children` (the events in an item;
 with `open`, its blockers), `list_items` (every item), `items_waiting_on`
@@ -96,11 +96,11 @@ the chat input should offer it, add a preset in `presets.ts`.
 
 | type | blocks | params | data |
 | --- | --- | --- | --- |
-| `item` | yes | `title`, `events?` (its first children, added in it), `assignees?` (who has it from the start; links, not kept in its params), `detached?` (sits in no item, wherever it is added), `key?` (so it is added once) | `{ how: closed \| cancelled }` |
+| `task` | yes | `title`, `events?` (its first children, added in it), `assignees?` (who has it from the start; links, not kept in its params), `detached?` (sits in no item, wherever it is added), `key?` (so it is added once) | `{ how: closed \| cancelled }` |
 | `note` | no | `text` | — |
 | `approval` | a person's | `action` (unsafe), `inputs`, `reason?` | `{ ran, inputs, changed, output }` |
 | `script` | yes | `source`, `description?`, `schedule?` (seconds), `timeout_minutes?` | `{ result, message?, runs, logs }` or `{ error, logs }` |
-| `bot` | while the bot lasts (sits in no item) | `name`, `instructions?`, `provider?`, `model?` (opus), `debounce_minutes?` (1), `folder?`, `sessionId` (set by the app) | `{ cancelled }`, once deleted |
+| `bot` | while the bot lasts (sits in no item) | `name`, `instructions?`, `provider?`, `model?` (opus), `debounce_minutes?` (1), `folder?`; the app sets `session_id`, `seen` and `last_run` | `{ cancelled }`, once deleted |
 | `user` | while the person lasts (sits in no item) | `username` (its id), `name?` | `{ cancelled }`, once removed |
 
 - **`script`** waits for anything. Its `source` is
@@ -128,13 +128,12 @@ the chat input should offer it, add a preset in `presets.ts`.
 - **Assignment is a link, not an event**: an `assigned_to` link in egdb from the
   item to the person or bot (`Store.setAssigned`), sorted by when; taking it off
   removes the link. The items someone has are their `assigned_to` links followed
-  backwards (`Engine.assignedTo`). Each change is traced twice, as `assigned` or
-  `unassigned`: in the item (`data.to`) and in the assignee (`data.item`). The
-  chat shows them as notes, and "Handed lately" and `recently_assigned` read them.
+  backwards (`Engine.assignedTo`). egdb keeps the link's history: who assigned
+  it, and when.
 - A new item goes to its `assignees` param if it has one; else, if a person made
   it, to them; else (a bot or a source made it) to nobody: a bot decides who has
-  what it makes. An item's **owner** (`Engine.owner`), whom a bot hands it back to,
-  is the person who last had it, else the person who made it, else its parent's owner.
+  what it makes. A task's **owner** (`Engine.owner`), whom a bot hands it back to,
+  is the person who made it, else its parent's owner.
 - Agents assign with the `assign` action; a bot's update may say `assign` too.
 
 ## Bots
@@ -144,7 +143,7 @@ the chat input should offer it, add a preset in `presets.ts`.
   another entry in `PROVIDERS`, `workers.ts`) and model (opus, unless it says
   otherwise), a debounce (a minute), and a folder and a Claude session of its own,
   which last. Its settings are its params: changing them writes them anew (egdb
-  keeps the old values) and traces `configured`. Notes in it are its **own chat**.
+  keeps the old values) and wake it. Notes in it are its **own chat**.
   Deleting it cancels it, and what it had goes back to each item's owner. People make and edit bots on the Bots page; agents may make
   them too (`add_events`).
 - **It wakes when something happens to it** (`Engine.wake`), its debounce after:
@@ -163,8 +162,8 @@ the chat input should offer it, add a preset in `presets.ts`.
 - **Prompt:** "Please action your assigned items, and give each a new assignee
   to carry it on", then its own chat (when someone wrote in it), then per item the
   events new since the bot was last prompted
-  (its place in the trace is its last run's `trace_mark`), less what its own runs
-  did, or "nothing new"; the item's whole history the first time the bot sees it.
+  (its mark, set as each run starts), less what its own runs did, or "nothing
+  new"; the task's whole history the first time its session sees it (`seen`).
   People's notes are given as they wrote them, after their name; anything else
   in brackets. Items are separated by `---`, each led by its id.
 - **Output:** `{ updates: [{ item, message?, events?, assign?, close? }] }`, as
@@ -176,8 +175,12 @@ the chat input should offer it, add a preset in `presets.ts`.
   it added, in this run or before), or something new came in while it ran. A run
   that fails says so in each item it has, and gives each back to its owner. A bot
   deleted while it runs lands nothing.
-- Runs (`runs`) keep the bot, the items, the prompt and, once over, the whole
-  stream-json transcript.
+- The bot's `last_run` value says how its last run went: when it started and
+  ended, its tasks, cost, turns, error and the bot's own words. egdb keeps the
+  earlier ones as old values. A run cut short (the app stopped) is marked ended
+  when the app starts again, and its tasks go back to their owners.
+- **It is told never to close a task unless someone explicitly asked it to**;
+  finishing the work is not being asked, so it hands the task back instead.
 
 ## The chat input
 
@@ -198,12 +201,17 @@ What a person types goes through a **preset**, which turns the text into events
 
 - The engine holds the store in memory (`store.ts`) and reads it synchronously.
   Every change is also queued as egdb ops and written, in order, to an
-  egdb-server (`egdb.ts`, `EgdbSink`): an entity per event (its `type` the
-  event type, linked as a `child` of its item, or of `@root`), per trace row
-  (`trace:<n>`), run (`run:<id>`), setting and custom action, and per finished
-  transcript (`transcript:<id>`, in parts, read only when asked for); and an
-  `assigned_to` link per assignment. egdb keeps every value an entity had, and
-  every state a link had, so nothing is lost by a change.
+  egdb-server (`egdb.ts`, `EgdbSink`), each write with its author and time: an
+  entity per event, setting and custom action. An event's values are its `type`
+  and its params (a note's are just `type` and `text`), and `resolved_at`,
+  `resolved_by`, `cancelled`, `data` and `state` once they apply. It is linked
+  from its task, or from `@root`, by a `contains` link (sorted by its place), and
+  who made it and when is that link's author and time. Who has a task is an
+  `assigned_to` link per assignee. egdb keeps every value an entity had, and
+  every state a link had, so nothing is lost by a change: there is no trace,
+  run or transcript store of the app's own.
+- A source made by an earlier build (values `params` and `created_by`) is
+  refused: start a new source.
 - When a blocker is next checked, its backoff step and its last error are held
   in memory only: after a restart every wait is checked at once.
 - A source starts empty: nothing is brought in from the older app's store.

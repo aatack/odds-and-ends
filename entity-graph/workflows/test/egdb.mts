@@ -1,6 +1,6 @@
 // The store against a real egdb-server: what the engine writes is read back the
-// same, by a new engine and after the server restarts; a store from before egdb
-// is imported; and the backend runs on its own, answering calls and sending
+// same, by a new engine and after the server restarts, and kept as plain values
+// and links; and the backend runs on its own, answering calls and sending
 // changes. Needs the egdb-server binary (npm run egdb:build): skipped without it.
 
 import assert from 'node:assert/strict'
@@ -11,6 +11,7 @@ import { join, relative } from 'node:path'
 import { EgdbClient } from 'egdb-client'
 import { egdbServerPath, loadStore, startEgdb } from '../src/engine/egdb.ts'
 import { Engine } from '../src/engine/engine.ts'
+import { EVENT_TYPES } from '../src/engine/eventTypes.ts'
 
 const bin = egdbServerPath()
 if (bin === 'egdb-server' || !existsSync(bin)) {
@@ -20,15 +21,17 @@ if (bin === 'egdb-server' || !existsSync(bin)) {
 
 const dir = mkdtempSync(join(tmpdir(), 'workflows-egdb-'))
 const token = 'test-token'
+const blocking = (type: string) => EVENT_TYPES.find((t) => t.type === type)?.blocking ?? true
 const open = async (file: string) => {
   const egdb = await startEgdb(file, token)
   const client = new EgdbClient({ url: egdb.url, token })
-  const { store, sink } = await loadStore(client)
+  const { store, sink } = await loadStore(client, blocking)
   return { egdb, client, store, sink }
 }
 
 // ---- 1. What the engine writes is read back the same ----
-let clock = 1_000_000
+// egdb keeps time moving forward, so the clock starts now.
+let clock = Date.now()
 const now = () => clock
 const file = join(dir, 'round-trip.egdb')
 {
@@ -44,23 +47,21 @@ const file = join(dir, 'round-trip.egdb')
   await engine.addEvents(id, [{ type: 'script', params: { source: 'async () => null', schedule: [600] } }])
   await engine.addEvents(id, [{ type: 'script', params: { source: 'async () => ({ done: false, state: 41 })', schedule: [0] } }])
   await engine.checkDue()
-  const run = engine.startRun(bot, [id], 'the prompt')
-  engine.appendTranscript(run, '{"type":"result"}\n')
+  const run = engine.startRun(bot, [id])
   await engine.endRun(run, { exitCode: 0, structured: { updates: [{ item: id, message: 'Hi.', assign: ['alex'] }] }, costUsd: 0.5 })
-  engine.customActions.save({ type: 'item', name: 'Hello', description: 'd', notes: 'n', source: 'async () => "hi"', icon: 'zap', important: true })
+  engine.customActions.save({ type: 'task', name: 'Hello', description: 'd', notes: 'n', source: 'async () => "hi"', icon: 'zap', important: true })
   engine.settings.set('mcp.port', 1234)
   const done = (await engine.create('Done'))!
   await engine.close(done)
   await store.flush()
-  const before = { overview: engine.overview(), detail: engine.detail(id)!, trace: store.trace.length, custom: engine.customActions.list() }
+  const before = { overview: engine.overview(), detail: engine.detail(id)!, bot: engine.agent(bot)!, custom: engine.customActions.list() }
   egdb.stop()
   await new Promise((r) => setTimeout(r, 300))
 
   // A new server on the same file, and a new engine.
   const again = await open(file)
   const engine2 = new Engine({ store: again.store, now, dataDir: dir })
-  const after = { overview: engine2.overview(), detail: engine2.detail(id)!, trace: again.store.trace.length, custom: engine2.customActions.list() }
-  assert.equal(after.trace, before.trace)
+  const after = { overview: engine2.overview(), detail: engine2.detail(id)!, bot: engine2.agent(bot)!, custom: engine2.customActions.list() }
   assert.deepEqual(after.custom, before.custom)
   assert.deepEqual(after.overview.items.map((i) => [i.id, i.title, i.closed, i.assignees, i.blockers.map((b) => b.type)]),
     before.overview.items.map((i) => [i.id, i.title, i.closed, i.assignees, i.blockers.map((b) => b.type)]))
@@ -70,20 +71,29 @@ const file = join(dir, 'round-trip.egdb')
   // Events keep their params, data, memo and order; waits are checked again at once.
   assert.deepEqual(after.detail.events.map((e) => [e.id, e.type, e.params, e.data, e.resolved, e.createdBy]),
     before.detail.events.map((e) => [e.id, e.type, e.params, e.data, e.resolved, e.createdBy]))
-  assert.ok(after.detail.events.filter((e) => !e.resolved && e.type !== 'item').every((e) => e.nextCheckAt === clock))
+  assert.ok(after.detail.events.filter((e) => !e.resolved && e.type !== 'task').every((e) => e.nextCheckAt === clock))
   assert.equal(again.store.events.get(after.detail.events.filter((e) => e.type === 'script').at(-1)!.id)!.memo, 41)
-  assert.deepEqual(after.detail.runs, before.detail.runs)
-  assert.equal(after.detail.runs[0].costUsd, 0.5)
-  assert.match((await engine2.transcript(run))!, /"type":"result"/, 'a transcript is read from egdb when asked for')
+  // Who made each event, and when, is the link to it.
+  assert.deepEqual(after.detail.events.map((e) => [e.createdAt, e.createdBy]), before.detail.events.map((e) => [e.createdAt, e.createdBy]))
+  assert.deepEqual(after.bot.lastRun, before.bot.lastRun)
+  assert.deepEqual([after.bot.lastRun!.id, after.bot.lastRun!.costUsd], [run, 0.5], 'a bot keeps its last run as a value; egdb keeps the rest')
+  // A note is its text, and nothing else; where it sits, who wrote it and when, is a `contains` link.
+  const note = after.detail.events.find((e) => e.type === 'note')!
+  const seen = await engine2.inspect(note.id)
+  assert.deepEqual(seen.values, { type: 'note', text: note.params.text })
+  assert.deepEqual([seen.createdAt, seen.createdBy], [note.createdAt, note.createdBy])
+  assert.ok(seen.links.some((l) => l.type === 'contains' && l.direction === 'inbound' && l.other === id))
+  // Who has a task is an `assigned_to` link.
+  assert.ok((await engine2.inspect(id)).links.some((l) => l.type === 'assigned_to' && l.other === 'alex'))
   assert.equal(engine2.settings.mcpPort(), 1234)
   // The tree can be walked in egdb itself, from the root.
   const branch = (await again.client.branches())[0].id
-  const kids = await again.client.children(branch, '@root', 'child')
+  const kids = await again.client.children(branch, '@root', 'contains')
   assert.ok(kids.some((l) => l.destination === id) && kids.some((l) => l.destination === bot))
   const removed = engine2.customActions.list()[0].id
   engine2.customActions.remove(removed)
   await again.store.flush()
-  const third = await loadStore(again.client)
+  const third = await loadStore(again.client, blocking)
   assert.equal(third.store.customActions.size, 0, 'a removed custom action is archived in egdb, and not read back')
   again.egdb.stop()
 }

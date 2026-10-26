@@ -40,10 +40,10 @@ const show = (id: string, depth = 0) => {
   console.log(`${'  '.repeat(depth)}# ${it.title} (${it.closed ? it.how : 'open'}) assigned ${it.assignees.map((a) => engine.actorName(a)).join(', ')}`)
   for (const e of engine.children(id)) {
     console.log(`${'  '.repeat(depth)}- ${e.resolved ? 'done' : 'OPEN'} ${engine.actorName(e.createdBy).padEnd(10)} ${e.type.padEnd(8)} ${(e.message ?? e.summary).slice(0, 100)}`)
-    if (e.type === 'item') show(e.id, depth + 1)
+    if (e.type === 'task') show(e.id, depth + 1)
   }
 }
 show(parent)
-console.log(engine.eventDetail(bot)!.runs.map((r) => ({ items: r.itemIds.length, cost: r.costUsd, error: r.result?.slice(0, 200) })))
+console.log(engine.agent(bot)!.lastRun)
 mcp.close()
 process.exit(0)

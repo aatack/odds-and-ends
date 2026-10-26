@@ -10,7 +10,7 @@ type Act = (fn: () => Promise<unknown>) => Promise<void>
 /**
  * Who has the task, in the top right of its view: a pill with their name, or
  * with more than one, their pictures. Clicking it opens the finder as a
- * multiselect: who has it shows first, ticked (pick them to take them off), and
+ * multiselect: who has it shows first, ticked (pick them to remove them), and
  * picking anyone else adds them.
  */
 export function AssigneePill({ item, overview, act }: { item: Item; overview: Overview; act: Act }) {
@@ -46,9 +46,9 @@ export function AssigneePill({ item, overview, act }: { item: Item; overview: Ov
       </button>
       {picking && (
         <ItemPicker
-          title="Who has it"
+          title="Assignees"
           items={[]}
-          recent={overview}
+          recent={{ viewed: [], users: overview.users }}
           sections={[]}
           verb="Assign"
           bots={people.map((p) => ({ ...p, name: p.id === overview.me.id ? `${p.name} (you)` : p.name }))}

@@ -1,5 +1,5 @@
 import { Bot } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Agent } from '../../shared/types'
 import { minutes } from './Chat'
 import { Form } from './forms'
@@ -56,6 +56,12 @@ export function botStatus(b: Agent, now = Date.now()): string {
  */
 export function BotsPage({ bots, act, onOpen }: { bots: Agent[]; act: Act; onOpen: (id: string) => void }) {
   const [draft, setDraft] = useState<BotDraft>(NEW_BOT)
+  // When each wakes counts down by the second.
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
   const add = () =>
     act(async () => {
       const id = await api().saveBot(draft)
@@ -74,7 +80,7 @@ export function BotsPage({ bots, act, onOpen }: { bots: Agent[]; act: Act; onOpe
                 {b.model || 'default model'}
                 {b.debounceMinutes ? ` · waits ${b.debounceMinutes}m` : ''}
               </span>
-              <span className="muted">{botStatus(b)}</span>
+              <span className="muted">{botStatus(b, now)}</span>
             </div>
           ))}
           {!bots.length && <p className="muted">No bots yet.</p>}
@@ -85,7 +91,7 @@ export function BotsPage({ bots, act, onOpen }: { bots: Agent[]; act: Act; onOpe
         <Form schema={NEW_BOT_FORM} value={draft} setValue={(v) => setDraft({ ...draft, ...(v as BotDraft) })} />
         <p className="muted">It runs on opus, waits a minute after anything happens to it, and works in a folder of its own: change those on its page.</p>
         <button data-ui className="primary" disabled={!draft.name.trim()} onClick={() => void add()}>
-          Make it
+          Create
         </button>
       </section>
     </div>

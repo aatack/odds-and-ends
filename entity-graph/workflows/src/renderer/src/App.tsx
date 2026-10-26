@@ -22,7 +22,7 @@ import { EventIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
 import { api, useWorkflows } from './useWorkflows'
-import { findAtom, findFocusAtom, forwardAtom, searchFocusAtom, viewsAtom, type View } from './views'
+import { findAtom, findFocusAtom, forwardAtom, searchFocusAtom, viewedAtom, viewsAtom, type View } from './views'
 import { FindLine } from './FindLine'
 import { AssigneePill } from './Assignees'
 import { BotsPage } from './BotsPage'
@@ -42,6 +42,7 @@ export function Root() {
   // The views on the stack are a source's: another source starts afresh.
   const setViews = useSetAtom(viewsAtom)
   const setForwards = useSetAtom(forwardAtom)
+  const setViewed = useSetAtom(viewedAtom)
   if (!open || !user || !source)
     return (
       <Start
@@ -50,6 +51,7 @@ export function Root() {
           if (s.source !== source) {
             setViews([])
             setForwards([])
+            setViewed([])
           }
           setUser(s.user)
           setSource(s.source)
@@ -169,16 +171,19 @@ function AppMenu({ onSignOut, onCloseSource }: { onSignOut: () => void; onCloseS
     <div className="app-menu" onMouseDown={(e) => e.stopPropagation()}>
       {open && (
         <div className="menu app-menu-list">
-          <div className="menu-note">
-            {w.overview.me.name} on {source} · Bots working {busy}/{w.overview.bots.length}
-          </div>
           <button onClick={() => go({ kind: 'items' })}>Tasks</button>
-          <button onClick={() => go({ kind: 'bots' })}>Bots</button>
+          <button onClick={() => go({ kind: 'bots' })}>
+            Bots <span className="menu-status">{busy} of {w.overview.bots.length} working</span>
+          </button>
           <button onClick={() => go({ kind: 'integrations' })}>Integrations</button>
           <button onClick={() => go({ kind: 'types' })}>Types</button>
           <button onClick={() => go({ kind: 'mcp' })}>MCP</button>
-          <button onClick={onSignOut}>Sign out</button>
-          <button onClick={onCloseSource}>Close source</button>
+          <button onClick={onSignOut}>
+            Sign out <span className="menu-status">{w.overview.me.name}</span>
+          </button>
+          <button onClick={onCloseSource} title={source ?? undefined}>
+            Close source <span className="menu-status">{source}</span>
+          </button>
           {/* For now, while a style is chosen. */}
           <div className="menu-note">Style</div>
           <div className="menu-choices">
@@ -260,7 +265,7 @@ function ItemsMain() {
         <div className="view-body">
           <ItemsList
             items={w.overview.items}
-            recent={w.overview}
+            recent={w.recent}
             sections={TASKS_SECTIONS}
             onEscape={w.views.length > 0 ? w.back : undefined}
             onOpen={openFromItems}
@@ -280,7 +285,7 @@ function ItemsMain() {
   const debug = w.view.kind === 'debug'
   const actions = debug ? null : (
     <>
-      {e.type === 'item' && d.item && !d.item.item.closed && <AssigneePill item={d.item.item} overview={w.overview} act={w.actOn(e.id)} />}
+      {e.type === 'task' && d.item && !d.item.item.closed && <AssigneePill item={d.item.item} overview={w.overview} act={w.actOn(e.id)} />}
       <HeaderActions actions={eventActions(e, { act: w.actOn(e.id), skip: w.skip, custom: w.customActions })} />
     </>
   )
@@ -292,15 +297,15 @@ function ItemsMain() {
         title={`${debug ? 'Debug: ' : ''}${e.summary}`}
         event={e}
         actions={actions}
-        onRename={e.type === 'item' && !debug ? (title) => void w.act(() => api().rename(e.id, title)) : undefined}
+        onRename={e.type === 'task' && !debug ? (title) => void w.act(() => api().rename(e.id, title)) : undefined}
       />
       {w.error && <div className="error">{w.error}</div>}
       <div className={`view-body ${d.item && !debug ? 'fill' : ''}`}>
         {debug ? (
-          <DebugView detail={d} />
+          <DebugView id={e.id} />
         ) : e.type === 'bot' && d.item ? (
           <div className="bot-page">
-            <BotView key={e.id} detail={d} bot={w.overview.bots.find((b) => b.id === e.id) ?? null} act={w.act} />
+            <BotView key={e.id} bot={w.overview.bots.find((b) => b.id === e.id) ?? null} act={w.act} />
             <ItemView key={`${e.id}:chat`} detail={d.item} catalog={w.catalog} act={w.act} onOpen={openEvent} />
           </div>
         ) : d.item ? (
@@ -385,7 +390,7 @@ function ViewHeader(props: {
       >
         <ChevronLeft className="icon" />
       </button>
-      {props.event && props.event.type !== 'item' && <EventIcon event={props.event} />}
+      {props.event && props.event.type !== 'task' && <EventIcon event={props.event} />}
       {editing !== null ? (
         <input
           className="view-title view-title-input"
@@ -438,7 +443,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
   const scroller = useRef<HTMLDivElement>(null)
   // Every time the human sees an item is in its trace.
   useEffect(() => {
-    void api().viewed(item.id)
+    w.markViewed(item.id)
   }, [item.id, item.withYou])
   // New messages arrive at the bottom, as in any chat.
   const resolved = detail.events.filter((e) => e.resolved).length
@@ -469,7 +474,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
             draftKey={item.id}
             catalog={catalog}
             onResolve={() => void act(() => api().close(item.id))}
-            mention={{ items: w.overview.items.filter((i) => i.id !== item.id), recent: w.overview, create: (title) => api().create(title, null) }}
+            mention={{ items: w.overview.items.filter((i) => i.id !== item.id), recent: w.recent, create: (title) => api().create(title, null) }}
             assignees={likeliest(detail, w.overview)}
             onSend={async (preset, text) => {
               let ok = false

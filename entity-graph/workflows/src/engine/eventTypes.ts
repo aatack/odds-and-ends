@@ -2,44 +2,38 @@
 // docs/events.md sets out; keep the two in step.
 
 import { z } from 'zod'
-import type { EventSpec } from '../shared/types'
 import type { EventType } from './integrations'
 import { runScript } from './script'
 
 const timeout = { timeout_minutes: z.number().optional().describe('Resolve as timed_out after this long.') }
 
-export const item: EventType = {
-  type: 'item',
+export const task: EventType = {
+  type: 'task',
   description:
-    'An item: a thing to be done. Its events sit in it, child items included, and it blocks the item it sits in until it closes. ' +
+    'A task: a thing to be done. Its events sit in it, child tasks included, and it blocks the task it sits in until it closes. ' +
     'Add one to split work off: give it its first events (e.g. a note) in `events`, and who has it in `assignees`. With no ' +
-    'assignees, it is its maker\'s if a person made it; otherwise it goes to the person who has (or last had) the item it sits in.',
+    "assignees, it is its maker's if a person made it, and nobody's otherwise.",
   params: {
     title: z.string(),
     events: z
       .array(z.object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional() }))
       .optional()
-      .describe('Events to put in it as it is created. They are added in it, and not kept in its params.'),
-    key: z.string().optional().describe('Identifies it, so a source polling again adds it only once.'),
+      .describe('Events to put in it as it is created. They are added in it, and not kept in its values.'),
+    key: z.string().optional().describe('Identifies it, so that it is added only once.'),
     detached: z
       .boolean()
       .optional()
-      .describe('Put it in no item, rather than the one it is added in: for work unrelated to this item, which should not block it.'),
+      .describe('Put it in no task, rather than the one it is added in: for work unrelated to this task, which should not block it.'),
     assignees: z
       .array(z.string())
       .optional()
-      .describe("Who has it from the start: people by username, bots by name or id. Not kept in its params: they are links."),
+      .describe('Who has it from the start: people by username, bots by name or id. Not kept in its values: they are links.'),
   },
-  data: '{ how: "closed" | "handled_outside" | "cancelled" }',
+  data: '{ how: "closed" | "cancelled" }',
   blocking: true,
   bots: true,
   describe: (p) => String(p.title),
-  said: (p, d) => `${p.title}: ${d.how === 'handled_outside' ? 'done outside the tool' : d.how === 'cancelled' ? 'cancelled' : 'closed'}`,
-  start: async (p, { engine, event, author }) => {
-    const { events, assignees: _given, ...params } = p
-    if (Array.isArray(events) && events.length) engine.add(event.id, engine.prepare(events as EventSpec[], author), event.createdBy)
-    return { params }
-  },
+  said: (p, d) => `${p.title}: ${d.how === 'cancelled' ? 'cancelled' : 'closed'}`,
 }
 
 export const note: EventType = {
@@ -107,8 +101,7 @@ export const script: EventType = {
   describe: (p) => String(p.description ?? 'Script'),
   said: (p, d) => (d.error ? `The script failed: ${d.error}` : String(d.message ?? `${p.description ?? 'Script'}: done`)),
   schedule: (p) => (p.schedule as number[] | undefined) ?? [1, 5, 10, 30, 60],
-  check: async (p, { engine, item, event, author, memo, setMemo }) => {
-    const runs = event.times.checks
+  check: async (p, { engine, item, event, author, memo, setMemo, runs }) => {
     const ctx = {
       item: { id: item.id, title: item.title },
       event: { id: event.id, description: p.description ?? null, createdAt: new Date(event.createdAt).toISOString(), runs },
@@ -146,7 +139,7 @@ export const bot: EventType = {
     model: z.string().optional().describe('The model, as the provider names it (opus, sonnet, haiku or a full id): opus if left out.'),
     debounce_minutes: z.number().min(0).optional().describe('How long to wait after the last thing that happened before it wakes: 1 if left out.'),
     folder: z.string().optional().describe('Its working folder; its own, under the app\'s, if left out.'),
-    sessionId: z.string().optional().describe("Its Claude session, set by the app once it first runs. Don't set it."),
+    session_id: z.string().optional().describe("Its Claude session, set by the app once it first runs. Don't set it."),
   },
   data: '{ cancelled: true }, once deleted',
   blocking: true,
@@ -169,4 +162,4 @@ export const user: EventType = {
   describe: (p) => String(p.name || p.username),
 }
 
-export const EVENT_TYPES: EventType[] = [item, note, approval, script, bot, user]
+export const EVENT_TYPES: EventType[] = [task, note, approval, script, bot, user]

@@ -72,7 +72,7 @@ export function botOutputSchema(types: EventType[]): Record<string, unknown> {
                 'Who has the item from now on: people by username, bots by name; yourself to keep it. Left out, the item goes back ' +
                 'to the person who last had it, unless you added a wait to it: then you keep it.',
             },
-            close: { type: 'boolean', description: 'The item is done.' },
+            close: { type: 'boolean', description: 'Close the task. Only when someone has explicitly asked you to close it.' },
           },
           required: ['item'],
           additionalProperties: false,

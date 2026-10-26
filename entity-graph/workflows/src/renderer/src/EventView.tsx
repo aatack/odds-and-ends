@@ -79,7 +79,7 @@ function Special({ detail }: { detail: EventDetail; onOpen: (id: string) => void
     <section className="card">
       <h2>Script</h2>
       <p className="muted">
-        {e.times.checks} runs{e.params.schedule ? ` · [${(e.params.schedule as number[]).join(', ')}]s` : ''}
+        {e.params.schedule ? `every [${(e.params.schedule as number[]).join(', ')}]s` : 'on the default schedule'}
         {!e.resolved && e.nextCheckAt && ` · next ${new Date(e.nextCheckAt).toLocaleTimeString()}`}
       </p>
       <Markdown text={fenced(String(e.params.source ?? ''), 'js')} />
@@ -112,26 +112,22 @@ function Values({ values }: { values: Record<string, unknown> }) {
   )
 }
 
-/** When each thing happened to an event. */
+/** When an event was added and resolved, and by whom. */
 export function Timeline({ e }: { e: ItemEvent }) {
-  const t = e.times
-  const rows: [string, number | null, string?][] = [
-    ['Added', t.added ?? e.createdAt],
-    ['First checked', t.firstChecked, t.checks > 1 ? `checked ${t.checks} times, last ${time(t.lastChecked!)}` : undefined],
-    ['Bot started', t.firstRunStarted, t.runs > 1 ? `${t.runs} runs` : undefined],
-    ['Bot finished', t.firstRunEnded],
-    ['Resolved', t.resolved ?? e.resolvedAt],
+  const rows: [string, number | null, string | null][] = [
+    ['Added', e.createdAt, e.createdBy],
+    ['Resolved', e.resolved ? e.resolvedAt : null, e.resolvedBy],
   ]
   return (
     <table className="timeline">
       <tbody>
         {rows
           .filter(([, at]) => at !== null)
-          .map(([label, at, extra]) => (
+          .map(([label, at, by]) => (
             <tr key={label}>
               <td className="muted">{label}</td>
               <td>{time(at!)}</td>
-              <td className="muted">{extra}</td>
+              <td className="muted">{by}</td>
             </tr>
           ))}
       </tbody>

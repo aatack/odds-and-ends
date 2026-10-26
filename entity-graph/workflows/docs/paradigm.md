@@ -12,29 +12,32 @@ The text uses ASD-STE100 Simplified Technical English.
 - You push one button. The app shows the next task that needs you.
 - Bots do all the other work.
 
-## Items and events
+## Tasks, events and items
 
-- An **item** is one task.
-- An item has a list of **events**. The list is the history of the item.
-- An item is also an event. Thus an item can contain other items. A bot can
-  split a task into smaller items in this way.
+- A **task** is one thing to do.
+- A task has a list of **events**. The list is the history of the task.
+- A task is also an event. Thus a task can contain other tasks. A bot can
+  split a task into smaller tasks in this way.
+- The database keeps each event as an **item**. "Item" is the general word for a
+  thing in the database. A link of the type `contains` connects a task to each
+  of its events.
 - Some events are complete when they occur. Example: a note.
 - Other events are **blockers**. A blocker waits until a condition occurs.
   Examples: a script finds that CI is complete, or a person approves an action.
 - When a blocker is complete, it records its result.
-- An item can have more than one blocker at the same time.
-- A person or a bot can **have** an item. To give an item to a person or to a bot
-  is to **assign** it. An assignment is a link from the item to the person or bot.
-  It is not an event in the item.
-- If you have an item and it has no blockers, it waits for you.
-- A new item that you make is yours. A new item that a bot makes has nobody,
+- A task can have more than one blocker at the same time.
+- A person or a bot can **have** a task. To give a task to a person or to a bot
+  is to **assign** it. An assignment is a link from the task to the person or bot.
+  It is not an event in the task.
+- If you have a task and it has no blockers, it waits for you.
+- A new task that you make is yours. A new task that a bot makes has nobody,
   unless the bot gives it to somebody.
-- An item that contains an open item is blocked by it. Thus you do the smaller
-  items before the item that contains them.
+- A task that contains an open task is blocked by it. Thus you do the smaller
+  tasks before the task that contains them.
 
 | Blocker | It waits for |
 | --- | --- |
-| Item | An item inside this item to close. |
+| Task | A task inside this task to close. |
 | Approval | You to approve an action. |
 | Script | A condition that a small program checks at set times. |
 
@@ -78,8 +81,10 @@ The text uses ASD-STE100 Simplified Technical English.
   person or bot. It can also keep an item.
 - For each item, a bot can reply, add blockers, give the item to a person or to a
   different bot, or close the item.
-- If the bot does not give an item to somebody, the item goes back to the person
-  who had it last. If the bot added a wait, it keeps the item.
+- If the bot does not give a task to somebody, the task goes back to its owner:
+  the person who made it. If the bot added a wait, it keeps the task.
+- A bot does not close a task unless somebody tells it to close the task.
+- The bot page shows the result of the last run of the bot.
 - When a bot asks you a question, the question must be short and direct.
 
 ## Find work
@@ -107,7 +112,10 @@ The text uses ASD-STE100 Simplified Technical English.
 
 ## History
 
-- The app keeps the full history of each item: every event and its result.
-- The app records the time of each event, and who or what did it.
+- The database (egdb) keeps the full history of each item: every value that it
+  had, and every link. The app does not keep a different history.
+- The database records the time of each change, and who or what did it.
+- The debug page shows an item as the database keeps it: its values, its links,
+  and who made it and when.
 - Bots can read this history. They use it to find which processes are slow, where
   you had to change their work, and where you did work outside the app.

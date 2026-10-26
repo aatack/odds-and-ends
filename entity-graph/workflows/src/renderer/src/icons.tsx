@@ -5,7 +5,7 @@ import type { EventKind, Item, ItemEvent } from '../../shared/types'
 
 /** One icon an event type. */
 export const TYPE_ICON: Record<EventKind, LucideIcon> = {
-  item: Layers,
+  task: Layers,
   note: MessageSquare,
   approval: ShieldCheck,
   script: SquareCode,
@@ -14,7 +14,7 @@ export const TYPE_ICON: Record<EventKind, LucideIcon> = {
 }
 
 export const TYPE_NAME: Record<EventKind, string> = {
-  item: 'Task',
+  task: 'Task',
   note: 'Note',
   approval: 'Approval',
   script: 'Script',
