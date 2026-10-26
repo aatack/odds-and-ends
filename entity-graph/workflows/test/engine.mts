@@ -83,6 +83,8 @@ const dataDir = mkdtempSync(join(tmpdir(), 'workflows-test-'))
 const engine = new Engine({ exec, fetch: fakeFetch, now: () => clock, dataDir })
 engine.settings.set('mcp.port', 0)
 const mcp = await startMcp(engine)
+// The person the tests act as (Engine.me, when nobody is said: the first person).
+await engine.signIn('human')
 
 // ---- bots: each run plays the next behaviour over MCP and returns its output ----
 type Call = (name: string, args?: Record<string, unknown>) => Promise<string>
@@ -159,7 +161,7 @@ const ciThenRoute: EventSpec[] = [
 const id = (await engine.create('Answer the PR'))!
 assert.deepEqual(engine.children(id), [])
 assert.deepEqual(item(id).assignees, ['human'], 'a new item is its maker\'s')
-assert.deepEqual(engine.users().map((u) => u.id), ['human'], 'the first person is made as soon as anything is done')
+assert.deepEqual(engine.users().map((u) => u.id), ['human'])
 assert.ok(item(id).withYou)
 assert.equal(engine.next(), id)
 assert.equal(engine.next([id]), null)
@@ -385,7 +387,7 @@ assert.equal(engine.event(child)!.params.events, undefined, 'its first events ar
 assert.deepEqual(engine.children(child).map((e) => e.type), ['message', 'message'])
 assert.ok(item(parent).closed)
 
-// A bot can also add an item that sits in no item, for unrelated work: it blocks nothing, and it is the human's.
+// A bot can also add an item that sits in no item, for unrelated work: it blocks nothing, and it is nobody's unless the bot says.
 {
   const host = (await engine.create('Host'))!
   behaviours.push(async () => out({ item: host, events: [{ type: 'item', params: { title: 'Unrelated', detached: true } }] }))
@@ -393,7 +395,7 @@ assert.ok(item(parent).closed)
   await settle()
   const loose = engine.overview().items.find((i) => i.title === 'Unrelated')!
   assert.equal(loose.parentId, null)
-  assert.ok(loose.withYou)
+  assert.deepEqual(loose.assignees, [], 'a bot decides who has what it makes')
   assert.ok(item(host).withYou, 'a detached item blocks nothing, and the run handed the host back')
   await engine.close(host)
   await engine.close(loose.id)
@@ -975,6 +977,7 @@ await assert.rejects(engine.attach(idea, collector), /closed/)
 {
   // A run the app stopped during: its items go back to the human, saying so.
   const e2 = new Engine({ now: () => clock, dataDir })
+  await e2.signIn('human')
   const b2 = await e2.saveAgent({ name: 'Cut', instructions: '', provider: 'claude', model: '', debounceMinutes: 0 })
   const t2 = (await e2.create('Cut short'))!
   await e2.assign(t2, b2, true)

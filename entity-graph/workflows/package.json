@@ -10,12 +10,12 @@
     "postinstall": "electron-builder install-app-deps",
     "test": "tsx test/engine.mts && tsx test/egdb.mts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "backend": "electron-vite build && node out/main/backend.js",
-    "egdb:build": "cd ../../egdb && cargo build --release --features server --bin egdb-server"
+    "backend": "node scripts/egdb-server.mjs && electron-vite build && node out/main/backend.js",
+    "egdb:build": "node scripts/egdb-server.mjs --force",
+    "prestart": "node scripts/egdb-server.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
-    "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
@@ -38,7 +38,6 @@
     "@fontsource-variable/newsreader": "^5.3.0",
     "@fontsource-variable/source-serif-4": "^5.3.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "better-sqlite3": "^11.1.2",
     "egdb-client": "file:../../egdb/client",
     "fuzzysort": "^3.1.0",
     "jotai": "^2.10.3",

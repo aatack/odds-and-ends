@@ -1,34 +1,30 @@
-// The backend, as a process of its own: the store (an egdb-server it runs on a
-// file in its data folder), the engine and its loop, the bots, the MCP server,
-// and an HTTP API for the app on a loopback port behind a token.
+// The backend, as a process of its own, on one source: the store (an
+// egdb-server it runs on the source's file), the engine and its loop, the bots,
+// the MCP server, and an HTTP API for the app on a loopback port behind a token.
 //
-//   node out/main/backend.js [--data <folder>] [--port <n>] [--user <name>]      (or: npm run backend)
+//   node out/main/backend.js --file <source>      (or: npm run backend -- --file <source>)
 //
-// The first time, it makes the first person (`--user`, else WORKFLOWS_USER, else
-// the system's username): everyone signs in by a username.
-//
-// It writes where it listens, and its token, to <data>/backend.json, which is
-// how the app finds it; the app starts one of its own when none is running.
-// One backend per data folder: a second refuses to start.
+// The source is made if it is not there (`~/` is the home folder). Beside it,
+// <source>.data/ holds the rest (see info.ts); its backend.json says where the
+// backend listens, and its token, which is how the app finds it. The app starts
+// one of its own when none is running. One backend per source: a second refuses.
 //
 //   GET  /health                 → { ok: true }
 //   POST /rpc/<method>  [args]   → { result } or { error }   (WorkflowsAPI's methods, as x-workflows-user; api.ts)
 //   GET  /events                 → server-sent events: `change` whenever anything changed
 
 import { randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { userInfo } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { Admin } from '../engine/admin'
 import { openStore } from '../engine/egdb'
 import { Engine } from '../engine/engine'
 import { startMcp } from '../engine/mcp'
 import { BotRunner } from '../engine/workers'
 import { handlers, OPEN_METHODS } from './api'
-import { defaultDataDir, runningBackend, type BackendInfo } from './info'
-import { importV4 } from './importV4'
+import { dataDirOf, runningBackend, sourceFile, type BackendInfo } from './info'
 import { keyFileSecrets } from './secrets'
 
 const LOOP_MS = 60_000
@@ -39,41 +35,21 @@ const arg = (name: string): string | undefined => {
 }
 
 async function main(): Promise<void> {
-  const dir = arg('data') ?? defaultDataDir()
+  const typed = arg('file') ?? process.env.WORKFLOWS_FILE
+  if (!typed) throw new Error('Which source? --file <path>, such as --file ~/tasks/tasks.sqlite.')
+  const file = sourceFile(typed)
+  const dir = dataDirOf(file)
+  mkdirSync(dirname(file), { recursive: true })
   mkdirSync(dir, { recursive: true })
   const already = await runningBackend(dir)
-  if (already) throw new Error(`A backend is running on ${dir} already, at ${already.url} (pid ${already.pid}).`)
-  // One backend per data folder: a lock, held from before the store opens until it is let go.
+  if (already) throw new Error(`A backend is running on ${file} already, at ${already.url} (pid ${already.pid}).`)
+  // One backend per source: a lock, held from before the store opens until it is let go.
   const release = lock(join(dir, 'backend.lock'))
 
   const log = (...a: unknown[]) => console.log(new Date().toISOString(), ...a)
-  const firstUser = (arg('user') ?? process.env.WORKFLOWS_USER ?? userInfo().username ?? 'me').toLowerCase().replace(/[^a-z0-9_.-]/g, '') || 'me'
   const token = randomBytes(24).toString('base64url')
-  const { store, sink, egdb } = await openStore(dir, randomBytes(24).toString('base64url'), (m) => log(m))
-
-  // The first time, the store from before egdb comes in; once it has, a setting says so.
-  const v4 = join(dir, 'workflows-v4.db')
-  if (existsSync(v4) && !store.settings.has('import.v4')) {
-    if (store.events.size) {
-      egdb.stop()
-      throw new Error(`An import of ${v4} stopped part way. Remove ${join(dir, 'workflows.egdb')}* and start again to import it afresh.`)
-    }
-    const counts = await importV4(v4, store, Date.now(), firstUser)
-    store.setSetting('import.v4', { at: Date.now(), ...counts })
-    await store.flush()
-    log(`imported ${v4}:`, counts)
-  }
+  const { store, sink, egdb } = await openStore(file, randomBytes(24).toString('base64url'), (m) => log(m))
   const engine = new Engine({ store, secrets: keyFileSecrets(dir), dataDir: dir })
-  // The first person: whoever runs it, unless told otherwise. They sign in by this username.
-  if (!engine.users().length) {
-    await engine.saveUser(firstUser, '', firstUser)
-    store.setSetting('users.default', firstUser)
-    log(`made the first person, ${firstUser}`)
-  }
-  if (!engine.agents().length) {
-    await engine.saveAgent({ name: 'Claude', instructions: '', provider: 'claude', model: '', debounceMinutes: 0 })
-    log('made the first bot, @Claude')
-  }
 
   const mcp = await startMcp(engine)
   const runner = new BotRunner(engine, mcp.runUrl)
@@ -137,7 +113,7 @@ async function main(): Promise<void> {
   const loop = setInterval(tick, LOOP_MS)
   const checks = setInterval(() => void engine.checkDue().catch((e) => log('checks:', e)), 1000)
   runner.start()
-  log(`backend for ${dir} listening at ${info.url}; egdb at ${egdb.url}`)
+  log(`backend for ${file} listening at ${info.url}; egdb at ${egdb.url}`)
   // Started by the app: it hears where it is at once.
   process.send?.({ ready: info })
 

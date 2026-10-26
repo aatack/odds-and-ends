@@ -26,5 +26,10 @@ export function nameOf(o: Pick<Overview, 'users' | 'bots' | 'me'>, id: string): 
 /** Whether someone is a person (not a bot). */
 export const isPerson = (o: Pick<Overview, 'users'>, id: string): boolean => o.users.some((u) => u.id === id)
 
+const kept = createJSONStorage<string | null>(() => localStorage)
+
 /** Who is signed in to this window: their username, kept in local storage. */
-export const userAtom = atomWithStorage<string | null>('workflows.user', null, createJSONStorage(() => localStorage), { getOnInit: true })
+export const userAtom = atomWithStorage<string | null>('workflows.user', null, kept, { getOnInit: true })
+
+/** Which source is open in this window: its path as typed, kept in local storage. */
+export const sourceAtom = atomWithStorage<string | null>('workflows.source', null, kept, { getOnInit: true })

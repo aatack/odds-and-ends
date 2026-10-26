@@ -15,6 +15,9 @@ const setUser = (u: string | null) => {
   user = u
 }
 
-const api = { ...calls, setUser, onBack: on('back'), onForward: on('forward'), onChange: on('changed') } as unknown as WorkflowsAPI
+const openSource = (path: string) => ipcRenderer.invoke('openSource', path)
+const closeSource = () => ipcRenderer.invoke('closeSource')
+
+const api = { ...calls, setUser, openSource, closeSource, onBack: on('back'), onForward: on('forward'), onChange: on('changed') } as unknown as WorkflowsAPI
 
 contextBridge.exposeInMainWorld('workflows', api)

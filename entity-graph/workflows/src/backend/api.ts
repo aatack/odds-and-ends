@@ -9,19 +9,13 @@ import type { Admin } from '../engine/admin'
 import type { Engine } from '../engine/engine'
 import { catalog } from '../engine/mcp'
 
-type Methods = Omit<WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser'>
+type Methods = Omit<WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser' | 'openSource' | 'closeSource'>
 type Handlers = { [K in keyof Methods]: (...args: Parameters<Methods[K]>) => unknown }
 
-/** For the app alone: secrets saved with Electron's safeStorage, which only the app can read, handed back to be kept anew. */
-export interface LegacySecrets {
-  legacySecrets: () => string[]
-  replaceLegacySecrets: (plain: Record<string, string>) => void
-}
-
 /** Calls that need nobody signed in: signing in, and seeing who there is to sign in as. */
-export const OPEN_METHODS = new Set(['signIn', 'users', 'saveUser', 'catalog', 'legacySecrets', 'replaceLegacySecrets'])
+export const OPEN_METHODS = new Set(['signIn', 'users', 'saveUser', 'catalog'])
 
-export function handlers(engine: Engine, admin: Admin, me: string): Handlers & LegacySecrets {
+export function handlers(engine: Engine, admin: Admin, me: string): Handlers {
   return {
     overview: () => engine.overview(me),
     detail: (id) => engine.detail(id, me),
@@ -66,7 +60,5 @@ export function handlers(engine: Engine, admin: Admin, me: string): Handlers & L
     mcp: () => admin.mcpView(),
     regenerateMcpToken: () => admin.regenerateMcpToken(),
     setMcpPort: (port) => admin.setMcpPort(port),
-    legacySecrets: () => engine.settings.legacySecrets(),
-    replaceLegacySecrets: (plain) => engine.settings.replaceLegacySecrets(plain),
   }
 }

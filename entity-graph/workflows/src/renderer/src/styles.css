@@ -303,3 +303,4 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 .sign-in { height: 100vh; display: flex; justify-content: center; padding-top: 20vh; background: var(--panel); }
 .sign-in .page { width: 420px; }
 .bubble-who { display: block; font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+.start-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }

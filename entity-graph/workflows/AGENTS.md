@@ -11,7 +11,7 @@ building anything for it.
 Do not start the app (`npm start`, `npm run dev`, `electron-vite`, `electron`)
 unless the user asks. It opens the user's store and starts bots that spend real money.
 The same goes for the backend on its own (`npm run backend`, `out/main/backend.js`)
-on the user's data folder; on a temporary `--data` folder it is safe.
+on the user's source; on a temporary `--file` it is safe.
 Check work with `npm run typecheck`, `npm run build` and `npm test` (`test/egdb.mts`
 needs the egdb-server binary: `npm run egdb:build`; it is skipped without it).
 `npx tsx test/smoke-claude.mts` does real `claude -p` runs, headless, against
@@ -19,17 +19,27 @@ an in-memory store; it costs runs, so use it only when the bot wiring changes.
 
 ## Running it (for the user)
 
-Build egdb-server once (`npm run egdb:build`; or set `EGDB_SERVER` to a binary).
-`npm start` builds once and runs the built app, watching nothing: bots can edit
-and build the code (in their worktrees) without restarting the app under
-themselves. `npm run dev` hot-reloads the window.
+`npm install`, then `npm start`: it builds egdb-server the first time (with
+rustup's cargo where there is one; `npm run egdb:build` builds it again; or set
+`EGDB_SERVER` to a binary), builds the app once and runs it, watching nothing:
+bots can edit and build the code (in their worktrees) without restarting the app
+under themselves. `npm run dev` hot-reloads the window.
 
-The backend is a process of its own. The app uses one already running on its
-data folder (`backend.json` there says where), or one at
-`WORKFLOWS_BACKEND_URL` (with `WORKFLOWS_BACKEND_TOKEN`); otherwise it starts
-one, with Electron's own Node, and stops it as it quits. `npm run backend` runs
-one on its own (`--data <folder>`, `--port <n>`, `--user <name>` for the first person), which lasts while apps come
-and go: then restarting the app restarts no bot.
+The app asks first for a **username** and a **source**: a file path (`~/` is the
+home folder), made if it is not there, which is the store (egdb's SQLite). Both
+are kept in local storage, so the next start opens them at once; the menu signs
+out of either. Beside the source, `<source>.data/` holds the rest: the secrets'
+key, the bots' folders, and the running backend's `backend.json` and lock.
+
+The backend is a process of its own, on one source. The app uses one already
+running on the source (its `backend.json` says where); otherwise it starts one,
+with Electron's own Node, and stops it as it leaves the source or quits.
+`npm run backend -- --file <source>` runs one on its own (and `--port <n>`),
+which lasts while apps come and go: then restarting the app restarts no bot.
+
+The app's Electron profile is `workflows-egdb` (not the older app's `workflows`),
+and its MCP endpoint's port is 47391 by default (the older app's is 47390), so
+the two run side by side; it reads nothing of the older app's.
 
 ## The paradigm
 
@@ -110,12 +120,12 @@ src/engine     everything but the window; plain Node, so the tests drive it head
   slack.ts       Slack via the user tokens: actions, the slack event
   integrations.ts  the interfaces: Action, EventType, Source
 src/backend    the backend as a process: an HTTP API (api.ts) and a change stream for the app,
-               the v4 import, secrets under a key of its own
+               secrets under a key of its own; info.ts, where a source keeps its things
 src/main       Electron main: finds or starts the backend, passes the renderer's calls to it
 src/preload    the renderer's API (WorkflowsAPI in src/shared/types.ts)
 src/renderer   the React UI
 test/          engine.mts: the whole engine with a fake gh and fake bots;
-               egdb.mts: the store against a real egdb-server, the import, the backend process
+               egdb.mts: the store against a real egdb-server, the backend process on a fresh source
 ```
 
 ## UI
@@ -198,9 +208,12 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   day); it adds them, edits them (a new directive with `replaces`, which cancels the old: events are never changed, so the age starts again), and deletes them (cancels: the row is kept). They are not put in bots' prompts: `SYSTEM` tells
   bots to read the latest with the `directives` action when they need context, and to add one (a `directive` event, through `add_events`) when
   the human's feedback should outlast the item.
-- **Signing in** (`SignIn`, before anything else): a username, typed or picked, or a new person. The
-  username is kept in local storage (`userAtom`), and the preload sends it with every call; Sign out is in
-  the menu. Everything is as that person sees it: `withYou`, Next, the recent lists.
+- **Starting** (`Start`, before anything else): a username and a source, both needed. Opening the source
+  starts (or finds) its backend; signing in makes the person if there is nobody by that username yet. Both
+  are kept in local storage (`userAtom`, `sourceAtom`), and the preload sends the username with every call.
+  The menu has Sign out and Close source (which stops the source's backend, if the app started it).
+  Everything is as that person sees it: `withYou`, Next, the recent lists. Another source starts with an
+  empty stack of views.
 - **Bots** (`BotsPage`, in the menu) lists the bots, with what each has and whether it is working or when it
   wakes, and makes new ones (a name is enough). A bot opens as an `event` view (`BotView`): its settings as a
   `Form` (saving adds a `configure` event with what changed, which wakes it), what it has, Wake now, Delete
@@ -240,25 +253,23 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   - Anything new that changes, starts, ends or is seen goes through
     `Engine.mark`. Bots read the trace back (`recent_items`, `get_item`,
     `run_transcript`) to find what to improve.
-- **The store is egdb.** The backend runs an egdb-server of its own on
-  `<data>/workflows.egdb` (loopback, a token). The engine keeps the store in memory
+- **The store is egdb.** The backend runs an egdb-server of its own on the
+  source's file (loopback, a token). The engine keeps the store in memory
   (`store.ts`) and reads it synchronously; every change is also queued as egdb ops
-  and written in order (`EgdbSink`). The tests use the store with no sink. On the
-  first start, `workflows-v4.db` (the SQLite store from before) is imported;
-  `better-sqlite3` is kept for that alone.
+  and written in order (`EgdbSink`). The tests use the store with no sink.
 - **The backend is one process.** It holds the store, the loop (every minute),
   the bots' runner and the MCP server; the app is a window onto it, over HTTP
   (`/rpc/<method>` and `/events`, loopback, a token). Every call the renderer
   makes is a WorkflowsAPI method listed in `API_METHODS` and answered in
-  `src/backend/api.ts`, as the person in `x-workflows-user` (only signing in works without one). Secrets are encrypted under `<data>/secret.key`;
-  Slack tokens an older app saved with safeStorage are handed back by the app.
+  `src/backend/api.ts`, as the person in `x-workflows-user` (only signing in works without one). Secrets are encrypted under
+  `<source>.data/secret.key`.
 - **One toolset for every agent.** Both MCP endpoints serve every action but the
   unsafe ones, and every call goes through `Engine.callAction`. Tools about an
   item take its id, so an agent may act on any item, its own included. Agents
   are author `bot`, so the bots' rules (which event types, Slack approvals) apply.
   The endpoints are `run` (a bot's run, at `/mcp/<runId>` on a free port; it
   ties calls to the run and its bot, traced in the bot, and records what it adds as `bot:<id>`) and `operator` (any other agent, at
-  `/mcp` on port 47390 by default, with a bearer token). Both bind to loopback only.
+  `/mcp` on port 47391 by default, with a bearer token). Both bind to loopback only.
 - **Bots run in auto mode, each in its own folder.** A Claude bot runs
   `claude -p --permission-mode auto` with the usual tools and the workflows MCP
   server, the output schema as `--json-schema`, its model, its own session

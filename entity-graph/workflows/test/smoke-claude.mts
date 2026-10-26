@@ -12,6 +12,7 @@ import { BotRunner } from '../src/engine/workers.ts'
 const engine = new Engine({ dataDir: mkdtempSync(join(tmpdir(), 'workflows-smoke-')) })
 engine.settings.set('mcp.port', 0)
 const mcp = await startMcp(engine)
+await engine.signIn('human')
 const runner = new BotRunner(engine, mcp.runUrl)
 const bot = await engine.saveAgent({ name: 'Smoke', instructions: 'Keep your messages to one line.', provider: 'claude', model: 'sonnet', debounceMinutes: 0 })
 const parent = (await engine.create('Smoke test'))!

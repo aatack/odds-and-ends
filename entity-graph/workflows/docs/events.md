@@ -164,19 +164,18 @@ the chat input should offer it, add a preset in `presets.ts`.
 
 - A **person** is a `user` event, in no item, whose id is their **username**.
   People sign in to the app by typing it (no password: the app is local); every
-  call the app makes says who it is from (`x-workflows-user`). The backend makes
-  the first person on its first start (`--user`, else `WORKFLOWS_USER`, else the
-  system's username); the engine, given nobody, makes `human`.
+  call the app makes says who it is from (`x-workflows-user`). Signing in as a
+  username nobody has yet makes that person.
 - **Assignment is a link, not an event**: an `assigned_to` link in egdb from the
   item to the person or bot (`Store.setAssigned`), sorted by when; taking it off
   removes the link. The items someone has are their `assigned_to` links followed
   backwards (`Engine.assignedTo`). Each change is traced twice, as `assigned` or
   `unassigned`: in the item (`data.to`) and in the assignee (`data.item`). The
   chat shows them as notes, and "Handed lately" and `recently_assigned` read them.
-- A new item goes to its `assignees` param if it has one; else to the person who
-  made it; else (a bot or a source made it) to the **owner** of the item it sits
-  in, or to the default person. An item's owner (`Engine.owner`) is the person who
-  last had it, else the person who made it, else its parent's owner.
+- A new item goes to its `assignees` param if it has one; else, if a person made
+  it, to them; else (a bot or a source made it) to nobody: a bot decides who has
+  what it makes. An item's **owner** (`Engine.owner`), whom a bot hands it back to,
+  is the person who last had it, else the person who made it, else its parent's owner.
 - Agents assign with the `assign` action; a bot's update may say `assign` too.
 
 ## Bots
@@ -246,10 +245,7 @@ What a person types goes through a **preset**, which turns the text into events
   every state a link had, so nothing is lost by a change.
 - When a blocker is next checked, its backoff step and its last error are held
   in memory only: after a restart every wait is checked at once.
-- The first time the backend starts on a data folder, the store from before egdb
-  (`workflows-v4.db`, SQLite) is imported (`src/backend/importV4.ts`). The one
-  person there was ("human") becomes the first person, and has every open item.
-  Bot blockers still open are cancelled, as bots are their own items now.
+- A source starts empty: nothing is brought in from the older app's store.
 
 ## Who may do what
 

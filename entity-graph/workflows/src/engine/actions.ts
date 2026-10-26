@@ -118,7 +118,7 @@ export const itemActions: Action[] = [
       'the one least recently touched. Null when nothing needs them.',
     input: { username: z.string().optional() },
     run: async (a, { engine }) => {
-      const who = a.username ? engine.signIn(String(a.username)).id : engine.me()
+      const who = a.username ? engine.resolveAssignee(String(a.username)) : engine.me()
       const id = engine.next([], who)
       const item = id ? engine.get(id, who) : null
       return item ? { id: item.id, title: item.title, since: new Date(item.since).toISOString() } : null
@@ -179,7 +179,7 @@ export const itemActions: Action[] = [
     input: { hours: z.number().default(24), username: z.string().optional() },
     run: async (a, { engine }) =>
       engine
-        .stale(Number(a.hours), a.username ? engine.signIn(String(a.username)).id : engine.me())
+        .stale(Number(a.hours), a.username ? engine.resolveAssignee(String(a.username)) : engine.me())
         .map((i) => ({ id: i.id, title: i.title, assignees: i.assignees, since: new Date(i.since).toISOString() })),
   },
   {

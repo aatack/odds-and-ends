@@ -1,8 +1,6 @@
 // Secrets for a backend that runs without Electron, and so without its
 // safeStorage: AES-256-GCM, under a key kept in a file of its own beside the
-// store (readable by its owner only). Values from before the backend ran on its
-// own, encrypted with safeStorage (`safe:`), can only be read by the app, which
-// hands them back decrypted (see `legacySecrets` in api.ts).
+// store (readable by its owner only).
 
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -22,7 +20,6 @@ export function keyFileSecrets(dir: string): Secrets {
       return `aes:${Buffer.concat([iv, cipher.getAuthTag(), body]).toString('base64')}`
     },
     decrypt: (stored) => {
-      if (stored.startsWith('safe:')) throw new Error('This secret was saved by an older app: open the app once, or add it again.')
       if (!stored.startsWith('aes:')) return plainSecrets.decrypt(stored)
       const raw = Buffer.from(stored.slice(4), 'base64')
       const decipher = createDecipheriv('aes-256-gcm', key, raw.subarray(0, 12))

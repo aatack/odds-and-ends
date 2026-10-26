@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Catalog, ItemDetail, ItemEvent, Overview } from '../../shared/types'
 import { Blockers } from './Blockers'
-import { useAtom, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ChevronLeft, Menu, MoreHorizontal } from 'lucide-react'
 import { attachingAtom, eventActions, snoozingAtom, type EventAction } from './eventActions'
 import { Dropdown, DropdownItem } from './components/ui/Dropdown'
@@ -24,7 +24,7 @@ import { EventIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
 import { api, useWorkflows } from './useWorkflows'
-import { findAtom, findFocusAtom, searchFocusAtom, type View } from './views'
+import { findAtom, findFocusAtom, forwardAtom, searchFocusAtom, viewsAtom, type View } from './views'
 import { FindLine } from './FindLine'
 import { Gather } from './Gather'
 import { Assignees } from './Assignees'
@@ -33,25 +33,47 @@ import { BotsPage } from './BotsPage'
 import { BotView } from './BotView'
 import { StalePage } from './StalePage'
 import { Bot, User as UserIcon } from 'lucide-react'
-import { everyone, nameOf, userAtom, type Someone } from './people'
-import { SignIn } from './SignIn'
+import { everyone, nameOf, sourceAtom, userAtom, type Someone } from './people'
+import { Start } from './Start'
 
-/** Sign in first; then the app, as whoever signed in. */
+/**
+ * First who you are and which source to open (`Start`, which opens them at once when both are kept); then the app,
+ * as that person, on that source.
+ */
 export function Root() {
   const [user, setUser] = useAtom(userAtom)
-  if (!user)
+  const [source, setSource] = useAtom(sourceAtom)
+  const [open, setOpen] = useState<string | null>(null)
+  // The views on the stack are a source's: another source starts afresh.
+  const setViews = useSetAtom(viewsAtom)
+  const setForwards = useSetAtom(forwardAtom)
+  if (!open || !user || !source)
     return (
-      <SignIn
-        onSignIn={(u) => {
-          api().setUser(u.id)
-          setUser(u.id)
+      <Start
+        kept={{ user: user ?? undefined, source: source ?? undefined }}
+        onBegin={(s) => {
+          if (s.source !== source) {
+            setViews([])
+            setForwards([])
+          }
+          setUser(s.user)
+          setSource(s.source)
+          setOpen(`${s.source}\n${s.user}`)
         }}
       />
     )
-  return <App key={user} />
+  return <App key={open} onSignOut={() => {
+    api().setUser(null)
+    setUser(null)
+    setOpen(null)
+  }} onCloseSource={() => {
+    void api().closeSource()
+    setSource(null)
+    setOpen(null)
+  }} />
 }
 
-export function App() {
+export function App({ onSignOut, onCloseSource }: { onSignOut: () => void; onCloseSource: () => void }) {
   const items = useWorkflows()
   // Ctrl+W and Alt+Left (sent by the main process) take the top view off the stack; Alt+Right puts it back.
   const { back, forward, open } = items
@@ -124,7 +146,7 @@ export function App() {
               <ItemsMain />
             </div>
           </main>
-          <AppMenu />
+          <AppMenu onSignOut={onSignOut} onCloseSource={onCloseSource} />
         </div>
         <EventMenu actOn={items.actOn} skip={items.skip} custom={items.customActions} />
         <AttachPicker />
@@ -182,13 +204,13 @@ function Snoozer() {
 const ItemsContext = createContext<ReturnType<typeof useWorkflows> | null>(null)
 const useItems = () => useContext(ItemsContext)!
 
-/** The button in the bottom left: the bots, and the way to the other pages. */
-function AppMenu() {
+/** The button in the bottom left: who is signed in, on which source (to leave either), the bots, and the way to the other pages. */
+function AppMenu({ onSignOut, onCloseSource }: { onSignOut: () => void; onCloseSource: () => void }) {
   const w = useItems()
   const [open, setOpen] = useState(false)
   const busy = w.overview.bots.filter((b) => b.runId).length
   const [look, setLook] = useAtom(appearanceAtom)
-  const setUser = useSetAtom(userAtom)
+  const source = useAtomValue(sourceAtom)
   useEffect(() => applyAppearance(look), [look])
   useEffect(() => {
     if (!open) return
@@ -205,7 +227,7 @@ function AppMenu() {
       {open && (
         <div className="menu app-menu-list">
           <div className="menu-note">
-            Signed in as {w.overview.me.name} · Bots working {busy}/{w.overview.bots.length}
+            {w.overview.me.name} on {source} · Bots working {busy}/{w.overview.bots.length}
           </div>
           <button onClick={() => go({ kind: 'items' })}>Tasks</button>
           <button onClick={() => go({ kind: 'bots' })}>Bots</button>
@@ -215,15 +237,8 @@ function AppMenu() {
           <button onClick={() => go({ kind: 'integrations' })}>Integrations</button>
           <button onClick={() => go({ kind: 'types' })}>Types</button>
           <button onClick={() => go({ kind: 'mcp' })}>MCP</button>
-          <button
-            onClick={() => {
-              setOpen(false)
-              api().setUser(null)
-              setUser(null)
-            }}
-          >
-            Sign out
-          </button>
+          <button onClick={onSignOut}>Sign out</button>
+          <button onClick={onCloseSource}>Close source</button>
           <button
             onClick={() => {
               setOpen(false)

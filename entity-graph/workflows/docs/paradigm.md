@@ -27,7 +27,8 @@ The text uses ASD-STE100 Simplified Technical English.
   is to **assign** it. An assignment is a link from the item to the person or bot.
   It is not an event in the item.
 - If you have an item and it has no blockers, it waits for you.
-- A new item that you make is yours.
+- A new item that you make is yours. A new item that a bot makes has nobody,
+  unless the bot gives it to somebody.
 - An item that contains an open item is blocked by it. Thus you do the smaller
   items before the item that contains them.
 
@@ -95,8 +96,13 @@ Example:
 
 ## Find work
 
-- When you start the app, you sign in with your username. There is no password,
-  because the app is on your computer. People are items too.
+- When you start the app, you write your username and a source. There is no
+  password, because the app is on your computer. People are items too. If
+  nobody has the username, the app makes a new person.
+- A source is a file that holds the items. Write its path, for example
+  `~/tasks/tasks.sqlite`. If the file does not exist, the app makes it.
+- The app keeps the username and the source for the next start. Use the menu to
+  sign out, or to close the source.
 - Next shows the items that you have, and that nothing blocks. The item that
   nobody touched for the longest time comes first.
 - "Handed lately" shows which items went to you, to a different person, or to a
