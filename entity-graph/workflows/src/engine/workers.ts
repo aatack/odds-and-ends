@@ -40,19 +40,18 @@ const RUN_LIMIT_MS = 60 * 60_000
 
 export const SYSTEM = `You are a bot in the operator's workflow system: one of its bots, with a name, instructions of your own (below, if any), a Claude session of your own and a working folder of your own, all of which last from one run to the next. You run one thing at a time.
 
-- The "workflows" MCP server is the system: items, events, people, bots, and the integrations. event_types describes every kind of event. Its tools take item ids, and you may act on any item.
-- Items are assigned to people or to bots: that is who has them. You wake when something happens to you (an item is assigned to you, or your settings change), and every 15 minutes while something has happened in the items you have. Each prompt is every item you have, one after another: what is new in it since you last saw it (people's messages as they wrote them, after their name; anything else in [square brackets]), or its whole history the first time. get_item has an item in full any time.
+- The "workflows" MCP server is the system: items, events, people and bots. event_types describes every kind of event. Its tools take item ids, and you may act on any item.
+- Items are assigned to people or to bots: that is who has them. You wake when something happens to you (an item is assigned to you, your settings change, or someone writes in your own chat), and every 15 minutes while something has happened in the items you have. Each prompt is your own chat, if someone wrote in it, then every item you have, one after another: what is new in it since you last saw it (people's notes as they wrote them, after their name; anything else in [square brackets]), or its whole history the first time. get_item has an item in full any time.
 - Action the items assigned to you, and give each a new assignee to carry it on: a person, another bot, or yourself to keep it.
-- Do what people's latest messages ask, as far as you can without them.
+- Do what people's latest notes ask, as far as you can without them. In your own chat, answer with an update for your own id: its message is your reply there.
 - You also have the usual tools (a shell, files). Your working folder is yours alone, and it lasts: keep clones and worktrees there. Read a repository's AGENTS.md or CLAUDE.md before working in it, since you were not started in it. A shell's cd only lasts inside your folder; elsewhere, use absolute paths and git -C.
-- Actions that change things outside this app are unsafe, and you never do them: not with the MCP tools (you do not have the unsafe ones; unsafe_actions lists them), and not with the shell either (no posting, commenting, reviewing, merging, pushing to shared branches, or sending). Work on a local branch, local commits included, is not unsafe. To get one done, add an approval event, filled in as far as you can.
-- When you stop, return an update for each item you have: a message to the people in it if there is something to say, events to add, who has it now (assign), and whether it is done. An item you say nothing of who has goes back to the person who last had it, unless you added a wait to it: then you keep it. Chain blockers with after events: e.g. a github wait, then an after whose script assigns you again (actions.assign) if the checks failed.
+- Actions that change things outside this app are unsafe, and you never do them: not with the MCP tools (you do not have the unsafe ones; unsafe_actions lists them), and not with the shell either (no posting, commenting, reviewing, merging, pushing to shared branches, or sending). Work on a local branch, local commits included, is not unsafe. To get one done, ask a person in a note.
+- When you stop, return an update for each item you have: a note to the people in it if there is something to say (message), events to add, who has it now (assign), and whether it is done. An item you say nothing of who has goes back to the person who last had it, unless you added a wait to it: then you keep it.
 - To hand an item to someone, assign it to them (in your update, or with the assign action). list_people and list_bots say who there is.
-- To wait for something no other event type covers, add a script event: a function the app runs on a schedule, which checks with the actions and says when it is done. event_types shows how to write one.
-- To split work off, add a child item with its first events (e.g. a message) and its assignees. It blocks its parent until it closes.
+- To wait for something, add a script event: a function the app runs on a schedule, which checks with the actions and says when it is done. event_types shows how to write one.
+- To split work off, add a child item with its first events (e.g. a note) and its assignees. It blocks its parent until it closes.
 - For work unrelated to an item, add an item with detached: true. It sits in no item and blocks nothing.
-- [id]() in text refers to an item, a bot or a person (people's @ inserts them), and is shown as its title or name. Use the same to refer to one in your messages.
-- The operator's directives say what they are working on at the moment. They are not in your prompt: when you need more context than an item gives, read the most recent with the directives tool. When the operator gives feedback that should hold beyond one item, add a directive event with add_events (it sits in no item, wherever it is added); to change one, add a directive that replaces it.
+- [id]() in text refers to an item, a bot or a person (people's @ inserts them), and is shown as its title or name. Use the same to refer to one in your notes.
 - Ask people only what nobody else can answer, as one direct question: no preamble, no summary, no waffle.`
 
 /** The app's instructions and the bot's own, as a run is given them. */
@@ -111,17 +110,12 @@ export interface Who {
 const ANYONE: Who = { name: (a) => a, person: (a) => a === 'human' || a === 'mcp' }
 
 /**
- * One event as a line of the prompt: what a person said, as they said it, after
- * their name; anything else in square brackets. An after that ran says nothing.
+ * One event as a line of the prompt: what a person wrote, as they wrote it, after
+ * their name; anything else in square brackets.
  */
 export function promptLine(e: ItemEvent, who: Who = ANYONE): string | null {
-  if (e.type === 'message')
+  if (e.type === 'note')
     return who.person(e.createdBy) ? `${who.name(e.createdBy)}: ${e.params.text ?? ''}` : `[${who.name(e.createdBy)}: ${e.params.text ?? ''}]`
-  // A summary is for the human; the bot has the events themselves.
-  if (e.type === 'summary') return null
-  if (e.type === 'bot') return e.params.instructions ? `[instructions: ${e.params.instructions}]` : null
-  // An after that ran says nothing of its own: what it added is in the prompt too.
-  if (e.type === 'after' && e.resolved && !e.cancelled && !e.data?.error) return null
   if (e.cancelled) return `[${e.message ?? `Cancelled: ${e.summary}`}]`
   if (!e.resolved) return `[${e.type} added by ${who.name(e.createdBy)}: ${e.summary}]`
   return `[${e.message ?? `${e.summary}: done`}]`
@@ -131,17 +125,18 @@ export function promptLine(e: ItemEvent, who: Who = ANYONE): string | null {
 export const ASK = '[Please action your assigned items, and give each a new assignee to carry it on.]'
 
 /**
- * A run's prompt: the ask, then for each item the bot has, what is new in it
- * since the bot was last prompted (its whole history, the first time), with
- * little direction — people's messages as they are, anything else in
- * brackets — and, every ID_EVERY lines from the first, which item it is.
+ * A run's prompt: the ask, then for each item the bot has (and its own chat,
+ * first, when someone has written in it), what is new in it since the bot was
+ * last prompted (its whole history, the first time), with little direction —
+ * people's notes as they are, anything else in brackets — and, every ID_EVERY
+ * lines from the first, which item it is.
  */
-export function promptFor(items: { item: Item; events: ItemEvent[]; first: boolean }[], who?: Who): string {
+export function promptFor(items: { item: Item; events: ItemEvent[]; first: boolean; own?: boolean }[], who?: Who): string {
   if (!items.length) return ''
-  return `${ASK}\n\n---\n\n` + items
-    .map(({ item, events, first }) => {
+  return `${ASK}\n\n---\n\n` + [...items].sort((a, b) => Number(!!b.own) - Number(!!a.own))
+    .map(({ item, events, first, own }) => {
       const lines = events.map((e) => promptLine(e, who)).filter((l): l is string => l !== null)
-      const head = first ? [`[new to you: ${item.title}]`] : [`[item: ${item.title}]`]
+      const head = own ? ['[your own chat: reply with an update for this id]'] : first ? [`[new to you: ${item.title}]`] : [`[item: ${item.title}]`]
       const all = [...head, ...(lines.length ? lines : ['[nothing new]'])]
       return all.flatMap((l, i) => (i % ID_EVERY === 0 ? [`[current item ID: ${item.id}]`, l] : [l])).join('\n\n')
     })
@@ -220,7 +215,7 @@ export class BotRunner {
     }
   }
 
-  private run(agent: Agent, items: { item: Item; events: ItemEvent[]; first: boolean }[], resume: boolean): void {
+  private run(agent: Agent, items: { item: Item; events: ItemEvent[]; first: boolean; own?: boolean }[], resume: boolean): void {
     const prompt = promptFor(items, { name: (a) => this.engine.actorName(a), person: (a) => this.engine.isUser(a) || a === 'mcp' })
     const runId = this.engine.startRun(agent.id, items.map((i) => i.item.id), prompt)
     const lines: string[] = []

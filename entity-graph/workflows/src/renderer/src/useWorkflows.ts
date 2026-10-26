@@ -19,8 +19,6 @@ export function useWorkflows() {
     bots: [],
     users: [],
     viewed: [],
-    linked: [],
-    attachments: [],
     recentAssignees: [],
   })
   const [views, setViews] = useAtom(viewsAtom)

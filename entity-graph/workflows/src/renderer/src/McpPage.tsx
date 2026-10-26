@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Catalog, McpView, ObjectSchema } from '../../shared/types'
+import type { Catalog, McpView } from '../../shared/types'
 import { Copyable } from './Copy'
 import { Form } from './forms'
 import { fenced, Markdown } from './components/ui/Markdown'
+import { Params } from './Params'
 import { api } from './useWorkflows'
 
 export function McpPage() {
@@ -82,43 +83,6 @@ export function McpPage() {
         ))}
       </section>
 
-      <section className="card">
-        <h2>
-          Events <span className="count">{catalog.events.length}</span>
-        </h2>
-        {catalog.events.map((h) => (
-          <div key={h.type} className="tool">
-            <div className="row-inline">
-              <code className="tool-name">{h.type}</code>
-              {h.blocking && <span className="badge">blocker</span>}
-            </div>
-            <Markdown className="tool-description" text={h.description} />
-            <Params schema={h.params} />
-            <code className="muted">→ {h.data}</code>
-          </div>
-        ))}
-      </section>
     </div>
-  )
-}
-
-function Params({ schema }: { schema: ObjectSchema }) {
-  const params = Object.entries(schema.properties ?? {})
-  if (!params.length) return null
-  return (
-    <table className="params">
-      <tbody>
-        {params.map(([name, p]) => (
-          <tr key={name}>
-            <td>
-              <code>{name}</code>
-              {schema.required?.includes(name) ? '' : '?'}
-            </td>
-            <td className="muted">{p.enum ? p.enum.join(' | ') : Array.isArray(p.type) ? p.type.join(' | ') : (p.type ?? 'any')}</td>
-            <td>{p.description && <Markdown text={p.description} />}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   )
 }

@@ -32,7 +32,7 @@ export function eventSchema(types: EventType[]): Record<string, unknown> {
         properties: {
           type: { type: 'string', enum: [t.type] },
           params: objectSchema(t.params),
-          ref: { type: 'string', description: 'A name for this event, so an after in the same list can wait for it.' },
+          ref: { type: 'string', description: 'A name for this event, so another in the same list can refer to it.' },
         },
         required: ['type', 'params'],
         additionalProperties: false,

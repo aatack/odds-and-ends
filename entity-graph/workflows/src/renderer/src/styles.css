@@ -293,14 +293,21 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 .choices { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .choices button[data-ui] { padding: 3px 9px; font-size: 12px; }
 .choices button[data-ui].chosen { background: var(--accent); color: var(--accent-ink); }
-.assignees { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
-.assignee { display: inline-flex; align-items: center; gap: 4px; padding: 1px 4px 1px 8px; border-radius: 10px; background: var(--bg); color: var(--ink); }
-.assignee .icon { width: 13px; height: 13px; }
-.assignee button { display: inline-flex; background: none; border: none; padding: 1px; color: var(--muted); }
-.assignee.working { background: color-mix(in srgb, var(--accent) 15%, transparent); }
-.assignees .add-assignee { background: none; border: none; color: var(--muted); padding: 1px 4px; display: inline-flex; }
+.assignee-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 12px; font-size: 12px; }
+.assignee-pill .icon { width: 13px; height: 13px; }
+.assignee-avatar { display: inline-flex; width: 20px; height: 20px; border-radius: 10px; align-items: center; justify-content: center; background: var(--panel); margin-left: -4px; }
+.assignee-avatar:first-child { margin-left: 0; }
+.assignee-avatar.working { background: color-mix(in srgb, var(--accent) 20%, var(--panel)); }
 .bot-ref { display: inline-flex; align-items: center; gap: 3px; }
 .sign-in { height: 100vh; display: flex; justify-content: center; padding-top: 20vh; background: var(--panel); }
 .sign-in .page { width: 420px; }
 .bubble-who { display: block; font-size: 11px; color: var(--muted); margin-bottom: 2px; }
 .start-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.bot-page { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.bot-top { display: flex; flex-direction: column; gap: 8px; padding: 0 32px; }
+.bot-line { display: flex; align-items: center; gap: 12px; font-size: 13px; }
+.bot-line .link { display: inline-flex; align-items: center; gap: 4px; }
+.bot-line .icon { width: 14px; height: 14px; }
+.runs { font-size: 12px; border-collapse: collapse; }
+.runs td { padding: 2px 16px 2px 0; }
+.fields-toggle { margin-left: auto; font-size: 12px; font-weight: 400; }

@@ -2,17 +2,15 @@
 // long form of what an event is.
 
 /**
- * Everything is an event, items included. Every event but an item sits in an
- * item (its parent), and an item may sit in another. Some events resolve as
- * they are added (a message, an action run); the rest are **blockers**, which
- * stay open until something happens (a bot replies, CI finishes, an approval is
- * given, a child item closes).
+ * Everything is an event, items included. Every event but an item, a bot or a
+ * person sits in an item or a bot (its parent), and an item may sit in another.
+ * Some events resolve as they are added (a note); the rest are **blockers**,
+ * which stay open until something happens (a script says it is done, an approval
+ * is given, a child item closes).
  */
-export type EventKind =
-  | 'item' | 'message' | 'attachment' | 'priority' | 'rename' | 'summary' | 'action' | 'approval' | 'bot' | 'github' | 'slack'
-  | 'after' | 'script' | 'directive' | 'snooze' | 'agent' | 'configure' | 'user'
+export type EventKind = 'item' | 'note' | 'approval' | 'script' | 'bot' | 'user'
 
-/** An event as it is added. `ref` names it, so an `after` added alongside can point at it. */
+/** An event as it is added. `ref` names it, so another added alongside can point at it. */
 export interface EventSpec {
   type: EventKind
   params: Record<string, unknown>
@@ -90,14 +88,8 @@ export interface Item {
   assignees: string[]
   /** Open, assigned to the person looking, and blocked by nothing but people's own approvals: it is their turn. */
   withYou: boolean
-  /** Marked as a priority (by its latest priority event): Next takes it before the rest. */
-  priority: boolean
-  /** When it wakes, while a snooze blocks it (the latest, if several). */
-  snoozedUntil: number | null
   /** The bot running on it now, if one is. Held in memory only. */
   bot: string | null
-  /** Its own Claude session, from before bots were their own items: kept for the record. */
-  sessionId: string | null
   /** Since when it has been as it is: the last child added or resolved. */
   since: number
   createdAt: number
@@ -133,8 +125,6 @@ export interface BotRun {
 
 export interface ItemDetail {
   item: Item
-  /** Who it was assigned to, and taken off, and when: notes in the chat. */
-  assignments: Assignment[]
   /** The item it sits in, if any. */
   parent: { id: string; title: string } | null
   /** Its children, oldest first: every event in it, child items included. */
@@ -151,23 +141,23 @@ export interface EventDetail {
   runs: BotRun[]
   /** Every trace row about it. */
   trace: TraceEntry[]
-  /** For an item event: the item in full. */
+  /** For an item, or a bot (whose own chat it is): it in full. */
   item: ItemDetail | null
 }
 
 /**
- * A bot: an `agent` event, in no item, configured by the `configure` events in it. It is assigned items (and may
- * watch others), and wakes when anything happens in them. One bot runs one thing at a time, in one Claude session
- * of its own, in a folder of its own.
+ * A bot: a `bot` event, in no item, its settings in its params, and its own chat in it. It is assigned items, and
+ * wakes when something happens to it. One bot runs one thing at a time, in one Claude session of its own, in a
+ * folder of its own.
  */
 export interface Agent {
   id: string
   name: string
-  /** What it is for and how it works: given with every run, after the app's own instructions. */
+  /** What it is for and how it works: its system prompt, after the app's own instructions. */
   instructions: string
   /** Who runs it: 'claude' (Claude Code) for now. */
   provider: string
-  /** The model, as the provider names it (for Claude: opus, sonnet, haiku or a full id); empty for the default. */
+  /** The model, as the provider names it (for Claude: opus, sonnet, haiku or a full id). */
   model: string
   /** How long it waits after the last thing that happened in its items before it wakes, so a burst of work goes in one run. */
   debounceMinutes: number
@@ -192,16 +182,6 @@ export interface User {
   name: string
 }
 
-/** An assignment or its end, as the trace has it (the "handed lately" lists, and the notes in a chat). */
-export interface Assignment {
-  itemId: string
-  title: string
-  assignee: string
-  on: boolean
-  by: string
-  at: number
-}
-
 export interface Overview {
   /** Who is looking: `withYou` and the recent lists are theirs. */
   me: User
@@ -210,20 +190,8 @@ export interface Overview {
   users: User[]
   /** Items the human had on screen in the last week, the most recent first. */
   viewed: string[]
-  /** Items the human attached something to, or attached, in the last week, the most recent first. */
-  linked: string[]
-  /** What the human attached in the last week, and to which item (`target`), the most recent first: a new item suggests them. */
-  attachments: RecentAttachment[]
   /** Whoever (people and bots) the person looking assigned things to, the most recent first: the chat input offers them first. */
   recentAssignees: string[]
-}
-
-/** One of the human's recent attachments: the event attached (`event`, its `title`, the `item` to read it in) and where it went. */
-export interface RecentAttachment {
-  event: string
-  title: string
-  item: string
-  target: string
 }
 
 /** A JSON Schema for a flat object, as far as the forms read it. */
@@ -284,9 +252,7 @@ export interface Check {
 }
 
 export interface IntegrationsView {
-  github: Check
   claude: Check & { bots: number }
-  slack: { id: string; name: string; team: string; user: string; tokenHint: string }[]
 }
 
 export interface McpView {
@@ -318,10 +284,6 @@ export interface WorkflowsAPI {
   /** Ends a blocker without it happening. */
   cancel: (eventId: string) => Promise<void>
   close: (id: string) => Promise<void>
-  /** Attaches any event to an item (`targetId`), as an attachment event in it. */
-  attach: (eventId: string, targetId: string) => Promise<void>
-  /** Asks a cheap model where an item stands: a summary event in it, answered in its chat. */
-  summarise: (id: string) => Promise<void>
   customActions: () => Promise<CustomAction[]>
   saveCustomAction: (a: Omit<CustomAction, 'id'> & { id?: string }) => Promise<CustomAction>
   removeCustomAction: (id: string) => Promise<void>
@@ -329,24 +291,9 @@ export interface WorkflowsAPI {
   runCustomAction: (id: string, eventId: string) => Promise<void>
   /** Writes a custom action's code from its description and notes, with a model. */
   generateCustomAction: (a: { type: string; name: string; description: string; notes: string; source?: string }) => Promise<string>
-  /** The directives that hold (not yet deleted), the newest first. */
-  directives: () => Promise<ItemEvent[]>
-  /** A new directive: markdown on what the human is working on. */
-  addDirective: (text: string) => Promise<string>
-  /** Edits a directive: a new one replaces it, and its age starts again. */
-  editDirective: (id: string, text: string) => Promise<string>
-  /** Marks an item as a priority, or not. */
-  setPriority: (id: string, on: boolean) => Promise<void>
-  /** Renames an item. */
+  /** Renames an item: its title changes (egdb keeps the old one). */
   rename: (id: string, title: string) => Promise<void>
-  /** Puts an item away until a time (ms), with a snooze event in it. */
-  snooze: (id: string, until: number) => Promise<void>
-  /** Wakes a snoozed item now: its snoozes are cancelled. */
-  unsnooze: (id: string) => Promise<void>
-  /** The human did it outside the tool. Recorded, so reviews can find it. */
-  handledOutside: (id: string) => Promise<void>
-  pollSources: () => Promise<void>
-  /** Makes a bot (no id) or changes one: a configure event in it. */
+  /** Makes a bot (no id) or changes its settings. */
   saveBot: (bot: { id?: string; name: string; instructions: string; provider: string; model: string; debounceMinutes: number; folder?: string }) => Promise<string>
   /** Deletes a bot: what it was assigned goes back to the human. */
   deleteBot: (id: string) => Promise<void>
@@ -364,15 +311,9 @@ export interface WorkflowsAPI {
   openSource: (path: string) => Promise<string>
   /** Lets go of the source open now (its backend stops, if the app started it). */
   closeSource: () => Promise<void>
-  /** Assign events, the newest first: for one assignee (or anyone), in the last `days`. */
-  assignments: (assignee: string | null, days: number) => Promise<Assignment[]>
-  /** The open items the human owns or had assigned to them, untouched for `hours`, the longest untouched first. */
-  stale: (hours: number) => Promise<Item[]>
   /** Wakes a bot now, whatever its debounce says. */
   wakeBot: (id: string) => Promise<void>
   integrations: () => Promise<IntegrationsView>
-  addSlack: (token: string) => Promise<void>
-  removeSlack: (id: string) => Promise<void>
   mcp: () => Promise<McpView>
   regenerateMcpToken: () => Promise<void>
   setMcpPort: (port: number) => Promise<void>
@@ -403,10 +344,9 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'eventDetail', 'catalog', 'next', 'viewed', 'skipped', 'create', 'send', 'approve', 'cancel', 'close', 'attach',
-  'summarise', 'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'directives',
-  'addDirective', 'editDirective', 'setPriority', 'rename', 'snooze', 'unsnooze', 'handledOutside', 'pollSources', 'saveBot', 'deleteBot',
-  'assign', 'assignments', 'stale', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'mcp', 'regenerateMcpToken', 'setMcpPort',
+  'overview', 'detail', 'eventDetail', 'catalog', 'next', 'viewed', 'skipped', 'create', 'send', 'approve', 'cancel', 'close',
+  'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
+  'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'mcp', 'regenerateMcpToken', 'setMcpPort',
 ] as const satisfies readonly ApiMethod[]
 
 type ApiMethod = Exclude<keyof WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser' | 'openSource' | 'closeSource'>

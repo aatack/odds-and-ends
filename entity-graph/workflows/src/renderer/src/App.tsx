@@ -3,10 +3,9 @@ import type { Catalog, ItemDetail, ItemEvent, Overview } from '../../shared/type
 import { Blockers } from './Blockers'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ChevronLeft, Menu, MoreHorizontal } from 'lucide-react'
-import { attachingAtom, eventActions, snoozingAtom, type EventAction } from './eventActions'
+import { eventActions, type EventAction } from './eventActions'
 import { Dropdown, DropdownItem } from './components/ui/Dropdown'
 import { TypesPage } from './TypesPage'
-import { DirectivesPage } from './DirectivesPage'
 import { IconButton } from './components/ui/IconButton'
 import { appearanceAtom, applyAppearance, MODES, SERIFS, THEMES } from './appearance'
 import { Chat } from './Chat'
@@ -14,7 +13,6 @@ import { DebugView } from './DebugView'
 import { EventMenu } from './EventMenu'
 import { EventView } from './EventView'
 import { ItemPicker } from './ItemPicker'
-import { SnoozePicker } from './SnoozePicker'
 import { ItemsList } from './ItemsList'
 import { TASKS_SECTIONS } from './sections'
 import { Composer } from './Composer'
@@ -26,12 +24,9 @@ import { McpPage } from './McpPage'
 import { api, useWorkflows } from './useWorkflows'
 import { findAtom, findFocusAtom, forwardAtom, searchFocusAtom, viewsAtom, type View } from './views'
 import { FindLine } from './FindLine'
-import { Gather } from './Gather'
-import { Assignees } from './Assignees'
-import { AssignedPage } from './AssignedPage'
+import { AssigneePill } from './Assignees'
 import { BotsPage } from './BotsPage'
 import { BotView } from './BotView'
-import { StalePage } from './StalePage'
 import { Bot, User as UserIcon } from 'lucide-react'
 import { everyone, nameOf, sourceAtom, userAtom, type Someone } from './people'
 import { Start } from './Start'
@@ -102,12 +97,6 @@ export function App({ onSignOut, onCloseSource }: { onSignOut: () => void; onClo
       } else if (key === 'd') {
         e.preventDefault()
         void next()
-      } else if (key === 's') {
-        // Ctrl+S: a summary of where the task on screen stands, as an event in its chat.
-        e.preventDefault()
-        if (!canFind || !items.selected) return
-        const id = items.selected
-        void act(() => api().summarise(id))
       } else if (key === 'f') {
         e.preventDefault()
         if (showingItems) focusSearch((n) => n + 1)
@@ -149,54 +138,8 @@ export function App({ onSignOut, onCloseSource }: { onSignOut: () => void; onClo
           <AppMenu onSignOut={onSignOut} onCloseSource={onCloseSource} />
         </div>
         <EventMenu actOn={items.actOn} skip={items.skip} custom={items.customActions} />
-        <AttachPicker />
-        <Snoozer />
       </ItemRefContext.Provider>
     </ItemsContext.Provider>
-  )
-}
-
-/** Attaching an event to a task, from its header or its right-click menu: pick the task, or make one. */
-function AttachPicker() {
-  const w = useItems()
-  const [attaching, setAttaching] = useAtom(attachingAtom)
-  if (!attaching) return null
-  const { id, summary } = attaching
-  return (
-    <ItemPicker
-      title={`Attach “${summary}” to a task`}
-      // Any open item but this one can take it.
-      items={w.overview.items.filter((i) => !i.closed && i.id !== id)}
-      recent={w.overview}
-      verb="Attach"
-      onPick={(target) => {
-        setAttaching(null)
-        void w.act(() => api().attach(id, target))
-      }}
-      onCreate={(title) => {
-        setAttaching(null)
-        void w.act(async () => api().attach(id, await api().create(title, null)))
-      }}
-      onClose={() => setAttaching(null)}
-    />
-  )
-}
-
-/** Snoozing a task, from its header or its right-click menu: pick when it wakes. */
-function Snoozer() {
-  const w = useItems()
-  const [snoozing, setSnoozing] = useAtom(snoozingAtom)
-  if (!snoozing) return null
-  const { id, summary } = snoozing
-  return (
-    <SnoozePicker
-      title={`Snooze “${summary}”`}
-      onPick={(until) => {
-        setSnoozing(null)
-        void w.actOn(id)(() => api().snooze(id, until))
-      }}
-      onClose={() => setSnoozing(null)}
-    />
   )
 }
 
@@ -231,22 +174,11 @@ function AppMenu({ onSignOut, onCloseSource }: { onSignOut: () => void; onCloseS
           </div>
           <button onClick={() => go({ kind: 'items' })}>Tasks</button>
           <button onClick={() => go({ kind: 'bots' })}>Bots</button>
-          <button onClick={() => go({ kind: 'assigned', to: w.overview.me.id })}>Handed lately</button>
-          <button onClick={() => go({ kind: 'stale' })}>Lost track</button>
-          <button onClick={() => go({ kind: 'directives' })}>Directives</button>
           <button onClick={() => go({ kind: 'integrations' })}>Integrations</button>
           <button onClick={() => go({ kind: 'types' })}>Types</button>
           <button onClick={() => go({ kind: 'mcp' })}>MCP</button>
           <button onClick={onSignOut}>Sign out</button>
           <button onClick={onCloseSource}>Close source</button>
-          <button
-            onClick={() => {
-              setOpen(false)
-              void w.act(() => api().pollSources())
-            }}
-          >
-            Poll sources
-          </button>
           {/* For now, while a style is chosen. */}
           <div className="menu-note">Style</div>
           <div className="menu-choices">
@@ -289,8 +221,6 @@ function AppMenu({ onSignOut, onCloseSource }: { onSignOut: () => void; onCloseS
  */
 function ItemsMain() {
   const w = useItems()
-  const setAttaching = useSetAtom(attachingAtom)
-  const setSnoozing = useSetAtom(snoozingAtom)
   const openEvent = (id: string) => w.open({ kind: 'event', id })
   // What the items view opens takes its place, so Back goes to where you were before it.
   const openFromItems = (id: string) => w.open({ kind: 'event', id }, { replace: w.view?.kind === 'items' })
@@ -303,16 +233,6 @@ function ItemsMain() {
         <div className="view-body">{w.catalog && <TypesPage catalog={w.catalog} custom={w.customActions} act={w.act} />}</div>
       </div>
     )
-  if (w.view?.kind === 'directives')
-    return (
-      <div className="view">
-        <ViewHeader canGoBack onBack={w.back} title="Directives" />
-        {w.error && <div className="error">{w.error}</div>}
-        <div className="view-body">
-          <DirectivesPage act={w.act} onOpen={openEvent} />
-        </div>
-      </div>
-    )
   if (w.view?.kind === 'bots')
     return (
       <div className="view">
@@ -320,26 +240,6 @@ function ItemsMain() {
         {w.error && <div className="error">{w.error}</div>}
         <div className="view-body">
           <BotsPage bots={w.overview.bots} act={w.act} onOpen={openEvent} />
-        </div>
-      </div>
-    )
-  if (w.view?.kind === 'assigned') {
-    const to = w.view.to
-    return (
-      <div className="view">
-        <ViewHeader canGoBack onBack={w.back} title="Handed lately" />
-        <div className="view-body">
-          <AssignedPage to={to} overview={w.overview} onOpen={openEvent} onPick={(next) => w.open({ kind: 'assigned', to: next }, { replace: true })} />
-        </div>
-      </div>
-    )
-  }
-  if (w.view?.kind === 'stale')
-    return (
-      <div className="view">
-        <ViewHeader canGoBack onBack={w.back} title="Lost track" />
-        <div className="view-body">
-          <StalePage onOpen={openEvent} />
         </div>
       </div>
     )
@@ -362,6 +262,7 @@ function ItemsMain() {
             items={w.overview.items}
             recent={w.overview}
             sections={TASKS_SECTIONS}
+            onEscape={w.views.length > 0 ? w.back : undefined}
             onOpen={openFromItems}
             onCreate={(title) => w.act(async () => openFromItems(await api().create(title, null)))}
           />
@@ -378,12 +279,10 @@ function ItemsMain() {
   const e = d.event
   const debug = w.view.kind === 'debug'
   const actions = debug ? null : (
-    <HeaderActions
-      actions={eventActions(
-        { ...e, priority: d.item?.item.priority, snoozedUntil: d.item?.item.snoozedUntil },
-        { act: w.actOn(e.id), skip: w.skip, attach: setAttaching, snooze: setSnoozing, custom: w.customActions },
-      )}
-    />
+    <>
+      {e.type === 'item' && d.item && !d.item.item.closed && <AssigneePill item={d.item.item} overview={w.overview} act={w.actOn(e.id)} />}
+      <HeaderActions actions={eventActions(e, { act: w.actOn(e.id), skip: w.skip, custom: w.customActions })} />
+    </>
   )
   return (
     <div className="view">
@@ -399,16 +298,11 @@ function ItemsMain() {
       <div className={`view-body ${d.item && !debug ? 'fill' : ''}`}>
         {debug ? (
           <DebugView detail={d} />
-        ) : e.type === 'agent' ? (
-          <BotView
-            key={e.id}
-            detail={d}
-            bot={w.overview.bots.find((b) => b.id === e.id) ?? null}
-            items={w.overview.items}
-            act={w.act}
-            onOpen={openEvent}
-            onAssigned={(to) => w.open({ kind: 'assigned', to })}
-          />
+        ) : e.type === 'bot' && d.item ? (
+          <div className="bot-page">
+            <BotView key={e.id} detail={d} bot={w.overview.bots.find((b) => b.id === e.id) ?? null} act={w.act} />
+            <ItemView key={`${e.id}:chat`} detail={d.item} catalog={w.catalog} act={w.act} onOpen={openEvent} />
+          </div>
         ) : d.item ? (
           <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openEvent} />
         ) : (
@@ -526,11 +420,12 @@ function ViewHeader(props: {
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 /**
- * Who to offer to hand a task to, the likeliest first: whoever else had it last, then those the person signed in
- * handed things to last, then the bots, then the other people. Never the person signed in.
+ * Who to offer to hand a task to, the likeliest first: whoever else has it, then those the person signed in
+ * handed things to last, then the bots, then the other people. Never the person signed in; nobody in a bot's own chat.
  */
 function likeliest(detail: ItemDetail, overview: Overview): Someone[] {
-  const here = detail.assignments.filter((a) => a.on).map((a) => a.assignee).reverse()
+  if (overview.bots.some((b) => b.id === detail.item.id)) return []
+  const here = detail.item.assignees
   const all = everyone(overview)
   const ids = [...new Set([...here, ...overview.recentAssignees, ...overview.bots.map((b) => b.id), ...overview.users.map((u) => u.id)])]
   return ids.filter((id) => id !== overview.me.id).flatMap((id) => all.find((s) => s.id === id) ?? [])
@@ -565,8 +460,6 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
         <Chat detail={detail} overview={w.overview} />
       </div>
       <div className="composer">
-        <Gather detail={detail} overview={w.overview} act={act} />
-        {!item.closed && <Assignees item={item} overview={w.overview} act={act} />}
         <Blockers detail={detail} catalog={catalog} act={act} onOpen={onOpen} />
         {item.closed ? (
           <div className="composer-bar muted">Closed.</div>

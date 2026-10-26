@@ -72,62 +72,20 @@ function status(e: ItemEvent): string {
 }
 
 /** What only some types have to show. */
-function Special({ detail, onOpen }: { detail: EventDetail; onOpen: (id: string) => void }) {
+function Special({ detail }: { detail: EventDetail; onOpen: (id: string) => void }) {
   const e = detail.event
-  if (e.type === 'attachment')
-    return (
-      <section className="card">
-        <button data-ui className="link" onClick={() => onOpen(String(e.params.event))}>
-          {String(e.params.title)}
-        </button>
-      </section>
-    )
-  const output = e.data?.output
-  if (e.type === 'bot')
-    return (
-      <section className="card">
-        <h2>Runs</h2>
-        {detail.runs.map((r) => (
-          <p key={r.id} className="muted">
-            {time(r.startedAt)} · {r.endedAt ? minutes(r.endedAt - r.startedAt) : 'running'}
-            {r.costUsd != null && ` · $${r.costUsd.toFixed(2)}`}
-            {r.turns != null && ` · ${r.turns} turns`}
-          </p>
-        ))}
-        {typeof output === 'string' && output && (
-          <>
-            <h2>Output</h2>
-            <Markdown text={output} />
-          </>
-        )}
-      </section>
-    )
-  const code = e.type === 'after' ? e.params.script : e.type === 'script' ? e.params.source : undefined
-  if (code)
-    return (
-      <section className="card">
-        <h2>Script</h2>
-        {e.type === 'script' && (
-          <p className="muted">
-            {e.times.checks} runs{e.params.schedule ? ` · [${(e.params.schedule as number[]).join(', ')}]s` : ''}
-            {!e.resolved && e.nextCheckAt && ` · next ${new Date(e.nextCheckAt).toLocaleTimeString()}`}
-          </p>
-        )}
-        <Markdown text={fenced(String(code), 'js')} />
-        {Array.isArray(e.data?.logs) && (e.data!.logs as string[]).length > 0 && (
-          <pre className="output">{(e.data!.logs as string[]).join('\n')}</pre>
-        )}
-      </section>
-    )
-  if (e.type === 'github' && e.params.url)
-    return (
-      <section className="card">
-        <a href={String(e.params.url)} target="_blank" rel="noreferrer">
-          {String(e.params.url)}
-        </a>
-      </section>
-    )
-  return null
+  if (e.type !== 'script') return null
+  return (
+    <section className="card">
+      <h2>Script</h2>
+      <p className="muted">
+        {e.times.checks} runs{e.params.schedule ? ` · [${(e.params.schedule as number[]).join(', ')}]s` : ''}
+        {!e.resolved && e.nextCheckAt && ` · next ${new Date(e.nextCheckAt).toLocaleTimeString()}`}
+      </p>
+      <Markdown text={fenced(String(e.params.source ?? ''), 'js')} />
+      {Array.isArray(e.data?.logs) && (e.data!.logs as string[]).length > 0 && <pre className="output">{(e.data!.logs as string[]).join('\n')}</pre>}
+    </section>
+  )
 }
 
 /** Values as a table: words as words, anything else as JSON. */

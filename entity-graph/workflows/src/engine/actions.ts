@@ -51,23 +51,9 @@ export const itemActions: Action[] = [
     name: 'list_items',
     unsafe: false,
     description:
-      "Every open item, at any depth, and those closed in the last day: whether it is the human's turn, and what blocks it. " +
-      'With type, the open events of that type instead, the newest first, with their params and age: e.g. directive.',
-    input: { type: z.string().optional().describe('An event type (see event_types); item by default.') },
-    run: async (a, { engine }) => {
-      if (a.type && a.type !== 'item') {
-        engine.type(String(a.type))
-        return engine.openOfType(String(a.type)).map((e) => ({
-          id: e.id,
-          type: e.type,
-          parentId: e.parentId,
-          summary: e.summary,
-          params: e.params,
-          createdBy: e.createdBy,
-          createdAt: new Date(e.createdAt).toISOString(),
-          ageHours: Math.round(((engine.now() - e.createdAt) / 3_600_000) * 10) / 10,
-        }))
-      }
+      'Every open item, at any depth, and those closed in the last day: who has it, whether it is their turn, and what blocks it.',
+    input: {},
+    run: async (_a, { engine }) => {
       return engine.overview().items.map((i) => ({
         id: i.id,
         title: i.title,
@@ -84,8 +70,8 @@ export const itemActions: Action[] = [
     unsafe: false,
     description:
       "The open items waiting on one thing: a person (by username: their turn, so assigned to them and blocked by nothing but " +
-      'approvals), `bot` (assigned to any bot), a bot by its name, or any blocking event type (`github`, `slack`, `script`, ' +
-      "`after`, `approval`, `item` for a child item, …: see event_types). Each with the blockers that match, longest-waiting first.",
+      'approvals), `bot` (assigned to any bot), a bot by its name, or any blocking event type (`script`, `approval`, `item` for ' +
+      "a child item: see event_types). Each with the blockers that match, longest-waiting first.",
     input: { on: z.string().describe("A person's username, bot, a bot's name, or a blocking event type.") },
     run: async (a, { engine }) => {
       const on = String(a.on)
@@ -163,36 +149,6 @@ export const itemActions: Action[] = [
       })),
   },
   {
-    name: 'recently_assigned',
-    unsafe: false,
-    description: "Assignments and their ends, the newest first, over the last `days`: to one assignee (a username, or a bot's name), or to anyone.",
-    input: { to: z.string().optional().describe("A username or a bot's name; anyone if left out."), days: z.number().default(7) },
-    run: async (a, { engine }) =>
-      engine.assignments(a.to ? engine.resolveAssignee(String(a.to)) : null, Number(a.days)).map((x) => ({ ...x, at: new Date(x.at).toISOString() })),
-  },
-  {
-    name: 'stale_items',
-    unsafe: false,
-    description:
-      'The open items a person (the default person, without `username`) made or was assigned at some time, in which nothing has ' +
-      'happened for `hours`: those that may have been lost track of, the longest untouched first.',
-    input: { hours: z.number().default(24), username: z.string().optional() },
-    run: async (a, { engine }) =>
-      engine
-        .stale(Number(a.hours), a.username ? engine.resolveAssignee(String(a.username)) : engine.me())
-        .map((i) => ({ id: i.id, title: i.title, assignees: i.assignees, since: new Date(i.since).toISOString() })),
-  },
-  {
-    name: 'directives',
-    unsafe: false,
-    description:
-      "The operator's directives: short markdown notes on what they are working on at the moment, the newest first, with each one's " +
-      'age. They are not in your prompt: read the latest for the broad picture when an item needs more context. ' +
-      'The same as list_items with type directive. Add one as a directive event, with add_events.',
-    input: {},
-    run: (_a, ctx) => itemActions.find((x) => x.name === 'list_items')!.run({ type: 'directive' }, ctx),
-  },
-  {
     name: 'custom_actions',
     unsafe: false,
     description:
@@ -261,15 +217,6 @@ export const itemActions: Action[] = [
     run: async (a, ctx) => {
       return { ids: await ctx.engine.addEvents(a.item_id ? String(a.item_id) : null, a.events as EventSpec[], ctx.actor, ctx.author, ctx.runId) }
     },
-  },
-  {
-    name: 'attach_event',
-    unsafe: false,
-    description:
-      'Attach any event (an item, a message, anything) to an item, to gather it there: an attachment event in the item points at it. ' +
-      'The event itself stays where it was.',
-    input: { event_id: z.string().describe('The event to attach.'), item_id: itemId.describe('The item to attach it to.') },
-    run: async (a, ctx) => ({ id: await ctx.engine.attach(String(a.event_id), String(a.item_id), ctx.actor, ctx.author, ctx.runId) }),
   },
   {
     name: 'cancel_event',

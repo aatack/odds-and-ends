@@ -100,7 +100,7 @@ export interface EventType {
   human?: boolean
   /** May a bot add it, in its output? */
   bots?: boolean
-  /** Turns one event into those actually added: so a bot's Slack message gets an approval before it. */
+  /** Turns one event into those actually added. */
   expand?: (params: Record<string, unknown>, author: Author) => EventSpec[]
   /** As it is added. It may change its params, or resolve it at once. */
   start?: (

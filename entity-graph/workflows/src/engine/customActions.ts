@@ -79,7 +79,7 @@ export class CustomActions {
     const item = itemId ? this.engine.get(itemId) : null
     if (!item) throw new Error('That event is in no item.')
     const context = {
-      item: { id: item.id, title: item.title, parentId: item.parentId, closed: item.closed, withYou: item.withYou, priority: item.priority },
+      item: { id: item.id, title: item.title, parentId: item.parentId, closed: item.closed, withYou: item.withYou },
       event: { id: event.id, type: event.type, summary: event.summary, params: event.params, data: event.data, resolved: event.resolved, parentId: event.parentId },
       now: new Date(this.engine.now()).toISOString(),
     }
@@ -103,8 +103,8 @@ export class CustomActions {
       throw e
     }
     this.engine.mark(item.id, 'custom_action_run', { eventId, actor, runId, data: { action: action.name, id, ok: true, ms: this.engine.now() - started } })
-    // The record of the run is the app's own; what the script returned is a bot's.
-    await this.engine.addEvents(item.id, [{ type: 'action', params: { name: action.name, inputs: { event: eventId }, output: { message } } }], actor, 'human', runId)
+    // What it said is a note in the item, by the script (the trace has the run itself); what it returned, a bot's.
+    if (message) await this.engine.addEvents(item.id, [{ type: 'note', params: { text: message } }], 'script', 'human', runId)
     if (events.length) await this.engine.addEvents(item.id, events, actor, 'bot', runId)
     return { message }
   }
@@ -124,7 +124,7 @@ export class CustomActions {
     const system = `You write one custom action for a workflow app, as a JavaScript function expression. Reply with the code only: no prose, no markdown fences.
 
 The function is: async (context, actions) => result
-- It runs on one event of type "${a.type}". context is { item: { id, title, parentId, closed, withYou, priority }, event: { id, type, summary, params, data, resolved, parentId }, now (ISO time) }. For an item event, item and event are the same item.
+- It runs on one event of type "${a.type}". context is { item: { id, title, parentId, closed, withYou }, event: { id, type, summary, params, data, resolved, parentId }, now (ISO time) }. For an item event, item and event are the same item.
 - actions.<name>(args) calls an action and resolves to its result (parsed JSON). These are the only ones it may call:
 ${actions.join('\n')}
 - It may not call unsafe actions (they change things outside the app). To get one done, return an approval event for the human: { type: 'approval', params: { action, inputs, reason } }. The unsafe actions are:

@@ -1,6 +1,6 @@
 import fuzzysort from 'fuzzysort'
 import { useAtomValue } from 'jotai'
-import { Bot, Flag, Search, User } from 'lucide-react'
+import { Bot, Check, Search, User } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Item } from '../../shared/types'
 import { minutes } from './Chat'
@@ -10,23 +10,23 @@ import { SECTIONS, type Recent, type SectionId } from './sections'
 import { searchFocusAtom } from './views'
 
 /**
- * What a row says beside its icon: only what the icon can't. The PR a task
- * waits on, what a script waits for, the approval the human is asked for; for
- * a bot, a child task, or the human's turn alone, nothing.
+ * What a row says beside its icon: only what the icon can't. What a script
+ * waits for, the approval asked for; for a bot, a child task, or your turn
+ * alone, nothing.
  */
 function detail(i: Item): string {
-  if (i.closed) return i.how === 'handled_outside' ? 'done outside' : i.how === 'cancelled' ? 'cancelled' : ''
+  if (i.closed) return i.how === 'cancelled' ? 'cancelled' : ''
   if (i.withYou) return i.blockers.find((b) => b.type === 'approval' && b.params.reason)?.summary ?? ''
   const b = waitingOn(i)
-  if (!b) return ''
-  if (b.type === 'github') return b.params.title ? String(b.params.title) : b.summary
-  if (b.type === 'slack' || b.type === 'snooze') return b.summary
-  if ((b.type === 'script' || b.type === 'after') && b.params.description) return b.summary
+  if (b?.type === 'script' && b.params.description) return b.summary
   return ''
 }
 
 /** A line of the finder: an item in a section, a bot, or the "n more" a section ends with when it has more than it shows. */
-type Line = { key: string; item: Item } | { key: string; bot: { id: string; name: string; bot?: boolean } } | { key: string; more: SectionId; n: number }
+type Line =
+  | { key: string; item: Item; chosen?: boolean }
+  | { key: string; bot: { id: string; name: string; bot?: boolean }; chosen?: boolean }
+  | { key: string; more: SectionId; n: number }
 
 /**
  * The finder: items in sections (`sections`, in order; see `SECTIONS`), under a
@@ -35,7 +35,9 @@ type Line = { key: string; item: Item } | { key: string; bot: { id: string; name
  * then shows in only the first section that has it); the arrow keys move through
  * what is left, Enter opens one (or shows a section's rest), and Tab makes a new
  * item with what was typed as its title. The pickers are this too, with Enter
- * (and a click) picking instead: `verb` says which.
+ * (and a click) picking instead: `verb` says which. With `selected`, what is
+ * selected comes first, in a section of its own, ticked (a multiselect picker:
+ * picking a row toggles it). Escape with nothing typed calls `onEscape`.
  */
 export function ItemsList(props: {
   items: Item[]
@@ -47,8 +49,12 @@ export function ItemsList(props: {
   verb?: string
   /** Bots and people to offer too, first, in a section of their own (`@` in the chat input). */
   bots?: { id: string; name: string; bot?: boolean }[]
+  /** For a multiselect: the ids selected, shown first. */
+  selected?: string[]
+  /** Escape with nothing typed. */
+  onEscape?: () => void
 }) {
-  const { items, recent, sections, perSection = 12, onOpen, onCreate, verb = 'Open', bots = [] } = props
+  const { items, recent, sections, perSection = 12, onOpen, onCreate, verb = 'Open', bots = [], selected, onEscape } = props
   const [text, setText] = useState('')
   const [at, setAt] = useState(0)
   const [expanded, setExpanded] = useState<SectionId[]>([])
@@ -62,15 +68,23 @@ export function ItemsList(props: {
     const matched = text.trim()
       ? new Map(fuzzysort.go(text, items, { key: 'title', threshold: 0.2 }).map((r, i) => [r.obj.id, i]))
       : null
-    const seen = new Set<string>()
-    const botLines: Line[] = (text.trim() ? fuzzysort.go(text, bots, { key: 'name', threshold: 0.2 }).map((r) => r.obj) : bots).map((bot) => ({
+    const chosen = new Set(selected ?? [])
+    const seen = new Set<string>(chosen)
+    const chosenLines: Line[] = [
+      ...bots.filter((b) => chosen.has(b.id)).map((bot) => ({ key: `chosen:${bot.id}`, bot, chosen: true })),
+      ...items.filter((i) => chosen.has(i.id)).map((item) => ({ key: `chosen:${item.id}`, item, chosen: true })),
+    ]
+    const chosenGroup = chosenLines.length ? [{ id: 'selected', label: 'Selected', count: chosenLines.length, lines: chosenLines }] : []
+    const others = bots.filter((b) => !chosen.has(b.id))
+    const botLines: Line[] = (text.trim() ? fuzzysort.go(text, others, { key: 'name', threshold: 0.2 }).map((r) => r.obj) : others).map((bot) => ({
       key: `bot:${bot.id}`,
       bot,
     }))
-    const botGroup = botLines.length ? [{ id: 'bots', label: 'Hand it to', count: botLines.length, lines: botLines }] : []
-    return [...botGroup, ...sections
+    const botGroup = botLines.length ? [{ id: 'bots', label: selected ? 'Others' : 'Hand it to', count: botLines.length, lines: botLines }] : []
+    return [...chosenGroup, ...botGroup, ...sections
       .map((id) => {
         let all = SECTIONS[id].items(items, recent)
+        all = all.filter((i) => !chosen.has(i.id))
         if (matched) {
           all = all.filter((i) => matched.has(i.id) && !seen.has(i.id)).sort((a, b) => matched.get(a.id)! - matched.get(b.id)!)
           all.forEach((i) => seen.add(i.id))
@@ -81,7 +95,7 @@ export function ItemsList(props: {
         return { id: id as string, label: SECTIONS[id].label, count: all.length, lines }
       })
       .filter((g) => g.count)]
-  }, [items, recent, sections, perSection, expanded, text, bots])
+  }, [items, recent, sections, perSection, expanded, text, bots, selected])
   const flat = groups.flatMap((g) => g.lines)
   const current = Math.min(at, Math.max(flat.length - 1, 0))
   const choose = (line: Line) => ('item' in line ? onOpen(line.item.id) : 'bot' in line ? onOpen(line.bot.id) : setExpanded([...expanded, line.more]))
@@ -129,7 +143,12 @@ export function ItemsList(props: {
                 e.preventDefault()
                 if (text.trim()) onCreate(text.trim())
               }
-              if (e.key === 'Escape') setText('')
+              if (e.key === 'Escape') {
+                if (!text && onEscape) {
+                  e.preventDefault()
+                  onEscape()
+                } else setText('')
+              }
             }}
           />
           {!text && <span className="hint">Search</span>}
@@ -157,9 +176,9 @@ export function ItemsList(props: {
             if ('bot' in line)
               return (
                 <div key={line.key} className={`row ${selected}`} onClick={() => choose(line)} onMouseMove={hover}>
-                  {line.bot.bot === false ? <User className="icon" /> : <Bot className="icon" />}
+                  {line.chosen ? <Check className="icon" /> : line.bot.bot === false ? <User className="icon" /> : <Bot className="icon" />}
                   <span className="row-title">@{line.bot.name}</span>
-                  <span className="muted row-status">hand them the task</span>
+                  <span className="muted row-status">{line.chosen ? 'take them off' : verb === 'Assign' ? '' : 'hand them the task'}</span>
                 </div>
               )
             if (!('item' in line))
@@ -171,9 +190,8 @@ export function ItemsList(props: {
             const i = line.item
             return (
               <div key={line.key} className={`row ${selected}`} onClick={() => onOpen(i.id)} onMouseMove={hover} {...menu(i.id)}>
-                <ItemIcon item={i} />
+                {line.chosen ? <Check className="icon" /> : <ItemIcon item={i} />}
                 <span className="row-title">{i.title}</span>
-                {i.priority && !i.closed && <Flag className="icon priority-flag" aria-label="Priority" />}
                 <span className="muted row-status">{detail(i)}</span>
                 <span className="muted row-age">{minutes(Math.max(0, now - i.since))}</span>
               </div>

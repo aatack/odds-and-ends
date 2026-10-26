@@ -1,59 +1,68 @@
-import { Bot, Plus, User, X } from 'lucide-react'
+import { Bot, User } from 'lucide-react'
+import { useState } from 'react'
 import type { Item, Overview } from '../../shared/types'
-import { Dropdown, DropdownItem } from './components/ui/Dropdown'
+import { ItemPicker } from './ItemPicker'
 import { everyone, nameOf } from './people'
 import { api } from './useWorkflows'
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 /**
- * Who has the task, above its blockers: people and bots, each to take off (×),
- * and + to hand it to someone else too. A bot that is working on it now says so.
+ * Who has the task, in the top right of its view: a pill with their name, or
+ * with more than one, their pictures. Clicking it opens the finder as a
+ * multiselect: who has it shows first, ticked (pick them to take them off), and
+ * picking anyone else adds them.
  */
-export function Assignees({ item, overview, act }: { item: Item; overview: Overview; act: Act }) {
+export function AssigneePill({ item, overview, act }: { item: Item; overview: Overview; act: Act }) {
+  const [picking, setPicking] = useState(false)
+  const isBot = (id: string) => overview.bots.some((b) => b.id === id)
   const name = (id: string) => {
     const n = nameOf(overview, id)
     return n === 'you' ? 'You' : n
   }
-  const others = everyone(overview).filter((s) => !item.assignees.includes(s.id))
+  const icon = (id: string) => (isBot(id) ? <Bot className="icon" /> : <User className="icon" />)
+  const people = everyone(overview)
   return (
-    <div className="assignees">
-      <span>With</span>
-      {!item.assignees.length && <span className="assignee">nobody</span>}
-      {item.assignees.map((id) => (
-        <span key={id} className={`assignee ${item.bot === id ? 'working' : ''}`} title={item.bot === id ? 'Working on it now' : undefined}>
-          {overview.bots.some((b) => b.id === id) ? <Bot className="icon" /> : <User className="icon" />}
-          {name(id)}
-          {item.bot === id && ' · working'}
-          <button title={`Take it off ${name(id)}`} aria-label="Unassign" onClick={() => void act(() => api().assign(item.id, id, false))}>
-            <X className="icon" />
-          </button>
-        </span>
-      ))}
-      {others.length > 0 && (
-        <Dropdown
-          menuClassName="popover"
-          trigger={({ toggle }) => (
-            <button className="add-assignee" title="Hand it to someone too" aria-label="Assign" onClick={toggle}>
-              <Plus className="icon" />
-            </button>
-          )}
-        >
-          {(close) =>
-            others.map((s) => (
-              <DropdownItem
-                key={s.id}
-                onClick={() => {
-                  close()
-                  void act(() => api().assign(item.id, s.id, true))
-                }}
-              >
-                {s.id === overview.me.id ? 'You' : s.bot ? `@${s.name}` : s.name}
-              </DropdownItem>
-            ))
+    <>
+      <button
+        data-ui
+        className="assignee-pill"
+        title={item.assignees.length ? `With ${item.assignees.map(name).join(', ')}` : 'With nobody: pick who has it'}
+        onClick={() => setPicking(true)}
+      >
+        {item.assignees.length === 0 && <span className="muted">Nobody</span>}
+        {item.assignees.length === 1 && (
+          <>
+            {icon(item.assignees[0])}
+            <span>{name(item.assignees[0])}</span>
+          </>
+        )}
+        {item.assignees.length > 1 &&
+          item.assignees.map((id) => (
+            <span key={id} className={`assignee-avatar ${item.bot === id ? 'working' : ''}`} title={name(id)}>
+              {icon(id)}
+            </span>
+          ))}
+      </button>
+      {picking && (
+        <ItemPicker
+          title="Who has it"
+          items={[]}
+          recent={overview}
+          sections={[]}
+          verb="Assign"
+          bots={people.map((p) => ({ ...p, name: p.id === overview.me.id ? `${p.name} (you)` : p.name }))}
+          multiple
+          value={item.assignees}
+          setValue={(next) =>
+            void act(async () => {
+              for (const id of next.filter((id) => !item.assignees.includes(id))) await api().assign(item.id, id, true)
+              for (const id of item.assignees.filter((id) => !next.includes(id))) await api().assign(item.id, id, false)
+            })
           }
-        </Dropdown>
+          onClose={() => setPicking(false)}
+        />
       )}
-    </div>
+    </>
   )
 }

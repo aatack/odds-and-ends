@@ -5,6 +5,7 @@ import { actionIcon } from './actionIcons'
 import { Markdown } from './components/ui/Markdown'
 import { eventActions } from './eventActions'
 import { Form } from './forms'
+import { Params } from './Params'
 import { TypeIcon, TYPE_NAME } from './icons'
 import { api } from './useWorkflows'
 
@@ -39,6 +40,8 @@ const ACTION_FORM = {
 export function TypesPage({ catalog, custom, act }: { catalog: Catalog; custom: CustomAction[]; act: Act }) {
   const [draft, setDraft] = useState<Draft | null>(null)
   const [generating, setGenerating] = useState(false)
+  /** The type whose fields are open, if any. */
+  const [fields, setFields] = useState<string | null>(null)
   const noop = () => {}
 
   // Every change is saved as it is made, a moment after the typing stops. Saves
@@ -99,7 +102,7 @@ export function TypesPage({ catalog, custom, act }: { catalog: Catalog; custom: 
   return (
     <div className="page types-page">
       {catalog.events.map((t) => {
-        const builtIn = eventActions({ id: '', type: t.type, resolved: false, summary: '' }, { act: async () => {}, skip: noop, attach: noop })
+        const builtIn = eventActions({ id: '', type: t.type, resolved: false, summary: '' }, { act: async () => {}, skip: noop })
         const mine = custom.filter((c) => c.type === t.type)
         const editing = draft?.type === t.type
         return (
@@ -107,8 +110,18 @@ export function TypesPage({ catalog, custom, act }: { catalog: Catalog; custom: 
             <h2 className="row-inline">
               <TypeIcon type={t.type as EventKind} />
               {TYPE_NAME[t.type as EventKind] ?? t.type} <code className="muted">{t.type}</code>
+              {t.blocking && <span className="badge">blocker</span>}
+              <button data-ui className="link fields-toggle" onClick={() => setFields(fields === t.type ? null : t.type)}>
+                {fields === t.type ? 'Hide fields' : 'Fields'}
+              </button>
             </h2>
-            <Markdown className="muted" text={t.description.split('\n')[0]} />
+            <Markdown className="muted" text={fields === t.type ? t.description : t.description.split('\n')[0]} />
+            {fields === t.type && (
+              <>
+                <Params schema={t.params} />
+                <code className="muted">→ {t.data}</code>
+              </>
+            )}
             <div className="type-actions">
               {builtIn.map((a) => (
                 <div key={a.id} className="type-action builtin" title={a.title}>

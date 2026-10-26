@@ -9,7 +9,6 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { EgdbClient } from 'egdb-client'
-import { keyFileSecrets } from '../src/backend/secrets.ts'
 import { egdbServerPath, loadStore, startEgdb } from '../src/engine/egdb.ts'
 import { Engine } from '../src/engine/engine.ts'
 
@@ -40,13 +39,14 @@ const file = join(dir, 'round-trip.egdb')
   await engine.saveAgent({ id: bot, name: 'Threepio', instructions: 'Be very polite.', provider: 'claude', model: 'opus', debounceMinutes: 2 })
   const id = (await engine.create('Round trip'))!
   clock += 1000
-  await engine.send(id, 'message', `[${bot}]() hello`)
-  await engine.addEvents(id, [{ type: 'github', params: { repo: 'o/r', number: 7, until: 'checks' } }])
+  await engine.send(id, 'note', `[${bot}]() hello`)
+  await engine.send(bot, 'note', 'hello, bot')
+  await engine.addEvents(id, [{ type: 'script', params: { source: 'async () => null', schedule: [600] } }])
   await engine.addEvents(id, [{ type: 'script', params: { source: 'async () => ({ done: false, state: 41 })', schedule: [0] } }])
   await engine.checkDue()
   const run = engine.startRun(bot, [id], 'the prompt')
   engine.appendTranscript(run, '{"type":"result"}\n')
-  await engine.endRun(run, { exitCode: 0, structured: { updates: [{ item: id, message: 'Hi.', assign: ['human'] }] }, costUsd: 0.5 })
+  await engine.endRun(run, { exitCode: 0, structured: { updates: [{ item: id, message: 'Hi.', assign: ['alex'] }] }, costUsd: 0.5 })
   engine.customActions.save({ type: 'item', name: 'Hello', description: 'd', notes: 'n', source: 'async () => "hi"', icon: 'zap', important: true })
   engine.settings.set('mcp.port', 1234)
   const done = (await engine.create('Done'))!
@@ -71,7 +71,7 @@ const file = join(dir, 'round-trip.egdb')
   assert.deepEqual(after.detail.events.map((e) => [e.id, e.type, e.params, e.data, e.resolved, e.createdBy]),
     before.detail.events.map((e) => [e.id, e.type, e.params, e.data, e.resolved, e.createdBy]))
   assert.ok(after.detail.events.filter((e) => !e.resolved && e.type !== 'item').every((e) => e.nextCheckAt === clock))
-  assert.equal(again.store.events.get(after.detail.events.find((e) => e.type === 'script')!.id)!.memo, 41)
+  assert.equal(again.store.events.get(after.detail.events.filter((e) => e.type === 'script').at(-1)!.id)!.memo, 41)
   assert.deepEqual(after.detail.runs, before.detail.runs)
   assert.equal(after.detail.runs[0].costUsd, 0.5)
   assert.match((await engine2.transcript(run))!, /"type":"result"/, 'a transcript is read from egdb when asked for')
@@ -88,16 +88,7 @@ const file = join(dir, 'round-trip.egdb')
   again.egdb.stop()
 }
 
-// ---- 2. Secrets under a key of the backend's own ----
-{
-  const secrets = keyFileSecrets(dir)
-  const stored = secrets.encrypt('xoxp-secret')
-  assert.match(stored, /^aes:/)
-  assert.equal(keyFileSecrets(dir).decrypt(stored), 'xoxp-secret', 'the key lasts')
-  assert.equal(secrets.decrypt('plain:x'), 'x')
-}
-
-// ---- 3. The backend on its own, on a source it makes: it answers calls, sends changes, and keeps what it was given ----
+// ---- 2. The backend on its own, on a source it makes: it answers calls, sends changes, and keeps what it was given ----
 {
   // `~/` is the home folder; a source that is not there is made, its folder too.
   const typed = `~/${relative(homedir(), join(dir, 'fresh', 'tasks.sqlite'))}`
@@ -143,7 +134,7 @@ const file = join(dir, 'round-trip.egdb')
   assert.deepEqual([overview.me.id, overview.users.length, overview.bots.length], ['tester', 1, 0], 'a fresh source has nothing in it but who signed in')
   assert.ok(existsSync(source), 'the source was made')
   const id = (await call('create', 'From the API', null)) as string
-  await call('send', id, 'message', 'A note')
+  await call('send', id, 'note', 'A note')
   for (let i = 0; i < 50 && !changes.some((c) => c.includes('event: change')); i++) await new Promise((r) => setTimeout(r, 50))
   assert.ok(changes.some((c) => c.includes('event: change')), 'changes are sent')
   await assert.rejects(call('send', id, 'nope', 'x'), /No preset nope/)
