@@ -132,8 +132,10 @@ export async function loadStore(client: EgdbClient, onError?: (message: string) 
   }
   // The root is an entity too, so that the tree can be walked from it.
   const sink = new EgdbSink(client, branch, onError)
+  const upgrade = upgradeEvents(events)
   const store = new Store(sink)
-  store.restore({ events, trace, runs, settings, customActions, assigned })
+  store.restore({ events: upgrade.events, trace, runs, settings, customActions, assigned })
+  if (upgrade.ops.length) sink.write(upgrade.ops)
   if (!events.length) sink.write([{ set: { entity: '@root', key: 'type', value: 'wf.root' } }])
   return { store, sink }
 }
@@ -187,4 +189,33 @@ export async function openStore(file: string, token: string, onError?: (message:
   const client = new EgdbClient({ url: egdb.url, token })
   const { store, sink } = await loadStore(client, onError)
   return { store, sink, client, egdb }
+}
+
+/** The event types there are now; and what some were called before. */
+const TYPES = new Set(['item', 'note', 'approval', 'script', 'bot', 'user'])
+const RENAMED: Record<string, string> = { agent: 'bot', message: 'note' }
+
+/**
+ * A store made by an earlier build, brought up to date as it loads (and written
+ * back): bots were `agent` events, with their settings in `configure` events in
+ * them, and notes were `message` events. Events of types there are no more
+ * (attachments, priorities, waits on GitHub and the like) are left in egdb, and
+ * out of the app.
+ */
+export function upgradeEvents(rows: EventRow[]): { events: EventRow[]; ops: Op[] } {
+  const ops: Op[] = []
+  const set = (entity: string, key: string, value: unknown) => ops.push({ set: { entity, key, value: value as never } })
+  for (const r of rows)
+    if (RENAMED[r.type]) {
+      r.type = RENAMED[r.type]
+      set(r.id, 'type', r.type)
+    }
+  const byId = new Map(rows.map((r) => [r.id, r]))
+  for (const r of rows.filter((r) => r.type === 'configure').sort((a, b) => a.seq - b.seq)) {
+    const bot = r.parent_id ? byId.get(r.parent_id) : undefined
+    if (bot?.type !== 'bot') continue
+    bot.params = { ...bot.params, ...r.params }
+    set(bot.id, 'params', bot.params)
+  }
+  return { events: rows.filter((r) => TYPES.has(r.type)), ops }
 }
