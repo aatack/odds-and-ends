@@ -360,6 +360,10 @@ export interface WorkflowsAPI {
   signIn: (username: string) => Promise<User>
   /** Who the calls from here on are made as (kept by the preload, sent with each call). */
   setUser: (username: string | null) => void
+  /** Opens a source: a file (made if it is not there; `~/` is the home folder), on a backend of its own. Answers its absolute path. */
+  openSource: (path: string) => Promise<string>
+  /** Lets go of the source open now (its backend stops, if the app started it). */
+  closeSource: () => Promise<void>
   /** Assign events, the newest first: for one assignee (or anyone), in the last `days`. */
   assignments: (assignee: string | null, days: number) => Promise<Assignment[]>
   /** The open items the human owns or had assigned to them, untouched for `hours`, the longest untouched first. */
@@ -405,6 +409,6 @@ export const API_METHODS = [
   'assign', 'assignments', 'stale', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'mcp', 'regenerateMcpToken', 'setMcpPort',
 ] as const satisfies readonly ApiMethod[]
 
-type ApiMethod = Exclude<keyof WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser'>
+type ApiMethod = Exclude<keyof WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser' | 'openSource' | 'closeSource'>
 /** Fails to compile while a call is left out of API_METHODS. */
 export const API_METHODS_COMPLETE: Exclude<ApiMethod, (typeof API_METHODS)[number]> extends never ? true : never = true

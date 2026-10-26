@@ -21,7 +21,8 @@ export interface SlackWorkspace {
   token: string
 }
 
-export const DEFAULT_MCP_PORT = 47390
+/** Not the older app's (47390), so that the two can run side by side. */
+export const DEFAULT_MCP_PORT = 47391
 
 export class Settings {
   constructor(
@@ -46,7 +47,7 @@ export class Settings {
     }))
   }
 
-  /** A secret as plain text; empty when it can't be read (one an older app saved, until the app hands it back). */
+  /** A secret as plain text; empty when it can't be read.  */
   private readSecret(stored: string): string {
     try {
       return this.secrets.decrypt(stored)
@@ -60,17 +61,6 @@ export class Settings {
     const stored = this.get<SlackWorkspace[]>('slack.workspaces', []).filter((x) => x.team !== w.team)
     this.set('slack.workspaces', [...stored, { ...added, token: this.secrets.encrypt(w.token) }])
     return added
-  }
-
-  /** The Slack tokens saved by an older app with its safeStorage (`safe:`), which this backend can't read. */
-  legacySecrets(): string[] {
-    return this.get<{ token: string }[]>('slack.workspaces', []).map((w) => w.token).filter((t) => t.startsWith('safe:'))
-  }
-
-  /** Keeps those tokens anew, from the plain text the app read them as. */
-  replaceLegacySecrets(plain: Record<string, string>): void {
-    const stored = this.get<{ token: string }[]>('slack.workspaces', [])
-    this.set('slack.workspaces', stored.map((w) => (plain[w.token] ? { ...w, token: this.secrets.encrypt(plain[w.token]) } : w)))
   }
 
   removeSlackWorkspace(id: string): void {

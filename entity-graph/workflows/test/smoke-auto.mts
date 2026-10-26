@@ -10,6 +10,7 @@ import { BotRunner } from '../src/engine/workers.ts'
 const engine = new Engine({ dataDir: mkdtempSync(join(tmpdir(), 'workflows-smoke-')) })
 engine.settings.set('mcp.port', 0)
 const mcp = await startMcp(engine)
+await engine.signIn('human')
 const runner = new BotRunner(engine, mcp.runUrl)
 const bot = await engine.saveAgent({ name: 'Auto', instructions: '', provider: 'claude', model: '', debounceMinutes: 0 })
 const id = (await engine.create('Auto smoke'))!

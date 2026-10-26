@@ -1,16 +1,23 @@
-// Where a backend keeps its data, and how to find one that is running: shared
-// by the backend and the app, which starts one when none is.
+// Where a source keeps what goes with it, and how to find a backend running on
+// one: shared by the backend and the app, which starts one when none is.
+//
+// A source is one file: the store (egdb's SQLite). Beside it, `<file>.data/`
+// holds the rest: the secrets' key, the bots' folders, and while a backend runs
+// on it, its backend.json and lock.
 
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
-/** Where the app keeps its data: Electron's userData for this app, unless told otherwise. */
-export function defaultDataDir(): string {
-  if (process.env.WORKFLOWS_DATA) return process.env.WORKFLOWS_DATA
-  const config = process.platform === 'darwin' ? join(homedir(), 'Library', 'Application Support') : process.env.XDG_CONFIG_HOME || join(homedir(), '.config')
-  return join(config, 'workflows')
+/** A source's file as typed (`~/` is the home folder; anything else is from the current folder), as an absolute path. */
+export function sourceFile(typed: string): string {
+  const t = typed.trim()
+  if (!t) throw new Error('Say which file: a path, such as ~/tasks/tasks.sqlite.')
+  return resolve(t === '~' ? homedir() : t.startsWith('~/') ? join(homedir(), t.slice(2)) : t)
 }
+
+/** The folder beside a source that holds the rest of what goes with it. */
+export const dataDirOf = (file: string): string => `${file}.data`
 
 export interface BackendInfo {
   url: string

@@ -23,8 +23,8 @@ const MINUTE = 60_000
 const DEFAULT_SCHEDULE = [0, ...BACKOFF_MINUTES.map((m) => m * 60)]
 /** A bot that has items wakes this often, when something has happened in them since its last run. */
 export const PERIODIC_MINUTES = 15
-/** The username of the person the app has when it has nobody else yet. */
-export const FIRST_USER = 'human'
+/** Who the engine acts as when nobody is said and there is nobody yet (the tests, mostly). */
+export const NOBODY = 'human'
 
 /** What a bot says about one item, in its run's output. */
 export interface BotUpdate {
@@ -526,13 +526,9 @@ export class Engine extends EventEmitter {
     return this.user(id) !== null
   }
 
-  /**
-   * Who the engine acts as when nobody says: the `users.default` setting's person, else the first person, else
-   * `FIRST_USER` (who is made as soon as anything is done).
-   */
+  /** Who the engine acts as when nobody says: the first person, else NOBODY. The app always says. */
   me(): string {
-    const chosen = this.settings.get<string | null>('users.default', null)
-    return (chosen && this.user(chosen)?.id) || this.store.ofType('user').find((r) => !r.resolved)?.id || FIRST_USER
+    return this.store.ofType('user').find((r) => !r.resolved)?.id ?? NOBODY
   }
 
   /** Adds a person (or names one anew). Their username is their id, and stays. */
@@ -547,17 +543,10 @@ export class Engine extends EventEmitter {
     return this.user(id)!
   }
 
-  /** Signing in: the person with this username, or an error. */
-  signIn(username: string): User {
-    const u = this.user(username.trim().toLowerCase())
-    if (!u) throw new Error(`Nobody is called ${username}. Make them first.`)
-    return u
-  }
-
-  /** Makes FIRST_USER if there is nobody yet, so that what is done has someone to be done by. */
-  private ensureSomeone(): void {
-    if (this.store.ofType('user').some((r) => !r.resolved)) return
-    this.addNow(null, [{ type: 'user', params: { username: FIRST_USER } }], FIRST_USER, null)
+  /** Signing in: the person with this username, made if there is nobody by it yet. */
+  async signIn(username: string): Promise<User> {
+    const id = username.trim().toLowerCase()
+    return this.user(id) ?? this.saveUser(id, '', id)
   }
 
   /** A person or a bot, by a username, a bot's name, or an id; or an error saying who there is. */
@@ -933,7 +922,8 @@ export class Engine extends EventEmitter {
   /** Takes an item off a bot; if that leaves it with nobody, it goes to its owner. */
   private handBack(itemId: string, agentId: string, runId: string | null, actor = `bot:${agentId}`): void {
     this.setAssignee(itemId, agentId, false, actor, runId)
-    if (!this.assignees(itemId).length) this.setAssignee(itemId, this.owner(itemId), true, actor, runId)
+    const owner = this.owner(itemId)
+    if (!this.assignees(itemId).length && this.isUser(owner)) this.setAssignee(itemId, owner, true, actor, runId)
   }
 
   transcript(runId: string): Promise<string | null> {
@@ -1088,8 +1078,6 @@ export class Engine extends EventEmitter {
     specs = specs.filter((s) => !keyed(s))
     if (!parentId && specs.some((s) => !['item', 'directive', 'agent', 'user'].includes(s.type)))
       throw new Error('Only an item, a bot, a person or a directive can sit in no item.')
-    // What is done is done by someone: the first person is made as soon as anything is.
-    if (!specs.some((s) => s.type === 'user')) this.ensureSomeone()
     if (parentId && this.row(parentId)?.type === 'agent' && specs.some((s) => s.type !== 'configure')) throw new Error('A bot holds only its configure events.')
     if (specs.some((s) => s.type === 'configure') && this.row(parentId ?? '')?.type !== 'agent') throw new Error('A configure event goes in a bot.')
     // An edit of a directive replaces one that still holds.
@@ -1120,11 +1108,9 @@ export class Engine extends EventEmitter {
       this.mark(where, 'event_added', { eventId: id, runId, actor: createdBy, data: { type: spec.type } })
       if (!type.blocking) this.mark(where, 'event_resolved', { eventId: id, runId, actor: createdBy })
       if (spec.type === 'directive' && params.replaces) this.resolve(String(params.replaces), { cancelled: true, replacedBy: id }, createdBy, true, runId)
-      // A new item goes to those given; else to the person who made it; else to whoever owns the item it sits in, or the default person.
+      // A new item goes to those given; else, made by a person, to them; else (a bot or a source made it) to nobody.
       if (spec.type === 'item') {
-        const to = Array.isArray(assignees) && assignees.length
-          ? (assignees as string[])
-          : [this.isUser(createdBy) ? createdBy : parentId && this.row(parentId)?.type === 'item' ? this.owner(parentId) : this.me()]
+        const to = Array.isArray(assignees) && assignees.length ? (assignees as string[]) : this.isUser(createdBy) ? [createdBy] : []
         for (const a of to) this.setAssignee(id, a, true, createdBy, runId)
       }
     })

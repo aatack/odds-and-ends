@@ -4,7 +4,7 @@
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { EgdbClient, type Filter, type Op } from 'egdb-client'
 import {
   customActionFromValues, eventFromValues, runFromValues, Store, traceFromValues,
@@ -181,9 +181,9 @@ export function startEgdb(file: string, token: string, bin = egdbServerPath()): 
   })
 }
 
-/** An egdb-server on a file in `dir`, and the store in it. */
-export async function openStore(dir: string, token: string, onError?: (message: string) => void) {
-  const egdb = await startEgdb(join(dir, 'workflows.egdb'), token)
+/** An egdb-server on `file`, and the store in it. */
+export async function openStore(file: string, token: string, onError?: (message: string) => void) {
+  const egdb = await startEgdb(file, token)
   const client = new EgdbClient({ url: egdb.url, token })
   const { store, sink } = await loadStore(client, onError)
   return { store, sink, client, egdb }

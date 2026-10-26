@@ -6,11 +6,9 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
+import { homedir, tmpdir } from 'node:os'
+import { join, relative } from 'node:path'
 import { EgdbClient } from 'egdb-client'
-import { importV4 } from '../src/backend/importV4.ts'
 import { keyFileSecrets } from '../src/backend/secrets.ts'
 import { egdbServerPath, loadStore, startEgdb } from '../src/engine/egdb.ts'
 import { Engine } from '../src/engine/engine.ts'
@@ -37,6 +35,7 @@ const file = join(dir, 'round-trip.egdb')
 {
   const { egdb, store } = await open(file)
   const engine = new Engine({ store, now, dataDir: dir })
+  await engine.signIn('alex')
   const bot = await engine.saveAgent({ name: 'Threepio', instructions: 'Be polite.', provider: 'claude', model: 'opus', debounceMinutes: 2 })
   await engine.saveAgent({ id: bot, name: 'Threepio', instructions: 'Be very polite.', provider: 'claude', model: 'opus', debounceMinutes: 2 })
   const id = (await engine.create('Round trip'))!
@@ -89,75 +88,22 @@ const file = join(dir, 'round-trip.egdb')
   again.egdb.stop()
 }
 
-// ---- 2. A store from before egdb comes in, once ----
-{
-  const v4 = join(dir, 'workflows-v4.db')
-  const old = new DatabaseSync(v4)
-  old.exec(`
-    CREATE TABLE events (id TEXT PRIMARY KEY, parent_id TEXT, seq INTEGER NOT NULL, type TEXT NOT NULL, params TEXT NOT NULL,
-      created_by TEXT NOT NULL, created_at INTEGER NOT NULL, resolved INTEGER NOT NULL DEFAULT 0, resolved_at INTEGER, resolved_by TEXT,
-      cancelled INTEGER NOT NULL DEFAULT 0, started INTEGER NOT NULL DEFAULT 0, data TEXT, check_step INTEGER NOT NULL DEFAULT 0, memo TEXT,
-      next_check_at INTEGER, last_error TEXT);
-    CREATE TABLE trace (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, item_id TEXT NOT NULL, event_id TEXT, run_id TEXT,
-      actor TEXT NOT NULL, kind TEXT NOT NULL, data TEXT);
-    CREATE TABLE runs (id TEXT PRIMARY KEY, item_id TEXT NOT NULL, event_ids TEXT NOT NULL, worker INTEGER NOT NULL, started_at INTEGER NOT NULL,
-      trace_mark INTEGER NOT NULL DEFAULT 0, ended_at INTEGER, cost_usd REAL, turns INTEGER, result TEXT, prompt TEXT NOT NULL, transcript TEXT NOT NULL DEFAULT '');
-    CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-    CREATE TABLE custom_actions (id TEXT PRIMARY KEY, type TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
-      notes TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '', icon TEXT NOT NULL DEFAULT 'zap', important INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
-    INSERT INTO events VALUES ('item-1', NULL, 1, 'item', '{"title":"Old task","sessionId":"s-1"}', 'human', 10, 0, NULL, NULL, 0, 1, NULL, 0, NULL, NULL, NULL);
-    INSERT INTO events VALUES ('msg-1', 'item-1', 1, 'message', '{"text":"Hello"}', 'human', 11, 1, 11, 'human', 0, 1, NULL, 0, NULL, NULL, NULL);
-    INSERT INTO events VALUES ('bot-1', 'item-1', 2, 'bot', '{}', 'human', 12, 1, 20, 'bot', 0, 1, '{"runId":"run-1"}', 0, NULL, NULL, NULL);
-    INSERT INTO events VALUES ('bot-2', 'item-1', 3, 'bot', '{}', 'human', 30, 0, NULL, NULL, 0, 1, NULL, 0, NULL, NULL, NULL);
-    INSERT INTO trace VALUES (1, 10, 'item-1', 'item-1', NULL, 'human', 'event_added', '{"type":"item"}');
-    INSERT INTO trace VALUES (2, 11, 'item-1', 'msg-1', NULL, 'human', 'event_added', NULL);
-    INSERT INTO trace VALUES (5, 12, 'item-1', 'bot-1', NULL, 'human', 'event_added', NULL);
-    INSERT INTO runs VALUES ('run-1', 'item-1', '["bot-1"]', 0, 13, 5, 20, 0.25, 4, 'Done.', 'the old prompt', '{"old":"transcript"}');
-    INSERT INTO settings VALUES ('mcp.port', '4321');
-    INSERT INTO custom_actions VALUES ('ca-1', 'item', 'Old action', '', '', 'async () => null', 'zap', 0, 1, 2);
-  `)
-  old.close()
-  const { egdb, store } = await open(join(dir, 'imported.egdb'))
-  const counts = await importV4(v4, store, 99, 'alex')
-  assert.deepEqual(counts, { events: 4, trace: 3, runs: 1 })
-  await assert.rejects(importV4(v4, store, 99, 'alex'), /not empty/)
-  await store.flush()
-  egdb.stop()
-  await new Promise((r) => setTimeout(r, 300))
-  const back = await open(join(dir, 'imported.egdb'))
-  const engine = new Engine({ store: back.store, now, dataDir: dir })
-  const it = engine.get('item-1')!
-  assert.equal(it.title, 'Old task')
-  assert.deepEqual(it.blockers, [], 'an open bot blocker from before is cancelled')
-  assert.deepEqual(it.assignees, ['alex'], 'the one person there was has every open item')
-  assert.ok(engine.get('item-1', 'alex')!.withYou)
-  assert.equal(engine.me(), 'alex')
-  assert.equal(engine.event('msg-1')!.createdBy, 'alex', 'what "human" did is theirs')
-  assert.equal(engine.event('bot-2')!.cancelled, true)
-  assert.equal(engine.event('bot-1')!.message, null, 'an old bot event that ran reads as it did')
-  assert.deepEqual(back.store.trace.map((t) => t.id).slice(0, 4), [1, 2, 5, 6], 'trace ids kept; the cancel traced after them')
-  assert.deepEqual(engine.detail('item-1')!.runs.map((r) => [r.id, r.agentId, r.itemIds, r.costUsd]), [['run-1', null, ['item-1'], 0.25]])
-  assert.match((await engine.transcript('run-1'))!, /"old":"transcript"/)
-  assert.equal(engine.settings.mcpPort(), 4321)
-  assert.equal(engine.customActions.list()[0].name, 'Old action')
-  back.egdb.stop()
-}
-
-// ---- 3. Secrets under a key of the backend's own ----
+// ---- 2. Secrets under a key of the backend's own ----
 {
   const secrets = keyFileSecrets(dir)
   const stored = secrets.encrypt('xoxp-secret')
   assert.match(stored, /^aes:/)
   assert.equal(keyFileSecrets(dir).decrypt(stored), 'xoxp-secret', 'the key lasts')
-  assert.throws(() => secrets.decrypt('safe:abc'), /older app/)
   assert.equal(secrets.decrypt('plain:x'), 'x')
 }
 
-// ---- 4. The backend on its own: it imports, answers calls, and sends changes ----
+// ---- 3. The backend on its own, on a source it makes: it answers calls, sends changes, and keeps what it was given ----
 {
-  const data = join(dir, 'backend')
-  const child = spawn(process.execPath, ['--import', 'tsx', 'src/backend/index.ts', '--data', data, '--user', 'Tester'], { stdio: ['ignore', 'pipe', 'pipe'] })
+  // `~/` is the home folder; a source that is not there is made, its folder too.
+  const typed = `~/${relative(homedir(), join(dir, 'fresh', 'tasks.sqlite'))}`
+  const source = join(dir, 'fresh', 'tasks.sqlite')
+  const data = `${source}.data`
+  const child = spawn(process.execPath, ['--import', 'tsx', 'src/backend/index.ts', '--file', typed], { stdio: ['ignore', 'pipe', 'pipe'] })
   let output = ''
   child.stdout.on('data', (c) => (output += c))
   child.stderr.on('data', (c) => (output += c))
@@ -181,10 +127,7 @@ const file = join(dir, 'round-trip.egdb')
   void (async () => {
     for (let c = await reader.read(); !c.done; c = await reader.read()) changes.push(new TextDecoder().decode(c.value))
   })()
-  const overview = (await call('overview')) as { bots: { name: string }[]; me: { id: string } }
-  assert.deepEqual(overview.bots.map((b) => b.name), ['Claude'], 'the first start makes a bot')
-  assert.equal(overview.me.id, 'tester', 'and the first person, who signs in by their username')
-  // Signed in as nobody, or as nobody there is, only signing in works.
+  // Signed in as nobody, or as nobody there is, only signing in works; signing in as someone new makes them.
   const as = async (user: string | null, method: string, ...args: unknown[]) =>
     (await (
       await fetch(`${info.url}/rpc/${method}`, {
@@ -196,7 +139,9 @@ const file = join(dir, 'round-trip.egdb')
   assert.match(String((await as(null, 'overview')).error), /Sign in first/)
   assert.match(String((await as('nobody', 'overview')).error), /Nobody is called nobody/)
   assert.deepEqual((await as(null, 'signIn', 'Tester')).result, { id: 'tester', name: 'tester' })
-  assert.match(String((await as(null, 'signIn', 'ghost')).error), /Nobody is called ghost/)
+  const overview = (await call('overview')) as { bots: unknown[]; users: unknown[]; me: { id: string } }
+  assert.deepEqual([overview.me.id, overview.users.length, overview.bots.length], ['tester', 1, 0], 'a fresh source has nothing in it but who signed in')
+  assert.ok(existsSync(source), 'the source was made')
   const id = (await call('create', 'From the API', null)) as string
   await call('send', id, 'message', 'A note')
   for (let i = 0; i < 50 && !changes.some((c) => c.includes('event: change')); i++) await new Promise((r) => setTimeout(r, 50))
@@ -204,7 +149,7 @@ const file = join(dir, 'round-trip.egdb')
   await assert.rejects(call('send', id, 'nope', 'x'), /No preset nope/)
   await assert.rejects(call('nothing'), /No method/)
   // A second backend on the same data refuses to start.
-  const second = spawn(process.execPath, ['--import', 'tsx', 'src/backend/index.ts', '--data', data, '--user', 'Tester'], { stdio: ['ignore', 'pipe', 'pipe'] })
+  const second = spawn(process.execPath, ['--import', 'tsx', 'src/backend/index.ts', '--file', typed], { stdio: ['ignore', 'pipe', 'pipe'] })
   let secondOut = ''
   second.stderr.on('data', (c) => (secondOut += c))
   assert.equal(await new Promise((r) => second.on('exit', r)), 1)
@@ -214,7 +159,7 @@ const file = join(dir, 'round-trip.egdb')
   await new Promise((r) => child.on('exit', r))
   assert.ok(!existsSync(join(data, 'backend.json')), 'it says it has gone')
   // What it wrote lasts: it starts again with the same items.
-  const again = spawn(process.execPath, ['--import', 'tsx', 'src/backend/index.ts', '--data', data, '--user', 'Tester'], { stdio: ['ignore', 'pipe', 'pipe'] })
+  const again = spawn(process.execPath, ['--import', 'tsx', 'src/backend/index.ts', '--file', typed], { stdio: ['ignore', 'pipe', 'pipe'] })
   for (let i = 0; i < 200 && !existsSync(join(data, 'backend.json')); i++) await new Promise((r) => setTimeout(r, 100))
   const info2 = JSON.parse(readFileSync(join(data, 'backend.json'), 'utf8')) as { url: string; token: string }
   const res = await fetch(`${info2.url}/rpc/detail`, { method: 'POST', headers: { authorization: `Bearer ${info2.token}`, 'x-workflows-user': 'tester' }, body: JSON.stringify([id]) })
