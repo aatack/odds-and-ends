@@ -189,33 +189,13 @@ export const itemActions: Action[] = [
     run: async (a, { engine }) => engine.children(String(a.item_id), Boolean(a.open)),
   },
   {
-    name: 'recent_items',
-    unsafe: false,
-    description:
-      'Items touched in the last `days`, for looking back at how the work went: how long each kind of blocker held them, bot runs and cost, ' +
-      'human messages, approvals the human changed, cancels, timeouts, bot failures, views and skips, and what was handled outside the tool.',
-    input: { days: z.number().default(7) },
-    run: async (a, { engine }) => engine.recent(Number(a.days)),
-  },
-  {
-    name: 'run_transcript',
-    unsafe: false,
-    description: "One bot run's prompt and whole transcript.",
-    input: { run_id: z.string() },
-    run: async (a, { engine }) => {
-      const t = await engine.transcript(String(a.run_id))
-      if (!t) throw new Error(`No run ${a.run_id}.`)
-      return t.length > 200_000 ? `${t.slice(0, 200_000)}\n… (cut)` : t
-    },
-  },
-  {
     name: 'add_events',
     unsafe: false,
     description:
-      'Add events in an item (your own or any other): messages, blockers, approvals, afters, child items. With no item_id, add items that sit in none.',
+      'Add events in a task (or in a bot\'s chat): notes, blockers, approvals, child tasks. With no item_id, add tasks, bots or people that sit in none.',
     input: { item_id: itemId.optional(), events: z.array(spec) },
     run: async (a, ctx) => {
-      return { ids: await ctx.engine.addEvents(a.item_id ? String(a.item_id) : null, a.events as EventSpec[], ctx.actor, ctx.author, ctx.runId) }
+      return { ids: await ctx.engine.addEvents(a.item_id ? String(a.item_id) : null, a.events as EventSpec[], ctx.actor, ctx.author) }
     },
   },
   {
@@ -224,7 +204,7 @@ export const itemActions: Action[] = [
     description: 'End a blocker without it happening (a child item is closed as cancelled).',
     input: { event_id: z.string() },
     run: async (a, ctx) => {
-      await ctx.engine.cancel(String(a.event_id), ctx.actor, ctx.runId)
+      await ctx.engine.cancel(String(a.event_id), ctx.actor)
       return 'Cancelled.'
     },
   },
@@ -234,7 +214,7 @@ export const itemActions: Action[] = [
     description: 'Close an item: its open children are cancelled, child items closed, all the way down.',
     input: { item_id: itemId },
     run: async (a, ctx) => {
-      await ctx.engine.close(String(a.item_id), { actor: ctx.actor, runId: ctx.runId ?? undefined })
+      await ctx.engine.close(String(a.item_id), { actor: ctx.actor })
       return 'Closed.'
     },
   },

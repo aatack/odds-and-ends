@@ -8,7 +8,7 @@
  * which stay open until something happens (a script says it is done, an approval
  * is given, a child item closes).
  */
-export type EventKind = 'item' | 'note' | 'approval' | 'script' | 'bot' | 'user'
+export type EventKind = 'task' | 'note' | 'approval' | 'script' | 'bot' | 'user'
 
 /** An event as it is added. `ref` names it, so another added alongside can point at it. */
 export interface EventSpec {
@@ -54,30 +54,16 @@ export interface ItemEvent {
   /** For the blockers the loop checks: when next, and what went wrong last. */
   nextCheckAt: number | null
   lastError: string | null
-  /** Its timeline, read from the trace. */
-  times: EventTimes
 }
 
-/** An event's timeline, read from the trace. */
-export interface EventTimes {
-  added: number | null
-  firstChecked: number | null
-  lastChecked: number | null
-  checks: number
-  firstRunStarted: number | null
-  firstRunEnded: number | null
-  runs: number
-  resolved: number | null
-}
-
-/** An item event, as the lists and the item view read it. */
+/** A task (or a bot, for its own chat), as the lists and its view read it. */
 export interface Item {
   id: string
   title: string
   /** The item it sits in, if any. It blocks that item until it closes. */
   parentId: string | null
   closed: boolean
-  /** How it closed: 'closed', 'handled_outside', or 'cancelled'. */
+  /** How it closed: 'closed' or 'cancelled'. */
   how: string | null
   /** Its open children, oldest first. */
   blockers: ItemEvent[]
@@ -96,51 +82,18 @@ export interface Item {
   closedAt: number | null
 }
 
-/** One row of the trace: one thing that happened. */
-export interface TraceEntry {
-  id: number
-  at: number
-  /** The item it happened in (for an item's own creation and closing, the item itself). */
-  itemId: string
-  eventId: string | null
-  runId: string | null
-  actor: string
-  kind: string
-  data: Record<string, unknown> | null
-}
-
-export interface BotRun {
-  id: string
-  /** The bot that ran; null for a run from before bots were their own items. */
-  agentId: string | null
-  /** The items it was woken for. */
-  itemIds: string[]
-  eventIds: string[]
-  startedAt: number
-  endedAt: number | null
-  costUsd: number | null
-  turns: number | null
-  result: string | null
-}
-
 export interface ItemDetail {
   item: Item
   /** The item it sits in, if any. */
   parent: { id: string; title: string } | null
   /** Its children, oldest first: every event in it, child items included. */
   events: ItemEvent[]
-  runs: BotRun[]
-  trace: TraceEntry[]
 }
 
-/** Any event, with what its views need: the item it sits in, its runs, its trace, and (for an item) the item in full. */
+/** Any item, with what its views need: the task it sits in, and (for a task, or a bot) it in full. */
 export interface EventDetail {
   event: ItemEvent
   parent: { id: string; title: string } | null
-  /** The bot runs that answered it (for an item, every run on it). */
-  runs: BotRun[]
-  /** Every trace row about it. */
-  trace: TraceEntry[]
   /** For an item, or a bot (whose own chat it is): it in full. */
   item: ItemDetail | null
 }
@@ -165,6 +118,8 @@ export interface Agent {
   folder: string
   /** Its Claude session, once it has run. */
   sessionId: string | null
+  /** How its last run went (its `last_run` value; egdb keeps every one before), or null before it has run. */
+  lastRun: LastRun | null
   createdAt: number
   /** Deleted (its agent event cancelled): it is assigned nothing more and never runs again. */
   deleted: boolean
@@ -174,6 +129,30 @@ export interface Agent {
   wakesAt: number | null
   /** The open items assigned to it. */
   assigned: string[]
+}
+
+/** A bot's last run, as its `last_run` value keeps it. */
+export interface LastRun {
+  id: string
+  startedAt: number
+  /** Null while it runs. */
+  endedAt: number | null
+  /** The tasks it was woken for (and its own id, for its chat). */
+  items: string[]
+  costUsd: number | null
+  turns: number | null
+  error: string | null
+  /** What it wrote along the way, cut short. */
+  output: string | null
+}
+
+/** An item as egdb holds it, for the debug view: its values, its links (each with who wrote it and when), and who made it. */
+export interface Inspection {
+  id: string
+  values: Record<string, unknown>
+  links: { type: string; direction: 'outbound' | 'inbound'; other: string; sort: number | null; at: number | null; by: string | null }[]
+  createdAt: number | null
+  createdBy: string | null
 }
 
 /** A person: a `user` event in no item, whose id is their username. */
@@ -188,8 +167,6 @@ export interface Overview {
   items: Item[]
   bots: Agent[]
   users: User[]
-  /** Items the human had on screen in the last week, the most recent first. */
-  viewed: string[]
   /** Whoever (people and bots) the person looking assigned things to, the most recent first: the chat input offers them first. */
   recentAssignees: string[]
 }
@@ -252,7 +229,9 @@ export interface Check {
 }
 
 export interface IntegrationsView {
+  github: Check
   claude: Check & { bots: number }
+  slack: { id: string; name: string; team: string; user: string; tokenHint: string }[]
 }
 
 export interface McpView {
@@ -271,10 +250,8 @@ export interface WorkflowsAPI {
   catalog: () => Promise<Catalog>
   /** The item that has waited longest for the human, or null. */
   next: (skip: string[]) => Promise<string | null>
-  /** The human has the item on screen. */
-  viewed: (id: string) => Promise<void>
-  /** The human passed over the item for now. */
-  skipped: (id: string) => Promise<void>
+  /** An item as egdb holds it: its values and links. */
+  inspect: (id: string) => Promise<Inspection>
   /** A new item, in `parentId` or in none. */
   create: (title: string, parentId: string | null) => Promise<string>
   /** Sends from the chat input: `text` through a preset. */
@@ -314,6 +291,9 @@ export interface WorkflowsAPI {
   /** Wakes a bot now, whatever its debounce says. */
   wakeBot: (id: string) => Promise<void>
   integrations: () => Promise<IntegrationsView>
+  /** Keeps a Slack workspace's user token (encrypted), once Slack says whose it is. Nothing uses it yet. */
+  addSlack: (token: string) => Promise<void>
+  removeSlack: (id: string) => Promise<void>
   mcp: () => Promise<McpView>
   regenerateMcpToken: () => Promise<void>
   setMcpPort: (port: number) => Promise<void>
@@ -344,9 +324,9 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'eventDetail', 'catalog', 'next', 'viewed', 'skipped', 'create', 'send', 'approve', 'cancel', 'close',
+  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'close',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
-  'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'mcp', 'regenerateMcpToken', 'setMcpPort',
+  'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'mcp', 'regenerateMcpToken', 'setMcpPort',
 ] as const satisfies readonly ApiMethod[]
 
 type ApiMethod = Exclude<keyof WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser' | 'openSource' | 'closeSource'>

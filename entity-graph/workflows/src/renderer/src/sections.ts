@@ -19,7 +19,8 @@ export interface Section {
   items: (items: Item[], recent: Recent) => Item[]
 }
 
-export type Recent = Pick<Overview, 'viewed' | 'users'>
+/** What the finder reads as recent: what was viewed here (kept by the app, not the store), and who there is. */
+export type Recent = { viewed: string[]; users: Overview['users'] }
 
 const open = (i: Item) => !i.closed
 /** The items with these ids that the finder has, in the ids' order. */

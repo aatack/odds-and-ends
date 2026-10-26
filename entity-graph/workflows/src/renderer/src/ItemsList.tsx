@@ -80,7 +80,7 @@ export function ItemsList(props: {
       key: `bot:${bot.id}`,
       bot,
     }))
-    const botGroup = botLines.length ? [{ id: 'bots', label: selected ? 'Others' : 'Hand it to', count: botLines.length, lines: botLines }] : []
+    const botGroup = botLines.length ? [{ id: 'bots', label: selected ? 'Others' : 'People and bots', count: botLines.length, lines: botLines }] : []
     return [...chosenGroup, ...botGroup, ...sections
       .map((id) => {
         let all = SECTIONS[id].items(items, recent)
@@ -178,7 +178,7 @@ export function ItemsList(props: {
                 <div key={line.key} className={`row ${selected}`} onClick={() => choose(line)} onMouseMove={hover}>
                   {line.chosen ? <Check className="icon" /> : line.bot.bot === false ? <User className="icon" /> : <Bot className="icon" />}
                   <span className="row-title">@{line.bot.name}</span>
-                  <span className="muted row-status">{line.chosen ? 'take them off' : verb === 'Assign' ? '' : 'hand them the task'}</span>
+                  <span className="muted row-status">{line.chosen ? 'Remove' : 'Assign'}</span>
                 </div>
               )
             if (!('item' in line))

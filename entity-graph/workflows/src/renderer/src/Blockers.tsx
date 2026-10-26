@@ -36,8 +36,8 @@ function Row(props: { b: ItemEvent; detail: ItemDetail; catalog: Catalog; act: A
   return (
     <div className="blocker" {...menu(b.id)}>
       <div className="blocker-line">
-        {b.type !== 'item' && <EventIcon event={b} />}
-        {b.type === 'item' ? (
+        {b.type !== 'task' && <EventIcon event={b} />}
+        {b.type === 'task' ? (
           <button data-ui className="link blocker-text" onClick={() => onOpen(b.id)}>
             <TaskCard event={b} />
           </button>

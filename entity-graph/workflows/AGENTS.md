@@ -46,25 +46,27 @@ the two run side by side; it reads nothing of the older app's.
 [`docs/paradigm.md`](./docs/paradigm.md) is the idea, in a page.
 [`docs/events.md`](./docs/events.md) is how it is built; read it before changing the engine.
 
-- Everything is an **event**, items included: one tree. An item's children are
-  its history. Some events resolve as they are added (a note); **blockers**
-  wait until something happens (a script says it is done, an approval, a child item closes).
-  There are six types: `item`, `note`, `approval`, `script`, `bot` and `user` (a person).
+- Everything is an **event**, tasks included: one tree, held in egdb as entities joined by `contains` links. A
+  task's children are its history. Some events resolve as they are added (a note); **blockers**
+  wait until something happens (a script says it is done, an approval, a child task closes).
+  There are six types: `task`, `note`, `approval`, `script`, `bot` and `user` (a person).
 - **People** are items too (`user` events, in no item, whose id is their username); they sign in to the
-  app by typing their username (no password: the app is local). Items are **assigned** to people and
-  bots: an `assigned_to` link from the item, not an event (`Engine.setAssignee`; the items someone has are
-  their links followed backwards). An item can have many blockers at once. It is a person's turn when they
+  app by typing their username (no password: the app is local). Tasks are **assigned** to people and
+  bots: an `assigned_to` link from the task, not an event (`Engine.setAssignee`; the tasks someone has are
+  their links followed backwards). A task can have many blockers at once. It is a person's turn when they
   have it and nothing blocks it but approvals. Next goes through those, the least recently touched first.
 - A **bot** is an item of its own (a `bot` event, in no item, its settings in its params): a name,
   instructions, a provider and model (opus by default), a debounce (a minute by default), and a folder and
   Claude session of its own, which last. Notes in it are its own chat. It wakes only when something happens
-  to it: an item is assigned to it, its settings change, or someone writes in its chat (its debounce after);
-  and every 15 minutes while its items have news (`Engine.wake`). It runs one thing at a
-  time: a run is asked to action every item it has and give each a new assignee, and told what is new in
+  to it: a task is assigned to it, its settings change, or someone writes in its chat (its debounce after);
+  and every 15 minutes while its tasks have news (`Engine.wake`). It runs one thing at a
+  time: a run is asked to action every task it has and give each a new assignee, and told what is new in
   its chat and in each (`promptFor` in `workers.ts`: people's notes as written, after their name; anything else in
-  [brackets]; each item's id every ten lines). It answers with
-  `{ updates: [{ item, message?, events?, assign?, close? }] }` as structured output. An item it says
+  [brackets]; each task's id every ten lines). It answers with
+  `{ updates: [{ item, message?, events?, assign?, close? }] }` as structured output. A task it says
   nothing of who has goes back to its owner, unless it is left waiting on something (`Engine.settle`).
+  It is told never to close a task unless someone explicitly asked it to. Its `last_run` value says how
+  its last run went (egdb keeps the earlier ones, as old values); `seen` lists the tasks its session has seen.
 - A `script` waits for anything: a function run on a schedule until it says it is done. Custom actions
   (the Types page) are scripts too, run on an event when asked.
 - The chat input sends a note by default; `@` a bot or a person in it to hand them the task (and take it
@@ -74,10 +76,9 @@ the two run side by side; it reads nothing of the older app's.
 
 ## Terminology
 
-- **Item** is the general word, for agents and in the code, for anything in the tree: every event is an item.
-  *Item* and *event* name the same thing; *item* usually means the parent in a given view, *event* one of its children.
-- **Task** is a particular kind of item, the `item` event type: a thing to be done, which is especially important.
-  The UI says *task* for these; the code, store and MCP tools keep `item`.
+- **Item** is the general word for a thing stored in the database (an egdb entity): every event is an item.
+- **Task** is the `task` event type: a thing to be done. Its events sit in it (`contains` links).
+  The MCP tools' names (`list_items`, `get_item`, `item_id`, …) still say *item*; a bot's prompt says *task*.
 
 ## The unsafe rule
 
@@ -95,8 +96,8 @@ sending, deploying and deleting, in any integration.
 - Only the human runs one: through an `approval` event, in the app. An agent asks
   for one by adding an approval; `unsafe_actions` tells it what it can ask for.
 - No event may act outside the app when an agent adds it.
-- For now the app has no unsafe actions of its own (the integrations are gone, to come back as types);
-  the tests add one to check the rule.
+- For now the app has no unsafe actions of its own: the integration settings (GitHub, Slack) are kept on the
+  Integrations page, but no tools are built from them yet. The tests add one to check the rule.
 - **Bots have a shell** (auto mode), and `gh` is logged in. The rule binds them
   there too: their instructions forbid doing anything unsafe with it, and the
   auto-mode classifier stands between them and it. That is a weaker guarantee
@@ -107,7 +108,7 @@ sending, deploying and deleting, in any integration.
 
 ```
 src/engine     everything but the window; plain Node, so the tests drive it headlessly
-  engine.ts      items, their events and blockers, assignments, bots' wakes and output, the trace, the loop
+  engine.ts      tasks, their events and blockers, assignments, bots' wakes and output, the loop
   store.ts       the store, in memory; every change goes on as egdb ops
   egdb.ts        the store's home: writing to egdb, reading it back, running egdb-server
   eventTypes.ts  the event types
@@ -116,7 +117,7 @@ src/engine     everything but the window; plain Node, so the tests drive it head
   script.ts      scripts, in QuickJS
   schema.ts      JSON Schema from the zod shapes: forms, docs, the bots' output schema
   mcp.ts         the MCP server: the actions, in two scopes
-  settings.ts    configuration in the store: the MCP port and token
+  settings.ts    configuration in the store: the MCP port and token, integration secrets (not used yet)
   admin.ts       what the Integrations and MCP pages show and change
   workers.ts     the bots' runner: one run at a time per bot, by its provider (`claude -p`)
   integrations.ts  the interfaces: Action, EventType
@@ -131,8 +132,6 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
 
 ## UI
 
-- **The UI says *task*; everything else says *item*.** The words on screen call an item a task. The code, the
-  store, the event type and the MCP tools (`list_items`, `get_item`, …) keep `item`.
 - **Two kinds of form.**
   - The forms used all day are condensed: the new-item form, and the chat input
     (`Composer`: one growing line, its preset's icon and hint, Tab between presets,
@@ -157,11 +156,13 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
 - **The content pane is a stack of views** (`views.ts`, a Jotai atom kept in
   local storage). The list and Next replace the stack; Open, Debug and links push
   onto it; Back pops it. A view is `{ kind, id }`: `event` shows an event as its
-  type is shown (an item as its chat, any other event as `EventView`); `debug`
-  shows its whole state as JSON. A new kind of view is a new `kind`.
+  type is shown (a task as its chat, any other event as `EventView`); `debug`
+  (`DebugView`) shows the item as egdb holds it (`Engine.inspect`): its id, who made it and when (from the
+  `contains` link to it), its values (a note's are just `type` and `text`), and its links, each with when and by whom. A new kind of view is a new `kind`.
 - **There is no sidebar.** The content fills the window in a centred column.
-  The bottom-left button opens the menu (who is signed in, on which source; bots working; Tasks, Bots,
-  Integrations, Types, MCP, which are views on the stack like any other; Sign out; Close source). Next has no button: it is Ctrl+D, and the app moves on
+  The bottom-left button opens the menu (Tasks, Bots, with how many are working beside it, Integrations, Types,
+  MCP, which are views on the stack like any other; Sign out, with the username beside it; Close source, with the
+  source beside it). Next has no button: it is Ctrl+D, and the app moves on
   by itself once the task on screen no longer needs you.
 - **The items view** (`ItemsList`) is what shows when the stack is empty, and
   Ctrl+L puts it on top (or, when it is already showing, puts the cursor in its
@@ -173,7 +174,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
 - **The finder** (`ItemsList`) is the items view and every picker: items in **sections** (`sections.ts`: recently
   viewed, needs you, with bots, waiting, closed today), each instance choosing which, in what order,
   and how many rows each shows before an "n more" row (Enter or a click shows the rest). The Tasks view shows 12 a
-  section; pickers in a modal, 6. Recently viewed comes from `Overview` (`Engine.inHand`: `viewed` trace rows). A
+  section; pickers in a modal, 6. Recently viewed is kept by the app, in local storage (`viewedAtom`). A
   row's grey text says only what its icon can't (what a script waits for); "needs you" and "waits for a task" are
   the icon's job.
 - **Text is markdown.** Messages, descriptions and code samples all go through `Markdown` (`components/ui/`, react-markdown
@@ -210,11 +211,12 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   Everything is as that person sees it: `withYou`, Next, the recent lists. Another source starts with an
   empty stack of views.
 - **Bots** (`BotsPage`, in the menu) lists the bots, with what each has and whether it is working or when it
-  wakes, and makes new ones (a name and instructions; the rest has defaults). A bot opens as an `event` view:
-  `BotView` at the top (its model, debounce and state; Settings, folded, as a `Form`, saving them wakes it; Wake
-  now; its last runs), then its own chat, like a task's. The header's Delete hands what it had back.
+  wakes, counting down), and creates new ones (a name and instructions; the rest has defaults). A bot opens as an
+  `event` view: `BotView` at the top (its model, debounce and state; Wake now; its last run in a line; Settings,
+  folded, as a `Form`, saving them wakes it, with Delete there, asking first, which hands what it had back), then
+  its own chat, like a task's. Its header has no Delete.
 - **Every event has a right-click menu** (`useEventMenu`): Open and Debug, then what can be done to it
-  (`eventActions.ts`: Resolve and Skip for an open task; Cancel (Delete, for a bot) for another open event; then the
+  (`eventActions.ts`: Resolve and Skip for an open task; Cancel for another open event, not a bot; then the
   custom actions). The view header draws the same list as icon buttons (the less important in the ⋯ menu), so the
   two never differ. Spread
   it on anything that stands for an event. Clicking an event does nothing else.
@@ -224,21 +226,14 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
 - **The engine is the only writer.** Every change goes through `Engine` and emits
   `change`. Events are added in `add` and resolved in `resolve`, and checks and
   starts on one item run one at a time (`serial`).
-- **Trace everything.** The aim is complete traceability: what happened, when,
-  and who or what did it.
-  - The `trace` table records every moment, one row each: an item created; an
-    event added, checked, resolved or cancelled; a view or skip; a bot
-    run started and ended; every action called, by whom, in which run, with its
-    arguments, its result (ok or error) and how long it took.
-  - `ItemEvent.times` is read from the trace, never stored apart from it.
-  - The `events` table is each item's history: rows are added and resolved,
-    never otherwise changed or deleted, and a resolved event keeps its data (a
-    bot's own words in `output`). `runs` keeps every run's prompt and full
-    stream-json transcript.
-  - The trace and the runs are append-only: never update or delete a row.
-  - Anything new that changes, starts, ends or is seen goes through
-    `Engine.mark`. Bots read the trace back (`recent_items`, `get_item`,
-    `run_transcript`) to find what to improve.
+- **egdb is the history.** Every write is an egdb event, with its author and time, and egdb keeps every value an
+  entity had and every state a link had. So the app keeps no trace, runs or transcripts of its own:
+  - An item's values are its params, plus `resolved_at`, `resolved_by`, `cancelled`, `data` and `state` once
+    they apply. Who made it and when is the `contains` link to it; who has a task, its `assigned_to` links.
+  - A bot keeps only its `last_run` (`{ id, startedAt, endedAt, items, costUsd, turns, error, output }`); the
+    earlier runs are its old values. Claude Code keeps its own session files.
+  - What happened since a bot last ran is told by when things were written (`Store.moment()` in memory, times
+    after a restart), against the bot's mark, set as each run starts.
 - **The store is egdb.** The backend runs an egdb-server of its own on the
   source's file (loopback, a token). The engine keeps the store in memory
   (`store.ts`) and reads it synchronously; every change is also queued as egdb ops
@@ -254,7 +249,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   item take its id, so an agent may act on any item, its own included. Agents
   are author `bot`, so the bots' rules (which event types they may add) apply.
   The endpoints are `run` (a bot's run, at `/mcp/<runId>` on a free port; it
-  ties calls to the run and its bot, traced in the bot, and records what it adds as `bot:<id>`) and `operator` (any other agent, at
+  ties calls to the run and its bot, and records what it adds as `bot:<id>`) and `operator` (any other agent, at
   `/mcp` on port 47391 by default, with a bearer token). Both bind to loopback only.
 - **Bots run in auto mode, each in its own folder.** A Claude bot runs
   `claude -p --permission-mode auto` with the usual tools and the workflows MCP

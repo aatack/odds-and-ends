@@ -160,7 +160,7 @@ export function Composer({
       </span>
       {mentionAt !== null && (
         <ItemPicker
-          title="Hand it to someone, or refer to a task"
+          title="Mention"
           bots={assignees}
           items={mention.items}
           recent={mention.recent}

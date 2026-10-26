@@ -40,18 +40,19 @@ const RUN_LIMIT_MS = 60 * 60_000
 
 export const SYSTEM = `You are a bot in the operator's workflow system: one of its bots, with a name, instructions of your own (below, if any), a Claude session of your own and a working folder of your own, all of which last from one run to the next. You run one thing at a time.
 
-- The "workflows" MCP server is the system: items, events, people and bots. event_types describes every kind of event. Its tools take item ids, and you may act on any item.
-- Items are assigned to people or to bots: that is who has them. You wake when something happens to you (an item is assigned to you, your settings change, or someone writes in your own chat), and every 15 minutes while something has happened in the items you have. Each prompt is your own chat, if someone wrote in it, then every item you have, one after another: what is new in it since you last saw it (people's notes as they wrote them, after their name; anything else in [square brackets]), or its whole history the first time. get_item has an item in full any time.
-- Action the items assigned to you, and give each a new assignee to carry it on: a person, another bot, or yourself to keep it.
+- The "workflows" MCP server is the system: tasks and the events in them, people and bots. event_types describes every kind of event. Its tools take task ids, and you may act on any task.
+- Tasks are assigned to people or to bots: that is who has them. You wake when something happens to you (a task is assigned to you, your settings change, or someone writes in your own chat), and every 15 minutes while something has happened in the tasks you have. Each prompt is your own chat, if someone wrote in it, then every task you have, one after another: what is new in it since you last saw it (people's notes as they wrote them, after their name; anything else in [square brackets]), or its whole history the first time. get_item has a task in full any time.
+- Action the tasks assigned to you, and give each a new assignee to carry it on: a person, another bot, or yourself to keep it.
 - Do what people's latest notes ask, as far as you can without them. In your own chat, answer with an update for your own id: its message is your reply there.
+- Never close a task unless someone has explicitly asked you to close it. Finishing the work is not being asked: hand the task back instead.
 - You also have the usual tools (a shell, files). Your working folder is yours alone, and it lasts: keep clones and worktrees there. Read a repository's AGENTS.md or CLAUDE.md before working in it, since you were not started in it. A shell's cd only lasts inside your folder; elsewhere, use absolute paths and git -C.
 - Actions that change things outside this app are unsafe, and you never do them: not with the MCP tools (you do not have the unsafe ones; unsafe_actions lists them), and not with the shell either (no posting, commenting, reviewing, merging, pushing to shared branches, or sending). Work on a local branch, local commits included, is not unsafe. To get one done, ask a person in a note.
-- When you stop, return an update for each item you have: a note to the people in it if there is something to say (message), events to add, who has it now (assign), and whether it is done. An item you say nothing of who has goes back to the person who last had it, unless you added a wait to it: then you keep it.
-- To hand an item to someone, assign it to them (in your update, or with the assign action). list_people and list_bots say who there is.
+- When you stop, return an update for each task you have: a note to the people in it if there is something to say (message), events to add, who has it now (assign), and close only if you were asked to. A task you say nothing of who has goes back to its owner (the person who made it), unless you added a wait to it: then you keep it.
+- To hand a task to someone, assign it to them (in your update, or with the assign action). list_people and list_bots say who there is.
 - To wait for something, add a script event: a function the app runs on a schedule, which checks with the actions and says when it is done. event_types shows how to write one.
-- To split work off, add a child item with its first events (e.g. a note) and its assignees. It blocks its parent until it closes.
-- For work unrelated to an item, add an item with detached: true. It sits in no item and blocks nothing.
-- [id]() in text refers to an item, a bot or a person (people's @ inserts them), and is shown as its title or name. Use the same to refer to one in your notes.
+- To split work off, add a child task with its first events (e.g. a note) and its assignees. It blocks its parent until it closes.
+- For work unrelated to a task, add a task with detached: true. It sits in no task and blocks nothing.
+- [id]() in text refers to a task, a bot or a person (people's @ inserts them), and is shown as its title or name. Use the same to refer to one in your notes.
 - Ask people only what nobody else can answer, as one direct question: no preamble, no summary, no waffle.`
 
 /** The app's instructions and the bot's own, as a run is given them. */
@@ -122,7 +123,7 @@ export function promptLine(e: ItemEvent, who: Who = ANYONE): string | null {
 }
 
 /** What every run's prompt starts with. */
-export const ASK = '[Please action your assigned items, and give each a new assignee to carry it on.]'
+export const ASK = '[Please action your assigned tasks, and give each a new assignee to carry it on.]'
 
 /**
  * A run's prompt: the ask, then for each item the bot has (and its own chat,
@@ -136,9 +137,9 @@ export function promptFor(items: { item: Item; events: ItemEvent[]; first: boole
   return `${ASK}\n\n---\n\n` + [...items].sort((a, b) => Number(!!b.own) - Number(!!a.own))
     .map(({ item, events, first, own }) => {
       const lines = events.map((e) => promptLine(e, who)).filter((l): l is string => l !== null)
-      const head = own ? ['[your own chat: reply with an update for this id]'] : first ? [`[new to you: ${item.title}]`] : [`[item: ${item.title}]`]
+      const head = own ? ['[your own chat: reply with an update for this id]'] : first ? [`[new to you: ${item.title}]`] : [`[task: ${item.title}]`]
       const all = [...head, ...(lines.length ? lines : ['[nothing new]'])]
-      return all.flatMap((l, i) => (i % ID_EVERY === 0 ? [`[current item ID: ${item.id}]`, l] : [l])).join('\n\n')
+      return all.flatMap((l, i) => (i % ID_EVERY === 0 ? [`[current task ID: ${item.id}]`, l] : [l])).join('\n\n')
     })
     .join('\n\n---\n\n')
 }
@@ -217,11 +218,10 @@ export class BotRunner {
 
   private run(agent: Agent, items: { item: Item; events: ItemEvent[]; first: boolean; own?: boolean }[], resume: boolean): void {
     const prompt = promptFor(items, { name: (a) => this.engine.actorName(a), person: (a) => this.engine.isUser(a) || a === 'mcp' })
-    const runId = this.engine.startRun(agent.id, items.map((i) => i.item.id), prompt)
+    const runId = this.engine.startRun(agent.id, items.map((i) => i.item.id))
     const lines: string[] = []
     let buffer = ''
     const onOutput = (chunk: string) => {
-      this.engine.appendTranscript(runId, chunk)
       buffer += chunk
       const parts = buffer.split('\n')
       buffer = parts.pop() ?? ''

@@ -1,7 +1,7 @@
 import { useAtom } from 'jotai'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Catalog, CustomAction, EventDetail, Overview, WorkflowsAPI } from '../../shared/types'
-import { forwardAtom, sameView, viewsAtom, type View } from './views'
+import { forwardAtom, sameView, viewedAtom, viewsAtom, type View } from './views'
 
 declare global {
   interface Window {
@@ -18,7 +18,6 @@ export function useWorkflows() {
     items: [],
     bots: [],
     users: [],
-    viewed: [],
     recentAssignees: [],
   })
   const [views, setViews] = useAtom(viewsAtom)
@@ -108,7 +107,6 @@ export function useWorkflows() {
 
   const skip = useCallback(
     (id: string) => {
-      void api().skipped(id)
       const all = [...skipped, id]
       setSkipped(all)
       void next(all)
@@ -146,5 +144,10 @@ export function useWorkflows() {
     [act, moveOn],
   )
 
-  return { overview, view, views, detail, catalog, customActions, selected, select, open, back, forward, next, skip, act, actOn, error, empty }
+  // What the finder reads as recent: what was viewed here, and who there is.
+  const [viewed, setViewed] = useAtom(viewedAtom)
+  const recent = useMemo(() => ({ viewed, users: overview.users }), [viewed, overview.users])
+  const markViewed = useCallback((id: string) => setViewed((v) => [id, ...v.filter((x) => x !== id)].slice(0, 50)), [setViewed])
+
+  return { recent, markViewed, overview, view, views, detail, catalog, customActions, selected, select, open, back, forward, next, skip, act, actOn, error, empty }
 }

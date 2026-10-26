@@ -33,13 +33,13 @@ export function Chat({ detail, overview }: { detail: ItemDetail; overview: Overv
   const find = useAtomValue(findAtom)?.trim() ?? ''
   const name = (id: string) => nameOf(overview, id)
   const done = detail.events
-    .filter((e) => e.resolved && e.message !== null && (!find || shows(e.type === 'item' ? e.summary : e.message, find)))
+    .filter((e) => e.resolved && e.message !== null && (!find || shows(e.type === 'task' ? e.summary : e.message, find)))
     .sort((a, b) => a.resolvedAt! - b.resolvedAt!)
   return (
     <section className="chat">
       {find && !done.length && <div className="chat-note">Nothing here says “{find}”.</div>}
       {done.map((e) =>
-        e.cancelled && e.type !== 'item' ? (
+        e.cancelled && e.type !== 'task' ? (
           <div key={e.id} className="chat-note" title={time(e.resolvedAt!)} {...menu(e.id)}>
             {e.message}
           </div>
@@ -59,7 +59,7 @@ function Message({ event: e, find, mine, who }: { event: ItemEvent; find: string
       {!mine && <Avatar event={e} />}
       <div className="bubble" title={`${who ? `${who}, ` : ''}${time(e.resolvedAt ?? e.createdAt)}`} {...menu(e.id)}>
         {!mine && who && <span className="bubble-who">{who}</span>}
-        {e.type === 'item' ? <TaskCard event={e} /> : <Markdown text={e.message ?? ''} highlight={find} />}
+        {e.type === 'task' ? <TaskCard event={e} /> : <Markdown text={e.message ?? ''} highlight={find} />}
         <span className="bubble-time">{shortTime(e.resolvedAt ?? e.createdAt)}</span>
       </div>
     </div>

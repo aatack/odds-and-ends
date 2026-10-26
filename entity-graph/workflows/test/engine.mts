@@ -102,7 +102,7 @@ const blockers = (id: string) => item(id).blockers.map((b) => b.type)
 const last = (id: string, type: string) => engine.children(id).filter((e) => e.type === type).at(-1)!
 
 // The types there are; those from before are gone.
-assert.deepEqual(engine.eventTypes.map((t) => t.type), ['item', 'note', 'approval', 'script', 'bot', 'user'])
+assert.deepEqual(engine.eventTypes.map((t) => t.type), ['task', 'note', 'approval', 'script', 'bot', 'user'])
 await assert.rejects(engine.addEvents((await engine.create('x'))!, [{ type: 'message' as 'note', params: { text: 'x' } }]), /No event type message/)
 for (const i of engine.overview().items) await engine.close(i.id)
 
@@ -131,9 +131,9 @@ behaviours.push(async ({ call, prompt, system, schema, sessionId, resume, model,
   assert.match(system, /You are @Threepio/)
   assert.match(system, /six million languages/, "the bot's own instructions are its system prompt")
   assert.ok(cwd.startsWith(join(dataDir, 'bots', 'threepio-')) && existsSync(cwd), 'a folder of its own, under the data folder')
-  assert.ok(prompt.startsWith(`${ASK}\n\n---\n\n[current item ID: ${id}]\n\n[new to you: Answer the PR]`))
+  assert.ok(prompt.startsWith(`${ASK}\n\n---\n\n[current task ID: ${id}]\n\n[new to you: Answer the PR]`))
   assert.match(prompt, /^human: Reply to the PR, please$/m, "a person's words as they are, after their name")
-  assert.ok(JSON.stringify(schema).includes('"enum":["item"]'), 'a bot may add child items')
+  assert.ok(JSON.stringify(schema).includes('"enum":["task"]'), 'a bot may add child tasks')
   assert.ok(JSON.stringify(schema).includes('"enum":["bot"]'), 'and bots')
   assert.equal(JSON.parse(await call('get_item', { item_id: id })).item.id, id)
   await assert.rejects(call('post_somewhere', { text: 'x' }), /not found/i)
@@ -158,7 +158,8 @@ assert.deepEqual(item(id).assignees, ['human'], 'a run that leaves the item wait
 assert.ok(item(id).withYou, 'an approval is a person\'s turn')
 assert.equal(last(id, 'note').params.text, 'Drafted a reply. Post it?')
 assert.equal(last(id, 'note').createdBy, `bot:${threepio}`)
-assert.equal(engine.detail(id)!.runs[0].agentId, threepio)
+assert.deepEqual(engine.agent(threepio)!.lastRun!.items, [id], 'the bot keeps its last run as a value')
+assert.ok(engine.agent(threepio)!.lastRun!.endedAt)
 
 // ---- 3. The person changes it and approves; the unsafe action runs, as theirs ----
 const approval = item(id).blockers[0]
@@ -174,7 +175,7 @@ await assert.rejects(engine.addEvents(id, [{ type: 'approval', params: { action:
 behaviours.push(async ({ prompt, sessionId, resume }) => {
   assert.equal(resume, true)
   assert.equal(sessionId, session, 'one session for the bot, across its runs')
-  assert.match(prompt, /\[item: Answer the PR\]/)
+  assert.match(prompt, /\[task: Answer the PR\]/)
   assert.doesNotMatch(prompt, /Reply to the PR, please/, 'what the session has seen is not sent again')
   return out({ item: id, events: [{ type: 'script', params: { description: 'CI', source: 'async (ctx) => (ctx.state ? { done: true, message: "CI passed" } : { done: false, state: 1 })', schedule: [1] } }] })
 })
@@ -203,14 +204,14 @@ const parent = (await engine.create('Parent'))!
 behaviours.push(async () =>
   out({
     item: parent,
-    events: [{ type: 'item', params: { title: 'Child', events: [{ type: 'note', params: { text: 'Do the child' } }], assignees: ['Threepio'] } }],
+    events: [{ type: 'task', params: { title: 'Child', events: [{ type: 'note', params: { text: 'Do the child' } }], assignees: ['Threepio'] } }],
   }),
 )
 behaviours.push(async ({ prompt }) => {
   assert.match(prompt, /\[new to you: Child\]/)
   assert.match(prompt, /Do the child/)
-  assert.match(prompt, /\[item: Parent\]\n\n\[nothing new\]/, 'every item it has, with only what is new in each')
-  const kid = engine.children(parent).find((e) => e.type === 'item')!.id
+  assert.match(prompt, /\[task: Parent\]\n\n\[nothing new\]/, 'every item it has, with only what is new in each')
+  const kid = engine.children(parent).find((e) => e.type === 'task')!.id
   return out({ item: kid, message: 'Child done.', close: true })
 })
 behaviours.push(async ({ prompt }) => {
@@ -228,7 +229,7 @@ assert.ok(item(parent).closed)
 // A bot can also add an item that sits in no item: it blocks nothing, and it is nobody's unless the bot says.
 {
   const host = (await engine.create('Host'))!
-  behaviours.push(async () => out({ item: host, events: [{ type: 'item', params: { title: 'Unrelated', detached: true } }] }))
+  behaviours.push(async () => out({ item: host, events: [{ type: 'task', params: { title: 'Unrelated', detached: true } }] }))
   await toBot(host, 'x')
   await settle()
   const loose = engine.overview().items.find((i) => i.title === 'Unrelated')!
@@ -355,7 +356,7 @@ await engine.close(bad)
 // ---- 10. A bot's own chat: a note in it wakes the bot, which answers there ----
 {
   behaviours.push(async ({ prompt }) => {
-    assert.match(prompt, new RegExp(`current item ID: ${threepio}\\]\\n\\n\\[your own chat`))
+    assert.match(prompt, new RegExp(`current task ID: ${threepio}\\]\\n\\n\\[your own chat`))
     assert.match(prompt, /^human: What are you up to\?$/m)
     return out({ item: threepio, message: 'Not much.' })
   })
@@ -367,7 +368,7 @@ await engine.close(bad)
     ['note', `bot:${threepio}`, 'Not much.'],
   ])
   assert.equal(chat.item.title, '@Threepio')
-  assert.ok(chat.runs.length > 0, "a bot's page has its runs")
+  assert.deepEqual(engine.agent(threepio)!.lastRun!.items, [threepio], 'its last run was for its chat')
   await assert.rejects(engine.addEvents(threepio, [{ type: 'script', params: { source: 'async () => null' } }]), /only notes/)
 }
 
@@ -382,7 +383,9 @@ await engine.close(bad)
   const bot = engine.agent(r2)!
   assert.deepEqual([bot.instructions, bot.model, bot.debounceMinutes], ['Beep boop.', 'haiku', 5])
   assert.deepEqual(engine.children(r2), [], 'settings are its params, not events')
-  assert.ok(engine.trace(r2).some((t) => t.kind === 'configured' && (t.data!.changed as string[]).includes('model')))
+  const inspected2 = await engine.inspect(r2)
+  assert.equal(inspected2.values.model, 'haiku', 'settings are plain values')
+  assert.equal(inspected2.createdBy, 'human')
   assert.equal(engine.agent(r2)!.wakesAt, null, 'with nothing, it never wakes')
 
   const a = (await engine.create('A'))!
@@ -403,7 +406,7 @@ await engine.close(bad)
   clock += 1
   await settle()
   assert.equal(seen.length, 1)
-  assert.match(seen[0], new RegExp(`current item ID: ${a}[\\s\\S]*---[\\s\\S]*current item ID: ${b}`), 'both items, in one prompt')
+  assert.match(seen[0], new RegExp(`current task ID: ${a}[\\s\\S]*---[\\s\\S]*current task ID: ${b}`), 'both items, in one prompt')
   assert.ok(item(b).closed)
   // Changing its settings wakes it, its debounce after; waking it by hand is now.
   await engine.saveAgent({ id: r2, name: 'R2', instructions: 'Beep beep.', provider: 'claude', model: 'haiku', debounceMinutes: 5 })
@@ -434,7 +437,7 @@ await engine.close(bad)
   assert.equal(engine.next([], 'sam'), t)
   await engine.rename(t, '  Renamed for Sam ')
   assert.equal(item(t).title, 'Renamed for Sam')
-  assert.ok(engine.trace(t).some((t) => t.kind === 'renamed'))
+  assert.deepEqual((await engine.inspect(t)).values, { type: 'task', title: 'Renamed for Sam' }, 'a task keeps only its title')
   await engine.close(t)
 }
 
@@ -442,16 +445,16 @@ await engine.close(bad)
 {
   const ca = engine.customActions
   const task = (await engine.create('Custom'))!
-  const hello = ca.save({ type: 'item', name: 'Hello', description: 'Says hello', notes: '', source: '', icon: 'zap', important: true })
+  const hello = ca.save({ type: 'task', name: 'Hello', description: 'Says hello', notes: '', source: '', icon: 'zap', important: true })
   await assert.rejects(ca.run(hello.id, task), /no code yet/)
-  const source = await ca.generate({ type: 'item', name: 'Hello', description: 'Says hello to the task', notes: 'Use its title' })
+  const source = await ca.generate({ type: 'task', name: 'Hello', description: 'Says hello to the task', notes: 'Use its title' })
   assert.equal(source, 'async (context) => `Hello ${context.item.title}`')
   assert.doesNotMatch(generateArgs[generateArgs.indexOf('--system-prompt') + 1].split('The unsafe actions are:')[0], /post_somewhere/)
   ca.save({ ...hello, source })
   await ca.run(hello.id, task)
   assert.equal(last(task, 'note').params.text, 'Hello Custom')
   assert.equal(last(task, 'note').createdBy, 'script')
-  const sneaky = ca.save({ type: 'item', name: 'Post', description: '', notes: '', icon: 'zap', important: false, source: `async (c, actions) => actions.post_somewhere({ text: 'x' })` })
+  const sneaky = ca.save({ type: 'task', name: 'Post', description: '', notes: '', icon: 'zap', important: false, source: `async (c, actions) => actions.post_somewhere({ text: 'x' })` })
   await assert.rejects(ca.run(sneaky.id, task), /unsafe/)
   ca.remove(sneaky.id)
   assert.equal(ca.get(sneaky.id), null)
@@ -461,7 +464,7 @@ await engine.close(bad)
 // ---- 14. The MCP endpoints: the same tools for a bot and anything else, and so no unsafe ones ----
 {
   const probe = (await engine.create('Probe'))!
-  const runId = engine.startRun(threepio, [probe], 'probe')
+  const runId = engine.startRun(threepio, [probe])
   const asBot = await connect(mcp.runUrl(runId))
   assert.deepEqual((await asBot.client.listTools()).tools.map((t) => t.name), engine.actions.filter((a) => !a.unsafe).map((a) => a.name))
   await asBot.client.close()
@@ -491,13 +494,14 @@ await engine.close(bad)
   await engine.close(probe)
 }
 
-// ---- 15. The history is there to look back on; a run cut short hands its items back ----
+// ---- 15. What egdb holds; a run cut short hands its tasks back ----
 {
-  const recent = engine.recent(7)
-  assert.equal(recent.find((r) => r.id === id)!.botRuns, 3)
-  assert.equal(recent.find((r) => r.id === id)!.approvalsChanged, 1)
-  assert.equal(recent.find((r) => r.id === bad)!.botFailures, 2)
-  assert.match((await engine.transcript(engine.detail(id)!.runs[0].id))!, /Thinking out loud/)
+  // A note keeps nothing but its text; who wrote it, and when, is the link to it.
+  const note = engine.children(id).find((e) => e.type === 'note')!
+  const inspected = await engine.inspect(note.id)
+  assert.deepEqual(inspected.values, { type: 'note', text: 'Reply to the PR, please' })
+  assert.deepEqual([inspected.createdBy, inspected.links[0].type, inspected.links[0].other], ['human', 'contains', id])
+  assert.equal(engine.agent(threepio)!.lastRun!.output, 'Thinking out loud.')
   const admin = new Admin(engine, mcp)
   assert.deepEqual((await admin.integrations()).claude, { ok: true, detail: '2.1.309 (Claude Code)', bots: 1 })
   assert.deepEqual(catalog(engine).presets.map((p) => p.id), ['note'])
@@ -508,7 +512,7 @@ await engine.close(bad)
   const b2 = await e2.saveAgent({ name: 'Cut', instructions: '', provider: 'claude', model: '', debounceMinutes: 0 })
   const t2 = (await e2.create('Cut short'))!
   await e2.assign(t2, b2, true)
-  e2.startRun(b2, [t2], 'p')
+  e2.startRun(b2, [t2])
   const e3 = new Engine({ store: e2.store, now: () => clock, dataDir })
   assert.deepEqual(e3.get(t2)!.assignees, ['human'])
   assert.match(String(e3.children(t2).at(-1)!.params.text), /was stopped/)
