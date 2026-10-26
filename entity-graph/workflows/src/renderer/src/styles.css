@@ -314,3 +314,20 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 .bot-last-run { font-size: 12px; margin: 0; }
 .buttons .delete { margin-left: auto; color: var(--danger); }
 .menu-status { margin-left: 12px; float: right; color: var(--muted); font-size: 12px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@layer components {
+  /* An event's card in the chat. */
+  .event-card { display: flex; flex-direction: column; gap: 6px; white-space: normal; }
+  .card-link { display: inline-flex; text-align: left; }
+  .script-line { display: flex; align-items: center; gap: 8px; }
+  .script-what { flex: 1; min-width: 0; }
+  .script-done { color: var(--color-success-600); }
+  .script-failed { color: var(--color-danger-600, #c00); }
+  .script-play { display: inline-flex; padding: 2px; border-radius: 6px; color: var(--accent); }
+  .script-play:hover { background: var(--color-gray-200); }
+  .script-timer { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .script-timer .icon, .script-line .icon { width: 15px; height: 15px; flex: none; }
+  .script-runs { font-size: 12px; }
+  .script-output { border-top: 1px solid var(--color-gray-200); padding-top: 6px; }
+  .view-title.clickable:hover { color: var(--accent); }
+}

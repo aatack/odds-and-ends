@@ -1,11 +1,17 @@
-import type { ItemDetail, ItemEvent, Overview } from '../../shared/types'
+import { CircleCheck, Play, Timer } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import type { Catalog, ItemDetail, ItemEvent, Overview } from '../../shared/types'
 import { isPerson, nameOf } from './people'
 import { useEventMenu } from './EventMenu'
 import { Avatar } from './icons'
 import { useAtomValue } from 'jotai'
-import { Markdown, shows } from './components/ui/Markdown'
+import { fenced, Markdown, shows } from './components/ui/Markdown'
 import { findAtom } from './views'
 import { TaskCard } from './TaskCard'
+import { Approval } from './Approval'
+import { api } from './useWorkflows'
+
+type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 export const time = (ms: number) => new Date(ms).toLocaleString()
 const shortTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -18,50 +24,124 @@ export const minutes = (ms: number) => {
   return `${Math.floor(s / 3600)}h ${pad(Math.floor(s / 60) % 60)}m`
 }
 
+/** The time, by the second, while the chat is open: for what counts down. */
+function useNow() {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1_000)
+    return () => clearInterval(t)
+  }, [])
+  return now
+}
+
+/** The words an event shows in the chat, for Ctrl+F. */
+const words = (e: ItemEvent) => (e.type === 'note' ? String(e.params.text ?? '') : [e.summary, e.message].filter(Boolean).join('\n'))
+
 /**
- * The item's history as a chat: every event that has resolved, at the moment it
- * did. What the person looking said or did is on the right; everything else on
- * the left, with who it came from as its picture (and, for other people, their
- * name). Cancelled blockers are small notes in the middle. A message shows its words and the time; pressing it
- * shows the rest. A child task, once it has closed, is a bubble like any other,
- * holding its card (while open it is among the blockers instead).
- * While Ctrl+F's find line has a phrase in it, only what shows the phrase is
- * left, with the phrase marked.
+ * The task's chat: every event in it (its `contains` links), in the order they were added, each as its card. What
+ * the person looking added is on the right; everything else on the left, with who it came from as its picture (and,
+ * for other people, their name). A note is its words; a child task, its card (which opens it); a script, what it
+ * waits for and where it stands; an approval, its form while open. Cancelled events are small notes in the middle.
+ * While Ctrl+F's find line has a phrase in it, only what shows the phrase is left, with the phrase marked.
  */
-export function Chat({ detail, overview }: { detail: ItemDetail; overview: Overview }) {
+export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: Catalog; act: Act; onOpen: (id: string) => void }) {
+  const { detail, overview } = props
   const menu = useEventMenu()
   const find = useAtomValue(findAtom)?.trim() ?? ''
-  const name = (id: string) => nameOf(overview, id)
-  const done = detail.events
-    .filter((e) => e.resolved && e.message !== null && (!find || shows(e.type === 'task' ? e.summary : e.message, find)))
-    .sort((a, b) => a.resolvedAt! - b.resolvedAt!)
+  const now = useNow()
+  const shown = detail.events.filter((e) => !find || shows(words(e), find))
   return (
     <section className="chat">
-      {find && !done.length && <div className="chat-note">Nothing here says “{find}”.</div>}
-      {done.map((e) =>
+      {find && !shown.length && <div className="chat-note">Nothing here says “{find}”.</div>}
+      {shown.map((e) =>
         e.cancelled && e.type !== 'task' ? (
-          <div key={e.id} className="chat-note" title={time(e.resolvedAt!)} {...menu(e.id)}>
+          <div key={e.id} className="chat-note" title={time(e.createdAt)} {...menu(e.id)}>
             {e.message}
           </div>
         ) : (
-          <Message key={e.id} event={e} find={find} mine={e.actor === overview.me.id} who={isPerson(overview, e.actor) ? name(e.actor) : null} />
+          <Message
+            key={e.id}
+            event={e}
+            mine={e.createdBy === overview.me.id}
+            who={isPerson(overview, e.createdBy) ? nameOf(overview, e.createdBy) : null}
+          >
+            <Card event={e} find={find} now={now} {...props} />
+          </Message>
         ),
       )}
     </section>
   )
 }
 
-/** One resolved event, as a message: right-click it to open it or debug it. */
-function Message({ event: e, find, mine, who }: { event: ItemEvent; find: string; mine: boolean; who: string | null }) {
+/** One event, as a message: right-click it to open it or debug it. */
+function Message({ event: e, mine, who, children }: { event: ItemEvent; mine: boolean; who: string | null; children: React.ReactNode }) {
   const menu = useEventMenu()
   return (
     <div className={`bubble-row ${mine ? 'mine' : 'theirs'}`}>
       {!mine && <Avatar event={e} />}
-      <div className="bubble" title={`${who ? `${who}, ` : ''}${time(e.resolvedAt ?? e.createdAt)}`} {...menu(e.id)}>
+      <div className={`bubble bubble-${e.type}`} title={`${who ? `${who}, ` : ''}${time(e.createdAt)}`} {...menu(e.id)}>
         {!mine && who && <span className="bubble-who">{who}</span>}
-        {e.type === 'task' ? <TaskCard event={e} /> : <Markdown text={e.message ?? ''} highlight={find} />}
-        <span className="bubble-time">{shortTime(e.resolvedAt ?? e.createdAt)}</span>
+        {children}
+        <span className="bubble-time">{shortTime(e.createdAt)}</span>
       </div>
+    </div>
+  )
+}
+
+/** What an event shows in the chat, by its type. */
+function Card(props: { event: ItemEvent; find: string; now: number; catalog: Catalog; act: Act; onOpen: (id: string) => void }) {
+  const { event: e, find, now, catalog, act, onOpen } = props
+  if (e.type === 'note') return <Markdown text={String(e.params.text ?? '')} highlight={find} />
+  if (e.type === 'task')
+    return (
+      <button data-ui className="link card-link" onClick={() => onOpen(e.id)}>
+        <TaskCard event={e} />
+      </button>
+    )
+  if (e.type === 'script') return <ScriptCard event={e} now={now} act={act} find={find} />
+  if (e.type === 'approval')
+    return (
+      <div className="event-card">
+        <Markdown text={e.resolved ? (e.message ?? e.summary) : e.summary} highlight={find} />
+        {!e.resolved && <Approval b={e} catalog={catalog} act={act} />}
+      </div>
+    )
+  return <Markdown text={e.message ?? e.summary} highlight={find} />
+}
+
+/**
+ * A script: what it waits for; then a tick and what it finished with, once done; a play button, if it has no
+ * schedule (it runs when pressed); or else how many times it has run and when it runs next.
+ */
+function ScriptCard({ event: e, now, act, find }: { event: ItemEvent; now: number; act: Act; find: string }) {
+  const scheduled = Array.isArray(e.params.schedule) && (e.params.schedule as unknown[]).length > 0
+  const error = typeof e.data?.error === 'string' ? e.data.error : null
+  const result = e.data?.message ?? (e.data?.result === undefined || e.data?.result === null ? null : e.data.result)
+  return (
+    <div className="event-card script-card">
+      <div className="script-line">
+        <Markdown className="script-what" text={e.summary} highlight={find} />
+        {e.resolved ? (
+          <CircleCheck className={`icon ${error ? 'script-failed' : 'script-done'}`} aria-label={error ? 'Failed' : 'Done'} />
+        ) : !scheduled ? (
+          <button data-ui className="script-play" title="Run it" aria-label="Run it" onClick={() => void act(() => api().runNow(e.id))}>
+            <Play className="icon" />
+          </button>
+        ) : (
+          <span className="script-timer muted" title={e.nextCheckAt ? time(e.nextCheckAt) : undefined}>
+            <Timer className="icon" />
+            {e.runs}× · {e.nextCheckAt ? (e.nextCheckAt > now ? `in ${minutes(e.nextCheckAt - now)}` : 'now') : '…'}
+          </span>
+        )}
+      </div>
+      {!e.resolved && !scheduled && e.runs > 0 && <div className="muted script-runs">Run {e.runs}× and not done yet.</div>}
+      {e.lastError && !e.resolved && <div className="error-text">{e.lastError}</div>}
+      {e.resolved && error && <div className="error-text">{error}</div>}
+      {e.resolved && !error && result !== null && (
+        <div className="script-output">
+          {typeof result === 'string' ? <Markdown text={result} highlight={find} /> : <Markdown text={fenced(JSON.stringify(result, null, 2), 'json')} />}
+        </div>
+      )}
     </div>
   )
 }

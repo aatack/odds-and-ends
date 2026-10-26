@@ -6,6 +6,7 @@ import type {
   BranchId,
   BranchInfo,
   EntityId,
+  EventRef,
   ErrorKind,
   Filter,
   FindOptions,
@@ -107,6 +108,11 @@ export class EgdbClient {
 
   values(branch: BranchId, entities: readonly EntityId[]): Promise<Record<EntityId, Values>> {
     return this.call('POST', '/values', { branch, entities })
+  }
+
+  /** The event that set each value of each entity (when, by whom), shaped as `values`. */
+  valueEvents(branch: BranchId, entities: readonly EntityId[]): Promise<Record<EntityId, Record<string, EventRef>>> {
+    return this.call('POST', '/value_events', { branch, entities })
   }
 
   value(branch: BranchId, entity: EntityId, key: string): Promise<Value> {

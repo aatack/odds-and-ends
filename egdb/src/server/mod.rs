@@ -33,8 +33,8 @@ use dto::query::{
 };
 use dto::{
     link_groups_to_dto, parse_branch, value_map_to_json, value_to_json, BranchInfoDto,
-    DirectionDto, LinkDto, LinkGroupDto, ParentRefDto, SeqRangeDto, UndoOutcomeDto, WriteBatchDto,
-    WriteResultDto,
+    DirectionDto, EventRefDto, LinkDto, LinkGroupDto, ParentRefDto, SeqRangeDto, UndoOutcomeDto,
+    WriteBatchDto, WriteResultDto,
 };
 use error::{ApiError, ApiJson};
 
@@ -73,6 +73,7 @@ pub fn router_with(store: SharedStore, config: Config) -> Router {
         .route("/restore_entity", post(restore_entity))
         .route("/undo", post(undo))
         .route("/values", post(values))
+        .route("/value_events", post(value_events))
         .route("/value", post(value))
         .route("/links", post(links))
         .route("/links_including_archived", post(links_including_archived))
@@ -252,6 +253,30 @@ async fn values(
     let obj: serde_json::Map<String, serde_json::Value> = map
         .iter()
         .map(|(id, vals)| (id.clone(), value_map_to_json(vals)))
+        .collect();
+    Ok(Json(serde_json::Value::Object(obj)))
+}
+
+async fn value_events(
+    State(state): State<AppState>,
+    ApiJson(body): ApiJson<EntitiesReq>,
+) -> ApiResult<serde_json::Value> {
+    let id = parse_branch(&body.branch)?;
+    let entities = body.entities;
+    let map = on_store(&state, move |s| {
+        let refs: Vec<&str> = entities.iter().map(String::as_str).collect();
+        s.value_events(id, &refs)
+    })
+    .await?;
+    let obj: serde_json::Map<String, serde_json::Value> = map
+        .into_iter()
+        .map(|(id, events)| {
+            let events: serde_json::Map<String, serde_json::Value> = events
+                .into_iter()
+                .map(|(k, e)| (k, json!(EventRefDto::from(e))))
+                .collect();
+            (id, serde_json::Value::Object(events))
+        })
         .collect();
     Ok(Json(serde_json::Value::Object(obj)))
 }

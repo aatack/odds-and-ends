@@ -4,7 +4,7 @@ import { useEffect, useState, type MouseEvent } from 'react'
 import type { CustomAction, ItemEvent } from '../../shared/types'
 import { eventActions } from './eventActions'
 import { api } from './useWorkflows'
-import { menuAtom, sameView, viewsAtom, type View } from './views'
+import { menuAtom, renameAtom, sameView, viewsAtom, type View } from './views'
 
 /** What to spread on anything standing for an event, so a right-click on it opens the event menu. */
 export function useEventMenu() {
@@ -34,6 +34,7 @@ export function EventMenu({
 }) {
   const [menu, setMenu] = useAtom(menuAtom)
   const [views, setViews] = useAtom(viewsAtom)
+  const setRename = useSetAtom(renameAtom)
   // The event itself, read as the menu opens, for which actions it has.
   const [event, setEvent] = useState<ItemEvent | null>(null)
   // Placed by Floating UI at the cursor: flipped above it, or shifted along, so it always stays in the window,
@@ -77,6 +78,17 @@ export function EventMenu({
     <div className="menu" ref={refs.setFloating} style={floatingStyles} onMouseDown={(e) => e.stopPropagation()}>
       <button onClick={() => push({ kind: 'event', id: menu.id })}>Open</button>
       <button onClick={() => push({ kind: 'debug', id: menu.id })}>Debug</button>
+      {/* A task on screen is renamed in its header. */}
+      {event?.id === menu.id && event.type === 'task' && sameView(views[views.length - 1], { kind: 'event', id: event.id }) && (
+        <button
+          onClick={() => {
+            setRename(event.id)
+            setMenu(null)
+          }}
+        >
+          Rename
+        </button>
+      )}
       {event?.id === menu.id &&
         eventActions(event, { act: actOn(event.id), skip, custom }).map((a) => (
           <button

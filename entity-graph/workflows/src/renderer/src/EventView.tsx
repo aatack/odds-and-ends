@@ -1,5 +1,5 @@
 import type { Catalog, EventDetail, ItemEvent } from '../../shared/types'
-import { Approval } from './Blockers'
+import { Approval } from './Approval'
 import { minutes, time } from './Chat'
 import { TYPE_NAME } from './icons'
 import { fenced, Markdown } from './components/ui/Markdown'
@@ -68,7 +68,9 @@ export function EventView({
 /** Open or how it ended, by whom, and for how long: `Open · 4m 02s` or `Cancelled · human · 12s`. */
 function status(e: ItemEvent): string {
   if (!e.resolved) return `Open · ${e.createdBy} · ${minutes(Date.now() - e.createdAt)}`
-  return `${e.cancelled ? 'Cancelled' : 'Resolved'} · ${e.resolvedBy} · ${minutes(Math.max(0, e.resolvedAt! - e.createdAt))}`
+  // When and by whom are known for what resolved since the app started; egdb's history of `resolved` has the rest.
+  const how = e.cancelled ? 'Cancelled' : 'Resolved'
+  return e.resolvedAt === null ? how : `${how} · ${e.resolvedBy} · ${minutes(Math.max(0, e.resolvedAt - e.createdAt))}`
 }
 
 /** What only some types have to show. */
@@ -79,7 +81,7 @@ function Special({ detail }: { detail: EventDetail; onOpen: (id: string) => void
     <section className="card">
       <h2>Script</h2>
       <p className="muted">
-        {e.params.schedule ? `every [${(e.params.schedule as number[]).join(', ')}]s` : 'on the default schedule'}
+        {e.params.schedule ? `every [${(e.params.schedule as number[]).join(', ')}]s` : 'run by hand'} · run {e.runs}×
         {!e.resolved && e.nextCheckAt && ` · next ${new Date(e.nextCheckAt).toLocaleTimeString()}`}
       </p>
       <Markdown text={fenced(String(e.params.source ?? ''), 'js')} />

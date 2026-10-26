@@ -36,6 +36,7 @@ export interface ItemEvent {
 
   /** It has happened (or was cancelled; for an item, closed). A plain event is resolved as it is added. */
   resolved: boolean
+  /** When, known for what resolved since the app started: egdb's history of `resolved` has the rest. */
   resolvedAt: number | null
   /** Who resolved it: the human (approving), a bot (its run ending), 'system' (a check), or as createdBy for a plain event. */
   resolvedBy: string | null
@@ -54,6 +55,8 @@ export interface ItemEvent {
   /** For the blockers the loop checks: when next, and what went wrong last. */
   nextCheckAt: number | null
   lastError: string | null
+  /** How many times it has been checked (a script, run) since the app started. */
+  runs: number
 }
 
 /** A task (or a bot, for its own chat), as the lists and its view read it. */
@@ -150,6 +153,8 @@ export interface LastRun {
 export interface Inspection {
   id: string
   values: Record<string, unknown>
+  /** When each value was set, and by whom (egdb's event for it); empty with no egdb. */
+  set: Record<string, { at: number; by: string }>
   links: { type: string; direction: 'outbound' | 'inbound'; other: string; sort: number | null; at: number | null; by: string | null }[]
   createdAt: number | null
   createdBy: string | null
@@ -260,6 +265,8 @@ export interface WorkflowsAPI {
   approve: (eventId: string, inputs: Record<string, unknown>) => Promise<void>
   /** Ends a blocker without it happening. */
   cancel: (eventId: string) => Promise<void>
+  /** Runs an open script that has no schedule, once. */
+  runNow: (eventId: string) => Promise<void>
   close: (id: string) => Promise<void>
   customActions: () => Promise<CustomAction[]>
   saveCustomAction: (a: Omit<CustomAction, 'id'> & { id?: string }) => Promise<CustomAction>
@@ -324,7 +331,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'close',
+  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'mcp', 'regenerateMcpToken', 'setMcpPort',
 ] as const satisfies readonly ApiMethod[]

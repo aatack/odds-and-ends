@@ -5,8 +5,9 @@
 //
 // In egdb every item is an entity, and nothing more is kept than it needs:
 //   - its `type`, and its params as values of their own (a note is `type` and
-//     `text`); a blocker, once resolved, also `resolved_at`, `resolved_by`,
-//     `cancelled` and `data`; a script, the `state` it hands on;
+//     `text`); a blocker, `resolved` (false, then true), and once resolved
+//     `cancelled` (if so) and `data`; a script, the `state` it hands on. When
+//     it resolved, and by whom, is egdb's history of `resolved`;
 //   - a `contains` link to it from the item it sits in (or from `@root`),
 //     sorted by its place there; who wrote that link, and when, is who made the
 //     item, and when (egdb keeps both with every write);
@@ -33,6 +34,7 @@ export interface EventRow {
   created_by: string
   created_at: number
   resolved: boolean
+  /** When it resolved, and by whom: known for what resolved since the app started (egdb keeps the rest). */
   resolved_at: number | null
   resolved_by: string | null
   cancelled: boolean
@@ -77,6 +79,8 @@ export interface LinkView {
 export interface Inspection {
   id: string
   values: Record<string, unknown>
+  /** When each value was set, and by whom (egdb's event for it); empty with no egdb. */
+  set: Record<string, { at: number; by: string }>
   links: LinkView[]
   createdAt: number | null
   createdBy: string | null
@@ -93,7 +97,8 @@ export interface Sink {
 
 export const ROOT = '@root'
 /** The values an event keeps beside its params. */
-export const STATE_KEYS = new Set(['type', 'resolved_at', 'resolved_by', 'cancelled', 'data', 'state'])
+// (`resolved_at` and `resolved_by` are from a build that kept them: they are read, and never written.)
+export const STATE_KEYS = new Set(['type', 'resolved', 'resolved_at', 'resolved_by', 'cancelled', 'data', 'state'])
 
 /** One value as egdb takes it: a JSON-ish value as is, anything else (undefined) as null, which clears the key. */
 const v = (x: unknown): Value => (x === undefined ? null : (x as Value))
@@ -185,6 +190,8 @@ export class Store {
     this.index(row)
     const ops: Op[] = [set(row.id, 'type', row.type)]
     for (const [k, value] of Object.entries(row.params)) if (value !== undefined && value !== null) ops.push(set(row.id, k, value))
+    // A blocker says it is open; a plain event says nothing, being resolved as it is made.
+    if (!row.resolved) ops.push(set(row.id, 'resolved', false))
     ops.push({ link: { source: row.parent_id ?? ROOT, destination: row.id, link_type: 'contains', sort: { explicit: row.seq } } })
     this.out(ops, row.created_by, row.created_at)
   }
@@ -201,12 +208,12 @@ export class Store {
     this.out(ops, by, at)
   }
 
-  /** Resolves a blocker: it keeps when, by whom, whether it was cancelled, and what it resolved with. */
+  /** Resolves a blocker: `resolved` turns true (egdb keeps when, and by whom), with whether it was cancelled, and what it resolved with. */
   resolveEvent(id: string, data: Record<string, unknown>, by: string, at: number, cancelled: boolean): void {
     const row = this.events.get(id)
     if (!row) throw new Error(`No event ${id}.`)
     Object.assign(row, { resolved: true, resolved_at: at, resolved_by: by, cancelled, data, next_check_at: null, resolved_n: this.moment() })
-    this.out([set(id, 'resolved_at', at), set(id, 'resolved_by', by), ...(cancelled ? [set(id, 'cancelled', true)] : []), set(id, 'data', data)], by, at)
+    this.out([set(id, 'resolved', true), ...(cancelled ? [set(id, 'cancelled', true)] : []), set(id, 'data', data)], by, at)
   }
 
   /** Keeps what a script hands on to its next run. */
@@ -302,13 +309,14 @@ export class Store {
     const row = this.events.get(id)
     if (!row) throw new Error(`No item ${id}.`)
     const values: Record<string, unknown> = { type: row.type, ...row.params }
-    if (row.resolved && row.resolved_at !== row.created_at) Object.assign(values, { resolved_at: row.resolved_at, resolved_by: row.resolved_by, data: row.data })
+    // A blocker is one that was not resolved as it was added.
+    if (!row.resolved || row.resolved_n !== row.added_n) Object.assign(values, { resolved: row.resolved }, row.cancelled ? { cancelled: true } : {}, row.resolved ? { data: row.data } : {})
     const links: LinkView[] = [
       { type: 'contains', direction: 'inbound', other: row.parent_id ?? ROOT, sort: row.seq, at: row.created_at, by: row.created_by },
       ...this.children(id).map((k) => ({ type: 'contains', direction: 'outbound' as const, other: k.id, sort: k.seq, at: k.created_at, by: k.created_by })),
       ...this.assignees(id).map((to) => ({ type: 'assigned_to', direction: 'outbound' as const, other: to, sort: null, at: this.assignment(id, to)!.at, by: this.assignment(id, to)!.by })),
     ]
-    return { id, values, links, createdAt: row.created_at, createdBy: row.created_by }
+    return { id, values, set: {}, links, createdAt: row.created_at, createdBy: row.created_by }
   }
 
   // ---- loading ----
@@ -337,16 +345,18 @@ const obj = <T>(x: unknown): T | null => (x && typeof x === 'object' && !Array.i
 /**
  * An event from its values and the `contains` link to it (where it sits, its
  * place, and who made it when). A plain event (`blocking` false) is resolved as
- * it was made; a blocker is resolved once it has a `resolved_at`.
+ * it was made; a blocker is resolved once its `resolved` is true.
  */
 export function eventFromValues(
   id: string,
   x: Values,
   made: { parent: string | null; seq: number; at: number; by: string },
   blocking: boolean,
+  /** The event that set `resolved` true: when it resolved, and by whom. */
+  resolvedBy?: { at: number; by: string },
 ): EventRow {
   const params = Object.fromEntries(Object.entries(x).filter(([k]) => !STATE_KEYS.has(k)))
-  const resolvedAt = num(x.resolved_at)
+  const resolved = x.resolved === true || num(x.resolved_at) !== null
   return {
     id,
     parent_id: made.parent,
@@ -355,9 +365,9 @@ export function eventFromValues(
     params,
     created_by: made.by,
     created_at: made.at,
-    resolved: !blocking || resolvedAt !== null,
-    resolved_at: blocking ? resolvedAt : made.at,
-    resolved_by: blocking ? str(x.resolved_by) : made.by,
+    resolved: !blocking || resolved,
+    resolved_at: blocking ? (resolvedBy?.at ?? num(x.resolved_at)) : made.at,
+    resolved_by: blocking ? (resolvedBy?.by ?? str(x.resolved_by)) : made.by,
     cancelled: x.cancelled === true,
     data: obj(x.data),
     memo: x.state ?? null,

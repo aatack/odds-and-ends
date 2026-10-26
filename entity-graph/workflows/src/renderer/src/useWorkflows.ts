@@ -115,16 +115,14 @@ export function useWorkflows() {
   )
 
   /**
-   * After the human has done something to the item on screen: if it no longer
-   * needs them (resolved, or something other than an approval now blocks it),
-   * goes on to the next that does. Pushed, not replacing the stack, so Back
-   * returns to it.
+   * After the human has done something to the task on screen: if it closed, goes on to the next that needs them.
+   * Pushed, not replacing the stack, so Back returns to it. Handing it to someone else stays on it (for now).
    */
   const moveOn = useCallback(
     async (id: string) => {
       if (selected !== id) return
       const item = (await api().eventDetail(id))?.item?.item
-      if (item && !item.closed && item.withYou) return
+      if (item && !item.closed) return
       const to = await api().next([...skipped, id])
       if (to) open({ kind: 'event', id: to })
       else {
