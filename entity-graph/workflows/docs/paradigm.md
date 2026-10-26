@@ -43,12 +43,16 @@ The text uses ASD-STE100 Simplified Technical English.
 
 ## The chat
 
-- The app shows the events of an item as a chat. Your notes are on the right.
-  Notes from other people, bots and scripts are on the left.
+- The app shows all of the events in a task as a chat, each as a card: notes,
+  child tasks, scripts and approvals. Your events are on the right. Events from
+  other people, bots and scripts are on the left. A bot that wants to show
+  something in the chat adds it to the task as an event.
+- A script card shows what the script waits for. If the script has no schedule,
+  it shows a play button: push it to run the script. If the script has a
+  schedule, the card shows how many times it ran and when it runs next. When the
+  script is complete, the card shows a tick and the result.
 - The app shows who has the item at the top right. Click it to give the item to
   more people or bots, or to take it from them.
-- The app shows the blockers that are not complete above the chat input. Each
-  blocker shows how long it has blocked the item.
 - When you send text, it is a note in the item.
 - Type "@" and select a bot or a person to give the item to them. When you send
   the note, they get the item and you do not have it.
@@ -114,7 +118,10 @@ The text uses ASD-STE100 Simplified Technical English.
 
 - The database (egdb) keeps the full history of each item: every value that it
   had, and every link. The app does not keep a different history.
-- The database records the time of each change, and who or what did it.
+- The database records the time of each change, and who or what did it. Thus
+  the app keeps only whether an event is complete (`resolved`). The database
+  records when it became complete, and who completed it.
+- Click the title of a task to open its menu. Use the menu to debug the task.
 - The debug page shows an item as the database keeps it: its values, its links,
   and who made it and when.
 - Bots can read this history. They use it to find which processes are slow, where

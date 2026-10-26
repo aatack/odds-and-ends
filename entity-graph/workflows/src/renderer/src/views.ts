@@ -47,6 +47,9 @@ export const searchFocusAtom = atom(0)
 /** The right-click menu on an event, while it is open: where, and for which event. */
 export const menuAtom = atom<{ x: number; y: number; id: string } | null>(null)
 
+/** The task whose title is being renamed in its view's header, as the event menu's Rename asks. */
+export const renameAtom = atom<string | null>(null)
+
 /**
  * What is typed in each item's chat input and not yet sent, by item id: kept so
  * that going to another view mid-sentence loses nothing. Sending clears it.

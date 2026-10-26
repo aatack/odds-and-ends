@@ -40,13 +40,13 @@ how it reads (`summary`, `message`), and whether and how it waits.
 | `type` | Its type: one of the table below. |
 | `params` | What it was given, as its type's params schema says. |
 | `createdBy`, `createdAt` | Who added it, and when (the author and time of the `contains` link to it): a person's username, `bot:<id>` (a bot's run), `bot` (an agent acting as a bot), `system`, `script`, `script:bot`, or `mcp`. |
-| `resolved`, `resolvedAt`, `resolvedBy` | Whether it has happened, when, and who resolved it. A plain event is resolved by whoever added it, as it is added. |
+| `resolved`, `resolvedAt`, `resolvedBy` | Whether it has happened, when, and who resolved it. A plain event is resolved by whoever added it, as it is added. Only `resolved` is stored; when and by whom are egdb's event for it. |
 | `cancelled` | Resolved without happening. |
 | `data` | What it resolved with, as its type's data says. Null while it is open. |
 | `actor` | Who made it happen: `resolvedBy` for a blocker, `createdBy` for a plain event. The chat puts the signed-in person's on the right. |
 | `summary` | One line saying what it is, from its type's `describe`. This is a blocker's row while it is open, and how prompts name it. |
 | `message` | What it says in the chat once resolved, from its type's `said`, or `Cancelled: …` when cancelled. Null while open, or when it says nothing. |
-| `nextCheckAt`, `lastError` | For blockers the loop checks: when the next check is, and what went wrong on the last one. |
+| `nextCheckAt`, `lastError`, `runs` | For blockers the loop checks: when the next check is (null for a script run by hand), what went wrong on the last one, and how many checks since the app started. |
 
 Events are ordered within their item by when they were added. Events added
 together keep the order they were given in.
@@ -107,7 +107,8 @@ the chat input should offer it, add a preset in `presets.ts`.
   `async (ctx, actions) => result`, run on its `schedule`.
   - The schedule is seconds: the wait before the first run, then between runs,
     with the last repeating. `[1, 5, 10]` runs after 1 second, then 5 more, then
-    every 10. The default is `[1, 5, 10, 30, 60]`.
+    every 10. With no schedule, it runs only when someone runs it: its card's
+    play button (`Engine.runNow`, the `runNow` API call).
   - Runs are at least a second apart. A run never starts while the last is still
     going. Every blocker's checks work this way; each type has a schedule, and
     the default is at once, then 1, 2, 5 and then every 10 minutes.
@@ -203,8 +204,7 @@ What a person types goes through a **preset**, which turns the text into events
   Every change is also queued as egdb ops and written, in order, to an
   egdb-server (`egdb.ts`, `EgdbSink`), each write with its author and time: an
   entity per event, setting and custom action. An event's values are its `type`
-  and its params (a note's are just `type` and `text`), and `resolved_at`,
-  `resolved_by`, `cancelled`, `data` and `state` once they apply. It is linked
+  and its params (a note's are just `type` and `text`); a blocker also has `resolved` (false, then true: when it turned true, and by whom, is egdb's event for that value, read with `value_events`), and `cancelled`, `data` and `state` once they apply. It is linked
   from its task, or from `@root`, by a `contains` link (sorted by its place), and
   who made it and when is that link's author and time. Who has a task is an
   `assigned_to` link per assignee. egdb keeps every value an entity had, and

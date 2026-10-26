@@ -166,6 +166,17 @@ async fn write_and_reads() {
     assert_eq!(vals["a"]["title"], "alpha");
     assert_eq!(vals["a"]["type"], "task");
 
+    // value_events: who set each value, and when
+    let events = post_ok(
+        &s.base,
+        "/value_events",
+        json!({ "branch": b, "entities": ["a", "nobody"] }),
+    )
+    .await;
+    assert!(events["a"]["title"]["timestamp"].as_i64().unwrap() > 0);
+    assert!(events["a"]["title"]["author"].is_string());
+    assert_eq!(events["nobody"], json!({}));
+
     // value
     let one = post_ok(
         &s.base,

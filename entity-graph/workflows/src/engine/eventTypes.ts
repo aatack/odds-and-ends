@@ -73,7 +73,7 @@ const scriptResult = z.union([
 export const script: EventType = {
   type: 'script',
   description:
-    'A script that runs on a schedule until it says it is done, and blocks until then. Use it to wait for anything the other ' +
+    'A script that runs on a schedule (or, with none, when a person presses its play button) until it says it is done, and blocks until then. Use it to wait for anything the other ' +
     'types do not cover, by checking with the actions. `source` is a JavaScript function expression, ' +
     '`async (ctx, actions) => result`:\n' +
     '- ctx is { item: { id, title }, event: { id, description, createdAt, runs }, now (ISO time), state }: where it runs, how many ' +
@@ -92,7 +92,7 @@ export const script: EventType = {
     schedule: z
       .array(z.number().min(0))
       .optional()
-      .describe('Seconds to wait before the first run, then between each run, the last repeating; e.g. [1, 5, 10]. Runs are at least a second apart. Default [1, 5, 10, 30, 60].'),
+      .describe('Seconds to wait before the first run, then between each run, the last repeating; e.g. [1, 5, 10]. Runs are at least a second apart. Leave it out for a script a person runs by hand.'),
     ...timeout,
   },
   data: '{ result: the data it finished with, message?, runs } or { error, logs }',
@@ -100,7 +100,7 @@ export const script: EventType = {
   bots: true,
   describe: (p) => String(p.description ?? 'Script'),
   said: (p, d) => (d.error ? `The script failed: ${d.error}` : String(d.message ?? `${p.description ?? 'Script'}: done`)),
-  schedule: (p) => (p.schedule as number[] | undefined) ?? [1, 5, 10, 30, 60],
+  schedule: (p) => (p.schedule as number[] | undefined) ?? null,
   check: async (p, { engine, item, event, author, memo, setMemo, runs }) => {
     const ctx = {
       item: { id: item.id, title: item.title },

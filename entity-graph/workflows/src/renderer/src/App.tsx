@@ -1,6 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Catalog, ItemDetail, ItemEvent, Overview } from '../../shared/types'
-import { Blockers } from './Blockers'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ChevronLeft, Menu, MoreHorizontal } from 'lucide-react'
 import { eventActions, type EventAction } from './eventActions'
@@ -10,7 +9,7 @@ import { IconButton } from './components/ui/IconButton'
 import { appearanceAtom, applyAppearance, MODES, SERIFS, THEMES } from './appearance'
 import { Chat } from './Chat'
 import { DebugView } from './DebugView'
-import { EventMenu } from './EventMenu'
+import { EventMenu, useEventMenu } from './EventMenu'
 import { EventView } from './EventView'
 import { ItemPicker } from './ItemPicker'
 import { ItemsList } from './ItemsList'
@@ -22,7 +21,7 @@ import { EventIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
 import { api, useWorkflows } from './useWorkflows'
-import { findAtom, findFocusAtom, forwardAtom, searchFocusAtom, viewedAtom, viewsAtom, type View } from './views'
+import { findAtom, findFocusAtom, forwardAtom, menuAtom, renameAtom, searchFocusAtom, viewedAtom, viewsAtom, type View } from './views'
 import { FindLine } from './FindLine'
 import { AssigneePill } from './Assignees'
 import { BotsPage } from './BotsPage'
@@ -114,19 +113,20 @@ export function App({ onSignOut, onCloseSource }: { onSignOut: () => void; onClo
   // `[itemId]()` in any text is drawn as the item it refers to; `[botId]()` and `[username]()` as the bot or person.
   const byId = useMemo(() => new Map(items.overview.items.map((i) => [i.id, i])), [items.overview.items])
   const { bots, users } = items.overview
+  const menu = useEventMenu()
   const itemRef = useCallback(
     (id: string) => {
       const bot = bots.find((b) => b.id === id)
       const person = users.find((u) => u.id === id)
       if (bot || person)
         return (
-          <button data-ui className="link item-ref bot-ref" onClick={() => bot && open({ kind: 'event', id })}>
+          <button data-ui className="link item-ref bot-ref" onClick={() => bot && open({ kind: 'event', id })} {...menu(id)}>
             {bot ? <Bot className="icon" /> : <UserIcon className="icon" />}@{bot?.name ?? person!.name}
           </button>
         )
       return <ItemRef id={id} item={byId.get(id)} onOpen={(to) => open({ kind: 'event', id: to })} />
     },
-    [byId, bots, users, open],
+    [byId, bots, users, open, menu],
   )
   return (
     <ItemsContext.Provider value={items}>
@@ -369,10 +369,19 @@ function ViewHeader(props: {
   title?: string
   event?: ItemEvent
   actions?: ReactNode
-  /** Given, the title can be edited: double-click it, then Enter (or leaving it) saves and Escape doesn't. */
+  /** Given, the title can be edited: Rename in its menu, then Enter (or leaving it) saves and Escape doesn't. */
   onRename?: (title: string) => void
 }) {
   const [editing, setEditing] = useState<string | null>(null)
+  // Clicking the title opens the event's menu (Open, Debug, Rename, its actions), as a right-click does.
+  const setMenu = useSetAtom(menuAtom)
+  const [rename, setRename] = useAtom(renameAtom)
+  const { event, onRename, title } = props
+  useEffect(() => {
+    if (!rename || rename !== event?.id) return
+    setRename(null)
+    if (onRename) setEditing(title ?? '')
+  }, [rename, event, onRename, title, setRename])
   const save = () => {
     if (editing !== null && editing.trim() && editing.trim() !== props.title) props.onRename?.(editing.trim())
     setEditing(null)
@@ -413,7 +422,17 @@ function ViewHeader(props: {
           }}
         />
       ) : (
-        <h1 className="view-title" onDoubleClick={props.onRename && (() => setEditing(props.title ?? ''))}>
+        <h1
+          className={`view-title ${event ? 'clickable' : ''}`}
+          onClick={event && ((e) => setMenu({ x: e.clientX, y: e.clientY, id: event.id }))}
+          onContextMenu={
+            event &&
+            ((e) => {
+              e.preventDefault()
+              setMenu({ x: e.clientX, y: e.clientY, id: event.id })
+            })
+          }
+        >
           {props.title}
         </h1>
       )}
@@ -445,11 +464,11 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
   useEffect(() => {
     w.markViewed(item.id)
   }, [item.id, item.withYou])
-  // New messages arrive at the bottom, as in any chat.
-  const resolved = detail.events.filter((e) => e.resolved).length
+  // New events arrive at the bottom, as in any chat.
+  const count = detail.events.length
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight })
-  }, [resolved])
+  }, [count])
   return (
     <div className="item">
       {detail.parent && (
@@ -462,10 +481,9 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
       )}
       <FindLine />
       <div className="chat-scroll" ref={scroller}>
-        <Chat detail={detail} overview={w.overview} />
+        <Chat detail={detail} overview={w.overview} catalog={catalog} act={act} onOpen={onOpen} />
       </div>
       <div className="composer">
-        <Blockers detail={detail} catalog={catalog} act={act} onOpen={onOpen} />
         {item.closed ? (
           <div className="composer-bar muted">Closed.</div>
         ) : (

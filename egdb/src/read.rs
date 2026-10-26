@@ -40,6 +40,40 @@ impl Store {
         self.values_with(view, entities, &eids)
     }
 
+    /// The event that set each value of each entity: when, by whom, at which
+    /// seq. Shaped as [`Store::values`]: null (cleared) values are left out,
+    /// and every asked-for ID is a key.
+    pub fn value_events(
+        &self,
+        branch: BranchId,
+        entities: &[&str],
+    ) -> Result<HashMap<String, BTreeMap<String, EventRef>>> {
+        let view = self.branch_view(branch)?;
+        let eids = self.lookup(entities)?;
+        let mut out: HashMap<String, BTreeMap<String, EventRef>> = entities
+            .iter()
+            .map(|e| ((*e).to_owned(), BTreeMap::new()))
+            .collect();
+        let keys: Vec<i64> = eids.keys().copied().collect();
+        if !keys.is_empty() {
+            self.note_sql(interval_count(&view));
+        }
+        for ((eid, key), c) in resolve_values(&self.conn, &view, &keys, None)? {
+            if !c.data.is_null() {
+                out.get_mut(&eids[&eid]).expect("asked for").insert(
+                    key,
+                    EventRef {
+                        branch: c.order.branch,
+                        seq: c.order.seq,
+                        timestamp: c.order.ts,
+                        author: c.author,
+                    },
+                );
+            }
+        }
+        Ok(out)
+    }
+
     /// [`Store::values_in`] with the interned keys already looked up.
     pub(crate) fn values_with(
         &self,

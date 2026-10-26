@@ -19,9 +19,9 @@ an in-memory store; it costs runs, so use it only when the bot wiring changes.
 
 ## Running it (for the user)
 
-`npm install`, then `npm start`: it builds egdb-server the first time (with
-rustup's cargo where there is one; `npm run egdb:build` builds it again; or set
-`EGDB_SERVER` to a binary), builds the app once and runs it, watching nothing:
+`npm install`, then `npm start`: it builds egdb-server and egdb's client whenever
+egdb's sources are newer than them (with rustup's cargo where there is one;
+`npm run egdb:build` builds them again; or set `EGDB_SERVER` to a binary), builds the app once and runs it, watching nothing:
 bots can edit and build the code (in their worktrees) without restarting the app
 under themselves. `npm run dev` hot-reloads the window.
 
@@ -163,7 +163,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   The bottom-left button opens the menu (Tasks, Bots, with how many are working beside it, Integrations, Types,
   MCP, which are views on the stack like any other; Sign out, with the username beside it; Close source, with the
   source beside it). Next has no button: it is Ctrl+D, and the app moves on
-  by itself once the task on screen no longer needs you.
+  by itself once the task on screen closes.
 - **The items view** (`ItemsList`) is what shows when the stack is empty, and
   Ctrl+L puts it on top (or, when it is already showing, puts the cursor in its
   search line); a view is never pushed onto an identical one; Ctrl+W and Alt+Left take the top view off, and Alt+Right puts the
@@ -192,10 +192,18 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   chat keeps only the events whose *displayed* text (`shows`, markdown stripped) has the phrase, marked in yellow
   (`Markdown`'s `highlight`). The phrase (`findAtom`) belongs to the view and is cleared when the view changes.
 - **A child task is a card** (`TaskCard`): its title, with a tick once resolved, a cross if cancelled, a pending
-  ring while open. While open it is among the blockers; once closed it is a chat bubble like any other event.
-- **When a task stops needing you, the app moves on.** Whatever the human does to the task on screen (sends, approves,
-  resolves, from the chat, header or menu) goes through `actOn(id)`: afterwards, if the task is resolved or blocked by
-  more than approvals, the next one that needs them is *pushed* (so Back returns). A plain note leaves it be.
+  ring while open. Clicking it opens it.
+- **A task's chat is every event in it** (`Chat`: its `contains` links, in the order they were added), each as its
+  card: a note its words; a child task its `TaskCard`; a script (`ScriptCard`) what it waits for, then a tick and
+  its output once done, a play button if it has no schedule, or else a timer (runs so far, next run counting down);
+  an approval its form while open. There is no separate blockers panel. Agents are told that what should show
+  in the chat must be an event in the task.
+- **When a task closes, the app moves on.** Whatever the human does to the task on screen (sends, approves,
+  resolves, from the chat, header or menu) goes through `actOn(id)`: afterwards, if the task has closed, the next one
+  that needs them is *pushed* (so Back returns). Handing it to someone else stays on it, for now.
+- **A view's title opens its event's menu** when clicked (or right-clicked): Open, Debug, Rename (for the task on
+  screen: the title becomes a text box, `renameAtom`) and its actions. `[id]()` references in text (tasks, bots,
+  people) have the same menu on right-click.
 - **The Types page** (`TypesPage`) lists every event type: what it is for, whether it blocks, its fields (the
   Fields button: its params' schema and what it resolves with), and its actions. The app's own are in `eventActions.ts`;
   the human's own are **custom actions** (`engine/customActions.ts`, the `custom_actions` table): per type, a name, a
@@ -228,8 +236,10 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   starts on one item run one at a time (`serial`).
 - **egdb is the history.** Every write is an egdb event, with its author and time, and egdb keeps every value an
   entity had and every state a link had. So the app keeps no trace, runs or transcripts of its own:
-  - An item's values are its params, plus `resolved_at`, `resolved_by`, `cancelled`, `data` and `state` once
-    they apply. Who made it and when is the `contains` link to it; who has a task, its `assigned_to` links.
+  - An item's values are its params; a blocker's also `resolved` (false, then true), and `cancelled`, `data` and
+    `state` once they apply. When it resolved, and by whom, is egdb's event for `resolved` (`value_events`,
+    read as a store loads; the debug view shows each value's). Who made it and when is the `contains` link to
+    it; who has a task, its `assigned_to` links.
   - A bot keeps only its `last_run` (`{ id, startedAt, endedAt, items, costUsd, turns, error, output }`); the
     earlier runs are its old values. Claude Code keeps its own session files.
   - What happened since a bot last ran is told by when things were written (`Store.moment()` in memory, times

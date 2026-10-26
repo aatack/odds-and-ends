@@ -288,6 +288,19 @@ await engine.close(bad)
   clock += MINUTE
   await tick()
   assert.equal(engine.event(slow)!.data!.outcome, 'timed_out')
+  // A script with no schedule runs only when someone runs it (its play button).
+  const [manual] = await engine.addEvents(counting, [{ type: 'script', params: { source: 'async (ctx) => (ctx.event.runs ? { done: true, message: "Second time" } : null)' } }])
+  clock += 10 * MINUTE
+  await tick()
+  assert.deepEqual([engine.event(manual)!.runs, engine.event(manual)!.nextCheckAt], [0, null], 'it waits to be run')
+  await engine.runNow(manual)
+  assert.deepEqual([engine.event(manual)!.resolved, engine.event(manual)!.runs, engine.event(manual)!.nextCheckAt], [false, 1, null])
+  await engine.runNow(manual)
+  assert.equal(engine.event(manual)!.message, 'Second time')
+  // Resolving is `resolved` turning true: egdb keeps when, and by whom.
+  assert.deepEqual((await engine.inspect(manual)).values.resolved, true)
+  assert.ok(!('resolved_at' in (await engine.inspect(manual)).values))
+  await assert.rejects(engine.runNow(manual), /nothing to run/)
   // A bot's script gets no unsafe actions.
   behaviours.push(async () =>
     out({ item: counting, assign: ['human'], events: [{ type: 'script', params: { source: `async (ctx, a) => { await a.post_somewhere({ text: 'x' }); return { done: true } }`, schedule: [0] } }] }),
@@ -437,7 +450,7 @@ await engine.close(bad)
   assert.equal(engine.next([], 'sam'), t)
   await engine.rename(t, '  Renamed for Sam ')
   assert.equal(item(t).title, 'Renamed for Sam')
-  assert.deepEqual((await engine.inspect(t)).values, { type: 'task', title: 'Renamed for Sam' }, 'a task keeps only its title')
+  assert.deepEqual((await engine.inspect(t)).values, { type: 'task', title: 'Renamed for Sam', resolved: false }, 'a task keeps only its title, and whether it is resolved')
   await engine.close(t)
 }
 
@@ -484,7 +497,7 @@ await engine.close(bad)
   const onHuman = JSON.parse(await outside.call('items_waiting_on', { on: 'human' }))
   assert.deepEqual(onHuman.map((i: { id: string }) => i.id).sort(), engine.overview().items.filter((i) => !i.closed && i.withYou).map((i) => i.id).sort())
   await assert.rejects(outside.call('items_waiting_on', { on: 'nobody' }), /One of: a person/)
-  assert.match(await outside.call('paradigm'), /An item is a thing to be done/)
+  assert.match(await outside.call('paradigm'), /A task is a thing to be done/)
   const types = JSON.parse(await outside.call('event_types'))
   assert.deepEqual(types.map((t: { type: string }) => t.type), engine.eventTypes.map((t) => t.type))
   const { ids: [made] } = JSON.parse(await outside.call('add_events', { events: [{ type: 'bot', params: { name: 'Sneaky' } }] }))

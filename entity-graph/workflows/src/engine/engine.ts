@@ -135,7 +135,7 @@ export class Engine extends EventEmitter {
       }
     }
     // Waits are checked at once after a start.
-    for (const r of this.store.events.values()) if (!r.resolved && this.typeOrNull(r.type)?.check) r.next_check_at = this.now()
+    for (const r of this.store.events.values()) if (!r.resolved && this.typeOrNull(r.type)?.check && this.scheduleOf(this.type(r.type), r.params)) r.next_check_at = this.now()
   }
 
   type(name: string): EventType {
@@ -189,6 +189,7 @@ export class Engine extends EventEmitter {
       summary,
       message: !r.resolved ? null : r.cancelled ? `Cancelled: ${summary}` : type.said ? type.said(params, data ?? {}) : summary,
       nextCheckAt: r.next_check_at,
+      runs: r.runs,
       lastError: r.last_error,
     }
   }
@@ -825,7 +826,7 @@ export class Engine extends EventEmitter {
       this.store.insertEvent({
         id, parent_id: parentId, seq: seq + i, type: spec.type, params, created_by: createdBy, created_at: at,
         resolved: !type.blocking, resolved_at: type.blocking ? null : at, resolved_by: type.blocking ? null : createdBy, cancelled: false,
-        data: null, memo: null, check_step: 0, next_check_at: type.check ? at + this.scheduleOf(type, params)[0] * 1000 : null, last_error: null,
+        data: null, memo: null, check_step: 0, next_check_at: type.check && this.scheduleOf(type, params) ? at + this.scheduleOf(type, params)![0] * 1000 : null, last_error: null,
         runs: 0, added_n: 0, resolved_n: 0,
       })
       if (spec.type === 'task') {
@@ -848,11 +849,22 @@ export class Engine extends EventEmitter {
     this.store.resolveEvent(eventId, data, by, this.now(), cancelled)
   }
 
-  /** An event's check schedule, in seconds: its type's, never under a second apart after the first, or the default. */
-  private scheduleOf(type: EventType, params: Record<string, unknown>): number[] {
-    const s = type.schedule?.(params) ?? DEFAULT_SCHEDULE
-    const delays = s.length ? s : DEFAULT_SCHEDULE
-    return delays.map((d, i) => (i === 0 ? Math.max(0, d) : Math.max(1, d)))
+  /**
+   * An event's check schedule, in seconds: its type's, never under a second apart after the first, or the default.
+   * Null when its type has schedules and it has none: then it runs only when someone runs it (`runNow`).
+   */
+  private scheduleOf(type: EventType, params: Record<string, unknown>): number[] | null {
+    const s = type.schedule ? type.schedule(params) : DEFAULT_SCHEDULE
+    if (!s?.length) return null
+    return s.map((d, i) => (i === 0 ? Math.max(0, d) : Math.max(1, d)))
+  }
+
+  /** Runs an open check (a script with no schedule, say) now, once. */
+  async runNow(eventId: string): Promise<void> {
+    const r = this.row(eventId)
+    if (!r || r.resolved || !this.type(r.type).check) throw new Error('There is nothing to run.')
+    r.next_check_at = this.now()
+    await this.checkOne(r.parent_id!, eventId)
   }
 
   /** Writes one param of an item: for the app's own bookkeeping, such as a bot's session and last run. */
@@ -999,8 +1011,11 @@ export class Engine extends EventEmitter {
         return
       }
       const schedule = this.scheduleOf(type, event.params)
-      const step = Math.min(row.check_step + 1, schedule.length - 1)
-      Object.assign(row, { check_step: step, next_check_at: this.now() + schedule[step] * 1000, last_error: error })
+      if (!schedule) Object.assign(row, { next_check_at: null, last_error: error })
+      else {
+        const step = Math.min(row.check_step + 1, schedule.length - 1)
+        Object.assign(row, { check_step: step, next_check_at: this.now() + schedule[step] * 1000, last_error: error })
+      }
       this.emit('change')
     }).finally(() => this.checking.delete(eventId))
   }

@@ -115,9 +115,9 @@ export interface EventType {
    * When `check` runs, as seconds to wait: before the first check, then between
    * each, the last repeating. Left out, the default backoff: at once, then 1, 2,
    * 5 and then every 10 minutes. Checks run at most once a second, and one check
-   * of an event never starts before the last has finished.
+   * of an event never starts before the last has finished. Null: it runs only when someone runs it.
    */
-  schedule?: (params: Record<string, unknown>) => number[]
+  schedule?: (params: Record<string, unknown>) => number[] | null
 }
 
 /** Where new items come from. Polled from the central loop; what it answers is added in no parent. */

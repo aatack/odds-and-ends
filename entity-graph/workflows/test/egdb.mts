@@ -85,6 +85,12 @@ const file = join(dir, 'round-trip.egdb')
   assert.ok(seen.links.some((l) => l.type === 'contains' && l.direction === 'inbound' && l.other === id))
   // Who has a task is an `assigned_to` link.
   assert.ok((await engine2.inspect(id)).links.some((l) => l.type === 'assigned_to' && l.other === 'alex'))
+  // A closed task is `resolved: true`; when it closed, and who closed it, is egdb's event for that value.
+  const closed = await engine2.inspect(done)
+  assert.equal(closed.values.resolved, true)
+  assert.ok(!('resolved_at' in closed.values) && !('resolved_by' in closed.values))
+  assert.deepEqual([closed.set.resolved.at, closed.set.resolved.by], [engine.event(done)!.resolvedAt, 'alex'])
+  assert.deepEqual([engine2.event(done)!.resolvedAt, engine2.event(done)!.resolvedBy], [engine.event(done)!.resolvedAt, 'alex'])
   assert.equal(engine2.settings.mcpPort(), 1234)
   // The tree can be walked in egdb itself, from the root.
   const branch = (await again.client.branches())[0].id

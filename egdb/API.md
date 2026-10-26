@@ -192,6 +192,16 @@ curl -s -X POST $URL/values -H 'content-type: application/json' \
 { "a": { "type": "task" } }
 ```
 
+### POST /value_events
+
+Request: `{branch, entities}`. Response: a map of entity ID to the event that
+set each of its values (shaped as `/values`: cleared values are left out). Use
+it to find when, and by whom, a value got its current state.
+
+```json
+{ "a": { "type": { "branch": "...", "seq": 3, "timestamp": 1700000000000, "author": "u" } } }
+```
+
 ### POST /value
 
 Request: `{branch, entity, key}`. Response: the value, or `null`.

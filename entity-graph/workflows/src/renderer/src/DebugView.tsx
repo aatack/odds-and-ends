@@ -5,7 +5,8 @@ import { api } from './useWorkflows'
 
 /**
  * An item as egdb holds it: who made it and when, its values (a note's is just
- * its `text`), and its links, each with who wrote it and when.
+ * its `text`), each with when it was set and by whom, and its links, each with
+ * who wrote it and when.
  */
 export function DebugView({ id }: { id: string }) {
   const [it, setIt] = useState<Inspection | null>(null)
@@ -43,6 +44,7 @@ export function DebugView({ id }: { id: string }) {
               <tr key={k}>
                 <td className="muted mono">{k}</td>
                 <td className="mono">{typeof v === 'string' ? v : JSON.stringify(v, null, 2)}</td>
+                <td className="muted">{it.set[k] ? `${time(it.set[k].at)} ${it.set[k].by}` : ''}</td>
               </tr>
             ))}
           </tbody>

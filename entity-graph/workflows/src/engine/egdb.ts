@@ -97,6 +97,8 @@ export class EgdbSink implements Sink {
 
   async inspect(id: string): Promise<Inspection> {
     const values = (await this.client.values(this.branch, [id]))[id] ?? {}
+    const events = (await this.client.valueEvents(this.branch, [id]))[id] ?? {}
+    const set = Object.fromEntries(Object.entries(events).map(([k, e]) => [k, { at: e.timestamp, by: e.author }]))
     const groups = LINK_TYPES.flatMap((t) => [[t, 'outbound'], [t, 'inbound']] as const)
     const got = (await this.client.linksIncludingArchived(this.branch, [id], groups))[id] ?? []
     const links: LinkView[] = got.flatMap((g) =>
@@ -110,7 +112,7 @@ export class EgdbSink implements Sink {
       })),
     )
     const made = links.find((l) => l.type === 'contains' && l.direction === 'inbound')
-    return { id, values, links, createdAt: made?.at ?? null, createdBy: made?.by ?? null }
+    return { id, values, set, links, createdAt: made?.at ?? null, createdBy: made?.by ?? null }
   }
 }
 
@@ -165,10 +167,17 @@ export async function loadStore(
           else assigned.push({ item: l.source, to: l.destination, ...meta })
         }
   }
+  // When each resolved blocker resolved, and by whom: the event that set its `resolved` true.
+  const resolved = new Map<string, { at: number; by: string }>()
+  const done = [...found].filter(([, x]) => x.resolved === true).map(([id]) => id)
+  for (let i = 0; i < done.length; i += 500) {
+    const got = await client.valueEvents(branch, done.slice(i, i + 500))
+    for (const [id, keys] of Object.entries(got)) if (keys.resolved) resolved.set(id, { at: keys.resolved.timestamp, by: keys.resolved.author })
+  }
   const events: EventRow[] = []
   for (const [id, x] of found) {
     const m = made.get(id)
-    if (m) events.push(eventFromValues(id, x, m, blocking(String(x.type))))
+    if (m) events.push(eventFromValues(id, x, m, blocking(String(x.type)), resolved.get(id)))
   }
   const sink = new EgdbSink(client, branch, onError)
   const store = new Store(sink)
