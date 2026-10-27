@@ -177,6 +177,14 @@ async fn write_and_reads() {
     assert!(events["a"]["title"]["author"].is_string());
     assert_eq!(events["nobody"], json!({}));
 
+    // value_log and link_log: every event, the newest first, filtered
+    let log = post_ok(&s.base, "/value_log", json!({ "branch": b, "entities": ["a"], "keys": ["title"] })).await;
+    assert_eq!(log[0]["entity"], "a");
+    assert_eq!(log[0]["value"], "alpha");
+    assert!(log[0]["event"]["author"].is_string());
+    let none = post_ok(&s.base, "/link_log", json!({ "branch": b, "authors": ["nobody"] })).await;
+    assert_eq!(none, json!([]));
+
     // value
     let one = post_ok(
         &s.base,

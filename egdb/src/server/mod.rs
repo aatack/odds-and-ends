@@ -25,8 +25,8 @@ use tokio::net::TcpListener;
 
 use crate::error::Result;
 use crate::store::Store;
-use crate::types::{Direction, ParentRef, SeqRange, WriteBatch};
-use crate::{Filter, FindOptions, Follow, ProveOptions, WalkOptions};
+use crate::types::{BranchId, Direction, ParentRef, SeqRange, WriteBatch};
+use crate::{Filter, FindOptions, Follow, LogFilter, ProveOptions, WalkOptions};
 use dto::query::{
     node_predicate, FilterDto, FindDto, FindOptionsDto, FollowDto, ProveDto, ProveOptionsDto,
     WalkDto, WalkOptionsDto,
@@ -74,6 +74,8 @@ pub fn router_with(store: SharedStore, config: Config) -> Router {
         .route("/undo", post(undo))
         .route("/values", post(values))
         .route("/value_events", post(value_events))
+        .route("/value_log", post(value_log))
+        .route("/link_log", post(link_log))
         .route("/value", post(value))
         .route("/links", post(links))
         .route("/links_including_archived", post(links_including_archived))
@@ -229,6 +231,56 @@ async fn undo(
     let author = body.author;
     let outcome = on_store(&state, move |s| s.undo(id, &author)).await?;
     Ok(Json(outcome.map(UndoOutcomeDto::from)))
+}
+
+// --- the edit log -----------------------------------------------------------
+
+#[derive(Deserialize)]
+struct LogReq {
+    branch: String,
+    entities: Option<Vec<String>>,
+    authors: Option<Vec<String>>,
+    keys: Option<Vec<String>>,
+    since: Option<i64>,
+    until: Option<i64>,
+    limit: Option<usize>,
+}
+
+impl LogReq {
+    fn filter(self) -> std::result::Result<(BranchId, LogFilter), ApiError> {
+        let id = parse_branch(&self.branch)?;
+        let filter = LogFilter {
+            entities: self.entities,
+            authors: self.authors,
+            keys: self.keys,
+            since: self.since,
+            until: self.until,
+            limit: self.limit,
+        };
+        Ok((id, filter))
+    }
+}
+
+async fn value_log(State(state): State<AppState>, ApiJson(body): ApiJson<LogReq>) -> ApiResult<serde_json::Value> {
+    let (id, filter) = body.filter()?;
+    let log = on_store(&state, move |s| s.value_log(id, &filter)).await?;
+    Ok(Json(serde_json::Value::Array(
+        log.into_iter()
+            .map(|c| json!({ "entity": c.entity, "key": c.key, "value": value_to_json(&c.value), "event": EventRefDto::from(c.event) }))
+            .collect(),
+    )))
+}
+
+async fn link_log(State(state): State<AppState>, ApiJson(body): ApiJson<LogReq>) -> ApiResult<serde_json::Value> {
+    let (id, filter) = body.filter()?;
+    let log = on_store(&state, move |s| s.link_log(id, &filter)).await?;
+    Ok(Json(serde_json::Value::Array(
+        log.into_iter()
+            .map(|c| {
+                json!({ "source": c.source, "destination": c.destination, "link_type": c.link_type, "sort": c.sort, "event": EventRefDto::from(c.event) })
+            })
+            .collect(),
+    )))
 }
 
 // --- value and link reads -------------------------------------------------

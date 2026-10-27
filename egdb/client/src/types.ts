@@ -38,6 +38,36 @@ export interface EventRef {
   author: string
 }
 
+/** What a log read keeps: each filter left out keeps everything. `keys` are value keys, or link types. */
+export interface LogFilter {
+  entities?: EntityId[]
+  authors?: string[]
+  keys?: string[]
+  /** At or after, in ms. */
+  since?: number
+  /** Before, in ms. */
+  until?: number
+  /** At most this many, the newest kept. */
+  limit?: number
+}
+
+/** One value event; `value` null is a clear. */
+export interface ValueChange {
+  entity: EntityId
+  key: string
+  value: Value
+  event: EventRef
+}
+
+/** One link event; `sort` null is a removal. */
+export interface LinkChange {
+  source: EntityId
+  destination: EntityId
+  link_type: string
+  sort: number | null
+  event: EventRef
+}
+
 export interface Link {
   source: EntityId
   destination: EntityId

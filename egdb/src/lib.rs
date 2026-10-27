@@ -13,6 +13,7 @@
 mod codec;
 mod error;
 mod find;
+mod log;
 mod middleware;
 mod prove;
 mod read;
@@ -30,6 +31,7 @@ pub use error::{Error, Result};
 /// Planner switches for benchmarks and tests. Not part of the API.
 #[doc(hidden)]
 pub use find::knobs as find_knobs;
+pub use log::{LinkChange, LogFilter, ValueChange};
 pub use find::{Filter, Find, FindOptions, FindOrder, FindRow, Predicate};
 pub use middleware::{WriteContext, WriteMiddleware};
 pub use prove::{Proof, Prove, ProveOptions, ProveOutcome, ProveStats};

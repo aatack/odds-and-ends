@@ -202,6 +202,20 @@ it to find when, and by whom, a value got its current state.
 { "a": { "type": { "branch": "...", "seq": 3, "timestamp": 1700000000000, "author": "u" } } }
 ```
 
+### POST /value_log, /link_log
+
+The edit log. Request: `{branch, entities?, authors?, keys?, since?, until?, limit?}`;
+each filter left out keeps everything (`keys` are value keys for `/value_log`,
+link types for `/link_log`; a link matches an entity at either end; `since` is
+inclusive, `until` exclusive, both in ms). Response: every event the branch sees
+that the filter keeps, current and superseded alike, the newest first; `limit`
+keeps the newest. A cleared value is `null`; a removed link has `sort: null`.
+
+```json
+[{ "entity": "a", "key": "title", "value": "alpha", "event": { "branch": "...", "seq": 3, "timestamp": 1700000000000, "author": "u" } }]
+[{ "source": "a", "destination": "b", "link_type": "child", "sort": null, "event": { "branch": "...", "seq": 4, "timestamp": 1700000000001, "author": "u" } }]
+```
+
 ### POST /value
 
 Request: `{branch, entity, key}`. Response: the value, or `null`.

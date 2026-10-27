@@ -2025,3 +2025,45 @@ fn the_sql_type_filter_equals_reading_the_type_for_stacks_forks_and_archives() {
         let _ = frozen_forks;
     }
 }
+
+// --- The edit log -----------------------------------------------------------
+
+#[test]
+fn the_log_has_every_event_newest_first_and_filters() {
+    let mut f = Fixture::new();
+    f.write(f.main, "alex", vec![Op::set("n", "text", "one"), Op::set("n", "type", "note")]);
+    f.write(f.main, "bot", vec![Op::set("n", "text", "two")]);
+    f.write(f.main, "alex", vec![Op::set("m", "text", "other"), Op::set("n", "text", Value::Null)]);
+    f.write(f.main, "alex", vec![Op::link("n", "c", "child", SortOrder::Explicit(1.0))]);
+    f.write(f.main, "bot", vec![Op::unlink("n", "c", "child")]);
+
+    let all = f.store.value_log(f.main, &LogFilter::default()).unwrap();
+    let seen: Vec<(String, String, Value, String)> =
+        all.iter().map(|c| (c.entity.clone(), c.key.clone(), c.value.clone(), c.event.author.clone())).collect();
+    assert_eq!(
+        seen,
+        vec![
+            ("n".into(), "text".into(), Value::Null, "alex".into()),
+            ("m".into(), "text".into(), Value::Text("other".into()), "alex".into()),
+            ("n".into(), "text".into(), Value::Text("two".into()), "bot".into()),
+            ("n".into(), "type".into(), Value::Text("note".into()), "alex".into()),
+            ("n".into(), "text".into(), Value::Text("one".into()), "alex".into()),
+        ]
+    );
+
+    let by_bot = f.store.value_log(f.main, &LogFilter { authors: Some(vec!["bot".into()]), ..Default::default() }).unwrap();
+    assert_eq!(by_bot.iter().map(|c| c.value.clone()).collect::<Vec<_>>(), vec![Value::Text("two".into())]);
+    let n_text = LogFilter { entities: Some(vec!["n".into()]), keys: Some(vec!["text".into()]), limit: Some(2), ..Default::default() };
+    assert_eq!(f.store.value_log(f.main, &n_text).unwrap().len(), 2);
+    let later = LogFilter { since: Some(T0 + 3), ..Default::default() };
+    assert_eq!(f.store.value_log(f.main, &later).unwrap().len(), 2);
+    let nobody = LogFilter { entities: Some(vec!["nothing".into()]), ..Default::default() };
+    assert!(f.store.value_log(f.main, &nobody).unwrap().is_empty());
+
+    // Links: either end matches an entity; a removal has no sort.
+    let links = f.store.link_log(f.main, &LogFilter { entities: Some(vec!["c".into()]), ..Default::default() }).unwrap();
+    assert_eq!(
+        links.iter().map(|l| (l.source.as_str(), l.destination.as_str(), l.sort, l.event.author.as_str())).collect::<Vec<_>>(),
+        vec![("n", "c", None, "bot"), ("n", "c", Some(1.0), "alex")]
+    );
+}
