@@ -2,7 +2,6 @@ import { BUILTIN_SECTIONS, DEFAULT_SECTIONS, matches, type SearchRow, type Searc
 import { runScript } from './script'
 import { github } from './github'
 import { slackActions } from './slack'
-import { Processes } from './processes'
 import { CustomActions } from './customActions'
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
@@ -107,8 +106,6 @@ export class Engine extends EventEmitter {
   readonly presets: Preset[] = PRESETS
   /** People's own actions, per event type (the Types page). */
   readonly customActions: CustomActions
-  /** What `process` events run, while the backend lasts. */
-  readonly processes: Processes
   /** Stops a bot's run. Set by the runner. */
   onCancel: (agentId: string) => void = () => {}
   /** The run each bot has going, by the bot's id. In memory only: a crash leaves nothing behind. */
@@ -128,7 +125,6 @@ export class Engine extends EventEmitter {
   constructor(opts: EngineOptions = {}) {
     super()
     this.store = opts.store ?? new Store(null, opts.now)
-    this.processes = new Processes(opts.now)
     this.settings = new Settings(this.store, opts.secrets ?? plainSecrets)
     this.exec = opts.exec ?? execCli
     this.fetch = opts.fetch ?? fetch
@@ -922,6 +918,7 @@ export class Engine extends EventEmitter {
   prepare(specs: EventSpec[], author: Author): EventSpec[] {
     return specs.flatMap((s) => {
       const type = this.type(s?.type)
+      if (s.type === 'process') throw new Error('Processes are switched off for now.')
       if (author === 'bot' && !type.bots) throw new Error(`A bot may not add a ${s.type} event.`)
       const parsed = z.object(type.params).safeParse(s.params ?? {})
       if (!parsed.success)
@@ -995,8 +992,6 @@ export class Engine extends EventEmitter {
     const r = this.row(eventId)
     if (!r || r.resolved) return
     this.store.resolveEvent(eventId, data, by, this.now(), cancelled)
-    // A process stops as its event ends (stopped, or its task closed).
-    if (r.type === 'process') this.processes.stop(eventId)
     // A script that ends lets go of the tasks it still has: each goes back to its owner, if nobody else has it.
     if (r.type === 'script') for (const t of this.assignedTo(eventId)) if (!this.get(t)?.closed) this.handBack(t, eventId, null, 'script')
   }

@@ -353,8 +353,6 @@ export interface WorkflowsAPI {
   close: (id: string) => Promise<void>
   /** Opens a closed task again. */
   reopen: (id: string) => Promise<void>
-  /** A process event's process: how it stands (null when this backend never ran it), and the last `n` lines it wrote. */
-  processOutput: (eventId: string, n: number) => Promise<{ status: ProcessStatus | null; lines: string[] }>
   /** The edit log: what was done, by whom and when, the newest first. */
   editLog: (query: LogQuery) => Promise<LogEntry[]>
   /** Adds events in a task, as the person signed in: what the chat input's default actions do. */
@@ -473,17 +471,6 @@ export interface LogEntry {
   removed: boolean
 }
 
-/** How a process (a `process` event's) stands, as the backend holding it says. */
-export interface ProcessStatus {
-  running: boolean
-  pid: number | null
-  exitCode: number | null
-  signal: string | null
-  error: string | null
-  startedAt: number
-  endedAt: number | null
-}
-
 /** One of the human's own actions, for events of one type: a script, usually written by a model from its description and notes. */
 export interface CustomAction {
   id: string
@@ -504,7 +491,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addEvents', 'runTool', 'link', 'searchSections', 'setSearchSections', 'runSearchSection', 'setWidgetState', 'processOutput', 'editLog',
+  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addEvents', 'runTool', 'link', 'searchSections', 'setSearchSections', 'runSearchSection', 'setWidgetState', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'regeneratePhoneToken',

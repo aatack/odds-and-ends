@@ -101,7 +101,7 @@ the chat input should offer it, add a preset in `presets.ts`.
 | `approval` | a person's | `action` (unsafe), `inputs`, `reason?` | `{ ran, inputs, changed, output }` |
 | `script` | while it lasts; it blocks nothing (a task waits on it by being assigned to it) | `source`, `description?`, `wake_at?`, `owns?`, `schedule?` (older), `timeout_minutes?` | `{ result, runs, logs }` or `{ error, logs }` |
 | `bot` | while the bot lasts (sits in no item) | `name`, `instructions?`, `provider?`, `model?` (opus), `debounce_minutes?` (1), `folder?`; the app sets `session_id`, `seen` and `last_run` | `{ cancelled }`, once deleted |
-| `process` | yes, while it runs | `command`, `cwd?`, `description?` | `{ exitCode, signal, error?, output }` once it exits; `{ cancelled }` once stopped |
+| `process` | — | switched off for now: kept so stored ones read; none can be added | — |
 | `widget` | no | `html`, `title?`, `widget_state?` (its state, set again as it changes) | — |
 | `slack_message` | no | `link`, or `channel` and `ts` (`thread_ts?`), `workspace?` | — (its card and view read Slack, through the cache, as shown) |
 | `slack_channel` | no | `channel` (id or #name), `oldest`, `latest?`, `workspace?` | — (as `slack_message`) |

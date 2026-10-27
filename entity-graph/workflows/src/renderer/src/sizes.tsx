@@ -12,7 +12,6 @@ import { Approval } from './Approval'
 import { fenced, Markdown } from './components/ui/Markdown'
 import { useEventMenu } from './EventMenu'
 import { eventIcon } from './icons'
-import { ProcessCard } from './ProcessCard'
 import { SlackCard } from './SlackView'
 import { Widget } from './Widget'
 import { TaskCard } from './TaskCard'
@@ -65,7 +64,6 @@ export const CARDS: Partial<Record<EventKind, (p: CardProps) => ReactNode>> = {
     </button>
   ),
   script: ({ event: e, act, find }) => <ScriptCard event={e} act={act} find={find} />,
-  process: ({ event: e, act }) => <ProcessCard event={e} act={act} lines={8} />,
   widget: ({ event: e }) => <Widget event={e} />,
   slack_message: ({ event: e, find }) => <SlackCard event={e} find={find} />,
   slack_channel: ({ event: e, find }) => <SlackCard event={e} find={find} />,

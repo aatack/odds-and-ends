@@ -131,9 +131,8 @@ window: there `window.workflows` is the preload's, as always.
   iframe (`Widget.tsx`: scripts only, a CSP that allows nothing out, no navigation), styled with the app's CSS
   variables. Its only way out is `setState`, by message; the state is its `widget_state` value (egdb keeps every one
   before), which bots and scripts read and set (`set_widget_state`). The frame is made once per HTML, so focus stays.
-- A `process` is a command the backend keeps running (a dev server) until it exits or is stopped (cancelled, its
-  task closing, or the backend stopping): `processes.ts`, read by its first check. A bot may add one, as it may
-  run the same command in its shell; the unsafe rule binds it there just the same.
+- `process` is switched off for now (aatack, Oct 2026): its type stays only so stored ones still read; none can
+  be added.
 - Nothing about the running app is stored: what is running is held in memory.
 
 ## Terminology

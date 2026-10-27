@@ -1,7 +1,6 @@
 // The event types. What each takes and resolves with is the contract
 // docs/events.md sets out; keep the two in step.
 
-import { homedir } from 'node:os'
 import { z } from 'zod'
 import type { EventType } from './integrations'
 import { runScript } from './script'
@@ -269,38 +268,15 @@ export const widget: EventType = {
   describe: (p) => String(p.title ?? 'Widget'),
 }
 
+/** Retired for now: kept so the process events already stored still read. None can be added (Engine.prepare). */
 export const proc: EventType = {
   type: 'process',
-  description:
-    'A command the app keeps running (a dev server, a watcher) until a person or a bot stops it (cancel_event), or it exits; it blocks until then. ' +
-    'It starts at once, in a shell, in `cwd` (by default the folder of the bot that added it, or the home folder). Its view shows the end of its ' +
-    'output and a Stop button: hand the task to a person to switch it off. It stops when its task closes, and when the app stops.',
-  params: {
-    command: z.string().describe('What to run, as a bash command line.'),
-    cwd: z.string().optional().describe('Where to run it: an absolute path.'),
-    description: z.string().optional().describe('What it is, in a line: the blocker row says this.'),
-  },
-  data: '{ exitCode, signal, error?, output } once it exits (the last lines it wrote); { cancelled: true } once stopped',
+  description: 'Switched off for now: no process can be added.',
+  params: { command: z.string(), cwd: z.string().optional(), description: z.string().optional() },
+  data: '—',
   blocking: true,
-  bots: true,
-  describe: (p) => String(p.description || `Running \`${p.command}\``),
-  said: (p, d) => `${p.description || `\`${p.command}\``} ${d.error ? `failed: ${d.error}` : d.signal ? `ended (${d.signal})` : `exited with ${d.exitCode ?? 'nothing'}`}`,
-  // Checked often: the first check starts it, and each after says whether it has ended.
-  schedule: () => [0, 1, 2],
-  check: async (p, ctx) => {
-    const id = ctx.event.id
-    const s = ctx.engine.processes.status(id)
-    if (!s) {
-      // Started before, by a backend that has since stopped: it stopped with it.
-      if (ctx.memo) return { exitCode: null, signal: null, error: 'The app stopped while it ran.', output: [] }
-      const by = ctx.event.createdBy.startsWith('bot:') ? ctx.engine.agent(ctx.event.createdBy.slice(4)) : null
-      ctx.engine.processes.start(id, String(p.command), String(p.cwd || by?.folder || homedir()))
-      ctx.setMemo({ started: true })
-      return null
-    }
-    if (s.running) return null
-    return { exitCode: s.exitCode, signal: s.signal, ...(s.error ? { error: s.error } : {}), output: ctx.engine.processes.output(id, 20) }
-  },
+  bots: false,
+  describe: (p) => String(p.description || `\`${p.command}\``),
 }
 
 /** When, to the minute, from a Slack ts or any time slack.ts reads. */

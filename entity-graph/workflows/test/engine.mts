@@ -407,37 +407,8 @@ await engine.close(loose)
   await engine.close(t)
 }
 
-// A process: started by its first check, ended when it exits (with what it wrote last), or stopped by a cancel.
-{
-  const host = (await engine.create('Processes'))!
-  const [quick, slow] = await engine.addEvents(host, [
-    { type: 'process', params: { command: 'echo one; echo two', cwd: '/tmp' } },
-    { type: 'process', params: { command: 'sleep 30', cwd: '/tmp', description: 'A long one' } },
-  ])
-  await engine.checkDue()
-  await engine.idle()
-  assert.equal(engine.processes.status(slow)!.running, true)
-  for (let i = 0; i < 50 && engine.processes.status(quick)!.running; i++) await new Promise((r) => setTimeout(r, 20))
-  clock += 2000
-  await engine.checkDue()
-  await engine.idle()
-  const done = engine.event(quick)!
-  assert.ok(done.resolved && !done.cancelled)
-  assert.deepEqual([done.data!.exitCode, done.data!.output], [0, ['one', 'two']])
-  await engine.cancel(slow)
-  for (let i = 0; i < 50 && engine.processes.status(slow)!.running; i++) await new Promise((r) => setTimeout(r, 20))
-  assert.equal(engine.processes.status(slow)!.signal, 'SIGTERM', 'a cancel stops it')
-  // One the backend never ran (it ran under one since stopped) ends as soon as it is checked.
-  const [old] = await engine.addEvents(host, [{ type: 'process', params: { command: 'sleep 30', cwd: '/tmp' } }])
-  await engine.idle()
-  engine.processes.stop(old)
-  ;(engine.processes as unknown as { held: Map<string, unknown> }).held.delete(old)
-  clock += 2000
-  await engine.checkDue()
-  await engine.idle()
-  assert.match(String(engine.event(old)!.data!.error), /stopped while it ran/)
-  await engine.close(host)
-}
+// Processes are switched off: none can be added.
+await assert.rejects(engine.addEvents((await engine.create('No process'))!, [{ type: 'process', params: { command: 'true' } }]), /switched off/)
 
 // ---- 6. Output that can't be used, or an update that can't be applied, is said, and the item goes back ----
 const bad = (await engine.create('Bad'))!

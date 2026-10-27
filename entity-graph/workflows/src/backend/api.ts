@@ -39,7 +39,6 @@ export function handlers(engine: Engine, admin: Admin, me: string, source = ''):
     link: (itemId, eventIds) => engine.link(itemId, eventIds, me),
     setWidgetState: (eventId, state) => engine.setWidgetState(eventId, state, me),
     editLog: (query) => engine.store.log(query),
-    processOutput: (eventId, n) => ({ status: engine.processes.status(eventId), lines: engine.processes.output(eventId, n) }),
     rename: (id, title) => engine.rename(id, title, me),
     customActions: () => engine.customActions.list(),
     saveCustomAction: (a) => engine.customActions.save(a),
