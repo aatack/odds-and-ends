@@ -16,7 +16,7 @@ async function main(): Promise<void> {
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
-    title: 'Workflows',
+    title: 'YAWN',
     webPreferences: { preload: join(__dirname, '../preload/index.js'), sandbox: false },
   })
 
@@ -46,16 +46,17 @@ async function main(): Promise<void> {
     if (/^https?:/.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
-  // Ctrl+W (rather than closing the window, as the default menu would) and Alt+Left take the top view off the stack;
-  // Alt+Right puts the last one taken off back on.
+  // Ctrl+W (rather than closing the window, as the default menu would), Alt+Left and Ctrl+Shift+Tab take the top view
+  // off the stack; Alt+Right and Ctrl+Tab put the last one taken off back on.
   win.webContents.on('before-input-event', (event, input) => {
-    if (input.type !== 'keyDown' || input.shift || input.meta) return
-    const ctrlW = input.control && !input.alt && input.key.toLowerCase() === 'w'
-    const altLeft = input.alt && !input.control && input.key === 'ArrowLeft'
-    const altRight = input.alt && !input.control && input.key === 'ArrowRight'
-    if (!ctrlW && !altLeft && !altRight) return
+    if (input.type !== 'keyDown' || input.meta) return
+    const ctrlTab = input.control && !input.alt && input.key === 'Tab'
+    const ctrlW = input.control && !input.alt && !input.shift && input.key.toLowerCase() === 'w'
+    const altLeft = input.alt && !input.control && !input.shift && input.key === 'ArrowLeft'
+    const altRight = input.alt && !input.control && !input.shift && input.key === 'ArrowRight'
+    if (!ctrlTab && !ctrlW && !altLeft && !altRight) return
     event.preventDefault()
-    win.webContents.send(altRight ? 'forward' : 'back')
+    win.webContents.send(altRight || (ctrlTab && !input.shift) ? 'forward' : 'back')
   })
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else void win.loadFile(join(__dirname, '../renderer/index.html'))

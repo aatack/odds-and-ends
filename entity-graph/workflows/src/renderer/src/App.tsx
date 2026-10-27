@@ -24,7 +24,7 @@ import { api, useWorkflows } from './useWorkflows'
 import { findAtom, findFocusAtom, forwardAtom, menuAtom, renameAtom, searchFocusAtom, viewedAtom, viewsAtom, type View } from './views'
 import { FindLine } from './FindLine'
 import { AssigneePill } from './Assignees'
-import { BotsPage } from './BotsPage'
+import { BotsPage, botStatus } from './BotsPage'
 import { BotView } from './BotView'
 import { Bot, User as UserIcon } from 'lucide-react'
 import { everyone, nameOf, sourceAtom, userAtom, type Someone } from './people'
@@ -71,7 +71,7 @@ export function Root() {
 
 export function App({ onSignOut, onCloseSource }: { onSignOut: () => void; onCloseSource: () => void }) {
   const items = useWorkflows()
-  // Ctrl+W and Alt+Left (sent by the main process) take the top view off the stack; Alt+Right puts it back.
+  // Ctrl+W, Alt+Left and Ctrl+Shift+Tab (sent by the main process) take the top view off the stack; Alt+Right and Ctrl+Tab put it back.
   const { back, forward, open } = items
   useEffect(() => api().onBack(back), [back])
   useEffect(() => api().onForward(forward), [forward])
@@ -267,6 +267,8 @@ function ItemsMain() {
             items={w.overview.items}
             recent={w.recent}
             sections={TASKS_SECTIONS}
+            bots={w.overview.bots.filter((b) => !b.deleted).map((b) => ({ id: b.id, name: b.name, status: botStatus(b) }))}
+            botsLabel="Bots"
             onEscape={w.views.length > 0 ? w.back : undefined}
             onOpen={openFromItems}
             onCreate={(title) => w.act(async () => openFromItems(await api().create(title, null)))}
@@ -469,6 +471,20 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight })
   }, [count])
+  // While the chat fills less than half the view, its title sits just above it too, to see at a glance.
+  const [short, setShort] = useState(false)
+  useEffect(() => {
+    const el = scroller.current
+    if (!el) return
+    const chat = el.querySelector<HTMLElement>('.chat')
+    if (!chat) return
+    const seen = new ResizeObserver(() => setShort(chat.offsetHeight < el.clientHeight / 2))
+    seen.observe(el)
+    seen.observe(chat)
+    return () => seen.disconnect()
+  }, [item.id])
+  // A bot working on it (or, in a bot's own chat, the bot itself) says so where its message will appear.
+  const working = w.overview.bots.find((b) => b.id === item.bot || (b.id === item.id && b.runId))
   return (
     <div className="item">
       {detail.parent && (
@@ -481,7 +497,9 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
       )}
       <FindLine />
       <div className="chat-scroll" ref={scroller}>
+        {short && <h2 className="chat-title">{item.title}</h2>}
         <Chat detail={detail} overview={w.overview} catalog={catalog} act={act} onOpen={onOpen} />
+        {working && <div className="chat-working">@{working.name} is working…</div>}
       </div>
       <div className="composer">
         {item.closed ? (

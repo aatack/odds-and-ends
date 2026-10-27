@@ -1,7 +1,7 @@
 import { useAtom } from 'jotai'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Catalog, CustomAction, EventDetail, Overview, WorkflowsAPI } from '../../shared/types'
-import { forwardAtom, sameView, viewedAtom, viewsAtom, type View } from './views'
+import { forwardAtom, HISTORY_LIMIT, reachedAtom, sameView, viewedAtom, viewsAtom, type View } from './views'
 
 declare global {
   interface Window {
@@ -69,31 +69,44 @@ export function useWorkflows() {
    * `replace`, it takes the top view's place instead (if there is one), so Back
    * goes past it.
    */
+  const [reached, setReached] = useAtom(reachedAtom)
   const open = useCallback(
-    (v: View, { replace = false }: { replace?: boolean } = {}) => {
+    (v: View, { replace = false, direct = !replace }: { replace?: boolean; direct?: boolean } = {}) => {
       setError(null)
+      const top = views[views.length - 1]
       const below = replace ? views.slice(0, -1) : views
-      if (!sameView(below[below.length - 1], v)) setViews([...below, v])
+      if (!sameView(below[below.length - 1], v)) setViews([...below, v].slice(-HISTORY_LIMIT))
       else if (replace) setViews(below)
       // Somewhere new: what Back took off is no longer ahead.
       setForwards([])
+      // Reached straight from a task: Forward from it, with nothing ahead, comes back here.
+      if (direct && top?.kind === 'event' && v.kind === 'event' && top.id !== v.id)
+        setReached((r) => Object.fromEntries([...Object.entries(r).filter(([k]) => k !== top.id), [top.id, v.id]].slice(-200)))
     },
-    [views, setViews, setForwards],
+    [views, setViews, setForwards, setReached],
   )
 
   /** Takes the top view off the stack, keeping it for Forward. */
   const back = useCallback(() => {
     if (!views.length) return
     setViews(views.slice(0, -1))
-    setForwards([...forwards, views[views.length - 1]])
+    setForwards([...forwards, views[views.length - 1]].slice(-HISTORY_LIMIT))
   }, [views, setViews, forwards, setForwards])
 
-  /** Puts the view Back last took off on top of the stack again. */
+  /**
+   * Puts the view Back last took off on top of the stack again. With nothing to put back, goes to what was last
+   * reached straight from the task on screen, if anything was.
+   */
   const forward = useCallback(() => {
-    if (!forwards.length) return
-    setViews([...views, forwards[forwards.length - 1]])
+    const top = views[views.length - 1]
+    if (!forwards.length) {
+      const to = top?.kind === 'event' ? reached[top.id] : undefined
+      if (to) setViews([...views, { kind: 'event' as const, id: to }].slice(-HISTORY_LIMIT))
+      return
+    }
+    setViews([...views, forwards[forwards.length - 1]].slice(-HISTORY_LIMIT))
     setForwards(forwards.slice(0, -1))
-  }, [views, setViews, forwards, setForwards])
+  }, [views, setViews, forwards, setForwards, reached])
 
   const next = useCallback(
     async (skip: string[] = skipped) => {
@@ -124,7 +137,7 @@ export function useWorkflows() {
       const item = (await api().eventDetail(id))?.item?.item
       if (item && !item.closed) return
       const to = await api().next([...skipped, id])
-      if (to) open({ kind: 'event', id: to })
+      if (to) open({ kind: 'event', id: to }, { direct: false })
       else {
         open({ kind: 'items' })
         setEmpty(true)

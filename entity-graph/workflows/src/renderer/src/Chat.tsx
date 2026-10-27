@@ -1,5 +1,5 @@
 import { CircleCheck, Play, Timer } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import type { Catalog, ItemDetail, ItemEvent, Overview } from '../../shared/types'
 import { isPerson, nameOf } from './people'
 import { useEventMenu } from './EventMenu'
@@ -24,7 +24,7 @@ export const minutes = (ms: number) => {
   return `${Math.floor(s / 3600)}h ${pad(Math.floor(s / 60) % 60)}m`
 }
 
-/** The time, by the second, while the chat is open: for what counts down. */
+/** The time, by the second: for what counts down (only those cards, so the rest of the chat isn't drawn again each second). */
 function useNow() {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
@@ -45,10 +45,15 @@ const words = (e: ItemEvent) => (e.type === 'note' ? String(e.params.text ?? '')
  * While Ctrl+F's find line has a phrase in it, only what shows the phrase is left, with the phrase marked.
  */
 export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: Catalog; act: Act; onOpen: (id: string) => void }) {
-  const { detail, overview } = props
+  const { detail, overview, catalog } = props
   const menu = useEventMenu()
   const find = useAtomValue(findAtom)?.trim() ?? ''
-  const now = useNow()
+  // The callbacks are the same from one render to the next (calling the latest given), so a message that hasn't
+  // changed isn't drawn again: a long chat stays quick.
+  const latest = useRef(props)
+  latest.current = props
+  const act = useCallback<Act>((fn) => latest.current.act(fn), [])
+  const onOpen = useCallback((id: string) => latest.current.onOpen(id), [])
   const shown = detail.events.filter((e) => !find || shows(words(e), find))
   return (
     <section className="chat">
@@ -64,33 +69,42 @@ export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: C
             event={e}
             mine={e.createdBy === overview.me.id}
             who={isPerson(overview, e.createdBy) ? nameOf(overview, e.createdBy) : null}
-          >
-            <Card event={e} find={find} now={now} {...props} />
-          </Message>
+            find={find}
+            catalog={catalog}
+            act={act}
+            onOpen={onOpen}
+          />
         ),
       )}
     </section>
   )
 }
 
-/** One event, as a message: right-click it to open it or debug it. */
-function Message({ event: e, mine, who, children }: { event: ItemEvent; mine: boolean; who: string | null; children: React.ReactNode }) {
+type MessageProps = { event: ItemEvent; mine: boolean; who: string | null; find: string; catalog: Catalog; act: Act; onOpen: (id: string) => void }
+
+/** One event, as a message: right-click it to open it or debug it. Drawn again only when something it shows changed. */
+const Message = memo(function Message(props: MessageProps) {
+  const { event: e, mine, who } = props
   const menu = useEventMenu()
   return (
     <div className={`bubble-row ${mine ? 'mine' : 'theirs'}`}>
       {!mine && <Avatar event={e} />}
       <div className={`bubble bubble-${e.type}`} title={`${who ? `${who}, ` : ''}${time(e.createdAt)}`} {...menu(e.id)}>
         {!mine && who && <span className="bubble-who">{who}</span>}
-        {children}
+        <Card {...props} />
         <span className="bubble-time">{shortTime(e.createdAt)}</span>
       </div>
     </div>
   )
-}
+}, (a, b) => {
+  const { event: ea, ...ra } = a
+  const { event: eb, ...rb } = b
+  return (Object.keys(ra) as (keyof typeof ra)[]).every((k) => ra[k] === rb[k]) && JSON.stringify(ea) === JSON.stringify(eb)
+})
 
 /** What an event shows in the chat, by its type. */
-function Card(props: { event: ItemEvent; find: string; now: number; catalog: Catalog; act: Act; onOpen: (id: string) => void }) {
-  const { event: e, find, now, catalog, act, onOpen } = props
+function Card(props: { event: ItemEvent; find: string; catalog: Catalog; act: Act; onOpen: (id: string) => void }) {
+  const { event: e, find, catalog, act, onOpen } = props
   if (e.type === 'note') return <Markdown text={String(e.params.text ?? '')} highlight={find} />
   if (e.type === 'task')
     return (
@@ -98,7 +112,7 @@ function Card(props: { event: ItemEvent; find: string; now: number; catalog: Cat
         <TaskCard event={e} />
       </button>
     )
-  if (e.type === 'script') return <ScriptCard event={e} now={now} act={act} find={find} />
+  if (e.type === 'script') return <ScriptCard event={e} act={act} find={find} />
   if (e.type === 'approval')
     return (
       <div className="event-card">
@@ -113,7 +127,8 @@ function Card(props: { event: ItemEvent; find: string; now: number; catalog: Cat
  * A script: what it waits for; then a tick and what it finished with, once done; a play button, if it has no
  * schedule (it runs when pressed); or else how many times it has run and when it runs next.
  */
-function ScriptCard({ event: e, now, act, find }: { event: ItemEvent; now: number; act: Act; find: string }) {
+function ScriptCard({ event: e, act, find }: { event: ItemEvent; act: Act; find: string }) {
+  const now = useNow()
   const scheduled = Array.isArray(e.params.schedule) && (e.params.schedule as unknown[]).length > 0
   const error = typeof e.data?.error === 'string' ? e.data.error : null
   const result = e.data?.message ?? (e.data?.result === undefined || e.data?.result === null ? null : e.data.result)

@@ -23,9 +23,12 @@ function detail(i: Item): string {
 }
 
 /** A line of the finder: an item in a section, a bot, or the "n more" a section ends with when it has more than it shows. */
+/** A bot or person a finder offers: `status` is what its row says (by default, Assign). */
+type Someone = { id: string; name: string; bot?: boolean; status?: string }
+
 type Line =
   | { key: string; item: Item; chosen?: boolean }
-  | { key: string; bot: { id: string; name: string; bot?: boolean }; chosen?: boolean }
+  | { key: string; bot: Someone; chosen?: boolean }
   | { key: string; more: SectionId; n: number }
 
 /**
@@ -48,13 +51,15 @@ export function ItemsList(props: {
   onCreate: (title: string) => void
   verb?: string
   /** Bots and people to offer too, first, in a section of their own (`@` in the chat input). */
-  bots?: { id: string; name: string; bot?: boolean }[]
+  bots?: Someone[]
+  /** Given, the bots' section is called this and comes after the others (the Tasks view's Bots). */
+  botsLabel?: string
   /** For a multiselect: the ids selected, shown first. */
   selected?: string[]
   /** Escape with nothing typed. */
   onEscape?: () => void
 }) {
-  const { items, recent, sections, perSection = 12, onOpen, onCreate, verb = 'Open', bots = [], selected, onEscape } = props
+  const { items, recent, sections, perSection = 12, onOpen, onCreate, verb = 'Open', bots = [], botsLabel, selected, onEscape } = props
   const [text, setText] = useState('')
   const [at, setAt] = useState(0)
   const [expanded, setExpanded] = useState<SectionId[]>([])
@@ -80,8 +85,10 @@ export function ItemsList(props: {
       key: `bot:${bot.id}`,
       bot,
     }))
-    const botGroup = botLines.length ? [{ id: 'bots', label: selected ? 'Others' : 'People and bots', count: botLines.length, lines: botLines }] : []
-    return [...chosenGroup, ...botGroup, ...sections
+    const botGroup = botLines.length
+      ? [{ id: 'bots', label: botsLabel ?? (selected ? 'Others' : 'People and bots'), count: botLines.length, lines: botLines }]
+      : []
+    const itemGroups = sections
       .map((id) => {
         let all = SECTIONS[id].items(items, recent)
         all = all.filter((i) => !chosen.has(i.id))
@@ -94,8 +101,9 @@ export function ItemsList(props: {
         if (shown.length < all.length) lines.push({ key: `${id}:more`, more: id, n: all.length - shown.length })
         return { id: id as string, label: SECTIONS[id].label, count: all.length, lines }
       })
-      .filter((g) => g.count)]
-  }, [items, recent, sections, perSection, expanded, text, bots, selected])
+      .filter((g) => g.count)
+    return botsLabel ? [...chosenGroup, ...itemGroups, ...botGroup] : [...chosenGroup, ...botGroup, ...itemGroups]
+  }, [items, recent, sections, perSection, expanded, text, bots, botsLabel, selected])
   const flat = groups.flatMap((g) => g.lines)
   const current = Math.min(at, Math.max(flat.length - 1, 0))
   const choose = (line: Line) => ('item' in line ? onOpen(line.item.id) : 'bot' in line ? onOpen(line.bot.id) : setExpanded([...expanded, line.more]))
@@ -178,7 +186,7 @@ export function ItemsList(props: {
                 <div key={line.key} className={`row ${selected}`} onClick={() => choose(line)} onMouseMove={hover}>
                   {line.chosen ? <Check className="icon" /> : line.bot.bot === false ? <User className="icon" /> : <Bot className="icon" />}
                   <span className="row-title">@{line.bot.name}</span>
-                  <span className="muted row-status">{line.chosen ? 'Remove' : 'Assign'}</span>
+                  <span className="muted row-status">{line.chosen ? 'Remove' : (line.bot.status ?? 'Assign')}</span>
                 </div>
               )
             if (!('item' in line))

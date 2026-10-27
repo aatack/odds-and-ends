@@ -1,5 +1,5 @@
 /* The styles to try, switched in the menu (appearance.ts sets data-theme and data-serif on <html>).
- * Linear is the default: the tokens as index.css has them, dark. Outside any layer, so they win over the tokens. */
+ * Corporate is the default: the tokens much as index.css has them, dark. Outside any layer, so they win over the tokens. */
 
 /* ---- Serifs for what the human typed ---- */
 html[data-serif='lora'] { --font-serif: 'Lora Variable', Georgia, serif; --serif-weight: 400; }
@@ -129,3 +129,145 @@ html[data-theme='notebook'] .theirs .bubble { background: var(--color-gray-100);
 html[data-theme='notebook'] .card { border-radius: 14px; }
 html[data-theme='notebook'] .row { border-radius: 10px; }
 html[data-theme='notebook'] .composer .builder-row { border-radius: 22px; box-shadow: var(--shadow-sm); }
+
+/* ---- Corporate: clean and minimal, a plain blue; the default (it replaced Linear, whose id still lands here). ---- */
+html[data-theme='corporate'][data-mode='light'],
+html[data-theme='linear'][data-mode='light'] {
+  --color-brand-50: #eff4ff;
+  --color-brand-500: #3b6fe0;
+  --color-brand-600: #2f5fcf;
+  --color-brand-700: #264fb0;
+}
+html[data-theme='corporate'][data-mode='dark'],
+html[data-theme='linear'][data-mode='dark'] {
+  --color-white: #16181c;
+  --color-gray-25: #0c0d10;
+  --color-gray-50: #101215;
+  --color-gray-100: #1e2126;
+  --color-gray-200: #2a2e35;
+  --color-gray-300: #3c414a;
+  --color-brand-50: #172036;
+  --color-brand-500: #6d93f0;
+  --color-brand-600: #5a84ec;
+  --color-brand-700: #9ab5f5;
+}
+html[data-theme='corporate'] .bubble,
+html[data-theme='linear'] .bubble { border-radius: 10px; }
+html[data-theme='corporate'] .mine .bubble,
+html[data-theme='linear'] .mine .bubble { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
+html[data-theme='corporate'] .composer .builder-row,
+html[data-theme='linear'] .composer .builder-row { border-radius: 10px; }
+
+/* ---- Dotcom: a web page from about 2002. Verdana, a beige desktop, bevelled buttons, blue links. Light whatever the mode. ---- */
+html[data-theme='dotcom'][data-mode] {
+  color-scheme: light;
+  --font-sans: Verdana, Tahoma, 'DejaVu Sans', sans-serif;
+  --color-white: #ffffff;
+  --color-gray-25: #f4f1e6;
+  --color-gray-50: #ece9d8;
+  --color-gray-100: #e3dfcc;
+  --color-gray-200: #d4d0c8;
+  --color-gray-300: #aca899;
+  --color-gray-400: #8a8778;
+  --color-gray-500: #5e5c52;
+  --color-gray-600: #444339;
+  --color-gray-700: #2e2d26;
+  --color-gray-800: #1c1b17;
+  --color-gray-900: #000000;
+  --color-gray-950: #000000;
+  --color-brand-50: #dde6fb;
+  --color-brand-500: #2457c5;
+  --color-brand-600: #0a246a;
+  --color-brand-700: #0a246a;
+}
+html[data-theme='dotcom'] body { font-size: 12px; }
+html[data-theme='dotcom'] .view-header { background: linear-gradient(#3a6fd8, #0a246a); color: #fff; margin: -24px -32px 12px; padding: 6px 12px; }
+html[data-theme='dotcom'] .view-header .view-title, html[data-theme='dotcom'] .view-header .icon { color: #fff; font-weight: 700; font-size: 13px; }
+html[data-theme='dotcom'] button[data-ui]:not(.link) { border-radius: 0; background: #ece9d8; border: 2px outset #f4f1e6; padding: 3px 10px; }
+html[data-theme='dotcom'] button[data-ui]:not(.link):active { border-style: inset; }
+html[data-theme='dotcom'] button[data-ui].primary { background: #ece9d8; color: #000; font-weight: 700; }
+html[data-theme='dotcom'] button[data-ui].link { color: #0000ee; text-decoration: underline; }
+html[data-theme='dotcom'] button[data-ui].link.item-ref { color: #0000ee; border-radius: 0; border-color: #aca899; }
+html[data-theme='dotcom'] .bubble { border-radius: 0; border: 1px solid #aca899; }
+html[data-theme='dotcom'] .theirs .bubble { background: #ffffe1; }
+html[data-theme='dotcom'] .mine .bubble { background: #dde6fb; }
+html[data-theme='dotcom'] .row, html[data-theme='dotcom'] .card { border-radius: 0; }
+html[data-theme='dotcom'] .row.selected { background: #316ac5; color: #fff; box-shadow: none; }
+html[data-theme='dotcom'] .row.selected .muted, html[data-theme='dotcom'] .row.selected .icon { color: #fff; }
+html[data-theme='dotcom'] .composer .builder-row, html[data-theme='dotcom'] .items-view .search, html[data-theme='dotcom'] .find-line { border-radius: 0; background: #fff; border: 2px inset #d4d0c8; }
+html[data-theme='dotcom'] .list h3 { color: #0a246a; font-weight: 700; }
+
+/* ---- Discord: blurple on charcoal, round avatars and soft cards. ---- */
+html[data-theme='discord'][data-mode='dark'] {
+  --font-sans: 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --color-white: #313338;
+  --color-gray-25: #1e1f22;
+  --color-gray-50: #2b2d31;
+  --color-gray-100: #383a40;
+  --color-gray-200: #404249;
+  --color-gray-300: #4e5058;
+  --color-gray-400: #6d6f78;
+  --color-gray-500: #949ba4;
+  --color-gray-600: #b5bac1;
+  --color-gray-700: #dbdee1;
+  --color-gray-800: #eaebed;
+  --color-gray-900: #f2f3f5;
+  --color-gray-950: #ffffff;
+  --color-brand-50: #2f3260;
+  --color-brand-500: #6b76f5;
+  --color-brand-600: #5865f2;
+  --color-brand-700: #949cf7;
+}
+html[data-theme='discord'][data-mode='light'] {
+  --font-sans: 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --color-white: #ffffff;
+  --color-gray-50: #f2f3f5;
+  --color-gray-100: #ebedef;
+  --color-gray-200: #e3e5e8;
+  --color-gray-300: #c4c9ce;
+  --color-gray-500: #5c5e66;
+  --color-gray-900: #060607;
+  --color-brand-50: #eef0fe;
+  --color-brand-500: #6b76f5;
+  --color-brand-600: #5865f2;
+  --color-brand-700: #4752c4;
+}
+html[data-theme='discord'] .bubble { border-radius: 8px; }
+html[data-theme='discord'] .mine .bubble { background: color-mix(in srgb, var(--accent) 28%, var(--panel)); }
+html[data-theme='discord'] .composer .builder-row { border-radius: 8px; background: var(--color-gray-100); }
+html[data-theme='discord'] .row { border-radius: 4px; }
+html[data-theme='discord'] .list h3 { text-transform: uppercase; letter-spacing: 0.02em; font-size: 11px; font-weight: 700; }
+
+/* ---- Classic: Mac OS 8's Platinum. Grey, bevelled, square, a lavender highlight. Light whatever the mode. ---- */
+html[data-theme='classic'][data-mode] {
+  color-scheme: light;
+  --font-sans: Charcoal, Geneva, 'Chicago', 'Helvetica Neue', Arial, sans-serif;
+  --color-white: #eeeeee;
+  --color-gray-25: #e4e4e4;
+  --color-gray-50: #dddddd;
+  --color-gray-100: #cccccc;
+  --color-gray-200: #bbbbbb;
+  --color-gray-300: #999999;
+  --color-gray-400: #777777;
+  --color-gray-500: #555555;
+  --color-gray-600: #444444;
+  --color-gray-700: #333333;
+  --color-gray-800: #222222;
+  --color-gray-900: #000000;
+  --color-gray-950: #000000;
+  --color-brand-50: #ccccff;
+  --color-brand-500: #6666cc;
+  --color-brand-600: #3333aa;
+  --color-brand-700: #222288;
+}
+html[data-theme='classic'] body { font-size: 12px; }
+html[data-theme='classic'] .main { box-shadow: inset 1px 1px 0 #fff, inset -1px -1px 0 #888; }
+html[data-theme='classic'] .view-header { border-bottom: 1px solid #888; box-shadow: 0 1px 0 #fff; padding-bottom: 8px; }
+html[data-theme='classic'] button[data-ui]:not(.link) { border-radius: 4px; background: #dddddd; box-shadow: inset 1px 1px 0 #fff, inset -1px -1px 0 #888, 0 0 0 1px #000; }
+html[data-theme='classic'] button[data-ui]:not(.link):active { background: #888; color: #fff; }
+html[data-theme='classic'] .bubble { border-radius: 2px; box-shadow: inset 1px 1px 0 #fff, inset -1px -1px 0 #999; }
+html[data-theme='classic'] .theirs .bubble { background: #dddddd; }
+html[data-theme='classic'] .mine .bubble { background: #ccccff; }
+html[data-theme='classic'] .row, html[data-theme='classic'] .card { border-radius: 0; }
+html[data-theme='classic'] .row.selected { background: #ccccff; box-shadow: none; }
+html[data-theme='classic'] .composer .builder-row, html[data-theme='classic'] .items-view .search, html[data-theme='classic'] .find-line { border-radius: 0; background: #fff; box-shadow: inset 1px 1px 0 #888, inset -1px -1px 0 #fff; }

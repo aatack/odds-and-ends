@@ -5,9 +5,12 @@
 import { atomWithStorage, createJSONStorage } from 'jotai/utils'
 
 export const THEMES = [
-  { id: 'linear', name: 'Linear' },
+  { id: 'corporate', name: 'Corporate' },
   { id: 'notebook', name: 'Notebook' },
   { id: 'terminal', name: 'Terminal' },
+  { id: 'dotcom', name: 'Dotcom' },
+  { id: 'discord', name: 'Discord' },
+  { id: 'classic', name: 'Classic Mac' },
 ] as const
 
 export const SERIFS = [
@@ -27,7 +30,7 @@ export const MODES = [
 export type Appearance = { theme: (typeof THEMES)[number]['id']; serif: (typeof SERIFS)[number]['id']; mode: (typeof MODES)[number]['id'] }
 
 const KEY = 'workflows.appearance'
-const DEFAULT: Appearance = { theme: 'linear', serif: 'lora', mode: 'dark' }
+const DEFAULT: Appearance = { theme: 'corporate', serif: 'lora', mode: 'dark' }
 
 export const appearanceAtom = atomWithStorage<Appearance>(KEY, DEFAULT, createJSONStorage(() => localStorage), { getOnInit: true })
 

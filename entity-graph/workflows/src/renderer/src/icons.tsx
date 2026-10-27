@@ -55,7 +55,7 @@ function whoIcon(by: string): [LucideIcon, string] {
   if (by === 'mcp') return [Link, 'MCP client']
   if (by.startsWith('github')) return [GitPullRequest, by]
   if (by.startsWith('slack')) return [MessageCircle, by]
-  if (by === 'system') return [Settings, 'Workflows']
+  if (by === 'system') return [Settings, 'YAWN']
   return [User, by]
 }
 

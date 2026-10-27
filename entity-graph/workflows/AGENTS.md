@@ -1,4 +1,8 @@
-# Workflows — agent & contributor guide
+# YAWN — agent & contributor guide
+
+YAWN (Yet Another Workflow Nanny) is the app's name: on screen, and in what is said of it. The code keeps
+`workflows` wherever a name is stored or connected to (the package, the folder, local storage keys, the
+`workflows-egdb` profile, the `workflows` MCP server that bots' tools are named after), so nothing kept is lost.
 
 An Electron + React + TypeScript app that gives the operator, at the press of a
 button, the next thing that needs their decision, and hands everything else to

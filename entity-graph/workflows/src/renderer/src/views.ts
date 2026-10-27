@@ -37,6 +37,15 @@ export const viewsAtom = atomWithStorage<View[]>('workflows.views', [], storage,
  */
 export const forwardAtom = atomWithStorage<View[]>('workflows.forward', [], storage, { getOnInit: true })
 
+/**
+ * What was last opened straight from each task (by its id): Forward, with nothing ahead, goes there. Only a direct
+ * step counts (a reference, a parent, a child); not one from the task list or Next.
+ */
+export const reachedAtom = atomWithStorage<Record<string, string>>('workflows.reached', {}, createJSONStorage(() => localStorage), { getOnInit: true })
+
+/** How many views the stack, and what Back took off, keep: the oldest go first. */
+export const HISTORY_LIMIT = 50
+
 /** Two views are the same view: the same kind, of the same event. */
 export const sameView = (a: View | undefined, b: View): boolean =>
   !!a && a.kind === b.kind && ('id' in a ? a.id : null) === ('id' in b ? b.id : null) 

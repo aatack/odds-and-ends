@@ -68,7 +68,7 @@ export function Start({ kept, onBegin }: { kept: Partial<Session>; onBegin: (s: 
   return (
     <div className="sign-in">
       <div className="page">
-        <h1>Workflows</h1>
+        <h1>YAWN</h1>
         {error && <div className="error">{error}</div>}
         <section className="card">
           {field('Username', user, setUser, 'e.g. alex', !kept.user)}
