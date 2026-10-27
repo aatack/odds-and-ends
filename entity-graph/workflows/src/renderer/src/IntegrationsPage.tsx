@@ -38,6 +38,8 @@ export function IntegrationsPage() {
 
       <Slack view={view} act={act} />
 
+      <Deepgram view={view} act={act} />
+
       <button data-ui onClick={() => void refresh()}>Refresh</button>
     </div>
   )
@@ -97,6 +99,52 @@ function Slack({ view, act }: { view: IntegrationsView; act: (fn: () => Promise<
           Check and add
         </button>
       </div>
+    </section>
+  )
+}
+
+const DEEPGRAM_KEY = {
+  type: 'object',
+  properties: { key: { type: 'string', 'x-editor': 'secret', description: 'An API key from the Deepgram console.' } },
+  required: ['key'],
+}
+
+/** The key the chat input's record button streams to Deepgram with: kept here, or the backend's DEEPGRAM_API_KEY. */
+function Deepgram({ view, act }: { view: IntegrationsView; act: (fn: () => Promise<unknown>) => Promise<void> }) {
+  const [value, setValue] = useState<{ key?: string }>({})
+  const d = view.deepgram
+  return (
+    <section className="card">
+      <h2>Deepgram</h2>
+      <p className="muted">
+        For recording into the chat input: what you say is transcribed live and sent as notes.{' '}
+        {d ? (
+          <>
+            Using <code>{d.hint}</code>, {d.from === 'env' ? 'from DEEPGRAM_API_KEY' : 'kept here'}.
+          </>
+        ) : (
+          'No key yet: add one, or start the app with DEEPGRAM_API_KEY set.'
+        )}
+      </p>
+      {d?.from === 'settings' && (
+        <button data-ui onClick={() => act(() => api().setDeepgramKey(null))}>
+          Forget the key
+        </button>
+      )}
+      <Form schema={DEEPGRAM_KEY} value={value} setValue={(v) => setValue(v as typeof value)} />
+      <button
+        data-ui
+        className="primary"
+        disabled={!value.key?.trim()}
+        onClick={() =>
+          act(async () => {
+            await api().setDeepgramKey(value.key ?? '')
+            setValue({})
+          })
+        }
+      >
+        Keep the key
+      </button>
     </section>
   )
 }

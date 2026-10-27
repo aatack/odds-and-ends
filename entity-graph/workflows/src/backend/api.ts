@@ -48,6 +48,8 @@ export function handlers(engine: Engine, admin: Admin, me: string): Handlers {
     integrations: () => admin.integrations(),
     addSlack: (token) => admin.addSlack(token),
     removeSlack: (id) => admin.removeSlack(id),
+    setDeepgramKey: (key) => engine.settings.setDeepgramKey(key),
+    deepgramKey: () => engine.settings.deepgramKey()?.key ?? null,
     mcp: () => admin.mcpView(),
     regenerateMcpToken: () => admin.regenerateMcpToken(),
     setMcpPort: (port) => admin.setMcpPort(port),

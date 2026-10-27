@@ -39,6 +39,21 @@ export class Settings {
     this.store.setSetting(key, value)
   }
 
+  // ---- deepgram (transcribing what is said into the chat input) ----
+
+  /** The Deepgram API key: the one kept here (encrypted), else the backend's DEEPGRAM_API_KEY; null with neither. */
+  deepgramKey(): { key: string; from: 'settings' | 'env' } | null {
+    const stored = this.get<string | null>('deepgram.key', null)
+    const kept = stored ? this.readSecret(stored) : ''
+    if (kept) return { key: kept, from: 'settings' }
+    return process.env.DEEPGRAM_API_KEY ? { key: process.env.DEEPGRAM_API_KEY, from: 'env' } : null
+  }
+
+  /** Keeps a Deepgram key (encrypted), or forgets it (null). */
+  setDeepgramKey(key: string | null): void {
+    this.set('deepgram.key', key?.trim() ? this.secrets.encrypt(key.trim()) : null)
+  }
+
   // ---- slack ----
 
   slackWorkspaces(): SlackWorkspace[] {

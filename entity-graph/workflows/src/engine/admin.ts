@@ -29,6 +29,10 @@ export class Admin {
     return {
       github,
       claude: { ...claude, bots: this.engine.agents().length },
+      deepgram: (() => {
+        const d = this.engine.settings.deepgramKey()
+        return d ? { from: d.from, hint: `${d.key.slice(0, 4)}…${d.key.slice(-4)}` } : null
+      })(),
       slack: this.engine.settings.slackWorkspaces().map(({ token, ...w }) => ({ ...w, tokenHint: `${token.slice(0, 5)}…${token.slice(-4)}` })),
     }
   }

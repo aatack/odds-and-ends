@@ -1,4 +1,5 @@
-import { SendHorizontal } from 'lucide-react'
+import { Mic, SendHorizontal, Square } from 'lucide-react'
+import { useRecorder } from './recorder'
 import { useAtom } from 'jotai'
 import { useEffect, useRef, useState } from 'react'
 import type { Catalog, Item, PresetInfo } from '../../shared/types'
@@ -100,6 +101,8 @@ export function Composer({
   const send = async () => {
     if (await onSend(preset.id, text)) setText('')
   }
+  // Recording: each finished utterance goes as a note, as if typed and sent (it hands the task to nobody).
+  const recorder = useRecorder((said) => void onSend('note', said))
   return (
     <div className="builder-row compact" onMouseDown={(e) => {
       if ((e.target as HTMLElement).closest('textarea, button, [role=button]')) return
@@ -141,7 +144,11 @@ export function Composer({
             }
           }}
         />
-        {resolving ? (
+        {recorder.on || recorder.error ? (
+          <span className={`hint recording ${recorder.error ? 'error-text' : ''}`}>
+            {recorder.error ?? (recorder.hearing ? recorder.hearing : <b>Listening…</b>)}
+          </span>
+        ) : resolving ? (
           <span className={`hint ${text ? 'below' : ''}`}>
             <b>Resolve?</b> — press Ctrl+Enter again to resolve this task
           </span>
@@ -153,6 +160,18 @@ export function Composer({
           )
         )}
       </div>
+      {/* With nothing typed, a record button beside Send: what is said is transcribed live and sent as notes. */}
+      {(!text || recorder.on) && (
+        <span
+          className={`builder-icon right record ${recorder.on ? 'on' : ''}`}
+          title={recorder.on ? 'Stop recording' : 'Record: what you say is sent as notes'}
+          role="button"
+          aria-label={recorder.on ? 'Stop recording' : 'Record'}
+          onClick={recorder.on ? recorder.stop : recorder.start}
+        >
+          <span className="type-icon">{recorder.on ? <Square className="icon" /> : <Mic className="icon" />}</span>
+        </span>
+      )}
       <span className="builder-icon right" title="Send (Enter)" role="button" aria-label="Send" onClick={() => void send()}>
         <span className="type-icon">
           <SendHorizontal className="icon" />

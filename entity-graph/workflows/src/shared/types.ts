@@ -239,6 +239,8 @@ export interface IntegrationsView {
   github: Check
   claude: Check & { bots: number }
   slack: { id: string; name: string; team: string; user: string; tokenHint: string }[]
+  /** The Deepgram key, for recording into the chat input: where it comes from, and its ends; null with none. */
+  deepgram: { from: 'settings' | 'env'; hint: string } | null
 }
 
 export interface McpView {
@@ -309,6 +311,10 @@ export interface WorkflowsAPI {
   /** Keeps a Slack workspace's user token (encrypted), once Slack says whose it is. Nothing uses it yet. */
   addSlack: (token: string) => Promise<void>
   removeSlack: (id: string) => Promise<void>
+  /** Keeps a Deepgram key (encrypted), or forgets it (null). */
+  setDeepgramKey: (key: string | null) => Promise<void>
+  /** The Deepgram key, for the window to stream what is said to Deepgram; null with none. */
+  deepgramKey: () => Promise<string | null>
   mcp: () => Promise<McpView>
   regenerateMcpToken: () => Promise<void>
   setMcpPort: (port: number) => Promise<void>
@@ -384,7 +390,7 @@ export interface CustomAction {
 export const API_METHODS = [
   'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'react', 'processOutput', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
-  'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'mcp', 'regenerateMcpToken', 'setMcpPort',
+  'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setDeepgramKey', 'deepgramKey', 'mcp', 'regenerateMcpToken', 'setMcpPort',
 ] as const satisfies readonly ApiMethod[]
 
 type ApiMethod = Exclude<keyof WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser' | 'openSource' | 'closeSource'>
