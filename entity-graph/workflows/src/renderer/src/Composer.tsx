@@ -8,6 +8,7 @@ import type { Someone } from './people'
 import { GrowingTextarea } from './GrowingTextarea'
 import { TypeIcon } from './icons'
 import { ItemPicker } from './ItemPicker'
+import { ToolRunner } from './ToolRunner'
 import type { Recent } from './sections'
 import { draftsAtom, withoutEmpty } from './views'
 import type { DefaultAction } from './defaultActions'
@@ -28,7 +29,7 @@ const lastSentences = (text: string): string => {
  * `draftKey`, until it is sent. An `@` typed at the start of a word opens the
  * finder, bots first; what is picked (or made, with Tab) takes the `@`'s place
  * as a reference, `[id]()`. A bot referred to in a note is handed the task as it
- * is sent, and the human is taken off it. Escape leaves the `@` as typed.
+ * is sent, and the human is taken off it. Escape leaves the `@` as typed. `/` typed first runs a tool (ToolRunner).
  */
 export function Composer({
   catalog,
@@ -85,6 +86,8 @@ export function Composer({
   }, [at])
   // Where the `@` being completed is, while the finder is open for it.
   const [mentionAt, setMentionAt] = useState<number | null>(null)
+  // `/` typed into an empty input: run a tool.
+  const [runningTool, setRunningTool] = useState(false)
   /** Puts the cursor back in the text box, at `caret` (else at the end), once a modal over it has closed. */
   const refocus = (caret?: number) => {
     const put = () => {
@@ -140,6 +143,8 @@ export function Composer({
           onChange={(e) => {
             const value = e.target.value
             const caret = e.target.selectionStart
+            // `/` as the first thing typed: pick a tool to run, rather than typing it.
+            if (!text && value === '/') return setRunningTool(true)
             // One `@` typed at the start of a word: find what it refers to.
             if (value.length === text.length + 1 && value[caret - 1] === '@' && /(^|\s)$/.test(value.slice(0, caret - 1)))
               setMentionAt(caret - 1)
@@ -197,6 +202,16 @@ export function Composer({
           <SendHorizontal className="icon" />
         </span>
       </span>
+      {runningTool && (
+        <ToolRunner
+          itemId={draftKey}
+          catalog={catalog}
+          onClose={() => {
+            setRunningTool(false)
+            refocus()
+          }}
+        />
+      )}
       {mentionAt !== null && (
         <ItemPicker
           title="Mention"

@@ -360,6 +360,25 @@ export class Engine extends EventEmitter {
     this.emit('change')
   }
 
+  /**
+   * Runs a tool for a person, from a task's chat input (`/`): any action, through `callAction` as theirs (so unsafe ones
+   * too: they pressed it). What it answered, or why it failed, is a note in the task.
+   */
+  async runTool(itemId: string, name: string, args: Record<string, unknown>, actor = this.me()): Promise<unknown> {
+    let out: unknown
+    try {
+      out = await this.callAction(name, args, { engine: this, author: this.isUser(actor) ? 'human' : 'bot', actor, itemId, runId: null })
+    } catch (e) {
+      this.add(itemId, [{ type: 'note', params: { text: `Ran \`${name}\`: it failed: ${(e as Error).message}` } }], actor)
+      throw e
+    }
+    const shown = typeof out === 'string' ? out : JSON.stringify(out, null, 2)
+    const text = shown && shown !== 'null' ? `Ran \`${name}\`:\n\n\`\`\`${typeof out === 'string' ? '' : 'json'}\n${shown.length > 3000 ? `${shown.slice(0, 3000)}\n…` : shown}\n\`\`\`` : `Ran \`${name}\`.`
+    this.add(itemId, [{ type: 'note', params: { text } }], actor)
+    await this.idle()
+    return out
+  }
+
   /** The search page's sections, as kept on the `search` item; the defaults when there is none. */
   searchSections(): SearchSection[] {
     const r = this.store.ofType('search')[0]

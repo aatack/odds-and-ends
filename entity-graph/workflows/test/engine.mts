@@ -394,6 +394,18 @@ await engine.close(loose)
   await engine.close(t)
 }
 
+// `/` in the chat input: any tool, as the person; what it answered is a note. An unsafe one is theirs to run.
+{
+  const t = (await engine.create('Tools'))!
+  await engine.runTool(t, 'list_people', {})
+  assert.match(String(last(t, 'note').params.text), /^Ran `list_people`:\n\n```json\n/)
+  await engine.runTool(t, 'post_somewhere', { text: 'by hand' })
+  assert.equal(posted.at(-1), 'by hand')
+  await assert.rejects(engine.runTool(t, 'nope', {}), /No action nope/)
+  assert.match(String(last(t, 'note').params.text), /it failed: No action nope/)
+  await engine.close(t)
+}
+
 // A process: started by its first check, ended when it exits (with what it wrote last), or stopped by a cancel.
 {
   const host = (await engine.create('Processes'))!

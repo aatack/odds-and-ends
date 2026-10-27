@@ -363,6 +363,8 @@ export interface WorkflowsAPI {
   setSearchSections: (sections: SearchSection[] | null) => Promise<void>
   /** A query or function section's rows, for what is typed. */
   runSearchSection: (section: SearchSection, text: string) => Promise<SearchRow[]>
+  /** Runs a tool (any action: the same registry as the MCP and a script's tools) as the person, from a task's `/`: what it answered is a note in the task. */
+  runTool: (itemId: string, name: string, args: Record<string, unknown>) => Promise<unknown>
   /** Changes a widget's state. */
   setWidgetState: (eventId: string, state: unknown) => Promise<void>
   /** Turns the person's thumbs-up on an event on or off. */
@@ -498,7 +500,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addEvents', 'searchSections', 'setSearchSections', 'runSearchSection', 'setWidgetState', 'processOutput', 'editLog',
+  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addEvents', 'runTool', 'searchSections', 'setSearchSections', 'runSearchSection', 'setWidgetState', 'processOutput', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'regeneratePhoneToken',
