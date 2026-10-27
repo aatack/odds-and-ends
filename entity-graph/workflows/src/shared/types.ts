@@ -260,6 +260,28 @@ export interface McpView {
   error: string | null
 }
 
+/**
+ * Reaching the app from a phone: the backend's phone listener (loopback, a port that lasts), which serves the app
+ * as a PWA and its API behind a token of its own. `tailscale serve` takes it to the tailnet; the backend answers what
+ * comes from there only while `tailnet` is on.
+ */
+export interface PhoneView {
+  /** Where it listens, on this machine. */
+  url: string
+  port: number
+  token: string
+  /** Whether what comes from the tailnet (through `tailscale serve`) is answered. */
+  tailnet: boolean
+  /** Why it is not listening, if it is not. */
+  error: string | null
+  /** This machine's name on the tailnet (MagicDNS), if Tailscale says. */
+  tailnetName: string | null
+  /** What to run, once, to serve it on the tailnet. */
+  serveCommand: string
+  /** Where the phone opens it: on the tailnet, if this machine has a name there. */
+  phoneUrl: string | null
+}
+
 /** The renderer's whole view of the main process. */
 export interface WorkflowsAPI {
   overview: () => Promise<Overview>
@@ -313,8 +335,14 @@ export interface WorkflowsAPI {
   setUser: (username: string | null) => void
   /** Opens a source: a file (made if it is not there; `~/` is the home folder), on a backend of its own. Answers its absolute path. */
   openSource: (path: string) => Promise<string>
-  /** Lets go of the source open now (its backend stops, if the app started it). */
+  /** Lets go of the source open now (its backend stops, if the app started it). Over HTTP, forgets the token. */
   closeSource: () => Promise<void>
+  /**
+   * Over HTTP (the phone) only: the token its calls carry, kept in local storage (null forgets it). The app on this
+   * machine has none, as its main process holds the backend's token.
+   */
+  setToken?: (token: string | null) => void
+  token?: () => string | null
   /** Wakes a bot now, whatever its debounce says. */
   wakeBot: (id: string) => Promise<void>
   integrations: () => Promise<IntegrationsView>
@@ -330,6 +358,13 @@ export interface WorkflowsAPI {
   mcp: () => Promise<McpView>
   regenerateMcpToken: () => Promise<void>
   setMcpPort: (port: number) => Promise<void>
+  /** The source the backend is on (its file); for the phone, which cannot choose one. */
+  source: () => Promise<string>
+  /** The phone page: only from the app on this machine, never from the phone. */
+  phone: () => Promise<PhoneView>
+  setPhoneTailnet: (on: boolean) => Promise<void>
+  setPhonePort: (port: number) => Promise<void>
+  regeneratePhoneToken: () => Promise<void>
   onChange: (cb: () => void) => () => void
   /** Ctrl+W, caught before the window's menu can close the window: take the top view off the stack. */
   onBack: (cb: () => void) => () => void
@@ -403,8 +438,9 @@ export const API_METHODS = [
   'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'react', 'processOutput', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
+  'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'regeneratePhoneToken',
 ] as const satisfies readonly ApiMethod[]
 
-type ApiMethod = Exclude<keyof WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser' | 'openSource' | 'closeSource'>
+type ApiMethod = Exclude<keyof WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser' | 'openSource' | 'closeSource' | 'setToken' | 'token'>
 /** Fails to compile while a call is left out of API_METHODS. */
 export const API_METHODS_COMPLETE: Exclude<ApiMethod, (typeof API_METHODS)[number]> extends never ? true : never = true

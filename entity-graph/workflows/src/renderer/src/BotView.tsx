@@ -36,7 +36,8 @@ function lastRun(b: Agent): string {
  * run, and its settings (folded away until wanted; saving them wakes it; Delete
  * is in there too, out of the way). Its own chat is below this, as any task's is.
  */
-export function BotView({ bot, act }: { bot: Agent | null; act: Act }) {
+/** `mobile`: its line of state and Wake now stack, for a phone's width. */
+export function BotView({ bot, act, mobile = false }: { bot: Agent | null; act: Act; mobile?: boolean }) {
   const [draft, setDraft] = useState<BotDraft | null>(bot && draftOf(bot))
   const [open, setOpen] = useState(false)
   // The countdown to its next wake moves on by the second.
@@ -48,7 +49,7 @@ export function BotView({ bot, act }: { bot: Agent | null; act: Act }) {
   if (!bot || !draft) return <p className="muted">This bot was deleted.</p>
   const changed = JSON.stringify(draft) !== JSON.stringify(draftOf(bot))
   return (
-    <div className="bot-top">
+    <div className={`bot-top ${mobile ? 'mobile' : ''}`}>
       <div className="bot-line">
         <button data-ui className="link" onClick={() => setOpen(!open)} aria-expanded={open}>
           {open ? <ChevronDown className="icon" /> : <ChevronRight className="icon" />} Settings

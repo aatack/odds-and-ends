@@ -58,15 +58,19 @@ export function ItemsList(props: {
   selected?: string[]
   /** Escape with nothing typed. */
   onEscape?: () => void
+  /** On a phone: buttons rather than keys (a New button for Tab), rows of two lines, and the search line focused only when asked (it raises the keyboard). */
+  mobile?: boolean
 }) {
-  const { items, recent, sections, perSection = 12, onOpen, onCreate, verb = 'Open', bots = [], botsLabel, selected, onEscape } = props
+  const { items, recent, sections, perSection = 12, onOpen, onCreate, verb = 'Open', bots = [], botsLabel, selected, onEscape, mobile = false } = props
   const [text, setText] = useState('')
   const [at, setAt] = useState(0)
   const [expanded, setExpanded] = useState<SectionId[]>([])
   const box = useRef<HTMLInputElement>(null)
   const menu = useEventMenu()
   const focusAsked = useAtomValue(searchFocusAtom)
-  useEffect(() => box.current?.focus(), [focusAsked])
+  useEffect(() => {
+    if (!mobile || focusAsked) box.current?.focus()
+  }, [focusAsked, mobile])
 
   // The sections, each filtered (best match first) when something is typed, and cut to `perSection` unless expanded.
   const groups = useMemo(() => {
@@ -115,7 +119,7 @@ export function ItemsList(props: {
   const now = Date.now()
 
   return (
-    <div className="items-view" ref={list}>
+    <div className={`items-view ${mobile ? 'mobile' : ''}`} ref={list}>
       <div
         className="builder-row compact search"
         onMouseDown={(e) => {
@@ -161,16 +165,24 @@ export function ItemsList(props: {
           />
           {!text && <span className="hint">Search</span>}
         </div>
-        <span className="keys">
-          <span className="key-pill">
-            <kbd>Enter</kbd> {verb}
-          </span>
-          {text.trim() && (
+        {mobile ? (
+          text.trim() && (
+            <button data-ui className="search-new" onClick={() => onCreate(text.trim())}>
+              New
+            </button>
+          )
+        ) : (
+          <span className="keys">
             <span className="key-pill">
-              <kbd>Tab</kbd> New
+              <kbd>Enter</kbd> {verb}
             </span>
-          )}
-        </span>
+            {text.trim() && (
+              <span className="key-pill">
+                <kbd>Tab</kbd> New
+              </span>
+            )}
+          </span>
+        )}
       </div>
 
       {groups.map((g) => (

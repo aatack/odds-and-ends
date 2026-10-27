@@ -54,7 +54,8 @@ export function botStatus(b: Agent, now = Date.now()): string {
  * The bots: each a name to @, its own instructions, model and debounce, and the
  * tasks it has. Each opens as its own page; a new one is made below.
  */
-export function BotsPage({ bots, act, onOpen }: { bots: Agent[]; act: Act; onOpen: (id: string) => void }) {
+/** `mobile`: one column, each bot's row on two lines. */
+export function BotsPage({ bots, act, onOpen, mobile = false }: { bots: Agent[]; act: Act; onOpen: (id: string) => void; mobile?: boolean }) {
   const [draft, setDraft] = useState<BotDraft>(NEW_BOT)
   // When each wakes counts down by the second.
   const [now, setNow] = useState(Date.now())
@@ -69,7 +70,7 @@ export function BotsPage({ bots, act, onOpen }: { bots: Agent[]; act: Act; onOpe
       onOpen(id)
     })
   return (
-    <div className="page bots-page">
+    <div className={`page bots-page ${mobile ? 'mobile' : ''}`}>
       <section className="card">
         <div className="list">
           {bots.map((b) => (

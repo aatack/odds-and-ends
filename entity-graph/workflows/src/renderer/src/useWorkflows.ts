@@ -1,6 +1,7 @@
 import { useAtom } from 'jotai'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Catalog, CustomAction, EventDetail, Overview, WorkflowsAPI } from '../../shared/types'
+import { browserApi } from './phone'
 import { forwardAtom, HISTORY_LIMIT, reachedAtom, sameView, viewedAtom, viewsAtom, type View } from './views'
 
 declare global {
@@ -9,7 +10,9 @@ declare global {
   }
 }
 
-export const api = (): WorkflowsAPI => window.workflows
+let browser: WorkflowsAPI | null = null
+/** The app's calls: the preload's in the app's window; in a browser (the phone), straight to the backend (phone.ts). */
+export const api = (): WorkflowsAPI => window.workflows ?? (browser ??= browserApi())
 
 /** Everything the app shows, kept in step with the main process. */
 export function useWorkflows() {

@@ -17,6 +17,7 @@ export type View =
   | { kind: 'debug'; id: string }
   | { kind: 'integrations' }
   | { kind: 'mcp' }
+  | { kind: 'phone' }
   | { kind: 'types' }
   | { kind: 'bots' }
   /** The edit log: of one event, given its id; else of everything. */

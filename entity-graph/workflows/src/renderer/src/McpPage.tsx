@@ -6,7 +6,8 @@ import { fenced, Markdown } from './components/ui/Markdown'
 import { Params } from './Params'
 import { api } from './useWorkflows'
 
-export function McpPage() {
+/** `mobile`: one column, full width. */
+export function McpPage({ mobile = false }: { mobile?: boolean }) {
   const [view, setView] = useState<McpView | null>(null)
   const [catalog, setCatalog] = useState<Catalog | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -38,7 +39,7 @@ export function McpPage() {
     2,
   )
   return (
-    <div className="page">
+    <div className={`page ${mobile ? 'mobile' : ''}`}>
       {error && <div className="error">{error}</div>}
 
       <section className="card">

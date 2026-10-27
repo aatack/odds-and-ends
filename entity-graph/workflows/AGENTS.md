@@ -45,6 +45,51 @@ The app's Electron profile is `workflows-egdb` (not the older app's `workflows`)
 and its MCP endpoint's port is 47391 by default (the older app's is 47390), so
 the two run side by side; it reads nothing of the older app's.
 
+## The phone
+
+The same app reaches a phone as a PWA, served by the backend, over Tailscale. Nothing of it runs in the app's
+window: there `window.workflows` is the preload's, as always.
+
+- **Two listeners, one handler** (`src/backend/http.ts`). The app's: loopback, a new port each start, the token in
+  `backend.json`, every method. The phone's: loopback too, on a port that lasts (`phone.port`, 47392 by default, for
+  `tailscale serve` to point at), behind the phone token (`phone.token`, kept as a secret, read on every request so a
+  new one takes at once, compared in constant time). It also serves the built app (`out/renderer`, beside
+  `out/main/backend.js`) to whoever asks, and refuses `PHONE_REFUSED` (the Phone page's own calls): the phone may not
+  change how it is reached. A port that is taken is said on the Phone page, and the backend goes on without it.
+- **Loopback only, unless let in.** `tailscale serve` forwards to loopback, so a bind can't tell the tailnet apart;
+  the handler does: a request that is forwarded (`X-Forwarded-For`, `Forwarded`, `Tailscale-User-Login`) or names a
+  host that is not loopback is refused (403) while `phone.tailnet` is off, which it is by default. The Phone page
+  turns it on.
+- **The transport** is `src/renderer/src/transport.ts`: WorkflowsAPI over `POST /rpc/<method>` and `GET /events`,
+  with the token and the person signed in on each call, and no DOM, so `test/phone.mts` drives it. `api()` uses it
+  wherever there is no preload (`phone.ts`, which adds the browser's own Back: a phone's back gesture takes the top
+  view off the stack). `openSource` asks the backend which source it is (`source`), and so checks the token;
+  `closeSource` forgets the token; `setToken`/`token` exist only here. A refused token sends the phone back to
+  signing in.
+- **Signing in on the phone** is `Start` with a token instead of a source. The Phone page's QR code (and its link)
+  is the phone address with `#token=…` after it, which the browser never sends: opened, it fills the token in and
+  signs in. `helpers/qr.ts` draws it (no dependency; checked against `qrencode` in the tests, where there is one).
+- **The PWA's files** are in `src/renderer/public` (copied as they are into the build): the manifest, the icons
+  (`node scripts/make-icons.mjs` makes them), and `sw.js`, which keeps the app's files so it opens offline and never
+  touches `/rpc` or `/events`. It registers only in a browser, in a secure context.
+- **`mobile`** is decided once, in `Root` (`useMobile`: a screen at most 640px wide, or the app installed), and passed
+  down as a prop to each main view (the task list, the chat and its input, the bot's page, the settings pages, the
+  header, the menu). Each lays itself out for a phone when it is true, through a `mobile` class and the `.mobile`
+  rules at the end of `styles.css`: one column, targets of 40px and more, 16px inputs (no zoom on focus), the safe
+  areas kept clear, and the menu at the top right with Next in it (a phone has no Ctrl+D). Views also act
+  differently where a phone needs it: nothing is focused for the person (it would raise the keyboard), the chat
+  input's icon is tapped to change what is sent and Enter is a new line, and the header's actions are all in its ⋯
+  menu. Without `mobile` nothing changes: a new view takes the prop and keeps the desktop as it was.
+
+**Setting it up** (the person does this; agents never run `tailscale`'s writes):
+
+1. Tailscale on this machine and on the phone, on the same tailnet, with MagicDNS and HTTPS certificates on.
+2. In the app: menu → Phone. Tick *Answer what comes from the tailnet*.
+3. Once, in a shell: `tailscale serve --bg --https=8443 http://127.0.0.1:47392` (the Phone page shows it with the
+   port in use; `tailscale serve --https=8443 off` undoes it). 8443 leaves 443 to whatever else this machine serves.
+4. On the phone: scan the QR code (or open `https://<machine>.<tailnet>.ts.net:8443/` and paste the token), sign in,
+   then Add to Home Screen.
+
 ## The paradigm
 
 [`docs/paradigm.md`](./docs/paradigm.md) is the idea, in a page.
@@ -135,12 +180,13 @@ src/engine     everything but the window; plain Node, so the tests drive it head
   admin.ts       what the Integrations and MCP pages show and change
   workers.ts     the bots' runner: one run at a time per bot, by its provider (`claude -p`)
   integrations.ts  the interfaces: Action, EventType
-src/backend    the backend as a process: an HTTP API (api.ts) and a change stream for the app;
-               info.ts, where a source keeps its things
+src/backend    the backend as a process: an HTTP API (api.ts, answered by http.ts) and a change stream for the app,
+               the phone's listener (http.ts); info.ts, where a source keeps its things
 src/main       Electron main: finds or starts the backend, passes the renderer's calls to it
 src/preload    the renderer's API (WorkflowsAPI in src/shared/types.ts)
-src/renderer   the React UI
+src/renderer   the React UI; public/ the PWA's files; src/transport.ts and src/phone.ts the app in a browser
 test/          engine.mts: the whole engine with a fake gh and fake bots;
+               phone.mts: the two listeners, the phone token, the tailnet's gate and the HTTP transport;
                egdb.mts: the store against a real egdb-server, the backend process on a fresh source
 ```
 
@@ -178,7 +224,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   `contains` link to it), its values (a note's are just `type` and `text`), and its links, each with when and by whom. A new kind of view is a new `kind`.
 - **There is no sidebar.** The content fills the window in a centred column.
   The bottom-left button opens the menu (Tasks, Bots, with how many are working beside it, Integrations, Types,
-  MCP, which are views on the stack like any other; Sign out, with the username beside it; Close source, with the
+  MCP, Phone (only in the app, not on the phone), which are views on the stack like any other; Sign out, with the username beside it; Close source, with the
   source beside it). Next has no button: it is Ctrl+D, and the app moves on
   by itself once the task on screen closes.
 - **The items view** (`ItemsList`) is what shows when the stack is empty, and
@@ -267,7 +313,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   and written in order (`EgdbSink`). The tests use the store with no sink.
 - **The backend is one process.** It holds the store, the loop (every minute),
   the bots' runner and the MCP server; the app is a window onto it, over HTTP
-  (`/rpc/<method>` and `/events`, loopback, a token). Every call the renderer
+  (`/rpc/<method>` and `/events`, loopback, a token), and so is the phone (its own listener and token: see The phone). Every call the renderer
   makes is a WorkflowsAPI method listed in `API_METHODS` and answered in
   `src/backend/api.ts`, as the person in `x-workflows-user` (only signing in works without one). Secrets are encrypted under
   `<source>.data/secret.key`.

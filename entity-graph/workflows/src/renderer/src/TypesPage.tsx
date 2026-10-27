@@ -37,7 +37,8 @@ const ACTION_FORM = {
  * (read only: which are buttons, which are in the menu), then the human's own,
  * to add, change, generate the code of, or remove.
  */
-export function TypesPage({ catalog, custom, act }: { catalog: Catalog; custom: CustomAction[]; act: Act }) {
+/** `mobile`: one column, full width. */
+export function TypesPage({ catalog, custom, act, mobile = false }: { catalog: Catalog; custom: CustomAction[]; act: Act; mobile?: boolean }) {
   const [draft, setDraft] = useState<Draft | null>(null)
   const [generating, setGenerating] = useState(false)
   /** The type whose fields are open, if any. */
@@ -100,7 +101,7 @@ export function TypesPage({ catalog, custom, act }: { catalog: Catalog; custom: 
       }
     })
   return (
-    <div className="page types-page">
+    <div className={`page types-page ${mobile ? 'mobile' : ''}`}>
       {catalog.events.map((t) => {
         const builtIn = eventActions({ id: '', type: t.type, resolved: false, summary: '' }, { act: async () => {}, skip: noop })
         const mine = custom.filter((c) => c.type === t.type)
