@@ -124,7 +124,8 @@ window: there `window.workflows` is the preload's, as always.
   needs no LLM. See `SCRIPT_DOC` in `eventTypes.ts`. Custom actions (the Types page) are scripts too, run on an
   event when asked; `run_script` runs one once.
 - The chat input sends a note by default; `@` a bot or a person in it to hand them the task (and take it
-  off the sender). With nothing typed it offers "Assign to @someone", the likeliest first. Tab steps through the
+  off the sender). With nothing typed it offers the default actions, a curated list in code
+  (`renderer/src/defaultActions.ts`): assign to the last bot, wait for each recent Slack message, snooze an hour or a day. Tab steps through the
   choices; its icon and hint show which.
 - A `widget` is UI with state of its own (`WIDGET_DOC` in `eventTypes.ts`): an HTML fragment run in a sandboxed
   iframe (`Widget.tsx`: scripts only, a CSP that allows nothing out, no navigation), styled with the app's CSS

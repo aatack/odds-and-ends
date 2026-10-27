@@ -354,6 +354,8 @@ export interface WorkflowsAPI {
   processOutput: (eventId: string, n: number) => Promise<{ status: ProcessStatus | null; lines: string[] }>
   /** The edit log: what was done, by whom and when, the newest first. */
   editLog: (query: LogQuery) => Promise<LogEntry[]>
+  /** Adds events in a task, as the person signed in: what the chat input's default actions do. */
+  addEvents: (itemId: string, events: EventSpec[]) => Promise<string[]>
   /** Changes a widget's state. */
   setWidgetState: (eventId: string, state: unknown) => Promise<void>
   /** Turns the person's thumbs-up on an event on or off. */
@@ -489,7 +491,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'setWidgetState', 'processOutput', 'editLog',
+  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addEvents', 'setWidgetState', 'processOutput', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'regeneratePhoneToken',

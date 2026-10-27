@@ -10,6 +10,7 @@ import { TypeIcon } from './icons'
 import { ItemPicker } from './ItemPicker'
 import type { Recent } from './sections'
 import { draftsAtom, withoutEmpty } from './views'
+import type { DefaultAction } from './defaultActions'
 
 /** The end of what is being said, as the record button shows it: the last two sentences (ended by `.`, `!` or `?`). */
 const lastSentences = (text: string): string => {
@@ -19,9 +20,8 @@ const lastSentences = (text: string): string => {
 
 /**
  * The chat input. What is typed goes through a preset (a note by default; a PR
- * to wait on…); with nothing typed, the choices are instead to hand the task to
- * a bot ("Assign to @Threepio"), the likeliest first: whoever else had it last,
- * else the bot the human handed something to last. The icon, for what Enter
+ * to wait on…); with nothing typed, the choices are instead the default actions
+ * (defaultActions.ts: assign to the last bot, wait for Slack, snooze). The icon, for what Enter
  * would do now, is in the top left; Tab and Shift+Tab step through the choices,
  * and Enter sends. Ctrl+Enter twice resolves the item: the first press only
  * asks, in the hint, and any other key takes it back. What is typed is kept, by
@@ -37,6 +37,7 @@ export function Composer({
   onResolve,
   mention,
   assignees,
+  defaults,
   mobile = false,
 }: {
   catalog: Catalog
@@ -45,8 +46,10 @@ export function Composer({
   onResolve: () => void
   /** What `@` picks from, and how it makes a new item. */
   mention: { items: Item[]; recent: Recent }
-  /** Who to offer to hand the task to (bots and people), the likeliest first. */
+  /** Who `@` offers first (bots and people), the likeliest first. */
   assignees: Someone[]
+  /** What the input offers with nothing typed (defaultActions.ts), in order; Enter runs the one shown. */
+  defaults: DefaultAction[]
   /** On a phone: the icon is tapped to change what is sent, Enter is a new line (Send sends), and it is never focused for the person, which would raise the keyboard. */
   mobile?: boolean
 }) {
@@ -64,15 +67,9 @@ export function Composer({
   }, [setDrafts])
   const [resolving, setResolving] = useState(false)
   const box = useRef<HTMLTextAreaElement>(null)
-  // With nothing typed, the choices are who to hand the task to; else the presets.
-  const assigns: PresetInfo[] = assignees.map((b) => ({
-    id: `assign:${b.id}`,
-    name: `Assign to @${b.name}`,
-    hint: `hand this task to @${b.name}`,
-    icon: b.bot ? 'bot' : 'user',
-  }))
-  const empty = !text.trim() && assigns.length > 0
-  const choices = empty ? assigns : catalog.presets
+  // With nothing typed, the choices are the default actions; else the presets.
+  const empty = !text.trim() && defaults.length > 0
+  const choices: PresetInfo[] = empty ? defaults : catalog.presets
   const at = (empty ? atEmpty : atText) % choices.length
   const setAt = empty ? setAtEmpty : setAtText
   const preset = choices[at]
@@ -109,6 +106,7 @@ export function Composer({
     refocus(mentionAt + ref.length)
   }
   const send = async () => {
+    if (empty) return void (await defaults[at]?.run())
     if (await onSend(preset.id, text)) setText('')
   }
   // Recording: each finished utterance goes as a note, as if typed and sent (it hands the task to nobody).

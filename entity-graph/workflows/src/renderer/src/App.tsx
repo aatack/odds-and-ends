@@ -21,6 +21,7 @@ import { FOCUS, Pill } from './sizes'
 import { EventIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
+import { defaultActions } from './defaultActions'
 import { minutes, useNow } from './time'
 import { LogPage } from './LogPage'
 import { api, useWorkflows } from './useWorkflows'
@@ -611,6 +612,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
             onResolve={() => void act(() => api().close(item.id))}
             mention={{ items: w.overview.items.filter((i) => i.id !== item.id), recent: w.recent }}
             assignees={likeliest(detail, w.overview)}
+            defaults={defaultActions(detail, w.overview).map((d) => ({ ...d, run: () => act(d.run) }))}
             mobile={mobile}
             onSend={async (preset, text) => {
               let ok = false

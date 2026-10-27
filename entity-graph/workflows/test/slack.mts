@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict'
 import { Admin } from '../src/engine/admin.ts'
 import { Engine } from '../src/engine/engine.ts'
-import { parseSlackLink } from '../src/shared/slack.ts'
+import { parseSlackLink, slackWait } from '../src/shared/slack.ts'
 
 const slackCalls: { method: string; body: Record<string, unknown> }[] = []
 let thread: { ts: string; user: string; text: string }[] = []
@@ -104,5 +104,28 @@ const ranged = (await engine.callAction('slack_messages', { after: '1700000140',
 assert.deepEqual(ranged.map((m) => m.author), ['Alex', 'Sam'])
 assert.deepEqual(((await engine.callAction('slack_channels', { query: '#eng' }, ctx)) as { id: string }[]).map((c) => c.id), ['C9'])
 await assert.rejects(engine.callAction('slack_post', { channel: 'C9', text: 'x' }, ctx), /unsafe/, 'posting is a person\'s, through an approval')
+
+// The chat input's "Wait for Slack": a script that owns the task, checks with backoff, and hands it back on news.
+{
+  await admin.clearSlackCache()
+  const waiting = (await engine.create('Waiting on Sam'))!
+  const [w] = await engine.addEvents(waiting, [{ type: 'script', params: { description: 'Wait for Slack', wake_at: '+1m', owns: [waiting], source: slackWait(link, 'alex') } }])
+  await engine.assign(waiting, 'alex', false)
+  clock += 60_000
+  await engine.checkDue()
+  await engine.idle()
+  assert.equal(engine.event(w)!.lastError, null)
+  assert.ok(!engine.event(w)!.resolved, 'nothing new yet')
+  assert.equal(engine.event(w)!.params.wake_at, clock + 5 * 60_000, 'then five minutes')
+  // Something new in the thread.
+  eng.push({ ts: '1700000170.000600', user: 'USAM', text: 'Any news?', thread_ts: '1700000100.000200' })
+  await admin.clearSlackCache()
+  clock += 5 * 60_000
+  await engine.checkDue()
+  await engine.idle()
+  assert.ok(engine.event(w)!.resolved, String(engine.event(w)!.data?.error ?? ''))
+  assert.deepEqual(engine.get(waiting)!.assignees, ['alex'])
+  assert.match(String(engine.children(waiting).filter((e) => e.type === 'note').at(-1)!.params.text), /New on Slack, in #eng:\n\n\*\*Sam\*\*: Any news\?/)
+}
 
 console.log('slack: ok')
