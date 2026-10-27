@@ -271,3 +271,74 @@ html[data-theme='classic'] .mine .bubble { background: #ccccff; }
 html[data-theme='classic'] .row, html[data-theme='classic'] .card { border-radius: 0; }
 html[data-theme='classic'] .row.selected { background: #ccccff; box-shadow: none; }
 html[data-theme='classic'] .composer .builder-row, html[data-theme='classic'] .items-view .search, html[data-theme='classic'] .find-line { border-radius: 0; background: #fff; box-shadow: inset 1px 1px 0 #888, inset -1px -1px 0 #fff; }
+
+/* ---- Demo: Flow's own look (branch-demo's ui/src/styles): Inter at 13px, its neutral grays, its blue, 8px corners,
+ * a grey canvas under a white page card, and grey chips for pills. ---- */
+@font-face { font-family: 'Flow Inter'; font-style: normal; font-weight: 100 900; font-display: swap; src: url('./assets/fonts/InterVariable.woff2') format('woff2'); }
+@font-face { font-family: 'Flow JetBrains Mono'; font-style: normal; font-weight: 100 800; font-display: swap; src: url('./assets/fonts/JetBrainsMonoVariable.woff2') format('woff2'); }
+html[data-theme='demo'] {
+  --font-sans: 'Flow Inter', -apple-system, system-ui, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'Flow JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+html[data-theme='demo'][data-mode='light'] {
+  color-scheme: light;
+  --color-white: #ffffff;
+  --color-gray-25: #fdfdfd;
+  --color-gray-50: #f4f4f5;
+  --color-gray-100: #f6f6f6;
+  --color-gray-200: #e7e7e7;
+  --color-gray-300: #c5c5c5;
+  --color-gray-400: #adadad;
+  --color-gray-500: #808080;
+  --color-gray-600: #646464;
+  --color-gray-700: #494949;
+  --color-gray-800: #323232;
+  --color-gray-900: #1a1a1a;
+  --color-gray-950: #1e1e1e;
+  --color-brand-50: #f4f7ff;
+  --color-brand-500: #395fe5;
+  --color-brand-600: #1f3acb;
+  --color-brand-700: #1930aa;
+}
+html[data-theme='demo'][data-mode='dark'] {
+  --color-white: hsl(230 3% 8%);
+  --color-gray-25: hsl(230 8% 5%);
+  --color-gray-50: hsl(230 8% 6%);
+  --color-gray-100: hsl(230 3% 14%);
+  --color-gray-200: hsl(230 3% 18%);
+  --color-gray-300: #3d3d3d;
+  --color-gray-400: #646464;
+  --color-gray-500: #969696;
+  --color-gray-600: #adadad;
+  --color-gray-700: #c5c5c5;
+  --color-gray-800: #e7e7e7;
+  --color-gray-900: hsl(230 10% 94%);
+  --color-gray-950: #ffffff;
+  --color-brand-50: #0e1f6c;
+  --color-brand-500: #6288ef;
+  --color-brand-600: #1f3acb;
+  --color-brand-700: #8dacf7;
+}
+html[data-theme='demo'] body { font-size: 13px; font-weight: 400; letter-spacing: 0; }
+/* The page sits as a card on the canvas, 6px in from the window. */
+html[data-theme='demo'] .app { background: var(--color-gray-50); padding: 6px; }
+html[data-theme='demo'] .main { height: calc(100vh - 12px); border-radius: 10px; background: var(--panel); box-shadow: 0 0 0 1px rgb(0 0 0 / 0.07), var(--shadow-xs); }
+html[data-theme='demo'][data-mode='dark'] .main { box-shadow: 0 0 0 1px rgb(255 255 255 / 0.05); }
+html[data-theme='demo'] .view-title { font-size: 15px; font-weight: 500; }
+html[data-theme='demo'] button[data-ui] { border-radius: 6px; }
+html[data-theme='demo'] button[data-ui].primary { background: var(--color-brand-600); color: #fff; }
+html[data-theme='demo'] .bubble { border-radius: 8px; }
+html[data-theme='demo'] .theirs .bubble { background: var(--color-gray-100); }
+html[data-theme='demo'] .mine .bubble { background: color-mix(in srgb, var(--color-brand-500) 12%, var(--panel)); }
+html[data-theme='demo'] .row, html[data-theme='demo'] .card { border-radius: 8px; }
+html[data-theme='demo'] .row.selected { background: var(--color-gray-100); box-shadow: none; }
+html[data-theme='demo'] .composer .builder-row, html[data-theme='demo'] .items-view .search, html[data-theme='demo'] .find-line {
+  border-radius: 8px; background: var(--panel); box-shadow: 0 0 0 1px rgb(0 0 0 / 0.07), var(--shadow-xs);
+}
+html[data-theme='demo'][data-mode='dark'] .composer .builder-row,
+html[data-theme='demo'][data-mode='dark'] .items-view .search,
+html[data-theme='demo'][data-mode='dark'] .find-line { box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1); }
+/* Pills are Flow's entity pills: a grey chip, a step darker under the mouse, no outline. */
+html[data-theme='demo'] button[data-ui].link.item-ref { border: none; border-radius: 4px; background: var(--color-gray-100); padding: 0 6px; }
+html[data-theme='demo'] button[data-ui].link.item-ref:hover { background: var(--color-gray-200); }
+html[data-theme='demo'] .list h3 { font-weight: 500; color: var(--color-gray-500); }

@@ -11,6 +11,7 @@ export const THEMES = [
   { id: 'dotcom', name: 'Dotcom' },
   { id: 'discord', name: 'Discord' },
   { id: 'classic', name: 'Classic Mac' },
+  { id: 'demo', name: 'Demo' },
 ] as const
 
 export const SERIFS = [
