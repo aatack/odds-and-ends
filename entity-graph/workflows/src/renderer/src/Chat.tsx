@@ -8,6 +8,7 @@ import { useAtomValue } from 'jotai'
 import { fenced, Markdown, shows } from './components/ui/Markdown'
 import { findAtom } from './views'
 import { TaskCard } from './TaskCard'
+import { ProcessCard } from './ProcessCard'
 import { Approval } from './Approval'
 import { api } from './useWorkflows'
 
@@ -128,6 +129,7 @@ function Card(props: { event: ItemEvent; find: string; catalog: Catalog; act: Ac
       </button>
     )
   if (e.type === 'script') return <ScriptCard event={e} act={act} find={find} />
+  if (e.type === 'process') return <ProcessCard event={e} act={act} lines={8} />
   if (e.type === 'approval')
     return (
       <div className="event-card">

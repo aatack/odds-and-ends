@@ -126,6 +126,7 @@ async function main(): Promise<void> {
     log('stopping')
     clearInterval(loop)
     clearInterval(checks)
+    engine.processes.stopAll()
     // The runs going end first (their items handed back), then what they wrote is flushed.
     await Promise.race([runner.stop(), new Promise((r) => setTimeout(r, 10_000))])
     for (const res of listeners) res.end()

@@ -1,3 +1,4 @@
+import { Processes } from './processes'
 import { CustomActions } from './customActions'
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
@@ -98,6 +99,8 @@ export class Engine extends EventEmitter {
   readonly presets: Preset[] = PRESETS
   /** People's own actions, per event type (the Types page). */
   readonly customActions: CustomActions
+  /** What `process` events run, while the backend lasts. */
+  readonly processes: Processes
   /** Stops a bot's run. Set by the runner. */
   onCancel: (agentId: string) => void = () => {}
   /** The run each bot has going, by the bot's id. In memory only: a crash leaves nothing behind. */
@@ -115,6 +118,7 @@ export class Engine extends EventEmitter {
   constructor(opts: EngineOptions = {}) {
     super()
     this.store = opts.store ?? new Store(null, opts.now)
+    this.processes = new Processes(opts.now)
     this.settings = new Settings(this.store, opts.secrets ?? plainSecrets)
     this.exec = opts.exec ?? execCli
     this.fetch = opts.fetch ?? fetch
@@ -857,6 +861,8 @@ export class Engine extends EventEmitter {
     const r = this.row(eventId)
     if (!r || r.resolved) return
     this.store.resolveEvent(eventId, data, by, this.now(), cancelled)
+    // A process stops as its event ends (stopped, or its task closed).
+    if (r.type === 'process') this.processes.stop(eventId)
   }
 
   /**

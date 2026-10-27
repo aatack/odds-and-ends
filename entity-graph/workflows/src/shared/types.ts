@@ -8,7 +8,7 @@
  * which stay open until something happens (a script says it is done, an approval
  * is given, a child item closes).
  */
-export type EventKind = 'task' | 'note' | 'approval' | 'script' | 'bot' | 'user'
+export type EventKind = 'task' | 'note' | 'approval' | 'script' | 'process' | 'bot' | 'user'
 
 /** An event as it is added. `ref` names it, so another added alongside can point at it. */
 export interface EventSpec {
@@ -270,6 +270,8 @@ export interface WorkflowsAPI {
   /** Runs an open script that has no schedule, once. */
   runNow: (eventId: string) => Promise<void>
   close: (id: string) => Promise<void>
+  /** A process event's process: how it stands (null when this backend never ran it), and the last `n` lines it wrote. */
+  processOutput: (eventId: string, n: number) => Promise<{ status: ProcessStatus | null; lines: string[] }>
   /** Turns the person's thumbs-up on an event on or off. */
   react: (eventId: string, on: boolean) => Promise<void>
   customActions: () => Promise<CustomAction[]>
@@ -315,6 +317,17 @@ export interface WorkflowsAPI {
   onForward: (cb: () => void) => () => void
 }
 
+/** How a process (a `process` event's) stands, as the backend holding it says. */
+export interface ProcessStatus {
+  running: boolean
+  pid: number | null
+  exitCode: number | null
+  signal: string | null
+  error: string | null
+  startedAt: number
+  endedAt: number | null
+}
+
 /** One of the human's own actions, for events of one type: a script, usually written by a model from its description and notes. */
 export interface CustomAction {
   id: string
@@ -335,7 +348,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'react',
+  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'react', 'processOutput',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'mcp', 'regenerateMcpToken', 'setMcpPort',
 ] as const satisfies readonly ApiMethod[]

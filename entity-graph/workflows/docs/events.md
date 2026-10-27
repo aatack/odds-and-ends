@@ -101,6 +101,7 @@ the chat input should offer it, add a preset in `presets.ts`.
 | `approval` | a person's | `action` (unsafe), `inputs`, `reason?` | `{ ran, inputs, changed, output }` |
 | `script` | yes | `source`, `description?`, `schedule?` (seconds), `timeout_minutes?` | `{ result, message?, runs, logs }` or `{ error, logs }` |
 | `bot` | while the bot lasts (sits in no item) | `name`, `instructions?`, `provider?`, `model?` (opus), `debounce_minutes?` (1), `folder?`; the app sets `session_id`, `seen` and `last_run` | `{ cancelled }`, once deleted |
+| `process` | yes, while it runs | `command`, `cwd?`, `description?` | `{ exitCode, signal, error?, output }` once it exits; `{ cancelled }` once stopped |
 | `user` | while the person lasts (sits in no item) | `username` (its id), `name?` | `{ cancelled }`, once removed |
 
 - **`script`** waits for anything. Its `source` is

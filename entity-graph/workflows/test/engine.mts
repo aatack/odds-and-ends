@@ -102,7 +102,7 @@ const blockers = (id: string) => item(id).blockers.map((b) => b.type)
 const last = (id: string, type: string) => engine.children(id).filter((e) => e.type === type).at(-1)!
 
 // The types there are; those from before are gone.
-assert.deepEqual(engine.eventTypes.map((t) => t.type), ['task', 'note', 'approval', 'script', 'bot', 'user'])
+assert.deepEqual(engine.eventTypes.map((t) => t.type), ['task', 'note', 'approval', 'script', 'process', 'bot', 'user'])
 await assert.rejects(engine.addEvents((await engine.create('x'))!, [{ type: 'message' as 'note', params: { text: 'x' } }]), /No event type message/)
 for (const i of engine.overview().items) await engine.close(i.id)
 
@@ -257,6 +257,38 @@ assert.ok(item(parent).closed)
   assert.ok(item(other).withYou, 'a task the bot was not given stays with whoever had it')
   await engine.close(host)
   await engine.close(other)
+}
+
+// A process: started by its first check, ended when it exits (with what it wrote last), or stopped by a cancel.
+{
+  const host = (await engine.create('Processes'))!
+  const [quick, slow] = await engine.addEvents(host, [
+    { type: 'process', params: { command: 'echo one; echo two', cwd: '/tmp' } },
+    { type: 'process', params: { command: 'sleep 30', cwd: '/tmp', description: 'A long one' } },
+  ])
+  await engine.checkDue()
+  await engine.idle()
+  assert.equal(engine.processes.status(slow)!.running, true)
+  for (let i = 0; i < 50 && engine.processes.status(quick)!.running; i++) await new Promise((r) => setTimeout(r, 20))
+  clock += 2000
+  await engine.checkDue()
+  await engine.idle()
+  const done = engine.event(quick)!
+  assert.ok(done.resolved && !done.cancelled)
+  assert.deepEqual([done.data!.exitCode, done.data!.output], [0, ['one', 'two']])
+  await engine.cancel(slow)
+  for (let i = 0; i < 50 && engine.processes.status(slow)!.running; i++) await new Promise((r) => setTimeout(r, 20))
+  assert.equal(engine.processes.status(slow)!.signal, 'SIGTERM', 'a cancel stops it')
+  // One the backend never ran (it ran under one since stopped) ends as soon as it is checked.
+  const [old] = await engine.addEvents(host, [{ type: 'process', params: { command: 'sleep 30', cwd: '/tmp' } }])
+  await engine.idle()
+  engine.processes.stop(old)
+  ;(engine.processes as unknown as { held: Map<string, unknown> }).held.delete(old)
+  clock += 2000
+  await engine.checkDue()
+  await engine.idle()
+  assert.match(String(engine.event(old)!.data!.error), /stopped while it ran/)
+  await engine.close(host)
 }
 
 // ---- 6. Output that can't be used, or an update that can't be applied, is said, and the item goes back ----

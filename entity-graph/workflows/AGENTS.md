@@ -53,7 +53,7 @@ the two run side by side; it reads nothing of the older app's.
 - Everything is an **event**, tasks included: one tree, held in egdb as entities joined by `contains` links. A
   task's children are its history. Some events resolve as they are added (a note); **blockers**
   wait until something happens (a script says it is done, an approval, a child task closes).
-  There are six types: `task`, `note`, `approval`, `script`, `bot` and `user` (a person).
+  There are seven types: `task`, `note`, `approval`, `script`, `process`, `bot` and `user` (a person).
 - **People** are items too (`user` events, in no item, whose id is their username); they sign in to the
   app by typing their username (no password: the app is local). Tasks are **assigned** to people and
   bots: an `assigned_to` link from the task, not an event (`Engine.setAssignee`; the tasks someone has are
@@ -76,6 +76,9 @@ the two run side by side; it reads nothing of the older app's.
 - The chat input sends a note by default; `@` a bot or a person in it to hand them the task (and take it
   off the sender). With nothing typed it offers "Assign to @someone", the likeliest first. Tab steps through the
   choices; its icon and hint show which.
+- A `process` is a command the backend keeps running (a dev server) until it exits or is stopped (cancelled, its
+  task closing, or the backend stopping): `processes.ts`, read by its first check. A bot may add one, as it may
+  run the same command in its shell; the unsafe rule binds it there just the same.
 - Nothing about the running app is stored: what is running is held in memory.
 
 ## Terminology

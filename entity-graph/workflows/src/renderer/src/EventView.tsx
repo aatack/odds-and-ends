@@ -2,6 +2,7 @@ import type { Catalog, EventDetail, ItemEvent } from '../../shared/types'
 import { Approval } from './Approval'
 import { minutes, time } from './Chat'
 import { TYPE_NAME } from './icons'
+import { ProcessCard } from './ProcessCard'
 import { fenced, Markdown } from './components/ui/Markdown'
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
@@ -42,6 +43,11 @@ export function EventView({
       {e.type === 'approval' && !e.resolved && (
         <section className="card">
           <Approval b={e} catalog={catalog} act={act} />
+        </section>
+      )}
+      {e.type === 'process' && (
+        <section className="card">
+          <ProcessCard event={e} act={act} lines={500} />
         </section>
       )}
       <Special detail={detail} onOpen={onOpen} />

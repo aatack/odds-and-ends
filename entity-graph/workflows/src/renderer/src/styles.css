@@ -41,6 +41,8 @@ button[data-ui].link { background: none; color: var(--muted); padding: 0; }
 .chat-scroll .chat { margin-top: auto; padding-bottom: 8px; }
 .chat-scroll .chat-title { margin: auto 0 12px; font-size: 22px; font-weight: 500; }
 .chat-scroll .chat-title + .chat { margin-top: 0; }
+.process-command { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.process-output { max-height: 60vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 6px; }
 .chat-working { font-size: 12px; color: var(--muted); padding: 0 4px 8px; }
 .composer { padding: 12px 32px 16px; display: flex; flex-direction: column; gap: 8px; }
 .composer-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
