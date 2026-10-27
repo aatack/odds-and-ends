@@ -125,6 +125,37 @@ export interface EventType {
   schedule?: (params: Record<string, unknown>) => number[] | null
 }
 
+/**
+ * One integration, in the shape every integration takes (AGENTS.md, Integrations): how it is set up, the tools it
+ * gives (each a read, or a write: `unsafe`), and the triggers it can fire. The Integrations page draws each from this
+ * alone, in four sections: setup, read, write, triggers.
+ */
+export interface Integration {
+  id: string
+  name: string
+  /** What it is for, in a line or two (markdown). */
+  description: string
+  /** How it is signed in: written once and reused (a CLI's own login, a token in its setup, or OAuth), and how to do it. */
+  auth: { kind: 'cli' | 'token' | 'oauth'; instructions: string }
+  /** What is put in to set it up: each value its own field, with how to get it beside it. */
+  setup: SetupField[]
+  /** Its tools: thin wrappers round its calls. A write is `unsafe`: only a person runs it. */
+  tools: Action[]
+  /** What it can tell the app has happened. A script polling its read tools stands in until one is built. */
+  triggers: { name: string; description: string }[]
+  /** How it stands now, in a line (signed in as whom); throws when it can't be used. */
+  status?: (engine: Engine) => Promise<string>
+}
+
+/** A value an integration is set up with: kept as a setting (a secret encrypted), shown unless it is a secret. */
+export interface SetupField {
+  key: string
+  label: string
+  /** How to get it, shown beside it (markdown). */
+  instructions: string
+  secret?: boolean
+}
+
 /** Where new items come from. Polled from the central loop; what it answers is added in no parent. */
 export interface Source {
   id: string

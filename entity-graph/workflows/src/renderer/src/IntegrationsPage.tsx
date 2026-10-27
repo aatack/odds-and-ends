@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Check, IntegrationsView } from '../../shared/types'
+import type { Check, IntegrationsView, IntegrationView } from '../../shared/types'
 import { Form } from './forms'
 import { Markdown } from './components/ui/Markdown'
 import { api } from './useWorkflows'
@@ -26,11 +26,9 @@ export function IntegrationsPage({ mobile = false }: { mobile?: boolean }) {
     <div className={`page ${mobile ? 'mobile' : ''}`}>
       {error && <div className="error">{error}</div>}
 
-      <section className="card">
-        <h2>GitHub</h2>
-        <Status check={view.github} />
-        <Markdown className="muted" text="Through the `gh` CLI, as whoever it is signed in as. To change that, run `gh auth login`." />
-      </section>
+      {view.registered.map((i) => (
+        <IntegrationCard key={i.id} integration={i} act={act} />
+      ))}
 
       <section className="card">
         <h2>Claude</h2>
@@ -157,5 +155,84 @@ function Deepgram({ view, act }: { view: IntegrationsView; act: (fn: () => Promi
         Keep the key
       </button>
     </section>
+  )
+}
+
+/**
+ * An integration in the one shape every integration takes: how it is signed in, then four sections, each folding:
+ * setup (each value its own field, how to get it beside it; shown unless secret, then only that it is set, with a
+ * way to remove it), the read tools, the write tools (only a person runs these), and the triggers.
+ */
+function IntegrationCard({ integration: i, act }: { integration: IntegrationView; act: (fn: () => Promise<unknown>) => Promise<void> }) {
+  const tools = (list: { name: string; description: string }[]) =>
+    list.length ? (
+      <ul className="integration-tools">
+        {list.map((t) => (
+          <li key={t.name}>
+            <code>{t.name}</code> <Markdown className="muted" text={t.description} />
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <p className="muted">None yet.</p>
+    )
+  return (
+    <section className="card integration">
+      <h2>{i.name}</h2>
+      {i.status && <Status check={i.status} />}
+      <Markdown className="muted" text={`${i.description} ${i.auth.instructions}`} />
+      <details open>
+        <summary>Setup</summary>
+        {i.setup.length === 0 && <p className="muted">Nothing to set up.</p>}
+        {i.setup.map((f) => (
+          <SetupValue key={f.key} integration={i.id} field={f} act={act} />
+        ))}
+      </details>
+      <details>
+        <summary>Read · {i.read.length}</summary>
+        {tools(i.read)}
+      </details>
+      <details>
+        <summary>Write · {i.write.length} (a person approves each)</summary>
+        {tools(i.write)}
+      </details>
+      <details>
+        <summary>Triggers · {i.triggers.length}</summary>
+        {i.triggers.length ? tools(i.triggers) : <p className="muted">None yet: a script polling the read tools stands in.</p>}
+      </details>
+    </section>
+  )
+}
+
+function SetupValue({ integration, field: f, act }: { integration: string; field: IntegrationView['setup'][number]; act: (fn: () => Promise<unknown>) => Promise<void> }) {
+  const [draft, setDraft] = useState('')
+  return (
+    <div className="setup-value">
+      <div className="setup-head">
+        <b>{f.label}</b>{' '}
+        {f.set ? (f.secret ? <span className="muted">· set</span> : <code>{f.value}</code>) : <span className="muted">· not set</span>}
+        {f.set && (
+          <button data-ui className="link" onClick={() => act(() => api().setIntegrationValue(integration, f.key, null))}>
+            Remove
+          </button>
+        )}
+      </div>
+      <Markdown className="muted" text={f.instructions} />
+      <div className="setup-input">
+        <input type={f.secret ? 'password' : 'text'} value={draft} placeholder={f.set ? 'Change it' : 'Set it'} onChange={(e) => setDraft(e.target.value)} />
+        <button
+          data-ui
+          disabled={!draft.trim()}
+          onClick={() =>
+            act(async () => {
+              await api().setIntegrationValue(integration, f.key, draft)
+              setDraft('')
+            })
+          }
+        >
+          Save
+        </button>
+      </div>
+    </div>
   )
 }

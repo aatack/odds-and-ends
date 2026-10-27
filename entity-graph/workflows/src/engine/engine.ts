@@ -1,3 +1,4 @@
+import { github } from './github'
 import { slackActions } from './slack'
 import { Processes } from './processes'
 import { CustomActions } from './customActions'
@@ -10,7 +11,7 @@ import { z } from 'zod'
 import type { Agent, EventDetail, EventSpec, Item, ItemDetail, ItemEvent, LastRun, Overview, User } from '../shared/types'
 import { itemActions } from './actions'
 import { EVENT_TYPES, whenNext } from './eventTypes'
-import { execCli, type Action, type ActionContext, type Author, type EventType, type Exec } from './integrations'
+import { execCli, type Action, type ActionContext, type Author, type EventType, type Exec, type Integration } from './integrations'
 import { PRESETS, type Preset } from './presets'
 import { plainSecrets, Settings, type Secrets } from './settings'
 import { Store, type EventRow, type Inspection } from './store'
@@ -97,7 +98,9 @@ export class Engine extends EventEmitter {
   readonly fetch: typeof fetch
   readonly now: () => number
   readonly dataDir: string
-  readonly actions: Action[] = [...itemActions, ...slackActions]
+  /** The integrations, each in the one shape (integrations.ts): their tools are among the actions. */
+  readonly integrations: Integration[] = [github]
+  readonly actions: Action[] = [...itemActions, ...slackActions, ...this.integrations.flatMap((i) => i.tools)]
   readonly eventTypes: EventType[] = EVENT_TYPES
   readonly presets: Preset[] = PRESETS
   /** People's own actions, per event type (the Types page). */

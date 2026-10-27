@@ -35,12 +35,25 @@ export class Admin {
         return { ok: false, detail: (e as Error).message }
       }
     }
-    const [github, claude] = await Promise.all([
-      check(async () => `Signed in as ${firstLine(await this.engine.exec('gh', ['api', 'user', '--jq', '.login']))}`),
-      check(async () => firstLine(await this.engine.exec('claude', ['--version']))),
-    ])
+    const claude = await check(async () => firstLine(await this.engine.exec('claude', ['--version'])))
+    const registered = await Promise.all(
+      this.engine.integrations.map(async (i) => ({
+        id: i.id,
+        name: i.name,
+        description: i.description,
+        auth: i.auth,
+        status: i.status ? await check(() => i.status!(this.engine)) : null,
+        setup: i.setup.map((f) => {
+          const value = this.engine.settings.integrationValue(i.id, f.key, f.secret)
+          return { key: f.key, label: f.label, instructions: f.instructions, secret: !!f.secret, value: f.secret ? null : value, set: value !== null }
+        }),
+        read: i.tools.filter((t) => !t.unsafe).map((t) => ({ name: t.name, description: t.description })),
+        write: i.tools.filter((t) => t.unsafe).map((t) => ({ name: t.name, description: t.description })),
+        triggers: i.triggers,
+      })),
+    )
     return {
-      github,
+      registered,
       claude: { ...claude, bots: this.engine.agents().length },
       deepgram: (() => {
         const d = this.engine.settings.deepgramKey()
@@ -58,6 +71,12 @@ export class Admin {
     if (!token.startsWith('xoxp-')) throw new Error('That is not a Slack user token: they start with xoxp-.')
     const { team, user, userId, url } = await slackAuthTest(token, this.fetchFn)
     this.engine.settings.addSlackWorkspace({ name: team, team, user, userId, token, ...(url ? { url } : {}) })
+  }
+
+  setIntegrationValue(id: string, key: string, value: string | null): void {
+    const field = this.engine.integrations.find((i) => i.id === id)?.setup.find((f) => f.key === key)
+    if (!field) throw new Error(`No setup value ${key} for ${id}.`)
+    this.engine.settings.setIntegrationValue(id, key, value, field.secret)
   }
 
   removeSlack(id: string): void {

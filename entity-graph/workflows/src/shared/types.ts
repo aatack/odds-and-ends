@@ -245,8 +245,24 @@ export interface Check {
   detail: string
 }
 
+/** One integration, as the Integrations page draws it: setup, read, write and triggers. */
+export interface IntegrationView {
+  id: string
+  name: string
+  description: string
+  auth: { kind: 'cli' | 'token' | 'oauth'; instructions: string }
+  /** How it stands now, if it says. */
+  status: Check | null
+  /** Each value it is set up with: shown, unless it is a secret (then only whether it is set). */
+  setup: { key: string; label: string; instructions: string; secret: boolean; value: string | null; set: boolean }[]
+  read: { name: string; description: string }[]
+  write: { name: string; description: string }[]
+  triggers: { name: string; description: string }[]
+}
+
 export interface IntegrationsView {
-  github: Check
+  /** The integrations in the one shape (integrations.ts): GitHub, so far. */
+  registered: IntegrationView[]
   claude: Check & { bots: number }
   slack: { id: string; name: string; team: string; user: string; tokenHint: string; url?: string }[]
   /** How many Slack answers are cached, and when the oldest was fetched. */
@@ -379,6 +395,8 @@ export interface WorkflowsAPI {
   /** Keeps a Slack workspace's user token (encrypted), once Slack says whose it is. Nothing uses it yet. */
   addSlack: (token: string) => Promise<void>
   removeSlack: (id: string) => Promise<void>
+  /** Sets an integration's setup value, or (null) removes it. */
+  setIntegrationValue: (id: string, key: string, value: string | null) => Promise<void>
   /** Empties the Slack cache: everything is fetched again when next asked for. */
   clearSlackCache: () => Promise<void>
   /** A slack_message's thread, or a slack_channel's messages; with `thread`, the replies to one of them. */
@@ -471,7 +489,7 @@ export interface CustomAction {
 export const API_METHODS = [
   'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'processOutput', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
-  'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'clearSlackCache', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
+  'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'regeneratePhoneToken',
 ] as const satisfies readonly ApiMethod[]
 

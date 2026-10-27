@@ -59,6 +59,20 @@ export class Settings {
     this.set('deepgram.key', key?.trim() ? this.secrets.encrypt(key.trim()) : null)
   }
 
+  // ---- integrations' setup values (Integration.setup): `integration.<id>.<key>`, a secret encrypted ----
+
+  integrationValue(id: string, key: string, secret = false): string | null {
+    const stored = this.get<string | null>(`integration.${id}.${key}`, null)
+    if (!stored) return null
+    return secret ? this.readSecret(stored) || null : stored
+  }
+
+  /** Sets a setup value, or (null, or nothing) removes it. */
+  setIntegrationValue(id: string, key: string, value: string | null, secret = false): void {
+    const v = value?.trim()
+    this.set(`integration.${id}.${key}`, v ? (secret ? this.secrets.encrypt(v) : v) : null)
+  }
+
   // ---- slack ----
 
   slackWorkspaces(): SlackWorkspace[] {

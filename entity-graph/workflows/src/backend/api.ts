@@ -49,6 +49,7 @@ export function handlers(engine: Engine, admin: Admin, me: string, source = ''):
     integrations: () => admin.integrations(),
     addSlack: (token) => admin.addSlack(token),
     removeSlack: (id) => admin.removeSlack(id),
+    setIntegrationValue: (id, key, value) => admin.setIntegrationValue(id, key, value),
     clearSlackCache: () => admin.clearSlackCache(),
     slackView: (eventId, thread) => admin.slackView(eventId, thread),
     setDeepgramKey: (key) => engine.settings.setDeepgramKey(key),

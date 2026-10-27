@@ -166,6 +166,28 @@ sending, deploying and deleting, in any integration.
   than the MCP's, so give bots no new credentials lightly.
 - `test/engine.mts` checks the rule. Keep those checks passing; never loosen them.
 
+## Integrations
+
+**This is how every integration works** (aatack's direction, Oct 2026). Each is an `Integration`
+(`src/engine/integrations.ts`), drawn by the Integrations page from that alone. `github.ts` (over `gh`) is the model.
+
+- **Auth is written once and reused**: a CLI's own login, a token, or OAuth. A new integration picks one rather than
+  building its own.
+- **Tools are a registry**: thin wrappers round the service's calls, each marked **read** (safe) or **write**
+  (`unsafe`: only a person runs it, through an approval; see the unsafe rule). Their tools join the actions, so bots,
+  scripts and the MCP see them as any other. (Later: who may run each tool, per automation: allowed, not, with a
+  person's approval, or for some users; for now, every write needs a person.)
+- **Setup** is custom where it must be, under rules: each value it is set up with (a token, a default repo, a channel
+  allowlist and other app-specific permissions) is its own field, with how to get it beside it. A value is always
+  shown, unless it is a secret: then only that it is set, with a way to remove it. Values are settings
+  (`integration.<id>.<key>`), secrets encrypted.
+- **Triggers** (webhooks, or what the service can tell us has happened) are listed last. Until one is built, a script
+  polling the read tools stands in.
+- On the page, each integration has four sections, each folding: **setup, read, write, triggers**.
+
+Slack (`slack.ts`) predates this and is still to be moved into it; Deepgram (a key for the window, no tools) is
+setup alone.
+
 ## Layout
 
 ```
