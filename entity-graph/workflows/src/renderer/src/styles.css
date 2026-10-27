@@ -157,6 +157,8 @@ button[data-ui].reaction.on { color: var(--accent); background: color-mix(in srg
 .bubble-row.mine + .bubble-row.theirs, .bubble-row.theirs + .bubble-row.mine { margin-top: 8px; }
 .avatar { flex: none; width: 28px; height: 28px; border-radius: 14px; display: flex; align-items: center; justify-content: center; background: var(--color-gray-200); color: var(--color-gray-700); }
 .avatar .icon { width: 15px; height: 15px; }
+button[data-ui].avatar { padding: 0; border-radius: 14px; background: var(--color-gray-200); color: var(--color-gray-700); }
+button[data-ui].avatar:hover { background: var(--color-gray-300); filter: none; }
 .type-icon { display: inline-flex; vertical-align: -2px; margin-right: 6px; color: var(--muted); }
 .type-icon .icon { width: 14px; height: 14px; }
 .builder-row { position: relative; width: 100%; padding: 8px 36px; border-radius: 8px; cursor: text; }

@@ -14,6 +14,15 @@ type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 export { minutes, time } from './time'
 
+/** Who made an event, if it is someone to open: a bot (its run's actor, `bot:<id>`) or a person; else null. */
+function ownerOf(o: Overview, by: string): { id: string; name: string } | null {
+  const id = by.startsWith('bot:') ? by.slice(4) : by
+  const bot = o.bots.find((b) => b.id === id)
+  if (bot) return { id, name: `@${bot.name}` }
+  const person = o.users.find((u) => u.id === id)
+  return person ? { id, name: person.name } : null
+}
+
 /** The words an event shows in the chat, for Ctrl+F. */
 const words = (e: ItemEvent) => (e.type === 'note' ? String(e.params.text ?? '') : [e.summary, e.message].filter(Boolean).join('\n'))
 
@@ -50,6 +59,8 @@ export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: C
             mine={e.createdBy === overview.me.id}
             me={overview.me.id}
             who={isPerson(overview, e.createdBy) ? nameOf(overview, e.createdBy) : null}
+            ownerId={ownerOf(overview, e.createdBy)?.id ?? null}
+            ownerName={ownerOf(overview, e.createdBy)?.name ?? null}
             find={find}
             catalog={catalog}
             act={act}
@@ -61,7 +72,7 @@ export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: C
   )
 }
 
-type MessageProps = { event: ItemEvent; mine: boolean; me: string; who: string | null; find: string; catalog: Catalog; act: Act; onOpen: (id: string) => void }
+type MessageProps = { event: ItemEvent; mine: boolean; me: string; who: string | null; ownerId: string | null; ownerName: string | null; find: string; catalog: Catalog; act: Act; onOpen: (id: string) => void }
 
 /** One event, as a message: right-click it to open it or debug it. Drawn again only when something it shows changed. */
 const Message = memo(function Message(props: MessageProps) {
@@ -72,7 +83,7 @@ const Message = memo(function Message(props: MessageProps) {
   const react = () => void act(() => api().react(e.id, !reacted))
   return (
     <div className={`bubble-row ${mine ? 'mine' : 'theirs'}`}>
-      {!mine && <EventAvatar event={e} />}
+      {!mine && <EventAvatar event={e} owner={props.ownerId ? { name: props.ownerName ?? props.ownerId, onOpen: () => props.onOpen(props.ownerId!) } : null} />}
       <div className="bubble-stack">
         <div className={`bubble bubble-${e.type}`} title={`${who ? `${who}, ` : ''}${time(e.createdAt)}`} {...menu(e.id)}>
           {!mine && who && <span className="bubble-who">{who}</span>}

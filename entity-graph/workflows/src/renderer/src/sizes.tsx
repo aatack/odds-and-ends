@@ -19,13 +19,22 @@ import { api } from './useWorkflows'
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
-/** An event's picture, beside its message in the chat. */
-export function EventAvatar({ event }: { event: { type: EventKind; createdBy: string } }) {
+/**
+ * An event's picture, beside its message in the chat. Given who made it (`owner`: a bot or a person), hovering it
+ * names them and pressing it opens them; otherwise it is named for what it is.
+ */
+export function EventAvatar({ event, owner }: { event: { type: EventKind; createdBy: string }; owner?: { name: string; onOpen: () => void } | null }) {
   const [Icon, name] = eventIcon(event)
+  if (!owner)
+    return (
+      <span className="avatar" title={name}>
+        <Icon className="icon" />
+      </span>
+    )
   return (
-    <span className="avatar" title={name}>
+    <button data-ui className="avatar" title={owner.name} aria-label={owner.name} onClick={owner.onOpen}>
       <Icon className="icon" />
-    </span>
+    </button>
   )
 }
 
