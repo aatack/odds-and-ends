@@ -190,30 +190,38 @@ function AppMenu({ onSignOut, onCloseSource }: { onSignOut: () => void; onCloseS
           <button onClick={onCloseSource} title={source ?? undefined}>
             Close source <span className="menu-status">{source}</span>
           </button>
-          {/* For now, while a style is chosen. */}
-          <div className="menu-note">Style</div>
-          <div className="menu-choices">
-            {THEMES.map((t) => (
-              <button key={t.id} className={look.theme === t.id ? 'chosen' : ''} onClick={() => setLook({ ...look, theme: t.id })}>
-                {t.name}
-              </button>
-            ))}
-          </div>
-          <div className="menu-note">Mode</div>
-          <div className="menu-choices">
-            {MODES.map((m) => (
-              <button key={m.id} className={look.mode === m.id ? 'chosen' : ''} onClick={() => setLook({ ...look, mode: m.id })}>
-                {m.name}
-              </button>
-            ))}
-          </div>
-          <div className="menu-note">Serif</div>
-          <div className="menu-choices">
-            {SERIFS.map((f) => (
-              <button key={f.id} className={look.serif === f.id ? 'chosen' : ''} onClick={() => setLook({ ...look, serif: f.id })}>
-                {f.name}
-              </button>
-            ))}
+          {/* For now, while a style is chosen: one dropdown each. */}
+          <div className="menu-selects">
+            <label>
+              Style
+              <select value={look.theme} onChange={(e) => setLook({ ...look, theme: e.target.value as typeof look.theme })}>
+                {THEMES.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Mode
+              <select value={look.mode} onChange={(e) => setLook({ ...look, mode: e.target.value as typeof look.mode })}>
+                {MODES.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Serif
+              <select value={look.serif} onChange={(e) => setLook({ ...look, serif: e.target.value as typeof look.serif })}>
+                {SERIFS.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         </div>
       )}
