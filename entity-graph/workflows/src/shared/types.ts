@@ -272,6 +272,8 @@ export interface WorkflowsAPI {
   close: (id: string) => Promise<void>
   /** A process event's process: how it stands (null when this backend never ran it), and the last `n` lines it wrote. */
   processOutput: (eventId: string, n: number) => Promise<{ status: ProcessStatus | null; lines: string[] }>
+  /** The edit log: what was done, by whom and when, the newest first. */
+  editLog: (query: LogQuery) => Promise<LogEntry[]>
   /** Turns the person's thumbs-up on an event on or off. */
   react: (eventId: string, on: boolean) => Promise<void>
   customActions: () => Promise<CustomAction[]>
@@ -317,6 +319,38 @@ export interface WorkflowsAPI {
   onForward: (cb: () => void) => () => void
 }
 
+/** What the edit log keeps: each filter left out keeps everything. */
+export interface LogQuery {
+  /** Who did it: usernames, or bots' actors (`bot:<id>`), or 'system', 'script'… */
+  authors?: string[]
+  /** What it was done to: events' ids (for links, either end). */
+  entities?: string[]
+  /** Value keys, or link types. */
+  keys?: string[]
+  /** At or after, in ms. */
+  since?: number
+  /** Before, in ms. */
+  until?: number
+  /** At most this many, the newest kept (200 by default). */
+  limit?: number
+}
+
+/** One thing done, as egdb keeps it: a value set (null: cleared), or a link made or removed. */
+export interface LogEntry {
+  at: number
+  by: string
+  kind: 'value' | 'link'
+  /** The entity the value is on, or the link's source. */
+  entity: string
+  /** The value's key, or the link's type. */
+  key: string
+  /** The value set (null: cleared); null for a link. */
+  value: unknown
+  /** For a link: its destination, and whether this removed it. */
+  other: string | null
+  removed: boolean
+}
+
 /** How a process (a `process` event's) stands, as the backend holding it says. */
 export interface ProcessStatus {
   running: boolean
@@ -348,7 +382,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'react', 'processOutput',
+  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'react', 'processOutput', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'mcp', 'regenerateMcpToken', 'setMcpPort',
 ] as const satisfies readonly ApiMethod[]

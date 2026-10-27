@@ -182,6 +182,22 @@ export const itemActions: Action[] = [
     },
   },
   {
+    name: 'edit_log',
+    unsafe: false,
+    description:
+      'What was done, by whom and when, the newest first: every value set (null: cleared) and every link made or removed, as egdb keeps them. ' +
+      "Filter by authors (usernames, a bot's actor `bot:<id>`, 'system'), entities (ids; for links, either end), keys (value keys or link types), and a time range (ms).",
+    input: {
+      authors: z.array(z.string()).optional(),
+      entities: z.array(z.string()).optional(),
+      keys: z.array(z.string()).optional(),
+      since: z.number().optional(),
+      until: z.number().optional(),
+      limit: z.number().int().positive().max(2000).optional(),
+    },
+    run: async (a, { engine }) => engine.store.log(a),
+  },
+  {
     name: 'get_children',
     unsafe: false,
     description: "The events in an item, oldest first. With open, only those still open: the item's blockers.",

@@ -80,6 +80,7 @@ export function EventMenu({
     <div className="menu" ref={refs.setFloating} style={floatingStyles} onMouseDown={(e) => e.stopPropagation()}>
       <button onClick={() => push({ kind: 'event', id: menu.id })}>Open</button>
       <button onClick={() => push({ kind: 'debug', id: menu.id })}>Debug</button>
+      <button onClick={() => push({ kind: 'log', id: menu.id })}>Edit log</button>
       {/* A task on screen is renamed in its header. */}
       {event?.id === menu.id && event.type === 'task' && sameView(views[views.length - 1], { kind: 'event', id: event.id }) && (
         <button

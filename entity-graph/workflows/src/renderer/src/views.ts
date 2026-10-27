@@ -19,6 +19,8 @@ export type View =
   | { kind: 'mcp' }
   | { kind: 'types' }
   | { kind: 'bots' }
+  /** The edit log: of one event, given its id; else of everything. */
+  | { kind: 'log'; id?: string }
 
 // Storage can throw (a private window, cleared site data): then the stack just isn't kept.
 const storage = createJSONStorage<View[]>(() => {

@@ -24,6 +24,7 @@
 // every wait is checked at once.
 
 import type { Op, Value } from 'egdb-client'
+import type { LogEntry, LogQuery } from '../shared/types'
 
 export interface EventRow {
   id: string
@@ -95,6 +96,8 @@ export interface Sink {
   flush(): Promise<void>
   /** An entity as egdb holds it. */
   inspect(id: string): Promise<Inspection>
+  /** The edit log: every value and link event the query keeps, the newest first. */
+  log(query: LogQuery): Promise<LogEntry[]>
 }
 
 export const ROOT = '@root'
@@ -327,6 +330,11 @@ export class Store {
       ...this.assignees(id).map((to) => ({ type: 'assigned_to', direction: 'outbound' as const, other: to, sort: null, at: this.assignment(id, to)!.at, by: this.assignment(id, to)!.by })),
     ]
     return { id, values, set: {}, links, createdAt: row.created_at, createdBy: row.created_by }
+  }
+
+  /** The edit log, as egdb keeps it; with no egdb (the tests), empty: memory keeps no history. */
+  log(query: LogQuery): Promise<LogEntry[]> {
+    return this.sink?.log(query) ?? Promise.resolve([])
   }
 
   // ---- loading ----

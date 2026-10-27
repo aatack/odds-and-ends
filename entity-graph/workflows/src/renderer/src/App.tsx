@@ -20,6 +20,7 @@ import { ItemRef } from './ItemRef'
 import { EventIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
+import { LogPage } from './LogPage'
 import { api, useWorkflows } from './useWorkflows'
 import { findAtom, findFocusAtom, forwardAtom, menuAtom, renameAtom, searchFocusAtom, viewedAtom, viewsAtom, type View } from './views'
 import { FindLine } from './FindLine'
@@ -178,6 +179,7 @@ function AppMenu({ onSignOut, onCloseSource }: { onSignOut: () => void; onCloseS
           <button onClick={() => go({ kind: 'integrations' })}>Integrations</button>
           <button onClick={() => go({ kind: 'types' })}>Types</button>
           <button onClick={() => go({ kind: 'mcp' })}>MCP</button>
+          <button onClick={() => go({ kind: 'log' })}>Edit log</button>
           <button onClick={onSignOut}>
             Sign out <span className="menu-status">{w.overview.me.name}</span>
           </button>
@@ -245,6 +247,15 @@ function ItemsMain() {
         {w.error && <div className="error">{w.error}</div>}
         <div className="view-body">
           <BotsPage bots={w.overview.bots} act={w.act} onOpen={openEvent} />
+        </div>
+      </div>
+    )
+  if (w.view?.kind === 'log')
+    return (
+      <div className="view">
+        <ViewHeader canGoBack onBack={w.back} title="Edit log" />
+        <div className="view-body">
+          <LogPage key={w.view.id ?? ''} overview={w.overview} recent={w.recent} entities={w.view.id ? [w.view.id] : []} />
         </div>
       </div>
     )

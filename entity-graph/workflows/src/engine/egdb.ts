@@ -2,6 +2,7 @@
 // in order, one batch at a time; `loadStore` reads a whole store back; and
 // `startEgdb` runs an egdb-server of the backend's own on a file.
 
+import type { LogEntry, LogQuery } from '../shared/types'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -93,6 +94,21 @@ export class EgdbSink implements Sink {
 
   async flush(): Promise<void> {
     while (this.writing) await this.writing
+  }
+
+  async log(query: LogQuery): Promise<LogEntry[]> {
+    const limit = query.limit ?? 200
+    const filter = { ...query, limit }
+    const [values, links] = await Promise.all([this.client.valueLog(this.branch, filter), this.client.linkLog(this.branch, filter)])
+    const all: (LogEntry & { seq: number })[] = [
+      ...values.map((c) => ({ at: c.event.timestamp, by: c.event.author, kind: 'value' as const, entity: c.entity, key: c.key, value: c.value, other: null, removed: false, seq: c.event.seq })),
+      ...links.map((c) => ({ at: c.event.timestamp, by: c.event.author, kind: 'link' as const, entity: c.source, key: c.link_type, value: null, other: c.destination, removed: c.sort === null, seq: c.event.seq })),
+    ]
+    // The newest first: by time, then by seq (one write's events share a time).
+    return all
+      .sort((a, b) => b.at - a.at || b.seq - a.seq)
+      .slice(0, limit)
+      .map(({ seq: _s, ...e }) => e)
   }
 
   async inspect(id: string): Promise<Inspection> {

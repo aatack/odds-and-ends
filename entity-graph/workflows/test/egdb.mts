@@ -80,6 +80,14 @@ const file = join(dir, 'round-trip.egdb')
   assert.equal(again.store.events.get(after.detail.events.filter((e) => e.type === 'script').at(-1)!.id)!.memo, 41)
   assert.deepEqual(after.detail.events.find((e) => e.id === hi)!.reactions, ['alex'])
   assert.ok(after.detail.events.filter((e) => e.id !== hi).every((e) => e.reactions.length === 0))
+  // The edit log: what was done, by whom and when, the newest first.
+  const log = await again.store.log({ entities: [hi] })
+  assert.deepEqual(log.filter((e) => e.key === 'reactions').map((e) => [e.by, e.value]),
+    [[`bot:${bot}`, ['alex']], [`bot:${bot}`, ['alex', `bot:${bot}`]], ['alex', ['alex']]])
+  assert.ok(log.some((e) => e.kind === 'link' && e.key === 'contains' && e.other === hi))
+  const renamed = await again.store.log({ entities: [id], keys: ['title'] })
+  assert.deepEqual(renamed.map((e) => e.value), ['Round trip'])
+  assert.deepEqual(await again.store.log({ authors: ['nobody'] }), [])
   // Who made each event, and when, is the link to it.
   assert.deepEqual(after.detail.events.map((e) => [e.createdAt, e.createdBy]), before.detail.events.map((e) => [e.createdAt, e.createdBy]))
   assert.deepEqual(after.bot.lastRun, before.bot.lastRun)
