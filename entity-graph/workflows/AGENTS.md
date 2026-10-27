@@ -243,10 +243,13 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   section; pickers in a modal, 6. Recently viewed is kept by the app, in local storage (`viewedAtom`). A
   row's grey text says only what its icon can't (what a script waits for); "needs you" and "waits for a task" are
   the icon's job.
-- **Text is markdown.** Messages, descriptions and code samples all go through `Markdown` (`components/ui/`, react-markdown
-  with GFM; fences drawn by `CodeBlock`). Code that is not inside prose goes in as `fenced(code, language)`.
+- **Text is markdown, always through `Markdown`.** Rule: any text that is or could be markdown-like, anywhere in the
+  app (messages, notes, descriptions, bot output, script results, code samples, new views too), is drawn by
+  `Markdown` (`components/ui/`, react-markdown with GFM; fences drawn by `CodeBlock`), never as a raw string or a
+  second renderer. Code that is not inside prose goes in as `fenced(code, language)`. `[id]()` in it is drawn as that
+  item's pill (`ItemRefContext`, `Pill` in `sizes.tsx`).
 - **Picking** is `ItemPicker`: the finder in a `Modal` over the blurred window, calling back with the item (or
-  bot, or person) picked (Enter or a click) or made (Tab). With `multiple`, its `value` and `setValue` are a list:
+  bot, or person) picked (Enter or a click); Tab only where a caller gives `onTab` (the Tasks view starts a topic). With `multiple`, its `value` and `setValue` are a list:
   what is selected shows first, ticked; picking a row adds it, or takes it off.
 - **Who has a task** is a pill at the top right of its view (`AssigneePill`): their name, or with more than one,
   their pictures. Clicking it opens the multiselect picker over people and bots.
