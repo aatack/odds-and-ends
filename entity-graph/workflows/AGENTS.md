@@ -103,6 +103,11 @@ sending, deploying and deleting, in any integration.
 - Only the human runs one: through an `approval` event, in the app. An agent asks
   for one by adding an approval; `unsafe_actions` tells it what it can ask for.
 - No event may act outside the app when an agent adds it.
+- **Scripts get unsafe tools only when a person presses play.** A script (a script event, a custom action, any
+  code the app runs) is handed the same tools as the MCP. When anything but a person's own press runs it (an
+  agent, a bot, a schedule, another script), the unsafe ones are left out, whoever wrote it. This holds for
+  every tool added later: declaring `unsafe` is what keeps it out. (For now no script is given unsafe tools at all,
+  even on a press: when there are unsafe actions to give, the press is the one place to give them.)
 - For now the app has no unsafe actions of its own: the integration settings (GitHub, Slack) are kept on the
   Integrations page, but no tools are built from them yet. The tests add one to check the rule.
 - **Bots have a shell** (auto mode), and `gh` is logged in. The rule binds them
