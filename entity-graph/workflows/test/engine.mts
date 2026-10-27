@@ -330,6 +330,21 @@ await engine.close(loose)
   await engine.close(t)
 }
 
+// Traceability: a task links in events that sit elsewhere; they show in its chat, and stay where they sit.
+{
+  const from = (await engine.create('Discussion'))!
+  await engine.send(from, 'note', 'We should fix the export')
+  const said = last(from, 'note').id
+  const [made] = await engine.addEvents(null, [{ type: 'task', params: { title: 'Fix the export' } }])
+  await engine.callAction('link_events', { item_id: made, event_ids: [said] }, { engine, author: 'bot', actor: `bot:${threepio}`, itemId: made, runId: null })
+  await engine.link(from, [made])
+  assert.ok(engine.detail(made)!.events.some((e) => e.id === said), 'the new task shows what it came from')
+  assert.ok(engine.detail(from)!.events.some((e) => e.id === made), 'and where it came from shows it')
+  assert.equal(engine.event(said)!.parentId, from, 'what is linked stays where it sits')
+  await engine.close(from)
+  await engine.close(made)
+}
+
 // A process: started by its first check, ended when it exits (with what it wrote last), or stopped by a cancel.
 {
   const host = (await engine.create('Processes'))!

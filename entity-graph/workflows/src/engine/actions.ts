@@ -230,6 +230,18 @@ export const itemActions: Action[] = [
     },
   },
   {
+    name: 'link_events',
+    unsafe: false,
+    description:
+      'Add `contains` links from a task to events that already exist elsewhere (messages, other tasks, anything): they show in its chat too, ' +
+      'and stay where they sit. For traceability: link a new task to what it came from, and what it came from to it.',
+    input: { item_id: itemId, event_ids: z.array(z.string()) },
+    run: async (a, ctx) => {
+      await ctx.engine.link(String(a.item_id), a.event_ids as string[], ctx.actor)
+      return 'Linked.'
+    },
+  },
+  {
     name: 'cancel_event',
     unsafe: false,
     description: 'End a blocker without it happening (a task is closed as cancelled).',

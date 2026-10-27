@@ -311,7 +311,11 @@ export class Engine extends EventEmitter {
     const item = r?.type === 'task' || r?.type === 'bot' ? this.toItem(r, viewer) : null
     if (!item) return null
     const parent = item.parentId ? this.get(item.parentId) : null
-    return { item, parent: parent && { id: parent.id, title: parent.title }, events: this.children(id) }
+    // What it contains by a later link shows too, where it was linked; its own parent stays where it sits.
+    const linked = this.store.linked(id).flatMap((l) => (this.row(l.id) ? [{ e: this.toEvent(this.row(l.id)!), at: l.at }] : []))
+    const own = this.children(id).map((e) => ({ e, at: e.createdAt }))
+    const events = [...own, ...linked].sort((a, b) => a.at - b.at).map((x) => x.e)
+    return { item, parent: parent && { id: parent.id, title: parent.title }, events }
   }
 
   /** Any item, with what its views need. */
@@ -1020,6 +1024,15 @@ export class Engine extends EventEmitter {
     })
     this.emit('change')
     if (actor !== 'script') await this.idle()
+  }
+
+  /** Adds `contains` links from a task to events that sit elsewhere (other tasks, notes, anything), for traceability. */
+  async link(itemId: string, eventIds: string[], actor = this.me()): Promise<void> {
+    if (this.row(itemId)?.type !== 'task') throw new Error(`No task ${itemId}.`)
+    this.store.batch(() => {
+      for (const id of eventIds) this.store.linkEvent(itemId, id, actor, this.now())
+    })
+    this.emit('change')
   }
 
   /** Closes a task: its open blockers are cancelled, then it resolves. Tasks in it are left as they are: they don't depend on it. */

@@ -170,7 +170,9 @@ export async function loadStore(
   })
   await findAll(client, branch, { eq: { key: 'type', value: 'wf.custom_action' } }, (_id, x) => customActions.push(customActionFromValues(x)))
   // Where each item sits, and who made it when: the `contains` links to it. And who has each task: `assigned_to` links.
+  // An event sits in the task whose `contains` link to it came first; any later ones are links for traceability.
   const made = new Map<string, { parent: string | null; seq: number; at: number; by: string }>()
+  const linked: { parent: string; id: string; at: number; by: string }[] = []
   const assigned: { item: string; to: string; at: number; by: string }[] = []
   const ids = [ROOT, ...found.keys()]
   for (let i = 0; i < ids.length; i += 500) {
@@ -179,7 +181,16 @@ export async function loadStore(
       for (const g of groups)
         for (const l of g.links) {
           const meta = { at: l.event?.timestamp ?? 0, by: l.event?.author ?? 'system' }
-          if (g.link_type === 'contains') made.set(l.destination, { parent: l.source === ROOT ? null : l.source, seq: Number(l.sort ?? 0), ...meta })
+          if (g.link_type === 'contains') {
+            const m = { parent: l.source === ROOT ? null : l.source, seq: Number(l.sort ?? 0), ...meta }
+            const had = made.get(l.destination)
+            // The first by time; at the same time, the one made in place (a seq, not a link's time as its sort).
+            if (had && (had.at < m.at || (had.at === m.at && had.seq <= m.seq))) linked.push({ parent: m.parent!, id: l.destination, at: m.at, by: m.by })
+            else {
+              if (had?.parent) linked.push({ parent: had.parent, id: l.destination, at: had.at, by: had.by })
+              made.set(l.destination, m)
+            }
+          }
           else assigned.push({ item: l.source, to: l.destination, ...meta })
         }
   }
@@ -197,7 +208,7 @@ export async function loadStore(
   }
   const sink = new EgdbSink(client, branch, onError)
   const store = new Store(sink)
-  store.restore({ events, settings, customActions, assigned })
+  store.restore({ events, settings, customActions, assigned, linked: linked.filter((l) => l.parent && found.has(l.id)) })
   // The root is an entity too, so that the tree can be walked from it.
   if (!events.length) sink.write([{ set: { entity: ROOT, key: 'type', value: 'wf.root' } }], 'system', Date.now())
   return { store, sink }

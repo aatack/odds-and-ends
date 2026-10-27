@@ -117,7 +117,13 @@ const file = join(dir, 'round-trip.egdb')
   // Reopened, a task is open when read back too.
   await engine2.reopen(done, 'alex')
   await again.store.flush()
+  // A later `contains` link is a link, not a move: read back, the note still sits where it was made.
+  const linkedTo = (await engine2.create('Linked'))!
+  await engine2.link(linkedTo, [note.id], 'alex')
+  await again.store.flush()
   const third = await loadStore(again.client, blocking)
+  assert.equal(third.store.events.get(note.id)!.parent_id, id)
+  assert.deepEqual(third.store.linked(linkedTo).map((l) => l.id), [note.id])
   assert.equal(third.store.customActions.size, 0, 'a removed custom action is archived in egdb, and not read back')
   assert.equal(third.store.events.get(done)!.resolved, false, 'a reopened task reads back open')
   again.egdb.stop()

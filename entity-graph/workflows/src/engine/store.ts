@@ -133,6 +133,11 @@ export class Store {
   /** `assigned_to` links: each task's assignees, with when (and at which moment) and by whom; and each assignee's tasks. */
   private assigneesOf = new Map<string, Map<string, Assigned>>()
   private itemsOf = new Map<string, Set<string>>()
+  /**
+   * Events a task also contains, besides those that sit in it: `contains` links added later (`link`), for
+   * traceability. Each event sits in one task (its first `contains` link, its parent); these are the rest.
+   */
+  private linkedIn = new Map<string, { id: string; at: number; by: string }[]>()
   /** Writes held back while a `batch` runs, so that they land together. */
   private held: Held[] | null = null
   /** The last moment handed out. */
@@ -247,6 +252,20 @@ export class Store {
     this.out([set(id, 'reactions', reactions)], by, at)
   }
 
+  /** Adds a `contains` link from a task to an event that sits elsewhere: the task shows it, as well. */
+  linkEvent(parentId: string, id: string, by: string, at: number): void {
+    const row = this.events.get(id)
+    if (!row) throw new Error(`No event ${id}.`)
+    if (row.parent_id === parentId || id === parentId || this.linked(parentId).some((l) => l.id === id)) return
+    this.linkedIn.set(parentId, [...this.linked(parentId), { id, at, by }])
+    this.out([{ link: { source: parentId, destination: id, link_type: 'contains', sort: { explicit: at } } }], by, at)
+  }
+
+  /** The events a task contains by a later link, the first linked first. */
+  linked(parentId: string): { id: string; at: number; by: string }[] {
+    return this.linkedIn.get(parentId) ?? []
+  }
+
   /** The events in an item (or, for null, those in none), by seq. */
   children(parentId: string | null): EventRow[] {
     return this.kids.get(parentId) ?? []
@@ -355,7 +374,9 @@ export class Store {
     settings: [string, unknown][]
     customActions: CustomActionRow[]
     assigned?: { item: string; to: string; at: number; by: string }[]
+    linked?: { parent: string; id: string; at: number; by: string }[]
   }): void {
+    for (const l of rows.linked ?? []) this.linkedIn.set(l.parent, [...this.linked(l.parent), { id: l.id, at: l.at, by: l.by }])
     for (const a of rows.assigned ?? []) this.link(a.item, a.to, { at: a.at, by: a.by, n: 0 })
     for (const r of [...rows.events].sort((a, b) => a.seq - b.seq)) this.index(r)
     for (const [k, value] of rows.settings) this.settings.set(k, value)
