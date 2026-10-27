@@ -15,11 +15,13 @@ export const everyone = (o: Pick<Overview, 'users' | 'bots'>): Someone[] => [
 ]
 
 /** Someone, for reading: "you" for whoever is signed in, a bot as @name, a person by name; a bot's run (`bot:<id>`) as its bot. */
-export function nameOf(o: Pick<Overview, 'users' | 'bots' | 'me'>, id: string): string {
+export function nameOf(o: Pick<Overview, 'users' | 'bots' | 'me'> & Partial<Pick<Overview, 'scripts'>>, id: string): string {
   const plain = id.startsWith('bot:') ? id.slice(4) : id
   if (plain === o.me.id) return 'you'
   const bot = o.bots.find((b) => b.id === plain)
   if (bot) return `@${bot.name}`
+  const script = o.scripts?.find((s) => s.id === plain)
+  if (script) return script.name
   return o.users.find((u) => u.id === plain)?.name ?? plain
 }
 

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { Catalog, ItemDetail, ItemEvent, Overview } from '../../shared/types'
+import type { Catalog, Item, ItemDetail, ItemEvent, Overview } from '../../shared/types'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ChevronLeft, Menu, MoreHorizontal } from 'lucide-react'
 import { eventActions, type EventAction } from './eventActions'
@@ -21,6 +21,7 @@ import { FOCUS, Pill } from './sizes'
 import { EventIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
+import { minutes, useNow } from './time'
 import { LogPage } from './LogPage'
 import { api, useWorkflows } from './useWorkflows'
 import { findAtom, findFocusAtom, forwardAtom, menuAtom, renameAtom, searchFocusAtom, viewedAtom, viewsAtom, type View } from './views'
@@ -475,6 +476,33 @@ function likeliest(detail: ItemDetail, overview: Overview): Someone[] {
   return ids.filter((id) => id !== overview.me.id).flatMap((id) => all.find((s) => s.id === id) ?? [])
 }
 
+/** How whoever has a task stands, in a line, unless the person looking has it: a bot (working, or when it wakes), or a script (running, or when it runs). */
+function ownerStatus(item: Item, o: Overview, now: number): string | null {
+  const ids = [...new Set([...(item.bot ? [item.bot] : []), ...(o.bots.some((b) => b.id === item.id) ? [item.id] : []), ...item.assignees])]
+  for (const id of ids) {
+    if (id === o.me.id) continue
+    const bot = o.bots.find((b) => b.id === id)
+    if (bot) {
+      if (bot.runId && bot.lastRun) return `@${bot.name} is working · ${minutes(now - bot.lastRun.startedAt)}`
+      if (bot.wakesAt !== null) return bot.wakesAt <= now ? `@${bot.name} is waking` : `@${bot.name} wakes in ${minutes(bot.wakesAt - now)}`
+      continue
+    }
+    const script = o.scripts.find((s) => s.id === id)
+    if (script) {
+      if (script.running) return `${script.name} is running`
+      if (script.wakesAt !== null) return script.wakesAt <= now ? `${script.name} runs now` : `${script.name} runs in ${minutes(script.wakesAt - now)}`
+      return `${script.name} waits to be run`
+    }
+  }
+  return null
+}
+
+/** `ownerStatus`, ticking by the second on its own, so the chat above it isn't drawn again each second. */
+function OwnerStatus({ item, overview }: { item: Item; overview: Overview }) {
+  const status = ownerStatus(item, overview, useNow())
+  return status ? <div className="chat-working">{status}</div> : null
+}
+
 function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpen: (id: string) => void }) {
   const { detail, catalog, act, onOpen } = props
   const { item } = detail
@@ -501,8 +529,8 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
     seen.observe(chat)
     return () => seen.disconnect()
   }, [item.id])
-  // A bot working on it (or, in a bot's own chat, the bot itself) says so where its message will appear.
-  const working = w.overview.bots.find((b) => b.id === item.bot || (b.id === item.id && b.runId))
+  // Whoever has it, unless it is you, says how it stands where their message will appear: a bot working or due to
+  // wake, a script running or due to run. In a bot's own chat, the bot itself.
   return (
     <div className="item">
       {detail.parent && (
@@ -517,7 +545,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
       <div className="chat-scroll" ref={scroller}>
         {short && <h2 className="chat-title">{item.title}</h2>}
         <Chat detail={detail} overview={w.overview} catalog={catalog} act={act} onOpen={onOpen} />
-        {working && <div className="chat-working">@{working.name} is working…</div>}
+        <OwnerStatus item={item} overview={w.overview} />
       </div>
       <div className="composer">
         {item.closed ? (

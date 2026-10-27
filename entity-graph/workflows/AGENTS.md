@@ -52,7 +52,7 @@ the two run side by side; it reads nothing of the older app's.
 
 - Everything is an **event**, tasks included: one tree, held in egdb as entities joined by `contains` links. A
   task's children are its history. Some events resolve as they are added (a note); **blockers**
-  wait until something happens (a script says it is done, an approval, a child task closes).
+  wait until something happens (an approval, a child task closes).
   There are seven types: `task`, `note`, `approval`, `script`, `process`, `bot` and `user` (a person).
 - **People** are items too (`user` events, in no item, whose id is their username); they sign in to the
   app by typing their username (no password: the app is local). Tasks are **assigned** to people and
@@ -71,8 +71,11 @@ the two run side by side; it reads nothing of the older app's.
   nothing of who has goes back to its owner, unless it is left waiting on something (`Engine.settle`).
   It is told never to close a task unless someone explicitly asked it to. Its `last_run` value says how
   its last run went (egdb keeps the earlier ones, as old values); `seen` lists the tasks its session has seen.
-- A `script` waits for anything: a function run on a schedule until it says it is done. Custom actions
-  (the Types page) are scripts too, run on an event when asked.
+- A `script` is JavaScript the app runs with no model, and can have tasks as a bot can: a button (pressed), an
+  owner on a timer (a snooze), or a check (runs until what it waits for happens). It never blocks the task it
+  sits in; a task waits on it by being assigned to it. Agents are told to use scripts for repetitive work that
+  needs no LLM. See `SCRIPT_DOC` in `eventTypes.ts`. Custom actions (the Types page) are scripts too, run on an
+  event when asked; `run_script` runs one once.
 - The chat input sends a note by default; `@` a bot or a person in it to hand them the task (and take it
   off the sender). With nothing typed it offers "Assign to @someone", the likeliest first. Tab steps through the
   choices; its icon and hint show which.
@@ -106,8 +109,7 @@ sending, deploying and deleting, in any integration.
 - **Scripts get unsafe tools only when a person presses play.** A script (a script event, a custom action, any
   code the app runs) is handed the same tools as the MCP. When anything but a person's own press runs it (an
   agent, a bot, a schedule, another script), the unsafe ones are left out, whoever wrote it. This holds for
-  every tool added later: declaring `unsafe` is what keeps it out. (For now no script is given unsafe tools at all,
-  even on a press: when there are unsafe actions to give, the press is the one place to give them.)
+  every tool added later: declaring `unsafe` is what keeps it out. (Custom actions are not given them yet.)
 - For now the app has no unsafe actions of its own: the integration settings (GitHub, Slack) are kept on the
   Integrations page, but no tools are built from them yet. The tests add one to check the rule.
 - **Bots have a shell** (auto mode), and `gh` is logged in. The rule binds them

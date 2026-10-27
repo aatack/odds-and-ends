@@ -1,4 +1,4 @@
-import { Bot, User } from 'lucide-react'
+import { Bot, SquareCode, User } from 'lucide-react'
 import { useState } from 'react'
 import type { Item, Overview } from '../../shared/types'
 import { ItemPicker } from './ItemPicker'
@@ -20,7 +20,8 @@ export function AssigneePill({ item, overview, act }: { item: Item; overview: Ov
     const n = nameOf(overview, id)
     return n === 'you' ? 'You' : n
   }
-  const icon = (id: string) => (isBot(id) ? <Bot className="icon" /> : <User className="icon" />)
+  const isScript = (id: string) => overview.scripts.some((s) => s.id === id)
+  const icon = (id: string) => (isBot(id) ? <Bot className="icon" /> : isScript(id) ? <SquareCode className="icon" /> : <User className="icon" />)
   const people = everyone(overview)
   return (
     <>

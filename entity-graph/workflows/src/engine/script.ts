@@ -7,10 +7,14 @@ import { getQuickJS, type QuickJSContext, type QuickJSHandle } from 'quickjs-ems
 const CPU_MS = 5_000
 const WALL_MS = 120_000
 
+/** Whether a source is a function expression (`async (context, tools) => …`), rather than a body. */
+export const isFunction = (source: string): boolean => /^\s*(async\s+)?(function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)/.test(source)
+
 /**
- * Runs `source`, a function expression `(input, actions) => …`, and answers what
- * it returns (awaited), as JSON, with whatever it logged. `actions.<name>(args)`
- * calls `call` and resolves to its result.
+ * Runs `source` and answers what it returns (awaited), as JSON, with whatever it logged. A source is a **body**:
+ * `context` and `tools` are in scope (and `ctx` and `actions`, the older names), and it may `await` and `return`
+ * at the top level. A function expression, `async (context, tools) => …`, is called with them too.
+ * `tools.<name>(args)` calls `call` and resolves to its result.
  */
 export async function runScript(
   source: string,
@@ -46,10 +50,11 @@ export async function runScript(
     const code = `(async () => {
       const show = (a) => typeof a === 'string' ? a : JSON.stringify(a)
       globalThis.console = { log: (...a) => __log(...a.map(show)), error: (...a) => __log(...a.map(show)) }
-      const actions = new Proxy({}, { get: (_, name) => async (args) => JSON.parse(await __call(String(name), JSON.stringify(args ?? {}))) })
-      const fn = (${source})
-      if (typeof fn !== 'function') throw new Error('A script is a function expression: (input, actions) => events')
-      return JSON.stringify((await fn(${JSON.stringify(input)}, actions)) ?? null)
+      const tools = new Proxy({}, { get: (_, name) => async (args) => JSON.parse(await __call(String(name), JSON.stringify(args ?? {}))) })
+      const fn = ${isFunction(source) ? `(${source})` : `async (context, tools) => { const ctx = context, actions = tools
+${source}
+}`}
+      return JSON.stringify((await fn(${JSON.stringify(input)}, tools)) ?? null)
     })()`
     const handle = vm.unwrapResult(vm.evalCode(code, 'script.js'))
     const result = vm.resolvePromise(handle)

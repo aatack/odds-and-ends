@@ -65,63 +65,115 @@ export const approval: EventType = {
 }
 
 /** What a script's run answers, read loosely: anything but `{ done: true }` means not yet. */
-const scriptResult = z.union([
-  z.null(),
-  z.object({ done: z.literal(false), state: z.unknown().optional() }).passthrough(),
-  z.object({ done: z.literal(true), data: z.unknown().optional(), message: z.string().optional() }).passthrough(),
-])
+/** What a script's run may return; null (or nothing) is `{}`. */
+const scriptResult = z
+  .object({
+    messages: z.array(z.object({ item: z.string().optional(), text: z.string() })).optional(),
+    assign: z.array(z.object({ item: z.string(), to: z.array(z.string()) })).optional(),
+    next: z.union([z.number(), z.string(), z.null()]).optional(),
+    state: z.unknown().optional(),
+    done: z.boolean().optional(),
+    data: z.unknown().optional(),
+    // The older shape: one message, in the item it sits in.
+    message: z.string().optional(),
+  })
+  .passthrough()
+  .nullable()
+
+/** When a script asked to run next: ms since the epoch, an ISO time, or `+30s`, `+5m`, `+2h`, `+1d` from now. */
+export function whenNext(next: number | string, now: number): number {
+  if (typeof next === 'number') return next
+  const rel = /^\+(\d+(?:\.\d+)?)\s*([smhd])$/.exec(next.trim())
+  if (rel) return now + Number(rel[1]) * { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 }[rel[2] as 's' | 'm' | 'h' | 'd']
+  const at = Date.parse(next)
+  if (Number.isNaN(at)) throw new Error(`next must be ms, an ISO time or +<n><s|m|h|d>, not ${JSON.stringify(next)}.`)
+  return at
+}
+
+export const SCRIPT_DOC =
+  'A script: JavaScript the app runs for you, with no model. Use one to own repetitive work that does not need an LLM: ' +
+  'snoozing a task, waiting for a branch to merge, checking something every hour. It costs nothing to run.\n' +
+  'Three uses:\n' +
+  '1. A button: add it in a task with no wake_at. It sits in the chat with a play button, and runs when a person presses it.\n' +
+  '2. An owner on a timer (a snooze): give it wake_at and `owns`. It has those tasks, as a bot or a person would, until it hands them on.\n' +
+  '3. A check: an owner that runs again and again (return next each time) until what it waits for happens, then hands its tasks on and says done.\n' +
+  'It never blocks the task it sits in: a task waits on a script by being assigned to it.\n' +
+  '`source` is the body of an async function: `context` and `tools` are in scope, and it may await and return.\n' +
+  '- context: { script: { id, description, runs, state }, item: { id, title } (the task it sits in), tasks: [{ id, title }] (those it owns), ' +
+  "now (ISO time), trigger: 'press' | 'schedule' }. state is what its last run returned as state (null the first time).\n" +
+  '- tools.<name>(args) calls any tool the MCP has, and resolves to its result. Unsafe tools (anything acting outside the app) are given only ' +
+  'when a person presses play; on a schedule, never.\n' +
+  '- It returns (all optional): { messages: [{ item, text }] (notes, in any tasks; item defaults to the one it sits in), assign: [{ item, to: [who] }] ' +
+  '(who has each task from now on: usernames, bot names, or the script\'s own id to keep it), next (when to run again: ms, an ISO time, or "+5m"; ' +
+  'left out, it waits for a press), state (handed to its next run), done: true (it closes; tasks it still owns go back to their owners), data }.\n' +
+  '- console.log is kept. A run that throws ends it with the error.\n' +
+  'Example, a snooze until 9am: params { description: "Snooze until 9am", wake_at: "2026-11-02T09:00:00Z", owns: ["<task id>"], source: ' +
+  '"return { messages: [{ text: \'Back from snooze\' }], assign: [{ item: context.tasks[0].id, to: [\'alex\'] }], done: true }" }.\n' +
+  'Example, a check every ten minutes: source: "const pr = await tools.some_read_tool({ ... }); if (!pr.merged) return { next: \'+10m\' }; ' +
+  'return { messages: [{ text: \'Merged\' }], assign: [{ item: context.tasks[0].id, to: [\'Threepio\'] }], done: true }".'
 
 export const script: EventType = {
   type: 'script',
-  description:
-    'A script that runs on a schedule (or, with none, when a person presses its play button) until it says it is done, and blocks until then. Use it to wait for anything the other ' +
-    'types do not cover, by checking with the actions. `source` is a JavaScript function expression, ' +
-    '`async (ctx, actions) => result`:\n' +
-    '- ctx is { item: { id, title }, event: { id, description, createdAt, runs }, now (ISO time), state }: where it runs, how many ' +
-    'times it has run before, and the state its last run handed on (null the first time).\n' +
-    "- actions.<name>(args) calls any action (see the MCP tools) and resolves to its result; a script a bot wrote gets no unsafe ones.\n" +
-    '- It returns null or { done: false, state } to keep waiting (state is handed to the next run), or ' +
-    '{ done: true, data, message } to finish: data is what the event resolves with, and message, if given, is what the chat says.\n' +
-    '- console.log is kept. A run that throws ends the event with the error.\n' +
-    'Example, waiting until a time: async (ctx) => (ctx.now >= "2026-11-01T09:00:00Z" ? { done: true, message: "Time to look again" } : null)\n' +
-    'A loop is a script that never says it is done: it runs on its schedule (the last gap repeating) until it is cancelled. ' +
-    'To give a bot something every hour, say: schedule [3600], and a source that adds a note each run, e.g. async (ctx, actions) => { await actions.add_events({ item_id: ctx.item.id, ' +
-    'events: [{ type: "note", params: { text: "Check the open PRs and fix any failing CI" } }] }); return { done: false } }',
+  description: SCRIPT_DOC,
   params: {
-    source: z.string().describe('async (ctx, actions) => null | { done: false, state? } | { done: true, data?, message? }'),
-    description: z.string().optional().describe('What it waits for, in a line: the blocker row says this.'),
-    schedule: z
-      .array(z.number().min(0))
+    source: z.string().describe('The body of an async function, with context and tools in scope; it returns { messages?, assign?, next?, state?, done?, data? }.'),
+    description: z.string().optional().describe('What it does, in a line: its card and the task list say this.'),
+    wake_at: z
+      .union([z.number(), z.string()])
       .optional()
-      .describe('Seconds to wait before the first run, then between each run, the last repeating; e.g. [1, 5, 10]. Runs are at least a second apart. Leave it out for a script a person runs by hand.'),
+      .describe('When it first runs (ms, an ISO time, or "+5m"); left out, it runs when a person presses play.'),
+    owns: z.array(z.string()).optional().describe('Tasks it takes on as it is added: each is assigned to it, as to a bot.'),
+    schedule: z.array(z.number().min(0)).optional().describe('Older scripts: seconds between runs, the last repeating. Use wake_at and next instead.'),
     ...timeout,
   },
-  data: '{ result: the data it finished with, message?, runs } or { error, logs }',
+  data: '{ result: the data it finished with, runs, logs } or { error, logs }',
   blocking: true,
   bots: true,
   describe: (p) => String(p.description ?? 'Script'),
   said: (p, d) => (d.error ? `The script failed: ${d.error}` : String(d.message ?? `${p.description ?? 'Script'}: done`)),
   schedule: (p) => (p.schedule as number[] | undefined) ?? null,
-  check: async (p, { engine, item, event, author, memo, setMemo, runs }) => {
-    const ctx = {
+  check: async (p, { engine, item, event, memo, setMemo, runs, trigger, pressedBy, setNext }) => {
+    const pressed = trigger === 'press' && !!pressedBy && engine.isUser(pressedBy)
+    const owned = engine.assignedTo(event.id)
+    const context = {
+      script: { id: event.id, description: p.description ?? null, runs, state: memo ?? null },
       item: { id: item.id, title: item.title },
-      event: { id: event.id, description: p.description ?? null, createdAt: new Date(event.createdAt).toISOString(), runs },
+      tasks: owned.map((id) => ({ id, title: engine.get(id)?.title ?? id })),
       now: new Date(engine.now()).toISOString(),
+      trigger,
+      // The older names.
+      event: { id: event.id, description: p.description ?? null, createdAt: new Date(event.createdAt).toISOString(), runs },
       state: memo ?? null,
     }
+    // Unsafe tools only for a person's own press (AGENTS.md, the unsafe rule).
+    const author = pressed ? 'human' : 'bot'
+    const actor = pressed ? pressedBy! : 'script'
     let ran: { value: unknown; logs: string[] }
     try {
-      ran = await runScript(String(p.source), ctx, (name, args) =>
-        engine.callAction(name, args, { engine, author, actor: 'script', itemId: item.id, runId: null }),
-      )
+      ran = await runScript(String(p.source), context, (name, args) => engine.callAction(name, args, { engine, author, actor, itemId: item.id, runId: null }))
     } catch (e) {
       return { error: (e as Error).message }
     }
     const parsed = scriptResult.safeParse(ran.value)
-    if (!parsed.success) return { error: `It returned ${JSON.stringify(ran.value)?.slice(0, 200)}, not null, { done: false } or { done: true, data }.`, logs: ran.logs }
-    const result = parsed.data
-    if (result?.done) return { result: result.data ?? null, ...(result.message ? { message: result.message } : {}), runs: runs + 1, logs: ran.logs }
-    if (result && 'state' in result) setMemo(result.state)
+    if (!parsed.success)
+      return { error: `It returned ${JSON.stringify(ran.value)?.slice(0, 200)}, not { messages?, assign?, next?, state?, done?, data? }.`, logs: ran.logs }
+    const r = parsed.data ?? {}
+    try {
+      for (const m of [...(r.messages ?? []), ...(r.message && !r.done ? [{ text: r.message }] : [])])
+        await engine.addEvents(m.item ?? item.id, [{ type: 'note', params: { text: m.text } }], 'script', author)
+      for (const a of r.assign ?? []) {
+        const to = new Set(a.to.map((x) => (x === event.id ? x : engine.resolveAssignee(x))))
+        const now = engine.assignees(a.item)
+        for (const x of to) if (!now.includes(x)) await engine.assign(a.item, x, true, 'script')
+        for (const x of now) if (!to.has(x)) await engine.assign(a.item, x, false, 'script')
+      }
+      if ('state' in r) setMemo(r.state)
+      if (r.next !== undefined) setNext(r.next === null ? null : whenNext(r.next, engine.now()))
+      else if (!p.schedule) setNext(null)
+    } catch (e) {
+      return { error: (e as Error).message, logs: ran.logs }
+    }
+    if (r.done) return { result: r.data ?? null, ...(r.message ? { message: r.message } : {}), runs: runs + 1, logs: ran.logs }
     return null
   },
 }

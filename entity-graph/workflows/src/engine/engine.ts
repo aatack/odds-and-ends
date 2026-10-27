@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import type { Agent, EventDetail, EventSpec, Item, ItemDetail, ItemEvent, LastRun, Overview, User } from '../shared/types'
 import { itemActions } from './actions'
-import { EVENT_TYPES } from './eventTypes'
+import { EVENT_TYPES, whenNext } from './eventTypes'
 import { execCli, type Action, type ActionContext, type Author, type EventType, type Exec } from './integrations'
 import { PRESETS, type Preset } from './presets'
 import { plainSecrets, Settings, type Secrets } from './settings'
@@ -113,6 +113,8 @@ export class Engine extends EventEmitter {
   private woken = new Map<string, number>()
   /** The events being checked right now: a check never starts while the last is still going. */
   private checking = new Set<string>()
+  /** Who pressed play on each event about to run (`runNow`): its next check is theirs. */
+  private pressed = new Map<string, string>()
   private queues = new Map<string, Promise<unknown>>()
 
   constructor(opts: EngineOptions = {}) {
@@ -138,8 +140,12 @@ export class Engine extends EventEmitter {
           }
       }
     }
-    // Waits are checked at once after a start.
-    for (const r of this.store.events.values()) if (!r.resolved && this.typeOrNull(r.type)?.check && this.scheduleOf(this.type(r.type), r.params)) r.next_check_at = this.now()
+    // Waits are checked at once after a start; a script, when it asked to be (its wake_at), or at once if that has passed.
+    for (const r of this.store.events.values()) {
+      if (r.resolved || !this.typeOrNull(r.type)?.check) continue
+      if (r.type === 'script' && typeof r.params.wake_at === 'number') r.next_check_at = Math.max(this.now(), r.params.wake_at)
+      else if (this.scheduleOf(this.type(r.type), r.params)) r.next_check_at = this.now()
+    }
   }
 
   type(name: string): EventType {
@@ -229,7 +235,8 @@ export class Engine extends EventEmitter {
   private toItem(r: EventRow, viewer = this.me()): Item {
     const id = r.id
     const kids = this.store.children(id)
-    const blockers = kids.filter((k) => !k.resolved).map((k) => this.toEvent(k))
+    // A script never blocks the task it sits in: a task waits on one by being assigned to it.
+    const blockers = kids.filter((k) => !k.resolved && k.type !== 'script').map((k) => this.toEvent(k))
     const assignees = this.assignees(id)
     const touched = Math.max(
       r.created_at,
@@ -279,7 +286,11 @@ export class Engine extends EventEmitter {
       .filter((r) => !r.resolved || (r.resolved_at ?? 0) > since)
       .map((r) => this.toItem(r, viewer))
       .sort((a, b) => a.since - b.since)
-    return { me: this.user(viewer) ?? { id: viewer, name: viewer }, items, bots: this.agents(), users: this.users(), recentAssignees: this.recentAssignees(viewer) }
+    const scripts = this.store
+      .ofType('script')
+      .filter((r) => !r.resolved && this.assignedTo(r.id).length)
+      .map((r) => ({ id: r.id, name: String(r.params.description ?? 'Script'), wakesAt: r.next_check_at, running: this.checking.has(r.id) }))
+    return { me: this.user(viewer) ?? { id: viewer, name: viewer }, items, bots: this.agents(), users: this.users(), recentAssignees: this.recentAssignees(viewer), scripts }
   }
 
   /** Whoever `viewer` gave the tasks they have now, the most recently first. */
@@ -397,7 +408,14 @@ export class Engine extends EventEmitter {
     if (this.user(r.toLowerCase())) return r.toLowerCase()
     const bot = this.findAgent(r)
     if (bot) return bot.id
+    if (this.isOpenScript(r)) return r
     throw new Error(`Nobody is called ${ref}, to assign. People: ${this.users().map((u) => u.id).join(', ') || 'none'}; bots: ${this.agents().map((a) => a.name).join(', ') || 'none'}.`)
+  }
+
+  /** Whether an id is a script that is still open: one that can have tasks. */
+  isOpenScript(id: string): boolean {
+    const r = this.row(id)
+    return r?.type === 'script' && !r.resolved
   }
 
   /** Who a task goes back to when a bot lets go of it: the person who made it, else the owner of the task it sits in. */
@@ -415,7 +433,7 @@ export class Engine extends EventEmitter {
   setAssignee(itemId: string, to: string, on: boolean, actor: string, runId: string | null = null): void {
     if (this.row(itemId)?.type !== 'task') throw new Error(`No task ${itemId}.`)
     const bot = this.agent(to)
-    if (on && !this.isUser(to) && !(bot && !bot.deleted)) throw new Error(`Nobody is ${to}, to assign.`)
+    if (on && !this.isUser(to) && !(bot && !bot.deleted) && !this.isOpenScript(to)) throw new Error(`Nobody is ${to}, to assign.`)
     if (!on && !this.assignees(itemId).includes(to)) return
     this.store.setAssigned(itemId, to, on, actor, this.now())
     for (const run of this.running.values()) if (run.id === runId) run.assigned.add(itemId)
@@ -848,11 +866,14 @@ export class Engine extends EventEmitter {
       // A person's id is their username.
       const id = spec.type === 'user' ? String(spec.params.username) : randomUUID()
       ids.push(id)
-      const { assignees, events, detached: _d, ...params } = spec.params
+      const { assignees, events, detached: _d, owns, ...params } = spec.params
+      // A script's first wake is kept as a time, whatever form it was given in.
+      if (spec.type === 'script' && params.wake_at !== undefined) params.wake_at = whenNext(params.wake_at as number | string, at)
+      const first = spec.type === 'script' ? ((params.wake_at as number | undefined) ?? null) : null
       this.store.insertEvent({
         id, parent_id: parentId, seq: seq + i, type: spec.type, params, created_by: createdBy, created_at: at,
         resolved: !type.blocking, resolved_at: type.blocking ? null : at, resolved_by: type.blocking ? null : createdBy, cancelled: false,
-        data: null, memo: null, reactions: [], check_step: 0, next_check_at: type.check && this.scheduleOf(type, params) ? at + this.scheduleOf(type, params)![0] * 1000 : null, last_error: null,
+        data: null, memo: null, reactions: [], check_step: 0, next_check_at: first ?? (type.check && this.scheduleOf(type, params) ? at + this.scheduleOf(type, params)![0] * 1000 : null), last_error: null,
         runs: 0, added_n: 0, resolved_n: 0,
       })
       if (spec.type === 'task') {
@@ -861,6 +882,8 @@ export class Engine extends EventEmitter {
         const to = Array.isArray(assignees) && assignees.length ? (assignees as string[]) : this.isUser(createdBy) ? [createdBy] : []
         for (const a of to) this.setAssignee(id, a, true, createdBy)
       }
+      // A script takes on the tasks it owns, as a bot is given them.
+      if (spec.type === 'script' && Array.isArray(owns)) for (const t of owns as string[]) this.setAssignee(t, id, true, createdBy)
     })
     // New waits are checked at once.
     if (specs.some((s) => this.type(s.type).check)) queueMicrotask(() => void this.checkDue())
@@ -875,6 +898,8 @@ export class Engine extends EventEmitter {
     this.store.resolveEvent(eventId, data, by, this.now(), cancelled)
     // A process stops as its event ends (stopped, or its task closed).
     if (r.type === 'process') this.processes.stop(eventId)
+    // A script that ends lets go of the tasks it still has: each goes back to its owner, if nobody else has it.
+    if (r.type === 'script') for (const t of this.assignedTo(eventId)) if (!this.get(t)?.closed) this.handBack(t, eventId, null, 'script')
   }
 
   /**
@@ -888,10 +913,11 @@ export class Engine extends EventEmitter {
   }
 
   /** Runs an open check (a script with no schedule, say) now, once. */
-  async runNow(eventId: string): Promise<void> {
+  async runNow(eventId: string, actor = this.me()): Promise<void> {
     const r = this.row(eventId)
     if (!r || r.resolved || !this.type(r.type).check) throw new Error('There is nothing to run.')
     r.next_check_at = this.now()
+    this.pressed.set(eventId, actor)
     await this.checkOne(r.parent_id!, eventId)
   }
 
@@ -1016,8 +1042,15 @@ export class Engine extends EventEmitter {
       const type = this.type(event.type)
       let data: Record<string, unknown> | null = null
       let error: string | null = null
+      const pressedBy = this.pressed.get(eventId) ?? null
+      this.pressed.delete(eventId)
+      // Undefined: as its type's schedule says. A number or null: what the check asked for.
+      let next: number | null | undefined
       try {
         data = await type.check!(event.params, {
+          trigger: pressedBy ? 'press' : 'schedule',
+          pressedBy,
+          setNext: (at) => (next = at),
           engine: this,
           item: this.must(itemId),
           event,
@@ -1035,6 +1068,16 @@ export class Engine extends EventEmitter {
         data = { outcome: 'timed_out', detail: `Nothing after ${timeout} minutes.` }
       if (data) {
         this.resolve(eventId, data, 'system')
+        this.emit('change')
+        return
+      }
+      if (next !== undefined) {
+        Object.assign(row, { next_check_at: next, last_error: error })
+        // A script's wake is kept, so a restart wakes it when it asked.
+        if (row.type === 'script' && row.params.wake_at !== (next ?? undefined)) {
+          const { wake_at: _w, ...rest } = row.params
+          this.store.setParams(eventId, next === null ? rest : { ...rest, wake_at: next }, 'script', this.now())
+        }
         this.emit('change')
         return
       }

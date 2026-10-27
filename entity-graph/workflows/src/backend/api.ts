@@ -27,7 +27,7 @@ export function handlers(engine: Engine, admin: Admin, me: string): Handlers {
     send: (id, preset, text) => engine.send(id, preset, text, me),
     approve: (eventId, inputs) => engine.approve(eventId, inputs, me),
     cancel: (eventId) => engine.cancel(eventId, me),
-    runNow: (eventId) => engine.runNow(eventId),
+    runNow: (eventId) => engine.runNow(eventId, me),
     close: (id) => engine.close(id, { actor: me }),
     react: (eventId, on) => engine.react(eventId, on, me),
     editLog: (query) => engine.store.log(query),

@@ -68,6 +68,11 @@ export interface EventContext {
   runs: number
   /** Whoever added this event, as an author. */
   author: Author
+  /** What ran it: its schedule, or a press (its play button: `runNow`), by `pressedBy`. */
+  trigger: 'press' | 'schedule'
+  pressedBy: string | null
+  /** When to check it next (ms), or null for only when pressed: in place of its type's schedule. */
+  setNext: (at: number | null) => void
 }
 
 /**

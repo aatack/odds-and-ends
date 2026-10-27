@@ -19,6 +19,7 @@ export function useWorkflows() {
     bots: [],
     users: [],
     recentAssignees: [],
+    scripts: [],
   })
   const [views, setViews] = useAtom(viewsAtom)
   const [forwards, setForwards] = useAtom(forwardAtom)

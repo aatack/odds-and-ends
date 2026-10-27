@@ -99,28 +99,32 @@ the chat input should offer it, add a preset in `presets.ts`.
 | `task` | yes | `title`, `events?` (its first children, added in it), `assignees?` (who has it from the start; links, not kept in its params), `detached?` (sits in no item, wherever it is added), `key?` (so it is added once) | `{ how: closed \| cancelled }` |
 | `note` | no | `text` | — |
 | `approval` | a person's | `action` (unsafe), `inputs`, `reason?` | `{ ran, inputs, changed, output }` |
-| `script` | yes | `source`, `description?`, `schedule?` (seconds), `timeout_minutes?` | `{ result, message?, runs, logs }` or `{ error, logs }` |
+| `script` | while it lasts; it blocks nothing (a task waits on it by being assigned to it) | `source`, `description?`, `wake_at?`, `owns?`, `schedule?` (older), `timeout_minutes?` | `{ result, runs, logs }` or `{ error, logs }` |
 | `bot` | while the bot lasts (sits in no item) | `name`, `instructions?`, `provider?`, `model?` (opus), `debounce_minutes?` (1), `folder?`; the app sets `session_id`, `seen` and `last_run` | `{ cancelled }`, once deleted |
 | `process` | yes, while it runs | `command`, `cwd?`, `description?` | `{ exitCode, signal, error?, output }` once it exits; `{ cancelled }` once stopped |
 | `user` | while the person lasts (sits in no item) | `username` (its id), `name?` | `{ cancelled }`, once removed |
 
-- **`script`** waits for anything. Its `source` is
-  `async (ctx, actions) => result`, run on its `schedule`.
-  - The schedule is seconds: the wait before the first run, then between runs,
-    with the last repeating. `[1, 5, 10]` runs after 1 second, then 5 more, then
-    every 10. With no schedule, it runs only when someone runs it: its card's
-    play button (`Engine.runNow`, the `runNow` API call).
-  - Runs are at least a second apart. A run never starts while the last is still
-    going. Every blocker's checks work this way; each type has a schedule, and
-    the default is at once, then 1, 2, 5 and then every 10 minutes.
-  - `ctx` is `{ item, event: { id, description, createdAt, runs }, now, state }`.
-  - It returns `null` or `{ done: false, state? }` to keep blocking. The `state`
-    is handed to its next run.
-  - It returns `{ done: true, data?, message? }` to finish. It resolves with
-    `{ result: data, message, runs }`, and `message` (if given) is what the chat says.
-  - A run that throws, or returns anything else, ends it with `{ error }`.
-  - It runs in QuickJS, with nothing but `actions` and `console.log`. A script a
-    bot wrote gets no unsafe actions.
+- **`script`** is JavaScript the app runs with no model: an item that can have
+  tasks, as a bot can. Its full contract is `SCRIPT_DOC` in `eventTypes.ts`,
+  which is what agents read (`event_types`); in short:
+  - Three uses: a **button** (no `wake_at`: it runs when a person presses its
+    play button), an **owner on a timer** (a snooze: `wake_at`, and `owns` the
+    tasks it takes on), and a **check** (an owner that returns `next` each run
+    until what it waits for happens).
+  - It never blocks the task it sits in. A task waits on a script by being
+    assigned to it; `owns` assigns them as it is added. Done (or cancelled), it
+    lets go of what it still has: each task goes back to its owner, unless
+    someone else has it.
+  - `source` is a body: `context` (`{ script, item, tasks, now, trigger }`) and
+    `tools` in scope, top-level `await` and `return`. A function expression
+    (`async (ctx, actions) => …`) is called with the same two, for older scripts.
+  - It returns `{ messages: [{ item, text }], assign: [{ item, to }], next,
+    state, done, data }`, all optional. `next` (ms, ISO, or `+5m`) is when it runs
+    again, kept as its `wake_at` so a restart wakes it then; with no `next` it
+    waits for a press. `schedule` (seconds) is still honoured for older scripts.
+  - Unsafe tools only when a person presses play (`runNow`, by them); on a
+    schedule never, whoever wrote it.
+  - `run_script` runs a body once, now, with the caller's tools.
 ## People, and who has what
 
 - A **person** is a `user` event, in no item, whose id is their **username**.
@@ -223,7 +227,7 @@ There is one list of **actions**, and every call goes through `Engine.callAction
 
 - **Unsafe** actions change something outside this app, and only the human runs
   one, through an `approval` event. No agent gets them: both MCP endpoints leave
-  them out, scripts an agent wrote get none, and `callAction` refuses them to
+  them out, a script gets them only when a person presses its play button, and `callAction` refuses them to
   anyone but the human. See the unsafe rule in AGENTS.md.
 - Every other action is the same for every agent, a bot or anything connected:
   `add_events`, `cancel_event` and `close_item` included, on any item. A bot can

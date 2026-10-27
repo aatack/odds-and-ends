@@ -176,6 +176,16 @@ export interface Overview {
   users: User[]
   /** Whoever (people and bots) the person looking assigned things to, the most recent first: the chat input offers them first. */
   recentAssignees: string[]
+  /** The open scripts that have tasks: who they are, as an assignee. */
+  scripts: ScriptOwner[]
+}
+
+/** A script that has tasks: its description as its name, when it runs next, and whether it is running now. */
+export interface ScriptOwner {
+  id: string
+  name: string
+  wakesAt: number | null
+  running: boolean
 }
 
 /** A JSON Schema for a flat object, as far as the forms read it. */

@@ -177,24 +177,29 @@ behaviours.push(async ({ prompt, sessionId, resume }) => {
   assert.equal(sessionId, session, 'one session for the bot, across its runs')
   assert.match(prompt, /\[task: Answer the PR\]/)
   assert.doesNotMatch(prompt, /Reply to the PR, please/, 'what the session has seen is not sent again')
-  return out({ item: id, events: [{ type: 'script', params: { description: 'CI', source: 'async (ctx) => (ctx.state ? { done: true, message: "CI passed" } : { done: false, state: 1 })', schedule: [1] } }] })
+  // It hands the task to a script that checks CI: the script owns it, and hands it back when CI passes.
+  return out({
+    item: id,
+    events: [{ type: 'script', params: { description: 'CI', wake_at: '+1s', owns: [id], source: `if (!context.state) return { state: 1, next: '+1s' }
+return { messages: [{ text: 'CI passed' }], assign: [{ item: context.tasks[0].id, to: ['Threepio'] }], done: true }` } }],
+  })
 })
 await toBot(id, 'Wait for CI')
 await settle()
-assert.deepEqual(item(id).assignees, [threepio], 'it added a wait, so it keeps the item')
-clock += 1000
-await tick()
-clock += 1000
-await tick()
-assert.deepEqual(blockers(id), [])
-assert.equal(last(id, 'script').message, 'CI passed')
-assert.equal(engine.agent(threepio)!.wakesAt! > clock, true, 'news in its items is not something happening to it')
+const ci = last(id, 'script').id
+assert.deepEqual(item(id).assignees, [ci], 'the script has the task now, and the bot has let go of it')
+assert.deepEqual(blockers(id), [], 'a script never blocks the task it sits in')
+assert.equal(item(id).withYou, false)
 behaviours.push(async ({ prompt }) => {
-  assert.match(prompt, /\[CI passed\]/)
+  assert.match(prompt, /CI passed/)
   return out({ item: id, message: 'All green.', assign: ['human'] })
 })
-clock += PERIODIC_MINUTES * MINUTE
+clock += 1000
+await tick()
+clock += 1000
+await tick()
 await settle()
+assert.ok(engine.event(ci)!.resolved)
 assert.deepEqual(item(id).assignees, ['human'])
 await engine.close(id)
 assert.ok(item(id).closed)
@@ -380,6 +385,40 @@ await engine.close(bad)
   await tick()
   assert.match(last(counting, 'script').message!, /unsafe/)
   assert.deepEqual(posted, ['Thanks a lot!'])
+  // The new shape: a body, watching several tasks at once, saying something in each, waking when it asks.
+  const a = (await engine.create('Watched A'))!
+  const b = (await engine.create('Watched B'))!
+  const [watch] = await engine.addEvents(counting, [{ type: 'script', params: { description: 'Watch two', wake_at: clock + 5000, owns: [a, b], source: `
+    const n = (context.state ?? 0) + 1
+    if (n < 2) return { state: n, next: '+1m', messages: context.tasks.map((t) => ({ item: t.id, text: 'Still waiting on ' + t.title })) }
+    return { assign: [{ item: context.tasks[0].id, to: ['human'] }], done: true, data: { n } }` } }])
+  assert.deepEqual([item(a).assignees, item(b).assignees], [['human', watch], ['human', watch]], 'it owns both, beside who had them')
+  assert.deepEqual(blockers(counting), [], 'it blocks nothing')
+  await tick()
+  assert.equal(engine.event(watch)!.runs, 0, 'not before its wake_at')
+  clock += 5000
+  await tick()
+  assert.deepEqual([last(a, 'note').params.text, last(b, 'note').params.text], ['Still waiting on Watched A', 'Still waiting on Watched B'])
+  assert.equal(engine.event(watch)!.params.wake_at, clock + MINUTE, 'its next wake is kept, for a restart')
+  clock += MINUTE
+  await tick()
+  assert.deepEqual(engine.event(watch)!.data!.result, { n: 2 })
+  assert.deepEqual([item(a).assignees, item(b).assignees], [['human'], ['human']], 'done, it lets go of what it still had')
+  // Unsafe tools: a person's press has them; a schedule never.
+  const unsafeSource = `await tools.post_somewhere({ text: 'pressed' }); return { done: true }`
+  const [press] = await engine.addEvents(counting, [{ type: 'script', params: { source: unsafeSource } }], 'bot', 'bot')
+  await engine.runNow(press, 'human')
+  assert.ok(engine.event(press)!.resolved && !engine.event(press)!.data!.error, 'pressed by a person, it may act outside')
+  assert.equal(posted.at(-1), 'pressed')
+  const [timed] = await engine.addEvents(counting, [{ type: 'script', params: { source: unsafeSource, wake_at: clock } }], 'human')
+  await tick()
+  assert.match(String(engine.event(timed)!.data!.error), /unsafe/, 'on a schedule, never: whoever wrote it')
+  // run_script: once, now, with the tools; an agent gets no unsafe ones.
+  const ran = (await engine.callAction('run_script', { source: 'return (await tools.list_items({})).length + context.n', context: { n: 1 } }, { engine, author: 'bot', actor: 'bot', itemId: null, runId: null })) as { result: number }
+  assert.equal(typeof ran.result, 'number')
+  await assert.rejects(engine.callAction('run_script', { source: unsafeSource }, { engine, author: 'bot', actor: 'bot', itemId: null, runId: null }), /unsafe/)
+  await engine.close(a)
+  await engine.close(b)
   await engine.close(counting)
 }
 

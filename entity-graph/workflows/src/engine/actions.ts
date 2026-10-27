@@ -2,6 +2,7 @@
 // the one list both MCP scopes serve and scripts are handed.
 
 import { z } from 'zod'
+import { runScript } from './script'
 import type { EventSpec } from '../shared/types'
 import type { Action } from './integrations'
 import { PARADIGM } from './paradigm'
@@ -179,6 +180,20 @@ export const itemActions: Action[] = [
       const d = engine.detail(String(a.item_id))
       if (!d) throw new Error(`No item ${a.item_id}.`)
       return d
+    },
+  },
+  {
+    name: 'run_script',
+    unsafe: false,
+    description:
+      'Run JavaScript now, once, in the app: `source` is the body of an async function with `context` (what you pass, plus now) and `tools` ' +
+      '(every tool here, as tools.<name>(args); never the unsafe ones for an agent) in scope; it may await and return. Answers { result, logs }. ' +
+      'For code that should run again, or own a task, add a script event instead (see event_types).',
+    input: { source: z.string(), context: z.record(z.unknown()).optional() },
+    run: async (a, ctx) => {
+      const context = { ...((a.context as Record<string, unknown>) ?? {}), now: new Date(ctx.engine.now()).toISOString(), trigger: ctx.author === 'human' ? 'press' : 'agent' }
+      const ran = await runScript(String(a.source), context, (name, args) => ctx.engine.callAction(name, args, { ...ctx, actor: ctx.author === 'human' ? ctx.actor : 'script' }))
+      return { result: ran.value, logs: ran.logs }
     },
   },
   {

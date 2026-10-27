@@ -90,12 +90,11 @@ export const FOCUS: Record<EventKind, 'chat' | 'details'> = {
 }
 
 /**
- * A script: what it waits for; then a tick and what it finished with, once done; a play button, if it has no
- * schedule (it runs when pressed); or else how many times it has run and when it runs next.
+ * A script: what it does; then a tick and what it finished with, once done. While open: when it runs next (if it
+ * asked to), and a play button, always: pressed, it runs now, with the unsafe tools a person's press brings.
  */
 function ScriptCard({ event: e, act, find }: { event: ItemEvent; act: Act; find: string }) {
   const now = useNow()
-  const scheduled = Array.isArray(e.params.schedule) && (e.params.schedule as unknown[]).length > 0
   const error = typeof e.data?.error === 'string' ? e.data.error : null
   const result = e.data?.message ?? (e.data?.result === undefined || e.data?.result === null ? null : e.data.result)
   return (
@@ -104,18 +103,21 @@ function ScriptCard({ event: e, act, find }: { event: ItemEvent; act: Act; find:
         <Markdown className="script-what" text={e.summary} highlight={find} />
         {e.resolved ? (
           <CircleCheck className={`icon ${error ? 'script-failed' : 'script-done'}`} aria-label={error ? 'Failed' : 'Done'} />
-        ) : !scheduled ? (
-          <button data-ui className="script-play" title="Run it" aria-label="Run it" onClick={() => void act(() => api().runNow(e.id))}>
-            <Play className="icon" />
-          </button>
         ) : (
-          <span className="script-timer muted" title={e.nextCheckAt ? time(e.nextCheckAt) : undefined}>
-            <Timer className="icon" />
-            {e.runs}× · {e.nextCheckAt ? (e.nextCheckAt > now ? `in ${minutes(e.nextCheckAt - now)}` : 'now') : '…'}
-          </span>
+          <>
+            {e.nextCheckAt !== null && (
+              <span className="script-timer muted" title={time(e.nextCheckAt)}>
+                <Timer className="icon" />
+                {e.runs}× · {e.nextCheckAt > now ? `in ${minutes(e.nextCheckAt - now)}` : 'now'}
+              </span>
+            )}
+            <button data-ui className="script-play" title="Run it now" aria-label="Run it now" onClick={() => void act(() => api().runNow(e.id))}>
+              <Play className="icon" />
+            </button>
+          </>
         )}
       </div>
-      {!e.resolved && !scheduled && e.runs > 0 && <div className="muted script-runs">Run {e.runs}× and not done yet.</div>}
+      {!e.resolved && e.nextCheckAt === null && e.runs > 0 && <div className="muted script-runs">Run {e.runs}× and not done yet.</div>}
       {e.lastError && !e.resolved && <div className="error-text">{e.lastError}</div>}
       {e.resolved && error && <div className="error-text">{error}</div>}
       {e.resolved && !error && result !== null && (
