@@ -57,6 +57,8 @@ export interface ItemEvent {
   lastError: string | null
   /** How many times it has been checked (a script, run) since the app started. */
   runs: number
+  /** Who reacted to it (a thumbs-up): people's usernames, or bots' actors (`bot:<id>`). */
+  reactions: string[]
 }
 
 /** A task (or a bot, for its own chat), as the lists and its view read it. */
@@ -268,6 +270,8 @@ export interface WorkflowsAPI {
   /** Runs an open script that has no schedule, once. */
   runNow: (eventId: string) => Promise<void>
   close: (id: string) => Promise<void>
+  /** Turns the person's thumbs-up on an event on or off. */
+  react: (eventId: string, on: boolean) => Promise<void>
   customActions: () => Promise<CustomAction[]>
   saveCustomAction: (a: Omit<CustomAction, 'id'> & { id?: string }) => Promise<CustomAction>
   removeCustomAction: (id: string) => Promise<void>
@@ -331,7 +335,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close',
+  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'react',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'mcp', 'regenerateMcpToken', 'setMcpPort',
 ] as const satisfies readonly ApiMethod[]

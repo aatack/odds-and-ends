@@ -49,6 +49,11 @@ const file = join(dir, 'round-trip.egdb')
   await engine.checkDue()
   const run = engine.startRun(bot, [id])
   await engine.endRun(run, { exitCode: 0, structured: { updates: [{ item: id, message: 'Hi.', assign: ['alex'] }] }, costUsd: 0.5 })
+  // A thumbs-up is a `reactions` value on the event: those who gave one.
+  const hi = engine.detail(id)!.events.find((e) => e.params.text === 'Hi.')!.id
+  await engine.react(hi, true, 'alex')
+  await engine.react(hi, true, `bot:${bot}`)
+  await engine.react(hi, false, `bot:${bot}`)
   engine.customActions.save({ type: 'task', name: 'Hello', description: 'd', notes: 'n', source: 'async () => "hi"', icon: 'zap', important: true })
   engine.settings.set('mcp.port', 1234)
   const done = (await engine.create('Done'))!
@@ -73,6 +78,8 @@ const file = join(dir, 'round-trip.egdb')
     before.detail.events.map((e) => [e.id, e.type, e.params, e.data, e.resolved, e.createdBy]))
   assert.ok(after.detail.events.filter((e) => !e.resolved && e.type !== 'task').every((e) => e.nextCheckAt === clock))
   assert.equal(again.store.events.get(after.detail.events.filter((e) => e.type === 'script').at(-1)!.id)!.memo, 41)
+  assert.deepEqual(after.detail.events.find((e) => e.id === hi)!.reactions, ['alex'])
+  assert.ok(after.detail.events.filter((e) => e.id !== hi).every((e) => e.reactions.length === 0))
   // Who made each event, and when, is the link to it.
   assert.deepEqual(after.detail.events.map((e) => [e.createdAt, e.createdBy]), before.detail.events.map((e) => [e.createdAt, e.createdBy]))
   assert.deepEqual(after.bot.lastRun, before.bot.lastRun)

@@ -191,6 +191,7 @@ export class Engine extends EventEmitter {
       nextCheckAt: r.next_check_at,
       runs: r.runs,
       lastError: r.last_error,
+      reactions: r.reactions,
     }
   }
 
@@ -329,6 +330,15 @@ export class Engine extends EventEmitter {
     const t = title.trim()
     if (!t || this.must(itemId).title === t) return
     this.store.setParams(itemId, { ...this.row(itemId)!.params, title: t }, actor, this.now())
+    this.emit('change')
+  }
+
+  /** Turns `actor`'s reaction (a thumbs-up) to an event on or off. */
+  async react(eventId: string, on: boolean, actor = this.me()): Promise<void> {
+    const row = this.row(eventId)
+    if (!row) throw new Error(`No event ${eventId}.`)
+    if (row.reactions.includes(actor) === on) return
+    this.store.setReactions(eventId, on ? [...row.reactions, actor] : row.reactions.filter((r) => r !== actor), actor, this.now())
     this.emit('change')
   }
 
@@ -826,7 +836,7 @@ export class Engine extends EventEmitter {
       this.store.insertEvent({
         id, parent_id: parentId, seq: seq + i, type: spec.type, params, created_by: createdBy, created_at: at,
         resolved: !type.blocking, resolved_at: type.blocking ? null : at, resolved_by: type.blocking ? null : createdBy, cancelled: false,
-        data: null, memo: null, check_step: 0, next_check_at: type.check && this.scheduleOf(type, params) ? at + this.scheduleOf(type, params)![0] * 1000 : null, last_error: null,
+        data: null, memo: null, reactions: [], check_step: 0, next_check_at: type.check && this.scheduleOf(type, params) ? at + this.scheduleOf(type, params)![0] * 1000 : null, last_error: null,
         runs: 0, added_n: 0, resolved_n: 0,
       })
       if (spec.type === 'task') {

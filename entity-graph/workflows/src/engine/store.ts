@@ -41,6 +41,8 @@ export interface EventRow {
   data: Record<string, unknown> | null
   /** What a script handed on to its next run. */
   memo: unknown
+  /** Who reacted to it (a thumbs-up): people's usernames, or bots' actors. */
+  reactions: string[]
   // In memory only.
   check_step: number
   next_check_at: number | null
@@ -98,7 +100,7 @@ export interface Sink {
 export const ROOT = '@root'
 /** The values an event keeps beside its params. */
 // (`resolved_at` and `resolved_by` are from a build that kept them: they are read, and never written.)
-export const STATE_KEYS = new Set(['type', 'resolved', 'resolved_at', 'resolved_by', 'cancelled', 'data', 'state'])
+export const STATE_KEYS = new Set(['type', 'resolved', 'resolved_at', 'resolved_by', 'cancelled', 'data', 'state', 'reactions'])
 
 /** One value as egdb takes it: a JSON-ish value as is, anything else (undefined) as null, which clears the key. */
 const v = (x: unknown): Value => (x === undefined ? null : (x as Value))
@@ -222,6 +224,14 @@ export class Store {
     if (!row) throw new Error(`No event ${id}.`)
     row.memo = state ?? null
     this.out([set(id, 'state', state ?? null)], 'system', at)
+  }
+
+  /** Who reacted to an event, as `by` changed it at `at`. */
+  setReactions(id: string, reactions: string[], by: string, at: number): void {
+    const row = this.events.get(id)
+    if (!row) throw new Error(`No event ${id}.`)
+    row.reactions = reactions
+    this.out([set(id, 'reactions', reactions)], by, at)
   }
 
   /** The events in an item (or, for null, those in none), by seq. */
@@ -371,6 +381,7 @@ export function eventFromValues(
     cancelled: x.cancelled === true,
     data: obj(x.data),
     memo: x.state ?? null,
+    reactions: Array.isArray(x.reactions) ? x.reactions.filter((r): r is string => typeof r === 'string') : [],
     check_step: 0,
     // Waits are checked at once after a restart.
     next_check_at: null,

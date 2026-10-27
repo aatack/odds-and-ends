@@ -113,6 +113,18 @@ code { font-family: var(--font-mono); font-size: 12px; }
 .bubble-row { display: flex; }
 .bubble-row.mine { justify-content: flex-end; }
 .bubble-row.theirs { justify-content: flex-start; }
+/* A bubble, and its thumbs-ups under it: a count once there are any, else a button shown while the mouse is over it. */
+.bubble-stack { position: relative; display: flex; flex-direction: column; max-width: 75%; min-width: 0; }
+.mine .bubble-stack { align-items: flex-end; }
+.theirs .bubble-stack { align-items: flex-start; }
+.bubble-stack .bubble { max-width: 100%; }
+button[data-ui].reaction { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; padding: 1px 7px; font-size: 11px; border-radius: 9px; color: var(--muted); background: var(--color-gray-100); visibility: hidden; }
+button[data-ui].reaction .icon { width: 12px; height: 12px; }
+button[data-ui].reaction.some, .bubble-row:hover button[data-ui].reaction { visibility: visible; }
+button[data-ui].reaction:not(.some) { position: absolute; bottom: -6px; background: var(--panel); box-shadow: var(--shadow-xs); }
+.mine button[data-ui].reaction:not(.some) { left: -10px; }
+.theirs button[data-ui].reaction:not(.some) { right: -10px; }
+button[data-ui].reaction.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, var(--panel)); }
 .bubble { max-width: 75%; padding: 8px 12px; border-radius: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .theirs .bubble { background: var(--color-gray-100); border-bottom-left-radius: 4px; }
 .mine .bubble { background: color-mix(in srgb, var(--accent) 35%, var(--panel)); border-bottom-right-radius: 4px; }

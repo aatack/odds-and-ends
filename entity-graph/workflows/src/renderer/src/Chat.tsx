@@ -1,4 +1,4 @@
-import { CircleCheck, Play, Timer } from 'lucide-react'
+import { CircleCheck, Play, ThumbsUp, Timer } from 'lucide-react'
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import type { Catalog, ItemDetail, ItemEvent, Overview } from '../../shared/types'
 import { isPerson, nameOf } from './people'
@@ -68,6 +68,7 @@ export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: C
             key={e.id}
             event={e}
             mine={e.createdBy === overview.me.id}
+            me={overview.me.id}
             who={isPerson(overview, e.createdBy) ? nameOf(overview, e.createdBy) : null}
             find={find}
             catalog={catalog}
@@ -80,19 +81,33 @@ export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: C
   )
 }
 
-type MessageProps = { event: ItemEvent; mine: boolean; who: string | null; find: string; catalog: Catalog; act: Act; onOpen: (id: string) => void }
+type MessageProps = { event: ItemEvent; mine: boolean; me: string; who: string | null; find: string; catalog: Catalog; act: Act; onOpen: (id: string) => void }
 
 /** One event, as a message: right-click it to open it or debug it. Drawn again only when something it shows changed. */
 const Message = memo(function Message(props: MessageProps) {
-  const { event: e, mine, who } = props
+  const { event: e, mine, me, who, act } = props
   const menu = useEventMenu()
+  // Thumbs-ups: a count under the bubble (pressing it toggles yours), or, with none yet, a button shown on hover.
+  const reacted = e.reactions.includes(me)
+  const react = () => void act(() => api().react(e.id, !reacted))
   return (
     <div className={`bubble-row ${mine ? 'mine' : 'theirs'}`}>
       {!mine && <Avatar event={e} />}
-      <div className={`bubble bubble-${e.type}`} title={`${who ? `${who}, ` : ''}${time(e.createdAt)}`} {...menu(e.id)}>
-        {!mine && who && <span className="bubble-who">{who}</span>}
-        <Card {...props} />
-        <span className="bubble-time">{shortTime(e.createdAt)}</span>
+      <div className="bubble-stack">
+        <div className={`bubble bubble-${e.type}`} title={`${who ? `${who}, ` : ''}${time(e.createdAt)}`} {...menu(e.id)}>
+          {!mine && who && <span className="bubble-who">{who}</span>}
+          <Card {...props} />
+          <span className="bubble-time">{shortTime(e.createdAt)}</span>
+        </div>
+        <button
+          data-ui
+          className={`reaction ${e.reactions.length ? 'some' : ''} ${reacted ? 'on' : ''}`}
+          title={e.reactions.length ? `${e.reactions.length} thumbs up` : 'Thumbs up'}
+          onClick={react}
+        >
+          <ThumbsUp className="icon" />
+          {e.reactions.length > 0 && e.reactions.length}
+        </button>
       </div>
     </div>
   )

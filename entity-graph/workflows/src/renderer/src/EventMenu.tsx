@@ -1,8 +1,9 @@
 import { autoUpdate, flip, offset, shift, useFloating } from '@floating-ui/react-dom'
-import { useAtom, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { useEffect, useState, type MouseEvent } from 'react'
 import type { CustomAction, ItemEvent } from '../../shared/types'
 import { eventActions } from './eventActions'
+import { userAtom } from './people'
 import { api } from './useWorkflows'
 import { menuAtom, renameAtom, sameView, viewsAtom, type View } from './views'
 
@@ -35,6 +36,7 @@ export function EventMenu({
   const [menu, setMenu] = useAtom(menuAtom)
   const [views, setViews] = useAtom(viewsAtom)
   const setRename = useSetAtom(renameAtom)
+  const me = useAtomValue(userAtom)
   // The event itself, read as the menu opens, for which actions it has.
   const [event, setEvent] = useState<ItemEvent | null>(null)
   // Placed by Floating UI at the cursor: flipped above it, or shifted along, so it always stays in the window,
@@ -87,6 +89,17 @@ export function EventMenu({
           }}
         >
           Rename
+        </button>
+      )}
+      {/* A message (anything but a task, a bot or a person) can be given a thumbs-up. */}
+      {event?.id === menu.id && me && !['task', 'bot', 'user'].includes(event.type) && (
+        <button
+          onClick={() => {
+            setMenu(null)
+            void actOn(event.id)(() => api().react(event.id, !event.reactions.includes(me)))
+          }}
+        >
+          {event.reactions.includes(me) ? 'Remove thumbs up' : 'Thumbs up'}
         </button>
       )}
       {event?.id === menu.id &&
