@@ -219,7 +219,6 @@ button[data-ui].avatar:hover { background: var(--color-gray-300); filter: none; 
 .hint.below { position: static; display: block; padding-bottom: 4px; }
 /* The preset's name: the hint's own type, only bolder. */
 .hint b { font: inherit; font-weight: 550; color: var(--color-gray-600); }
-/* On a new task: what was attached lately, to group it with. */
 .gather { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .gather-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
 button[data-ui].gather-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 260px; padding: 2px 10px; border-radius: 10px; background: var(--color-gray-100); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

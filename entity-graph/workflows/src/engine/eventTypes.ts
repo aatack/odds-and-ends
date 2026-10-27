@@ -11,7 +11,7 @@ const timeout = { timeout_minutes: z.number().optional().describe('Resolve as ti
 export const task: EventType = {
   type: 'task',
   description:
-    'A task: a thing to be done. Its events sit in it, child tasks included, and it blocks the task it sits in until it closes. ' +
+    'A task: a thing to be done. Its events sit in it, other tasks included; a task in another blocks nothing and is not closed with it. ' +
     'Add one to split work off: give it its first events (e.g. a note) in `events`, and who has it in `assignees`. With no ' +
     "assignees, it is its maker's if a person made it, and nobody's otherwise.",
   params: {
@@ -24,7 +24,7 @@ export const task: EventType = {
     detached: z
       .boolean()
       .optional()
-      .describe('Put it in no task, rather than the one it is added in: for work unrelated to this task, which should not block it.'),
+      .describe('Put it in no task, rather than the one it is added in: for work unrelated to this task.'),
     assignees: z
       .array(z.string())
       .optional()

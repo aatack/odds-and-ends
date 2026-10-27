@@ -97,7 +97,8 @@ window: there `window.workflows` is the preload's, as always.
 
 - Everything is an **event**, tasks included: one tree, held in egdb as entities joined by `contains` links. A
   task's children are its history. Some events resolve as they are added (a note); **blockers**
-  wait until something happens (an approval, a child task closes).
+  wait until something happens (an approval). Tasks don't depend on, or attach to, each other: a task in
+  another is a card in its chat, and blocks nothing (dependencies are to come back with the wake rules).
   There are seven types: `task`, `note`, `approval`, `script`, `process`, `bot` and `user` (a person).
 - **People** are items too (`user` events, in no item, whose id is their username); they sign in to the
   app by typing their username (no password: the app is local). Tasks are **assigned** to people and

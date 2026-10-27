@@ -232,7 +232,7 @@ export const itemActions: Action[] = [
   {
     name: 'cancel_event',
     unsafe: false,
-    description: 'End a blocker without it happening (a child item is closed as cancelled).',
+    description: 'End a blocker without it happening (a task is closed as cancelled).',
     input: { event_id: z.string() },
     run: async (a, ctx) => {
       await ctx.engine.cancel(String(a.event_id), ctx.actor)
@@ -252,7 +252,7 @@ export const itemActions: Action[] = [
   {
     name: 'close_item',
     unsafe: false,
-    description: 'Close an item: its open children are cancelled, child items closed, all the way down.',
+    description: 'Close an item: its open blockers are cancelled. Tasks in it are left open.',
     input: { item_id: itemId },
     run: async (a, ctx) => {
       await ctx.engine.close(String(a.item_id), { actor: ctx.actor })

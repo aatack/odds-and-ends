@@ -8,7 +8,7 @@ and *item* is the general word for one.
   form one tree. Its children are its history.
 - A plain event resolves as it is added: a note.
 - A **blocker** is an event that stays unresolved until something happens: a
-  script says it is done, a person approves, a child item closes.
+  a person approves. Tasks don't block each other.
 - An item is **assigned** to people and to bots (`assigned_to` links, not events).
   A person is a `user` event and a bot a `bot` event, each in no item. See
   [People, and who has what](#people-and-who-has-what) and [Bots](#bots).
@@ -232,5 +232,4 @@ There is one list of **actions**, and every call goes through `Engine.callAction
 - Every other action is the same for every agent, a bot or anything connected:
   `add_events`, `cancel_event` and `close_item` included, on any item. A bot can
   also add events through its output, and a script by what it returns.
-- Closing an item cancels its open children, closing child items as cancelled,
-  all the way down.
+- Closing an item cancels its open blockers; tasks in it are left open.

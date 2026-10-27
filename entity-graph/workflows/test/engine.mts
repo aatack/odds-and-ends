@@ -204,7 +204,7 @@ assert.deepEqual(item(id).assignees, ['human'])
 await engine.close(id)
 assert.ok(item(id).closed)
 
-// ---- 5. Child items: a bot splits work off, gives it to itself, and hears of it closing ----
+// ---- 5. Child tasks: a bot splits work off and gives it to itself; the child blocks nothing ----
 const parent = (await engine.create('Parent'))!
 behaviours.push(async () =>
   out({
@@ -215,22 +215,22 @@ behaviours.push(async () =>
 behaviours.push(async ({ prompt }) => {
   assert.match(prompt, /\[new to you: Child\]/)
   assert.match(prompt, /Do the child/)
-  assert.match(prompt, /\[task: Parent\]\n\n\[nothing new\]/, 'every item it has, with only what is new in each')
   const kid = engine.children(parent).find((e) => e.type === 'task')!.id
   return out({ item: kid, message: 'Child done.', close: true })
 })
-behaviours.push(async ({ prompt }) => {
-  assert.match(prompt, /\[Child: closed\]/, 'a child closing is news for its parent, even when the bot closed it')
-  return out({ item: parent, message: 'All done.', close: true })
-})
 await toBot(parent, 'Split it')
 await settle()
-assert.equal(behaviours.length, 2, 'what it did itself is not something happening to it')
+assert.deepEqual(blockers(parent), [], 'a task in another is no dependency of it')
+assert.ok(item(parent).withYou, 'so the parent went back to its owner')
 clock += PERIODIC_MINUTES * MINUTE
 await settle()
-clock += PERIODIC_MINUTES * MINUTE
-await settle()
-assert.ok(item(parent).closed)
+const kid = engine.children(parent).find((e) => e.type === 'task')!.id
+assert.ok(item(kid).closed)
+// Closing a task leaves the tasks in it as they are.
+const [loose] = await engine.addEvents(parent, [{ type: 'task', params: { title: 'Still open' } }])
+await engine.close(parent)
+assert.ok(item(parent).closed && !item(loose).closed)
+await engine.close(loose)
 // A bot can also add an item that sits in no item: it blocks nothing, and it is nobody's unless the bot says.
 {
   const host = (await engine.create('Host'))!

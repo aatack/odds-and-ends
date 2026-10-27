@@ -237,8 +237,8 @@ export class Engine extends EventEmitter {
   private toItem(r: EventRow, viewer = this.me()): Item {
     const id = r.id
     const kids = this.store.children(id)
-    // A script never blocks the task it sits in: a task waits on one by being assigned to it.
-    const blockers = kids.filter((k) => !k.resolved && k.type !== 'script').map((k) => this.toEvent(k))
+    // Neither a script nor a task sits in another as a dependency: a task waits on something by being assigned to it.
+    const blockers = kids.filter((k) => !k.resolved && k.type !== 'script' && k.type !== 'task').map((k) => this.toEvent(k))
     const assignees = this.assignees(id)
     const touched = Math.max(
       r.created_at,
@@ -1021,13 +1021,11 @@ export class Engine extends EventEmitter {
     if (actor !== 'script') await this.idle()
   }
 
-  /** Closes a task: its open children are cancelled (child tasks closed, all the way down), then it resolves. */
+  /** Closes a task: its open blockers are cancelled, then it resolves. Tasks in it are left as they are: they don't depend on it. */
   async close(itemId: string, opts: { actor?: string; how?: 'closed' | 'cancelled' } = {}): Promise<void> {
     const actor = opts.actor ?? this.me()
     const shut = (id: string, how: string) => {
-      for (const b of this.children(id, true))
-        if (b.type === 'task') shut(b.id, 'cancelled')
-        else this.resolve(b.id, { cancelled: true, detail: 'Its task closed.' }, actor, true)
+      for (const b of this.children(id, true)) if (b.type !== 'task') this.resolve(b.id, { cancelled: true, detail: 'Its task closed.' }, actor, true)
       this.resolve(id, { how }, actor, false)
     }
     const item = this.must(itemId)
