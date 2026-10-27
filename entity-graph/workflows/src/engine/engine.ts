@@ -1,3 +1,5 @@
+import { BUILTIN_SECTIONS, DEFAULT_SECTIONS, matches, type SearchRow, type SearchSection } from '../shared/search'
+import { runScript } from './script'
 import { github } from './github'
 import { slackActions } from './slack'
 import { Processes } from './processes'
@@ -356,6 +358,63 @@ export class Engine extends EventEmitter {
     if (!t || this.must(itemId).title === t) return
     this.store.setParams(itemId, { ...this.row(itemId)!.params, title: t }, actor, this.now())
     this.emit('change')
+  }
+
+  /** The search page's sections, as kept on the `search` item; the defaults when there is none. */
+  searchSections(): SearchSection[] {
+    const r = this.store.ofType('search')[0]
+    return r && Array.isArray(r.params.sections) ? (r.params.sections as SearchSection[]) : DEFAULT_SECTIONS
+  }
+
+  /** Replaces the search page's sections (null: the defaults again), checking each; the `search` item is made the first time. */
+  async setSearchSections(sections: SearchSection[] | null, actor = this.me()): Promise<void> {
+    const next = sections ?? DEFAULT_SECTIONS
+    for (const s of next) {
+      if (s.kind === 'builtin' && !(BUILTIN_SECTIONS as readonly string[]).includes(s.id)) throw new Error(`No built-in section ${s.id}: one of ${BUILTIN_SECTIONS.join(', ')}.`)
+      else if (s.kind === 'query') matches({}, s.filter)
+      else if (s.kind === 'function' && !String(s.source ?? '').trim()) throw new Error(`The function section ${s.label} has no source.`)
+      else if (!['builtin', 'query', 'function'].includes(s.kind)) throw new Error(`A section's kind is builtin, query or function, not ${(s as { kind: string }).kind}.`)
+    }
+    const r = this.store.ofType('search')[0]
+    if (r) this.store.setParams(r.id, { ...r.params, sections: next }, actor, this.now())
+    else this.add(null, [{ type: 'search', params: { sections: next } }], actor)
+    this.emit('change')
+  }
+
+  /** A query's or a function's rows, for what is typed (a function is told it; a query's rows are filtered by the finder). */
+  async runSearchSection(section: SearchSection, text: string): Promise<SearchRow[]> {
+    if (section.kind === 'query') {
+      const rows = [...this.store.events.values()]
+        .filter((r) => r.type !== 'search' && matches(this.valuesOf(r), section.filter))
+        .sort((a, b) => b.created_at - a.created_at)
+        .slice(0, section.limit ?? 50)
+      return rows.map((r) => {
+        const e = this.toEvent(r)
+        return { id: r.id, type: r.type, left: e.summary, right: r.resolved && this.type(r.type).blocking ? (r.cancelled ? 'cancelled' : 'closed') : '' }
+      })
+    }
+    if (section.kind === 'function') {
+      const ran = await runScript(section.source, { text, now: new Date(this.now()).toISOString() }, (name, args) =>
+        this.callAction(name, args, { engine: this, author: 'bot', actor: 'script', itemId: null, runId: null }),
+      )
+      if (!Array.isArray(ran.value)) throw new Error(`${section.label}: it returned ${JSON.stringify(ran.value)?.slice(0, 100)}, not a list of rows.`)
+      return (ran.value as SearchRow[]).filter((x) => x && typeof x.id === 'string').map((x) => ({ id: x.id, type: String(x.type ?? 'task'), left: String(x.left ?? x.id), right: x.right ? String(x.right) : '' }))
+    }
+    return []
+  }
+
+  /** An event's values, as a query reads them: its type and params, how it stands, and keys made from its links. */
+  private valuesOf(r: EventRow): Record<string, unknown> {
+    return {
+      ...r.params,
+      type: r.type,
+      resolved: r.resolved,
+      cancelled: r.cancelled,
+      parent: r.parent_id,
+      assignees: r.type === 'task' ? this.assignees(r.id) : [],
+      created_by: r.created_by,
+      created_at: r.created_at,
+    }
   }
 
   /** Changes a widget's state: a value on its event (egdb keeps every one before). */
@@ -875,7 +934,8 @@ export class Engine extends EventEmitter {
     if (detached.length) return [...this.addNow(parentId, specs.filter((s) => !detached.includes(s)), createdBy), ...this.addNow(null, detached, createdBy)]
     const keyed = (s: EventSpec) => s.type === 'task' && s.params.key && this.store.ofType('task').some((r) => r.params.key === s.params.key)
     specs = specs.filter((s) => !keyed(s))
-    if (!parentId && specs.some((s) => !['task', 'bot', 'user'].includes(s.type))) throw new Error('Only a task, a bot or a person can sit in no task.')
+    if (!parentId && specs.some((s) => !['task', 'bot', 'user', 'search'].includes(s.type))) throw new Error('Only a task, a bot, a person or the search item can sit in no task.')
+    if (parentId && specs.some((s) => s.type === 'search')) throw new Error('The search item sits in no task.')
     if (parentId && this.row(parentId)?.type === 'bot' && specs.some((s) => s.type !== 'note')) throw new Error("A bot's own chat holds only notes.")
     const ids: string[] = []
     const seq = this.store.nextSeq(parentId)

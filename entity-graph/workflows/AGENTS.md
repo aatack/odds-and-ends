@@ -171,6 +171,15 @@ sending, deploying and deleting, in any integration.
   than the MCP's, so give bots no new credentials lightly.
 - `test/engine.mts` checks the rule. Keep those checks passing; never loosen them.
 
+## The search page
+
+Every finder (the Tasks view, `@`, the pickers: `ItemsList`) shows the same configured sections, kept as `sections` on
+the one `search` item (in no task; `src/shared/search.ts`). Each is built in (`sections.ts`), a **query** (egdb's
+`Filter`, run in memory over every event's values and `parent`, `assignees`, `created_by`, `created_at`), or a
+**function** (a script body answering rows `{ id, type, left, right }`, told what is typed). The ⚙ in the search line
+opens its page; bots read and change it with `search_sections` / `set_search_sections` (`SEARCH_DOC` says how). A
+caller can still pass its own `sections` (the assignee picker passes none).
+
 ## Integrations
 
 **This is how every integration works** (aatack's direction, Oct 2026). Each is an `Integration`

@@ -1,3 +1,5 @@
+import { createContext } from 'react'
+import { DEFAULT_SECTIONS, type SearchSection } from '../../shared/search'
 import type { Item, Overview } from '../../shared/types'
 import { withBot } from './icons'
 
@@ -37,7 +39,6 @@ export const SECTIONS: Record<SectionId, Section> = {
   closed: { label: 'Closed today', items: (items) => items.filter((i) => i.closed) },
 }
 
-/** The Tasks view's sections: every item, by whose turn it is. */
-export const TASKS_SECTIONS: SectionId[] = ['needsYou', 'withBots', 'waiting', 'closed']
-/** A picker's: what was in hand lately, then the rest. */
-export const PICKER_SECTIONS: SectionId[] = ['viewed', 'needsYou', 'withBots', 'waiting', 'closed']
+
+/** The search page's sections as configured (the `search` item; the defaults until it is read): every finder's, unless it says. */
+export const SearchSectionsContext = createContext<SearchSection[]>(DEFAULT_SECTIONS)

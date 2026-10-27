@@ -10,4 +10,5 @@ export const PARADIGM = `How this works:
 - Keep traceability: link_events what a new task came from into it, and the new task into where it came from.
 - To split work off, add a task in this one (it shows as a card here, and blocks nothing), or with detached: true to file it on its own.
 - Changing anything outside this app (posting, merging, sending) is unsafe: only people do that.
+- The search page (the Tasks view and every picker) shows sections that are configurable: search_sections reads them, set_search_sections changes them (built-in sections, queries over events, or JavaScript functions answering rows).
 - Finding work: items_waiting_on (a username, bot, a bot's name, or a blocker type), next_for_human, list_items, get_item. event_types describes every event.`

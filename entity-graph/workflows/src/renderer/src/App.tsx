@@ -13,7 +13,9 @@ import { EventMenu } from './EventMenu'
 import { EventView } from './EventView'
 import { ItemPicker } from './ItemPicker'
 import { ItemsList } from './ItemsList'
-import { TASKS_SECTIONS } from './sections'
+import { SearchSectionsContext } from './sections'
+import { SearchPage } from './SearchPage'
+import { DEFAULT_SECTIONS, type SearchSection } from '../../shared/search'
 import { Composer } from './Composer'
 import { ItemRefContext } from './components/ui/Markdown'
 import { ItemRef } from './ItemRef'
@@ -148,8 +150,12 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
     },
     [byId, bots, users, open],
   )
+  // The search page's sections, as configured: read again whenever anything changes (a bot may have set them).
+  const [sections, setSections] = useState<SearchSection[] | null>(null)
+  useEffect(() => void api().searchSections().then(setSections), [items.overview])
   return (
     <ItemsContext.Provider value={items}>
+      <SearchSectionsContext.Provider value={sections ?? DEFAULT_SECTIONS}>
       <ItemRefContext.Provider value={itemRef}>
         <div className={`app ${mobile ? 'mobile' : ''}`}>
           <main className="main">
@@ -161,6 +167,7 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
         </div>
         <EventMenu actOn={items.actOn} skip={items.skip} custom={items.customActions} />
       </ItemRefContext.Provider>
+      </SearchSectionsContext.Provider>
     </ItemsContext.Provider>
   )
 }
@@ -294,6 +301,15 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
         </div>
       </div>
     )
+  if (w.view?.kind === 'search')
+    return (
+      <div className="view">
+        <ViewHeader canGoBack onBack={w.back} title="Search page sections" />
+        <div className="view-body">
+          <SearchPage />
+        </div>
+      </div>
+    )
   if (w.view?.kind === 'log')
     return (
       <div className="view">
@@ -325,7 +341,6 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
           <ItemsList
             items={w.overview.items}
             recent={w.recent}
-            sections={TASKS_SECTIONS}
             bots={w.overview.bots.filter((b) => !b.deleted).map((b) => ({ id: b.id, name: b.name, status: botStatus(b) }))}
             botsLabel="Bots"
             onEscape={w.views.length > 0 ? w.back : undefined}

@@ -22,6 +22,8 @@ export type View =
   | { kind: 'bots' }
   /** The edit log: of one event, given its id; else of everything. */
   | { kind: 'log'; id?: string }
+  /** The search page's sections, to configure. */
+  | { kind: 'search' }
 
 // Storage can throw (a private window, cleared site data): then the stack just isn't kept.
 const storage = createJSONStorage<View[]>(() => {

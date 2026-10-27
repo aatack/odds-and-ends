@@ -92,6 +92,7 @@ export const FOCUS: Record<EventKind, 'chat' | 'details'> = {
   script: 'details',
   process: 'details',
   widget: 'details',
+  search: 'details',
   slack_message: 'details',
   slack_channel: 'details',
   user: 'details',

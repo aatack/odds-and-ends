@@ -1,3 +1,4 @@
+import type { SearchRow, SearchSection } from './search'
 // The shapes the main process and the renderer both read. docs/events.md is the
 // long form of what an event is.
 
@@ -8,7 +9,7 @@
  * which stay open until something happens (a script says it is done, an approval
  * is given, a child item closes).
  */
-export type EventKind = 'task' | 'note' | 'approval' | 'script' | 'process' | 'widget' | 'slack_message' | 'slack_channel' | 'bot' | 'user'
+export type EventKind = 'task' | 'note' | 'approval' | 'script' | 'process' | 'widget' | 'search' | 'slack_message' | 'slack_channel' | 'bot' | 'user'
 
 /** An event as it is added. `ref` names it, so another added alongside can point at it. */
 export interface EventSpec {
@@ -356,6 +357,12 @@ export interface WorkflowsAPI {
   editLog: (query: LogQuery) => Promise<LogEntry[]>
   /** Adds events in a task, as the person signed in: what the chat input's default actions do. */
   addEvents: (itemId: string, events: EventSpec[]) => Promise<string[]>
+  /** The search page's sections (search.ts), as configured: the defaults when nothing is. */
+  searchSections: () => Promise<SearchSection[]>
+  /** Replaces the search page's sections; null goes back to the defaults. */
+  setSearchSections: (sections: SearchSection[] | null) => Promise<void>
+  /** A query or function section's rows, for what is typed. */
+  runSearchSection: (section: SearchSection, text: string) => Promise<SearchRow[]>
   /** Changes a widget's state. */
   setWidgetState: (eventId: string, state: unknown) => Promise<void>
   /** Turns the person's thumbs-up on an event on or off. */
@@ -491,7 +498,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addEvents', 'setWidgetState', 'processOutput', 'editLog',
+  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addEvents', 'searchSections', 'setSearchSections', 'runSearchSection', 'setWidgetState', 'processOutput', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'regeneratePhoneToken',

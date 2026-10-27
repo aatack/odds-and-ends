@@ -1,13 +1,16 @@
 import fuzzysort from 'fuzzysort'
-import { useAtomValue } from 'jotai'
-import { Bot, Check, Search, User } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useAtom, useAtomValue } from 'jotai'
+import { Bot, Check, Circle, Search, Settings2, User } from 'lucide-react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
+import type { SearchRow, SearchSection } from '../../shared/search'
+import { Markdown } from './components/ui/Markdown'
 import type { Item } from '../../shared/types'
 import { minutes } from './Chat'
 import { useEventMenu } from './EventMenu'
-import { ItemIcon, waitingOn } from './icons'
-import { SECTIONS, type Recent, type SectionId } from './sections'
-import { searchFocusAtom } from './views'
+import { ItemIcon, TYPE_ICON, waitingOn } from './icons'
+import { SearchSectionsContext, SECTIONS, type Recent } from './sections'
+import { api } from './useWorkflows'
+import { sameView, searchFocusAtom, viewsAtom } from './views'
 
 /**
  * What a row says beside its icon: only what the icon can't. What a script
@@ -29,7 +32,8 @@ type Someone = { id: string; name: string; bot?: boolean; status?: string }
 type Line =
   | { key: string; item: Item; chosen?: boolean }
   | { key: string; bot: Someone; chosen?: boolean }
-  | { key: string; more: SectionId; n: number }
+  | { key: string; row: SearchRow }
+  | { key: string; more: string; n: number }
 
 /**
  * The finder: items in sections (`sections`, in order; see `SECTIONS`), under a
@@ -45,7 +49,8 @@ type Line =
 export function ItemsList(props: {
   items: Item[]
   recent: Recent
-  sections: SectionId[]
+  /** Its sections, in order; left out, the search page's as configured (the `search` item). */
+  sections?: SearchSection[]
   perSection?: number
   /** Enter, or a click: the row chosen. */
   onOpen: (id: string) => void
@@ -63,10 +68,35 @@ export function ItemsList(props: {
   /** On a phone: buttons rather than keys (a New button for Tab), rows of two lines, and the search line focused only when asked (it raises the keyboard). */
   mobile?: boolean
 }) {
-  const { items, recent, sections, perSection = 12, onOpen, onTab, verb = 'Open', bots = [], botsLabel, selected, onEscape, mobile = false } = props
+  const configured = useContext(SearchSectionsContext)
+  const { items, recent, sections = configured, perSection = 12, onOpen, onTab, verb = 'Open', bots = [], botsLabel, selected, onEscape, mobile = false } = props
   const [text, setText] = useState('')
   const [at, setAt] = useState(0)
-  const [expanded, setExpanded] = useState<SectionId[]>([])
+  const [expanded, setExpanded] = useState<string[]>([])
+  // A query's or a function's rows: asked for again a moment after the typing stops (a function is told what is typed).
+  const [rows, setRows] = useState<Record<number, SearchRow[] | { error: string }>>({})
+  const asked = useMemo(() => JSON.stringify(sections.map((s) => (s.kind === 'builtin' ? null : s))), [sections])
+  useEffect(() => {
+    const wanted = sections.map((s, i) => [s, i] as const).filter(([s]) => s.kind !== 'builtin')
+    if (!wanted.length) return setRows({})
+    let live = true
+    const t = setTimeout(() => {
+      for (const [s, i] of wanted)
+        api()
+          .runSearchSection(s, text.trim())
+          .then(
+            (r) => live && setRows((all) => ({ ...all, [i]: r })),
+            (e: Error) => live && setRows((all) => ({ ...all, [i]: { error: e.message } })),
+          )
+    }, 250)
+    return () => {
+      live = false
+      clearTimeout(t)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asked, text])
+  const [views, setViews] = useAtom(viewsAtom)
+  const configure = () => !sameView(views[views.length - 1], { kind: 'search' }) && setViews([...views, { kind: 'search' }])
   const box = useRef<HTMLInputElement>(null)
   const menu = useEventMenu()
   const focusAsked = useAtomValue(searchFocusAtom)
@@ -95,8 +125,19 @@ export function ItemsList(props: {
       ? [{ id: 'bots', label: botsLabel ?? (selected ? 'Others' : 'People and bots'), count: botLines.length, lines: botLines }]
       : []
     const itemGroups = sections
-      .map((id) => {
-        let all = SECTIONS[id].items(items, recent)
+      .map((s, i) => {
+        const id = s.kind === 'builtin' ? s.id : `s${i}`
+        if (s.kind !== 'builtin') {
+          const got = rows[i]
+          if (got && 'error' in got) return { id, label: s.label, count: 1, lines: [{ key: `${id}:error`, row: { id: '', type: '', left: got.error } }] as Line[] }
+          let all = got ?? []
+          if (text.trim()) all = fuzzysort.go(text, all, { key: 'left', threshold: 0.2 }).map((r) => r.obj)
+          const shown = expanded.includes(id) ? all : all.slice(0, perSection)
+          const lines: Line[] = shown.map((row) => ({ key: `${id}:${row.id}`, row }))
+          if (shown.length < all.length) lines.push({ key: `${id}:more`, more: id, n: all.length - shown.length })
+          return { id, label: s.label, count: all.length, lines }
+        }
+        let all = SECTIONS[s.id].items(items, recent)
         all = all.filter((i) => !chosen.has(i.id))
         if (matched) {
           all = all.filter((i) => matched.has(i.id) && !seen.has(i.id)).sort((a, b) => matched.get(a.id)! - matched.get(b.id)!)
@@ -105,14 +146,15 @@ export function ItemsList(props: {
         const shown = expanded.includes(id) ? all : all.slice(0, perSection)
         const lines: Line[] = shown.map((item) => ({ key: `${id}:${item.id}`, item }))
         if (shown.length < all.length) lines.push({ key: `${id}:more`, more: id, n: all.length - shown.length })
-        return { id: id as string, label: SECTIONS[id].label, count: all.length, lines }
+        return { id, label: s.label ?? SECTIONS[s.id].label, count: all.length, lines }
       })
       .filter((g) => g.count)
     return botsLabel ? [...chosenGroup, ...itemGroups, ...botGroup] : [...chosenGroup, ...botGroup, ...itemGroups]
-  }, [items, recent, sections, perSection, expanded, text, bots, botsLabel, selected])
+  }, [items, recent, sections, rows, perSection, expanded, text, bots, botsLabel, selected])
   const flat = groups.flatMap((g) => g.lines)
   const current = Math.min(at, Math.max(flat.length - 1, 0))
-  const choose = (line: Line) => ('item' in line ? onOpen(line.item.id) : 'bot' in line ? onOpen(line.bot.id) : setExpanded([...expanded, line.more]))
+  const choose = (line: Line) =>
+    'item' in line ? onOpen(line.item.id) : 'bot' in line ? onOpen(line.bot.id) : 'row' in line ? line.row.id && onOpen(line.row.id) : setExpanded([...expanded, line.more])
   // The highlighted row stays in sight as the arrows move it.
   const list = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -175,6 +217,9 @@ export function ItemsList(props: {
           )
         ) : (
           <span className="keys">
+            <button data-ui className="search-configure" title="Configure the search page's sections" aria-label="Configure sections" onMouseDown={(e) => e.preventDefault()} onClick={configure}>
+              <Settings2 className="icon" />
+            </button>
             <span className="key-pill">
               <kbd>Enter</kbd> {verb}
             </span>
@@ -203,6 +248,17 @@ export function ItemsList(props: {
                   <span className="muted row-status">{line.chosen ? 'Remove' : (line.bot.status ?? 'Assign')}</span>
                 </div>
               )
+            if ('row' in line) {
+              const r = line.row
+              const Icon = TYPE_ICON[r.type as keyof typeof TYPE_ICON] ?? Circle
+              return (
+                <div key={line.key} className={`row ${selected}`} onClick={() => choose(line)} onMouseMove={hover} {...(r.id ? menu(r.id) : {})}>
+                  {r.id ? <Icon className="icon" /> : null}
+                  <Markdown className={`row-title row-md ${r.id ? '' : 'error-text'}`} text={r.left} />
+                  {r.right && <Markdown className="muted row-status row-md" text={r.right} />}
+                </div>
+              )
+            }
             if (!('item' in line))
               return (
                 <div key={line.key} className={`row more ${selected}`} onClick={() => choose(line)} onMouseMove={hover}>

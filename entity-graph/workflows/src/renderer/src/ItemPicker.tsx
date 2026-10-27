@@ -1,7 +1,8 @@
 import type { Item } from '../../shared/types'
 import { Modal } from './components/ui/Modal'
 import { ItemsList } from './ItemsList'
-import { PICKER_SECTIONS, type Recent, type SectionId } from './sections'
+import type { SearchSection } from '../../shared/search'
+import type { Recent } from './sections'
 
 /** One pick, which closes the picker; or a multiselect, whose `value` is what is selected and `setValue` changes it. */
 type Picking = { multiple?: false; onPick: (id: string) => void } | { multiple: true; value: string[]; setValue: (ids: string[]) => void }
@@ -19,7 +20,8 @@ export function ItemPicker(
     title: string
     items: Item[]
     recent: Recent
-    sections?: SectionId[]
+    /** Left out, the search page's as configured. */
+    sections?: SearchSection[]
     perSection?: number
     verb: string
     /** Tab: with what is typed. Left out, Tab does nothing. */
@@ -29,7 +31,7 @@ export function ItemPicker(
     bots?: { id: string; name: string; bot?: boolean }[]
   } & Picking,
 ) {
-  const { title, items, recent, sections = PICKER_SECTIONS, perSection = 6, verb, onTab, onClose, bots } = props
+  const { title, items, recent, sections, perSection = 6, verb, onTab, onClose, bots } = props
   const pick = (id: string) => {
     if (!props.multiple) return props.onPick(id)
     props.setValue(props.value.includes(id) ? props.value.filter((v) => v !== id) : [...props.value, id])

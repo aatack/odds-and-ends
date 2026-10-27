@@ -3,6 +3,8 @@
 
 import { z } from 'zod'
 import { runScript } from './script'
+import { SEARCH_DOC } from './eventTypes'
+import type { SearchSection } from '../shared/search'
 import type { EventSpec } from '../shared/types'
 import type { Action } from './integrations'
 import { PARADIGM } from './paradigm'
@@ -239,6 +241,23 @@ export const itemActions: Action[] = [
     run: async (a, ctx) => {
       await ctx.engine.link(String(a.item_id), a.event_ids as string[], ctx.actor)
       return 'Linked.'
+    },
+  },
+  {
+    name: 'search_sections',
+    unsafe: false,
+    description: "The search page's sections, as configured, and how they work (one list for the whole app). See set_search_sections.",
+    input: {},
+    run: async (_a, { engine }) => ({ sections: engine.searchSections(), how: SEARCH_DOC }),
+  },
+  {
+    name: 'set_search_sections',
+    unsafe: false,
+    description: "Replace the search page's sections (the Tasks view and every picker), or put the defaults back (sections: null). " + SEARCH_DOC,
+    input: { sections: z.array(z.record(z.unknown())).nullable() },
+    run: async (a, ctx) => {
+      await ctx.engine.setSearchSections(a.sections as SearchSection[] | null, ctx.actor)
+      return { sections: ctx.engine.searchSections() }
     },
   },
   {

@@ -201,6 +201,30 @@ export const bot: EventType = {
   describe: (p) => `@${p.name}`,
 }
 
+export const SEARCH_DOC =
+  "The search page's sections: one list for the whole app (the Tasks view, and every picker: @ in the chat input, and the rest). " +
+  'It is kept on the one `search` item, which sits in no task; search_sections reads it, set_search_sections replaces it. Each section, in order:\n' +
+  "- { kind: 'builtin', id, label? }: one of the finder's own: viewed (recently viewed), needsYou, withBots, waiting, closed (today).\n" +
+  "- { kind: 'query', label, filter, limit? }: a filter, as egdb's find takes it ({ eq: { key, value } }, ne, lt/le/gt/ge, contains, " +
+  'contains_ignore_case, prefix, in: { key, values }, is_null, not_null, and: [], or: [], not), over every event\'s values (type, ' +
+  'title, text, description, resolved, the rest of its params) and these made from its links: parent (the task it sits in), assignees ' +
+  '(who has it: eq matches any one), created_by, created_at. Rows are the events that match, the newest first.\n' +
+  "- { kind: 'function', label, source }: JavaScript, run as a script's body is (context and tools in scope, no unsafe tools), with " +
+  'context.text the filter typed so far; it returns rows: [{ id, type, left, right? }] (left and right in markdown; id is what Enter opens).\n' +
+  'The label heads the section. What is typed filters every section at once; a function runs again as it changes.\n' +
+  "Example: [{ kind: 'builtin', id: 'needsYou' }, { kind: 'query', label: 'Open scripts', filter: { and: [{ eq: { key: 'type', value: 'script' } }, " +
+  "{ eq: { key: 'resolved', value: false } }] } }]"
+
+export const search: EventType = {
+  type: 'search',
+  description: SEARCH_DOC,
+  params: { sections: z.array(z.record(z.unknown())).describe('The sections, in order: see the description.') },
+  data: '—',
+  blocking: false,
+  bots: false,
+  describe: () => 'Search page sections',
+}
+
 export const user: EventType = {
   type: 'user',
   description:
@@ -308,4 +332,4 @@ export const slackChannel: EventType = {
   describe: (p) => `Slack ${p.channel}, ${at(p.oldest)} to ${p.latest ? at(p.latest) : 'now'}`,
 }
 
-export const EVENT_TYPES: EventType[] = [task, note, approval, script, proc, widget, slackMessage, slackChannel, bot, user]
+export const EVENT_TYPES: EventType[] = [task, note, approval, script, proc, widget, search, slackMessage, slackChannel, bot, user]
