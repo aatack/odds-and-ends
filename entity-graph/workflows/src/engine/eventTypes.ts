@@ -5,6 +5,7 @@ import { homedir } from 'node:os'
 import { z } from 'zod'
 import type { EventType } from './integrations'
 import { runScript } from './script'
+import { slackChannelParams, slackMessageParams } from './slack'
 
 const timeout = { timeout_minutes: z.number().optional().describe('Resolve as timed_out after this long.') }
 
@@ -249,4 +250,33 @@ export const proc: EventType = {
   },
 }
 
-export const EVENT_TYPES: EventType[] = [task, note, approval, script, proc, bot, user]
+/** When, to the minute, from a Slack ts or any time slack.ts reads. */
+const at = (when: unknown) => {
+  const s = String(when)
+  const ms = /^\d{9,10}(\.\d+)?$/.test(s) ? Number(s) * 1000 : Date.parse(s)
+  return Number.isNaN(ms) ? s : new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+export const slackMessage: EventType = {
+  type: 'slack_message',
+  description:
+    'A Slack message, pulled into the task: from its link (or its channel and ts). The chat shows who said it and what, read from Slack as it ' +
+    "is shown; its view shows the thread it is in. A Slack link in a person's note is pulled in this way by itself.",
+  params: slackMessageParams,
+  data: '—',
+  blocking: false,
+  bots: true,
+  describe: (p) => (p.link ? `Slack message ${p.link}` : `Slack message ${p.ts} in ${p.channel}`),
+}
+
+export const slackChannel: EventType = {
+  type: 'slack_channel',
+  description: 'A Slack channel over a range of time, pulled into the task: its view shows the messages, with their threads.',
+  params: slackChannelParams,
+  data: '—',
+  blocking: false,
+  bots: true,
+  describe: (p) => `Slack ${p.channel}, ${at(p.oldest)} to ${p.latest ? at(p.latest) : 'now'}`,
+}
+
+export const EVENT_TYPES: EventType[] = [task, note, approval, script, proc, slackMessage, slackChannel, bot, user]

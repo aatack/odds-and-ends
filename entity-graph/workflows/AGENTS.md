@@ -99,7 +99,8 @@ window: there `window.workflows` is the preload's, as always.
   task's children are its history. Some events resolve as they are added (a note); **blockers**
   wait until something happens (an approval). Tasks don't depend on, or attach to, each other: a task in
   another is a card in its chat, and blocks nothing (dependencies are to come back with the wake rules).
-  There are seven types: `task`, `note`, `approval`, `script`, `process`, `bot` and `user` (a person).
+  There are nine types: `task`, `note`, `approval`, `script`, `process`, `slack_message`, `slack_channel`, `bot` and
+  `user` (a person).
 - **People** are items too (`user` events, in no item, whose id is their username); they sign in to the
   app by typing their username (no password: the app is local). Tasks are **assigned** to people and
   bots: an `assigned_to` link from the task, not an event (`Engine.setAssignee`; the tasks someone has are
@@ -156,8 +157,9 @@ sending, deploying and deleting, in any integration.
   code the app runs) is handed the same tools as the MCP. When anything but a person's own press runs it (an
   agent, a bot, a schedule, another script), the unsafe ones are left out, whoever wrote it. This holds for
   every tool added later: declaring `unsafe` is what keeps it out. (Custom actions are not given them yet.)
-- For now the app has no unsafe actions of its own: the integration settings (GitHub, Slack) are kept on the
-  Integrations page, but no tools are built from them yet. The tests add one to check the rule.
+- Slack (`slack.ts`) is the app's one integration with tools: its reads are safe (through a cache in the backend's
+  memory: names a day, channels an hour, messages five minutes), and `slack_post` is unsafe. A Slack message's link
+  in a note (or pasted alone) is pulled in as a `slack_message`, whose card reads the message as it is shown.
 - **Bots have a shell** (auto mode), and `gh` is logged in. The rule binds them
   there too: their instructions forbid doing anything unsafe with it, and the
   auto-mode classifier stands between them and it. That is a weaker guarantee

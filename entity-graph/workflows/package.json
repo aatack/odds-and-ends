@@ -9,7 +9,7 @@
     "start": "electron-vite build && electron . --no-sandbox",
     "build": "electron-vite build",
     "postinstall": "electron-builder install-app-deps",
-    "test": "tsx test/engine.mts && tsx test/phone.mts && tsx test/egdb.mts",
+    "test": "tsx test/engine.mts && tsx test/slack.mts && tsx test/phone.mts && tsx test/egdb.mts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "backend": "node scripts/egdb-server.mjs && electron-vite build && node out/main/backend.js",
     "egdb:build": "node scripts/egdb-server.mjs --force",

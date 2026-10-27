@@ -8,7 +8,7 @@
  * which stay open until something happens (a script says it is done, an approval
  * is given, a child item closes).
  */
-export type EventKind = 'task' | 'note' | 'approval' | 'script' | 'process' | 'bot' | 'user'
+export type EventKind = 'task' | 'note' | 'approval' | 'script' | 'process' | 'slack_message' | 'slack_channel' | 'bot' | 'user'
 
 /** An event as it is added. `ref` names it, so another added alongside can point at it. */
 export interface EventSpec {
@@ -248,9 +248,37 @@ export interface Check {
 export interface IntegrationsView {
   github: Check
   claude: Check & { bots: number }
-  slack: { id: string; name: string; team: string; user: string; tokenHint: string }[]
+  slack: { id: string; name: string; team: string; user: string; tokenHint: string; url?: string }[]
+  /** How many Slack answers are cached, and when the oldest was fetched. */
+  slackCache: { entries: number; oldest: number | null }
   /** The Deepgram key, for recording into the chat input: where it comes from, and its ends; null with none. */
   deepgram: { from: 'settings' | 'env'; hint: string } | null
+}
+
+/** A Slack message as the app shows it: its text as markdown, its author by name. */
+export interface SlackMessage {
+  ts: string
+  /** The thread it is in, when it is a reply, or the thread it starts. */
+  thread_ts?: string
+  /** The author's user id, if a person wrote it. */
+  user?: string
+  author: string
+  /** Its text, as markdown. */
+  text: string
+  /** How many replies it has, when it starts a thread. */
+  replies?: number
+  files?: string[]
+  permalink?: string
+}
+
+/** What a Slack event's card and view show: its messages, oldest first, and which one it is about. */
+export interface SlackView {
+  workspace: string
+  channel: string
+  channelName: string
+  messages: SlackMessage[]
+  /** For a slack_message: the message itself, among the thread's. */
+  focus?: string
 }
 
 export interface McpView {
@@ -351,6 +379,10 @@ export interface WorkflowsAPI {
   /** Keeps a Slack workspace's user token (encrypted), once Slack says whose it is. Nothing uses it yet. */
   addSlack: (token: string) => Promise<void>
   removeSlack: (id: string) => Promise<void>
+  /** Empties the Slack cache: everything is fetched again when next asked for. */
+  clearSlackCache: () => Promise<void>
+  /** A slack_message's thread, or a slack_channel's messages; with `thread`, the replies to one of them. */
+  slackView: (eventId: string, thread?: string) => Promise<SlackView>
   /** Keeps a Deepgram key (encrypted), or forgets it (null). */
   setDeepgramKey: (key: string | null) => Promise<void>
   /** The Deepgram key, for the window to stream what is said to Deepgram; null with none. */
@@ -439,7 +471,7 @@ export interface CustomAction {
 export const API_METHODS = [
   'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'processOutput', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
-  'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
+  'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'clearSlackCache', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'regeneratePhoneToken',
 ] as const satisfies readonly ApiMethod[]
 

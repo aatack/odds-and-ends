@@ -4,9 +4,18 @@
 // @someone" in place of these while it is empty.
 
 import type { EventSpec, PresetInfo } from '../shared/types'
+import { SLACK_LINK } from '../shared/slack'
 
 export interface Preset extends PresetInfo {
   build: (text: string) => EventSpec[]
+}
+
+/** A note, with every Slack message link in it pulled in as a slack_message after it (a link alone is just the message). */
+const note = (text: string): EventSpec[] => {
+  const links = [...text.matchAll(new RegExp(SLACK_LINK, 'g'))].map((m) => m[0])
+  const rest = links.reduce((t, l) => t.replace(l, ''), text).trim()
+  const said: EventSpec[] = rest ? [{ type: 'note', params: { text: links.length ? text.trim() : rest } }] : []
+  return [...said, ...links.map((link): EventSpec => ({ type: 'slack_message', params: { link } }))]
 }
 
 export const PRESETS: Preset[] = [
@@ -15,6 +24,6 @@ export const PRESETS: Preset[] = [
     name: 'Note',
     hint: 'a note in this task; @ someone to hand them the task',
     icon: 'note',
-    build: (text) => (text.trim() ? [{ type: 'note', params: { text: text.trim() } }] : []),
+    build: note,
   },
 ]

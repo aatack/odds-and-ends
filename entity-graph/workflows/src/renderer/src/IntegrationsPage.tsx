@@ -82,6 +82,16 @@ function Slack({ view, act }: { view: IntegrationsView; act: (fn: () => Promise<
           </button>
         </div>
       ))}
+      {view.slack.length > 0 && (
+        <p className="muted">
+          Pulled in: a Slack message's link pasted into a chat (or in a note) brings the message in; bots can add a channel over a range too.
+          The token needs channels:read, groups:read, users:read, search:read and history scopes. {view.slackCache.entries} answers cached
+          (names a day, channels an hour, messages five minutes).{' '}
+          <button data-ui className="link" onClick={() => act(() => api().clearSlackCache())}>
+            Clear the cache
+          </button>
+        </p>
+      )}
       <div className="add">
         <h3>Add workspace</h3>
         <Markdown className="muted" text={SLACK_STEPS} />

@@ -1,6 +1,6 @@
 // Lucide (lucide.dev, ISC): its robot is what a bot looks like here, and the
 // rest come from it too so that they match.
-import { Bot, Check, GitPullRequest, Layers, Link, MessageCircle, MessageSquare, Settings, ShieldCheck, SquareCode, SquareTerminal, User, type LucideIcon } from 'lucide-react'
+import { Bot, Check, GitPullRequest, Hash, Layers, Link, MessageCircle, MessageSquare, Settings, ShieldCheck, SquareCode, SquareTerminal, User, type LucideIcon } from 'lucide-react'
 import type { EventKind, Item, ItemEvent } from '../../shared/types'
 
 /** One icon an event type. */
@@ -10,6 +10,8 @@ export const TYPE_ICON: Record<EventKind, LucideIcon> = {
   approval: ShieldCheck,
   script: SquareCode,
   process: SquareTerminal,
+  slack_message: MessageCircle,
+  slack_channel: Hash,
   bot: Bot,
   user: User,
 }
@@ -20,6 +22,8 @@ export const TYPE_NAME: Record<EventKind, string> = {
   approval: 'Approval',
   script: 'Script',
   process: 'Process',
+  slack_message: 'Slack message',
+  slack_channel: 'Slack channel',
   bot: 'Bot',
   user: 'Person',
 }

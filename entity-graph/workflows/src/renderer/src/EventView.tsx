@@ -3,6 +3,7 @@ import { Approval } from './Approval'
 import { minutes, time } from './Chat'
 import { TYPE_NAME } from './icons'
 import { ProcessCard } from './ProcessCard'
+import { SlackMessages } from './SlackView'
 import { fenced, Markdown } from './components/ui/Markdown'
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
@@ -50,6 +51,7 @@ export function EventView({
           <ProcessCard event={e} act={act} lines={500} />
         </section>
       )}
+      {(e.type === 'slack_message' || e.type === 'slack_channel') && <SlackMessages event={e} />}
       <Special detail={detail} onOpen={onOpen} />
 
       <section className="card">

@@ -4,6 +4,7 @@ import type { IntegrationsView, McpView, PhoneView } from '../shared/types'
 import type { Engine } from './engine'
 import type { Mcp } from './mcp'
 import { slackAuthTest } from './settings'
+import { clearSlackCache, slackCacheStats, slackView } from './slack'
 
 const firstLine = (s: string) => s.trim().split('\n')[0]
 
@@ -45,6 +46,7 @@ export class Admin {
         const d = this.engine.settings.deepgramKey()
         return d ? { from: d.from, hint: `${d.key.slice(0, 4)}…${d.key.slice(-4)}` } : null
       })(),
+      slackCache: slackCacheStats(this.engine),
       slack: this.engine.settings.slackWorkspaces().map(({ token, ...w }) => ({ ...w, tokenHint: `${token.slice(0, 5)}…${token.slice(-4)}` })),
     }
   }
@@ -54,12 +56,23 @@ export class Admin {
   async addSlack(token: string): Promise<void> {
     token = token.trim()
     if (!token.startsWith('xoxp-')) throw new Error('That is not a Slack user token: they start with xoxp-.')
-    const { team, user, userId } = await slackAuthTest(token, this.fetchFn)
-    this.engine.settings.addSlackWorkspace({ name: team, team, user, userId, token })
+    const { team, user, userId, url } = await slackAuthTest(token, this.fetchFn)
+    this.engine.settings.addSlackWorkspace({ name: team, team, user, userId, token, ...(url ? { url } : {}) })
   }
 
   removeSlack(id: string): void {
     this.engine.settings.removeSlackWorkspace(id)
+  }
+
+  clearSlackCache(): void {
+    clearSlackCache(this.engine)
+  }
+
+  /** A Slack event's messages, for its card and view; with `thread`, the replies to one of them. */
+  async slackView(eventId: string, thread?: string) {
+    const event = this.engine.event(eventId)
+    if (!event) throw new Error(`No event ${eventId}.`)
+    return slackView(this.engine, event, thread)
   }
 
   mcpView(): McpView {

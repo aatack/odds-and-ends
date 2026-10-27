@@ -20,6 +20,8 @@ export interface SlackWorkspace {
   user: string
   userId: string
   token: string
+  /** Its address, e.g. https://acme.slack.com/: how a message's link is matched to it. */
+  url?: string
 }
 
 /** Not the older app's (47390), so that the two can run side by side. */
@@ -82,6 +84,11 @@ export class Settings {
     return added
   }
 
+  /** Keeps a workspace's address, for one added before addresses were kept. */
+  setSlackUrl(id: string, url: string): void {
+    this.set('slack.workspaces', this.get<SlackWorkspace[]>('slack.workspaces', []).map((w) => (w.id === id ? { ...w, url } : w)))
+  }
+
   removeSlackWorkspace(id: string): void {
     this.set('slack.workspaces', this.get<SlackWorkspace[]>('slack.workspaces', []).filter((w) => w.id !== id))
   }
@@ -130,12 +137,12 @@ export class Settings {
 export async function slackAuthTest(
   token: string,
   fetchFn: typeof fetch = fetch,
-): Promise<{ team: string; user: string; userId: string }> {
+): Promise<{ team: string; user: string; userId: string; url?: string }> {
   const res = await fetchFn('https://slack.com/api/auth.test', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
   })
-  const body = (await res.json()) as { ok: boolean; error?: string; team?: string; user?: string; user_id?: string }
+  const body = (await res.json()) as { ok: boolean; error?: string; team?: string; user?: string; user_id?: string; url?: string }
   if (!body.ok) throw new Error(`Slack refused the token: ${body.error ?? res.status}`)
-  return { team: body.team ?? '', user: body.user ?? '', userId: body.user_id ?? '' }
+  return { team: body.team ?? '', user: body.user ?? '', userId: body.user_id ?? '', ...(body.url ? { url: body.url } : {}) }
 }

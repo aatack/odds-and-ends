@@ -102,6 +102,8 @@ the chat input should offer it, add a preset in `presets.ts`.
 | `script` | while it lasts; it blocks nothing (a task waits on it by being assigned to it) | `source`, `description?`, `wake_at?`, `owns?`, `schedule?` (older), `timeout_minutes?` | `{ result, runs, logs }` or `{ error, logs }` |
 | `bot` | while the bot lasts (sits in no item) | `name`, `instructions?`, `provider?`, `model?` (opus), `debounce_minutes?` (1), `folder?`; the app sets `session_id`, `seen` and `last_run` | `{ cancelled }`, once deleted |
 | `process` | yes, while it runs | `command`, `cwd?`, `description?` | `{ exitCode, signal, error?, output }` once it exits; `{ cancelled }` once stopped |
+| `slack_message` | no | `link`, or `channel` and `ts` (`thread_ts?`), `workspace?` | — (its card and view read Slack, through the cache, as shown) |
+| `slack_channel` | no | `channel` (id or #name), `oldest`, `latest?`, `workspace?` | — (as `slack_message`) |
 | `user` | while the person lasts (sits in no item) | `username` (its id), `name?` | `{ cancelled }`, once removed |
 
 - **`script`** is JavaScript the app runs with no model: an item that can have

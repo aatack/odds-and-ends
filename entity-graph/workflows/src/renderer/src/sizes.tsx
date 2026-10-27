@@ -13,6 +13,7 @@ import { fenced, Markdown } from './components/ui/Markdown'
 import { useEventMenu } from './EventMenu'
 import { eventIcon } from './icons'
 import { ProcessCard } from './ProcessCard'
+import { SlackCard } from './SlackView'
 import { TaskCard } from './TaskCard'
 import { minutes, time, useNow } from './time'
 import { api } from './useWorkflows'
@@ -64,6 +65,8 @@ export const CARDS: Partial<Record<EventKind, (p: CardProps) => ReactNode>> = {
   ),
   script: ({ event: e, act, find }) => <ScriptCard event={e} act={act} find={find} />,
   process: ({ event: e, act }) => <ProcessCard event={e} act={act} lines={8} />,
+  slack_message: ({ event: e, find }) => <SlackCard event={e} find={find} />,
+  slack_channel: ({ event: e, find }) => <SlackCard event={e} find={find} />,
   approval: ({ event: e, find, catalog, act }) => (
     <div className="event-card">
       <Markdown text={e.resolved ? (e.message ?? e.summary) : e.summary} highlight={find} />
@@ -86,6 +89,8 @@ export const FOCUS: Record<EventKind, 'chat' | 'details'> = {
   approval: 'details',
   script: 'details',
   process: 'details',
+  slack_message: 'details',
+  slack_channel: 'details',
   user: 'details',
 }
 

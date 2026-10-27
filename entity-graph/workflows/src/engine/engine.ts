@@ -1,3 +1,4 @@
+import { slackActions } from './slack'
 import { Processes } from './processes'
 import { CustomActions } from './customActions'
 import { randomUUID } from 'node:crypto'
@@ -96,7 +97,7 @@ export class Engine extends EventEmitter {
   readonly fetch: typeof fetch
   readonly now: () => number
   readonly dataDir: string
-  readonly actions: Action[] = [...itemActions]
+  readonly actions: Action[] = [...itemActions, ...slackActions]
   readonly eventTypes: EventType[] = EVENT_TYPES
   readonly presets: Preset[] = PRESETS
   /** People's own actions, per event type (the Types page). */

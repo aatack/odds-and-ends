@@ -102,7 +102,7 @@ const blockers = (id: string) => item(id).blockers.map((b) => b.type)
 const last = (id: string, type: string) => engine.children(id).filter((e) => e.type === type).at(-1)!
 
 // The types there are; those from before are gone.
-assert.deepEqual(engine.eventTypes.map((t) => t.type), ['task', 'note', 'approval', 'script', 'process', 'bot', 'user'])
+assert.deepEqual(engine.eventTypes.map((t) => t.type), ['task', 'note', 'approval', 'script', 'process', 'slack_message', 'slack_channel', 'bot', 'user'])
 await assert.rejects(engine.addEvents((await engine.create('x'))!, [{ type: 'message' as 'note', params: { text: 'x' } }]), /No event type message/)
 for (const i of engine.overview().items) await engine.close(i.id)
 

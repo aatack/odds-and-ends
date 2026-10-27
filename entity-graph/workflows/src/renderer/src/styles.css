@@ -56,6 +56,15 @@ button[data-ui].link { background: none; color: var(--muted); padding: 0; }
 .builder-fields.hearing textarea { display: none; }
 .builder-fields.hearing .hint.recording { position: static; display: block; white-space: normal; overflow: visible; color: var(--muted); padding: 4px 0; }
 .builder-icon.record.on .icon { color: var(--danger); fill: var(--danger); }
+.slack-messages { display: flex; flex-direction: column; gap: 12px; }
+.slack-message { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+.slack-message.focus { background: var(--color-gray-100); border-radius: 6px; padding: 6px 8px; margin: -6px -8px; align-self: stretch; }
+.slack-message.reply, .slack-thread { padding-left: 16px; }
+.slack-thread { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; align-self: stretch; }
+.slack-meta { font-size: 12px; display: flex; align-items: center; gap: 4px; }
+.slack-meta .icon { width: 13px; height: 13px; color: var(--muted); }
+.slack-meta a.muted { color: var(--muted); text-decoration: none; }
+.slack-quote { margin: 4px 0; padding-left: 10px; border-left: 3px solid var(--color-gray-300); }
 .chat-working { font-size: 12px; color: var(--muted); padding: 0 4px 8px; }
 .composer { padding: 12px 32px 16px; display: flex; flex-direction: column; gap: 8px; }
 .composer-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
