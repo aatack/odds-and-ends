@@ -10,10 +10,10 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { z } from 'zod'
 import { Admin } from '../src/engine/admin.ts'
-import { DEFAULT_DEBOUNCE, DEFAULT_MODEL, Engine, PERIODIC_MINUTES, type BotOutput, type BotUpdate } from '../src/engine/engine.ts'
+import { DEFAULT_DEBOUNCE, DEFAULT_MODEL, Engine, MAX_SCRIPTS, PERIODIC_MINUTES, type BotOutput, type BotUpdate } from '../src/engine/engine.ts'
 import { catalog, startMcp } from '../src/engine/mcp.ts'
 import { botOutputSchema } from '../src/engine/schema.ts'
-import { ASK, BotRunner, promptFor, type SpawnBot } from '../src/engine/workers.ts'
+import { ASK, BotRunner, MAX_BOTS, promptFor, type SpawnBot } from '../src/engine/workers.ts'
 
 const MINUTE = 60_000
 let clock = 1_000_000
@@ -282,6 +282,40 @@ assert.ok(item(parent).closed)
   assert.equal(behaviours.length, 0, 'it woke again for what it missed, after its debounce, not the periodic wait')
   assert.deepEqual(engine.assignees(busy), [engine.me()], 'with nothing new, its update hands the task on')
   await engine.close(busy)
+}
+
+// Limits: at most `bots.max_running` bots run at once, and `scripts.max_running` scripts; the rest wait their turn.
+{
+  engine.settings.set('bots.max_running', 1)
+  const other = await engine.saveAgent({ name: 'Other', instructions: '', provider: 'claude', model: '', debounceMinutes: 0 })
+  const [t1, t2] = [(await engine.create('One'))!, (await engine.create('Two'))!]
+  const seen: number[] = []
+  for (const _ of [1, 2])
+    behaviours.push(async ({ prompt }) => {
+      seen.push(runner.busy().length)
+      const t = /One/.test(prompt) ? t1 : t2
+      return out({ item: t, assign: [engine.me()] })
+    })
+  await engine.send(t1, `assign:${threepio}`, 'x')
+  await engine.send(t2, `assign:${other}`, 'y')
+  await settle()
+  assert.deepEqual(seen, [1, 1], 'one at a time')
+  engine.settings.set('bots.max_running', MAX_BOTS)
+  await engine.deleteAgent(other)
+  engine.settings.set('scripts.max_running', 1)
+  const [s1, s2] = await engine.addEvents(t1, [
+    { type: 'script', params: { source: 'return { next: "+1h" }', wake_at: clock } },
+    { type: 'script', params: { source: 'return { next: "+1h" }', wake_at: clock } },
+  ])
+  await engine.checkDue()
+  await engine.idle()
+  assert.deepEqual([engine.event(s1)!.runs, engine.event(s2)!.runs], [1, 0], 'one script at a time; the other waits for the next turn')
+  await engine.checkDue()
+  await engine.idle()
+  assert.equal(engine.event(s2)!.runs, 1)
+  engine.settings.set('scripts.max_running', MAX_SCRIPTS)
+  await engine.close(t1)
+  await engine.close(t2)
 }
 
 // A process: started by its first check, ended when it exits (with what it wrote last), or stopped by a cancel.

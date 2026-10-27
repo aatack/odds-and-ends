@@ -24,6 +24,8 @@ export const DEFAULT_MODEL = 'opus'
 export const DEFAULT_DEBOUNCE = 1
 /** A bot that has tasks wakes this often, when something has happened in them since its last run. */
 export const PERIODIC_MINUTES = 15
+/** How many scripts may run at once, unless the `scripts.max_running` setting says otherwise. */
+export const MAX_SCRIPTS = 8
 /** Who the engine acts as when nobody is said and there is nobody yet (the tests, mostly). */
 export const NOBODY = 'human'
 
@@ -1029,8 +1031,15 @@ export class Engine extends EventEmitter {
 
   async checkDue(): Promise<void> {
     const now = this.now()
-    const due = [...this.store.events.values()].filter((r) => !r.resolved && r.next_check_at !== null && r.next_check_at <= now)
-    await Promise.all(due.filter((r) => !this.checking.has(r.id)).map((r) => this.checkOne(r.parent_id!, r.id)))
+    const due = [...this.store.events.values()]
+      .filter((r) => !r.resolved && r.next_check_at !== null && r.next_check_at <= now && !this.checking.has(r.id))
+      .sort((a, b) => a.next_check_at! - b.next_check_at!)
+    // At most `scripts.max_running` scripts at once (MAX_SCRIPTS by default): those due longest go first; the rest stay
+    // due, for the next turn of the loop.
+    const max = Number(this.settings.get('scripts.max_running', MAX_SCRIPTS))
+    let room = max - [...this.checking].filter((id) => this.row(id)?.type === 'script').length
+    const allowed = due.filter((r) => r.type !== 'script' || room-- > 0)
+    await Promise.all(allowed.map((r) => this.checkOne(r.parent_id!, r.id)))
   }
 
   private checkOne(itemId: string, eventId: string): Promise<void> {

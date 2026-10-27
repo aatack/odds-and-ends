@@ -39,6 +39,9 @@ export type SpawnBot = (args: {
 /** Environment variables that hold the app's own secrets: a bot's run is not given them. */
 const APP_SECRETS = ['DEEPGRAM_API_KEY']
 
+/** How many bots may run at once, unless the `bots.max_running` setting says otherwise. */
+export const MAX_BOTS = 6
+
 const RUN_LIMIT_MS = 60 * 60_000
 
 export const SYSTEM = `You are a bot in the operator's workflow system: one of its bots, with a name, instructions of your own (below, if any), a Claude session of your own and a working folder of your own, all of which last from one run to the next. You run one thing at a time.
@@ -215,8 +218,11 @@ export class BotRunner {
 
   fill(): void {
     if (this.stopped) return
-    for (const agent of this.engine.agents()) {
-      if (this.running.has(agent.id)) continue
+    // At most `bots.max_running` at once (MAX_BOTS by default): those due longest go first, the rest wait their turn.
+    const max = Number(this.engine.settings.get('bots.max_running', MAX_BOTS))
+    const due = this.engine.agents().filter((a) => !this.running.has(a.id) && a.wakesAt !== null).sort((a, b) => a.wakesAt! - b.wakesAt!)
+    for (const agent of due) {
+      if (this.running.size >= max) return
       const claimed = this.engine.claim(agent.id)
       if (claimed) this.run(claimed.agent, claimed.items, claimed.resume)
     }
