@@ -1006,6 +1006,21 @@ export class Engine extends EventEmitter {
     if (actor !== 'script') await this.idle()
   }
 
+  /**
+   * Opens a closed task again (unresolving it), as it was before it closed: who has it is unchanged, and what its
+   * closing cancelled stays cancelled. The chat says who reopened it.
+   */
+  async reopen(itemId: string, actor = this.me()): Promise<void> {
+    const item = this.must(itemId)
+    if (!item.closed) return
+    this.store.batch(() => {
+      this.store.reopenEvent(itemId, actor, this.now())
+      this.add(itemId, [{ type: 'note', params: { text: `Reopened by ${this.actorName(actor)}.` } }], 'system')
+    })
+    this.emit('change')
+    if (actor !== 'script') await this.idle()
+  }
+
   /** Closes a task: its open children are cancelled (child tasks closed, all the way down), then it resolves. */
   async close(itemId: string, opts: { actor?: string; how?: 'closed' | 'cancelled' } = {}): Promise<void> {
     const actor = opts.actor ?? this.me()

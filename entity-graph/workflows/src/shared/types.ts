@@ -304,6 +304,8 @@ export interface WorkflowsAPI {
   /** Runs an open script that has no schedule, once. */
   runNow: (eventId: string) => Promise<void>
   close: (id: string) => Promise<void>
+  /** Opens a closed task again. */
+  reopen: (id: string) => Promise<void>
   /** A process event's process: how it stands (null when this backend never ran it), and the last `n` lines it wrote. */
   processOutput: (eventId: string, n: number) => Promise<{ status: ProcessStatus | null; lines: string[] }>
   /** The edit log: what was done, by whom and when, the newest first. */
@@ -435,7 +437,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'react', 'processOutput', 'editLog',
+  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'processOutput', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'regeneratePhoneToken',

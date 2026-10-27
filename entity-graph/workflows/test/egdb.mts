@@ -114,8 +114,12 @@ const file = join(dir, 'round-trip.egdb')
   const removed = engine2.customActions.list()[0].id
   engine2.customActions.remove(removed)
   await again.store.flush()
+  // Reopened, a task is open when read back too.
+  await engine2.reopen(done, 'alex')
+  await again.store.flush()
   const third = await loadStore(again.client, blocking)
   assert.equal(third.store.customActions.size, 0, 'a removed custom action is archived in egdb, and not read back')
+  assert.equal(third.store.events.get(done)!.resolved, false, 'a reopened task reads back open')
   again.egdb.stop()
 }
 

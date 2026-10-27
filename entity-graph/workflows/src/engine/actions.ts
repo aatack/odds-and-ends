@@ -240,6 +240,16 @@ export const itemActions: Action[] = [
     },
   },
   {
+    name: 'reopen_item',
+    unsafe: false,
+    description: 'Open a closed task again: who has it is unchanged, and what its closing cancelled stays cancelled.',
+    input: { item_id: itemId },
+    run: async (a, ctx) => {
+      await ctx.engine.reopen(String(a.item_id), ctx.actor)
+      return 'Reopened.'
+    },
+  },
+  {
     name: 'close_item',
     unsafe: false,
     description: 'Close an item: its open children are cancelled, child items closed, all the way down.',

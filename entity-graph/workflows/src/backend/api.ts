@@ -29,6 +29,7 @@ export function handlers(engine: Engine, admin: Admin, me: string, source = ''):
     cancel: (eventId) => engine.cancel(eventId, me),
     runNow: (eventId) => engine.runNow(eventId, me),
     close: (id) => engine.close(id, { actor: me }),
+    reopen: (id) => engine.reopen(id, me),
     react: (eventId, on) => engine.react(eventId, on, me),
     editLog: (query) => engine.store.log(query),
     processOutput: (eventId, n) => ({ status: engine.processes.status(eventId), lines: engine.processes.output(eventId, n) }),

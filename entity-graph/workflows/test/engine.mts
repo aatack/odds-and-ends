@@ -318,6 +318,18 @@ assert.ok(item(parent).closed)
   await engine.close(t2)
 }
 
+// A closed task can be reopened: who has it is unchanged; it is open again, and says who reopened it.
+{
+  const t = (await engine.create('Reopen me'))!
+  await engine.close(t)
+  assert.ok(item(t).closed)
+  await engine.reopen(t)
+  assert.ok(!item(t).closed && item(t).withYou)
+  assert.match(String(last(t, 'note').params.text), /^Reopened by /)
+  assert.equal((await engine.inspect(t)).values.resolved, false)
+  await engine.close(t)
+}
+
 // A process: started by its first check, ended when it exits (with what it wrote last), or stopped by a cancel.
 {
   const host = (await engine.create('Processes'))!

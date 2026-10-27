@@ -221,6 +221,16 @@ export class Store {
     this.out([set(id, 'resolved', true), ...(cancelled ? [set(id, 'cancelled', true)] : []), set(id, 'data', data)], by, at)
   }
 
+  /** Opens a resolved event again: `resolved` turns false (egdb keeps that it was), and what it resolved with is cleared. */
+  reopenEvent(id: string, by: string, at: number): void {
+    const row = this.events.get(id)
+    if (!row) throw new Error(`No event ${id}.`)
+    const wasCancelled = row.cancelled
+    Object.assign(row, { resolved: false, resolved_at: null, resolved_by: null, cancelled: false, data: null, resolved_n: 0 })
+    // An older build's `resolved_at` would read as resolved still: it is cleared too.
+    this.out([set(id, 'resolved', false), set(id, 'resolved_at', null), ...(wasCancelled ? [set(id, 'cancelled', null)] : []), set(id, 'data', null)], by, at)
+  }
+
   /** Keeps what a script hands on to its next run. */
   setState(id: string, state: unknown, at: number): void {
     const row = this.events.get(id)

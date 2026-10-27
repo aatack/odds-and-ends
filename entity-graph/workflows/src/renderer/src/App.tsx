@@ -593,7 +593,12 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
       </div>
       <div className="composer">
         {item.closed ? (
-          <div className="composer-bar muted">Closed.</div>
+          <div className="composer-bar muted">
+            Closed.
+            <button data-ui onClick={() => void act(() => api().reopen(item.id))}>
+              Reopen
+            </button>
+          </div>
         ) : (
           <Composer
             key={item.id}

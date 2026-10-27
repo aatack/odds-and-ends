@@ -2,7 +2,7 @@
 // view header (as icon buttons, the rest in the menu beside them) and the
 // right-click menu draw.
 
-import { CircleCheck, CircleX, SkipForward, type LucideIcon } from 'lucide-react'
+import { CircleCheck, CircleX, RotateCcw, SkipForward, type LucideIcon } from 'lucide-react'
 import type { CustomAction } from '../../shared/types'
 import { actionIcon } from './actionIcons'
 import { api } from './useWorkflows'
@@ -23,7 +23,7 @@ export interface EventAction {
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 /**
- * The actions on an event: an open task can be resolved or skipped; any other
+ * The actions on an event: an open task can be resolved or skipped, a closed one reopened; any other
  * open event cancelled (a bot is deleted from its settings, not here). Then the person's own actions for its
  * type (`custom`), from the Types page.
  */
@@ -32,7 +32,9 @@ export function eventActions(
   ctx: { act: Act; skip: (id: string) => void; custom?: CustomAction[] },
 ): EventAction[] {
   const own: EventAction[] = e.resolved
-    ? []
+    ? e.type === 'task'
+      ? [{ id: 'reopen', label: 'Reopen', important: true, icon: RotateCcw, tone: '', run: () => void ctx.act(() => api().reopen(e.id)) }]
+      : []
     : e.type === 'task'
       ? [
           { id: 'resolve', label: 'Resolve', important: true, icon: CircleCheck, tone: 'text-success-600 hover:text-success-600', run: () => void ctx.act(() => api().close(e.id)) },
