@@ -32,6 +32,8 @@ import { BotView } from './BotView'
 import { Bot, User as UserIcon } from 'lucide-react'
 import { everyone, nameOf, sourceAtom, userAtom, type Someone } from './people'
 import { Start } from './Start'
+import { inBrowser, REFUSED_EVENT, useMobile } from './phone'
+import { PhonePage } from './PhonePage'
 
 /**
  * First who you are and which source to open (`Start`, which opens them at once when both are kept); then the app,
@@ -45,6 +47,14 @@ export function Root() {
   const setViews = useSetAtom(viewsAtom)
   const setForwards = useSetAtom(forwardAtom)
   const setViewed = useSetAtom(viewedAtom)
+  // In a browser, a token the backend refuses (a new one made on the Phone page) is asked for again.
+  useEffect(() => {
+    const refused = () => setOpen(null)
+    window.addEventListener(REFUSED_EVENT, refused)
+    return () => window.removeEventListener(REFUSED_EVENT, refused)
+  }, [])
+  // Whether the views are laid out for a phone: decided here, once, and passed down.
+  const mobile = useMobile()
   if (!open || !user || !source)
     return (
       <Start
@@ -61,7 +71,7 @@ export function Root() {
         }}
       />
     )
-  return <App key={open} onSignOut={() => {
+  return <App key={open} mobile={mobile} onSignOut={() => {
     api().setUser(null)
     setUser(null)
     setOpen(null)
@@ -72,7 +82,7 @@ export function Root() {
   }} />
 }
 
-export function App({ onSignOut, onCloseSource }: { onSignOut: () => void; onCloseSource: () => void }) {
+export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onSignOut: () => void; onCloseSource: () => void }) {
   const items = useWorkflows()
   // Ctrl+W, Alt+Left and Ctrl+Shift+Tab (sent by the main process) take the top view off the stack; Alt+Right and Ctrl+Tab put it back.
   const { back, forward, open } = items
@@ -136,13 +146,13 @@ export function App({ onSignOut, onCloseSource }: { onSignOut: () => void; onClo
   return (
     <ItemsContext.Provider value={items}>
       <ItemRefContext.Provider value={itemRef}>
-        <div className="app">
+        <div className={`app ${mobile ? 'mobile' : ''}`}>
           <main className="main">
             <div className="content">
-              <ItemsMain />
+              <ItemsMain mobile={mobile} />
             </div>
           </main>
-          <AppMenu onSignOut={onSignOut} onCloseSource={onCloseSource} />
+          <AppMenu mobile={mobile} onSignOut={onSignOut} onCloseSource={onCloseSource} />
         </div>
         <EventMenu actOn={items.actOn} skip={items.skip} custom={items.customActions} />
       </ItemRefContext.Provider>
@@ -154,14 +164,19 @@ export function App({ onSignOut, onCloseSource }: { onSignOut: () => void; onClo
 const ItemsContext = createContext<ReturnType<typeof useWorkflows> | null>(null)
 const useItems = () => useContext(ItemsContext)!
 
-/** The button in the bottom left: who is signed in, on which source (to leave either), the bots, and the way to the other pages. */
-function AppMenu({ onSignOut, onCloseSource }: { onSignOut: () => void; onCloseSource: () => void }) {
+/**
+ * The button in the bottom left: who is signed in, on which source (to leave either), the bots, and the way to the
+ * other pages. On a phone it is at the top right, clear of the chat input, and offers Next, which has no key there.
+ */
+function AppMenu({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onSignOut: () => void; onCloseSource: () => void }) {
   const w = useItems()
   const [open, setOpen] = useState(false)
   const busy = w.overview.bots.filter((b) => b.runId).length
   const [look, setLook] = useAtom(appearanceAtom)
   const source = useAtomValue(sourceAtom)
   useEffect(() => applyAppearance(look), [look])
+  // Anywhere new (Back, Next, the phone's own Back) closes it.
+  useEffect(() => setOpen(false), [w.views])
   useEffect(() => {
     if (!open) return
     const close = () => setOpen(false)
@@ -173,9 +188,19 @@ function AppMenu({ onSignOut, onCloseSource }: { onSignOut: () => void; onCloseS
     setOpen(false)
   }
   return (
-    <div className="app-menu" onMouseDown={(e) => e.stopPropagation()}>
+    <div className={`app-menu ${mobile ? 'mobile' : ''}`} onMouseDown={(e) => e.stopPropagation()}>
       {open && (
         <div className="menu app-menu-list">
+          {mobile && (
+            <button
+              onClick={() => {
+                setOpen(false)
+                void w.next()
+              }}
+            >
+              Next <span className="menu-status">what needs you</span>
+            </button>
+          )}
           <button onClick={() => go({ kind: 'items' })}>Tasks</button>
           <button onClick={() => go({ kind: 'bots' })}>
             Bots <span className="menu-status">{busy} of {w.overview.bots.length} working</span>
@@ -183,12 +208,14 @@ function AppMenu({ onSignOut, onCloseSource }: { onSignOut: () => void; onCloseS
           <button onClick={() => go({ kind: 'integrations' })}>Integrations</button>
           <button onClick={() => go({ kind: 'types' })}>Types</button>
           <button onClick={() => go({ kind: 'mcp' })}>MCP</button>
+          {/* Only here: the phone may not change how it is reached. */}
+          {!inBrowser && <button onClick={() => go({ kind: 'phone' })}>Phone</button>}
           <button onClick={() => go({ kind: 'log' })}>Edit log</button>
           <button onClick={onSignOut}>
             Sign out <span className="menu-status">{w.overview.me.name}</span>
           </button>
           <button onClick={onCloseSource} title={source ?? undefined}>
-            Close source <span className="menu-status">{source}</span>
+            {inBrowser ? 'Disconnect' : 'Close source'} <span className="menu-status">{source}</span>
           </button>
           {/* For now, while a style is chosen: one dropdown each. */}
           <div className="menu-selects">
@@ -238,7 +265,7 @@ function AppMenu({ onSignOut, onCloseSource }: { onSignOut: () => void; onCloseS
  * same: Back, the event as text, and what can be done to it, on the right.
  * Below is the view itself, which depends on the event's type.
  */
-function ItemsMain() {
+function ItemsMain({ mobile }: { mobile: boolean }) {
   const w = useItems()
   const openEvent = (id: string) => w.open({ kind: 'event', id })
   // What the items view opens takes its place, so Back goes to where you were before it.
@@ -249,7 +276,7 @@ function ItemsMain() {
       <div className="view">
         <ViewHeader canGoBack onBack={w.back} title="Types" />
         {w.error && <div className="error">{w.error}</div>}
-        <div className="view-body">{w.catalog && <TypesPage catalog={w.catalog} custom={w.customActions} act={w.act} />}</div>
+        <div className="view-body">{w.catalog && <TypesPage catalog={w.catalog} custom={w.customActions} act={w.act} mobile={mobile} />}</div>
       </div>
     )
   if (w.view?.kind === 'bots')
@@ -258,7 +285,7 @@ function ItemsMain() {
         <ViewHeader canGoBack onBack={w.back} title="Bots" />
         {w.error && <div className="error">{w.error}</div>}
         <div className="view-body">
-          <BotsPage bots={w.overview.bots} act={w.act} onOpen={openEvent} />
+          <BotsPage bots={w.overview.bots} act={w.act} onOpen={openEvent} mobile={mobile} />
         </div>
       </div>
     )
@@ -267,17 +294,21 @@ function ItemsMain() {
       <div className="view">
         <ViewHeader canGoBack onBack={w.back} title="Edit log" />
         <div className="view-body">
-          <LogPage key={w.view.id ?? ''} overview={w.overview} recent={w.recent} entities={w.view.id ? [w.view.id] : []} />
+          <LogPage key={w.view.id ?? ''} overview={w.overview} recent={w.recent} entities={w.view.id ? [w.view.id] : []} mobile={mobile} />
         </div>
       </div>
     )
-  if (w.view?.kind === 'integrations' || w.view?.kind === 'mcp')
+  if (w.view?.kind === 'integrations' || w.view?.kind === 'mcp' || w.view?.kind === 'phone') {
+    const kind = w.view.kind
     return (
       <div className="view">
-        <ViewHeader canGoBack onBack={w.back} title={w.view.kind === 'mcp' ? 'MCP' : 'Integrations'} />
-        <div className="view-body">{w.view.kind === 'mcp' ? <McpPage /> : <IntegrationsPage />}</div>
+        <ViewHeader canGoBack onBack={w.back} title={kind === 'mcp' ? 'MCP' : kind === 'phone' ? 'Phone' : 'Integrations'} />
+        <div className="view-body">
+          {kind === 'mcp' ? <McpPage mobile={mobile} /> : kind === 'phone' ? <PhonePage mobile={mobile} /> : <IntegrationsPage mobile={mobile} />}
+        </div>
       </div>
     )
+  }
   // With nothing on the stack, every item.
   if (!w.view || w.view.kind === 'items')
     return (
@@ -295,6 +326,7 @@ function ItemsMain() {
             onEscape={w.views.length > 0 ? w.back : undefined}
             onOpen={openFromItems}
             onCreate={(title) => w.act(async () => openFromItems(await api().create(title, null)))}
+            mobile={mobile}
           />
         </div>
       </div>
@@ -311,7 +343,7 @@ function ItemsMain() {
   const actions = debug ? null : (
     <>
       {e.type === 'task' && d.item && !d.item.item.closed && <AssigneePill item={d.item.item} overview={w.overview} act={w.actOn(e.id)} />}
-      <HeaderActions actions={eventActions(e, { act: w.actOn(e.id), skip: w.skip, custom: w.customActions })} />
+      <HeaderActions actions={eventActions(e, { act: w.actOn(e.id), skip: w.skip, custom: w.customActions })} mobile={mobile} />
     </>
   )
   return (
@@ -330,11 +362,11 @@ function ItemsMain() {
           <DebugView id={e.id} />
         ) : FOCUS[e.type] === 'chat' && e.type === 'bot' && d.item ? (
           <div className="bot-page">
-            <BotView key={e.id} bot={w.overview.bots.find((b) => b.id === e.id) ?? null} act={w.act} />
-            <ItemView key={`${e.id}:chat`} detail={d.item} catalog={w.catalog} act={w.act} onOpen={openEvent} />
+            <BotView key={e.id} bot={w.overview.bots.find((b) => b.id === e.id) ?? null} act={w.act} mobile={mobile} />
+            <ItemView key={`${e.id}:chat`} detail={d.item} catalog={w.catalog} act={w.act} onOpen={openEvent} mobile={mobile} />
           </div>
         ) : FOCUS[e.type] === 'chat' && d.item ? (
-          <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openEvent} />
+          <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openEvent} mobile={mobile} />
         ) : (
           <EventView detail={d} catalog={w.catalog} act={w.act} onOpen={openEvent} />
         )}
@@ -343,13 +375,16 @@ function ItemsMain() {
   )
 }
 
-/** An event's actions in its header: the important ones as icon buttons, the rest in a menu beside them. */
-function HeaderActions({ actions }: { actions: EventAction[] }) {
-  const rest = actions.filter((a) => !a.important)
+/**
+ * An event's actions in its header: the important ones as icon buttons, the rest in a menu beside them. On a phone,
+ * all of them in the menu, leaving the title the width.
+ */
+function HeaderActions({ actions, mobile = false }: { actions: EventAction[]; mobile?: boolean }) {
+  const rest = actions.filter((a) => mobile || !a.important)
   return (
     <>
       {actions
-        .filter((a) => a.important)
+        .filter((a) => !mobile && a.important)
         .map((a) => (
           <IconButton key={a.id} title={a.title ?? a.label} className={a.tone} onClick={a.run}>
             <a.icon className="size-[17px]" />
@@ -511,8 +546,9 @@ function OwnerStatus({ item, overview }: { item: Item; overview: Overview }) {
   return status ? <div className="chat-working">{status}</div> : null
 }
 
-function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpen: (id: string) => void }) {
-  const { detail, catalog, act, onOpen } = props
+/** A task's chat and its input; `mobile` lays both out for a phone. */
+function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpen: (id: string) => void; mobile?: boolean }) {
+  const { detail, catalog, act, onOpen, mobile = false } = props
   const { item } = detail
   const w = useItems()
   const scroller = useRef<HTMLDivElement>(null)
@@ -552,7 +588,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
       <FindLine />
       <div className="chat-scroll" ref={scroller}>
         {short && <h2 className="chat-title">{item.title}</h2>}
-        <Chat detail={detail} overview={w.overview} catalog={catalog} act={act} onOpen={onOpen} />
+        <Chat detail={detail} overview={w.overview} catalog={catalog} act={act} onOpen={onOpen} mobile={mobile} />
         <OwnerStatus item={item} overview={w.overview} />
       </div>
       <div className="composer">
@@ -566,6 +602,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
             onResolve={() => void act(() => api().close(item.id))}
             mention={{ items: w.overview.items.filter((i) => i.id !== item.id), recent: w.recent, create: (title) => api().create(title, null) }}
             assignees={likeliest(detail, w.overview)}
+            mobile={mobile}
             onSend={async (preset, text) => {
               let ok = false
               await act(async () => {

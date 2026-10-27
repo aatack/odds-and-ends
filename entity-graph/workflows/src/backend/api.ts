@@ -9,13 +9,13 @@ import type { Admin } from '../engine/admin'
 import type { Engine } from '../engine/engine'
 import { catalog } from '../engine/mcp'
 
-type Methods = Omit<WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser' | 'openSource' | 'closeSource'>
+type Methods = Omit<WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser' | 'openSource' | 'closeSource' | 'setToken' | 'token'>
 type Handlers = { [K in keyof Methods]: (...args: Parameters<Methods[K]>) => unknown }
 
 /** Calls that need nobody signed in: signing in, and seeing who there is to sign in as. */
 export const OPEN_METHODS = new Set(['signIn', 'users', 'saveUser', 'catalog'])
 
-export function handlers(engine: Engine, admin: Admin, me: string): Handlers {
+export function handlers(engine: Engine, admin: Admin, me: string, source = ''): Handlers {
   return {
     overview: () => engine.overview(me),
     detail: (id) => engine.detail(id, me),
@@ -54,5 +54,10 @@ export function handlers(engine: Engine, admin: Admin, me: string): Handlers {
     mcp: () => admin.mcpView(),
     regenerateMcpToken: () => admin.regenerateMcpToken(),
     setMcpPort: (port) => admin.setMcpPort(port),
+    source: () => source,
+    phone: () => admin.phoneView(),
+    setPhoneTailnet: (on) => admin.setPhoneTailnet(on),
+    setPhonePort: (port) => admin.setPhonePort(port),
+    regeneratePhoneToken: () => admin.regeneratePhoneToken(),
   }
 }

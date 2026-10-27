@@ -36,6 +36,7 @@ export function Composer({
   onResolve,
   mention,
   assignees,
+  mobile = false,
 }: {
   catalog: Catalog
   draftKey: string
@@ -45,6 +46,8 @@ export function Composer({
   mention: { items: Item[]; recent: Recent; create: (title: string) => Promise<string> }
   /** Who to offer to hand the task to (bots and people), the likeliest first. */
   assignees: Someone[]
+  /** On a phone: the icon is tapped to change what is sent, Enter is a new line (Send sends), and it is never focused for the person, which would raise the keyboard. */
+  mobile?: boolean
 }) {
   const [atText, setAtText] = useState(0)
   const [atEmpty, setAtEmpty] = useState(0)
@@ -78,7 +81,7 @@ export function Composer({
   // Focused as it opens (and as the preset changes), with the cursor after any draft rather than before it.
   useEffect(() => {
     const el = box.current
-    if (!el) return
+    if (!el || mobile) return
     el.focus()
     el.setSelectionRange(el.value.length, el.value.length)
   }, [at])
@@ -116,7 +119,11 @@ export function Composer({
       e.preventDefault()
       box.current?.focus()
     }}>
-      <span className="builder-icon" title={`${shown.name} (Tab to change)`}>
+      <span
+        className="builder-icon"
+        title={`${shown.name} (${mobile ? 'tap' : 'Tab'} to change)`}
+        {...(mobile ? { role: 'button', 'aria-label': `${shown.name}: tap to change`, onClick: () => setAt((at + 1) % choices.length) } : {})}
+      >
         <TypeIcon type={shown.icon} />
       </span>
       <div className={`builder-fields hinted ${(recorder.on || recorder.error) && !text ? 'hearing' : ''}`}>
@@ -145,7 +152,7 @@ export function Composer({
               e.preventDefault()
               setAt((at + (e.shiftKey ? -1 : 1) + choices.length) % choices.length)
             }
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !mobile) {
               e.preventDefault()
               void send()
             }

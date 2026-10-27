@@ -33,7 +33,7 @@ const words = (e: ItemEvent) => (e.type === 'note' ? String(e.params.text ?? '')
  * waits for and where it stands; an approval, its form while open. Cancelled events are small notes in the middle.
  * While Ctrl+F's find line has a phrase in it, only what shows the phrase is left, with the phrase marked.
  */
-export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: Catalog; act: Act; onOpen: (id: string) => void }) {
+export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: Catalog; act: Act; onOpen: (id: string) => void; mobile?: boolean }) {
   const { detail, overview, catalog } = props
   const menu = useEventMenu()
   const find = useAtomValue(findAtom)?.trim() ?? ''
@@ -45,7 +45,7 @@ export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: C
   const onOpen = useCallback((id: string) => latest.current.onOpen(id), [])
   const shown = detail.events.filter((e) => !find || shows(words(e), find))
   return (
-    <section className="chat">
+    <section className={`chat ${props.mobile ? 'mobile' : ''}`}>
       {find && !shown.length && <div className="chat-note">Nothing here says “{find}”.</div>}
       {shown.map((e) =>
         e.cancelled && e.type !== 'task' ? (

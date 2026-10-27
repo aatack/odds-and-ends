@@ -11,8 +11,11 @@ import './index.css'
 import './styles.css'
 import './themes.css'
 import { applyAppearance, storedAppearance } from './appearance'
+import { registerServiceWorker } from './phone'
 
 // The chosen theme (dark but for Notebook: entity-graph's tokens redefine themselves under html.dark).
 applyAppearance(storedAppearance())
+
+registerServiceWorker()
 
 createRoot(document.getElementById('root')!).render(<Root />)

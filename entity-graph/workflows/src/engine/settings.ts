@@ -25,6 +25,9 @@ export interface SlackWorkspace {
 /** Not the older app's (47390), so that the two can run side by side. */
 export const DEFAULT_MCP_PORT = 47391
 
+/** The phone listener's port, unless the settings say otherwise: one that lasts, for `tailscale serve` to point at. */
+export const DEFAULT_PHONE_PORT = 47392
+
 export class Settings {
   constructor(
     private store: Store,
@@ -98,6 +101,28 @@ export class Settings {
 
   mcpPort(): number {
     return this.get('mcp.port', DEFAULT_MCP_PORT)
+  }
+
+  // ---- the phone: its listener's token (encrypted, as a secret), its port, and whether the tailnet is let in ----
+
+  phoneToken(): string {
+    const stored = this.get<string | null>('phone.token', null)
+    return (stored && this.readSecret(stored)) || this.regeneratePhoneToken()
+  }
+
+  regeneratePhoneToken(): string {
+    const token = randomBytes(24).toString('base64url')
+    this.set('phone.token', this.secrets.encrypt(token))
+    return token
+  }
+
+  phonePort(): number {
+    return this.get('phone.port', DEFAULT_PHONE_PORT)
+  }
+
+  /** Off by default: only this machine reaches the phone listener. */
+  phoneTailnet(): boolean {
+    return this.get('phone.tailnet', false)
   }
 }
 

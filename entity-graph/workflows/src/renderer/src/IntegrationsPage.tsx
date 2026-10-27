@@ -4,7 +4,8 @@ import { Form } from './forms'
 import { Markdown } from './components/ui/Markdown'
 import { api } from './useWorkflows'
 
-export function IntegrationsPage() {
+/** `mobile`: one column, full width. */
+export function IntegrationsPage({ mobile = false }: { mobile?: boolean }) {
   const [view, setView] = useState<IntegrationsView | null>(null)
   const [error, setError] = useState<string | null>(null)
   const refresh = useCallback(async () => setView(await api().integrations()), [])
@@ -22,7 +23,7 @@ export function IntegrationsPage() {
 
   if (!view) return <div className="muted">Checking…</div>
   return (
-    <div className="page">
+    <div className={`page ${mobile ? 'mobile' : ''}`}>
       {error && <div className="error">{error}</div>}
 
       <section className="card">

@@ -25,7 +25,8 @@ const brief = (v: unknown): string => {
  * The edit log: what was done, by whom and when, the newest first, as egdb keeps it. Choose who (people and bots;
  * nobody chosen is everyone), what (tasks or any event; none is everything) and how far back.
  */
-export function LogPage({ overview, recent, entities: given = [] }: { overview: Overview; recent: Recent; entities?: string[] }) {
+/** `mobile`: one column, full width. */
+export function LogPage({ overview, recent, entities: given = [], mobile = false }: { overview: Overview; recent: Recent; entities?: string[]; mobile?: boolean }) {
   const ref = useContext(ItemRefContext)
   const [authors, setAuthors] = useState<string[]>([])
   const [entities, setEntities] = useState<string[]>(given)
@@ -51,7 +52,7 @@ export function LogPage({ overview, recent, entities: given = [] }: { overview: 
   const people = everyone(overview)
   const toggle = (id: string) => setAuthors(authors.includes(id) ? authors.filter((a) => a !== id) : [...authors, id])
   return (
-    <div className="page log-page">
+    <div className={`page log-page ${mobile ? 'mobile' : ''}`}>
       <div className="log-filters">
         <div className="choices">
           <span className="muted">Who</span>
