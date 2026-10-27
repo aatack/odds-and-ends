@@ -12,8 +12,8 @@ import { catalog } from '../engine/mcp'
 type Methods = Omit<WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser' | 'openSource' | 'closeSource' | 'setToken' | 'token'>
 type Handlers = { [K in keyof Methods]: (...args: Parameters<Methods[K]>) => unknown }
 
-/** Calls that need nobody signed in: signing in, and seeing who there is to sign in as. */
-export const OPEN_METHODS = new Set(['signIn', 'users', 'saveUser', 'catalog'])
+/** Calls that need nobody signed in: signing in, seeing who there is to sign in as, and which source it is (the phone asks first). */
+export const OPEN_METHODS = new Set(['signIn', 'users', 'saveUser', 'catalog', 'source'])
 
 export function handlers(engine: Engine, admin: Admin, me: string, source = ''): Handlers {
   return {

@@ -374,3 +374,75 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
   .script-output { border-top: 1px solid var(--color-gray-200); padding-top: 6px; }
   .view-title.clickable:hover { color: var(--accent); }
 }
+
+/* ---- The phone (PhonePage.tsx) ---- */
+.phone-connect { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+.phone-connect-text { flex: 1; min-width: 240px; display: flex; flex-direction: column; gap: 10px; }
+.qr { flex: none; border-radius: 8px; }
+.phone-toggle { font-size: 13px; }
+.search-new { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); border-radius: 14px; }
+/* Signing in, on a narrow screen. */
+@media (max-width: 640px) {
+  .sign-in { height: 100dvh; padding: max(12vh, env(safe-area-inset-top)) 16px 0; }
+  .sign-in .page { width: 100%; }
+  .sign-in input { font-size: 16px; }
+}
+
+/* ---- Laid out for a phone: `.mobile`, set by the views given `mobile` (App.tsx decides it, once). ---- */
+.app.mobile, .app.mobile .main { height: 100dvh; }
+.app.mobile .main { padding: 0; }
+.app.mobile .content { max-width: none; }
+/* The menu's button is at the top right, in the header's place for it, so nothing covers the chat input. */
+.app.mobile .view-header { padding: max(8px, env(safe-area-inset-top)) 56px 8px max(4px, env(safe-area-inset-left)); min-height: 52px; }
+.app-menu.mobile .corner-button { top: max(8px, env(safe-area-inset-top)); bottom: auto; }
+.app-menu.mobile button[data-ui].corner-button { left: auto; right: max(8px, env(safe-area-inset-right)); width: 40px; height: 40px; border-radius: 20px; }
+.app-menu.mobile .app-menu-list { left: 8px; right: 8px; top: calc(max(8px, env(safe-area-inset-top)) + 48px); bottom: auto; max-height: calc(100dvh - 80px); overflow-y: auto; }
+.app-menu.mobile .menu button { padding: 12px; }
+.app-menu.mobile .menu-status { max-width: 50vw; }
+.app-menu.mobile .menu-selects select { font-size: 16px; padding: 6px 8px; }
+.app.mobile button[data-ui].back { padding: 10px; }
+.app.mobile .view-header .buttons { gap: 2px; }
+.app.mobile .view-header .buttons button { min-width: 40px; min-height: 40px; }
+.app.mobile .view-body { padding: 4px 12px calc(16px + env(safe-area-inset-bottom)); }
+.app.mobile .view-body.fill { padding: 0; }
+.app.mobile .view > .error, .app.mobile .view-note { margin-left: 12px; margin-right: 12px; }
+/* 16px in every input, so a phone does not zoom in on focusing one. */
+.app.mobile input, .app.mobile textarea, .app.mobile select { font-size: 16px; }
+
+.items-view.mobile { max-width: none; }
+.items-view.mobile .search { padding-right: 64px; }
+.items-view.mobile .row { min-height: 48px; flex-wrap: wrap; row-gap: 2px; padding: 8px; }
+.items-view.mobile .row-title { flex: 1 1 calc(100% - 32px); white-space: normal; }
+.items-view.mobile .row-status { order: 3; flex: 1; max-width: none; margin-left: 26px; }
+.items-view.mobile .row-age { order: 4; width: auto; }
+.items-view.mobile .row.more { min-height: 40px; }
+/* A tap leaves no highlight behind: there is no hover on a phone. */
+.items-view.mobile .row.selected { background: none; }
+
+.app.mobile .chat-scroll, .app.mobile .item-parent { padding-left: 12px; padding-right: 12px; }
+.app.mobile .composer { padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); }
+.app.mobile .composer .builder-icon[role=button] { padding: 9px; top: 5px; }
+.app.mobile .composer .builder-icon.right.record { right: 44px; }
+.chat.mobile .bubble, .chat.mobile .bubble-stack { max-width: 88%; }
+.chat.mobile .bubble-stack .bubble { max-width: 100%; }
+.chat.mobile .bubble-row, .chat.mobile .chat-note { -webkit-touch-callout: none; }
+.chat.mobile button[data-ui].reaction { visibility: visible; }
+
+.bot-top.mobile { padding: 0 12px; }
+.bot-top.mobile .bot-line { flex-wrap: wrap; row-gap: 6px; }
+.bot-top.mobile .bot-line > .muted { order: 3; flex-basis: 100%; }
+.bot-top.mobile .bot-line button[data-ui]:not(.link) { margin-left: auto; padding: 8px 14px; }
+
+.page.mobile { max-width: none; width: 100%; gap: 12px; }
+.page.mobile .card { padding: 12px; }
+.page.mobile .kv { grid-template-columns: 1fr; gap: 4px; }
+.page.mobile .kv > span { margin-top: 6px; }
+.page.mobile .row-inline { flex-wrap: wrap; }
+.page.mobile .copyable { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+.page.mobile .copyable code { white-space: normal; overflow-wrap: anywhere; }
+.page.mobile .markdown pre, .page.mobile table { max-width: 100%; overflow-x: auto; display: block; }
+.page.mobile button[data-ui] { padding: 9px 14px; }
+.bots-page.mobile .row { flex-wrap: wrap; min-height: 48px; padding: 8px; }
+.bots-page.mobile .row-title { flex: 1 1 calc(100% - 32px); }
+.bots-page.mobile .row-status { order: 3; margin-left: 26px; max-width: none; }
+
