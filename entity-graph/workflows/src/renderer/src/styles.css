@@ -42,14 +42,15 @@ button[data-ui].link { background: none; color: var(--muted); padding: 0; }
 .chat-scroll .chat-title { margin: auto 0 12px; font-size: 22px; font-weight: 500; }
 .chat-scroll .chat-title + .chat { margin-top: 0; }
 .log-page { width: 100%; max-width: none; }
-.log-filters { display: flex; flex-direction: column; gap: 8px; }
-.log-filters .choices .muted { width: 44px; font-size: 12px; }
-.log-chosen { display: inline-flex; align-items: center; gap: 4px; }
-.log-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.log-table td { padding: 4px 8px 4px 0; vertical-align: top; border-top: 1px solid var(--line); }
-.log-when { white-space: nowrap; }
-.log-who, .log-key { white-space: nowrap; }
-.log-value { overflow-wrap: anywhere; color: var(--muted); }
+.log-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.log-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; width: 100%; }
+.log-line { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.log-when { font-size: 12px; white-space: nowrap; min-width: 92px; }
+.log-who { font-weight: 500; white-space: nowrap; }
+.log-what { min-width: 0; overflow-wrap: anywhere; }
+.log-key { font-family: var(--font-mono); font-size: 12px; padding: 0 4px; border-radius: 4px; background: var(--color-gray-100); }
+.log-key.removed { text-decoration: line-through; }
+.log-value { color: var(--muted); }
 /* While recording into an empty chat input, what is heard takes the text box's place, and wraps as text would. */
 .builder-fields.hearing textarea { display: none; }
 .builder-fields.hearing .hint.recording { position: static; display: block; white-space: normal; overflow: visible; color: var(--muted); padding: 4px 0; }
@@ -87,6 +88,7 @@ button[data-ui].link { background: none; color: var(--muted); padding: 0; }
 .tool-search { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
 /* Where else a message is: as a reply quotes what it answers, a bar above it with a coloured edge. */
 .bubble-elsewhere { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; padding: 4px 8px; border-left: 3px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--ink) 6%, transparent); font-size: 12px; }
+.item-ref .pill-label, .assignee-pill .pill-label { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; }
 .chat-working { font-size: 12px; color: var(--muted); padding: 0 4px 8px; }
 .composer { padding: 12px 32px 16px; display: flex; flex-direction: column; gap: 8px; }
 .composer-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

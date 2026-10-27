@@ -48,7 +48,7 @@ export function Pill({ id, label, icon, onOpen }: { id: string; label: ReactNode
   return (
     <button data-ui className="link item-ref" onClick={onOpen} {...menu(id)}>
       {icon}
-      {label}
+      <span className="pill-label">{label}</span>
     </button>
   )
 }
