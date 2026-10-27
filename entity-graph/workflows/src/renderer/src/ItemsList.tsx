@@ -172,16 +172,16 @@ export function ItemsList(props: {
             </button>
           )
         ) : (
-        <span className="keys">
-          <span className="key-pill">
-            <kbd>Enter</kbd> {verb}
-          </span>
-          {text.trim() && (
+          <span className="keys">
             <span className="key-pill">
-              <kbd>Tab</kbd> New
+              <kbd>Enter</kbd> {verb}
             </span>
-          )}
-        </span>
+            {text.trim() && (
+              <span className="key-pill">
+                <kbd>Tab</kbd> New
+              </span>
+            )}
+          </span>
         )}
       </div>
 

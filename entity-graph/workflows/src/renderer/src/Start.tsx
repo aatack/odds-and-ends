@@ -23,7 +23,7 @@ export async function begin(s: Session & { token?: string }): Promise<Session> {
 }
 
 // A link from the Phone page brings its token: taken as the page loads, before anything asks.
-const linked = inBrowser ? tokenFromLink() : null
+let linked = inBrowser ? tokenFromLink() : null
 
 /**
  * The first screen: a username and a source, both needed. In a browser (the phone), a username and the token from
@@ -35,7 +35,12 @@ const linked = inBrowser ? tokenFromLink() : null
 export function Start({ kept, onBegin }: { kept: Partial<Session>; onBegin: (s: Session) => void }) {
   const [user, setUser] = useState(kept.user ?? '')
   const [source, setSource] = useState(kept.source ?? '')
-  const [token, setToken] = useState(() => linked ?? api().token?.() ?? '')
+  // The link's token is used once: if it is refused, it is not offered again.
+  const [token, setToken] = useState(() => {
+    const t = linked ?? api().token?.() ?? ''
+    linked = null
+    return t
+  })
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const go = async (s: Session) => {
