@@ -8,7 +8,7 @@
  * which stay open until something happens (a script says it is done, an approval
  * is given, a child item closes).
  */
-export type EventKind = 'task' | 'note' | 'approval' | 'script' | 'process' | 'slack_message' | 'slack_channel' | 'bot' | 'user'
+export type EventKind = 'task' | 'note' | 'approval' | 'script' | 'process' | 'widget' | 'slack_message' | 'slack_channel' | 'bot' | 'user'
 
 /** An event as it is added. `ref` names it, so another added alongside can point at it. */
 export interface EventSpec {
@@ -354,6 +354,8 @@ export interface WorkflowsAPI {
   processOutput: (eventId: string, n: number) => Promise<{ status: ProcessStatus | null; lines: string[] }>
   /** The edit log: what was done, by whom and when, the newest first. */
   editLog: (query: LogQuery) => Promise<LogEntry[]>
+  /** Changes a widget's state. */
+  setWidgetState: (eventId: string, state: unknown) => Promise<void>
   /** Turns the person's thumbs-up on an event on or off. */
   react: (eventId: string, on: boolean) => Promise<void>
   customActions: () => Promise<CustomAction[]>
@@ -487,7 +489,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'processOutput', 'editLog',
+  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'setWidgetState', 'processOutput', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'regeneratePhoneToken',

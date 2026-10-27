@@ -358,6 +358,15 @@ export class Engine extends EventEmitter {
     this.emit('change')
   }
 
+  /** Changes a widget's state: a value on its event (egdb keeps every one before). */
+  async setWidgetState(eventId: string, state: unknown, actor = this.me()): Promise<void> {
+    const row = this.row(eventId)
+    if (row?.type !== 'widget') throw new Error(`No widget ${eventId}.`)
+    if (JSON.stringify(row.params.widget_state ?? null) === JSON.stringify(state ?? null)) return
+    this.store.setParams(eventId, { ...row.params, widget_state: state ?? null }, actor, this.now())
+    this.emit('change')
+  }
+
   /** Turns `actor`'s reaction (a thumbs-up) to an event on or off. */
   async react(eventId: string, on: boolean, actor = this.me()): Promise<void> {
     const row = this.row(eventId)

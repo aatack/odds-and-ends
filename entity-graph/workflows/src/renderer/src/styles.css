@@ -72,6 +72,9 @@ button[data-ui].link { background: none; color: var(--muted); padding: 0; }
 .setup-head { display: flex; align-items: baseline; gap: 6px; }
 .setup-input { display: flex; gap: 6px; }
 .setup-input input { flex: 1; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+.widget-frame { display: block; width: 100%; min-width: 280px; border: none; background: transparent; }
+.bubble-stack:has(.bubble-widget) { width: 75%; }
+.bubble-widget { width: 100%; box-sizing: border-box; }
 .chat-working { font-size: 12px; color: var(--muted); padding: 0 4px 8px; }
 .composer { padding: 12px 32px 16px; display: flex; flex-direction: column; gap: 8px; }
 .composer-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

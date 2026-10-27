@@ -216,6 +216,35 @@ export const user: EventType = {
   describe: (p) => String(p.name || p.username),
 }
 
+export const WIDGET_DOC =
+  'A widget: a small piece of UI with state of its own, shown in the chat (and larger in its view). Use one when a person should see or ' +
+  'fill in structured data: a checklist, a form, a table to edit, a dashboard.\n' +
+  '- `html` is an HTML fragment (with <script> and <style> in it), run in a sandbox with no way out: no network, no app. It is styled as ' +
+  'the app is (its fonts and colours as CSS variables: --ink, --muted, --panel, --bg, --line, --accent), so plain HTML (button, input, ' +
+  'table, select) looks native.\n' +
+  '- In its scripts: `onState(fn)` calls fn with the state now and whenever it changes (from anywhere); `setState(next)` or ' +
+  '`setState(current => next)` changes it (kept on the event: other items, bots and scripts read it as `widget_state`); `getState()`; ' +
+  'and helpers that answer HTML strings: `esc(text)`, `pill(text)`, `card(title, bodyHtml)`.\n' +
+  '- Update the page in place in onState (set .textContent, .value, .checked) rather than rewriting innerHTML round an input, so a ' +
+  'person typing keeps their place.\n' +
+  '- `widget_state` is its first state (any JSON). set_widget_state changes it from outside.\n' +
+  'Example: html: \'<button id="b">Add one</button> <span id="n"></span><script>onState(s => n.textContent = s.count); ' +
+  'b.onclick = () => setState(s => ({ ...s, count: s.count + 1 }))</script>\', widget_state: { count: 0 }'
+
+export const widget: EventType = {
+  type: 'widget',
+  description: WIDGET_DOC,
+  params: {
+    title: z.string().optional().describe('What it is, in a line.'),
+    html: z.string().describe('The HTML fragment, scripts and styles included: see the description.'),
+    widget_state: z.unknown().optional().describe('Its state: any JSON. Its first, as it is added.'),
+  },
+  data: '—',
+  blocking: false,
+  bots: true,
+  describe: (p) => String(p.title ?? 'Widget'),
+}
+
 export const proc: EventType = {
   type: 'process',
   description:
@@ -279,4 +308,4 @@ export const slackChannel: EventType = {
   describe: (p) => `Slack ${p.channel}, ${at(p.oldest)} to ${p.latest ? at(p.latest) : 'now'}`,
 }
 
-export const EVENT_TYPES: EventType[] = [task, note, approval, script, proc, slackMessage, slackChannel, bot, user]
+export const EVENT_TYPES: EventType[] = [task, note, approval, script, proc, widget, slackMessage, slackChannel, bot, user]

@@ -99,7 +99,7 @@ window: there `window.workflows` is the preload's, as always.
   task's children are its history. Some events resolve as they are added (a note); **blockers**
   wait until something happens (an approval). Tasks don't depend on, or attach to, each other: a task in
   another is a card in its chat, and blocks nothing (dependencies are to come back with the wake rules).
-  There are nine types: `task`, `note`, `approval`, `script`, `process`, `slack_message`, `slack_channel`, `bot` and
+  There are ten types: `task`, `note`, `approval`, `script`, `process`, `widget`, `slack_message`, `slack_channel`, `bot` and
   `user` (a person).
 - **People** are items too (`user` events, in no item, whose id is their username); they sign in to the
   app by typing their username (no password: the app is local). Tasks are **assigned** to people and
@@ -126,6 +126,10 @@ window: there `window.workflows` is the preload's, as always.
 - The chat input sends a note by default; `@` a bot or a person in it to hand them the task (and take it
   off the sender). With nothing typed it offers "Assign to @someone", the likeliest first. Tab steps through the
   choices; its icon and hint show which.
+- A `widget` is UI with state of its own (`WIDGET_DOC` in `eventTypes.ts`): an HTML fragment run in a sandboxed
+  iframe (`Widget.tsx`: scripts only, a CSP that allows nothing out, no navigation), styled with the app's CSS
+  variables. Its only way out is `setState`, by message; the state is its `widget_state` value (egdb keeps every one
+  before), which bots and scripts read and set (`set_widget_state`). The frame is made once per HTML, so focus stays.
 - A `process` is a command the backend keeps running (a dev server) until it exits or is stopped (cancelled, its
   task closing, or the backend stopping): `processes.ts`, read by its first check. A bot may add one, as it may
   run the same command in its shell; the unsafe rule binds it there just the same.

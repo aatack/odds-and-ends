@@ -242,6 +242,16 @@ export const itemActions: Action[] = [
     },
   },
   {
+    name: 'set_widget_state',
+    unsafe: false,
+    description: "Change a widget's state (any JSON): it shows at once wherever the widget is open. Its state now is its `widget_state` param (get_item).",
+    input: { event_id: z.string(), state: z.unknown() },
+    run: async (a, ctx) => {
+      await ctx.engine.setWidgetState(String(a.event_id), a.state, ctx.actor)
+      return 'Set.'
+    },
+  },
+  {
     name: 'cancel_event',
     unsafe: false,
     description: 'End a blocker without it happening (a task is closed as cancelled).',

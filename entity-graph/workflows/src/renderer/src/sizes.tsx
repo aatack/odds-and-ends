@@ -14,6 +14,7 @@ import { useEventMenu } from './EventMenu'
 import { eventIcon } from './icons'
 import { ProcessCard } from './ProcessCard'
 import { SlackCard } from './SlackView'
+import { Widget } from './Widget'
 import { TaskCard } from './TaskCard'
 import { minutes, time, useNow } from './time'
 import { api } from './useWorkflows'
@@ -65,6 +66,7 @@ export const CARDS: Partial<Record<EventKind, (p: CardProps) => ReactNode>> = {
   ),
   script: ({ event: e, act, find }) => <ScriptCard event={e} act={act} find={find} />,
   process: ({ event: e, act }) => <ProcessCard event={e} act={act} lines={8} />,
+  widget: ({ event: e }) => <Widget event={e} />,
   slack_message: ({ event: e, find }) => <SlackCard event={e} find={find} />,
   slack_channel: ({ event: e, find }) => <SlackCard event={e} find={find} />,
   approval: ({ event: e, find, catalog, act }) => (
@@ -89,6 +91,7 @@ export const FOCUS: Record<EventKind, 'chat' | 'details'> = {
   approval: 'details',
   script: 'details',
   process: 'details',
+  widget: 'details',
   slack_message: 'details',
   slack_channel: 'details',
   user: 'details',

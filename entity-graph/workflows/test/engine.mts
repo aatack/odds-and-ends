@@ -102,7 +102,7 @@ const blockers = (id: string) => item(id).blockers.map((b) => b.type)
 const last = (id: string, type: string) => engine.children(id).filter((e) => e.type === type).at(-1)!
 
 // The types there are; those from before are gone.
-assert.deepEqual(engine.eventTypes.map((t) => t.type), ['task', 'note', 'approval', 'script', 'process', 'slack_message', 'slack_channel', 'bot', 'user'])
+assert.deepEqual(engine.eventTypes.map((t) => t.type), ['task', 'note', 'approval', 'script', 'process', 'widget', 'slack_message', 'slack_channel', 'bot', 'user'])
 await assert.rejects(engine.addEvents((await engine.create('x'))!, [{ type: 'message' as 'note', params: { text: 'x' } }]), /No event type message/)
 for (const i of engine.overview().items) await engine.close(i.id)
 
@@ -343,6 +343,18 @@ await engine.close(loose)
   assert.equal(engine.event(said)!.parentId, from, 'what is linked stays where it sits')
   await engine.close(from)
   await engine.close(made)
+}
+
+// A widget: its state is a value on its event, changed by a person, a bot or a script, and read back by anyone.
+{
+  const t = (await engine.create('Widget'))!
+  const [w] = await engine.addEvents(t, [{ type: 'widget', params: { title: 'Count', html: '<b id="n"></b>', widget_state: { count: 0 } } }], 'bot', 'bot')
+  assert.deepEqual(blockers(t), [], 'a widget blocks nothing')
+  await engine.setWidgetState(w, { count: 1 })
+  await engine.callAction('set_widget_state', { event_id: w, state: { count: 2 } }, { engine, author: 'bot', actor: 'bot', itemId: t, runId: null })
+  assert.deepEqual(engine.event(w)!.params.widget_state, { count: 2 })
+  await assert.rejects(engine.setWidgetState(t, {}), /No widget/)
+  await engine.close(t)
 }
 
 // A process: started by its first check, ended when it exits (with what it wrote last), or stopped by a cancel.

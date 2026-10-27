@@ -4,6 +4,7 @@ import { minutes, time } from './Chat'
 import { TYPE_NAME } from './icons'
 import { ProcessCard } from './ProcessCard'
 import { SlackMessages } from './SlackView'
+import { Widget } from './Widget'
 import { fenced, Markdown } from './components/ui/Markdown'
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
@@ -49,6 +50,11 @@ export function EventView({
       {e.type === 'process' && (
         <section className="card">
           <ProcessCard event={e} act={act} lines={500} />
+        </section>
+      )}
+      {e.type === 'widget' && (
+        <section className="card">
+          <Widget event={e} tall />
         </section>
       )}
       {(e.type === 'slack_message' || e.type === 'slack_channel') && <SlackMessages event={e} />}

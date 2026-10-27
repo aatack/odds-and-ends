@@ -31,6 +31,7 @@ export function handlers(engine: Engine, admin: Admin, me: string, source = ''):
     close: (id) => engine.close(id, { actor: me }),
     reopen: (id) => engine.reopen(id, me),
     react: (eventId, on) => engine.react(eventId, on, me),
+    setWidgetState: (eventId, state) => engine.setWidgetState(eventId, state, me),
     editLog: (query) => engine.store.log(query),
     processOutput: (eventId, n) => ({ status: engine.processes.status(eventId), lines: engine.processes.output(eventId, n) }),
     rename: (id, title) => engine.rename(id, title, me),
