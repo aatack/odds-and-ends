@@ -48,7 +48,7 @@ export function botOutputSchema(types: EventType[]): Record<string, unknown> {
       updates: {
         type: 'array',
         description:
-          'One for each item you have (and any other you did something in). An item you have and say nothing of goes back ' +
+          'One for each item you have, and one for any other you want to say something in (its message is a note there; who has it is left alone unless you say). An item you have and say nothing of goes back ' +
           'to the person who last had it, unless you added a wait to it.',
         items: {
           type: 'object',

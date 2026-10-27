@@ -240,6 +240,25 @@ assert.ok(item(parent).closed)
   await engine.close(loose.id)
 }
 
+// A bot can say something in a task it doesn't have: by its update, or by add_events. Who has that task is left alone.
+{
+  const host = (await engine.create('Host'))!
+  const other = (await engine.create('Other'))!
+  behaviours.push(async ({ call }) => {
+    await call('add_events', { item_id: other, events: [{ type: 'note', params: { text: 'By the tool.' } }] })
+    return out({ item: host, message: 'Told them.' }, { item: other, message: 'By the update.' })
+  })
+  await toBot(host, 'Tell the other task')
+  await settle()
+  assert.deepEqual(
+    engine.children(other).filter((e) => e.type === 'note').map((e) => [e.params.text, e.createdBy]),
+    [['By the tool.', `bot:${threepio}`], ['By the update.', `bot:${threepio}`]],
+  )
+  assert.ok(item(other).withYou, 'a task the bot was not given stays with whoever had it')
+  await engine.close(host)
+  await engine.close(other)
+}
+
 // ---- 6. Output that can't be used, or an update that can't be applied, is said, and the item goes back ----
 const bad = (await engine.create('Bad'))!
 behaviours.push(async () => out({ item: bad, events: [{ type: 'user', params: { username: 'Not Valid' } }] }))

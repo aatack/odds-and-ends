@@ -286,7 +286,9 @@ button[data-ui].snooze-choice:hover { background: var(--color-gray-100); filter:
 }
 .items-view .row.more { justify-content: flex-end; padding-top: 1px; padding-bottom: 1px; font-size: 12px; }
 .view-title-input { border: none; background: transparent; color: inherit; font: inherit; padding: 0; outline: none; }
-button[data-ui].link.item-ref { color: var(--ink); display: inline-flex; align-items: baseline; gap: 4px; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+/* A reference in text: an outlined pill, tinted under the mouse, so it reads as something to open. */
+button[data-ui].link.item-ref { color: var(--ink); display: inline-flex; align-items: baseline; gap: 4px; padding: 0 7px; border: 1px solid var(--color-gray-300); border-radius: 9px; line-height: 1.35; }
+button[data-ui].link.item-ref:hover { background: var(--color-gray-100); border-color: var(--color-gray-400); }
 button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: center; color: var(--muted); }
 
 /* ---- Bots, and who has what ---- */
