@@ -87,6 +87,8 @@ button[data-ui].link { background: none; color: var(--muted); padding: 0; }
 .search-code { width: 100%; font-family: var(--font-mono); font-size: 12px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; resize: vertical; }
 .tool-runner { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto; }
 .tool-search { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+/* Where else a message is: as a reply quotes what it answers, a bar above it with a coloured edge. */
+.bubble-elsewhere { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; padding: 4px 8px; border-left: 3px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--ink) 6%, transparent); font-size: 12px; }
 .chat-working { font-size: 12px; color: var(--muted); padding: 0 4px 8px; }
 .composer { padding: 12px 32px 16px; display: flex; flex-direction: column; gap: 8px; }
 .composer-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

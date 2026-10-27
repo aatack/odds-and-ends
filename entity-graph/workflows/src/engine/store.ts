@@ -138,6 +138,8 @@ export class Store {
    * traceability. Each event sits in one task (its first `contains` link, its parent); these are the rest.
    */
   private linkedIn = new Map<string, { id: string; at: number; by: string }[]>()
+  /** The other way: each event's parents by a later link. */
+  private linkedFrom = new Map<string, string[]>()
   /** Writes held back while a `batch` runs, so that they land together. */
   private held: Held[] | null = null
   /** The last moment handed out. */
@@ -258,7 +260,14 @@ export class Store {
     if (!row) throw new Error(`No event ${id}.`)
     if (row.parent_id === parentId || id === parentId || this.linked(parentId).some((l) => l.id === id)) return
     this.linkedIn.set(parentId, [...this.linked(parentId), { id, at, by }])
+    this.linkedFrom.set(id, [...(this.linkedFrom.get(id) ?? []), parentId])
     this.out([{ link: { source: parentId, destination: id, link_type: 'contains', sort: { explicit: at } } }], by, at)
+  }
+
+  /** Every item that contains an event (its `contains` links in): where it sits first, then where it was linked. */
+  containers(id: string): string[] {
+    const row = this.events.get(id)
+    return [...(row?.parent_id ? [row.parent_id] : []), ...(this.linkedFrom.get(id) ?? [])]
   }
 
   /** The events a task contains by a later link, the first linked first. */
@@ -376,7 +385,10 @@ export class Store {
     assigned?: { item: string; to: string; at: number; by: string }[]
     linked?: { parent: string; id: string; at: number; by: string }[]
   }): void {
-    for (const l of rows.linked ?? []) this.linkedIn.set(l.parent, [...this.linked(l.parent), { id: l.id, at: l.at, by: l.by }])
+    for (const l of rows.linked ?? []) {
+      this.linkedIn.set(l.parent, [...this.linked(l.parent), { id: l.id, at: l.at, by: l.by }])
+      this.linkedFrom.set(l.id, [...(this.linkedFrom.get(l.id) ?? []), l.parent])
+    }
     for (const a of rows.assigned ?? []) this.link(a.item, a.to, { at: a.at, by: a.by, n: 0 })
     for (const r of [...rows.events].sort((a, b) => a.seq - b.seq)) this.index(r)
     for (const [k, value] of rows.settings) this.settings.set(k, value)

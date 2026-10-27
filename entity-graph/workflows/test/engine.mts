@@ -341,6 +341,7 @@ await engine.close(loose)
   assert.ok(engine.detail(made)!.events.some((e) => e.id === said), 'the new task shows what it came from')
   assert.ok(engine.detail(from)!.events.some((e) => e.id === made), 'and where it came from shows it')
   assert.equal(engine.event(said)!.parentId, from, 'what is linked stays where it sits')
+  assert.deepEqual(engine.event(said)!.containers, [from, made], 'and is in both: where it sits first')
   await engine.close(from)
   await engine.close(made)
 }

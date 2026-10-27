@@ -1,12 +1,12 @@
 import { ThumbsUp } from 'lucide-react'
-import { memo, useCallback, useRef } from 'react'
+import { memo, useCallback, useContext, useRef } from 'react'
 import type { Catalog, ItemDetail, ItemEvent, Overview } from '../../shared/types'
 import { isPerson, nameOf } from './people'
 import { useEventMenu } from './EventMenu'
 import { EventAvatar, EventCard } from './sizes'
 import { shortTime, time } from './time'
 import { useAtomValue } from 'jotai'
-import { shows } from './components/ui/Markdown'
+import { ItemRefContext, shows } from './components/ui/Markdown'
 import { findAtom } from './views'
 import { api } from './useWorkflows'
 
@@ -58,6 +58,7 @@ export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: C
             event={e}
             mine={e.createdBy === overview.me.id}
             me={overview.me.id}
+            here={detail.item.id}
             who={isPerson(overview, e.createdBy) ? nameOf(overview, e.createdBy) : null}
             ownerId={ownerOf(overview, e.createdBy)?.id ?? null}
             ownerName={ownerOf(overview, e.createdBy)?.name ?? null}
@@ -72,7 +73,7 @@ export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: C
   )
 }
 
-type MessageProps = { event: ItemEvent; mine: boolean; me: string; who: string | null; ownerId: string | null; ownerName: string | null; find: string; catalog: Catalog; act: Act; onOpen: (id: string) => void }
+type MessageProps = { here: string; event: ItemEvent; mine: boolean; me: string; who: string | null; ownerId: string | null; ownerName: string | null; find: string; catalog: Catalog; act: Act; onOpen: (id: string) => void }
 
 /** One event, as a message: right-click it to open it or debug it. Drawn again only when something it shows changed. */
 const Message = memo(function Message(props: MessageProps) {
@@ -80,6 +81,9 @@ const Message = memo(function Message(props: MessageProps) {
   const menu = useEventMenu()
   // Thumbs-ups: a count under the bubble (pressing it toggles yours), or, with none yet, a button shown on hover.
   const reacted = e.reactions.includes(me)
+  // Where else it is (the other items that contain it), as a reply is shown: pills in a quoted bar, above what it says.
+  const ref = useContext(ItemRefContext)
+  const elsewhere = e.containers.filter((id) => id !== props.here)
   const react = () => void act(() => api().react(e.id, !reacted))
   return (
     <div className={`bubble-row ${mine ? 'mine' : 'theirs'}`}>
@@ -87,6 +91,13 @@ const Message = memo(function Message(props: MessageProps) {
       <div className="bubble-stack">
         <div className={`bubble bubble-${e.type}`} title={`${who ? `${who}, ` : ''}${time(e.createdAt)}`} {...menu(e.id)}>
           {!mine && who && <span className="bubble-who">{who}</span>}
+          {elsewhere.length > 0 && (
+            <div className="bubble-elsewhere" title="Also in">
+              {elsewhere.map((id) => (
+                <span key={id}>{ref ? ref(id) : id}</span>
+              ))}
+            </div>
+          )}
           <EventCard {...props} />
           <span className="bubble-time">{shortTime(e.createdAt)}</span>
         </div>

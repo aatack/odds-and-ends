@@ -60,6 +60,8 @@ export interface ItemEvent {
   runs: number
   /** Who reacted to it (a thumbs-up): people's usernames, or bots' actors (`bot:<id>`). */
   reactions: string[]
+  /** Every item that contains it (`contains` links to it): where it sits first, then where it was linked too. */
+  containers: string[]
 }
 
 /** A task (or a bot, for its own chat), as the lists and its view read it. */
@@ -365,6 +367,8 @@ export interface WorkflowsAPI {
   runSearchSection: (section: SearchSection, text: string) => Promise<SearchRow[]>
   /** Runs a tool (any action: the same registry as the MCP and a script's tools) as the person, from a task's `/`: what it answered is a note in the task. */
   runTool: (itemId: string, name: string, args: Record<string, unknown>) => Promise<unknown>
+  /** Puts events in a task as well as where they sit (`contains` links): an event can be in many. */
+  link: (itemId: string, eventIds: string[]) => Promise<void>
   /** Changes a widget's state. */
   setWidgetState: (eventId: string, state: unknown) => Promise<void>
   /** Turns the person's thumbs-up on an event on or off. */
@@ -500,7 +504,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addEvents', 'runTool', 'searchSections', 'setSearchSections', 'runSearchSection', 'setWidgetState', 'processOutput', 'editLog',
+  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addEvents', 'runTool', 'link', 'searchSections', 'setSearchSections', 'runSearchSection', 'setWidgetState', 'processOutput', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'regeneratePhoneToken',

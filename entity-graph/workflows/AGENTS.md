@@ -171,6 +171,13 @@ sending, deploying and deleting, in any integration.
   than the MCP's, so give bots no new credentials lightly.
 - `test/engine.mts` checks the rule. Keep those checks passing; never loosen them.
 
+## An event in many items
+
+An event sits in one item (its first `contains` link: `parent_id`) and can be put in others as well (later
+`contains` links: `link_events`, or "Also put in…" in its right-click menu): it shows in each one's chat, and stays
+where it sits. `ItemEvent.containers` lists them all; a chat shows the others as pills in a quoted bar above the
+message, as a reply is shown. Only where it sits counts for blockers, wakes and closing.
+
 ## The search page
 
 Every finder (the Tasks view, `@`, the pickers: `ItemsList`) shows the same configured sections, kept as `sections` on

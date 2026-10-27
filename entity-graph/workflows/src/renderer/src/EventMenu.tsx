@@ -1,7 +1,9 @@
 import { autoUpdate, flip, offset, shift, useFloating } from '@floating-ui/react-dom'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { useEffect, useState, type MouseEvent } from 'react'
-import type { CustomAction, ItemEvent } from '../../shared/types'
+import type { CustomAction, Item, ItemEvent } from '../../shared/types'
+import { ItemPicker } from './ItemPicker'
+import type { Recent } from './sections'
 import { eventActions } from './eventActions'
 import { userAtom } from './people'
 import { api } from './useWorkflows'
@@ -28,8 +30,13 @@ export function EventMenu({
   actOn,
   skip,
   custom,
+  tasks,
+  recent,
 }: {
   custom: CustomAction[]
+  /** What "Also put in" picks from. */
+  tasks: Item[]
+  recent: Recent
   actOn: (id: string) => (fn: () => Promise<unknown>) => Promise<void>
   skip: (id: string) => void
 }) {
@@ -71,7 +78,23 @@ export function EventMenu({
       window.removeEventListener('blur', close)
     }
   }, [menu, setMenu])
-  if (!menu) return null
+  // "Also put in…": the event a task is being picked for, once the menu has closed.
+  const [adding, setAdding] = useState<string | null>(null)
+  const picker = adding && (
+    <ItemPicker
+      title="Also put it in"
+      items={tasks.filter((t) => t.id !== adding && !t.closed)}
+      recent={recent}
+      verb="Put it there"
+      onPick={(to) => {
+        const id = adding
+        setAdding(null)
+        void actOn(to)(() => api().link(to, [id]))
+      }}
+      onClose={() => setAdding(null)}
+    />
+  )
+  if (!menu) return picker || null
   const push = (view: View) => {
     if (!sameView(views[views.length - 1], view)) setViews([...views, view])
     setMenu(null)
@@ -81,6 +104,15 @@ export function EventMenu({
       <button onClick={() => push({ kind: 'event', id: menu.id })}>Open</button>
       <button onClick={() => push({ kind: 'debug', id: menu.id })}>Debug</button>
       <button onClick={() => push({ kind: 'log', id: menu.id })}>Edit log</button>
+      <button
+        title="Put it in another task as well: it stays where it is, and shows there too"
+        onClick={() => {
+          setAdding(menu.id)
+          setMenu(null)
+        }}
+      >
+        Also put in…
+      </button>
       {/* A task on screen is renamed in its header. */}
       {event?.id === menu.id && event.type === 'task' && sameView(views[views.length - 1], { kind: 'event', id: event.id }) && (
         <button

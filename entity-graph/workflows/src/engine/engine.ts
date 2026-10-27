@@ -210,6 +210,7 @@ export class Engine extends EventEmitter {
       runs: r.runs,
       lastError: r.last_error,
       reactions: r.reactions,
+      containers: this.store.containers(r.id),
     }
   }
 
