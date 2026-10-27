@@ -1,5 +1,5 @@
 import { Mic, SendHorizontal, Square } from 'lucide-react'
-import { useRecorder } from './recorder'
+import { useHasDeepgram, useRecorder } from './recorder'
 import { useAtom } from 'jotai'
 import { useEffect, useRef, useState } from 'react'
 import type { Catalog, Item, PresetInfo } from '../../shared/types'
@@ -103,6 +103,7 @@ export function Composer({
   }
   // Recording: each finished utterance goes as a note, as if typed and sent (it hands the task to nobody).
   const recorder = useRecorder((said) => void onSend('note', said))
+  const canRecord = useHasDeepgram()
   return (
     <div className="builder-row compact" onMouseDown={(e) => {
       if ((e.target as HTMLElement).closest('textarea, button, [role=button]')) return
@@ -161,7 +162,7 @@ export function Composer({
         )}
       </div>
       {/* With nothing typed, a record button beside Send: what is said is transcribed live and sent as notes. */}
-      {(!text || recorder.on) && (
+      {canRecord && (!text || recorder.on) && (
         <span
           className={`builder-icon right record ${recorder.on ? 'on' : ''}`}
           title={recorder.on ? 'Stop recording' : 'Record: what you say is sent as notes'}

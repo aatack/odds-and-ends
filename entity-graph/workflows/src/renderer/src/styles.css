@@ -165,6 +165,13 @@ button[data-ui].avatar:hover { background: var(--color-gray-300); filter: none; 
 .builder-row { position: relative; width: 100%; padding: 8px 36px; border-radius: 8px; cursor: text; }
 .builder-icon { position: absolute; top: 15px; left: 12px; display: flex; }
 .builder-icon.right { left: auto; right: 12px; }
+/* The buttons on the right (Send, and Record beside it): a tint under the mouse, the default cursor. */
+.builder-icon[role=button] { top: 9px; padding: 6px; border-radius: 7px; cursor: default; }
+.builder-icon.right[role=button] { right: 6px; }
+.builder-icon.right.record { right: 34px; }
+.builder-icon[role=button]:hover { background: var(--color-gray-200); }
+.builder-icon[role=button]:hover .type-icon { color: var(--ink); }
+.builder-row:has(.record) { padding-right: 64px; }
 .builder-icon .type-icon { margin: 0; color: var(--color-gray-600); }
 .builder-remove { position: absolute; top: 8px; right: 34px; }
 .builder-fields { width: 100%; }

@@ -15,6 +15,17 @@ interface DeepgramMessage {
   channel?: { alternatives?: { transcript?: string }[] }
 }
 
+/** Whether Deepgram is set up (a key kept, or DEEPGRAM_API_KEY): asked again whenever a chat input is shown. */
+export function useHasDeepgram(): boolean {
+  const [has, setHas] = useState(false)
+  useEffect(() => {
+    let live = true
+    void api().hasDeepgram().then((h) => live && setHas(h))
+    return () => void (live = false)
+  }, [])
+  return has
+}
+
 export type Recording = {
   /** Recording now (or starting). */
   on: boolean

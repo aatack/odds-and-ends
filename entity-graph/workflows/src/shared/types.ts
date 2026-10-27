@@ -315,6 +315,8 @@ export interface WorkflowsAPI {
   setDeepgramKey: (key: string | null) => Promise<void>
   /** The Deepgram key, for the window to stream what is said to Deepgram; null with none. */
   deepgramKey: () => Promise<string | null>
+  /** Whether there is a Deepgram key (the record button shows only then). */
+  hasDeepgram: () => Promise<boolean>
   mcp: () => Promise<McpView>
   regenerateMcpToken: () => Promise<void>
   setMcpPort: (port: number) => Promise<void>
@@ -390,7 +392,7 @@ export interface CustomAction {
 export const API_METHODS = [
   'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'react', 'processOutput', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
-  'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setDeepgramKey', 'deepgramKey', 'mcp', 'regenerateMcpToken', 'setMcpPort',
+  'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
 ] as const satisfies readonly ApiMethod[]
 
 type ApiMethod = Exclude<keyof WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser' | 'openSource' | 'closeSource'>
