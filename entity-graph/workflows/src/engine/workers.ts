@@ -36,6 +36,9 @@ export type SpawnBot = (args: {
   onOutput: (chunk: string) => void
 }) => BotProcess
 
+/** Environment variables that hold the app's own secrets: a bot's run is not given them. */
+const APP_SECRETS = ['DEEPGRAM_API_KEY']
+
 const RUN_LIMIT_MS = 60 * 60_000
 
 export const SYSTEM = `You are a bot in the operator's workflow system: one of its bots, with a name, instructions of your own (below, if any), a Claude session of your own and a working folder of your own, all of which last from one run to the next. You run one thing at a time.
@@ -84,7 +87,8 @@ export const spawnClaude: SpawnBot = ({ prompt, system, schema, mcpUrl, sessionI
       '--append-system-prompt', system, '--settings', settings, '--mcp-config', mcp, '--strict-mcp-config',
       '--allowedTools', 'mcp__workflows', '--permission-mode', 'auto',
       '--json-schema', JSON.stringify(schema), '--output-format', 'stream-json', '--verbose'],
-    { cwd, stdio: ['ignore', 'pipe', 'pipe'] },
+    // The app's own secrets stay out of a bot's environment (its shell could read them there).
+    { cwd, stdio: ['ignore', 'pipe', 'pipe'], env: Object.fromEntries(Object.entries(process.env).filter(([k]) => !APP_SECRETS.includes(k))) },
   )
   child.stdout.setEncoding('utf8').on('data', onOutput)
   let stderr = ''
