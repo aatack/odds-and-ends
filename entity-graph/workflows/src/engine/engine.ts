@@ -726,11 +726,21 @@ export class Engine extends EventEmitter {
         return
       }
       const broken = new Set<string>()
+      // What a person said in a task while the run went on, the run did not see: a run's update can't hand that task
+      // away from the bot. The bot keeps it (beside whoever the update gave it to), and wakes again for it.
+      const mark = this.marks.get(agentId) ?? { n: 0, at: 0 }
+      const heard = (itemId: string) =>
+        run.assigned.has(itemId) || this.store.children(itemId).some((e) => after(e.added_n, e.created_at, mark) && this.isUser(e.created_by))
+      let missed = false
       for (const u of updates) {
         if (this.get(u.item)?.closed) continue
         try {
           // Each update is checked on its own: one that is wrong fails only its task.
           const to = u.assign && u.item !== agentId ? new Set(u.assign.map((a) => this.resolveAssignee(a))) : null
+          if (to && !to.has(agentId) && !u.close && heard(u.item)) {
+            to.add(agentId)
+            missed = true
+          }
           const events: EventSpec[] = [...(u.message ? [{ type: 'note' as const, params: { text: u.message } }] : []), ...this.prepare(u.events ?? [], 'bot')]
           if (events.length) this.add(u.item, events, actor)
           if (to) {
@@ -747,6 +757,8 @@ export class Engine extends EventEmitter {
       // A task it said who has is settled; the rest are settled here.
       const said = new Set([...updates.filter((u) => u.assign).map((u) => u.item), ...broken])
       for (const itemId of run.itemIds) if (!closing.includes(itemId) && !said.has(itemId) && this.get(itemId) && !this.get(itemId)!.closed) this.settle(itemId, run)
+      // Woken for what it missed, after its debounce (not the periodic wait that news in a task otherwise has).
+      if (missed) this.woken.set(agentId, this.now() + Number(this.agentParams(agentId).debounce_minutes ?? DEFAULT_DEBOUNCE) * MINUTE)
     })
     for (const itemId of closing) await this.close(itemId, { actor })
     this.emit('change')

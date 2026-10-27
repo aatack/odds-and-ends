@@ -259,6 +259,26 @@ assert.ok(item(parent).closed)
   await engine.close(other)
 }
 
+// What a person says while a run goes on isn't lost: the run's update can't hand that task away, and the bot wakes for it.
+{
+  const busy = (await engine.create('Busy'))!
+  behaviours.push(async () => {
+    await engine.send(busy, 'note', 'Also do the other thing')
+    return out({ item: busy, message: 'Done the first thing.', assign: [engine.me()] })
+  })
+  behaviours.push(async ({ prompt }) => {
+    assert.deepEqual(engine.assignees(busy).sort(), [engine.me(), threepio].sort(), 'it kept the task, beside who it gave it to')
+    assert.match(prompt, /Also do the other thing/)
+    assert.doesNotMatch(prompt, /Done the first thing/, 'what it said itself is not news to it')
+    return out({ item: busy, message: 'Done the other thing.', assign: [engine.me()] })
+  })
+  await toBot(busy, 'Do the first thing')
+  await settle()
+  assert.equal(behaviours.length, 0, 'it woke again for what it missed, after its debounce, not the periodic wait')
+  assert.deepEqual(engine.assignees(busy), [engine.me()], 'with nothing new, its update hands the task on')
+  await engine.close(busy)
+}
+
 // A process: started by its first check, ended when it exits (with what it wrote last), or stopped by a cancel.
 {
   const host = (await engine.create('Processes'))!
