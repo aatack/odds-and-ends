@@ -446,14 +446,18 @@ function ViewHeader(props: {
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 /**
- * Who to offer to hand a task to, the likeliest first: whoever else has it, then those the person signed in
- * handed things to last, then the bots, then the other people. Never the person signed in; nobody in a bot's own chat.
+ * Who to offer to hand a task to, the likeliest first: the bot that last wrote anything in it, whoever else has it,
+ * then those the person signed in handed things to last, then the bots, then the other people. Never the person
+ * signed in; nobody in a bot's own chat.
  */
 function likeliest(detail: ItemDetail, overview: Overview): Someone[] {
   if (overview.bots.some((b) => b.id === detail.item.id)) return []
   const here = detail.item.assignees
   const all = everyone(overview)
-  const ids = [...new Set([...here, ...overview.recentAssignees, ...overview.bots.map((b) => b.id), ...overview.users.map((u) => u.id)])]
+  const lastBot = detail.events.map((e) => e.createdBy).reverse().find((by) => by.startsWith('bot:'))?.slice(4)
+  const ids = [
+    ...new Set([...(lastBot ? [lastBot] : []), ...here, ...overview.recentAssignees, ...overview.bots.map((b) => b.id), ...overview.users.map((u) => u.id)]),
+  ]
   return ids.filter((id) => id !== overview.me.id).flatMap((id) => all.find((s) => s.id === id) ?? [])
 }
 

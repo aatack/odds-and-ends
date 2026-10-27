@@ -86,6 +86,15 @@ export function useWorkflows() {
     [views, setViews, setForwards, setReached],
   )
 
+  // A task that closes leaves the history (Back and Forward pass it by), unless it is the view on screen.
+  useEffect(() => {
+    const closed = new Set(overview.items.filter((i) => i.closed).map((i) => i.id))
+    const open = (v: View) => !(v.kind === 'event' && closed.has(v.id))
+    const below = views.slice(0, -1)
+    if (!below.every(open)) setViews([...below.filter(open), ...views.slice(-1)])
+    if (!forwards.every(open)) setForwards(forwards.filter(open))
+  }, [overview.items, views, forwards, setViews, setForwards])
+
   /** Takes the top view off the stack, keeping it for Forward. */
   const back = useCallback(() => {
     if (!views.length) return
