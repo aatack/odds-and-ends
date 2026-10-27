@@ -65,8 +65,11 @@ export const SYSTEM = `You are a bot in the operator's workflow system: one of i
 - Ask people only what nobody else can answer, as one direct question: no preamble, no summary, no waffle.`
 
 /** The app's instructions and the bot's own, as a run is given them. */
-export const systemFor = (agent: Agent): string =>
-  `${SYSTEM}\n\nYou are @${agent.name}.${agent.instructions.trim() ? `\n\nYour own instructions, from the operator:\n\n${agent.instructions.trim()}` : ''}`
+/** The open task bots tell of what they needed and didn't have: the one titled so (the operator reads them through). */
+export const GAPS_TITLE = 'Bot capability gaps'
+
+export const systemFor = (agent: Agent, gaps: string | null = null): string =>
+  `${SYSTEM}${gaps ? `\n- When you run into something you needed and couldn't do (a missing tool, an action, access, information), add a note in [${gaps}]() saying what, and what it was for, in a line or two: the operator decides what to build. Then carry on as best you can.` : ''}\n\nYou are @${agent.name}.${agent.instructions.trim() ? `\n\nYour own instructions, from the operator:\n\n${agent.instructions.trim()}` : ''}`
 
 /**
  * Claude Code, in auto mode, with the workflows MCP server and the bot's
@@ -256,7 +259,7 @@ export class BotRunner {
       const spawnBot = this.providers[agent.provider]
       if (!spawnBot) throw new Error(`No provider ${agent.provider}: one of ${Object.keys(this.providers).join(', ')}.`)
       proc = spawnBot({
-        prompt, system: systemFor(agent), schema: botOutputSchema(this.engine.eventTypes), mcpUrl: this.mcpUrl(runId),
+        prompt, system: systemFor(agent, this.engine.overview().items.find((i) => i.title === GAPS_TITLE && !i.closed)?.id ?? null), schema: botOutputSchema(this.engine.eventTypes), mcpUrl: this.mcpUrl(runId),
         sessionId: agent.sessionId!, resume, model: agent.model, cwd: this.engine.agentFolder(agent.id), onOutput,
       })
     } catch (e) {

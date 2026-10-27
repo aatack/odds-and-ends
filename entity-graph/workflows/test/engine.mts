@@ -357,6 +357,20 @@ await engine.close(loose)
   await engine.close(t)
 }
 
+// The task bots tell of what they lacked: named in every bot's instructions while it is open.
+{
+  const gaps = (await engine.create('Bot capability gaps'))!
+  const t = (await engine.create('Anything'))!
+  behaviours.push(async ({ system }) => {
+    assert.ok(system.includes(`add a note in [${gaps}]()`))
+    return out({ item: t, assign: [engine.me()] })
+  })
+  await toBot(t, 'x')
+  await settle()
+  await engine.close(gaps)
+  await engine.close(t)
+}
+
 // A process: started by its first check, ended when it exits (with what it wrote last), or stopped by a cancel.
 {
   const host = (await engine.create('Processes'))!
