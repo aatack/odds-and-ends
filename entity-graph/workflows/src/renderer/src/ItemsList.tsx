@@ -37,7 +37,7 @@ type Line =
  * "n more", which shows the rest. Typing filters the titles fuzzily (an item
  * then shows in only the first section that has it); the arrow keys move through
  * what is left, Enter opens one (or shows a section's rest), and Tab makes a new
- * item with what was typed as its title. The pickers are this too, with Enter
+ * item with what was typed as its title (the Tasks view: `onTab`; a picker has none). The pickers are this too, with Enter
  * (and a click) picking instead: `verb` says which. With `selected`, what is
  * selected comes first, in a section of its own, ticked (a multiselect picker:
  * picking a row toggles it). Escape with nothing typed calls `onEscape`.
@@ -47,8 +47,10 @@ export function ItemsList(props: {
   recent: Recent
   sections: SectionId[]
   perSection?: number
+  /** Enter, or a click: the row chosen. */
   onOpen: (id: string) => void
-  onCreate: (title: string) => void
+  /** Tab: with what is typed (perhaps nothing). Left out, Tab does nothing: a finder for looking things up, not starting them. */
+  onTab?: (text: string) => void
   verb?: string
   /** Bots and people to offer too, first, in a section of their own (`@` in the chat input). */
   bots?: Someone[]
@@ -61,7 +63,7 @@ export function ItemsList(props: {
   /** On a phone: buttons rather than keys (a New button for Tab), rows of two lines, and the search line focused only when asked (it raises the keyboard). */
   mobile?: boolean
 }) {
-  const { items, recent, sections, perSection = 12, onOpen, onCreate, verb = 'Open', bots = [], botsLabel, selected, onEscape, mobile = false } = props
+  const { items, recent, sections, perSection = 12, onOpen, onTab, verb = 'Open', bots = [], botsLabel, selected, onEscape, mobile = false } = props
   const [text, setText] = useState('')
   const [at, setAt] = useState(0)
   const [expanded, setExpanded] = useState<SectionId[]>([])
@@ -153,7 +155,7 @@ export function ItemsList(props: {
               }
               if (e.key === 'Tab') {
                 e.preventDefault()
-                if (text.trim()) onCreate(text.trim())
+                onTab?.(text.trim())
               }
               if (e.key === 'Escape') {
                 if (!text && onEscape) {
@@ -166,8 +168,8 @@ export function ItemsList(props: {
           {!text && <span className="hint">Search</span>}
         </div>
         {mobile ? (
-          text.trim() && (
-            <button data-ui className="search-new" onClick={() => onCreate(text.trim())}>
+          onTab && (
+            <button data-ui className="search-new" onClick={() => onTab(text.trim())}>
               New
             </button>
           )
@@ -176,7 +178,7 @@ export function ItemsList(props: {
             <span className="key-pill">
               <kbd>Enter</kbd> {verb}
             </span>
-            {text.trim() && (
+            {onTab && (
               <span className="key-pill">
                 <kbd>Tab</kbd> New
               </span>

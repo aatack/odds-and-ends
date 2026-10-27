@@ -35,6 +35,10 @@ import { Start } from './Start'
 import { inBrowser, REFUSED_EVENT, useMobile } from './phone'
 import { PhonePage } from './PhonePage'
 
+/** A new topic's title when nothing was typed: when it was started, e.g. "New topic, Thursday 20:39". */
+const newTopicTitle = (at = new Date()) =>
+  `New topic, ${at.toLocaleDateString([], { weekday: 'long' })} ${at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}`
+
 /**
  * First who you are and which source to open (`Start`, which opens them at once when both are kept); then the app,
  * as that person, on that source.
@@ -325,7 +329,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
             botsLabel="Bots"
             onEscape={w.views.length > 0 ? w.back : undefined}
             onOpen={openFromItems}
-            onCreate={(title) => w.act(async () => openFromItems(await api().create(title, null)))}
+            onTab={(title) => w.act(async () => openFromItems(await api().create(title || newTopicTitle(), null)))}
             mobile={mobile}
           />
         </div>
@@ -605,7 +609,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
             draftKey={item.id}
             catalog={catalog}
             onResolve={() => void act(() => api().close(item.id))}
-            mention={{ items: w.overview.items.filter((i) => i.id !== item.id), recent: w.recent, create: (title) => api().create(title, null) }}
+            mention={{ items: w.overview.items.filter((i) => i.id !== item.id), recent: w.recent }}
             assignees={likeliest(detail, w.overview)}
             mobile={mobile}
             onSend={async (preset, text) => {

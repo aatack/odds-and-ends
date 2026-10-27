@@ -44,7 +44,7 @@ export function Composer({
   onSend: (preset: string, text: string) => Promise<boolean>
   onResolve: () => void
   /** What `@` picks from, and how it makes a new item. */
-  mention: { items: Item[]; recent: Recent; create: (title: string) => Promise<string> }
+  mention: { items: Item[]; recent: Recent }
   /** Who to offer to hand the task to (bots and people), the likeliest first. */
   assignees: Someone[]
   /** On a phone: the icon is tapped to change what is sent, Enter is a new line (Send sends), and it is never focused for the person, which would raise the keyboard. */
@@ -207,7 +207,6 @@ export function Composer({
           recent={mention.recent}
           verb="Insert"
           onPick={insertRef}
-          onCreate={(title) => void mention.create(title).then(insertRef)}
           onClose={() => {
             setMentionAt(null)
             refocus()

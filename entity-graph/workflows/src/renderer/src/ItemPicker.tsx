@@ -22,13 +22,14 @@ export function ItemPicker(
     sections?: SectionId[]
     perSection?: number
     verb: string
-    onCreate?: (title: string) => void
+    /** Tab: with what is typed. Left out, Tab does nothing. */
+    onTab?: (text: string) => void
     onClose: () => void
     /** Bots and people to offer first, in a section of their own. */
     bots?: { id: string; name: string; bot?: boolean }[]
   } & Picking,
 ) {
-  const { title, items, recent, sections = PICKER_SECTIONS, perSection = 6, verb, onCreate, onClose, bots } = props
+  const { title, items, recent, sections = PICKER_SECTIONS, perSection = 6, verb, onTab, onClose, bots } = props
   const pick = (id: string) => {
     if (!props.multiple) return props.onPick(id)
     props.setValue(props.value.includes(id) ? props.value.filter((v) => v !== id) : [...props.value, id])
@@ -43,7 +44,7 @@ export function ItemPicker(
           perSection={perSection}
           verb={verb}
           onOpen={pick}
-          onCreate={onCreate ?? (() => {})}
+          onTab={onTab}
           bots={bots}
           selected={props.multiple ? props.value : undefined}
         />
