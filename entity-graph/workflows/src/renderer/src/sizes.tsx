@@ -1,0 +1,119 @@
+// The four sizes anything is drawn at, from one place:
+//
+// - avatar: its picture, beside it in the chat (who said a note; any other event, its type);
+// - pill: inline in text, as `[id]()` is drawn: its icon and name, which open it;
+// - card: in a chat or a list, by its type (`CARDS`);
+// - focus: on its own, filling the view (`FOCUS`): a task or a bot as its chat, anything else as its details.
+
+import { CircleCheck, Play, Timer } from 'lucide-react'
+import type { ReactNode } from 'react'
+import type { Catalog, EventKind, ItemEvent } from '../../shared/types'
+import { Approval } from './Approval'
+import { fenced, Markdown } from './components/ui/Markdown'
+import { useEventMenu } from './EventMenu'
+import { eventIcon } from './icons'
+import { ProcessCard } from './ProcessCard'
+import { TaskCard } from './TaskCard'
+import { minutes, time, useNow } from './time'
+import { api } from './useWorkflows'
+
+type Act = (fn: () => Promise<unknown>) => Promise<void>
+
+/** An event's picture, beside its message in the chat. */
+export function EventAvatar({ event }: { event: { type: EventKind; createdBy: string } }) {
+  const [Icon, name] = eventIcon(event)
+  return (
+    <span className="avatar" title={name}>
+      <Icon className="icon" />
+    </span>
+  )
+}
+
+/**
+ * Anything, inline in text: its icon (or `icon`, drawn as given) and its name, outlined, opening it when pressed;
+ * right-click for its menu. Tasks, bots and people are all drawn so (`[id]()` in any text).
+ */
+export function Pill({ id, label, icon, onOpen }: { id: string; label: ReactNode; icon?: ReactNode; onOpen?: () => void }) {
+  const menu = useEventMenu()
+  return (
+    <button data-ui className="link item-ref" onClick={onOpen} {...menu(id)}>
+      {icon}
+      {label}
+    </button>
+  )
+}
+
+export type CardProps = { event: ItemEvent; find: string; catalog: Catalog; act: Act; onOpen: (id: string) => void }
+
+/** Each type's card: what it shows in a chat. A type left out shows what it says (`message`, or its summary). */
+export const CARDS: Partial<Record<EventKind, (p: CardProps) => ReactNode>> = {
+  note: ({ event: e, find }) => <Markdown text={String(e.params.text ?? '')} highlight={find} />,
+  task: ({ event: e, onOpen }) => (
+    <button data-ui className="link card-link" onClick={() => onOpen(e.id)}>
+      <TaskCard event={e} />
+    </button>
+  ),
+  script: ({ event: e, act, find }) => <ScriptCard event={e} act={act} find={find} />,
+  process: ({ event: e, act }) => <ProcessCard event={e} act={act} lines={8} />,
+  approval: ({ event: e, find, catalog, act }) => (
+    <div className="event-card">
+      <Markdown text={e.resolved ? (e.message ?? e.summary) : e.summary} highlight={find} />
+      {!e.resolved && <Approval b={e} catalog={catalog} act={act} />}
+    </div>
+  ),
+}
+
+/** An event's card, by its type. */
+export function EventCard(props: CardProps) {
+  const card = CARDS[props.event.type]
+  return card ? <>{card(props)}</> : <Markdown text={props.event.message ?? props.event.summary} highlight={props.find} />
+}
+
+/** How each type fills the view on its own: as a chat (its events, and the chat input), or as its details. */
+export const FOCUS: Record<EventKind, 'chat' | 'details'> = {
+  task: 'chat',
+  bot: 'chat',
+  note: 'details',
+  approval: 'details',
+  script: 'details',
+  process: 'details',
+  user: 'details',
+}
+
+/**
+ * A script: what it waits for; then a tick and what it finished with, once done; a play button, if it has no
+ * schedule (it runs when pressed); or else how many times it has run and when it runs next.
+ */
+function ScriptCard({ event: e, act, find }: { event: ItemEvent; act: Act; find: string }) {
+  const now = useNow()
+  const scheduled = Array.isArray(e.params.schedule) && (e.params.schedule as unknown[]).length > 0
+  const error = typeof e.data?.error === 'string' ? e.data.error : null
+  const result = e.data?.message ?? (e.data?.result === undefined || e.data?.result === null ? null : e.data.result)
+  return (
+    <div className="event-card script-card">
+      <div className="script-line">
+        <Markdown className="script-what" text={e.summary} highlight={find} />
+        {e.resolved ? (
+          <CircleCheck className={`icon ${error ? 'script-failed' : 'script-done'}`} aria-label={error ? 'Failed' : 'Done'} />
+        ) : !scheduled ? (
+          <button data-ui className="script-play" title="Run it" aria-label="Run it" onClick={() => void act(() => api().runNow(e.id))}>
+            <Play className="icon" />
+          </button>
+        ) : (
+          <span className="script-timer muted" title={e.nextCheckAt ? time(e.nextCheckAt) : undefined}>
+            <Timer className="icon" />
+            {e.runs}× · {e.nextCheckAt ? (e.nextCheckAt > now ? `in ${minutes(e.nextCheckAt - now)}` : 'now') : '…'}
+          </span>
+        )}
+      </div>
+      {!e.resolved && !scheduled && e.runs > 0 && <div className="muted script-runs">Run {e.runs}× and not done yet.</div>}
+      {e.lastError && !e.resolved && <div className="error-text">{e.lastError}</div>}
+      {e.resolved && error && <div className="error-text">{error}</div>}
+      {e.resolved && !error && result !== null && (
+        <div className="script-output">
+          {typeof result === 'string' ? <Markdown text={result} highlight={find} /> : <Markdown text={fenced(JSON.stringify(result, null, 2), 'json')} />}
+        </div>
+      )}
+    </div>
+  )
+}

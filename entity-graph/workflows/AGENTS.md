@@ -150,6 +150,9 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   - `SchemaForm` and `SchemaBuilder` are copied from entity-graph
     (`components/schema/`, with the `ui/` primitives they need and its `index.css`
     tokens). Keep them in step with entity-graph rather than editing them here.
+- **Four sizes.** Anything is drawn as an avatar (its picture in the chat), a pill (inline in text, as `[id]()` is),
+  a card (in a chat or list, by its type: `CARDS`) or its focus (filling the view: a chat, or its details: `FOCUS`).
+  They are all in `sizes.tsx`: a new type's views go there.
 - **The same design rules as entity-graph:** no motion, no pointer cursor,
   restrained colour, tone rather than borders. Tailwind v4 provides the tokens.
   The app's own CSS (`styles.css`) sits in `@layer components`, so the

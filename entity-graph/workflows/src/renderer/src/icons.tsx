@@ -79,13 +79,3 @@ export function EventIcon({ event }: { event: { type: EventKind; createdBy: stri
     </span>
   )
 }
-
-/** An event's icon as a profile picture, beside its message in the chat. */
-export function Avatar({ event }: { event: { type: EventKind; createdBy: string } }) {
-  const [Icon, name] = eventIcon(event)
-  return (
-    <span className="avatar" title={name}>
-      <Icon className="icon" />
-    </span>
-  )
-}

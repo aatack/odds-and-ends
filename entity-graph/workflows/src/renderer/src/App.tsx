@@ -9,7 +9,7 @@ import { IconButton } from './components/ui/IconButton'
 import { appearanceAtom, applyAppearance, MODES, SERIFS, THEMES } from './appearance'
 import { Chat } from './Chat'
 import { DebugView } from './DebugView'
-import { EventMenu, useEventMenu } from './EventMenu'
+import { EventMenu } from './EventMenu'
 import { EventView } from './EventView'
 import { ItemPicker } from './ItemPicker'
 import { ItemsList } from './ItemsList'
@@ -17,6 +17,7 @@ import { TASKS_SECTIONS } from './sections'
 import { Composer } from './Composer'
 import { ItemRefContext } from './components/ui/Markdown'
 import { ItemRef } from './ItemRef'
+import { FOCUS, Pill } from './sizes'
 import { EventIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
@@ -111,23 +112,25 @@ export function App({ onSignOut, onCloseSource }: { onSignOut: () => void; onClo
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, next, showingItems, focusSearch, canFind, setFind, focusFind, act, items.selected])
-  // `[itemId]()` in any text is drawn as the item it refers to; `[botId]()` and `[username]()` as the bot or person.
+  // `[itemId]()` in any text is drawn as the pill of the item it refers to; `[botId]()` and `[username]()` as the bot's or person's.
   const byId = useMemo(() => new Map(items.overview.items.map((i) => [i.id, i])), [items.overview.items])
   const { bots, users } = items.overview
-  const menu = useEventMenu()
   const itemRef = useCallback(
     (id: string) => {
       const bot = bots.find((b) => b.id === id)
       const person = users.find((u) => u.id === id)
       if (bot || person)
         return (
-          <button data-ui className="link item-ref bot-ref" onClick={() => bot && open({ kind: 'event', id })} {...menu(id)}>
-            {bot ? <Bot className="icon" /> : <UserIcon className="icon" />}@{bot?.name ?? person!.name}
-          </button>
+          <Pill
+            id={id}
+            icon={bot ? <Bot className="icon" /> : <UserIcon className="icon" />}
+            label={`@${bot?.name ?? person!.name}`}
+            onOpen={bot ? () => open({ kind: 'event', id }) : undefined}
+          />
         )
       return <ItemRef id={id} item={byId.get(id)} onOpen={(to) => open({ kind: 'event', id: to })} />
     },
-    [byId, bots, users, open, menu],
+    [byId, bots, users, open],
   )
   return (
     <ItemsContext.Provider value={items}>
@@ -316,12 +319,12 @@ function ItemsMain() {
       <div className={`view-body ${d.item && !debug ? 'fill' : ''}`}>
         {debug ? (
           <DebugView id={e.id} />
-        ) : e.type === 'bot' && d.item ? (
+        ) : FOCUS[e.type] === 'chat' && e.type === 'bot' && d.item ? (
           <div className="bot-page">
             <BotView key={e.id} bot={w.overview.bots.find((b) => b.id === e.id) ?? null} act={w.act} />
             <ItemView key={`${e.id}:chat`} detail={d.item} catalog={w.catalog} act={w.act} onOpen={openEvent} />
           </div>
-        ) : d.item ? (
+        ) : FOCUS[e.type] === 'chat' && d.item ? (
           <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openEvent} />
         ) : (
           <EventView detail={d} catalog={w.catalog} act={w.act} onOpen={openEvent} />
