@@ -10,6 +10,12 @@ import { ItemPicker } from './ItemPicker'
 import type { Recent } from './sections'
 import { draftsAtom, withoutEmpty } from './views'
 
+/** The end of what is being said, as the record button shows it: the last two sentences (ended by `.`, `!` or `?`). */
+const lastSentences = (text: string): string => {
+  const sentences = text.split(/(?<=[.!?…])\s+/)
+  return (sentences.length > 2 ? '… ' : '') + sentences.slice(-2).join(' ')
+}
+
 /**
  * The chat input. What is typed goes through a preset (a note by default; a PR
  * to wait on…); with nothing typed, the choices are instead to hand the task to
@@ -113,7 +119,7 @@ export function Composer({
       <span className="builder-icon" title={`${shown.name} (Tab to change)`}>
         <TypeIcon type={shown.icon} />
       </span>
-      <div className="builder-fields hinted">
+      <div className={`builder-fields hinted ${(recorder.on || recorder.error) && !text ? 'hearing' : ''}`}>
         <GrowingTextarea
           ref={box}
           value={text}
@@ -147,7 +153,7 @@ export function Composer({
         />
         {recorder.on || recorder.error ? (
           <span className={`hint recording ${recorder.error ? 'error-text' : ''}`}>
-            {recorder.error ?? (recorder.hearing ? recorder.hearing : <b>Listening…</b>)}
+            {recorder.error ?? (recorder.hearing ? lastSentences(recorder.hearing) : <b>Listening…</b>)}
           </span>
         ) : resolving ? (
           <span className={`hint ${text ? 'below' : ''}`}>
