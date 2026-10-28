@@ -135,7 +135,7 @@ own press on the Phone page, which the phone itself may not call):
 - A `widget` is UI with state of its own (`WIDGET_DOC` in `eventTypes.ts`): an HTML fragment run in a sandboxed
   iframe (`Widget.tsx`: scripts only, a CSP that allows nothing out, no navigation), styled with the app's CSS
   variables. Its only way out is `setState`, by message; the state is its `widget_state` value (egdb keeps every one
-  before), which bots and scripts read and set (`set_widget_state`). The frame is made once per HTML, so focus stays.
+  before), which bots and scripts read and set (`set_value`, as any value: every change reaches the window, which passes it into the frame). The frame is made once per HTML, so focus stays.
 - `process` is switched off for now (aatack, Oct 2026): its type stays only so stored ones still read; none can
   be added.
 - Nothing about the running app is stored: what is running is held in memory.

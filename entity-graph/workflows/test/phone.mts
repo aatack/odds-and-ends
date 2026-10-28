@@ -22,8 +22,8 @@ const served = new Map<string, string>()
 const exec = async (cmd: string, args: string[]) => {
   if (cmd === 'tailscale' && args[0] === 'status') return JSON.stringify({ Self: { DNSName: 'laptop.tail1234.ts.net.' } })
   if (cmd === 'tailscale' && args[0] === 'serve' && args[1] === 'status') return JSON.stringify({ TCP: Object.fromEntries([...served.keys()].map((p) => [p, { HTTPS: true }])) })
-  if (cmd === 'tailscale' && args[0] === 'serve' && args.at(-1) === 'off') return void served.delete(args[1].replace('--https=', '')) ?? ''
-  if (cmd === 'tailscale' && args[0] === 'serve') return void served.set(args[2].replace('--https=', ''), args[3]) ?? ''
+  if (cmd === 'tailscale' && args[0] === 'serve' && args.at(-1) === 'off') served.delete(args[1].replace('--https=', '')); return ''
+  if (cmd === 'tailscale' && args[0] === 'serve') served.set(args[2].replace('--https=', ''), args[3]); return ''
   throw new Error(`no ${cmd}`)
 }
 const engine = new Engine({ exec, dataDir: dir })

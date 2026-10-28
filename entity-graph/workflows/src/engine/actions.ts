@@ -278,12 +278,15 @@ export const itemActions: Action[] = [
     },
   },
   {
-    name: 'set_widget_state',
+    name: 'set_value',
     unsafe: false,
-    description: "Change a widget's state (any JSON): it shows at once wherever the widget is open. Its state now is its `widget_state` param (get_item).",
-    input: { event_id: z.string(), state: z.unknown() },
+    description:
+      "Set one value on an item (null clears it): any of its type's params (see event_types), e.g. a task's title, a widget's " +
+      "widget_state, a bot's instructions or cycle_minutes. Not how it stands (type, resolved…: those have their own tools). " +
+      'Whatever shows it is told at once.',
+    input: { item_id: itemId, key: z.string(), value: z.unknown() },
     run: async (a, ctx) => {
-      await ctx.engine.setWidgetState(String(a.event_id), a.state, ctx.actor)
+      await ctx.engine.setValue(String(a.item_id), String(a.key), a.value, ctx.actor)
       return 'Set.'
     },
   },

@@ -16,7 +16,10 @@ import { EVENT_TYPES, whenNext } from './eventTypes'
 import { execCli, type Action, type ActionContext, type Author, type EventType, type Exec, type Integration } from './integrations'
 import { PRESETS, type Preset } from './presets'
 import { plainSecrets, Settings, type Secrets } from './settings'
-import { Store, type EventRow, type Inspection } from './store'
+import { STATE_KEYS, Store, type EventRow, type Inspection } from './store'
+
+/** What the app keeps on items for itself: never set by `setValue`. */
+const OWN_KEYS = new Set(['session_id', 'seen', 'last_run', 'last_wake', 'handoff', 'key'])
 
 /** How long a blocker sleeps between checks, by default: at once, then a minute, then longer, up to the last. */
 export const BACKOFF_MINUTES = [1, 2, 5, 10]
@@ -439,10 +442,29 @@ export class Engine extends EventEmitter {
 
   /** Changes a widget's state: a value on its event (egdb keeps every one before). */
   async setWidgetState(eventId: string, state: unknown, actor = this.me()): Promise<void> {
-    const row = this.row(eventId)
-    if (row?.type !== 'widget') throw new Error(`No widget ${eventId}.`)
-    if (JSON.stringify(row.params.widget_state ?? null) === JSON.stringify(state ?? null)) return
-    this.store.setParams(eventId, { ...row.params, widget_state: state ?? null }, actor, this.now())
+    if (this.row(eventId)?.type !== 'widget') throw new Error(`No widget ${eventId}.`)
+    return this.setValue(eventId, 'widget_state', state, actor)
+  }
+
+  /**
+   * Sets one value on an item (null clears it): any of its type's params (a task's title, a widget's state, a bot's
+   * instructions, the search sections), checked against them. Not how it stands (`type`, `resolved` and the like: those
+   * have their own ways), nor what the app keeps for itself on a bot. egdb keeps every value it had. Whatever shows it
+   * is told at once (every change is).
+   */
+  async setValue(id: string, key: string, value: unknown, actor = this.me()): Promise<void> {
+    const row = this.row(id)
+    if (!row) throw new Error(`No item ${id}.`)
+    if (STATE_KEYS.has(key) || OWN_KEYS.has(key)) throw new Error(`${key} can't be set this way.`)
+    const type = this.type(row.type)
+    if (!(key in type.params)) throw new Error(`A ${row.type} has no ${key}: it has ${Object.keys(type.params).join(', ')}.`)
+    const next = { ...row.params, [key]: value ?? undefined }
+    const parsed = z.object(type.params).safeParse(next)
+    if (!parsed.success) throw new Error(`Bad ${key}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
+    if (JSON.stringify(row.params[key] ?? null) === JSON.stringify(value ?? null)) return
+    this.store.setParams(id, Object.fromEntries(Object.entries(next).filter(([, v]) => v !== undefined)), actor, this.now())
+    // A bot's settings changing is something happening to it.
+    if (row.type === 'bot') this.configured.set(id, { n: this.store.moment(), at: this.now() })
     this.emit('change')
   }
 

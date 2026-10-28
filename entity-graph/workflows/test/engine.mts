@@ -352,9 +352,16 @@ await engine.close(loose)
   const [w] = await engine.addEvents(t, [{ type: 'widget', params: { title: 'Count', html: '<b id="n"></b>', widget_state: { count: 0 } } }], 'bot', 'bot')
   assert.deepEqual(blockers(t), [], 'a widget blocks nothing')
   await engine.setWidgetState(w, { count: 1 })
-  await engine.callAction('set_widget_state', { event_id: w, state: { count: 2 } }, { engine, author: 'bot', actor: 'bot', itemId: t, runId: null })
+  await engine.callAction('set_value', { item_id: w, key: 'widget_state', value: { count: 2 } }, { engine, author: 'bot', actor: 'bot', itemId: t, runId: null })
   assert.deepEqual(engine.event(w)!.params.widget_state, { count: 2 })
   await assert.rejects(engine.setWidgetState(t, {}), /No widget/)
+  // set_value: any param, checked; not how it stands, nor what the app keeps for itself.
+  await engine.setValue(t, 'title', 'Widget, renamed')
+  assert.equal(item(t).title, 'Widget, renamed')
+  await assert.rejects(engine.setValue(t, 'resolved', true), /can't be set/)
+  await assert.rejects(engine.setValue(t, 'nope', 1), /has no nope/)
+  await assert.rejects(engine.setValue(threepio, 'session_id', 'x'), /can't be set/)
+  await assert.rejects(engine.setValue(threepio, 'cycle_minutes', 'soon'), /Bad cycle_minutes/)
   await engine.close(t)
 }
 

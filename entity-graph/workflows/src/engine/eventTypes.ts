@@ -248,7 +248,7 @@ export const WIDGET_DOC =
   'and helpers that answer HTML strings: `esc(text)`, `pill(text)`, `card(title, bodyHtml)`.\n' +
   '- Update the page in place in onState (set .textContent, .value, .checked) rather than rewriting innerHTML round an input, so a ' +
   'person typing keeps their place.\n' +
-  '- `widget_state` is its first state (any JSON). set_widget_state changes it from outside.\n' +
+  '- `widget_state` is its first state (any JSON). set_value (key widget_state) changes it from outside, and an open widget hears of it at once.\n' +
   'Example: html: \'<button id="b">Add one</button> <span id="n"></span><script>onState(s => n.textContent = s.count); ' +
   'b.onclick = () => setState(s => ({ ...s, count: s.count + 1 }))</script>\', widget_state: { count: 0 }'
 
