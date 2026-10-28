@@ -99,7 +99,7 @@ the chat input should offer it, add a preset in `presets.ts`.
 | `task` | yes | `title`, `events?` (its first children, added in it), `assignees?` (who has it from the start; links, not kept in its params), `detached?` (sits in no item, wherever it is added), `key?` (so it is added once) | `{ how: closed \| cancelled }` |
 | `note` | no | `text` | — |
 | `approval` | a person's | `action` (unsafe), `inputs`, `reason?` | `{ ran, inputs, changed, output }` |
-| `script` | while it lasts; it blocks nothing (a task waits on it by being assigned to it) | `source`, `description?`, `wake_at?`, `owns?`, `schedule?` (older), `timeout_minutes?` | `{ result, runs, logs }` or `{ error, logs }` |
+| `script` | while it lasts; it blocks nothing (a task waits on it by being assigned to it) | `source`, `description?`, `owns?`, `debounce_minutes?`, `cycle_minutes?`, `wake_at?`/`schedule?` (older), `timeout_minutes?` | `{ result, runs, logs }` or `{ error, logs }` |
 | `bot` | while the bot lasts (sits in no item) | `name`, `instructions?`, `provider?`, `model?` (opus), `debounce_minutes?` (1), `folder?`; the app sets `session_id`, `seen` and `last_run` | `{ cancelled }`, once deleted |
 | `process` | — | switched off for now: kept so stored ones read; none can be added | — |
 | `widget` | no | `html`, `title?`, `widget_state?` (its state, set again as it changes) | — |
@@ -110,10 +110,12 @@ the chat input should offer it, add a preset in `presets.ts`.
 - **`script`** is JavaScript the app runs with no model: an item that can have
   tasks, as a bot can. Its full contract is `SCRIPT_DOC` in `eventTypes.ts`,
   which is what agents read (`event_types`); in short:
-  - Three uses: a **button** (no `wake_at`: it runs when a person presses its
-    play button), an **owner on a timer** (a snooze: `wake_at`, and `owns` the
-    tasks it takes on), and a **check** (an owner that returns `next` each run
-    until what it waits for happens).
+  - Two uses: a **button** (it owns nothing: it runs only when a person
+    presses its play button), and an **owner** (`owns` the tasks it takes on):
+    it wakes by the same rule as a bot (`dueAt`, wakes.ts): news in its tasks
+    (not its own), `debounce_minutes` (1) after; and every `cycle_minutes` (15)
+    while it owns tasks. It checks what it waits for each run, and says done
+    when it has happened. It keeps when it last woke as `last_wake`.
   - It never blocks the task it sits in. A task waits on a script by being
     assigned to it; `owns` assigns them as it is added. Done (or cancelled), it
     lets go of what it still has: each task goes back to its owner, unless
@@ -121,10 +123,9 @@ the chat input should offer it, add a preset in `presets.ts`.
   - `source` is a body: `context` (`{ script, item, tasks, now, trigger }`) and
     `tools` in scope, top-level `await` and `return`. A function expression
     (`async (ctx, actions) => …`) is called with the same two, for older scripts.
-  - It returns `{ messages: [{ item, text }], assign: [{ item, to }], next,
-    state, done, data }`, all optional. `next` (ms, ISO, or `+5m`) is when it runs
-    again, kept as its `wake_at` so a restart wakes it then; with no `next` it
-    waits for a press. `schedule` (seconds) is still honoured for older scripts.
+  - It returns `{ messages: [{ item, text }], assign: [{ item, to }], state,
+    done, data }`, all optional. Older scripts' `wake_at` (not before) and
+    `schedule` (seconds between runs) are still honoured; `next` is ignored.
   - Unsafe tools only when a person presses play (`runNow`, by them); on a
     schedule never, whoever wrote it.
   - `run_script` runs a body once, now, with the caller's tools.
@@ -155,14 +156,12 @@ the chat input should offer it, add a preset in `presets.ts`.
   keeps the old values) and wake it. Notes in it are its **own chat**.
   Deleting it cancels it, and what it had goes back to each item's owner. People make and edit bots on the Bots page; agents may make
   them too (`add_events`).
-- **It wakes when something happens to it** (`Engine.wake`), its debounce after:
-  an item is assigned to it (assigning one it has already writes the link again,
-  so it wakes), its settings change, or someone writes in its chat; or at once
-  when woken by hand. What its
-  own runs do is not something happening to it. And while something has
-  happened in the items it has since its last run (an event added, resolved or
-  cancelled, not by its own runs; a child item closing always counts), it wakes
-  every `PERIODIC_MINUTES` (15) after its last run. With no items, it never wakes.
+- **It wakes by the one rule** (`Engine.wake`, `dueAt` in wakes.ts), as a script
+  does: once anything affected it since it last woke (an item assigned to it,
+  even one it has; anything added or resolved in its items, not by its own runs;
+  someone writing in its chat; its settings changing), its debounce after; and
+  every `cycle_minutes` (`PERIODIC_MINUTES`, 15) after its last run while it
+  has items, news or not. Woken by hand, at once. With no items, only news wakes it.
 - **One run at a time**, for **every item it has**, in **one session**
   (`--session-id`, then `--resume`), in its own folder. Its instructions are its
   system prompt (`--append-system-prompt`), not part of any prompt; a

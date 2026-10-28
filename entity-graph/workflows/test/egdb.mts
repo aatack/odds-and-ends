@@ -76,7 +76,7 @@ const file = join(dir, 'round-trip.egdb')
   // Events keep their params, data, memo and order; waits are checked again at once.
   assert.deepEqual(after.detail.events.map((e) => [e.id, e.type, e.params, e.data, e.resolved, e.createdBy]),
     before.detail.events.map((e) => [e.id, e.type, e.params, e.data, e.resolved, e.createdBy]))
-  assert.ok(after.detail.events.filter((e) => !e.resolved && e.type !== 'task').every((e) => e.nextCheckAt === clock))
+  assert.ok(after.detail.events.filter((e) => !e.resolved && e.type !== 'task' && e.type !== 'script').every((e) => e.nextCheckAt === clock))
   assert.equal(again.store.events.get(after.detail.events.filter((e) => e.type === 'script').at(-1)!.id)!.memo, 41)
   assert.deepEqual(after.detail.events.find((e) => e.id === hi)!.reactions, ['alex'])
   assert.ok(after.detail.events.filter((e) => e.id !== hi).every((e) => e.reactions.length === 0))

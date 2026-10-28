@@ -93,23 +93,24 @@ export function whenNext(next: number | string, now: number): number {
 export const SCRIPT_DOC =
   'A script: JavaScript the app runs for you, with no model. Use one to own repetitive work that does not need an LLM: ' +
   'snoozing a task, waiting for a branch to merge, checking something every hour. It costs nothing to run.\n' +
-  'Three uses:\n' +
-  '1. A button: add it in a task with no wake_at. It sits in the chat with a play button, and runs when a person presses it.\n' +
-  '2. An owner on a timer (a snooze): give it wake_at and `owns`. It has those tasks, as a bot or a person would, until it hands them on.\n' +
-  '3. A check: an owner that runs again and again (return next each time) until what it waits for happens, then hands its tasks on and says done.\n' +
+  'Two uses:\n' +
+  '1. A button: add it in a task owning nothing. It sits in the chat with a play button, and runs only when a person presses it.\n' +
+  '2. An owner: give it `owns` (task ids). It has those tasks, as a bot or a person would, and wakes as a bot does: once anything ' +
+  '(but itself) happens in them, debounce_minutes (1) after; and every cycle_minutes (15) while it owns them, news or not. Each run ' +
+  'checks what it waits for (the time, a branch, a reply); when it has happened, it hands its tasks on and says done.\n' +
   'It never blocks the task it sits in: a task waits on a script by being assigned to it.\n' +
   '`source` is the body of an async function: `context` and `tools` are in scope, and it may await and return.\n' +
   '- context: { script: { id, description, runs, state }, item: { id, title } (the task it sits in), tasks: [{ id, title }] (those it owns), ' +
   "now (ISO time), trigger: 'press' | 'schedule' }. state is what its last run returned as state (null the first time).\n" +
   '- tools.<name>(args) calls any tool the MCP has, and resolves to its result. Unsafe tools (anything acting outside the app) are given only ' +
-  'when a person presses play; on a schedule, never.\n' +
+  'when a person presses play; on its own, never.\n' +
   '- It returns (all optional): { messages: [{ item, text }] (notes, in any tasks; item defaults to the one it sits in), assign: [{ item, to: [who] }] ' +
-  '(who has each task from now on: usernames, bot names, or the script\'s own id to keep it), next (when to run again: ms, an ISO time, or "+5m"; ' +
-  'left out, it waits for a press), state (handed to its next run), done: true (it closes; tasks it still owns go back to their owners), data }.\n' +
+  "(who has each task from now on: usernames, bot names, or the script's own id to keep it), state (handed to its next run), " +
+  'done: true (it closes; tasks it still owns go back to their owners), data }.\n' +
   '- console.log is kept. A run that throws ends it with the error.\n' +
-  'Example, a snooze until 9am: params { description: "Snooze until 9am", wake_at: "2026-11-02T09:00:00Z", owns: ["<task id>"], source: ' +
-  '"return { messages: [{ text: \'Back from snooze\' }], assign: [{ item: context.tasks[0].id, to: [\'alex\'] }], done: true }" }.\n' +
-  'Example, a check every ten minutes: source: "const pr = await tools.some_read_tool({ ... }); if (!pr.merged) return { next: \'+10m\' }; ' +
+  'Example, a snooze until 9am: params { description: "Snooze until 9am", owns: ["<task id>"], cycle_minutes: 5, source: ' +
+  '"if (context.now < \'2026-11-02T09:00:00Z\') return null; return { messages: [{ text: \'Back from snooze\' }], assign: [{ item: context.tasks[0].id, to: [\'alex\'] }], done: true }" }.\n' +
+  'Example, a check every ten minutes: cycle_minutes: 10, source: "const pr = await tools.some_read_tool({ ... }); if (!pr.merged) return null; ' +
   'return { messages: [{ text: \'Merged\' }], assign: [{ item: context.tasks[0].id, to: [\'Threepio\'] }], done: true }".'
 
 export const script: EventType = {
@@ -118,12 +119,11 @@ export const script: EventType = {
   params: {
     source: z.string().describe('The body of an async function, with context and tools in scope; it returns { messages?, assign?, next?, state?, done?, data? }.'),
     description: z.string().optional().describe('What it does, in a line: its card and the task list say this.'),
-    wake_at: z
-      .union([z.number(), z.string()])
-      .optional()
-      .describe('When it first runs (ms, an ISO time, or "+5m"); left out, it runs when a person presses play.'),
     owns: z.array(z.string()).optional().describe('Tasks it takes on as it is added: each is assigned to it, as to a bot.'),
-    schedule: z.array(z.number().min(0)).optional().describe('Older scripts: seconds between runs, the last repeating. Use wake_at and next instead.'),
+    debounce_minutes: z.number().min(0).optional().describe('How long after something happens in its tasks it runs: 1 if left out.'),
+    cycle_minutes: z.number().min(0).optional().describe('How often it runs while it owns tasks, news or not: 15 if left out; 0, never.'),
+    wake_at: z.union([z.number(), z.string()]).optional().describe('Older scripts: not before this time. Check the time in the script instead.'),
+    schedule: z.array(z.number().min(0)).optional().describe('Older scripts: seconds between runs. Use cycle_minutes instead.'),
     ...timeout,
   },
   data: '{ result: the data it finished with, runs, logs } or { error, logs }',
@@ -132,7 +132,7 @@ export const script: EventType = {
   describe: (p) => String(p.description ?? 'Script'),
   said: (p, d) => (d.error ? `The script failed: ${d.error}` : String(d.message ?? `${p.description ?? 'Script'}: done`)),
   schedule: (p) => (p.schedule as number[] | undefined) ?? null,
-  check: async (p, { engine, item, event, memo, setMemo, runs, trigger, pressedBy, setNext }) => {
+  check: async (p, { engine, item, event, memo, setMemo, runs, trigger, pressedBy }) => {
     const pressed = trigger === 'press' && !!pressedBy && engine.isUser(pressedBy)
     const owned = engine.assignedTo(event.id)
     const context = {
@@ -168,8 +168,6 @@ export const script: EventType = {
         for (const x of now) if (!to.has(x)) await engine.assign(a.item, x, false, 'script')
       }
       if ('state' in r) setMemo(r.state)
-      if (r.next !== undefined) setNext(r.next === null ? null : whenNext(r.next, engine.now()))
-      else if (!p.schedule) setNext(null)
     } catch (e) {
       return { error: (e as Error).message, logs: ran.logs }
     }
@@ -182,15 +180,15 @@ export const bot: EventType = {
   type: 'bot',
   description:
     'A bot: a name, instructions, and how it runs. It sits in no item, and is open while it lasts (cancelling it deletes it). ' +
-    'Items are assigned to it (the assign action). It wakes when something happens to it: an item is assigned to it, its ' +
-    'settings change, or someone writes in its own chat (notes in it); and every 15 minutes while it has items that something ' +
-    'happened in.',
+    'Items are assigned to it (the assign action). It wakes when anything affects it (a task is assigned to it, something new in ' +
+    'its tasks or its own chat, its settings change), its debounce after; and every cycle_minutes (15) while it has tasks.',
   params: {
     name: z.string().min(1).describe('What it is called: people @ it by this name.'),
     instructions: z.string().optional().describe('What it is for and how it works: given with every run.'),
     provider: z.string().optional().describe("Who runs it: 'claude' (the default)."),
     model: z.string().optional().describe('The model, as the provider names it (opus, sonnet, haiku or a full id): opus if left out.'),
     debounce_minutes: z.number().min(0).optional().describe('How long to wait after the last thing that happened before it wakes: 1 if left out.'),
+    cycle_minutes: z.number().min(0).optional().describe('How often it wakes while it has tasks, news or not: 15 if left out; 0, never.'),
     folder: z.string().optional().describe('Its working folder; its own, under the app\'s, if left out.'),
     session_id: z.string().optional().describe("Its Claude session, set by the app once it first runs. Don't set it."),
   },

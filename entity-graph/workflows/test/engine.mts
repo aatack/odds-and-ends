@@ -180,7 +180,7 @@ behaviours.push(async ({ prompt, sessionId, resume }) => {
   // It hands the task to a script that checks CI: the script owns it, and hands it back when CI passes.
   return out({
     item: id,
-    events: [{ type: 'script', params: { description: 'CI', wake_at: '+1s', owns: [id], source: `if (!context.state) return { state: 1, next: '+1s' }
+    events: [{ type: 'script', params: { description: 'CI', owns: [id], debounce_minutes: 0, cycle_minutes: 1 / 60, source: `if (!context.state) return { state: 1 }
 return { messages: [{ text: 'CI passed' }], assign: [{ item: context.tasks[0].id, to: ['Threepio'] }], done: true }` } }],
   })
 })
@@ -304,8 +304,8 @@ await engine.close(loose)
   await engine.deleteAgent(other)
   engine.settings.set('scripts.max_running', 1)
   const [s1, s2] = await engine.addEvents(t1, [
-    { type: 'script', params: { source: 'return { next: "+1h" }', wake_at: clock } },
-    { type: 'script', params: { source: 'return { next: "+1h" }', wake_at: clock } },
+    { type: 'script', params: { source: 'return null', schedule: [0, 3600] } },
+    { type: 'script', params: { source: 'return null', schedule: [0, 3600] } },
   ])
   await engine.checkDue()
   await engine.idle()
@@ -482,18 +482,17 @@ await engine.close(bad)
   // The new shape: a body, watching several tasks at once, saying something in each, waking when it asks.
   const a = (await engine.create('Watched A'))!
   const b = (await engine.create('Watched B'))!
-  const [watch] = await engine.addEvents(counting, [{ type: 'script', params: { description: 'Watch two', wake_at: clock + 5000, owns: [a, b], source: `
+  const [watch] = await engine.addEvents(counting, [{ type: 'script', params: { description: 'Watch two', owns: [a, b], debounce_minutes: 0, cycle_minutes: 1, source: `
     const n = (context.state ?? 0) + 1
-    if (n < 2) return { state: n, next: '+1m', messages: context.tasks.map((t) => ({ item: t.id, text: 'Still waiting on ' + t.title })) }
+    if (n < 2) return { state: n, messages: context.tasks.map((t) => ({ item: t.id, text: 'Still waiting on ' + t.title })) }
     return { assign: [{ item: context.tasks[0].id, to: ['human'] }], done: true, data: { n } }` } }])
   assert.deepEqual([item(a).assignees, item(b).assignees], [['human', watch], ['human', watch]], 'it owns both, beside who had them')
   assert.deepEqual(blockers(counting), [], 'it blocks nothing')
   await tick()
-  assert.equal(engine.event(watch)!.runs, 0, 'not before its wake_at')
-  clock += 5000
+  assert.deepEqual([last(a, 'note').params.text, last(b, 'note').params.text], ['Still waiting on Watched A', 'Still waiting on Watched B'], 'given tasks, it runs (its debounce after)')
+  assert.equal(engine.event(watch)!.params.last_wake, clock, 'when it woke is kept, for a restart')
   await tick()
-  assert.deepEqual([last(a, 'note').params.text, last(b, 'note').params.text], ['Still waiting on Watched A', 'Still waiting on Watched B'])
-  assert.equal(engine.event(watch)!.params.wake_at, clock + MINUTE, 'its next wake is kept, for a restart')
+  assert.equal(engine.event(watch)!.runs, 1, 'its own messages are not news to it')
   clock += MINUTE
   await tick()
   assert.deepEqual(engine.event(watch)!.data!.result, { n: 2 })
@@ -504,7 +503,8 @@ await engine.close(bad)
   await engine.runNow(press, 'human')
   assert.ok(engine.event(press)!.resolved && !engine.event(press)!.data!.error, 'pressed by a person, it may act outside')
   assert.equal(posted.at(-1), 'pressed')
-  const [timed] = await engine.addEvents(counting, [{ type: 'script', params: { source: unsafeSource, wake_at: clock } }], 'human')
+  const owned = (await engine.create('Owned'))!
+  const [timed] = await engine.addEvents(counting, [{ type: 'script', params: { source: unsafeSource, owns: [owned], debounce_minutes: 0 } }], 'human')
   await tick()
   assert.match(String(engine.event(timed)!.data!.error), /unsafe/, 'on a schedule, never: whoever wrote it')
   // run_script: once, now, with the tools; an agent gets no unsafe ones.
@@ -512,6 +512,7 @@ await engine.close(bad)
   assert.equal(typeof ran.result, 'number')
   await assert.rejects(engine.callAction('run_script', { source: unsafeSource }, { engine, author: 'bot', actor: 'bot', itemId: null, runId: null }), /unsafe/)
   await engine.close(a)
+  await engine.close(owned)
   await engine.close(b)
   await engine.close(counting)
 }
@@ -560,10 +561,7 @@ await engine.close(bad)
   await engine.send(queue, 'note', 'three')
   releaseFirst()
   await settle()
-  assert.equal(prompts.length, 1)
-  assert.deepEqual(item(queue).assignees, [threepio], 'news came in while it ran, so it keeps the item')
-  clock += PERIODIC_MINUTES * MINUTE
-  await settle()
+  assert.equal(prompts.length, 2, 'news came in while it ran: it keeps the item, and wakes again (its debounce after) for it')
   assert.match(prompts[1], /two[\s\S]*three/)
   assert.doesNotMatch(prompts[1], /\bone\b/)
   assert.deepEqual(item(queue).assignees, ['human'])

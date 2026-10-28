@@ -12,10 +12,13 @@ export interface DefaultAction extends PresetInfo {
 
 type Ctx = { detail: ItemDetail; overview: Overview }
 
-/** A snooze: a script has the task until `wake` (`+1h`, `+1d`), then gives it back to the person, who lets go of it now. */
-const snooze = (label: string, wake: string) => ({ detail, overview }: Ctx): DefaultAction[] => [
+/**
+ * A snooze: a script has the task for `ms`, then gives it back to the person, who lets go of it now. It wakes every five
+ * minutes (and when anything happens in the task) and checks the time: scripts don't sleep until a time.
+ */
+const snooze = (label: string, ms: number) => ({ detail, overview }: Ctx): DefaultAction[] => [
   {
-    id: `snooze:${wake}`,
+    id: `snooze:${ms}`,
     name: `Snooze for ${label}`,
     hint: `this task comes back to you in ${label}`,
     icon: 'script',
@@ -24,9 +27,9 @@ const snooze = (label: string, wake: string) => ({ detail, overview }: Ctx): Def
         type: 'script',
         params: {
           description: `Snooze for ${label}`,
-          wake_at: wake,
           owns: [detail.item.id],
-          source: `return { messages: [{ text: 'Back from snooze' }], assign: context.tasks.map((t) => ({ item: t.id, to: [${JSON.stringify(overview.me.id)}] })), done: true }`,
+          cycle_minutes: 5,
+          source: `if (context.now < ${JSON.stringify(new Date(Date.now() + ms).toISOString())}) return null\nreturn { messages: [{ text: 'Back from snooze' }], assign: context.tasks.map((t) => ({ item: t.id, to: [${JSON.stringify(overview.me.id)}] })), done: true }`,
         },
       }),
   },
@@ -64,19 +67,19 @@ const waitForSlack = ({ detail, overview }: Ctx): DefaultAction[] => {
     return {
       id: `slack-wait:${link}`,
       name: `Wait for Slack${links.length > 1 ? ` (${i + 1})` : ''}`,
-      hint: `this task comes back when there is something new after ${where}: checked after 1, then 5, 15, and every 60 minutes`,
+      hint: `this task comes back when there is something new after ${where}: checked every five minutes`,
       icon: 'slack_message',
       run: () =>
         takeOff(detail, overview, {
           type: 'script',
-          params: { description: 'Wait for something new on Slack', wake_at: '+1m', owns: [detail.item.id], source: slackWait(link, overview.me.id) },
+          params: { description: 'Wait for something new on Slack', owns: [detail.item.id], cycle_minutes: 5, source: slackWait(link, overview.me.id) },
         }),
     }
   })
 }
 
 /** The default actions, in the order they are offered. */
-export const DEFAULT_ACTIONS: ((ctx: Ctx) => DefaultAction[])[] = [assignToLastBot, waitForSlack, snooze('an hour', '+1h'), snooze('a day', '+1d')]
+export const DEFAULT_ACTIONS: ((ctx: Ctx) => DefaultAction[])[] = [assignToLastBot, waitForSlack, snooze('an hour', 3_600_000), snooze('a day', 86_400_000)]
 
 /** What the chat input offers for this task, with nothing typed. None in a bot's own chat. */
 export function defaultActions(detail: ItemDetail, overview: Overview): DefaultAction[] {

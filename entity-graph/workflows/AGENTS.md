@@ -108,9 +108,10 @@ window: there `window.workflows` is the preload's, as always.
   have it and nothing blocks it but approvals. Next goes through those, the most recently touched first.
 - A **bot** is an item of its own (a `bot` event, in no item, its settings in its params): a name,
   instructions, a provider and model (opus by default), a debounce (a minute by default), and a folder and
-  Claude session of its own, which last. Notes in it are its own chat. It wakes only when something happens
-  to it: a task is assigned to it, its settings change, or someone writes in its chat (its debounce after);
-  and every 15 minutes while its tasks have news (`Engine.wake`). It runs one thing at a
+  Claude session of its own, which last. Notes in it are its own chat. **Bots and scripts wake by one rule** (`dueAt` in
+  `wakes.ts`): once anything but itself affected it since it last woke (a task assigned to it, anything new in its
+  tasks, its chat, its settings), its `debounce_minutes` (1) after; or its `cycle_minutes` (15) after it last woke
+  while it has tasks, news or not. Never while it runs (`Engine.wake`, `Engine.scriptDue`). It runs one thing at a
   time: a run is asked to action every task it has and give each a new assignee, and told what is new in
   its chat and in each (`promptFor` in `workers.ts`: people's notes as written, after their name; anything else in
   [brackets]; each task's id every ten lines). It answers with

@@ -109,14 +109,14 @@ await assert.rejects(engine.callAction('slack_post', { channel: 'C9', text: 'x' 
 {
   await admin.clearSlackCache()
   const waiting = (await engine.create('Waiting on Sam'))!
-  const [w] = await engine.addEvents(waiting, [{ type: 'script', params: { description: 'Wait for Slack', wake_at: '+1m', owns: [waiting], source: slackWait(link, 'alex') } }])
+  const [w] = await engine.addEvents(waiting, [{ type: 'script', params: { description: 'Wait for Slack', owns: [waiting], cycle_minutes: 5, source: slackWait(link, 'alex') } }])
   await engine.assign(waiting, 'alex', false)
   clock += 60_000
   await engine.checkDue()
   await engine.idle()
   assert.equal(engine.event(w)!.lastError, null)
   assert.ok(!engine.event(w)!.resolved, 'nothing new yet')
-  assert.equal(engine.event(w)!.params.wake_at, clock + 5 * 60_000, 'then five minutes')
+  assert.equal(engine.event(w)!.nextCheckAt, clock + 5 * 60_000, 'then every five minutes')
   // Something new in the thread.
   eng.push({ ts: '1700000170.000600', user: 'USAM', text: 'Any news?', thread_ts: '1700000100.000200' })
   await admin.clearSlackCache()

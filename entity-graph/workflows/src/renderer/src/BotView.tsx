@@ -14,6 +14,7 @@ const draftOf = (b: Agent): BotDraft => ({
   provider: b.provider,
   model: b.model,
   debounceMinutes: b.debounceMinutes,
+  cycleMinutes: b.cycleMinutes,
   folder: b.folder,
 })
 

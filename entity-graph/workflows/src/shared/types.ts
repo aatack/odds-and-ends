@@ -122,6 +122,8 @@ export interface Agent {
   model: string
   /** How long it waits after the last thing that happened in its items before it wakes, so a burst of work goes in one run. */
   debounceMinutes: number
+  /** How often it wakes while it has tasks, news or not; 0, never. */
+  cycleMinutes: number
   /** Where it runs: its own folder, which lasts, so it can keep repositories there. */
   folder: string
   /** Its Claude session, once it has run. */
@@ -381,7 +383,7 @@ export interface WorkflowsAPI {
   /** Renames an item: its title changes (egdb keeps the old one). */
   rename: (id: string, title: string) => Promise<void>
   /** Makes a bot (no id) or changes its settings. */
-  saveBot: (bot: { id?: string; name: string; instructions: string; provider: string; model: string; debounceMinutes: number; folder?: string }) => Promise<string>
+  saveBot: (bot: { id?: string; name: string; instructions: string; provider: string; model: string; debounceMinutes: number; cycleMinutes?: number; folder?: string }) => Promise<string>
   /** Deletes a bot: what it was assigned goes back to the human. */
   deleteBot: (id: string) => Promise<void>
   /** Assigns an item to a person or a bot (on), or takes the assignment away (off). */

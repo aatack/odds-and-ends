@@ -8,7 +8,7 @@ import { api } from './useWorkflows'
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 /** A bot's settings, as WorkflowsAPI.saveBot takes them. */
-export type BotDraft = { name: string; instructions: string; provider: string; model: string; debounceMinutes: number; folder?: string }
+export type BotDraft = { name: string; instructions: string; provider: string; model: string; debounceMinutes: number; cycleMinutes?: number; folder?: string }
 
 /** All a bot's settings, on its own page. */
 export const BOT_FORM = {
@@ -26,6 +26,11 @@ export const BOT_FORM = {
       type: 'number',
       title: 'Debounce (minutes)',
       description: 'How long it waits after the last thing that happened to it before it wakes: a burst of work goes in one run.',
+    },
+    cycleMinutes: {
+      type: 'number',
+      title: 'Cycle (minutes)',
+      description: 'How often it wakes while it has tasks, news or not (15 by default; 0, never).',
     },
     folder: { type: 'string', title: 'Folder', description: 'Where it works: a folder of its own beside the source, unless you give another.' },
     provider: { type: 'string', title: 'Provider', enum: ['claude'], description: 'Who runs it.' },

@@ -22,7 +22,7 @@ const newest = (xs) => xs.reduce((a, x) => (Number(x.ts) > Number(a) ? x.ts : a)
 const since = s.since ?? { thread: newest(thread), channel: newest(channel) }
 const newer = [...thread.filter((x) => Number(x.ts) > Number(since.thread)), ...channel.filter((x) => Number(x.ts) > Number(since.channel))]
   .sort((a, b) => Number(a.ts) - Number(b.ts))
-if (!newer.length) return { state: { step: s.step + 1, since }, next: ['+5m', '+15m', '+60m'][Math.min(s.step, 2)] }
+if (!newer.length) return { state: { step: s.step + 1, since } }
 return {
   messages: [{ text: 'New on Slack, in ' + m.channel_name + ':\\n\\n' + newer.map((x) => '**' + x.author + '**: ' + x.text).join('\\n\\n') }],
   assign: context.tasks.map((t) => ({ item: t.id, to: [${JSON.stringify(me)}] })),
