@@ -111,7 +111,9 @@ window: there `window.workflows` is the preload's, as always.
   Claude session of its own, which last. Notes in it are its own chat. **Bots and scripts wake by one rule** (`dueAt` in
   `wakes.ts`): once anything but itself affected it since it last woke (a task assigned to it, anything new in its
   tasks, its chat, its settings), its `debounce_minutes` (1) after; or its `cycle_minutes` (15) after it last woke
-  while it has tasks, news or not. Never while it runs (`Engine.wake`, `Engine.scriptDue`). It runs one thing at a
+  while it has tasks, news or not. Never while it runs (`Engine.wake`, `Engine.scriptDue`). A run may end with a `handoff` (optional, in its output): done for
+  now, so its next run starts a fresh session told the handoff once (else it carries on, and Claude's auto-compaction
+  keeps the session in bounds). It runs one thing at a
   time: a run is asked to action every task it has and give each a new assignee, and told what is new in
   its chat and in each (`promptFor` in `workers.ts`: people's notes as written, after their name; anything else in
   [brackets]; each task's id every ten lines). It answers with

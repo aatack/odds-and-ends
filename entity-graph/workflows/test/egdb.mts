@@ -88,6 +88,12 @@ const file = join(dir, 'round-trip.egdb')
   const renamed = await again.store.log({ entities: [id], keys: ['title'] })
   assert.deepEqual(renamed.map((e) => e.value), ['Round trip'])
   assert.deepEqual(await again.store.log({ authors: ['nobody'] }), [])
+  // The two log tools: what happened to an item, and what someone did.
+  const ctx = { engine: engine2, author: 'bot' as const, actor: 'bot', itemId: null, runId: null }
+  const toItem = (await engine2.callAction('edit_log', { item_id: hi }, ctx)) as { entity: string; other: string | null }[]
+  assert.ok(toItem.length > 0 && toItem.length <= 10 && toItem.every((e) => e.entity === hi || e.other === hi))
+  const byBot = (await engine2.callAction('activity_log', { who: 'Threepio', limit: 3 }, ctx)) as { by: string }[]
+  assert.ok(byBot.length > 0 && byBot.length <= 3 && byBot.every((e) => e.by === `bot:${bot}`))
   // Who made each event, and when, is the link to it.
   assert.deepEqual(after.detail.events.map((e) => [e.createdAt, e.createdBy]), before.detail.events.map((e) => [e.createdAt, e.createdBy]))
   assert.deepEqual(after.bot.lastRun, before.bot.lastRun)

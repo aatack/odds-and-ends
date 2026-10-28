@@ -78,6 +78,12 @@ export function botOutputSchema(types: EventType[]): Record<string, unknown> {
           additionalProperties: false,
         },
       },
+      handoff: {
+        type: 'string',
+        description:
+          "Optional. Only if you're done for now and nothing in this session needs carrying over: a few lines for your next run, which then " +
+          'starts a fresh session with them (and every task in full as it next moves). Leave it out to carry on in this session.',
+      },
     },
     additionalProperties: false,
   }

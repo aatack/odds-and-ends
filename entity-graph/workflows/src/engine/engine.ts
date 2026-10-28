@@ -49,6 +49,8 @@ export interface BotUpdate {
 /** What a bot's run returns, as its structured output. */
 export interface BotOutput {
   updates?: BotUpdate[]
+  /** Done for now: a few lines for its next run, which starts a fresh session with them. */
+  handoff?: string
 }
 
 /** A point in the order of things: a moment (`Store.moment`; 0 for what was loaded), and a time, for what was loaded. */
@@ -692,9 +694,10 @@ export class Engine extends EventEmitter {
       const given = this.store.assignment(itemId, agentId)!
       if (after(given.n, given.at, mark) && given.by !== self) trigger = Math.max(trigger, given.at)
       // A task its session has not seen yet (one it gave itself, say) is news to it.
+      // It is a reason to wake only if it was just given (after a fresh start, its old tasks are news when they move).
       if (!seen.includes(itemId)) {
         fresh.add(itemId)
-        activity = Math.max(activity, given.at)
+        if (after(given.n, given.at, mark)) activity = Math.max(activity, given.at)
       }
       for (const e of this.store.children(itemId)) {
         const added = after(e.added_n, e.created_at, mark) && e.created_by !== self
@@ -735,7 +738,7 @@ export class Engine extends EventEmitter {
    * Starts a bot's run, if it is due and not running: its chat and every task it has, each with its new events (or,
    * for a task its session has not seen, its whole history). Its session is its own: resumed if it has one, otherwise new.
    */
-  claim(agentId: string): { agent: Agent; items: { item: Item; events: ItemEvent[]; first: boolean; own?: boolean }[]; resume: boolean } | null {
+  claim(agentId: string): { agent: Agent; items: { item: Item; events: ItemEvent[]; first: boolean; own?: boolean }[]; resume: boolean; handoff: string | null } | null {
     const agent = this.agent(agentId)
     if (!agent || agent.deleted || this.running.has(agentId)) return null
     const wake = this.wake(agentId)
@@ -748,12 +751,15 @@ export class Engine extends EventEmitter {
       return { item: this.must(itemId), events, first }
     })
     const resume = agent.sessionId !== null
+    // A fresh session hears the handoff its last one left, once.
+    const handoff = !resume && typeof this.agentParams(agentId).handoff === 'string' ? String(this.agentParams(agentId).handoff) : null
     if (!resume) {
       this.setParam(agentId, 'session_id', randomUUID(), `bot:${agentId}`)
       this.setParam(agentId, 'seen', [], `bot:${agentId}`)
+      if (handoff !== null) this.setParam(agentId, 'handoff', null, `bot:${agentId}`)
     }
     this.woken.delete(agentId)
-    return { agent: this.agent(agentId)!, items, resume }
+    return { agent: this.agent(agentId)!, items, resume, handoff }
   }
 
   /** What a bot's session has seen: the tasks in its runs since the session began. */
@@ -807,6 +813,7 @@ export class Engine extends EventEmitter {
 
     let error = end.error ?? null
     let updates: BotUpdate[] = []
+    let handoff: string | null = null
     if (!error) {
       try {
         const out = z
@@ -822,9 +829,11 @@ export class Engine extends EventEmitter {
                 }),
               )
               .optional(),
+            handoff: z.string().optional(),
           })
           .parse(end.structured ?? {})
         updates = (out.updates ?? []) as BotUpdate[]
+        handoff = out.handoff?.trim() || null
         for (const u of updates) if (!this.get(u.item) && u.item !== agentId) throw new Error(`No task ${u.item}.`)
       } catch (e) {
         error = `The bot's output was not usable: ${(e as Error).message}`
@@ -878,6 +887,12 @@ export class Engine extends EventEmitter {
       const said = new Set([...updates.filter((u) => u.assign).map((u) => u.item), ...broken])
       for (const itemId of run.itemIds) if (!closing.includes(itemId) && !said.has(itemId) && this.get(itemId) && !this.get(itemId)!.closed) this.settle(itemId, run)
     })
+    // Done for now: its next run starts a fresh session (with the handoff said once), rather than carrying this one on.
+    if (handoff && !error && !this.row(agentId)?.resolved) {
+      this.setParam(agentId, 'handoff', handoff, actor)
+      this.setParam(agentId, 'session_id', null, actor)
+      this.setParam(agentId, 'seen', [], actor)
+    }
     for (const itemId of closing) await this.close(itemId, { actor })
     this.emit('change')
     await this.idle()

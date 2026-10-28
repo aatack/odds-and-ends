@@ -407,6 +407,31 @@ await engine.close(loose)
   await engine.close(t)
 }
 
+// A handoff: a run done for now leaves one; the next run starts a fresh session, told it once, with each task in full.
+{
+  const t = (await engine.create('Handoff'))!
+  let session = ''
+  behaviours.push(async ({ sessionId }) => {
+    session = sessionId
+    return { updates: [{ item: t, message: 'Done for now.', assign: [threepio] }], handoff: 'Was halfway through Handoff: next, the tests.' }
+  })
+  await toBot(t, 'start')
+  await settle()
+  assert.equal(engine.agent(threepio)!.sessionId, null, 'its session is let go')
+  behaviours.push(async ({ prompt, sessionId, resume }) => {
+    assert.notEqual(sessionId, session)
+    assert.equal(resume, false)
+    assert.match(prompt, /^\[a fresh session: your last one left you this handoff\]\n\nWas halfway through Handoff/)
+    assert.match(prompt, /\[new to you: Handoff\][\s\S]*start/, 'the task in full')
+    return out({ item: t, assign: [engine.me()] })
+  })
+  await engine.send(t, 'note', 'carry on')
+  await settle()
+  assert.equal(behaviours.length, 0)
+  assert.equal(engine.agent(threepio)!.sessionId !== null, true)
+  await engine.close(t)
+}
+
 // Processes are switched off: none can be added.
 await assert.rejects(engine.addEvents((await engine.create('No process'))!, [{ type: 'process', params: { command: 'true' } }]), /switched off/)
 

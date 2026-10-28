@@ -202,17 +202,34 @@ export const itemActions: Action[] = [
     name: 'edit_log',
     unsafe: false,
     description:
-      'What was done, by whom and when, the newest first: every value set (null: cleared) and every link made or removed, as egdb keeps them. ' +
-      "Filter by authors (usernames, a bot's actor `bot:<id>`, 'system'), entities (ids; for links, either end), keys (value keys or link types), and a time range (ms).",
+      'What happened to an item: every value set on it (null: cleared) and every link made or removed to or from it, by anyone, the newest ' +
+      "first, as egdb keeps them (`limit`, 10 by default). With no item_id, everything. Narrow by authors (usernames, a bot's actor `bot:<id>`), " +
+      'keys (value keys or link types) and a time range (ms). For what someone did, see activity_log.',
     input: {
+      item_id: z.string().optional(),
       authors: z.array(z.string()).optional(),
-      entities: z.array(z.string()).optional(),
       keys: z.array(z.string()).optional(),
       since: z.number().optional(),
       until: z.number().optional(),
-      limit: z.number().int().positive().max(2000).optional(),
+      limit: z.number().int().positive().max(2000).default(10),
     },
-    run: async (a, { engine }) => engine.store.log(a),
+    run: async (a, { engine }) => {
+      const { item_id, ...rest } = a as { item_id?: string } & Record<string, unknown>
+      return engine.store.log({ ...rest, ...(item_id ? { entities: [item_id] } : {}) })
+    },
+  },
+  {
+    name: 'activity_log',
+    unsafe: false,
+    description:
+      'What someone did: every value they set and every link they made or removed, on anything, the newest first (`limit`, 10 by default). ' +
+      "`who` is a username, or a bot's name or id (its runs' writes). For what happened to an item, see edit_log.",
+    input: { who: z.string(), limit: z.number().int().positive().max(2000).default(10), since: z.number().optional() },
+    run: async (a, { engine }) => {
+      const who = String(a.who).replace(/^@/, '')
+      const bot = engine.findAgent(who)
+      return engine.store.log({ authors: bot ? [`bot:${bot.id}`] : [who.toLowerCase()], limit: Number(a.limit), ...(a.since ? { since: Number(a.since) } : {}) })
+    },
   },
   {
     name: 'get_children',
