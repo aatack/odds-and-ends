@@ -1082,7 +1082,8 @@ export class Engine extends EventEmitter {
       edited: edited || null,
       debounceMs: Number(r.params.debounce_minutes ?? DEFAULT_DEBOUNCE) * MINUTE,
       cycleMs: cycle * MINUTE || null,
-      hasWork: owned.length > 0,
+      // A timer: given a cycle of its own, it runs every cycle whether or not it owns anything.
+      hasWork: owned.length > 0 || r.params.cycle_minutes !== undefined,
     })
     // An older schedule with nothing owned: it polls on its cycle, from when it was made.
     const woke = Number(r.params.last_wake ?? 0)

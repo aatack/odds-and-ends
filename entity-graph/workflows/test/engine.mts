@@ -441,6 +441,35 @@ await engine.close(loose)
   await engine.close(t)
 }
 
+// A timer: a script with a cycle and nothing owned runs every cycle; it makes a task for a bot, and a new one only
+// once the last is closed.
+{
+  const host = (await engine.create('Timer host'))!
+  const source = `if (context.state?.last && !(await tools.get_item({ item_id: context.state.last })).item.closed) return null
+const { ids } = await tools.add_items({ items: [{ type: 'task', params: { title: 'Weekly review', assignees: ['human'] } }] })
+return { state: { last: ids[0] } }`
+  const [timer] = await engine.addItems(host, [{ type: 'script', params: { description: 'Weekly', cycle_minutes: 10080, source } }])
+  const reviews = () => engine.overview().items.filter((i) => i.title === 'Weekly review')
+  await engine.checkDue()
+  await engine.idle()
+  assert.equal(reviews().length, 0, 'not before its first cycle')
+  clock += 10080 * MINUTE
+  await engine.checkDue()
+  await engine.idle()
+  assert.equal(reviews().length, 1, String(engine.info(timer)!.lastError))
+  clock += 10080 * MINUTE
+  await engine.checkDue()
+  await engine.idle()
+  assert.equal(reviews().length, 1, 'the last one is still open')
+  await engine.close(reviews()[0].id)
+  clock += 10080 * MINUTE
+  await engine.checkDue()
+  await engine.idle()
+  assert.equal(reviews().filter((r) => !r.closed).length, 1, 'closed, so a new one')
+  for (const r of reviews()) await engine.close(r.id)
+  await engine.close(host)
+}
+
 // Processes are switched off: none can be added.
 await assert.rejects(engine.addItems((await engine.create('No process'))!, [{ type: 'process', params: { command: 'true' } }]), /switched off/)
 

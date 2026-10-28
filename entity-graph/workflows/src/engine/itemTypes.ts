@@ -93,11 +93,14 @@ export function whenNext(next: number | string, now: number): number {
 export const SCRIPT_DOC =
   'A script: JavaScript the app runs for you, with no model. Use one to own repetitive work that does not need an LLM: ' +
   'snoozing a task, waiting for a branch to merge, checking something every hour. It costs nothing to run.\n' +
-  'Two uses:\n' +
+  'Three uses:\n' +
   '1. A button: add it in a task owning nothing. It sits in the chat with a play button, and runs only when a person presses it.\n' +
   '2. An owner: give it `owns` (task ids). It has those tasks, as a bot or a person would, and wakes as a bot does: once anything ' +
   '(but itself) happens in them, debounce_minutes (1) after; and every cycle_minutes (15) while it owns them, news or not. Each run ' +
   'checks what it waits for (the time, a branch, a reply); when it has happened, it hands its tasks on and says done.\n' +
+  '3. A timer: give it cycle_minutes and no owns. It runs every cycle (e.g. 10080, a week) and does something each time: ' +
+  'make a fresh task for a bot (add_items with no item_id, assignees: [the bot], a note saying what to do), better than a bot ' +
+  "holding a standing task. Keep the last task's id in state, and make a new one only once the last is closed.\n" +
   'It never blocks the task it sits in: a task waits on a script by being assigned to it.\n' +
   '`source` is the body of an async function: `context` and `tools` are in scope, and it may await and return.\n' +
   '- context: { script: { id, description, runs, state }, item: { id, title } (the task it sits in), tasks: [{ id, title }] (those it owns), ' +
@@ -110,6 +113,9 @@ export const SCRIPT_DOC =
   '- console.log is kept. A run that throws ends it with the error.\n' +
   'Example, a snooze until 9am: params { description: "Snooze until 9am", owns: ["<task id>"], cycle_minutes: 5, source: ' +
   '"if (context.now < \'2026-11-02T09:00:00Z\') return null; return { messages: [{ text: \'Back from snooze\' }], assign: [{ item: context.tasks[0].id, to: [\'alex\'] }], done: true }" }.\n' +
+  'Example, a weekly timer: cycle_minutes: 10080, source: "if (context.state?.last && !(await tools.get_item({ item_id: context.state.last })).item.closed) ' +
+  'return null; const { ids } = await tools.add_items({ items: [{ type: \'task\', params: { title: \'Weekly review\', assignees: [\'Remulos\'], items: ' +
+  '[{ type: \'note\', params: { text: \'Do the review, then close this task.\' } }] } }] }); return { state: { last: ids[0] } }".\n' +
   'Example, a check every ten minutes: cycle_minutes: 10, source: "const pr = await tools.some_read_tool({ ... }); if (!pr.merged) return null; ' +
   'return { messages: [{ text: \'Merged\' }], assign: [{ item: context.tasks[0].id, to: [\'Threepio\'] }], done: true }".'
 
