@@ -547,6 +547,7 @@ function ownerStatus(item: Item, o: Overview, now: number): string | null {
     const bot = o.bots.find((b) => b.id === id)
     if (bot) {
       if (bot.runId && bot.lastRun) return `@${bot.name} is working · ${minutes(now - bot.lastRun.startedAt)}`
+      if (bot.pausedUntil) return `@${bot.name} is waiting out a usage limit, till ${new Date(bot.pausedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
       if (bot.wakesAt !== null) return bot.wakesAt <= now ? `@${bot.name} is waking` : `@${bot.name} wakes in ${minutes(bot.wakesAt - now)}`
       continue
     }
