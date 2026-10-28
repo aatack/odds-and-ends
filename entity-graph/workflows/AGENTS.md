@@ -92,6 +92,13 @@ own press on the Phone page, which the phone itself may not call):
 3. On the phone: scan the QR code (or open `https://<machine>.<tailnet>.ts.net:8443/` and paste the token), sign in,
    then Add to Home Screen.
 
+## Special rules
+
+[`docs/special-rules.md`](./docs/special-rules.md) lists every place the app treats an item type, a value, a link
+or an id specially, and whether the backend or the window does it. **When you add, change or remove such a rule,
+update that list in the same commit.** Prefer making behaviour general over adding a row; the list is meant to
+shrink.
+
 ## The paradigm
 
 [`docs/paradigm.md`](./docs/paradigm.md) is the idea, in a page.
