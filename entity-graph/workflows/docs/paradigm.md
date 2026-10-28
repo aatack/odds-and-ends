@@ -1,7 +1,7 @@
 # The paradigm
 
 This page gives the idea of the app. It does not give the implementation.
-For the implementation, see [`events.md`](./events.md).
+For the implementation, see [`items.md`](./items.md).
 The text uses ASD-STE100 Simplified Technical English.
 
 ## Purpose

@@ -6,7 +6,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import type { CustomAction, EventSpec } from '../shared/types'
+import type { CustomAction, ItemSpec } from '../shared/types'
 import type { Engine } from './engine'
 import { objectSchema } from './schema'
 import { runScript } from './script'
@@ -45,7 +45,7 @@ export class CustomActions {
 
   /** Adds one (no id) or changes one. */
   save(a: Omit<CustomAction, 'id'> & { id?: string }): CustomAction {
-    if (!this.engine.eventTypes.some((t) => t.type === a.type)) throw new Error(`No event type ${a.type}.`)
+    if (!this.engine.itemTypes.some((t) => t.type === a.type)) throw new Error(`No event type ${a.type}.`)
     if (!a.name.trim()) throw new Error('An action needs a name.')
     const now = this.engine.now()
     const id = a.id ?? randomUUID()
@@ -68,15 +68,15 @@ export class CustomActions {
    * the time) and the safe actions; what it returns is said in the item's
    * chat, as an action event, and any events it returns are added there.
    */
-  async run(id: string, eventId: string, actor = 'human', runId: string | null = null): Promise<{ message: string | null }> {
+  async run(id: string, itemId: string, actor = 'human', runId: string | null = null): Promise<{ message: string | null }> {
     const action = this.get(id)
     if (!action) throw new Error(`No custom action ${id}.`)
-    const event = this.engine.event(eventId)
-    if (!event) throw new Error(`No event ${eventId}.`)
+    const event = this.engine.event(itemId)
+    if (!event) throw new Error(`No event ${itemId}.`)
     if (event.type !== action.type) throw new Error(`${action.name} is for ${action.type} events, not ${event.type}.`)
     if (!action.source.trim()) throw new Error(`${action.name} has no code yet: write or generate it on the Types page.`)
-    const itemId = event.type === 'task' ? event.id : event.parentId
-    const item = itemId ? this.engine.get(itemId) : null
+    const taskId = event.type === 'task' ? event.id : event.parentId
+    const item = taskId ? this.engine.get(taskId) : null
     if (!item) throw new Error('That event is in no item.')
     const context = {
       item: { id: item.id, title: item.title, parentId: item.parentId, closed: item.closed, withYou: item.withYou },
@@ -90,12 +90,12 @@ export class CustomActions {
     if (!parsed.success) throw new Error(`It returned ${JSON.stringify(ran.value)?.slice(0, 200)}, not null, a string, or { message?, events? }.`)
     const out = parsed.data
     const message = typeof out === 'string' ? out : (out?.message ?? null)
-    const events = typeof out === 'object' && out ? ((out.events ?? []) as EventSpec[]) : []
+    const events = typeof out === 'object' && out ? ((out.events ?? []) as ItemSpec[]) : []
     // Its events are held to the bots' rules, and checked before anything is added.
     this.engine.prepare(events, 'bot')
     // What it said is a note in the task, by the script; what it returned, a bot's (held to the bots' rules).
-    if (message) await this.engine.addEvents(item.id, [{ type: 'note', params: { text: message } }], 'script', 'human')
-    if (events.length) await this.engine.addEvents(item.id, events, actor, 'bot')
+    if (message) await this.engine.addItems(item.id, [{ type: 'note', params: { text: message } }], 'script', 'human')
+    if (events.length) await this.engine.addItems(item.id, events, actor, 'bot')
     return { message }
   }
 
@@ -109,7 +109,7 @@ export class CustomActions {
     const actions = this.engine.actions
       .filter((x) => !x.unsafe)
       .map((x) => `- ${x.name}(${JSON.stringify(objectSchema(x.input).properties ?? {})}): ${x.description}`)
-    const events = this.engine.eventTypes.filter((t) => t.bots).map((t) => `- ${t.type} ${JSON.stringify(objectSchema(t.params).properties ?? {})}: ${t.description}`)
+    const events = this.engine.itemTypes.filter((t) => t.bots).map((t) => `- ${t.type} ${JSON.stringify(objectSchema(t.params).properties ?? {})}: ${t.description}`)
     const unsafe = this.engine.actions.filter((x) => x.unsafe).map((x) => `- ${x.name}: ${x.description}`)
     const system = `You write one custom action for a workflow app, as a JavaScript function expression. Reply with the code only: no prose, no markdown fences.
 

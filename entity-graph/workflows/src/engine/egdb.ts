@@ -8,7 +8,7 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { EgdbClient, type Filter, type Op } from 'egdb-client'
 import {
-  customActionFromValues, eventFromValues, ROOT, Store, type CustomActionRow, type EventRow, type Inspection, type LinkView, type Sink,
+  customActionFromValues, itemFromValues, ROOT, Store, type CustomActionRow, type ItemRow, type Inspection, type LinkView, type Sink,
 } from './store'
 
 const BRANCH_NAME = 'workflows'
@@ -201,10 +201,10 @@ export async function loadStore(
     const got = await client.valueEvents(branch, done.slice(i, i + 500))
     for (const [id, keys] of Object.entries(got)) if (keys.resolved) resolved.set(id, { at: keys.resolved.timestamp, by: keys.resolved.author })
   }
-  const events: EventRow[] = []
+  const events: ItemRow[] = []
   for (const [id, x] of found) {
     const m = made.get(id)
-    if (m) events.push(eventFromValues(id, x, m, blocking(String(x.type)), resolved.get(id)))
+    if (m) events.push(itemFromValues(id, x, m, blocking(String(x.type)), resolved.get(id)))
   }
   const sink = new EgdbSink(client, branch, onError)
   const store = new Store(sink)

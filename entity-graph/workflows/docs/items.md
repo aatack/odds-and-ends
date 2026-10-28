@@ -27,11 +27,11 @@ When it resolves, it keeps its **data**.
 
 ## The interface
 
-Every event has the same shape, whatever its type: `ItemEvent`, in
+Every event has the same shape, whatever its type: `ItemInfo`, in
 `src/shared/types.ts`. A type decides only what its `params` and `data` hold,
 how it reads (`summary`, `message`), and whether and how it waits.
 
-### Every event (`ItemEvent`)
+### Every event (`ItemInfo`)
 
 | field | what it is |
 | --- | --- |
@@ -70,13 +70,13 @@ with `open`, its blockers), `list_items` (every item), `items_waiting_on`
 `next_for_human` (what a person's Next would show: of the items that are their
 turn, the least recently touched), `list_people` and `list_bots`.
 
-### Every type (`EventType`)
+### Every type (`ItemType`)
 
-Defined in `src/engine/integrations.ts` and written in `src/engine/eventTypes.ts`.
+Defined in `src/engine/integrations.ts` and written in `src/engine/itemTypes.ts`.
 
 | member | what it is |
 | --- | --- |
-| `type`, `description` | Its name, and what it is for (shown to bots by `event_types`, and on the MCP page). |
+| `type`, `description` | Its name, and what it is for (shown to bots by `item_types`, and on the MCP page). |
 | `params` | A zod shape. Params are checked against it as the event is added. |
 | `data` | What it resolves with, in words. |
 | `blocking` | False: it resolves as it is added. True: it is a blocker. |
@@ -88,7 +88,7 @@ Defined in `src/engine/integrations.ts` and written in `src/engine/eventTypes.ts
 | `start(params, ctx)` | Optional: runs as it is added. It may change the params, or resolve the event at once. |
 | `check(params, ctx)` | Optional, for waits: answers the data once the event has happened, or null while it hasn't. Polled with backoff. |
 
-**To add a type:** write it in `eventTypes.ts` and add its name to `EventKind`.
+**To add a type:** write it in `itemTypes.ts` and add its name to `ItemKind`.
 Give it an icon in the renderer's `icons.tsx`, and a row in the table below. If
 the chat input should offer it, add a preset in `presets.ts`.
 
@@ -108,8 +108,8 @@ the chat input should offer it, add a preset in `presets.ts`.
 | `user` | while the person lasts (sits in no item) | `username` (its id), `name?` | `{ cancelled }`, once removed |
 
 - **`script`** is JavaScript the app runs with no model: an item that can have
-  tasks, as a bot can. Its full contract is `SCRIPT_DOC` in `eventTypes.ts`,
-  which is what agents read (`event_types`); in short:
+  tasks, as a bot can. Its full contract is `SCRIPT_DOC` in `itemTypes.ts`,
+  which is what agents read (`item_types`); in short:
   - Two uses: a **button** (it owns nothing: it runs only when a person
     presses its play button), and an **owner** (`owns` the tasks it takes on):
     it wakes by the same rule as a bot (`dueAt`, wakes.ts): news in its tasks
@@ -155,7 +155,7 @@ the chat input should offer it, add a preset in `presets.ts`.
   which last. Its settings are its params: changing them writes them anew (egdb
   keeps the old values) and wake it. Notes in it are its **own chat**.
   Deleting it cancels it, and what it had goes back to each item's owner. People make and edit bots on the Bots page; agents may make
-  them too (`add_events`).
+  them too (`add_items`).
 - **It wakes by the one rule** (`Engine.wake`, `dueAt` in wakes.ts), as a script
   does: once anything affected it since it last woke (an item assigned to it,
   even one it has; anything added or resolved in its items, not by its own runs;
@@ -232,6 +232,6 @@ There is one list of **actions**, and every call goes through `Engine.callAction
   them out, a script gets them only when a person presses its play button, and `callAction` refuses them to
   anyone but the human. See the unsafe rule in AGENTS.md.
 - Every other action is the same for every agent, a bot or anything connected:
-  `add_events`, `cancel_event` and `close_item` included, on any item. A bot can
+  `add_items`, `cancel_item` and `close_item` included, on any item. A bot can
   also add events through its output, and a script by what it returns.
 - Closing an item cancels its open blockers; tasks in it are left open.

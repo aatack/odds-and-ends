@@ -86,9 +86,9 @@ export class Admin {
   }
 
   /** A Slack event's messages, for its card and view; with `thread`, the replies to one of them. */
-  async slackView(eventId: string, thread?: string) {
-    const event = this.engine.event(eventId)
-    if (!event) throw new Error(`No event ${eventId}.`)
+  async slackView(itemId: string, thread?: string) {
+    const event = this.engine.event(itemId)
+    if (!event) throw new Error(`No event ${itemId}.`)
     return slackView(this.engine, event, thread)
   }
 

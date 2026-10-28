@@ -1,6 +1,6 @@
 import { useAtom } from 'jotai'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { Catalog, CustomAction, EventDetail, Overview, WorkflowsAPI } from '../../shared/types'
+import type { Catalog, CustomAction, ItemInfoDetail, Overview, WorkflowsAPI } from '../../shared/types'
 import { browserApi } from './phone'
 import { forwardAtom, HISTORY_LIMIT, reachedAtom, sameView, viewedAtom, viewsAtom, type View } from './views'
 
@@ -28,7 +28,7 @@ export function useWorkflows() {
   const [forwards, setForwards] = useAtom(forwardAtom)
   const view = views[views.length - 1] ?? null
   const selected = view && 'id' in view ? view.id : null
-  const [detail, setDetail] = useState<EventDetail | null>(null)
+  const [detail, setDetail] = useState<ItemInfoDetail | null>(null)
   const [skipped, setSkipped] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [empty, setEmpty] = useState(false)
@@ -39,7 +39,7 @@ export function useWorkflows() {
   const refresh = useCallback(async () => {
     setOverview(await api().overview())
     setCustomActions(await api().customActions())
-    setDetail(selected ? await api().eventDetail(selected) : null)
+    setDetail(selected ? await api().itemInfoDetail(selected) : null)
   }, [selected])
 
   useEffect(() => {
@@ -147,7 +147,7 @@ export function useWorkflows() {
   const moveOn = useCallback(
     async (id: string) => {
       if (selected !== id) return
-      const item = (await api().eventDetail(id))?.item?.item
+      const item = (await api().itemInfoDetail(id))?.item?.item
       if (item && !item.closed) return
       const to = await api().next([...skipped, id])
       if (to) open({ kind: 'event', id: to }, { direct: false })

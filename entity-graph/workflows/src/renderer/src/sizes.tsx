@@ -7,11 +7,11 @@
 
 import { CircleCheck, Play, Timer } from 'lucide-react'
 import type { ReactNode } from 'react'
-import type { Catalog, EventKind, ItemEvent } from '../../shared/types'
+import type { Catalog, ItemKind, ItemInfo } from '../../shared/types'
 import { Approval } from './Approval'
 import { fenced, Markdown } from './components/ui/Markdown'
-import { useEventMenu } from './EventMenu'
-import { eventIcon } from './icons'
+import { useItemMenu } from './ItemMenu'
+import { itemInfoIcon } from './icons'
 import { SlackCard } from './SlackView'
 import { Widget } from './Widget'
 import { TaskCard } from './TaskCard'
@@ -24,8 +24,8 @@ type Act = (fn: () => Promise<unknown>) => Promise<void>
  * An event's picture, beside its message in the chat. Given who made it (`owner`: a bot or a person), hovering it
  * names them and pressing it opens them; otherwise it is named for what it is.
  */
-export function EventAvatar({ event, owner }: { event: { type: EventKind; createdBy: string }; owner?: { name: string; onOpen: () => void } | null }) {
-  const [Icon, name] = eventIcon(event)
+export function ItemAvatar({ event, owner }: { event: { type: ItemKind; createdBy: string }; owner?: { name: string; onOpen: () => void } | null }) {
+  const [Icon, name] = itemInfoIcon(event)
   if (!owner)
     return (
       <span className="avatar" title={name}>
@@ -44,7 +44,7 @@ export function EventAvatar({ event, owner }: { event: { type: EventKind; create
  * right-click for its menu. Tasks, bots and people are all drawn so (`[id]()` in any text).
  */
 export function Pill({ id, label, icon, onOpen }: { id: string; label: ReactNode; icon?: ReactNode; onOpen?: () => void }) {
-  const menu = useEventMenu()
+  const menu = useItemMenu()
   return (
     <button data-ui className="link item-ref" onClick={onOpen} {...menu(id)}>
       {icon}
@@ -53,10 +53,10 @@ export function Pill({ id, label, icon, onOpen }: { id: string; label: ReactNode
   )
 }
 
-export type CardProps = { event: ItemEvent; find: string; catalog: Catalog; act: Act; onOpen: (id: string) => void }
+export type CardProps = { event: ItemInfo; find: string; catalog: Catalog; act: Act; onOpen: (id: string) => void }
 
 /** Each type's card: what it shows in a chat. A type left out shows what it says (`message`, or its summary). */
-export const CARDS: Partial<Record<EventKind, (p: CardProps) => ReactNode>> = {
+export const CARDS: Partial<Record<ItemKind, (p: CardProps) => ReactNode>> = {
   note: ({ event: e, find }) => <Markdown text={String(e.params.text ?? '')} highlight={find} />,
   task: ({ event: e, onOpen }) => (
     <button data-ui className="link card-link" onClick={() => onOpen(e.id)}>
@@ -76,13 +76,13 @@ export const CARDS: Partial<Record<EventKind, (p: CardProps) => ReactNode>> = {
 }
 
 /** An event's card, by its type. */
-export function EventCard(props: CardProps) {
+export function ItemCard(props: CardProps) {
   const card = CARDS[props.event.type]
   return card ? <>{card(props)}</> : <Markdown text={props.event.message ?? props.event.summary} highlight={props.find} />
 }
 
 /** How each type fills the view on its own: as a chat (its events, and the chat input), or as its details. */
-export const FOCUS: Record<EventKind, 'chat' | 'details'> = {
+export const FOCUS: Record<ItemKind, 'chat' | 'details'> = {
   task: 'chat',
   bot: 'chat',
   note: 'details',
@@ -100,7 +100,7 @@ export const FOCUS: Record<EventKind, 'chat' | 'details'> = {
  * A script: what it does; then a tick and what it finished with, once done. While open: when it runs next (if it
  * asked to), and a play button, always: pressed, it runs now, with the unsafe tools a person's press brings.
  */
-function ScriptCard({ event: e, act, find }: { event: ItemEvent; act: Act; find: string }) {
+function ScriptCard({ event: e, act, find }: { event: ItemInfo; act: Act; find: string }) {
   const now = useNow()
   const error = typeof e.data?.error === 'string' ? e.data.error : null
   const result = e.data?.message ?? (e.data?.result === undefined || e.data?.result === null ? null : e.data.result)

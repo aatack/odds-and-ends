@@ -1,16 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { Catalog, Item, ItemDetail, ItemEvent, Overview } from '../../shared/types'
+import type { Catalog, Item, ItemDetail, ItemInfo, Overview } from '../../shared/types'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ChevronLeft, Menu, MoreHorizontal } from 'lucide-react'
-import { eventActions, type EventAction } from './eventActions'
+import { itemActions, type ItemAction } from './itemActions'
 import { Dropdown, DropdownItem } from './components/ui/Dropdown'
 import { TypesPage } from './TypesPage'
 import { IconButton } from './components/ui/IconButton'
 import { appearanceAtom, applyAppearance, MODES, SERIFS, THEMES } from './appearance'
 import { Chat } from './Chat'
 import { DebugView } from './DebugView'
-import { EventMenu } from './EventMenu'
-import { EventView } from './EventView'
+import { ItemMenu } from './ItemMenu'
+import { ItemInfoView } from './ItemInfoView'
 import { ItemPicker } from './ItemPicker'
 import { ItemsList } from './ItemsList'
 import { SearchSectionsContext } from './sections'
@@ -20,7 +20,7 @@ import { Composer } from './Composer'
 import { ItemRefContext } from './components/ui/Markdown'
 import { ItemRef } from './ItemRef'
 import { FOCUS, Pill } from './sizes'
-import { EventIcon } from './icons'
+import { ItemInfoIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
 import { defaultActions } from './defaultActions'
@@ -165,7 +165,7 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
           </main>
           <AppMenu mobile={mobile} onSignOut={onSignOut} onCloseSource={onCloseSource} />
         </div>
-        <EventMenu actOn={items.actOn} skip={items.skip} custom={items.customActions} tasks={items.overview.items} recent={items.recent} />
+        <ItemMenu actOn={items.actOn} skip={items.skip} custom={items.customActions} tasks={items.overview.items} recent={items.recent} />
       </ItemRefContext.Provider>
       </SearchSectionsContext.Provider>
     </ItemsContext.Provider>
@@ -279,7 +279,7 @@ function AppMenu({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onSign
  */
 function ItemsMain({ mobile }: { mobile: boolean }) {
   const w = useItems()
-  const openEvent = (id: string) => w.open({ kind: 'event', id })
+  const openItem = (id: string) => w.open({ kind: 'event', id })
   // What the items view opens takes its place, so Back goes to where you were before it.
   const openFromItems = (id: string) => w.open({ kind: 'event', id }, { replace: w.view?.kind === 'items' })
   const d = w.detail
@@ -297,7 +297,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
         <ViewHeader canGoBack onBack={w.back} title="Bots" />
         {w.error && <div className="error">{w.error}</div>}
         <div className="view-body">
-          <BotsPage bots={w.overview.bots} act={w.act} onOpen={openEvent} mobile={mobile} />
+          <BotsPage bots={w.overview.bots} act={w.act} onOpen={openItem} mobile={mobile} />
         </div>
       </div>
     )
@@ -363,7 +363,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
   const actions = debug ? null : (
     <>
       {e.type === 'task' && d.item && !d.item.item.closed && <AssigneePill item={d.item.item} overview={w.overview} act={w.actOn(e.id)} />}
-      <HeaderActions actions={eventActions(e, { act: w.actOn(e.id), skip: w.skip, custom: w.customActions })} mobile={mobile} />
+      <HeaderActions actions={itemActions(e, { act: w.actOn(e.id), skip: w.skip, custom: w.customActions })} mobile={mobile} />
     </>
   )
   return (
@@ -383,12 +383,12 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
         ) : FOCUS[e.type] === 'chat' && e.type === 'bot' && d.item ? (
           <div className="bot-page">
             <BotView key={e.id} bot={w.overview.bots.find((b) => b.id === e.id) ?? null} act={w.act} mobile={mobile} />
-            <ItemView key={`${e.id}:chat`} detail={d.item} catalog={w.catalog} act={w.act} onOpen={openEvent} mobile={mobile} />
+            <ItemView key={`${e.id}:chat`} detail={d.item} catalog={w.catalog} act={w.act} onOpen={openItem} mobile={mobile} />
           </div>
         ) : FOCUS[e.type] === 'chat' && d.item ? (
-          <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openEvent} mobile={mobile} />
+          <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openItem} mobile={mobile} />
         ) : (
-          <EventView detail={d} catalog={w.catalog} act={w.act} onOpen={openEvent} />
+          <ItemInfoView detail={d} catalog={w.catalog} act={w.act} onOpen={openItem} />
         )}
       </div>
     </div>
@@ -399,7 +399,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
  * An event's actions in its header: the important ones as icon buttons, the rest in a menu beside them. On a phone,
  * all of them in the menu, leaving the title the width.
  */
-function HeaderActions({ actions, mobile = false }: { actions: EventAction[]; mobile?: boolean }) {
+function HeaderActions({ actions, mobile = false }: { actions: ItemAction[]; mobile?: boolean }) {
   const rest = actions.filter((a) => mobile || !a.important)
   return (
     <>
@@ -447,7 +447,7 @@ function ViewHeader(props: {
   canGoBack: boolean
   onBack: () => void
   title?: string
-  event?: ItemEvent
+  event?: ItemInfo
   actions?: ReactNode
   /** Given, the title can be edited: Rename in its menu, then Enter (or leaving it) saves and Escape doesn't. */
   onRename?: (title: string) => void
@@ -479,7 +479,7 @@ function ViewHeader(props: {
       >
         <ChevronLeft className="icon" />
       </button>
-      {props.event && props.event.type !== 'task' && <EventIcon event={props.event} />}
+      {props.event && props.event.type !== 'task' && <ItemInfoIcon event={props.event} />}
       {editing !== null ? (
         <input
           className="view-title view-title-input"

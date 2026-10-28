@@ -1,5 +1,5 @@
 import type { SearchRow, SearchSection } from './search'
-// The shapes the main process and the renderer both read. docs/events.md is the
+// The shapes the main process and the renderer both read. docs/items.md is the
 // long form of what an event is.
 
 /**
@@ -9,25 +9,25 @@ import type { SearchRow, SearchSection } from './search'
  * which stay open until something happens (a script says it is done, an approval
  * is given, a child item closes).
  */
-export type EventKind = 'task' | 'note' | 'approval' | 'script' | 'process' | 'widget' | 'search' | 'slack_message' | 'slack_channel' | 'bot' | 'user'
+export type ItemKind = 'task' | 'note' | 'approval' | 'script' | 'process' | 'widget' | 'search' | 'slack_message' | 'slack_channel' | 'bot' | 'user'
 
 /** An event as it is added. `ref` names it, so another added alongside can point at it. */
-export interface EventSpec {
-  type: EventKind
+export interface ItemSpec {
+  type: ItemKind
   params: Record<string, unknown>
   ref?: string
 }
 
 /**
- * One event on one item: the interface every type shares. docs/events.md has
+ * One event on one item: the interface every type shares. docs/items.md has
  * the table. What an event *is* (its params, data, and how it reads) depends
  * on its type; everything else here is the same for all of them.
  */
-export interface ItemEvent {
+export interface ItemInfo {
   id: string
   /** The item it sits in; null only for an item that sits in none. */
   parentId: string | null
-  type: EventKind
+  type: ItemKind
   /** What it was given, as its type's params schema says. */
   params: Record<string, unknown>
 
@@ -74,7 +74,7 @@ export interface Item {
   /** How it closed: 'closed' or 'cancelled'. */
   how: string | null
   /** Its open children, oldest first. */
-  blockers: ItemEvent[]
+  blockers: ItemInfo[]
   /**
    * Who it is assigned to: people (their usernames) and bots (their ids), the earliest assigned first. These are
    * `assigned_to` links from the item, not events in it.
@@ -95,12 +95,12 @@ export interface ItemDetail {
   /** The item it sits in, if any. */
   parent: { id: string; title: string } | null
   /** Its children, oldest first: every event in it, child items included. */
-  events: ItemEvent[]
+  events: ItemInfo[]
 }
 
 /** Any item, with what its views need: the task it sits in, and (for a task, or a bot) it in full. */
-export interface EventDetail {
-  event: ItemEvent
+export interface ItemInfoDetail {
+  event: ItemInfo
   parent: { id: string; title: string } | null
   /** For an item, or a bot (whose own chat it is): it in full. */
   item: ItemDetail | null
@@ -219,8 +219,8 @@ export interface ActionInfo extends ToolInfo {
   unsafe: boolean
 }
 
-export interface EventTypeInfo {
-  type: EventKind
+export interface ItemTypeInfo {
+  type: ItemKind
   description: string
   params: ObjectSchema
   data: string
@@ -234,14 +234,14 @@ export interface PresetInfo {
   /** What happens, after the name, in the empty input. */
   hint: string
   /** The event type whose icon stands for it. */
-  icon: EventKind
+  icon: ItemKind
   /** What it does instead with nothing typed, if that differs: the input shows this while it is empty. */
-  whenEmpty?: { name: string; hint: string; icon: EventKind }
+  whenEmpty?: { name: string; hint: string; icon: ItemKind }
 }
 
 export interface Catalog {
   actions: ActionInfo[]
-  events: EventTypeInfo[]
+  events: ItemTypeInfo[]
   presets: PresetInfo[]
 }
 
@@ -340,7 +340,7 @@ export interface WorkflowsAPI {
   overview: () => Promise<Overview>
   detail: (id: string) => Promise<ItemDetail | null>
   /** Any event, item or not, with what its views need. */
-  eventDetail: (id: string) => Promise<EventDetail | null>
+  itemInfoDetail: (id: string) => Promise<ItemInfoDetail | null>
   catalog: () => Promise<Catalog>
   /** The item that has waited longest for the human, or null. */
   next: (skip: string[]) => Promise<string | null>
@@ -351,18 +351,18 @@ export interface WorkflowsAPI {
   /** Sends from the chat input: `text` through a preset. */
   send: (id: string, preset: string, text: string) => Promise<void>
   /** Runs an approval blocker's action with the human's inputs. */
-  approve: (eventId: string, inputs: Record<string, unknown>) => Promise<void>
+  approve: (itemId: string, inputs: Record<string, unknown>) => Promise<void>
   /** Ends a blocker without it happening. */
-  cancel: (eventId: string) => Promise<void>
+  cancel: (itemId: string) => Promise<void>
   /** Runs an open script that has no schedule, once. */
-  runNow: (eventId: string) => Promise<void>
+  runNow: (itemId: string) => Promise<void>
   close: (id: string) => Promise<void>
   /** Opens a closed task again. */
   reopen: (id: string) => Promise<void>
   /** The edit log: what was done, by whom and when, the newest first. */
   editLog: (query: LogQuery) => Promise<LogEntry[]>
   /** Adds events in a task, as the person signed in: what the chat input's default actions do. */
-  addEvents: (itemId: string, events: EventSpec[]) => Promise<string[]>
+  addItems: (itemId: string, events: ItemSpec[]) => Promise<string[]>
   /** The search page's sections (search.ts), as configured: the defaults when nothing is. */
   searchSections: () => Promise<SearchSection[]>
   /** Replaces the search page's sections; null goes back to the defaults. */
@@ -372,16 +372,16 @@ export interface WorkflowsAPI {
   /** Runs a tool (any action: the same registry as the MCP and a script's tools) as the person, from a task's `/`: what it answered is a note in the task. */
   runTool: (itemId: string, name: string, args: Record<string, unknown>) => Promise<unknown>
   /** Puts events in a task as well as where they sit (`contains` links): an event can be in many. */
-  link: (itemId: string, eventIds: string[]) => Promise<void>
+  link: (taskId: string, itemIds: string[]) => Promise<void>
   /** Changes a widget's state. */
-  setWidgetState: (eventId: string, state: unknown) => Promise<void>
+  setWidgetState: (itemId: string, state: unknown) => Promise<void>
   /** Turns the person's thumbs-up on an event on or off. */
-  react: (eventId: string, on: boolean) => Promise<void>
+  react: (itemId: string, on: boolean) => Promise<void>
   customActions: () => Promise<CustomAction[]>
   saveCustomAction: (a: Omit<CustomAction, 'id'> & { id?: string }) => Promise<CustomAction>
   removeCustomAction: (id: string) => Promise<void>
   /** Runs a custom action on an event. */
-  runCustomAction: (id: string, eventId: string) => Promise<void>
+  runCustomAction: (id: string, itemId: string) => Promise<void>
   /** Writes a custom action's code from its description and notes, with a model. */
   generateCustomAction: (a: { type: string; name: string; description: string; notes: string; source?: string }) => Promise<string>
   /** Renames an item: its title changes (egdb keeps the old one). */
@@ -421,7 +421,7 @@ export interface WorkflowsAPI {
   /** Empties the Slack cache: everything is fetched again when next asked for. */
   clearSlackCache: () => Promise<void>
   /** A slack_message's thread, or a slack_channel's messages; with `thread`, the replies to one of them. */
-  slackView: (eventId: string, thread?: string) => Promise<SlackView>
+  slackView: (itemId: string, thread?: string) => Promise<SlackView>
   /** Keeps a Deepgram key (encrypted), or forgets it (null). */
   setDeepgramKey: (key: string | null) => Promise<void>
   /** The Deepgram key, for the window to stream what is said to Deepgram; null with none. */
@@ -498,7 +498,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addEvents', 'runTool', 'link', 'searchSections', 'setSearchSections', 'runSearchSection', 'setWidgetState', 'editLog',
+  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addItems', 'runTool', 'link', 'searchSections', 'setSearchSections', 'runSearchSection', 'setWidgetState', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',

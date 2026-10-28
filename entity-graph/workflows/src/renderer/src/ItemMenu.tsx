@@ -1,16 +1,16 @@
 import { autoUpdate, flip, offset, shift, useFloating } from '@floating-ui/react-dom'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { useEffect, useState, type MouseEvent } from 'react'
-import type { CustomAction, Item, ItemEvent } from '../../shared/types'
+import type { CustomAction, Item, ItemInfo } from '../../shared/types'
 import { ItemPicker } from './ItemPicker'
 import type { Recent } from './sections'
-import { eventActions } from './eventActions'
+import { itemActions } from './itemActions'
 import { userAtom } from './people'
 import { api } from './useWorkflows'
 import { menuAtom, renameAtom, sameView, viewsAtom, type View } from './views'
 
 /** What to spread on anything standing for an event, so a right-click on it opens the event menu. */
-export function useEventMenu() {
+export function useItemMenu() {
   const setMenu = useSetAtom(menuAtom)
   return (id: string) => ({
     onContextMenu: (e: MouseEvent) => {
@@ -23,10 +23,10 @@ export function useEventMenu() {
 
 /**
  * The right-click menu on an event: Open it, or Debug it (each puts a view on
- * top of the stack), and below, what can be done to it (`eventActions`), as its
+ * top of the stack), and below, what can be done to it (`itemActions`), as its
  * view's header offers.
  */
-export function EventMenu({
+export function ItemMenu({
   actOn,
   skip,
   custom,
@@ -45,7 +45,7 @@ export function EventMenu({
   const setRename = useSetAtom(renameAtom)
   const me = useAtomValue(userAtom)
   // The event itself, read as the menu opens, for which actions it has.
-  const [event, setEvent] = useState<ItemEvent | null>(null)
+  const [event, setInfo] = useState<ItemInfo | null>(null)
   // Placed by Floating UI at the cursor: flipped above it, or shifted along, so it always stays in the window,
   // and placed again as it grows (its actions come in a moment after it opens).
   const { refs, floatingStyles } = useFloating({
@@ -62,8 +62,8 @@ export function EventMenu({
     })
   }, [menu, refs])
   useEffect(() => {
-    setEvent(null)
-    if (menu) void api().eventDetail(menu.id).then((d) => setEvent(d?.event ?? null))
+    setInfo(null)
+    if (menu) void api().itemInfoDetail(menu.id).then((d) => setInfo(d?.event ?? null))
   }, [menu])
   useEffect(() => {
     if (!menu) return
@@ -136,7 +136,7 @@ export function EventMenu({
         </button>
       )}
       {event?.id === menu.id &&
-        eventActions(event, { act: actOn(event.id), skip, custom }).map((a) => (
+        itemActions(event, { act: actOn(event.id), skip, custom }).map((a) => (
           <button
             key={a.id}
             className="menu-action"

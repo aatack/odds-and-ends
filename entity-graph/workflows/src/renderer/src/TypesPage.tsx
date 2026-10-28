@@ -1,9 +1,9 @@
 import { Star } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import type { Catalog, CustomAction, EventKind } from '../../shared/types'
+import type { Catalog, CustomAction, ItemKind } from '../../shared/types'
 import { actionIcon } from './actionIcons'
 import { Markdown } from './components/ui/Markdown'
-import { eventActions } from './eventActions'
+import { itemActions } from './itemActions'
 import { Form } from './forms'
 import { Params } from './Params'
 import { TypeIcon, TYPE_NAME } from './icons'
@@ -103,14 +103,14 @@ export function TypesPage({ catalog, custom, act, mobile = false }: { catalog: C
   return (
     <div className={`page types-page ${mobile ? 'mobile' : ''}`}>
       {catalog.events.map((t) => {
-        const builtIn = eventActions({ id: '', type: t.type, resolved: false, summary: '' }, { act: async () => {}, skip: noop })
+        const builtIn = itemActions({ id: '', type: t.type, resolved: false, summary: '' }, { act: async () => {}, skip: noop })
         const mine = custom.filter((c) => c.type === t.type)
         const editing = draft?.type === t.type
         return (
           <section key={t.type} className="card">
             <h2 className="row-inline">
-              <TypeIcon type={t.type as EventKind} />
-              {TYPE_NAME[t.type as EventKind] ?? t.type} <code className="muted">{t.type}</code>
+              <TypeIcon type={t.type as ItemKind} />
+              {TYPE_NAME[t.type as ItemKind] ?? t.type} <code className="muted">{t.type}</code>
               {t.blocking && <span className="badge">blocker</span>}
               <button data-ui className="link fields-toggle" onClick={() => setFields(fields === t.type ? null : t.type)}>
                 {fields === t.type ? 'Hide fields' : 'Fields'}

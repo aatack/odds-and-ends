@@ -11,7 +11,7 @@ import { join, relative } from 'node:path'
 import { EgdbClient } from 'egdb-client'
 import { egdbServerPath, loadStore, startEgdb } from '../src/engine/egdb.ts'
 import { Engine } from '../src/engine/engine.ts'
-import { EVENT_TYPES } from '../src/engine/eventTypes.ts'
+import { ITEM_TYPES } from '../src/engine/itemTypes.ts'
 
 const bin = egdbServerPath()
 if (bin === 'egdb-server' || !existsSync(bin)) {
@@ -21,7 +21,7 @@ if (bin === 'egdb-server' || !existsSync(bin)) {
 
 const dir = mkdtempSync(join(tmpdir(), 'workflows-egdb-'))
 const token = 'test-token'
-const blocking = (type: string) => EVENT_TYPES.find((t) => t.type === type)?.blocking ?? true
+const blocking = (type: string) => ITEM_TYPES.find((t) => t.type === type)?.blocking ?? true
 const open = async (file: string) => {
   const egdb = await startEgdb(file, token)
   const client = new EgdbClient({ url: egdb.url, token })
@@ -44,8 +44,8 @@ const file = join(dir, 'round-trip.egdb')
   clock += 1000
   await engine.send(id, 'note', `[${bot}]() hello`)
   await engine.send(bot, 'note', 'hello, bot')
-  await engine.addEvents(id, [{ type: 'script', params: { source: 'async () => null', schedule: [600] } }])
-  await engine.addEvents(id, [{ type: 'script', params: { source: 'async () => ({ done: false, state: 41 })', schedule: [0] } }])
+  await engine.addItems(id, [{ type: 'script', params: { source: 'async () => null', schedule: [600] } }])
+  await engine.addItems(id, [{ type: 'script', params: { source: 'async () => ({ done: false, state: 41 })', schedule: [0] } }])
   await engine.checkDue()
   const run = engine.startRun(bot, [id])
   await engine.endRun(run, { exitCode: 0, structured: { updates: [{ item: id, message: 'Hi.', assign: ['alex'] }] }, costUsd: 0.5 })

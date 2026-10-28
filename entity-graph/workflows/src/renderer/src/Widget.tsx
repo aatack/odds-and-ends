@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ItemEvent } from '../../shared/types'
+import type { ItemInfo } from '../../shared/types'
 import { api } from './useWorkflows'
 
 /** What a widget's sandbox may load: its own inline scripts and styles, and data: images and fonts. Nothing else. */
@@ -59,7 +59,7 @@ const runtime = (state: unknown) => `
  * the app is. The frame is made once for its HTML, so what is typed in it keeps its place; its state goes in and out
  * by messages. What it sets is saved a moment after it stops changing; a change from elsewhere is passed in.
  */
-export function Widget({ event: e, tall = false }: { event: ItemEvent; tall?: boolean }) {
+export function Widget({ event: e, tall = false }: { event: ItemInfo; tall?: boolean }) {
   const frame = useRef<HTMLIFrameElement>(null)
   const [height, setHeight] = useState(40)
   const html = String(e.params.html ?? '')

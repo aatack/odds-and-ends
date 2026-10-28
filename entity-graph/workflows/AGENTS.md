@@ -95,7 +95,7 @@ own press on the Phone page, which the phone itself may not call):
 ## The paradigm
 
 [`docs/paradigm.md`](./docs/paradigm.md) is the idea, in a page.
-[`docs/events.md`](./docs/events.md) is how it is built; read it before changing the engine.
+[`docs/items.md`](./docs/items.md) is how it is built; read it before changing the engine.
 
 - Everything is an **event**, tasks included: one tree, held in egdb as entities joined by `contains` links. A
   task's children are its history. Some events resolve as they are added (a note); **blockers**
@@ -126,13 +126,13 @@ own press on the Phone page, which the phone itself may not call):
 - A `script` is JavaScript the app runs with no model, and can have tasks as a bot can: a button (pressed), an
   owner on a timer (a snooze), or a check (runs until what it waits for happens). It never blocks the task it
   sits in; a task waits on it by being assigned to it. Agents are told to use scripts for repetitive work that
-  needs no LLM. See `SCRIPT_DOC` in `eventTypes.ts`. Custom actions (the Types page) are scripts too, run on an
+  needs no LLM. See `SCRIPT_DOC` in `itemTypes.ts`. Custom actions (the Types page) are scripts too, run on an
   event when asked; `run_script` runs one once.
 - The chat input sends a note by default; `@` a bot or a person in it to hand them the task (and take it
   off the sender). With nothing typed it offers the default actions, a curated list in code
   (`renderer/src/defaultActions.ts`): assign to the last bot, wait for each recent Slack message, snooze an hour or a day. Tab steps through the
   choices; its icon and hint show which.
-- A `widget` is UI with state of its own (`WIDGET_DOC` in `eventTypes.ts`): an HTML fragment run in a sandboxed
+- A `widget` is UI with state of its own (`WIDGET_DOC` in `itemTypes.ts`): an HTML fragment run in a sandboxed
   iframe (`Widget.tsx`: scripts only, a CSP that allows nothing out, no navigation), styled with the app's CSS
   variables. Its only way out is `setState`, by message; the state is its `widget_state` value (egdb keeps every one
   before), which bots and scripts read and set (`set_value`, as any value: every change reaches the window, which passes it into the frame). The frame is made once per HTML, so focus stays.
@@ -178,8 +178,8 @@ sending, deploying and deleting, in any integration.
 ## An event in many items
 
 An event sits in one item (its first `contains` link: `parent_id`) and can be put in others as well (later
-`contains` links: `link_events`, or "Also put in…" in its right-click menu): it shows in each one's chat, and stays
-where it sits. `ItemEvent.containers` lists them all; a chat shows the others as pills in a quoted bar above the
+`contains` links: `link_items`, or "Also put in…" in its right-click menu): it shows in each one's chat, and stays
+where it sits. `ItemInfo.containers` lists them all; a chat shows the others as pills in a quoted bar above the
 message, as a reply is shown. Only where it sits counts for blockers, wakes and closing.
 
 ## The search page
@@ -220,7 +220,7 @@ src/engine     everything but the window; plain Node, so the tests drive it head
   engine.ts      tasks, their events and blockers, assignments, bots' wakes and output, the loop
   store.ts       the store, in memory; every change goes on as egdb ops
   egdb.ts        the store's home: writing to egdb, reading it back, running egdb-server
-  eventTypes.ts  the event types
+  itemTypes.ts  the event types
   presets.ts     what the chat input can send
   actions.ts     the actions on items: the MCP tools
   script.ts      scripts, in QuickJS
@@ -229,7 +229,7 @@ src/engine     everything but the window; plain Node, so the tests drive it head
   settings.ts    configuration in the store: the MCP port and token, integration secrets (not used yet)
   admin.ts       what the Integrations and MCP pages show and change
   workers.ts     the bots' runner: one run at a time per bot, by its provider (`claude -p`)
-  integrations.ts  the interfaces: Action, EventType
+  integrations.ts  the interfaces: Action, ItemType
 src/backend    the backend as a process: an HTTP API (api.ts, answered by http.ts) and a change stream for the app,
                the phone's listener (http.ts); info.ts, where a source keeps its things
 src/main       Electron main: finds or starts the backend, passes the renderer's calls to it
@@ -269,7 +269,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
 - **The content pane is a stack of views** (`views.ts`, a Jotai atom kept in
   local storage). The list and Next replace the stack; Open, Debug and links push
   onto it; Back pops it. A view is `{ kind, id }`: `event` shows an event as its
-  type is shown (a task as its chat, any other event as `EventView`); `debug`
+  type is shown (a task as its chat, any other event as `ItemInfoView`); `debug`
   (`DebugView`) shows the item as egdb holds it (`Engine.inspect`): its id, who made it and when (from the
   `contains` link to it), its values (a note's are just `type` and `text`), and its links, each with when and by whom. A new kind of view is a new `kind`.
 - **There is no sidebar.** The content fills the window in a centred column.
@@ -321,7 +321,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   screen: the title becomes a text box, `renameAtom`) and its actions. `[id]()` references in text (tasks, bots,
   people) have the same menu on right-click.
 - **The Types page** (`TypesPage`) lists every event type: what it is for, whether it blocks, its fields (the
-  Fields button: its params' schema and what it resolves with), and its actions. The app's own are in `eventActions.ts`;
+  Fields button: its params' schema and what it resolves with), and its actions. The app's own are in `itemActions.ts`;
   the human's own are **custom actions** (`engine/customActions.ts`, the `custom_actions` table): per type, a name, a
   description, hidden notes, an icon, *important* or not, and a script `async (context, actions) => null | string |
   { message?, events? }` run in QuickJS with the event's context and only the safe actions. **Generate** has Sonnet write
@@ -339,8 +339,8 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   `event` view: `BotView` at the top (its model, debounce and state; Wake now; its last run in a line; Settings,
   folded, as a `Form`, saving them wakes it, with Delete there, asking first, which hands what it had back), then
   its own chat, like a task's. Its header has no Delete.
-- **Every event has a right-click menu** (`useEventMenu`): Open and Debug, then what can be done to it
-  (`eventActions.ts`: Resolve and Skip for an open task; Cancel for another open event, not a bot; then the
+- **Every event has a right-click menu** (`useItemMenu`): Open and Debug, then what can be done to it
+  (`itemActions.ts`: Resolve and Skip for an open task; Cancel for another open event, not a bot; then the
   custom actions). The view header draws the same list as icon buttons (the less important in the ⋯ menu), so the
   two never differ. Spread
   it on anything that stands for an event. Clicking an event does nothing else.
@@ -386,7 +386,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   `<data>/bots/<name>-<id>` unless it says otherwise, and lasts. Another provider
   is another `SpawnBot` in `PROVIDERS`. A new capability for bots that touches this app is an action.
 - **Adding an integration** means adding its actions (each declaring `unsafe`), an event type if it can be waited on, a preset if the chat
-  input should offer it, and a source if it produces items. Update `docs/events.md`
+  input should offer it, and a source if it produces items. Update `docs/items.md`
   when a type changes. Run CLIs and
   HTTP through `engine.exec` and `engine.fetch`, so the tests can stand in for them.
 - **Waits back off**: 1, 2, 5, then 10 minutes between checks.

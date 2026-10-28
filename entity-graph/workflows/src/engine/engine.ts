@@ -10,13 +10,13 @@ import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
-import type { Agent, EventDetail, EventSpec, Item, ItemDetail, ItemEvent, LastRun, Overview, User } from '../shared/types'
+import type { Agent, ItemInfoDetail, ItemSpec, Item, ItemDetail, ItemInfo, LastRun, Overview, User } from '../shared/types'
 import { itemActions } from './actions'
-import { EVENT_TYPES, whenNext } from './eventTypes'
-import { execCli, type Action, type ActionContext, type Author, type EventType, type Exec, type Integration } from './integrations'
+import { ITEM_TYPES, whenNext } from './itemTypes'
+import { execCli, type Action, type ActionContext, type Author, type ItemType, type Exec, type Integration } from './integrations'
 import { PRESETS, type Preset } from './presets'
 import { plainSecrets, Settings, type Secrets } from './settings'
-import { STATE_KEYS, Store, type EventRow, type Inspection } from './store'
+import { STATE_KEYS, Store, type ItemRow, type Inspection } from './store'
 
 /** What the app keeps on items for itself: never set by `setValue`. */
 const OWN_KEYS = new Set(['session_id', 'seen', 'last_run', 'last_wake', 'handoff', 'key'])
@@ -43,7 +43,7 @@ export interface BotUpdate {
   /** To the people in it: what it did, or one direct question. */
   message?: string
   /** Events to add in it: waits, approvals, child tasks. */
-  events?: EventSpec[]
+  events?: ItemSpec[]
   /** Who has the task from now on: people by username, bots by name or id. Left out: see Engine.settle. */
   assign?: string[]
   close?: boolean
@@ -108,7 +108,7 @@ export class Engine extends EventEmitter {
   /** The integrations, each in the one shape (integrations.ts): their tools are among the actions. */
   readonly integrations: Integration[] = [github]
   readonly actions: Action[] = [...itemActions, ...slackActions, ...this.integrations.flatMap((i) => i.tools)]
-  readonly eventTypes: EventType[] = EVENT_TYPES
+  readonly itemTypes: ItemType[] = ITEM_TYPES
   readonly presets: Preset[] = PRESETS
   /** People's own actions, per event type (the Types page). */
   readonly customActions: CustomActions
@@ -158,14 +158,14 @@ export class Engine extends EventEmitter {
     }
   }
 
-  type(name: string): EventType {
+  type(name: string): ItemType {
     const t = this.typeOrNull(name)
-    if (!t) throw new Error(`No event type ${name}: one of ${this.eventTypes.map((t) => t.type).join(', ')}.`)
+    if (!t) throw new Error(`No event type ${name}: one of ${this.itemTypes.map((t) => t.type).join(', ')}.`)
     return t
   }
 
-  private typeOrNull(name: string): EventType | null {
-    return this.eventTypes.find((t) => t.type === name) ?? null
+  private typeOrNull(name: string): ItemType | null {
+    return this.itemTypes.find((t) => t.type === name) ?? null
   }
 
   /** Whether events of a type are blockers: for the loader. */
@@ -188,7 +188,7 @@ export class Engine extends EventEmitter {
   // ---- reads ----
 
   /** A row as the shared event shape, its text filled in by its type. */
-  private toEvent(r: EventRow): ItemEvent {
+  private toInfo(r: ItemRow): ItemInfo {
     const type = this.type(r.type)
     const params = r.params
     const data = r.data
@@ -216,21 +216,21 @@ export class Engine extends EventEmitter {
     }
   }
 
-  private row(id: string): EventRow | undefined {
+  private row(id: string): ItemRow | undefined {
     return this.store.events.get(id)
   }
 
-  event(id: string): ItemEvent | null {
+  event(id: string): ItemInfo | null {
     const r = this.row(id)
-    return r ? this.toEvent(r) : null
+    return r ? this.toInfo(r) : null
   }
 
   /** The events in an item, oldest first; only the open ones (its blockers) with `open`. */
-  children(itemId: string, open = false): ItemEvent[] {
+  children(itemId: string, open = false): ItemInfo[] {
     return this.store
       .children(itemId)
       .filter((r) => !open || !r.resolved)
-      .map((r) => this.toEvent(r))
+      .map((r) => this.toInfo(r))
   }
 
   /** A task's title (a bot's: its @name). */
@@ -243,11 +243,11 @@ export class Engine extends EventEmitter {
     return this.store.assignees(itemId)
   }
 
-  private toItem(r: EventRow, viewer = this.me()): Item {
+  private toItem(r: ItemRow, viewer = this.me()): Item {
     const id = r.id
     const kids = this.store.children(id)
     // Neither a script nor a task sits in another as a dependency: a task waits on something by being assigned to it.
-    const blockers = kids.filter((k) => !k.resolved && k.type !== 'script' && k.type !== 'task').map((k) => this.toEvent(k))
+    const blockers = kids.filter((k) => !k.resolved && k.type !== 'script' && k.type !== 'task').map((k) => this.toInfo(k))
     const assignees = this.assignees(id)
     const touched = Math.max(
       r.created_at,
@@ -273,7 +273,7 @@ export class Engine extends EventEmitter {
   }
 
   /** A blocker a person resolves (an approval): the task is still the person's turn. */
-  private waitsOnHuman(b: ItemEvent): boolean {
+  private waitsOnHuman(b: ItemInfo): boolean {
     return Boolean(this.type(b.type).human)
   }
 
@@ -321,14 +321,14 @@ export class Engine extends EventEmitter {
     if (!item) return null
     const parent = item.parentId ? this.get(item.parentId) : null
     // What it contains by a later link shows too, where it was linked; its own parent stays where it sits.
-    const linked = this.store.linked(id).flatMap((l) => (this.row(l.id) ? [{ e: this.toEvent(this.row(l.id)!), at: l.at }] : []))
+    const linked = this.store.linked(id).flatMap((l) => (this.row(l.id) ? [{ e: this.toInfo(this.row(l.id)!), at: l.at }] : []))
     const own = this.children(id).map((e) => ({ e, at: e.createdAt }))
     const events = [...own, ...linked].sort((a, b) => a.at - b.at).map((x) => x.e)
     return { item, parent: parent && { id: parent.id, title: parent.title }, events }
   }
 
   /** Any item, with what its views need. */
-  eventDetail(id: string, viewer = this.me()): EventDetail | null {
+  itemInfoDetail(id: string, viewer = this.me()): ItemInfoDetail | null {
     const event = this.event(id)
     if (!event) return null
     const parent = event.parentId ? this.get(event.parentId) : null
@@ -412,7 +412,7 @@ export class Engine extends EventEmitter {
         .sort((a, b) => b.created_at - a.created_at)
         .slice(0, section.limit ?? 50)
       return rows.map((r) => {
-        const e = this.toEvent(r)
+        const e = this.toInfo(r)
         return { id: r.id, type: r.type, left: e.summary, right: r.resolved && this.type(r.type).blocking ? (r.cancelled ? 'cancelled' : 'closed') : '' }
       })
     }
@@ -427,7 +427,7 @@ export class Engine extends EventEmitter {
   }
 
   /** An event's values, as a query reads them: its type and params, how it stands, and keys made from its links. */
-  private valuesOf(r: EventRow): Record<string, unknown> {
+  private valuesOf(r: ItemRow): Record<string, unknown> {
     return {
       ...r.params,
       type: r.type,
@@ -441,9 +441,9 @@ export class Engine extends EventEmitter {
   }
 
   /** Changes a widget's state: a value on its event (egdb keeps every one before). */
-  async setWidgetState(eventId: string, state: unknown, actor = this.me()): Promise<void> {
-    if (this.row(eventId)?.type !== 'widget') throw new Error(`No widget ${eventId}.`)
-    return this.setValue(eventId, 'widget_state', state, actor)
+  async setWidgetState(itemId: string, state: unknown, actor = this.me()): Promise<void> {
+    if (this.row(itemId)?.type !== 'widget') throw new Error(`No widget ${itemId}.`)
+    return this.setValue(itemId, 'widget_state', state, actor)
   }
 
   /**
@@ -469,11 +469,11 @@ export class Engine extends EventEmitter {
   }
 
   /** Turns `actor`'s reaction (a thumbs-up) to an event on or off. */
-  async react(eventId: string, on: boolean, actor = this.me()): Promise<void> {
-    const row = this.row(eventId)
-    if (!row) throw new Error(`No event ${eventId}.`)
+  async react(itemId: string, on: boolean, actor = this.me()): Promise<void> {
+    const row = this.row(itemId)
+    if (!row) throw new Error(`No event ${itemId}.`)
     if (row.reactions.includes(actor) === on) return
-    this.store.setReactions(eventId, on ? [...row.reactions, actor] : row.reactions.filter((r) => r !== actor), actor, this.now())
+    this.store.setReactions(itemId, on ? [...row.reactions, actor] : row.reactions.filter((r) => r !== actor), actor, this.now())
     this.emit('change')
   }
 
@@ -512,7 +512,7 @@ export class Engine extends EventEmitter {
       this.emit('change')
       return this.user(id)!
     }
-    await this.addEvents(null, [{ type: 'user', params: { username: id, ...(name.trim() ? { name: name.trim() } : {}) } }], this.isUser(actor) ? actor : id)
+    await this.addItems(null, [{ type: 'user', params: { username: id, ...(name.trim() ? { name: name.trim() } : {}) } }], this.isUser(actor) ? actor : id)
     return this.user(id)!
   }
 
@@ -659,7 +659,7 @@ export class Engine extends EventEmitter {
       ...(a.cycleMinutes !== undefined && String(a.cycleMinutes) !== '' && Number.isFinite(Number(a.cycleMinutes)) ? { cycle_minutes: Math.max(0, Number(a.cycleMinutes)) } : {}),
     }
     if (!a.id) {
-      const [id] = await this.addEvents(null, [{ type: 'bot', params }], actor)
+      const [id] = await this.addItems(null, [{ type: 'bot', params }], actor)
       return id
     }
     const now = this.agentParams(a.id)
@@ -760,7 +760,7 @@ export class Engine extends EventEmitter {
    * Starts a bot's run, if it is due and not running: its chat and every task it has, each with its new events (or,
    * for a task its session has not seen, its whole history). Its session is its own: resumed if it has one, otherwise new.
    */
-  claim(agentId: string): { agent: Agent; items: { item: Item; events: ItemEvent[]; first: boolean; own?: boolean }[]; resume: boolean; handoff: string | null } | null {
+  claim(agentId: string): { agent: Agent; items: { item: Item; events: ItemInfo[]; first: boolean; own?: boolean }[]; resume: boolean; handoff: string | null } | null {
     const agent = this.agent(agentId)
     if (!agent || agent.deleted || this.running.has(agentId)) return null
     const wake = this.wake(agentId)
@@ -892,7 +892,7 @@ export class Engine extends EventEmitter {
           if (to && !to.has(agentId) && !u.close && heard(u.item)) {
             to.add(agentId)
           }
-          const events: EventSpec[] = [...(u.message ? [{ type: 'note' as const, params: { text: u.message } }] : []), ...this.prepare(u.events ?? [], 'bot')]
+          const events: ItemSpec[] = [...(u.message ? [{ type: 'note' as const, params: { text: u.message } }] : []), ...this.prepare(u.events ?? [], 'bot')]
           if (events.length) this.add(u.item, events, actor)
           if (to) {
             const now = this.assignees(u.item)
@@ -958,7 +958,7 @@ export class Engine extends EventEmitter {
   // ---- events ----
 
   /** Checks events and expands them as their types say, without touching the store. */
-  prepare(specs: EventSpec[], author: Author): EventSpec[] {
+  prepare(specs: ItemSpec[], author: Author): ItemSpec[] {
     return specs.flatMap((s) => {
       const type = this.type(s?.type)
       if (s.type === 'process') throw new Error('Processes are switched off for now.')
@@ -973,7 +973,7 @@ export class Engine extends EventEmitter {
       if (s.type === 'task' && params.assignees) params.assignees = (params.assignees as string[]).map((a) => this.resolveAssignee(a))
       if (s.type === 'user' && this.row(String(params.username))) throw new Error(`The username ${params.username} is taken.`)
       // Prepared now, so a bad one fails the whole list; added in the task as it is.
-      if (s.type === 'task' && params.events) params.events = this.prepare(params.events as EventSpec[], author)
+      if (s.type === 'task' && params.events) params.events = this.prepare(params.events as ItemSpec[], author)
       const expanded = type.expand ? type.expand(params, author) : [{ type: s.type, params }]
       return expanded.map((e, i) => ({ type: e.type, params: e.params, ref: i === 0 ? (s.ref ?? e.ref) : e.ref }))
     })
@@ -984,15 +984,15 @@ export class Engine extends EventEmitter {
    * resolve at once; blockers wait. A task's first events (`events`) are added in it, and its `assignees` assigned;
    * neither is kept in its values. A task whose key is already taken is left out. Answers the ids added.
    */
-  add(parentId: string | null, specs: EventSpec[], createdBy: string): string[] {
+  add(parentId: string | null, specs: ItemSpec[], createdBy: string): string[] {
     return this.store.batch(() => this.addNow(parentId, specs, createdBy))
   }
 
-  private addNow(parentId: string | null, specs: EventSpec[], createdBy: string): string[] {
+  private addNow(parentId: string | null, specs: ItemSpec[], createdBy: string): string[] {
     // A detached task sits in no task, wherever it is added.
     const detached = parentId ? specs.filter((s) => s.type === 'task' && s.params.detached) : []
     if (detached.length) return [...this.addNow(parentId, specs.filter((s) => !detached.includes(s)), createdBy), ...this.addNow(null, detached, createdBy)]
-    const keyed = (s: EventSpec) => s.type === 'task' && s.params.key && this.store.ofType('task').some((r) => r.params.key === s.params.key)
+    const keyed = (s: ItemSpec) => s.type === 'task' && s.params.key && this.store.ofType('task').some((r) => r.params.key === s.params.key)
     specs = specs.filter((s) => !keyed(s))
     if (!parentId && specs.some((s) => !['task', 'bot', 'user', 'search'].includes(s.type))) throw new Error('Only a task, a bot, a person or the search item can sit in no task.')
     if (parentId && specs.some((s) => s.type === 'search')) throw new Error('The search item sits in no task.')
@@ -1008,14 +1008,14 @@ export class Engine extends EventEmitter {
       const { assignees, events, detached: _d, owns, ...params } = spec.params
       // A script's first wake is kept as a time, whatever form it was given in.
       if (spec.type === 'script' && params.wake_at !== undefined) params.wake_at = whenNext(params.wake_at as number | string, at)
-      this.store.insertEvent({
+      this.store.insertItem({
         id, parent_id: parentId, seq: seq + i, type: spec.type, params, created_by: createdBy, created_at: at,
         resolved: !type.blocking, resolved_at: type.blocking ? null : at, resolved_by: type.blocking ? null : createdBy, cancelled: false,
         data: null, memo: null, reactions: [], check_step: 0, next_check_at: spec.type === 'script' ? null : type.check && this.scheduleOf(type, params) ? at + this.scheduleOf(type, params)![0] * 1000 : null, last_error: null,
         runs: 0, added_n: 0, resolved_n: 0,
       })
       if (spec.type === 'task') {
-        if (Array.isArray(events) && events.length) this.addNow(id, events as EventSpec[], createdBy)
+        if (Array.isArray(events) && events.length) this.addNow(id, events as ItemSpec[], createdBy)
         // A new task goes to those given; else, made by a person, to them; else (a bot made it) to nobody.
         const to = Array.isArray(assignees) && assignees.length ? (assignees as string[]) : this.isUser(createdBy) ? [createdBy] : []
         for (const a of to) this.setAssignee(id, a, true, createdBy)
@@ -1030,19 +1030,19 @@ export class Engine extends EventEmitter {
   }
 
   /** Resolves a blocker, as `by`. */
-  private resolve(eventId: string, data: Record<string, unknown>, by: string, cancelled = false): void {
-    const r = this.row(eventId)
+  private resolve(itemId: string, data: Record<string, unknown>, by: string, cancelled = false): void {
+    const r = this.row(itemId)
     if (!r || r.resolved) return
-    this.store.resolveEvent(eventId, data, by, this.now(), cancelled)
+    this.store.resolveItem(itemId, data, by, this.now(), cancelled)
     // A script that ends lets go of the tasks it still has: each goes back to its owner, if nobody else has it.
-    if (r.type === 'script') for (const t of this.assignedTo(eventId)) if (!this.get(t)?.closed) this.handBack(t, eventId, null, 'script')
+    if (r.type === 'script') for (const t of this.assignedTo(itemId)) if (!this.get(t)?.closed) this.handBack(t, itemId, null, 'script')
   }
 
   /**
    * An event's check schedule, in seconds: its type's, never under a second apart after the first, or the default.
    * Null when its type has schedules and it has none: then it runs only when someone runs it (`runNow`).
    */
-  private scheduleOf(type: EventType, params: Record<string, unknown>): number[] | null {
+  private scheduleOf(type: ItemType, params: Record<string, unknown>): number[] | null {
     const s = type.schedule ? type.schedule(params) : DEFAULT_SCHEDULE
     if (!s?.length) return null
     return s.map((d, i) => (i === 0 ? Math.max(0, d) : Math.max(1, d)))
@@ -1054,7 +1054,7 @@ export class Engine extends EventEmitter {
    * or its cycle (`cycle_minutes`, 15) after it last woke, while it owns tasks. A script that owns nothing runs only
    * when pressed. An older script waits for the `wake_at` it asked for, and an older `schedule` is its cycle.
    */
-  private scriptDue(r: EventRow): number | null {
+  private scriptDue(r: ItemRow): number | null {
     const owned = this.assignedTo(r.id)
     // Never woken: as if it woke as it was made (its cycle counts from then; what made it is not news).
     const lastWake = Number(r.params.last_wake ?? 0) || r.created_at - 1
@@ -1086,17 +1086,17 @@ export class Engine extends EventEmitter {
   }
 
   /** Runs an open check (a script with no schedule, say) now, once. */
-  async runNow(eventId: string, actor = this.me()): Promise<void> {
-    const r = this.row(eventId)
+  async runNow(itemId: string, actor = this.me()): Promise<void> {
+    const r = this.row(itemId)
     if (!r || r.resolved || !this.type(r.type).check) throw new Error('There is nothing to run.')
     r.next_check_at = this.now()
-    this.pressed.set(eventId, actor)
-    await this.checkOne(r.parent_id!, eventId)
+    this.pressed.set(itemId, actor)
+    await this.checkOne(r.parent_id!, itemId)
   }
 
   /** Writes one param of an item: for the app's own bookkeeping, such as a bot's session and last run. */
-  private setParam(eventId: string, key: string, value: unknown, by: string): void {
-    this.store.setParams(eventId, { ...this.row(eventId)!.params, [key]: value }, by, this.now())
+  private setParam(itemId: string, key: string, value: unknown, by: string): void {
+    this.store.setParams(itemId, { ...this.row(itemId)!.params, [key]: value }, by, this.now())
   }
 
   // ---- people ----
@@ -1104,7 +1104,7 @@ export class Engine extends EventEmitter {
   /** A new task, in `parentId` or in none, with events to start it off. */
   async create(
     title: string,
-    opts: { parentId?: string | null; key?: string; events?: EventSpec[]; assignees?: string[]; actor?: string; author?: Author } = {},
+    opts: { parentId?: string | null; key?: string; events?: ItemSpec[]; assignees?: string[]; actor?: string; author?: Author } = {},
   ): Promise<string | null> {
     const author = opts.author ?? 'human'
     const params = { title, ...(opts.key ? { key: opts.key } : {}), ...(opts.events ? { events: opts.events } : {}), ...(opts.assignees ? { assignees: opts.assignees } : {}) }
@@ -1145,7 +1145,7 @@ export class Engine extends EventEmitter {
   }
 
   /** Adds events in a task (or tasks in none): from a person, or from an agent through MCP (author 'bot', so its rules apply). */
-  async addEvents(parentId: string | null, specs: EventSpec[], actor = this.me(), author: Author = 'human'): Promise<string[]> {
+  async addItems(parentId: string | null, specs: ItemSpec[], actor = this.me(), author: Author = 'human'): Promise<string[]> {
     if (parentId && this.row(parentId)?.type !== 'bot' && this.must(parentId).closed) throw new Error('This task is closed.')
     const ids = this.add(parentId, this.prepare(specs, author), actor)
     // A script is run from inside a task's queue, so waiting for the queues to empty would wait for itself.
@@ -1154,25 +1154,25 @@ export class Engine extends EventEmitter {
   }
 
   /** Runs an approval's action with a person's inputs, which resolves it. */
-  async approve(eventId: string, inputs: Record<string, unknown>, actor = this.me()): Promise<void> {
-    const event = this.event(eventId)
+  async approve(itemId: string, inputs: Record<string, unknown>, actor = this.me()): Promise<void> {
+    const event = this.event(itemId)
     if (!event || event.type !== 'approval' || event.resolved) throw new Error('No approval waiting with that id.')
     const proposed = event.params.inputs as Record<string, unknown>
     const changed = Object.keys({ ...proposed, ...inputs }).filter((k) => String(inputs[k] ?? '') !== String(proposed[k] ?? ''))
     const name = String(event.params.action)
     const output = await this.callAction(name, inputs, { engine: this, author: 'human', actor, itemId: event.parentId, runId: null, approving: true })
-    this.resolve(eventId, { ran: true, inputs, changed, output }, actor)
+    this.resolve(itemId, { ran: true, inputs, changed, output }, actor)
     this.emit('change')
     await this.idle()
   }
 
   /** Ends a blocker without it happening; a task is closed as cancelled, and a bot deleted. */
-  async cancel(eventId: string, actor = this.me()): Promise<void> {
-    const event = this.event(eventId)
+  async cancel(itemId: string, actor = this.me()): Promise<void> {
+    const event = this.event(itemId)
     if (!event || event.resolved) throw new Error('That event is not waiting.')
-    if (event.type === 'task') return this.close(eventId, { actor, how: 'cancelled' })
-    if (event.type === 'bot') return this.deleteAgent(eventId, actor)
-    this.resolve(eventId, { cancelled: true }, actor, true)
+    if (event.type === 'task') return this.close(itemId, { actor, how: 'cancelled' })
+    if (event.type === 'bot') return this.deleteAgent(itemId, actor)
+    this.resolve(itemId, { cancelled: true }, actor, true)
     this.emit('change')
     if (actor !== 'script') await this.idle()
   }
@@ -1185,7 +1185,7 @@ export class Engine extends EventEmitter {
     const item = this.must(itemId)
     if (!item.closed) return
     this.store.batch(() => {
-      this.store.reopenEvent(itemId, actor, this.now())
+      this.store.reopenItem(itemId, actor, this.now())
       this.add(itemId, [{ type: 'note', params: { text: `Reopened by ${this.actorName(actor)}.` } }], 'system')
     })
     this.emit('change')
@@ -1193,10 +1193,10 @@ export class Engine extends EventEmitter {
   }
 
   /** Adds `contains` links from a task to events that sit elsewhere (other tasks, notes, anything), for traceability. */
-  async link(itemId: string, eventIds: string[], actor = this.me()): Promise<void> {
-    if (this.row(itemId)?.type !== 'task') throw new Error(`No task ${itemId}.`)
+  async link(taskId: string, itemIds: string[], actor = this.me()): Promise<void> {
+    if (this.row(taskId)?.type !== 'task') throw new Error(`No task ${taskId}.`)
     this.store.batch(() => {
-      for (const id of eventIds) this.store.linkEvent(itemId, id, actor, this.now())
+      for (const id of itemIds) this.store.linkItem(taskId, id, actor, this.now())
     })
     this.emit('change')
   }
@@ -1237,18 +1237,18 @@ export class Engine extends EventEmitter {
     await Promise.all(allowed.map((r) => this.checkOne(r.parent_id!, r.id)))
   }
 
-  private checkOne(itemId: string, eventId: string): Promise<void> {
-    this.checking.add(eventId)
-    return this.serial(itemId, async () => {
-      const row = this.row(eventId)
+  private checkOne(taskId: string, itemId: string): Promise<void> {
+    this.checking.add(itemId)
+    return this.serial(taskId, async () => {
+      const row = this.row(itemId)
       if (!row || row.resolved || (row.next_check_at ?? 0) > this.now()) return
-      const event = this.toEvent(row)
+      const event = this.toInfo(row)
       const type = this.type(event.type)
       let data: Record<string, unknown> | null = null
       let error: string | null = null
       const woke = this.now()
-      const pressedBy = this.pressed.get(eventId) ?? null
-      this.pressed.delete(eventId)
+      const pressedBy = this.pressed.get(itemId) ?? null
+      this.pressed.delete(itemId)
       // Undefined: as its type's schedule says. A number or null: what the check asked for.
       let next: number | null | undefined
       try {
@@ -1257,12 +1257,12 @@ export class Engine extends EventEmitter {
           pressedBy,
           setNext: (at) => (next = at),
           engine: this,
-          item: this.must(itemId),
+          item: this.must(taskId),
           event,
           author: authorOf(event.createdBy),
           memo: row.memo ?? null,
           runs: row.runs,
-          setMemo: (value) => this.store.setState(eventId, value, this.now()),
+          setMemo: (value) => this.store.setState(itemId, value, this.now()),
         })
       } catch (e) {
         error = (e as Error).message
@@ -1272,13 +1272,13 @@ export class Engine extends EventEmitter {
       if (!data && timeout && this.now() >= event.createdAt + timeout * MINUTE)
         data = { outcome: 'timed_out', detail: `Nothing after ${timeout} minutes.` }
       if (data) {
-        this.resolve(eventId, data, 'system')
+        this.resolve(itemId, data, 'system')
         this.emit('change')
         return
       }
       // A script keeps when it last woke (so a restart knows), and is due again by the rule.
       if (row.type === 'script') {
-        this.store.setParams(eventId, { ...row.params, last_wake: woke }, 'script', this.now())
+        this.store.setParams(itemId, { ...row.params, last_wake: woke }, 'script', this.now())
         Object.assign(row, { last_error: error })
         row.next_check_at = this.scriptDue(row)
         this.emit('change')
@@ -1289,7 +1289,7 @@ export class Engine extends EventEmitter {
         // A script's wake is kept, so a restart wakes it when it asked.
         if (row.type === 'script' && row.params.wake_at !== (next ?? undefined)) {
           const { wake_at: _w, ...rest } = row.params
-          this.store.setParams(eventId, next === null ? rest : { ...rest, wake_at: next }, 'script', this.now())
+          this.store.setParams(itemId, next === null ? rest : { ...rest, wake_at: next }, 'script', this.now())
         }
         this.emit('change')
         return
@@ -1301,6 +1301,6 @@ export class Engine extends EventEmitter {
         Object.assign(row, { check_step: step, next_check_at: this.now() + schedule[step] * 1000, last_error: error })
       }
       this.emit('change')
-    }).finally(() => this.checking.delete(eventId))
+    }).finally(() => this.checking.delete(itemId))
   }
 }

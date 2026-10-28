@@ -1,5 +1,5 @@
 // The search page's sections (the finder: the Tasks view, and every picker), as configured: one list for the whole
-// app, kept on the `search` item (eventTypes.ts), which people change on its page and bots with set_search_sections.
+// app, kept on the `search` item (itemTypes.ts), which people change on its page and bots with set_search_sections.
 
 /** egdb's filter (egdb-client's `Filter`), as a query section runs it over the app's events. */
 export type Filter =

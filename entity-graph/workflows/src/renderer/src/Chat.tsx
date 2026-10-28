@@ -1,9 +1,9 @@
 import { ThumbsUp } from 'lucide-react'
 import { memo, useCallback, useContext, useRef } from 'react'
-import type { Catalog, ItemDetail, ItemEvent, Overview } from '../../shared/types'
+import type { Catalog, ItemDetail, ItemInfo, Overview } from '../../shared/types'
 import { isPerson, nameOf } from './people'
-import { useEventMenu } from './EventMenu'
-import { EventAvatar, EventCard } from './sizes'
+import { useItemMenu } from './ItemMenu'
+import { ItemAvatar, ItemCard } from './sizes'
 import { shortTime, time } from './time'
 import { useAtomValue } from 'jotai'
 import { ItemRefContext, shows } from './components/ui/Markdown'
@@ -24,7 +24,7 @@ function ownerOf(o: Overview, by: string): { id: string; name: string } | null {
 }
 
 /** The words an event shows in the chat, for Ctrl+F. */
-const words = (e: ItemEvent) => (e.type === 'note' ? String(e.params.text ?? '') : [e.summary, e.message].filter(Boolean).join('\n'))
+const words = (e: ItemInfo) => (e.type === 'note' ? String(e.params.text ?? '') : [e.summary, e.message].filter(Boolean).join('\n'))
 
 /**
  * The task's chat: every event in it (its `contains` links), in the order they were added, each as its card. What
@@ -35,7 +35,7 @@ const words = (e: ItemEvent) => (e.type === 'note' ? String(e.params.text ?? '')
  */
 export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: Catalog; act: Act; onOpen: (id: string) => void; mobile?: boolean }) {
   const { detail, overview, catalog } = props
-  const menu = useEventMenu()
+  const menu = useItemMenu()
   const find = useAtomValue(findAtom)?.trim() ?? ''
   // The callbacks are the same from one render to the next (calling the latest given), so a message that hasn't
   // changed isn't drawn again: a long chat stays quick.
@@ -73,12 +73,12 @@ export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: C
   )
 }
 
-type MessageProps = { here: string; event: ItemEvent; mine: boolean; me: string; who: string | null; ownerId: string | null; ownerName: string | null; find: string; catalog: Catalog; act: Act; onOpen: (id: string) => void }
+type MessageProps = { here: string; event: ItemInfo; mine: boolean; me: string; who: string | null; ownerId: string | null; ownerName: string | null; find: string; catalog: Catalog; act: Act; onOpen: (id: string) => void }
 
 /** One event, as a message: right-click it to open it or debug it. Drawn again only when something it shows changed. */
 const Message = memo(function Message(props: MessageProps) {
   const { event: e, mine, me, who, act } = props
-  const menu = useEventMenu()
+  const menu = useItemMenu()
   // Thumbs-ups: a count under the bubble (pressing it toggles yours), or, with none yet, a button shown on hover.
   const reacted = e.reactions.includes(me)
   // Where else it is (the other items that contain it), as a reply is shown: pills in a quoted bar, above what it says.
@@ -87,7 +87,7 @@ const Message = memo(function Message(props: MessageProps) {
   const react = () => void act(() => api().react(e.id, !reacted))
   return (
     <div className={`bubble-row ${mine ? 'mine' : 'theirs'}`}>
-      {!mine && <EventAvatar event={e} owner={props.ownerId ? { name: props.ownerName ?? props.ownerId, onOpen: () => props.onOpen(props.ownerId!) } : null} />}
+      {!mine && <ItemAvatar event={e} owner={props.ownerId ? { name: props.ownerName ?? props.ownerId, onOpen: () => props.onOpen(props.ownerId!) } : null} />}
       <div className="bubble-stack">
         <div className={`bubble bubble-${e.type}`} title={`${who ? `${who}, ` : ''}${time(e.createdAt)}`} {...menu(e.id)}>
           {!mine && who && <span className="bubble-who">{who}</span>}
@@ -98,7 +98,7 @@ const Message = memo(function Message(props: MessageProps) {
               ))}
             </div>
           )}
-          <EventCard {...props} />
+          <ItemCard {...props} />
           <span className="bubble-time">{shortTime(e.createdAt)}</span>
         </div>
         <button

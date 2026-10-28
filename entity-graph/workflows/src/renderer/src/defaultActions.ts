@@ -1,7 +1,7 @@
 // What the chat input offers with nothing typed: a curated list, in order, each built from the task as it is. Tab
 // steps through them and Enter runs the one shown. Add to `DEFAULT_ACTIONS` to offer more.
 
-import type { EventSpec, ItemDetail, Overview, PresetInfo } from '../../shared/types'
+import type { ItemSpec, ItemDetail, Overview, PresetInfo } from '../../shared/types'
 import { SLACK_LINK, slackWait } from '../../shared/slack'
 import { api } from './useWorkflows'
 
@@ -36,8 +36,8 @@ const snooze = (label: string, ms: number) => ({ detail, overview }: Ctx): Defau
 ]
 
 /** Adds a script that owns the task, and takes the person off it: the script has it now. */
-async function takeOff(detail: ItemDetail, overview: Overview, script: EventSpec): Promise<void> {
-  await api().addEvents(detail.item.id, [script])
+async function takeOff(detail: ItemDetail, overview: Overview, script: ItemSpec): Promise<void> {
+  await api().addItems(detail.item.id, [script])
   if (detail.item.assignees.includes(overview.me.id)) await api().assign(detail.item.id, overview.me.id, false)
 }
 

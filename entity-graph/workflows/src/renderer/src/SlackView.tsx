@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { MessageCircle } from 'lucide-react'
-import type { ItemEvent, SlackMessage, SlackView } from '../../shared/types'
+import type { ItemInfo, SlackMessage, SlackView } from '../../shared/types'
 import { Markdown } from './components/ui/Markdown'
 import { api } from './useWorkflows'
 
@@ -35,7 +35,7 @@ const quote = (text: string, lines = 6) => {
  * A Slack event in a chat: for a message, who said it, where, and what (quoted), and how many replies; for a
  * channel, its name, the range, and how many messages. Read from Slack (through the cache) as it is shown.
  */
-export function SlackCard({ event: e, find }: { event: ItemEvent; find: string }) {
+export function SlackCard({ event: e, find }: { event: ItemInfo; find: string }) {
   const { view, error } = useSlackView(e.id)
   if (error) return <div className="event-card"><Markdown text={e.summary} highlight={find} /><p className="error-text">{error}</p></div>
   if (!view) return <div className="event-card muted">Reading Slack…</div>
@@ -70,7 +70,7 @@ export function SlackCard({ event: e, find }: { event: ItemEvent; find: string }
  * A slack_message's thread, or a slack_channel's messages, read from Slack
  * through the cache as the view opens. A message with a thread opens it in place.
  */
-export function SlackMessages({ event }: { event: ItemEvent }) {
+export function SlackMessages({ event }: { event: ItemInfo }) {
   const { view, error } = useSlackView(event.id)
   return (
     <section className="card">
@@ -81,7 +81,7 @@ export function SlackMessages({ event }: { event: ItemEvent }) {
       {view && (
         <div className="slack-messages">
           {view.messages.map((m) => (
-            <Message key={m.ts} m={m} eventId={event.id} focus={view.focus === m.ts} threaded={!view.focus} />
+            <Message key={m.ts} m={m} itemId={event.id} focus={view.focus === m.ts} threaded={!view.focus} />
           ))}
         </div>
       )}
@@ -89,12 +89,12 @@ export function SlackMessages({ event }: { event: ItemEvent }) {
   )
 }
 
-function Message({ m, eventId, focus, threaded }: { m: SlackMessage; eventId: string; focus?: boolean; threaded: boolean }) {
+function Message({ m, itemId, focus, threaded }: { m: SlackMessage; itemId: string; focus?: boolean; threaded: boolean }) {
   const [replies, setReplies] = useState<SlackMessage[] | null>(null)
   const [open, setOpen] = useState(false)
   const toggle = async () => {
     setOpen(!open)
-    if (!replies) setReplies((await api().slackView(eventId, m.ts)).messages)
+    if (!replies) setReplies((await api().slackView(itemId, m.ts)).messages)
   }
   const reply = m.thread_ts && m.thread_ts !== m.ts
   return (
@@ -118,7 +118,7 @@ function Message({ m, eventId, focus, threaded }: { m: SlackMessage; eventId: st
       ) : null}
       {open && (
         <div className="slack-thread">
-          {replies ? replies.map((r) => <Message key={r.ts} m={r} eventId={eventId} threaded={false} />) : <p className="muted">Reading…</p>}
+          {replies ? replies.map((r) => <Message key={r.ts} m={r} itemId={itemId} threaded={false} />) : <p className="muted">Reading…</p>}
         </div>
       )}
     </div>

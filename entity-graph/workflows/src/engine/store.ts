@@ -26,7 +26,7 @@
 import type { Op, Value } from 'egdb-client'
 import type { LogEntry, LogQuery } from '../shared/types'
 
-export interface EventRow {
+export interface ItemRow {
   id: string
   parent_id: string | null
   seq: number
@@ -124,9 +124,9 @@ interface Held {
 }
 
 export class Store {
-  readonly events = new Map<string, EventRow>()
+  readonly events = new Map<string, ItemRow>()
   /** Each item's events by seq; the key null holds those that sit in none. */
-  private kids = new Map<string | null, EventRow[]>()
+  private kids = new Map<string | null, ItemRow[]>()
   private byType = new Map<string, Set<string>>()
   readonly settings = new Map<string, unknown>()
   readonly customActions = new Map<string, CustomActionRow>()
@@ -185,7 +185,7 @@ export class Store {
 
   // ---- events ----
 
-  private index(row: EventRow): void {
+  private index(row: ItemRow): void {
     this.events.set(row.id, row)
     const kids = this.kids.get(row.parent_id) ?? []
     kids.push(row)
@@ -196,7 +196,7 @@ export class Store {
   }
 
   /** Adds an event: its type and params as values, and the `contains` link to it, as its maker wrote them. */
-  insertEvent(row: EventRow): void {
+  insertItem(row: ItemRow): void {
     row.added_n = this.moment()
     if (row.resolved) row.resolved_n = row.added_n
     this.index(row)
@@ -221,7 +221,7 @@ export class Store {
   }
 
   /** Resolves a blocker: `resolved` turns true (egdb keeps when, and by whom), with whether it was cancelled, and what it resolved with. */
-  resolveEvent(id: string, data: Record<string, unknown>, by: string, at: number, cancelled: boolean): void {
+  resolveItem(id: string, data: Record<string, unknown>, by: string, at: number, cancelled: boolean): void {
     const row = this.events.get(id)
     if (!row) throw new Error(`No event ${id}.`)
     Object.assign(row, { resolved: true, resolved_at: at, resolved_by: by, cancelled, data, next_check_at: null, resolved_n: this.moment() })
@@ -229,7 +229,7 @@ export class Store {
   }
 
   /** Opens a resolved event again: `resolved` turns false (egdb keeps that it was), and what it resolved with is cleared. */
-  reopenEvent(id: string, by: string, at: number): void {
+  reopenItem(id: string, by: string, at: number): void {
     const row = this.events.get(id)
     if (!row) throw new Error(`No event ${id}.`)
     const wasCancelled = row.cancelled
@@ -255,7 +255,7 @@ export class Store {
   }
 
   /** Adds a `contains` link from a task to an event that sits elsewhere: the task shows it, as well. */
-  linkEvent(parentId: string, id: string, by: string, at: number): void {
+  linkItem(parentId: string, id: string, by: string, at: number): void {
     const row = this.events.get(id)
     if (!row) throw new Error(`No event ${id}.`)
     if (row.parent_id === parentId || id === parentId || this.linked(parentId).some((l) => l.id === id)) return
@@ -276,11 +276,11 @@ export class Store {
   }
 
   /** The events in an item (or, for null, those in none), by seq. */
-  children(parentId: string | null): EventRow[] {
+  children(parentId: string | null): ItemRow[] {
     return this.kids.get(parentId) ?? []
   }
 
-  ofType(type: string): EventRow[] {
+  ofType(type: string): ItemRow[] {
     return [...(this.byType.get(type) ?? [])].map((id) => this.events.get(id)!)
   }
 
@@ -379,7 +379,7 @@ export class Store {
 
   /** Puts back what was read from egdb, without writing it again. */
   restore(rows: {
-    events: EventRow[]
+    events: ItemRow[]
     settings: [string, unknown][]
     customActions: CustomActionRow[]
     assigned?: { item: string; to: string; at: number; by: string }[]
@@ -408,14 +408,14 @@ const obj = <T>(x: unknown): T | null => (x && typeof x === 'object' && !Array.i
  * place, and who made it when). A plain event (`blocking` false) is resolved as
  * it was made; a blocker is resolved once its `resolved` is true.
  */
-export function eventFromValues(
+export function itemFromValues(
   id: string,
   x: Values,
   made: { parent: string | null; seq: number; at: number; by: string },
   blocking: boolean,
   /** The event that set `resolved` true: when it resolved, and by whom. */
   resolvedBy?: { at: number; by: string },
-): EventRow {
+): ItemRow {
   const params = Object.fromEntries(Object.entries(x).filter(([k]) => !STATE_KEYS.has(k)))
   const resolved = x.resolved === true || num(x.resolved_at) !== null
   return {

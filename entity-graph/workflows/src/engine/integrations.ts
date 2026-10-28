@@ -1,10 +1,10 @@
 // The two things the engine is built from: actions (what anyone can do) and
 // event types (what can happen to an item, and what it can wait for).
-// docs/events.md is the long form.
+// docs/items.md is the long form.
 
 import { execFile } from 'node:child_process'
 import type { z } from 'zod'
-import type { EventKind, EventSpec, Item, ItemEvent } from '../shared/types'
+import type { ItemKind, ItemSpec, Item, ItemInfo } from '../shared/types'
 import type { Engine } from './engine'
 
 /** Runs a CLI and answers its stdout. Handed in, so the tests can stand in for gh. */
@@ -56,11 +56,11 @@ export interface Action {
   run: (args: Record<string, unknown>, ctx: ActionContext) => Promise<unknown>
 }
 
-export interface EventContext {
+export interface ItemContext {
   engine: Engine
   /** The item the event sits in; for an item event with no parent, the item itself. */
   item: Item
-  event: ItemEvent
+  event: ItemInfo
   /** What the event's last check handed on (a script's `state`), and how to hand something on to the next. */
   memo: unknown
   setMemo: (value: unknown) => void
@@ -77,18 +77,18 @@ export interface EventContext {
 
 /**
  * One kind of event: everything that differs from one kind to the next. The
- * rest (who, when, resolved or not) is the same for all; see ItemEvent.
+ * rest (who, when, resolved or not) is the same for all; see ItemInfo.
  *
  * A plain type (`blocking: false`) resolves as it is added. A blocker stays
  * open until `check` answers its data, or something resolves it from outside:
  * a bot's run ending, the human approving, a cancel.
  *
- * To add one: write it in eventTypes.ts, add its name to EventKind, give it an
- * icon in the renderer's icons.tsx, and a row in docs/events.md.
+ * To add one: write it in itemTypes.ts, add its name to ItemKind, give it an
+ * icon in the renderer's icons.tsx, and a row in docs/items.md.
  */
-export interface EventType {
-  type: EventKind
-  /** What it is for, for the bots (event_types) and the MCP page. */
+export interface ItemType {
+  type: ItemKind
+  /** What it is for, for the bots (item_types) and the MCP page. */
   description: string
   /** What it takes. Checked as it is added. */
   params: z.ZodRawShape
@@ -108,14 +108,14 @@ export interface EventType {
   /** May a bot add it, in its output? */
   bots?: boolean
   /** Turns one event into those actually added. */
-  expand?: (params: Record<string, unknown>, author: Author) => EventSpec[]
+  expand?: (params: Record<string, unknown>, author: Author) => ItemSpec[]
   /** As it is added. It may change its params, or resolve it at once. */
   start?: (
     params: Record<string, unknown>,
-    ctx: EventContext,
+    ctx: ItemContext,
   ) => Promise<{ params?: Record<string, unknown>; resolve?: Record<string, unknown> } | void>
   /** Polled by the loop on its schedule: the data once it has happened, null while it hasn't. */
-  check?: (params: Record<string, unknown>, ctx: EventContext) => Promise<Record<string, unknown> | null>
+  check?: (params: Record<string, unknown>, ctx: ItemContext) => Promise<Record<string, unknown> | null>
   /**
    * When `check` runs, as seconds to wait: before the first check, then between
    * each, the last repeating. Left out, the default backoff: at once, then 1, 2,
@@ -161,5 +161,5 @@ export interface Source {
   id: string
   everyMinutes: number
   /** Item events to add, each with a `key` so that polling again adds none twice. */
-  poll: (engine: Engine) => Promise<EventSpec[]>
+  poll: (engine: Engine) => Promise<ItemSpec[]>
 }
