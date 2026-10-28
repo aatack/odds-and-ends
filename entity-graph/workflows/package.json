@@ -22,6 +22,7 @@
     "@types/react-dom": "^18.3.0",
     "@untitledui/icons": "^0.0.22",
     "@vitejs/plugin-react": "^4.3.0",
+    "ajv": "^8.20.0",
     "electron": "^31.3.0",
     "electron-builder": "^24.13.0",
     "electron-vite": "^2.3.0",

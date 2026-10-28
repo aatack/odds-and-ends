@@ -122,7 +122,7 @@ export const script: EventType = {
     owns: z.array(z.string()).optional().describe('Tasks it takes on as it is added: each is assigned to it, as to a bot.'),
     debounce_minutes: z.number().min(0).optional().describe('How long after something happens in its tasks it runs: 1 if left out.'),
     cycle_minutes: z.number().min(0).optional().describe('How often it runs while it owns tasks, news or not: 15 if left out; 0, never.'),
-    wake_at: z.union([z.number(), z.string()]).optional().describe('Older scripts: not before this time. Check the time in the script instead.'),
+    wake_at: z.number().optional().describe('Older scripts: not before this time (ms). Check the time in the script instead.'),
     schedule: z.array(z.number().min(0)).optional().describe('Older scripts: seconds between runs. Use cycle_minutes instead.'),
     ...timeout,
   },

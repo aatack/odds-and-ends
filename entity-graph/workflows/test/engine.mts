@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { z } from 'zod'
+import Ajv from 'ajv'
 import { Admin } from '../src/engine/admin.ts'
 import { DEFAULT_DEBOUNCE, DEFAULT_MODEL, Engine, MAX_SCRIPTS, PERIODIC_MINUTES, type BotOutput, type BotUpdate } from '../src/engine/engine.ts'
 import { catalog, startMcp } from '../src/engine/mcp.ts'
@@ -753,6 +754,8 @@ await engine.close(bad)
   assert.deepEqual((await admin.integrations()).claude, { ok: true, detail: '2.1.309 (Claude Code)', bots: 1 })
   assert.deepEqual(catalog(engine).presets.map((p) => p.id), ['note'])
   assert.ok(!(botOutputSchema(engine.eventTypes).required))
+  // Claude checks the output schema strictly (no union types): one that fails breaks every bot's run.
+  new Ajv({ strict: true }).compile(botOutputSchema(engine.eventTypes))
 
   const e2 = new Engine({ now: () => clock, dataDir })
   await e2.signIn('human')
