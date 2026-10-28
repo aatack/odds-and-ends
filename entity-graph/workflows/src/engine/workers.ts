@@ -68,6 +68,26 @@ export const SYSTEM = `You are a bot in the operator's workflow system: one of i
 
 /** The app's instructions and the bot's own, as a run is given them. */
 /** The open task bots tell of what they needed and didn't have: the one titled so (the operator reads them through). */
+/**
+ * When a usage or rate limit a run was stopped by lifts: its reset time, if the error says (`…|<epoch seconds>`, or
+ * "resets 3pm"), else a while from now; null if the error is not a limit.
+ */
+export function limitedUntil(error: string, now: number): number | null {
+  if (!/usage limit|rate.?limit|limit reached|429|overloaded|too many requests/i.test(error)) return null
+  const epoch = /\|(\d{10})\b/.exec(error)
+  if (epoch) return Number(epoch[1]) * 1000
+  const at = /resets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i.exec(error)
+  if (at) {
+    const d = new Date(now)
+    const pm = at[3]?.toLowerCase() === 'pm'
+    const h = Number(at[1]) % 12 + (pm || (!at[3] && Number(at[1]) === 12) ? 12 : 0)
+    d.setHours(h === 24 ? 12 : h, Number(at[2] ?? 0), 0, 0)
+    if (d.getTime() <= now) d.setDate(d.getDate() + 1)
+    return d.getTime()
+  }
+  return now + (/overloaded/i.test(error) ? 2 : 15) * 60_000
+}
+
 export const GAPS_TITLE = 'Bot capability gaps'
 
 export const systemFor = (agent: Agent, gaps: string | null = null): string =>
@@ -222,6 +242,11 @@ export class BotRunner {
     }, 0)
   }
 
+  /** Until when a provider's bots wait out a usage limit (kept on the engine, which shows it); null if they don't. */
+  pausedUntil(provider: string): number | null {
+    return this.engine.pausedUntil(provider)
+  }
+
   fill(): void {
     if (this.stopped) return
     // At most `bots.max_running` at once (MAX_BOTS by default): those due longest go first, the rest wait their turn.
@@ -229,6 +254,7 @@ export class BotRunner {
     const due = this.engine.agents().filter((a) => !this.running.has(a.id) && a.wakesAt !== null).sort((a, b) => a.wakesAt! - b.wakesAt!)
     for (const agent of due) {
       if (this.running.size >= max) return
+      if (this.pausedUntil(agent.provider)) continue
       const claimed = this.engine.claim(agent.id)
       if (claimed) this.run(claimed.agent, claimed.items, claimed.resume, claimed.handoff)
     }
@@ -248,9 +274,14 @@ export class BotRunner {
     }
     const end = (exitCode: number | null, error?: string) => {
       const { text, result } = readStream([...lines, buffer])
+      const failure = error ?? (result?.is_error ? `The run failed: ${String(result.result ?? result.subtype)}` : result ? undefined : 'The run ended without a result.')
+      // A usage limit pauses the provider's bots until it resets; the run is put back as if it never began.
+      const until = failure ? limitedUntil(`${failure}\n${text.join('\n')}`, this.engine.now()) : null
+      if (until) this.engine.pause(agent.provider, until)
       return this.engine.endRun(runId, {
         exitCode,
-        error: error ?? (result?.is_error ? `The run failed: ${String(result.result ?? result.subtype)}` : result ? undefined : 'The run ended without a result.'),
+        limited: until !== null,
+        error: failure,
         structured: result?.structured_output,
         output: text.join('\n\n'),
         costUsd: result?.total_cost_usd as number | undefined,

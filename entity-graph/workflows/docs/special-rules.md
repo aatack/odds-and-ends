@@ -60,6 +60,7 @@ follow a link) is not listed. Keep this list current: see AGENTS.md. Each rule i
 | **Owner**: the maker if a person, else the parent's owner. Hand-backs go there. | B `owner`, `handBack` |
 | **Hand-back after a run** (`settle`): a task the bot said nothing about goes back to its owner, unless the run changed who has it, it waits on a non-person blocker the bot added, or news came in during the run. An update can't hand away a task a person wrote in during the run. A failed run hands everything back with a note. | B `endRun`, `settle` |
 | **Wakes** (`dueAt`, one rule for bots and scripts): affected since the last wake and settled for the debounce, or a cycle since the last wake while holding tasks; never while running. Limits `bots.max_running` (6) and `scripts.max_running` (8). | B `wakes.ts`, `wake`, `scriptDue`, `checkDue`; `workers.fill` |
+| **Usage limits**: a run stopped by one is put back as if it never began (the bot keeps its topics, news stays new), and no bot of that provider runs until it resets (`limitedUntil`; held in memory). | B `endRun`, `pause`; `workers.fill` |
 | **Prompts**: a task's whole history the first time a session sees it (`seen`), then only what is new; a handoff starts a fresh session. | B `claim`, `endRun`; `workers.promptFor` |
 | **Sending** with an `@` (or a default action that assigns) hands the task to them and takes it off the sender. | B `send` |
 | **Bots never close** a task unless asked (instruction only). | `workers.ts` SYSTEM |

@@ -14,7 +14,7 @@ import { Admin } from '../src/engine/admin.ts'
 import { DEFAULT_DEBOUNCE, DEFAULT_MODEL, Engine, MAX_SCRIPTS, PERIODIC_MINUTES, type BotOutput, type BotUpdate } from '../src/engine/engine.ts'
 import { catalog, startMcp } from '../src/engine/mcp.ts'
 import { botOutputSchema } from '../src/engine/schema.ts'
-import { ASK, BotRunner, MAX_BOTS, promptFor, type SpawnBot } from '../src/engine/workers.ts'
+import { ASK, BotRunner, limitedUntil, MAX_BOTS, promptFor, type SpawnBot } from '../src/engine/workers.ts'
 
 const MINUTE = 60_000
 let clock = 1_000_000
@@ -87,7 +87,7 @@ const settle = async () => {
     await engine.idle()
     await new Promise((r) => setTimeout(r, 5))
     runner.fill()
-    const due = engine.agents().some((a) => a.wakesAt !== null && a.wakesAt <= clock)
+    const due = engine.agents().some((a) => a.wakesAt !== null && a.wakesAt <= clock && !runner.pausedUntil(a.provider))
     if (!runner.busy().length && !due) return engine.idle()
   }
   throw new Error(`still busy: ${JSON.stringify(runner.busy())}`)
@@ -468,6 +468,34 @@ return { state: { last: ids[0] } }`
   assert.equal(reviews().filter((r) => !r.closed).length, 1, 'closed, so a new one')
   for (const r of reviews()) await engine.close(r.id)
   await engine.close(host)
+}
+
+// A usage limit: the run is put back as if it never began (the task stays, what was new stays new), and the provider's
+// bots wait until it resets.
+{
+  assert.equal(limitedUntil('Claude AI usage limit reached|1800000000', 0), 1_800_000_000_000)
+  assert.equal(limitedUntil('API Error: 529 overloaded', 1000), 1000 + 2 * MINUTE)
+  assert.equal(limitedUntil('some other failure', 1000), null)
+  const t = (await engine.create('Limited'))!
+  behaviours.push(async () => {
+    throw new Error('Claude AI usage limit reached|' + Math.floor((clock + 30 * MINUTE) / 1000))
+  })
+  await toBot(t, 'please')
+  await settle()
+  assert.deepEqual(item(t).assignees, [threepio], 'it keeps the task')
+  assert.ok(!engine.children(t).some((e) => /failed/.test(String(e.params.text))), 'and says nothing of it')
+  assert.equal(runner.pausedUntil('claude') !== null, true)
+  clock += 5 * MINUTE
+  await settle()
+  assert.equal(behaviours.length, 0, 'nothing runs while paused')
+  behaviours.push(async ({ prompt }) => {
+    assert.match(prompt, /please/, 'what was new before is new still')
+    return out({ item: t, assign: [engine.me()] })
+  })
+  clock += 30 * MINUTE
+  await settle()
+  assert.equal(behaviours.length, 0)
+  await engine.close(t)
 }
 
 // Processes are switched off: none can be added.

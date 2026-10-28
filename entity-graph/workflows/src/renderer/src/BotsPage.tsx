@@ -51,6 +51,7 @@ export const NEW_BOT: BotDraft = { name: '', instructions: '', provider: 'claude
 export function botStatus(b: Agent, now = Date.now()): string {
   const has = b.assigned.length ? `${b.assigned.length} task${b.assigned.length === 1 ? '' : 's'}` : 'nothing'
   if (b.runId) return `working · has ${has}`
+  if (b.pausedUntil) return `waiting out a usage limit, till ${new Date(b.pausedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · has ${has}`
   if (b.wakesAt !== null) return b.wakesAt <= now ? `waking · has ${has}` : `wakes in ${minutes(b.wakesAt - now)} · has ${has}`
   return `idle · has ${has}`
 }

@@ -137,6 +137,8 @@ export interface Agent {
   runId: string | null
   /** When it wakes next, if something new is waiting for it (it may already be due). */
   wakesAt: number | null
+  /** Until when its provider waits out a usage limit: it runs nothing till then. */
+  pausedUntil: number | null
   /** The open items assigned to it. */
   assigned: string[]
 }

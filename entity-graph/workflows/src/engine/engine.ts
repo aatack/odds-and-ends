@@ -72,6 +72,8 @@ interface Run {
   startedAt: number
   /** The tasks whose assignees the run changed. */
   assigned: Set<string>
+  /** Where the bot stood before it: put back if the run never really happened (a usage limit). */
+  before: { mark: Mark | undefined; seen: string[] }
 }
 
 /** A person added it, or the system did; a bot, or a bot's script, is a bot. */
@@ -620,6 +622,7 @@ export class Engine extends EventEmitter {
       deleted: r.resolved,
       runId: this.running.get(id)?.id ?? null,
       wakesAt: r.resolved ? null : (this.wake(id)?.at ?? null),
+      pausedUntil: this.pausedUntil(String(p.provider ?? 'claude')),
       assigned: this.assignedTo(id),
     }
   }
@@ -794,7 +797,7 @@ export class Engine extends EventEmitter {
   startRun(agentId: string, itemIds: string[]): string {
     const id = randomUUID()
     const at = this.now()
-    this.running.set(agentId, { id, agentId, itemIds, startedAt: at, assigned: new Set() })
+    this.running.set(agentId, { id, agentId, itemIds, startedAt: at, assigned: new Set(), before: { mark: this.marks.get(agentId), seen: this.seen(agentId) } })
     this.marks.set(agentId, { n: this.store.moment(), at })
     const lastRun: LastRun = { id, startedAt: at, endedAt: null, items: itemIds, costUsd: null, turns: null, error: null, output: null }
     this.setParam(agentId, 'last_run', lastRun, `bot:${agentId}`)
@@ -803,6 +806,19 @@ export class Engine extends EventEmitter {
     if (unseen.length) this.setParam(agentId, 'seen', [...seen, ...unseen], `bot:${agentId}`)
     this.emit('change')
     return id
+  }
+
+  /** Until when each provider's bots wait out a usage limit: the runner runs none of them till then. In memory only. */
+  private paused = new Map<string, number>()
+
+  pause(provider: string, until: number): void {
+    this.paused.set(provider, Math.max(until, this.paused.get(provider) ?? 0))
+    this.emit('change')
+  }
+
+  pausedUntil(provider: string): number | null {
+    const until = this.paused.get(provider)
+    return until && until > this.now() ? until : null
   }
 
   /** A run still going: its bot and its tasks; or null. */
@@ -818,7 +834,7 @@ export class Engine extends EventEmitter {
    */
   async endRun(
     runId: string,
-    end: { exitCode: number | null; structured?: unknown; output?: string; costUsd?: number; turns?: number; error?: string },
+    end: { exitCode: number | null; structured?: unknown; output?: string; costUsd?: number; turns?: number; error?: string; limited?: boolean },
   ): Promise<void> {
     const run = [...this.running.values()].find((r) => r.id === runId)
     if (!run) return
@@ -875,6 +891,14 @@ export class Engine extends EventEmitter {
         if (this.get(itemId)?.closed || !this.assignees(itemId).includes(agentId)) return
         this.add(itemId, [{ type: 'note', params: { text: `@${this.agentName(agentId)} failed: ${why}` } }], 'system')
         this.handBack(itemId, agentId, runId)
+      }
+      // Stopped by a usage limit, the run never really happened: the bot keeps its tasks, and what was new stays new, for
+      // when the runner lets it run again.
+      if (error && end.limited) {
+        if (run.before.mark) this.marks.set(agentId, run.before.mark)
+        else this.marks.delete(agentId)
+        this.setParam(agentId, 'seen', run.before.seen, actor)
+        return
       }
       if (error) {
         for (const itemId of run.itemIds) failed(itemId, error)
