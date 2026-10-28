@@ -102,7 +102,7 @@ export function TypesPage({ catalog, custom, act, mobile = false }: { catalog: C
     })
   return (
     <div className={`page types-page ${mobile ? 'mobile' : ''}`}>
-      {catalog.events.map((t) => {
+      {catalog.types.map((t) => {
         const builtIn = itemActions({ id: '', type: t.type, resolved: false, summary: '' }, { act: async () => {}, skip: noop })
         const mine = custom.filter((c) => c.type === t.type)
         const editing = draft?.type === t.type

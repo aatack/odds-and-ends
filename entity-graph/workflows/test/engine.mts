@@ -145,7 +145,7 @@ behaviours.push(async ({ call, prompt, system, schema, sessionId, resume, model,
   return out({
     item: id,
     message: 'Drafted a reply. Post it?',
-    events: [{ type: 'approval', params: { action: 'post_somewhere', inputs: { text: 'Thanks!' } } }],
+    items: [{ type: 'approval', params: { action: 'post_somewhere', inputs: { text: 'Thanks!' } } }],
   })
 })
 await toBot(id, 'Reply to the PR, please')
@@ -180,7 +180,7 @@ behaviours.push(async ({ prompt, sessionId, resume }) => {
   // It hands the task to a script that checks CI: the script owns it, and hands it back when CI passes.
   return out({
     item: id,
-    events: [{ type: 'script', params: { description: 'CI', owns: [id], debounce_minutes: 0, cycle_minutes: 1 / 60, source: `if (!context.state) return { state: 1 }
+    items: [{ type: 'script', params: { description: 'CI', owns: [id], debounce_minutes: 0, cycle_minutes: 1 / 60, source: `if (!context.state) return { state: 1 }
 return { messages: [{ text: 'CI passed' }], assign: [{ item: context.tasks[0].id, to: ['Threepio'] }], done: true }` } }],
   })
 })
@@ -209,7 +209,8 @@ const parent = (await engine.create('Parent'))!
 behaviours.push(async () =>
   out({
     item: parent,
-    events: [{ type: 'task', params: { title: 'Child', events: [{ type: 'note', params: { text: 'Do the child' } }], assignees: ['Threepio'] } }],
+    // A task's first items by their old name, `events`, are taken too.
+    items: [{ type: 'task', params: { title: 'Child', events: [{ type: 'note', params: { text: 'Do the child' } }], assignees: ['Threepio'] } }],
   }),
 )
 behaviours.push(async ({ prompt }) => {
@@ -234,7 +235,7 @@ await engine.close(loose)
 // A bot can also add an item that sits in no item: it blocks nothing, and it is nobody's unless the bot says.
 {
   const host = (await engine.create('Host'))!
-  behaviours.push(async () => out({ item: host, events: [{ type: 'task', params: { title: 'Unrelated', detached: true } }] }))
+  behaviours.push(async () => out({ item: host, items: [{ type: 'task', params: { title: 'Unrelated', detached: true } }] }))
   await toBot(host, 'x')
   await settle()
   const loose = engine.overview().items.find((i) => i.title === 'Unrelated')!
@@ -444,7 +445,7 @@ await assert.rejects(engine.addItems((await engine.create('No process'))!, [{ ty
 
 // ---- 6. Output that can't be used, or an update that can't be applied, is said, and the item goes back ----
 const bad = (await engine.create('Bad'))!
-behaviours.push(async () => out({ item: bad, events: [{ type: 'user', params: { username: 'Not Valid' } }] }))
+behaviours.push(async () => out({ item: bad, items: [{ type: 'user', params: { username: 'Not Valid' } }] }))
 await toBot(bad, 'x')
 await settle()
 assert.match(String(last(bad, 'note').params.text), /^@Threepio failed: its update could not be applied: Bad params for a user event/)
@@ -505,7 +506,7 @@ await engine.close(bad)
   await assert.rejects(engine.runNow(manual), /nothing to run/)
   // A bot's script gets no unsafe actions.
   behaviours.push(async () =>
-    out({ item: counting, assign: ['human'], events: [{ type: 'script', params: { source: `async (ctx, a) => { await a.post_somewhere({ text: 'x' }); return { done: true } }`, schedule: [0] } }] }),
+    out({ item: counting, assign: ['human'], items: [{ type: 'script', params: { source: `async (ctx, a) => { await a.post_somewhere({ text: 'x' }); return { done: true } }`, schedule: [0] } }] }),
   )
   await toBot(counting, 'post it')
   await tick()

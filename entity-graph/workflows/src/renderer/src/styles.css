@@ -273,9 +273,9 @@ button[data-ui].gather-chip { display: inline-flex; align-items: center; gap: 4p
 .menu .menu-action { display: flex; align-items: center; gap: 8px; }
 .menu button:not(.menu-action) + .menu-action { margin-top: 4px; }
 .menu-action .icon { width: 14px; height: 14px; flex: none; }
-.event-view header h1 { display: flex; align-items: center; gap: 8px; }
-.event-view header h1 .type-icon .icon { width: 18px; height: 18px; }
-.event-message { white-space: pre-wrap; }
+.item-view header h1 { display: flex; align-items: center; gap: 8px; }
+.item-view header h1 .type-icon .icon { width: 18px; height: 18px; }
+.item-message { white-space: pre-wrap; }
 .value { white-space: pre-wrap; }
 .debug-json { width: 100%; overflow-x: auto; white-space: pre; user-select: text; }
 /* The content pane: a header line that is always there, then the view. */
@@ -392,7 +392,7 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 
 @layer components {
   /* An event's card in the chat. */
-  .event-card { display: flex; flex-direction: column; gap: 6px; white-space: normal; }
+  .item-card { display: flex; flex-direction: column; gap: 6px; white-space: normal; }
   .card-link { display: inline-flex; text-align: left; }
   .script-line { display: flex; align-items: center; gap: 8px; }
   .script-what { flex: 1; min-width: 0; }

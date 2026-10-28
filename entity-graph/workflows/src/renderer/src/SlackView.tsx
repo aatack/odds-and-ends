@@ -37,12 +37,12 @@ const quote = (text: string, lines = 6) => {
  */
 export function SlackCard({ info: e, find }: { info: ItemInfo; find: string }) {
   const { view, error } = useSlackView(e.id)
-  if (error) return <div className="event-card"><Markdown text={e.summary} highlight={find} /><p className="error-text">{error}</p></div>
-  if (!view) return <div className="event-card muted">Reading Slack…</div>
+  if (error) return <div className="item-card"><Markdown text={e.summary} highlight={find} /><p className="error-text">{error}</p></div>
+  if (!view) return <div className="item-card muted">Reading Slack…</div>
   if (e.type === 'slack_channel') {
     const threads = view.messages.filter((m) => m.replies).length
     return (
-      <div className="event-card slack-card">
+      <div className="item-card slack-card">
         <b>{view.channelName}</b>{' '}
         <span className="muted">
           {e.summary.replace(/^Slack [^,]*, /, '')}: {view.messages.length} {view.messages.length === 1 ? 'message' : 'messages'}
@@ -52,9 +52,9 @@ export function SlackCard({ info: e, find }: { info: ItemInfo; find: string }) {
     )
   }
   const m = view.messages.find((x) => x.ts === view.focus)
-  if (!m) return <div className="event-card muted">That Slack message is not there any more.</div>
+  if (!m) return <div className="item-card muted">That Slack message is not there any more.</div>
   return (
-    <div className="event-card slack-card">
+    <div className="item-card slack-card">
       <div className="slack-meta">
         <MessageCircle className="icon" /> <b>{m.author}</b> <span className="muted">in {view.channelName}{m.thread_ts && m.thread_ts !== m.ts ? ', in a thread' : ''}</span>
       </div>

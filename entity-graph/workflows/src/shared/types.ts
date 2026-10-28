@@ -241,7 +241,7 @@ export interface PresetInfo {
 
 export interface Catalog {
   actions: ActionInfo[]
-  events: ItemTypeInfo[]
+  types: ItemTypeInfo[]
   presets: PresetInfo[]
 }
 

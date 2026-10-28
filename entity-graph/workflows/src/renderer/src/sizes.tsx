@@ -68,7 +68,7 @@ export const CARDS: Partial<Record<ItemKind, (p: CardProps) => ReactNode>> = {
   slack_message: ({ info: e, find }) => <SlackCard info={e} find={find} />,
   slack_channel: ({ info: e, find }) => <SlackCard info={e} find={find} />,
   approval: ({ info: e, find, catalog, act }) => (
-    <div className="event-card">
+    <div className="item-card">
       <Markdown text={e.resolved ? (e.message ?? e.summary) : e.summary} highlight={find} />
       {!e.resolved && <Approval b={e} catalog={catalog} act={act} />}
     </div>
@@ -105,7 +105,7 @@ function ScriptCard({ info: e, act, find }: { info: ItemInfo; act: Act; find: st
   const error = typeof e.data?.error === 'string' ? e.data.error : null
   const result = e.data?.message ?? (e.data?.result === undefined || e.data?.result === null ? null : e.data.result)
   return (
-    <div className="event-card script-card">
+    <div className="item-card script-card">
       <div className="script-line">
         <Markdown className="script-what" text={e.summary} highlight={find} />
         {e.resolved ? (

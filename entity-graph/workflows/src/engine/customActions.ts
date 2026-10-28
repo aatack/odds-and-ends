@@ -22,6 +22,8 @@ const result = z.union([
   z.string(),
   z.object({
     message: z.string().optional(),
+    items: z.array(z.object({ type: z.string(), params: z.record(z.unknown()).default({}), ref: z.string().optional() })).optional(),
+    // The old name (from when items were called events): actions written before still return it.
     events: z.array(z.object({ type: z.string(), params: z.record(z.unknown()).default({}), ref: z.string().optional() })).optional(),
   }),
 ])
@@ -90,7 +92,7 @@ export class CustomActions {
     if (!parsed.success) throw new Error(`It returned ${JSON.stringify(ran.value)?.slice(0, 200)}, not null, a string, or { message?, events? }.`)
     const out = parsed.data
     const message = typeof out === 'string' ? out : (out?.message ?? null)
-    const specs = typeof out === 'object' && out ? ((out.events ?? []) as ItemSpec[]) : []
+    const specs = typeof out === 'object' && out ? ([...(out.items ?? []), ...(out.events ?? [])] as ItemSpec[]) : []
     // Its events are held to the bots' rules, and checked before anything is added.
     this.engine.prepare(specs, 'bot')
     // What it said is a note in the task, by the script; what it returned, a bot's (held to the bots' rules).

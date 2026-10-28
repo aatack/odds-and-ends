@@ -11,15 +11,15 @@ const timeout = { timeout_minutes: z.number().optional().describe('Resolve as ti
 export const task: ItemType = {
   type: 'task',
   description:
-    'A task: a thing to be done. Its events sit in it, other tasks included; a task in another blocks nothing and is not closed with it. ' +
-    'Add one to split work off: give it its first events (e.g. a note) in `events`, and who has it in `assignees`. With no ' +
+    'A task: a thing to be done. Its items sit in it, other tasks included; a task in another blocks nothing and is not closed with it. ' +
+    'Add one to split work off: give it its first items (e.g. a note) in `items`, and who has it in `assignees`. With no ' +
     "assignees, it is its maker's if a person made it, and nobody's otherwise.",
   params: {
     title: z.string(),
-    events: z
+    items: z
       .array(z.object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional() }))
       .optional()
-      .describe('Events to put in it as it is created. They are added in it, and not kept in its values.'),
+      .describe('Items to put in it as it is created (`events`, the old name, is taken too). They are added in it, and not kept in its values.'),
     key: z.string().optional().describe('Identifies it, so that it is added only once.'),
     detached: z
       .boolean()

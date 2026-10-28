@@ -60,9 +60,9 @@ export function botOutputSchema(types: ItemType[]): Record<string, unknown> {
                 'To the people in the item: what you did, in a line or two, or one direct question. No preamble and no waffle. ' +
                 'Leave it out if there is nothing to say.',
             },
-            events: {
+            items: {
               type: 'array',
-              description: 'Events to add in the item: waits, approvals, afters, child items.',
+              description: 'Items to add in it: waits, approvals, afters, child items.',
               items: itemSchema(types),
             },
             assign: {

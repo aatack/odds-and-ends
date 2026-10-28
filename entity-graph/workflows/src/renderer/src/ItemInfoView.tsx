@@ -22,7 +22,7 @@ export function ItemInfoView({
 }) {
   const e = detail.info
   return (
-    <div className="page event-view">
+    <div className="page item-view">
       <div className="meta">
         {TYPE_NAME[e.type]}
         {detail.parent && (
@@ -37,7 +37,7 @@ export function ItemInfoView({
 
       <section className="card">
         <p>{status(e)}</p>
-        {e.message && !e.cancelled && <Markdown className="event-message" text={e.message} />}
+        {e.message && !e.cancelled && <Markdown className="item-message" text={e.message} />}
         {e.lastError && <p className="error-text">{e.lastError}</p>}
       </section>
 

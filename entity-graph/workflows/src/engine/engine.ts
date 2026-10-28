@@ -42,8 +42,8 @@ export interface BotUpdate {
   item: string
   /** To the people in it: what it did, or one direct question. */
   message?: string
-  /** Events to add in it: waits, approvals, child tasks. */
-  events?: ItemSpec[]
+  /** Items to add in it: waits, approvals, child tasks. */
+  items?: ItemSpec[]
   /** Who has the task from now on: people by username, bots by name or id. Left out: see Engine.settle. */
   assign?: string[]
   close?: boolean
@@ -845,6 +845,8 @@ export class Engine extends EventEmitter {
                 z.object({
                   item: z.string(),
                   message: z.string().optional(),
+                  items: z.array(z.object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional() })).optional(),
+                  // The old name (from when items were called events).
                   events: z.array(z.object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional() })).optional(),
                   assign: z.array(z.string()).optional(),
                   close: z.boolean().optional(),
@@ -854,7 +856,7 @@ export class Engine extends EventEmitter {
             handoff: z.string().optional(),
           })
           .parse(end.structured ?? {})
-        updates = (out.updates ?? []) as BotUpdate[]
+        updates = (out.updates ?? []).map(({ events, ...u }) => ({ ...u, items: [...(u.items ?? []), ...(events ?? [])] })) as BotUpdate[]
         handoff = out.handoff?.trim() || null
         for (const u of updates) if (!this.get(u.item) && u.item !== agentId) throw new Error(`No task ${u.item}.`)
       } catch (e) {
@@ -892,7 +894,7 @@ export class Engine extends EventEmitter {
           if (to && !to.has(agentId) && !u.close && heard(u.item)) {
             to.add(agentId)
           }
-          const specs: ItemSpec[] = [...(u.message ? [{ type: 'note' as const, params: { text: u.message } }] : []), ...this.prepare(u.events ?? [], 'bot')]
+          const specs: ItemSpec[] = [...(u.message ? [{ type: 'note' as const, params: { text: u.message } }] : []), ...this.prepare(u.items ?? [], 'bot')]
           if (specs.length) this.add(u.item, specs, actor)
           if (to) {
             const now = this.assignees(u.item)
@@ -965,7 +967,9 @@ export class Engine extends EventEmitter {
       const type = this.type(s?.type)
       if (s.type === 'process') throw new Error('Processes are switched off for now.')
       if (author === 'bot' && !type.bots) throw new Error(`A bot may not add a ${s.type} event.`)
-      const parsed = z.object(type.params).safeParse(s.params ?? {})
+      // A task's first items, by their old name (from when items were called events).
+      const given = s.type === 'task' && s.params && 'events' in s.params && !('items' in s.params) ? { ...s.params, items: s.params.events } : s.params
+      const parsed = z.object(type.params).safeParse(given ?? {})
       if (!parsed.success)
         throw new Error(`Bad params for a ${s.type} event: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
       const params = parsed.data as Record<string, unknown>
@@ -975,7 +979,7 @@ export class Engine extends EventEmitter {
       if (s.type === 'task' && params.assignees) params.assignees = (params.assignees as string[]).map((a) => this.resolveAssignee(a))
       if (s.type === 'user' && this.row(String(params.username))) throw new Error(`The username ${params.username} is taken.`)
       // Prepared now, so a bad one fails the whole list; added in the task as it is.
-      if (s.type === 'task' && params.events) params.events = this.prepare(params.events as ItemSpec[], author)
+      if (s.type === 'task' && params.items) params.items = this.prepare(params.items as ItemSpec[], author)
       const expanded = type.expand ? type.expand(params, author) : [{ type: s.type, params }]
       return expanded.map((e, i) => ({ type: e.type, params: e.params, ref: i === 0 ? (s.ref ?? e.ref) : e.ref }))
     })
@@ -1007,7 +1011,7 @@ export class Engine extends EventEmitter {
       // A person's id is their username.
       const id = spec.type === 'user' ? String(spec.params.username) : randomUUID()
       ids.push(id)
-      const { assignees, events, detached: _d, owns, ...params } = spec.params
+      const { assignees, items: first, detached: _d, owns, ...params } = spec.params
       // A script's first wake is kept as a time, whatever form it was given in.
       if (spec.type === 'script' && params.wake_at !== undefined) params.wake_at = whenNext(params.wake_at as number | string, at)
       this.store.insertItem({
@@ -1017,7 +1021,7 @@ export class Engine extends EventEmitter {
         runs: 0, added_n: 0, resolved_n: 0,
       })
       if (spec.type === 'task') {
-        if (Array.isArray(events) && events.length) this.addNow(id, events as ItemSpec[], createdBy)
+        if (Array.isArray(first) && first.length) this.addNow(id, first as ItemSpec[], createdBy)
         // A new task goes to those given; else, made by a person, to them; else (a bot made it) to nobody.
         const to = Array.isArray(assignees) && assignees.length ? (assignees as string[]) : this.isUser(createdBy) ? [createdBy] : []
         for (const a of to) this.setAssignee(id, a, true, createdBy)
@@ -1109,7 +1113,7 @@ export class Engine extends EventEmitter {
     opts: { parentId?: string | null; key?: string; specs?: ItemSpec[]; assignees?: string[]; actor?: string; author?: Author } = {},
   ): Promise<string | null> {
     const author = opts.author ?? 'human'
-    const params = { title, ...(opts.key ? { key: opts.key } : {}), ...(opts.specs ? { events: opts.specs } : {}), ...(opts.assignees ? { assignees: opts.assignees } : {}) }
+    const params = { title, ...(opts.key ? { key: opts.key } : {}), ...(opts.specs ? { items: opts.specs } : {}), ...(opts.assignees ? { assignees: opts.assignees } : {}) }
     const [spec] = this.prepare([{ type: 'task', params }], author)
     const [id] = this.add(opts.parentId ?? null, [spec], author === 'bot' ? 'bot' : (opts.actor ?? this.me()))
     await this.idle()
