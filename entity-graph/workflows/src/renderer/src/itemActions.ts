@@ -1,4 +1,4 @@
-// What can be done to an event, by its type and state: the one list both the
+// What can be done to an item, by its type and state: the one list both the
 // view header (as icon buttons, the rest in the menu beside them) and the
 // right-click menu draw.
 
@@ -7,7 +7,7 @@ import type { CustomAction } from '../../shared/types'
 import { actionIcon } from './actionIcons'
 import { api } from './useWorkflows'
 
-export interface EventAction {
+export interface ItemAction {
   id: string
   label: string
   /** Shown on hover, where the label alone says too little. */
@@ -23,15 +23,15 @@ export interface EventAction {
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 /**
- * The actions on an event: an open task can be resolved or skipped, a closed one reopened; any other
- * open event cancelled (a bot is deleted from its settings, not here). Then the person's own actions for its
+ * The actions on an item: an open task can be resolved or skipped, a closed one reopened; any other
+ * open item cancelled (a bot is deleted from its settings, not here). Then the person's own actions for its
  * type (`custom`), from the Types page.
  */
-export function eventActions(
+export function itemActions(
   e: { id: string; type: string; resolved: boolean; summary: string },
   ctx: { act: Act; skip: (id: string) => void; custom?: CustomAction[] },
-): EventAction[] {
-  const own: EventAction[] = e.resolved
+): ItemAction[] {
+  const own: ItemAction[] = e.resolved
     ? e.type === 'task'
       ? [{ id: 'reopen', label: 'Reopen', important: true, icon: RotateCcw, tone: '', run: () => void ctx.act(() => api().reopen(e.id)) }]
       : []

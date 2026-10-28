@@ -1,4 +1,4 @@
-// The bots' runner. Each bot (an `agent` event) runs one thing at a time, in a
+// The bots' runner. Each bot (an `agent` item) runs one thing at a time, in a
 // Claude session of its own and a folder of its own, both of which last: so a
 // bot remembers its work, and keeps its repositories, from one run to the next.
 // A bot wakes when something happens to it (an item is assigned to it, its
@@ -10,7 +10,7 @@
 import { spawn } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Agent, Item, ItemEvent } from '../shared/types'
+import type { Agent, Item, ItemInfo } from '../shared/types'
 import type { Engine } from './engine'
 import { botOutputSchema } from './schema'
 
@@ -46,21 +46,21 @@ const RUN_LIMIT_MS = 60 * 60_000
 
 export const SYSTEM = `You are a bot in the operator's workflow system: one of its bots, with a name, instructions of your own (below, if any), a Claude session of your own and a working folder of your own, all of which last from one run to the next. You run one thing at a time.
 
-- The "workflows" MCP server is the system: tasks and the events in them, people and bots. event_types describes every kind of event. Its tools take task ids, and you may act on any task.
+- The "workflows" MCP server is the system: tasks and the items in them, people and bots. item_types describes every kind of item. Its tools take task ids, and you may act on any task.
 - Tasks are assigned to people or to bots: that is who has them. You wake when anything affects you (a task is assigned to you, anything new in your tasks or your own chat, your settings change), a minute after it settles; and every 15 minutes while you have tasks, news or not. So hand on what you are not working on: tasks you keep wake you. Each prompt is your own chat, if someone wrote in it, then every task you have, one after another: what is new in it since you last saw it (people's notes as they wrote them, after their name; anything else in [square brackets]), or its whole history the first time. get_item has a task in full any time.
 - Action the tasks assigned to you, and give each a new assignee to carry it on: a person, another bot, or yourself to keep it.
-- A task's chat is every event in it: what you want people to see there must be an event in the task (your update's message is a note in it; add_events adds others, such as scripts and child tasks). Text anywhere else (your shell, your own replies outside the update) is not seen.
+- A task's chat is every item in it: what you want people to see there must be an item in the task (your update's message is a note in it; add_items adds others, such as scripts and child tasks). Text anywhere else (your shell, your own replies outside the update) is not seen.
 - Do what people's latest notes ask, as far as you can without them. In your own chat, answer with an update for your own id: its message is your reply there.
 - Never close a task unless someone has explicitly asked you to close it. Finishing the work is not being asked: hand the task back instead.
 - You also have the usual tools (a shell, files). Your working folder is yours alone, and it lasts: keep clones and worktrees there. Read a repository's AGENTS.md or CLAUDE.md before working in it, since you were not started in it. A shell's cd only lasts inside your folder; elsewhere, use absolute paths and git -C.
 - Actions that change things outside this app are unsafe, and you never do them: not with the MCP tools (you do not have the unsafe ones; unsafe_actions lists them), and not with the shell either (no posting, commenting, reviewing, merging, pushing to shared branches, or sending). Work on a local branch, local commits included, is not unsafe. To get one done, ask a person in a note.
-- To say something in another task (one you don't have), add a note in it: an update for that task with a message, or add_events. Who has it is left alone unless you say.
+- To say something in another task (one you don't have), add a note in it: an update for that task with a message, or add_items. Who has it is left alone unless you say.
 - If you're done for now and nothing needs carrying over, add a short "handoff" to your output: your next run starts fresh with it. Otherwise leave it out.
-- When you stop, return an update for each task you have: a note to the people in it if there is something to say (message), events to add, who has it now (assign), and close only if you were asked to. A task you say nothing of who has goes back to its owner (the person who made it), unless you added a wait to it: then you keep it.
+- When you stop, return an update for each task you have: a note to the people in it if there is something to say (message), items to add, who has it now (assign), and close only if you were asked to. A task you say nothing of who has goes back to its owner (the person who made it), unless you added a wait to it: then you keep it.
 - To hand a task to someone, assign it to them (in your update, or with the assign action). list_people and list_bots say who there is.
-- To wait for something, or for anything repetitive that doesn't need you (an LLM), hand the task to a script: a script event with owns [the task] (and cycle_minutes, how often it checks). It wakes as you do, runs JavaScript with no model, and hands the task on when what it waits for has happened. event_types shows how to write one; run_script runs code once, now.
-- To split work off, add a child task with its first events (e.g. a note) and its assignees. It blocks nothing: to wait on it, hand the parent to a script that checks it.
-- Keep traceability: when you make a task from something, link_events the messages and items it came from (and the tasks it depends on) into it, and link the new task into where it came from.
+- To wait for something, or for anything repetitive that doesn't need you (an LLM), hand the task to a script: a script item with owns [the task] (and cycle_minutes, how often it checks). It wakes as you do, runs JavaScript with no model, and hands the task on when what it waits for has happened. item_types shows how to write one; run_script runs code once, now.
+- To split work off, add a child task with its first items (e.g. a note) and its assignees. It blocks nothing: to wait on it, hand the parent to a script that checks it.
+- Keep traceability: when you make a task from something, link_items the messages and items it came from (and the tasks it depends on) into it, and link the new task into where it came from.
 - For work unrelated to a task, add a task with detached: true. It sits in no task and blocks nothing.
 - [id]() in text refers to a task, a bot or a person (people's @ inserts them), and is shown as its title or name. Use the same to refer to one in your notes.
 - Ask people only what nobody else can answer, as one direct question: no preamble, no summary, no waffle.`
@@ -125,10 +125,10 @@ export interface Who {
 const ANYONE: Who = { name: (a) => a, person: (a) => a === 'human' || a === 'mcp' }
 
 /**
- * One event as a line of the prompt: what a person wrote, as they wrote it, after
+ * One item as a line of the prompt: what a person wrote, as they wrote it, after
  * their name; anything else in square brackets.
  */
-export function promptLine(e: ItemEvent, who: Who = ANYONE): string | null {
+export function promptLine(e: ItemInfo, who: Who = ANYONE): string | null {
   if (e.type === 'note')
     return who.person(e.createdBy) ? `${who.name(e.createdBy)}: ${e.params.text ?? ''}` : `[${who.name(e.createdBy)}: ${e.params.text ?? ''}]`
   if (e.cancelled) return `[${e.message ?? `Cancelled: ${e.summary}`}]`
@@ -146,11 +146,11 @@ export const ASK = '[Please action your assigned tasks, and give each a new assi
  * people's notes as they are, anything else in brackets — and, every ID_EVERY
  * lines from the first, which item it is.
  */
-export function promptFor(items: { item: Item; events: ItemEvent[]; first: boolean; own?: boolean }[], who?: Who): string {
+export function promptFor(items: { item: Item; children: ItemInfo[]; first: boolean; own?: boolean }[], who?: Who): string {
   if (!items.length) return ''
   return `${ASK}\n\n---\n\n` + [...items].sort((a, b) => Number(!!b.own) - Number(!!a.own))
-    .map(({ item, events, first, own }) => {
-      const lines = events.map((e) => promptLine(e, who)).filter((l): l is string => l !== null)
+    .map(({ item, children, first, own }) => {
+      const lines = children.map((e) => promptLine(e, who)).filter((l): l is string => l !== null)
       const head = own ? ['[your own chat: reply with an update for this id]'] : first ? [`[new to you: ${item.title}]`] : [`[task: ${item.title}]`]
       const all = [...head, ...(lines.length ? lines : ['[nothing new]'])]
       return all.flatMap((l, i) => (i % ID_EVERY === 0 ? [`[current task ID: ${item.id}]`, l] : [l])).join('\n\n')
@@ -233,7 +233,7 @@ export class BotRunner {
     }
   }
 
-  private run(agent: Agent, items: { item: Item; events: ItemEvent[]; first: boolean; own?: boolean }[], resume: boolean, handoff: string | null = null): void {
+  private run(agent: Agent, items: { item: Item; children: ItemInfo[]; first: boolean; own?: boolean }[], resume: boolean, handoff: string | null = null): void {
     const told = promptFor(items, { name: (a) => this.engine.actorName(a), person: (a) => this.engine.isUser(a) || a === 'mcp' })
     const prompt = handoff ? `[a fresh session: your last one left you this handoff]\n\n${handoff}\n\n---\n\n${told}` : told
     const runId = this.engine.startRun(agent.id, items.map((i) => i.item.id))
@@ -261,7 +261,7 @@ export class BotRunner {
       const spawnBot = this.providers[agent.provider]
       if (!spawnBot) throw new Error(`No provider ${agent.provider}: one of ${Object.keys(this.providers).join(', ')}.`)
       proc = spawnBot({
-        prompt, system: systemFor(agent, this.engine.overview().items.find((i) => i.title === GAPS_TITLE && !i.closed)?.id ?? null), schema: botOutputSchema(this.engine.eventTypes), mcpUrl: this.mcpUrl(runId),
+        prompt, system: systemFor(agent, this.engine.overview().items.find((i) => i.title === GAPS_TITLE && !i.closed)?.id ?? null), schema: botOutputSchema(this.engine.itemTypes), mcpUrl: this.mcpUrl(runId),
         sessionId: agent.sessionId!, resume, model: agent.model, cwd: this.engine.agentFolder(agent.id), onOutput,
       })
     } catch (e) {

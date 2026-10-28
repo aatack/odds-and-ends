@@ -107,7 +107,7 @@ button[data-ui].link { background: none; color: var(--muted); padding: 0; }
 .approval button[data-ui] { align-self: flex-start; }
 .buttons { display: flex; gap: 8px; flex-wrap: wrap; }
 .history { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
-.event-text { white-space: pre-wrap; margin-top: 2px; }
+.item-text { white-space: pre-wrap; margin-top: 2px; }
 .nav { display: flex; flex-direction: column; gap: 2px; }
 .nav button[data-ui] { text-align: left; background: none; padding: 6px 8px; }
 .nav button[data-ui].active { background: var(--panel); box-shadow: var(--shadow-xs); }
@@ -273,9 +273,9 @@ button[data-ui].gather-chip { display: inline-flex; align-items: center; gap: 4p
 .menu .menu-action { display: flex; align-items: center; gap: 8px; }
 .menu button:not(.menu-action) + .menu-action { margin-top: 4px; }
 .menu-action .icon { width: 14px; height: 14px; flex: none; }
-.event-view header h1 { display: flex; align-items: center; gap: 8px; }
-.event-view header h1 .type-icon .icon { width: 18px; height: 18px; }
-.event-message { white-space: pre-wrap; }
+.item-view header h1 { display: flex; align-items: center; gap: 8px; }
+.item-view header h1 .type-icon .icon { width: 18px; height: 18px; }
+.item-message { white-space: pre-wrap; }
 .value { white-space: pre-wrap; }
 .debug-json { width: 100%; overflow-x: auto; white-space: pre; user-select: text; }
 /* The content pane: a header line that is always there, then the view. */
@@ -391,8 +391,8 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 .menu-status { margin-left: 12px; float: right; color: var(--muted); font-size: 12px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @layer components {
-  /* An event's card in the chat. */
-  .event-card { display: flex; flex-direction: column; gap: 6px; white-space: normal; }
+  /* An item's card in the chat. */
+  .item-card { display: flex; flex-direction: column; gap: 6px; white-space: normal; }
   .card-link { display: inline-flex; text-align: left; }
   .script-line { display: flex; align-items: center; gap: 8px; }
   .script-what { flex: 1; min-width: 0; }

@@ -6,7 +6,7 @@ import type { SearchRow, SearchSection } from '../../shared/search'
 import { Markdown } from './components/ui/Markdown'
 import type { Item } from '../../shared/types'
 import { minutes } from './Chat'
-import { useEventMenu } from './EventMenu'
+import { useItemMenu } from './ItemMenu'
 import { ItemIcon, TYPE_ICON, waitingOn } from './icons'
 import { SearchSectionsContext, SECTIONS, type Recent } from './sections'
 import { api } from './useWorkflows'
@@ -98,7 +98,7 @@ export function ItemsList(props: {
   const [views, setViews] = useAtom(viewsAtom)
   const configure = () => !sameView(views[views.length - 1], { kind: 'search' }) && setViews([...views, { kind: 'search' }])
   const box = useRef<HTMLInputElement>(null)
-  const menu = useEventMenu()
+  const menu = useItemMenu()
   const focusAsked = useAtomValue(searchFocusAtom)
   useEffect(() => {
     if (!mobile || focusAsked) box.current?.focus()

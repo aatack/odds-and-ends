@@ -4,7 +4,7 @@
 import { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
 import type { ObjectSchema } from '../shared/types'
-import type { EventType } from './integrations'
+import type { ItemType } from './integrations'
 
 /** Drops what structured output and the forms don't want. */
 function clean(node: unknown): unknown {
@@ -20,8 +20,8 @@ function clean(node: unknown): unknown {
 export const objectSchema = (shape: z.ZodRawShape): ObjectSchema =>
   clean(zodToJsonSchema(z.object(shape), { $refStrategy: 'none' })) as ObjectSchema
 
-/** One event of any type a bot may add, as the bots return them. */
-export function eventSchema(types: EventType[]): Record<string, unknown> {
+/** One item of any type a bot may add, as the bots return them. */
+export function itemSchema(types: ItemType[]): Record<string, unknown> {
   return {
     anyOf: types
       .filter((t) => t.bots)
@@ -32,7 +32,7 @@ export function eventSchema(types: EventType[]): Record<string, unknown> {
         properties: {
           type: { type: 'string', enum: [t.type] },
           params: objectSchema(t.params),
-          ref: { type: 'string', description: 'A name for this event, so another in the same list can refer to it.' },
+          ref: { type: 'string', description: 'A name for this item, so another in the same list can refer to it.' },
         },
         required: ['type', 'params'],
         additionalProperties: false,
@@ -41,7 +41,7 @@ export function eventSchema(types: EventType[]): Record<string, unknown> {
 }
 
 /** What a bot's run must return: an update for each item it did something in. */
-export function botOutputSchema(types: EventType[]): Record<string, unknown> {
+export function botOutputSchema(types: ItemType[]): Record<string, unknown> {
   return {
     type: 'object',
     properties: {
@@ -60,10 +60,10 @@ export function botOutputSchema(types: EventType[]): Record<string, unknown> {
                 'To the people in the item: what you did, in a line or two, or one direct question. No preamble and no waffle. ' +
                 'Leave it out if there is nothing to say.',
             },
-            events: {
+            items: {
               type: 'array',
-              description: 'Events to add in the item: waits, approvals, afters, child items.',
-              items: eventSchema(types),
+              description: 'Items to add in it: waits, approvals, afters, child items.',
+              items: itemSchema(types),
             },
             assign: {
               type: 'array',

@@ -103,15 +103,15 @@ const blockers = (id: string) => item(id).blockers.map((b) => b.type)
 const last = (id: string, type: string) => engine.children(id).filter((e) => e.type === type).at(-1)!
 
 // The types there are; those from before are gone.
-assert.deepEqual(engine.eventTypes.map((t) => t.type), ['task', 'note', 'approval', 'script', 'process', 'widget', 'search', 'slack_message', 'slack_channel', 'bot', 'user'])
-await assert.rejects(engine.addEvents((await engine.create('x'))!, [{ type: 'message' as 'note', params: { text: 'x' } }]), /No event type message/)
+assert.deepEqual(engine.itemTypes.map((t) => t.type), ['task', 'note', 'approval', 'script', 'process', 'widget', 'search', 'slack_message', 'slack_channel', 'bot', 'user'])
+await assert.rejects(engine.addItems((await engine.create('x'))!, [{ type: 'message' as 'note', params: { text: 'x' } }]), /No item type message/)
 for (const i of engine.overview().items) await engine.close(i.id)
 
 // The bots. Threepio does most things; a new bot runs on opus and waits a minute, unless it says otherwise.
 await assert.rejects(engine.send((await engine.create('Too soon'))!, 'note', '  '), /Nothing to send/)
 const threepio = await engine.saveAgent({ name: 'Threepio', instructions: 'You speak six million languages.', provider: 'claude', model: '', debounceMinutes: 0 })
 assert.deepEqual([engine.agent(threepio)!.model, DEFAULT_MODEL], ['opus', 'opus'])
-assert.equal(engine.event(threepio)!.type, 'bot')
+assert.equal(engine.info(threepio)!.type, 'bot')
 const toBot = (id: string, text: string) => engine.send(id, `assign:${threepio}`, text)
 for (const i of engine.overview().items) await engine.close(i.id)
 
@@ -140,17 +140,17 @@ behaviours.push(async ({ call, prompt, system, schema, sessionId, resume, model,
   await assert.rejects(call('post_somewhere', { text: 'x' }), /not found/i)
   // It has the same tools as anyone connected, so it may act on other items too, as itself.
   const other = (await engine.create('Elsewhere'))!
-  await call('add_events', { item_id: other, events: [{ type: 'note', params: { text: 'from a bot' } }] })
+  await call('add_items', { item_id: other, items: [{ type: 'note', params: { text: 'from a bot' } }] })
   assert.equal(engine.children(other)[0].createdBy, `bot:${threepio}`)
   await engine.close(other)
   return out({
     item: id,
     message: 'Drafted a reply. Post it?',
-    events: [{ type: 'approval', params: { action: 'post_somewhere', inputs: { text: 'Thanks!' } } }],
+    items: [{ type: 'approval', params: { action: 'post_somewhere', inputs: { text: 'Thanks!' } } }],
   })
 })
 await toBot(id, 'Reply to the PR, please')
-assert.deepEqual(engine.children(id).map((e) => [e.type, e.createdBy]), [['note', 'human']], 'assignment is a link, not an event')
+assert.deepEqual(engine.children(id).map((e) => [e.type, e.createdBy]), [['note', 'human']], 'assignment is a link, not an item')
 assert.deepEqual(item(id).assignees, [threepio], 'handing it to the bot took it off the sender')
 assert.deepEqual(engine.assignedTo(threepio), [id], "the bot's items: its assigned_to links, followed backwards")
 await settle()
@@ -166,11 +166,11 @@ assert.ok(engine.agent(threepio)!.lastRun!.endedAt)
 const approval = item(id).blockers[0]
 await engine.approve(approval.id, { text: 'Thanks a lot!' })
 assert.deepEqual(posted, ['Thanks a lot!'])
-assert.deepEqual(engine.event(approval.id)!.data!.changed, ['text'])
-assert.equal(engine.event(approval.id)!.message, 'Ran post_somewhere (changed text)')
+assert.deepEqual(engine.info(approval.id)!.data!.changed, ['text'])
+assert.equal(engine.info(approval.id)!.message, 'Ran post_somewhere (changed text)')
 for (const a of engine.actions.filter((a) => a.unsafe))
   await assert.rejects(engine.callAction(a.name, { text: 'x' }, { engine, author: 'bot', actor: 'script', itemId: id, runId: null }), /unsafe/)
-await assert.rejects(engine.addEvents(id, [{ type: 'approval', params: { action: 'list_items', inputs: {} } }]), /not an unsafe action/)
+await assert.rejects(engine.addItems(id, [{ type: 'approval', params: { action: 'list_items', inputs: {} } }]), /not an unsafe action/)
 
 // ---- 4. A bot that adds a wait keeps the item; the wait resolving is news, heard of in time ----
 behaviours.push(async ({ prompt, sessionId, resume }) => {
@@ -181,7 +181,7 @@ behaviours.push(async ({ prompt, sessionId, resume }) => {
   // It hands the task to a script that checks CI: the script owns it, and hands it back when CI passes.
   return out({
     item: id,
-    events: [{ type: 'script', params: { description: 'CI', owns: [id], debounce_minutes: 0, cycle_minutes: 1 / 60, source: `if (!context.state) return { state: 1 }
+    items: [{ type: 'script', params: { description: 'CI', owns: [id], debounce_minutes: 0, cycle_minutes: 1 / 60, source: `if (!context.state) return { state: 1 }
 return { messages: [{ text: 'CI passed' }], assign: [{ item: context.tasks[0].id, to: ['Threepio'] }], done: true }` } }],
   })
 })
@@ -200,7 +200,7 @@ await tick()
 clock += 1000
 await tick()
 await settle()
-assert.ok(engine.event(ci)!.resolved)
+assert.ok(engine.info(ci)!.resolved)
 assert.deepEqual(item(id).assignees, ['human'])
 await engine.close(id)
 assert.ok(item(id).closed)
@@ -210,7 +210,8 @@ const parent = (await engine.create('Parent'))!
 behaviours.push(async () =>
   out({
     item: parent,
-    events: [{ type: 'task', params: { title: 'Child', events: [{ type: 'note', params: { text: 'Do the child' } }], assignees: ['Threepio'] } }],
+    // A task's first items by their old name, `items`, are taken too.
+    items: [{ type: 'task', params: { title: 'Child', events: [{ type: 'note', params: { text: 'Do the child' } }], assignees: ['Threepio'] } }],
   }),
 )
 behaviours.push(async ({ prompt }) => {
@@ -228,14 +229,14 @@ await settle()
 const kid = engine.children(parent).find((e) => e.type === 'task')!.id
 assert.ok(item(kid).closed)
 // Closing a task leaves the tasks in it as they are.
-const [loose] = await engine.addEvents(parent, [{ type: 'task', params: { title: 'Still open' } }])
+const [loose] = await engine.addItems(parent, [{ type: 'task', params: { title: 'Still open' } }])
 await engine.close(parent)
 assert.ok(item(parent).closed && !item(loose).closed)
 await engine.close(loose)
 // A bot can also add an item that sits in no item: it blocks nothing, and it is nobody's unless the bot says.
 {
   const host = (await engine.create('Host'))!
-  behaviours.push(async () => out({ item: host, events: [{ type: 'task', params: { title: 'Unrelated', detached: true } }] }))
+  behaviours.push(async () => out({ item: host, items: [{ type: 'task', params: { title: 'Unrelated', detached: true } }] }))
   await toBot(host, 'x')
   await settle()
   const loose = engine.overview().items.find((i) => i.title === 'Unrelated')!
@@ -246,12 +247,12 @@ await engine.close(loose)
   await engine.close(loose.id)
 }
 
-// A bot can say something in a task it doesn't have: by its update, or by add_events. Who has that task is left alone.
+// A bot can say something in a task it doesn't have: by its update, or by add_items. Who has that task is left alone.
 {
   const host = (await engine.create('Host'))!
   const other = (await engine.create('Other'))!
   behaviours.push(async ({ call }) => {
-    await call('add_events', { item_id: other, events: [{ type: 'note', params: { text: 'By the tool.' } }] })
+    await call('add_items', { item_id: other, items: [{ type: 'note', params: { text: 'By the tool.' } }] })
     return out({ item: host, message: 'Told them.' }, { item: other, message: 'By the update.' })
   })
   await toBot(host, 'Tell the other task')
@@ -304,16 +305,16 @@ await engine.close(loose)
   engine.settings.set('bots.max_running', MAX_BOTS)
   await engine.deleteAgent(other)
   engine.settings.set('scripts.max_running', 1)
-  const [s1, s2] = await engine.addEvents(t1, [
+  const [s1, s2] = await engine.addItems(t1, [
     { type: 'script', params: { source: 'return null', schedule: [0, 3600] } },
     { type: 'script', params: { source: 'return null', schedule: [0, 3600] } },
   ])
   await engine.checkDue()
   await engine.idle()
-  assert.deepEqual([engine.event(s1)!.runs, engine.event(s2)!.runs], [1, 0], 'one script at a time; the other waits for the next turn')
+  assert.deepEqual([engine.info(s1)!.runs, engine.info(s2)!.runs], [1, 0], 'one script at a time; the other waits for the next turn')
   await engine.checkDue()
   await engine.idle()
-  assert.equal(engine.event(s2)!.runs, 1)
+  assert.equal(engine.info(s2)!.runs, 1)
   engine.settings.set('scripts.max_running', MAX_SCRIPTS)
   await engine.close(t1)
   await engine.close(t2)
@@ -331,30 +332,30 @@ await engine.close(loose)
   await engine.close(t)
 }
 
-// Traceability: a task links in events that sit elsewhere; they show in its chat, and stay where they sit.
+// Traceability: a task links in items that sit elsewhere; they show in its chat, and stay where they sit.
 {
   const from = (await engine.create('Discussion'))!
   await engine.send(from, 'note', 'We should fix the export')
   const said = last(from, 'note').id
-  const [made] = await engine.addEvents(null, [{ type: 'task', params: { title: 'Fix the export' } }])
-  await engine.callAction('link_events', { item_id: made, event_ids: [said] }, { engine, author: 'bot', actor: `bot:${threepio}`, itemId: made, runId: null })
+  const [made] = await engine.addItems(null, [{ type: 'task', params: { title: 'Fix the export' } }])
+  await engine.callAction('link_items', { item_id: made, item_ids: [said] }, { engine, author: 'bot', actor: `bot:${threepio}`, itemId: made, runId: null })
   await engine.link(from, [made])
-  assert.ok(engine.detail(made)!.events.some((e) => e.id === said), 'the new task shows what it came from')
-  assert.ok(engine.detail(from)!.events.some((e) => e.id === made), 'and where it came from shows it')
-  assert.equal(engine.event(said)!.parentId, from, 'what is linked stays where it sits')
-  assert.deepEqual(engine.event(said)!.containers, [from, made], 'and is in both: where it sits first')
+  assert.ok(engine.detail(made)!.children.some((e) => e.id === said), 'the new task shows what it came from')
+  assert.ok(engine.detail(from)!.children.some((e) => e.id === made), 'and where it came from shows it')
+  assert.equal(engine.info(said)!.parentId, from, 'what is linked stays where it sits')
+  assert.deepEqual(engine.info(said)!.containers, [from, made], 'and is in both: where it sits first')
   await engine.close(from)
   await engine.close(made)
 }
 
-// A widget: its state is a value on its event, changed by a person, a bot or a script, and read back by anyone.
+// A widget: its state is a value on its item, changed by a person, a bot or a script, and read back by anyone.
 {
   const t = (await engine.create('Widget'))!
-  const [w] = await engine.addEvents(t, [{ type: 'widget', params: { title: 'Count', html: '<b id="n"></b>', widget_state: { count: 0 } } }], 'bot', 'bot')
+  const [w] = await engine.addItems(t, [{ type: 'widget', params: { title: 'Count', html: '<b id="n"></b>', widget_state: { count: 0 } } }], 'bot', 'bot')
   assert.deepEqual(blockers(t), [], 'a widget blocks nothing')
   await engine.setWidgetState(w, { count: 1 })
   await engine.callAction('set_value', { item_id: w, key: 'widget_state', value: { count: 2 } }, { engine, author: 'bot', actor: 'bot', itemId: t, runId: null })
-  assert.deepEqual(engine.event(w)!.params.widget_state, { count: 2 })
+  assert.deepEqual(engine.info(w)!.params.widget_state, { count: 2 })
   await assert.rejects(engine.setWidgetState(t, {}), /No widget/)
   // set_value: any param, checked; not how it stands, nor what the app keeps for itself.
   await engine.setValue(t, 'title', 'Widget, renamed')
@@ -441,14 +442,14 @@ await engine.close(loose)
 }
 
 // Processes are switched off: none can be added.
-await assert.rejects(engine.addEvents((await engine.create('No process'))!, [{ type: 'process', params: { command: 'true' } }]), /switched off/)
+await assert.rejects(engine.addItems((await engine.create('No process'))!, [{ type: 'process', params: { command: 'true' } }]), /switched off/)
 
 // ---- 6. Output that can't be used, or an update that can't be applied, is said, and the item goes back ----
 const bad = (await engine.create('Bad'))!
-behaviours.push(async () => out({ item: bad, events: [{ type: 'user', params: { username: 'Not Valid' } }] }))
+behaviours.push(async () => out({ item: bad, items: [{ type: 'user', params: { username: 'Not Valid' } }] }))
 await toBot(bad, 'x')
 await settle()
-assert.match(String(last(bad, 'note').params.text), /^@Threepio failed: its update could not be applied: Bad params for a user event/)
+assert.match(String(last(bad, 'note').params.text), /^@Threepio failed: its update could not be applied: Bad params for a user item/)
 assert.equal(last(bad, 'note').createdBy, 'system')
 assert.ok(item(bad).withYou)
 behaviours.push(async () => ({ updates: 'nonsense' }) as unknown as BotOutput)
@@ -460,7 +461,7 @@ await engine.close(bad)
 // ---- 7. Scripts: on their schedule, with state, done when they say; a bot's script gets no unsafe actions ----
 {
   const counting = (await engine.create('Counting'))!
-  const [sid] = await engine.addEvents(counting, [
+  const [sid] = await engine.addItems(counting, [
     {
       type: 'script',
       params: {
@@ -476,37 +477,37 @@ await engine.close(bad)
     },
   ])
   for (const _ of [1, 5, 10]) {
-    clock = engine.event(sid)!.nextCheckAt!
+    clock = engine.info(sid)!.nextCheckAt!
     await tick()
   }
-  const done = engine.event(sid)!
+  const done = engine.info(sid)!
   assert.deepEqual(done.data!.result, { n: 2, item: 'Counting' })
   assert.equal(done.message, 'Counted to two')
   assert.match((done.data!.logs as string[])[0], /^run 2 items \d+$/)
-  const [bad2] = await engine.addEvents(counting, [{ type: 'script', params: { source: 'async () => { throw new Error("nope") }', schedule: [0] } }])
+  const [bad2] = await engine.addItems(counting, [{ type: 'script', params: { source: 'async () => { throw new Error("nope") }', schedule: [0] } }])
   await tick()
-  assert.match(engine.event(bad2)!.message!, /The script failed: .*nope/)
+  assert.match(engine.info(bad2)!.message!, /The script failed: .*nope/)
   // A script with a timeout resolves as timed_out.
-  const [slow] = await engine.addEvents(counting, [{ type: 'script', params: { source: 'async () => null', schedule: [60], timeout_minutes: 1 } }])
+  const [slow] = await engine.addItems(counting, [{ type: 'script', params: { source: 'async () => null', schedule: [60], timeout_minutes: 1 } }])
   clock += MINUTE
   await tick()
-  assert.equal(engine.event(slow)!.data!.outcome, 'timed_out')
+  assert.equal(engine.info(slow)!.data!.outcome, 'timed_out')
   // A script with no schedule runs only when someone runs it (its play button).
-  const [manual] = await engine.addEvents(counting, [{ type: 'script', params: { source: 'async (ctx) => (ctx.event.runs ? { done: true, message: "Second time" } : null)' } }])
+  const [manual] = await engine.addItems(counting, [{ type: 'script', params: { source: 'async (ctx) => (ctx.event.runs ? { done: true, message: "Second time" } : null)' } }])
   clock += 10 * MINUTE
   await tick()
-  assert.deepEqual([engine.event(manual)!.runs, engine.event(manual)!.nextCheckAt], [0, null], 'it waits to be run')
+  assert.deepEqual([engine.info(manual)!.runs, engine.info(manual)!.nextCheckAt], [0, null], 'it waits to be run')
   await engine.runNow(manual)
-  assert.deepEqual([engine.event(manual)!.resolved, engine.event(manual)!.runs, engine.event(manual)!.nextCheckAt], [false, 1, null])
+  assert.deepEqual([engine.info(manual)!.resolved, engine.info(manual)!.runs, engine.info(manual)!.nextCheckAt], [false, 1, null])
   await engine.runNow(manual)
-  assert.equal(engine.event(manual)!.message, 'Second time')
+  assert.equal(engine.info(manual)!.message, 'Second time')
   // Resolving is `resolved` turning true: egdb keeps when, and by whom.
   assert.deepEqual((await engine.inspect(manual)).values.resolved, true)
   assert.ok(!('resolved_at' in (await engine.inspect(manual)).values))
   await assert.rejects(engine.runNow(manual), /nothing to run/)
   // A bot's script gets no unsafe actions.
   behaviours.push(async () =>
-    out({ item: counting, assign: ['human'], events: [{ type: 'script', params: { source: `async (ctx, a) => { await a.post_somewhere({ text: 'x' }); return { done: true } }`, schedule: [0] } }] }),
+    out({ item: counting, assign: ['human'], items: [{ type: 'script', params: { source: `async (ctx, a) => { await a.post_somewhere({ text: 'x' }); return { done: true } }`, schedule: [0] } }] }),
   )
   await toBot(counting, 'post it')
   await tick()
@@ -515,7 +516,7 @@ await engine.close(bad)
   // The new shape: a body, watching several tasks at once, saying something in each, waking when it asks.
   const a = (await engine.create('Watched A'))!
   const b = (await engine.create('Watched B'))!
-  const [watch] = await engine.addEvents(counting, [{ type: 'script', params: { description: 'Watch two', owns: [a, b], debounce_minutes: 0, cycle_minutes: 1, source: `
+  const [watch] = await engine.addItems(counting, [{ type: 'script', params: { description: 'Watch two', owns: [a, b], debounce_minutes: 0, cycle_minutes: 1, source: `
     const n = (context.state ?? 0) + 1
     if (n < 2) return { state: n, messages: context.tasks.map((t) => ({ item: t.id, text: 'Still waiting on ' + t.title })) }
     return { assign: [{ item: context.tasks[0].id, to: ['human'] }], done: true, data: { n } }` } }])
@@ -523,23 +524,23 @@ await engine.close(bad)
   assert.deepEqual(blockers(counting), [], 'it blocks nothing')
   await tick()
   assert.deepEqual([last(a, 'note').params.text, last(b, 'note').params.text], ['Still waiting on Watched A', 'Still waiting on Watched B'], 'given tasks, it runs (its debounce after)')
-  assert.equal(engine.event(watch)!.params.last_wake, clock, 'when it woke is kept, for a restart')
+  assert.equal(engine.info(watch)!.params.last_wake, clock, 'when it woke is kept, for a restart')
   await tick()
-  assert.equal(engine.event(watch)!.runs, 1, 'its own messages are not news to it')
+  assert.equal(engine.info(watch)!.runs, 1, 'its own messages are not news to it')
   clock += MINUTE
   await tick()
-  assert.deepEqual(engine.event(watch)!.data!.result, { n: 2 })
+  assert.deepEqual(engine.info(watch)!.data!.result, { n: 2 })
   assert.deepEqual([item(a).assignees, item(b).assignees], [['human'], ['human']], 'done, it lets go of what it still had')
   // Unsafe tools: a person's press has them; a schedule never.
   const unsafeSource = `await tools.post_somewhere({ text: 'pressed' }); return { done: true }`
-  const [press] = await engine.addEvents(counting, [{ type: 'script', params: { source: unsafeSource } }], 'bot', 'bot')
+  const [press] = await engine.addItems(counting, [{ type: 'script', params: { source: unsafeSource } }], 'bot', 'bot')
   await engine.runNow(press, 'human')
-  assert.ok(engine.event(press)!.resolved && !engine.event(press)!.data!.error, 'pressed by a person, it may act outside')
+  assert.ok(engine.info(press)!.resolved && !engine.info(press)!.data!.error, 'pressed by a person, it may act outside')
   assert.equal(posted.at(-1), 'pressed')
   const owned = (await engine.create('Owned'))!
-  const [timed] = await engine.addEvents(counting, [{ type: 'script', params: { source: unsafeSource, owns: [owned], debounce_minutes: 0 } }], 'human')
+  const [timed] = await engine.addItems(counting, [{ type: 'script', params: { source: unsafeSource, owns: [owned], debounce_minutes: 0 } }], 'human')
   await tick()
-  assert.match(String(engine.event(timed)!.data!.error), /unsafe/, 'on a schedule, never: whoever wrote it')
+  assert.match(String(engine.info(timed)!.data!.error), /unsafe/, 'on a schedule, never: whoever wrote it')
   // run_script: once, now, with the tools; an agent gets no unsafe ones.
   const ran = (await engine.callAction('run_script', { source: 'return (await tools.list_items({})).length + context.n', context: { n: 1 } }, { engine, author: 'bot', actor: 'bot', itemId: null, runId: null })) as { result: number }
   assert.equal(typeof ran.result, 'number')
@@ -567,7 +568,7 @@ await engine.close(bad)
   await engine.cancel(temp)
   release()
   await settle()
-  assert.ok(engine.event(temp)!.cancelled)
+  assert.ok(engine.info(temp)!.cancelled)
   assert.ok(!item(taken).closed)
   assert.deepEqual(item(taken).assignees, ['human'])
   await engine.close(taken)
@@ -611,13 +612,13 @@ await engine.close(bad)
   await engine.send(threepio, 'note', 'What are you up to?')
   await settle()
   const chat = engine.detail(threepio)!
-  assert.deepEqual(chat.events.map((e) => [e.type, e.createdBy, e.params.text]), [
+  assert.deepEqual(chat.children.map((e) => [e.type, e.createdBy, e.params.text]), [
     ['note', 'human', 'What are you up to?'],
     ['note', `bot:${threepio}`, 'Not much.'],
   ])
   assert.equal(chat.item.title, '@Threepio')
   assert.deepEqual(engine.agent(threepio)!.lastRun!.items, [threepio], 'its last run was for its chat')
-  await assert.rejects(engine.addEvents(threepio, [{ type: 'script', params: { source: 'async () => null' } }]), /only notes/)
+  await assert.rejects(engine.addItems(threepio, [{ type: 'script', params: { source: 'async () => null' } }]), /only notes/)
 }
 
 // ---- 11. A bot's settings: changing them wakes it; a debounce gathers a burst of work into one run; waking by hand ----
@@ -630,7 +631,7 @@ await engine.close(bad)
   await engine.saveAgent({ id: r2, name: 'R2', instructions: 'Beep boop.', provider: 'claude', model: 'haiku', debounceMinutes: 5 })
   const bot = engine.agent(r2)!
   assert.deepEqual([bot.instructions, bot.model, bot.debounceMinutes], ['Beep boop.', 'haiku', 5])
-  assert.deepEqual(engine.children(r2), [], 'settings are its params, not events')
+  assert.deepEqual(engine.children(r2), [], 'settings are its params, not items')
   const inspected2 = await engine.inspect(r2)
   assert.equal(inspected2.values.model, 'haiku', 'settings are plain values')
   assert.equal(inspected2.createdBy, 'human')
@@ -689,7 +690,7 @@ await engine.close(bad)
   await engine.close(t)
 }
 
-// ---- 13. Custom actions: scripts per event type, run on an event; what they say is a note ----
+// ---- 13. Custom actions: scripts per item type, run on an item; what they say is a note ----
 {
   const ca = engine.customActions
   const task = (await engine.create('Custom'))!
@@ -720,7 +721,7 @@ await engine.close(bad)
   const { url } = mcp.operator()
   await assert.rejects(connect(url, { Authorization: 'Bearer wrong' }), (e: { code?: number }) => e.code === 401)
   const outside = await connect(url, { Authorization: `Bearer ${engine.settings.mcpToken()}` })
-  await outside.call('add_events', { item_id: probe, events: [{ type: 'note', params: { text: 'From outside' } }] })
+  await outside.call('add_items', { item_id: probe, items: [{ type: 'note', params: { text: 'From outside' } }] })
   assert.equal(last(probe, 'note').createdBy, 'mcp')
   // Assigning a bot wakes it.
   behaviours.push(async () => out({ item: probe, assign: ['human'] }))
@@ -733,11 +734,27 @@ await engine.close(bad)
   assert.deepEqual(onHuman.map((i: { id: string }) => i.id).sort(), engine.overview().items.filter((i) => !i.closed && i.withYou).map((i) => i.id).sort())
   await assert.rejects(outside.call('items_waiting_on', { on: 'nobody' }), /One of: a person/)
   assert.match(await outside.call('paradigm'), /A task is a thing to be done/)
-  const types = JSON.parse(await outside.call('event_types'))
-  assert.deepEqual(types.map((t: { type: string }) => t.type), engine.eventTypes.map((t) => t.type))
-  const { ids: [made] } = JSON.parse(await outside.call('add_events', { events: [{ type: 'bot', params: { name: 'Sneaky' } }] }))
+  const types = JSON.parse(await outside.call('item_types'))
+  assert.deepEqual(types.map((t: { type: string }) => t.type), engine.itemTypes.map((t) => t.type))
+  const { ids: [made] } = JSON.parse(await outside.call('add_items', { items: [{ type: 'bot', params: { name: 'Sneaky' } }] }))
   assert.equal(engine.findAgent('sneaky')!.id, made, 'agents may make bots')
   await engine.deleteAgent(made)
+  // The tools' old names (from when items were called items) still answer, with their old parameters, but are not listed.
+  const listed = (await outside.client.listTools()).tools.map((t) => t.name)
+  for (const old of ['event_types', 'add_events', 'link_events', 'cancel_event']) assert.ok(!listed.includes(old), `${old} is not listed`)
+  assert.deepEqual(JSON.parse(await outside.call('event_types')).length, engine.itemTypes.length)
+  const { ids: [said] } = JSON.parse(await outside.call('add_events', { item_id: probe, events: [{ type: 'note', params: { text: 'Old names' } }] }))
+  assert.equal(last(probe, 'note').params.text, 'Old names')
+  const linkedTo = (await engine.create('Linked by the old name'))!
+  await outside.call('link_events', { item_id: linkedTo, event_ids: [said] })
+  assert.ok(engine.detail(linkedTo)!.children.some((e) => e.id === said))
+  const { ids: [waiting] } = JSON.parse(await outside.call('add_items', { item_id: probe, items: [{ type: 'approval', params: { action: 'post_somewhere', inputs: { text: 'x' } } }] }))
+  await outside.call('cancel_event', { event_id: waiting })
+  assert.ok(engine.info(waiting)!.cancelled, 'cancel_event, with event_id')
+  const { ids: [again] } = JSON.parse(await outside.call('add_items', { item_id: probe, items: [{ type: 'approval', params: { action: 'post_somewhere', inputs: { text: 'y' } } }] }))
+  await outside.call('cancel_item', { event_id: again })
+  assert.ok(engine.info(again)!.cancelled, 'cancel_item takes event_id too')
+  await engine.close(linkedTo)
   await outside.client.close()
   await engine.close(probe)
 }
@@ -753,9 +770,9 @@ await engine.close(bad)
   const admin = new Admin(engine, mcp)
   assert.deepEqual((await admin.integrations()).claude, { ok: true, detail: '2.1.309 (Claude Code)', bots: 1 })
   assert.deepEqual(catalog(engine).presets.map((p) => p.id), ['note'])
-  assert.ok(!(botOutputSchema(engine.eventTypes).required))
+  assert.ok(!(botOutputSchema(engine.itemTypes).required))
   // Claude checks the output schema strictly (no union types): one that fails breaks every bot's run.
-  new Ajv({ strict: true }).compile(botOutputSchema(engine.eventTypes))
+  new Ajv({ strict: true }).compile(botOutputSchema(engine.itemTypes))
 
   const e2 = new Engine({ now: () => clock, dataDir })
   await e2.signIn('human')

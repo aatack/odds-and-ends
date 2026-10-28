@@ -8,11 +8,11 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { EgdbClient, type Filter, type Op } from 'egdb-client'
 import {
-  customActionFromValues, eventFromValues, ROOT, Store, type CustomActionRow, type EventRow, type Inspection, type LinkView, type Sink,
+  customActionFromValues, itemFromValues, ROOT, Store, type CustomActionRow, type ItemRow, type Inspection, type LinkView, type Sink,
 } from './store'
 
 const BRANCH_NAME = 'workflows'
-/** The kinds of entity that are not events. */
+/** The kinds of entity that are not items. */
 const OWN_TYPES = ['wf.root', 'wf.setting', 'wf.custom_action']
 /** The links an item may have, as the loader and the debug view read them. */
 const LINK_TYPES = ['contains', 'assigned_to'] as const
@@ -104,7 +104,7 @@ export class EgdbSink implements Sink {
       ...values.map((c) => ({ at: c.event.timestamp, by: c.event.author, kind: 'value' as const, entity: c.entity, key: c.key, value: c.value, other: null, removed: false, seq: c.event.seq })),
       ...links.map((c) => ({ at: c.event.timestamp, by: c.event.author, kind: 'link' as const, entity: c.source, key: c.link_type, value: null, other: c.destination, removed: c.sort === null, seq: c.event.seq })),
     ]
-    // The newest first: by time, then by seq (one write's events share a time).
+    // The newest first: by time, then by seq (one write's items share a time).
     return all
       .sort((a, b) => b.at - a.at || b.seq - a.seq)
       .slice(0, limit)
@@ -144,9 +144,9 @@ async function findAll(client: EgdbClient, branch: string, filter: Filter, each:
 
 /**
  * A store read back from egdb, which writes its changes there from now on.
- * `blocking(type)` says which events are blockers (resolved only once they say
+ * `blocking(type)` says which items are blockers (resolved only once they say
  * so); the rest resolved as they were made. A source written by an earlier
- * build (its events' params in one value) is refused: start a new one.
+ * build (its items' params in one value) is refused: start a new one.
  */
 export async function loadStore(
   client: EgdbClient,
@@ -170,7 +170,7 @@ export async function loadStore(
   })
   await findAll(client, branch, { eq: { key: 'type', value: 'wf.custom_action' } }, (_id, x) => customActions.push(customActionFromValues(x)))
   // Where each item sits, and who made it when: the `contains` links to it. And who has each task: `assigned_to` links.
-  // An event sits in the task whose `contains` link to it came first; any later ones are links for traceability.
+  // An item sits in the task whose `contains` link to it came first; any later ones are links for traceability.
   const made = new Map<string, { parent: string | null; seq: number; at: number; by: string }>()
   const linked: { parent: string; id: string; at: number; by: string }[] = []
   const assigned: { item: string; to: string; at: number; by: string }[] = []
@@ -194,23 +194,23 @@ export async function loadStore(
           else assigned.push({ item: l.source, to: l.destination, ...meta })
         }
   }
-  // When each resolved blocker resolved, and by whom: the event that set its `resolved` true.
+  // When each resolved blocker resolved, and by whom: the item that set its `resolved` true.
   const resolved = new Map<string, { at: number; by: string }>()
   const done = [...found].filter(([, x]) => x.resolved === true).map(([id]) => id)
   for (let i = 0; i < done.length; i += 500) {
     const got = await client.valueEvents(branch, done.slice(i, i + 500))
     for (const [id, keys] of Object.entries(got)) if (keys.resolved) resolved.set(id, { at: keys.resolved.timestamp, by: keys.resolved.author })
   }
-  const events: EventRow[] = []
+  const rows: ItemRow[] = []
   for (const [id, x] of found) {
     const m = made.get(id)
-    if (m) events.push(eventFromValues(id, x, m, blocking(String(x.type)), resolved.get(id)))
+    if (m) rows.push(itemFromValues(id, x, m, blocking(String(x.type)), resolved.get(id)))
   }
   const sink = new EgdbSink(client, branch, onError)
   const store = new Store(sink)
-  store.restore({ events, settings, customActions, assigned, linked: linked.filter((l) => l.parent && found.has(l.id)) })
+  store.restore({ items: rows, settings, customActions, assigned, linked: linked.filter((l) => l.parent && found.has(l.id)) })
   // The root is an entity too, so that the tree can be walked from it.
-  if (!events.length) sink.write([{ set: { entity: ROOT, key: 'type', value: 'wf.root' } }], 'system', Date.now())
+  if (!rows.length) sink.write([{ set: { entity: ROOT, key: 'type', value: 'wf.root' } }], 'system', Date.now())
   return { store, sink }
 }
 

@@ -11,7 +11,7 @@ import { join, relative } from 'node:path'
 import { EgdbClient } from 'egdb-client'
 import { egdbServerPath, loadStore, startEgdb } from '../src/engine/egdb.ts'
 import { Engine } from '../src/engine/engine.ts'
-import { EVENT_TYPES } from '../src/engine/eventTypes.ts'
+import { ITEM_TYPES } from '../src/engine/itemTypes.ts'
 
 const bin = egdbServerPath()
 if (bin === 'egdb-server' || !existsSync(bin)) {
@@ -21,7 +21,7 @@ if (bin === 'egdb-server' || !existsSync(bin)) {
 
 const dir = mkdtempSync(join(tmpdir(), 'workflows-egdb-'))
 const token = 'test-token'
-const blocking = (type: string) => EVENT_TYPES.find((t) => t.type === type)?.blocking ?? true
+const blocking = (type: string) => ITEM_TYPES.find((t) => t.type === type)?.blocking ?? true
 const open = async (file: string) => {
   const egdb = await startEgdb(file, token)
   const client = new EgdbClient({ url: egdb.url, token })
@@ -44,13 +44,13 @@ const file = join(dir, 'round-trip.egdb')
   clock += 1000
   await engine.send(id, 'note', `[${bot}]() hello`)
   await engine.send(bot, 'note', 'hello, bot')
-  await engine.addEvents(id, [{ type: 'script', params: { source: 'async () => null', schedule: [600] } }])
-  await engine.addEvents(id, [{ type: 'script', params: { source: 'async () => ({ done: false, state: 41 })', schedule: [0] } }])
+  await engine.addItems(id, [{ type: 'script', params: { source: 'async () => null', schedule: [600] } }])
+  await engine.addItems(id, [{ type: 'script', params: { source: 'async () => ({ done: false, state: 41 })', schedule: [0] } }])
   await engine.checkDue()
   const run = engine.startRun(bot, [id])
   await engine.endRun(run, { exitCode: 0, structured: { updates: [{ item: id, message: 'Hi.', assign: ['alex'] }] }, costUsd: 0.5 })
-  // A thumbs-up is a `reactions` value on the event: those who gave one.
-  const hi = engine.detail(id)!.events.find((e) => e.params.text === 'Hi.')!.id
+  // A thumbs-up is a `reactions` value on the item: those who gave one.
+  const hi = engine.detail(id)!.children.find((e) => e.params.text === 'Hi.')!.id
   await engine.react(hi, true, 'alex')
   await engine.react(hi, true, `bot:${bot}`)
   await engine.react(hi, false, `bot:${bot}`)
@@ -73,13 +73,13 @@ const file = join(dir, 'round-trip.egdb')
   assert.deepEqual(after.overview.bots.map((b) => [b.id, b.name, b.instructions, b.model, b.debounceMinutes, b.sessionId]),
     before.overview.bots.map((b) => [b.id, b.name, b.instructions, b.model, b.debounceMinutes, b.sessionId]))
   assert.equal(after.overview.bots[0].instructions, 'Be very polite.')
-  // Events keep their params, data, memo and order; waits are checked again at once.
-  assert.deepEqual(after.detail.events.map((e) => [e.id, e.type, e.params, e.data, e.resolved, e.createdBy]),
-    before.detail.events.map((e) => [e.id, e.type, e.params, e.data, e.resolved, e.createdBy]))
-  assert.ok(after.detail.events.filter((e) => !e.resolved && e.type !== 'task' && e.type !== 'script').every((e) => e.nextCheckAt === clock))
-  assert.equal(again.store.events.get(after.detail.events.filter((e) => e.type === 'script').at(-1)!.id)!.memo, 41)
-  assert.deepEqual(after.detail.events.find((e) => e.id === hi)!.reactions, ['alex'])
-  assert.ok(after.detail.events.filter((e) => e.id !== hi).every((e) => e.reactions.length === 0))
+  // Items keep their params, data, memo and order; waits are checked again at once.
+  assert.deepEqual(after.detail.children.map((e) => [e.id, e.type, e.params, e.data, e.resolved, e.createdBy]),
+    before.detail.children.map((e) => [e.id, e.type, e.params, e.data, e.resolved, e.createdBy]))
+  assert.ok(after.detail.children.filter((e) => !e.resolved && e.type !== 'task' && e.type !== 'script').every((e) => e.nextCheckAt === clock))
+  assert.equal(again.store.items.get(after.detail.children.filter((e) => e.type === 'script').at(-1)!.id)!.memo, 41)
+  assert.deepEqual(after.detail.children.find((e) => e.id === hi)!.reactions, ['alex'])
+  assert.ok(after.detail.children.filter((e) => e.id !== hi).every((e) => e.reactions.length === 0))
   // The edit log: what was done, by whom and when, the newest first.
   const log = await again.store.log({ entities: [hi] })
   assert.deepEqual(log.filter((e) => e.key === 'reactions').map((e) => [e.by, e.value]),
@@ -94,12 +94,12 @@ const file = join(dir, 'round-trip.egdb')
   assert.ok(toItem.length > 0 && toItem.length <= 10 && toItem.every((e) => e.entity === hi || e.other === hi))
   const byBot = (await engine2.callAction('activity_log', { who: 'Threepio', limit: 3 }, ctx)) as { by: string }[]
   assert.ok(byBot.length > 0 && byBot.length <= 3 && byBot.every((e) => e.by === `bot:${bot}`))
-  // Who made each event, and when, is the link to it.
-  assert.deepEqual(after.detail.events.map((e) => [e.createdAt, e.createdBy]), before.detail.events.map((e) => [e.createdAt, e.createdBy]))
+  // Who made each item, and when, is the link to it.
+  assert.deepEqual(after.detail.children.map((e) => [e.createdAt, e.createdBy]), before.detail.children.map((e) => [e.createdAt, e.createdBy]))
   assert.deepEqual(after.bot.lastRun, before.bot.lastRun)
   assert.deepEqual([after.bot.lastRun!.id, after.bot.lastRun!.costUsd], [run, 0.5], 'a bot keeps its last run as a value; egdb keeps the rest')
   // A note is its text, and nothing else; where it sits, who wrote it and when, is a `contains` link.
-  const note = after.detail.events.find((e) => e.type === 'note')!
+  const note = after.detail.children.find((e) => e.type === 'note')!
   const seen = await engine2.inspect(note.id)
   assert.deepEqual(seen.values, { type: 'note', text: note.params.text })
   assert.deepEqual([seen.createdAt, seen.createdBy], [note.createdAt, note.createdBy])
@@ -110,8 +110,8 @@ const file = join(dir, 'round-trip.egdb')
   const closed = await engine2.inspect(done)
   assert.equal(closed.values.resolved, true)
   assert.ok(!('resolved_at' in closed.values) && !('resolved_by' in closed.values))
-  assert.deepEqual([closed.set.resolved.at, closed.set.resolved.by], [engine.event(done)!.resolvedAt, 'alex'])
-  assert.deepEqual([engine2.event(done)!.resolvedAt, engine2.event(done)!.resolvedBy], [engine.event(done)!.resolvedAt, 'alex'])
+  assert.deepEqual([closed.set.resolved.at, closed.set.resolved.by], [engine.info(done)!.resolvedAt, 'alex'])
+  assert.deepEqual([engine2.info(done)!.resolvedAt, engine2.info(done)!.resolvedBy], [engine.info(done)!.resolvedAt, 'alex'])
   assert.equal(engine2.settings.mcpPort(), 1234)
   // The tree can be walked in egdb itself, from the root.
   const branch = (await again.client.branches())[0].id
@@ -128,11 +128,11 @@ const file = join(dir, 'round-trip.egdb')
   await engine2.link(linkedTo, [note.id], 'alex')
   await again.store.flush()
   const third = await loadStore(again.client, blocking)
-  assert.equal(third.store.events.get(note.id)!.parent_id, id)
+  assert.equal(third.store.items.get(note.id)!.parent_id, id)
   assert.deepEqual(third.store.linked(linkedTo).map((l) => l.id), [note.id])
   assert.deepEqual(third.store.containers(note.id), [id, linkedTo])
   assert.equal(third.store.customActions.size, 0, 'a removed custom action is archived in egdb, and not read back')
-  assert.equal(third.store.events.get(done)!.resolved, false, 'a reopened task reads back open')
+  assert.equal(third.store.items.get(done)!.resolved, false, 'a reopened task reads back open')
   again.egdb.stop()
 }
 
@@ -202,8 +202,8 @@ const file = join(dir, 'round-trip.egdb')
   for (let i = 0; i < 200 && !existsSync(join(data, 'backend.json')); i++) await new Promise((r) => setTimeout(r, 100))
   const info2 = JSON.parse(readFileSync(join(data, 'backend.json'), 'utf8')) as { url: string; token: string }
   const res = await fetch(`${info2.url}/rpc/detail`, { method: 'POST', headers: { authorization: `Bearer ${info2.token}`, 'x-workflows-user': 'tester' }, body: JSON.stringify([id]) })
-  const detail = ((await res.json()) as { result: { events: { params: { text?: string } }[] } }).result
-  assert.equal(detail.events[0].params.text, 'A note')
+  const detail = ((await res.json()) as { result: { children: { params: { text?: string } }[] } }).result
+  assert.equal(detail.children[0].params.text, 'A note')
   again.kill('SIGTERM')
   await new Promise((r) => again.on('exit', r))
 }

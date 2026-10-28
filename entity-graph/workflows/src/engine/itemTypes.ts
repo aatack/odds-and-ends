@@ -1,25 +1,25 @@
-// The event types. What each takes and resolves with is the contract
-// docs/events.md sets out; keep the two in step.
+// The item types. What each takes and resolves with is the contract
+// docs/items.md sets out; keep the two in step.
 
 import { z } from 'zod'
-import type { EventType } from './integrations'
+import type { ItemType } from './integrations'
 import { runScript } from './script'
 import { slackChannelParams, slackMessageParams } from './slack'
 
 const timeout = { timeout_minutes: z.number().optional().describe('Resolve as timed_out after this long.') }
 
-export const task: EventType = {
+export const task: ItemType = {
   type: 'task',
   description:
-    'A task: a thing to be done. Its events sit in it, other tasks included; a task in another blocks nothing and is not closed with it. ' +
-    'Add one to split work off: give it its first events (e.g. a note) in `events`, and who has it in `assignees`. With no ' +
+    'A task: a thing to be done. Its items sit in it, other tasks included; a task in another blocks nothing and is not closed with it. ' +
+    'Add one to split work off: give it its first items (e.g. a note) in `items`, and who has it in `assignees`. With no ' +
     "assignees, it is its maker's if a person made it, and nobody's otherwise.",
   params: {
     title: z.string(),
-    events: z
+    items: z
       .array(z.object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional() }))
       .optional()
-      .describe('Events to put in it as it is created. They are added in it, and not kept in its values.'),
+      .describe('Items to put in it as it is created (`items`, the old name, is taken too). They are added in it, and not kept in its values.'),
     key: z.string().optional().describe('Identifies it, so that it is added only once.'),
     detached: z
       .boolean()
@@ -37,7 +37,7 @@ export const task: EventType = {
   said: (p, d) => `${p.title}: ${d.how === 'cancelled' ? 'cancelled' : 'closed'}`,
 }
 
-export const note: EventType = {
+export const note: ItemType = {
   type: 'note',
   description: 'Something written in an item (or in a bot\'s own chat): by a person, a bot, or a script.',
   params: { text: z.string() },
@@ -47,7 +47,7 @@ export const note: EventType = {
   describe: (p) => String(p.text),
 }
 
-export const approval: EventType = {
+export const approval: ItemType = {
   type: 'approval',
   description:
     'An unsafe action for the human to approve, change, or turn down. While only approvals are open, the item is the human\'s turn.',
@@ -113,7 +113,7 @@ export const SCRIPT_DOC =
   'Example, a check every ten minutes: cycle_minutes: 10, source: "const pr = await tools.some_read_tool({ ... }); if (!pr.merged) return null; ' +
   'return { messages: [{ text: \'Merged\' }], assign: [{ item: context.tasks[0].id, to: [\'Threepio\'] }], done: true }".'
 
-export const script: EventType = {
+export const script: ItemType = {
   type: 'script',
   description: SCRIPT_DOC,
   params: {
@@ -132,17 +132,17 @@ export const script: EventType = {
   describe: (p) => String(p.description ?? 'Script'),
   said: (p, d) => (d.error ? `The script failed: ${d.error}` : String(d.message ?? `${p.description ?? 'Script'}: done`)),
   schedule: (p) => (p.schedule as number[] | undefined) ?? null,
-  check: async (p, { engine, item, event, memo, setMemo, runs, trigger, pressedBy }) => {
+  check: async (p, { engine, item, info, memo, setMemo, runs, trigger, pressedBy }) => {
     const pressed = trigger === 'press' && !!pressedBy && engine.isUser(pressedBy)
-    const owned = engine.assignedTo(event.id)
+    const owned = engine.assignedTo(info.id)
     const context = {
-      script: { id: event.id, description: p.description ?? null, runs, state: memo ?? null },
+      script: { id: info.id, description: p.description ?? null, runs, state: memo ?? null },
       item: { id: item.id, title: item.title },
       tasks: owned.map((id) => ({ id, title: engine.get(id)?.title ?? id })),
       now: new Date(engine.now()).toISOString(),
       trigger,
       // The older names.
-      event: { id: event.id, description: p.description ?? null, createdAt: new Date(event.createdAt).toISOString(), runs },
+      event: { id: info.id, description: p.description ?? null, createdAt: new Date(info.createdAt).toISOString(), runs },
       state: memo ?? null,
     }
     // Unsafe tools only for a person's own press (AGENTS.md, the unsafe rule).
@@ -160,9 +160,9 @@ export const script: EventType = {
     const r = parsed.data ?? {}
     try {
       for (const m of [...(r.messages ?? []), ...(r.message && !r.done ? [{ text: r.message }] : [])])
-        await engine.addEvents(m.item ?? item.id, [{ type: 'note', params: { text: m.text } }], 'script', author)
+        await engine.addItems(m.item ?? item.id, [{ type: 'note', params: { text: m.text } }], 'script', author)
       for (const a of r.assign ?? []) {
-        const to = new Set(a.to.map((x) => (x === event.id ? x : engine.resolveAssignee(x))))
+        const to = new Set(a.to.map((x) => (x === info.id ? x : engine.resolveAssignee(x))))
         const now = engine.assignees(a.item)
         for (const x of to) if (!now.includes(x)) await engine.assign(a.item, x, true, 'script')
         for (const x of now) if (!to.has(x)) await engine.assign(a.item, x, false, 'script')
@@ -176,7 +176,7 @@ export const script: EventType = {
   },
 }
 
-export const bot: EventType = {
+export const bot: ItemType = {
   type: 'bot',
   description:
     'A bot: a name, instructions, and how it runs. It sits in no item, and is open while it lasts (cancelling it deletes it). ' +
@@ -203,16 +203,16 @@ export const SEARCH_DOC =
   'It is kept on the one `search` item, which sits in no task; search_sections reads it, set_search_sections replaces it. Each section, in order:\n' +
   "- { kind: 'builtin', id, label? }: one of the finder's own: viewed (recently viewed), needsYou, withBots, waiting, closed (today).\n" +
   "- { kind: 'query', label, filter, limit? }: a filter, as egdb's find takes it ({ eq: { key, value } }, ne, lt/le/gt/ge, contains, " +
-  'contains_ignore_case, prefix, in: { key, values }, is_null, not_null, and: [], or: [], not), over every event\'s values (type, ' +
+  'contains_ignore_case, prefix, in: { key, values }, is_null, not_null, and: [], or: [], not), over every item\'s values (type, ' +
   'title, text, description, resolved, the rest of its params) and these made from its links: parent (the task it sits in), assignees ' +
-  '(who has it: eq matches any one), created_by, created_at. Rows are the events that match, the newest first.\n' +
+  '(who has it: eq matches any one), created_by, created_at. Rows are the items that match, the newest first.\n' +
   "- { kind: 'function', label, source }: JavaScript, run as a script's body is (context and tools in scope, no unsafe tools), with " +
   'context.text the filter typed so far; it returns rows: [{ id, type, left, right? }] (left and right in markdown; id is what Enter opens).\n' +
   'The label heads the section. What is typed filters every section at once; a function runs again as it changes.\n' +
   "Example: [{ kind: 'builtin', id: 'needsYou' }, { kind: 'query', label: 'Open scripts', filter: { and: [{ eq: { key: 'type', value: 'script' } }, " +
   "{ eq: { key: 'resolved', value: false } }] } }]"
 
-export const search: EventType = {
+export const search: ItemType = {
   type: 'search',
   description: SEARCH_DOC,
   params: { sections: z.array(z.record(z.unknown())).describe('The sections, in order: see the description.') },
@@ -222,13 +222,13 @@ export const search: EventType = {
   describe: () => 'Search page sections',
 }
 
-export const user: EventType = {
+export const user: ItemType = {
   type: 'user',
   description:
     'A person who uses the app: its id is their username, which they sign in with. It sits in no item, and is open while it lasts. ' +
     'Items are assigned to people as to bots.',
   params: {
-    username: z.string().regex(/^[a-z0-9][a-z0-9_.-]*$/, 'Lower-case letters, digits, dots, dashes and underscores.').describe('Their username: the id of this event.'),
+    username: z.string().regex(/^[a-z0-9][a-z0-9_.-]*$/, 'Lower-case letters, digits, dots, dashes and underscores.').describe('Their username: the id of this item.'),
     name: z.string().optional().describe('What they are called, if not their username.'),
   },
   data: '{ cancelled: true }, once removed',
@@ -244,7 +244,7 @@ export const WIDGET_DOC =
   'the app is (its fonts and colours as CSS variables: --ink, --muted, --panel, --bg, --line, --accent), so plain HTML (button, input, ' +
   'table, select) looks native.\n' +
   '- In its scripts: `onState(fn)` calls fn with the state now and whenever it changes (from anywhere); `setState(next)` or ' +
-  '`setState(current => next)` changes it (kept on the event: other items, bots and scripts read it as `widget_state`); `getState()`; ' +
+  '`setState(current => next)` changes it (kept on the item: other items, bots and scripts read it as `widget_state`); `getState()`; ' +
   'and helpers that answer HTML strings: `esc(text)`, `pill(text)`, `card(title, bodyHtml)`.\n' +
   '- Update the page in place in onState (set .textContent, .value, .checked) rather than rewriting innerHTML round an input, so a ' +
   'person typing keeps their place.\n' +
@@ -252,7 +252,7 @@ export const WIDGET_DOC =
   'Example: html: \'<button id="b">Add one</button> <span id="n"></span><script>onState(s => n.textContent = s.count); ' +
   'b.onclick = () => setState(s => ({ ...s, count: s.count + 1 }))</script>\', widget_state: { count: 0 }'
 
-export const widget: EventType = {
+export const widget: ItemType = {
   type: 'widget',
   description: WIDGET_DOC,
   params: {
@@ -266,8 +266,8 @@ export const widget: EventType = {
   describe: (p) => String(p.title ?? 'Widget'),
 }
 
-/** Retired for now: kept so the process events already stored still read. None can be added (Engine.prepare). */
-export const proc: EventType = {
+/** Retired for now: kept so the process items already stored still read. None can be added (Engine.prepare). */
+export const proc: ItemType = {
   type: 'process',
   description: 'Switched off for now: no process can be added.',
   params: { command: z.string(), cwd: z.string().optional(), description: z.string().optional() },
@@ -284,7 +284,7 @@ const at = (when: unknown) => {
   return Number.isNaN(ms) ? s : new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-export const slackMessage: EventType = {
+export const slackMessage: ItemType = {
   type: 'slack_message',
   description:
     'A Slack message, pulled into the task: from its link (or its channel and ts). The chat shows who said it and what, read from Slack as it ' +
@@ -296,7 +296,7 @@ export const slackMessage: EventType = {
   describe: (p) => (p.link ? `Slack message ${p.link}` : `Slack message ${p.ts} in ${p.channel}`),
 }
 
-export const slackChannel: EventType = {
+export const slackChannel: ItemType = {
   type: 'slack_channel',
   description: 'A Slack channel over a range of time, pulled into the task: its view shows the messages, with their threads.',
   params: slackChannelParams,
@@ -306,4 +306,4 @@ export const slackChannel: EventType = {
   describe: (p) => `Slack ${p.channel}, ${at(p.oldest)} to ${p.latest ? at(p.latest) : 'now'}`,
 }
 
-export const EVENT_TYPES: EventType[] = [task, note, approval, script, proc, widget, search, slackMessage, slackChannel, bot, user]
+export const ITEM_TYPES: ItemType[] = [task, note, approval, script, proc, widget, search, slackMessage, slackChannel, bot, user]

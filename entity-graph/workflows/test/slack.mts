@@ -88,11 +88,11 @@ await admin.clearSlackCache()
 assert.equal((await admin.integrations()).slackCache.entries, 0)
 
 // A channel over a range: by #name; its threads open in place.
-const [chan] = await engine.addEvents(task, [{ type: 'slack_channel', params: { channel: '#eng', oldest: '1700000000.000000', latest: '1700000300.000000' } }])
+const [chan] = await engine.addItems(task, [{ type: 'slack_channel', params: { channel: '#eng', oldest: '1700000000.000000', latest: '1700000300.000000' } }])
 const chView = await admin.slackView(chan)
 assert.deepEqual(chView.messages.map((m) => m.ts), ['1700000000.000100', '1700000100.000200', '1700000200.000500'], 'replies are left out')
 assert.deepEqual((await admin.slackView(chan, '1700000100.000200')).messages.map((m) => m.text), ['Thanks!', '*np*'])
-const [nowhere] = await engine.addEvents(task, [{ type: 'slack_channel', params: { channel: '#nowhere', oldest: '1700000000' } }])
+const [nowhere] = await engine.addItems(task, [{ type: 'slack_channel', params: { channel: '#nowhere', oldest: '1700000000' } }])
 await assert.rejects(admin.slackView(nowhere), /No channel #nowhere/)
 
 // The actions.
@@ -109,21 +109,21 @@ await assert.rejects(engine.callAction('slack_post', { channel: 'C9', text: 'x' 
 {
   await admin.clearSlackCache()
   const waiting = (await engine.create('Waiting on Sam'))!
-  const [w] = await engine.addEvents(waiting, [{ type: 'script', params: { description: 'Wait for Slack', owns: [waiting], cycle_minutes: 5, source: slackWait(link, 'alex') } }])
+  const [w] = await engine.addItems(waiting, [{ type: 'script', params: { description: 'Wait for Slack', owns: [waiting], cycle_minutes: 5, source: slackWait(link, 'alex') } }])
   await engine.assign(waiting, 'alex', false)
   clock += 60_000
   await engine.checkDue()
   await engine.idle()
-  assert.equal(engine.event(w)!.lastError, null)
-  assert.ok(!engine.event(w)!.resolved, 'nothing new yet')
-  assert.equal(engine.event(w)!.nextCheckAt, clock + 5 * 60_000, 'then every five minutes')
+  assert.equal(engine.info(w)!.lastError, null)
+  assert.ok(!engine.info(w)!.resolved, 'nothing new yet')
+  assert.equal(engine.info(w)!.nextCheckAt, clock + 5 * 60_000, 'then every five minutes')
   // Something new in the thread.
   eng.push({ ts: '1700000170.000600', user: 'USAM', text: 'Any news?', thread_ts: '1700000100.000200' })
   await admin.clearSlackCache()
   clock += 5 * 60_000
   await engine.checkDue()
   await engine.idle()
-  assert.ok(engine.event(w)!.resolved, String(engine.event(w)!.data?.error ?? ''))
+  assert.ok(engine.info(w)!.resolved, String(engine.info(w)!.data?.error ?? ''))
   assert.deepEqual(engine.get(waiting)!.assignees, ['alex'])
   assert.match(String(engine.children(waiting).filter((e) => e.type === 'note').at(-1)!.params.text), /New on Slack, in #eng:\n\n\*\*Sam\*\*: Any news\?/)
 }

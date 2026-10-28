@@ -1,4 +1,4 @@
-// Real claude -p runs, against the MCP server, with the event schema as
+// Real claude -p runs, against the MCP server, with the item schema as
 // structured output: a bot splits off a child item and assigns it to itself;
 // its next run (woken by hand here, rather than in 15 minutes) takes the child up
 // in the same session, so it knows what it was told for the parent. Not part of npm test: it costs a few runs.
@@ -28,7 +28,7 @@ const wait = async () => {
 await engine.send(
   parent,
   `assign:${bot}`,
-  'Remember the word "pelican", but do not write it anywhere. Then add a child item titled "Recall", whose first events are a ' +
+  'Remember the word "pelican", but do not write it anywhere. Then add a child item titled "Recall", whose first items are a ' +
     'note "Say the word you were asked to remember, then close this item.", and assign it to yourself. Keep the parent too.',
 )
 await wait()

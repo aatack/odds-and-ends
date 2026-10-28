@@ -1,12 +1,12 @@
 import { CircleCheck, CircleDashed, CircleX } from 'lucide-react'
-import type { ItemEvent } from '../../shared/types'
+import type { ItemInfo } from '../../shared/types'
 
 /**
  * A task as it shows where another task mentions it (a child, in its parent's
  * chat or blockers): its title, with a tick once resolved, a cross if it was
  * cancelled, and a pending ring while it is open.
  */
-export function TaskCard({ event: e }: { event: ItemEvent }) {
+export function TaskCard({ info: e }: { info: ItemInfo }) {
   const [Icon, label, tone] = !e.resolved
     ? [CircleDashed, 'Open', 'pending']
     : e.data?.how === 'cancelled'

@@ -2,7 +2,7 @@
 //
 // What Slack answers is cached for a while, in the backend's memory (never the
 // store): names for a day, channels for an hour, messages for a few minutes.
-// The slack_message and slack_channel events keep only where a message or
+// The slack_message and slack_channel items keep only where a message or
 // channel is; their cards and views read the rest through the cache, as they
 // are shown. To wait for a reply, a script checks with these actions.
 
@@ -456,7 +456,7 @@ export const slackActions: Action[] = [
   },
 ]
 
-// ---- the slack_message and slack_channel events ----
+// ---- the slack_message and slack_channel items ----
 
 export const slackMessageParams = {
   workspace,
@@ -473,15 +473,15 @@ export const slackChannelParams = {
   latest: z.string().optional().describe('Up to this time. Left out, up to now.'),
 }
 
-/** What a Slack event's view shows: through the cache, as the actions read it. */
-export async function slackView(engine: Engine, event: { type: string; params: Record<string, unknown> }, thread?: string): Promise<SlackView> {
-  const p = event.params
-  if (event.type === 'slack_message') {
+/** What a Slack item's view shows: through the cache, as the actions read it. */
+export async function slackView(engine: Engine, info: { type: string; params: Record<string, unknown> }, thread?: string): Promise<SlackView> {
+  const p = info.params
+  if (info.type === 'slack_message') {
     const { w, channel, channelName: name, message, thread: messages } = await messageAndThread(engine, p)
     if (thread) return { workspace: w.name, channel, channelName: name, messages: messages.filter((m) => m.ts !== thread) }
     return { workspace: w.name, channel, channelName: name, messages, focus: message.ts }
   }
-  if (event.type === 'slack_channel') {
+  if (info.type === 'slack_channel') {
     const w = slackWorkspace(engine, p.workspace)
     const channel = await channelId(engine, w, String(p.channel))
     const name = await channelName(engine, w, channel)
@@ -489,5 +489,5 @@ export async function slackView(engine: Engine, event: { type: string; params: R
     const raw = await historyOf(engine, w, channel, { oldest: toTs(String(p.oldest)), latest: p.latest ? toTs(String(p.latest)) : undefined, limit: 1000 })
     return { workspace: w.name, channel, channelName: name, messages: await render(engine, w, channel, raw) }
   }
-  throw new Error(`A ${event.type} event has no Slack messages.`)
+  throw new Error(`A ${info.type} item has no Slack messages.`)
 }

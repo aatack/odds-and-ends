@@ -1,5 +1,5 @@
 // The search page's sections (the finder: the Tasks view, and every picker), as configured: one list for the whole
-// app, kept on the `search` item (eventTypes.ts), which people change on its page and bots with set_search_sections.
+// app, kept on the `search` item (itemTypes.ts), which people change on its page and bots with set_search_sections.
 
 /** egdb's filter (egdb-client's `Filter`), as a query section runs it over the app's events. */
 export type Filter =
@@ -23,7 +23,7 @@ export type Filter =
 export const BUILTIN_SECTIONS = ['viewed', 'needsYou', 'withBots', 'waiting', 'closed'] as const
 export type BuiltinSection = (typeof BUILTIN_SECTIONS)[number]
 
-/** One section: built in; a query (a filter over every event); or a function (JavaScript that answers rows). */
+/** One section: built in; a query (a filter over every item); or a function (JavaScript that answers rows). */
 export type SearchSection =
   | { kind: 'builtin'; id: BuiltinSection; label?: string }
   | { kind: 'query'; label: string; filter: Filter; limit?: number }
@@ -40,7 +40,7 @@ export interface SearchRow {
 /** The sections when nothing is configured. */
 export const DEFAULT_SECTIONS: SearchSection[] = BUILTIN_SECTIONS.map((id) => ({ kind: 'builtin', id }))
 
-/** Whether a value-set (an event's values, and the keys made from its links) passes a filter. */
+/** Whether a value-set (an item's values, and the keys made from its links) passes a filter. */
 export function matches(values: Record<string, unknown>, f: Filter): boolean {
   const get = (key: string) => values[key]
   const cmp = (a: unknown, b: unknown) => (typeof a === 'number' && typeof b === 'number' ? a - b : String(a ?? '').localeCompare(String(b ?? '')))

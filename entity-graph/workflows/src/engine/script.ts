@@ -1,4 +1,4 @@
-// After events' scripts run here: JavaScript in QuickJS, so a script a bot wrote
+// After items' scripts run here: JavaScript in QuickJS, so a script a bot wrote
 // can reach nothing but the actions it is handed, and those through the same
 // gate as any other call.
 

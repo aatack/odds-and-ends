@@ -1,16 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { Catalog, Item, ItemDetail, ItemEvent, Overview } from '../../shared/types'
+import type { Catalog, Item, ItemDetail, ItemInfo, Overview } from '../../shared/types'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ChevronLeft, Menu, MoreHorizontal } from 'lucide-react'
-import { eventActions, type EventAction } from './eventActions'
+import { itemActions, type ItemAction } from './itemActions'
 import { Dropdown, DropdownItem } from './components/ui/Dropdown'
 import { TypesPage } from './TypesPage'
 import { IconButton } from './components/ui/IconButton'
 import { appearanceAtom, applyAppearance, MODES, SERIFS, THEMES } from './appearance'
 import { Chat } from './Chat'
 import { DebugView } from './DebugView'
-import { EventMenu } from './EventMenu'
-import { EventView } from './EventView'
+import { ItemMenu } from './ItemMenu'
+import { ItemInfoView } from './ItemInfoView'
 import { ItemPicker } from './ItemPicker'
 import { ItemsList } from './ItemsList'
 import { SearchSectionsContext } from './sections'
@@ -20,7 +20,7 @@ import { Composer } from './Composer'
 import { ItemRefContext } from './components/ui/Markdown'
 import { ItemRef } from './ItemRef'
 import { FOCUS, Pill } from './sizes'
-import { EventIcon } from './icons'
+import { ItemInfoIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
 import { defaultActions } from './defaultActions'
@@ -165,7 +165,7 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
           </main>
           <AppMenu mobile={mobile} onSignOut={onSignOut} onCloseSource={onCloseSource} />
         </div>
-        <EventMenu actOn={items.actOn} skip={items.skip} custom={items.customActions} tasks={items.overview.items} recent={items.recent} />
+        <ItemMenu actOn={items.actOn} skip={items.skip} custom={items.customActions} tasks={items.overview.items} recent={items.recent} />
       </ItemRefContext.Provider>
       </SearchSectionsContext.Provider>
     </ItemsContext.Provider>
@@ -274,12 +274,12 @@ function AppMenu({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onSign
 
 /**
  * The content pane: the top view on the stack. Its first line is always the
- * same: Back, the event as text, and what can be done to it, on the right.
- * Below is the view itself, which depends on the event's type.
+ * same: Back, the item as text, and what can be done to it, on the right.
+ * Below is the view itself, which depends on the item's type.
  */
 function ItemsMain({ mobile }: { mobile: boolean }) {
   const w = useItems()
-  const openEvent = (id: string) => w.open({ kind: 'event', id })
+  const openItem = (id: string) => w.open({ kind: 'event', id })
   // What the items view opens takes its place, so Back goes to where you were before it.
   const openFromItems = (id: string) => w.open({ kind: 'event', id }, { replace: w.view?.kind === 'items' })
   const d = w.detail
@@ -297,7 +297,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
         <ViewHeader canGoBack onBack={w.back} title="Bots" />
         {w.error && <div className="error">{w.error}</div>}
         <div className="view-body">
-          <BotsPage bots={w.overview.bots} act={w.act} onOpen={openEvent} mobile={mobile} />
+          <BotsPage bots={w.overview.bots} act={w.act} onOpen={openItem} mobile={mobile} />
         </div>
       </div>
     )
@@ -355,15 +355,15 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
     return (
       <div className="view">
         <ViewHeader canGoBack={w.views.length > 0} onBack={w.back} />
-        <div className="empty">That event is not there any more.</div>
+        <div className="empty">That item is not there any more.</div>
       </div>
     )
-  const e = d.event
+  const e = d.info
   const debug = w.view.kind === 'debug'
   const actions = debug ? null : (
     <>
       {e.type === 'task' && d.item && !d.item.item.closed && <AssigneePill item={d.item.item} overview={w.overview} act={w.actOn(e.id)} />}
-      <HeaderActions actions={eventActions(e, { act: w.actOn(e.id), skip: w.skip, custom: w.customActions })} mobile={mobile} />
+      <HeaderActions actions={itemActions(e, { act: w.actOn(e.id), skip: w.skip, custom: w.customActions })} mobile={mobile} />
     </>
   )
   return (
@@ -372,7 +372,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
         canGoBack={w.views.length > 0}
         onBack={w.back}
         title={`${debug ? 'Debug: ' : ''}${e.summary}`}
-        event={e}
+        info={e}
         actions={actions}
         onRename={e.type === 'task' && !debug ? (title) => void w.act(() => api().rename(e.id, title)) : undefined}
       />
@@ -383,12 +383,12 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
         ) : FOCUS[e.type] === 'chat' && e.type === 'bot' && d.item ? (
           <div className="bot-page">
             <BotView key={e.id} bot={w.overview.bots.find((b) => b.id === e.id) ?? null} act={w.act} mobile={mobile} />
-            <ItemView key={`${e.id}:chat`} detail={d.item} catalog={w.catalog} act={w.act} onOpen={openEvent} mobile={mobile} />
+            <ItemView key={`${e.id}:chat`} detail={d.item} catalog={w.catalog} act={w.act} onOpen={openItem} mobile={mobile} />
           </div>
         ) : FOCUS[e.type] === 'chat' && d.item ? (
-          <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openEvent} mobile={mobile} />
+          <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openItem} mobile={mobile} />
         ) : (
-          <EventView detail={d} catalog={w.catalog} act={w.act} onOpen={openEvent} />
+          <ItemInfoView detail={d} catalog={w.catalog} act={w.act} onOpen={openItem} />
         )}
       </div>
     </div>
@@ -396,10 +396,10 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
 }
 
 /**
- * An event's actions in its header: the important ones as icon buttons, the rest in a menu beside them. On a phone,
+ * An item's actions in its header: the important ones as icon buttons, the rest in a menu beside them. On a phone,
  * all of them in the menu, leaving the title the width.
  */
-function HeaderActions({ actions, mobile = false }: { actions: EventAction[]; mobile?: boolean }) {
+function HeaderActions({ actions, mobile = false }: { actions: ItemAction[]; mobile?: boolean }) {
   const rest = actions.filter((a) => mobile || !a.important)
   return (
     <>
@@ -442,26 +442,26 @@ function HeaderActions({ actions, mobile = false }: { actions: EventAction[]; mo
   )
 }
 
-/** Back (to the items view, at the bottom of every stack; its place kept on the items view itself), the event as text, and its actions on the right. */
+/** Back (to the items view, at the bottom of every stack; its place kept on the items view itself), the item as text, and its actions on the right. */
 function ViewHeader(props: {
   canGoBack: boolean
   onBack: () => void
   title?: string
-  event?: ItemEvent
+  info?: ItemInfo
   actions?: ReactNode
   /** Given, the title can be edited: Rename in its menu, then Enter (or leaving it) saves and Escape doesn't. */
   onRename?: (title: string) => void
 }) {
   const [editing, setEditing] = useState<string | null>(null)
-  // Clicking the title opens the event's menu (Open, Debug, Rename, its actions), as a right-click does.
+  // Clicking the title opens the item's menu (Open, Debug, Rename, its actions), as a right-click does.
   const setMenu = useSetAtom(menuAtom)
   const [rename, setRename] = useAtom(renameAtom)
-  const { event, onRename, title } = props
+  const { info, onRename, title } = props
   useEffect(() => {
-    if (!rename || rename !== event?.id) return
+    if (!rename || rename !== info?.id) return
     setRename(null)
     if (onRename) setEditing(title ?? '')
-  }, [rename, event, onRename, title, setRename])
+  }, [rename, info, onRename, title, setRename])
   const save = () => {
     if (editing !== null && editing.trim() && editing.trim() !== props.title) props.onRename?.(editing.trim())
     setEditing(null)
@@ -479,7 +479,7 @@ function ViewHeader(props: {
       >
         <ChevronLeft className="icon" />
       </button>
-      {props.event && props.event.type !== 'task' && <EventIcon event={props.event} />}
+      {props.info && props.info.type !== 'task' && <ItemInfoIcon info={props.info} />}
       {editing !== null ? (
         <input
           className="view-title view-title-input"
@@ -503,13 +503,13 @@ function ViewHeader(props: {
         />
       ) : (
         <h1
-          className={`view-title ${event ? 'clickable' : ''}`}
-          onClick={event && ((e) => setMenu({ x: e.clientX, y: e.clientY, id: event.id }))}
+          className={`view-title ${info ? 'clickable' : ''}`}
+          onClick={info && ((e) => setMenu({ x: e.clientX, y: e.clientY, id: info.id }))}
           onContextMenu={
-            event &&
+            info &&
             ((e) => {
               e.preventDefault()
-              setMenu({ x: e.clientX, y: e.clientY, id: event.id })
+              setMenu({ x: e.clientX, y: e.clientY, id: info.id })
             })
           }
         >
@@ -532,7 +532,7 @@ function likeliest(detail: ItemDetail, overview: Overview): Someone[] {
   if (overview.bots.some((b) => b.id === detail.item.id)) return []
   const here = detail.item.assignees
   const all = everyone(overview)
-  const lastBot = detail.events.map((e) => e.createdBy).reverse().find((by) => by.startsWith('bot:'))?.slice(4)
+  const lastBot = detail.children.map((e) => e.createdBy).reverse().find((by) => by.startsWith('bot:'))?.slice(4)
   const ids = [
     ...new Set([...(lastBot ? [lastBot] : []), ...here, ...overview.recentAssignees, ...overview.bots.map((b) => b.id), ...overview.users.map((u) => u.id)]),
   ]
@@ -576,8 +576,8 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
   useEffect(() => {
     w.markViewed(item.id)
   }, [item.id, item.withYou])
-  // New events arrive at the bottom, as in any chat.
-  const count = detail.events.length
+  // New items arrive at the bottom, as in any chat.
+  const count = detail.children.length
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight })
   }, [count])

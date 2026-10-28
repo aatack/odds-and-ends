@@ -26,7 +26,7 @@
 import type { Op, Value } from 'egdb-client'
 import type { LogEntry, LogQuery } from '../shared/types'
 
-export interface EventRow {
+export interface ItemRow {
   id: string
   parent_id: string | null
   seq: number
@@ -96,12 +96,12 @@ export interface Sink {
   flush(): Promise<void>
   /** An entity as egdb holds it. */
   inspect(id: string): Promise<Inspection>
-  /** The edit log: every value and link event the query keeps, the newest first. */
+  /** The edit log: every value and link item the query keeps, the newest first. */
   log(query: LogQuery): Promise<LogEntry[]>
 }
 
 export const ROOT = '@root'
-/** The values an event keeps beside its params. */
+/** The values an item keeps beside its params. */
 // (`resolved_at` and `resolved_by` are from a build that kept them: they are read, and never written.)
 export const STATE_KEYS = new Set(['type', 'resolved', 'resolved_at', 'resolved_by', 'cancelled', 'data', 'state', 'reactions'])
 
@@ -124,9 +124,9 @@ interface Held {
 }
 
 export class Store {
-  readonly events = new Map<string, EventRow>()
-  /** Each item's events by seq; the key null holds those that sit in none. */
-  private kids = new Map<string | null, EventRow[]>()
+  readonly items = new Map<string, ItemRow>()
+  /** Each item's items by seq; the key null holds those that sit in none. */
+  private kids = new Map<string | null, ItemRow[]>()
   private byType = new Map<string, Set<string>>()
   readonly settings = new Map<string, unknown>()
   readonly customActions = new Map<string, CustomActionRow>()
@@ -134,11 +134,11 @@ export class Store {
   private assigneesOf = new Map<string, Map<string, Assigned>>()
   private itemsOf = new Map<string, Set<string>>()
   /**
-   * Events a task also contains, besides those that sit in it: `contains` links added later (`link`), for
-   * traceability. Each event sits in one task (its first `contains` link, its parent); these are the rest.
+   * Items a task also contains, besides those that sit in it: `contains` links added later (`link`), for
+   * traceability. Each item sits in one task (its first `contains` link, its parent); these are the rest.
    */
   private linkedIn = new Map<string, { id: string; at: number; by: string }[]>()
-  /** The other way: each event's parents by a later link. */
+  /** The other way: each item's parents by a later link. */
   private linkedFrom = new Map<string, string[]>()
   /** Writes held back while a `batch` runs, so that they land together. */
   private held: Held[] | null = null
@@ -183,10 +183,10 @@ export class Store {
     return ++this.moments
   }
 
-  // ---- events ----
+  // ---- items ----
 
-  private index(row: EventRow): void {
-    this.events.set(row.id, row)
+  private index(row: ItemRow): void {
+    this.items.set(row.id, row)
     const kids = this.kids.get(row.parent_id) ?? []
     kids.push(row)
     this.kids.set(row.parent_id, kids)
@@ -195,23 +195,23 @@ export class Store {
     this.byType.set(row.type, typed)
   }
 
-  /** Adds an event: its type and params as values, and the `contains` link to it, as its maker wrote them. */
-  insertEvent(row: EventRow): void {
+  /** Adds an item: its type and params as values, and the `contains` link to it, as its maker wrote them. */
+  insertItem(row: ItemRow): void {
     row.added_n = this.moment()
     if (row.resolved) row.resolved_n = row.added_n
     this.index(row)
     const ops: Op[] = [set(row.id, 'type', row.type)]
     for (const [k, value] of Object.entries(row.params)) if (value !== undefined && value !== null) ops.push(set(row.id, k, value))
-    // A blocker says it is open; a plain event says nothing, being resolved as it is made.
+    // A blocker says it is open; a plain item says nothing, being resolved as it is made.
     if (!row.resolved) ops.push(set(row.id, 'resolved', false))
     ops.push({ link: { source: row.parent_id ?? ROOT, destination: row.id, link_type: 'contains', sort: { explicit: row.seq } } })
     this.out(ops, row.created_by, row.created_at)
   }
 
-  /** Changes an event's params: the values that changed are written (a param gone is cleared), as `by` at `at`. */
+  /** Changes an item's params: the values that changed are written (a param gone is cleared), as `by` at `at`. */
   setParams(id: string, params: Record<string, unknown>, by: string, at: number): void {
-    const row = this.events.get(id)
-    if (!row) throw new Error(`No event ${id}.`)
+    const row = this.items.get(id)
+    if (!row) throw new Error(`No item ${id}.`)
     const keys = new Set([...Object.keys(row.params), ...Object.keys(params)])
     const ops = [...keys]
       .filter((k) => JSON.stringify(row.params[k] ?? null) !== JSON.stringify(params[k] ?? null))
@@ -221,17 +221,17 @@ export class Store {
   }
 
   /** Resolves a blocker: `resolved` turns true (egdb keeps when, and by whom), with whether it was cancelled, and what it resolved with. */
-  resolveEvent(id: string, data: Record<string, unknown>, by: string, at: number, cancelled: boolean): void {
-    const row = this.events.get(id)
-    if (!row) throw new Error(`No event ${id}.`)
+  resolveItem(id: string, data: Record<string, unknown>, by: string, at: number, cancelled: boolean): void {
+    const row = this.items.get(id)
+    if (!row) throw new Error(`No item ${id}.`)
     Object.assign(row, { resolved: true, resolved_at: at, resolved_by: by, cancelled, data, next_check_at: null, resolved_n: this.moment() })
     this.out([set(id, 'resolved', true), ...(cancelled ? [set(id, 'cancelled', true)] : []), set(id, 'data', data)], by, at)
   }
 
   /** Opens a resolved event again: `resolved` turns false (egdb keeps that it was), and what it resolved with is cleared. */
-  reopenEvent(id: string, by: string, at: number): void {
-    const row = this.events.get(id)
-    if (!row) throw new Error(`No event ${id}.`)
+  reopenItem(id: string, by: string, at: number): void {
+    const row = this.items.get(id)
+    if (!row) throw new Error(`No item ${id}.`)
     const wasCancelled = row.cancelled
     Object.assign(row, { resolved: false, resolved_at: null, resolved_by: null, cancelled: false, data: null, resolved_n: 0 })
     // An older build's `resolved_at` would read as resolved still: it is cleared too.
@@ -240,48 +240,48 @@ export class Store {
 
   /** Keeps what a script hands on to its next run. */
   setState(id: string, state: unknown, at: number): void {
-    const row = this.events.get(id)
-    if (!row) throw new Error(`No event ${id}.`)
+    const row = this.items.get(id)
+    if (!row) throw new Error(`No item ${id}.`)
     row.memo = state ?? null
     this.out([set(id, 'state', state ?? null)], 'system', at)
   }
 
-  /** Who reacted to an event, as `by` changed it at `at`. */
+  /** Who reacted to an item, as `by` changed it at `at`. */
   setReactions(id: string, reactions: string[], by: string, at: number): void {
-    const row = this.events.get(id)
-    if (!row) throw new Error(`No event ${id}.`)
+    const row = this.items.get(id)
+    if (!row) throw new Error(`No item ${id}.`)
     row.reactions = reactions
     this.out([set(id, 'reactions', reactions)], by, at)
   }
 
-  /** Adds a `contains` link from a task to an event that sits elsewhere: the task shows it, as well. */
-  linkEvent(parentId: string, id: string, by: string, at: number): void {
-    const row = this.events.get(id)
-    if (!row) throw new Error(`No event ${id}.`)
+  /** Adds a `contains` link from a task to an item that sits elsewhere: the task shows it, as well. */
+  linkItem(parentId: string, id: string, by: string, at: number): void {
+    const row = this.items.get(id)
+    if (!row) throw new Error(`No item ${id}.`)
     if (row.parent_id === parentId || id === parentId || this.linked(parentId).some((l) => l.id === id)) return
     this.linkedIn.set(parentId, [...this.linked(parentId), { id, at, by }])
     this.linkedFrom.set(id, [...(this.linkedFrom.get(id) ?? []), parentId])
     this.out([{ link: { source: parentId, destination: id, link_type: 'contains', sort: { explicit: at } } }], by, at)
   }
 
-  /** Every item that contains an event (its `contains` links in): where it sits first, then where it was linked. */
+  /** Every item that contains an item (its `contains` links in): where it sits first, then where it was linked. */
   containers(id: string): string[] {
-    const row = this.events.get(id)
+    const row = this.items.get(id)
     return [...(row?.parent_id ? [row.parent_id] : []), ...(this.linkedFrom.get(id) ?? [])]
   }
 
-  /** The events a task contains by a later link, the first linked first. */
+  /** The items a task contains by a later link, the first linked first. */
   linked(parentId: string): { id: string; at: number; by: string }[] {
     return this.linkedIn.get(parentId) ?? []
   }
 
-  /** The events in an item (or, for null, those in none), by seq. */
-  children(parentId: string | null): EventRow[] {
+  /** The items in an item (or, for null, those in none), by seq. */
+  children(parentId: string | null): ItemRow[] {
     return this.kids.get(parentId) ?? []
   }
 
-  ofType(type: string): EventRow[] {
-    return [...(this.byType.get(type) ?? [])].map((id) => this.events.get(id)!)
+  ofType(type: string): ItemRow[] {
+    return [...(this.byType.get(type) ?? [])].map((id) => this.items.get(id)!)
   }
 
   nextSeq(parentId: string | null): number {
@@ -357,7 +357,7 @@ export class Store {
   /** An item as egdb holds it; with no egdb (the tests), as memory has it. */
   async inspect(id: string): Promise<Inspection> {
     if (this.sink) return this.sink.inspect(id)
-    const row = this.events.get(id)
+    const row = this.items.get(id)
     if (!row) throw new Error(`No item ${id}.`)
     const values: Record<string, unknown> = { type: row.type, ...row.params }
     // A blocker is one that was not resolved as it was added.
@@ -378,21 +378,21 @@ export class Store {
   // ---- loading ----
 
   /** Puts back what was read from egdb, without writing it again. */
-  restore(rows: {
-    events: EventRow[]
+  restore(saved: {
+    items: ItemRow[]
     settings: [string, unknown][]
     customActions: CustomActionRow[]
     assigned?: { item: string; to: string; at: number; by: string }[]
     linked?: { parent: string; id: string; at: number; by: string }[]
   }): void {
-    for (const l of rows.linked ?? []) {
+    for (const l of saved.linked ?? []) {
       this.linkedIn.set(l.parent, [...this.linked(l.parent), { id: l.id, at: l.at, by: l.by }])
       this.linkedFrom.set(l.id, [...(this.linkedFrom.get(l.id) ?? []), l.parent])
     }
-    for (const a of rows.assigned ?? []) this.link(a.item, a.to, { at: a.at, by: a.by, n: 0 })
-    for (const r of [...rows.events].sort((a, b) => a.seq - b.seq)) this.index(r)
-    for (const [k, value] of rows.settings) this.settings.set(k, value)
-    for (const r of rows.customActions) this.customActions.set(r.id, r)
+    for (const a of saved.assigned ?? []) this.link(a.item, a.to, { at: a.at, by: a.by, n: 0 })
+    for (const r of [...saved.items].sort((a, b) => a.seq - b.seq)) this.index(r)
+    for (const [k, value] of saved.settings) this.settings.set(k, value)
+    for (const r of saved.customActions) this.customActions.set(r.id, r)
   }
 }
 
@@ -404,18 +404,18 @@ const str = (x: unknown): string | null => (typeof x === 'string' ? x : null)
 const obj = <T>(x: unknown): T | null => (x && typeof x === 'object' && !Array.isArray(x) ? (x as T) : null)
 
 /**
- * An event from its values and the `contains` link to it (where it sits, its
- * place, and who made it when). A plain event (`blocking` false) is resolved as
+ * An item from its values and the `contains` link to it (where it sits, its
+ * place, and who made it when). A plain item (`blocking` false) is resolved as
  * it was made; a blocker is resolved once its `resolved` is true.
  */
-export function eventFromValues(
+export function itemFromValues(
   id: string,
   x: Values,
   made: { parent: string | null; seq: number; at: number; by: string },
   blocking: boolean,
-  /** The event that set `resolved` true: when it resolved, and by whom. */
+  /** The item that set `resolved` true: when it resolved, and by whom. */
   resolvedBy?: { at: number; by: string },
-): EventRow {
+): ItemRow {
   const params = Object.fromEntries(Object.entries(x).filter(([k]) => !STATE_KEYS.has(k)))
   const resolved = x.resolved === true || num(x.resolved_at) !== null
   return {

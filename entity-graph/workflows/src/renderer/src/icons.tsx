@@ -1,10 +1,10 @@
 // Lucide (lucide.dev, ISC): its robot is what a bot looks like here, and the
 // rest come from it too so that they match.
 import { AppWindow, Bot, Search, Check, GitPullRequest, Hash, Layers, Link, MessageCircle, MessageSquare, Settings, ShieldCheck, SquareCode, SquareTerminal, User, type LucideIcon } from 'lucide-react'
-import type { EventKind, Item, ItemEvent } from '../../shared/types'
+import type { ItemKind, Item, ItemInfo } from '../../shared/types'
 
-/** One icon an event type. */
-export const TYPE_ICON: Record<EventKind, LucideIcon> = {
+/** One icon an item type. */
+export const TYPE_ICON: Record<ItemKind, LucideIcon> = {
   task: Layers,
   note: MessageSquare,
   approval: ShieldCheck,
@@ -18,7 +18,7 @@ export const TYPE_ICON: Record<EventKind, LucideIcon> = {
   user: User,
 }
 
-export const TYPE_NAME: Record<EventKind, string> = {
+export const TYPE_NAME: Record<ItemKind, string> = {
   task: 'Task',
   note: 'Note',
   approval: 'Approval',
@@ -33,7 +33,7 @@ export const TYPE_NAME: Record<EventKind, string> = {
 }
 
 /** The blocker an open item that is not the human's turn is shown as waiting on: its first; null when only someone has it. */
-export const waitingOn = (item: Item): ItemEvent | null => item.blockers[0] ?? null
+export const waitingOn = (item: Item): ItemInfo | null => item.blockers[0] ?? null
 
 /** Whether a bot has the item: anyone who has it who is not one of `people`. */
 export const withBot = (item: Item, people: { id: string }[]): boolean => item.assignees.some((a) => !people.some((p) => p.id === a))
@@ -48,8 +48,8 @@ export function ItemIcon({ item }: { item: Item }) {
   return <Icon className="icon" aria-label={TYPE_NAME[waiting.type]} />
 }
 
-/** An event type's icon, named for whoever hovers it. */
-export function TypeIcon({ type }: { type: EventKind }) {
+/** An item type's icon, named for whoever hovers it. */
+export function TypeIcon({ type }: { type: ItemKind }) {
   const Icon = TYPE_ICON[type]
   return (
     <span className="type-icon" title={TYPE_NAME[type]}>
@@ -70,17 +70,17 @@ function whoIcon(by: string): [LucideIcon, string] {
 }
 
 /**
- * The one icon for an event, wherever it is drawn: a note is
+ * The one icon for an item, wherever it is drawn: a note is
  * whoever said (or ran) it; anything else is its type. The chat's pictures, the
  * blocker rows and the view header all use this.
  */
-export function eventIcon(e: { type: EventKind; createdBy: string }): [LucideIcon, string] {
+export function itemInfoIcon(e: { type: ItemKind; createdBy: string }): [LucideIcon, string] {
   return e.type === 'note' ? whoIcon(e.createdBy) : [TYPE_ICON[e.type], TYPE_NAME[e.type]]
 }
 
-/** An event's icon, inline. */
-export function EventIcon({ event }: { event: { type: EventKind; createdBy: string } }) {
-  const [Icon, name] = eventIcon(event)
+/** An item's icon, inline. */
+export function ItemInfoIcon({ info }: { info: { type: ItemKind; createdBy: string } }) {
+  const [Icon, name] = itemInfoIcon(info)
   return (
     <span className="type-icon" title={name}>
       <Icon className="icon" />

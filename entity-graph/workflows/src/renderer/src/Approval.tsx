@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import type { Catalog, ItemEvent } from '../../shared/types'
+import type { Catalog, ItemInfo } from '../../shared/types'
 import { Form, withHints } from './forms'
 import { api } from './useWorkflows'
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 /** An open approval: the unsafe action's inputs, to change, and the button that runs it. */
-export function Approval({ b, catalog, act }: { b: ItemEvent; catalog: Catalog; act: Act }) {
+export function Approval({ b, catalog, act }: { b: ItemInfo; catalog: Catalog; act: Act }) {
   const name = String(b.params.action)
   const action = catalog.actions.find((a) => a.name === name)
   const [inputs, setInputs] = useState<Record<string, unknown>>((b.params.inputs as Record<string, unknown>) ?? {})

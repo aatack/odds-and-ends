@@ -3,9 +3,9 @@
 
 import { z } from 'zod'
 import { runScript } from './script'
-import { SEARCH_DOC } from './eventTypes'
+import { SEARCH_DOC } from './itemTypes'
 import type { SearchSection } from '../shared/search'
-import type { EventSpec } from '../shared/types'
+import type { ItemSpec } from '../shared/types'
 import type { Action } from './integrations'
 import { PARADIGM } from './paradigm'
 import { objectSchema } from './schema'
@@ -13,25 +13,56 @@ import { objectSchema } from './schema'
 const itemId = z.string().describe('The id of the item.')
 const spec = z
   .object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional() })
-  .describe('An event: see event_types. ref names it, so an after in the same list can wait for it.')
+  .describe('An item: see item_types. ref names it, so an after in the same list can wait for it.')
 
+
+/**
+ * The tools' names from when items were called items: still answered, as the new ones, so bots in sessions that
+ * began before know them, but not listed (mcp.ts). Their old parameters are taken too (LEGACY_PARAMS).
+ */
+export const LEGACY_NAMES: Record<string, string> = {
+  event_types: 'item_types',
+  add_events: 'add_items',
+  link_events: 'link_items',
+  cancel_event: 'cancel_item',
+}
+
+/** Each tool's parameters by their old names (from when items were called items), and what they are called now. */
+export const LEGACY_PARAMS: Record<string, Record<string, string>> = {
+  add_items: { events: 'items' },
+  link_items: { event_ids: 'item_ids' },
+  cancel_item: { event_id: 'item_id' },
+  run_custom_action: { event_id: 'item_id' },
+}
+
+/** A call by an old name, or with old parameters, as it is called now. */
+export function current(name: string, args: Record<string, unknown>): { name: string; args: Record<string, unknown> } {
+  const now = LEGACY_NAMES[name] ?? name
+  const out = { ...args }
+  for (const [old, to] of Object.entries(LEGACY_PARAMS[now] ?? {}))
+    if (old in out) {
+      if (!(to in out)) out[to] = out[old]
+      delete out[old]
+    }
+  return { name: now, args: out }
+}
 
 export const itemActions: Action[] = [
   {
     name: 'paradigm',
     unsafe: false,
-    description: 'How items, events and blockers work, in a few lines: read it first.',
+    description: 'How tasks, items and blockers work, in a few lines: read it first.',
     input: {},
     run: async () => PARADIGM,
   },
   {
-    name: 'event_types',
+    name: 'item_types',
     unsafe: false,
     description:
-      'Every kind of event: what it is for, whether it blocks, the params it takes (as JSON Schema), and what it resolves with.',
+      'Every kind of item: what it is for, whether it blocks, the params it takes (as JSON Schema), and what it resolves with.',
     input: {},
     run: async (_a, { engine }) =>
-      engine.eventTypes.map((t) => ({
+      engine.itemTypes.map((t) => ({
         type: t.type,
         description: t.description,
         blocking: t.blocking,
@@ -45,7 +76,7 @@ export const itemActions: Action[] = [
     unsafe: false,
     description:
       'The unsafe actions: those that change things outside this app, which only a human may run. ' +
-      'A bot can not call them; it asks for one by adding an approval event that names it and fills in its inputs.',
+      'A bot can not call them; it asks for one by adding an approval item that names it and fills in its inputs.',
     input: {},
     run: async (_a, { engine }) =>
       engine.actions.filter((a) => a.unsafe).map((a) => ({ name: a.name, description: a.description, inputs: objectSchema(a.input) })),
@@ -73,12 +104,12 @@ export const itemActions: Action[] = [
     unsafe: false,
     description:
       "The open items waiting on one thing: a person (by username: their turn, so assigned to them and blocked by nothing but " +
-      'approvals), `bot` (assigned to any bot), a bot by its name, or any blocking event type (`script`, `approval`, `item` for ' +
-      "a child item: see event_types). Each with the blockers that match, longest-waiting first.",
-    input: { on: z.string().describe("A person's username, bot, a bot's name, or a blocking event type.") },
+      'approvals), `bot` (assigned to any bot), a bot by its name, or any blocking item type (`script`, `approval`, `item` for ' +
+      "a child item: see item_types). Each with the blockers that match, longest-waiting first.",
+    input: { on: z.string().describe("A person's username, bot, a bot's name, or a blocking item type.") },
     run: async (a, { engine }) => {
       const on = String(a.on)
-      const types: string[] = engine.eventTypes.filter((t) => t.blocking).map((t) => t.type)
+      const types: string[] = engine.itemTypes.filter((t) => t.blocking).map((t) => t.type)
       const person = engine.user(on.toLowerCase())
       const agent = on === 'bot' || person ? null : engine.findAgent(on)
       if (!person && on !== 'bot' && !agent && !types.includes(on))
@@ -155,9 +186,9 @@ export const itemActions: Action[] = [
     name: 'custom_actions',
     unsafe: false,
     description:
-      "The human's own actions, defined per event type on the Types page: each a script over the safe actions. With type, only " +
-      'those for that event type. Run one with run_custom_action.',
-    input: { type: z.string().optional().describe('An event type, e.g. item.') },
+      "The human's own actions, defined per item type on the Types page: each a script over the safe actions. With type, only " +
+      'those for that item type. Run one with run_custom_action.',
+    input: { type: z.string().optional().describe('An item type, e.g. item.') },
     run: async (a, { engine }) =>
       engine.customActions
         .list()
@@ -167,15 +198,15 @@ export const itemActions: Action[] = [
   {
     name: 'run_custom_action',
     unsafe: false,
-    description: 'Run one of the custom actions on an event of its type: what it says is added in the item, as an action event.',
-    input: { action_id: z.string().describe('From custom_actions.'), event_id: z.string().describe('The event (an item, or one in it) to run it on.') },
-    run: async (a, ctx) => ctx.engine.customActions.run(String(a.action_id), String(a.event_id), ctx.actor, ctx.runId),
+    description: 'Run one of the custom actions on an item of its type: what it says is added in the item, as an action item.',
+    input: { action_id: z.string().describe('From custom_actions.'), item_id: z.string().describe('The item (a task, or one in it) to run it on.') },
+    run: async (a, ctx) => ctx.engine.customActions.run(String(a.action_id), String(a.item_id), ctx.actor, ctx.runId),
   },
   {
     name: 'get_item',
     unsafe: false,
     description:
-      'An item in full: its children (every event in it, with its data and timeline, child items included), its bot runs, and its ' +
+      'An item in full: its children (every item in it, with its data and timeline, child items included), its bot runs, and its ' +
       'trace: every thing that happened in it, when, and by whom.',
     input: { item_id: itemId },
     run: async (a, { engine }) => {
@@ -190,7 +221,7 @@ export const itemActions: Action[] = [
     description:
       'Run JavaScript now, once, in the app: `source` is the body of an async function with `context` (what you pass, plus now) and `tools` ' +
       '(every tool here, as tools.<name>(args); never the unsafe ones for an agent) in scope; it may await and return. Answers { result, logs }. ' +
-      'For code that should run again, or own a task, add a script event instead (see event_types).',
+      'For code that should run again, or own a task, add a script item instead (see item_types).',
     input: { source: z.string(), context: z.record(z.unknown()).optional() },
     run: async (a, ctx) => {
       const context = { ...((a.context as Record<string, unknown>) ?? {}), now: new Date(ctx.engine.now()).toISOString(), trigger: ctx.author === 'human' ? 'press' : 'agent' }
@@ -234,29 +265,29 @@ export const itemActions: Action[] = [
   {
     name: 'get_children',
     unsafe: false,
-    description: "The events in an item, oldest first. With open, only those still open: the item's blockers.",
+    description: "The items in an item, oldest first. With open, only those still open: the item's blockers.",
     input: { item_id: itemId, open: z.boolean().optional() },
     run: async (a, { engine }) => engine.children(String(a.item_id), Boolean(a.open)),
   },
   {
-    name: 'add_events',
+    name: 'add_items',
     unsafe: false,
     description:
-      'Add events in a task (or in a bot\'s chat): notes, blockers, approvals, child tasks. With no item_id, add tasks, bots or people that sit in none.',
-    input: { item_id: itemId.optional(), events: z.array(spec) },
+      'Add items in a task (or in a bot\'s chat): notes, blockers, approvals, child tasks. With no item_id, add tasks, bots or people that sit in none.',
+    input: { item_id: itemId.optional(), items: z.array(spec) },
     run: async (a, ctx) => {
-      return { ids: await ctx.engine.addEvents(a.item_id ? String(a.item_id) : null, a.events as EventSpec[], ctx.actor, ctx.author) }
+      return { ids: await ctx.engine.addItems(a.item_id ? String(a.item_id) : null, a.items as ItemSpec[], ctx.actor, ctx.author) }
     },
   },
   {
-    name: 'link_events',
+    name: 'link_items',
     unsafe: false,
     description:
-      'Add `contains` links from a task to events that already exist elsewhere (messages, other tasks, anything): they show in its chat too, ' +
+      'Add `contains` links from a task to items that already exist elsewhere (messages, other tasks, anything): they show in its chat too, ' +
       'and stay where they sit. For traceability: link a new task to what it came from, and what it came from to it.',
-    input: { item_id: itemId, event_ids: z.array(z.string()) },
+    input: { item_id: itemId, item_ids: z.array(z.string()) },
     run: async (a, ctx) => {
-      await ctx.engine.link(String(a.item_id), a.event_ids as string[], ctx.actor)
+      await ctx.engine.link(String(a.item_id), a.item_ids as string[], ctx.actor)
       return 'Linked.'
     },
   },
@@ -281,7 +312,7 @@ export const itemActions: Action[] = [
     name: 'set_value',
     unsafe: false,
     description:
-      "Set one value on an item (null clears it): any of its type's params (see event_types), e.g. a task's title, a widget's " +
+      "Set one value on an item (null clears it): any of its type's params (see item_types), e.g. a task's title, a widget's " +
       "widget_state, a bot's instructions or cycle_minutes. Not how it stands (type, resolved…: those have their own tools). " +
       'Whatever shows it is told at once.',
     input: { item_id: itemId, key: z.string(), value: z.unknown() },
@@ -291,12 +322,12 @@ export const itemActions: Action[] = [
     },
   },
   {
-    name: 'cancel_event',
+    name: 'cancel_item',
     unsafe: false,
     description: 'End a blocker without it happening (a task is closed as cancelled).',
-    input: { event_id: z.string() },
+    input: { item_id: z.string() },
     run: async (a, ctx) => {
-      await ctx.engine.cancel(String(a.event_id), ctx.actor)
+      await ctx.engine.cancel(String(a.item_id), ctx.actor)
       return 'Cancelled.'
     },
   },

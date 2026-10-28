@@ -1,4 +1,4 @@
-import type { Catalog, EventDetail, ItemEvent } from '../../shared/types'
+import type { Catalog, ItemInfoDetail, ItemInfo } from '../../shared/types'
 import { Approval } from './Approval'
 import { minutes, time } from './Chat'
 import { TYPE_NAME } from './icons'
@@ -8,21 +8,21 @@ import { fenced, Markdown } from './components/ui/Markdown'
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
-/** Any event but an item, on its own: what it is, where it stands, and what its type has to show. */
-export function EventView({
+/** Any item but an item, on its own: what it is, where it stands, and what its type has to show. */
+export function ItemInfoView({
   detail,
   catalog,
   act,
   onOpen,
 }: {
-  detail: EventDetail
+  detail: ItemInfoDetail
   catalog: Catalog
   act: Act
   onOpen: (id: string) => void
 }) {
-  const e = detail.event
+  const e = detail.info
   return (
-    <div className="page event-view">
+    <div className="page item-view">
       <div className="meta">
         {TYPE_NAME[e.type]}
         {detail.parent && (
@@ -37,7 +37,7 @@ export function EventView({
 
       <section className="card">
         <p>{status(e)}</p>
-        {e.message && !e.cancelled && <Markdown className="event-message" text={e.message} />}
+        {e.message && !e.cancelled && <Markdown className="item-message" text={e.message} />}
         {e.lastError && <p className="error-text">{e.lastError}</p>}
       </section>
 
@@ -48,10 +48,10 @@ export function EventView({
       )}
       {e.type === 'widget' && (
         <section className="card">
-          <Widget event={e} tall />
+          <Widget info={e} tall />
         </section>
       )}
-      {(e.type === 'slack_message' || e.type === 'slack_channel') && <SlackMessages event={e} />}
+      {(e.type === 'slack_message' || e.type === 'slack_channel') && <SlackMessages info={e} />}
       <Special detail={detail} onOpen={onOpen} />
 
       <section className="card">
@@ -74,7 +74,7 @@ export function EventView({
 }
 
 /** Open or how it ended, by whom, and for how long: `Open · 4m 02s` or `Cancelled · human · 12s`. */
-function status(e: ItemEvent): string {
+function status(e: ItemInfo): string {
   if (!e.resolved) return `Open · ${e.createdBy} · ${minutes(Date.now() - e.createdAt)}`
   // When and by whom are known for what resolved since the app started; egdb's history of `resolved` has the rest.
   const how = e.cancelled ? 'Cancelled' : 'Resolved'
@@ -82,8 +82,8 @@ function status(e: ItemEvent): string {
 }
 
 /** What only some types have to show. */
-function Special({ detail }: { detail: EventDetail; onOpen: (id: string) => void }) {
-  const e = detail.event
+function Special({ detail }: { detail: ItemInfoDetail; onOpen: (id: string) => void }) {
+  const e = detail.info
   if (e.type !== 'script') return null
   return (
     <section className="card">
@@ -122,8 +122,8 @@ function Values({ values }: { values: Record<string, unknown> }) {
   )
 }
 
-/** When an event was added and resolved, and by whom. */
-export function Timeline({ e }: { e: ItemEvent }) {
+/** When an item was added and resolved, and by whom. */
+export function Timeline({ e }: { e: ItemInfo }) {
   const rows: [string, number | null, string | null][] = [
     ['Added', e.createdAt, e.createdBy],
     ['Resolved', e.resolved ? e.resolvedAt : null, e.resolvedBy],

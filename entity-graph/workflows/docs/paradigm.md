@@ -1,7 +1,7 @@
 # The paradigm
 
 This page gives the idea of the app. It does not give the implementation.
-For the implementation, see [`events.md`](./events.md).
+For the implementation, see [`items.md`](./items.md).
 The text uses ASD-STE100 Simplified Technical English.
 
 ## Purpose
@@ -12,23 +12,23 @@ The text uses ASD-STE100 Simplified Technical English.
 - You push one button. The app shows the next task that needs you.
 - Bots do all the other work.
 
-## Tasks, events and items
+## Tasks and items
 
 - A **task** is one thing to do.
-- A task has a list of **events**. The list is the history of the task.
-- A task is also an event. Thus a task can contain other tasks. A bot can
+- A task has a list of **items**. The list is the history of the task.
+- A task is also an item. Thus a task can contain other tasks. A bot can
   split a task into smaller tasks in this way.
-- The database keeps each event as an **item**. "Item" is the general word for a
-  thing in the database. A link of the type `contains` connects a task to each
-  of its events.
-- Some events are complete when they occur. Example: a note.
-- Other events are **blockers**. A blocker waits until a condition occurs.
+- "Item" is the general word for a thing in the database: a task, a note, a
+  blocker, a bot, a person. A link of the type `contains` connects a task to each
+  of its items.
+- Some items are complete when they occur. Example: a note.
+- Other items are **blockers**. A blocker waits until a condition occurs.
   Examples: a script finds that CI is complete, or a person approves an action.
 - When a blocker is complete, it records its result.
 - A task can have more than one blocker at the same time.
 - A person or a bot can **have** a task. To give a task to a person or to a bot
   is to **assign** it. An assignment is a link from the task to the person or bot.
-  It is not an event in the task.
+  It is not an item in the task.
 - If you have a task and it has no blockers, it waits for you.
 - A new task that you make is yours. A new task that a bot makes has nobody,
   unless the bot gives it to somebody.
@@ -43,10 +43,10 @@ The text uses ASD-STE100 Simplified Technical English.
 
 ## The chat
 
-- The app shows all of the events in a task as a chat, each as a card: notes,
-  child tasks, scripts and approvals. Your events are on the right. Events from
+- The app shows all of the items in a task as a chat, each as a card: notes,
+  child tasks, scripts and approvals. Your items are on the right. Items from
   other people, bots and scripts are on the left. A bot that wants to show
-  something in the chat adds it to the task as an event.
+  something in the chat adds it to the task as an item.
 - A script card shows what the script waits for. If the script has no schedule,
   it shows a play button: push it to run the script. If the script has a
   schedule, the card shows how many times it ran and when it runs next. When the
@@ -66,19 +66,19 @@ The text uses ASD-STE100 Simplified Technical English.
   You make bots on the Bots page. Different bots can use different models. The
   model is opus if you do not select a different model.
 - A bot has a chat of its own. Write in it to talk to the bot.
-- A bot starts when an event occurs to the bot itself. Examples: somebody gives
+- A bot starts when an item occurs to the bot itself. Examples: somebody gives
   it an item, somebody changes its settings, or somebody writes in its chat.
-- A bot also starts every 15 minutes, if events occurred in its items after its
+- A bot also starts every 15 minutes, if items occurred in its items after its
   last run.
 - A bot does one run at a time. Thus two bots do not work on the same thing at the
   same time by accident.
 - A bot waits for a short time (1 minute, if you do not change it) after the last
-  event before it starts. Thus you can give it many items quickly, and it does
+  item before it starts. Thus you can give it many items quickly, and it does
   them all in one run.
 - A bot has one conversation, for all of its items. The bot remembers its work.
   Its instructions are in its system prompt. After the conversation becomes
   shorter (compaction), the bot gets its instructions again.
-- In each run, the bot gets all of its items. For each item, it gets the events
+- In each run, the bot gets all of its items. For each item, it gets the items
   that occurred after its last run. The first time that it sees an item, it gets
   all of the item.
 - The bot must do the work on its items, and then give each item to the next
@@ -119,7 +119,7 @@ The text uses ASD-STE100 Simplified Technical English.
 - The database (egdb) keeps the full history of each item: every value that it
   had, and every link. The app does not keep a different history.
 - The database records the time of each change, and who or what did it. Thus
-  the app keeps only whether an event is complete (`resolved`). The database
+  the app keeps only whether an item is complete (`resolved`). The database
   records when it became complete, and who completed it.
 - Click the title of a task to open its menu. Use the menu to debug the task.
 - The debug page shows an item as the database keeps it: its values, its links,

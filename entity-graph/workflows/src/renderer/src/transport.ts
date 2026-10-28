@@ -54,7 +54,7 @@ export function httpApi(o: HttpOptions): WorkflowsAPI {
         try {
           const res = await go(`${base}/events`, { headers: headers(), signal: stop.signal })
           if (res.status === 401) return refused()
-          if (!res.ok || !res.body) throw new Error(`events: ${res.status}`)
+          if (!res.ok || !res.body) throw new Error(`changes: ${res.status}`)
           // Anything may have changed while nobody was listening.
           cb()
           const reader = res.body.getReader()

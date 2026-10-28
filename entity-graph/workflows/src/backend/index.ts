@@ -20,7 +20,7 @@ import { Admin } from '../engine/admin'
 import { openStore } from '../engine/egdb'
 import { Engine } from '../engine/engine'
 import { startMcp } from '../engine/mcp'
-import { EVENT_TYPES } from '../engine/eventTypes'
+import { ITEM_TYPES } from '../engine/itemTypes'
 import { BotRunner } from '../engine/workers'
 import { keyFileSecrets } from './secrets'
 import { handlers } from './api'
@@ -48,7 +48,7 @@ async function main(): Promise<void> {
 
   const log = (...a: unknown[]) => console.log(new Date().toISOString(), ...a)
   const token = randomBytes(24).toString('base64url')
-  const blocking = (type: string) => Boolean(EVENT_TYPES.find((t) => t.type === type)?.blocking)
+  const blocking = (type: string) => Boolean(ITEM_TYPES.find((t) => t.type === type)?.blocking)
   const { store, sink, egdb } = await openStore(file, randomBytes(24).toString('base64url'), blocking, (m) => log(m))
   const engine = new Engine({ store, dataDir: dir, secrets: keyFileSecrets(dir) })
 

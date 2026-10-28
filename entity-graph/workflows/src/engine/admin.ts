@@ -85,11 +85,11 @@ export class Admin {
     clearSlackCache(this.engine)
   }
 
-  /** A Slack event's messages, for its card and view; with `thread`, the replies to one of them. */
-  async slackView(eventId: string, thread?: string) {
-    const event = this.engine.event(eventId)
-    if (!event) throw new Error(`No event ${eventId}.`)
-    return slackView(this.engine, event, thread)
+  /** A Slack item's messages, for its card and view; with `thread`, the replies to one of them. */
+  async slackView(itemId: string, thread?: string) {
+    const info = this.engine.info(itemId)
+    if (!info) throw new Error(`No item ${itemId}.`)
+    return slackView(this.engine, info, thread)
   }
 
   mcpView(): McpView {
