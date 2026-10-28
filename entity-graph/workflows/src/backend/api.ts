@@ -68,6 +68,7 @@ export function handlers(engine: Engine, admin: Admin, me: string, source = ''):
     phone: () => admin.phoneView(),
     setPhoneTailnet: (on) => admin.setPhoneTailnet(on),
     setPhonePort: (port) => admin.setPhonePort(port),
+    setPhoneTailnetPort: (port) => admin.setPhoneTailnetPort(port),
     regeneratePhoneToken: () => admin.regeneratePhoneToken(),
   }
 }

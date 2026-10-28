@@ -325,7 +325,11 @@ export interface PhoneView {
   error: string | null
   /** This machine's name on the tailnet (MagicDNS), if Tailscale says. */
   tailnetName: string | null
-  /** What to run, once, to serve it on the tailnet. */
+  /** The HTTPS port it is served on, on the tailnet. */
+  tailnetPort: number
+  /** Whether Tailscale serves that port now; null when Tailscale can't be asked. */
+  serving: boolean | null
+  /** What the app runs to serve it on the tailnet (to run by hand, if it can't). */
   serveCommand: string
   /** Where the phone opens it: on the tailnet, if this machine has a name there. */
   phoneUrl: string | null
@@ -433,6 +437,7 @@ export interface WorkflowsAPI {
   phone: () => Promise<PhoneView>
   setPhoneTailnet: (on: boolean) => Promise<void>
   setPhonePort: (port: number) => Promise<void>
+  setPhoneTailnetPort: (port: number) => Promise<void>
   regeneratePhoneToken: () => Promise<void>
   onChange: (cb: () => void) => () => void
   /** Ctrl+W, caught before the window's menu can close the window: take the top view off the stack. */
@@ -496,7 +501,7 @@ export const API_METHODS = [
   'overview', 'detail', 'eventDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addEvents', 'runTool', 'link', 'searchSections', 'setSearchSections', 'runSearchSection', 'setWidgetState', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
-  'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'regeneratePhoneToken',
+  'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',
 ] as const satisfies readonly ApiMethod[]
 
 type ApiMethod = Exclude<keyof WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser' | 'openSource' | 'closeSource' | 'setToken' | 'token'>

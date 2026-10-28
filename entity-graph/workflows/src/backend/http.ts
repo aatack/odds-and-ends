@@ -19,7 +19,7 @@ import type { Engine } from '../engine/engine'
 import { OPEN_METHODS } from './api'
 
 /** What the phone may not call: what it is reached by is changed only from the app on this machine. */
-export const PHONE_REFUSED = new Set(['phone', 'setPhoneTailnet', 'setPhonePort', 'regeneratePhoneToken'])
+export const PHONE_REFUSED = new Set(['phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken'])
 
 /** Every listener's `/events`: one `change` for a burst of changes, to everyone listening. */
 export class Changes {

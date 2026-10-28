@@ -141,6 +141,11 @@ export class Settings {
     return this.get('phone.port', DEFAULT_PHONE_PORT)
   }
 
+  /** The HTTPS port `tailscale serve` takes the phone listener to, on the tailnet. */
+  phoneTailnetPort(): number {
+    return this.get('phone.tailnetPort', 8443)
+  }
+
   /** Off by default: only this machine reaches the phone listener. */
   phoneTailnet(): boolean {
     return this.get('phone.tailnet', false)

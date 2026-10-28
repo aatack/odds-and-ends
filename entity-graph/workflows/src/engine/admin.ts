@@ -14,8 +14,6 @@ export interface Phone {
   restart: () => Promise<void>
 }
 
-/** The HTTPS port on the tailnet the phone opens: not 443, which is left for whatever else this machine serves. */
-export const PHONE_TAILNET_PORT = 8443
 
 export class Admin {
   /** The phone listener, once the backend has one; none in the tests of the engine alone. */
@@ -112,11 +110,15 @@ export class Admin {
   async phoneView(): Promise<PhoneView> {
     const s = this.engine.settings
     const { url, port, error } = this.phone?.status() ?? { url: `http://127.0.0.1:${s.phonePort()}/`, port: s.phonePort(), error: 'The phone listener is not running.' }
+    const tailnetPort = s.phoneTailnetPort()
     let tailnetName: string | null = null
+    let serving: boolean | null = null
     try {
-      // Only read: what Tailscale serves is changed by the person, from a shell.
       const status = JSON.parse(await this.engine.exec('tailscale', ['status', '--json'])) as { Self?: { DNSName?: string } }
       tailnetName = status.Self?.DNSName?.replace(/\.$/, '') || null
+      // Whether Tailscale serves this port now: some HTTPS handler on it.
+      const serve = JSON.parse((await this.engine.exec('tailscale', ['serve', 'status', '--json'])) || '{}') as { TCP?: Record<string, unknown> }
+      serving = !!serve.TCP?.[String(tailnetPort)]
     } catch {
       // No Tailscale here, or it is down.
     }
@@ -127,19 +129,53 @@ export class Admin {
       tailnet: s.phoneTailnet(),
       error,
       tailnetName,
-      serveCommand: `tailscale serve --bg --https=${PHONE_TAILNET_PORT} http://127.0.0.1:${port}`,
-      phoneUrl: tailnetName ? `https://${tailnetName}:${PHONE_TAILNET_PORT}/` : null,
+      tailnetPort,
+      serving,
+      serveCommand: `tailscale serve --bg --https=${tailnetPort} http://127.0.0.1:${port}`,
+      phoneUrl: tailnetName ? `https://${tailnetName}:${tailnetPort}/` : null,
     }
   }
 
-  setPhoneTailnet(on: boolean): void {
-    this.engine.settings.set('phone.tailnet', on)
+  /**
+   * Puts the phone on the tailnet, or takes it off: `tailscale serve` (run here, as the person's own press on the Phone
+   * page; the phone itself may not call this) for its tailnet port, and the setting that lets what comes through it in.
+   */
+  async setPhoneTailnet(on: boolean): Promise<void> {
+    const s = this.engine.settings
+    if (on) {
+      try {
+        await this.engine.exec('tailscale', ['serve', '--bg', `--https=${s.phoneTailnetPort()}`, `http://127.0.0.1:${s.phonePort()}`])
+      } catch (e) {
+        throw new Error(
+          `Tailscale would not serve it: ${(e as Error).message}\nIf it asks for root, run once in a shell: sudo tailscale set --operator=$USER`,
+        )
+      }
+      s.set('phone.tailnet', true)
+    } else {
+      s.set('phone.tailnet', false)
+      try {
+        await this.engine.exec('tailscale', ['serve', `--https=${s.phoneTailnetPort()}`, 'off'])
+      } catch {
+        // Nothing was served there.
+      }
+    }
   }
 
   async setPhonePort(port: number): Promise<void> {
     if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('The port must be a number from 1024 to 65535.')
     this.engine.settings.set('phone.port', port)
     await this.phone?.restart()
+    // Served on the tailnet: served again, to the new port.
+    if (this.engine.settings.phoneTailnet()) await this.setPhoneTailnet(true)
+  }
+
+  /** The HTTPS port on the tailnet; served there again if it is on. */
+  async setPhoneTailnetPort(port: number): Promise<void> {
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('The port must be a number from 1 to 65535.')
+    const was = this.engine.settings.phoneTailnet()
+    if (was) await this.setPhoneTailnet(false)
+    this.engine.settings.set('phone.tailnetPort', port)
+    if (was) await this.setPhoneTailnet(true)
   }
 
   /** The token is read on every request, so the old one stops working at once. */

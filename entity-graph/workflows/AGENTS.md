@@ -81,13 +81,15 @@ window: there `window.workflows` is the preload's, as always.
   input's icon is tapped to change what is sent and Enter is a new line, and the header's actions are all in its ⋯
   menu. Without `mobile` nothing changes: a new view takes the prop and keeps the desktop as it was.
 
-**Setting it up** (the person does this; agents never run `tailscale`'s writes):
+**Setting it up** (the person does this; agents never run `tailscale`'s writes: the app runs them only on the person's
+own press on the Phone page, which the phone itself may not call):
 
-1. Tailscale on this machine and on the phone, on the same tailnet, with MagicDNS and HTTPS certificates on.
-2. In the app: menu → Phone. Tick *Answer what comes from the tailnet*.
-3. Once, in a shell: `tailscale serve --bg --https=8443 http://127.0.0.1:47392` (the Phone page shows it with the
-   port in use; `tailscale serve --https=8443 off` undoes it). 8443 leaves 443 to whatever else this machine serves.
-4. On the phone: scan the QR code (or open `https://<machine>.<tailnet>.ts.net:8443/` and paste the token), sign in,
+1. Tailscale on this machine and on the phone, on the same tailnet, with MagicDNS and HTTPS certificates on. If
+   `tailscale serve` wants root, once: `sudo tailscale set --operator=$USER`.
+2. In the app: menu → Phone. Tick *Serve it on the tailnet*: the app runs `tailscale serve --bg --https=<tailnet port>
+   http://127.0.0.1:<port>` (and `… off` when unticked), and lets what comes through it in. Both ports are set there
+   (8443 on the tailnet by default, leaving 443 to whatever else this machine serves).
+3. On the phone: scan the QR code (or open `https://<machine>.<tailnet>.ts.net:8443/` and paste the token), sign in,
    then Add to Home Screen.
 
 ## The paradigm

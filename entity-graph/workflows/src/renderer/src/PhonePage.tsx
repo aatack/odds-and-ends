@@ -22,18 +22,20 @@ function QrCode({ text, size = 220 }: { text: string; size?: number }) {
 
 /**
  * Reaching the app from a phone: the backend's phone listener, its token (as a QR code that signs the phone in, or to
- * copy), whether the tailnet is let in, and the `tailscale serve` command that takes it there. Only in the app on
+ * copy), and whether it is served on the tailnet: the app runs `tailscale serve` itself, on and off. Only in the app on
  * this machine: the phone is refused what changes its own access.
  */
 export function PhonePage({ mobile }: { mobile: boolean }) {
   const [view, setView] = useState<PhoneView | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [port, setPort] = useState('')
+  const [tailnetPort, setTailnetPort] = useState('')
   const [showToken, setShowToken] = useState(false)
   const refresh = useCallback(async () => {
     const v = await api().phone()
     setView(v)
     setPort(String(v.port))
+    setTailnetPort(String(v.tailnetPort))
   }, [])
   useEffect(() => void refresh().catch((e) => setError((e as Error).message)), [refresh])
 
@@ -93,23 +95,43 @@ export function PhonePage({ mobile }: { mobile: boolean }) {
         <h2>Tailnet</h2>
         <label className="row-inline phone-toggle">
           <input type="checkbox" checked={view.tailnet} onChange={(e) => void act(() => api().setPhoneTailnet(e.target.checked))} />
-          Answer what comes from the tailnet
+          Serve it on the tailnet
         </label>
-        <p className="muted">Off, only this machine reaches it, whatever Tailscale serves. Run this once, in a shell on this machine:</p>
-        <Copyable value={view.serveCommand} block language="bash" />
         <p className="muted">
-          It needs MagicDNS and HTTPS certificates on in the tailnet, and Tailscale signed in on the phone. <code>tailscale serve status</code> shows
-          what is served; <code>tailscale serve --https={view.serveCommand.match(/--https=(\d+)/)?.[1]} off</code> stops it.
+          {view.serving === null
+            ? "Tailscale can't be asked here (is it installed and up?)."
+            : view.serving
+              ? `Tailscale serves it on port ${view.tailnetPort}${view.tailnet ? '.' : ', but it answers nothing from there while this is off.'}`
+              : view.tailnet
+                ? 'On, but Tailscale is not serving it: turn it off and on again, or run the command below.'
+                : 'Off: only this machine reaches it.'}{' '}
+          It needs MagicDNS and HTTPS certificates on in the tailnet, and Tailscale signed in on the phone.
         </p>
         <div className="kv">
-          <span>Port</span>
+          <span>Port here</span>
           <div className="row-inline">
             <div className="port">
               <Form schema={{ type: 'string' }} value={port} setValue={(v) => setPort(typeof v === 'string' ? v : '')} />
             </div>
             {port !== String(view.port) && <button data-ui onClick={() => act(() => api().setPhonePort(Number(port)))}>Save</button>}
           </div>
+          <span>On the tailnet</span>
+          <div className="row-inline">
+            <div className="port">
+              <Form schema={{ type: 'string' }} value={tailnetPort} setValue={(v) => setTailnetPort(typeof v === 'string' ? v : '')} />
+            </div>
+            {tailnetPort !== String(view.tailnetPort) && (
+              <button data-ui onClick={() => act(() => api().setPhoneTailnetPort(Number(tailnetPort)))}>Save</button>
+            )}
+          </div>
         </div>
+        <details>
+          <summary className="muted">If the app can't run Tailscale</summary>
+          <p className="muted">
+            Tailscale may want root to serve: run <code>sudo tailscale set --operator=$USER</code> once, or this, in a shell:
+          </p>
+          <Copyable value={view.serveCommand} block language="bash" />
+        </details>
       </section>
 
       <section className="card">

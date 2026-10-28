@@ -17,8 +17,13 @@ import { encodeQr } from '../src/renderer/src/helpers/qr.ts'
 import { httpApi, TOKEN_KEY, type KeptStrings } from '../src/renderer/src/transport.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'workflows-phone-'))
+// A stand-in for tailscale: what it serves, by HTTPS port.
+const served = new Map<string, string>()
 const exec = async (cmd: string, args: string[]) => {
   if (cmd === 'tailscale' && args[0] === 'status') return JSON.stringify({ Self: { DNSName: 'laptop.tail1234.ts.net.' } })
+  if (cmd === 'tailscale' && args[0] === 'serve' && args[1] === 'status') return JSON.stringify({ TCP: Object.fromEntries([...served.keys()].map((p) => [p, { HTTPS: true }])) })
+  if (cmd === 'tailscale' && args[0] === 'serve' && args.at(-1) === 'off') return void served.delete(args[1].replace('--https=', '')) ?? ''
+  if (cmd === 'tailscale' && args[0] === 'serve') return void served.set(args[2].replace('--https=', ''), args[3]) ?? ''
   throw new Error(`no ${cmd}`)
 }
 const engine = new Engine({ exec, dataDir: dir })
@@ -107,9 +112,12 @@ const bearer = (t: string) => ({ authorization: `Bearer ${t}` })
   )
   assert.equal(hosted, 403, 'and a host that is not this machine')
   assert.equal((await rpc(deskUrl, 'setPhoneTailnet', [true], bearer('desk-token'))).status, 200)
+  assert.match(String(served.get('8443')), /^http:\/\/127\.0\.0\.1:\d+$/, 'the app has Tailscale serve it')
+  assert.equal(((await (await rpc(deskUrl, 'phone', [], bearer('desk-token'))).json()) as { result: { serving: boolean } }).result.serving, true)
   assert.equal((await rpc(phoneUrl, 'overview', [], forwarded)).status, 200, 'answered once it is let in')
   assert.equal((await rpc(phoneUrl, 'overview', [], { 'x-forwarded-for': '100.1.2.3' })).status, 401, 'still with the token')
   await rpc(deskUrl, 'setPhoneTailnet', [false], bearer('desk-token'))
+  assert.equal(served.size, 0, 'and stop')
   assert.equal((await rpc(phoneUrl, 'overview', [], forwarded)).status, 403, 'and refused again once it is not')
   // The app's own listener is reached only from this machine, as before: it has no tailnet gate, as nothing forwards to it.
   assert.equal((await rpc(deskUrl, 'overview', [], { 'x-forwarded-for': '1.2.3.4', ...bearer('desk-token') })).status, 200)
