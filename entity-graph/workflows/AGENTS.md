@@ -98,17 +98,17 @@ own press on the Phone page, which the phone itself may not call):
 [`docs/items.md`](./docs/items.md) is how it is built; read it before changing the engine.
 
 - Everything is an **event**, tasks included: one tree, held in egdb as entities joined by `contains` links. A
-  task's children are its history. Some events resolve as they are added (a note); **blockers**
+  task's children are its history. Some items resolve as they are added (a note); **blockers**
   wait until something happens (an approval). Tasks don't depend on, or attach to, each other: a task in
   another is a card in its chat, and blocks nothing (dependencies are to come back with the wake rules).
   There are ten types: `task`, `note`, `approval`, `script`, `process`, `widget`, `slack_message`, `slack_channel`, `bot` and
   `user` (a person).
-- **People** are items too (`user` events, in no item, whose id is their username); they sign in to the
+- **People** are items too (`user` items, in no item, whose id is their username); they sign in to the
   app by typing their username (no password: the app is local). Tasks are **assigned** to people and
-  bots: an `assigned_to` link from the task, not an event (`Engine.setAssignee`; the tasks someone has are
+  bots: an `assigned_to` link from the task, not an item (`Engine.setAssignee`; the tasks someone has are
   their links followed backwards). A task can have many blockers at once. It is a person's turn when they
   have it and nothing blocks it but approvals. Next goes through those, the most recently touched first.
-- A **bot** is an item of its own (a `bot` event, in no item, its settings in its params): a name,
+- A **bot** is an item of its own (a `bot` item, in no item, its settings in its params): a name,
   instructions, a provider and model (opus by default), a debounce (a minute by default), and a folder and
   Claude session of its own, which last. Notes in it are its own chat. **Bots and scripts wake by one rule** (`dueAt` in
   `wakes.ts`): once anything but itself affected it since it last woke (a task assigned to it, anything new in its
@@ -119,7 +119,7 @@ own press on the Phone page, which the phone itself may not call):
   time: a run is asked to action every task it has and give each a new assignee, and told what is new in
   its chat and in each (`promptFor` in `workers.ts`: people's notes as written, after their name; anything else in
   [brackets]; each task's id every ten lines). It answers with
-  `{ updates: [{ item, message?, events?, assign?, close? }] }` as structured output. A task it says
+  `{ updates: [{ item, message?, items?, assign?, close? }] }` as structured output. A task it says
   nothing of who has goes back to its owner, unless it is left waiting on something (`Engine.settle`).
   It is told never to close a task unless someone explicitly asked it to. Its `last_run` value says how
   its last run went (egdb keeps the earlier ones, as old values); `seen` lists the tasks its session has seen.
@@ -127,7 +127,7 @@ own press on the Phone page, which the phone itself may not call):
   owner on a timer (a snooze), or a check (runs until what it waits for happens). It never blocks the task it
   sits in; a task waits on it by being assigned to it. Agents are told to use scripts for repetitive work that
   needs no LLM. See `SCRIPT_DOC` in `itemTypes.ts`. Custom actions (the Types page) are scripts too, run on an
-  event when asked; `run_script` runs one once.
+  item when asked; `run_script` runs one once.
 - The chat input sends a note by default; `@` a bot or a person in it to hand them the task (and take it
   off the sender). With nothing typed it offers the default actions, a curated list in code
   (`renderer/src/defaultActions.ts`): assign to the last bot, wait for each recent Slack message, snooze an hour or a day. Tab steps through the
@@ -143,7 +143,7 @@ own press on the Phone page, which the phone itself may not call):
 ## Terminology
 
 - **Item** is the general word for a thing stored in the database (an egdb entity): every event is an item.
-- **Task** is the `task` event type: a thing to be done. Its events sit in it (`contains` links).
+- **Task** is the `task` item type: a thing to be done. Its items sit in it (`contains` links).
   The MCP tools' names (`list_items`, `get_item`, `item_id`, …) still say *item*; a bot's prompt says *task*.
 
 ## The unsafe rule
@@ -159,10 +159,10 @@ sending, deploying and deleting, in any integration.
   other agent connects to) offer every action but the unsafe ones. Scripts that
   an agent wrote get none either. `Engine.callAction` refuses them to any caller
   that is not the human.
-- Only the human runs one: through an `approval` event, in the app. An agent asks
+- Only the human runs one: through an `approval` item, in the app. An agent asks
   for one by adding an approval; `unsafe_actions` tells it what it can ask for.
-- No event may act outside the app when an agent adds it.
-- **Scripts get unsafe tools only when a person presses play.** A script (a script event, a custom action, any
+- No item may act outside the app when an agent adds it.
+- **Scripts get unsafe tools only when a person presses play.** A script (a script item, a custom action, any
   code the app runs) is handed the same tools as the MCP. When anything but a person's own press runs it (an
   agent, a bot, a schedule, another script), the unsafe ones are left out, whoever wrote it. This holds for
   every tool added later: declaring `unsafe` is what keeps it out. (Custom actions are not given them yet.)
@@ -175,9 +175,9 @@ sending, deploying and deleting, in any integration.
   than the MCP's, so give bots no new credentials lightly.
 - `test/engine.mts` checks the rule. Keep those checks passing; never loosen them.
 
-## An event in many items
+## An item in many items
 
-An event sits in one item (its first `contains` link: `parent_id`) and can be put in others as well (later
+An item sits in one item (its first `contains` link: `parent_id`) and can be put in others as well (later
 `contains` links: `link_items`, or "Also put in…" in its right-click menu): it shows in each one's chat, and stays
 where it sits. `ItemInfo.containers` lists them all; a chat shows the others as pills in a quoted bar above the
 message, as a reply is shown. Only where it sits counts for blockers, wakes and closing.
@@ -186,7 +186,7 @@ message, as a reply is shown. Only where it sits counts for blockers, wakes and 
 
 Every finder (the Tasks view, `@`, the pickers: `ItemsList`) shows the same configured sections, kept as `sections` on
 the one `search` item (in no task; `src/shared/search.ts`). Each is built in (`sections.ts`), a **query** (egdb's
-`Filter`, run in memory over every event's values and `parent`, `assignees`, `created_by`, `created_at`), or a
+`Filter`, run in memory over every item's values and `parent`, `assignees`, `created_by`, `created_at`), or a
 **function** (a script body answering rows `{ id, type, left, right }`, told what is typed). The ⚙ in the search line
 opens its page; bots read and change it with `search_sections` / `set_search_sections` (`SEARCH_DOC` says how). A
 caller can still pass its own `sections` (the assignee picker passes none).
@@ -217,10 +217,10 @@ setup alone.
 
 ```
 src/engine     everything but the window; plain Node, so the tests drive it headlessly
-  engine.ts      tasks, their events and blockers, assignments, bots' wakes and output, the loop
+  engine.ts      tasks, their items and blockers, assignments, bots' wakes and output, the loop
   store.ts       the store, in memory; every change goes on as egdb ops
   egdb.ts        the store's home: writing to egdb, reading it back, running egdb-server
-  itemTypes.ts  the event types
+  itemTypes.ts   the item types
   presets.ts     what the chat input can send
   actions.ts     the actions on items: the MCP tools
   script.ts      scripts, in QuickJS
@@ -268,8 +268,8 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   `themes.css` holds the overrides. Code is Fira Code everywhere; weights lean light.
 - **The content pane is a stack of views** (`views.ts`, a Jotai atom kept in
   local storage). The list and Next replace the stack; Open, Debug and links push
-  onto it; Back pops it. A view is `{ kind, id }`: `event` shows an event as its
-  type is shown (a task as its chat, any other event as `ItemInfoView`); `debug`
+  onto it; Back pops it. A view is `{ kind, id }`: `item` shows an item as its
+  type is shown (a task as its chat, any other item as `ItemInfoView`); `debug`
   (`DebugView`) shows the item as egdb holds it (`Engine.inspect`): its id, who made it and when (from the
   `contains` link to it), its values (a note's are just `type` and `text`), and its links, each with when and by whom. A new kind of view is a new `kind`.
 - **There is no sidebar.** The content fills the window in a centred column.
@@ -305,28 +305,28 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   the chat input. `Markdown` draws such a link, to nowhere with an
   item's id as its text, through `ItemRefContext`: the app gives `ItemRef`, the item's icon and title, which open it.
 - **Ctrl+F finds in the view.** On the items view it is the search line; over a chat it opens `FindLine`, and the
-  chat keeps only the events whose *displayed* text (`shows`, markdown stripped) has the phrase, marked in yellow
+  chat keeps only the items whose *displayed* text (`shows`, markdown stripped) has the phrase, marked in yellow
   (`Markdown`'s `highlight`). The phrase (`findAtom`) belongs to the view and is cleared when the view changes.
 - **A child task is a card** (`TaskCard`): its title, with a tick once resolved, a cross if cancelled, a pending
   ring while open. Clicking it opens it.
-- **A task's chat is every event in it** (`Chat`: its `contains` links, in the order they were added), each as its
+- **A task's chat is every item in it** (`Chat`: its `contains` links, in the order they were added), each as its
   card: a note its words; a child task its `TaskCard`; a script (`ScriptCard`) what it waits for, then a tick and
   its output once done, a play button if it has no schedule, or else a timer (runs so far, next run counting down);
   an approval its form while open. There is no separate blockers panel. Agents are told that what should show
-  in the chat must be an event in the task.
+  in the chat must be an item in the task.
 - **When a task closes, the app moves on.** Whatever the human does to the task on screen (sends, approves,
   resolves, from the chat, header or menu) goes through `actOn(id)`: afterwards, if the task has closed, the next one
   that needs them is *pushed* (so Back returns). Handing it to someone else stays on it, for now.
-- **A view's title opens its event's menu** when clicked (or right-clicked): Open, Debug, Rename (for the task on
+- **A view's title opens its item's menu** when clicked (or right-clicked): Open, Debug, Rename (for the task on
   screen: the title becomes a text box, `renameAtom`) and its actions. `[id]()` references in text (tasks, bots,
   people) have the same menu on right-click.
-- **The Types page** (`TypesPage`) lists every event type: what it is for, whether it blocks, its fields (the
+- **The Types page** (`TypesPage`) lists every item type: what it is for, whether it blocks, its fields (the
   Fields button: its params' schema and what it resolves with), and its actions. The app's own are in `itemActions.ts`;
   the human's own are **custom actions** (`engine/customActions.ts`, the `custom_actions` table): per type, a name, a
   description, hidden notes, an icon, *important* or not, and a script `async (context, actions) => null | string |
-  { message?, events? }` run in QuickJS with the event's context and only the safe actions. **Generate** has Sonnet write
+  { message?, items? }` run in QuickJS with the item's context and only the safe actions. **Generate** has Sonnet write
   the script from the description and notes. What a run says is a note in the item, by `script`. Important
-  actions are buttons in an event's header; the rest are in the ⋯ menu beside them; all are in the right-click menu.
+  actions are buttons in an item's header; the rest are in the ⋯ menu beside them; all are in the right-click menu.
   Agents list and run them with `custom_actions` and `run_custom_action`.
 - **Starting** (`Start`, before anything else): a username and a source, both needed. Opening the source
   starts (or finds) its backend; signing in makes the person if there is nobody by that username yet. Both
@@ -336,19 +336,19 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   empty stack of views.
 - **Bots** (`BotsPage`, in the menu) lists the bots, with what each has and whether it is working or when it
   wakes, counting down), and creates new ones (a name and instructions; the rest has defaults). A bot opens as an
-  `event` view: `BotView` at the top (its model, debounce and state; Wake now; its last run in a line; Settings,
+  `item` view: `BotView` at the top (its model, debounce and state; Wake now; its last run in a line; Settings,
   folded, as a `Form`, saving them wakes it, with Delete there, asking first, which hands what it had back), then
   its own chat, like a task's. Its header has no Delete.
-- **Every event has a right-click menu** (`useItemMenu`): Open and Debug, then what can be done to it
-  (`itemActions.ts`: Resolve and Skip for an open task; Cancel for another open event, not a bot; then the
+- **Every item has a right-click menu** (`useItemMenu`): Open and Debug, then what can be done to it
+  (`itemActions.ts`: Resolve and Skip for an open task; Cancel for another open item, not a bot; then the
   custom actions). The view header draws the same list as icon buttons (the less important in the ⋯ menu), so the
   two never differ. Spread
-  it on anything that stands for an event. Clicking an event does nothing else.
+  it on anything that stands for an item. Clicking an item does nothing else.
 
 ## Rules
 
 - **The engine is the only writer.** Every change goes through `Engine` and emits
-  `change`. Events are added in `add` and resolved in `resolve`, and checks and
+  `change`. Items are added in `add` and resolved in `resolve`, and checks and
   starts on one item run one at a time (`serial`).
 - **egdb is the history.** Every write is an egdb event, with its author and time, and egdb keeps every value an
   entity had and every state a link had. So the app keeps no trace, runs or transcripts of its own:
@@ -373,7 +373,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
 - **One toolset for every agent.** Both MCP endpoints serve every action but the
   unsafe ones, and every call goes through `Engine.callAction`. Tools about an
   item take its id, so an agent may act on any item, its own included. Agents
-  are author `bot`, so the bots' rules (which event types they may add) apply.
+  are author `bot`, so the bots' rules (which item types they may add) apply.
   The endpoints are `run` (a bot's run, at `/mcp/<runId>` on a free port; it
   ties calls to the run and its bot, and records what it adds as `bot:<id>`) and `operator` (any other agent, at
   `/mcp` on port 47391 by default, with a bearer token). Both bind to loopback only.
@@ -385,7 +385,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   SessionStart `compact` hook says them again after a compaction. Its folder is
   `<data>/bots/<name>-<id>` unless it says otherwise, and lasts. Another provider
   is another `SpawnBot` in `PROVIDERS`. A new capability for bots that touches this app is an action.
-- **Adding an integration** means adding its actions (each declaring `unsafe`), an event type if it can be waited on, a preset if the chat
+- **Adding an integration** means adding its actions (each declaring `unsafe`), an item type if it can be waited on, a preset if the chat
   input should offer it, and a source if it produces items. Update `docs/items.md`
   when a type changes. Run CLIs and
   HTTP through `engine.exec` and `engine.fetch`, so the tests can stand in for them.

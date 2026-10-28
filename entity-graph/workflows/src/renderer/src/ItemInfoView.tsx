@@ -8,7 +8,7 @@ import { fenced, Markdown } from './components/ui/Markdown'
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
-/** Any event but an item, on its own: what it is, where it stands, and what its type has to show. */
+/** Any item but an item, on its own: what it is, where it stands, and what its type has to show. */
 export function ItemInfoView({
   detail,
   catalog,
@@ -122,7 +122,7 @@ function Values({ values }: { values: Record<string, unknown> }) {
   )
 }
 
-/** When an event was added and resolved, and by whom. */
+/** When an item was added and resolved, and by whom. */
 export function Timeline({ e }: { e: ItemInfo }) {
   const rows: [string, number | null, string | null][] = [
     ['Added', e.createdAt, e.createdBy],

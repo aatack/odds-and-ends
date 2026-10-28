@@ -1,5 +1,5 @@
 // What the backend answers over HTTP: every method of WorkflowsAPI that is not
-// an event subscription, by name, with its arguments as a JSON array, made as
+// an item subscription, by name, with its arguments as a JSON array, made as
 // the person the call says it is from (the `x-workflows-user` header; there is
 // no password, as the app is local). The app's main process passes the
 // renderer's calls through to it (src/main/backend.ts).

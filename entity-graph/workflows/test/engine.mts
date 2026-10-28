@@ -103,7 +103,7 @@ const last = (id: string, type: string) => engine.children(id).filter((e) => e.t
 
 // The types there are; those from before are gone.
 assert.deepEqual(engine.itemTypes.map((t) => t.type), ['task', 'note', 'approval', 'script', 'process', 'widget', 'search', 'slack_message', 'slack_channel', 'bot', 'user'])
-await assert.rejects(engine.addItems((await engine.create('x'))!, [{ type: 'message' as 'note', params: { text: 'x' } }]), /No event type message/)
+await assert.rejects(engine.addItems((await engine.create('x'))!, [{ type: 'message' as 'note', params: { text: 'x' } }]), /No item type message/)
 for (const i of engine.overview().items) await engine.close(i.id)
 
 // The bots. Threepio does most things; a new bot runs on opus and waits a minute, unless it says otherwise.
@@ -149,7 +149,7 @@ behaviours.push(async ({ call, prompt, system, schema, sessionId, resume, model,
   })
 })
 await toBot(id, 'Reply to the PR, please')
-assert.deepEqual(engine.children(id).map((e) => [e.type, e.createdBy]), [['note', 'human']], 'assignment is a link, not an event')
+assert.deepEqual(engine.children(id).map((e) => [e.type, e.createdBy]), [['note', 'human']], 'assignment is a link, not an item')
 assert.deepEqual(item(id).assignees, [threepio], 'handing it to the bot took it off the sender')
 assert.deepEqual(engine.assignedTo(threepio), [id], "the bot's items: its assigned_to links, followed backwards")
 await settle()
@@ -209,7 +209,7 @@ const parent = (await engine.create('Parent'))!
 behaviours.push(async () =>
   out({
     item: parent,
-    // A task's first items by their old name, `events`, are taken too.
+    // A task's first items by their old name, `items`, are taken too.
     items: [{ type: 'task', params: { title: 'Child', events: [{ type: 'note', params: { text: 'Do the child' } }], assignees: ['Threepio'] } }],
   }),
 )
@@ -331,7 +331,7 @@ await engine.close(loose)
   await engine.close(t)
 }
 
-// Traceability: a task links in events that sit elsewhere; they show in its chat, and stay where they sit.
+// Traceability: a task links in items that sit elsewhere; they show in its chat, and stay where they sit.
 {
   const from = (await engine.create('Discussion'))!
   await engine.send(from, 'note', 'We should fix the export')
@@ -347,7 +347,7 @@ await engine.close(loose)
   await engine.close(made)
 }
 
-// A widget: its state is a value on its event, changed by a person, a bot or a script, and read back by anyone.
+// A widget: its state is a value on its item, changed by a person, a bot or a script, and read back by anyone.
 {
   const t = (await engine.create('Widget'))!
   const [w] = await engine.addItems(t, [{ type: 'widget', params: { title: 'Count', html: '<b id="n"></b>', widget_state: { count: 0 } } }], 'bot', 'bot')
@@ -448,7 +448,7 @@ const bad = (await engine.create('Bad'))!
 behaviours.push(async () => out({ item: bad, items: [{ type: 'user', params: { username: 'Not Valid' } }] }))
 await toBot(bad, 'x')
 await settle()
-assert.match(String(last(bad, 'note').params.text), /^@Threepio failed: its update could not be applied: Bad params for a user event/)
+assert.match(String(last(bad, 'note').params.text), /^@Threepio failed: its update could not be applied: Bad params for a user item/)
 assert.equal(last(bad, 'note').createdBy, 'system')
 assert.ok(item(bad).withYou)
 behaviours.push(async () => ({ updates: 'nonsense' }) as unknown as BotOutput)
@@ -630,7 +630,7 @@ await engine.close(bad)
   await engine.saveAgent({ id: r2, name: 'R2', instructions: 'Beep boop.', provider: 'claude', model: 'haiku', debounceMinutes: 5 })
   const bot = engine.agent(r2)!
   assert.deepEqual([bot.instructions, bot.model, bot.debounceMinutes], ['Beep boop.', 'haiku', 5])
-  assert.deepEqual(engine.children(r2), [], 'settings are its params, not events')
+  assert.deepEqual(engine.children(r2), [], 'settings are its params, not items')
   const inspected2 = await engine.inspect(r2)
   assert.equal(inspected2.values.model, 'haiku', 'settings are plain values')
   assert.equal(inspected2.createdBy, 'human')
@@ -689,7 +689,7 @@ await engine.close(bad)
   await engine.close(t)
 }
 
-// ---- 13. Custom actions: scripts per event type, run on an event; what they say is a note ----
+// ---- 13. Custom actions: scripts per item type, run on an item; what they say is a note ----
 {
   const ca = engine.customActions
   const task = (await engine.create('Custom'))!
@@ -738,7 +738,7 @@ await engine.close(bad)
   const { ids: [made] } = JSON.parse(await outside.call('add_items', { items: [{ type: 'bot', params: { name: 'Sneaky' } }] }))
   assert.equal(engine.findAgent('sneaky')!.id, made, 'agents may make bots')
   await engine.deleteAgent(made)
-  // The tools' old names (from when items were called events) still answer, with their old parameters, but are not listed.
+  // The tools' old names (from when items were called items) still answer, with their old parameters, but are not listed.
   const listed = (await outside.client.listTools()).tools.map((t) => t.name)
   for (const old of ['event_types', 'add_events', 'link_events', 'cancel_event']) assert.ok(!listed.includes(old), `${old} is not listed`)
   assert.deepEqual(JSON.parse(await outside.call('event_types')).length, engine.itemTypes.length)

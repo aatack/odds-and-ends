@@ -3,7 +3,7 @@
 import { AppWindow, Bot, Search, Check, GitPullRequest, Hash, Layers, Link, MessageCircle, MessageSquare, Settings, ShieldCheck, SquareCode, SquareTerminal, User, type LucideIcon } from 'lucide-react'
 import type { ItemKind, Item, ItemInfo } from '../../shared/types'
 
-/** One icon an event type. */
+/** One icon an item type. */
 export const TYPE_ICON: Record<ItemKind, LucideIcon> = {
   task: Layers,
   note: MessageSquare,
@@ -48,7 +48,7 @@ export function ItemIcon({ item }: { item: Item }) {
   return <Icon className="icon" aria-label={TYPE_NAME[waiting.type]} />
 }
 
-/** An event type's icon, named for whoever hovers it. */
+/** An item type's icon, named for whoever hovers it. */
 export function TypeIcon({ type }: { type: ItemKind }) {
   const Icon = TYPE_ICON[type]
   return (
@@ -70,7 +70,7 @@ function whoIcon(by: string): [LucideIcon, string] {
 }
 
 /**
- * The one icon for an event, wherever it is drawn: a note is
+ * The one icon for an item, wherever it is drawn: a note is
  * whoever said (or ran) it; anything else is its type. The chat's pictures, the
  * blocker rows and the view header all use this.
  */
@@ -78,7 +78,7 @@ export function itemInfoIcon(e: { type: ItemKind; createdBy: string }): [LucideI
   return e.type === 'note' ? whoIcon(e.createdBy) : [TYPE_ICON[e.type], TYPE_NAME[e.type]]
 }
 
-/** An event's icon, inline. */
+/** An item's icon, inline. */
 export function ItemInfoIcon({ info }: { info: { type: ItemKind; createdBy: string } }) {
   const [Icon, name] = itemInfoIcon(info)
   return (

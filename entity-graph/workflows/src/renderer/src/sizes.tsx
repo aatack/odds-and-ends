@@ -1,6 +1,6 @@
 // The four sizes anything is drawn at, from one place:
 //
-// - avatar: its picture, beside it in the chat (who said a note; any other event, its type);
+// - avatar: its picture, beside it in the chat (who said a note; any other item, its type);
 // - pill: inline in text, as `[id]()` is drawn: its icon and name, which open it;
 // - card: in a chat or a list, by its type (`CARDS`);
 // - focus: on its own, filling the view (`FOCUS`): a task or a bot as its chat, anything else as its details.
@@ -21,7 +21,7 @@ import { api } from './useWorkflows'
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 /**
- * An event's picture, beside its message in the chat. Given who made it (`owner`: a bot or a person), hovering it
+ * An item's picture, beside its message in the chat. Given who made it (`owner`: a bot or a person), hovering it
  * names them and pressing it opens them; otherwise it is named for what it is.
  */
 export function ItemAvatar({ info, owner }: { info: { type: ItemKind; createdBy: string }; owner?: { name: string; onOpen: () => void } | null }) {
@@ -75,13 +75,13 @@ export const CARDS: Partial<Record<ItemKind, (p: CardProps) => ReactNode>> = {
   ),
 }
 
-/** An event's card, by its type. */
+/** An item's card, by its type. */
 export function ItemCard(props: CardProps) {
   const card = CARDS[props.info.type]
   return card ? <>{card(props)}</> : <Markdown text={props.info.message ?? props.info.summary} highlight={props.find} />
 }
 
-/** How each type fills the view on its own: as a chat (its events, and the chat input), or as its details. */
+/** How each type fills the view on its own: as a chat (its items, and the chat input), or as its details. */
 export const FOCUS: Record<ItemKind, 'chat' | 'details'> = {
   task: 'chat',
   bot: 'chat',

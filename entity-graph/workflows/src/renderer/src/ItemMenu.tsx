@@ -9,7 +9,7 @@ import { userAtom } from './people'
 import { api } from './useWorkflows'
 import { menuAtom, renameAtom, sameView, viewsAtom, type View } from './views'
 
-/** What to spread on anything standing for an event, so a right-click on it opens the event menu. */
+/** What to spread on anything standing for an item, so a right-click on it opens the item menu. */
 export function useItemMenu() {
   const setMenu = useSetAtom(menuAtom)
   return (id: string) => ({
@@ -22,7 +22,7 @@ export function useItemMenu() {
 }
 
 /**
- * The right-click menu on an event: Open it, or Debug it (each puts a view on
+ * The right-click menu on an item: Open it, or Debug it (each puts a view on
  * top of the stack), and below, what can be done to it (`itemActions`), as its
  * view's header offers.
  */
@@ -44,7 +44,7 @@ export function ItemMenu({
   const [views, setViews] = useAtom(viewsAtom)
   const setRename = useSetAtom(renameAtom)
   const me = useAtomValue(userAtom)
-  // The event itself, read as the menu opens, for which actions it has.
+  // The item itself, read as the menu opens, for which actions it has.
   const [info, setInfo] = useState<ItemInfo | null>(null)
   // Placed by Floating UI at the cursor: flipped above it, or shifted along, so it always stays in the window,
   // and placed again as it grows (its actions come in a moment after it opens).
@@ -78,7 +78,7 @@ export function ItemMenu({
       window.removeEventListener('blur', close)
     }
   }, [menu, setMenu])
-  // "Also put in…": the event a task is being picked for, once the menu has closed.
+  // "Also put in…": the item a task is being picked for, once the menu has closed.
   const [adding, setAdding] = useState<string | null>(null)
   const picker = adding && (
     <ItemPicker

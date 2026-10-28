@@ -274,8 +274,8 @@ function AppMenu({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onSign
 
 /**
  * The content pane: the top view on the stack. Its first line is always the
- * same: Back, the event as text, and what can be done to it, on the right.
- * Below is the view itself, which depends on the event's type.
+ * same: Back, the item as text, and what can be done to it, on the right.
+ * Below is the view itself, which depends on the item's type.
  */
 function ItemsMain({ mobile }: { mobile: boolean }) {
   const w = useItems()
@@ -355,7 +355,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
     return (
       <div className="view">
         <ViewHeader canGoBack={w.views.length > 0} onBack={w.back} />
-        <div className="empty">That event is not there any more.</div>
+        <div className="empty">That item is not there any more.</div>
       </div>
     )
   const e = d.info
@@ -396,7 +396,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
 }
 
 /**
- * An event's actions in its header: the important ones as icon buttons, the rest in a menu beside them. On a phone,
+ * An item's actions in its header: the important ones as icon buttons, the rest in a menu beside them. On a phone,
  * all of them in the menu, leaving the title the width.
  */
 function HeaderActions({ actions, mobile = false }: { actions: ItemAction[]; mobile?: boolean }) {
@@ -442,7 +442,7 @@ function HeaderActions({ actions, mobile = false }: { actions: ItemAction[]; mob
   )
 }
 
-/** Back (to the items view, at the bottom of every stack; its place kept on the items view itself), the event as text, and its actions on the right. */
+/** Back (to the items view, at the bottom of every stack; its place kept on the items view itself), the item as text, and its actions on the right. */
 function ViewHeader(props: {
   canGoBack: boolean
   onBack: () => void
@@ -453,7 +453,7 @@ function ViewHeader(props: {
   onRename?: (title: string) => void
 }) {
   const [editing, setEditing] = useState<string | null>(null)
-  // Clicking the title opens the event's menu (Open, Debug, Rename, its actions), as a right-click does.
+  // Clicking the title opens the item's menu (Open, Debug, Rename, its actions), as a right-click does.
   const setMenu = useSetAtom(menuAtom)
   const [rename, setRename] = useAtom(renameAtom)
   const { info, onRename, title } = props
@@ -576,7 +576,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
   useEffect(() => {
     w.markViewed(item.id)
   }, [item.id, item.withYou])
-  // New events arrive at the bottom, as in any chat.
+  // New items arrive at the bottom, as in any chat.
   const count = detail.children.length
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight })

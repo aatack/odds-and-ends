@@ -50,7 +50,7 @@ const assignToLastBot = ({ detail, overview }: Ctx): DefaultAction[] => {
   return [{ id: `assign:${bot.id}`, name: `Assign to @${bot.name}`, hint: `hand this task to @${bot.name}`, icon: 'bot', run: () => api().send(detail.item.id, `assign:${bot.id}`, '') }]
 }
 
-/** Wait for Slack: one for each Slack message in the last 20 events (pulled in, or linked in a note). */
+/** Wait for Slack: one for each Slack message in the last 20 items (pulled in, or linked in a note). */
 const waitForSlack = ({ detail, overview }: Ctx): DefaultAction[] => {
   const links: string[] = []
   for (const e of detail.children.slice(-20).reverse()) {

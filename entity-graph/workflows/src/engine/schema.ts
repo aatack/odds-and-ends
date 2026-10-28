@@ -20,7 +20,7 @@ function clean(node: unknown): unknown {
 export const objectSchema = (shape: z.ZodRawShape): ObjectSchema =>
   clean(zodToJsonSchema(z.object(shape), { $refStrategy: 'none' })) as ObjectSchema
 
-/** One event of any type a bot may add, as the bots return them. */
+/** One item of any type a bot may add, as the bots return them. */
 export function itemSchema(types: ItemType[]): Record<string, unknown> {
   return {
     anyOf: types
@@ -32,7 +32,7 @@ export function itemSchema(types: ItemType[]): Record<string, unknown> {
         properties: {
           type: { type: 'string', enum: [t.type] },
           params: objectSchema(t.params),
-          ref: { type: 'string', description: 'A name for this event, so another in the same list can refer to it.' },
+          ref: { type: 'string', description: 'A name for this item, so another in the same list can refer to it.' },
         },
         required: ['type', 'params'],
         additionalProperties: false,

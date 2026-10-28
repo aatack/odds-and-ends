@@ -1,4 +1,4 @@
-// The event types. What each takes and resolves with is the contract
+// The item types. What each takes and resolves with is the contract
 // docs/items.md sets out; keep the two in step.
 
 import { z } from 'zod'
@@ -19,7 +19,7 @@ export const task: ItemType = {
     items: z
       .array(z.object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional() }))
       .optional()
-      .describe('Items to put in it as it is created (`events`, the old name, is taken too). They are added in it, and not kept in its values.'),
+      .describe('Items to put in it as it is created (`items`, the old name, is taken too). They are added in it, and not kept in its values.'),
     key: z.string().optional().describe('Identifies it, so that it is added only once.'),
     detached: z
       .boolean()
@@ -203,9 +203,9 @@ export const SEARCH_DOC =
   'It is kept on the one `search` item, which sits in no task; search_sections reads it, set_search_sections replaces it. Each section, in order:\n' +
   "- { kind: 'builtin', id, label? }: one of the finder's own: viewed (recently viewed), needsYou, withBots, waiting, closed (today).\n" +
   "- { kind: 'query', label, filter, limit? }: a filter, as egdb's find takes it ({ eq: { key, value } }, ne, lt/le/gt/ge, contains, " +
-  'contains_ignore_case, prefix, in: { key, values }, is_null, not_null, and: [], or: [], not), over every event\'s values (type, ' +
+  'contains_ignore_case, prefix, in: { key, values }, is_null, not_null, and: [], or: [], not), over every item\'s values (type, ' +
   'title, text, description, resolved, the rest of its params) and these made from its links: parent (the task it sits in), assignees ' +
-  '(who has it: eq matches any one), created_by, created_at. Rows are the events that match, the newest first.\n' +
+  '(who has it: eq matches any one), created_by, created_at. Rows are the items that match, the newest first.\n' +
   "- { kind: 'function', label, source }: JavaScript, run as a script's body is (context and tools in scope, no unsafe tools), with " +
   'context.text the filter typed so far; it returns rows: [{ id, type, left, right? }] (left and right in markdown; id is what Enter opens).\n' +
   'The label heads the section. What is typed filters every section at once; a function runs again as it changes.\n' +
@@ -228,7 +228,7 @@ export const user: ItemType = {
     'A person who uses the app: its id is their username, which they sign in with. It sits in no item, and is open while it lasts. ' +
     'Items are assigned to people as to bots.',
   params: {
-    username: z.string().regex(/^[a-z0-9][a-z0-9_.-]*$/, 'Lower-case letters, digits, dots, dashes and underscores.').describe('Their username: the id of this event.'),
+    username: z.string().regex(/^[a-z0-9][a-z0-9_.-]*$/, 'Lower-case letters, digits, dots, dashes and underscores.').describe('Their username: the id of this item.'),
     name: z.string().optional().describe('What they are called, if not their username.'),
   },
   data: '{ cancelled: true }, once removed',
@@ -244,7 +244,7 @@ export const WIDGET_DOC =
   'the app is (its fonts and colours as CSS variables: --ink, --muted, --panel, --bg, --line, --accent), so plain HTML (button, input, ' +
   'table, select) looks native.\n' +
   '- In its scripts: `onState(fn)` calls fn with the state now and whenever it changes (from anywhere); `setState(next)` or ' +
-  '`setState(current => next)` changes it (kept on the event: other items, bots and scripts read it as `widget_state`); `getState()`; ' +
+  '`setState(current => next)` changes it (kept on the item: other items, bots and scripts read it as `widget_state`); `getState()`; ' +
   'and helpers that answer HTML strings: `esc(text)`, `pill(text)`, `card(title, bodyHtml)`.\n' +
   '- Update the page in place in onState (set .textContent, .value, .checked) rather than rewriting innerHTML round an input, so a ' +
   'person typing keeps their place.\n' +
@@ -266,7 +266,7 @@ export const widget: ItemType = {
   describe: (p) => String(p.title ?? 'Widget'),
 }
 
-/** Retired for now: kept so the process events already stored still read. None can be added (Engine.prepare). */
+/** Retired for now: kept so the process items already stored still read. None can be added (Engine.prepare). */
 export const proc: ItemType = {
   type: 'process',
   description: 'Switched off for now: no process can be added.',

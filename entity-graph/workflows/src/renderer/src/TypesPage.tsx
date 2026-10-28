@@ -26,14 +26,14 @@ const ACTION_FORM = {
       title: 'Code',
       'x-multiline': true,
       'x-monospace': true,
-      description: 'async (context, actions) => null | "said in the chat" | { message?, events? }. Generate writes it from the description and notes.',
+      description: 'async (context, actions) => null | "said in the chat" | { message?, items? }. Generate writes it from the description and notes.',
     },
   },
   required: ['name'],
 }
 
 /**
- * Every event type, with what can be done to its events: the app's own actions
+ * Every item type, with what can be done to its items: the app's own actions
  * (read only: which are buttons, which are in the menu), then the human's own,
  * to add, change, generate the code of, or remove.
  */

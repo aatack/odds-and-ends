@@ -1,17 +1,17 @@
 import type { SearchRow, SearchSection } from './search'
 // The shapes the main process and the renderer both read. docs/items.md is the
-// long form of what an event is.
+// long form of what an item is.
 
 /**
- * Everything is an event, items included. Every event but an item, a bot or a
+ * Everything is an item, items included. Every item but an item, a bot or a
  * person sits in an item or a bot (its parent), and an item may sit in another.
- * Some events resolve as they are added (a note); the rest are **blockers**,
+ * Some items resolve as they are added (a note); the rest are **blockers**,
  * which stay open until something happens (a script says it is done, an approval
  * is given, a child item closes).
  */
 export type ItemKind = 'task' | 'note' | 'approval' | 'script' | 'process' | 'widget' | 'search' | 'slack_message' | 'slack_channel' | 'bot' | 'user'
 
-/** An event as it is added. `ref` names it, so another added alongside can point at it. */
+/** An item as it is added. `ref` names it, so another added alongside can point at it. */
 export interface ItemSpec {
   type: ItemKind
   params: Record<string, unknown>
@@ -19,8 +19,8 @@ export interface ItemSpec {
 }
 
 /**
- * One event on one item: the interface every type shares. docs/items.md has
- * the table. What an event *is* (its params, data, and how it reads) depends
+ * One item on one item: the interface every type shares. docs/items.md has
+ * the table. What an item *is* (its params, data, and how it reads) depends
  * on its type; everything else here is the same for all of them.
  */
 export interface ItemInfo {
@@ -35,18 +35,18 @@ export interface ItemInfo {
   createdBy: string
   createdAt: number
 
-  /** It has happened (or was cancelled; for an item, closed). A plain event is resolved as it is added. */
+  /** It has happened (or was cancelled; for an item, closed). A plain item is resolved as it is added. */
   resolved: boolean
   /** When, known for what resolved since the app started: egdb's history of `resolved` has the rest. */
   resolvedAt: number | null
-  /** Who resolved it: the human (approving), a bot (its run ending), 'system' (a check), or as createdBy for a plain event. */
+  /** Who resolved it: the human (approving), a bot (its run ending), 'system' (a check), or as createdBy for a plain item. */
   resolvedBy: string | null
   /** Resolved without happening. */
   cancelled: boolean
   /** What it resolved with, as its type's data says; null while open. */
   data: Record<string, unknown> | null
 
-  /** Who made it happen: resolvedBy for a blocker, createdBy for a plain event. The chat puts the human's on the right. */
+  /** Who made it happen: resolvedBy for a blocker, createdBy for a plain item. The chat puts the human's on the right. */
   actor: string
   /** One line saying what it is, from its type's `describe`: a blocker's row while open, and how prompts name it. */
   summary: string
@@ -77,7 +77,7 @@ export interface Item {
   blockers: ItemInfo[]
   /**
    * Who it is assigned to: people (their usernames) and bots (their ids), the earliest assigned first. These are
-   * `assigned_to` links from the item, not events in it.
+   * `assigned_to` links from the item, not items in it.
    */
   assignees: string[]
   /** Open, assigned to the person looking, and blocked by nothing but people's own approvals: it is their turn. */
@@ -94,7 +94,7 @@ export interface ItemDetail {
   item: Item
   /** The item it sits in, if any. */
   parent: { id: string; title: string } | null
-  /** Its children, oldest first: every event in it, child items included. */
+  /** Its children, oldest first: every item in it, child items included. */
   children: ItemInfo[]
 }
 
@@ -107,7 +107,7 @@ export interface ItemInfoDetail {
 }
 
 /**
- * A bot: a `bot` event, in no item, its settings in its params, and its own chat in it. It is assigned items, and
+ * A bot: a `bot` item, in no item, its settings in its params, and its own chat in it. It is assigned items, and
  * wakes when something happens to it. One bot runs one thing at a time, in one Claude session of its own, in a
  * folder of its own.
  */
@@ -131,7 +131,7 @@ export interface Agent {
   /** How its last run went (its `last_run` value; egdb keeps every one before), or null before it has run. */
   lastRun: LastRun | null
   createdAt: number
-  /** Deleted (its agent event cancelled): it is assigned nothing more and never runs again. */
+  /** Deleted (its agent item cancelled): it is assigned nothing more and never runs again. */
   deleted: boolean
   /** The run going now, if any. */
   runId: string | null
@@ -167,7 +167,7 @@ export interface Inspection {
   createdBy: string | null
 }
 
-/** A person: a `user` event in no item, whose id is their username. */
+/** A person: a `user` item in no item, whose id is their username. */
 export interface User {
   id: string
   name: string
@@ -233,7 +233,7 @@ export interface PresetInfo {
   name: string
   /** What happens, after the name, in the empty input. */
   hint: string
-  /** The event type whose icon stands for it. */
+  /** The item type whose icon stands for it. */
   icon: ItemKind
   /** What it does instead with nothing typed, if that differs: the input shows this while it is empty. */
   whenEmpty?: { name: string; hint: string; icon: ItemKind }
@@ -292,7 +292,7 @@ export interface SlackMessage {
   permalink?: string
 }
 
-/** What a Slack event's card and view show: its messages, oldest first, and which one it is about. */
+/** What a Slack item's card and view show: its messages, oldest first, and which one it is about. */
 export interface SlackView {
   workspace: string
   channel: string
@@ -339,7 +339,7 @@ export interface PhoneView {
 export interface WorkflowsAPI {
   overview: () => Promise<Overview>
   detail: (id: string) => Promise<ItemDetail | null>
-  /** Any event, item or not, with what its views need. */
+  /** Any item, item or not, with what its views need. */
   itemInfoDetail: (id: string) => Promise<ItemInfoDetail | null>
   catalog: () => Promise<Catalog>
   /** The item that has waited longest for the human, or null. */
@@ -361,7 +361,7 @@ export interface WorkflowsAPI {
   reopen: (id: string) => Promise<void>
   /** The edit log: what was done, by whom and when, the newest first. */
   editLog: (query: LogQuery) => Promise<LogEntry[]>
-  /** Adds events in a task, as the person signed in: what the chat input's default actions do. */
+  /** Adds items in a task, as the person signed in: what the chat input's default actions do. */
   addItems: (itemId: string, specs: ItemSpec[]) => Promise<string[]>
   /** The search page's sections (search.ts), as configured: the defaults when nothing is. */
   searchSections: () => Promise<SearchSection[]>
@@ -371,16 +371,16 @@ export interface WorkflowsAPI {
   runSearchSection: (section: SearchSection, text: string) => Promise<SearchRow[]>
   /** Runs a tool (any action: the same registry as the MCP and a script's tools) as the person, from a task's `/`: what it answered is a note in the task. */
   runTool: (itemId: string, name: string, args: Record<string, unknown>) => Promise<unknown>
-  /** Puts events in a task as well as where they sit (`contains` links): an event can be in many. */
+  /** Puts items in a task as well as where they sit (`contains` links): an item can be in many. */
   link: (taskId: string, itemIds: string[]) => Promise<void>
   /** Changes a widget's state. */
   setWidgetState: (itemId: string, state: unknown) => Promise<void>
-  /** Turns the person's thumbs-up on an event on or off. */
+  /** Turns the person's thumbs-up on an item on or off. */
   react: (itemId: string, on: boolean) => Promise<void>
   customActions: () => Promise<CustomAction[]>
   saveCustomAction: (a: Omit<CustomAction, 'id'> & { id?: string }) => Promise<CustomAction>
   removeCustomAction: (id: string) => Promise<void>
-  /** Runs a custom action on an event. */
+  /** Runs a custom action on an item. */
   runCustomAction: (id: string, itemId: string) => Promise<void>
   /** Writes a custom action's code from its description and notes, with a model. */
   generateCustomAction: (a: { type: string; name: string; description: string; notes: string; source?: string }) => Promise<string>
@@ -450,7 +450,7 @@ export interface WorkflowsAPI {
 export interface LogQuery {
   /** Who did it: usernames, or bots' actors (`bot:<id>`), or 'system', 'script'… */
   authors?: string[]
-  /** What it was done to: events' ids (for links, either end). */
+  /** What it was done to: items' ids (for links, either end). */
   entities?: string[]
   /** Value keys, or link types. */
   keys?: string[]
@@ -478,21 +478,21 @@ export interface LogEntry {
   removed: boolean
 }
 
-/** One of the human's own actions, for events of one type: a script, usually written by a model from its description and notes. */
+/** One of the human's own actions, for items of one type: a script, usually written by a model from its description and notes. */
 export interface CustomAction {
   id: string
-  /** The event type it is for. */
+  /** The item type it is for. */
   type: string
   name: string
   /** What it does: shown, and what its code is written from. */
   description: string
   /** More for the model writing its code; shown only on the Types page. */
   notes: string
-  /** async (context, actions) => null | string | { message?, events? } */
+  /** async (context, actions) => null | string | { message?, items? } */
   source: string
   /** A lucide icon, by its name in the Types page's list. */
   icon: string
-  /** Shown as a button in an event's header; the rest are in the menu beside them. */
+  /** Shown as a button in an item's header; the rest are in the menu beside them. */
   important: boolean
 }
 

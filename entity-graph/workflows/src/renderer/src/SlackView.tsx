@@ -6,7 +6,7 @@ import { api } from './useWorkflows'
 
 const when = (ts: string) => new Date(Number(ts) * 1000).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
 
-/** A Slack event's messages, read through the backend's cache as it is shown. */
+/** A Slack item's messages, read through the backend's cache as it is shown. */
 function useSlackView(id: string): { view: SlackView | null; error: string | null } {
   const [view, setView] = useState<SlackView | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -32,7 +32,7 @@ const quote = (text: string, lines = 6) => {
 }
 
 /**
- * A Slack event in a chat: for a message, who said it, where, and what (quoted), and how many replies; for a
+ * A Slack item in a chat: for a message, who said it, where, and what (quoted), and how many replies; for a
  * channel, its name, the range, and how many messages. Read from Slack (through the cache) as it is shown.
  */
 export function SlackCard({ info: e, find }: { info: ItemInfo; find: string }) {

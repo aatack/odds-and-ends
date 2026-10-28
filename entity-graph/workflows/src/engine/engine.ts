@@ -110,7 +110,7 @@ export class Engine extends EventEmitter {
   readonly actions: Action[] = [...itemActions, ...slackActions, ...this.integrations.flatMap((i) => i.tools)]
   readonly itemTypes: ItemType[] = ITEM_TYPES
   readonly presets: Preset[] = PRESETS
-  /** People's own actions, per event type (the Types page). */
+  /** People's own actions, per item type (the Types page). */
   readonly customActions: CustomActions
   /** Stops a bot's run. Set by the runner. */
   onCancel: (agentId: string) => void = () => {}
@@ -122,9 +122,9 @@ export class Engine extends EventEmitter {
   private configured = new Map<string, Mark>()
   /** When each bot was woken by hand: it runs then, whatever its debounce says. */
   private woken = new Map<string, number>()
-  /** The events being checked right now: a check never starts while the last is still going. */
+  /** The items being checked right now: a check never starts while the last is still going. */
   private checking = new Set<string>()
-  /** Who pressed play on each event about to run (`runNow`): its next check is theirs. */
+  /** Who pressed play on each item about to run (`runNow`): its next check is theirs. */
   private pressed = new Map<string, string>()
   private queues = new Map<string, Promise<unknown>>()
 
@@ -160,7 +160,7 @@ export class Engine extends EventEmitter {
 
   type(name: string): ItemType {
     const t = this.typeOrNull(name)
-    if (!t) throw new Error(`No event type ${name}: one of ${this.itemTypes.map((t) => t.type).join(', ')}.`)
+    if (!t) throw new Error(`No item type ${name}: one of ${this.itemTypes.map((t) => t.type).join(', ')}.`)
     return t
   }
 
@@ -168,7 +168,7 @@ export class Engine extends EventEmitter {
     return this.itemTypes.find((t) => t.type === name) ?? null
   }
 
-  /** Whether events of a type are blockers: for the loader. */
+  /** Whether items of a type are blockers: for the loader. */
   blocking = (type: string): boolean => Boolean(this.typeOrNull(type)?.blocking)
 
   /** Runs `fn` after everything already queued for this item: one change to an item at a time. */
@@ -187,7 +187,7 @@ export class Engine extends EventEmitter {
 
   // ---- reads ----
 
-  /** A row as the shared event shape, its text filled in by its type. */
+  /** A row as the shared item shape, its text filled in by its type. */
   private toInfo(r: ItemRow): ItemInfo {
     const type = this.type(r.type)
     const params = r.params
@@ -225,7 +225,7 @@ export class Engine extends EventEmitter {
     return r ? this.toInfo(r) : null
   }
 
-  /** The events in an item, oldest first; only the open ones (its blockers) with `open`. */
+  /** The items in an item, oldest first; only the open ones (its blockers) with `open`. */
   children(itemId: string, open = false): ItemInfo[] {
     return this.store
       .children(itemId)
@@ -314,7 +314,7 @@ export class Engine extends EventEmitter {
     return [...new Set(given.map((a) => a.to))]
   }
 
-  /** A task in full; or a bot, its own chat being its events. */
+  /** A task in full; or a bot, its own chat being its items. */
   detail(id: string, viewer = this.me()): ItemDetail | null {
     const r = this.row(id)
     const item = r?.type === 'task' || r?.type === 'bot' ? this.toItem(r, viewer) : null
@@ -426,7 +426,7 @@ export class Engine extends EventEmitter {
     return []
   }
 
-  /** An event's values, as a query reads them: its type and params, how it stands, and keys made from its links. */
+  /** An item's values, as a query reads them: its type and params, how it stands, and keys made from its links. */
   private valuesOf(r: ItemRow): Record<string, unknown> {
     return {
       ...r.params,
@@ -468,10 +468,10 @@ export class Engine extends EventEmitter {
     this.emit('change')
   }
 
-  /** Turns `actor`'s reaction (a thumbs-up) to an event on or off. */
+  /** Turns `actor`'s reaction (a thumbs-up) to an item on or off. */
   async react(itemId: string, on: boolean, actor = this.me()): Promise<void> {
     const row = this.row(itemId)
-    if (!row) throw new Error(`No event ${itemId}.`)
+    if (!row) throw new Error(`No item ${itemId}.`)
     if (row.reactions.includes(actor) === on) return
     this.store.setReactions(itemId, on ? [...row.reactions, actor] : row.reactions.filter((r) => r !== actor), actor, this.now())
     this.emit('change')
@@ -695,7 +695,7 @@ export class Engine extends EventEmitter {
 
   /**
    * When a bot wakes next, and for what: its own chat (when someone wrote in it, or it is woken by hand), and every
-   * open task it has, each with the events new in it since the bot was last prompted (less what the bot itself did,
+   * open task it has, each with the items new in it since the bot was last prompted (less what the bot itself did,
    * but a child task closing is always news). The rule is `dueAt` (wakes.ts), the same as a script's: once anything
    * affected it since it last woke (a task assigned to it, anything new in its tasks or its chat, its settings), its
    * debounce after; or its cycle (`cycle_minutes`, PERIODIC_MINUTES by default) after it last woke, while it has
@@ -757,7 +757,7 @@ export class Engine extends EventEmitter {
   }
 
   /**
-   * Starts a bot's run, if it is due and not running: its chat and every task it has, each with its new events (or,
+   * Starts a bot's run, if it is due and not running: its chat and every task it has, each with its new items (or,
    * for a task its session has not seen, its whole history). Its session is its own: resumed if it has one, otherwise new.
    */
   claim(agentId: string): { agent: Agent; items: { item: Item; children: ItemInfo[]; first: boolean; own?: boolean }[]; resume: boolean; handoff: string | null } | null {
@@ -813,7 +813,7 @@ export class Engine extends EventEmitter {
 
   /**
    * A run is over. The bot's `last_run` says how it went. Its output's updates are applied, task by task: a note, the
-   * events to add, who has it, closing. Then each task it had that it said nothing of who has goes back to its owner
+   * items to add, who has it, closing. Then each task it had that it said nothing of who has goes back to its owner
    * (`settle`). If the run failed, each task it has says so, and goes back to its owner.
    */
   async endRun(
@@ -846,7 +846,7 @@ export class Engine extends EventEmitter {
                   item: z.string(),
                   message: z.string().optional(),
                   items: z.array(z.object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional() })).optional(),
-                  // The old name (from when items were called events).
+                  // The old name (from when items were called items).
                   events: z.array(z.object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional() })).optional(),
                   assign: z.array(z.string()).optional(),
                   close: z.boolean().optional(),
@@ -946,32 +946,32 @@ export class Engine extends EventEmitter {
 
   /** The one way into an action, from MCP, a script or the UI: checked, then run. */
   async callAction(called: string, given: Record<string, unknown>, ctx: ActionContext): Promise<unknown> {
-    // Old names and parameters (from when items were called events) are taken as the new.
+    // Old names and parameters (from when items were called items) are taken as the new.
     const { name, args } = current(called, given ?? {})
     const action = this.actions.find((a) => a.name === name)
     if (!action) throw new Error(`No action ${name}.`)
     // The rule on unsafe actions (see Action in integrations.ts), checked here
     // too, whatever the caller was shown.
     if (action.unsafe && ctx.author !== 'human')
-      throw new Error(`${name} is unsafe, so bots, and scripts bots wrote, may not run it. Ask a person: add an approval event for it.`)
+      throw new Error(`${name} is unsafe, so bots, and scripts bots wrote, may not run it. Ask a person: add an approval item for it.`)
     const parsed = z.object(action.input).safeParse(args ?? {})
     if (!parsed.success) throw new Error(`Bad arguments for ${name}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
     return action.run(parsed.data, ctx)
   }
 
-  // ---- events ----
+  // ---- items ----
 
-  /** Checks events and expands them as their types say, without touching the store. */
+  /** Checks items and expands them as their types say, without touching the store. */
   prepare(specs: ItemSpec[], author: Author): ItemSpec[] {
     return specs.flatMap((s) => {
       const type = this.type(s?.type)
       if (s.type === 'process') throw new Error('Processes are switched off for now.')
-      if (author === 'bot' && !type.bots) throw new Error(`A bot may not add a ${s.type} event.`)
-      // A task's first items, by their old name (from when items were called events).
+      if (author === 'bot' && !type.bots) throw new Error(`A bot may not add a ${s.type} item.`)
+      // A task's first items, by their old name (from when items were called items).
       const given = s.type === 'task' && s.params && 'events' in s.params && !('items' in s.params) ? { ...s.params, items: s.params.events } : s.params
       const parsed = z.object(type.params).safeParse(given ?? {})
       if (!parsed.success)
-        throw new Error(`Bad params for a ${s.type} event: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
+        throw new Error(`Bad params for a ${s.type} item: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
       const params = parsed.data as Record<string, unknown>
       if (s.type === 'approval' && !this.actions.find((a) => a.name === params.action)?.unsafe)
         throw new Error(`${params.action} is not an unsafe action, so it needs no approval.`)
@@ -986,8 +986,8 @@ export class Engine extends EventEmitter {
   }
 
   /**
-   * Adds events, already prepared, in a task or a bot's chat (or, for tasks, bots and people, in none). Plain ones
-   * resolve at once; blockers wait. A task's first events (`events`) are added in it, and its `assignees` assigned;
+   * Adds items, already prepared, in a task or a bot's chat (or, for tasks, bots and people, in none). Plain ones
+   * resolve at once; blockers wait. A task's first items (`items`) are added in it, and its `assignees` assigned;
    * neither is kept in its values. A task whose key is already taken is left out. Answers the ids added.
    */
   add(parentId: string | null, specs: ItemSpec[], createdBy: string): string[] {
@@ -1045,7 +1045,7 @@ export class Engine extends EventEmitter {
   }
 
   /**
-   * An event's check schedule, in seconds: its type's, never under a second apart after the first, or the default.
+   * An item's check schedule, in seconds: its type's, never under a second apart after the first, or the default.
    * Null when its type has schedules and it has none: then it runs only when someone runs it (`runNow`).
    */
   private scheduleOf(type: ItemType, params: Record<string, unknown>): number[] | null {
@@ -1107,7 +1107,7 @@ export class Engine extends EventEmitter {
 
   // ---- people ----
 
-  /** A new task, in `parentId` or in none, with events to start it off. */
+  /** A new task, in `parentId` or in none, with items to start it off. */
   async create(
     title: string,
     opts: { parentId?: string | null; key?: string; specs?: ItemSpec[]; assignees?: string[]; actor?: string; author?: Author } = {},
@@ -1150,7 +1150,7 @@ export class Engine extends EventEmitter {
     await this.idle()
   }
 
-  /** Adds events in a task (or tasks in none): from a person, or from an agent through MCP (author 'bot', so its rules apply). */
+  /** Adds items in a task (or tasks in none): from a person, or from an agent through MCP (author 'bot', so its rules apply). */
   async addItems(parentId: string | null, specs: ItemSpec[], actor = this.me(), author: Author = 'human'): Promise<string[]> {
     if (parentId && this.row(parentId)?.type !== 'bot' && this.must(parentId).closed) throw new Error('This task is closed.')
     const ids = this.add(parentId, this.prepare(specs, author), actor)
@@ -1175,7 +1175,7 @@ export class Engine extends EventEmitter {
   /** Ends a blocker without it happening; a task is closed as cancelled, and a bot deleted. */
   async cancel(itemId: string, actor = this.me()): Promise<void> {
     const info = this.info(itemId)
-    if (!info || info.resolved) throw new Error('That event is not waiting.')
+    if (!info || info.resolved) throw new Error('That item is not waiting.')
     if (info.type === 'task') return this.close(itemId, { actor, how: 'cancelled' })
     if (info.type === 'bot') return this.deleteAgent(itemId, actor)
     this.resolve(itemId, { cancelled: true }, actor, true)
@@ -1198,7 +1198,7 @@ export class Engine extends EventEmitter {
     if (actor !== 'script') await this.idle()
   }
 
-  /** Adds `contains` links from a task to events that sit elsewhere (other tasks, notes, anything), for traceability. */
+  /** Adds `contains` links from a task to items that sit elsewhere (other tasks, notes, anything), for traceability. */
   async link(taskId: string, itemIds: string[], actor = this.me()): Promise<void> {
     if (this.row(taskId)?.type !== 'task') throw new Error(`No task ${taskId}.`)
     this.store.batch(() => {

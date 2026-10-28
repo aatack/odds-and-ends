@@ -6,13 +6,14 @@ import { atomWithStorage, createJSONStorage } from 'jotai/utils'
 
 /**
  * A view. `items` is every item, to filter, open or add to: what shows when the
- * stack is empty. `event` shows one event as its type is shown (an item as its
+ * stack is empty. `item` shows one item as its type is shown (an item as its
  * chat, anything else as its details); `debug` shows its whole state as JSON.
- * `integrations` and `mcp` are the app's settings pages; `types` the event types and their actions. `bots` lists the
- * bots (each opens as an `event`: its settings, runs and own chat). More kinds of view go here.
+ * `integrations` and `mcp` are the app's settings pages; `types` the item types and their actions. `bots` lists the
+ * bots (each opens as an `item`: its settings, runs and own chat). More kinds of view go here.
  */
 export type View =
   | { kind: 'items' }
+  // 'event' is the old word for an item, kept: the stack is in local storage.
   | { kind: 'event'; id: string }
   | { kind: 'debug'; id: string }
   | { kind: 'integrations' }
@@ -20,7 +21,7 @@ export type View =
   | { kind: 'phone' }
   | { kind: 'types' }
   | { kind: 'bots' }
-  /** The edit log: of one event, given its id; else of everything. */
+  /** The edit log: of one item, given its id; else of everything. */
   | { kind: 'log'; id?: string }
   /** The search page's sections, to configure. */
   | { kind: 'search' }
@@ -51,17 +52,17 @@ export const reachedAtom = atomWithStorage<Record<string, string>>('workflows.re
 /** How many views the stack, and what Back took off, keep: the oldest go first. */
 export const HISTORY_LIMIT = 50
 
-/** Two views are the same view: the same kind, of the same event. */
+/** Two views are the same view: the same kind, of the same item. */
 export const sameView = (a: View | undefined, b: View): boolean =>
   !!a && a.kind === b.kind && ('id' in a ? a.id : null) === ('id' in b ? b.id : null) 
 
 /** Bumped to put the cursor in the items view's search line (Ctrl+L, when that view is already showing). */
 export const searchFocusAtom = atom(0)
 
-/** The right-click menu on an event, while it is open: where, and for which event. */
+/** The right-click menu on an item, while it is open: where, and for which item. */
 export const menuAtom = atom<{ x: number; y: number; id: string } | null>(null)
 
-/** The task whose title is being renamed in its view's header, as the event menu's Rename asks. */
+/** The task whose title is being renamed in its view's header, as the item menu's Rename asks. */
 export const renameAtom = atom<string | null>(null)
 
 /**

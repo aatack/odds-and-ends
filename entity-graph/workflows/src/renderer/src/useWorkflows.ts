@@ -57,7 +57,7 @@ export function useWorkflows() {
     }
   }, [])
 
-  /** Shows an item (or any event) afresh: the stack is just it. From the list and from Next. */
+  /** Shows an item (or any item) afresh: the stack is just it. From the list and from Next. */
   const select = useCallback(
     (id: string | null) => {
       setError(null)

@@ -49,7 +49,7 @@ const file = join(dir, 'round-trip.egdb')
   await engine.checkDue()
   const run = engine.startRun(bot, [id])
   await engine.endRun(run, { exitCode: 0, structured: { updates: [{ item: id, message: 'Hi.', assign: ['alex'] }] }, costUsd: 0.5 })
-  // A thumbs-up is a `reactions` value on the event: those who gave one.
+  // A thumbs-up is a `reactions` value on the item: those who gave one.
   const hi = engine.detail(id)!.children.find((e) => e.params.text === 'Hi.')!.id
   await engine.react(hi, true, 'alex')
   await engine.react(hi, true, `bot:${bot}`)
@@ -73,7 +73,7 @@ const file = join(dir, 'round-trip.egdb')
   assert.deepEqual(after.overview.bots.map((b) => [b.id, b.name, b.instructions, b.model, b.debounceMinutes, b.sessionId]),
     before.overview.bots.map((b) => [b.id, b.name, b.instructions, b.model, b.debounceMinutes, b.sessionId]))
   assert.equal(after.overview.bots[0].instructions, 'Be very polite.')
-  // Events keep their params, data, memo and order; waits are checked again at once.
+  // Items keep their params, data, memo and order; waits are checked again at once.
   assert.deepEqual(after.detail.children.map((e) => [e.id, e.type, e.params, e.data, e.resolved, e.createdBy]),
     before.detail.children.map((e) => [e.id, e.type, e.params, e.data, e.resolved, e.createdBy]))
   assert.ok(after.detail.children.filter((e) => !e.resolved && e.type !== 'task' && e.type !== 'script').every((e) => e.nextCheckAt === clock))
@@ -94,7 +94,7 @@ const file = join(dir, 'round-trip.egdb')
   assert.ok(toItem.length > 0 && toItem.length <= 10 && toItem.every((e) => e.entity === hi || e.other === hi))
   const byBot = (await engine2.callAction('activity_log', { who: 'Threepio', limit: 3 }, ctx)) as { by: string }[]
   assert.ok(byBot.length > 0 && byBot.length <= 3 && byBot.every((e) => e.by === `bot:${bot}`))
-  // Who made each event, and when, is the link to it.
+  // Who made each item, and when, is the link to it.
   assert.deepEqual(after.detail.children.map((e) => [e.createdAt, e.createdBy]), before.detail.children.map((e) => [e.createdAt, e.createdBy]))
   assert.deepEqual(after.bot.lastRun, before.bot.lastRun)
   assert.deepEqual([after.bot.lastRun!.id, after.bot.lastRun!.costUsd], [run, 0.5], 'a bot keeps its last run as a value; egdb keeps the rest')

@@ -1,5 +1,5 @@
 // The two things the engine is built from: actions (what anyone can do) and
-// event types (what can happen to an item, and what it can wait for).
+// item types (what can happen to an item, and what it can wait for).
 // docs/items.md is the long form.
 
 import { execFile } from 'node:child_process'
@@ -33,7 +33,7 @@ export interface ActionContext {
   itemId: string | null
   /** The bot run making the call, if one is. */
   runId: string | null
-  /** The human is running an approval's action: the approval's resolution records it, not an action event. */
+  /** The human is running an approval's action: the approval's resolution records it, not an action item. */
   approving?: boolean
 }
 
@@ -45,7 +45,7 @@ export interface ActionContext {
  * reviews, merges, sends, deploys, deletes) is `unsafe: true`. Bots, and scripts
  * a bot wrote, never get one: it is left out of their MCP tools, and
  * `Engine.callAction` refuses it. A bot asks for one as the approval on a human
- * approval event, and the human runs it. Every action must say which it is: `unsafe` is
+ * approval item, and the human runs it. Every action must say which it is: `unsafe` is
  * required so that the choice is never left to a default.
  */
 export interface Action {
@@ -58,15 +58,15 @@ export interface Action {
 
 export interface ItemContext {
   engine: Engine
-  /** The item the event sits in; for an item event with no parent, the item itself. */
+  /** The item the item sits in; for a task with no parent, the item itself. */
   item: Item
   info: ItemInfo
-  /** What the event's last check handed on (a script's `state`), and how to hand something on to the next. */
+  /** What the item's last check handed on (a script's `state`), and how to hand something on to the next. */
   memo: unknown
   setMemo: (value: unknown) => void
   /** How many times it has been checked since the app started. */
   runs: number
-  /** Whoever added this event, as an author. */
+  /** Whoever added this item, as an author. */
   author: Author
   /** What ran it: its schedule, or a press (its play button: `runNow`), by `pressedBy`. */
   trigger: 'press' | 'schedule'
@@ -76,7 +76,7 @@ export interface ItemContext {
 }
 
 /**
- * One kind of event: everything that differs from one kind to the next. The
+ * One kind of item: everything that differs from one kind to the next. The
  * rest (who, when, resolved or not) is the same for all; see ItemInfo.
  *
  * A plain type (`blocking: false`) resolves as it is added. A blocker stays
@@ -99,15 +99,15 @@ export interface ItemType {
   describe: (params: Record<string, unknown>) => string
   /**
    * What it says in the chat once it has resolved (not called when cancelled:
-   * a cancel reads the same for every type). Null to say nothing, as a bot event
-   * does, whose reply is a message event of its own. Left out, it says `describe`.
+   * a cancel reads the same for every type). Null to say nothing, as a bot item
+   * does, whose reply is a message item of its own. Left out, it says `describe`.
    */
   said?: (params: Record<string, unknown>, data: Record<string, unknown>) => string | null
   /** A blocker the human resolves (an approval): while only these are open, the item is still the human's. */
   human?: boolean
   /** May a bot add it, in its output? */
   bots?: boolean
-  /** Turns one event into those actually added. */
+  /** Turns one item into those actually added. */
   expand?: (params: Record<string, unknown>, author: Author) => ItemSpec[]
   /** As it is added. It may change its params, or resolve it at once. */
   start?: (
@@ -120,7 +120,7 @@ export interface ItemType {
    * When `check` runs, as seconds to wait: before the first check, then between
    * each, the last repeating. Left out, the default backoff: at once, then 1, 2,
    * 5 and then every 10 minutes. Checks run at most once a second, and one check
-   * of an event never starts before the last has finished. Null: it runs only when someone runs it.
+   * of an item never starts before the last has finished. Null: it runs only when someone runs it.
    */
   schedule?: (params: Record<string, unknown>) => number[] | null
 }
@@ -160,6 +160,6 @@ export interface SetupField {
 export interface Source {
   id: string
   everyMinutes: number
-  /** Item events to add, each with a `key` so that polling again adds none twice. */
+  /** Task items to add, each with a `key` so that polling again adds none twice. */
   poll: (engine: Engine) => Promise<ItemSpec[]>
 }

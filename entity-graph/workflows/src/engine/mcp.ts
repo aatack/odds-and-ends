@@ -75,7 +75,7 @@ export function makeServer(engine: Engine, scope: Scope): McpServer {
   return server
 }
 
-/** Every action, event type and preset, for the MCP page and the chat input. */
+/** Every action, item type and preset, for the MCP page and the chat input. */
 export function catalog(engine: Engine): Catalog {
   return {
     actions: engine.actions.map((a) => ({

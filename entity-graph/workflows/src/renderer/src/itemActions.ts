@@ -1,4 +1,4 @@
-// What can be done to an event, by its type and state: the one list both the
+// What can be done to an item, by its type and state: the one list both the
 // view header (as icon buttons, the rest in the menu beside them) and the
 // right-click menu draw.
 
@@ -23,8 +23,8 @@ export interface ItemAction {
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 /**
- * The actions on an event: an open task can be resolved or skipped, a closed one reopened; any other
- * open event cancelled (a bot is deleted from its settings, not here). Then the person's own actions for its
+ * The actions on an item: an open task can be resolved or skipped, a closed one reopened; any other
+ * open item cancelled (a bot is deleted from its settings, not here). Then the person's own actions for its
  * type (`custom`), from the Types page.
  */
 export function itemActions(

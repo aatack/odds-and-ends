@@ -14,7 +14,7 @@ type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 export { minutes, time } from './time'
 
-/** Who made an event, if it is someone to open: a bot (its run's actor, `bot:<id>`) or a person; else null. */
+/** Who made an item, if it is someone to open: a bot (its run's actor, `bot:<id>`) or a person; else null. */
 function ownerOf(o: Overview, by: string): { id: string; name: string } | null {
   const id = by.startsWith('bot:') ? by.slice(4) : by
   const bot = o.bots.find((b) => b.id === id)
@@ -23,14 +23,14 @@ function ownerOf(o: Overview, by: string): { id: string; name: string } | null {
   return person ? { id, name: person.name } : null
 }
 
-/** The words an event shows in the chat, for Ctrl+F. */
+/** The words an item shows in the chat, for Ctrl+F. */
 const words = (e: ItemInfo) => (e.type === 'note' ? String(e.params.text ?? '') : [e.summary, e.message].filter(Boolean).join('\n'))
 
 /**
- * The task's chat: every event in it (its `contains` links), in the order they were added, each as its card. What
+ * The task's chat: every item in it (its `contains` links), in the order they were added, each as its card. What
  * the person looking added is on the right; everything else on the left, with who it came from as its picture (and,
  * for other people, their name). A note is its words; a child task, its card (which opens it); a script, what it
- * waits for and where it stands; an approval, its form while open. Cancelled events are small notes in the middle.
+ * waits for and where it stands; an approval, its form while open. Cancelled items are small notes in the middle.
  * While Ctrl+F's find line has a phrase in it, only what shows the phrase is left, with the phrase marked.
  */
 export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: Catalog; act: Act; onOpen: (id: string) => void; mobile?: boolean }) {
@@ -75,7 +75,7 @@ export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: C
 
 type MessageProps = { here: string; info: ItemInfo; mine: boolean; me: string; who: string | null; ownerId: string | null; ownerName: string | null; find: string; catalog: Catalog; act: Act; onOpen: (id: string) => void }
 
-/** One event, as a message: right-click it to open it or debug it. Drawn again only when something it shows changed. */
+/** One item, as a message: right-click it to open it or debug it. Drawn again only when something it shows changed. */
 const Message = memo(function Message(props: MessageProps) {
   const { info: e, mine, me, who, act } = props
   const menu = useItemMenu()
