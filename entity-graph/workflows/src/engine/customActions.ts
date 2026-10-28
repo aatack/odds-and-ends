@@ -111,7 +111,7 @@ export class CustomActions {
     const actions = this.engine.actions
       .filter((x) => !x.unsafe)
       .map((x) => `- ${x.name}(${JSON.stringify(objectSchema(x.input).properties ?? {})}): ${x.description}`)
-    const events = this.engine.itemTypes.filter((t) => t.bots).map((t) => `- ${t.type} ${JSON.stringify(objectSchema(t.params).properties ?? {})}: ${t.description}`)
+    const types = this.engine.itemTypes.filter((t) => t.bots).map((t) => `- ${t.type} ${JSON.stringify(objectSchema(t.params).properties ?? {})}: ${t.description}`)
     const unsafe = this.engine.actions.filter((x) => x.unsafe).map((x) => `- ${x.name}: ${x.description}`)
     const system = `You write one custom action for a workflow app, as a JavaScript function expression. Reply with the code only: no prose, no markdown fences.
 
@@ -122,7 +122,7 @@ ${actions.join('\n')}
 - It may not call unsafe actions (they change things outside the app). To get one done, return an approval item for the human: { type: 'approval', params: { action, inputs, reason } }. The unsafe actions are:
 ${unsafe.join('\n')}
 - It returns null, a string (said in the item's chat), or { message?, items? }: items are added in the item. Item types it may add:
-${events.join('\n')}
+${types.join('\n')}
 - It runs in a sandbox (QuickJS): no fetch, no require, no timers. console.log is kept. Keep it short and plain.`
     const prompt = [
       `Action: ${a.name || '(unnamed)'}`,
