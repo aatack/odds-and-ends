@@ -104,7 +104,7 @@ export const itemActions: Action[] = [
     unsafe: false,
     description:
       "The item a person's Next would show them now (the default person's, without `username`): their priority items first, then " +
-      'the one least recently touched. Null when nothing needs them.',
+      'the one most recently touched. Null when nothing needs them.',
     input: { username: z.string().optional() },
     run: async (a, { engine }) => {
       const who = a.username ? engine.resolveAssignee(String(a.username)) : engine.me()

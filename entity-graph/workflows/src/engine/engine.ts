@@ -290,7 +290,8 @@ export class Engine extends EventEmitter {
       .ofType('task')
       .filter((r) => !r.resolved || (r.resolved_at ?? 0) > since)
       .map((r) => this.toItem(r, viewer))
-      .sort((a, b) => a.since - b.since)
+      // The most recently touched first: what is moving stays on top.
+      .sort((a, b) => b.since - a.since)
     const scripts = this.store
       .ofType('script')
       .filter((r) => !r.resolved && this.assignedTo(r.id).length)
@@ -338,15 +339,15 @@ export class Engine extends EventEmitter {
   }
 
   /**
-   * What needs `viewer` next, of the open tasks assigned to them that nothing but approvals blocks: the one least
-   * recently touched.
+   * What needs `viewer` next, of the open tasks assigned to them that nothing but approvals blocks: the one most
+   * recently touched, so the few in hand get closed out before the rest come round.
    */
   next(skip: string[] = [], viewer = this.me()): string | null {
     const open = this.store
       .assignedTo(viewer)
       .flatMap((id) => this.get(id, viewer) ?? [])
       .filter((i) => i.withYou && !skip.includes(i.id))
-    return open.sort((a, b) => a.since - b.since)[0]?.id ?? null
+    return open.sort((a, b) => b.since - a.since)[0]?.id ?? null
   }
 
   /** Renames a task: its `title` value changes (egdb keeps the old one, and who changed it). */

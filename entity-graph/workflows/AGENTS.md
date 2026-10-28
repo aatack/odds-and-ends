@@ -105,7 +105,7 @@ window: there `window.workflows` is the preload's, as always.
   app by typing their username (no password: the app is local). Tasks are **assigned** to people and
   bots: an `assigned_to` link from the task, not an event (`Engine.setAssignee`; the tasks someone has are
   their links followed backwards). A task can have many blockers at once. It is a person's turn when they
-  have it and nothing blocks it but approvals. Next goes through those, the least recently touched first.
+  have it and nothing blocks it but approvals. Next goes through those, the most recently touched first.
 - A **bot** is an item of its own (a `bot` event, in no item, its settings in its params): a name,
   instructions, a provider and model (opus by default), a debounce (a minute by default), and a folder and
   Claude session of its own, which last. Notes in it are its own chat. It wakes only when something happens
