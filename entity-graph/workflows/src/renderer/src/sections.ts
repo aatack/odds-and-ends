@@ -22,7 +22,7 @@ export interface Section {
 }
 
 /** What the finder reads as recent: what was viewed here (kept by the app, not the store), and who there is. */
-export type Recent = { viewed: string[]; users: Overview['users'] }
+export type Recent = { viewed: string[]; users: Overview['users']; bots: { id: string }[] }
 
 const open = (i: Item) => !i.closed
 /** The items with these ids that the finder has, in the ids' order. */
@@ -34,8 +34,8 @@ const byIds = (ids: string[], items: Item[]): Item[] => {
 export const SECTIONS: Record<SectionId, Section> = {
   viewed: { label: 'Recently viewed', items: (items, r) => byIds(r.viewed, items) },
   needsYou: { label: 'Needs you', items: (items) => items.filter((i) => open(i) && i.withYou) },
-  withBots: { label: 'With bots', items: (items, r) => items.filter((i) => open(i) && !i.withYou && withBot(i, r.users)) },
-  waiting: { label: 'Waiting', items: (items, r) => items.filter((i) => open(i) && !i.withYou && !withBot(i, r.users)) },
+  withBots: { label: 'With bots', items: (items, r) => items.filter((i) => open(i) && !i.withYou && withBot(i, r.bots)) },
+  waiting: { label: 'Waiting', items: (items, r) => items.filter((i) => open(i) && !i.withYou && !withBot(i, r.bots)) },
   closed: { label: 'Closed today', items: (items) => items.filter((i) => i.closed) },
 }
 

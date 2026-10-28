@@ -35,8 +35,8 @@ export const TYPE_NAME: Record<ItemKind, string> = {
 /** The blocker an open item that is not the human's turn is shown as waiting on: its first; null when only someone has it. */
 export const waitingOn = (item: Item): ItemInfo | null => item.blockers[0] ?? null
 
-/** Whether a bot has the item: anyone who has it who is not one of `people`. */
-export const withBot = (item: Item, people: { id: string }[]): boolean => item.assignees.some((a) => !people.some((p) => p.id === a))
+/** Whether a bot has the item: one of `bots` is among who has it (a script having it is not a bot). */
+export const withBot = (item: Item, bots: { id: string }[]): boolean => item.assignees.some((a) => bots.some((b) => b.id === a))
 
 /** What an item waits on: a bot while one is on it, else its blocker (`waitingOn`), else the bot that has it; the human; a tick once closed. */
 export function ItemIcon({ item }: { item: Item }) {

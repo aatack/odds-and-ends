@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BUILTIN_SECTIONS, DEFAULT_SECTIONS, type SearchSection } from '../../shared/search'
 import { fenced, Markdown } from './components/ui/Markdown'
 import { SECTIONS } from './sections'
@@ -18,26 +18,37 @@ const draftOf = (s: SearchSection): Draft => (s.kind === 'query' ? { ...s, filte
 /**
  * The search page's sections, one list for every finder (the Tasks view, the pickers): kept on the `search` item,
  * which bots change too (set_search_sections). Each is built in, a query (egdb's filter, over every event's values),
- * or a function (JavaScript answering rows). Save keeps them; Defaults puts the built-in ones back.
+ * or a function (JavaScript answering rows). Each edit is kept as it is made; Defaults puts the built-in ones back.
  */
 export function SearchPage() {
   const [drafts, setDrafts] = useState<Draft[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   useEffect(() => void api().searchSections().then((s) => setDrafts(s.map(draftOf))), [])
+  // Every edit is kept a moment after it stops (a query whose JSON doesn't read yet waits until it does).
+  const edited = useRef(false)
+  useEffect(() => {
+    if (!drafts || !edited.current) return
+    const t = setTimeout(() => void save(drafts), 600)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drafts])
   if (!drafts) return <p className="muted">Reading…</p>
-  const set = (i: number, d: Partial<Draft>) => {
+  const setDraftsEdited = (next: Draft[]) => {
+    edited.current = true
     setSaved(false)
-    setDrafts(drafts.map((x, j) => (j === i ? ({ ...x, ...d } as Draft) : x)))
+    setDrafts(next)
+  }
+  const set = (i: number, d: Partial<Draft>) => {
+    setDraftsEdited(drafts.map((x, j) => (j === i ? ({ ...x, ...d } as Draft) : x)))
   }
   const move = (i: number, by: number) => {
     const next = [...drafts]
     const [d] = next.splice(i, 1)
     next.splice(i + by, 0, d)
-    setDrafts(next)
-    setSaved(false)
+    setDraftsEdited(next)
   }
-  const save = async () => {
+  async function save(drafts: Draft[]) {
     setError(null)
     try {
       const sections: SearchSection[] = drafts.map((d) => {
@@ -68,8 +79,7 @@ export function SearchPage() {
               value={d.kind}
               onChange={(e) => {
                 const kind = e.target.value as Draft['kind']
-                setSaved(false)
-                setDrafts(
+                setDraftsEdited(
                   drafts.map((x, j) =>
                     j !== i
                       ? x
@@ -104,7 +114,7 @@ export function SearchPage() {
               <button data-ui className="link" disabled={i === drafts.length - 1} title="Down" onClick={() => move(i, 1)}>
                 <ArrowDown className="icon" />
               </button>
-              <button data-ui className="link" title="Remove" onClick={() => setDrafts(drafts.filter((_, j) => j !== i))}>
+              <button data-ui className="link" title="Remove" onClick={() => setDraftsEdited(drafts.filter((_, j) => j !== i))}>
                 <X className="icon" />
               </button>
             </span>
@@ -118,13 +128,10 @@ export function SearchPage() {
         </section>
       ))}
       <div className="buttons">
-        <button data-ui onClick={() => setDrafts([...drafts, { kind: 'query', label: 'New query', filter: QUERY_EXAMPLE, filterText: JSON.stringify(QUERY_EXAMPLE, null, 2) }])}>
+        <button data-ui onClick={() => setDraftsEdited([...drafts, { kind: 'query', label: 'New query', filter: QUERY_EXAMPLE, filterText: JSON.stringify(QUERY_EXAMPLE, null, 2) }])}>
           Add a section
         </button>
-        <button data-ui onClick={() => setDrafts(DEFAULT_SECTIONS.map(draftOf))}>Defaults</button>
-        <button data-ui className="primary" onClick={() => void save()}>
-          Save
-        </button>
+        <button data-ui onClick={() => setDraftsEdited(DEFAULT_SECTIONS.map(draftOf))}>Defaults</button>
         {saved && <span className="muted">Saved.</span>}
       </div>
       <details>
