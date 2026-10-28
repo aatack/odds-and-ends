@@ -45,7 +45,7 @@ export function ItemMenu({
   const setRename = useSetAtom(renameAtom)
   const me = useAtomValue(userAtom)
   // The event itself, read as the menu opens, for which actions it has.
-  const [event, setInfo] = useState<ItemInfo | null>(null)
+  const [info, setInfo] = useState<ItemInfo | null>(null)
   // Placed by Floating UI at the cursor: flipped above it, or shifted along, so it always stays in the window,
   // and placed again as it grows (its actions come in a moment after it opens).
   const { refs, floatingStyles } = useFloating({
@@ -63,7 +63,7 @@ export function ItemMenu({
   }, [menu, refs])
   useEffect(() => {
     setInfo(null)
-    if (menu) void api().itemInfoDetail(menu.id).then((d) => setInfo(d?.event ?? null))
+    if (menu) void api().itemInfoDetail(menu.id).then((d) => setInfo(d?.info ?? null))
   }, [menu])
   useEffect(() => {
     if (!menu) return
@@ -114,10 +114,10 @@ export function ItemMenu({
         Also put in…
       </button>
       {/* A task on screen is renamed in its header. */}
-      {event?.id === menu.id && event.type === 'task' && sameView(views[views.length - 1], { kind: 'event', id: event.id }) && (
+      {info?.id === menu.id && info.type === 'task' && sameView(views[views.length - 1], { kind: 'event', id: info.id }) && (
         <button
           onClick={() => {
-            setRename(event.id)
+            setRename(info.id)
             setMenu(null)
           }}
         >
@@ -125,18 +125,18 @@ export function ItemMenu({
         </button>
       )}
       {/* A message (anything but a task, a bot or a person) can be given a thumbs-up. */}
-      {event?.id === menu.id && me && !['task', 'bot', 'user'].includes(event.type) && (
+      {info?.id === menu.id && me && !['task', 'bot', 'user'].includes(info.type) && (
         <button
           onClick={() => {
             setMenu(null)
-            void actOn(event.id)(() => api().react(event.id, !event.reactions.includes(me)))
+            void actOn(info.id)(() => api().react(info.id, !info.reactions.includes(me)))
           }}
         >
-          {event.reactions.includes(me) ? 'Remove thumbs up' : 'Thumbs up'}
+          {info.reactions.includes(me) ? 'Remove thumbs up' : 'Thumbs up'}
         </button>
       )}
-      {event?.id === menu.id &&
-        itemActions(event, { act: actOn(event.id), skip, custom }).map((a) => (
+      {info?.id === menu.id &&
+        itemActions(info, { act: actOn(info.id), skip, custom }).map((a) => (
           <button
             key={a.id}
             className="menu-action"

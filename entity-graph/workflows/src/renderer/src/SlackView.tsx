@@ -35,7 +35,7 @@ const quote = (text: string, lines = 6) => {
  * A Slack event in a chat: for a message, who said it, where, and what (quoted), and how many replies; for a
  * channel, its name, the range, and how many messages. Read from Slack (through the cache) as it is shown.
  */
-export function SlackCard({ event: e, find }: { event: ItemInfo; find: string }) {
+export function SlackCard({ info: e, find }: { info: ItemInfo; find: string }) {
   const { view, error } = useSlackView(e.id)
   if (error) return <div className="event-card"><Markdown text={e.summary} highlight={find} /><p className="error-text">{error}</p></div>
   if (!view) return <div className="event-card muted">Reading Slack…</div>
@@ -70,8 +70,8 @@ export function SlackCard({ event: e, find }: { event: ItemInfo; find: string })
  * A slack_message's thread, or a slack_channel's messages, read from Slack
  * through the cache as the view opens. A message with a thread opens it in place.
  */
-export function SlackMessages({ event }: { event: ItemInfo }) {
-  const { view, error } = useSlackView(event.id)
+export function SlackMessages({ info }: { info: ItemInfo }) {
+  const { view, error } = useSlackView(info.id)
   return (
     <section className="card">
       <h2>{view ? view.channelName : 'Slack'}</h2>
@@ -81,7 +81,7 @@ export function SlackMessages({ event }: { event: ItemInfo }) {
       {view && (
         <div className="slack-messages">
           {view.messages.map((m) => (
-            <Message key={m.ts} m={m} itemId={event.id} focus={view.focus === m.ts} threaded={!view.focus} />
+            <Message key={m.ts} m={m} itemId={info.id} focus={view.focus === m.ts} threaded={!view.focus} />
           ))}
         </div>
       )}

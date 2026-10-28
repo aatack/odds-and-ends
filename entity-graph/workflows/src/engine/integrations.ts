@@ -60,7 +60,7 @@ export interface ItemContext {
   engine: Engine
   /** The item the event sits in; for an item event with no parent, the item itself. */
   item: Item
-  event: ItemInfo
+  info: ItemInfo
   /** What the event's last check handed on (a script's `state`), and how to hand something on to the next. */
   memo: unknown
   setMemo: (value: unknown) => void

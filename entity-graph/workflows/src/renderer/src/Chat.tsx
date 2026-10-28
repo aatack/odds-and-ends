@@ -43,7 +43,7 @@ export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: C
   latest.current = props
   const act = useCallback<Act>((fn) => latest.current.act(fn), [])
   const onOpen = useCallback((id: string) => latest.current.onOpen(id), [])
-  const shown = detail.events.filter((e) => !find || shows(words(e), find))
+  const shown = detail.children.filter((e) => !find || shows(words(e), find))
   return (
     <section className={`chat ${props.mobile ? 'mobile' : ''}`}>
       {find && !shown.length && <div className="chat-note">Nothing here says “{find}”.</div>}
@@ -55,7 +55,7 @@ export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: C
         ) : (
           <Message
             key={e.id}
-            event={e}
+            info={e}
             mine={e.createdBy === overview.me.id}
             me={overview.me.id}
             here={detail.item.id}
@@ -73,11 +73,11 @@ export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: C
   )
 }
 
-type MessageProps = { here: string; event: ItemInfo; mine: boolean; me: string; who: string | null; ownerId: string | null; ownerName: string | null; find: string; catalog: Catalog; act: Act; onOpen: (id: string) => void }
+type MessageProps = { here: string; info: ItemInfo; mine: boolean; me: string; who: string | null; ownerId: string | null; ownerName: string | null; find: string; catalog: Catalog; act: Act; onOpen: (id: string) => void }
 
 /** One event, as a message: right-click it to open it or debug it. Drawn again only when something it shows changed. */
 const Message = memo(function Message(props: MessageProps) {
-  const { event: e, mine, me, who, act } = props
+  const { info: e, mine, me, who, act } = props
   const menu = useItemMenu()
   // Thumbs-ups: a count under the bubble (pressing it toggles yours), or, with none yet, a button shown on hover.
   const reacted = e.reactions.includes(me)
@@ -87,7 +87,7 @@ const Message = memo(function Message(props: MessageProps) {
   const react = () => void act(() => api().react(e.id, !reacted))
   return (
     <div className={`bubble-row ${mine ? 'mine' : 'theirs'}`}>
-      {!mine && <ItemAvatar event={e} owner={props.ownerId ? { name: props.ownerName ?? props.ownerId, onOpen: () => props.onOpen(props.ownerId!) } : null} />}
+      {!mine && <ItemAvatar info={e} owner={props.ownerId ? { name: props.ownerName ?? props.ownerId, onOpen: () => props.onOpen(props.ownerId!) } : null} />}
       <div className="bubble-stack">
         <div className={`bubble bubble-${e.type}`} title={`${who ? `${who}, ` : ''}${time(e.createdAt)}`} {...menu(e.id)}>
           {!mine && who && <span className="bubble-who">{who}</span>}
@@ -114,7 +114,7 @@ const Message = memo(function Message(props: MessageProps) {
     </div>
   )
 }, (a, b) => {
-  const { event: ea, ...ra } = a
-  const { event: eb, ...rb } = b
+  const { info: ea, ...ra } = a
+  const { info: eb, ...rb } = b
   return (Object.keys(ra) as (keyof typeof ra)[]).every((k) => ra[k] === rb[k]) && JSON.stringify(ea) === JSON.stringify(eb)
 })

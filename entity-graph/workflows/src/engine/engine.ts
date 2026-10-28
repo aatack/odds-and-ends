@@ -151,7 +151,7 @@ export class Engine extends EventEmitter {
       }
     }
     // Waits are checked at once after a start; a script, when it asked to be (its wake_at), or at once if that has passed.
-    for (const r of this.store.events.values()) {
+    for (const r of this.store.items.values()) {
       if (r.resolved || !this.typeOrNull(r.type)?.check) continue
       if (r.type === 'script') continue
       if (this.scheduleOf(this.type(r.type), r.params)) r.next_check_at = this.now()
@@ -217,10 +217,10 @@ export class Engine extends EventEmitter {
   }
 
   private row(id: string): ItemRow | undefined {
-    return this.store.events.get(id)
+    return this.store.items.get(id)
   }
 
-  event(id: string): ItemInfo | null {
+  info(id: string): ItemInfo | null {
     const r = this.row(id)
     return r ? this.toInfo(r) : null
   }
@@ -323,19 +323,19 @@ export class Engine extends EventEmitter {
     // What it contains by a later link shows too, where it was linked; its own parent stays where it sits.
     const linked = this.store.linked(id).flatMap((l) => (this.row(l.id) ? [{ e: this.toInfo(this.row(l.id)!), at: l.at }] : []))
     const own = this.children(id).map((e) => ({ e, at: e.createdAt }))
-    const events = [...own, ...linked].sort((a, b) => a.at - b.at).map((x) => x.e)
-    return { item, parent: parent && { id: parent.id, title: parent.title }, events }
+    const children = [...own, ...linked].sort((a, b) => a.at - b.at).map((x) => x.e)
+    return { item, parent: parent && { id: parent.id, title: parent.title }, children }
   }
 
   /** Any item, with what its views need. */
   itemInfoDetail(id: string, viewer = this.me()): ItemInfoDetail | null {
-    const event = this.event(id)
-    if (!event) return null
-    const parent = event.parentId ? this.get(event.parentId) : null
+    const info = this.info(id)
+    if (!info) return null
+    const parent = info.parentId ? this.get(info.parentId) : null
     return {
-      event,
+      info,
       parent: parent && { id: parent.id, title: parent.title },
-      item: event.type === 'task' || event.type === 'bot' ? this.detail(id, viewer) : null,
+      item: info.type === 'task' || info.type === 'bot' ? this.detail(id, viewer) : null,
     }
   }
 
@@ -407,7 +407,7 @@ export class Engine extends EventEmitter {
   /** A query's or a function's rows, for what is typed (a function is told it; a query's rows are filtered by the finder). */
   async runSearchSection(section: SearchSection, text: string): Promise<SearchRow[]> {
     if (section.kind === 'query') {
-      const rows = [...this.store.events.values()]
+      const rows = [...this.store.items.values()]
         .filter((r) => r.type !== 'search' && matches(this.valuesOf(r), section.filter))
         .sort((a, b) => b.created_at - a.created_at)
         .slice(0, section.limit ?? 50)
@@ -760,17 +760,17 @@ export class Engine extends EventEmitter {
    * Starts a bot's run, if it is due and not running: its chat and every task it has, each with its new events (or,
    * for a task its session has not seen, its whole history). Its session is its own: resumed if it has one, otherwise new.
    */
-  claim(agentId: string): { agent: Agent; items: { item: Item; events: ItemInfo[]; first: boolean; own?: boolean }[]; resume: boolean; handoff: string | null } | null {
+  claim(agentId: string): { agent: Agent; items: { item: Item; children: ItemInfo[]; first: boolean; own?: boolean }[]; resume: boolean; handoff: string | null } | null {
     const agent = this.agent(agentId)
     if (!agent || agent.deleted || this.running.has(agentId)) return null
     const wake = this.wake(agentId)
     if (!wake || wake.at > this.now()) return null
     const seen = this.seen(agentId)
     const items = [...wake.items].map(([itemId, ids]) => {
-      if (itemId === agentId) return { item: this.toItem(this.row(agentId)!), events: this.children(agentId).filter((e) => ids.has(e.id)), first: false, own: true }
+      if (itemId === agentId) return { item: this.toItem(this.row(agentId)!), children: this.children(agentId).filter((e) => ids.has(e.id)), first: false, own: true }
       const first = !seen.includes(itemId)
-      const events = first ? this.children(itemId) : this.children(itemId).filter((e) => ids.has(e.id))
-      return { item: this.must(itemId), events, first }
+      const children = first ? this.children(itemId) : this.children(itemId).filter((e) => ids.has(e.id))
+      return { item: this.must(itemId), children, first }
     })
     const resume = agent.sessionId !== null
     // A fresh session hears the handoff its last one left, once.
@@ -892,8 +892,8 @@ export class Engine extends EventEmitter {
           if (to && !to.has(agentId) && !u.close && heard(u.item)) {
             to.add(agentId)
           }
-          const events: ItemSpec[] = [...(u.message ? [{ type: 'note' as const, params: { text: u.message } }] : []), ...this.prepare(u.events ?? [], 'bot')]
-          if (events.length) this.add(u.item, events, actor)
+          const specs: ItemSpec[] = [...(u.message ? [{ type: 'note' as const, params: { text: u.message } }] : []), ...this.prepare(u.events ?? [], 'bot')]
+          if (specs.length) this.add(u.item, specs, actor)
           if (to) {
             const now = this.assignees(u.item)
             for (const a of to) if (!now.includes(a)) this.setAssignee(u.item, a, true, actor, runId)
@@ -1104,10 +1104,10 @@ export class Engine extends EventEmitter {
   /** A new task, in `parentId` or in none, with events to start it off. */
   async create(
     title: string,
-    opts: { parentId?: string | null; key?: string; events?: ItemSpec[]; assignees?: string[]; actor?: string; author?: Author } = {},
+    opts: { parentId?: string | null; key?: string; specs?: ItemSpec[]; assignees?: string[]; actor?: string; author?: Author } = {},
   ): Promise<string | null> {
     const author = opts.author ?? 'human'
-    const params = { title, ...(opts.key ? { key: opts.key } : {}), ...(opts.events ? { events: opts.events } : {}), ...(opts.assignees ? { assignees: opts.assignees } : {}) }
+    const params = { title, ...(opts.key ? { key: opts.key } : {}), ...(opts.specs ? { events: opts.specs } : {}), ...(opts.assignees ? { assignees: opts.assignees } : {}) }
     const [spec] = this.prepare([{ type: 'task', params }], author)
     const [id] = this.add(opts.parentId ?? null, [spec], author === 'bot' ? 'bot' : (opts.actor ?? this.me()))
     await this.idle()
@@ -1125,18 +1125,18 @@ export class Engine extends EventEmitter {
     if (!preset) throw new Error(`No preset ${presetId}.`)
     // A bot's own chat takes notes, and nothing is assigned there.
     if (this.row(itemId)?.type === 'bot') {
-      const events = this.prepare(preset.build(text), 'human')
-      if (!events.length) throw new Error('Nothing to send.')
-      this.add(itemId, events, actor)
+      const specs = this.prepare(preset.build(text), 'human')
+      if (!specs.length) throw new Error('Nothing to send.')
+      this.add(itemId, specs, actor)
       return this.idle()
     }
     if (this.must(itemId).closed) throw new Error('This task is closed.')
     const live = (id: string) => this.isUser(id) || (this.agent(id) !== null && !this.agent(id)!.deleted)
     const to = [...new Set([...(assignTo ? [this.resolveAssignee(assignTo)] : []), ...refsIn(text).filter(live)])].filter((id) => id !== actor)
-    const events = this.prepare(preset.build(text), 'human')
-    if (!events.length && !to.length) throw new Error('Nothing to send.')
+    const specs = this.prepare(preset.build(text), 'human')
+    if (!specs.length && !to.length) throw new Error('Nothing to send.')
     this.store.batch(() => {
-      if (events.length) this.add(itemId, events, actor)
+      if (specs.length) this.add(itemId, specs, actor)
       for (const a of to) this.setAssignee(itemId, a, true, actor)
       // Handing it on takes it off whoever sent it.
       if (to.length) this.setAssignee(itemId, actor, false, actor)
@@ -1155,12 +1155,12 @@ export class Engine extends EventEmitter {
 
   /** Runs an approval's action with a person's inputs, which resolves it. */
   async approve(itemId: string, inputs: Record<string, unknown>, actor = this.me()): Promise<void> {
-    const event = this.event(itemId)
-    if (!event || event.type !== 'approval' || event.resolved) throw new Error('No approval waiting with that id.')
-    const proposed = event.params.inputs as Record<string, unknown>
+    const info = this.info(itemId)
+    if (!info || info.type !== 'approval' || info.resolved) throw new Error('No approval waiting with that id.')
+    const proposed = info.params.inputs as Record<string, unknown>
     const changed = Object.keys({ ...proposed, ...inputs }).filter((k) => String(inputs[k] ?? '') !== String(proposed[k] ?? ''))
-    const name = String(event.params.action)
-    const output = await this.callAction(name, inputs, { engine: this, author: 'human', actor, itemId: event.parentId, runId: null, approving: true })
+    const name = String(info.params.action)
+    const output = await this.callAction(name, inputs, { engine: this, author: 'human', actor, itemId: info.parentId, runId: null, approving: true })
     this.resolve(itemId, { ran: true, inputs, changed, output }, actor)
     this.emit('change')
     await this.idle()
@@ -1168,10 +1168,10 @@ export class Engine extends EventEmitter {
 
   /** Ends a blocker without it happening; a task is closed as cancelled, and a bot deleted. */
   async cancel(itemId: string, actor = this.me()): Promise<void> {
-    const event = this.event(itemId)
-    if (!event || event.resolved) throw new Error('That event is not waiting.')
-    if (event.type === 'task') return this.close(itemId, { actor, how: 'cancelled' })
-    if (event.type === 'bot') return this.deleteAgent(itemId, actor)
+    const info = this.info(itemId)
+    if (!info || info.resolved) throw new Error('That event is not waiting.')
+    if (info.type === 'task') return this.close(itemId, { actor, how: 'cancelled' })
+    if (info.type === 'bot') return this.deleteAgent(itemId, actor)
     this.resolve(itemId, { cancelled: true }, actor, true)
     this.emit('change')
     if (actor !== 'script') await this.idle()
@@ -1226,7 +1226,7 @@ export class Engine extends EventEmitter {
     const now = this.now()
     // A script is due by the one rule (`scriptDue`); a press (runNow) makes it due at once.
     for (const r of this.store.ofType('script')) if (!r.resolved && !this.pressed.has(r.id)) r.next_check_at = this.scriptDue(r)
-    const due = [...this.store.events.values()]
+    const due = [...this.store.items.values()]
       .filter((r) => !r.resolved && r.next_check_at !== null && r.next_check_at <= now && !this.checking.has(r.id))
       .sort((a, b) => a.next_check_at! - b.next_check_at!)
     // At most `scripts.max_running` scripts at once (MAX_SCRIPTS by default): those due longest go first; the rest stay
@@ -1242,8 +1242,8 @@ export class Engine extends EventEmitter {
     return this.serial(taskId, async () => {
       const row = this.row(itemId)
       if (!row || row.resolved || (row.next_check_at ?? 0) > this.now()) return
-      const event = this.toInfo(row)
-      const type = this.type(event.type)
+      const info = this.toInfo(row)
+      const type = this.type(info.type)
       let data: Record<string, unknown> | null = null
       let error: string | null = null
       const woke = this.now()
@@ -1252,14 +1252,14 @@ export class Engine extends EventEmitter {
       // Undefined: as its type's schedule says. A number or null: what the check asked for.
       let next: number | null | undefined
       try {
-        data = await type.check!(event.params, {
+        data = await type.check!(info.params, {
           trigger: pressedBy ? 'press' : 'schedule',
           pressedBy,
           setNext: (at) => (next = at),
           engine: this,
           item: this.must(taskId),
-          event,
-          author: authorOf(event.createdBy),
+          info,
+          author: authorOf(info.createdBy),
           memo: row.memo ?? null,
           runs: row.runs,
           setMemo: (value) => this.store.setState(itemId, value, this.now()),
@@ -1268,8 +1268,8 @@ export class Engine extends EventEmitter {
         error = (e as Error).message
       }
       row.runs++
-      const timeout = Number(event.params.timeout_minutes ?? 0)
-      if (!data && timeout && this.now() >= event.createdAt + timeout * MINUTE)
+      const timeout = Number(info.params.timeout_minutes ?? 0)
+      if (!data && timeout && this.now() >= info.createdAt + timeout * MINUTE)
         data = { outcome: 'timed_out', detail: `Nothing after ${timeout} minutes.` }
       if (data) {
         this.resolve(itemId, data, 'system')
@@ -1294,7 +1294,7 @@ export class Engine extends EventEmitter {
         this.emit('change')
         return
       }
-      const schedule = this.scheduleOf(type, event.params)
+      const schedule = this.scheduleOf(type, info.params)
       if (!schedule) Object.assign(row, { next_check_at: null, last_error: error })
       else {
         const step = Math.min(row.check_step + 1, schedule.length - 1)

@@ -114,16 +114,16 @@ await assert.rejects(engine.callAction('slack_post', { channel: 'C9', text: 'x' 
   clock += 60_000
   await engine.checkDue()
   await engine.idle()
-  assert.equal(engine.event(w)!.lastError, null)
-  assert.ok(!engine.event(w)!.resolved, 'nothing new yet')
-  assert.equal(engine.event(w)!.nextCheckAt, clock + 5 * 60_000, 'then every five minutes')
+  assert.equal(engine.info(w)!.lastError, null)
+  assert.ok(!engine.info(w)!.resolved, 'nothing new yet')
+  assert.equal(engine.info(w)!.nextCheckAt, clock + 5 * 60_000, 'then every five minutes')
   // Something new in the thread.
   eng.push({ ts: '1700000170.000600', user: 'USAM', text: 'Any news?', thread_ts: '1700000100.000200' })
   await admin.clearSlackCache()
   clock += 5 * 60_000
   await engine.checkDue()
   await engine.idle()
-  assert.ok(engine.event(w)!.resolved, String(engine.event(w)!.data?.error ?? ''))
+  assert.ok(engine.info(w)!.resolved, String(engine.info(w)!.data?.error ?? ''))
   assert.deepEqual(engine.get(waiting)!.assignees, ['alex'])
   assert.match(String(engine.children(waiting).filter((e) => e.type === 'note').at(-1)!.params.text), /New on Slack, in #eng:\n\n\*\*Sam\*\*: Any news\?/)
 }

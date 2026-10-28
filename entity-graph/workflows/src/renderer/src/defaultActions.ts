@@ -43,7 +43,7 @@ async function takeOff(detail: ItemDetail, overview: Overview, script: ItemSpec)
 
 /** Assign to the bot that last worked on it: the last to write in it, else the one the person handed something to last. */
 const assignToLastBot = ({ detail, overview }: Ctx): DefaultAction[] => {
-  const wrote = detail.events.map((e) => e.createdBy).reverse().find((by) => by.startsWith('bot:'))?.slice(4)
+  const wrote = detail.children.map((e) => e.createdBy).reverse().find((by) => by.startsWith('bot:'))?.slice(4)
   const id = wrote ?? overview.recentAssignees.find((a) => overview.bots.some((b) => b.id === a))
   const bot = overview.bots.find((b) => b.id === id && !b.deleted)
   if (!bot) return []
@@ -53,7 +53,7 @@ const assignToLastBot = ({ detail, overview }: Ctx): DefaultAction[] => {
 /** Wait for Slack: one for each Slack message in the last 20 events (pulled in, or linked in a note). */
 const waitForSlack = ({ detail, overview }: Ctx): DefaultAction[] => {
   const links: string[] = []
-  for (const e of detail.events.slice(-20).reverse()) {
+  for (const e of detail.children.slice(-20).reverse()) {
     const found =
       e.type === 'slack_message' && e.params.link
         ? [String(e.params.link)]

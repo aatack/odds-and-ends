@@ -71,16 +71,16 @@ export class CustomActions {
   async run(id: string, itemId: string, actor = 'human', runId: string | null = null): Promise<{ message: string | null }> {
     const action = this.get(id)
     if (!action) throw new Error(`No custom action ${id}.`)
-    const event = this.engine.event(itemId)
-    if (!event) throw new Error(`No event ${itemId}.`)
-    if (event.type !== action.type) throw new Error(`${action.name} is for ${action.type} events, not ${event.type}.`)
+    const info = this.engine.info(itemId)
+    if (!info) throw new Error(`No event ${itemId}.`)
+    if (info.type !== action.type) throw new Error(`${action.name} is for ${action.type} events, not ${info.type}.`)
     if (!action.source.trim()) throw new Error(`${action.name} has no code yet: write or generate it on the Types page.`)
-    const taskId = event.type === 'task' ? event.id : event.parentId
+    const taskId = info.type === 'task' ? info.id : info.parentId
     const item = taskId ? this.engine.get(taskId) : null
     if (!item) throw new Error('That event is in no item.')
     const context = {
       item: { id: item.id, title: item.title, parentId: item.parentId, closed: item.closed, withYou: item.withYou },
-      event: { id: event.id, type: event.type, summary: event.summary, params: event.params, data: event.data, resolved: event.resolved, parentId: event.parentId },
+      event: { id: info.id, type: info.type, summary: info.summary, params: info.params, data: info.data, resolved: info.resolved, parentId: info.parentId },
       now: new Date(this.engine.now()).toISOString(),
     }
     const ran = await runScript(action.source, context, (name, args) =>
@@ -90,12 +90,12 @@ export class CustomActions {
     if (!parsed.success) throw new Error(`It returned ${JSON.stringify(ran.value)?.slice(0, 200)}, not null, a string, or { message?, events? }.`)
     const out = parsed.data
     const message = typeof out === 'string' ? out : (out?.message ?? null)
-    const events = typeof out === 'object' && out ? ((out.events ?? []) as ItemSpec[]) : []
+    const specs = typeof out === 'object' && out ? ((out.events ?? []) as ItemSpec[]) : []
     // Its events are held to the bots' rules, and checked before anything is added.
-    this.engine.prepare(events, 'bot')
+    this.engine.prepare(specs, 'bot')
     // What it said is a note in the task, by the script; what it returned, a bot's (held to the bots' rules).
     if (message) await this.engine.addItems(item.id, [{ type: 'note', params: { text: message } }], 'script', 'human')
-    if (events.length) await this.engine.addItems(item.id, events, actor, 'bot')
+    if (specs.length) await this.engine.addItems(item.id, specs, actor, 'bot')
     return { message }
   }
 

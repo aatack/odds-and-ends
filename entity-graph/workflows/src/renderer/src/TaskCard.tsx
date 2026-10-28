@@ -6,7 +6,7 @@ import type { ItemInfo } from '../../shared/types'
  * chat or blockers): its title, with a tick once resolved, a cross if it was
  * cancelled, and a pending ring while it is open.
  */
-export function TaskCard({ event: e }: { event: ItemInfo }) {
+export function TaskCard({ info: e }: { info: ItemInfo }) {
   const [Icon, label, tone] = !e.resolved
     ? [CircleDashed, 'Open', 'pending']
     : e.data?.how === 'cancelled'

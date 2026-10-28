@@ -201,16 +201,16 @@ export async function loadStore(
     const got = await client.valueEvents(branch, done.slice(i, i + 500))
     for (const [id, keys] of Object.entries(got)) if (keys.resolved) resolved.set(id, { at: keys.resolved.timestamp, by: keys.resolved.author })
   }
-  const events: ItemRow[] = []
+  const rows: ItemRow[] = []
   for (const [id, x] of found) {
     const m = made.get(id)
-    if (m) events.push(itemFromValues(id, x, m, blocking(String(x.type)), resolved.get(id)))
+    if (m) rows.push(itemFromValues(id, x, m, blocking(String(x.type)), resolved.get(id)))
   }
   const sink = new EgdbSink(client, branch, onError)
   const store = new Store(sink)
-  store.restore({ events, settings, customActions, assigned, linked: linked.filter((l) => l.parent && found.has(l.id)) })
+  store.restore({ items: rows, settings, customActions, assigned, linked: linked.filter((l) => l.parent && found.has(l.id)) })
   // The root is an entity too, so that the tree can be walked from it.
-  if (!events.length) sink.write([{ set: { entity: ROOT, key: 'type', value: 'wf.root' } }], 'system', Date.now())
+  if (!rows.length) sink.write([{ set: { entity: ROOT, key: 'type', value: 'wf.root' } }], 'system', Date.now())
   return { store, sink }
 }
 

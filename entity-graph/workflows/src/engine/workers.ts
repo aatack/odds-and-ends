@@ -146,11 +146,11 @@ export const ASK = '[Please action your assigned tasks, and give each a new assi
  * people's notes as they are, anything else in brackets — and, every ID_EVERY
  * lines from the first, which item it is.
  */
-export function promptFor(items: { item: Item; events: ItemInfo[]; first: boolean; own?: boolean }[], who?: Who): string {
+export function promptFor(items: { item: Item; children: ItemInfo[]; first: boolean; own?: boolean }[], who?: Who): string {
   if (!items.length) return ''
   return `${ASK}\n\n---\n\n` + [...items].sort((a, b) => Number(!!b.own) - Number(!!a.own))
-    .map(({ item, events, first, own }) => {
-      const lines = events.map((e) => promptLine(e, who)).filter((l): l is string => l !== null)
+    .map(({ item, children, first, own }) => {
+      const lines = children.map((e) => promptLine(e, who)).filter((l): l is string => l !== null)
       const head = own ? ['[your own chat: reply with an update for this id]'] : first ? [`[new to you: ${item.title}]`] : [`[task: ${item.title}]`]
       const all = [...head, ...(lines.length ? lines : ['[nothing new]'])]
       return all.flatMap((l, i) => (i % ID_EVERY === 0 ? [`[current task ID: ${item.id}]`, l] : [l])).join('\n\n')
@@ -233,7 +233,7 @@ export class BotRunner {
     }
   }
 
-  private run(agent: Agent, items: { item: Item; events: ItemInfo[]; first: boolean; own?: boolean }[], resume: boolean, handoff: string | null = null): void {
+  private run(agent: Agent, items: { item: Item; children: ItemInfo[]; first: boolean; own?: boolean }[], resume: boolean, handoff: string | null = null): void {
     const told = promptFor(items, { name: (a) => this.engine.actorName(a), person: (a) => this.engine.isUser(a) || a === 'mcp' })
     const prompt = handoff ? `[a fresh session: your last one left you this handoff]\n\n${handoff}\n\n---\n\n${told}` : told
     const runId = this.engine.startRun(agent.id, items.map((i) => i.item.id))

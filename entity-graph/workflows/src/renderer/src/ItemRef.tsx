@@ -12,7 +12,7 @@ import { api } from './useWorkflows'
 export function ItemRef({ id, item, onOpen }: { id: string; item: Item | undefined; onOpen: (id: string) => void }) {
   const [found, setFound] = useState<string | null>(null)
   useEffect(() => {
-    if (!item) void api().itemInfoDetail(id).then((d) => setFound(d?.event.summary ?? null))
+    if (!item) void api().itemInfoDetail(id).then((d) => setFound(d?.info.summary ?? null))
   }, [id, item])
   return <Pill id={id} icon={item && <ItemIcon item={item} />} label={item?.title ?? found ?? id} onOpen={() => onOpen(id)} />
 }

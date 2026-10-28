@@ -20,7 +20,7 @@ export function ItemInfoView({
   act: Act
   onOpen: (id: string) => void
 }) {
-  const e = detail.event
+  const e = detail.info
   return (
     <div className="page event-view">
       <div className="meta">
@@ -48,10 +48,10 @@ export function ItemInfoView({
       )}
       {e.type === 'widget' && (
         <section className="card">
-          <Widget event={e} tall />
+          <Widget info={e} tall />
         </section>
       )}
-      {(e.type === 'slack_message' || e.type === 'slack_channel') && <SlackMessages event={e} />}
+      {(e.type === 'slack_message' || e.type === 'slack_channel') && <SlackMessages info={e} />}
       <Special detail={detail} onOpen={onOpen} />
 
       <section className="card">
@@ -83,7 +83,7 @@ function status(e: ItemInfo): string {
 
 /** What only some types have to show. */
 function Special({ detail }: { detail: ItemInfoDetail; onOpen: (id: string) => void }) {
-  const e = detail.event
+  const e = detail.info
   if (e.type !== 'script') return null
   return (
     <section className="card">

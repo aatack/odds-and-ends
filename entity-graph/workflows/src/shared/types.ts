@@ -95,12 +95,12 @@ export interface ItemDetail {
   /** The item it sits in, if any. */
   parent: { id: string; title: string } | null
   /** Its children, oldest first: every event in it, child items included. */
-  events: ItemInfo[]
+  children: ItemInfo[]
 }
 
 /** Any item, with what its views need: the task it sits in, and (for a task, or a bot) it in full. */
 export interface ItemInfoDetail {
-  event: ItemInfo
+  info: ItemInfo
   parent: { id: string; title: string } | null
   /** For an item, or a bot (whose own chat it is): it in full. */
   item: ItemDetail | null
@@ -362,7 +362,7 @@ export interface WorkflowsAPI {
   /** The edit log: what was done, by whom and when, the newest first. */
   editLog: (query: LogQuery) => Promise<LogEntry[]>
   /** Adds events in a task, as the person signed in: what the chat input's default actions do. */
-  addItems: (itemId: string, events: ItemSpec[]) => Promise<string[]>
+  addItems: (itemId: string, specs: ItemSpec[]) => Promise<string[]>
   /** The search page's sections (search.ts), as configured: the defaults when nothing is. */
   searchSections: () => Promise<SearchSection[]>
   /** Replaces the search page's sections; null goes back to the defaults. */

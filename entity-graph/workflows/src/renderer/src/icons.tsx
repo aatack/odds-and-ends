@@ -79,8 +79,8 @@ export function itemInfoIcon(e: { type: ItemKind; createdBy: string }): [LucideI
 }
 
 /** An event's icon, inline. */
-export function ItemInfoIcon({ event }: { event: { type: ItemKind; createdBy: string } }) {
-  const [Icon, name] = itemInfoIcon(event)
+export function ItemInfoIcon({ info }: { info: { type: ItemKind; createdBy: string } }) {
+  const [Icon, name] = itemInfoIcon(info)
   return (
     <span className="type-icon" title={name}>
       <Icon className="icon" />

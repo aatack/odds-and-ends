@@ -132,17 +132,17 @@ export const script: ItemType = {
   describe: (p) => String(p.description ?? 'Script'),
   said: (p, d) => (d.error ? `The script failed: ${d.error}` : String(d.message ?? `${p.description ?? 'Script'}: done`)),
   schedule: (p) => (p.schedule as number[] | undefined) ?? null,
-  check: async (p, { engine, item, event, memo, setMemo, runs, trigger, pressedBy }) => {
+  check: async (p, { engine, item, info, memo, setMemo, runs, trigger, pressedBy }) => {
     const pressed = trigger === 'press' && !!pressedBy && engine.isUser(pressedBy)
-    const owned = engine.assignedTo(event.id)
+    const owned = engine.assignedTo(info.id)
     const context = {
-      script: { id: event.id, description: p.description ?? null, runs, state: memo ?? null },
+      script: { id: info.id, description: p.description ?? null, runs, state: memo ?? null },
       item: { id: item.id, title: item.title },
       tasks: owned.map((id) => ({ id, title: engine.get(id)?.title ?? id })),
       now: new Date(engine.now()).toISOString(),
       trigger,
       // The older names.
-      event: { id: event.id, description: p.description ?? null, createdAt: new Date(event.createdAt).toISOString(), runs },
+      event: { id: info.id, description: p.description ?? null, createdAt: new Date(info.createdAt).toISOString(), runs },
       state: memo ?? null,
     }
     // Unsafe tools only for a person's own press (AGENTS.md, the unsafe rule).
@@ -162,7 +162,7 @@ export const script: ItemType = {
       for (const m of [...(r.messages ?? []), ...(r.message && !r.done ? [{ text: r.message }] : [])])
         await engine.addItems(m.item ?? item.id, [{ type: 'note', params: { text: m.text } }], 'script', author)
       for (const a of r.assign ?? []) {
-        const to = new Set(a.to.map((x) => (x === event.id ? x : engine.resolveAssignee(x))))
+        const to = new Set(a.to.map((x) => (x === info.id ? x : engine.resolveAssignee(x))))
         const now = engine.assignees(a.item)
         for (const x of to) if (!now.includes(x)) await engine.assign(a.item, x, true, 'script')
         for (const x of now) if (!to.has(x)) await engine.assign(a.item, x, false, 'script')

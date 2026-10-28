@@ -124,7 +124,7 @@ interface Held {
 }
 
 export class Store {
-  readonly events = new Map<string, ItemRow>()
+  readonly items = new Map<string, ItemRow>()
   /** Each item's events by seq; the key null holds those that sit in none. */
   private kids = new Map<string | null, ItemRow[]>()
   private byType = new Map<string, Set<string>>()
@@ -186,7 +186,7 @@ export class Store {
   // ---- events ----
 
   private index(row: ItemRow): void {
-    this.events.set(row.id, row)
+    this.items.set(row.id, row)
     const kids = this.kids.get(row.parent_id) ?? []
     kids.push(row)
     this.kids.set(row.parent_id, kids)
@@ -210,7 +210,7 @@ export class Store {
 
   /** Changes an event's params: the values that changed are written (a param gone is cleared), as `by` at `at`. */
   setParams(id: string, params: Record<string, unknown>, by: string, at: number): void {
-    const row = this.events.get(id)
+    const row = this.items.get(id)
     if (!row) throw new Error(`No event ${id}.`)
     const keys = new Set([...Object.keys(row.params), ...Object.keys(params)])
     const ops = [...keys]
@@ -222,7 +222,7 @@ export class Store {
 
   /** Resolves a blocker: `resolved` turns true (egdb keeps when, and by whom), with whether it was cancelled, and what it resolved with. */
   resolveItem(id: string, data: Record<string, unknown>, by: string, at: number, cancelled: boolean): void {
-    const row = this.events.get(id)
+    const row = this.items.get(id)
     if (!row) throw new Error(`No event ${id}.`)
     Object.assign(row, { resolved: true, resolved_at: at, resolved_by: by, cancelled, data, next_check_at: null, resolved_n: this.moment() })
     this.out([set(id, 'resolved', true), ...(cancelled ? [set(id, 'cancelled', true)] : []), set(id, 'data', data)], by, at)
@@ -230,7 +230,7 @@ export class Store {
 
   /** Opens a resolved event again: `resolved` turns false (egdb keeps that it was), and what it resolved with is cleared. */
   reopenItem(id: string, by: string, at: number): void {
-    const row = this.events.get(id)
+    const row = this.items.get(id)
     if (!row) throw new Error(`No event ${id}.`)
     const wasCancelled = row.cancelled
     Object.assign(row, { resolved: false, resolved_at: null, resolved_by: null, cancelled: false, data: null, resolved_n: 0 })
@@ -240,7 +240,7 @@ export class Store {
 
   /** Keeps what a script hands on to its next run. */
   setState(id: string, state: unknown, at: number): void {
-    const row = this.events.get(id)
+    const row = this.items.get(id)
     if (!row) throw new Error(`No event ${id}.`)
     row.memo = state ?? null
     this.out([set(id, 'state', state ?? null)], 'system', at)
@@ -248,7 +248,7 @@ export class Store {
 
   /** Who reacted to an event, as `by` changed it at `at`. */
   setReactions(id: string, reactions: string[], by: string, at: number): void {
-    const row = this.events.get(id)
+    const row = this.items.get(id)
     if (!row) throw new Error(`No event ${id}.`)
     row.reactions = reactions
     this.out([set(id, 'reactions', reactions)], by, at)
@@ -256,7 +256,7 @@ export class Store {
 
   /** Adds a `contains` link from a task to an event that sits elsewhere: the task shows it, as well. */
   linkItem(parentId: string, id: string, by: string, at: number): void {
-    const row = this.events.get(id)
+    const row = this.items.get(id)
     if (!row) throw new Error(`No event ${id}.`)
     if (row.parent_id === parentId || id === parentId || this.linked(parentId).some((l) => l.id === id)) return
     this.linkedIn.set(parentId, [...this.linked(parentId), { id, at, by }])
@@ -266,7 +266,7 @@ export class Store {
 
   /** Every item that contains an event (its `contains` links in): where it sits first, then where it was linked. */
   containers(id: string): string[] {
-    const row = this.events.get(id)
+    const row = this.items.get(id)
     return [...(row?.parent_id ? [row.parent_id] : []), ...(this.linkedFrom.get(id) ?? [])]
   }
 
@@ -281,7 +281,7 @@ export class Store {
   }
 
   ofType(type: string): ItemRow[] {
-    return [...(this.byType.get(type) ?? [])].map((id) => this.events.get(id)!)
+    return [...(this.byType.get(type) ?? [])].map((id) => this.items.get(id)!)
   }
 
   nextSeq(parentId: string | null): number {
@@ -357,7 +357,7 @@ export class Store {
   /** An item as egdb holds it; with no egdb (the tests), as memory has it. */
   async inspect(id: string): Promise<Inspection> {
     if (this.sink) return this.sink.inspect(id)
-    const row = this.events.get(id)
+    const row = this.items.get(id)
     if (!row) throw new Error(`No item ${id}.`)
     const values: Record<string, unknown> = { type: row.type, ...row.params }
     // A blocker is one that was not resolved as it was added.
@@ -378,21 +378,21 @@ export class Store {
   // ---- loading ----
 
   /** Puts back what was read from egdb, without writing it again. */
-  restore(rows: {
-    events: ItemRow[]
+  restore(saved: {
+    items: ItemRow[]
     settings: [string, unknown][]
     customActions: CustomActionRow[]
     assigned?: { item: string; to: string; at: number; by: string }[]
     linked?: { parent: string; id: string; at: number; by: string }[]
   }): void {
-    for (const l of rows.linked ?? []) {
+    for (const l of saved.linked ?? []) {
       this.linkedIn.set(l.parent, [...this.linked(l.parent), { id: l.id, at: l.at, by: l.by }])
       this.linkedFrom.set(l.id, [...(this.linkedFrom.get(l.id) ?? []), l.parent])
     }
-    for (const a of rows.assigned ?? []) this.link(a.item, a.to, { at: a.at, by: a.by, n: 0 })
-    for (const r of [...rows.events].sort((a, b) => a.seq - b.seq)) this.index(r)
-    for (const [k, value] of rows.settings) this.settings.set(k, value)
-    for (const r of rows.customActions) this.customActions.set(r.id, r)
+    for (const a of saved.assigned ?? []) this.link(a.item, a.to, { at: a.at, by: a.by, n: 0 })
+    for (const r of [...saved.items].sort((a, b) => a.seq - b.seq)) this.index(r)
+    for (const [k, value] of saved.settings) this.settings.set(k, value)
+    for (const r of saved.customActions) this.customActions.set(r.id, r)
   }
 }
 

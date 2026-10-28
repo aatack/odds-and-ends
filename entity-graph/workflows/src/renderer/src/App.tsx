@@ -358,7 +358,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
         <div className="empty">That event is not there any more.</div>
       </div>
     )
-  const e = d.event
+  const e = d.info
   const debug = w.view.kind === 'debug'
   const actions = debug ? null : (
     <>
@@ -372,7 +372,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
         canGoBack={w.views.length > 0}
         onBack={w.back}
         title={`${debug ? 'Debug: ' : ''}${e.summary}`}
-        event={e}
+        info={e}
         actions={actions}
         onRename={e.type === 'task' && !debug ? (title) => void w.act(() => api().rename(e.id, title)) : undefined}
       />
@@ -447,7 +447,7 @@ function ViewHeader(props: {
   canGoBack: boolean
   onBack: () => void
   title?: string
-  event?: ItemInfo
+  info?: ItemInfo
   actions?: ReactNode
   /** Given, the title can be edited: Rename in its menu, then Enter (or leaving it) saves and Escape doesn't. */
   onRename?: (title: string) => void
@@ -456,12 +456,12 @@ function ViewHeader(props: {
   // Clicking the title opens the event's menu (Open, Debug, Rename, its actions), as a right-click does.
   const setMenu = useSetAtom(menuAtom)
   const [rename, setRename] = useAtom(renameAtom)
-  const { event, onRename, title } = props
+  const { info, onRename, title } = props
   useEffect(() => {
-    if (!rename || rename !== event?.id) return
+    if (!rename || rename !== info?.id) return
     setRename(null)
     if (onRename) setEditing(title ?? '')
-  }, [rename, event, onRename, title, setRename])
+  }, [rename, info, onRename, title, setRename])
   const save = () => {
     if (editing !== null && editing.trim() && editing.trim() !== props.title) props.onRename?.(editing.trim())
     setEditing(null)
@@ -479,7 +479,7 @@ function ViewHeader(props: {
       >
         <ChevronLeft className="icon" />
       </button>
-      {props.event && props.event.type !== 'task' && <ItemInfoIcon event={props.event} />}
+      {props.info && props.info.type !== 'task' && <ItemInfoIcon info={props.info} />}
       {editing !== null ? (
         <input
           className="view-title view-title-input"
@@ -503,13 +503,13 @@ function ViewHeader(props: {
         />
       ) : (
         <h1
-          className={`view-title ${event ? 'clickable' : ''}`}
-          onClick={event && ((e) => setMenu({ x: e.clientX, y: e.clientY, id: event.id }))}
+          className={`view-title ${info ? 'clickable' : ''}`}
+          onClick={info && ((e) => setMenu({ x: e.clientX, y: e.clientY, id: info.id }))}
           onContextMenu={
-            event &&
+            info &&
             ((e) => {
               e.preventDefault()
-              setMenu({ x: e.clientX, y: e.clientY, id: event.id })
+              setMenu({ x: e.clientX, y: e.clientY, id: info.id })
             })
           }
         >
@@ -532,7 +532,7 @@ function likeliest(detail: ItemDetail, overview: Overview): Someone[] {
   if (overview.bots.some((b) => b.id === detail.item.id)) return []
   const here = detail.item.assignees
   const all = everyone(overview)
-  const lastBot = detail.events.map((e) => e.createdBy).reverse().find((by) => by.startsWith('bot:'))?.slice(4)
+  const lastBot = detail.children.map((e) => e.createdBy).reverse().find((by) => by.startsWith('bot:'))?.slice(4)
   const ids = [
     ...new Set([...(lastBot ? [lastBot] : []), ...here, ...overview.recentAssignees, ...overview.bots.map((b) => b.id), ...overview.users.map((u) => u.id)]),
   ]
@@ -577,7 +577,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
     w.markViewed(item.id)
   }, [item.id, item.withYou])
   // New events arrive at the bottom, as in any chat.
-  const count = detail.events.length
+  const count = detail.children.length
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight })
   }, [count])

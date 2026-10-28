@@ -24,8 +24,8 @@ type Act = (fn: () => Promise<unknown>) => Promise<void>
  * An event's picture, beside its message in the chat. Given who made it (`owner`: a bot or a person), hovering it
  * names them and pressing it opens them; otherwise it is named for what it is.
  */
-export function ItemAvatar({ event, owner }: { event: { type: ItemKind; createdBy: string }; owner?: { name: string; onOpen: () => void } | null }) {
-  const [Icon, name] = itemInfoIcon(event)
+export function ItemAvatar({ info, owner }: { info: { type: ItemKind; createdBy: string }; owner?: { name: string; onOpen: () => void } | null }) {
+  const [Icon, name] = itemInfoIcon(info)
   if (!owner)
     return (
       <span className="avatar" title={name}>
@@ -53,21 +53,21 @@ export function Pill({ id, label, icon, onOpen }: { id: string; label: ReactNode
   )
 }
 
-export type CardProps = { event: ItemInfo; find: string; catalog: Catalog; act: Act; onOpen: (id: string) => void }
+export type CardProps = { info: ItemInfo; find: string; catalog: Catalog; act: Act; onOpen: (id: string) => void }
 
 /** Each type's card: what it shows in a chat. A type left out shows what it says (`message`, or its summary). */
 export const CARDS: Partial<Record<ItemKind, (p: CardProps) => ReactNode>> = {
-  note: ({ event: e, find }) => <Markdown text={String(e.params.text ?? '')} highlight={find} />,
-  task: ({ event: e, onOpen }) => (
+  note: ({ info: e, find }) => <Markdown text={String(e.params.text ?? '')} highlight={find} />,
+  task: ({ info: e, onOpen }) => (
     <button data-ui className="link card-link" onClick={() => onOpen(e.id)}>
-      <TaskCard event={e} />
+      <TaskCard info={e} />
     </button>
   ),
-  script: ({ event: e, act, find }) => <ScriptCard event={e} act={act} find={find} />,
-  widget: ({ event: e }) => <Widget event={e} />,
-  slack_message: ({ event: e, find }) => <SlackCard event={e} find={find} />,
-  slack_channel: ({ event: e, find }) => <SlackCard event={e} find={find} />,
-  approval: ({ event: e, find, catalog, act }) => (
+  script: ({ info: e, act, find }) => <ScriptCard info={e} act={act} find={find} />,
+  widget: ({ info: e }) => <Widget info={e} />,
+  slack_message: ({ info: e, find }) => <SlackCard info={e} find={find} />,
+  slack_channel: ({ info: e, find }) => <SlackCard info={e} find={find} />,
+  approval: ({ info: e, find, catalog, act }) => (
     <div className="event-card">
       <Markdown text={e.resolved ? (e.message ?? e.summary) : e.summary} highlight={find} />
       {!e.resolved && <Approval b={e} catalog={catalog} act={act} />}
@@ -77,8 +77,8 @@ export const CARDS: Partial<Record<ItemKind, (p: CardProps) => ReactNode>> = {
 
 /** An event's card, by its type. */
 export function ItemCard(props: CardProps) {
-  const card = CARDS[props.event.type]
-  return card ? <>{card(props)}</> : <Markdown text={props.event.message ?? props.event.summary} highlight={props.find} />
+  const card = CARDS[props.info.type]
+  return card ? <>{card(props)}</> : <Markdown text={props.info.message ?? props.info.summary} highlight={props.find} />
 }
 
 /** How each type fills the view on its own: as a chat (its events, and the chat input), or as its details. */
@@ -100,7 +100,7 @@ export const FOCUS: Record<ItemKind, 'chat' | 'details'> = {
  * A script: what it does; then a tick and what it finished with, once done. While open: when it runs next (if it
  * asked to), and a play button, always: pressed, it runs now, with the unsafe tools a person's press brings.
  */
-function ScriptCard({ event: e, act, find }: { event: ItemInfo; act: Act; find: string }) {
+function ScriptCard({ info: e, act, find }: { info: ItemInfo; act: Act; find: string }) {
   const now = useNow()
   const error = typeof e.data?.error === 'string' ? e.data.error : null
   const result = e.data?.message ?? (e.data?.result === undefined || e.data?.result === null ? null : e.data.result)

@@ -87,9 +87,9 @@ export class Admin {
 
   /** A Slack event's messages, for its card and view; with `thread`, the replies to one of them. */
   async slackView(itemId: string, thread?: string) {
-    const event = this.engine.event(itemId)
-    if (!event) throw new Error(`No event ${itemId}.`)
-    return slackView(this.engine, event, thread)
+    const info = this.engine.info(itemId)
+    if (!info) throw new Error(`No event ${itemId}.`)
+    return slackView(this.engine, info, thread)
   }
 
   mcpView(): McpView {

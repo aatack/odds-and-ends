@@ -59,7 +59,7 @@ const runtime = (state: unknown) => `
  * the app is. The frame is made once for its HTML, so what is typed in it keeps its place; its state goes in and out
  * by messages. What it sets is saved a moment after it stops changing; a change from elsewhere is passed in.
  */
-export function Widget({ event: e, tall = false }: { event: ItemInfo; tall?: boolean }) {
+export function Widget({ info: e, tall = false }: { info: ItemInfo; tall?: boolean }) {
   const frame = useRef<HTMLIFrameElement>(null)
   const [height, setHeight] = useState(40)
   const html = String(e.params.html ?? '')
