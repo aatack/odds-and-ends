@@ -6,7 +6,7 @@
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev -- --no-sandbox",
-    "start": "electron-vite build && electron . --no-sandbox",
+    "start": "node scripts/start.mjs",
     "build": "electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "test": "tsx test/engine.mts && tsx test/slack.mts && tsx test/github.mts && tsx test/phone.mts && tsx test/egdb.mts",

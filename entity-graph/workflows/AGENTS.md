@@ -25,7 +25,7 @@ an in-memory store; it costs runs, so use it only when the bot wiring changes.
 
 `npm install`, then `npm start`: it builds egdb-server and egdb's client whenever
 egdb's sources are newer than them (with rustup's cargo where there is one;
-`npm run egdb:build` builds them again; or set `EGDB_SERVER` to a binary), builds the app once and runs it, watching nothing:
+`npm run egdb:build` builds them again; or set `EGDB_SERVER` to a binary), builds the app once and runs it from a snapshot of that build (`.run/`, made by `scripts/start.mjs`), watching nothing:
 bots can edit and build the code (in their worktrees) without restarting the app
 under themselves. `npm run dev` hot-reloads the window.
 
