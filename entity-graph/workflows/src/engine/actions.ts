@@ -16,6 +16,37 @@ const spec = z
   .describe('An event: see item_types. ref names it, so an after in the same list can wait for it.')
 
 
+/**
+ * The tools' names from when items were called events: still answered, as the new ones, so bots in sessions that
+ * began before know them, but not listed (mcp.ts). Their old parameters are taken too (LEGACY_PARAMS).
+ */
+export const LEGACY_NAMES: Record<string, string> = {
+  event_types: 'item_types',
+  add_events: 'add_items',
+  link_events: 'link_items',
+  cancel_event: 'cancel_item',
+}
+
+/** Each tool's parameters by their old names (from when items were called events), and what they are called now. */
+export const LEGACY_PARAMS: Record<string, Record<string, string>> = {
+  add_items: { events: 'items' },
+  link_items: { event_ids: 'item_ids' },
+  cancel_item: { event_id: 'item_id' },
+  run_custom_action: { event_id: 'item_id' },
+}
+
+/** A call by an old name, or with old parameters, as it is called now. */
+export function current(name: string, args: Record<string, unknown>): { name: string; args: Record<string, unknown> } {
+  const now = LEGACY_NAMES[name] ?? name
+  const out = { ...args }
+  for (const [old, to] of Object.entries(LEGACY_PARAMS[now] ?? {}))
+    if (old in out) {
+      if (!(to in out)) out[to] = out[old]
+      delete out[old]
+    }
+  return { name: now, args: out }
+}
+
 export const itemActions: Action[] = [
   {
     name: 'paradigm',
@@ -243,9 +274,9 @@ export const itemActions: Action[] = [
     unsafe: false,
     description:
       'Add events in a task (or in a bot\'s chat): notes, blockers, approvals, child tasks. With no item_id, add tasks, bots or people that sit in none.',
-    input: { item_id: itemId.optional(), events: z.array(spec) },
+    input: { item_id: itemId.optional(), items: z.array(spec) },
     run: async (a, ctx) => {
-      return { ids: await ctx.engine.addItems(a.item_id ? String(a.item_id) : null, a.events as ItemSpec[], ctx.actor, ctx.author) }
+      return { ids: await ctx.engine.addItems(a.item_id ? String(a.item_id) : null, a.items as ItemSpec[], ctx.actor, ctx.author) }
     },
   },
   {

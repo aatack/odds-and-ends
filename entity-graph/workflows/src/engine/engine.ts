@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import type { Agent, ItemInfoDetail, ItemSpec, Item, ItemDetail, ItemInfo, LastRun, Overview, User } from '../shared/types'
-import { itemActions } from './actions'
+import { current, itemActions } from './actions'
 import { ITEM_TYPES, whenNext } from './itemTypes'
 import { execCli, type Action, type ActionContext, type Author, type ItemType, type Exec, type Integration } from './integrations'
 import { PRESETS, type Preset } from './presets'
@@ -943,7 +943,9 @@ export class Engine extends EventEmitter {
   // ---- actions ----
 
   /** The one way into an action, from MCP, a script or the UI: checked, then run. */
-  async callAction(name: string, args: Record<string, unknown>, ctx: ActionContext): Promise<unknown> {
+  async callAction(called: string, given: Record<string, unknown>, ctx: ActionContext): Promise<unknown> {
+    // Old names and parameters (from when items were called events) are taken as the new.
+    const { name, args } = current(called, given ?? {})
     const action = this.actions.find((a) => a.name === name)
     if (!action) throw new Error(`No action ${name}.`)
     // The rule on unsafe actions (see Action in integrations.ts), checked here

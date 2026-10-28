@@ -139,7 +139,7 @@ behaviours.push(async ({ call, prompt, system, schema, sessionId, resume, model,
   await assert.rejects(call('post_somewhere', { text: 'x' }), /not found/i)
   // It has the same tools as anyone connected, so it may act on other items too, as itself.
   const other = (await engine.create('Elsewhere'))!
-  await call('add_items', { item_id: other, events: [{ type: 'note', params: { text: 'from a bot' } }] })
+  await call('add_items', { item_id: other, items: [{ type: 'note', params: { text: 'from a bot' } }] })
   assert.equal(engine.children(other)[0].createdBy, `bot:${threepio}`)
   await engine.close(other)
   return out({
@@ -250,7 +250,7 @@ await engine.close(loose)
   const host = (await engine.create('Host'))!
   const other = (await engine.create('Other'))!
   behaviours.push(async ({ call }) => {
-    await call('add_items', { item_id: other, events: [{ type: 'note', params: { text: 'By the tool.' } }] })
+    await call('add_items', { item_id: other, items: [{ type: 'note', params: { text: 'By the tool.' } }] })
     return out({ item: host, message: 'Told them.' }, { item: other, message: 'By the update.' })
   })
   await toBot(host, 'Tell the other task')
@@ -719,7 +719,7 @@ await engine.close(bad)
   const { url } = mcp.operator()
   await assert.rejects(connect(url, { Authorization: 'Bearer wrong' }), (e: { code?: number }) => e.code === 401)
   const outside = await connect(url, { Authorization: `Bearer ${engine.settings.mcpToken()}` })
-  await outside.call('add_items', { item_id: probe, events: [{ type: 'note', params: { text: 'From outside' } }] })
+  await outside.call('add_items', { item_id: probe, items: [{ type: 'note', params: { text: 'From outside' } }] })
   assert.equal(last(probe, 'note').createdBy, 'mcp')
   // Assigning a bot wakes it.
   behaviours.push(async () => out({ item: probe, assign: ['human'] }))
@@ -734,9 +734,25 @@ await engine.close(bad)
   assert.match(await outside.call('paradigm'), /A task is a thing to be done/)
   const types = JSON.parse(await outside.call('item_types'))
   assert.deepEqual(types.map((t: { type: string }) => t.type), engine.itemTypes.map((t) => t.type))
-  const { ids: [made] } = JSON.parse(await outside.call('add_items', { events: [{ type: 'bot', params: { name: 'Sneaky' } }] }))
+  const { ids: [made] } = JSON.parse(await outside.call('add_items', { items: [{ type: 'bot', params: { name: 'Sneaky' } }] }))
   assert.equal(engine.findAgent('sneaky')!.id, made, 'agents may make bots')
   await engine.deleteAgent(made)
+  // The tools' old names (from when items were called events) still answer, with their old parameters, but are not listed.
+  const listed = (await outside.client.listTools()).tools.map((t) => t.name)
+  for (const old of ['event_types', 'add_events', 'link_events', 'cancel_event']) assert.ok(!listed.includes(old), `${old} is not listed`)
+  assert.deepEqual(JSON.parse(await outside.call('event_types')).length, engine.itemTypes.length)
+  const { ids: [said] } = JSON.parse(await outside.call('add_events', { item_id: probe, events: [{ type: 'note', params: { text: 'Old names' } }] }))
+  assert.equal(last(probe, 'note').params.text, 'Old names')
+  const linkedTo = (await engine.create('Linked by the old name'))!
+  await outside.call('link_events', { item_id: linkedTo, event_ids: [said] })
+  assert.ok(engine.detail(linkedTo)!.children.some((e) => e.id === said))
+  const { ids: [waiting] } = JSON.parse(await outside.call('add_items', { item_id: probe, items: [{ type: 'approval', params: { action: 'post_somewhere', inputs: { text: 'x' } } }] }))
+  await outside.call('cancel_event', { event_id: waiting })
+  assert.ok(engine.info(waiting)!.cancelled, 'cancel_event, with event_id')
+  const { ids: [again] } = JSON.parse(await outside.call('add_items', { item_id: probe, items: [{ type: 'approval', params: { action: 'post_somewhere', inputs: { text: 'y' } } }] }))
+  await outside.call('cancel_item', { event_id: again })
+  assert.ok(engine.info(again)!.cancelled, 'cancel_item takes event_id too')
+  await engine.close(linkedTo)
   await outside.client.close()
   await engine.close(probe)
 }

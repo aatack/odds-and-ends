@@ -15,6 +15,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { Catalog } from '../shared/types'
 import type { Engine } from './engine'
 import type { ActionContext } from './integrations'
+import { LEGACY_NAMES, LEGACY_PARAMS } from './actions'
 import { PARADIGM } from './paradigm'
 import { objectSchema } from './schema'
 
@@ -32,19 +33,45 @@ export function makeServer(engine: Engine, scope: Scope): McpServer {
   }
   // The unsafe rule: no agent is given an unsafe action.
   const offered = engine.actions.filter((a) => !a.unsafe)
-  for (const action of offered)
+  // A tool's old parameters are taken too: what they name is then optional here, and required by callAction.
+  const inputOf = (action: (typeof offered)[number]) => {
+    const old = Object.entries(LEGACY_PARAMS[action.name] ?? {})
+    if (!old.length) return action.input
+    const input = { ...action.input }
+    for (const [from, to] of old) {
+      input[to] = input[to].optional()
+      input[from] = input[to].describe(`The old name for ${to}.`)
+    }
+    return input
+  }
+  const register = (name: string, action: (typeof offered)[number]) =>
     server.registerTool(
-      action.name,
-      { description: action.description, inputSchema: action.input },
+      name,
+      { description: action.description, inputSchema: inputOf(action) },
       (async (args: Record<string, unknown>) => {
         try {
-          const out = await engine.callAction(action.name, args, ctx())
+          const out = await engine.callAction(name, args, ctx())
           return { content: [{ type: 'text' as const, text: typeof out === 'string' ? out : JSON.stringify(out, null, 1) }] }
         } catch (e) {
           return { content: [{ type: 'text' as const, text: (e as Error).message }], isError: true }
         }
       }) as never,
     )
+  for (const action of offered) register(action.name, action)
+  // The old names answer too, but are not listed.
+  const hidden = new Set<string>()
+  for (const [old, now] of Object.entries(LEGACY_NAMES)) {
+    const action = offered.find((a) => a.name === now)
+    if (!action) continue
+    register(old, action)
+    hidden.add(old)
+  }
+  const handlers = (server.server as unknown as { _requestHandlers: Map<string, (...a: unknown[]) => Promise<{ tools: { name: string }[] }>> })._requestHandlers
+  const list = handlers.get('tools/list')
+  if (list) handlers.set('tools/list', async (...a) => {
+    const out = await list(...a)
+    return { ...out, tools: out.tools.filter((t) => !hidden.has(t.name)) }
+  })
   return server
 }
 
