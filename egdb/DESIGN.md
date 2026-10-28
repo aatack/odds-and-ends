@@ -529,6 +529,24 @@ Shortcuts:
 - `is_archived(branch, entities)`: true when the winning `type` event of the entity is null. An entity that never had a type is not archived.
 - `archive_entity(branch, author, entity)` writes `type = null`. `restore_entity(branch, author, entity, type)` writes the type again. The caller supplies the type, because the store does not read history to find it (R21).
 
+### 8.5.1 Derived entities [CHOSEN, I23]
+
+An entity whose own `derives_from` value is the text ID of another entity is **derived** from that source.
+It is a way to reuse one entity (for example a script) with a few values changed.
+
+- `values`, `value` and `value_events` of a derived entity first take the source's values, then apply the entity's own values on top.
+  - The entity's own events always win. An own null clears an inherited value.
+  - The source can itself be derived. The chain is followed to its end, and nearer sources win over farther ones.
+  - `type` and `derives_from` are never inherited. So existence, archiving and the type filter of link reads see the entity's own type only.
+  - `value_events` gives the source's event for an inherited value.
+- **Cycles.** The chain stops at the first entity that it already saw. An entity that derives from itself inherits nothing. In a cycle `a -> b -> a`, `a` takes `b`'s own values and `b` takes `a`'s own values.
+- An unknown source, or a `derives_from` that is not text, inherits nothing. Writing null to `derives_from` ends the derivation.
+- Links are not inherited.
+- The source is read on the same view as the entity. A change to the source shows in every entity derived from it.
+- `walk` sees derived values (its predicates and its cache read `values`). `find` does not: it filters and returns the stored values only, because its indexes only hold stored values (Q21).
+- Cost: one extra batch read per chain step, for the whole batch. Entities with no `derives_from` add nothing beyond their own read.
+- Nothing is stored differently. `derives_from` is a normal value, so existing data reads the same.
+
 ### 8.6 Batch reads (R29)
 
 1. A read resolves the flat view once for the call.
@@ -876,6 +894,7 @@ The earlier version took a set of roots and a pair-only relationship map, and ha
 | I16 | R23: entities with no type | Hidden, the same as archived entities. The filter checks the other end of each link. `links_including_archived` skips the filter. |
 | I15 | R4: live merges | `merge` is a frozen snapshot. To follow a branch live, use `pull` with an open range. |
 | I21 | Prove (11.3) | Takes a walk query and an item: proved when the walk emits the item. Backward layers of ancestors from the item, then a forward search from the start through them with the walk's predicates, repeated until a proof or no more layers. A budget gives `Unknown`, never a false `NoPath`. |
+| I23 | Derived entities (8.5.1) | `derives_from` (text ID) makes value reads take the source's values first, the entity's own on top. `type` and `derives_from` are not inherited, nor are links. A chain stops at the first repeat. `find` does not derive. |
 | I22 | Write middleware (8.1.1) | A hook transforms a batch's ops inside the write transaction, after the branch check and the timestamp resolution and before validation. It may change, drop or add ops, or reject the batch. Only `write`, `archive_entity` and `restore_entity` run it. Middleware cannot read the store. Registration is per store handle, in order. A batch dropped to empty writes nothing and returns an empty range. |
 
 ---
@@ -919,6 +938,8 @@ Still open:
 - **Q19. Branch name in the context.** The middleware context does not give the branch name, only the branch ID, to keep the write path cheap. Must the name be added?
 
 - **Q20. Dropped-to-empty batch.** A middleware that drops every op writes nothing and returns an empty range. Must this be an error instead?
+
+- **Q21. Derived values in find.** Must `find` filter on derived values? Its index seeks only find stored values, so an entity that matches only through its source would need a second search through the entities that derive from each candidate.
 
 ---
 

@@ -16,6 +16,7 @@ The design is in [`DESIGN.md`](DESIGN.md).
     - `Removed`: stored as NULL.
   - The tables keep one nullable `sort REAL` column. Reads sort live links by it.
 - **Entities.** There are no create or delete events. An entity exists when it has events. To archive an entity, set its `type` value to null (`archive_entity`). To restore it, pass the type to `restore_entity`. An index on `(key, value)` serves "entities of type X". `children`, `parents` and `links` show only entities whose `type` is not null. Entities that never had a type are hidden too. `links_including_archived` skips this filter.
+- **Derived entities.** An entity whose `derives_from` value is another entity's ID reads that source's values first, then its own on top (`values`, `value`, `value_events`, `walk`). `type`, `derives_from` and links are not inherited; a chain stops at the first repeat, so cycles end. `find` uses stored values only. See DESIGN.md section 8.5.1.
 - **Sequence IDs.** Every event has a per-branch sequence ID, and `(branch, seq)` is unique.
 - **Current and history tables.**
   - `value_current` and `link_current` hold only the last event per target.

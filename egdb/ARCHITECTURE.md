@@ -53,6 +53,15 @@ flowchart LR
   - Why: archived entities must disappear from normal views without a delete. One rule also covers half-written entities.
   - A separate read skips the filter, for repair tools.
 
+## 3a. Derived entities
+
+- An entity can name a source in its `derives_from` value. Value reads then take the source's values first, and the entity's own values on top.
+- Why: one entity (for example a script) can be used again with a few values changed. A fix to the source shows in every copy.
+- It is a rule of the read, not a new kind of event. The `derives_from` value is a normal value event. Why: the stored format does not change, and derivation merges and undoes like all other values.
+- The `type`, the `derives_from` value and the links are not inherited. Why: the type decides existence, archiving and link filters. These must stay the entity's own.
+- A chain stops at the first entity that it already saw. Why: two entities can name each other by error. A read must still end.
+- `find` does not derive. Why: its indexes hold stored values only.
+
 ## 4. Links
 
 - A link joins a source and a destination with a link type. It carries no other data.

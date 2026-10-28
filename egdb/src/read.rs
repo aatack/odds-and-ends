@@ -13,7 +13,9 @@ use rusqlite::{params, Connection};
 use crate::codec::decode_value;
 use crate::error::Result;
 use crate::store::{branch_row, Store};
-use crate::types::{BranchId, Direction, EventRef, Link, Seq, Timestamp, Value, TYPE_KEY};
+use crate::types::{
+    BranchId, Direction, EventRef, Link, Seq, Timestamp, Value, DERIVES_FROM_KEY, TYPE_KEY,
+};
 use crate::view::{roll_up, Cand, EventSource, Order, Source, View};
 
 /// Links of one entity, grouped by the asked-for `(link type, direction)`.
@@ -58,7 +60,7 @@ impl Store {
         if !keys.is_empty() {
             self.note_sql(interval_count(&view));
         }
-        for ((eid, key), c) in resolve_values(&self.conn, &view, &keys, None)? {
+        for ((eid, key), c) in self.resolve_derived(&view, &keys, None)? {
             if !c.data.is_null() {
                 out.get_mut(&eids[&eid]).expect("asked for").insert(
                     key,
@@ -89,12 +91,99 @@ impl Store {
         if !keys.is_empty() {
             self.note_sql(interval_count(view));
         }
-        for ((eid, key), c) in resolve_values(&self.conn, view, &keys, None)? {
+        for ((eid, key), c) in self.resolve_derived(view, &keys, None)? {
             if !c.data.is_null() {
                 out.get_mut(&eids[&eid])
                     .expect("asked for")
                     .insert(key, c.data);
             }
+        }
+        Ok(out)
+    }
+
+    /// The winning value event per `(entity, key)` of `eids` (all keys, or
+    /// one key), with derivation: an entity whose own [`DERIVES_FROM_KEY`]
+    /// names a source first takes the source's values (themselves derived),
+    /// except `type` and [`DERIVES_FROM_KEY`]; its own events win over them,
+    /// a null included. A chain stops at the first entity it already saw, so
+    /// a cycle or a self-reference ends it. Each chain step is one batch read.
+    pub(crate) fn resolve_derived(
+        &self,
+        view: &View,
+        eids: &[i64],
+        key: Option<&str>,
+    ) -> Result<HashMap<(i64, String), Cand<Value>>> {
+        if eids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        // Each entity's own events (the asked key and its source), and the
+        // interned key of its source, read one chain step at a time.
+        let mut own: HashMap<i64, Vec<(String, Cand<Value>)>> = HashMap::new();
+        let mut source: HashMap<i64, i64> = HashMap::new();
+        let mut frontier: Vec<i64> = eids.to_vec();
+        let mut first = true;
+        while !frontier.is_empty() {
+            if !first {
+                self.note_sql(interval_count(view));
+            }
+            first = false;
+            let rolled = match key {
+                None => resolve_values(&self.conn, view, &frontier, None)?,
+                Some(k) => resolve_values_of(&self.conn, view, &frontier, &[k, DERIVES_FROM_KEY])?,
+            };
+            let mut names: HashMap<i64, String> = HashMap::new();
+            for e in &frontier {
+                own.entry(*e).or_default();
+            }
+            for ((eid, k), c) in rolled {
+                if k == DERIVES_FROM_KEY {
+                    if let Value::Text(s) = &c.data {
+                        names.insert(eid, s.clone());
+                    }
+                    if key.is_some_and(|k| k != DERIVES_FROM_KEY) {
+                        continue;
+                    }
+                }
+                own.get_mut(&eid).expect("loaded").push((k, c));
+            }
+            let wanted: Vec<&str> = names.values().map(String::as_str).collect();
+            let found: HashMap<String, i64> = self
+                .lookup(&wanted)?
+                .into_iter()
+                .map(|(eid, ext)| (ext, eid))
+                .collect();
+            frontier = Vec::new();
+            for (eid, name) in &names {
+                if let Some(&src) = found.get(name) {
+                    source.insert(*eid, src);
+                    if !own.contains_key(&src) && !frontier.contains(&src) {
+                        frontier.push(src);
+                    }
+                }
+            }
+        }
+        let mut out = HashMap::new();
+        for &eid in eids {
+            // The chain from the entity to its last source, cut at a repeat.
+            let mut chain = vec![eid];
+            let mut at = eid;
+            while let Some(&src) = source.get(&at) {
+                if chain.contains(&src) {
+                    break;
+                }
+                chain.push(src);
+                at = src;
+            }
+            let mut merged: HashMap<String, Cand<Value>> = HashMap::new();
+            for (i, e) in chain.iter().enumerate().rev() {
+                for (k, c) in &own[e] {
+                    if i > 0 && (k == TYPE_KEY || k == DERIVES_FROM_KEY) {
+                        continue;
+                    }
+                    merged.insert(k.clone(), c.clone());
+                }
+            }
+            out.extend(merged.into_iter().map(|(k, c)| ((eid, k), c)));
         }
         Ok(out)
     }
@@ -119,7 +208,8 @@ impl Store {
     pub fn value(&self, branch: BranchId, entity: &str, key: &str) -> Result<Option<Value>> {
         let (view, eids) = self.prepare(branch, &[entity])?;
         let keys: Vec<i64> = eids.keys().copied().collect();
-        Ok(resolve_values(&self.conn, &view, &keys, Some(key))?
+        Ok(self
+            .resolve_derived(&view, &keys, Some(key))?
             .into_values()
             .next()
             .map(|c| c.data)

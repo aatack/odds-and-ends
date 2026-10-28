@@ -45,6 +45,8 @@ pub use walk::{
 };
 
 #[cfg(test)]
+mod derive_tests;
+#[cfg(test)]
 mod find_tests;
 #[cfg(test)]
 mod history_tests;

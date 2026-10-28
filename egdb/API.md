@@ -182,6 +182,7 @@ curl -s -X POST $URL/undo -H 'content-type: application/json' \
 ### POST /values
 
 Request: `{branch, entities}`. Response: a map of entity ID to its values.
+A derived entity (its `derives_from` names a source) also has the values it inherits (DESIGN.md section 8.5.1).
 
 ```sh
 curl -s -X POST $URL/values -H 'content-type: application/json' \

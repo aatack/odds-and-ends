@@ -15,6 +15,13 @@ pub type Timestamp = i64;
 /// here (there are no delete events), so a search by type skips archived ones.
 pub const TYPE_KEY: &str = "type";
 
+/// The value key that makes an entity derived: its text value is the ID of a
+/// source entity. Value reads of a derived entity first take the source's
+/// values (except `type` and this key), then the entity's own values on top.
+/// A chain follows sources until it ends or meets an entity it already saw.
+/// Links are not inherited, and `find` filters on stored values only.
+pub const DERIVES_FROM_KEY: &str = "derives_from";
+
 /// How long after a batch its author may still undo it.
 pub const UNDO_WINDOW_MS: Timestamp = 5 * 60 * 1000;
 
