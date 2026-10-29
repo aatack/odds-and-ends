@@ -14,6 +14,7 @@ import { Admin } from '../src/engine/admin.ts'
 import { DEFAULT_DEBOUNCE, DEFAULT_MODEL, Engine, MAX_SCRIPTS, PERIODIC_MINUTES, type BotOutput, type BotUpdate } from '../src/engine/engine.ts'
 import { catalog, startMcp } from '../src/engine/mcp.ts'
 import { botOutputSchema } from '../src/engine/schema.ts'
+import { dueAt } from '../src/engine/wakes.ts'
 import { ASK, BotRunner, limitedUntil, MAX_BOTS, promptFor, type SpawnBot } from '../src/engine/workers.ts'
 
 const MINUTE = 60_000
@@ -497,6 +498,10 @@ return { state: { last: ids[0] } }`
   assert.equal(behaviours.length, 0)
   await engine.close(t)
 }
+
+// News waits out the debounce, even when the cycle is long overdue (a bot idle for an hour, given a task).
+assert.equal(dueAt({ lastWake: 0, edited: 3_600_000, debounceMs: 60_000, cycleMs: 900_000, hasWork: true }), 3_660_000)
+assert.equal(dueAt({ lastWake: 0, edited: null, debounceMs: 60_000, cycleMs: 900_000, hasWork: true }), 900_000)
 
 // Processes are switched off: none can be added.
 await assert.rejects(engine.addItems((await engine.create('No process'))!, [{ type: 'process', params: { command: 'true' } }]), /switched off/)

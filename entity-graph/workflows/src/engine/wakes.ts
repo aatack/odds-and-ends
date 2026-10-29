@@ -14,10 +14,13 @@ export interface WakeState {
   hasWork: boolean
 }
 
-/** When it is due: (edited and settled) or (a cycle on, with work). Null: nothing calls for it. */
+/**
+ * When it is due: once something affected it, when that has settled (its debounce); with nothing new, a cycle after it
+ * last woke, if it has work. News always waits out the debounce: an idle bot given a task long after it last woke is not
+ * started at once by its overdue cycle.
+ */
 export function dueAt(s: WakeState): number | null {
-  const due: number[] = []
-  if (s.edited !== null) due.push(s.edited + s.debounceMs)
-  if (s.hasWork && s.cycleMs) due.push(s.lastWake + s.cycleMs)
-  return due.length ? Math.min(...due) : null
+  if (s.edited !== null) return s.edited + s.debounceMs
+  if (s.hasWork && s.cycleMs) return s.lastWake + s.cycleMs
+  return null
 }
