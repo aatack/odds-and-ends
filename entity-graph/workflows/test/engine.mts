@@ -508,6 +508,20 @@ return { state: { last: ids[0] } }`
 assert.equal(dueAt({ lastWake: 0, edited: 3_600_000, debounceMs: 60_000, cycleMs: 900_000, hasWork: true }), 3_660_000)
 assert.equal(dueAt({ lastWake: 0, edited: null, debounceMs: 60_000, cycleMs: 900_000, hasWork: true }), 900_000)
 
+// One answer to who can hold a task: a person, a bot or an open script, by any name for it.
+{
+  const t = (await engine.create('Held by a script'))!
+  const [s] = await engine.addItems(t, [{ type: 'script', params: { source: 'return null', owns: [t] } }])
+  await engine.assign(t, engine.me(), false)
+  assert.deepEqual([engine.holder('@Threepio'), engine.holder(threepio), engine.holder(s), engine.holder('nobody')], [threepio, threepio, s, null])
+  const ctx = { engine, author: 'bot' as const, actor: 'bot', itemId: null, runId: null }
+  const onBots = (await engine.callAction('items_waiting_on', { on: 'bot' }, ctx)) as { id: string }[]
+  assert.ok(!onBots.some((i) => i.id === t), 'a topic a script holds is not waiting on a bot')
+  const onScript = (await engine.callAction('items_waiting_on', { on: s }, ctx)) as { id: string }[]
+  assert.deepEqual(onScript.map((i) => i.id), [t])
+  await engine.close(t)
+}
+
 // Processes are switched off: none can be added.
 await assert.rejects(engine.addItems((await engine.create('No process'))!, [{ type: 'process', params: { command: 'true' } }]), /switched off/)
 

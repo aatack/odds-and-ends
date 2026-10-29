@@ -541,12 +541,19 @@ export class Engine extends EventEmitter {
   }
 
   /** A person or a bot, by a username, a bot's name, or an id; or an error saying who there is. */
-  resolveAssignee(ref: string): string {
+  /**
+   * Who can hold a task, by any name for it: the id of an open item that can (a person by username, a bot by name, with or
+   * without the @, or id; an open script by id); null if there is none. Which of them it is doesn't matter to holding.
+   */
+  holder(ref: string): string | null {
     const r = ref.trim().replace(/^@/, '')
     if (this.user(r.toLowerCase())) return r.toLowerCase()
-    const bot = this.findAgent(r)
-    if (bot) return bot.id
-    if (this.isOpenScript(r)) return r
+    return this.findAgent(r)?.id ?? (this.isOpenScript(r) ? r : null)
+  }
+
+  resolveAssignee(ref: string): string {
+    const id = this.holder(ref)
+    if (id) return id
     throw new Error(`Nobody is called ${ref}, to assign. People: ${this.users().map((u) => u.id).join(', ') || 'none'}; bots: ${this.agents().map((a) => a.name).join(', ') || 'none'}.`)
   }
 
@@ -570,8 +577,7 @@ export class Engine extends EventEmitter {
    */
   setAssignee(itemId: string, to: string, on: boolean, actor: string, runId: string | null = null): void {
     if (this.row(itemId)?.type !== 'task') throw new Error(`No task ${itemId}.`)
-    const bot = this.agent(to)
-    if (on && !this.isUser(to) && !(bot && !bot.deleted) && !this.isOpenScript(to)) throw new Error(`Nobody is ${to}, to assign.`)
+    if (on && this.holder(to) !== to) throw new Error(`Nobody is ${to}, to assign.`)
     if (!on && !this.assignees(itemId).includes(to)) return
     this.store.setAssigned(itemId, to, on, actor, this.now())
     for (const run of this.running.values()) if (run.id === runId) run.assigned.add(itemId)

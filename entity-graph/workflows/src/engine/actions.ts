@@ -110,15 +110,15 @@ export const itemActions: Action[] = [
     run: async (a, { engine }) => {
       const on = String(a.on)
       const types: string[] = engine.itemTypes.filter((t) => t.blocking).map((t) => t.type)
-      const person = engine.user(on.toLowerCase())
-      const agent = on === 'bot' || person ? null : engine.findAgent(on)
-      if (!person && on !== 'bot' && !agent && !types.includes(on))
+      const held = on === 'bot' ? null : engine.holder(on)
+      const person = held && engine.isUser(held) ? engine.user(held) : null
+      if (on !== 'bot' && !held && !types.includes(on))
         throw new Error(`Waiting on what? One of: a person (${engine.users().map((u) => u.id).join(', ')}), bot, a bot's name, ${types.join(', ')}.`)
       const items = engine.overview(person?.id).items.filter((i) => !i.closed)
       const waits = (i: (typeof items)[number]) =>
         person ? i.withYou
-        : on === 'bot' ? i.assignees.some((x) => !engine.isUser(x))
-        : agent ? i.assignees.includes(agent.id)
+        : on === 'bot' ? i.assignees.some((x) => engine.info(x)?.type === 'bot')
+        : held ? i.assignees.includes(held)
         : i.blockers.some((b) => b.type === on)
       return items.filter(waits).map((i) => ({
         id: i.id,
