@@ -312,8 +312,9 @@ export const itemActions: Action[] = [
     name: 'set_value',
     unsafe: false,
     description:
-      "Set one value on an item (null clears it): any of its type's params (see item_types), e.g. a task's title, a widget's " +
-      "widget_state, a bot's instructions or cycle_minutes. Not how it stands (type, resolved…: those have their own tools). " +
+      "Set one value on an item (null clears it): any of its type's params (see item_types), e.g. a task's title or a widget's " +
+      "widget_state. Bots are items too: this is how to change a bot's instructions, name or cycle_minutes, keeping its session and tasks. " +
+      'Not how it stands (type, resolved…: those have their own tools). ' +
       'Whatever shows it is told at once.',
     input: { item_id: itemId, key: z.string(), value: z.unknown() },
     run: async (a, ctx) => {
