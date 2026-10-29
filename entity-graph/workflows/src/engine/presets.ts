@@ -4,19 +4,13 @@
 // @someone" in place of these while it is empty.
 
 import type { ItemSpec, PresetInfo } from '../shared/types'
-import { SLACK_LINK } from '../shared/slack'
 
 export interface Preset extends PresetInfo {
   build: (text: string) => ItemSpec[]
 }
 
-/** A note, with every Slack message link in it pulled in as a slack_message after it (a link alone is just the message). */
-const note = (text: string): ItemSpec[] => {
-  const links = [...text.matchAll(new RegExp(SLACK_LINK, 'g'))].map((m) => m[0])
-  const rest = links.reduce((t, l) => t.replace(l, ''), text).trim()
-  const said: ItemSpec[] = rest ? [{ type: 'note', params: { text: links.length ? text.trim() : rest } }] : []
-  return [...said, ...links.map((link): ItemSpec => ({ type: 'slack_message', params: { link } }))]
-}
+/** A note. The URLs in it are pulled in by the engine as it is added (Engine.addNow). */
+const note = (text: string): ItemSpec[] => (text.trim() ? [{ type: 'note', params: { text: text.trim() } }] : [])
 
 export const PRESETS: Preset[] = [
   {

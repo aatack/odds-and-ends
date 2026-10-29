@@ -134,7 +134,7 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
   const byId = useMemo(() => new Map(items.overview.items.map((i) => [i.id, i])), [items.overview.items])
   const { bots, users } = items.overview
   const itemRef = useCallback(
-    (id: string) => {
+    (id: string, label?: string) => {
       const bot = bots.find((b) => b.id === id)
       const person = users.find((u) => u.id === id)
       if (bot || person)
@@ -146,7 +146,7 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
             onOpen={bot ? () => open({ kind: 'event', id }) : undefined}
           />
         )
-      return <ItemRef id={id} item={byId.get(id)} onOpen={(to) => open({ kind: 'event', id: to })} />
+      return <ItemRef id={id} item={byId.get(id)} label={label} onOpen={(to) => open({ kind: 'event', id: to })} />
     },
     [byId, bots, users, open],
   )

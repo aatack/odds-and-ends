@@ -65,6 +65,11 @@ export const CARDS: Partial<Record<ItemKind, (p: CardProps) => ReactNode>> = {
   ),
   script: ({ info: e, act, find }) => <ScriptCard info={e} act={act} find={find} />,
   widget: ({ info: e }) => <Widget info={e} />,
+  link: ({ info: e }) => (
+    <a className="link-card" href={String(e.params.url)} target="_blank" rel="noreferrer">
+      {String(e.params.title || e.params.url)}
+    </a>
+  ),
   slack_message: ({ info: e, find }) => <SlackCard info={e} find={find} />,
   slack_channel: ({ info: e, find }) => <SlackCard info={e} find={find} />,
   approval: ({ info: e, find, catalog, act }) => (
@@ -90,6 +95,7 @@ export const FOCUS: Record<ItemKind, 'chat' | 'details'> = {
   script: 'details',
   process: 'details',
   widget: 'details',
+  link: 'details',
   search: 'details',
   slack_message: 'details',
   slack_channel: 'details',

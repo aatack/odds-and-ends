@@ -46,6 +46,13 @@ export function ItemInfoView({
           <Approval b={e} catalog={catalog} act={act} />
         </section>
       )}
+      {e.type === 'link' && (
+        <section className="card">
+          <a href={String(e.params.url)} target="_blank" rel="noreferrer">
+            Open {String(e.params.url)} in the browser
+          </a>
+        </section>
+      )}
       {e.type === 'widget' && (
         <section className="card">
           <Widget info={e} tall />

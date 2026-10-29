@@ -258,6 +258,18 @@ export const WIDGET_DOC =
   'Example: html: \'<button id="b">Add one</button> <span id="n"></span><script>onState(s => n.textContent = s.count); ' +
   'b.onclick = () => setState(s => ({ ...s, count: s.count + 1 }))</script>\', widget_state: { count: 0 }'
 
+export const link: ItemType = {
+  type: 'link',
+  description:
+    "A web page, pulled into the task: a URL in a note becomes one (its id is the URL), so [url]() refers to it. Made by hand, " +
+    'give it the url and, if you like, a title.',
+  params: { url: z.string().regex(/^https?:\/\//, 'A web address: http(s)://…'), title: z.string().optional().describe('What it is, in a line; the URL if left out.') },
+  data: '—',
+  blocking: false,
+  bots: true,
+  describe: (p) => String(p.title || p.url),
+}
+
 export const widget: ItemType = {
   type: 'widget',
   description: WIDGET_DOC,
@@ -312,4 +324,4 @@ export const slackChannel: ItemType = {
   describe: (p) => `Slack ${p.channel}, ${at(p.oldest)} to ${p.latest ? at(p.latest) : 'now'}`,
 }
 
-export const ITEM_TYPES: ItemType[] = [task, note, approval, script, proc, widget, search, slackMessage, slackChannel, bot, user]
+export const ITEM_TYPES: ItemType[] = [task, note, approval, script, proc, link, widget, search, slackMessage, slackChannel, bot, user]

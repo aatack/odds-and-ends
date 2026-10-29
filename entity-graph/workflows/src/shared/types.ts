@@ -9,7 +9,7 @@ import type { SearchRow, SearchSection } from './search'
  * which stay open until something happens (a script says it is done, an approval
  * is given, a child item closes).
  */
-export type ItemKind = 'task' | 'note' | 'approval' | 'script' | 'process' | 'widget' | 'search' | 'slack_message' | 'slack_channel' | 'bot' | 'user'
+export type ItemKind = 'task' | 'note' | 'approval' | 'script' | 'process' | 'link' | 'widget' | 'search' | 'slack_message' | 'slack_channel' | 'bot' | 'user'
 
 /** An item as it is added. `ref` names it, so another added alongside can point at it. */
 export interface ItemSpec {

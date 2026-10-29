@@ -2,6 +2,7 @@ import { BUILTIN_SECTIONS, DEFAULT_SECTIONS, matches, type SearchRow, type Searc
 import { runScript } from './script'
 import { github } from './github'
 import { slackActions } from './slack'
+import { parseSlackLink } from '../shared/slack'
 import { dueAt } from './wakes'
 import { CustomActions } from './customActions'
 import { randomUUID } from 'node:crypto'
@@ -80,7 +81,22 @@ interface Run {
 const authorOf = (createdBy: string): Author => (createdBy === 'bot' || createdBy === 'script:bot' || createdBy.startsWith('bot:') ? 'bot' : 'human')
 
 /** `[id]()` in text: a reference to an item (a task, a bot, or a person by their username). */
-export const refsIn = (text: string): string[] => [...text.matchAll(/\[([\w.-]+)\]\(\)/g)].map((m) => m[1])
+/** The item a URL is pulled in as: a Slack message, a Slack channel (its last day), or a link. */
+function pulledIn(url: string, at: number): ItemSpec {
+  if (parseSlackLink(url)) return { type: 'slack_message', params: { link: url } }
+  const channel = /^https:\/\/[\w-]+(?:\.enterprise)?\.slack\.com\/archives\/([CGD][A-Z0-9]+)\/?(?:[?#].*)?$/.exec(url)
+  if (channel) return { type: 'slack_channel', params: { channel: channel[1], oldest: new Date(at - 24 * 60 * MINUTE).toISOString() } }
+  return { type: 'link', params: { url } }
+}
+
+export const refsIn = (text: string): string[] => [
+  ...[...text.matchAll(/\[([\w.-]+)\]\(\)/g)].map((m) => m[1]),
+  // `[label](id)`, as markdown writes a link, refers to the item `id` too.
+  ...[...text.matchAll(/\[[^\]]*\]\(([\w.-]+)\)/g)].map((m) => m[1]),
+]
+
+/** Every URL a text mentions: bare, `[label](url)`, or `[url]()`; each once, in order. */
+export const urlsIn = (text: string): string[] => [...new Set([...text.matchAll(/https?:\/\/[^\s<>()\[\]]+[^\s<>()\[\].,;:!?'"]/g)].map((m) => m[0]))]
 
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'bot'
 
@@ -1018,6 +1034,16 @@ export class Engine extends EventEmitter {
     return this.store.batch(() => this.addNow(parentId, specs, createdBy))
   }
 
+  /** Adds one plain item with an id of its own choosing (a URL), in a task. */
+  private addAs(parentId: string, id: string, spec: ItemSpec, createdBy: string): void {
+    const at = this.now()
+    this.store.insertItem({
+      id, parent_id: parentId, seq: this.store.nextSeq(parentId), type: spec.type, params: this.prepare([spec], 'human')[0].params, created_by: createdBy, created_at: at,
+      resolved: true, resolved_at: at, resolved_by: createdBy, cancelled: false, data: null, memo: null, reactions: [], check_step: 0, next_check_at: null,
+      last_error: null, runs: 0, added_n: 0, resolved_n: 0,
+    })
+  }
+
   private addNow(parentId: string | null, specs: ItemSpec[], createdBy: string): string[] {
     // A detached task sits in no task, wherever it is added.
     const detached = parentId ? specs.filter((s) => s.type === 'task' && s.params.detached) : []
@@ -1053,6 +1079,14 @@ export class Engine extends EventEmitter {
       // A script takes on the tasks it owns, as a bot is given them.
       if (spec.type === 'script' && Array.isArray(owns)) for (const t of owns as string[]) this.setAssignee(t, id, true, createdBy)
     })
+    // Whatever a note links to is pulled in, as an item whose id is its URL (a Slack message or channel, or a link): made
+    // the first time, and put in this task as well after that. So `[url]()` (or the URL itself) opens it.
+    if (parentId && this.row(parentId)?.type === 'task')
+      for (const spec of specs.filter((s) => s.type === 'note'))
+        for (const url of urlsIn(String(spec.params.text ?? ''))) {
+          if (this.row(url)) this.store.linkItem(parentId, url, createdBy, at)
+          else this.addAs(parentId, url, pulledIn(url, at), createdBy)
+        }
     // New waits are checked at once.
     if (specs.some((s) => this.type(s.type).check)) queueMicrotask(() => void this.checkDue())
     this.emit('change')

@@ -30,7 +30,7 @@ const fence: Components['pre'] = ({ children }) => {
 }
 
 /** How a reference to an item, `[itemId]()`, is drawn: the app says, as the items are its. Without it, as a link. */
-export const ItemRefContext = createContext<((id: string) => React.ReactNode) | null>(null)
+export const ItemRefContext = createContext<((id: string, label?: string) => React.ReactNode) | null>(null)
 
 const ITEM_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
@@ -38,7 +38,9 @@ const ITEM_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 function Link({ href, children }: { href?: string; children?: React.ReactNode }) {
   const itemRef = useContext(ItemRefContext)
   const text = plainText(children)
-  if (!href && itemRef && ITEM_ID.test(text)) return itemRef(text)
+  if (!href && itemRef && (ITEM_ID.test(text) || /^https?:\/\//.test(text))) return itemRef(text)
+  // A URL is an item too (a note brings it in): drawn as its pill, with the link's own text if it has some.
+  if (href && itemRef && /^https?:\/\//.test(href)) return itemRef(href, text === href ? undefined : text)
   return (
     <a href={href} target="_blank" rel="noreferrer">
       {children}

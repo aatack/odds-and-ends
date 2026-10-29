@@ -16,7 +16,8 @@ follow a link) is not listed. Keep this list current: see AGENTS.md. Each rule i
 | `note` | Plain. In the chat its picture is whoever wrote it, not its type; it is Ctrl+F's text. | F `itemIcon`, `Chat` |
 | `widget` | `widget_state` is set through `setWidgetState` / `set_value`; drawn in a sandboxed frame. | B `setWidgetState`; F `Widget` |
 | `search` | One per store, in no item; its `sections` configure every finder. Read and set through its own calls. | B `searchSections`, `setSearchSections`; F `SearchSectionsContext` |
-| `slack_message`, `slack_channel` | Fetch nothing on add; their card and view read Slack (cached) as shown. A Slack link in a person's note is added as one. | B `slack.ts`, `presets.ts`; F `SlackView`, `Composer` (paste) |
+| `slack_message`, `slack_channel` | Fetch nothing on add; their card and view read Slack (cached) as shown. A Slack link in a note is added as one (see `link`). | B `slack.ts`, `presets.ts`; F `SlackView`, `Composer` (paste) |
+| `link` | A web page. Made when a note mentions a URL (bare, `[label](url)` or `[url]()`), as are Slack messages and channels: its id **is** the URL, so the second mention links it in rather than making another. A URL in rendered text is drawn as that item's pill. | B `addNow`, `pulledIn`; F `Markdown` Link, `ItemRef` |
 | `process` | Switched off: can't be added; kept so stored ones read. | B `prepare` |
 
 ## Values with special meaning
@@ -62,7 +63,7 @@ follow a link) is not listed. Keep this list current: see AGENTS.md. Each rule i
 | **Wakes** (`dueAt`, one rule for bots and scripts): affected since the last wake: when that has settled for the debounce; with nothing new, a cycle since the last wake while holding tasks; never while running. Limits `bots.max_running` (6) and `scripts.max_running` (8). | B `wakes.ts`, `wake`, `scriptDue`, `checkDue`; `workers.fill` |
 | **Usage limits**: a run stopped by one is put back as if it never began (the bot keeps its topics, news stays new), and no bot of that provider runs until it resets (`limitedUntil`; held in memory). | B `endRun`, `pause`; `workers.fill` |
 | **Prompts**: a task's whole history the first time a session sees it (`seen`), then only what is new; a handoff starts a fresh session. | B `claim`, `endRun`; `workers.promptFor` |
-| **Sending** with an `@` (or a default action that assigns) hands the task to them and takes it off the sender. | B `send` |
+| **Sending** with an `@`, `[id]()` or `[label](id)` of a bot or person (or a default action that assigns) hands the task to them and takes it off the sender. | B `send` |
 | **Bots never close** a task unless asked (instruction only). | `workers.ts` SYSTEM |
 | **Unsafe**: an unsafe action runs only for a person (an approval, a pressed script, `/`). | B `callAction`, `itemTypes.ts` script |
 | **Closing** a task cancels its open blockers; tasks in it stay open. Reopen undoes the close only. | B `close`, `reopen` |
