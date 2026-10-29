@@ -345,6 +345,11 @@ await engine.close(loose)
   assert.ok(engine.detail(from)!.children.some((e) => e.id === made), 'and where it came from shows it')
   assert.equal(engine.info(said)!.parentId, from, 'what is linked stays where it sits')
   assert.deepEqual(engine.info(said)!.containers, [from, made], 'and is in both: where it sits first')
+  // A message can hold another: a reply shows what it answers.
+  await engine.send(from, 'note', 'Agreed')
+  const reply = last(from, 'note').id
+  await engine.link(said, [reply])
+  assert.deepEqual(engine.info(reply)!.containers, [from, said])
   await engine.close(from)
   await engine.close(made)
 }

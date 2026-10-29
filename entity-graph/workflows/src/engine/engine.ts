@@ -1259,7 +1259,8 @@ export class Engine extends EventEmitter {
 
   /** Adds `contains` links from a task to items that sit elsewhere (other tasks, notes, anything), for traceability. */
   async link(taskId: string, itemIds: string[], actor = this.me()): Promise<void> {
-    if (this.row(taskId)?.type !== 'task') throw new Error(`No task ${taskId}.`)
+    // Any item can hold others: a message holding a reply, as well as a task its context.
+    if (!this.row(taskId)) throw new Error(`No item ${taskId}.`)
     this.store.batch(() => {
       for (const id of itemIds) this.store.linkItem(taskId, id, actor, this.now())
     })
