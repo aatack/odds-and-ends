@@ -283,7 +283,7 @@ export const itemActions: Action[] = [
     name: 'link_items',
     unsafe: false,
     description:
-      'Add `contains` links from a task to items that already exist elsewhere (messages, other tasks, anything): they show in its chat too, ' +
+      'Add `contains` links from an item (a task; or a message, which then holds a reply) to items that already exist elsewhere: they show there too, ' +
       'and stay where they sit. For traceability: link a new task to what it came from, and what it came from to it.',
     input: { item_id: itemId, item_ids: z.array(z.string()) },
     run: async (a, ctx) => {
