@@ -337,7 +337,7 @@ export const itemActions: Action[] = [
   {
     name: 'reopen_item',
     unsafe: false,
-    description: 'Open a closed task again: who has it is unchanged, and what its closing cancelled stays cancelled.',
+    description: 'Open a closed task again: who has it is unchanged, and what its closing cancelled stays cancelled. A cancelled script comes back too, holding nothing.',
     input: { item_id: itemId },
     run: async (a, ctx) => {
       await ctx.engine.reopen(String(a.item_id), ctx.actor)

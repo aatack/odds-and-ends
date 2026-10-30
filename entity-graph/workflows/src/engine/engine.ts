@@ -1267,6 +1267,14 @@ export class Engine extends EventEmitter {
    * closing cancelled stays cancelled. The chat says who reopened it.
    */
   async reopen(itemId: string, actor = this.me()): Promise<void> {
+    // A cancelled script comes back as it was (its name, source and cycle), with no topics: its cancelling handed them back.
+    const row = this.row(itemId)
+    if (row?.type === 'script') {
+      if (!row.resolved) return
+      this.store.reopenItem(itemId, actor, this.now())
+      this.emit('change')
+      return
+    }
     const item = this.must(itemId)
     if (!item.closed) return
     this.store.batch(() => {

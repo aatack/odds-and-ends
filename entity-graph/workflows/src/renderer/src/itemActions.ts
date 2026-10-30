@@ -23,7 +23,7 @@ export interface ItemAction {
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 /**
- * The actions on an item: an open task can be resolved or skipped, a closed one reopened; any other
+ * The actions on an item: an open task can be resolved or skipped, a closed one (or a cancelled script) reopened; any other
  * open item cancelled (a bot is deleted from its settings, not here). Then the person's own actions for its
  * type (`custom`), from the Types page.
  */
@@ -32,7 +32,7 @@ export function itemActions(
   ctx: { act: Act; skip: (id: string) => void; custom?: CustomAction[] },
 ): ItemAction[] {
   const own: ItemAction[] = e.resolved
-    ? e.type === 'task'
+    ? e.type === 'task' || e.type === 'script'
       ? [{ id: 'reopen', label: 'Reopen', important: true, icon: RotateCcw, tone: '', run: () => void ctx.act(() => api().reopen(e.id)) }]
       : []
     : e.type === 'task'

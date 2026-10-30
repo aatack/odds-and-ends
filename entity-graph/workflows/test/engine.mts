@@ -609,6 +609,13 @@ assert.equal(dueAt({ lastWake: 0, edited: null, debounceMs: 60_000, cycleMs: 900
   assert.equal(engine.info(t)!.params.sleepUntil, undefined)
   await engine.close(t)
   await engine.cancel(snooze)
+  assert.ok(engine.info(snooze)!.resolved)
+  // A cancelled script can be reopened, as it was.
+  await engine.reopen(snooze)
+  assert.equal(engine.info(snooze)!.resolved, false)
+  assert.equal(engine.info(snooze)!.cancelled, false)
+  assert.ok(engine.info(snooze)!.params.source)
+  await engine.cancel(snooze)
 }
 
 // Processes are switched off: none can be added.
