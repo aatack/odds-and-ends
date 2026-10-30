@@ -206,13 +206,15 @@ export const itemActions: Action[] = [
     name: 'get_item',
     unsafe: false,
     description:
-      'An item in full: its children (every item in it, with its data and timeline, child items included), its bot runs, and its ' +
-      'trace: every thing that happened in it, when, and by whom.',
+      'An item in full: its values (what set_value set on it, and its params), and for a topic (or a bot, or a script) its children: ' +
+      'every item in it, with its data, linked ones included.',
     input: { item_id: itemId },
     run: async (a, { engine }) => {
-      const d = engine.detail(String(a.item_id))
-      if (!d) throw new Error(`No item ${a.item_id}.`)
-      return d
+      const id = String(a.item_id)
+      const info = engine.info(id)
+      if (!info) throw new Error(`No item ${id}.`)
+      const d = engine.detail(id)
+      return { ...(d ?? { item: null, parent: null, children: engine.children(id) }), values: info.params }
     },
   },
   {

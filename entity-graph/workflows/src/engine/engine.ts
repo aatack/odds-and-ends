@@ -253,7 +253,10 @@ export class Engine extends EventEmitter {
 
   /** A task's title (a bot's: its @name). */
   private title(id: string, params: Record<string, unknown>): string {
-    return this.row(id)?.type === 'bot' ? `@${this.agentName(id)}` : String(params.title)
+    const type = this.row(id)?.type
+    if (type === 'bot') return `@${this.agentName(id)}`
+    if (type === 'script') return String(params.name ?? params.description ?? 'Script')
+    return String(params.title)
   }
 
   /** Who a task is assigned to: its `assigned_to` links, the earliest first. */
@@ -318,8 +321,8 @@ export class Engine extends EventEmitter {
       .sort((a, b) => b.since - a.since)
     const scripts = this.store
       .ofType('script')
-      .filter((r) => !r.resolved && this.assignedTo(r.id).length)
-      .map((r) => ({ id: r.id, name: String(r.params.description ?? 'Script'), wakesAt: r.next_check_at, running: this.checking.has(r.id) }))
+      .filter((r) => !r.resolved && (r.params.name || this.assignedTo(r.id).length))
+      .map((r) => ({ id: r.id, named: !!r.params.name, name: String(r.params.name ?? r.params.description ?? 'Script'), wakesAt: r.next_check_at, running: this.checking.has(r.id) }))
     return { me: this.user(viewer) ?? { id: viewer, name: viewer }, items, bots: this.agents(), users: this.users(), recentAssignees: this.recentAssignees(viewer), scripts }
   }
 
@@ -474,11 +477,8 @@ export class Engine extends EventEmitter {
     const row = this.row(id)
     if (!row) throw new Error(`No item ${id}.`)
     if (STATE_KEYS.has(key) || OWN_KEYS.has(key)) throw new Error(`${key} can't be set this way.`)
-    const type = this.type(row.type)
-    if (!(key in type.params)) throw new Error(`A ${row.type} has no ${key}: it has ${Object.keys(type.params).join(', ')}.`)
+    // Duck typed: any key, any value. A type's params are advice, not a check.
     const next = { ...row.params, [key]: value ?? undefined }
-    const parsed = z.object(type.params).safeParse(next)
-    if (!parsed.success) throw new Error(`Bad ${key}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
     if (JSON.stringify(row.params[key] ?? null) === JSON.stringify(value ?? null)) return
     this.store.setParams(id, Object.fromEntries(Object.entries(next).filter(([, v]) => v !== undefined)), actor, this.now())
     // A bot's settings changing is something happening to it.
@@ -548,7 +548,9 @@ export class Engine extends EventEmitter {
   holder(ref: string): string | null {
     const r = ref.trim().replace(/^@/, '')
     if (this.user(r.toLowerCase())) return r.toLowerCase()
-    return this.findAgent(r)?.id ?? (this.isOpenScript(r) ? r : null)
+    if (this.isOpenScript(r)) return r
+    const named = this.store.ofType('script').find((x) => !x.resolved && String(x.params.name ?? '').toLowerCase() === r.toLowerCase())
+    return this.findAgent(r)?.id ?? named?.id ?? null
   }
 
   resolveAssignee(ref: string): string {
@@ -1056,7 +1058,7 @@ export class Engine extends EventEmitter {
     if (detached.length) return [...this.addNow(parentId, specs.filter((s) => !detached.includes(s)), createdBy), ...this.addNow(null, detached, createdBy)]
     const keyed = (s: ItemSpec) => s.type === 'task' && s.params.key && this.store.ofType('task').some((r) => r.params.key === s.params.key)
     specs = specs.filter((s) => !keyed(s))
-    if (!parentId && specs.some((s) => !['task', 'bot', 'user', 'search'].includes(s.type))) throw new Error('Only a task, a bot, a person or the search item can sit in no task.')
+    if (!parentId && specs.some((s) => !['task', 'bot', 'user', 'search', 'script'].includes(s.type))) throw new Error('Only a task, a bot, a person, a script or the search item can sit in no task.')
     if (parentId && specs.some((s) => s.type === 'search')) throw new Error('The search item sits in no task.')
     if (parentId && this.row(parentId)?.type === 'bot' && specs.some((s) => s.type !== 'note')) throw new Error("A bot's own chat holds only notes.")
     const ids: string[] = []
@@ -1128,17 +1130,14 @@ export class Engine extends EventEmitter {
     const owned = this.assignedTo(r.id)
     // Never woken: as if it woke as it was made (its cycle counts from then; what made it is not news).
     const lastWake = Number(r.params.last_wake ?? 0) || r.created_at - 1
+    // What happens to it, as for a bot: a topic assigned to it (by anyone but itself), or a note in its own chat.
     const mine = (by: string | null) => !!by && (by === 'script' || by === r.id)
     let edited = 0
     for (const t of owned) {
       const given = this.store.assignment(t, r.id)
-      if (given && given.at > lastWake) edited = Math.max(edited, given.at)
-      for (const e of this.store.children(t)) {
-        if (e.id === r.id) continue
-        if (e.created_at > lastWake && !mine(e.created_by)) edited = Math.max(edited, e.created_at)
-        if (e.resolved && (e.resolved_at ?? 0) > lastWake && !mine(e.resolved_by) && e.resolved_n !== e.added_n) edited = Math.max(edited, e.resolved_at ?? 0)
-      }
+      if (given && given.at > lastWake && !mine(given.by)) edited = Math.max(edited, given.at)
     }
+    for (const e of this.store.children(r.id)) if (e.created_at > lastWake && !mine(e.created_by)) edited = Math.max(edited, e.created_at)
     const schedule = Array.isArray(r.params.schedule) ? (r.params.schedule as number[]) : null
     const cycle = r.params.cycle_minutes !== undefined ? Number(r.params.cycle_minutes) : schedule?.length ? schedule[schedule.length - 1] / 60 : PERIODIC_MINUTES
     let at = dueAt({
@@ -1162,7 +1161,7 @@ export class Engine extends EventEmitter {
     if (!r || r.resolved || !this.type(r.type).check) throw new Error('There is nothing to run.')
     r.next_check_at = this.now()
     this.pressed.set(itemId, actor)
-    await this.checkOne(r.parent_id!, itemId)
+    await this.checkOne(r.parent_id ?? itemId, itemId)
   }
 
   /** Writes one param of an item: for the app's own bookkeeping, such as a bot's session and last run. */
@@ -1202,7 +1201,7 @@ export class Engine extends EventEmitter {
       return this.idle()
     }
     if (this.must(itemId).closed) throw new Error('This task is closed.')
-    const live = (id: string) => this.isUser(id) || (this.agent(id) !== null && !this.agent(id)!.deleted)
+    const live = (id: string) => this.holder(id) === id
     const to = [...new Set([...(assignTo ? [this.resolveAssignee(assignTo)] : []), ...refsIn(text).filter(live)])].filter((id) => id !== actor)
     const specs = this.prepare(preset.build(text), 'human')
     if (!specs.length && !to.length) throw new Error('Nothing to send.')
@@ -1306,7 +1305,7 @@ export class Engine extends EventEmitter {
     const max = Number(this.settings.get('scripts.max_running', MAX_SCRIPTS))
     let room = max - [...this.checking].filter((id) => this.row(id)?.type === 'script').length
     const allowed = due.filter((r) => r.type !== 'script' || room-- > 0)
-    await Promise.all(allowed.map((r) => this.checkOne(r.parent_id!, r.id)))
+    await Promise.all(allowed.map((r) => this.checkOne(r.parent_id ?? r.id, r.id)))
   }
 
   private checkOne(taskId: string, itemId: string): Promise<void> {
@@ -1329,7 +1328,8 @@ export class Engine extends EventEmitter {
           pressedBy,
           setNext: (at) => (next = at),
           engine: this,
-          item: this.must(taskId),
+          // A script on its own (in no topic) is where it runs.
+          item: taskId === itemId ? this.toItem(row) : this.must(taskId),
           info,
           author: authorOf(info.createdBy),
           memo: row.memo ?? null,

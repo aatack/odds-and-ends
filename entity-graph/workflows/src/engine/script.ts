@@ -51,10 +51,29 @@ export async function runScript(
       const show = (a) => typeof a === 'string' ? a : JSON.stringify(a)
       globalThis.console = { log: (...a) => __log(...a.map(show)), error: (...a) => __log(...a.map(show)) }
       const tools = new Proxy({}, { get: (_, name) => async (args) => JSON.parse(await __call(String(name), JSON.stringify(args ?? {}))) })
+      const __input = ${JSON.stringify(input)}
+      const __children = async (id) => (await tools.get_item({ item_id: id })).children ?? []
+      // The notes in an item that mention someone (the script itself, by default) as [id]() or [label](id): each with
+      // the text after the mention ("2d"), the newest first.
+      const mentions = async (parentId, mentionedId) => {
+        const who = mentionedId ?? __input.id
+        const out = []
+        for (const c of await __children(parentId)) {
+          if (c.type !== 'note') continue
+          const text = String(c.params.text ?? '')
+          const at = [text.indexOf('[' + who + ']()'), text.indexOf('](' + who + ')')].filter((i) => i >= 0)
+          if (!at.length) continue
+          const end = text.indexOf(')', Math.min(...at)) + 1
+          out.push({ id: c.id, by: c.createdBy, at: c.createdAt, text: text.slice(end).trim() })
+        }
+        return out.sort((a, b) => b.at - a.at)
+      }
+      // The items in an item (where they sit, or linked in), of one type if given.
+      const refs = async (id, type) => (await __children(id)).filter((c) => !type || c.type === type)
       const fn = ${isFunction(source) ? `(${source})` : `async (context, tools) => { const ctx = context, actions = tools
 ${source}
 }`}
-      return JSON.stringify((await fn(${JSON.stringify(input)}, tools)) ?? null)
+      return JSON.stringify((await fn(__input, tools)) ?? null)
     })()`
     const handle = vm.unwrapResult(vm.evalCode(code, 'script.js'))
     const result = vm.resolvePromise(handle)

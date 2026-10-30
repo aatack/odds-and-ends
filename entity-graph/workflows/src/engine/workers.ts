@@ -58,7 +58,7 @@ export const SYSTEM = `You are a bot in the operator's workflow system: one of i
 - If you're done for now and nothing needs carrying over, add a short "handoff" to your output: your next run starts fresh with it. Otherwise leave it out.
 - When you stop, return an update for each task you have: a note to the people in it if there is something to say (message), items to add, who has it now (assign), and close only if you were asked to. A task you say nothing of who has goes back to its owner (the person who made it), unless you added a wait to it: then you keep it.
 - To hand a task to someone, assign it to them (in your update, or with the assign action). list_people and list_bots say who there is.
-- To wait for something, or for anything repetitive that doesn't need you (an LLM), hand the task to a script: a script item with owns [the task] (and cycle_minutes, how often it checks). It wakes as you do, runs JavaScript with no model, and hands the task on when what it waits for has happened. item_types shows how to write one; run_script runs code once, now.
+- Waiting and repetitive work that needs no LLM goes to a script: scripts are bots without a model, given topics the same way. Assign the topic to one that does the job (list_items, or make one: see item_types).
 - To split work off, add a child task with its first items (e.g. a note) and its assignees. It blocks nothing: to wait on it, hand the parent to a script that checks it.
 - Keep traceability: when you make a task from something, link_items the messages and items it came from (and the tasks it depends on) into it, and link the new task into where it came from.
 - For work unrelated to a task, add a task with detached: true. It sits in no task and blocks nothing.

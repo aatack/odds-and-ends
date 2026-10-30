@@ -13,27 +13,32 @@ export interface DefaultAction extends PresetInfo {
 type Ctx = { detail: ItemDetail; overview: Overview }
 
 /**
- * A snooze: a script has the task for `ms`, then gives it back to the person, who lets go of it now. It wakes every five
- * minutes (and when anything happens in the task) and checks the time: scripts don't sleep until a time.
+ * A snooze: hands the topic to the script called Snooze with how long ("[id]() 1h"), which gives it back then; if there is
+ * no such script, a script of its own in the topic does the same.
  */
-const snooze = (label: string, ms: number) => ({ detail, overview }: Ctx): DefaultAction[] => [
-  {
-    id: `snooze:${ms}`,
-    name: `Snooze for ${label}`,
-    hint: `this task comes back to you in ${label}`,
-    icon: 'script',
-    run: () =>
-      takeOff(detail, overview, {
-        type: 'script',
-        params: {
-          description: `Snooze for ${label}`,
-          owns: [detail.item.id],
-          cycle_minutes: 5,
-          source: `if (context.now < ${JSON.stringify(new Date(Date.now() + ms).toISOString())}) return null\nreturn { messages: [{ text: 'Back from snooze' }], assign: context.tasks.map((t) => ({ item: t.id, to: [${JSON.stringify(overview.me.id)}] })), done: true }`,
-        },
-      }),
-  },
-]
+const snooze = (label: string, ms: number, short: string) => ({ detail, overview }: Ctx): DefaultAction[] => {
+  const named = overview.scripts.find((s) => s.named && s.name.toLowerCase() === 'snooze')
+  return [
+    {
+      id: `snooze:${ms}`,
+      name: `Snooze for ${label}`,
+      hint: `this topic comes back to you in ${label}`,
+      icon: 'script',
+      run: () =>
+        named
+          ? api().send(detail.item.id, 'note', `[${named.id}]() ${short}`)
+          : takeOff(detail, overview, {
+              type: 'script',
+              params: {
+                description: `Snooze for ${label}`,
+                owns: [detail.item.id],
+                cycle_minutes: 5,
+                source: `if (context.now < ${JSON.stringify(new Date(Date.now() + ms).toISOString())}) return null\nreturn { messages: [{ text: 'Back from snooze' }], assign: context.topics.map((t) => ({ item: t.id, to: [${JSON.stringify(overview.me.id)}] })), done: true }`,
+              },
+            }),
+    },
+  ]
+}
 
 /** Adds a script that owns the task, and takes the person off it: the script has it now. */
 async function takeOff(detail: ItemDetail, overview: Overview, script: ItemSpec): Promise<void> {
@@ -79,7 +84,7 @@ const waitForSlack = ({ detail, overview }: Ctx): DefaultAction[] => {
 }
 
 /** The default actions, in the order they are offered. */
-export const DEFAULT_ACTIONS: ((ctx: Ctx) => DefaultAction[])[] = [assignToLastBot, waitForSlack, snooze('an hour', 3_600_000), snooze('a day', 86_400_000)]
+export const DEFAULT_ACTIONS: ((ctx: Ctx) => DefaultAction[])[] = [assignToLastBot, waitForSlack, snooze('an hour', 3_600_000, '1h'), snooze('a day', 86_400_000, '1d')]
 
 /** What the chat input offers for this task, with nothing typed. None in a bot's own chat. */
 export function defaultActions(detail: ItemDetail, overview: Overview): DefaultAction[] {

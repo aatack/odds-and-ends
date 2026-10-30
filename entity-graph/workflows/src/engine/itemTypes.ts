@@ -4,6 +4,7 @@
 import { z } from 'zod'
 import type { ItemType } from './integrations'
 import { runScript } from './script'
+import { SNOOZE_SOURCE } from '../shared/snooze'
 import { slackChannelParams, slackMessageParams } from './slack'
 
 const timeout = { timeout_minutes: z.number().optional().describe('Resolve as timed_out after this long.') }
@@ -91,41 +92,32 @@ export function whenNext(next: number | string, now: number): number {
 }
 
 export const SCRIPT_DOC =
-  'A script: JavaScript the app runs for you, with no model. Use one to own repetitive work that does not need an LLM: ' +
-  'snoozing a task, waiting for a branch to merge, checking something every hour. It costs nothing to run.\n' +
-  'Three uses:\n' +
-  '1. A button: add it in a task owning nothing. It sits in the chat with a play button, and runs only when a person presses it.\n' +
-  '2. An owner: give it `owns` (task ids). It has those tasks, as a bot or a person would, and wakes as a bot does: once anything ' +
-  '(but itself) happens in them, debounce_minutes (1) after; and every cycle_minutes (15) while it owns them, news or not. Each run ' +
-  'checks what it waits for (the time, a branch, a reply); when it has happened, it hands its tasks on and says done.\n' +
-  '3. A timer: give it cycle_minutes and no owns. It runs every cycle (e.g. 10080, a week) and does something each time: ' +
-  'make a fresh task for a bot (add_items with no item_id, assignees: [the bot], a note saying what to do), better than a bot ' +
-  "holding a standing task. Keep the last task's id in state, and make a new one only once the last is closed.\n" +
-  'It never blocks the task it sits in: a task waits on a script by being assigned to it.\n' +
-  '`source` is the body of an async function: `context` and `tools` are in scope, and it may await and return.\n' +
-  '- context: { script: { id, description, runs, state }, item: { id, title } (the task it sits in), tasks: [{ id, title }] (those it owns), ' +
-  "now (ISO time), trigger: 'press' | 'schedule' }. state is what its last run returned as state (null the first time).\n" +
-  '- tools.<name>(args) calls any tool the MCP has, and resolves to its result. Unsafe tools (anything acting outside the app) are given only ' +
-  'when a person presses play; on its own, never.\n' +
-  '- It returns (all optional): { messages: [{ item, text }] (notes, in any tasks; item defaults to the one it sits in), assign: [{ item, to: [who] }] ' +
-  "(who has each task from now on: usernames, bot names, or the script's own id to keep it), state (handed to its next run), " +
-  'done: true (it closes; tasks it still owns go back to their owners), data }.\n' +
-  '- console.log is kept. A run that throws ends it with the error.\n' +
-  'Example, a snooze until 9am: params { description: "Snooze until 9am", owns: ["<task id>"], cycle_minutes: 5, source: ' +
-  '"if (context.now < \'2026-11-02T09:00:00Z\') return null; return { messages: [{ text: \'Back from snooze\' }], assign: [{ item: context.tasks[0].id, to: [\'alex\'] }], done: true }" }.\n' +
-  'Example, a weekly timer: cycle_minutes: 10080, source: "if (context.state?.last && !(await tools.get_item({ item_id: context.state.last })).item.closed) ' +
-  'return null; const { ids } = await tools.add_items({ items: [{ type: \'task\', params: { title: \'Weekly review\', assignees: [\'Remulos\'], items: ' +
-  '[{ type: \'note\', params: { text: \'Do the review, then close this task.\' } }] } }] }); return { state: { last: ids[0] } }".\n' +
-  'Example, a check every ten minutes: cycle_minutes: 10, source: "const pr = await tools.some_read_tool({ ... }); if (!pr.merged) return null; ' +
-  'return { messages: [{ text: \'Merged\' }], assign: [{ item: context.tasks[0].id, to: [\'Threepio\'] }], done: true }".'
+  'A script: an automaton, run as JavaScript with no model. It works as a bot does (it has a name, topics are assigned to it, ' +
+  'it hands them on), for repetitive work that needs no LLM: snoozing, watching a PR or a Slack thread, a weekly chore. It costs ' +
+  'nothing to run.\n' +
+  '- Make it on its own (add_items with no item_id), with a name, then assign topics to it (or @ it in a note: "[id]() 2d"). One ' +
+  'script serves every topic it is given: write it once.\n' +
+  '- It wakes as a bot does: when something happens to it (a topic assigned to it, a note in its own chat), debounce_minutes (1) ' +
+  'after; and every cycle_minutes (15) while it holds topics, or always if cycle_minutes is set. Each run handles all it holds.\n' +
+  '- Keep state on the topics it works on, with set_value (any key, any value: e.g. sleepUntil), not on itself.\n' +
+  '- `source` is the body of an async function with `context` and `tools` in scope (await, return). context is the script itself ' +
+  '(its id, name and values, state, runs) plus topics: [{ id, title }] (what it holds), now (ISO time), trigger. tools.<name>(args) ' +
+  'calls any MCP tool; unsafe ones only when a person presses its play button. Two helpers: mentions(topicId, who = itself) answers ' +
+  'the notes in a topic that mention it, newest first, each with text (what follows the mention, e.g. "2d"); refs(itemId, type?) ' +
+  'answers the items in an item, of one type if given (e.g. its slack_message).\n' +
+  '- It returns (all optional): { messages: [{ item, text }], assign: [{ item, to: [who] }] (who has each topic now), state ' +
+  '(handed to its next run), done: true (it closes; topics it holds go back), data }. A run that throws ends it.\n' +
+  'Example, a snooze ("[snoozeId]() 2d"): name "Snooze", cycle_minutes 5, source:\n' +
+  SNOOZE_SOURCE
 
 export const script: ItemType = {
   type: 'script',
   description: SCRIPT_DOC,
   params: {
-    source: z.string().describe('The body of an async function, with context and tools in scope; it returns { messages?, assign?, next?, state?, done?, data? }.'),
+    name: z.string().optional().describe('What it is called: assign to it or @ it by this.'),
+    source: z.string().describe('The body of an async function, with context and tools in scope; it returns { messages?, assign?, state?, done?, data? }.'),
     description: z.string().optional().describe('What it does, in a line: its card and the task list say this.'),
-    owns: z.array(z.string()).optional().describe('Tasks it takes on as it is added: each is assigned to it, as to a bot.'),
+    owns: z.array(z.string()).optional().describe('Topics to assign to it as it is added.'),
     debounce_minutes: z.number().min(0).optional().describe('How long after something happens in its tasks it runs: 1 if left out.'),
     cycle_minutes: z.number().min(0).optional().describe('How often it runs while it owns tasks, news or not: 15 if left out; 0, never.'),
     wake_at: z.number().optional().describe('Older scripts: not before this time (ms). Check the time in the script instead.'),
@@ -141,12 +133,21 @@ export const script: ItemType = {
   check: async (p, { engine, item, info, memo, setMemo, runs, trigger, pressedBy }) => {
     const pressed = trigger === 'press' && !!pressedBy && engine.isUser(pressedBy)
     const owned = engine.assignedTo(info.id)
+    const topics = owned.map((id) => ({ id, title: engine.get(id)?.title ?? id }))
+    const { source: _s, ...own } = p
+    // The script itself: its id, its name and values, its state; what it holds; the time; what woke it.
     const context = {
-      script: { id: info.id, description: p.description ?? null, runs, state: memo ?? null },
-      item: { id: item.id, title: item.title },
-      tasks: owned.map((id) => ({ id, title: engine.get(id)?.title ?? id })),
+      ...own,
+      id: info.id,
+      name: p.name ?? p.description ?? null,
+      runs,
+      topics,
       now: new Date(engine.now()).toISOString(),
       trigger,
+      // Where it sits, if in a topic (null on its own), and the older names.
+      item: item.id === info.id ? null : { id: item.id, title: item.title },
+      tasks: topics,
+      script: { id: info.id, description: p.description ?? null, runs, state: memo ?? null },
       // The older names.
       event: { id: info.id, description: p.description ?? null, createdAt: new Date(info.createdAt).toISOString(), runs },
       state: memo ?? null,

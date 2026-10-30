@@ -130,11 +130,12 @@ shrink.
   nothing of who has goes back to its owner, unless it is left waiting on something (`Engine.settle`).
   It is told never to close a task unless someone explicitly asked it to. Its `last_run` value says how
   its last run went (egdb keeps the earlier ones, as old values); `seen` lists the tasks its session has seen.
-- A `script` is JavaScript the app runs with no model, and can have tasks as a bot can: a button (pressed), an
-  owner on a timer (a snooze), or a check (runs until what it waits for happens). It never blocks the task it
-  sits in; a task waits on it by being assigned to it. Agents are told to use scripts for repetitive work that
-  needs no LLM. See `SCRIPT_DOC` in `itemTypes.ts`. Custom actions (the Types page) are scripts too, run on an
-  item when asked; `run_script` runs one once.
+- A `script` is a bot without a model: it can sit on its own (with a `name`), is given topics as a bot is (`@` it,
+  or assign it), wakes by the same rule (when something happens to *it*, and on its cycle), and runs its JavaScript
+  over everything it holds, keeping its state on those topics (`set_value`, duck typed). `mentions(topic)` and
+  `refs(item, type)` help it read what it was asked. See `SCRIPT_DOC` in `itemTypes.ts`; `src/shared/snooze.ts` is
+  the model one. Scripts inside a topic (the older kind) still run. Custom actions (the Types page) are scripts too,
+  run on an item when asked; `run_script` runs one once.
 - The chat input sends a note by default; `@` a bot or a person in it to hand them the task (and take it
   off the sender). With nothing typed it offers the default actions, a curated list in code
   (`renderer/src/defaultActions.ts`): assign to the last bot, wait for each recent Slack message, snooze an hour or a day. Tab steps through the

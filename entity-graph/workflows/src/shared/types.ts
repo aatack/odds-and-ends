@@ -191,6 +191,8 @@ export interface Overview {
 export interface ScriptOwner {
   id: string
   name: string
+  /** It has a name of its own: it is offered to be given topics, as a bot is. */
+  named: boolean
   wakesAt: number | null
   running: boolean
 }

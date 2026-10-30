@@ -11,7 +11,7 @@ follow a link) is not listed. Keep this list current: see AGENTS.md. Each rule i
 | `task` | The only type that can be assigned (`setAssignee`), has a chat view, a title, Next, `withYou`, Reopen. Its first items (`items`) and `assignees` are params taken out on add. A new one goes to its `assignees`, else its maker if a person, else nobody. `key` makes it add once. `detached` puts it in no item. A task in another blocks nothing and is not closed with it. | B `addNow`, `toItem`, `close`; F `FOCUS`, `itemActions`, `App` |
 | `bot` | Sits in no item; its chat holds only notes. Settings are params; the app keeps `session_id`, `seen`, `last_run`, `handoff` on it. Assignable. Cancelling deletes it and hands its tasks back. | B `agent`, `saveAgent`, `deleteAgent`, `addNow`; F `BotView`, `FOCUS` |
 | `user` | Sits in no item; its id is its username. Signing in makes one. Assignable. | B `signIn`, `saveUser`, `addNow` |
-| `script` | Never a blocker. Assignable (it "owns" tasks: `owns` param, taken out on add). Wakes by the bot rule (`scriptDue`); with its own `cycle_minutes` it is a timer, running every cycle even owning nothing; `last_wake` kept. Done or cancelled, hands its tasks back. Unsafe tools only on a person's press. Counted against `scripts.max_running`. Older `wake_at` / `schedule` honoured. | B `addNow`, `scriptDue`, `checkOne`, `resolve`, `itemTypes.ts`; F `ScriptCard` |
+| `script` | A bot without a model: may sit in no topic, with a `name` (a holder by it, offered in pickers). Never a blocker. Wakes by the bot rule but only for what happens to *it* (a topic given to it, a note in its chat), plus its cycle; `last_wake` kept. Context is the script plus `topics`; `mentions` / `refs` helpers. Done or cancelled, hands its topics back. Unsafe tools only on a person's press. Counted against `scripts.max_running`. `owns` and older `wake_at` / `schedule` still read. | B `addNow`, `holder`, `scriptDue`, `checkOne`, `itemTypes.ts`, `script.ts`; F `ScriptCard`, `defaultActions` (Snooze) |
 | `approval` | A blocker that leaves the task `withYou`. Its `action` must be unsafe. Resolved only by a person (`approve`). | B `prepare`, `waitsOnHuman`, `approve`; F `Approval` |
 | `note` | Plain. In the chat its picture is whoever wrote it, not its type; it is Ctrl+F's text. | F `itemIcon`, `Chat` |
 | `widget` | `widget_state` is set through `setWidgetState` / `set_value`; drawn in a sandboxed frame. | B `setWidgetState`; F `Widget` |
@@ -24,7 +24,7 @@ follow a link) is not listed. Keep this list current: see AGENTS.md. Each rule i
 
 | Value | Meaning | Where |
 |---|---|---|
-| `type`, `resolved`, `cancelled`, `data`, `state`, `reactions` (and old `resolved_at`, `resolved_by`) | How an item stands, not its params (`STATE_KEYS`). Not settable with `set_value`. | B `store.ts`, `setValue` |
+| `type`, `resolved`, `cancelled`, `data`, `state`, `reactions` (and old `resolved_at`, `resolved_by`) | How an item stands, not its params (`STATE_KEYS`). Not settable with `set_value`; anything else is (duck typed: a type's params are advice). | B `store.ts`, `setValue` |
 | `session_id`, `seen`, `last_run`, `last_wake`, `handoff`, `key` | Kept by the app for itself (`OWN_KEYS`); not settable with `set_value`. | B `engine.ts` |
 | `title` | A task's name; a bot's summary is its `@name` instead. | B `title`, `toInfo` |
 | `debounce_minutes`, `cycle_minutes` | The wake rule's two numbers, on bots and scripts (defaults 1 and 15). | B `wakes.ts`, `wake`, `scriptDue` |

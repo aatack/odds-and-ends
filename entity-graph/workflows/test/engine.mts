@@ -15,6 +15,7 @@ import { DEFAULT_DEBOUNCE, DEFAULT_MODEL, Engine, MAX_SCRIPTS, PERIODIC_MINUTES,
 import { catalog, startMcp } from '../src/engine/mcp.ts'
 import { botOutputSchema } from '../src/engine/schema.ts'
 import { dueAt } from '../src/engine/wakes.ts'
+import { SNOOZE_SOURCE } from '../src/shared/snooze.ts'
 import { ASK, BotRunner, limitedUntil, MAX_BOTS, promptFor, type SpawnBot } from '../src/engine/workers.ts'
 
 const MINUTE = 60_000
@@ -367,9 +368,9 @@ await engine.close(loose)
   await engine.setValue(t, 'title', 'Widget, renamed')
   assert.equal(item(t).title, 'Widget, renamed')
   await assert.rejects(engine.setValue(t, 'resolved', true), /can't be set/)
-  await assert.rejects(engine.setValue(t, 'nope', 1), /has no nope/)
+  await engine.setValue(t, 'anything', { at: 1 })
+  assert.deepEqual(engine.info(t)!.params.anything, { at: 1 }, 'duck typed: any key, any value')
   await assert.rejects(engine.setValue(threepio, 'session_id', 'x'), /can't be set/)
-  await assert.rejects(engine.setValue(threepio, 'cycle_minutes', 'soon'), /Bad cycle_minutes/)
   await engine.close(t)
 }
 
@@ -520,6 +521,36 @@ assert.equal(dueAt({ lastWake: 0, edited: null, debounceMs: 60_000, cycleMs: 900
   const onScript = (await engine.callAction('items_waiting_on', { on: s }, ctx)) as { id: string }[]
   assert.deepEqual(onScript.map((i) => i.id), [t])
   await engine.close(t)
+}
+
+// A script on its own, given topics as a bot is: "[snooze]() 2h" hands the topic to it; it keeps it till then (its state
+// on the topic), and hands it back. It wakes when given a topic (its debounce after), and on its cycle; not on news.
+{
+  const [snooze] = await engine.addItems(null, [{ type: 'script', params: { name: 'Snooze', source: SNOOZE_SOURCE, cycle_minutes: 5 } }])
+  assert.equal(engine.holder('@snooze'), snooze, 'by its name')
+  const t = (await engine.create('Snooze me'))!
+  await engine.send(t, 'note', `[${snooze}]() 2h`)
+  assert.deepEqual(item(t).assignees, [snooze], 'handed to it, and off the sender')
+  await engine.checkDue()
+  await engine.idle()
+  assert.equal(engine.info(snooze)!.runs, 0, 'not before its debounce')
+  clock += MINUTE
+  await engine.checkDue()
+  await engine.idle()
+  assert.equal(engine.info(snooze)!.lastError, null)
+  assert.equal(engine.info(t)!.params.sleepUntil, clock + 2 * 60 * MINUTE, 'its state is on the topic')
+  await engine.send(t, 'note', 'news in the topic')
+  clock += MINUTE
+  await engine.checkDue()
+  await engine.idle()
+  assert.equal(engine.info(snooze)!.runs, 1, 'news in a topic it holds is not something happening to it')
+  clock += 2 * 60 * MINUTE
+  await engine.checkDue()
+  await engine.idle()
+  assert.deepEqual(item(t).assignees, [engine.me()], 'and back after two hours')
+  assert.equal(engine.info(t)!.params.sleepUntil, undefined)
+  await engine.close(t)
+  await engine.cancel(snooze)
 }
 
 // Processes are switched off: none can be added.
