@@ -49,7 +49,7 @@ export function botOutputSchema(types: ItemType[]): Record<string, unknown> {
         type: 'array',
         description:
           'One for each item you have, and one for any other you want to say something in (its message is a note there; who has it is left alone unless you say). An item you have and say nothing of goes back ' +
-          'to the person who last had it, unless you added a wait to it.',
+          'to the person who last had it.',
         items: {
           type: 'object',
           properties: {
@@ -62,15 +62,15 @@ export function botOutputSchema(types: ItemType[]): Record<string, unknown> {
             },
             items: {
               type: 'array',
-              description: 'Items to add in it: waits, approvals, afters, child items.',
+              description: 'Items to add in it: notes, approvals, scripts, child items.',
               items: itemSchema(types),
             },
             assign: {
               type: 'array',
               items: { type: 'string' },
               description:
-                'Who has the item from now on: people by username, bots by name; yourself to keep it. Left out, the item goes back ' +
-                'to the person who last had it, unless you added a wait to it: then you keep it.',
+                'Who has the item from now on: people by username, bots or scripts by name; yourself only if you will work on it ' +
+                'next run (to wait, give it to a script). Left out, the item goes back to the person who last had it.',
             },
             close: { type: 'boolean', description: 'Close the task. Only when someone has explicitly asked you to close it.' },
           },

@@ -84,7 +84,7 @@ The text uses ASD-STE100 Simplified Technical English.
 - For each item, a bot can reply, add blockers, give the item to a person or to a
   different bot, or close the item.
 - If the bot does not give a task to somebody, the task goes back to its owner:
-  the person who made it. If the bot added a wait, it keeps the task.
+  the person who made it. A bot never keeps a task only to wait: it hands it to a script that gives it back.
 - A bot does not close a task unless somebody tells it to close the task.
 - The bot page shows the result of the last run of the bot.
 - When a bot asks you a question, the question must be short and direct.
