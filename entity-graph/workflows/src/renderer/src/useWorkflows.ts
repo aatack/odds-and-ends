@@ -2,7 +2,7 @@ import { useAtom } from 'jotai'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Catalog, CustomAction, ItemInfoDetail, Overview, WorkflowsAPI } from '../../shared/types'
 import { browserApi } from './phone'
-import { forwardAtom, HISTORY_LIMIT, reachedAtom, sameView, viewedAtom, viewsAtom, type View } from './views'
+import { forwardAtom, HISTORY_LIMIT, reachedAtom, sameView, VIEWED_LATELY_MS, viewedAtAtom, viewedAtom, viewsAtom, type View } from './views'
 
 declare global {
   interface Window {
@@ -74,6 +74,7 @@ export function useWorkflows() {
    * goes past it.
    */
   const [reached, setReached] = useAtom(reachedAtom)
+  const [viewedAt, setViewedAt] = useAtom(viewedAtAtom)
   const open = useCallback(
     (v: View, { replace = false, direct = !replace }: { replace?: boolean; direct?: boolean } = {}) => {
       setError(null)
@@ -121,14 +122,21 @@ export function useWorkflows() {
     setForwards(forwards.slice(0, -1))
   }, [views, setViews, forwards, setForwards, reached])
 
+  // What was opened here in the last half hour: Next comes to it only after everything else.
+  const viewedLately = useCallback(() => {
+    const since = Date.now() - VIEWED_LATELY_MS
+    return Object.keys(viewedAt).filter((id) => viewedAt[id] > since)
+  }, [viewedAt])
+
   const next = useCallback(
     async (skip: string[] = skipped) => {
       // Next moves on from what is on screen; it comes back to it only when nothing else needs the human.
-      const id = (selected && (await api().next([...skip, selected]))) || (await api().next(skip))
+      const later = viewedLately()
+      const id = (selected && (await api().next([...skip, selected], later))) || (await api().next(skip, later))
       select(id)
       setEmpty(id === null)
     },
-    [skipped, selected, select],
+    [skipped, selected, select, viewedLately],
   )
 
   const skip = useCallback(
@@ -149,14 +157,14 @@ export function useWorkflows() {
       if (selected !== id) return
       const item = (await api().itemInfoDetail(id))?.item?.item
       if (item && !item.closed) return
-      const to = await api().next([...skipped, id])
+      const to = await api().next([...skipped, id], viewedLately())
       if (to) open({ kind: 'event', id: to }, { direct: false })
       else {
         open({ kind: 'items' })
         setEmpty(true)
       }
     },
-    [selected, skipped, open],
+    [selected, skipped, open, viewedLately],
   )
 
   /** `act`, for something done to one item: then, if it no longer needs the human, on to the next (`moveOn`). */
@@ -171,7 +179,13 @@ export function useWorkflows() {
   // What the finder reads as recent: what was viewed here, and who there is.
   const [viewed, setViewed] = useAtom(viewedAtom)
   const recent = useMemo(() => ({ viewed, users: overview.users, bots: overview.bots }), [viewed, overview.users, overview.bots])
-  const markViewed = useCallback((id: string) => setViewed((v) => [id, ...v.filter((x) => x !== id)].slice(0, 50)), [setViewed])
+  const markViewed = useCallback(
+    (id: string) => {
+      setViewed((v) => [id, ...v.filter((x) => x !== id)].slice(0, 50))
+      setViewedAt((v) => ({ ...v, [id]: Date.now() }))
+    },
+    [setViewed, setViewedAt],
+  )
 
   return { recent, markViewed, overview, view, views, detail, catalog, customActions, selected, select, open, back, forward, next, skip, act, actOn, error, empty }
 }

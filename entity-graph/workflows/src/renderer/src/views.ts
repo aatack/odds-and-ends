@@ -87,3 +87,7 @@ export const findFocusAtom = atom(0)
 
 /** The tasks the person here has had on screen lately, the most recent first: the finder's "Recently viewed". Kept here, not in the store. */
 export const viewedAtom = atomWithStorage<string[]>('workflows.viewed', [], createJSONStorage(() => localStorage), { getOnInit: true })
+
+/** When each task was last opened here, this session only (not kept): Next puts those seen in the last `VIEWED_LATELY_MS` last. */
+export const viewedAtAtom = atom<Record<string, number>>({})
+export const VIEWED_LATELY_MS = 30 * 60 * 1000

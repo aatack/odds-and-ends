@@ -346,8 +346,8 @@ export interface WorkflowsAPI {
   /** Any item, item or not, with what its views need. */
   itemInfoDetail: (id: string) => Promise<ItemInfoDetail | null>
   catalog: () => Promise<Catalog>
-  /** The item that has waited longest for the human, or null. */
-  next: (skip: string[]) => Promise<string | null>
+  /** The item most recently touched that needs the human, those in `later` after the rest; or null. */
+  next: (skip: string[], later?: string[]) => Promise<string | null>
   /** An item as egdb holds it: its values and links. */
   inspect: (id: string) => Promise<Inspection>
   /** A new item, in `parentId` or in none. */

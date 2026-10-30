@@ -360,14 +360,16 @@ export class Engine extends EventEmitter {
 
   /**
    * What needs `viewer` next, of the open tasks assigned to them that nothing but approvals blocks: the one most
-   * recently touched, so the few in hand get closed out before the rest come round.
+   * recently touched, so the few in hand get closed out before the rest come round. Those in `later` (what the window
+   * says was viewed lately) go after all the rest.
    */
-  next(skip: string[] = [], viewer = this.me()): string | null {
+  next(skip: string[] = [], viewer = this.me(), later: string[] = []): string | null {
     const open = this.store
       .assignedTo(viewer)
       .flatMap((id) => this.get(id, viewer) ?? [])
       .filter((i) => i.withYou && !skip.includes(i.id))
-    return open.sort((a, b) => b.since - a.since)[0]?.id ?? null
+    const last = (id: string) => (later.includes(id) ? 1 : 0)
+    return open.sort((a, b) => last(a.id) - last(b.id) || b.since - a.since)[0]?.id ?? null
   }
 
   /** Renames a task: its `title` value changes (egdb keeps the old one, and who changed it). */

@@ -824,6 +824,13 @@ await engine.close(bad)
   assert.ok(!item(t).withYou)
   assert.ok(engine.get(t, 'sam')!.withYou)
   assert.equal(engine.next([], 'sam'), t)
+  const u = (await engine.create('Also for Sam'))!
+  await engine.send(u, 'note', '[sam]() this too')
+  const first = engine.next([], 'sam')!
+  const other = first === t ? u : t
+  assert.equal(engine.next([], 'sam', [first]), other, 'what was viewed lately goes after the rest')
+  assert.equal(engine.next([other], 'sam', [first]), first, 'but still comes round')
+  await engine.close(u)
   await engine.rename(t, '  Renamed for Sam ')
   assert.equal(item(t).title, 'Renamed for Sam')
   assert.deepEqual((await engine.inspect(t)).values, { type: 'task', title: 'Renamed for Sam', resolved: false }, 'a task keeps only its title, and whether it is resolved')
