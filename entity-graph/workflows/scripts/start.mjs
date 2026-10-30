@@ -13,7 +13,9 @@ const run = (cmd, args) =>
     spawn(cmd, args, { cwd: root, stdio: 'inherit' }).on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`${cmd} exited ${code}`)))),
   )
 
-await run(process.execPath, [createRequire(import.meta.url).resolve('electron-vite/bin/electron-vite.js'), 'build'])
+// electron-vite's exports don't include its bin, so find it beside its package.json.
+const electronVite = fileURLToPath(new URL('bin/electron-vite.js', `file://${createRequire(import.meta.url).resolve('electron-vite/package.json')}`))
+await run(process.execPath, [electronVite, 'build'])
 rmSync(`${root}.run`, { recursive: true, force: true })
 cpSync(`${root}out`, `${root}.run`, { recursive: true })
 const electron = createRequire(import.meta.url)('electron')
