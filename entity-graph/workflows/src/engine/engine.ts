@@ -27,6 +27,8 @@ const MINUTE = 60_000
 export const DEFAULT_MODEL = 'opus'
 /** How many minutes a bot waits after the last thing that happened to it before it wakes, unless it says otherwise. */
 export const DEFAULT_DEBOUNCE = 1
+/** A bot woken this long after its last run ended starts a fresh session (its cache is cold anyway), with a recap. */
+export const IDLE_MINUTES = 30
 /** A bot that has tasks wakes this often, when something has happened in them since its last run. */
 export const PERIODIC_MINUTES = 15
 /** How many scripts may run at once, unless the `scripts.max_running` setting says otherwise. */
@@ -776,11 +778,15 @@ export class Engine extends EventEmitter {
    * Starts a bot's run, if it is due and not running: its chat and every task it has, each with its new items (or,
    * for a task its session has not seen, its whole history). Its session is its own: resumed if it has one, otherwise new.
    */
-  claim(agentId: string): { agent: Agent; items: { item: Item; children: ItemInfo[]; first: boolean; own?: boolean }[]; resume: boolean; handoff: string | null } | null {
+  claim(agentId: string): { agent: Agent; items: { item: Item; children: ItemInfo[]; first: boolean; own?: boolean }[]; resume: boolean; handoff: string | null; recap: boolean } | null {
     const agent = this.agent(agentId)
     if (!agent || agent.deleted || this.running.has(agentId)) return null
     const wake = this.wake(agentId)
     if (!wake || wake.at > this.now()) return null
+    // Idle past `bots.idle_minutes` since its last run ended, it starts afresh: resuming would re-read the whole session uncached.
+    const last = this.agentParams(agentId).last_run as LastRun | undefined
+    const idle = Number(this.settings.get('bots.idle_minutes', IDLE_MINUTES)) * MINUTE
+    if (agent.sessionId !== null && last?.endedAt && this.now() - last.endedAt > idle) this.setParam(agentId, 'session_id', null, `bot:${agentId}`)
     const seen = this.seen(agentId)
     const items = [...wake.items].map(([itemId, ids]) => {
       if (itemId === agentId) return { item: this.toItem(this.row(agentId)!), children: this.children(agentId).filter((e) => ids.has(e.id)), first: false, own: true }
@@ -788,7 +794,7 @@ export class Engine extends EventEmitter {
       const children = first ? this.children(itemId) : this.children(itemId).filter((e) => ids.has(e.id))
       return { item: this.must(itemId), children, first }
     })
-    const resume = agent.sessionId !== null
+    const resume = this.agentParams(agentId).session_id != null
     // A fresh session hears the handoff its last one left, once.
     const handoff = !resume && typeof this.agentParams(agentId).handoff === 'string' ? String(this.agentParams(agentId).handoff) : null
     if (!resume) {
@@ -797,7 +803,50 @@ export class Engine extends EventEmitter {
       if (handoff !== null) this.setParam(agentId, 'handoff', null, `bot:${agentId}`)
     }
     this.woken.delete(agentId)
-    return { agent: this.agent(agentId)!, items, resume, handoff }
+    return { agent: this.agent(agentId)!, items, resume, handoff, recap: !resume && !!last }
+  }
+
+  /**
+   * What a bot has been doing, for a fresh session: what it wrote lately, and what was given to it or taken from it,
+   * the newest first, each thing named beside its id. Null if there is nothing.
+   */
+  async recap(agentId: string, limit = 40): Promise<string | null> {
+    const actor = `bot:${agentId}`
+    const [did, given] = await Promise.all([
+      this.store.log({ authors: [actor], limit: limit * 2 }),
+      this.store.log({ entities: [agentId], keys: ['assigned_to'], limit }),
+    ])
+    const name = (id: string | null): string => {
+      const r = id ? this.row(id) : undefined
+      if (!id || !r) return String(id)
+      if (r.type === 'user') return `@${this.actorName(id)}`
+      if (r.type === 'task' || r.type === 'bot' || r.type === 'script') return `"${this.title(id, r.params)}" [${id}]`
+      return `a ${r.type} [${id}]${r.parent_id ? ` in ${name(r.parent_id)}` : ''}`
+    }
+    const brief = (v: unknown) => {
+      const t = (typeof v === 'string' ? v : JSON.stringify(v)).replace(/\s+/g, ' ')
+      return t.length > 120 ? `${t.slice(0, 120)}…` : t
+    }
+    const when = (at: number) => new Date(at).toISOString().slice(0, 16).replace('T', ' ')
+    // Its own bookkeeping, and the type a new item is made with, say nothing.
+    const wrote = did
+      .filter((e) => !(e.entity === agentId && OWN_KEYS.has(e.key)) && e.key !== 'type' && !(e.kind === 'link' && e.key === 'contains'))
+      .slice(0, limit)
+      .map((e) =>
+        e.kind === 'link'
+          ? e.key === 'assigned_to'
+            ? `- ${when(e.at)} ${e.removed ? 'took' : 'assigned'} ${name(e.entity)} ${e.removed ? 'off' : 'to'} ${name(e.other)}`
+            : `- ${when(e.at)} ${e.removed ? 'unlinked' : 'linked'} ${name(e.entity)} → ${name(e.other)} (${e.key})`
+          : `- ${when(e.at)} ${e.value === null ? `cleared ${e.key} on` : `set ${e.key} on`} ${name(e.entity)}${e.value === null ? '' : `: ${brief(e.value)}`}`,
+      )
+    const got = given
+      .filter((e) => e.other === agentId && e.by !== actor)
+      .map((e) => `- ${when(e.at)} ${this.actorName(e.by)} ${e.removed ? 'took' : 'gave you'} ${name(e.entity)}`)
+    if (!wrote.length && !got.length) return null
+    return [
+      got.length ? `Topics given to you or taken from you, newest first:\n${got.join('\n')}` : '',
+      wrote.length ? `What you did lately, newest first:\n${wrote.join('\n')}` : '',
+    ].filter(Boolean).join('\n\n')
   }
 
   /** What a bot's session has seen: the tasks in its runs since the session began. */

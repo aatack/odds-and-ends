@@ -256,13 +256,12 @@ export class BotRunner {
       if (this.running.size >= max) return
       if (this.pausedUntil(agent.provider)) continue
       const claimed = this.engine.claim(agent.id)
-      if (claimed) this.run(claimed.agent, claimed.items, claimed.resume, claimed.handoff)
+      if (claimed) this.run(claimed.agent, claimed.items, claimed.resume, claimed.handoff, claimed.recap)
     }
   }
 
-  private run(agent: Agent, items: { item: Item; children: ItemInfo[]; first: boolean; own?: boolean }[], resume: boolean, handoff: string | null = null): void {
+  private run(agent: Agent, items: { item: Item; children: ItemInfo[]; first: boolean; own?: boolean }[], resume: boolean, handoff: string | null = null, recap = false): void {
     const told = promptFor(items, { name: (a) => this.engine.actorName(a), person: (a) => this.engine.isUser(a) || a === 'mcp' })
-    const prompt = handoff ? `[a fresh session: your last one left you this handoff]\n\n${handoff}\n\n---\n\n${told}` : told
     const runId = this.engine.startRun(agent.id, items.map((i) => i.item.id))
     const lines: string[] = []
     let buffer = ''
@@ -288,6 +287,30 @@ export class BotRunner {
         turns: result?.num_turns as number | undefined,
       })
     }
+    // A fresh session hears its last one's handoff, and a recap of what it has been doing (read from the log first).
+    let killed = false
+    const ended = (async () => {
+      const lately = recap ? await this.engine.recap(agent.id).catch(() => null) : null
+      const prompt = [
+        handoff ? `[a fresh session: your last one left you this handoff]\n\n${handoff}` : null,
+        lately ? `[a fresh session: what you have been doing lately, from the edit log]\n\n${lately}` : null,
+        told,
+      ].filter(Boolean).join('\n\n---\n\n')
+      if (killed) return void (await end(null, 'Stopped before it began.'))
+      return this.spawn(agent, runId, prompt, resume, onOutput, end)
+    })()
+      .catch((e: Error) => console.error(`@${agent.name}'s run ${runId} could not end cleanly:`, e))
+      .finally(() => {
+        this.running.delete(agent.id)
+        this.schedule()
+      })
+    this.running.set(agent.id, { runId, kill: () => ((killed = true), this.kills.get(runId)?.()), ended })
+  }
+
+  /** How to stop each run whose process has started. */
+  private kills = new Map<string, () => void>()
+
+  private async spawn(agent: Agent, runId: string, prompt: string, resume: boolean, onOutput: (chunk: string) => void, end: (exitCode: number | null, error?: string) => Promise<unknown>): Promise<void> {
     let proc: BotProcess
     try {
       const spawnBot = this.providers[agent.provider]
@@ -297,21 +320,19 @@ export class BotRunner {
         sessionId: agent.sessionId!, resume, model: agent.model, cwd: this.engine.agentFolder(agent.id), onOutput,
       })
     } catch (e) {
-      void end(null, (e as Error).message)
+      await end(null, (e as Error).message)
       return
     }
+    this.kills.set(runId, proc.kill)
     const limit = setTimeout(() => proc.kill(), RUN_LIMIT_MS)
-    const ended = proc.done
-      .then(
+    try {
+      await proc.done.then(
         ({ exitCode }) => end(exitCode),
         (e: Error) => end(null, e.message),
       )
-      .catch((e: Error) => console.error(`@${agent.name}'s run ${runId} could not end cleanly:`, e))
-      .finally(() => {
-        clearTimeout(limit)
-        this.running.delete(agent.id)
-        this.schedule()
-      })
-    this.running.set(agent.id, { runId, kill: proc.kill, ended })
+    } finally {
+      clearTimeout(limit)
+      this.kills.delete(runId)
+    }
   }
 }

@@ -97,6 +97,8 @@ export class EgdbSink implements Sink {
   }
 
   async log(query: LogQuery): Promise<LogEntry[]> {
+    // What was written just now is in it.
+    await this.flush()
     const limit = query.limit ?? 200
     const filter = { ...query, limit }
     const [values, links] = await Promise.all([this.client.valueLog(this.branch, filter), this.client.linkLog(this.branch, filter)])

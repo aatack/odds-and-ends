@@ -122,7 +122,9 @@ shrink.
   tasks, its chat, its settings), its `debounce_minutes` (1) after; or its `cycle_minutes` (15) after it last woke
   while it has tasks, news or not. Never while it runs (`Engine.wake`, `Engine.scriptDue`). A run may end with a `handoff` (optional, in its output): done for
   now, so its next run starts a fresh session told the handoff once (else it carries on, and Claude's auto-compaction
-  keeps the session in bounds). It runs one thing at a
+  keeps the session in bounds). Woken more than `bots.idle_minutes` (30) after its last run ended, it starts a fresh
+  session too, since the prompt cache is cold by then; a fresh session also gets a recap from the edit log
+  (`Engine.recap`: topics given to or taken from it, what it wrote, each named beside its id). It runs one thing at a
   time: a run is asked to action every task it has and give each a new assignee, and told what is new in
   its chat and in each (`promptFor` in `workers.ts`: people's notes as written, after their name; anything else in
   [brackets]; each task's id every ten lines). It answers with

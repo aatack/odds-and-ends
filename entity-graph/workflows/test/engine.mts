@@ -468,6 +468,37 @@ await engine.close(loose)
   await engine.close(t)
 }
 
+// Idle: woken more than half an hour after its last run ended, a bot starts a fresh session; sooner, it resumes.
+{
+  const t = (await engine.create('Idle'))!
+  let session = ''
+  behaviours.push(async ({ sessionId }) => {
+    session = sessionId
+    return out({ item: t, assign: [engine.me()] })
+  })
+  await toBot(t, 'first')
+  await settle()
+  clock += 10 * MINUTE
+  behaviours.push(async ({ sessionId, resume }) => {
+    assert.equal(sessionId, session, 'soon after: the same session')
+    assert.equal(resume, true)
+    return out({ item: t, assign: [engine.me()] })
+  })
+  await toBot(t, 'still there?')
+  await settle()
+  clock += 31 * MINUTE
+  behaviours.push(async ({ prompt, sessionId, resume }) => {
+    assert.notEqual(sessionId, session, 'idle: a fresh one')
+    assert.equal(resume, false)
+    assert.match(prompt, /\[new to you: Idle\][\s\S]*first/, 'its topics in full again')
+    return out({ item: t, assign: [engine.me()] })
+  })
+  await toBot(t, 'back now')
+  await settle()
+  assert.equal(behaviours.length, 0)
+  await engine.close(t)
+}
+
 // A timer: a script runs every cycle while it holds a topic (here, the one it sits in); it makes a task for a bot, and a
 // new one only once the last is closed.
 {

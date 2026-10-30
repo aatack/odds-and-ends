@@ -50,6 +50,12 @@ const file = join(dir, 'round-trip.egdb')
   await engine.runNow(stateful, 'alex')
   const run = engine.startRun(bot, [id])
   await engine.endRun(run, { exitCode: 0, structured: { updates: [{ item: id, message: 'Hi.', assign: ['alex'] }] }, costUsd: 0.5 })
+  // A fresh session's recap: what was given to it, and what it did, each named beside its id.
+  const recap = (await engine.recap(bot))!
+  assert.match(recap, new RegExp(`alex gave you "Round trip" \\[${id}\\]`))
+  assert.match(recap, new RegExp(`set text on a note \\[[^\\]]+\\] in "Round trip" \\[${id}\\]: Hi\\.`))
+  assert.match(recap, /assigned "Round trip" .* to @alex/)
+  assert.doesNotMatch(recap, /last_run|session_id/)
   // A thumbs-up is a `reactions` value on the item: those who gave one.
   const hi = engine.detail(id)!.children.find((e) => e.params.text === 'Hi.')!.id
   await engine.react(hi, true, 'alex')
