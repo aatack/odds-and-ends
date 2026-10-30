@@ -461,8 +461,8 @@ export class Engine extends EventEmitter {
   }
 
   /**
-   * Sets one value on an item (null clears it): any of its type's params (a task's title, a widget's state, a bot's
-   * instructions, the search sections), checked against them. Not how it stands (`type`, `resolved` and the like: those
+   * Sets one value on an item (null clears it): any key, any value (a task's title, a widget's state, a bot's
+   * instructions, a script's state on a topic it holds); a type's params are advice. Not how it stands (`type`, `resolved` and the like: those
    * have their own ways), nor what the app keeps for itself on a bot. egdb keeps every value it had. Whatever shows it
    * is told at once (every change is).
    */
