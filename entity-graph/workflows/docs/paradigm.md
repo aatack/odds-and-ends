@@ -47,10 +47,8 @@ The text uses ASD-STE100 Simplified Technical English.
   child tasks, scripts and approvals. Your items are on the right. Items from
   other people, bots and scripts are on the left. A bot that wants to show
   something in the chat adds it to the task as an item.
-- A script card shows what the script waits for. If the script has no schedule,
-  it shows a play button: push it to run the script. If the script has a
-  schedule, the card shows how many times it ran and when it runs next. When the
-  script is complete, the card shows a tick and the result.
+- A script card shows what the script is, a play button (a person's press runs it now), when it runs next, and what
+  it finished with.
 - The app shows who has the item at the top right. Click it to give the item to
   more people or bots, or to take it from them.
 - When you send text, it is a note in the item.

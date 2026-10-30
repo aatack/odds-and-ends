@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict'
 import { Admin } from '../src/engine/admin.ts'
 import { Engine } from '../src/engine/engine.ts'
-import { parseSlackLink, slackWait } from '../src/shared/slack.ts'
+import { parseSlackLink } from '../src/shared/slack.ts'
 
 const slackCalls: { method: string; body: Record<string, unknown> }[] = []
 let thread: { ts: string; user: string; text: string }[] = []
@@ -112,26 +112,50 @@ assert.deepEqual(ranged.map((m) => m.author), ['Alex', 'Sam'])
 assert.deepEqual(((await engine.callAction('slack_channels', { query: '#eng' }, ctx)) as { id: string }[]).map((c) => c.id), ['C9'])
 await assert.rejects(engine.callAction('slack_post', { channel: 'C9', text: 'x' }, ctx), /unsafe/, 'posting is a person\'s, through an approval')
 
-// The chat input's "Wait for Slack": a script that owns the task, checks with backoff, and hands it back on news.
+// A "Slack wait" script, as one would be made in the app: given a topic with a message ("[id]() <link>"), it keeps the
+// topic until something new appears after that message, then says what and hands it back. Its state is on the topic.
+const SLACK_WAIT = `const out = { messages: [], assign: [] }
+for (const t of context.topics) {
+  const v = (await tools.get_item({ item_id: t.id })).values
+  let w = v.slackWait
+  if (!w) {
+    const m = (await mentions(t.id))[0]
+    w = { link: m.text.trim(), by: m.by }
+  }
+  const msg = await tools.slack_message({ link: w.link })
+  const top = !msg.message.thread_ts || msg.message.thread_ts === msg.message.ts
+  const thread = await tools.slack_thread({ channel: msg.channel, ts: msg.message.thread_ts ?? msg.message.ts })
+  const channel = top ? await tools.slack_channel_history({ channel: msg.channel, oldest: msg.message.ts, limit: 50 }) : []
+  const newest = (xs) => xs.reduce((a, x) => (Number(x.ts) > Number(a) ? x.ts : a), msg.message.ts)
+  if (!w.since) {
+    await tools.set_value({ item_id: t.id, key: 'slackWait', value: { ...w, since: { thread: newest(thread), channel: newest(channel) } } })
+    continue
+  }
+  const newer = [...thread.filter((x) => Number(x.ts) > Number(w.since.thread)), ...channel.filter((x) => Number(x.ts) > Number(w.since.channel))]
+  if (!newer.length) continue
+  await tools.set_value({ item_id: t.id, key: 'slackWait', value: null })
+  out.messages.push({ item: t.id, text: 'New on Slack, in ' + msg.channel_name + ':\\n\\n' + newer.map((x) => '**' + x.author + '**: ' + x.text).join('\\n\\n') })
+  out.assign.push({ item: t.id, to: [w.by] })
+}
+return out`
 {
   await admin.clearSlackCache()
+  const [w] = await engine.addItems(null, [{ type: 'script', params: { name: 'Slack wait', source: SLACK_WAIT, cycle_minutes: 5 } }])
   const waiting = (await engine.create('Waiting on Sam'))!
-  const [w] = await engine.addItems(waiting, [{ type: 'script', params: { description: 'Wait for Slack', owns: [waiting], cycle_minutes: 5, source: slackWait(link, 'alex') } }])
-  await engine.assign(waiting, 'alex', false)
+  await engine.send(waiting, 'note', `[${w}]() ${link}`)
+  assert.deepEqual(engine.get(waiting)!.assignees, [w], 'handed to it')
   clock += 60_000
   await engine.checkDue()
   await engine.idle()
-  assert.equal(engine.info(w)!.lastError, null)
-  assert.ok(!engine.info(w)!.resolved, 'nothing new yet')
-  assert.equal(engine.info(w)!.nextCheckAt, clock + 5 * 60_000, 'then every five minutes')
+  assert.equal(engine.info(w)!.resolved, false, String(engine.info(w)!.data?.error ?? ''))
+  assert.ok((engine.info(waiting)!.params.slackWait as { since?: unknown }).since, 'its state is on the topic')
   // Something new in the thread.
   eng.push({ ts: '1700000170.000600', user: 'USAM', text: 'Any news?', thread_ts: '1700000100.000200' })
   await admin.clearSlackCache()
   clock += 5 * 60_000
   await engine.checkDue()
   await engine.idle()
-  assert.ok(engine.info(w)!.resolved, String(engine.info(w)!.data?.error ?? ''))
-  assert.deepEqual(engine.get(waiting)!.assignees, ['alex'])
+  assert.deepEqual(engine.get(waiting)!.assignees, ['alex'], String(engine.info(w)!.data?.error ?? ''))
   assert.match(String(engine.children(waiting).filter((e) => e.type === 'note').at(-1)!.params.text), /New on Slack, in #eng:\n\n\*\*Sam\*\*: Any news\?/)
 }
 

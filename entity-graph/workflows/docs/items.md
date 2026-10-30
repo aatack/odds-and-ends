@@ -99,7 +99,7 @@ the chat input should offer it, add a preset in `presets.ts`.
 | `task` | yes | `title`, `items?` (its first children, added in it), `assignees?` (who has it from the start; links, not kept in its params), `detached?` (sits in no item, wherever it is added), `key?` (so it is added once) | `{ how: closed \| cancelled }` |
 | `note` | no | `text` | — |
 | `approval` | a person's | `action` (unsafe), `inputs`, `reason?` | `{ ran, inputs, changed, output }` |
-| `script` | while it lasts; it blocks nothing (a task waits on it by being assigned to it) | `source`, `description?`, `owns?`, `debounce_minutes?`, `cycle_minutes?`, `wake_at?`/`schedule?` (older), `timeout_minutes?` | `{ result, runs, logs }` or `{ error, logs }` |
+| `script` | while it lasts; it blocks nothing (a topic waits on it by being assigned to it) | `source`, `name?`, `description?`, `debounce_minutes?`, `cycle_minutes?` | `{ result, runs, logs }` or `{ error }` |
 | `bot` | while the bot lasts (sits in no item) | `name`, `instructions?`, `provider?`, `model?` (opus), `debounce_minutes?` (1), `folder?`; the app sets `session_id`, `seen` and `last_run` | `{ cancelled }`, once deleted |
 | `process` | — | switched off for now: kept so stored ones read; none can be added | — |
 | `widget` | no | `html`, `title?`, `widget_state?` (its state, set again as it changes) | — |
@@ -107,25 +107,15 @@ the chat input should offer it, add a preset in `presets.ts`.
 | `slack_channel` | no | `channel` (id or #name), `oldest`, `latest?`, `workspace?` | — (as `slack_message`) |
 | `user` | while the person lasts (sits in no item) | `username` (its id), `name?` | `{ cancelled }`, once removed |
 
-- **`script`** is JavaScript the app runs with no model: an item that can have
-  tasks, as a bot can. Its full contract is `SCRIPT_DOC` in `itemTypes.ts`,
-  which is what agents read (`item_types`); in short:
-  - Two uses: a **button** (it owns nothing: it runs only when a person
-    presses its play button), and an **owner** (`owns` the tasks it takes on):
-    it wakes by the same rule as a bot (`dueAt`, wakes.ts): news in its tasks
-    (not its own), `debounce_minutes` (1) after; and every `cycle_minutes` (15)
-    while it owns tasks. It checks what it waits for each run, and says done
-    when it has happened. It keeps when it last woke as `last_wake`.
-  - It never blocks the task it sits in. A task waits on a script by being
-    assigned to it; `owns` assigns them as it is added. Done (or cancelled), it
-    lets go of what it still has: each task goes back to its owner, unless
-    someone else has it.
-  - `source` is a body: `context` (`{ script, item, tasks, now, trigger }`) and
-    `tools` in scope, top-level `await` and `return`. A function expression
-    (`async (ctx, actions) => …`) is called with the same two, for older scripts.
-  - It returns `{ messages: [{ item, text }], assign: [{ item, to }], state,
-    done, data }`, all optional. Older scripts' `wake_at` (not before) and
-    `schedule` (seconds between runs) are still honoured; `next` is ignored.
+- **`script`** is a bot without a model (`SCRIPT_DOC` in `itemTypes.ts`, which
+  agents read): it may sit on its own with a `name`, is given topics as a bot
+  is (assigned, or `@`-ed), and wakes by the bot rule: when something happens to
+  it (a topic given to it, a note in its own chat), its debounce after; else
+  every `cycle_minutes` while it holds topics. Each run: `context` (the script's
+  values, `state`, `runs`, `topics`, `now`, `trigger`) and `tools` in scope,
+  with `mentions` and `refs`; it returns `{ messages, assign, state, done, data }`.
+  It keeps its state on the topics it works on (`set_value`). Done, or
+  throwing, it ends and hands back what it holds. It keeps `last_wake`.
   - Unsafe tools only when a person presses play (`runNow`, by them); on a
     schedule never, whoever wrote it.
   - `run_script` runs a body once, now, with the caller's tools.

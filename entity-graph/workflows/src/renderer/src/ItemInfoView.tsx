@@ -96,7 +96,7 @@ function Special({ detail }: { detail: ItemInfoDetail; onOpen: (id: string) => v
     <section className="card">
       <h2>Script</h2>
       <p className="muted">
-        {e.params.schedule ? `every [${(e.params.schedule as number[]).join(', ')}]s` : 'run by hand'} · run {e.runs}×
+        {`every ${e.params.cycle_minutes ?? 15} min while it holds topics`} · run {e.runs}×
         {!e.resolved && e.nextCheckAt && ` · next ${new Date(e.nextCheckAt).toLocaleTimeString()}`}
       </p>
       <Markdown text={fenced(String(e.params.source ?? ''), 'js')} />

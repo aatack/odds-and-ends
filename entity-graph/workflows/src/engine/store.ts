@@ -45,7 +45,6 @@ export interface ItemRow {
   /** Who reacted to it (a thumbs-up): people's usernames, or bots' actors. */
   reactions: string[]
   // In memory only.
-  check_step: number
   next_check_at: number | null
   last_error: string | null
   /** How many times a script has run since the app started. */
@@ -433,7 +432,6 @@ export function itemFromValues(
     data: obj(x.data),
     memo: x.state ?? null,
     reactions: Array.isArray(x.reactions) ? x.reactions.filter((r): r is string => typeof r === 'string') : [],
-    check_step: 0,
     // Waits are checked at once after a restart.
     next_check_at: null,
     last_error: null,

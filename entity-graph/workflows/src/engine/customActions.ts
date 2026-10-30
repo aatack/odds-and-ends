@@ -113,11 +113,11 @@ export class CustomActions {
       .map((x) => `- ${x.name}(${JSON.stringify(objectSchema(x.input).properties ?? {})}): ${x.description}`)
     const types = this.engine.itemTypes.filter((t) => t.bots).map((t) => `- ${t.type} ${JSON.stringify(objectSchema(t.params).properties ?? {})}: ${t.description}`)
     const unsafe = this.engine.actions.filter((x) => x.unsafe).map((x) => `- ${x.name}: ${x.description}`)
-    const system = `You write one custom action for a workflow app, as a JavaScript function expression. Reply with the code only: no prose, no markdown fences.
+    const system = `You write one custom action for a workflow app: the body of an async JavaScript function. Reply with the code only: no prose, no markdown fences.
 
-The function is: async (context, actions) => result
-- It runs on one item of type "${a.type}". context is { item: { id, title, parentId, closed, withYou }, event: { id, type, summary, params, data, resolved, parentId }, now (ISO time) }: item is the task it is in, and event the item it runs on (the name is from when items were called events). For a task, the two are the same.
-- actions.<name>(args) calls an action and resolves to its result (parsed JSON). These are the only ones it may call:
+\`context\` and \`tools\` are in scope; it may await and return.
+- It runs on one item of type "${a.type}". context is { item: { id, title, parentId, closed, withYou }, event: { id, type, summary, params, data, resolved, parentId }, now (ISO time) }: item is the task it is in, and event the item it runs on. For a task, the two are the same.
+- tools.<name>(args) calls an action and resolves to its result (parsed JSON). These are the only ones it may call:
 ${actions.join('\n')}
 - It may not call unsafe actions (they change things outside the app). To get one done, return an approval item for the human: { type: 'approval', params: { action, inputs, reason } }. The unsafe actions are:
 ${unsafe.join('\n')}

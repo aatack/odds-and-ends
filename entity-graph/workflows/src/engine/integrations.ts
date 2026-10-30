@@ -56,25 +56,6 @@ export interface Action {
   run: (args: Record<string, unknown>, ctx: ActionContext) => Promise<unknown>
 }
 
-export interface ItemContext {
-  engine: Engine
-  /** The item the item sits in; for a task with no parent, the item itself. */
-  item: Item
-  info: ItemInfo
-  /** What the item's last check handed on (a script's `state`), and how to hand something on to the next. */
-  memo: unknown
-  setMemo: (value: unknown) => void
-  /** How many times it has been checked since the app started. */
-  runs: number
-  /** Whoever added this item, as an author. */
-  author: Author
-  /** What ran it: its schedule, or a press (its play button: `runNow`), by `pressedBy`. */
-  trigger: 'press' | 'schedule'
-  pressedBy: string | null
-  /** When to check it next (ms), or null for only when pressed: in place of its type's schedule. */
-  setNext: (at: number | null) => void
-}
-
 /**
  * One kind of item: everything that differs from one kind to the next. The
  * rest (who, when, resolved or not) is the same for all; see ItemInfo.
@@ -109,20 +90,6 @@ export interface ItemType {
   bots?: boolean
   /** Turns one item into those actually added. */
   expand?: (params: Record<string, unknown>, author: Author) => ItemSpec[]
-  /** As it is added. It may change its params, or resolve it at once. */
-  start?: (
-    params: Record<string, unknown>,
-    ctx: ItemContext,
-  ) => Promise<{ params?: Record<string, unknown>; resolve?: Record<string, unknown> } | void>
-  /** Polled by the loop on its schedule: the data once it has happened, null while it hasn't. */
-  check?: (params: Record<string, unknown>, ctx: ItemContext) => Promise<Record<string, unknown> | null>
-  /**
-   * When `check` runs, as seconds to wait: before the first check, then between
-   * each, the last repeating. Left out, the default backoff: at once, then 1, 2,
-   * 5 and then every 10 minutes. Checks run at most once a second, and one check
-   * of an item never starts before the last has finished. Null: it runs only when someone runs it.
-   */
-  schedule?: (params: Record<string, unknown>) => number[] | null
 }
 
 /**

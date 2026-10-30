@@ -11,7 +11,7 @@ follow a link) is not listed. Keep this list current: see AGENTS.md. Each rule i
 | `task` | The only type that can be assigned (`setAssignee`), has a chat view, a title, Next, `withYou`, Reopen. Its first items (`items`) and `assignees` are params taken out on add. A new one goes to its `assignees`, else its maker if a person, else nobody. `key` makes it add once. `detached` puts it in no item. A task in another blocks nothing and is not closed with it. | B `addNow`, `toItem`, `close`; F `FOCUS`, `itemActions`, `App` |
 | `bot` | Sits in no item; its chat holds only notes. Settings are params; the app keeps `session_id`, `seen`, `last_run`, `handoff` on it. Assignable. Cancelling deletes it and hands its tasks back. | B `agent`, `saveAgent`, `deleteAgent`, `addNow`; F `BotView`, `FOCUS` |
 | `user` | Sits in no item; its id is its username. Signing in makes one. Assignable. | B `signIn`, `saveUser`, `addNow` |
-| `script` | A bot without a model: may sit in no topic, with a `name` (a holder by it, offered in pickers). Never a blocker. Wakes by the bot rule but only for what happens to *it* (a topic given to it, a note in its chat), plus its cycle; `last_wake` kept. Context is the script plus `topics`; `mentions` / `refs` helpers. Done or cancelled, hands its topics back. Unsafe tools only on a person's press. Counted against `scripts.max_running`. `owns` and older `wake_at` / `schedule` still read. | B `addNow`, `holder`, `scriptDue`, `checkOne`, `itemTypes.ts`, `script.ts`; F `ScriptCard`, `defaultActions` (Snooze) |
+| `script` | A bot without a model: may sit in no topic, with a `name` (a holder by it, offered in pickers). Never a blocker. Wakes by the bot rule but only for what happens to *it* (a topic given to it, a note in its chat), plus its cycle; `last_wake` kept. Context is the script plus `topics`; `mentions` / `refs` helpers. Done or cancelled, hands its topics back. Unsafe tools only on a person's press. Counted against `scripts.max_running`. | B `addNow`, `holder`, `scriptDue`, `checkOne`, `itemTypes.ts`, `script.ts`; F `ScriptCard`, `defaultActions` (Snooze) |
 | `approval` | A blocker that leaves the task `withYou`. Its `action` must be unsafe. Resolved only by a person (`approve`). | B `prepare`, `waitsOnHuman`, `approve`; F `Approval` |
 | `note` | Plain. In the chat its picture is whoever wrote it, not its type; it is Ctrl+F's text. | F `itemIcon`, `Chat` |
 | `widget` | `widget_state` is set through `setWidgetState` / `set_value`; drawn in a sandboxed frame. | B `setWidgetState`; F `Widget` |
@@ -28,8 +28,6 @@ follow a link) is not listed. Keep this list current: see AGENTS.md. Each rule i
 | `session_id`, `seen`, `last_run`, `last_wake`, `handoff`, `key` | Kept by the app for itself (`OWN_KEYS`); not settable with `set_value`. | B `engine.ts` |
 | `title` | A task's name; a bot's summary is its `@name` instead. | B `title`, `toInfo` |
 | `debounce_minutes`, `cycle_minutes` | The wake rule's two numbers, on bots and scripts (defaults 1 and 15). | B `wakes.ts`, `wake`, `scriptDue` |
-| `owns` | On a script, as it is added: assigns it those tasks; not kept. | B `addNow` |
-| `wake_at`, `schedule`, `timeout_minutes` | Older scripts' timing; still read. | B `scriptDue`, `checkOne` |
 | `widget_state` | A widget's state. | B `setWidgetState`; F `Widget` |
 | `sections` | On the search item: the finders' sections. | B, F as above |
 | `derives_from` | egdb: an entity reads its source's values under its own (not yet used by the app). | egdb `read.rs` |
@@ -41,7 +39,7 @@ follow a link) is not listed. Keep this list current: see AGENTS.md. Each rule i
 | Link | Meaning | Where |
 |---|---|---|
 | `contains` | From an item (or the root, `@root`) to what is in it. The **first** one is where an item sits (`parent_id`); later ones put it in other items too (`link_items`), shown there and as reply pills, but they count for nothing else (blockers, wakes, closing). | B `store.ts` (`linkedIn`), `egdb.ts` loader, `detail`; F `Chat` pills |
-| `assigned_to` | From a task to a person, bot or script: who has it. Drives `withYou`, Next, the bots' wakes and prompts, scripts' `owns`, hand-backs. | B `setAssignee`, `assignees`, `assignedTo`, `wake`, `settle` |
+| `assigned_to` | From a task to a person, bot or script: who has it. Drives `withYou`, Next, what wakes bots and scripts and what they run on, hand-backs. | B `setAssignee`, `assignees`, `assignedTo`, `wake`, `settle` |
 
 ## Ids and actors
 
@@ -60,7 +58,7 @@ follow a link) is not listed. Keep this list current: see AGENTS.md. Each rule i
 | **Next**: the viewer's withYou tasks, most recently touched first; skipped ones last. | B `next`; F `useWorkflows.next` |
 | **Owner**: the maker if a person, else the parent's owner. Hand-backs go there. | B `owner`, `handBack` |
 | **Hand-back after a run** (`settle`): a task the bot said nothing about goes back to its owner, unless the run changed who has it, it waits on a non-person blocker the bot added, or news came in during the run. An update can't hand away a task a person wrote in during the run. A failed run hands everything back with a note. | B `endRun`, `settle` |
-| **Wakes** (`dueAt`, one rule for bots and scripts): affected since the last wake: when that has settled for the debounce; with nothing new, a cycle since the last wake while holding tasks; never while running. Limits `bots.max_running` (6) and `scripts.max_running` (8). | B `wakes.ts`, `wake`, `scriptDue`, `checkDue`; `workers.fill` |
+| **Wakes** (`dueAt`, one rule for bots and scripts): something happened to it (a topic assigned to it, a note in its chat, its settings) since it last woke, when that has settled for the debounce; with nothing new, a cycle since the last wake while it holds topics (news in those topics is heard then); never while running. Limits `bots.max_running` (6) and `scripts.max_running` (8). | B `wakes.ts`, `wake`, `scriptDue`, `checkDue`; `workers.fill` |
 | **Usage limits**: a run stopped by one is put back as if it never began (the bot keeps its topics, news stays new), and no bot of that provider runs until it resets (`limitedUntil`; held in memory). | B `endRun`, `pause`; `workers.fill` |
 | **Prompts**: a task's whole history the first time a session sees it (`seen`), then only what is new; a handoff starts a fresh session. | B `claim`, `endRun`; `workers.promptFor` |
 | **Sending** with an `@`, `[id]()` or `[label](id)` of a bot or person (or a default action that assigns) hands the task to them and takes it off the sender. | B `send` |

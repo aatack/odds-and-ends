@@ -3,11 +3,8 @@
 
 import { z } from 'zod'
 import type { ItemType } from './integrations'
-import { runScript } from './script'
-import { SNOOZE_SOURCE } from '../shared/snooze'
 import { slackChannelParams, slackMessageParams } from './slack'
 
-const timeout = { timeout_minutes: z.number().optional().describe('Resolve as timed_out after this long.') }
 
 export const task: ItemType = {
   type: 'task',
@@ -65,122 +62,48 @@ export const approval: ItemType = {
   said: (p, d) => `Ran ${p.action}${(d.changed as string[] | undefined)?.length ? ` (changed ${(d.changed as string[]).join(', ')})` : ''}`,
 }
 
-/** What a script's run answers, read loosely: anything but `{ done: true }` means not yet. */
 /** What a script's run may return; null (or nothing) is `{}`. */
-const scriptResult = z
+export const scriptResult = z
   .object({
     messages: z.array(z.object({ item: z.string().optional(), text: z.string() })).optional(),
     assign: z.array(z.object({ item: z.string(), to: z.array(z.string()) })).optional(),
-    next: z.union([z.number(), z.string(), z.null()]).optional(),
     state: z.unknown().optional(),
     done: z.boolean().optional(),
     data: z.unknown().optional(),
-    // The older shape: one message, in the item it sits in.
-    message: z.string().optional(),
   })
-  .passthrough()
   .nullable()
 
-/** When a script asked to run next: ms since the epoch, an ISO time, or `+30s`, `+5m`, `+2h`, `+1d` from now. */
-export function whenNext(next: number | string, now: number): number {
-  if (typeof next === 'number') return next
-  const rel = /^\+(\d+(?:\.\d+)?)\s*([smhd])$/.exec(next.trim())
-  if (rel) return now + Number(rel[1]) * { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 }[rel[2] as 's' | 'm' | 'h' | 'd']
-  const at = Date.parse(next)
-  if (Number.isNaN(at)) throw new Error(`next must be ms, an ISO time or +<n><s|m|h|d>, not ${JSON.stringify(next)}.`)
-  return at
-}
-
 export const SCRIPT_DOC =
-  'A script: an automaton, run as JavaScript with no model. It works as a bot does (it has a name, topics are assigned to it, ' +
-  'it hands them on), for repetitive work that needs no LLM: snoozing, watching a PR or a Slack thread, a weekly chore. It costs ' +
-  'nothing to run.\n' +
-  '- Make it on its own (add_items with no item_id), with a name, then assign topics to it (or @ it in a note: "[id]() 2d"). One ' +
-  'script serves every topic it is given: write it once.\n' +
-  '- It wakes as a bot does: when something happens to it (a topic assigned to it, a note in its own chat), debounce_minutes (1) ' +
-  'after; and every cycle_minutes (15) while it holds topics, or always if cycle_minutes is set. Each run handles all it holds.\n' +
-  '- Keep state on the topics it works on, with set_value (any key, any value: e.g. sleepUntil), not on itself.\n' +
-  '- `source` is the body of an async function with `context` and `tools` in scope (await, return). context is the script itself ' +
-  '(its id, name and values, state, runs) plus topics: [{ id, title }] (what it holds), now (ISO time), trigger. tools.<name>(args) ' +
-  'calls any MCP tool; unsafe ones only when a person presses its play button. Two helpers: mentions(topicId, who = itself) answers ' +
-  'the notes in a topic that mention it, newest first, each with text (what follows the mention, e.g. "2d"); refs(itemId, type?) ' +
-  'answers the items in an item, of one type if given (e.g. its slack_message).\n' +
-  '- It returns (all optional): { messages: [{ item, text }], assign: [{ item, to: [who] }] (who has each topic now), state ' +
-  '(handed to its next run), done: true (it closes; topics it holds go back), data }. A run that throws ends it.\n' +
-  'Example, a snooze ("[snoozeId]() 2d"): name "Snooze", cycle_minutes 5, source:\n' +
-  SNOOZE_SOURCE
+  'A script: a bot without a model, running JavaScript. Give it a name, and topics as you would a bot (assign it, or @ it in a ' +
+  'note: "[id]() 2d"); one script serves every topic it is given. Use one for repetitive work that needs no LLM: a snooze, ' +
+  'watching a PR or a thread, a weekly chore. It costs nothing to run.\n' +
+  '- Make it on its own: add_items with no item_id.\n' +
+  '- It wakes as a bot does: when something happens to it (a topic is assigned to it, a note in its own chat), debounce_minutes ' +
+  '(1) after; and every cycle_minutes (15) while it holds topics. A run handles everything it holds.\n' +
+  '- Keep state on the topics it works on (set_value: any key, any value), and read it back with get_item (values).\n' +
+  '- `source` is the body of an async function: `context` and `tools` are in scope; it may await and return. context is the ' +
+  'script (id, name, its values, state, runs) with topics: [{ id, title }] (what it holds), now (ISO time) and trigger. ' +
+  'tools.<name>(args) calls any MCP tool; unsafe ones only when a person presses its play button. mentions(topicId, who = itself) ' +
+  'answers the notes in a topic that mention it, newest first, each with text (what follows the mention); refs(itemId, type?) ' +
+  'answers the items in an item, of one type if given.\n' +
+  '- It returns (all optional): { messages: [{ item, text }] (item: its own chat if left out), assign: [{ item, to: [who] }], ' +
+  'state (for its next run), done: true (it closes, and what it holds goes back), data }. A run that throws ends it.'
 
 export const script: ItemType = {
   type: 'script',
   description: SCRIPT_DOC,
   params: {
     name: z.string().optional().describe('What it is called: assign to it or @ it by this.'),
-    source: z.string().describe('The body of an async function, with context and tools in scope; it returns { messages?, assign?, state?, done?, data? }.'),
-    description: z.string().optional().describe('What it does, in a line: its card and the task list say this.'),
-    owns: z.array(z.string()).optional().describe('Topics to assign to it as it is added.'),
-    debounce_minutes: z.number().min(0).optional().describe('How long after something happens in its tasks it runs: 1 if left out.'),
-    cycle_minutes: z.number().min(0).optional().describe('How often it runs while it owns tasks, news or not: 15 if left out; 0, never.'),
-    wake_at: z.number().optional().describe('Older scripts: not before this time (ms). Check the time in the script instead.'),
-    schedule: z.array(z.number().min(0)).optional().describe('Older scripts: seconds between runs. Use cycle_minutes instead.'),
-    ...timeout,
+    source: z.string().describe('The body of an async function, with context and tools in scope.'),
+    description: z.string().optional().describe('What it does, in a line.'),
+    debounce_minutes: z.number().min(0).optional().describe('How long after something happens to it it runs: 1 if left out.'),
+    cycle_minutes: z.number().min(0).optional().describe('How often it runs while it holds topics: 15 if left out; 0, never.'),
   },
-  data: '{ result: the data it finished with, runs, logs } or { error, logs }',
+  data: '{ result, runs, logs } once done, or { error }',
   blocking: true,
   bots: true,
-  describe: (p) => String(p.description ?? 'Script'),
-  said: (p, d) => (d.error ? `The script failed: ${d.error}` : String(d.message ?? `${p.description ?? 'Script'}: done`)),
-  schedule: (p) => (p.schedule as number[] | undefined) ?? null,
-  check: async (p, { engine, item, info, memo, setMemo, runs, trigger, pressedBy }) => {
-    const pressed = trigger === 'press' && !!pressedBy && engine.isUser(pressedBy)
-    const owned = engine.assignedTo(info.id)
-    const topics = owned.map((id) => ({ id, title: engine.get(id)?.title ?? id }))
-    const { source: _s, ...own } = p
-    // The script itself: its id, its name and values, its state; what it holds; the time; what woke it.
-    const context = {
-      ...own,
-      id: info.id,
-      name: p.name ?? p.description ?? null,
-      runs,
-      topics,
-      now: new Date(engine.now()).toISOString(),
-      trigger,
-      // Where it sits, if in a topic (null on its own), and the older names.
-      item: item.id === info.id ? null : { id: item.id, title: item.title },
-      tasks: topics,
-      script: { id: info.id, description: p.description ?? null, runs, state: memo ?? null },
-      // The older names.
-      event: { id: info.id, description: p.description ?? null, createdAt: new Date(info.createdAt).toISOString(), runs },
-      state: memo ?? null,
-    }
-    // Unsafe tools only for a person's own press (AGENTS.md, the unsafe rule).
-    const author = pressed ? 'human' : 'bot'
-    const actor = pressed ? pressedBy! : 'script'
-    let ran: { value: unknown; logs: string[] }
-    try {
-      ran = await runScript(String(p.source), context, (name, args) => engine.callAction(name, args, { engine, author, actor, itemId: item.id, runId: null }))
-    } catch (e) {
-      return { error: (e as Error).message }
-    }
-    const parsed = scriptResult.safeParse(ran.value)
-    if (!parsed.success)
-      return { error: `It returned ${JSON.stringify(ran.value)?.slice(0, 200)}, not { messages?, assign?, next?, state?, done?, data? }.`, logs: ran.logs }
-    const r = parsed.data ?? {}
-    try {
-      for (const m of [...(r.messages ?? []), ...(r.message && !r.done ? [{ text: r.message }] : [])])
-        await engine.addItems(m.item ?? item.id, [{ type: 'note', params: { text: m.text } }], 'script', author)
-      for (const a of r.assign ?? []) {
-        const to = new Set(a.to.map((x) => (x === info.id ? x : engine.resolveAssignee(x))))
-        const now = engine.assignees(a.item)
-        for (const x of to) if (!now.includes(x)) await engine.assign(a.item, x, true, 'script')
-        for (const x of now) if (!to.has(x)) await engine.assign(a.item, x, false, 'script')
-      }
-      if ('state' in r) setMemo(r.state)
-    } catch (e) {
-      return { error: (e as Error).message, logs: ran.logs }
-    }
-    if (r.done) return { result: r.data ?? null, ...(r.message ? { message: r.message } : {}), runs: runs + 1, logs: ran.logs }
-    return null
-  },
+  describe: (p) => String(p.name ?? p.description ?? 'Script'),
+  said: (p, d) => (d.error ? `The script failed: ${d.error}` : `${p.name ?? p.description ?? 'Script'}: done`),
 }
 
 export const bot: ItemType = {

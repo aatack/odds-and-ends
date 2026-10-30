@@ -7,14 +7,10 @@ import { getQuickJS, type QuickJSContext, type QuickJSHandle } from 'quickjs-ems
 const CPU_MS = 5_000
 const WALL_MS = 120_000
 
-/** Whether a source is a function expression (`async (context, tools) => …`), rather than a body. */
-export const isFunction = (source: string): boolean => /^\s*(async\s+)?(function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)/.test(source)
-
 /**
- * Runs `source` and answers what it returns (awaited), as JSON, with whatever it logged. A source is a **body**:
- * `context` and `tools` are in scope (and `ctx` and `actions`, the older names), and it may `await` and `return`
- * at the top level. A function expression, `async (context, tools) => …`, is called with them too.
- * `tools.<name>(args)` calls `call` and resolves to its result.
+ * Runs `source` and answers what it returns (awaited), as JSON, with whatever it logged. A source is the body of an
+ * async function: `context` and `tools` (and the helpers `mentions` and `refs`) are in scope, and it may `await` and
+ * `return`. `tools.<name>(args)` calls `call` and resolves to its result.
  */
 export async function runScript(
   source: string,
@@ -70,9 +66,9 @@ export async function runScript(
       }
       // The items in an item (where they sit, or linked in), of one type if given.
       const refs = async (id, type) => (await __children(id)).filter((c) => !type || c.type === type)
-      const fn = ${isFunction(source) ? `(${source})` : `async (context, tools) => { const ctx = context, actions = tools
+      const fn = async (context, tools) => {
 ${source}
-}`}
+}
       return JSON.stringify((await fn(__input, tools)) ?? null)
     })()`
     const handle = vm.unwrapResult(vm.evalCode(code, 'script.js'))

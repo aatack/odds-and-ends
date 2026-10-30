@@ -133,12 +133,12 @@ shrink.
 - A `script` is a bot without a model: it can sit on its own (with a `name`), is given topics as a bot is (`@` it,
   or assign it), wakes by the same rule (when something happens to *it*, and on its cycle), and runs its JavaScript
   over everything it holds, keeping its state on those topics (`set_value`, duck typed). `mentions(topic)` and
-  `refs(item, type)` help it read what it was asked. See `SCRIPT_DOC` in `itemTypes.ts`; `src/shared/snooze.ts` is
-  the model one. Scripts inside a topic (the older kind) still run. Custom actions (the Types page) are scripts too,
+  `refs(item, type)` help it read what it was asked. See `SCRIPT_DOC` in `itemTypes.ts`. Useful scripts (Snooze, Slack wait) are
+  made in the app, not written into the code; the default actions hand topics to them by name. Custom actions (the Types page) are scripts too,
   run on an item when asked; `run_script` runs one once.
 - The chat input sends a note by default; `@` a bot or a person in it to hand them the task (and take it
   off the sender). With nothing typed it offers the default actions, a curated list in code
-  (`renderer/src/defaultActions.ts`): assign to the last bot, wait for each recent Slack message, snooze an hour or a day. Tab steps through the
+  (`renderer/src/defaultActions.ts`): assign to the last bot, and, when scripts by these names exist, "Slack wait" for each recent Slack message and "Snooze" for an hour or a day. Tab steps through the
   choices; its icon and hint show which.
 - A `widget` is UI with state of its own (`WIDGET_DOC` in `itemTypes.ts`): an HTML fragment run in a sandboxed
   iframe (`Widget.tsx`: scripts only, a CSP that allows nothing out, no navigation), styled with the app's CSS
@@ -172,7 +172,7 @@ sending, deploying and deleting, in any integration.
 - No item may act outside the app when an agent adds it.
 - **Scripts get unsafe tools only when a person presses play.** A script (a script item, a custom action, any
   code the app runs) is handed the same tools as the MCP. When anything but a person's own press runs it (an
-  agent, a bot, a schedule, another script), the unsafe ones are left out, whoever wrote it. This holds for
+  agent, a bot, its own wake, another script), the unsafe ones are left out, whoever wrote it. This holds for
   every tool added later: declaring `unsafe` is what keeps it out. (Custom actions are not given them yet.)
 - Slack (`slack.ts`) is the app's one integration with tools: its reads are safe (through a cache in the backend's
   memory: names a day, channels an hour, messages five minutes), and `slack_post` is unsafe. A Slack message's link
@@ -319,7 +319,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   ring while open. Clicking it opens it.
 - **A task's chat is every item in it** (`Chat`: its `contains` links, in the order they were added), each as its
   card: a note its words; a child task its `TaskCard`; a script (`ScriptCard`) what it waits for, then a tick and
-  its output once done, a play button if it has no schedule, or else a timer (runs so far, next run counting down);
+  its output once done, a play button, and when it runs next (counting down);
   an approval its form while open. There is no separate blockers panel. Agents are told that what should show
   in the chat must be an item in the task.
 - **When a task closes, the app moves on.** Whatever the human does to the task on screen (sends, approves,

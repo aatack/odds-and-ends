@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import type { Agent, ItemInfoDetail, ItemSpec, Item, ItemDetail, ItemInfo, LastRun, Overview, User } from '../shared/types'
 import { current, itemActions } from './actions'
-import { ITEM_TYPES, whenNext } from './itemTypes'
+import { ITEM_TYPES, scriptResult } from './itemTypes'
 import { execCli, type Action, type ActionContext, type Author, type ItemType, type Exec, type Integration } from './integrations'
 import { PRESETS, type Preset } from './presets'
 import { plainSecrets, Settings, type Secrets } from './settings'
@@ -22,10 +22,7 @@ import { STATE_KEYS, Store, type ItemRow, type Inspection } from './store'
 /** What the app keeps on items for itself: never set by `setValue`. */
 const OWN_KEYS = new Set(['session_id', 'seen', 'last_run', 'last_wake', 'handoff', 'key'])
 
-/** How long a blocker sleeps between checks, by default: at once, then a minute, then longer, up to the last. */
-export const BACKOFF_MINUTES = [1, 2, 5, 10]
 const MINUTE = 60_000
-const DEFAULT_SCHEDULE = [0, ...BACKOFF_MINUTES.map((m) => m * 60)]
 /** A bot's model, unless it says another. */
 export const DEFAULT_MODEL = 'opus'
 /** How many minutes a bot waits after the last thing that happened to it before it wakes, unless it says otherwise. */
@@ -167,12 +164,6 @@ export class Engine extends EventEmitter {
             this.handBack(itemId, r.id, null)
           }
       }
-    }
-    // Waits are checked at once after a start; a script, when it asked to be (its wake_at), or at once if that has passed.
-    for (const r of this.store.items.values()) {
-      if (r.resolved || !this.typeOrNull(r.type)?.check) continue
-      if (r.type === 'script') continue
-      if (this.scheduleOf(this.type(r.type), r.params)) r.next_check_at = this.now()
     }
   }
 
@@ -723,10 +714,10 @@ export class Engine extends EventEmitter {
   /**
    * When a bot wakes next, and for what: its own chat (when someone wrote in it, or it is woken by hand), and every
    * open task it has, each with the items new in it since the bot was last prompted (less what the bot itself did,
-   * but a child task closing is always news). The rule is `dueAt` (wakes.ts), the same as a script's: once anything
-   * affected it since it last woke (a task assigned to it, anything new in its tasks or its chat, its settings), its
-   * debounce after; or its cycle (`cycle_minutes`, PERIODIC_MINUTES by default) after it last woke, while it has
-   * tasks. Woken by hand, at once. Null when nothing calls for it.
+   * but a child task closing is always news). The rule is `dueAt` (wakes.ts), the same as a script's: once something
+   * happened to it since it last woke (a topic assigned to it, a note in its chat, its settings changed), its debounce
+   * after; else its cycle (`cycle_minutes`, PERIODIC_MINUTES by default) after it last woke, while it holds topics. News
+   * in a topic it holds waits for that cycle. Woken by hand, at once. Null when nothing calls for it.
    */
   wake(agentId: string): { at: number; items: Map<string, Set<string>>; fresh: Set<string> } | null {
     const self = `bot:${agentId}`
@@ -737,7 +728,6 @@ export class Engine extends EventEmitter {
     const seen = this.seen(agentId)
     const items = new Map(assigned.map((id) => [id, new Set<string>()]))
     const fresh = new Set<string>()
-    let activity = 0
     let trigger = 0
     for (const itemId of assigned) {
       const given = this.store.assignment(itemId, agentId)!
@@ -746,7 +736,6 @@ export class Engine extends EventEmitter {
       // It is a reason to wake only if it was just given (after a fresh start, its old tasks are news when they move).
       if (!seen.includes(itemId)) {
         fresh.add(itemId)
-        if (after(given.n, given.at, mark)) activity = Math.max(activity, given.at)
       }
       for (const e of this.store.children(itemId)) {
         const added = after(e.added_n, e.created_at, mark) && e.created_by !== self
@@ -754,7 +743,6 @@ export class Engine extends EventEmitter {
         if (!added && !resolved) continue
         items.get(itemId)!.add(e.id)
         fresh.add(itemId)
-        activity = Math.max(activity, added ? e.created_at : (e.resolved_at ?? 0))
       }
     }
     // Its own chat: someone wrote in it.
@@ -771,7 +759,8 @@ export class Engine extends EventEmitter {
       return null
     }
     const p = this.agentParams(agentId)
-    const edited = Math.max(trigger, activity)
+    // Only what happens to it wakes it (a topic assigned to it, its chat, its settings): news in its topics waits for its cycle.
+    const edited = trigger
     const at = dueAt({
       lastWake: lastStart,
       edited: edited || null,
@@ -1047,7 +1036,7 @@ export class Engine extends EventEmitter {
     const at = this.now()
     this.store.insertItem({
       id, parent_id: parentId, seq: this.store.nextSeq(parentId), type: spec.type, params: this.prepare([spec], 'human')[0].params, created_by: createdBy, created_at: at,
-      resolved: true, resolved_at: at, resolved_by: createdBy, cancelled: false, data: null, memo: null, reactions: [], check_step: 0, next_check_at: null,
+      resolved: true, resolved_at: at, resolved_by: createdBy, cancelled: false, data: null, memo: null, reactions: [], next_check_at: null,
       last_error: null, runs: 0, added_n: 0, resolved_n: 0,
     })
   }
@@ -1069,13 +1058,11 @@ export class Engine extends EventEmitter {
       // A person's id is their username.
       const id = spec.type === 'user' ? String(spec.params.username) : randomUUID()
       ids.push(id)
-      const { assignees, items: first, detached: _d, owns, ...params } = spec.params
-      // A script's first wake is kept as a time, whatever form it was given in.
-      if (spec.type === 'script' && params.wake_at !== undefined) params.wake_at = whenNext(params.wake_at as number | string, at)
+      const { assignees, items: first, detached: _d, ...params } = spec.params
       this.store.insertItem({
         id, parent_id: parentId, seq: seq + i, type: spec.type, params, created_by: createdBy, created_at: at,
         resolved: !type.blocking, resolved_at: type.blocking ? null : at, resolved_by: type.blocking ? null : createdBy, cancelled: false,
-        data: null, memo: null, reactions: [], check_step: 0, next_check_at: spec.type === 'script' ? null : type.check && this.scheduleOf(type, params) ? at + this.scheduleOf(type, params)![0] * 1000 : null, last_error: null,
+        data: null, memo: null, reactions: [], next_check_at: null, last_error: null,
         runs: 0, added_n: 0, resolved_n: 0,
       })
       if (spec.type === 'task') {
@@ -1084,8 +1071,6 @@ export class Engine extends EventEmitter {
         const to = Array.isArray(assignees) && assignees.length ? (assignees as string[]) : this.isUser(createdBy) ? [createdBy] : []
         for (const a of to) this.setAssignee(id, a, true, createdBy)
       }
-      // A script takes on the tasks it owns, as a bot is given them.
-      if (spec.type === 'script' && Array.isArray(owns)) for (const t of owns as string[]) this.setAssignee(t, id, true, createdBy)
     })
     // Whatever a note links to is pulled in, as an item whose id is its URL (a Slack message or channel, or a link): made
     // the first time, and put in this task as well after that. So `[url]()` (or the URL itself) opens it.
@@ -1096,7 +1081,7 @@ export class Engine extends EventEmitter {
           else this.addAs(parentId, url, pulledIn(url, at), createdBy)
         }
     // New waits are checked at once.
-    if (specs.some((s) => this.type(s.type).check)) queueMicrotask(() => void this.checkDue())
+    if (specs.some((s) => s.type === 'script')) queueMicrotask(() => void this.checkDue())
     this.emit('change')
     return ids
   }
@@ -1111,57 +1096,36 @@ export class Engine extends EventEmitter {
   }
 
   /**
-   * An item's check schedule, in seconds: its type's, never under a second apart after the first, or the default.
-   * Null when its type has schedules and it has none: then it runs only when someone runs it (`runNow`).
-   */
-  private scheduleOf(type: ItemType, params: Record<string, unknown>): number[] | null {
-    const s = type.schedule ? type.schedule(params) : DEFAULT_SCHEDULE
-    if (!s?.length) return null
-    return s.map((d, i) => (i === 0 ? Math.max(0, d) : Math.max(1, d)))
-  }
-
-  /**
-   * When a script is due, by the rule bots wake by (`dueAt`, wakes.ts): once anything (but itself) affected the tasks it
-   * owns since it last woke (a task assigned to it, something new in one), its debounce after (`debounce_minutes`, 1);
-   * or its cycle (`cycle_minutes`, 15) after it last woke, while it owns tasks. A script that owns nothing runs only
-   * when pressed. An older script waits for the `wake_at` it asked for, and an older `schedule` is its cycle.
+   * When a script is due, by the rule bots wake by (`dueAt`, wakes.ts): once something happened to it since it last woke (a
+   * topic assigned to it, a note in its own chat), its debounce after; with nothing new, its cycle after it last woke,
+   * while it holds topics.
    */
   private scriptDue(r: ItemRow): number | null {
-    const owned = this.assignedTo(r.id)
-    // Never woken: as if it woke as it was made (its cycle counts from then; what made it is not news).
+    const held = this.assignedTo(r.id)
+    // Never woken: as if it woke as it was made.
     const lastWake = Number(r.params.last_wake ?? 0) || r.created_at - 1
-    // What happens to it, as for a bot: a topic assigned to it (by anyone but itself), or a note in its own chat.
     const mine = (by: string | null) => !!by && (by === 'script' || by === r.id)
     let edited = 0
-    for (const t of owned) {
+    for (const t of held) {
       const given = this.store.assignment(t, r.id)
       if (given && given.at > lastWake && !mine(given.by)) edited = Math.max(edited, given.at)
     }
     for (const e of this.store.children(r.id)) if (e.created_at > lastWake && !mine(e.created_by)) edited = Math.max(edited, e.created_at)
-    const schedule = Array.isArray(r.params.schedule) ? (r.params.schedule as number[]) : null
-    const cycle = r.params.cycle_minutes !== undefined ? Number(r.params.cycle_minutes) : schedule?.length ? schedule[schedule.length - 1] / 60 : PERIODIC_MINUTES
-    let at = dueAt({
+    return dueAt({
       lastWake,
       edited: edited || null,
       debounceMs: Number(r.params.debounce_minutes ?? DEFAULT_DEBOUNCE) * MINUTE,
-      cycleMs: cycle * MINUTE || null,
-      // A timer: given a cycle of its own, it runs every cycle whether or not it owns anything.
-      hasWork: owned.length > 0 || r.params.cycle_minutes !== undefined,
+      cycleMs: Number(r.params.cycle_minutes ?? PERIODIC_MINUTES) * MINUTE || null,
+      hasWork: held.length > 0,
     })
-    // An older schedule with nothing owned: it polls on its cycle, from when it was made.
-    const woke = Number(r.params.last_wake ?? 0)
-    if (schedule?.length && !owned.length) at = woke ? woke + Math.max(1000, cycle * MINUTE) : r.created_at + schedule[0] * 1000
-    if (at !== null && typeof r.params.wake_at === 'number') at = Math.max(at, r.params.wake_at)
-    return at
   }
 
-  /** Runs an open check (a script with no schedule, say) now, once. */
+  /** Runs a script now, once: its play button. A person's press gives it the unsafe tools. */
   async runNow(itemId: string, actor = this.me()): Promise<void> {
     const r = this.row(itemId)
-    if (!r || r.resolved || !this.type(r.type).check) throw new Error('There is nothing to run.')
-    r.next_check_at = this.now()
+    if (r?.type !== 'script' || r.resolved) throw new Error('There is nothing to run.')
     this.pressed.set(itemId, actor)
-    await this.checkOne(r.parent_id ?? itemId, itemId)
+    await this.runScriptItem(itemId)
   }
 
   /** Writes one param of an item: for the app's own bookkeeping, such as a bot's session and last run. */
@@ -1293,86 +1257,68 @@ export class Engine extends EventEmitter {
     await this.checkDue()
   }
 
+  /** Runs every script that is due, at most `scripts.max_running` (MAX_SCRIPTS) at once, those due longest first. */
   async checkDue(): Promise<void> {
     const now = this.now()
-    // A script is due by the one rule (`scriptDue`); a press (runNow) makes it due at once.
-    for (const r of this.store.ofType('script')) if (!r.resolved && !this.pressed.has(r.id)) r.next_check_at = this.scriptDue(r)
-    const due = [...this.store.items.values()]
-      .filter((r) => !r.resolved && r.next_check_at !== null && r.next_check_at <= now && !this.checking.has(r.id))
-      .sort((a, b) => a.next_check_at! - b.next_check_at!)
-    // At most `scripts.max_running` scripts at once (MAX_SCRIPTS by default): those due longest go first; the rest stay
-    // due, for the next turn of the loop.
-    const max = Number(this.settings.get('scripts.max_running', MAX_SCRIPTS))
-    let room = max - [...this.checking].filter((id) => this.row(id)?.type === 'script').length
-    const allowed = due.filter((r) => r.type !== 'script' || room-- > 0)
-    await Promise.all(allowed.map((r) => this.checkOne(r.parent_id ?? r.id, r.id)))
+    const open = this.store.ofType('script').filter((r) => !r.resolved)
+    for (const r of open) r.next_check_at = this.scriptDue(r)
+    const due = open.filter((r) => r.next_check_at !== null && r.next_check_at <= now && !this.checking.has(r.id)).sort((a, b) => a.next_check_at! - b.next_check_at!)
+    const room = Math.max(0, Number(this.settings.get('scripts.max_running', MAX_SCRIPTS)) - this.checking.size)
+    await Promise.all(due.slice(0, room).map((r) => this.runScriptItem(r.id)))
   }
 
-  private checkOne(taskId: string, itemId: string): Promise<void> {
-    this.checking.add(itemId)
-    return this.serial(taskId, async () => {
-      const row = this.row(itemId)
-      if (!row || row.resolved || (row.next_check_at ?? 0) > this.now()) return
-      const info = this.toInfo(row)
-      const type = this.type(info.type)
-      let data: Record<string, unknown> | null = null
-      let error: string | null = null
+  /**
+   * Runs a script once: its source, given the script itself (its values, state and runs), what it holds, and the tools; then
+   * what it returned. Unsafe tools only for a person's own press. Done (or throwing), it ends, and hands back what it holds.
+   */
+  private runScriptItem(id: string): Promise<void> {
+    this.checking.add(id)
+    return this.serial(id, async () => {
+      const row = this.row(id)
+      if (!row || row.resolved) return
+      const pressedBy = this.pressed.get(id) ?? null
+      this.pressed.delete(id)
+      const pressed = !!pressedBy && this.isUser(pressedBy)
+      const author: Author = pressed ? 'human' : 'bot'
+      const actor = pressed ? pressedBy! : 'script'
       const woke = this.now()
-      const pressedBy = this.pressed.get(itemId) ?? null
-      this.pressed.delete(itemId)
-      // Undefined: as its type's schedule says. A number or null: what the check asked for.
-      let next: number | null | undefined
+      const { source, last_wake: _w, ...own } = row.params
+      const context = {
+        ...own,
+        id,
+        name: own.name ?? own.description ?? null,
+        runs: row.runs,
+        state: row.memo ?? null,
+        topics: this.assignedTo(id).map((t) => ({ id: t, title: this.get(t)?.title ?? t })),
+        now: new Date(woke).toISOString(),
+        trigger: pressed ? 'press' : 'wake',
+      }
+      let end: Record<string, unknown> | null = null
       try {
-        data = await type.check!(info.params, {
-          trigger: pressedBy ? 'press' : 'schedule',
-          pressedBy,
-          setNext: (at) => (next = at),
-          engine: this,
-          // A script on its own (in no topic) is where it runs.
-          item: taskId === itemId ? this.toItem(row) : this.must(taskId),
-          info,
-          author: authorOf(info.createdBy),
-          memo: row.memo ?? null,
-          runs: row.runs,
-          setMemo: (value) => this.store.setState(itemId, value, this.now()),
-        })
+        const ran = await runScript(String(source ?? ''), context, (name, args) => this.callAction(name, args, { engine: this, author, actor, itemId: row.parent_id ?? id, runId: null }))
+        const parsed = scriptResult.safeParse(ran.value)
+        if (!parsed.success) throw new Error(`It returned ${JSON.stringify(ran.value)?.slice(0, 200)}, not { messages?, assign?, state?, done?, data? }.`)
+        const r = parsed.data ?? {}
+        for (const m of r.messages ?? []) await this.addItems(m.item ?? row.parent_id ?? id, [{ type: 'note', params: { text: m.text } }], 'script', author)
+        for (const a of r.assign ?? []) {
+          const to = new Set(a.to.map((x) => (x === id ? x : this.resolveAssignee(x))))
+          const now = this.assignees(a.item)
+          for (const x of to) if (!now.includes(x)) await this.assign(a.item, x, true, 'script')
+          for (const x of now) if (!to.has(x)) await this.assign(a.item, x, false, 'script')
+        }
+        if ('state' in r) this.store.setState(id, r.state, this.now())
+        if (r.done) end = { result: r.data ?? null, runs: row.runs + 1, logs: ran.logs }
       } catch (e) {
-        error = (e as Error).message
+        end = { error: (e as Error).message }
       }
       row.runs++
-      const timeout = Number(info.params.timeout_minutes ?? 0)
-      if (!data && timeout && this.now() >= info.createdAt + timeout * MINUTE)
-        data = { outcome: 'timed_out', detail: `Nothing after ${timeout} minutes.` }
-      if (data) {
-        this.resolve(itemId, data, 'system')
-        this.emit('change')
-        return
-      }
-      // A script keeps when it last woke (so a restart knows), and is due again by the rule.
-      if (row.type === 'script') {
-        this.store.setParams(itemId, { ...row.params, last_wake: woke }, 'script', this.now())
-        Object.assign(row, { last_error: error })
-        row.next_check_at = this.scriptDue(row)
-        this.emit('change')
-        return
-      }
-      if (next !== undefined) {
-        Object.assign(row, { next_check_at: next, last_error: error })
-        // A script's wake is kept, so a restart wakes it when it asked.
-        if (row.type === 'script' && row.params.wake_at !== (next ?? undefined)) {
-          const { wake_at: _w, ...rest } = row.params
-          this.store.setParams(itemId, next === null ? rest : { ...rest, wake_at: next }, 'script', this.now())
-        }
-        this.emit('change')
-        return
-      }
-      const schedule = this.scheduleOf(type, info.params)
-      if (!schedule) Object.assign(row, { next_check_at: null, last_error: error })
+      if (end) this.resolve(id, end, 'system')
       else {
-        const step = Math.min(row.check_step + 1, schedule.length - 1)
-        Object.assign(row, { check_step: step, next_check_at: this.now() + schedule[step] * 1000, last_error: error })
+        this.store.setParams(id, { ...row.params, last_wake: woke }, 'script', this.now())
+        row.next_check_at = this.scriptDue(row)
       }
       this.emit('change')
-    }).finally(() => this.checking.delete(itemId))
+    }).finally(() => this.checking.delete(id))
   }
+
 }
