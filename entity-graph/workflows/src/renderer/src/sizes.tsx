@@ -16,6 +16,7 @@ import { SlackCard } from './SlackView'
 import { Widget } from './Widget'
 import { TaskCard } from './TaskCard'
 import { minutes, time, useNow } from './time'
+import { Marked } from './components/ui/Marked'
 import { api } from './useWorkflows'
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
@@ -58,16 +59,16 @@ export type CardProps = { info: ItemInfo; find: string; catalog: Catalog; act: A
 /** Each type's card: what it shows in a chat. A type left out shows what it says (`message`, or its summary). */
 export const CARDS: Partial<Record<ItemKind, (p: CardProps) => ReactNode>> = {
   note: ({ info: e, find }) => <Markdown text={String(e.params.text ?? '')} highlight={find} />,
-  task: ({ info: e, onOpen }) => (
+  task: ({ info: e, onOpen, find }) => (
     <button data-ui className="link card-link" onClick={() => onOpen(e.id)}>
-      <TaskCard info={e} />
+      <TaskCard info={e} find={find} />
     </button>
   ),
   script: ({ info: e, act, find }) => <ScriptCard info={e} act={act} find={find} />,
   widget: ({ info: e }) => <Widget info={e} />,
-  link: ({ info: e }) => (
+  link: ({ info: e, find }) => (
     <a className="link-card" href={String(e.params.url)} target="_blank" rel="noreferrer">
-      {String(e.params.title || e.params.url)}
+      <Marked text={String(e.params.title || e.params.url)} phrase={find} />
     </a>
   ),
   slack_message: ({ info: e, find }) => <SlackCard info={e} find={find} />,

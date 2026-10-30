@@ -10,6 +10,7 @@ import { useItemMenu } from './ItemMenu'
 import { ItemIcon, TYPE_ICON, waitingOn } from './icons'
 import { SearchSectionsContext, SECTIONS, type Recent } from './sections'
 import { api } from './useWorkflows'
+import { Marked } from './components/ui/Marked'
 import { sameView, searchFocusAtom, viewsAtom } from './views'
 
 /**
@@ -244,7 +245,7 @@ export function ItemsList(props: {
               return (
                 <div key={line.key} className={`row ${selected}`} onClick={() => choose(line)} onMouseMove={hover}>
                   {line.chosen ? <Check className="icon" /> : line.bot.bot === false ? <User className="icon" /> : <Bot className="icon" />}
-                  <span className="row-title">@{line.bot.name}</span>
+                  <span className="row-title">@<Marked text={line.bot.name} phrase={text} /></span>
                   <span className="muted row-status">{line.chosen ? 'Remove' : (line.bot.status ?? 'Assign')}</span>
                 </div>
               )
@@ -254,8 +255,8 @@ export function ItemsList(props: {
               return (
                 <div key={line.key} className={`row ${selected}`} onClick={() => choose(line)} onMouseMove={hover} {...(r.id ? menu(r.id) : {})}>
                   {r.id ? <Icon className="icon" /> : null}
-                  <Markdown className={`row-title row-md ${r.id ? '' : 'error-text'}`} text={r.left} />
-                  {r.right && <Markdown className="muted row-status row-md" text={r.right} />}
+                  <Markdown className={`row-title row-md ${r.id ? '' : 'error-text'}`} text={r.left} highlight={text} />
+                  {r.right && <Markdown className="muted row-status row-md" text={r.right} highlight={text} />}
                 </div>
               )
             }
@@ -269,7 +270,7 @@ export function ItemsList(props: {
             return (
               <div key={line.key} className={`row ${selected}`} onClick={() => onOpen(i.id)} onMouseMove={hover} {...menu(i.id)}>
                 {line.chosen ? <Check className="icon" /> : <ItemIcon item={i} />}
-                <span className="row-title">{i.title}</span>
+                <span className="row-title"><Marked text={i.title} phrase={text} /></span>
                 <span className="muted row-status">{detail(i)}</span>
                 <span className="muted row-age">{minutes(Math.max(0, now - i.since))}</span>
               </div>
