@@ -394,16 +394,6 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
   /* An item's card in the chat. */
   .item-card { display: flex; flex-direction: column; gap: 6px; white-space: normal; }
   .card-link { display: inline-flex; text-align: left; }
-  .script-line { display: flex; align-items: center; gap: 8px; }
-  .script-what { flex: 1; min-width: 0; }
-  .script-done { color: var(--color-success-600); }
-  .script-failed { color: var(--color-danger-600, #c00); }
-  .script-play { display: inline-flex; padding: 2px; border-radius: 6px; color: var(--accent); }
-  .script-play:hover { background: var(--color-gray-200); }
-  .script-timer { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .script-timer .icon, .script-line .icon { width: 15px; height: 15px; flex: none; }
-  .script-runs { font-size: 12px; }
-  .script-output { border-top: 1px solid var(--color-gray-200); padding-top: 6px; }
   .view-title.clickable:hover { color: var(--accent); }
 }
 
