@@ -16,7 +16,8 @@ import { current, itemActions } from './actions'
 import { ITEM_TYPES, scriptResult } from './itemTypes'
 import { execCli, type Action, type ActionContext, type Author, type ItemType, type Exec, type Integration } from './integrations'
 import { PRESETS, type Preset } from './presets'
-import { plainSecrets, Settings, type Secrets } from './settings'
+import { IDLE_MINUTES, MAX_SCRIPTS, plainSecrets, Settings, type Secrets } from './settings'
+export { IDLE_MINUTES, MAX_SCRIPTS } from './settings'
 import { STATE_KEYS, Store, type ItemRow, type Inspection } from './store'
 
 /** What the app keeps on items for itself: never set by `setValue`. */
@@ -27,12 +28,8 @@ const MINUTE = 60_000
 export const DEFAULT_MODEL = 'opus'
 /** How many minutes a bot waits after the last thing that happened to it before it wakes, unless it says otherwise. */
 export const DEFAULT_DEBOUNCE = 1
-/** A bot woken this long after its last run ended starts a fresh session (its cache is cold anyway), with a recap. */
-export const IDLE_MINUTES = 30
 /** A bot that has tasks wakes this often, when something has happened in them since its last run. */
 export const PERIODIC_MINUTES = 15
-/** How many scripts may run at once, unless the `scripts.max_running` setting says otherwise. */
-export const MAX_SCRIPTS = 8
 /** Who the engine acts as when nobody is said and there is nobody yet (the tests, mostly). */
 export const NOBODY = 'human'
 

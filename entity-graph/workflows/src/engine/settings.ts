@@ -30,6 +30,28 @@ export const DEFAULT_MCP_PORT = 47391
 /** The phone listener's port, unless the settings say otherwise: one that lasts, for `tailscale serve` to point at. */
 export const DEFAULT_PHONE_PORT = 47392
 
+/** How many bots may run at once, unless the `bots.max_running` setting says otherwise. */
+export const MAX_BOTS = 6
+/** How many scripts may run at once, unless the `scripts.max_running` setting says otherwise. */
+export const MAX_SCRIPTS = 8
+/** A bot woken this long after its last run ended starts a fresh session (its cache is cold anyway), with a recap. */
+export const IDLE_MINUTES = 30
+
+/**
+ * The settings bots may read and change (the `settings` and `set_setting` tools), with the integrations' setup
+ * values that are not secret. Only these: no secret, and nothing of how the app is reached (the MCP and phone
+ * listeners, the tailnet), which stay the person's, on their own pages.
+ */
+export const TUNABLE: { key: string; description: string; default: number }[] = [
+  { key: 'bots.max_running', description: 'How many bots may run at once.', default: MAX_BOTS },
+  { key: 'scripts.max_running', description: 'How many scripts may run at once.', default: MAX_SCRIPTS },
+  {
+    key: 'bots.idle_minutes',
+    description: 'A bot woken this many minutes after its last run ended starts a fresh session, with a recap.',
+    default: IDLE_MINUTES,
+  },
+]
+
 export class Settings {
   constructor(
     private store: Store,
@@ -40,8 +62,9 @@ export class Settings {
     return this.store.settings.has(key) ? (this.store.settings.get(key) as T) : fallback
   }
 
-  set(key: string, value: unknown): void {
-    this.store.setSetting(key, value)
+  /** `by` is who changed it, for the edit log: the system unless said. */
+  set(key: string, value: unknown, by?: string): void {
+    this.store.setSetting(key, value, by)
   }
 
   // ---- deepgram (transcribing what is said into the chat input) ----
@@ -68,9 +91,9 @@ export class Settings {
   }
 
   /** Sets a setup value, or (null, or nothing) removes it. */
-  setIntegrationValue(id: string, key: string, value: string | null, secret = false): void {
+  setIntegrationValue(id: string, key: string, value: string | null, secret = false, by?: string): void {
     const v = value?.trim()
-    this.set(`integration.${id}.${key}`, v ? (secret ? this.secrets.encrypt(v) : v) : null)
+    this.set(`integration.${id}.${key}`, v ? (secret ? this.secrets.encrypt(v) : v) : null, by)
   }
 
   // ---- slack ----

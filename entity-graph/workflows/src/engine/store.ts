@@ -331,10 +331,10 @@ export class Store {
 
   // ---- settings and custom actions ----
 
-  setSetting(key: string, value: unknown): void {
+  setSetting(key: string, value: unknown, by = 'system'): void {
     this.settings.set(key, value)
     const e = `setting:${key}`
-    this.out([set(e, 'type', 'wf.setting'), set(e, 'key', key), set(e, 'value', JSON.stringify(value))], 'system', this.now())
+    this.out([set(e, 'type', 'wf.setting'), set(e, 'key', key), set(e, 'value', JSON.stringify(value))], by, this.now())
   }
 
   putCustomAction(row: CustomActionRow): void {

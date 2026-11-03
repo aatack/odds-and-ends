@@ -9,6 +9,8 @@ import type { ItemSpec } from '../shared/types'
 import type { Action } from './integrations'
 import { PARADIGM } from './paradigm'
 import { objectSchema } from './schema'
+import { TUNABLE } from './settings'
+import type { Engine } from './engine'
 
 const itemId = z.string().describe('The id of the item.')
 const spec = z
@@ -45,6 +47,40 @@ export function current(name: string, args: Record<string, unknown>): { name: st
       delete out[old]
     }
   return { name: now, args: out }
+}
+
+/**
+ * The settings bots may see and change: TUNABLE (counts), and each integration's setup values that are not secret
+ * (text, as `integration.<id>.<key>`). Secrets and how the app is reached are not among them.
+ */
+function tunable(engine: Engine): { key: string; description: string; value: unknown; default: unknown; set: (v: unknown, by: string) => void }[] {
+  return [
+    ...TUNABLE.map((t) => ({
+      key: t.key,
+      description: `${t.description} A whole number, at least 1; null puts the default back.`,
+      value: engine.settings.get(t.key, t.default),
+      default: t.default,
+      set: (v: unknown, by: string) => {
+        if (v !== null && !(Number.isInteger(v) && (v as number) >= 1)) throw new Error(`${t.key} is a whole number, at least 1 (or null for the default).`)
+        // A stored null would read as 0 (and run nothing), so the default is kept instead.
+        engine.settings.set(t.key, v ?? t.default, by)
+      },
+    })),
+    ...engine.integrations.flatMap((i) =>
+      i.setup
+        .filter((f) => !f.secret)
+        .map((f) => ({
+          key: `integration.${i.id}.${f.key}`,
+          description: `${i.name}: ${f.label}. ${f.instructions} Text; null or "" removes it.`,
+          value: engine.settings.integrationValue(i.id, f.key),
+          default: null,
+          set: (v: unknown, by: string) => {
+            if (v !== null && typeof v !== 'string') throw new Error(`integration.${i.id}.${f.key} is text (or null to remove it).`)
+            engine.settings.setIntegrationValue(i.id, f.key, v, false, by)
+          },
+        })),
+    ),
+  ]
 }
 
 export const itemActions: Action[] = [
@@ -308,6 +344,28 @@ export const itemActions: Action[] = [
     run: async (a, ctx) => {
       await ctx.engine.setSearchSections(a.sections as SearchSection[] | null, ctx.actor)
       return { sections: ctx.engine.searchSections() }
+    },
+  },
+  {
+    name: 'settings',
+    unsafe: false,
+    description:
+      "The app's settings that bots may change (with set_setting): each one's key, what it does, its value now and its default. " +
+      'Secrets, and how the app is reached (the MCP and phone listeners, the tailnet), are not among them.',
+    input: {},
+    run: async (_a, { engine }) => tunable(engine).map(({ set: _, ...t }) => t),
+  },
+  {
+    name: 'set_setting',
+    unsafe: false,
+    description: 'Change one of the settings that `settings` lists (null puts its default back). It takes at once.',
+    input: { key: z.string().describe('A key that `settings` lists.'), value: z.unknown() },
+    run: async (a, { engine, actor }) => {
+      const t = tunable(engine).find((x) => x.key === a.key)
+      if (!t) throw new Error(`${String(a.key)} is not a setting bots may change: see settings.`)
+      t.set(a.value ?? null, actor)
+      const { set: _, ...now } = tunable(engine).find((x) => x.key === a.key)!
+      return now
     },
   },
   {

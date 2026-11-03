@@ -13,6 +13,8 @@ import { join } from 'node:path'
 import type { Agent, Item, ItemInfo } from '../shared/types'
 import type { Engine } from './engine'
 import { botOutputSchema } from './schema'
+import { MAX_BOTS } from './settings'
+export { MAX_BOTS } from './settings'
 
 export interface BotProcess {
   done: Promise<{ exitCode: number | null }>
@@ -39,8 +41,6 @@ export type SpawnBot = (args: {
 /** Environment variables that hold the app's own secrets: a bot's run is not given them. */
 const APP_SECRETS = ['DEEPGRAM_API_KEY']
 
-/** How many bots may run at once, unless the `bots.max_running` setting says otherwise. */
-export const MAX_BOTS = 6
 
 const RUN_LIMIT_MS = 60 * 60_000
 

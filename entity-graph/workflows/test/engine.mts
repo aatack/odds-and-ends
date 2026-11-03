@@ -431,6 +431,24 @@ await engine.close(loose)
   await engine.close(t)
 }
 
+// Settings a bot may read and change: the counts and the integrations' setup values that are not secret; nothing else.
+{
+  const bot = { engine, author: 'bot' as const, actor: `bot:${threepio}`, itemId: null, runId: null }
+  const listed = (await engine.callAction('settings', {}, bot)) as { key: string; value: unknown }[]
+  assert.deepEqual(listed.map((s) => s.key), ['bots.max_running', 'scripts.max_running', 'bots.idle_minutes', 'integration.github.default_repo'])
+  await engine.callAction('set_setting', { key: 'bots.max_running', value: 3 }, bot)
+  assert.equal(engine.settings.get('bots.max_running', 0), 3)
+  await engine.callAction('set_setting', { key: 'bots.max_running', value: null }, bot)
+  assert.equal(engine.settings.get('bots.max_running', 0), MAX_BOTS, 'null puts the default back')
+  await assert.rejects(engine.callAction('set_setting', { key: 'scripts.max_running', value: 0 }, bot), /at least 1/)
+  await assert.rejects(engine.callAction('set_setting', { key: 'mcp.port', value: 1 }, bot), /not a setting bots may change/)
+  await assert.rejects(engine.callAction('set_setting', { key: 'phone.tailnet', value: true }, bot), /not a setting bots may change/)
+  await engine.callAction('set_setting', { key: 'integration.github.default_repo', value: 'a/b' }, bot)
+  assert.equal(engine.settings.integrationValue('github', 'default_repo'), 'a/b')
+  await engine.callAction('set_setting', { key: 'integration.github.default_repo', value: null }, bot)
+  assert.equal(engine.settings.integrationValue('github', 'default_repo'), null)
+}
+
 // `/` in the chat input: any tool, as the person; what it answered is a note. An unsafe one is theirs to run.
 {
   const t = (await engine.create('Tools'))!
