@@ -103,6 +103,7 @@ the chat input should offer it, add a preset in `presets.ts`.
 | `bot` | while the bot lasts (sits in no item) | `name`, `instructions?`, `provider?`, `model?` (opus), `debounce_minutes?` (1), `folder?`; the app sets `session_id`, `seen` and `last_run` | `{ cancelled }`, once deleted |
 | `process` | — | switched off for now: kept so stored ones read; none can be added | — |
 | `widget` | no | `html`, `title?`, `widget_state?` (its state, set again as it changes) | — |
+| `file` | no | `path` (absolute, a file on this machine, read as it is when shown), or `copy: true` with it (a copy kept in `<source>.data/files/<sha256>`, as `hash`; `copy` and `path` not kept); `name?`, `title?`; the app sets `mime` (from the name), and `size` for a copy | — (its card and view read it through the backend: `fileData`, `fileText`) |
 | `slack_message` | no | `link`, or `channel` and `ts` (`thread_ts?`), `workspace?` | — (its card and view read Slack, through the cache, as shown) |
 | `slack_channel` | no | `channel` (id or #name), `oldest`, `latest?`, `workspace?` | — (as `slack_message`) |
 | `user` | while the person lasts (sits in no item) | `username` (its id), `name?` | `{ cancelled }`, once removed |

@@ -20,6 +20,7 @@ import { Composer } from './Composer'
 import { ItemRefContext } from './components/ui/Markdown'
 import { ItemRef } from './ItemRef'
 import { FOCUS, Pill } from './sizes'
+import { FileFocus, uploadFiles } from './FileView'
 import { ItemInfoIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
@@ -377,7 +378,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
         onRename={e.type === 'task' && !debug ? (title) => void w.act(() => api().rename(e.id, title)) : undefined}
       />
       {w.error && <div className="error">{w.error}</div>}
-      <div className={`view-body ${d.item && !debug ? 'fill' : ''}`}>
+      <div className={`view-body ${(d.item || e.type === 'file') && !debug ? 'fill' : ''}`}>
         {debug ? (
           <DebugView id={e.id} />
         ) : FOCUS[e.type] === 'chat' && e.type === 'bot' && d.item ? (
@@ -385,6 +386,8 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
             <BotView key={e.id} bot={w.overview.bots.find((b) => b.id === e.id) ?? null} act={w.act} mobile={mobile} />
             <ItemView key={`${e.id}:chat`} detail={d.item} catalog={w.catalog} act={w.act} onOpen={openItem} mobile={mobile} />
           </div>
+        ) : e.type === 'file' ? (
+          <FileFocus key={e.id} info={e} mobile={mobile} />
         ) : FOCUS[e.type] === 'chat' && d.item ? (
           <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openItem} mobile={mobile} />
         ) : (
@@ -600,8 +603,31 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
   }, [item.id])
   // Whoever has it, unless it is you, says how it stands where their message will appear: a bot working or due to
   // wake, a script running or due to run. In a bot's own chat, the bot itself.
+  // A file dropped on the chat, or pasted into it, is kept as a file item here.
+  const [dropping, setDropping] = useState(false)
+  const take = (files: File[]) => files.length > 0 && !item.closed && void act(() => uploadFiles(item.id, files))
   return (
-    <div className="item">
+    <div
+      className={`item ${dropping ? 'dropping' : ''}`}
+      onDragOver={(ev) => {
+        if (![...ev.dataTransfer.types].includes('Files')) return
+        ev.preventDefault()
+        setDropping(true)
+      }}
+      onDragLeave={(ev) => !ev.currentTarget.contains(ev.relatedTarget as Node) && setDropping(false)}
+      onDrop={(ev) => {
+        setDropping(false)
+        if (!ev.dataTransfer.files.length) return
+        ev.preventDefault()
+        take([...ev.dataTransfer.files])
+      }}
+      onPaste={(ev) => {
+        const files = [...ev.clipboardData.files]
+        if (!files.length) return
+        ev.preventDefault()
+        take(files)
+      }}
+    >
       {detail.parent && (
         <div className="meta item-parent">
           in{' '}

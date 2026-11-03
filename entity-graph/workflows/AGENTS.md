@@ -108,7 +108,7 @@ shrink.
   task's children are its history. Some items resolve as they are added (a note); **blockers**
   wait until something happens (an approval). Tasks don't depend on, or attach to, each other: a task in
   another is a card in its chat, and blocks nothing (dependencies are to come back with the wake rules).
-  There are ten types: `task`, `note`, `approval`, `script`, `process`, `widget`, `slack_message`, `slack_channel`, `bot` and
+  There are eleven types: `task`, `note`, `approval`, `script`, `process`, `widget`, `file`, `slack_message`, `slack_channel`, `bot` and
   `user` (a person).
 - **People** are items too (`user` items, in no item, whose id is their username); they sign in to the
   app by typing their username (no password: the app is local). Tasks are **assigned** to people and

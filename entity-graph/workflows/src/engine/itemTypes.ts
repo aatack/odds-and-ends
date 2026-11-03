@@ -248,4 +248,25 @@ export const slackChannel: ItemType = {
   describe: (p) => `Slack ${p.channel}, ${at(p.oldest)} to ${p.latest ? at(p.latest) : 'now'}`,
 }
 
-export const ITEM_TYPES: ItemType[] = [task, note, approval, script, proc, link, widget, search, slackMessage, slackChannel, bot, user]
+export const file: ItemType = {
+  type: 'file',
+  description:
+    'A file, shown in the chat: an image inline, anything else as its name; its view shows it whole (an image to zoom, text, a PDF or Word ' +
+    'document as it looks). Give the absolute path of a file on this machine: it refers to that file as it is when looked at (and a person ' +
+    'may edit it, if it is text). With copy: true a copy is kept with the app instead, which lasts whatever happens to the file.',
+  params: {
+    path: z.string().optional().describe('The absolute path of a file on this machine.'),
+    copy: z.boolean().optional().describe('Keep a copy now, rather than referring to the file. Not kept in its values.'),
+    name: z.string().optional().describe("What it is called; the file's name if left out."),
+    title: z.string().optional().describe('A line to show with it.'),
+    hash: z.string().optional().describe('Set by the app: the kept copy, by its sha256.'),
+    size: z.number().optional().describe('Set by the app: a kept copy\'s size, in bytes.'),
+    mime: z.string().optional().describe("Set by the app, from its name: the file's type."),
+  },
+  data: '—',
+  blocking: false,
+  bots: true,
+  describe: (p) => String(p.title || p.name || p.path || 'File'),
+}
+
+export const ITEM_TYPES: ItemType[] = [task, note, approval, script, proc, link, widget, file, search, slackMessage, slackChannel, bot, user]

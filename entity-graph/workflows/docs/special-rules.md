@@ -18,6 +18,7 @@ follow a link) is not listed. Keep this list current: see AGENTS.md. Each rule i
 | `search` | One per store, in no item; its `sections` configure every finder. Read and set through its own calls. | B `searchSections`, `setSearchSections`; F `SearchSectionsContext` |
 | `slack_message`, `slack_channel` | Fetch nothing on add; their card and view read Slack (cached) as shown. A Slack link in a note is added as one (see `link`). | B `slack.ts`, `presets.ts`; F `SlackView`, `Composer` (paste) |
 | `link` | A web page. Made when a note mentions a URL (bare, `[label](url)` or `[url]()`), as are Slack messages and channels: its id **is** the URL, so the second mention links it in rather than making another. A URL in rendered text is drawn as that item's pill. | B `addNow`, `pulledIn`; F `Markdown` Link, `ItemRef` |
+| `file` | Its params are prepared by `Files.prepare` (a path checked; `copy` kept under its hash and dropped; `name`, `mime` filled in). Its bytes are read through the backend, never by the window. Only a file it refers to may be edited (`saveFileText`); a kept copy stays as given. A file dropped or pasted in a task's chat is uploaded as one. Its view is the file itself (`FileFocus`), not its details. | B `files.ts`, `prepare`, `uploadFile`, `fileData`, `fileText`, `saveFileText`; F `FileView`, `App` (focus, drop, paste) |
 | `process` | Switched off: can't be added; kept so stored ones read. | B `prepare` |
 
 ## Values with special meaning

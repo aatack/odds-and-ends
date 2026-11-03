@@ -468,3 +468,45 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 .bots-page.mobile .row-title { flex: 1 1 calc(100% - 32px); }
 .bots-page.mobile .row-status { order: 3; margin-left: 26px; max-width: none; }
 
+
+/* Files: the card in the chat, and the file on its own (FileView.tsx). */
+.file-card { display: flex; flex-direction: column; gap: 4px; }
+.file-thumb { padding: 0; border: none; background: none; display: block; cursor: zoom-in; }
+.file-thumb img { display: block; max-width: min(100%, 420px); max-height: 280px; border-radius: 6px; }
+.file-chip { display: inline-flex; align-items: center; gap: 6px; }
+.file-chip .icon { width: 16px; height: 16px; }
+.file-name { font-weight: 500; overflow-wrap: anywhere; }
+.item.dropping { outline: 2px dashed var(--accent, var(--color-gray-400)); outline-offset: -6px; }
+.file-focus { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.file-bar { display: flex; align-items: center; gap: 10px; padding: 6px 32px; border-bottom: 1px solid var(--line); }
+.file-bar .icon { width: 15px; height: 15px; }
+.file-bar a.link { display: inline-flex; color: inherit; }
+.file-where { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.segmented button { border: none; border-radius: 0; padding: 2px 10px; background: none; font-size: 12px; }
+.segmented button.on { background: var(--color-gray-200); }
+.file-body { flex: 1; min-height: 0; overflow: auto; padding: 12px 32px 24px; display: flex; flex-direction: column; }
+.file-focus .error { margin: 8px 32px 0; }
+.zoom { position: relative; flex: 1; min-height: 0; display: flex; margin: -12px -32px -24px; }
+.zoom-area { width: 100% !important; height: 100% !important; flex: 1; cursor: grab; }
+.zoom-area:active { cursor: grabbing; }
+.zoom-img { max-width: 100%; max-height: 100%; display: block; }
+.zoom-content { width: 100% !important; height: 100% !important; display: flex !important; align-items: center; justify-content: center; }
+.zoom-buttons { position: absolute; top: 8px; right: 8px; z-index: 1; display: flex; gap: 4px; }
+.zoom-buttons button { display: inline-flex; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.zoom-buttons .icon { width: 16px; height: 16px; }
+.file-text { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+.file-edit-bar { display: flex; align-items: center; gap: 6px; }
+.file-edit-bar .icon { width: 14px; height: 14px; vertical-align: -2px; }
+.file-editor { flex: 1; min-height: 300px; resize: none; font-family: var(--font-mono, 'Fira Code Variable', monospace); font-size: 12px; line-height: 1.45; padding: 8px 10px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; tab-size: 2; }
+.file-markdown { max-width: 820px; }
+.file-html { flex: 1; min-height: 400px; border: 1px solid var(--line); border-radius: 6px; background: white; }
+.file-csv { overflow: auto; }
+.file-csv th { text-align: left; font-weight: 500; }
+.file-pdf { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.file-pdf-page { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15); }
+.file-docx { overflow: auto; }
+.file-media { max-width: 100%; max-height: 100%; }
+.file-focus.mobile .file-bar { padding: 6px 12px; }
+.file-focus.mobile .file-body { padding: 8px 12px 16px; }
+.file-focus.mobile .zoom { margin: -8px -12px -16px; }

@@ -122,7 +122,7 @@ const blockers = (id: string) => item(id).blockers.map((b) => b.type)
 const last = (id: string, type: string) => engine.children(id).filter((e) => e.type === type).at(-1)!
 
 // The types there are; those from before are gone.
-assert.deepEqual(engine.itemTypes.map((t) => t.type), ['task', 'note', 'approval', 'script', 'process', 'link', 'widget', 'search', 'slack_message', 'slack_channel', 'bot', 'user'])
+assert.deepEqual(engine.itemTypes.map((t) => t.type), ['task', 'note', 'approval', 'script', 'process', 'link', 'widget', 'file', 'search', 'slack_message', 'slack_channel', 'bot', 'user'])
 await assert.rejects(engine.addItems((await engine.create('x'))!, [{ type: 'message' as 'note', params: { text: 'x' } }]), /No item type message/)
 for (const i of engine.overview().items) await engine.close(i.id)
 
@@ -962,6 +962,37 @@ await engine.close(bad)
 assert.equal(promptFor([]), '')
 assert.equal(behaviours.length, 0)
 assert.deepEqual(unexpected, [], 'no bot ran that no test expected')
+// Files: one on this machine referred to (read as it is now, edited in place), or a copy kept; an upload is kept.
+{
+  const { mkdtempSync, writeFileSync: wf, readFileSync: rf } = await import('node:fs')
+  const { join: j } = await import('node:path')
+  const dir = mkdtempSync(j((await import('node:os')).tmpdir(), 'files-'))
+  const t = (await engine.create('Files'))!
+  const bot = { engine, author: 'bot' as const, actor: `bot:${threepio}`, itemId: t, runId: null }
+  wf(j(dir, 'notes.md'), '# Hi')
+  const { ids: [ref] } = (await engine.callAction('add_items', { item_id: t, items: [{ type: 'file', params: { path: j(dir, 'notes.md') } }] }, bot)) as { ids: string[] }
+  assert.equal(engine.info(ref)!.params.mime, 'text/markdown')
+  assert.deepEqual(engine.fileText(ref), { text: '# Hi', editable: true, path: j(dir, 'notes.md'), size: 4, missing: false })
+  engine.saveFileText(ref, '# Bye')
+  assert.equal(rf(j(dir, 'notes.md'), 'utf8'), '# Bye')
+  const { ids: [copy] } = (await engine.callAction('add_items', { item_id: t, items: [{ type: 'file', params: { path: j(dir, 'notes.md'), copy: true } }] }, bot)) as { ids: string[] }
+  const kept = engine.info(copy)!.params
+  assert.equal(kept.path, undefined)
+  assert.equal(kept.copy, undefined)
+  assert.match(String(kept.hash), /^[0-9a-f]{64}$/)
+  assert.equal(engine.fileText(copy).editable, false)
+  assert.throws(() => engine.saveFileText(copy, 'x'), /kept copy/)
+  wf(j(dir, 'notes.md'), 'changed')
+  assert.equal(engine.fileText(copy).text, '# Bye', 'a copy stays as it was')
+  const up = await engine.uploadFile(t, 'dot.png', Buffer.from([137, 80, 78, 71]).toString('base64'))
+  assert.deepEqual({ ...engine.fileData(up) }, { name: 'dot.png', mime: 'image/png', base64: 'iVBORw==' })
+  assert.equal(engine.fileText(up).text, null, 'an image is not text')
+  await assert.rejects(engine.callAction('add_items', { item_id: t, items: [{ type: 'file', params: { path: 'relative.txt' } }] }, bot), /absolute/)
+  await assert.rejects(engine.callAction('add_items', { item_id: t, items: [{ type: 'file', params: { path: j(dir, 'nope') } }] }, bot), /no file/)
+  await assert.rejects(engine.callAction('add_items', { item_id: t, items: [{ type: 'file', params: { hash: 'a'.repeat(64) } }] }, bot), /No file is kept/)
+  await engine.close(t)
+}
+
 // Trusting bot folders: the folder, the repos in it, a worktree's main repo; kept in Claude Code's config with all else.
 {
   const { mkdtempSync, mkdirSync: mk, writeFileSync: wf, readFileSync: rf } = await import('node:fs')

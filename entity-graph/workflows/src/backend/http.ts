@@ -84,7 +84,8 @@ export interface HandlerOptions {
   phone?: { files: string | null; tailnet: () => boolean }
 }
 
-const BODY_LIMIT = 5_000_000
+/** Room for an upload: a file of up to 50 MB, as base64. */
+const BODY_LIMIT = 70_000_000
 
 class TooLarge extends Error {}
 
@@ -141,6 +142,7 @@ export function handler(o: HandlerOptions): RequestListener {
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.webmanifest': 'application/manifest+json',

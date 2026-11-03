@@ -1,6 +1,6 @@
 // Lucide (lucide.dev, ISC): its robot is what a bot looks like here, and the
 // rest come from it too so that they match.
-import { AppWindow, Bot, Search, Check, GitPullRequest, Hash, Layers, Link, MessageCircle, MessageSquare, Settings, ShieldCheck, SquareCode, SquareTerminal, User, type LucideIcon } from 'lucide-react'
+import { AppWindow, Bot, File, Search, Check, GitPullRequest, Hash, Layers, Link, MessageCircle, MessageSquare, Settings, ShieldCheck, SquareCode, SquareTerminal, User, type LucideIcon } from 'lucide-react'
 import type { ItemKind, Item, ItemInfo } from '../../shared/types'
 
 /** One icon an item type. */
@@ -15,6 +15,7 @@ export const TYPE_ICON: Record<ItemKind, LucideIcon> = {
   search: Search,
   slack_message: MessageCircle,
   slack_channel: Hash,
+  file: File,
   bot: Bot,
   user: User,
 }
@@ -30,6 +31,7 @@ export const TYPE_NAME: Record<ItemKind, string> = {
   search: 'Search page',
   slack_message: 'Slack message',
   slack_channel: 'Slack channel',
+  file: 'File',
   bot: 'Bot',
   user: 'Person',
 }

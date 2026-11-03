@@ -9,7 +9,7 @@ import type { SearchRow, SearchSection } from './search'
  * which stay open until something happens (a script says it is done, an approval
  * is given, a child item closes).
  */
-export type ItemKind = 'task' | 'note' | 'approval' | 'script' | 'process' | 'link' | 'widget' | 'search' | 'slack_message' | 'slack_channel' | 'bot' | 'user'
+export type ItemKind = 'task' | 'note' | 'approval' | 'script' | 'process' | 'link' | 'widget' | 'search' | 'slack_message' | 'slack_channel' | 'file' | 'bot' | 'user'
 
 /** An item as it is added. `ref` names it, so another added alongside can point at it. */
 export interface ItemSpec {
@@ -367,6 +367,14 @@ export interface WorkflowsAPI {
   editLog: (query: LogQuery) => Promise<LogEntry[]>
   /** Adds items in a task, as the person signed in: what the chat input's default actions do. */
   addItems: (itemId: string, specs: ItemSpec[]) => Promise<string[]>
+  /** Keeps a file (its bytes, base64) with the source, as a file item in the task: answers its id. */
+  uploadFile: (itemId: string, name: string, base64: string) => Promise<string>
+  /** A file item's bytes (base64), name and type. */
+  fileData: (itemId: string) => Promise<{ name: string; mime: string; base64: string }>
+  /** A file item as text (null unless it is text), whether it can be edited (a file here, not a kept copy), and how it stands. */
+  fileText: (itemId: string) => Promise<{ text: string | null; editable: boolean; path: string | null; size: number | null; missing: boolean }>
+  /** Writes text over the file on this machine a file item refers to. */
+  saveFileText: (itemId: string, text: string) => Promise<void>
   /** The search page's sections (search.ts), as configured: the defaults when nothing is. */
   searchSections: () => Promise<SearchSection[]>
   /** Replaces the search page's sections; null goes back to the defaults. */
@@ -504,7 +512,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addItems', 'runTool', 'link', 'searchSections', 'setSearchSections', 'runSearchSection', 'setWidgetState', 'editLog',
+  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'link', 'searchSections', 'setSearchSections', 'runSearchSection', 'setWidgetState', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'trustBotFolders', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',

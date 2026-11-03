@@ -13,6 +13,7 @@ import { useItemMenu } from './ItemMenu'
 import { itemInfoIcon } from './icons'
 import { SlackCard } from './SlackView'
 import { Widget } from './Widget'
+import { FileCard } from './FileView'
 import { TaskCard } from './TaskCard'
 import { Marked } from './components/ui/Marked'
 
@@ -62,6 +63,7 @@ export const CARDS: Partial<Record<ItemKind, (p: CardProps) => ReactNode>> = {
     </button>
   ),
   widget: ({ info: e }) => <Widget info={e} />,
+  file: ({ info: e, onOpen }) => <FileCard info={e} onOpen={onOpen} />,
   link: ({ info: e, find }) => (
     <a className="link-card" href={String(e.params.url)} target="_blank" rel="noreferrer">
       <Marked text={String(e.params.title || e.params.url)} phrase={find} />
@@ -96,6 +98,8 @@ export const FOCUS: Record<ItemKind, 'chat' | 'details'> = {
   search: 'details',
   slack_message: 'details',
   slack_channel: 'details',
+  // Its own view (FileFocus): the file itself, filling it.
+  file: 'details',
   user: 'details',
 }
 

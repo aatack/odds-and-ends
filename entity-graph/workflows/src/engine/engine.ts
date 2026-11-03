@@ -5,6 +5,7 @@ import { slackActions } from './slack'
 import { parseSlackLink } from '../shared/slack'
 import { dueAt } from './wakes'
 import { CustomActions } from './customActions'
+import { Files, isText } from './files'
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { mkdirSync } from 'node:fs'
@@ -119,6 +120,8 @@ export class Engine extends EventEmitter {
   readonly fetch: typeof fetch
   readonly now: () => number
   readonly dataDir: string
+  /** What file items hold: kept copies under `<dataDir>/files`, or files on this machine they refer to. */
+  readonly files: Files
   /** The integrations, each in the one shape (integrations.ts): their tools are among the actions. */
   readonly integrations: Integration[] = [github]
   readonly actions: Action[] = [...itemActions, ...slackActions, ...this.integrations.flatMap((i) => i.tools)]
@@ -150,6 +153,7 @@ export class Engine extends EventEmitter {
     this.fetch = opts.fetch ?? fetch
     this.now = opts.now ?? Date.now
     this.dataDir = opts.dataDir ?? join(tmpdir(), 'workflows')
+    this.files = new Files(join(this.dataDir, 'files'))
     this.customActions = new CustomActions(this, this.store)
     for (const r of this.store.ofType('bot')) {
       const last = r.params.last_run as LastRun | undefined
@@ -1057,7 +1061,8 @@ export class Engine extends EventEmitter {
       const parsed = z.object(type.params).safeParse(given ?? {})
       if (!parsed.success)
         throw new Error(`Bad params for a ${s.type} item: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
-      const params = parsed.data as Record<string, unknown>
+      let params = parsed.data as Record<string, unknown>
+      if (s.type === 'file') params = this.files.prepare(params)
       if (s.type === 'approval' && !this.actions.find((a) => a.name === params.action)?.unsafe)
         throw new Error(`${params.action} is not an unsafe action, so it needs no approval.`)
       // Who a new task goes to, as ids.
@@ -1233,6 +1238,42 @@ export class Engine extends EventEmitter {
     // A script is run from inside a task's queue, so waiting for the queues to empty would wait for itself.
     if (actor !== 'script') await this.idle()
     return ids
+  }
+
+  // ---- files ----
+
+  private fileParams(itemId: string): Record<string, unknown> {
+    const r = this.row(itemId)
+    if (r?.type !== 'file') throw new Error(`${itemId} is not a file.`)
+    return r.params
+  }
+
+  /** A person's upload (or paste, or drop): kept with the source, as a file item in the task. */
+  async uploadFile(parentId: string, name: string, base64: string, actor = this.me()): Promise<string> {
+    const bytes = Buffer.from(base64, 'base64')
+    const hash = this.files.keep(bytes)
+    const [id] = await this.addItems(parentId, [{ type: 'file', params: { name: name || 'file', hash, size: bytes.length } }], actor)
+    return id
+  }
+
+  /** A file item's bytes, for the window to show: base64, with its name and type. */
+  fileData(itemId: string): { name: string; mime: string; base64: string } {
+    const p = this.fileParams(itemId)
+    return { name: String(p.name), mime: String(p.mime), base64: this.files.read(p).toString('base64') }
+  }
+
+  /** A file item as text, with whether it can be edited (a file here, not a kept copy), how big it is and if it is gone. */
+  fileText(itemId: string): { text: string | null; editable: boolean; path: string | null; size: number | null; missing: boolean } {
+    const p = this.fileParams(itemId)
+    const { size, missing } = this.files.stat(p)
+    const text = !missing && isText(String(p.name), String(p.mime)) ? this.files.read(p).toString('utf8') : null
+    return { text, editable: !p.hash && !!p.path && !missing, path: p.path ? String(p.path) : null, size, missing }
+  }
+
+  /** Writes a person's edit over the file a file item refers to. */
+  saveFileText(itemId: string, text: string): void {
+    this.files.saveText(this.fileParams(itemId), text)
+    this.emit('change')
   }
 
   /** Runs an approval's action with a person's inputs, which resolves it. */
