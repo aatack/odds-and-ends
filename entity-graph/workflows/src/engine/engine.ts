@@ -611,8 +611,7 @@ export class Engine extends EventEmitter {
 
   /** A bot's own folder: given in its settings, or one under the app's that lasts. */
   agentFolder(id: string): string {
-    const p = this.agentParams(id)
-    const dir = p.folder ? String(p.folder) : join(this.dataDir, 'bots', `${slug(String(p.name))}-${id.slice(0, 8)}`)
+    const dir = this.agent(id)!.folder
     mkdirSync(dir, { recursive: true })
     return dir
   }
