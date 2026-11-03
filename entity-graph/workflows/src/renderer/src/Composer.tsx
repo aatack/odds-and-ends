@@ -117,7 +117,10 @@ export function Composer({
   const canRecord = useHasDeepgram()
   return (
     <div className="builder-row compact" onMouseDown={(e) => {
-      if ((e.target as HTMLElement).closest('textarea, button, [role=button]')) return
+      // Only a press on the row itself: one in a modal opened from it (the tool runner, the finder) bubbles here
+      // through React's portal, and taking it would keep the modal's fields from being typed in.
+      if (!e.currentTarget.contains(e.target as Node)) return
+      if ((e.target as HTMLElement).closest('textarea, input, select, button, [role=button]')) return
       e.preventDefault()
       box.current?.focus()
     }}>
