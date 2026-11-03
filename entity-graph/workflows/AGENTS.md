@@ -135,7 +135,7 @@ shrink.
 - A `script` is a bot without a model: it can sit on its own (with a `name`), is given topics as a bot is (`@` it,
   or assign it), wakes by the same rule (when something happens to *it*, and on its cycle), and runs its JavaScript
   over everything it holds, keeping its state on those topics (`set_value`, duck typed). `mentions(topic)` and
-  `refs(item, type)` help it read what it was asked. See `SCRIPT_DOC` in `itemTypes.ts`. Useful scripts (Snooze, Slack wait) are
+  `refs(item, type)` help it read what it was asked. See `SCRIPT_DOC` in `itemTypes.ts`. Useful scripts (Snooze, Slack wait, Merge) are
   made in the app, not written into the code; the default actions hand topics to them by name. Custom actions (the Types page) are scripts too,
   run on an item when asked; `run_script` runs one once.
 - The chat input sends a note by default; `@` a bot or a person in it to hand them the task (and take it

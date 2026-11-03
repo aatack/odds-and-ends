@@ -1,5 +1,5 @@
 // GitHub, through the `gh` CLI, as whoever it is signed in as: an Integration (integrations.ts) in the shape every
-// integration takes. Its reads are safe; its writes (comment, create, merge) are unsafe, so only a person runs them.
+// integration takes. Its reads are safe; its writes (comment, create, merge, auto-merge) are unsafe, so only a person runs them.
 
 import { z } from 'zod'
 import type { Engine } from './engine'
@@ -43,7 +43,7 @@ const read: Action[] = [
     description: 'One pull request: its body, state, whether it can merge, its review decision, its checks and its comments.',
     input: { repo, number },
     run: async (a, { engine }) =>
-      gh(engine, ['pr', 'view', String(a.number), '-R', repoOf(engine, a.repo), '--json', `${PR_FIELDS},body,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,comments`]),
+      gh(engine, ['pr', 'view', String(a.number), '-R', repoOf(engine, a.repo), '--json', `${PR_FIELDS},body,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,comments,autoMergeRequest`]),
   },
   {
     name: 'github_pr_checks',
@@ -97,6 +97,18 @@ const write: Action[] = [
     description: 'Merge a pull request (squash by default), deleting its branch.',
     input: { repo, number, method: z.enum(['squash', 'merge', 'rebase']).default('squash') },
     run: async (a, { engine }) => gh(engine, ['pr', 'merge', String(a.number), '-R', repoOf(engine, a.repo), `--${a.method}`, '--delete-branch']),
+  },
+  {
+    name: 'github_pr_automerge',
+    unsafe: true,
+    description: 'Turn on auto-merge for a pull request (squash by default, deleting its branch), marking a draft ready for review first: GitHub merges it once it is approved and its checks pass.',
+    input: { repo, number, method: z.enum(['squash', 'merge', 'rebase']).default('squash') },
+    run: async (a, { engine }) => {
+      const r = repoOf(engine, a.repo)
+      const pr = (await gh(engine, ['pr', 'view', String(a.number), '-R', r, '--json', 'isDraft'])) as { isDraft?: boolean }
+      if (pr.isDraft) await engine.exec('gh', ['pr', 'ready', String(a.number), '-R', r])
+      return gh(engine, ['pr', 'merge', String(a.number), '-R', r, '--auto', `--${a.method}`, '--delete-branch'])
+    },
   },
   {
     name: 'github_issue_comment',

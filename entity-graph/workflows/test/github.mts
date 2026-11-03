@@ -12,6 +12,7 @@ const exec = async (cmd: string, args: string[]) => {
   if (args[0] === 'api' && args[1] === 'user') return 'alex\n'
   if (args[0] === 'pr' && args[1] === 'list') return JSON.stringify([{ number: 7, title: 'Fix it' }])
   if (args[0] === 'pr' && args[1] === 'comment') return 'https://github.com/o/r/pull/7#issuecomment-1\n'
+  if (args[0] === 'pr' && args[1] === 'view') return JSON.stringify({ isDraft: args[2] === '8' })
   if (args[0] === 'api') return JSON.stringify({ path: args.at(-1) })
   return '{}'
 }
@@ -43,6 +44,13 @@ assert.deepEqual(calls.at(-1), ['api', '--method', 'GET', 'repos/o/r/pulls'])
 await assert.rejects(engine.callAction('github_pr_comment', { number: 7, body: 'hi' }, bot), /unsafe/)
 assert.match(String(await engine.callAction('github_pr_comment', { number: 7, body: 'hi' }, person)), /issuecomment/)
 assert.deepEqual(calls.at(-1), ['pr', 'comment', '7', '-R', 'o/r', '--body', 'hi'])
+// Auto-merge: a person's; a draft is marked ready first.
+await assert.rejects(engine.callAction('github_pr_automerge', { number: 7 }, bot), /unsafe/)
+await engine.callAction('github_pr_automerge', { number: 7 }, person)
+assert.deepEqual(calls.at(-1), ['pr', 'merge', '7', '-R', 'o/r', '--auto', '--squash', '--delete-branch'])
+assert.ok(!calls.some((c) => c[1] === 'ready'))
+await engine.callAction('github_pr_automerge', { number: 8 }, person)
+assert.deepEqual(calls.slice(-2).map((c) => c.slice(0, 3)), [['pr', 'ready', '8'], ['pr', 'merge', '8']])
 admin.setIntegrationValue('github', 'default_repo', null)
 assert.equal((await admin.integrations()).registered[0].setup[0].set, false)
 
