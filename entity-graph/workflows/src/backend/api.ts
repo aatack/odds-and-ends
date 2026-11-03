@@ -57,6 +57,7 @@ export function handlers(engine: Engine, admin: Admin, me: string, source = ''):
     removeSlack: (id) => admin.removeSlack(id),
     setIntegrationValue: (id, key, value) => admin.setIntegrationValue(id, key, value),
     clearSlackCache: () => admin.clearSlackCache(),
+    trustBotFolders: () => admin.trustBotFolders(),
     slackView: (itemId, thread) => admin.slackView(itemId, thread),
     setDeepgramKey: (key) => engine.settings.setDeepgramKey(key),
     hasDeepgram: () => engine.settings.deepgramKey() !== null,

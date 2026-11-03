@@ -424,6 +424,8 @@ export interface WorkflowsAPI {
   setIntegrationValue: (id: string, key: string, value: string | null) => Promise<void>
   /** Empties the Slack cache: everything is fetched again when next asked for. */
   clearSlackCache: () => Promise<void>
+  /** Marks every bot's folder, the repos in it and their main repos as trusted by Claude Code: how many there are, and those new. */
+  trustBotFolders: () => Promise<{ trusted: number; folders: string[] }>
   /** A slack_message's thread, or a slack_channel's messages; with `thread`, the replies to one of them. */
   slackView: (itemId: string, thread?: string) => Promise<SlackView>
   /** Keeps a Deepgram key (encrypted), or forgets it (null). */
@@ -504,7 +506,7 @@ export interface CustomAction {
 export const API_METHODS = [
   'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addItems', 'runTool', 'link', 'searchSections', 'setSearchSections', 'runSearchSection', 'setWidgetState', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
-  'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
+  'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'trustBotFolders', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',
 ] as const satisfies readonly ApiMethod[]
 

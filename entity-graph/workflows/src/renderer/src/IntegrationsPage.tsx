@@ -8,6 +8,7 @@ import { api } from './useWorkflows'
 export function IntegrationsPage({ mobile = false }: { mobile?: boolean }) {
   const [view, setView] = useState<IntegrationsView | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [trusted, setTrusted] = useState<string | null>(null)
   const refresh = useCallback(async () => setView(await api().integrations()), [])
   useEffect(() => void refresh(), [refresh])
 
@@ -33,6 +34,22 @@ export function IntegrationsPage({ mobile = false }: { mobile?: boolean }) {
       <section className="card">
         <h2>Claude</h2>
         <Status check={view.claude} />
+        <p className="muted">
+          Claude Code ignores a repo's <code>.claude/settings.json</code> in a folder it hasn't trusted. This marks every bot's folder, the
+          repos in it and their main repos as trusted.
+        </p>
+        <button
+          data-ui
+          onClick={() =>
+            act(async () => {
+              const { trusted, folders } = await api().trustBotFolders()
+              setTrusted(folders.length ? `Trusted ${folders.length} more (${trusted} in all).` : `All ${trusted} were trusted already.`)
+            })
+          }
+        >
+          Trust bot folders
+        </button>
+        {trusted && <p className="muted">{trusted}</p>}
       </section>
 
       <Slack view={view} act={act} />

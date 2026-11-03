@@ -1,10 +1,12 @@
 // What the Integrations, MCP and Phone pages show and change.
 
+import { join } from 'node:path'
 import type { IntegrationsView, McpView, PhoneView } from '../shared/types'
 import type { Engine } from './engine'
 import type { Mcp } from './mcp'
 import { slackAuthTest } from './settings'
 import { clearSlackCache, slackCacheStats, slackView } from './slack'
+import { trustFolders, trustTargets } from './trust'
 
 const firstLine = (s: string) => s.trim().split('\n')[0]
 
@@ -79,6 +81,13 @@ export class Admin {
 
   removeSlack(id: string): void {
     this.engine.settings.removeSlackWorkspace(id)
+  }
+
+  /** Marks every bot's folder (and the repos in it, and their main repos) as trusted by Claude Code: answers how many were new. */
+  trustBotFolders(): { trusted: number; folders: string[] } {
+    const targets = new Set([join(this.engine.dataDir, 'bots'), ...this.engine.agents().flatMap((a) => trustTargets(this.engine.agentFolder(a.id)))])
+    const added = trustFolders([...targets])
+    return { trusted: targets.size, folders: added }
   }
 
   clearSlackCache(): void {

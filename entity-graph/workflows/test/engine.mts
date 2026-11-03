@@ -15,6 +15,7 @@ import { DEFAULT_DEBOUNCE, DEFAULT_MODEL, Engine, MAX_SCRIPTS, PERIODIC_MINUTES,
 import { catalog, startMcp } from '../src/engine/mcp.ts'
 import { botOutputSchema } from '../src/engine/schema.ts'
 import { dueAt } from '../src/engine/wakes.ts'
+import { trustFolders, trustTargets } from '../src/engine/trust.ts'
 import { ASK, BotRunner, limitedUntil, MAX_BOTS, promptFor, type SpawnBot } from '../src/engine/workers.ts'
 
 const MINUTE = 60_000
@@ -961,5 +962,23 @@ await engine.close(bad)
 assert.equal(promptFor([]), '')
 assert.equal(behaviours.length, 0)
 assert.deepEqual(unexpected, [], 'no bot ran that no test expected')
+// Trusting bot folders: the folder, the repos in it, a worktree's main repo; kept in Claude Code's config with all else.
+{
+  const { mkdtempSync, mkdirSync: mk, writeFileSync: wf, readFileSync: rf } = await import('node:fs')
+  const { join: j } = await import('node:path')
+  const root = mkdtempSync(j((await import('node:os')).tmpdir(), 'trust-'))
+  mk(j(root, 'bot', 'repo', '.git', 'worktrees', 'wt'), { recursive: true })
+  mk(j(root, 'bot', 'wts', 'wt'), { recursive: true })
+  wf(j(root, 'bot', 'wts', 'wt', '.git'), `gitdir: ${j(root, 'bot', 'repo', '.git', 'worktrees', 'wt')}\n`)
+  assert.deepEqual(trustTargets(j(root, 'bot')).sort(), [j(root, 'bot'), j(root, 'bot', 'repo'), j(root, 'bot', 'wts', 'wt')].sort())
+  const config = j(root, 'claude.json')
+  wf(config, JSON.stringify({ other: 1, projects: { [j(root, 'bot')]: { kept: true } } }))
+  assert.equal(trustFolders(trustTargets(j(root, 'bot')), config).length, 3)
+  assert.equal(trustFolders(trustTargets(j(root, 'bot')), config).length, 0, 'none twice')
+  const after = JSON.parse(rf(config, 'utf8'))
+  assert.equal(after.other, 1)
+  assert.deepEqual(after.projects[j(root, 'bot')], { kept: true, hasTrustDialogAccepted: true })
+}
+
 mcp.close()
 console.log('engine: ok')
