@@ -21,9 +21,15 @@ export function useItemMenu() {
   })
 }
 
+/** An item as text, for Copy: a note's markdown, a task's title, a link's or Slack message's URL; else its one line. */
+function asText(info: ItemInfo): string {
+  const p = info.params
+  return String(p.text ?? p.title ?? p.url ?? p.link ?? info.summary)
+}
+
 /**
  * The right-click menu on an item: Open it, or Debug it (each puts a view on
- * top of the stack), and below, what can be done to it (`itemActions`), as its
+ * top of the stack), Copy it as text, and below, what can be done to it (`itemActions`), as its
  * view's header offers.
  */
 export function ItemMenu({
@@ -104,6 +110,17 @@ export function ItemMenu({
       <button onClick={() => push({ kind: 'event', id: menu.id })}>Open</button>
       <button onClick={() => push({ kind: 'debug', id: menu.id })}>Debug</button>
       <button onClick={() => push({ kind: 'log', id: menu.id })}>Edit log</button>
+      {info?.id === menu.id && (
+        <button
+          title="Copy it as text: a note's markdown, a task's title, a link's address"
+          onClick={() => {
+            void navigator.clipboard.writeText(asText(info))
+            setMenu(null)
+          }}
+        >
+          Copy
+        </button>
+      )}
       <button
         title="Put it in another task as well: it stays where it is, and shows there too"
         onClick={() => {
