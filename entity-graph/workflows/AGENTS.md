@@ -21,6 +21,16 @@ needs the egdb-server binary: `npm run egdb:build`; it is skipped without it).
 `npx tsx test/smoke-claude.mts` does real `claude -p` runs, headless, against
 an in-memory store; it costs runs, so use it only when the bot wiring changes.
 
+## Seeing the UI (expensive: only to check a specific change)
+
+`npx tsx scripts/screenshot.mts [view ...]` builds the app, renders views in headless Chromium on a throwaway
+in-memory engine (never the user's source), and saves PNGs at desktop and phone widths to `./screenshots`, to look
+at with Read. **Treat it as expensive**: it costs a build, a browser and large images in your context. Run it only
+to check a UI change you just made (a layout, a theme, an empty state), for the one or two views it touches, and
+not as a routine step. Views: `tasks`, `task`, `file`, `bot`, `bots`, `integrations`, `types`, `log`, `search`,
+`item:<id>`; `--desktop-only` / `--phone-only` halve it, `--no-build` skips the build, `--seed <module>` seeds your own
+fixture (see the script's header).
+
 ## Running it (for the user)
 
 `npm install`, then `npm start`: it builds egdb-server and egdb's client whenever

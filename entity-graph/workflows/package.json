@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "backend": "node scripts/egdb-server.mjs && electron-vite build && node out/main/backend.js",
     "egdb:build": "node scripts/egdb-server.mjs --force",
-    "prestart": "node scripts/egdb-server.mjs"
+    "prestart": "node scripts/egdb-server.mjs",
+    "screenshot": "tsx scripts/screenshot.mts"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -26,6 +27,7 @@
     "electron": "^31.3.0",
     "electron-builder": "^24.13.0",
     "electron-vite": "^2.3.0",
+    "playwright-core": "^1.61.1",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.0",
     "typescript": "^5.5.4"
