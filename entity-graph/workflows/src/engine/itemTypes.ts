@@ -68,8 +68,6 @@ export const scriptResult = z
     messages: z.array(z.object({ item: z.string().optional(), text: z.string() })).optional(),
     assign: z.array(z.object({ item: z.string(), to: z.array(z.string()) })).optional(),
     state: z.unknown().optional(),
-    done: z.boolean().optional(),
-    data: z.unknown().optional(),
   })
   .nullable()
 
@@ -87,7 +85,7 @@ export const SCRIPT_DOC =
   'answers the notes in a topic that mention it, newest first, each with text (what follows the mention); refs(itemId, type?) ' +
   'answers the items in an item, of one type if given.\n' +
   '- It returns (all optional): { messages: [{ item, text }] (item: its own chat if left out), assign: [{ item, to: [who] }], ' +
-  'state (for its next run), done: true (it closes, and what it holds goes back), data }. A run that throws ends it.'
+  'state (for its next run) }. It never ends on its own: a run that throws says so in its chat, and it runs again on its cycle.'
 
 export const script: ItemType = {
   type: 'script',
@@ -99,7 +97,7 @@ export const script: ItemType = {
     debounce_minutes: z.number().min(0).optional().describe('How long after something happens to it it runs: 1 if left out.'),
     cycle_minutes: z.number().min(0).optional().describe('How often it runs while it holds topics: 15 if left out; 0, never.'),
   },
-  data: '{ result, runs, logs } once done, or { error }',
+  data: 'none: it runs till a person cancels it (older scripts may have { result, runs, logs } or { error }, from when they could end)',
   blocking: true,
   bots: true,
   describe: (p) => String(p.name ?? p.description ?? 'Script'),

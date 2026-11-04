@@ -1143,7 +1143,7 @@ export class Engine extends EventEmitter {
     const r = this.row(itemId)
     if (!r || r.resolved) return
     this.store.resolveItem(itemId, data, by, this.now(), cancelled)
-    // A script that ends lets go of the tasks it still has: each goes back to its owner, if nobody else has it.
+    // A script cancelled lets go of the tasks it still has: each goes back to its owner, if nobody else has it.
     if (r.type === 'script') for (const t of this.assignedTo(itemId)) if (!this.get(t)?.closed) this.handBack(t, itemId, null, 'script')
   }
 
@@ -1177,7 +1177,8 @@ export class Engine extends EventEmitter {
     const r = this.row(itemId)
     if (r?.type !== 'script' || r.resolved) throw new Error('There is nothing to run.')
     this.pressed.set(itemId, actor)
-    await this.runScriptItem(itemId)
+    const error = await this.runScriptItem(itemId)
+    if (error) throw new Error(error)
   }
 
   /** Writes one param of an item: for the app's own bookkeeping, such as a bot's session and last run. */
@@ -1232,7 +1233,9 @@ export class Engine extends EventEmitter {
 
   /** Adds items in a task (or tasks in none): from a person, or from an agent through MCP (author 'bot', so its rules apply). */
   async addItems(parentId: string | null, specs: ItemSpec[], actor = this.me(), author: Author = 'human'): Promise<string[]> {
-    if (parentId && this.row(parentId)?.type !== 'bot' && this.must(parentId).closed) throw new Error('This task is closed.')
+    // A bot's or a script's own chat takes notes too.
+    const own = ['bot', 'script'].includes(this.row(parentId ?? '')?.type ?? '')
+    if (parentId && !own && this.must(parentId).closed) throw new Error('This task is closed.')
     const ids = this.add(parentId, this.prepare(specs, author), actor)
     // A script is run from inside a task's queue, so waiting for the queues to empty would wait for itself.
     if (actor !== 'script') await this.idle()
@@ -1332,11 +1335,14 @@ export class Engine extends EventEmitter {
     this.emit('change')
   }
 
-  /** Closes a task: its open blockers are cancelled, then it resolves. Tasks in it are left as they are: they don't depend on it. */
+  /**
+   * Closes a task: its open blockers are cancelled, then it resolves. Tasks in it are left as they are: they don't depend on it.
+   * Nor are scripts in it: like a bot, a script lasts till someone cancels it.
+   */
   async close(itemId: string, opts: { actor?: string; how?: 'closed' | 'cancelled' } = {}): Promise<void> {
     const actor = opts.actor ?? this.me()
     const shut = (id: string, how: string) => {
-      for (const b of this.children(id, true)) if (b.type !== 'task') this.resolve(b.id, { cancelled: true, detail: 'Its task closed.' }, actor, true)
+      for (const b of this.children(id, true)) if (b.type !== 'task' && b.type !== 'script') this.resolve(b.id, { cancelled: true, detail: 'Its task closed.' }, actor, true)
       this.resolve(id, { how }, actor, false)
     }
     const item = this.must(itemId)
@@ -1365,13 +1371,14 @@ export class Engine extends EventEmitter {
 
   /**
    * Runs a script once: its source, given the script itself (its values, state and runs), what it holds, and the tools; then
-   * what it returned. Unsafe tools only for a person's own press. Done (or throwing), it ends, and hands back what it holds.
+   * what it returned. Unsafe tools only for a person's own press. A script never ends on its own: a run that throws is
+   * said in its chat (once, till the error changes) and it carries on, on its cycle. Answers the run's error, if any.
    */
-  private runScriptItem(id: string): Promise<void> {
+  private runScriptItem(id: string): Promise<string | null> {
     this.checking.add(id)
     return this.serial(id, async () => {
       const row = this.row(id)
-      if (!row || row.resolved) return
+      if (!row || row.resolved) return null
       const pressedBy = this.pressed.get(id) ?? null
       this.pressed.delete(id)
       const pressed = !!pressedBy && this.isUser(pressedBy)
@@ -1389,11 +1396,11 @@ export class Engine extends EventEmitter {
         now: new Date(woke).toISOString(),
         trigger: pressed ? 'press' : 'wake',
       }
-      let end: Record<string, unknown> | null = null
+      let error: string | null = null
       try {
         const ran = await runScript(String(source ?? ''), context, (name, args) => this.callAction(name, args, { engine: this, author, actor, itemId: row.parent_id ?? id, runId: null }))
         const parsed = scriptResult.safeParse(ran.value)
-        if (!parsed.success) throw new Error(`It returned ${JSON.stringify(ran.value)?.slice(0, 200)}, not { messages?, assign?, state?, done?, data? }.`)
+        if (!parsed.success) throw new Error(`It returned ${JSON.stringify(ran.value)?.slice(0, 200)}, not { messages?, assign?, state? }.`)
         const r = parsed.data ?? {}
         for (const m of r.messages ?? []) await this.addItems(m.item ?? row.parent_id ?? id, [{ type: 'note', params: { text: m.text } }], 'script', author)
         for (const a of r.assign ?? []) {
@@ -1403,17 +1410,17 @@ export class Engine extends EventEmitter {
           for (const x of now) if (!to.has(x)) await this.assign(a.item, x, false, 'script')
         }
         if ('state' in r) this.store.setState(id, r.state, this.now())
-        if (r.done) end = { result: r.data ?? null, runs: row.runs + 1, logs: ran.logs }
       } catch (e) {
-        end = { error: (e as Error).message }
+        error = (e as Error).message
       }
       row.runs++
-      if (end) this.resolve(id, end, 'system')
-      else {
-        this.store.setParams(id, { ...row.params, last_wake: woke }, 'script', this.now())
-        row.next_check_at = this.scriptDue(row)
-      }
+      // By `script`, so saying it is not something happening to it (which would wake it again).
+      if (error && error !== row.last_error) await this.addItems(row.parent_id ?? id, [{ type: 'note', params: { text: `${this.title(id, row.params)} failed: ${error}` } }], 'script', author)
+      row.last_error = error
+      this.store.setParams(id, { ...row.params, last_wake: woke }, 'script', this.now())
+      row.next_check_at = this.scriptDue(row)
       this.emit('change')
+      return error
     }).finally(() => this.checking.delete(id))
   }
 

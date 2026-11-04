@@ -144,7 +144,9 @@ shrink.
   its last run went (egdb keeps the earlier ones, as old values); `seen` lists the tasks its session has seen.
 - A `script` is a bot without a model: it can sit on its own (with a `name`), is given topics as a bot is (`@` it,
   or assign it), wakes by the same rule (when something happens to *it*, and on its cycle), and runs its JavaScript
-  over everything it holds, keeping its state on those topics (`set_value`, duck typed). `mentions(topic)` and
+  over everything it holds, keeping its state on those topics (`set_value`, duck typed). Like a bot, it lasts till
+  someone cancels it: it can't end itself, a run that throws says so in its chat (once per new error) and it runs
+  again on its cycle, and closing a task it sits in leaves it be. `mentions(topic)` and
   `refs(item, type)` help it read what it was asked. See `SCRIPT_DOC` in `itemTypes.ts`. Useful scripts (Snooze, Slack wait, Merge) are
   made in the app, not written into the code; the default actions hand topics to them by name. Custom actions (the Types page) are scripts too,
   run on an item when asked; `run_script` runs one once.

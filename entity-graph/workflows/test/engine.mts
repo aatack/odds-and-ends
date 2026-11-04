@@ -200,7 +200,7 @@ behaviours.push(async ({ prompt, sessionId, resume, call }) => {
   assert.doesNotMatch(prompt, /Reply to the PR, please/, 'what the session has seen is not sent again')
   // It makes a script that checks CI, and hands it the task: the script hands it back when CI passes.
   const { ids } = JSON.parse(await call('add_items', { items: [{ type: 'script', params: { name: 'CI', debounce_minutes: 0, cycle_minutes: 1 / 60, source: `if (!context.state) return { state: 1 }
-return { messages: [{ item: context.topics[0].id, text: 'CI passed' }], assign: [{ item: context.topics[0].id, to: ['Threepio'] }], done: true }` } }] }))
+return { messages: [{ item: context.topics[0].id, text: 'CI passed' }], assign: [{ item: context.topics[0].id, to: ['Threepio'] }] }` } }] }))
   return out({ item: id, assign: [ids[0]] })
 })
 await toBot(id, 'Wait for CI')
@@ -218,10 +218,10 @@ await tick()
 clock += 1000
 await tick()
 await settle()
-assert.ok(engine.info(ci)!.resolved)
 assert.deepEqual(item(id).assignees, ['human'])
 await engine.close(id)
 assert.ok(item(id).closed)
+assert.ok(!engine.info(ci)!.resolved, 'a script lasts: neither handing its topics on nor its task closing ends it')
 
 // ---- 5. Child tasks: a bot splits work off and gives it to itself; the child blocks nothing ----
 const parent = (await engine.create('Parent'))!
@@ -655,7 +655,7 @@ await settle()
 assert.match(String(last(bad, 'note').params.text), /The bot's output was not usable/)
 await engine.close(bad)
 
-// ---- 7. Scripts: bots without a model. Given topics, they run (state kept), say things, hand topics on, end when done ----
+// ---- 7. Scripts: bots without a model. Given topics, they run (state kept), say things, hand topics on; they never end on their own ----
 {
   const a = (await engine.create('Watched A'))!
   const b = (await engine.create('Watched B'))!
@@ -664,7 +664,7 @@ await engine.close(bad)
     console.log('run', context.runs, 'items', items.length)
     const n = (context.state ?? 0) + 1
     if (n < 2) return { state: n, messages: context.topics.map((t) => ({ item: t.id, text: 'Still waiting on ' + t.title })) }
-    return { assign: [{ item: context.topics[0].id, to: ['human'] }], done: true, data: { n, name: context.name } }` } }])
+    return { state: n, assign: context.topics.map((t) => ({ item: t.id, to: ['human'] })), done: true }` } }])
   await engine.assign(a, watch, true)
   await engine.assign(b, watch, true)
   assert.deepEqual(blockers(a), [], 'it blocks nothing')
@@ -676,37 +676,45 @@ await engine.close(bad)
   assert.equal(engine.info(watch)!.runs, 1, 'its own messages are not something happening to it')
   clock += MINUTE
   await tick()
-  const done = engine.info(watch)!
-  assert.deepEqual(done.data!.result, { n: 2, name: 'Watcher' })
-  assert.match((done.data!.logs as string[])[0], /^run 1 items \d+$/)
-  assert.deepEqual([item(a).assignees, item(b).assignees], [['human'], ['human']], 'done, it lets go of what it still had')
-  // A run that throws ends it, with the error.
-  const [bad2] = await engine.addItems(null, [{ type: 'script', params: { source: 'throw new Error("nope")', debounce_minutes: 0 } }])
+  assert.deepEqual([item(a).assignees, item(b).assignees], [['human'], ['human']], 'it hands its topics on')
+  assert.ok(!engine.info(watch)!.resolved, 'and lasts (an old `done: true` is ignored)')
+  // A run that throws says so in its chat, once till the error changes, and carries on.
+  const [bad2] = await engine.addItems(null, [{ type: 'script', params: { name: 'Bad', source: 'throw new Error("nope " + Math.min(context.runs, 1))', debounce_minutes: 0, cycle_minutes: 1 } }])
   await engine.assign(a, bad2, true)
   clock += 1
   await tick()
-  assert.match(engine.info(bad2)!.message!, /The script failed: .*nope/)
+  const said = () => engine.children(bad2).filter((e) => e.type === 'note').map((e) => String(e.params.text))
+  assert.ok(!engine.info(bad2)!.resolved, 'a failing run does not end it')
+  assert.equal(said().length, 1)
+  assert.match(said()[0], /^Bad failed: The script failed: nope 0$/)
+  clock += MINUTE
+  await tick()
+  clock += MINUTE
+  await tick()
+  assert.equal(engine.info(bad2)!.runs, 3, 'it runs again on its cycle')
+  assert.equal(said().length, 2, 'a new error is said; the same one again is not')
+  await engine.cancel(bad2)
+  assert.ok(engine.info(bad2)!.resolved, 'cancelling is the only way it goes')
   // One that holds nothing runs only when pressed.
-  const [manual] = await engine.addItems(null, [{ type: 'script', params: { source: 'return context.runs ? { done: true } : null' } }])
+  const [manual] = await engine.addItems(null, [{ type: 'script', params: { source: 'return null' } }])
   clock += 60 * MINUTE
   await tick()
   assert.equal(engine.info(manual)!.runs, 0, 'it waits to be run')
   await engine.runNow(manual)
   await engine.runNow(manual)
-  assert.ok(engine.info(manual)!.resolved)
-  assert.deepEqual((await engine.inspect(manual)).values.resolved, true)
-  await assert.rejects(engine.runNow(manual), /nothing to run/)
+  assert.equal(engine.info(manual)!.runs, 2)
+  assert.ok(!engine.info(manual)!.resolved)
   // Unsafe tools: a person's press has them; a run on its own never, whoever wrote it.
-  const unsafeSource = `await tools.post_somewhere({ text: 'pressed' }); return { done: true }`
+  const unsafeSource = `await tools.post_somewhere({ text: 'pressed' }); return null`
   const [press] = await engine.addItems(null, [{ type: 'script', params: { source: unsafeSource } }], 'bot', 'bot')
   await engine.runNow(press, 'human')
-  assert.ok(engine.info(press)!.resolved && !engine.info(press)!.data!.error, 'pressed by a person, it may act outside')
-  assert.equal(posted.pop(), 'pressed')
+  assert.equal(posted.pop(), 'pressed', 'pressed by a person, it may act outside')
+  await assert.rejects(engine.runNow(press, 'bot'), /unsafe/, 'a press that fails says why')
   const [timed] = await engine.addItems(null, [{ type: 'script', params: { source: unsafeSource, debounce_minutes: 0 } }], 'human')
   await engine.assign(b, timed, true)
   clock += 1
   await tick()
-  assert.match(String(engine.info(timed)!.data!.error), /unsafe/)
+  assert.match(String(engine.children(timed).find((e) => e.type === 'note')?.params.text), /unsafe/)
   // run_script: once, now, with the tools; an agent gets no unsafe ones.
   const ran = (await engine.callAction('run_script', { source: 'return (await tools.list_items({})).length + context.n', context: { n: 1 } }, { engine, author: 'bot', actor: 'bot', itemId: null, runId: null })) as { result: number }
   assert.equal(typeof ran.result, 'number')
