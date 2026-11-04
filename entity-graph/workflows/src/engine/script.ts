@@ -2,7 +2,7 @@
 // can reach nothing but the actions it is handed, and those through the same
 // gate as any other call.
 
-import { getQuickJS, type QuickJSContext, type QuickJSHandle } from 'quickjs-emscripten'
+import { getQuickJS, type QuickJSContext, type QuickJSDeferredPromise, type QuickJSHandle } from 'quickjs-emscripten'
 
 const CPU_MS = 5_000
 const WALL_MS = 120_000
@@ -24,6 +24,8 @@ export async function runScript(
   runtime.setInterruptHandler(() => Date.now() > deadline)
   const vm = runtime.newContext()
   const logs: string[] = []
+  // Calls still out when the script ends (it threw, or timed out): freed before the runtime is, which aborts on a leak.
+  const pending = new Set<QuickJSDeferredPromise>()
   try {
     const fn = (name: string, impl: (...args: QuickJSHandle[]) => QuickJSHandle | void) => {
       const h = vm.newFunction(name, impl)
@@ -35,12 +37,16 @@ export async function runScript(
     })
     fn('__call', (nameH, argsH) => {
       const promise = vm.newPromise()
+      pending.add(promise)
       call(vm.getString(nameH), JSON.parse(vm.getString(argsH)))
         .then(
           (r) => settle(vm, (h) => promise.resolve(h), () => vm.newString(JSON.stringify(r ?? null))),
           (e: Error) => settle(vm, (h) => promise.reject(h), () => vm.newError(e.message)),
         )
-      promise.settled.then(() => runtime.alive && runtime.executePendingJobs())
+      promise.settled.then(() => {
+        pending.delete(promise)
+        if (runtime.alive) runtime.executePendingJobs()
+      })
       return promise.handle
     })
     const code = `(async () => {
@@ -89,6 +95,7 @@ ${source}
     settled.value.dispose()
     return { value, logs }
   } finally {
+    for (const p of pending) if (p.alive) p.dispose()
     vm.dispose()
     runtime.dispose()
   }

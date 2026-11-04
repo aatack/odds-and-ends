@@ -14,6 +14,7 @@ import { Admin } from '../src/engine/admin.ts'
 import { DEFAULT_DEBOUNCE, DEFAULT_MODEL, Engine, MAX_SCRIPTS, PERIODIC_MINUTES, type BotOutput, type BotUpdate } from '../src/engine/engine.ts'
 import { catalog, startMcp } from '../src/engine/mcp.ts'
 import { botOutputSchema } from '../src/engine/schema.ts'
+import { runScript } from '../src/engine/script.ts'
 import { dueAt } from '../src/engine/wakes.ts'
 import { trustFolders, trustTargets } from '../src/engine/trust.ts'
 import { ASK, BotRunner, limitedUntil, MAX_BOTS, promptFor, type SpawnBot } from '../src/engine/workers.ts'
@@ -1009,6 +1010,14 @@ assert.deepEqual(unexpected, [], 'no bot ran that no test expected')
   const after = JSON.parse(rf(config, 'utf8'))
   assert.equal(after.other, 1)
   assert.deepEqual(after.projects[j(root, 'bot')], { kept: true, hasTrustDialogAccepted: true })
+}
+
+// A script that ends with a tool call still out fails with its own error, not QuickJS aborting on the leaked call.
+{
+  const slow = () => new Promise((r) => setTimeout(() => r(1), 50))
+  await assert.rejects(runScript(`tools.slow(); throw new Error('boom')`, { id: 'x' }, slow), /The script failed: boom/)
+  await new Promise((r) => setTimeout(r, 100))
+  assert.deepEqual((await runScript('return 1', { id: 'x' }, slow)).value, 1, 'and the next script still runs')
 }
 
 mcp.close()
