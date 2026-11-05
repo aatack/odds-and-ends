@@ -1,0 +1,64 @@
+# Example for Flow's GitHub workflow tools (theengineeringco/branch-demo#7126).
+# Start it with dispatchGitHubWorkflow, then read the result with
+# getGitHubWorkflowRun: the job summary, notice/warning/error annotations and
+# job outputs are all things the agent can inspect.
+name: Flow dispatch example
+
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: Who to greet
+        type: string
+        default: world
+      count:
+        description: How many numbers to sum (1 to n)
+        type: string
+        default: "10"
+      should_fail:
+        description: Make the check job fail, to test failure reporting
+        type: boolean
+        default: false
+
+jobs:
+  compute:
+    runs-on: ubuntu-latest
+    outputs:
+      greeting: ${{ steps.calc.outputs.greeting }}
+      total: ${{ steps.calc.outputs.total }}
+    steps:
+      - id: calc
+        env:
+          NAME: ${{ inputs.name }}
+          COUNT: ${{ inputs.count }}
+        run: |
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+            echo "::error title=Bad input::count must be a whole number, got '$COUNT'"
+            exit 1
+          fi
+          total=$(( COUNT * (COUNT + 1) / 2 ))
+          greeting="Hello, $NAME!"
+          echo "greeting=$greeting" >> "$GITHUB_OUTPUT"
+          echo "total=$total" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Result::$greeting The sum of 1..$COUNT is $total."
+          {
+            echo "## Flow dispatch example"
+            echo ""
+            echo "| name | count | sum 1..count |"
+            echo "| --- | --- | --- |"
+            echo "| $NAME | $COUNT | $total |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  check:
+    needs: compute
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report
+        run: |
+          echo "Greeting: ${{ needs.compute.outputs.greeting }}"
+          echo "Total: ${{ needs.compute.outputs.total }}"
+      - name: Optional failure
+        if: ${{ inputs.should_fail }}
+        run: |
+          echo "::error title=Requested failure::should_fail was true, so this step failed on purpose (total was ${{ needs.compute.outputs.total }})."
+          exit 1
