@@ -86,7 +86,7 @@ const file = join(dir, 'round-trip.egdb')
   assert.ok(after.detail.children.filter((e) => !e.resolved && e.type !== 'task' && e.type !== 'script').every((e) => e.nextCheckAt === clock))
   assert.equal(again.store.items.get(after.detail.children.filter((e) => e.type === 'script').at(-1)!.id)!.memo, 41)
   assert.deepEqual(after.detail.children.find((e) => e.id === hi)!.reactions, ['alex'])
-  assert.deepEqual([engine2.info('https://example.com/a?b=1#c')!.type, engine2.info('https://example.com/a?b=1#c')!.parentId], ['link', id], 'an item whose id is a URL reads back')
+  assert.deepEqual([engine2.info('https://example.com/a?b=1#c')!.type, engine2.info('https://example.com/a?b=1#c')!.parentId], ['link', null], 'an item whose id is a URL reads back, in no task')
   assert.ok(after.detail.children.filter((e) => e.id !== hi).every((e) => e.reactions.length === 0))
   // The edit log: what was done, by whom and when, the newest first.
   const log = await again.store.log({ entities: [hi] })
@@ -131,14 +131,24 @@ const file = join(dir, 'round-trip.egdb')
   // Reopened, a task is open when read back too.
   await engine2.reopen(done, 'alex')
   await again.store.flush()
-  // A later `contains` link is a link, not a move: read back, the note still sits where it was made.
+  // A pin is a `pins` link, not a move: read back, the note still sits where it was made, and is pinned. A later `contains`
+  // link (an older build's link_items) reads back as a pin too, and is the link removed when it is unpinned.
   const linkedTo = (await engine2.create('Linked'))!
-  await engine2.link(linkedTo, [note.id], 'alex')
+  await engine2.pin(linkedTo, [note.id], true, 'alex')
+  const older = (await engine2.create('Older'))!
+  await again.store.flush()
+  await again.client.write({ branch, author: 'alex', timestamp: Date.now() + 1000, ops: [{ link: { source: older, destination: note.id, link_type: 'contains', sort: { explicit: Date.now() + 1000 } } }] })
   await again.store.flush()
   const third = await loadStore(again.client, blocking)
   assert.equal(third.store.items.get(note.id)!.parent_id, id)
-  assert.deepEqual(third.store.linked(linkedTo).map((l) => l.id), [note.id])
-  assert.deepEqual(third.store.containers(note.id), [id, linkedTo])
+  assert.deepEqual(third.store.pins(linkedTo).map((p) => p.id), [note.id])
+  assert.deepEqual(third.store.pinnedIn(note.id), [linkedTo, older])
+  third.store.unpin(older, note.id, 'alex', Date.now())
+  third.store.unpin(linkedTo, note.id, 'alex', Date.now())
+  await third.store.flush()
+  const fourth = await loadStore(again.client, blocking)
+  assert.deepEqual(fourth.store.pinnedIn(note.id), [], 'unpinned, both links are gone')
+  assert.equal(fourth.store.items.get(note.id)!.parent_id, id)
   assert.equal(third.store.customActions.size, 0, 'a removed custom action is archived in egdb, and not read back')
   assert.equal(third.store.items.get(done)!.resolved, false, 'a reopened task reads back open')
   again.egdb.stop()

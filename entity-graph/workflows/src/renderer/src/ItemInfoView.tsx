@@ -1,5 +1,6 @@
 import type { Catalog, ItemInfoDetail, ItemInfo } from '../../shared/types'
 import { Approval } from './Approval'
+import { Pins } from './Pins'
 import { minutes, time } from './Chat'
 import { TYPE_NAME } from './icons'
 import { SlackMessages } from './SlackView'
@@ -60,6 +61,11 @@ export function ItemInfoView({
       )}
       {(e.type === 'slack_message' || e.type === 'slack_channel') && <SlackMessages info={e} />}
       <Special detail={detail} onOpen={onOpen} />
+      {(detail.pins.length > 0 || detail.pinnedIn.length > 0) && (
+        <section className="card">
+          <Pins id={e.id} pins={detail.pins} pinnedIn={detail.pinnedIn} catalog={catalog} act={act} onOpen={onOpen} />
+        </section>
+      )}
 
       <section className="card">
         <h2>What it was given</h2>

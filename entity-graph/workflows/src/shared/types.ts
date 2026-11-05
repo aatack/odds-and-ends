@@ -16,6 +16,8 @@ export interface ItemSpec {
   type: ItemKind
   params: Record<string, unknown>
   ref?: string
+  /** Pin it to the item it is added in, too. */
+  pin?: boolean
 }
 
 /**
@@ -60,8 +62,10 @@ export interface ItemInfo {
   runs: number
   /** Who reacted to it (a thumbs-up): people's usernames, or bots' actors (`bot:<id>`). */
   reactions: string[]
-  /** Every item that contains it (`contains` links to it): where it sits first, then where it was linked too. */
-  containers: string[]
+  /** What is pinned to it (`pins` links from it): items useful in actioning it, the first pinned first. */
+  pins: string[]
+  /** The items it is pinned to (`pins` links to it): where it is referenced. */
+  pinnedIn: string[]
 }
 
 /** A task (or a bot, for its own chat), as the lists and its view read it. */
@@ -102,6 +106,9 @@ export interface ItemDetail {
 export interface ItemInfoDetail {
   info: ItemInfo
   parent: { id: string; title: string } | null
+  /** What is pinned to it, and the items it is pinned to, in full. */
+  pins: ItemInfo[]
+  pinnedIn: ItemInfo[]
   /** For an item, or a bot (whose own chat it is): it in full. */
   item: ItemDetail | null
 }
@@ -384,7 +391,8 @@ export interface WorkflowsAPI {
   /** Runs a tool (any action: the same registry as the MCP and a script's tools) as the person, from a task's `/`: what it answered is a note in the task. */
   runTool: (itemId: string, name: string, args: Record<string, unknown>) => Promise<unknown>
   /** Puts items in a task as well as where they sit (`contains` links): an item can be in many. */
-  link: (taskId: string, itemIds: string[]) => Promise<void>
+  /** Pins items to an item, or (with `on` false) unpins them. */
+  pin: (itemId: string, itemIds: string[], on: boolean) => Promise<void>
   /** Changes a widget's state. */
   setWidgetState: (itemId: string, state: unknown) => Promise<void>
   /** Turns the person's thumbs-up on an item on or off. */
@@ -512,7 +520,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'link', 'searchSections', 'setSearchSections', 'runSearchSection', 'setWidgetState', 'editLog',
+  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'searchSections', 'setSearchSections', 'runSearchSection', 'setWidgetState', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'trustBotFolders', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',

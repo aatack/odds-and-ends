@@ -131,6 +131,11 @@ the chat input should offer it, add a preset in `presets.ts`.
   removes the link. The items someone has are their `assigned_to` links followed
   backwards (`Engine.assignedTo`). egdb keeps the link's history: who assigned
   it, and when.
+- **Pinning is a link too**: a `pins` link from an item to what is pinned to it
+  (`Store.pin` / `unpin`), sorted by when; followed backwards, where an item is
+  referenced. A subtask is pinned to the task it is made in; an item added with
+  `pin: true` (beside `type` and `params`) to the item it is added in. See
+  AGENTS.md, Pins.
 - A new item goes to its `assignees` param if it has one; else, if a person made
   it, to them; else (a bot or a source made it) to nobody: a bot decides who has
   what it makes. A task's **owner** (`Engine.owner`), whom a bot hands it back to,

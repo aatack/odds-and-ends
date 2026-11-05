@@ -15,7 +15,7 @@ const BRANCH_NAME = 'workflows'
 /** The kinds of entity that are not items. */
 const OWN_TYPES = ['wf.root', 'wf.setting', 'wf.custom_action']
 /** The links an item may have, as the loader and the debug view read them. */
-const LINK_TYPES = ['contains', 'assigned_to'] as const
+const LINK_TYPES = ['contains', 'pins', 'assigned_to'] as const
 /** Bytes per write, about: egdb-server takes requests of 2 MB at most, so a big change goes in several. */
 const MAX_BYTES = 1_000_000
 
@@ -172,13 +172,14 @@ export async function loadStore(
   })
   await findAll(client, branch, { eq: { key: 'type', value: 'wf.custom_action' } }, (_id, x) => customActions.push(customActionFromValues(x)))
   // Where each item sits, and who made it when: the `contains` links to it. And who has each task: `assigned_to` links.
-  // An item sits in the task whose `contains` link to it came first; any later ones are links for traceability.
+  // An item sits in the task whose `contains` link to it came first; any later ones (an older build's) read as pins.
+  // What is pinned to each item: its `pins` links.
   const made = new Map<string, { parent: string | null; seq: number; at: number; by: string }>()
-  const linked: { parent: string; id: string; at: number; by: string }[] = []
+  const pinned: { from: string; id: string; at: number; by: string; via: 'pins' | 'contains' }[] = []
   const assigned: { item: string; to: string; at: number; by: string }[] = []
   const ids = [ROOT, ...found.keys()]
   for (let i = 0; i < ids.length; i += 500) {
-    const got = await client.links(branch, ids.slice(i, i + 500), [['contains', 'outbound'], ['assigned_to', 'outbound']])
+    const got = await client.links(branch, ids.slice(i, i + 500), [['contains', 'outbound'], ['pins', 'outbound'], ['assigned_to', 'outbound']])
     for (const groups of Object.values(got))
       for (const g of groups)
         for (const l of g.links) {
@@ -187,12 +188,13 @@ export async function loadStore(
             const m = { parent: l.source === ROOT ? null : l.source, seq: Number(l.sort ?? 0), ...meta }
             const had = made.get(l.destination)
             // The first by time; at the same time, the one made in place (a seq, not a link's time as its sort).
-            if (had && (had.at < m.at || (had.at === m.at && had.seq <= m.seq))) linked.push({ parent: m.parent!, id: l.destination, at: m.at, by: m.by })
+            if (had && (had.at < m.at || (had.at === m.at && had.seq <= m.seq))) pinned.push({ from: l.source, id: l.destination, at: m.at, by: m.by, via: 'contains' })
             else {
-              if (had?.parent) linked.push({ parent: had.parent, id: l.destination, at: had.at, by: had.by })
+              if (had?.parent) pinned.push({ from: had.parent, id: l.destination, at: had.at, by: had.by, via: 'contains' })
               made.set(l.destination, m)
             }
           }
+          else if (g.link_type === 'pins') pinned.push({ from: l.source, id: l.destination, ...meta, via: 'pins' })
           else assigned.push({ item: l.source, to: l.destination, ...meta })
         }
   }
@@ -210,7 +212,7 @@ export async function loadStore(
   }
   const sink = new EgdbSink(client, branch, onError)
   const store = new Store(sink)
-  store.restore({ items: rows, settings, customActions, assigned, linked: linked.filter((l) => l.parent && found.has(l.id)) })
+  store.restore({ items: rows, settings, customActions, assigned, pinned: pinned.filter((p) => p.from !== ROOT && found.has(p.from) && found.has(p.id)) })
   // The root is an entity too, so that the tree can be walked from it.
   if (!rows.length) sink.write([{ set: { entity: ROOT, key: 'type', value: 'wf.root' } }], 'system', Date.now())
   return { store, sink }

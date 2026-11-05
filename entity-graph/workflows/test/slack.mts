@@ -63,16 +63,17 @@ const link = 'https://acme.slack.com/archives/C9/p1700000100000200'
 assert.deepEqual(parseSlackLink(link), { host: 'acme.slack.com', channel: 'C9', ts: '1700000100.000200' })
 assert.equal(parseSlackLink(`https://acme.slack.com/archives/C9/p1700000150000300?thread_ts=1700000100.000200&cid=C9`)?.thread_ts, '1700000100.000200')
 
-// A URL in a note is pulled in as an item whose id is the URL: once, and put in each topic it is linked from after that.
+// A URL in a note is pulled in as an item whose id is the URL: once, in no topic (it shows in no chat; it is pinned by hand).
 const task = (await engine.create('Slack'))!
 await engine.send(task, 'note', `What happened here? ${link}`)
 await engine.send(task, 'note', `[see this](${link}) and [the docs](https://example.com/docs)`)
-assert.deepEqual(engine.children(task).map((e) => e.type), ['note', 'slack_message', 'note', 'link'])
+assert.deepEqual(engine.children(task).map((e) => e.type), ['note', 'note'])
 assert.equal(engine.info(link)!.type, 'slack_message', 'its id is the URL')
 assert.equal(engine.info('https://example.com/docs')!.params.url, 'https://example.com/docs')
 const other = (await engine.create('Elsewhere'))!
 await engine.send(other, 'note', `again: ${link}`)
-assert.deepEqual(engine.info(link)!.containers, [task, other], 'made once, linked after')
+assert.equal(engine.info(link)!.parentId, null, 'made once, in no topic')
+assert.deepEqual(engine.children(other).map((e) => e.type), ['note'])
 await engine.send(other, 'note', 'https://acme.slack.com/archives/C9')
 assert.equal(engine.info('https://acme.slack.com/archives/C9')!.type, 'slack_channel')
 const msg = engine.info(link)!

@@ -14,7 +14,7 @@ import type { Engine } from './engine'
 
 const itemId = z.string().describe('The id of the item.')
 const spec = z
-  .object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional() })
+  .object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional(), pin: z.boolean().optional().describe('Pin it to the item it is added in, as well: it shows beside that item, as something useful in actioning it (a pull request, a file, a link). A subtask is pinned anyway.') })
   .describe('An item: see item_types. ref names it, so an after in the same list can wait for it.')
 
 
@@ -25,14 +25,15 @@ const spec = z
 export const LEGACY_NAMES: Record<string, string> = {
   event_types: 'item_types',
   add_events: 'add_items',
-  link_events: 'link_items',
+  link_events: 'pin',
+  link_items: 'pin',
   cancel_event: 'cancel_item',
 }
 
 /** Each tool's parameters by their old names (from when items were called items), and what they are called now. */
 export const LEGACY_PARAMS: Record<string, Record<string, string>> = {
   add_items: { events: 'items' },
-  link_items: { event_ids: 'item_ids' },
+  pin: { event_ids: 'item_ids' },
   cancel_item: { event_id: 'item_id' },
   run_custom_action: { event_id: 'item_id' },
 }
@@ -318,15 +319,16 @@ export const itemActions: Action[] = [
     },
   },
   {
-    name: 'link_items',
+    name: 'pin',
     unsafe: false,
     description:
-      'Add `contains` links from an item (a task; or a message, which then holds a reply) to items that already exist elsewhere: they show there too, ' +
-      'and stay where they sit. For traceability: link a new task to what it came from, and what it came from to it.',
-    input: { item_id: itemId, item_ids: z.array(z.string()) },
+      'Pin items to an item (`pins` links): what is pinned to it shows beside it (cards on the right of a task), as useful in actioning it: ' +
+      'subtasks (pinned as they are made), pull requests, preview links, files, the task it came from. Followed backwards, they say where an item is ' +
+      'referenced (get_item: pins and pinnedIn). With unpin, take them off. Pinning moves nothing: each item stays where it sits.',
+    input: { item_id: itemId, item_ids: z.array(z.string()), unpin: z.boolean().optional() },
     run: async (a, ctx) => {
-      await ctx.engine.link(String(a.item_id), a.item_ids as string[], ctx.actor)
-      return 'Linked.'
+      await ctx.engine.pin(String(a.item_id), a.item_ids as string[], !a.unpin, ctx.actor)
+      return a.unpin ? 'Unpinned.' : 'Pinned.'
     },
   },
   {

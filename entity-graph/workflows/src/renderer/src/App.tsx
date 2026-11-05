@@ -9,6 +9,7 @@ import { IconButton } from './components/ui/IconButton'
 import { appearanceAtom, applyAppearance, MODES, SERIFS, THEMES } from './appearance'
 import { Chat } from './Chat'
 import { DebugView } from './DebugView'
+import { Pins } from './Pins'
 import { ItemMenu } from './ItemMenu'
 import { ItemInfoView } from './ItemInfoView'
 import { ItemPicker } from './ItemPicker'
@@ -380,7 +381,9 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
       {w.error && <div className="error">{w.error}</div>}
       <div className={`view-body ${(d.item || e.type === 'file') && !debug ? 'fill' : ''}`}>
         {debug ? (
-          <DebugView id={e.id} />
+          <DebugView id={e.id}>
+            <Pins id={e.id} pins={d.pins} pinnedIn={d.pinnedIn} catalog={w.catalog} act={w.act} onOpen={openItem} />
+          </DebugView>
         ) : FOCUS[e.type] === 'chat' && e.type === 'bot' && d.item ? (
           <div className="bot-page">
             <BotView key={e.id} bot={w.overview.bots.find((b) => b.id === e.id) ?? null} act={w.act} mobile={mobile} />
@@ -389,7 +392,17 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
         ) : e.type === 'file' ? (
           <FileFocus key={e.id} info={e} mobile={mobile} />
         ) : FOCUS[e.type] === 'chat' && d.item ? (
-          <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openItem} mobile={mobile} />
+          // A task's pins fill the right of the screen, beside its chat (on a phone there is no room: the debug view has them).
+          !mobile && (d.pins.length > 0 || d.pinnedIn.length > 0) ? (
+            <div className="with-pins">
+              <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openItem} mobile={mobile} />
+              <aside className="pins-pane">
+                <Pins id={e.id} pins={d.pins} pinnedIn={d.pinnedIn} catalog={w.catalog} act={w.act} onOpen={openItem} />
+              </aside>
+            </div>
+          ) : (
+            <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openItem} mobile={mobile} />
+          )
         ) : (
           <ItemInfoView detail={d} catalog={w.catalog} act={w.act} onOpen={openItem} />
         )}

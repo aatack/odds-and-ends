@@ -356,23 +356,40 @@ await engine.close(loose)
   await engine.close(t)
 }
 
-// Traceability: a task links in items that sit elsewhere; they show in its chat, and stay where they sit.
+// Pins: what is useful in actioning an item is pinned to it. They show beside it, not in its chat, and stay where they sit.
 {
   const from = (await engine.create('Discussion'))!
   await engine.send(from, 'note', 'We should fix the export')
   const said = last(from, 'note').id
   const [made] = await engine.addItems(null, [{ type: 'task', params: { title: 'Fix the export' } }])
-  await engine.callAction('link_items', { item_id: made, item_ids: [said] }, { engine, author: 'bot', actor: `bot:${threepio}`, itemId: made, runId: null })
-  await engine.link(from, [made])
-  assert.ok(engine.detail(made)!.children.some((e) => e.id === said), 'the new task shows what it came from')
-  assert.ok(engine.detail(from)!.children.some((e) => e.id === made), 'and where it came from shows it')
-  assert.equal(engine.info(said)!.parentId, from, 'what is linked stays where it sits')
-  assert.deepEqual(engine.info(said)!.containers, [from, made], 'and is in both: where it sits first')
-  // A message can hold another: a reply shows what it answers.
-  await engine.send(from, 'note', 'Agreed')
-  const reply = last(from, 'note').id
-  await engine.link(said, [reply])
-  assert.deepEqual(engine.info(reply)!.containers, [from, said])
+  await engine.callAction('pin', { item_id: made, item_ids: [said] }, { engine, author: 'bot', actor: `bot:${threepio}`, itemId: made, runId: null })
+  // link_items, the old name, pins too.
+  await engine.callAction('link_items', { item_id: from, item_ids: [made] }, { engine, author: 'bot', actor: `bot:${threepio}`, itemId: from, runId: null })
+  assert.deepEqual(engine.info(made)!.pins, [said], 'the new task has what it came from pinned')
+  assert.deepEqual(engine.info(made)!.pinnedIn, [from], 'and is pinned where it came from')
+  assert.ok(!engine.detail(made)!.children.some((e) => e.id === said), 'a pin is not in the chat')
+  assert.equal(engine.info(said)!.parentId, from, 'what is pinned stays where it sits')
+  assert.deepEqual(engine.itemInfoDetail(made)!.pins.map((p) => p.id), [said])
+  assert.deepEqual(engine.itemInfoDetail(said)!.pinnedIn.map((p) => p.id), [made])
+  // Pinning twice, or to itself, does nothing; unpinning takes it off.
+  await engine.pin(made, [said, made])
+  assert.deepEqual(engine.info(made)!.pins, [said])
+  await engine.pin(made, [said], false)
+  assert.deepEqual([engine.info(made)!.pins, engine.info(said)!.pinnedIn], [[], []])
+  // A subtask is pinned to the task it is made in; anything added with `pin` too, and a link may sit in no task.
+  const [sub, pr] = await engine.addItems(
+    from,
+    [{ type: 'task', params: { title: 'Sub' } }, { type: 'link', params: { url: 'https://github.com/o/r/pull/1' }, pin: true }],
+    `bot:${threepio}`,
+    'bot',
+  )
+  const [loose] = await engine.addItems(from, [{ type: 'note', params: { text: 'not pinned' } }])
+  assert.deepEqual(engine.info(from)!.pins, [made, sub, pr])
+  assert.ok(!engine.info(from)!.pins.includes(loose))
+  const [detachedSub] = await engine.addItems(from, [{ type: 'task', params: { title: 'Elsewhere', detached: true }, pin: true }])
+  assert.equal(engine.info(detachedSub)!.parentId, null)
+  assert.deepEqual(engine.info(detachedSub)!.pinnedIn, [from], 'a detached task added with pin is pinned where it was added')
+  await engine.addItems(null, [{ type: 'link', params: { url: 'https://example.com/preview' } }])
   await engine.close(from)
   await engine.close(made)
 }
@@ -929,7 +946,7 @@ await engine.close(bad)
   assert.equal(last(probe, 'note').params.text, 'Old names')
   const linkedTo = (await engine.create('Linked by the old name'))!
   await outside.call('link_events', { item_id: linkedTo, event_ids: [said] })
-  assert.ok(engine.detail(linkedTo)!.children.some((e) => e.id === said))
+  assert.deepEqual(engine.info(linkedTo)!.pins, [said], 'link_events pins, as link_items does')
   const { ids: [waiting] } = JSON.parse(await outside.call('add_items', { item_id: probe, items: [{ type: 'approval', params: { action: 'post_somewhere', inputs: { text: 'x' } } }] }))
   await outside.call('cancel_event', { event_id: waiting })
   assert.ok(engine.info(waiting)!.cancelled, 'cancel_event, with event_id')

@@ -197,12 +197,22 @@ sending, deploying and deleting, in any integration.
   than the MCP's, so give bots no new credentials lightly.
 - `test/engine.mts` checks the rule. Keep those checks passing; never loosen them.
 
-## An item in many items
+## Pins
 
-An item sits in one item (its first `contains` link: `parent_id`) and can be put in others as well (later
-`contains` links: `link_items`, or "Also put in…" in its right-click menu): it shows in each one's chat, and stays
-where it sits. `ItemInfo.containers` lists them all; a chat shows the others as pills in a quoted bar above the
-message, as a reply is shown. Only where it sits counts for blockers, wakes and closing.
+An item sits in one item (its `contains` link: `parent_id`). Anything can also be **pinned** to any item: a `pins` link
+from it, saying the pinned item is useful in actioning it (a subtask, a pull request, a preview link, a file). Followed
+backwards, pins say where an item is referenced. `ItemInfo.pins` / `pinnedIn` list the ids; `ItemInfoDetail.pins` /
+`pinnedIn` the items. Pinning moves nothing and counts for nothing else (blockers, wakes, closing).
+
+- **Made**: the `pin` tool (`link_items`, its old name, still answers; `unpin: true` takes them off), `pin: true` on an
+  item in `add_items`, a subtask as it is made (pinned to the task it is made in), and a person's right-click: *Pin to
+  <the item on screen>* (or *Unpin from*) and *Pin to…* (a picker).
+- **Shown**: on the right of a task's view, beside its chat (`Pins`, desktop only, while there are any); in the debug
+  view and an item's details, as cards. A pin's × takes it off.
+- **Older stores**: a `contains` link later than the one an item was made with (the old `link_items`) reads back as a
+  pin (`Pin.via`), and unpinning it removes that link. Nothing is rewritten.
+- A URL mentioned in a note is still pulled in as an item (its id the URL), but in no task: it shows in no chat until
+  someone pins it.
 
 ## The search page
 

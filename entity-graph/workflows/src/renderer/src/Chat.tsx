@@ -1,12 +1,12 @@
 import { ThumbsUp } from 'lucide-react'
-import { memo, useCallback, useContext, useRef } from 'react'
+import { memo, useCallback, useRef } from 'react'
 import type { Catalog, ItemDetail, ItemInfo, Overview } from '../../shared/types'
 import { isPerson, nameOf } from './people'
 import { useItemMenu } from './ItemMenu'
 import { ItemAvatar, ItemCard } from './sizes'
 import { shortTime, time } from './time'
 import { useAtomValue } from 'jotai'
-import { ItemRefContext, shows } from './components/ui/Markdown'
+import { shows } from './components/ui/Markdown'
 import { findAtom } from './views'
 import { api } from './useWorkflows'
 
@@ -81,9 +81,6 @@ const Message = memo(function Message(props: MessageProps) {
   const menu = useItemMenu()
   // Thumbs-ups: a count under the bubble (pressing it toggles yours), or, with none yet, a button shown on hover.
   const reacted = e.reactions.includes(me)
-  // Where else it is (the other items that contain it), as a reply is shown: pills in a quoted bar, above what it says.
-  const ref = useContext(ItemRefContext)
-  const elsewhere = e.containers.filter((id) => id !== props.here)
   const react = () => void act(() => api().react(e.id, !reacted))
   return (
     <div className={`bubble-row ${mine ? 'mine' : 'theirs'}`}>
@@ -91,13 +88,6 @@ const Message = memo(function Message(props: MessageProps) {
       <div className="bubble-stack">
         <div className={`bubble bubble-${e.type}`} title={`${who ? `${who}, ` : ''}${time(e.createdAt)}`} {...menu(e.id)}>
           {!mine && who && <span className="bubble-who">{who}</span>}
-          {elsewhere.length > 0 && (
-            <div className="bubble-elsewhere" title="Also in">
-              {elsewhere.map((id) => (
-                <span key={id}>{ref ? ref(id) : id}</span>
-              ))}
-            </div>
-          )}
           <ItemCard {...props} />
           <span className="bubble-time">{shortTime(e.createdAt)}</span>
         </div>

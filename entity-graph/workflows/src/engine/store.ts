@@ -122,6 +122,15 @@ interface Held {
   at: number
 }
 
+/** An item pinned to another. */
+export interface Pin {
+  id: string
+  at: number
+  by: string
+  /** The link that pins it: `pins`, or (written by an older build) a later `contains`. */
+  via: 'pins' | 'contains'
+}
+
 export class Store {
   readonly items = new Map<string, ItemRow>()
   /** Each item's items by seq; the key null holds those that sit in none. */
@@ -133,12 +142,13 @@ export class Store {
   private assigneesOf = new Map<string, Map<string, Assigned>>()
   private itemsOf = new Map<string, Set<string>>()
   /**
-   * Items a task also contains, besides those that sit in it: `contains` links added later (`link`), for
-   * traceability. Each item sits in one task (its first `contains` link, its parent); these are the rest.
+   * Pins: `pins` links from an item to what is pinned to it (artefacts it needs: subtasks, PRs, files), each with when
+   * and by whom, the first pinned first. A `contains` link added later than the one an item was made with (an older
+   * build's `link_items`) reads as a pin too: `via` says which link it is, to remove the right one.
    */
-  private linkedIn = new Map<string, { id: string; at: number; by: string }[]>()
-  /** The other way: each item's parents by a later link. */
-  private linkedFrom = new Map<string, string[]>()
+  private pinsOf = new Map<string, Pin[]>()
+  /** The other way: the items each item is pinned to. */
+  private pinnedTo = new Map<string, string[]>()
   /** Writes held back while a `batch` runs, so that they land together. */
   private held: Held[] | null = null
   /** The last moment handed out. */
@@ -253,25 +263,36 @@ export class Store {
     this.out([set(id, 'reactions', reactions)], by, at)
   }
 
-  /** Adds a `contains` link from a task to an item that sits elsewhere: the task shows it, as well. */
-  linkItem(parentId: string, id: string, by: string, at: number): void {
-    const row = this.items.get(id)
-    if (!row) throw new Error(`No item ${id}.`)
-    if (row.parent_id === parentId || id === parentId || this.linked(parentId).some((l) => l.id === id)) return
-    this.linkedIn.set(parentId, [...this.linked(parentId), { id, at, by }])
-    this.linkedFrom.set(id, [...(this.linkedFrom.get(id) ?? []), parentId])
-    this.out([{ link: { source: parentId, destination: id, link_type: 'contains', sort: { explicit: at } } }], by, at)
+  private indexPin(from: string, pin: Pin): void {
+    this.pinsOf.set(from, [...this.pins(from), pin])
+    this.pinnedTo.set(pin.id, [...(this.pinnedTo.get(pin.id) ?? []), from])
   }
 
-  /** Every item that contains an item (its `contains` links in): where it sits first, then where it was linked. */
-  containers(id: string): string[] {
-    const row = this.items.get(id)
-    return [...(row?.parent_id ? [row.parent_id] : []), ...(this.linkedFrom.get(id) ?? [])]
+  /** Pins an item to another: a `pins` link from `from` to it. Pinning one twice, or to itself, does nothing. */
+  pin(from: string, id: string, by: string, at: number): void {
+    if (!this.items.has(id)) throw new Error(`No item ${id}.`)
+    if (id === from || this.pins(from).some((p) => p.id === id)) return
+    this.indexPin(from, { id, at, by, via: 'pins' })
+    this.out([{ link: { source: from, destination: id, link_type: 'pins', sort: { explicit: at } } }], by, at)
   }
 
-  /** The items a task contains by a later link, the first linked first. */
-  linked(parentId: string): { id: string; at: number; by: string }[] {
-    return this.linkedIn.get(parentId) ?? []
+  /** Unpins it: the link that pinned it is removed (egdb keeps that it was). */
+  unpin(from: string, id: string, by: string, at: number): void {
+    const had = this.pins(from).find((p) => p.id === id)
+    if (!had) return
+    this.pinsOf.set(from, this.pins(from).filter((p) => p.id !== id))
+    this.pinnedTo.set(id, (this.pinnedTo.get(id) ?? []).filter((f) => f !== from))
+    this.out([{ link: { source: from, destination: id, link_type: had.via, sort: 'removed' } }], by, at)
+  }
+
+  /** What is pinned to an item, the first pinned first. */
+  pins(from: string): Pin[] {
+    return this.pinsOf.get(from) ?? []
+  }
+
+  /** The items an item is pinned to, the first first. */
+  pinnedIn(id: string): string[] {
+    return this.pinnedTo.get(id) ?? []
   }
 
   /** The items in an item (or, for null, those in none), by seq. */
@@ -364,6 +385,11 @@ export class Store {
     const links: LinkView[] = [
       { type: 'contains', direction: 'inbound', other: row.parent_id ?? ROOT, sort: row.seq, at: row.created_at, by: row.created_by },
       ...this.children(id).map((k) => ({ type: 'contains', direction: 'outbound' as const, other: k.id, sort: k.seq, at: k.created_at, by: k.created_by })),
+      ...this.pins(id).map((p) => ({ type: p.via, direction: 'outbound' as const, other: p.id, sort: p.at, at: p.at, by: p.by })),
+      ...this.pinnedIn(id).map((from) => {
+        const p = this.pins(from).find((q) => q.id === id)!
+        return { type: p.via, direction: 'inbound' as const, other: from, sort: p.at, at: p.at, by: p.by }
+      }),
       ...this.assignees(id).map((to) => ({ type: 'assigned_to', direction: 'outbound' as const, other: to, sort: null, at: this.assignment(id, to)!.at, by: this.assignment(id, to)!.by })),
     ]
     return { id, values, set: {}, links, createdAt: row.created_at, createdBy: row.created_by }
@@ -382,12 +408,9 @@ export class Store {
     settings: [string, unknown][]
     customActions: CustomActionRow[]
     assigned?: { item: string; to: string; at: number; by: string }[]
-    linked?: { parent: string; id: string; at: number; by: string }[]
+    pinned?: { from: string; id: string; at: number; by: string; via: Pin['via'] }[]
   }): void {
-    for (const l of saved.linked ?? []) {
-      this.linkedIn.set(l.parent, [...this.linked(l.parent), { id: l.id, at: l.at, by: l.by }])
-      this.linkedFrom.set(l.id, [...(this.linkedFrom.get(l.id) ?? []), l.parent])
-    }
+    for (const p of [...(saved.pinned ?? [])].sort((a, b) => a.at - b.at)) if (!this.pins(p.from).some((q) => q.id === p.id)) this.indexPin(p.from, p)
     for (const a of saved.assigned ?? []) this.link(a.item, a.to, { at: a.at, by: a.by, n: 0 })
     for (const r of [...saved.items].sort((a, b) => a.seq - b.seq)) this.index(r)
     for (const [k, value] of saved.settings) this.settings.set(k, value)

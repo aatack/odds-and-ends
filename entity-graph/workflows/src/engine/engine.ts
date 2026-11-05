@@ -95,6 +95,9 @@ export const refsIn = (text: string): string[] => [
 /** Every URL a text mentions: bare, `[label](url)`, or `[url]()`; each once, in order. */
 export const urlsIn = (text: string): string[] => [...new Set([...text.matchAll(/https?:\/\/[^\s<>()\[\]]+[^\s<>()\[\].,;:!?'"]/g)].map((m) => m[0]))]
 
+/** What may sit in no task: what is its own (tasks, bots, people, scripts, the search item), and what is pinned rather than said (links, Slack, files). */
+const SIT_IN_NONE = ['task', 'bot', 'user', 'search', 'script', 'link', 'slack_message', 'slack_channel', 'file']
+
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'bot'
 
 export interface EngineOptions {
@@ -224,7 +227,8 @@ export class Engine extends EventEmitter {
       runs: r.runs,
       lastError: r.last_error,
       reactions: r.reactions,
-      containers: this.store.containers(r.id),
+      pins: this.store.pins(r.id).map((p) => p.id),
+      pinnedIn: this.store.pinnedIn(r.id),
     }
   }
 
@@ -335,11 +339,7 @@ export class Engine extends EventEmitter {
     const item = r?.type === 'task' || r?.type === 'bot' ? this.toItem(r, viewer) : null
     if (!item) return null
     const parent = item.parentId ? this.get(item.parentId) : null
-    // What it contains by a later link shows too, where it was linked; its own parent stays where it sits.
-    const linked = this.store.linked(id).flatMap((l) => (this.row(l.id) ? [{ e: this.toInfo(this.row(l.id)!), at: l.at }] : []))
-    const own = this.children(id).map((e) => ({ e, at: e.createdAt }))
-    const children = [...own, ...linked].sort((a, b) => a.at - b.at).map((x) => x.e)
-    return { item, parent: parent && { id: parent.id, title: parent.title }, children }
+    return { item, parent: parent && { id: parent.id, title: parent.title }, children: this.children(id) }
   }
 
   /** Any item, with what its views need. */
@@ -347,9 +347,12 @@ export class Engine extends EventEmitter {
     const info = this.info(id)
     if (!info) return null
     const parent = info.parentId ? this.get(info.parentId) : null
+    const infos = (ids: string[]) => ids.flatMap((i) => (this.row(i) ? [this.toInfo(this.row(i)!)] : []))
     return {
       info,
       parent: parent && { id: parent.id, title: parent.title },
+      pins: infos(info.pins),
+      pinnedIn: infos(info.pinnedIn),
       item: info.type === 'task' || info.type === 'bot' ? this.detail(id, viewer) : null,
     }
   }
@@ -1070,7 +1073,7 @@ export class Engine extends EventEmitter {
       // Prepared now, so a bad one fails the whole list; added in the task as it is.
       if (s.type === 'task' && params.items) params.items = this.prepare(params.items as ItemSpec[], author)
       const expanded = type.expand ? type.expand(params, author) : [{ type: s.type, params }]
-      return expanded.map((e, i) => ({ type: e.type, params: e.params, ref: i === 0 ? (s.ref ?? e.ref) : e.ref }))
+      return expanded.map((e, i) => ({ type: e.type, params: e.params, ref: i === 0 ? (s.ref ?? e.ref) : e.ref, ...(i === 0 && s.pin ? { pin: true } : {}) }))
     })
   }
 
@@ -1084,7 +1087,7 @@ export class Engine extends EventEmitter {
   }
 
   /** Adds one plain item with an id of its own choosing (a URL), in a task. */
-  private addAs(parentId: string, id: string, spec: ItemSpec, createdBy: string): void {
+  private addAs(parentId: string | null, id: string, spec: ItemSpec, createdBy: string): void {
     const at = this.now()
     this.store.insertItem({
       id, parent_id: parentId, seq: this.store.nextSeq(parentId), type: spec.type, params: this.prepare([spec], 'human')[0].params, created_by: createdBy, created_at: at,
@@ -1093,13 +1096,13 @@ export class Engine extends EventEmitter {
     })
   }
 
-  private addNow(parentId: string | null, specs: ItemSpec[], createdBy: string): string[] {
-    // A detached task sits in no task, wherever it is added.
+  private addNow(parentId: string | null, specs: ItemSpec[], createdBy: string, pinTo = parentId): string[] {
+    // A detached task sits in no task, wherever it is added (and is pinned there, if it says so).
     const detached = parentId ? specs.filter((s) => s.type === 'task' && s.params.detached) : []
-    if (detached.length) return [...this.addNow(parentId, specs.filter((s) => !detached.includes(s)), createdBy), ...this.addNow(null, detached, createdBy)]
+    if (detached.length) return [...this.addNow(parentId, specs.filter((s) => !detached.includes(s)), createdBy), ...this.addNow(null, detached, createdBy, parentId)]
     const keyed = (s: ItemSpec) => s.type === 'task' && s.params.key && this.store.ofType('task').some((r) => r.params.key === s.params.key)
     specs = specs.filter((s) => !keyed(s))
-    if (!parentId && specs.some((s) => !['task', 'bot', 'user', 'search', 'script'].includes(s.type))) throw new Error('Only a task, a bot, a person, a script or the search item can sit in no task.')
+    if (!parentId && specs.some((s) => !SIT_IN_NONE.includes(s.type))) throw new Error(`Only these can sit in no task: ${SIT_IN_NONE.join(', ')}.`)
     if (parentId && specs.some((s) => s.type === 'search')) throw new Error('The search item sits in no task.')
     if (parentId && this.row(parentId)?.type === 'bot' && specs.some((s) => s.type !== 'note')) throw new Error("A bot's own chat holds only notes.")
     const ids: string[] = []
@@ -1123,15 +1126,14 @@ export class Engine extends EventEmitter {
         const to = Array.isArray(assignees) && assignees.length ? (assignees as string[]) : this.isUser(createdBy) ? [createdBy] : []
         for (const a of to) this.setAssignee(id, a, true, createdBy)
       }
+      // A subtask is pinned to the task it is made in, as is anything added with `pin`.
+      if (pinTo && (spec.pin || (spec.type === 'task' && this.row(pinTo)?.type === 'task'))) this.store.pin(pinTo, id, createdBy, at)
     })
-    // Whatever a note links to is pulled in, as an item whose id is its URL (a Slack message or channel, or a link): made
-    // the first time, and put in this task as well after that. So `[url]()` (or the URL itself) opens it.
+    // Whatever a note links to is pulled in, as an item whose id is its URL (a Slack message or channel, or a link), in no
+    // task: made the first time, so `[url]()` (or the URL itself) opens it. It shows in no chat; pin it where it is wanted.
     if (parentId && this.row(parentId)?.type === 'task')
       for (const spec of specs.filter((s) => s.type === 'note'))
-        for (const url of urlsIn(String(spec.params.text ?? ''))) {
-          if (this.row(url)) this.store.linkItem(parentId, url, createdBy, at)
-          else this.addAs(parentId, url, pulledIn(url, at), createdBy)
-        }
+        for (const url of urlsIn(String(spec.params.text ?? ''))) if (!this.row(url)) this.addAs(null, url, pulledIn(url, at), createdBy)
     // New waits are checked at once.
     if (specs.some((s) => s.type === 'script')) queueMicrotask(() => void this.checkDue())
     this.emit('change')
@@ -1325,12 +1327,15 @@ export class Engine extends EventEmitter {
     if (actor !== 'script') await this.idle()
   }
 
-  /** Adds `contains` links from a task to items that sit elsewhere (other tasks, notes, anything), for traceability. */
-  async link(taskId: string, itemIds: string[], actor = this.me()): Promise<void> {
-    // Any item can hold others: a message holding a reply, as well as a task its context.
-    if (!this.row(taskId)) throw new Error(`No item ${taskId}.`)
+  /**
+   * Pins items to an item (`pins` links), or unpins them: what is pinned to an item is what is useful in actioning it
+   * (subtasks, pull requests, files, links); followed backwards, where an item is referenced.
+   */
+  async pin(itemId: string, itemIds: string[], on = true, actor = this.me()): Promise<void> {
+    if (!this.row(itemId)) throw new Error(`No item ${itemId}.`)
+    for (const id of itemIds) if (on && !this.row(id)) throw new Error(`No item ${id}.`)
     this.store.batch(() => {
-      for (const id of itemIds) this.store.linkItem(taskId, id, actor, this.now())
+      for (const id of itemIds) on ? this.store.pin(itemId, id, actor, this.now()) : this.store.unpin(itemId, id, actor, this.now())
     })
     this.emit('change')
   }

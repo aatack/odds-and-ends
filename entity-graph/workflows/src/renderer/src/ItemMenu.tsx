@@ -40,7 +40,7 @@ export function ItemMenu({
   recent,
 }: {
   custom: CustomAction[]
-  /** What "Also put in" picks from. */
+  /** What "Pin to…" picks from. */
   tasks: Item[]
   recent: Recent
   actOn: (id: string) => (fn: () => Promise<unknown>) => Promise<void>
@@ -84,22 +84,27 @@ export function ItemMenu({
       window.removeEventListener('blur', close)
     }
   }, [menu, setMenu])
-  // "Also put in…": the item a task is being picked for, once the menu has closed.
+  // "Pin to…": the item a task is being picked for, once the menu has closed.
   const [adding, setAdding] = useState<string | null>(null)
   const picker = adding && (
     <ItemPicker
-      title="Also put it in"
+      title="Pin it to"
       items={tasks.filter((t) => t.id !== adding && !t.closed)}
       recent={recent}
-      verb="Put it there"
+      verb="Pin it there"
       onPick={(to) => {
         const id = adding
         setAdding(null)
-        void actOn(to)(() => api().link(to, [id]))
+        void actOn(to)(() => api().pin(to, [id], true))
       }}
       onClose={() => setAdding(null)}
     />
   )
+  // The item on screen, which anything else can be pinned to (or unpinned from) at once.
+  const top = views[views.length - 1]
+  const focused = top && (top.kind === 'event' || top.kind === 'debug') && top.id !== menu?.id ? top.id : null
+  const focusedTitle = focused ? (tasks.find((t) => t.id === focused)?.title ?? 'this item') : ''
+  const pinnedHere = !!focused && info?.id === menu?.id && !!info?.pinnedIn.includes(focused)
   if (!menu) return picker || null
   const push = (view: View) => {
     if (!sameView(views[views.length - 1], view)) setViews([...views, view])
@@ -121,14 +126,25 @@ export function ItemMenu({
           Copy
         </button>
       )}
+      {focused && info?.id === menu.id && (
+        <button
+          title={pinnedHere ? 'Take it off what is pinned to the item on screen' : 'Pin it to the item on screen: it shows beside it, and stays where it is'}
+          onClick={() => {
+            setMenu(null)
+            void actOn(focused)(() => api().pin(focused, [menu.id], !pinnedHere))
+          }}
+        >
+          {pinnedHere ? 'Unpin from' : 'Pin to'} <span className="menu-target">{focusedTitle}</span>
+        </button>
+      )}
       <button
-        title="Put it in another task as well: it stays where it is, and shows there too"
+        title="Pin it to a task: it shows beside it, and stays where it is"
         onClick={() => {
           setAdding(menu.id)
           setMenu(null)
         }}
       >
-        Also put in…
+        Pin to…
       </button>
       {/* A task on screen is renamed in its header. */}
       {info?.id === menu.id && info.type === 'task' && sameView(views[views.length - 1], { kind: 'event', id: info.id }) && (

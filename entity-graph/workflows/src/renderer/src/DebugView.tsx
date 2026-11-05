@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { Inspection } from '../../shared/types'
 import { time } from './Chat'
 import { api } from './useWorkflows'
@@ -6,9 +6,9 @@ import { api } from './useWorkflows'
 /**
  * An item as egdb holds it: who made it and when, its values (a note's is just
  * its `text`), each with when it was set and by whom, and its links, each with
- * who wrote it and when.
+ * who wrote it and when; then (`children`) the cards of what is pinned to it and where it is pinned.
  */
-export function DebugView({ id }: { id: string }) {
+export function DebugView({ id, children }: { id: string; children?: ReactNode }) {
   const [it, setIt] = useState<Inspection | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
@@ -68,6 +68,10 @@ export function DebugView({ id }: { id: string }) {
             ))}
           </tbody>
         </table>
+      </section>
+      <section className="card">
+        <h2>Pins</h2>
+        {children}
       </section>
     </div>
   )

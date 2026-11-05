@@ -87,7 +87,6 @@ button[data-ui].link { background: none; color: var(--muted); padding: 0; }
 .tool-runner { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto; }
 .tool-search { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
 /* Where else a message is: as a reply quotes what it answers, a bar above it with a coloured edge. */
-.bubble-elsewhere { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; padding: 4px 8px; border-left: 3px solid var(--accent); border-radius: 6px; background: color-mix(in srgb, var(--ink) 6%, transparent); font-size: 12px; }
 .item-ref .pill-label, .assignee-pill .pill-label { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; }
 .chat-working { font-size: 12px; color: var(--muted); padding: 0 4px 8px; }
 .composer { padding: 12px 32px 16px; display: flex; flex-direction: column; gap: 8px; }
@@ -270,6 +269,7 @@ button[data-ui].gather-chip { display: inline-flex; align-items: center; gap: 4p
 .menu { position: fixed; z-index: 50; min-width: 140px; padding: 4px; border-radius: 8px; background: var(--color-gray-100); box-shadow: 0 0 0 1px var(--color-gray-200), var(--shadow-lg); display: flex; flex-direction: column; }
 .menu button { text-align: left; padding: 6px 10px; border: none; border-radius: 5px; background: none; color: var(--ink); font: inherit; cursor: default; }
 .menu button:hover { background: var(--color-gray-200); }
+.menu-target { display: inline-block; max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; font-weight: 500; }
 .menu .menu-action { display: flex; align-items: center; gap: 8px; }
 .menu button:not(.menu-action) + .menu-action { margin-top: 4px; }
 .menu-action .icon { width: 14px; height: 14px; flex: none; }
@@ -310,6 +310,20 @@ button[data-ui].blocker-text { text-align: left; padding: 0; overflow: hidden; t
 /* The gutters keep the corner buttons (52px and 64px from the edges) clear of the column when the window is narrow. */
 .main { height: 100vh; padding: 0 72px; display: flex; flex-direction: row; justify-content: center; overflow: hidden; }
 .content { width: 100%; max-width: 920px; height: 100%; display: flex; flex-direction: column; }
+/* A task with pins: the column widens, and its pins take the right of it, beside the chat. */
+.content:has(.with-pins) { max-width: 1260px; }
+.with-pins { flex: 1; min-height: 0; display: flex; gap: 16px; }
+.with-pins > :first-child { flex: 1; min-width: 0; }
+.pins-pane { flex: none; width: 320px; overflow-y: auto; padding: 4px 16px 24px 0; }
+.pins { display: flex; flex-direction: column; gap: 16px; width: 100%; }
+.pin-list { display: flex; flex-direction: column; gap: 6px; }
+.pin-list h3 { margin: 0; font-size: 12px; font-weight: 500; }
+.pin-card { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: 10px; background: var(--color-gray-100); overflow-wrap: anywhere; }
+.pin-card .type-icon { margin: 1px 0 0; }
+.pin-body { flex: 1; min-width: 0; max-height: 240px; overflow: hidden; }
+button[data-ui].pin-off { flex: none; padding: 2px; border-radius: 6px; background: none; color: var(--muted); visibility: hidden; }
+.pin-card:hover .pin-off { visibility: visible; }
+.pin-off .icon { width: 14px; height: 14px; }
 .view { margin: 0; }
 .corner-button { position: fixed; bottom: 16px; display: flex; align-items: center; justify-content: center; z-index: 20; }
 button[data-ui].corner-button { left: 16px; width: 36px; height: 36px; padding: 0; border-radius: 18px; background: var(--color-gray-100); color: var(--color-gray-600); }
