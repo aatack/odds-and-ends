@@ -217,6 +217,34 @@ export class Store {
     this.out(ops, row.created_by, row.created_at)
   }
 
+  /**
+   * Moves an item into another (null: into none), at its end: the `contains` link it sits by is removed (egdb keeps
+   * that it was) and one from where it goes is added. Read back, that link is when and by whom the item was made, so
+   * both change here too, as they will after a restart. An item an older build linked elsewhere with a later
+   * `contains` (read as a pin) can't be moved: that link would be where it sits once its first is gone.
+   */
+  move(id: string, to: string | null, by: string, at: number): void {
+    const row = this.items.get(id)
+    if (!row) throw new Error(`No item ${id}.`)
+    if (row.parent_id === to) return
+    if (to && !this.items.has(to)) throw new Error(`No item ${to}.`)
+    for (let p: string | null = to; p; p = this.items.get(p)?.parent_id ?? null) if (p === id) throw new Error("An item can't go inside itself.")
+    if (this.pinnedIn(id).some((from) => this.pins(from).some((p) => p.id === id && p.via === 'contains')))
+      throw new Error('An older build linked this item into another as well, so it can only stay where it is.')
+    const from = row.parent_id
+    this.kids.set(from, this.children(from).filter((r) => r.id !== id))
+    Object.assign(row, { parent_id: to, seq: this.nextSeq(to), created_at: at, created_by: by })
+    this.kids.set(to, [...this.children(to), row])
+    this.out(
+      [
+        { link: { source: from ?? ROOT, destination: id, link_type: 'contains', sort: 'removed' } },
+        { link: { source: to ?? ROOT, destination: id, link_type: 'contains', sort: { explicit: row.seq } } },
+      ],
+      by,
+      at,
+    )
+  }
+
   /** Changes an item's params: the values that changed are written (a param gone is cleared), as `by` at `at`. */
   setParams(id: string, params: Record<string, unknown>, by: string, at: number): void {
     const row = this.items.get(id)

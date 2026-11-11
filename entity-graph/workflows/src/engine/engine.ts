@@ -96,7 +96,7 @@ export const refsIn = (text: string): string[] => [
 export const urlsIn = (text: string): string[] => [...new Set([...text.matchAll(/https?:\/\/[^\s<>()\[\]]+[^\s<>()\[\].,;:!?'"]/g)].map((m) => m[0]))]
 
 /** What may sit in no task: what is its own (tasks, bots, people, scripts, the search item), and what is pinned rather than said (links, Slack, files). */
-const SIT_IN_NONE = ['task', 'bot', 'user', 'search', 'script', 'link', 'slack_message', 'slack_channel', 'file']
+const SIT_IN_NONE = ['task', 'note', 'bot', 'user', 'search', 'script', 'link', 'slack_message', 'slack_channel', 'file']
 
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'bot'
 
@@ -1235,9 +1235,9 @@ export class Engine extends EventEmitter {
 
   /** Adds items in a task (or tasks in none): from a person, or from an agent through MCP (author 'bot', so its rules apply). */
   async addItems(parentId: string | null, specs: ItemSpec[], actor = this.me(), author: Author = 'human'): Promise<string[]> {
-    // A bot's or a script's own chat takes notes too.
-    const own = ['bot', 'script'].includes(this.row(parentId ?? '')?.type ?? '')
-    if (parentId && !own && this.must(parentId).closed) throw new Error('This task is closed.')
+    // A bot's or a script's own chat takes notes too, and any other item holds what is put in it (a note, its notes).
+    if (parentId && !this.row(parentId)) throw new Error(`No item ${parentId}.`)
+    if (parentId && this.row(parentId)!.type === 'task' && this.must(parentId).closed) throw new Error('This task is closed.')
     const ids = this.add(parentId, this.prepare(specs, author), actor)
     // A script is run from inside a task's queue, so waiting for the queues to empty would wait for itself.
     if (actor !== 'script') await this.idle()
@@ -1338,6 +1338,46 @@ export class Engine extends EventEmitter {
       for (const id of itemIds) on ? this.store.pin(itemId, id, actor, this.now()) : this.store.unpin(itemId, id, actor, this.now())
     })
     this.emit('change')
+  }
+
+  /**
+   * Moves an item into another (null: into none): the notes view's move and link, and taking a note out of its
+   * parent. When and by whom it was made become the move's (`Store.move`).
+   */
+  async moveItem(itemId: string, to: string | null, actor = this.me()): Promise<void> {
+    this.store.batch(() => this.store.move(itemId, to, actor, this.now()))
+    this.emit('change')
+  }
+
+  /**
+   * A set of notes: a note titled `title`, in no item, pinned to `pinTo` (if given). Its notes are the notes in it
+   * (`contains` links), however deep: the notes view draws them as a tree. Answers its id.
+   */
+  newNotes(title: string, pinTo: string | null, actor = this.me()): string {
+    if (pinTo && !this.row(pinTo)) throw new Error(`No item ${pinTo}.`)
+    return this.store.batch(() => {
+      const [id] = this.addNow(null, [{ type: 'note', params: { text: title } }], actor)
+      if (pinTo) this.store.pin(pinTo, id, actor, this.now())
+      this.emit('change')
+      return id
+    })
+  }
+
+  /**
+   * A note and everything in it, the notes view's tree: the note first, then each item in it, depth first, oldest
+   * first (each with its `parentId`). Only notes are walked into: anything else in a note is a leaf. At most `limit`.
+   */
+  subtree(id: string, limit = 20_000): ItemInfo[] {
+    const root = this.row(id)
+    if (!root) return []
+    const out: ItemInfo[] = []
+    const walk = (r: ItemRow) => {
+      if (out.length >= limit) return
+      out.push(this.toInfo(r))
+      if (r.type === 'note') for (const k of this.store.children(r.id)) walk(k)
+    }
+    walk(root)
+    return out
   }
 
   /**

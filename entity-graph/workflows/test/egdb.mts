@@ -151,6 +151,20 @@ const file = join(dir, 'round-trip.egdb')
   assert.equal(fourth.store.items.get(note.id)!.parent_id, id)
   assert.equal(third.store.customActions.size, 0, 'a removed custom action is archived in egdb, and not read back')
   assert.equal(third.store.items.get(done)!.resolved, false, 'a reopened task reads back open')
+  // A move is a `contains` link removed and another added: read back, the item sits where it went, as made by the move.
+  const notes = fourth.store
+  const [moved, into] = ['n-moved', 'n-into'].map((nid, i) => {
+    notes.insertItem({ id: nid, parent_id: id, seq: notes.nextSeq(id) + i, type: 'note', params: { text: nid }, created_by: 'alex', created_at: Date.now(), resolved: true, resolved_at: null, resolved_by: null, cancelled: false, data: null, memo: null, reactions: [], next_check_at: null, last_error: null, runs: 0, added_n: 0, resolved_n: 0 })
+    return nid
+  })
+  const movedAt = Date.now() + 5000
+  notes.move(moved, into, 'bea', movedAt)
+  notes.move(into, null, 'bea', movedAt)
+  await notes.flush()
+  const fifth = await loadStore(again.client, blocking)
+  assert.deepEqual([fifth.store.items.get(moved)!.parent_id, fifth.store.items.get(moved)!.created_by, fifth.store.items.get(moved)!.created_at], [into, 'bea', movedAt])
+  assert.equal(fifth.store.items.get(into)!.parent_id, null)
+  assert.deepEqual(fifth.store.pinnedIn(moved), [], 'a move is not read back as a pin')
   again.egdb.stop()
 }
 

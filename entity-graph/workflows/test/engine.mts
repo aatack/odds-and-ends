@@ -394,6 +394,33 @@ await engine.close(loose)
   await engine.close(made)
 }
 
+// Notes: a set of notes is a note in no item, pinned where it was made; its tree is the items in it (contains links).
+{
+  const t = (await engine.create('Notes here'))!
+  const root = engine.newNotes('Plan', t, 'alex')
+  assert.equal(engine.info(root)!.parentId, null, 'a set of notes sits in no item')
+  assert.deepEqual(engine.info(t)!.pins, [root], 'and is pinned where it was made')
+  assert.ok(!engine.detail(t)!.children.some((c) => c.id === root), 'not in its chat')
+  const [a, b] = await engine.addItems(root, [{ type: 'note', params: { text: 'A' } }, { type: 'note', params: { text: 'B', section: true } }], 'alex')
+  const [a1] = await engine.addItems(a, [{ type: 'note', params: { text: 'A1', open: true } }], 'alex')
+  assert.deepEqual(engine.subtree(root).map((i) => [i.params.text, i.parentId]), [['Plan', null], ['A', root], ['A1', a], ['B', root]])
+  // Moving: to the end of where it goes; never inside itself; out of everything with null.
+  await engine.moveItem(a1, b, 'alex')
+  assert.deepEqual(engine.subtree(root).map((i) => i.params.text), ['Plan', 'A', 'B', 'A1'])
+  await assert.rejects(engine.moveItem(b, a1, 'alex'), /inside itself/)
+  await engine.moveItem(a, null, 'alex')
+  assert.deepEqual(engine.subtree(root).map((i) => i.params.text), ['Plan', 'B', 'A1'])
+  assert.equal(engine.info(a)!.parentId, null)
+  await engine.setValue(a1, 'open', false, 'alex')
+  assert.equal(engine.info(a1)!.params.open, false)
+  // Anything else in a note is a leaf of its tree.
+  const [inner] = await engine.addItems(b, [{ type: 'task', params: { title: 'Do it' } }], 'alex')
+  await engine.addItems(inner, [{ type: 'note', params: { text: 'in the task' } }], 'alex')
+  assert.deepEqual(engine.subtree(root).map((i) => i.id), [root, b, a1, inner])
+  await engine.close(inner)
+  await engine.close(t)
+}
+
 // A widget: its state is a value on its item, changed by a person, a bot or a script, and read back by anyone.
 {
   const t = (await engine.create('Widget'))!

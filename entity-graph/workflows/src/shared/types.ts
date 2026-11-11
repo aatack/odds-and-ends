@@ -393,6 +393,14 @@ export interface WorkflowsAPI {
   /** Puts items in a task as well as where they sit (`contains` links): an item can be in many. */
   /** Pins items to an item, or (with `on` false) unpins them. */
   pin: (itemId: string, itemIds: string[], on: boolean) => Promise<void>
+  /** Sets one value on an item (null clears it): a note's text, `section` or `open`. */
+  setValue: (itemId: string, key: string, value: unknown) => Promise<void>
+  /** Moves an item into another (null: into none). */
+  moveItem: (itemId: string, to: string | null) => Promise<void>
+  /** Makes a set of notes: a note titled so, in no item, pinned to `pinTo`. Answers its id. */
+  newNotes: (title: string, pinTo: string | null) => Promise<string>
+  /** A note and everything in it, depth first (only notes are walked into): the notes view's tree. */
+  subtree: (itemId: string) => Promise<ItemInfo[]>
   /** Changes a widget's state. */
   setWidgetState: (itemId: string, state: unknown) => Promise<void>
   /** Turns the person's thumbs-up on an item on or off. */
@@ -525,7 +533,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'searchSections', 'setSearchSections', 'runSearchSection', 'setWidgetState', 'editLog',
+  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'moveItem', 'newNotes', 'subtree', 'searchSections', 'setSearchSections', 'runSearchSection', 'setWidgetState', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'trustBotFolders', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',
