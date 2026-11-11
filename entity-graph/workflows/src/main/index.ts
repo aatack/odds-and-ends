@@ -1,5 +1,8 @@
-import { join } from 'node:path'
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { app, BrowserWindow, clipboard, ipcMain, shell } from 'electron'
 import { sourceFile } from '../backend/info'
 import { backend, type Backend } from './backend'
 
@@ -40,6 +43,24 @@ async function main(): Promise<void> {
   ipcMain.handle('rpc', (_e, method: string, args: unknown[], user: string | null) => {
     if (!current) throw new Error('Open a source first.')
     return current.call(method, args, user)
+  })
+
+  // A file item onto the clipboard as a file: its own path when it is a file on this machine, otherwise its bytes
+  // written to the temporary folder first. On Linux as a URI list (what file managers and Chromium's paste read);
+  // elsewhere as its path, as text.
+  ipcMain.handle('copyFile', async (_e, itemId: string, user: string | null) => {
+    if (!current) throw new Error('Open a source first.')
+    const text = (await current.call('fileText', [itemId], user)) as { path: string | null; missing: boolean }
+    let path = text.path && !text.missing ? text.path : null
+    if (!path) {
+      const { name, base64 } = (await current.call('fileData', [itemId], user)) as { name: string; base64: string }
+      const dir = join(tmpdir(), 'yawn-clipboard', itemId)
+      await mkdir(dir, { recursive: true })
+      path = join(dir, basename(name) || 'file')
+      await writeFile(path, Buffer.from(base64, 'base64'))
+    }
+    if (process.platform === 'linux') clipboard.writeBuffer('text/uri-list', Buffer.from(`${pathToFileURL(path).href}\r\n`))
+    else clipboard.writeText(path)
   })
 
   win.webContents.setWindowOpenHandler(({ url }) => {

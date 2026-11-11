@@ -430,6 +430,11 @@ export interface WorkflowsAPI {
    */
   setToken?: (token: string | null) => void
   token?: () => string | null
+  /**
+   * The app on this machine only: puts a file item on the clipboard as a file (its path, or a copy of a kept one in
+   * the temporary folder), for a file manager or another app to paste. The phone has none.
+   */
+  copyFile?: (itemId: string) => Promise<void>
   /** Wakes a bot now, whatever its debounce says. */
   wakeBot: (id: string) => Promise<void>
   integrations: () => Promise<IntegrationsView>
@@ -526,6 +531,6 @@ export const API_METHODS = [
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',
 ] as const satisfies readonly ApiMethod[]
 
-type ApiMethod = Exclude<keyof WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser' | 'openSource' | 'closeSource' | 'setToken' | 'token'>
+type ApiMethod = Exclude<keyof WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser' | 'openSource' | 'closeSource' | 'setToken' | 'token' | 'copyFile'>
 /** Fails to compile while a call is left out of API_METHODS. */
 export const API_METHODS_COMPLETE: Exclude<ApiMethod, (typeof API_METHODS)[number]> extends never ? true : never = true

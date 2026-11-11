@@ -3,7 +3,7 @@
 // looks; with a switch between the text and how it looks for what is both, such as markdown). Its bytes come
 // through the backend (fileData, fileText), as a blob here, so the phone shows them as the window does.
 
-import { Download, FileText, Pencil, RefreshCw, ZoomIn, ZoomOut, Maximize } from 'lucide-react'
+import { Check, Copy, Download, FileText, Pencil, RefreshCw, ZoomIn, ZoomOut, Maximize } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch'
 import type { ItemInfo } from '../../shared/types'
@@ -124,6 +124,21 @@ export function FileFocus({ info, mobile = false }: { info: ItemInfo; mobile?: b
   }
 
   const where = text?.path ?? (info.params.hash ? 'kept with the app' : '')
+  // Copy: text as text, an image as an image, anything else as the file itself (in the app on this machine only).
+  const copyAs: 'text' | 'image' | 'file' | null = !text || text.missing ? null : isText ? 'text' : kind === 'image' ? 'image' : api().copyFile ? 'file' : null
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    setError(null)
+    try {
+      if (copyAs === 'text') await navigator.clipboard.writeText(text!.text!)
+      else if (copyAs === 'image') await navigator.clipboard.write([new ClipboardItem({ 'image/png': asPng(blob.url!) })])
+      else await api().copyFile!(info.id)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
   return (
     <div className={`file-focus ${mobile ? 'mobile' : ''}`}>
       <div className="file-bar">
@@ -144,6 +159,11 @@ export function FileFocus({ info, mobile = false }: { info: ItemInfo; mobile?: b
         <button data-ui className="link" title="Read it again" onClick={again}>
           <RefreshCw className="icon" />
         </button>
+        {copyAs && (copyAs !== 'image' || blob.url) && (
+          <button data-ui className="link" title={`Copy ${copyAs === 'file' ? 'the file' : `the ${copyAs}`}`} onClick={() => void copy()}>
+            {copied ? <Check className="icon" /> : <Copy className="icon" />}
+          </button>
+        )}
         {blob.url && (
           <a className="link" href={blob.url} download={name} title="Download">
             <Download className="icon" />
@@ -183,6 +203,20 @@ export function FileFocus({ info, mobile = false }: { info: ItemInfo; mobile?: b
       </div>
     </div>
   )
+}
+
+/** An image as PNG, the one image type the clipboard takes: drawn on a canvas when it is another. */
+async function asPng(url: string): Promise<Blob> {
+  const blob = await (await fetch(url)).blob()
+  if (blob.type === 'image/png') return blob
+  const img = new Image()
+  img.src = url
+  await img.decode()
+  const canvas = document.createElement('canvas')
+  canvas.width = img.naturalWidth
+  canvas.height = img.naturalHeight
+  canvas.getContext('2d')!.drawImage(img, 0, 0)
+  return new Promise((ok, fail) => canvas.toBlob((b) => (b ? ok(b) : fail(new Error('The image could not be copied.'))), 'image/png'))
 }
 
 /** An image to zoom (the wheel, a pinch, the buttons) and pan (dragging); double-click zooms in. */

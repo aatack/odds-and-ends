@@ -9,7 +9,7 @@ import type { Admin } from '../engine/admin'
 import type { Engine } from '../engine/engine'
 import { catalog } from '../engine/mcp'
 
-type Methods = Omit<WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser' | 'openSource' | 'closeSource' | 'setToken' | 'token'>
+type Methods = Omit<WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser' | 'openSource' | 'closeSource' | 'setToken' | 'token' | 'copyFile'>
 type Handlers = { [K in keyof Methods]: (...args: Parameters<Methods[K]>) => unknown }
 
 /** Calls that need nobody signed in: signing in, seeing who there is to sign in as, and which source it is (the phone asks first). */
