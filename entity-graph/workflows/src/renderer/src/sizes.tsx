@@ -85,11 +85,14 @@ export function ItemCard(props: CardProps) {
   return card ? <>{card(props)}</> : <Markdown text={props.info.message ?? props.info.summary} highlight={props.find} />
 }
 
-/** How each type fills the view on its own: as a chat (its items, and the chat input), or as its details. */
-export const FOCUS: Record<ItemKind, 'chat' | 'details'> = {
+/**
+ * How each type fills the view on its own: as a chat (its items, and the chat input), as its details, or (a note) as
+ * the tree of notes in it (`NotesView`).
+ */
+export const FOCUS: Record<ItemKind, 'chat' | 'details' | 'notes'> = {
   task: 'chat',
   bot: 'chat',
-  note: 'details',
+  note: 'notes',
   approval: 'details',
   script: 'details',
   process: 'details',

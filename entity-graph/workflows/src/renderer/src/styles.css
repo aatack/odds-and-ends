@@ -365,9 +365,36 @@ button[data-ui].snooze-choice:hover { background: var(--color-gray-100); filter:
 .markdown table { border-collapse: collapse; font-size: 0.95em; }
 .markdown th, .markdown td { border: 1px solid var(--color-gray-100); padding: 0.15em 0.5em; text-align: left; }
 .markdown th { font-weight: 600; }
+/* ---- A note's tree (NotesView.tsx): dense rows, as entity-graph's outliner ---- */
+.notes { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.notes-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0 40vh; }
+.notes-filters { display: flex; gap: 6px; padding: 4px 8px; }
+.note-row { display: flex; align-items: flex-start; margin: 1px 8px; padding: 1px 8px 1px 0; border-radius: 6px; line-height: 20px; }
+.note-row:hover { background: color-mix(in srgb, var(--color-gray-100) 70%, transparent); }
+.note-row.selected { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+.note-mark { flex: none; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; color: var(--muted); }
+.note-mark .icon { width: 14px; height: 14px; }
+.note-mark .type-icon { margin: 0; }
+.note-bullet { width: 4px; height: 4px; border-radius: 2px; background: var(--color-gray-300); }
+.note-body { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.note-body .markdown > :first-child { margin-top: 0; }
+.note-body .markdown > :last-child { margin-bottom: 0; }
+.note-row.shut .note-text, .note-row.ticked .note-text { color: var(--muted); }
+.note-section, .note-section .markdown { font-weight: 600; }
+.note-section .markdown { font-size: inherit; line-height: inherit; }
+.note-item { color: var(--muted); }
+.note-empty { font-style: italic; color: var(--muted); }
+.note-input { display: block; width: 100%; padding: 0; border: none; background: transparent; color: inherit; font: inherit; line-height: 20px; outline: none; resize: none; }
+.note-section.note-input { font-weight: 600; }
+.note-picker-input { width: 100%; margin-bottom: 8px; }
+.note-picker-list { display: flex; flex-direction: column; overflow-y: auto; min-height: 0; flex: 1; }
+.note-picker-list .row { display: flex; gap: 8px; align-items: center; text-align: left; }
+button[data-ui].new-notes { display: flex; align-items: center; gap: 6px; align-self: flex-start; font-size: 13px; }
+.new-notes .icon { width: 14px; height: 14px; }
+.new-notes-title { width: 100%; font-size: 13px; }
 /* ---- Appearance (temporary: chosen in the menu, see appearance.ts) ----
  * What the human typed is set in the serif: their messages, the chat input, task titles. */
-.mine .bubble .markdown, .composer textarea, .row-title {
+.mine .bubble .markdown, .composer textarea, .row-title, .note-text, .note-input {
   font-family: var(--font-serif); font-weight: var(--serif-weight, 400); letter-spacing: 0; font-optical-sizing: auto;
 }
 .mine .bubble .markdown code, .mine .bubble .markdown pre { font-family: var(--font-mono); }

@@ -5,7 +5,7 @@ import { findAtom, findFocusAtom } from './views'
 
 /**
  * Ctrl+F's line, over the view it finds in, while it is open: what is typed
- * filters the view to what shows it. Escape, or the ×, closes it.
+ * filters the view to what shows it. Enter leaves it open and gives up the keyboard; Escape, or the ×, closes it.
  */
 export function FindLine() {
   const [find, setFind] = useAtom(findAtom)
@@ -31,6 +31,11 @@ export function FindLine() {
             if (e.key === 'Escape') {
               e.preventDefault()
               setFind(null)
+            }
+            // Enter keeps what is found and hands the keyboard back (a note's tree: to move through it).
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              e.currentTarget.blur()
             }
           }}
         />

@@ -3,7 +3,7 @@
 // ⚠ Expensive: it builds the app, starts Chromium and reads big images into your context. Use it only to check a
 // specific change you made to the UI (a layout, a theme, an empty state), once or twice, not as a routine step.
 //
-//   npx tsx scripts/screenshot.mts [view ...] [--out <dir>] [--seed <module>] [--no-build] [--desktop-only | --phone-only]
+//   npx tsx scripts/screenshot.mts [view ...] [--out <dir>] [--seed <module>] [--press <keys>] [--no-build] [--desktop-only | --phone-only]
 //
 // Views: tasks (the default), task (the seeded task's chat), bot, bots, integrations, types, log, search, file,
 // item:<id>. Each is shot at a desktop width (1280×800) and a phone's (390×844), to <out>/<view>-<width>.png
@@ -13,6 +13,8 @@
 // serving the built renderer (out/renderer); everything stops when it is done. `--seed` names a module whose default
 // export, `(engine) => Promise<Record<string, string>>`, adds what you need and answers extra views by name (an
 // item's id each); without it, a small fixture is made (a task with a chat, a bot, a child task, an image file).
+// `--press` presses keys in each view before it is shot, comma-separated as Playwright names them (`s,s,Enter`,
+// `Shift+A`, `Control+f`); `type:<text>` types text, and `wait:<ms>` waits.
 
 import { execSync } from 'node:child_process'
 import { deflateSync } from 'node:zlib'
@@ -35,7 +37,7 @@ const value = (name: string) => {
   const i = argv.indexOf(`--${name}`)
   return i >= 0 ? argv[i + 1] : undefined
 }
-const valued = new Set([value('out'), value('seed')])
+const valued = new Set([value('out'), value('seed'), value('press')])
 const views = argv.filter((a) => !a.startsWith('--') && !valued.has(a))
 const out = resolve(value('out') ?? 'screenshots')
 const ME = 'aatack'
@@ -97,6 +99,13 @@ try {
       await page.waitForSelector('.view, .page', { timeout: 15_000 }).catch(() => errors.push('Nothing rendered within 15s.'))
       // Not networkidle: the page keeps /events open for as long as it lasts. A moment for what loads after.
       await page.waitForTimeout(800)
+      for (const key of value('press')?.split(',').filter(Boolean) ?? []) {
+        if (key.startsWith('type:')) await page.keyboard.type(key.slice(5))
+        else if (key.startsWith('wait:')) await page.waitForTimeout(Number(key.slice(5)))
+        else await page.keyboard.press(key)
+        await page.waitForTimeout(60)
+      }
+      if (value('press')) await page.waitForTimeout(500)
       const file = join(out, `${name.replace(/[^\w.-]+/g, '_')}-${s.tag}.png`)
       await page.screenshot({ path: file })
       written.push(file)

@@ -404,6 +404,7 @@ await engine.close(loose)
   const [a, b] = await engine.addItems(root, [{ type: 'note', params: { text: 'A' } }, { type: 'note', params: { text: 'B', section: true } }], 'alex')
   const [a1] = await engine.addItems(a, [{ type: 'note', params: { text: 'A1', open: true } }], 'alex')
   assert.deepEqual(engine.subtree(root).map((i) => [i.params.text, i.parentId]), [['Plan', null], ['A', root], ['A1', a], ['B', root]])
+  assert.deepEqual([engine.info(b)!.params.section, engine.info(a1)!.params.open], [true, true], 'a heading and a checkbox are kept as they are added')
   // Moving: to the end of where it goes; never inside itself; out of everything with null.
   await engine.moveItem(a1, b, 'alex')
   assert.deepEqual(engine.subtree(root).map((i) => i.params.text), ['Plan', 'A', 'B', 'A1'])

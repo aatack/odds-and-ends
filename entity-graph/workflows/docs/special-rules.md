@@ -13,7 +13,7 @@ follow a link) is not listed. Keep this list current: see AGENTS.md. Each rule i
 | `user` | Sits in no item; its id is its username. Signing in makes one. Assignable. | B `signIn`, `saveUser`, `addNow` |
 | `script` | A bot without a model: may sit in no topic, with a `name` (a holder by it, offered in pickers). Never a blocker. Wakes by the bot rule but only for what happens to *it* (a topic given to it, a note in its chat), plus its cycle; `last_wake` kept. Context is the script plus `topics`; `mentions` / `refs` helpers. Done or cancelled, hands its topics back. Unsafe tools only on a person's press. Counted against `scripts.max_running`. | B `addNow`, `holder`, `scriptDue`, `checkOne`, `itemTypes.ts`, `script.ts`; F `ScriptCard`, `defaultActions` (Snooze) |
 | `approval` | A blocker that leaves the task `withYou`. Its `action` must be unsafe. Resolved only by a person (`approve`). | B `prepare`, `waitsOnHuman`, `approve`; F `Approval` |
-| `note` | Plain. In the chat its picture is whoever wrote it, not its type; it is Ctrl+F's text. | F `itemIcon`, `Chat` |
+| `note` | Plain. In the chat its picture is whoever wrote it, not its type; it is Ctrl+F's text. May sit in no item (a set of notes, `newNotes`, pinned where it was made). Its focus is the tree of what is in it (`NotesView`, from `subtree`, which walks into notes only); `section` and `open` (params) make a row a heading or a checkbox there. | B `newNotes`, `subtree`; F `itemIcon`, `Chat`, `FOCUS`, `NotesView`, `Pins` (New notes) |
 | `widget` | `widget_state` is set through `setWidgetState` / `set_value`; drawn in a sandboxed frame. | B `setWidgetState`; F `Widget` |
 | `search` | One per store, in no item; its `sections` configure every finder. Read and set through its own calls. | B `searchSections`, `setSearchSections`; F `SearchSectionsContext` |
 | `slack_message`, `slack_channel` | Fetch nothing on add; their card and view read Slack (cached) as shown. A Slack link in a note is added as one (see `link`). | B `slack.ts`, `presets.ts`; F `SlackView`, `Composer` (paste) |
@@ -39,7 +39,7 @@ follow a link) is not listed. Keep this list current: see AGENTS.md. Each rule i
 
 | Link | Meaning | Where |
 |---|---|---|
-| `contains` | From an item (or the root, `@root`) to what is in it. The **first** one is where an item sits (`parent_id`); a later one (an older build's `link_items`) reads as a pin. | B `store.ts`, `egdb.ts` loader |
+| `contains` | From an item (or the root, `@root`) to what is in it. The **first** one is where an item sits (`parent_id`); a later one (an older build's `link_items`) reads as a pin. A move (`moveItem`) removes the one it sits by and adds another, so who made it and when become the move's; an item with an older build's later one can't be moved. | B `store.ts` (`move`), `egdb.ts` loader |
 | `pins` | From an item to what is pinned to it: artefacts useful in actioning it. Followed back, where an item is referenced. A subtask is pinned to the task it is made in; `pin: true` on an added item pins it where it is added. Counts for nothing else. | B `store.ts` (`pin`, `unpin`), `egdb.ts` loader, `addNow`, `pin`; F `Pins`, `ItemMenu` |
 | `assigned_to` | From a task to a person, bot or script: who has it. Drives `withYou`, Next, what wakes bots and scripts and what they run on, hand-backs. | B `setAssignee`, `assignees`, `assignedTo`, `wake`, `settle` |
 

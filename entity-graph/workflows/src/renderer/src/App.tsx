@@ -22,6 +22,7 @@ import { ItemRefContext } from './components/ui/Markdown'
 import { ItemRef } from './ItemRef'
 import { FOCUS, Pill } from './sizes'
 import { FileFocus, uploadFiles } from './FileView'
+import { NotesView } from './NotesView'
 import { ItemInfoIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
@@ -103,7 +104,7 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
   const setFind = useSetAtom(findAtom)
   const focusFind = useSetAtom(findFocusAtom)
   const { act } = items
-  const canFind = !!items.detail?.item && items.view?.kind === 'event'
+  const canFind = (!!items.detail?.item || items.detail?.info.type === 'note') && items.view?.kind === 'event'
   // A find belongs to the view it was made in.
   const viewKey = JSON.stringify(items.view)
   useEffect(() => setFind(null), [viewKey, setFind])
@@ -379,7 +380,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
         onRename={e.type === 'task' && !debug ? (title) => void w.act(() => api().rename(e.id, title)) : undefined}
       />
       {w.error && <div className="error">{w.error}</div>}
-      <div className={`view-body ${(d.item || e.type === 'file') && !debug ? 'fill' : ''}`}>
+      <div className={`view-body ${(d.item || e.type === 'file' || FOCUS[e.type] === 'notes') && !debug ? 'fill' : ''}`}>
         {debug ? (
           <DebugView id={e.id}>
             <Pins id={e.id} pins={d.pins} pinnedIn={d.pinnedIn} catalog={w.catalog} act={w.act} onOpen={openItem} />
@@ -391,9 +392,11 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
           </div>
         ) : e.type === 'file' ? (
           <FileFocus key={e.id} info={e} mobile={mobile} />
+        ) : FOCUS[e.type] === 'notes' ? (
+          <NotesView key={e.id} info={e} tasks={w.overview.items} onOpen={openItem} onBack={w.back} mobile={mobile} />
         ) : FOCUS[e.type] === 'chat' && d.item ? (
-          // A task's pins fill the right of the screen, beside its chat (on a phone there is no room: the debug view has them).
-          !mobile && (d.pins.length > 0 || d.pinnedIn.length > 0) ? (
+          // A task's pins fill the right of the screen, beside its chat, with New notes atop (on a phone there is no room: the debug view has them).
+          !mobile ? (
             <div className="with-pins">
               <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openItem} mobile={mobile} />
               <aside className="pins-pane">

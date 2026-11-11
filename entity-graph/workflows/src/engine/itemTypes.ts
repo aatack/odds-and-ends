@@ -37,8 +37,13 @@ export const task: ItemType = {
 
 export const note: ItemType = {
   type: 'note',
-  description: 'Something written in an item (or in a bot\'s own chat): by a person, a bot, or a script.',
-  params: { text: z.string() },
+  description:
+    'Something written in an item (or in a bot\'s own chat): by a person, a bot, or a script. Notes in a note are its notes: its view is them as a tree.',
+  params: {
+    text: z.string(),
+    section: z.boolean().optional().describe('A heading, in a tree of notes.'),
+    open: z.boolean().optional().describe('A checkbox, in a tree of notes: true while open, false once ticked.'),
+  },
   data: '{}',
   blocking: false,
   bots: true,

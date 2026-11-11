@@ -29,7 +29,7 @@ at with Read. **Treat it as expensive**: it costs a build, a browser and large i
 to check a UI change you just made (a layout, a theme, an empty state), for the one or two views it touches, and
 not as a routine step. Views: `tasks`, `task`, `file`, `bot`, `bots`, `integrations`, `types`, `log`, `search`,
 `item:<id>`; `--desktop-only` / `--phone-only` halve it, `--no-build` skips the build, `--seed <module>` seeds your own
-fixture (see the script's header).
+fixture, `--press <keys>` presses keys before each shot (see the script's header).
 
 ## Running it (for the user)
 
@@ -213,6 +213,21 @@ backwards, pins say where an item is referenced. `ItemInfo.pins` / `pinnedIn` li
   pin (`Pin.via`), and unpinning it removes that link. Nothing is rewritten.
 - A URL mentioned in a note is still pulled in as an item (its id the URL), but in no task: it shows in no chat until
   someone pins it.
+
+## Notes
+
+A note's focus is the notes in it, as a dense tree (`NotesView.tsx`), worked as entity-graph's outliner is. Its
+structure is only `contains` links: the items in each note (`subtree` walks into notes, and anything else in one is a
+leaf). New notes, atop a task's pins (always shown on a desktop), makes a note titled as typed, in no item and pinned
+to the task, and opens it. Every change shows at once and is sent after (`notes.ts`: pending ops over what was read,
+in order, a new note on a temporary id until the backend gives its own), so nothing waits on the backend.
+
+Keys: `w`/`s` (or the arrows) move, `a` to the parent, Home/End; ←/→ fold; `d` opens the row (a note as its own tree,
+anything else as itself) and `Shift+A` (or Alt+←) goes back; Enter adds a note in the row, `/` a section, `?` a
+checkbox, `e` edits (Enter or leaving writes, Escape doesn't); `Ctrl+/` toggles a section, `>` steps the checkbox
+(none, open, ticked); `x` moves the row into a note or task picked, `r` puts one picked into the row, Delete/Backspace
+takes it out of its note (into none); `q` sections only, `Shift+Q` open ones only; Ctrl+F finds (Enter hands the keys
+back), Escape clears a find or the filters. Where each tree was left (the row, what is folded) is kept per note.
 
 ## The search page
 
