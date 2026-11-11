@@ -3,10 +3,11 @@
 // looks; with a switch between the text and how it looks for what is both, such as markdown). Its bytes come
 // through the backend (fileData, fileText), as a blob here, so the phone shows them as the window does.
 
-import { Check, Copy, Download, FileText, Pencil, RefreshCw, ZoomIn, ZoomOut, Maximize } from 'lucide-react'
+import { Check, ChevronDown, Copy, Download, FileText, Pencil, RefreshCw, ZoomIn, ZoomOut, Maximize } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch'
 import type { ItemInfo } from '../../shared/types'
+import { Dropdown, DropdownItem } from './components/ui/Dropdown'
 import { CodeBlock } from './components/ui/CodeBlock'
 import { Markdown } from './components/ui/Markdown'
 import { api } from './useWorkflows'
@@ -124,14 +125,18 @@ export function FileFocus({ info, mobile = false }: { info: ItemInfo; mobile?: b
   }
 
   const where = text?.path ?? (info.params.hash ? 'kept with the app' : '')
-  // Copy: text as text, an image as an image, anything else as the file itself (in the app on this machine only).
-  const copyAs: 'text' | 'image' | 'file' | null = !text || text.missing ? null : isText ? 'text' : kind === 'image' ? 'image' : api().copyFile ? 'file' : null
+  // Copy: the file itself first (in the app on this machine only, for pasting into Slack or a file manager), and its
+  // text, or an image as an image, as the others.
+  const copyAs: ('file' | 'text' | 'image')[] =
+    !text || text.missing
+      ? []
+      : [...(api().copyFile ? ['file' as const] : []), ...(isText ? ['text' as const] : kind === 'image' && blob.url ? ['image' as const] : [])]
   const [copied, setCopied] = useState(false)
-  const copy = async () => {
+  const copy = async (as: 'file' | 'text' | 'image') => {
     setError(null)
     try {
-      if (copyAs === 'text') await navigator.clipboard.writeText(text!.text!)
-      else if (copyAs === 'image') await navigator.clipboard.write([new ClipboardItem({ 'image/png': asPng(blob.url!) })])
+      if (as === 'text') await navigator.clipboard.writeText(text!.text!)
+      else if (as === 'image') await navigator.clipboard.write([new ClipboardItem({ 'image/png': asPng(blob.url!) })])
       else await api().copyFile!(info.id)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
@@ -159,10 +164,35 @@ export function FileFocus({ info, mobile = false }: { info: ItemInfo; mobile?: b
         <button data-ui className="link" title="Read it again" onClick={again}>
           <RefreshCw className="icon" />
         </button>
-        {copyAs && (copyAs !== 'image' || blob.url) && (
-          <button data-ui className="link" title={`Copy ${copyAs === 'file' ? 'the file' : `the ${copyAs}`}`} onClick={() => void copy()}>
+        {copyAs.length > 0 && (
+          <button data-ui className="link" title={`Copy the ${copyAs[0]}`} onClick={() => void copy(copyAs[0])}>
             {copied ? <Check className="icon" /> : <Copy className="icon" />}
           </button>
+        )}
+        {copyAs.length > 1 && (
+          <Dropdown
+            align="right"
+            menuClassName="popover"
+            trigger={({ toggle }) => (
+              <button data-ui className="link copy-more" title="Other ways to copy it" onClick={toggle}>
+                <ChevronDown className="icon" />
+              </button>
+            )}
+          >
+            {(close) =>
+              copyAs.map((as) => (
+                <DropdownItem
+                  key={as}
+                  onClick={() => {
+                    close()
+                    void copy(as)
+                  }}
+                >
+                  Copy the {as}
+                </DropdownItem>
+              ))
+            }
+          </Dropdown>
         )}
         {blob.url && (
           <a className="link" href={blob.url} download={name} title="Download">
