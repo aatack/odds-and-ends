@@ -3,7 +3,17 @@
 import { useEffect, useState } from 'react'
 
 export const time = (ms: number) => new Date(ms).toLocaleString()
-export const shortTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+/** When something was, as short as says it: 18:32 today, Friday 18:32 within the week, 17 August 17:12 before that (and its year, from another). */
+export const shortTime = (ms: number) => {
+  const at = new Date(ms)
+  const now = new Date()
+  const clock = at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  if (ms >= midnight) return clock
+  if (ms >= midnight - 6 * 86_400_000) return `${at.toLocaleDateString('en-GB', { weekday: 'long' })} ${clock}`
+  const year = at.getFullYear() === now.getFullYear() ? undefined : ('numeric' as const)
+  return `${at.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year })} ${clock}`
+}
 /** A duration to the second: 45s, 3m 07s, 2h 05m. */
 export const minutes = (ms: number) => {
   const s = Math.floor(ms / 1000)
