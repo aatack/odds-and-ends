@@ -14,7 +14,7 @@
 // export, `(engine) => Promise<Record<string, string>>`, adds what you need and answers extra views by name (an
 // item's id each); without it, a small fixture is made (a task with a chat, a bot, a child task, an image file).
 // `--press` presses keys in each view before it is shot, comma-separated as Playwright names them (`s,s,Enter`,
-// `Shift+A`, `Control+f`); `type:<text>` types text, and `wait:<ms>` waits.
+// `Shift+A`, `Control+f`); `type:<text>` types text, `click:<selector>` clicks, and `wait:<ms>` waits.
 
 import { execSync } from 'node:child_process'
 import { deflateSync } from 'node:zlib'
@@ -102,6 +102,7 @@ try {
       for (const key of value('press')?.split(',').filter(Boolean) ?? []) {
         if (key.startsWith('type:')) await page.keyboard.type(key.slice(5))
         else if (key.startsWith('wait:')) await page.waitForTimeout(Number(key.slice(5)))
+        else if (key.startsWith('click:')) await page.click(key.slice(6))
         else await page.keyboard.press(key)
         await page.waitForTimeout(60)
       }

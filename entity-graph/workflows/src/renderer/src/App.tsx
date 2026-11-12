@@ -22,7 +22,7 @@ import { ItemRefContext } from './components/ui/Markdown'
 import { ItemRef } from './ItemRef'
 import { FOCUS, Pill } from './sizes'
 import { FileFocus, uploadFiles } from './FileView'
-import { NotesView } from './NotesView'
+import { NotesView } from './notes/NotesView'
 import { ItemInfoIcon } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
@@ -363,6 +363,18 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
     )
   const e = d.info
   const debug = w.view.kind === 'debug'
+  // The pins fill the right of the screen, beside the view (on a phone there is no room: the debug view has them).
+  const withPins = (view: ReactNode) =>
+    mobile ? (
+      view
+    ) : (
+      <div className="with-pins">
+        {view}
+        <aside className="pins-pane">
+          <Pins id={e.id} pins={d.pins} pinnedIn={d.pinnedIn} catalog={w.catalog!} act={w.act} onOpen={openItem} />
+        </aside>
+      </div>
+    )
   const actions = debug ? null : (
     <>
       {e.type === 'task' && d.item && !d.item.item.closed && <AssigneePill item={d.item.item} overview={w.overview} act={w.actOn(e.id)} />}
@@ -393,19 +405,11 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
         ) : e.type === 'file' ? (
           <FileFocus key={e.id} info={e} mobile={mobile} />
         ) : FOCUS[e.type] === 'notes' ? (
-          <NotesView key={e.id} info={e} tasks={w.overview.items} onOpen={openItem} onBack={w.back} mobile={mobile} />
+          // A note's pins fill the right, beside its tree, as a task's do beside its chat.
+          withPins(<NotesView key={e.id} info={e} tasks={w.overview.items} recent={w.recent} onOpen={openItem} onBack={w.back} mobile={mobile} />)
         ) : FOCUS[e.type] === 'chat' && d.item ? (
-          // A task's pins fill the right of the screen, beside its chat, with New notes atop (on a phone there is no room: the debug view has them).
-          !mobile ? (
-            <div className="with-pins">
-              <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openItem} mobile={mobile} />
-              <aside className="pins-pane">
-                <Pins id={e.id} pins={d.pins} pinnedIn={d.pinnedIn} catalog={w.catalog} act={w.act} onOpen={openItem} />
-              </aside>
-            </div>
-          ) : (
-            <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openItem} mobile={mobile} />
-          )
+          // A task's pins fill the right of the screen, beside its chat, with New notes atop.
+          withPins(<ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openItem} mobile={mobile} />)
         ) : (
           <ItemInfoView detail={d} catalog={w.catalog} act={w.act} onOpen={openItem} />
         )}

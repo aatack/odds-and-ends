@@ -216,18 +216,27 @@ backwards, pins say where an item is referenced. `ItemInfo.pins` / `pinnedIn` li
 
 ## Notes
 
-A note's focus is the notes in it, as a dense tree (`NotesView.tsx`), worked as entity-graph's outliner is. Its
-structure is only `contains` links: the items in each note (`subtree` walks into notes, and anything else in one is a
-leaf). New notes, atop a task's pins (always shown on a desktop), makes a note titled as typed, in no item and pinned
-to the task, and opens it. Every change shows at once and is sent after (`notes.ts`: pending ops over what was read,
-in order, a new note on a temporary id until the backend gives its own), so nothing waits on the backend.
+A note's focus is the notes in it, as a dense tree (`notes/NotesView.tsx`), worked as entity-graph's outliner is, with
+its pins beside it as a task's are. Everything of it is in `src/renderer/src/notes/` (the view, its store, New notes, its
+CSS); what it shares it takes from the rest (the picker, the find line, markdown). Its structure is only `contains`
+links: the items in each note (`subtree` walks into notes; anything else in one is a leaf). New notes, atop the pins
+(always shown on a desktop), makes a note titled as typed, in no item and pinned to the item on screen, and opens it.
+Every change shows at once and is sent after (`notes/store.ts`: pending ops over what was read, in order, a new note
+on a temporary id until the backend gives its own), so nothing waits on the backend. It is set in the theme and serif
+chosen in the menu, as the app's lists are.
 
 Keys: `w`/`s` (or the arrows) move, `a` to the parent, Home/End; ←/→ fold; `d` opens the row (a note as its own tree,
 anything else as itself) and `Shift+A` (or Alt+←) goes back; Enter adds a note in the row, `/` a section, `?` a
-checkbox, `e` edits (Enter or leaving writes, Escape doesn't); `Ctrl+/` toggles a section, `>` steps the checkbox
-(none, open, ticked); `x` moves the row into a note or task picked, `r` puts one picked into the row, Delete/Backspace
-takes it out of its note (into none); `q` sections only, `Shift+Q` open ones only; Ctrl+F finds (Enter hands the keys
-back), Escape clears a find or the filters. Where each tree was left (the row, what is folded) is kept per note.
+checkbox, `e` edits (Enter, or pressing another row, writes; Escape doesn't; leaving the window or the view keeps the
+draft, per note, to finish); `Ctrl+/` toggles a section, `>` steps the checkbox (none, open, ticked); `x` then select
+where it goes and `x` again moves the row there, `r` then select what and `r` again puts it in the row (either across
+trees reached with `d`; the corner says what waits, and its Pick… opens the app's picker); Delete/Backspace takes the
+row out of its note (into none); `q` sections only, `Shift+Q` open ones only; Ctrl+F finds (Enter hands the keys back),
+Escape clears a find or the filters. Where each tree was left (the row, what is folded) is kept per note. The wheel
+anywhere on the page scrolls the tree.
+
+Bots read what is under an item with `get_item` (`outline`: an indented list with ids, cut at 100 lines with the ids to
+ask for the rest), and a run's prompt tells each task's pins with the outline under each.
 
 ## The search page
 

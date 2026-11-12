@@ -1,0 +1,50 @@
+/* A note's tree (NotesView.tsx): dense rows, set as the app's own lists are (`.row`), in the theme and serif chosen in
+ * the menu. In `@layer components`, as styles.css is, so the components' utilities win over it. This file can come
+ * first in the bundle, so it names Tailwind's layers in Tailwind's order before using one (else components would
+ * rank below the base reset). */
+@layer theme, base, components, utilities;
+@layer components {
+  .notes { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+  .notes-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 0 40vh; }
+  .notes-filters { display: flex; gap: 6px; }
+
+  .note-row { display: flex; align-items: flex-start; gap: 6px; margin: 1px 0; padding: 2px 8px 2px 0; border-radius: 6px; line-height: 20px; scroll-margin: 25vh 0; }
+  .note-row:hover { background: var(--line); }
+  .note-row.selected { background: var(--panel); box-shadow: var(--shadow-xs); }
+  .note-row.picking { outline: 1px dashed var(--accent); outline-offset: -1px; }
+  .note-mark { flex: none; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; color: var(--muted); }
+  .note-mark .icon { width: 15px; height: 15px; }
+  .note-mark .type-icon { margin: 0; }
+  .note-bullet { width: 4px; height: 4px; border-radius: 2px; background: var(--muted); opacity: 0.6; }
+  .note-body { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .note-body .markdown > :first-child { margin-top: 0; }
+  .note-body .markdown > :last-child { margin-bottom: 0; }
+  .note-row.shut .note-text, .note-row.ticked .note-text, .note-item, .note-empty { color: var(--muted); }
+  .note-empty { font-style: italic; }
+  /* Headings as the app's titles are: weight 500, a little larger the nearer the top. */
+  .note-section { font-weight: 500; }
+  .note-section.depth-0 { font-size: 20px; line-height: 28px; }
+  .note-section.depth-1 { font-size: 17px; line-height: 24px; }
+  .note-section.depth-2 { font-size: 15px; }
+  .notes { padding: 0 16px; }
+  .note-row textarea.note-input { display: block; width: 100%; padding: 0; border: none; border-radius: 0; background: transparent; color: inherit; font-size: inherit; line-height: inherit; resize: none; }
+  .note-row textarea.note-input:focus, .note-row textarea.note-input:focus-visible { outline: none; box-shadow: none; }
+
+  /* What is typed, set in the serif chosen in the menu, as the chat sets it (themes.css: none sets it as the rest). */
+  .note-text, .note-row textarea.note-input { font-family: var(--font-serif); font-weight: var(--serif-weight, 400); letter-spacing: 0; font-optical-sizing: auto; }
+  .note-section .note-text, .note-row textarea.note-section { font-weight: 500; }
+  .note-text code, .note-text pre { font-family: var(--font-mono); }
+
+  /* Waiting for where to move (x) or what to put in (r): in the corner, as a toast. */
+  .note-picking { position: fixed; right: 16px; bottom: 16px; z-index: 30; max-width: 360px; padding: 8px 12px; border-radius: 10px; background: var(--panel); box-shadow: var(--shadow-lg); font-size: 13px; }
+  .note-picking-head { display: flex; align-items: center; gap: 8px; }
+  .note-picking-head strong { flex: 1; min-width: 0; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .note-picking p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+  .note-picking button[data-ui] { padding: 2px 6px; font-size: 12px; }
+
+  button[data-ui].new-notes { display: flex; align-items: center; gap: 6px; align-self: flex-start; font-size: 13px; }
+  .new-notes .icon { width: 14px; height: 14px; }
+  .new-notes-title { width: 100%; font-size: 13px; }
+}
+html[data-serif='none'] .note-text, html[data-serif='none'] .note-row textarea.note-input { font-family: inherit; font-weight: inherit; letter-spacing: inherit; }
+html[data-serif='none'] .note-section .note-text, html[data-serif='none'] .note-row textarea.note-section { font-weight: 500; }

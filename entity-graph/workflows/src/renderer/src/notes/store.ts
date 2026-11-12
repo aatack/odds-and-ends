@@ -6,8 +6,8 @@
 // is already known.
 
 import { useEffect, useRef, useSyncExternalStore } from 'react'
-import type { ItemInfo } from '../../shared/types'
-import { api } from './useWorkflows'
+import type { ItemInfo } from '../../../shared/types'
+import { api } from '../useWorkflows'
 
 type Op =
   | { kind: 'create'; temp: string; parent: string; params: Record<string, unknown> }
@@ -101,6 +101,12 @@ export const setNoteValue = (id: string, key: string, value: unknown) => enqueue
 
 /** Moves an item into another (null: into none). */
 export const moveNote = (id: string, to: string | null) => enqueue({ kind: 'move', id, to })
+
+/** Says something went wrong, as a failed change does. */
+export const notesError = (message: string) => {
+  error = message
+  emit()
+}
 
 export const clearNotesError = () => {
   error = null

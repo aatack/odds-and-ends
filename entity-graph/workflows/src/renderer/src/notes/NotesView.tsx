@@ -1,31 +1,57 @@
 // A note's focus: the notes in it as a dense tree, worked from the keyboard as entity-graph's outliner is. Its
 // structure is only the items in each note (`contains` links); anything else in a note is a leaf, opened with `d`.
-// Every change shows at once (notes.ts) and goes to the backend after.
+// Every change shows at once (store.ts) and goes to the backend after. Everything of the notes view is in this folder;
+// what it shares with the rest of the app (the picker, the find line, markdown) it takes from there.
 
-import fuzzysort from 'fuzzysort'
-import { useAtom } from 'jotai'
+import { atom, useAtom } from 'jotai'
 import { atomWithStorage, createJSONStorage } from 'jotai/utils'
-import { ChevronDown, ChevronRight, Square, SquareCheck } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Item, ItemInfo } from '../../shared/types'
-import { Markdown } from './components/ui/Markdown'
-import { Modal } from './components/ui/Modal'
-import { FindLine } from './FindLine'
-import { GrowingTextarea } from './GrowingTextarea'
-import { ItemInfoIcon } from './icons'
-import { useItemMenu } from './ItemMenu'
-import { clearNotesError, createNote, moveNote, resolve, setNoteValue, useNotes, type NotesTree } from './notes'
-import { findAtom } from './views'
+import { ChevronDown, ChevronRight, Square, SquareCheck, X } from 'lucide-react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
+import type { Item, ItemInfo } from '../../../shared/types'
+import type { SearchSection } from '../../../shared/search'
+import { Markdown } from '../components/ui/Markdown'
+import { FindLine } from '../FindLine'
+import { GrowingTextarea } from '../GrowingTextarea'
+import { ItemInfoIcon } from '../icons'
+import { useItemMenu } from '../ItemMenu'
+import { ItemPicker } from '../ItemPicker'
+import { SearchSectionsContext, type Recent } from '../sections'
+import { findAtom } from '../views'
+import { clearNotesError, createNote, notesError, moveNote, resolve, setNoteValue, useNotes, type NotesTree } from './store'
+import './notes.css'
+
+const storage = <T,>() => createJSONStorage<T>(() => localStorage)
 
 /** Where each tree was left, by its root: the row selected, and the notes folded shut. Kept across reloads. */
 type Place = { path: string[]; collapsed: string[] }
-const placesAtom = atomWithStorage<Record<string, Place>>('workflows.notes', {}, createJSONStorage(() => localStorage), { getOnInit: true })
+const placesAtom = atomWithStorage<Record<string, Place>>('workflows.notes', {}, storage(), { getOnInit: true })
+
+/**
+ * What is being typed in each tree, by its root, until it is written (Enter, or pressing another row): kept when the
+ * window loses focus or the view is left, so it is there to finish on coming back, as the chat input's drafts are.
+ */
+type Edit = { mode: 'edit' | 'create'; path: string[]; draft: string; values?: Record<string, unknown> }
+const editsAtom = atomWithStorage<Record<string, Edit>>('workflows.notes.edits', {}, storage(), { getOnInit: true })
+
+/**
+ * A move waiting for where to (`x`: the row picked goes into the one chosen), or a link for what (`r`: the one chosen
+ * goes into the row picked). Chosen by selecting a row, in this tree or another reached with `d`, and pressing the key
+ * again; or in the picker, from the corner. Not kept: a reload forgets it.
+ */
+type Picking = { kind: 'move' | 'link'; subject: string; label: string }
+const pickingAtom = atom<Picking | null>(null)
 
 type Row = { key: string; id: string; path: string[]; depth: number; info: ItemInfo; hasKids: boolean; collapsed: boolean }
-type Edit = { mode: 'edit' | 'create'; path: string[]; draft: string; values?: Record<string, unknown> }
 type Filters = { find: string; sectionsOnly: boolean; openOnly: boolean }
 
 const textOf = (i: ItemInfo) => (i.type === 'note' ? String(i.params.text ?? '') : i.summary)
+
+/** The sets of notes (notes in no item), for the picker, after the sections it always has. */
+const NOTES_SECTION: SearchSection = {
+  kind: 'query',
+  label: 'Notes',
+  filter: { and: [{ eq: { key: 'type', value: 'note' } }, { is_null: { key: 'parent' } }] },
+}
 
 /**
  * The rows on screen, depth first from the root. Folded notes hide what is in them, unless something is being looked
@@ -60,11 +86,17 @@ function rowsOf(tree: NotesTree, root: string, collapsed: Set<string>, f: Filter
   return out
 }
 
+/** Whether `id` is `outer`, or sits somewhere inside it, as the tree now has it. */
+function within(tree: NotesTree, id: string, outer: string): boolean {
+  for (let at: string | null | undefined = resolve(id); at; at = tree.info(at)?.parentId) if (at === resolve(outer)) return true
+  return false
+}
+
 const same = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => resolve(x) === resolve(b[i]))
 const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))
 
-export function NotesView(props: { info: ItemInfo; tasks: Item[]; onOpen: (id: string) => void; onBack: () => void; mobile?: boolean }) {
-  const { info, tasks, onOpen, onBack, mobile = false } = props
+export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent; onOpen: (id: string) => void; onBack: () => void; mobile?: boolean }) {
+  const { info, tasks, recent, onOpen, onBack, mobile = false } = props
   const root = info.id
   const { tree, error } = useNotes(root, info)
   const [places, setPlaces] = useAtom(placesAtom)
@@ -75,10 +107,18 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; onOpen: (id: s
   const [sectionsOnly, setSectionsOnly] = useState(false)
   const [openOnly, setOpenOnly] = useState(false)
   const rows = useMemo(() => rowsOf(tree, root, collapsed, { find: find ?? '', sectionsOnly, openOnly }), [tree, root, collapsed, find, sectionsOnly, openOnly])
-  const [edit, setEdit] = useState<Edit | null>(null)
-  const editRef = useRef(edit)
+  const [edits, setEdits] = useAtom(editsAtom)
+  const edit = edits[root] ?? null
+  const setEdit = (e: Edit | null | ((x: Edit | null) => Edit | null)) =>
+    setEdits((all) => {
+      const next = typeof e === 'function' ? e(all[root] ?? null) : e
+      const { [root]: _, ...rest } = all
+      return next ? { ...rest, [root]: next } : rest
+    })
+  const editRef = useRef<Edit | null>(edit)
   editRef.current = edit
-  const [picking, setPicking] = useState<null | 'move' | 'link'>(null)
+  const [picking, setPicking] = useAtom(pickingAtom)
+  const [choosing, setChoosing] = useState(false)
 
   // The row selected: the path kept, or as much of it as is still on screen.
   const at = useMemo(() => {
@@ -93,6 +133,17 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; onOpen: (id: s
   const setCollapsed = (id: string, shut: boolean) =>
     setPlace((p) => ({ ...p, collapsed: shut ? [...new Set([...p.collapsed, id])] : p.collapsed.filter((c) => resolve(c) !== id) }))
 
+  // Where a kept edit's box goes: its row (editing), or the end of what is in its note (a new one). Not on screen (its
+  // row filtered out, or gone), the draft waits, and the keys are the tree's.
+  const editAt = edit ? rows.findIndex((r) => same(r.path, edit.path)) : -1
+  const createAt = useMemo(() => {
+    if (edit?.mode !== 'create' || editAt < 0) return -1
+    let i = editAt + 1
+    while (i < rows.length && rows[i].depth > rows[editAt].depth) i++
+    return i
+  }, [edit?.mode, editAt, rows])
+  const editing = editAt >= 0
+
   const startCreate = (values?: Record<string, unknown>) => {
     if (!selected || selected.info.type !== 'note') return
     setCollapsed(selected.id, false)
@@ -106,7 +157,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; onOpen: (id: s
     const subject = e.path[e.path.length - 1]
     if (!e.draft.trim()) return
     if (e.mode === 'edit') {
-      if (e.draft !== textOf(tree.info(subject)!)) setNoteValue(subject, 'text', e.draft)
+      if (e.draft !== textOf(tree.info(subject) ?? info)) setNoteValue(subject, 'text', e.draft)
       return
     }
     const id = createNote(subject, { text: e.draft, ...e.values })
@@ -117,27 +168,60 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; onOpen: (id: s
     setEdit(null)
   }
 
+  /** Finishes a move or a link with what was chosen; refuses what would put a note inside itself. */
+  const finish = (chosen: string) => {
+    if (!picking) return
+    setPicking(null)
+    setChoosing(false)
+    const [what, into] = picking.kind === 'move' ? [picking.subject, chosen] : [chosen, picking.subject]
+    if (within(tree, into, what)) return notesError("A note can't go inside itself.")
+    moveNote(what, into)
+    setCollapsed(resolve(into), false)
+  }
+
+  // The selected row stays in view, clear of the edges (its scroll-margin, in notes.css).
   const scroller = useRef<HTMLDivElement>(null)
   useEffect(() => {
     scroller.current?.querySelector('.note-row.selected')?.scrollIntoView({ block: 'nearest' })
   }, [at, rows.length])
+  // The wheel anywhere on the page scrolls the tree, not only over it: the margins, the header.
+  useEffect(() => {
+    const on = (e: WheelEvent) => {
+      const el = scroller.current
+      const t = e.target as HTMLElement | null
+      if (!el || e.defaultPrevented || t?.closest('.notes-scroll, .pins-pane, .modal, [role="dialog"], .menu, textarea')) return
+      el.scrollBy({ top: e.deltaY, left: 0 })
+    }
+    window.addEventListener('wheel', on, { passive: true })
+    return () => window.removeEventListener('wheel', on)
+  }, [])
 
   // The keys, as entity-graph's: only while nothing is being typed into.
   const keys = useRef<(e: KeyboardEvent) => void>(() => {})
   keys.current = (e: KeyboardEvent) => {
-    if (isTyping(e.target) || picking || edit || e.altKey || e.metaKey) return
+    if (isTyping(e.target) || choosing || e.altKey || e.metaKey) return
+    // A draft waiting (the window or the view was left mid-edit): Escape drops it, any other key goes back to it.
+    if (editing) {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        cancel()
+      } else scroller.current?.querySelector<HTMLTextAreaElement>('textarea.note-input')?.focus()
+      return
+    }
     const k = e.key
-    const mod = e.ctrlKey
     const run = (fn: () => void) => {
       e.preventDefault()
       fn()
     }
-    if (mod) {
+    if (e.ctrlKey) {
       if (k === '/' && selected?.info.type === 'note') run(() => setNoteValue(selected.id, 'section', selected.info.params.section ? null : true))
       return
     }
     if (!selected) return
     const parentPath = selected.path.slice(0, -1)
+    // Waiting for a pick: the same key again takes the row selected; Escape gives up. Everything else moves as ever.
+    if (picking && ((k === 'x' && picking.kind === 'move') || (k === 'r' && picking.kind === 'link'))) return run(() => finish(selected.id))
+    if (picking && k === 'Escape') return run(() => setPicking(null))
     if (k === 'w' || k === 'ArrowUp') run(() => at > 0 && select(rows[at - 1].path))
     else if (k === 's' || k === 'ArrowDown') run(() => at < rows.length - 1 && select(rows[at + 1].path))
     else if (k === 'a') run(() => parentPath.length && select(parentPath))
@@ -154,8 +238,8 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; onOpen: (id: s
     else if (k === 'Q') run(() => setOpenOnly((v) => !v))
     else if (k === 'd') run(() => selected.id !== root && onOpen(selected.id))
     else if (k === 'A') run(onBack)
-    else if (k === 'x') run(() => parentPath.length && setPicking('move'))
-    else if (k === 'r') run(() => selected.info.type === 'note' && setPicking('link'))
+    else if (k === 'x') run(() => parentPath.length && setPicking({ kind: 'move', subject: selected.id, label: textOf(selected.info) }))
+    else if (k === 'r') run(() => selected.info.type === 'note' && setPicking({ kind: 'link', subject: selected.id, label: textOf(selected.info) }))
     else if ((k === 'Delete' || k === 'Backspace') && parentPath.length)
       // Out of its note, into none; the row above is selected, as in entity-graph.
       run(() => {
@@ -177,26 +261,14 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; onOpen: (id: s
     return () => window.removeEventListener('keydown', on)
   }, [])
 
-  // The box a new note is typed into sits at the end of what is in its note.
-  const createAt = useMemo(() => {
-    if (edit?.mode !== 'create') return -1
-    const from = rows.findIndex((r) => same(r.path, edit.path))
-    if (from < 0) return -1
-    let i = from + 1
-    while (i < rows.length && rows[i].depth > rows[from].depth) i++
-    return i
-  }, [edit, rows])
-
   const box = (depth: number, section: boolean) => (
     <GrowingTextarea
       autoFocus
-      className={`note-input ${section ? 'note-section' : ''}`}
-      style={section ? sectionStyle(depth) : undefined}
+      className={`note-input ${section ? `note-section depth-${Math.min(depth, 3)}` : ''}`}
       value={edit?.draft ?? ''}
       placeholder={edit?.mode === 'create' ? (section ? 'New section…' : 'New note…') : undefined}
       onChange={(e) => setEdit((x) => x && { ...x, draft: e.target.value })}
       onFocus={(e) => e.target.setSelectionRange(e.target.value.length, e.target.value.length)}
-      onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault()
@@ -212,16 +284,18 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; onOpen: (id: s
 
   const menu = useItemMenu()
   const rendered = rows.map((r, i) => {
-    const editing = edit?.mode === 'edit' && same(edit.path, r.path)
+    const typing = edit?.mode === 'edit' && i === editAt
     const section = r.info.params.section === true
     const open = r.info.params.open
     return (
       <div
         key={r.key}
-        className={`note-row ${i === at ? 'selected' : ''} ${r.collapsed ? 'shut' : ''} ${open === false ? 'ticked' : ''}`}
+        className={`note-row ${i === at ? 'selected' : ''} ${r.collapsed ? 'shut' : ''} ${open === false ? 'ticked' : ''} ${picking?.subject === r.id ? 'picking' : ''}`}
         style={{ paddingLeft: r.depth * 20 + 4 }}
+        // Pressing another row writes what is being typed, as Enter does; going elsewhere keeps it, to finish later.
+        onMouseDown={(e) => edit && !(e.target as HTMLElement).closest('textarea') && commit()}
         onClick={() => select(r.path)}
-        onDoubleClick={() => r.info.type === 'note' ? setEdit({ mode: 'edit', path: r.path, draft: textOf(r.info) }) : r.id !== root && onOpen(r.id)}
+        onDoubleClick={() => (r.info.type === 'note' ? setEdit({ mode: 'edit', path: r.path, draft: textOf(r.info) }) : r.id !== root && onOpen(r.id))}
         {...menu(r.id)}
       >
         <span
@@ -247,12 +321,12 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; onOpen: (id: s
           )}
         </span>
         <div className="note-body">
-          {editing ? (
+          {typing ? (
             box(r.depth, section)
           ) : r.info.type !== 'note' ? (
             <span className="note-item">{r.info.summary}</span>
           ) : textOf(r.info) ? (
-            <div className={section ? 'note-section' : undefined} style={section ? sectionStyle(r.depth) : undefined}>
+            <div className={section ? `note-section depth-${Math.min(r.depth, 3)}` : undefined}>
               <Markdown text={textOf(r.info)} highlight={find ?? undefined} className="note-text" />
             </div>
           ) : (
@@ -263,7 +337,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; onOpen: (id: s
     )
   })
   if (createAt >= 0 && edit) {
-    const depth = (rows.find((r) => same(r.path, edit.path))?.depth ?? 0) + 1
+    const depth = rows[editAt].depth + 1
     rendered.splice(
       createAt,
       0,
@@ -274,6 +348,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; onOpen: (id: s
     )
   }
 
+  const sections = useContext(SearchSectionsContext)
   return (
     <div className={`notes ${mobile ? 'mobile' : ''}`}>
       {info.parentId && (
@@ -307,97 +382,35 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; onOpen: (id: s
       <div className="notes-scroll" ref={scroller}>
         {rendered}
       </div>
-      {picking && selected && (
-        <NotePicker
-          title={picking === 'move' ? 'Move into…' : 'Put in this note…'}
-          tree={tree}
-          root={root}
-          tasks={tasks}
-          // Nothing goes inside itself.
-          exclude={picking === 'move' ? selected.id : null}
-          onClose={() => setPicking(null)}
-          onPick={(id) => {
-            setPicking(null)
-            if (picking === 'move') {
-              moveNote(selected.id, id)
-              select(rows[at - 1]?.path ?? [root])
-            } else {
-              moveNote(id, selected.id)
-              setCollapsed(selected.id, false)
-            }
-          }}
+      {picking && (
+        <div className="note-picking" role="status">
+          <div className="note-picking-head">
+            <strong>
+              {picking.kind === 'move' ? 'Move' : 'Put in'} “{picking.label.split('\n')[0] || 'Empty'}”
+            </strong>
+            <button data-ui onClick={() => setChoosing(true)} title={picking.kind === 'move' ? 'Pick where it goes' : 'Pick what goes in it'}>
+              Pick…
+            </button>
+            <button data-ui title="Cancel (Escape)" aria-label="Cancel" onClick={() => setPicking(null)}>
+              <X className="icon" />
+            </button>
+          </div>
+          <p>
+            {picking.kind === 'move' ? 'Select where it goes' : 'Select what goes in it'}, then press {picking.kind === 'move' ? 'x' : 'r'} again.
+          </p>
+        </div>
+      )}
+      {picking && choosing && (
+        <ItemPicker
+          title={picking.kind === 'move' ? 'Move into…' : 'Put in it…'}
+          items={tasks}
+          recent={recent}
+          sections={[...sections, NOTES_SECTION]}
+          verb={picking.kind === 'move' ? 'Move here' : 'Put in'}
+          onClose={() => setChoosing(false)}
+          onPick={finish}
         />
       )}
     </div>
-  )
-}
-
-/** Headings grow with prominence: half as big again at the top, easing to a tenth as they nest (entity-graph's). */
-const sectionStyle = (depth: number) => ({ fontSize: `${Math.max(1.1, 1.5 - depth * 0.1)}em`, lineHeight: 1.3 })
-
-/**
- * Picks where a note goes (x), or what to put in one (r): the notes in this tree and the open tasks, filtered as
- * typed; the arrow keys and Enter, or a click.
- */
-function NotePicker(props: {
-  title: string
-  tree: NotesTree
-  root: string
-  tasks: Item[]
-  exclude: string | null
-  onPick: (id: string) => void
-  onClose: () => void
-}) {
-  const { title, tree, root, tasks, exclude, onPick, onClose } = props
-  const [text, setText] = useState('')
-  const [at, setAt] = useState(0)
-  const options = useMemo(() => {
-    const out: { id: string; label: string; info?: ItemInfo }[] = []
-    const walk = (id: string) => {
-      const i = tree.info(id)
-      if (!i || resolve(id) === exclude) return
-      if (i.type === 'note') out.push({ id: resolve(id), label: textOf(i) || 'Empty', info: i })
-      for (const k of tree.kids(id)) walk(k)
-    }
-    walk(root)
-    for (const t of tasks) if (!t.closed) out.push({ id: t.id, label: t.title })
-    return out
-  }, [tree, root, tasks, exclude])
-  const shown = useMemo(
-    () => (text.trim() ? fuzzysort.go(text, options, { key: 'label', limit: 50 }).map((r) => r.obj) : options.slice(0, 50)),
-    [text, options],
-  )
-  useEffect(() => setAt(0), [text])
-  return (
-    <Modal title={title} size="large" blur onClose={onClose}>
-      <input
-        className="note-picker-input"
-        autoFocus
-        value={text}
-        placeholder="Find a note or a task"
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'ArrowDown') {
-            e.preventDefault()
-            setAt((n) => Math.min(n + 1, shown.length - 1))
-          } else if (e.key === 'ArrowUp') {
-            e.preventDefault()
-            setAt((n) => Math.max(n - 1, 0))
-          } else if (e.key === 'Enter' && shown[at]) {
-            e.preventDefault()
-            onPick(shown[at].id)
-          }
-        }}
-      />
-      <div className="note-picker-list">
-        {shown.map((o, i) => (
-          <button data-ui key={o.id} className={`row ${i === at ? 'selected' : ''}`} onMouseEnter={() => setAt(i)} onClick={() => onPick(o.id)}>
-            {o.info ? <ItemInfoIcon info={o.info} /> : <ItemInfoIcon info={{ type: 'task', createdBy: '' }} />}
-            <span className="row-title">{o.label}</span>
-          </button>
-        ))}
-        {!shown.length && <p className="muted">Nothing matches.</p>}
-      </div>
-    </Modal>
   )
 }
