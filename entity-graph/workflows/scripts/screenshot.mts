@@ -3,7 +3,7 @@
 // ⚠ Expensive: it builds the app, starts Chromium and reads big images into your context. Use it only to check a
 // specific change you made to the UI (a layout, a theme, an empty state), once or twice, not as a routine step.
 //
-//   npx tsx scripts/screenshot.mts [view ...] [--out <dir>] [--seed <module>] [--press <keys>] [--no-build] [--desktop-only | --phone-only]
+//   npx tsx scripts/screenshot.mts [view ...] [--out <dir>] [--seed <module>] [--press <keys>] [--theme <theme:mode>] [--no-build] [--desktop-only | --phone-only]
 //
 // Views: tasks (the default), task (the seeded task's chat), bot, bots, integrations, types, log, search, file,
 // item:<id>. Each is shot at a desktop width (1280×800) and a phone's (390×844), to <out>/<view>-<width>.png
@@ -37,7 +37,9 @@ const value = (name: string) => {
   const i = argv.indexOf(`--${name}`)
   return i >= 0 ? argv[i + 1] : undefined
 }
-const valued = new Set([value('out'), value('seed'), value('press')])
+const valued = new Set([value('out'), value('seed'), value('press'), value('theme')])
+// `--theme demo:light` shoots in that theme and mode (the serif stays Lora).
+const theme = value('theme') ? { theme: value('theme')!.split(':')[0], mode: value('theme')!.split(':')[1] ?? 'dark', serif: 'lora' } : null
 const views = argv.filter((a) => !a.startsWith('--') && !valued.has(a))
 const out = resolve(value('out') ?? 'screenshots')
 const ME = 'aatack'
@@ -87,13 +89,14 @@ try {
       page.on('pageerror', (e) => errors.push(e.message))
       await page.addInitScript(
         // Signed in already, on this source (a new source would empty the view stack).
-        ([t, u, v, src]) => {
+        ([t, u, v, src, look]) => {
+          if (look) localStorage.setItem('workflows.appearance', JSON.stringify(look))
           localStorage.setItem('workflows.source', JSON.stringify(src))
           localStorage.setItem('workflows.phoneToken', t)
           localStorage.setItem('workflows.user', JSON.stringify(u))
           localStorage.setItem('workflows.views', JSON.stringify(v))
         },
-        [token, ME, stack, source] as const,
+        [token, ME, stack, source, theme] as const,
       )
       await page.goto(url)
       await page.waitForSelector('.view, .page', { timeout: 15_000 }).catch(() => errors.push('Nothing rendered within 15s.'))

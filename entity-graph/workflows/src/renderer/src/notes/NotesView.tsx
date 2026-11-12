@@ -293,9 +293,14 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
         className={`note-row ${i === at ? 'selected' : ''} ${r.collapsed ? 'shut' : ''} ${open === false ? 'ticked' : ''} ${picking?.subject === r.id ? 'picking' : ''}`}
         style={{ paddingLeft: r.depth * 20 + 4 }}
         // Pressing another row writes what is being typed, as Enter does; going elsewhere keeps it, to finish later.
-        onMouseDown={(e) => edit && !(e.target as HTMLElement).closest('textarea') && commit()}
+        // A double press neither edits (that is `e`) nor selects a word; on an item that isn't a note, it opens it.
+        onMouseDown={(e) => {
+          const inBox = !!(e.target as HTMLElement).closest('textarea')
+          if (e.detail > 1 && !inBox) e.preventDefault()
+          if (edit && !inBox) commit()
+        }}
         onClick={() => select(r.path)}
-        onDoubleClick={() => (r.info.type === 'note' ? setEdit({ mode: 'edit', path: r.path, draft: textOf(r.info) }) : r.id !== root && onOpen(r.id))}
+        onDoubleClick={() => r.info.type !== 'note' && r.id !== root && onOpen(r.id)}
         {...menu(r.id)}
       >
         <span

@@ -11,6 +11,17 @@
   .note-row { display: flex; align-items: flex-start; gap: 6px; margin: 1px 0; padding: 2px 8px 2px 0; border-radius: 6px; line-height: 20px; scroll-margin: 25vh 0; }
   .note-row:hover { background: var(--line); }
   .note-row.selected { background: var(--panel); box-shadow: var(--shadow-xs); }
+  /* The pointer, not a text cursor: a row is selected, not typed into, until Enter or `e`. */
+  .note-row { cursor: default; }
+  .note-row textarea.note-input { cursor: text; }
+  /* As the themes set their own lists' selection (themes.css), but plainer to see: in demo the page is the panel. */
+  html[data-theme='demo'] .note-row:hover { background: var(--color-gray-50); }
+  html[data-theme='demo'] .note-row.selected { background: var(--color-gray-200); box-shadow: none; }
+  html[data-theme='dotcom'] .note-row { border-radius: 0; }
+  html[data-theme='dotcom'] .note-row.selected { background: #316ac5; color: #fff; box-shadow: none; }
+  html[data-theme='dotcom'] .note-row.selected .note-text, html[data-theme='dotcom'] .note-row.selected .note-mark { color: #fff; }
+  html[data-theme='classic'] .note-row { border-radius: 0; }
+  html[data-theme='classic'] .note-row.selected { background: #ccccff; box-shadow: none; }
   .note-row.picking { outline: 1px dashed var(--accent); outline-offset: -1px; }
   .note-mark { flex: none; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; color: var(--muted); }
   .note-mark .icon { width: 15px; height: 15px; }
