@@ -563,9 +563,20 @@ export class Engine extends EventEmitter {
     return this.findAgent(r)?.id ?? named?.id ?? null
   }
 
+  /** A bot or script that could once hold tasks but is cancelled or closed now, by its name or id: how it is named; else null. */
+  goneHolder(ref: string): string | null {
+    const r = ref.trim().replace(/^@/, '').toLowerCase()
+    const x = [...this.store.ofType('bot'), ...this.store.ofType('script')].find(
+      (x) => x.resolved && (x.id === ref.trim() || String(x.params.name ?? '').toLowerCase() === r),
+    )
+    return x ? (x.type === 'bot' ? `@${String(x.params.name ?? x.id)}` : `The script ${String(x.params.name ?? x.id)}`) : null
+  }
+
   resolveAssignee(ref: string): string {
     const id = this.holder(ref)
     if (id) return id
+    const gone = this.goneHolder(ref)
+    if (gone) throw new Error(`${gone} (${ref}) is ${gone.startsWith('@') ? 'cancelled' : 'closed'}, so it can't have tasks now.`)
     throw new Error(`Nobody is called ${ref}, to assign. People: ${this.users().map((u) => u.id).join(', ') || 'none'}; bots: ${this.agents().map((a) => a.name).join(', ') || 'none'}.`)
   }
 
@@ -1001,7 +1012,14 @@ export class Engine extends EventEmitter {
         if (this.get(u.item)?.closed) continue
         try {
           // Each update is checked on its own: one that is wrong fails only its task.
-          const to = u.assign && u.item !== agentId ? new Set(u.assign.map((a) => this.resolveAssignee(a))) : null
+          // Handing a task to a bot or script that is gone (cancelled since) drops it from the list, rather than failing the update.
+          const gone = (u.assign ?? []).filter((a) => !this.holder(a) && this.goneHolder(a))
+          const kept = (u.assign ?? []).filter((a) => !gone.includes(a))
+          const to = u.assign && u.item !== agentId && (kept.length || !gone.length) ? new Set(kept.map((a) => this.resolveAssignee(a))) : null
+          if (gone.length && u.item !== agentId) {
+            this.add(u.item, [{ type: 'note', params: { text: `@${this.agentName(agentId)} gave this to ${gone.map((a) => this.goneHolder(a)).join(', ')}, which can't have tasks now (cancelled or closed).` } }], 'system')
+            if (!to && this.assignees(u.item).includes(agentId)) this.handBack(u.item, agentId, runId)
+          }
           if (to && !to.has(agentId) && !u.close && heard(u.item)) {
             to.add(agentId)
           }

@@ -326,6 +326,16 @@ await engine.close(loose)
   assert.deepEqual(seen, [1, 1], 'one at a time')
   engine.settings.set('bots.max_running', MAX_BOTS)
   await engine.deleteAgent(other)
+  // Handing a task to a bot cancelled since: the rest of the update lands, and the task goes back as if nobody was named.
+  behaviours.push(async () => out({ item: t1, message: 'Back to you', assign: [other] }))
+  await engine.send(t1, `assign:${threepio}`, 'z')
+  await settle()
+  const said = engine.children(t1).map((e) => String(e.params.text ?? ''))
+  assert.ok(said.includes('Back to you'), 'the message still lands')
+  assert.ok(said.some((t) => /can't have tasks now/.test(t)), 'it says the bot is gone')
+  assert.ok(!said.some((t) => /failed/.test(t)), 'nothing failed')
+  assert.deepEqual(engine.assignees(t1), [engine.me()], 'the task goes back to its owner')
+  await assert.rejects(engine.assign(t1, other, true), /is cancelled, so it can't have tasks now/)
   engine.settings.set('scripts.max_running', 1)
   const [s1, s2] = await engine.addItems(null, [
     { type: 'script', params: { source: 'return null', debounce_minutes: 0 } },
