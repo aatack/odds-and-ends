@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Agent, Item, ItemInfo } from '../shared/types'
-import type { Engine } from './engine'
+import type { Engine, PromptItem } from './engine'
 import { botOutputSchema } from './schema'
 import { MAX_BOTS } from './settings'
 export { MAX_BOTS } from './settings'
@@ -154,11 +154,14 @@ export const ASK = '[Please action your assigned tasks, and give each a new assi
  * people's notes as they are, anything else in brackets — and, every ID_EVERY
  * lines from the first, which item it is.
  */
-export function promptFor(items: { item: Item; children: ItemInfo[]; first: boolean; own?: boolean }[], who?: Who): string {
+export function promptFor(items: PromptItem[], who?: Who): string {
   if (!items.length) return ''
   return `${ASK}\n\n---\n\n` + [...items].sort((a, b) => Number(!!b.own) - Number(!!a.own))
-    .map(({ item, children, first, own }) => {
-      const lines = children.map((e) => promptLine(e, who)).filter((l): l is string => l !== null)
+    .map(({ item, children, first, own, pins = [] }) => {
+      const lines = [
+        ...pins.map((p) => `[pinned here: ${p.info.summary.split('\n')[0]} (${p.info.id})${p.outline ? `, and under it:\n${p.outline}` : ''}]`),
+        ...children.map((e) => promptLine(e, who)).filter((l): l is string => l !== null),
+      ]
       const head = own ? ['[your own chat: reply with an update for this id]'] : first ? [`[new to you: ${item.title}]`] : [`[task: ${item.title}]`]
       const all = [...head, ...(lines.length ? lines : ['[nothing new]'])]
       return all.flatMap((l, i) => (i % ID_EVERY === 0 ? [`[current task ID: ${item.id}]`, l] : [l])).join('\n\n')
@@ -247,7 +250,7 @@ export class BotRunner {
     }
   }
 
-  private run(agent: Agent, items: { item: Item; children: ItemInfo[]; first: boolean; own?: boolean }[], resume: boolean, handoff: string | null = null, recap = false): void {
+  private run(agent: Agent, items: PromptItem[], resume: boolean, handoff: string | null = null, recap = false): void {
     const told = promptFor(items, { name: (a) => this.engine.actorName(a), person: (a) => this.engine.isUser(a) || a === 'mcp' })
     const runId = this.engine.startRun(agent.id, items.map((i) => i.item.id))
     const lines: string[] = []

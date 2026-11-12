@@ -418,6 +418,13 @@ await engine.close(loose)
   const [inner] = await engine.addItems(b, [{ type: 'task', params: { title: 'Do it' } }], 'alex')
   await engine.addItems(inner, [{ type: 'note', params: { text: 'in the task' } }], 'alex')
   assert.deepEqual(engine.subtree(root).map((i) => i.id), [root, b, a1, inner])
+  // A bot reads what is under it as an outline (get_item), cut off with the id to ask for the rest.
+  const got = (await engine.callAction('get_item', { item_id: root }, { engine, author: 'bot', actor: 'bot', itemId: null, runId: null })) as { outline: string; pinnedIn: { id: string }[] }
+  assert.equal(got.outline, `- # B (${b})\n  - [x] A1 (${a1})\n  - [task] Do it (${inner})`)
+  assert.deepEqual(got.pinnedIn.map((p) => p.id), [t])
+  await engine.addItems(a1, Array.from({ length: 5 }, (_, i) => ({ type: 'note' as const, params: { text: `n${i}` } })), 'alex')
+  assert.match(engine.outline(root, 4)!, new RegExp(`\\.\\.\\. 3 more under ${a1}: get_item it[^]*\\.\\.\\. 1 more under ${b}`))
+  assert.equal(engine.outline(inner + 'x'), null)
   await engine.close(inner)
   await engine.close(t)
 }
@@ -1014,6 +1021,11 @@ await engine.close(bad)
 }
 
 assert.equal(promptFor([]), '')
+{
+  const pinnedNote = { id: 'n1', summary: 'Feedback\nmore', type: 'note' } as unknown as Parameters<typeof promptFor>[0][number]['children'][number]
+  const told = promptFor([{ item: { id: 't1', title: 'T' } as never, children: [], first: true, pins: [{ info: pinnedNote, outline: '- [ ] Fix it (n2)' }] }])
+  assert.match(told, /\[pinned here: Feedback \(n1\), and under it:\n- \[ \] Fix it \(n2\)\]/, 'a pin, with what is under it, is told')
+}
 assert.equal(behaviours.length, 0)
 assert.deepEqual(unexpected, [], 'no bot ran that no test expected')
 // Files: one on this machine referred to (read as it is now, edited in place), or a copy kept; an upload is kept.

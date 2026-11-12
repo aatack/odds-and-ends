@@ -96,6 +96,18 @@ export const refsIn = (text: string): string[] => [
 export const urlsIn = (text: string): string[] => [...new Set([...text.matchAll(/https?:\/\/[^\s<>()\[\]]+[^\s<>()\[\].,;:!?'"]/g)].map((m) => m[0]))]
 
 /** What may sit in no task: what is its own (tasks, bots, people, scripts, the search item), and what is pinned rather than said (links, Slack, files). */
+/** A task as a run's prompt tells it: its items new to the bot, and what was pinned to it lately (with what is under each). */
+export interface PromptItem {
+  item: Item
+  children: ItemInfo[]
+  first: boolean
+  own?: boolean
+  pins?: { info: ItemInfo; outline: string | null }[]
+}
+
+/** How many lines of what is under an item a bot is shown at once (`outline`). */
+export const OUTLINE_LIMIT = 100
+
 const SIT_IN_NONE = ['task', 'note', 'bot', 'user', 'search', 'script', 'link', 'slack_message', 'slack_channel', 'file']
 
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'bot'
@@ -783,7 +795,7 @@ export class Engine extends EventEmitter {
    * Starts a bot's run, if it is due and not running: its chat and every task it has, each with its new items (or,
    * for a task its session has not seen, its whole history). Its session is its own: resumed if it has one, otherwise new.
    */
-  claim(agentId: string): { agent: Agent; items: { item: Item; children: ItemInfo[]; first: boolean; own?: boolean }[]; resume: boolean; handoff: string | null; recap: boolean } | null {
+  claim(agentId: string): { agent: Agent; items: PromptItem[]; resume: boolean; handoff: string | null; recap: boolean } | null {
     const agent = this.agent(agentId)
     if (!agent || agent.deleted || this.running.has(agentId)) return null
     const wake = this.wake(agentId)
@@ -797,7 +809,12 @@ export class Engine extends EventEmitter {
       if (itemId === agentId) return { item: this.toItem(this.row(agentId)!), children: this.children(agentId).filter((e) => ids.has(e.id)), first: false, own: true }
       const first = !seen.includes(itemId)
       const children = first ? this.children(itemId) : this.children(itemId).filter((e) => ids.has(e.id))
-      return { item: this.must(itemId), children, first }
+      // What is pinned to it: all of it the first time, then what was pinned since the last run began, with what is under each.
+      const pins = this.store
+        .pins(itemId)
+        .filter((p) => first || !last || p.at >= last.startedAt)
+        .flatMap((p) => (this.row(p.id) ? [{ info: this.toInfo(this.row(p.id)!), outline: this.outline(p.id) }] : []))
+      return { item: this.must(itemId), children, first, pins }
     })
     const resume = this.agentParams(agentId).session_id != null
     // A fresh session hears the handoff its last one left, once.
@@ -1378,6 +1395,37 @@ export class Engine extends EventEmitter {
     }
     walk(root)
     return out
+  }
+
+  /**
+   * What is under an item, as text for a bot: one line per item, indented by depth, depth first, oldest first (a
+   * heading `#`, a checkbox `[ ]` or `[x]`, then what it says, then its id). Notes are walked into, as `subtree` does,
+   * and anything else is a line of its own. At most `limit` lines: what is cut off is said, with the id to ask for.
+   * Null when nothing is under it.
+   */
+  outline(id: string, limit = OUTLINE_LIMIT): string | null {
+    if (!this.store.children(id).length) return null
+    const lines: string[] = []
+    const cut: string[] = []
+    const count = (r: ItemRow): number => 1 + (r.type === 'note' ? this.store.children(r.id).reduce((n, k) => n + count(k), 0) : 0)
+    const walk = (parent: string, depth: number) => {
+      const kids = this.store.children(parent)
+      for (let i = 0; i < kids.length; i++) {
+        if (lines.length >= limit) {
+          const more = kids.slice(i).reduce((n, k) => n + count(k), 0)
+          cut.push(`... ${more} more under ${parent}: get_item it for the rest`)
+          return
+        }
+        const k = kids[i]
+        const p = k.params
+        const mark = `${p.section === true ? '# ' : ''}${p.open === true ? '[ ] ' : p.open === false ? '[x] ' : ''}`
+        const text = k.type === 'note' ? String(p.text ?? '') : `[${k.type}] ${this.toInfo(k).summary}`
+        lines.push(`${'  '.repeat(depth)}- ${mark}${text.replace(/\n+/g, ' ')} (${k.id})`)
+        if (k.type === 'note') walk(k.id, depth + 1)
+      }
+    }
+    walk(id, 0)
+    return [...lines, ...cut].join('\n')
   }
 
   /**
