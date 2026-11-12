@@ -11,6 +11,7 @@ import { spawn } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Agent, Item, ItemInfo } from '../shared/types'
+import { cardText, type Who } from './views'
 import type { Engine, PromptItem } from './engine'
 import { botOutputSchema } from './schema'
 import { MAX_BOTS } from './settings'
@@ -124,26 +125,6 @@ export const PROVIDERS: Record<string, SpawnBot> = { claude: spawnClaude }
 /** How often the prompt reminds the bot which item it is on: every this many lines of an item, starting with the first. */
 const ID_EVERY = 10
 
-/** Who did something, for a prompt: their name, and whether they are a person (whose words go to the bot as they are). */
-export interface Who {
-  name: (actor: string) => string
-  person: (actor: string) => boolean
-}
-
-const ANYONE: Who = { name: (a) => a, person: (a) => a === 'human' || a === 'mcp' }
-
-/**
- * One item as a line of the prompt: what a person wrote, as they wrote it, after
- * their name; anything else in square brackets.
- */
-export function promptLine(e: ItemInfo, who: Who = ANYONE): string | null {
-  if (e.type === 'note')
-    return who.person(e.createdBy) ? `${who.name(e.createdBy)}: ${e.params.text ?? ''}` : `[${who.name(e.createdBy)}: ${e.params.text ?? ''}]`
-  if (e.cancelled) return `[${e.message ?? `Cancelled: ${e.summary}`}]`
-  if (!e.resolved) return `[${e.type} added by ${who.name(e.createdBy)}: ${e.summary}]`
-  return `[${e.message ?? `${e.summary}: done`}]`
-}
-
 /** What every run's prompt starts with. */
 export const ASK = '[Please action your assigned tasks, and give each a new assignee to carry it on.]'
 
@@ -159,8 +140,8 @@ export function promptFor(items: PromptItem[], who?: Who): string {
   return `${ASK}\n\n---\n\n` + [...items].sort((a, b) => Number(!!b.own) - Number(!!a.own))
     .map(({ item, children, first, own, pins = [] }) => {
       const lines = [
-        ...pins.map((p) => `[pinned here: ${p.info.summary.split('\n')[0]} (${p.info.id})${p.outline ? `, and under it:\n${p.outline}` : ''}]`),
-        ...children.map((e) => promptLine(e, who)).filter((l): l is string => l !== null),
+        ...pins.map((p) => `[pinned here: ${p.text}]`),
+        ...children.map((e) => cardText(e, who)),
       ]
       const head = own ? ['[your own chat: reply with an update for this id]'] : first ? [`[new to you: ${item.title}]`] : [`[task: ${item.title}]`]
       const all = [...head, ...(lines.length ? lines : ['[nothing new]'])]
@@ -251,7 +232,7 @@ export class BotRunner {
   }
 
   private run(agent: Agent, items: PromptItem[], resume: boolean, handoff: string | null = null, recap = false): void {
-    const told = promptFor(items, { name: (a) => this.engine.actorName(a), person: (a) => this.engine.isUser(a) || a === 'mcp' })
+    const told = promptFor(items, this.engine.who())
     const runId = this.engine.startRun(agent.id, items.map((i) => i.item.id))
     const lines: string[] = []
     let buffer = ''

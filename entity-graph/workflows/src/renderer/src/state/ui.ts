@@ -19,3 +19,6 @@ export function openModal(close: () => void): () => void {
     if (i >= 0) open.splice(i, 1)
   }
 }
+
+/** Whether a dialog is up: views that take keys from the window leave them to it meanwhile. */
+export const modalOpen = (): boolean => open.length > 0

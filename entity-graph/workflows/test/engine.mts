@@ -18,6 +18,7 @@ import { runScript } from '../src/engine/script.ts'
 import { dueAt } from '../src/engine/wakes.ts'
 import { trustFolders, trustTargets } from '../src/engine/trust.ts'
 import { ASK, BotRunner, limitedUntil, MAX_BOTS, promptFor, type SpawnBot } from '../src/engine/workers.ts'
+import { focusText } from '../src/engine/views.ts'
 
 const MINUTE = 60_000
 let clock = 1_000_000
@@ -418,13 +419,18 @@ await engine.close(loose)
   const [inner] = await engine.addItems(b, [{ type: 'task', params: { title: 'Do it' } }], 'alex')
   await engine.addItems(inner, [{ type: 'note', params: { text: 'in the task' } }], 'alex')
   assert.deepEqual(engine.subtree(root).map((i) => i.id), [root, b, a1, inner])
-  // A bot reads what is under it as an outline (get_item), cut off with the id to ask for the rest.
-  const got = (await engine.callAction('get_item', { item_id: root }, { engine, author: 'bot', actor: 'bot', itemId: null, runId: null })) as { outline: string; pinnedIn: { id: string }[] }
-  assert.equal(got.outline, `- # B (${b})\n  - [x] A1 (${a1})\n  - [task] Do it (${inner})`)
+  // A bot reads it at its focus (get_item): its tree under its pill, a note at focus, anything else as its pill.
+  const ctx = { engine, author: 'bot' as const, actor: 'bot', itemId: null, runId: null }
+  const got = (await engine.callAction('get_item', { item_id: root }, ctx)) as { focus: string; pinnedIn: { id: string }[] }
+  assert.equal(got.focus, `[note] Plan (${root})\n- # B (${b})\n  - [x] A1 (${a1})\n  - [task] Do it (${inner})`)
   assert.deepEqual(got.pinnedIn.map((p) => p.id), [t])
   await engine.addItems(a1, Array.from({ length: 5 }, (_, i) => ({ type: 'note' as const, params: { text: `n${i}` } })), 'alex')
-  assert.match(engine.outline(root, 4)!, new RegExp(`\\.\\.\\. 3 more under ${a1}: get_item it[^]*\\.\\.\\. 1 more under ${b}`))
-  assert.equal(engine.outline(inner + 'x'), null)
+  // Cut off at the limit, with the ids to ask for the rest.
+  assert.match(focusText(engine, root, undefined, 4)!, new RegExp(`\\.\\.\\. 3 more under ${a1}: get_item it[^]*\\.\\.\\. 1 more under ${b}`))
+  assert.equal(engine.view(inner + 'x', 'focus'), null)
+  // The smaller sizes, and a task at its focus: the cards of what is in it.
+  assert.deepEqual(await engine.callAction('get_item', { item_id: inner, size: 'pill' }, ctx), { text: `[task] Do it (${inner})` })
+  assert.equal(engine.view(inner, 'focus'), `[task] Do it (${inner})\n[alex: in the task]`)
   await engine.close(inner)
   await engine.close(t)
 }
@@ -1023,8 +1029,8 @@ await engine.close(bad)
 assert.equal(promptFor([]), '')
 {
   const pinnedNote = { id: 'n1', summary: 'Feedback\nmore', type: 'note' } as unknown as Parameters<typeof promptFor>[0][number]['children'][number]
-  const told = promptFor([{ item: { id: 't1', title: 'T' } as never, children: [], first: true, pins: [{ info: pinnedNote, outline: '- [ ] Fix it (n2)' }] }])
-  assert.match(told, /\[pinned here: Feedback \(n1\), and under it:\n- \[ \] Fix it \(n2\)\]/, 'a pin, with what is under it, is told')
+  const told = promptFor([{ item: { id: 't1', title: 'T' } as never, children: [], first: true, pins: [{ info: pinnedNote, text: '[note] Feedback (n1)\n- [ ] Fix it (n2)' }] }])
+  assert.match(told, /\[pinned here: \[note\] Feedback \(n1\)\n- \[ \] Fix it \(n2\)\]/, 'a pin, with what is under it, is told')
 }
 assert.equal(behaviours.length, 0)
 assert.deepEqual(unexpected, [], 'no bot ran that no test expected')

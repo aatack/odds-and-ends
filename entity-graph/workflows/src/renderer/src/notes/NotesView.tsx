@@ -1,7 +1,7 @@
 // A note's focus: the notes in it as a dense tree, worked from the keyboard as entity-graph's outliner is. Its
 // structure is only the items in each note (`contains` links); anything else in a note is a leaf, opened with `d`.
 // Every change shows at once (store.ts) and goes to the backend after. Everything of the notes view is in this folder;
-// what it shares with the rest of the app (the picker, the find line, markdown) it takes from there.
+// what it shares with the rest of the app (the picker, the text box and its `@`, the find line, markdown) it takes from there.
 
 import { atom, useAtom } from 'jotai'
 import { atomWithStorage, createJSONStorage } from 'jotai/utils'
@@ -11,11 +11,12 @@ import type { Item, ItemInfo } from '../../../shared/types'
 import type { SearchSection } from '../../../shared/search'
 import { Markdown } from '../components/ui/Markdown'
 import { FindLine } from '../FindLine'
-import { GrowingTextarea } from '../GrowingTextarea'
 import { ItemInfoIcon } from '../icons'
 import { useItemMenu } from '../ItemMenu'
 import { ItemPicker } from '../ItemPicker'
 import { SearchSectionsContext, type Recent } from '../sections'
+import { modalOpen } from '../state/ui'
+import { TextInput, type Mentions } from '../TextInput'
 import { findAtom } from '../views'
 import { clearNotesError, createNote, notesError, moveNote, resolve, setNoteValue, useNotes, type NotesTree } from './store'
 import './notes.css'
@@ -95,8 +96,8 @@ function within(tree: NotesTree, id: string, outer: string): boolean {
 const same = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => resolve(x) === resolve(b[i]))
 const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))
 
-export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent; onOpen: (id: string) => void; onBack: () => void; mobile?: boolean }) {
-  const { info, tasks, recent, onOpen, onBack, mobile = false } = props
+export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent; bots: Mentions['bots']; onOpen: (id: string) => void; onBack: () => void; mobile?: boolean }) {
+  const { info, tasks, recent, bots, onOpen, onBack, mobile = false } = props
   const root = info.id
   const { tree, error } = useNotes(root, info)
   const [places, setPlaces] = useAtom(placesAtom)
@@ -199,7 +200,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
   // The keys, as entity-graph's: only while nothing is being typed into.
   const keys = useRef<(e: KeyboardEvent) => void>(() => {})
   keys.current = (e: KeyboardEvent) => {
-    if (isTyping(e.target) || choosing || e.altKey || e.metaKey) return
+    if (isTyping(e.target) || modalOpen() || e.altKey || e.metaKey) return
     // A draft waiting (the window or the view was left mid-edit): Escape drops it, any other key goes back to it.
     if (editing) {
       if (e.key === 'Escape') {
@@ -262,12 +263,13 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
   }, [])
 
   const box = (depth: number, section: boolean) => (
-    <GrowingTextarea
+    <TextInput
       autoFocus
       className={`note-input ${section ? `note-section depth-${Math.min(depth, 3)}` : ''}`}
       value={edit?.draft ?? ''}
+      mentions={{ items: tasks, recent, bots }}
       placeholder={edit?.mode === 'create' ? (section ? 'New section…' : 'New note…') : undefined}
-      onChange={(e) => setEdit((x) => x && { ...x, draft: e.target.value })}
+      onText={(draft) => setEdit((x) => x && { ...x, draft })}
       onFocus={(e) => e.target.setSelectionRange(e.target.value.length, e.target.value.length)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -293,11 +295,12 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
         className={`note-row ${i === at ? 'selected' : ''} ${r.collapsed ? 'shut' : ''} ${open === false ? 'ticked' : ''} ${picking?.subject === r.id ? 'picking' : ''}`}
         style={{ paddingLeft: r.depth * 20 + 4 }}
         // Pressing another row writes what is being typed, as Enter does; going elsewhere keeps it, to finish later.
-        // A double press neither edits (that is `e`) nor selects a word; on an item that isn't a note, it opens it.
+        // A press in a modal opened from the box (the `@` finder) bubbles here through React's portal: not a press on a
+        // row. A double press selects a word, as in any text, and doesn't edit (that is `e`); on an item that isn't a
+        // note, it opens it.
         onMouseDown={(e) => {
-          const inBox = !!(e.target as HTMLElement).closest('textarea')
-          if (e.detail > 1 && !inBox) e.preventDefault()
-          if (edit && !inBox) commit()
+          if (!e.currentTarget.contains(e.target as Node)) return
+          if (edit && !(e.target as HTMLElement).closest('textarea')) commit()
         }}
         onClick={() => select(r.path)}
         onDoubleClick={() => r.info.type !== 'note' && r.id !== root && onOpen(r.id)}

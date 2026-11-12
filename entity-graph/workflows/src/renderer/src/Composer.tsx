@@ -5,9 +5,8 @@ import { useAtom } from 'jotai'
 import { useEffect, useRef, useState } from 'react'
 import type { Catalog, Item, PresetInfo } from '../../shared/types'
 import type { Someone } from './people'
-import { GrowingTextarea } from './GrowingTextarea'
 import { TypeIcon } from './icons'
-import { ItemPicker } from './ItemPicker'
+import { TextInput } from './TextInput'
 import { ToolRunner } from './ToolRunner'
 import type { Recent } from './sections'
 import { draftsAtom, withoutEmpty } from './views'
@@ -28,7 +27,7 @@ const lastSentences = (text: string): string => {
  * asks, in the hint, and any other key takes it back. What is typed is kept, by
  * `draftKey`, until it is sent. An `@` typed at the start of a word opens the
  * finder, bots first; what is picked (or made, with Tab) takes the `@`'s place
- * as a reference, `[id]()`. A bot referred to in a note is handed the task as it
+ * as a reference, `[id]()` (TextInput). A bot referred to in a note is handed the task as it
  * is sent, and the human is taken off it. Escape leaves the `@` as typed. `/` typed first runs a tool (ToolRunner).
  */
 export function Composer({
@@ -84,29 +83,18 @@ export function Composer({
     el.focus()
     el.setSelectionRange(el.value.length, el.value.length)
   }, [at])
-  // Where the `@` being completed is, while the finder is open for it.
-  const [mentionAt, setMentionAt] = useState<number | null>(null)
   // `/` typed into an empty input: run a tool.
   const [runningTool, setRunningTool] = useState(false)
-  /** Puts the cursor back in the text box, at `caret` (else at the end), once a modal over it has closed. */
-  const refocus = (caret?: number) => {
+  /** Puts the cursor back in the text box, at the end, once a modal over it has closed. */
+  const refocus = () => {
     const put = () => {
       const el = box.current
       if (!el) return
       el.focus()
-      const at = caret ?? el.value.length
-      el.setSelectionRange(at, at)
+      el.setSelectionRange(el.value.length, el.value.length)
     }
     requestAnimationFrame(put)
     setTimeout(put, 50)
-  }
-  const insertRef = (id: string) => {
-    if (mentionAt === null) return
-    const ref = `[${id}]()`
-    setText(text.slice(0, mentionAt) + ref + text.slice(mentionAt + 1))
-    setMentionAt(null)
-    // The cursor goes back to the text box, after the reference, once the modal has closed (and whatever it does with focus).
-    refocus(mentionAt + ref.length)
   }
   const send = async () => {
     if (empty) return void (await defaults[at]?.run())
@@ -132,9 +120,10 @@ export function Composer({
         <TypeIcon type={shown.icon} />
       </span>
       <div className={`builder-fields hinted ${(recorder.on || recorder.error) && !text ? 'hearing' : ''}`}>
-        <GrowingTextarea
+        <TextInput
           ref={box}
           value={text}
+          mentions={{ ...mention, bots: assignees }}
           aria-label={preset.name}
           onPaste={(e) => {
             // A Slack message's link, pasted on its own into an empty input, pulls the message in at once.
@@ -143,14 +132,9 @@ export function Composer({
             e.preventDefault()
             void onSend('note', pasted)
           }}
-          onChange={(e) => {
-            const value = e.target.value
-            const caret = e.target.selectionStart
+          onText={(value) => {
             // `/` as the first thing typed: pick a tool to run, rather than typing it.
             if (!text && value === '/') return setRunningTool(true)
-            // One `@` typed at the start of a word: find what it refers to.
-            if (value.length === text.length + 1 && value[caret - 1] === '@' && /(^|\s)$/.test(value.slice(0, caret - 1)))
-              setMentionAt(caret - 1)
             setText(value)
           }}
           onBlur={() => setResolving(false)}
@@ -211,20 +195,6 @@ export function Composer({
           catalog={catalog}
           onClose={() => {
             setRunningTool(false)
-            refocus()
-          }}
-        />
-      )}
-      {mentionAt !== null && (
-        <ItemPicker
-          title="Mention"
-          bots={assignees}
-          items={mention.items}
-          recent={mention.recent}
-          verb="Insert"
-          onPick={insertRef}
-          onClose={() => {
-            setMentionAt(null)
             refocus()
           }}
         />

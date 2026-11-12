@@ -244,19 +244,22 @@ export const itemActions: Action[] = [
     unsafe: false,
     description:
       'An item in full: its values (what set_value set on it, and its params), and for a topic (or a bot, or a script) its children: ' +
-      'every item in it, with its data, linked ones included. For anything else (a note, say), `outline`: everything under it, ' +
-      'as an indented list with ids (notes in notes are its notes), cut off at 100 lines with the ids to ask for the rest. ' +
-      'And what is pinned to it (`pins`) and where it is pinned (`pinnedIn`), each with its id.',
-    input: { item_id: itemId },
+      'every item in it, with its data, linked ones included. For anything else (a note, say), `focus`: the whole of it as text, ' +
+      'as its view shows it (a note as an indented tree with ids, notes in notes being its notes), cut off at 100 lines with the ' +
+      'ids to ask for the rest. And what is pinned to it (`pins`) and where it is pinned (`pinnedIn`), each with its id. ' +
+      'With `size`, only the item as text at that size: `pill` (its type, name and id, as `[id]()` shows it), `card` (as a chat ' +
+      'shows it) or `focus` (the whole of it: a task as the cards of what is in it, the latest 100).',
+    input: { item_id: itemId, size: z.enum(['pill', 'card', 'focus']).optional() },
     run: async (a, { engine }) => {
       const id = String(a.item_id)
       const info = engine.info(id)
       if (!info) throw new Error(`No item ${id}.`)
+      if (a.size) return { text: engine.view(id, a.size as 'pill' | 'card' | 'focus') }
       const d = engine.detail(id)
       const brief = (ids: string[]) => ids.map((i) => engine.info(i)).filter((i) => !!i).map((i) => ({ id: i!.id, type: i!.type, summary: i!.summary }))
       const pinned = { pins: brief(info.pins), pinnedIn: brief(info.pinnedIn) }
       if (d) return { ...d, values: info.params, ...pinned }
-      return { item: null, parent: null, outline: engine.outline(id), values: info.params, ...pinned }
+      return { item: null, parent: null, focus: engine.view(id, 'focus'), values: info.params, ...pinned }
     },
   },
   {

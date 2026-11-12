@@ -218,7 +218,8 @@ backwards, pins say where an item is referenced. `ItemInfo.pins` / `pinnedIn` li
 
 A note's focus is the notes in it, as a dense tree (`notes/NotesView.tsx`), worked as entity-graph's outliner is, with
 its pins beside it as a task's are. Everything of it is in `src/renderer/src/notes/` (the view, its store, New notes, its
-CSS); what it shares it takes from the rest (the picker, the find line, markdown). Its structure is only `contains`
+CSS); what it shares it takes from the rest (the picker, the text box, the find line, markdown). A note is typed in the
+app's one text box (`TextInput`, as the chat input is: `@` inserts a reference) and drawn by the one `Markdown`. Its structure is only `contains`
 links: the items in each note (`subtree` walks into notes; anything else in one is a leaf). New notes, atop the pins
 (always shown on a desktop), makes a note titled as typed, in no item and pinned to the item on screen, and opens it.
 Every change shows at once and is sent after (`notes/store.ts`: pending ops over what was read, in order, a new note
@@ -235,8 +236,8 @@ row out of its note (into none); `q` sections only, `Shift+Q` open ones only; Ct
 Escape clears a find or the filters. Where each tree was left (the row, what is folded) is kept per note. The wheel
 anywhere on the page scrolls the tree.
 
-Bots read what is under an item with `get_item` (`outline`: an indented list with ids, cut at 100 lines with the ids to
-ask for the rest), and a run's prompt tells each task's pins with the outline under each.
+Bots read a note at its focus, as text (see the four sizes below): `get_item` gives it as `focus`, an indented tree
+with ids, cut at 100 lines with the ids to ask for the rest; a run's prompt tells each task's pins so.
 
 ## The search page
 
@@ -311,7 +312,10 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
     tokens). Keep them in step with entity-graph rather than editing them here.
 - **Four sizes.** Anything is drawn as an avatar (its picture in the chat), a pill (inline in text, as `[id]()` is),
   a card (in a chat or list, by its type: `CARDS`) or its focus (filling the view: a chat, or its details: `FOCUS`).
-  They are all in `sizes.tsx`: a new type's views go there.
+  They are all in `sizes.tsx`: a new type's views go there. Each but the avatar has a text version, for bots
+  (`engine/views.ts`: `pillText`, `cardText`, `focusText`, each built from the smaller ones; `get_item` with `size`, and
+  the prompt's lines, which are cards). What both share (`FOCUS`, the pill's name) is in `shared/views.ts`: a type's
+  text goes in step with how it is drawn.
 - **The same design rules as entity-graph:** no motion, no pointer cursor,
   restrained colour, tone rather than borders. Tailwind v4 provides the tokens.
   The app's own CSS (`styles.css`) sits in `@layer components`, so the

@@ -20,6 +20,8 @@ import { PRESETS, type Preset } from './presets'
 import { IDLE_MINUTES, MAX_SCRIPTS, plainSecrets, Settings, type Secrets } from './settings'
 export { IDLE_MINUTES, MAX_SCRIPTS } from './settings'
 import { STATE_KEYS, Store, type ItemRow, type Inspection } from './store'
+import { viewText, type Size, type Who } from './views'
+import { FOCUS } from '../shared/views'
 
 /** What the app keeps on items for itself: never set by `setValue`. */
 const OWN_KEYS = new Set(['session_id', 'seen', 'last_run', 'last_wake', 'handoff', 'key'])
@@ -95,19 +97,16 @@ export const refsIn = (text: string): string[] => [
 /** Every URL a text mentions: bare, `[label](url)`, or `[url]()`; each once, in order. */
 export const urlsIn = (text: string): string[] => [...new Set([...text.matchAll(/https?:\/\/[^\s<>()\[\]]+[^\s<>()\[\].,;:!?'"]/g)].map((m) => m[0]))]
 
-/** What may sit in no task: what is its own (tasks, bots, people, scripts, the search item), and what is pinned rather than said (links, Slack, files). */
-/** A task as a run's prompt tells it: its items new to the bot, and what was pinned to it lately (with what is under each). */
+/** A task as a run's prompt tells it: its items new to the bot, and what was pinned to it lately (each as text: views.ts). */
 export interface PromptItem {
   item: Item
   children: ItemInfo[]
   first: boolean
   own?: boolean
-  pins?: { info: ItemInfo; outline: string | null }[]
+  pins?: { info: ItemInfo; text: string }[]
 }
 
-/** How many lines of what is under an item a bot is shown at once (`outline`). */
-export const OUTLINE_LIMIT = 100
-
+/** What may sit in no task: what is its own (tasks, bots, people, scripts, the search item), and what is pinned rather than said (links, Slack, files). */
 const SIT_IN_NONE = ['task', 'note', 'bot', 'user', 'search', 'script', 'link', 'slack_message', 'slack_channel', 'file']
 
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'bot'
@@ -809,11 +808,15 @@ export class Engine extends EventEmitter {
       if (itemId === agentId) return { item: this.toItem(this.row(agentId)!), children: this.children(agentId).filter((e) => ids.has(e.id)), first: false, own: true }
       const first = !seen.includes(itemId)
       const children = first ? this.children(itemId) : this.children(itemId).filter((e) => ids.has(e.id))
-      // What is pinned to it: all of it the first time, then what was pinned since the last run began, with what is under each.
+      // What is pinned to it: all of it the first time, then what was pinned since the last run began. Each at its focus
+      // (a note with its tree), but a chat as its pill: its history is long, and get_item reads it.
       const pins = this.store
         .pins(itemId)
         .filter((p) => first || !last || p.at >= last.startedAt)
-        .flatMap((p) => (this.row(p.id) ? [{ info: this.toInfo(this.row(p.id)!), outline: this.outline(p.id) }] : []))
+        .flatMap((p) => {
+          const info = this.info(p.id)
+          return info ? [{ info, text: this.view(p.id, FOCUS[info.type] === 'chat' ? 'pill' : 'focus')! }] : []
+        })
       return { item: this.must(itemId), children, first, pins }
     })
     const resume = this.agentParams(agentId).session_id != null
@@ -1397,35 +1400,14 @@ export class Engine extends EventEmitter {
     return out
   }
 
-  /**
-   * What is under an item, as text for a bot: one line per item, indented by depth, depth first, oldest first (a
-   * heading `#`, a checkbox `[ ]` or `[x]`, then what it says, then its id). Notes are walked into, as `subtree` does,
-   * and anything else is a line of its own. At most `limit` lines: what is cut off is said, with the id to ask for.
-   * Null when nothing is under it.
-   */
-  outline(id: string, limit = OUTLINE_LIMIT): string | null {
-    if (!this.store.children(id).length) return null
-    const lines: string[] = []
-    const cut: string[] = []
-    const count = (r: ItemRow): number => 1 + (r.type === 'note' ? this.store.children(r.id).reduce((n, k) => n + count(k), 0) : 0)
-    const walk = (parent: string, depth: number) => {
-      const kids = this.store.children(parent)
-      for (let i = 0; i < kids.length; i++) {
-        if (lines.length >= limit) {
-          const more = kids.slice(i).reduce((n, k) => n + count(k), 0)
-          cut.push(`... ${more} more under ${parent}: get_item it for the rest`)
-          return
-        }
-        const k = kids[i]
-        const p = k.params
-        const mark = `${p.section === true ? '# ' : ''}${p.open === true ? '[ ] ' : p.open === false ? '[x] ' : ''}`
-        const text = k.type === 'note' ? String(p.text ?? '') : `[${k.type}] ${this.toInfo(k).summary}`
-        lines.push(`${'  '.repeat(depth)}- ${mark}${text.replace(/\n+/g, ' ')} (${k.id})`)
-        if (k.type === 'note') walk(k.id, depth + 1)
-      }
-    }
-    walk(id, 0)
-    return [...lines, ...cut].join('\n')
+  /** An item at a size, as text for a bot (views.ts); null if there is no such item. */
+  view(id: string, size: Size): string | null {
+    return viewText(this, id, size, this.who())
+  }
+
+  /** Who did something, as a bot is told: a name, and whether a person said it. */
+  who(): Who {
+    return { name: (a) => this.actorName(a), person: (a) => this.isUser(a) || a === 'mcp' }
   }
 
   /**

@@ -406,7 +406,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
           <FileFocus key={e.id} info={e} mobile={mobile} />
         ) : FOCUS[e.type] === 'notes' ? (
           // A note's pins fill the right, beside its tree, as a task's do beside its chat.
-          withPins(<NotesView key={e.id} info={e} tasks={w.overview.items} recent={w.recent} onOpen={openItem} onBack={w.back} mobile={mobile} />)
+          withPins(<NotesView key={e.id} info={e} tasks={w.overview.items} recent={w.recent} bots={everyone(w.overview)} onOpen={openItem} onBack={w.back} mobile={mobile} />)
         ) : FOCUS[e.type] === 'chat' && d.item ? (
           // A task's pins fill the right of the screen, beside its chat, with New notes atop.
           withPins(<ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openItem} mobile={mobile} />)
