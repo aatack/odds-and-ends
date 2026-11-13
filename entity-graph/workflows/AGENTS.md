@@ -188,11 +188,11 @@ merging, sending, deploying and deleting, in any integration.
 
 - `unsafe` is a required field on `Action`, so every new action has to declare it. If in doubt, it is unsafe.
 - **For now it is a label, not a gate** (aatack, Nov 2026): bots, scripts and custom-made scripts are given every tool,
-  unsafe ones too (the only ones are GitHub's and `slack_post`, which a bot could run with its shell anyway). The
+  unsafe ones too (the only ones are GitHub's, which a bot could run with its shell anyway). The
   bots' instructions say to act outside the app only when a person asked. The MCP page and the `/` tool runner mark
   unsafe tools. There are no approvals any more: an older build's `approval` items are left out on load.
 - Slack (`slack.ts`) is the app's one integration with tools: its reads are safe (through a cache in the backend's
-  memory: names a day, channels an hour, messages five minutes), and `slack_post` is unsafe. A Slack message's link
+  memory: names a day, channels an hour, messages five minutes), and there are no writes: `slackCall` calls only read methods (`READS`), so nothing posts to Slack. A Slack message's link
   in a comment (or pasted alone) is pulled in as a `slack_message`, whose card reads the message as it is shown.
 - **Bots have a shell** (auto mode), and `gh` is logged in. Give bots no new credentials lightly.
 

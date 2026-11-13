@@ -29,20 +29,14 @@ export function slackWorkspace(engine: Engine, which: unknown): SlackWorkspace {
 }
 
 /** Calls one Slack Web API method, failing with Slack's own error. */
-export async function slackCall(
-  engine: Engine,
-  which: unknown,
-  method: string,
-  args: Record<string, unknown>,
-  post = false,
-): Promise<Record<string, unknown>> {
+/** The only Slack methods the app calls: reads. Slack is read only here: nothing posts, edits or reacts, whoever asks. */
+const READS = new Set(['auth.test', 'conversations.history', 'conversations.info', 'conversations.replies', 'search.messages', 'users.conversations', 'users.info'])
+
+export async function slackCall(engine: Engine, which: unknown, method: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (!READS.has(method)) throw new Error(`Slack is read only here: ${method} is not called.`)
   const w = slackWorkspace(engine, which)
   const query = new URLSearchParams(Object.entries(args).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)] as [string, string]))
-  const res = await engine.fetch(post ? `https://slack.com/api/${method}` : `https://slack.com/api/${method}?${query}`, {
-    method: post ? 'POST' : 'GET',
-    headers: { Authorization: `Bearer ${w.token}`, ...(post ? { 'Content-Type': 'application/json; charset=utf-8' } : {}) },
-    ...(post ? { body: JSON.stringify(args) } : {}),
-  })
+  const res = await engine.fetch(`https://slack.com/api/${method}?${query}`, { method: 'GET', headers: { Authorization: `Bearer ${w.token}` } })
   const body = (await res.json()) as Record<string, unknown>
   if (!body.ok) throw new Error(`Slack ${method}: ${body.error ?? res.status}`)
   return body
@@ -504,21 +498,6 @@ export const slackActions: Action[] = [
       const matches = (r.messages as { matches?: Raw[] }).matches ?? []
       const shown = await render(engine, w, null, matches)
       return shown.map((m, i) => ({ ...m, channel: matches[i].channel }))
-    },
-  },
-  {
-    name: 'slack_post',
-    unsafe: true,
-    description: 'Post a message as the operator, in a channel or a thread. Answers its channel and ts.',
-    input: {
-      workspace,
-      channel: z.string().describe('The channel id.'),
-      text: z.string().describe('The message, in Slack mrkdwn.'),
-      thread_ts: z.string().optional().describe('Reply in this thread.'),
-    },
-    run: async (a, { engine }) => {
-      const r = await slackCall(engine, a.workspace, 'chat.postMessage', { channel: a.channel, text: a.text, thread_ts: a.thread_ts }, true)
-      return { channel: r.channel, ts: r.ts }
     },
   },
 ]

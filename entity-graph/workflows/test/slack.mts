@@ -2,7 +2,7 @@
 // the actions; mrkdwn as markdown; links in notes and pasted.
 
 import assert from 'node:assert/strict'
-import { slackConversations } from '../src/engine/slack.ts'
+import { slackCall, slackConversations } from '../src/engine/slack.ts'
 import { Admin } from '../src/engine/admin.ts'
 import { Engine } from '../src/engine/engine.ts'
 import { parseSlackLink } from '../src/shared/slack.ts'
@@ -118,6 +118,10 @@ assert.deepEqual(convos.map((c) => [c.label, c.kind]), [['eng', 'channel'], ['ge
 assert.equal(convos[0].link, 'https://acme.slack.com/archives/C9')
 await engine.setInferredType(convos[0].link)
 assert.equal(engine.info(convos[0].link)!.type, 'slack_channel')
+
+// Slack is read only: no tool posts, and the client calls nothing that writes.
+assert.ok(!engine.actions.some((x) => x.name.startsWith('slack_') && x.unsafe), 'no Slack write tools')
+await assert.rejects(slackCall(engine, undefined, 'chat.postMessage', { channel: 'C9', text: 'x' }), /read only/)
 
 // What is new after a message: its thread's replies, and what came after it in the channel, marked mine or not.
 type New = { replies: { text: string; from_me: boolean }[]; after: { text: string }[]; others: number; newest: string }

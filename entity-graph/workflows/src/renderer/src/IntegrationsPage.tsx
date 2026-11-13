@@ -66,7 +66,7 @@ function Status({ check }: { check: Check }) {
 }
 
 const SLACK_STEPS = `1. Create an app for the workspace on [Slack's apps page](https://api.slack.com/apps).
-2. Under OAuth & Permissions, add the User Token Scopes the workflows need, then install it to the workspace. Reading and waiting need \`channels:history\`, \`groups:history\`, \`im:history\` and \`mpim:history\`; posting needs \`chat:write\`; searching needs \`search:read\`.
+2. Under OAuth & Permissions, add the User Token Scopes the workflows need (all read only: the app never posts), then install it to the workspace. Reading and waiting need \`channels:history\`, \`groups:history\`, \`im:history\` and \`mpim:history\`; searching needs \`search:read\`.
 3. Paste the User OAuth Token below.`
 
 const SLACK_WORKSPACE = {
