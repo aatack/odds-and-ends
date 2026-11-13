@@ -4,7 +4,7 @@ import type { Item, Overview } from '../../shared/types'
  * The finder's sections, the same in every finder (home, an item's Assignments, every item picker), in this order:
  * each a way to pick out items worth seeing first, for whoever the finder is for.
  */
-export type SectionId = 'assigned' | 'owned' | 'pinned' | 'unassigned' | 'everything'
+export type SectionId = 'assigned' | 'owned' | 'pinned' | 'unassigned' | 'everything' | 'history'
 export const FINDER_SECTIONS: SectionId[] = ['assigned', 'owned', 'pinned', 'unassigned', 'everything']
 
 export interface Section {
@@ -28,6 +28,8 @@ export type Recent = {
   pinned?: Item[]
   /** What was assigned to whoever it is for and no longer is, the latest first (`finder`, read by the finder). */
   unassigned?: Item[]
+  /** What Back goes through, the nearest first (the History view's, given by it). */
+  history?: Item[]
 }
 
 /** Whose finder it is: `who`, or the person signed in. */
@@ -44,4 +46,6 @@ export const SECTIONS: Record<SectionId, Section> = {
   unassigned: { label: 'Recently unassigned', items: (_items, r) => r.unassigned ?? [] },
   // Only while something is typed (the finder skips it otherwise): whatever matches that no section above has.
   everything: { label: 'Everything else', items: (items) => items },
+  // Not a finder's: the History view's one section.
+  history: { label: 'History', items: (_items, r) => r.history ?? [] },
 }

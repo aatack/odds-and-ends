@@ -367,6 +367,11 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   `before-input-event`, so the window's menu doesn't close the window. Typing filters titles fuzzily; the arrows
   move; Enter opens; Tab makes a new item with the typed title; Escape with nothing typed goes Back. What the items view opens *replaces* it on the stack
   (`open(view, { replace: true })`), so Back goes to where you were before it rather than to the list.
+- **History** (`HistoryView`, view kind `history`, which takes no item) is what Back goes through: the stack below the
+  top, never what Forward would bring back, the nearest first, each item once (pages have no row), in the finder with
+  one section (`history` in `sections.ts`; the rows read by `api().items(ids)`). Picking one is Back as many times
+  (`backTo`: what is passed goes ahead, for Forward). For now it is reached only in a modal, by Ctrl+T (which closes
+  it again).
 - **The finder** (`ItemsList`) is one view: home, an item's Assignments, and every item picker (`ItemPicker`, the
   same list in a modal, picking rather than opening: one item, or with `multiple` toggling each) show the same
   **sections** (`FINDER_SECTIONS` in `sections.ts`), for whoever it is for (`recent.who`, else you): **Assigned**,

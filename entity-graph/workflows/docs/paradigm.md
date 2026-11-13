@@ -123,6 +123,8 @@ The text uses ASD-STE100 Simplified Technical English.
 - Next (Ctrl+D) shows the next item that you have, and that nothing blocks.
   It does not show the item on the screen. It does not show items that you
   looked at in the last 30 minutes.
+- History (Ctrl+T) lists the items that Back goes through, the nearest first.
+  Type to search it. Pick an item to go back to it.
 
 ## Safety
 

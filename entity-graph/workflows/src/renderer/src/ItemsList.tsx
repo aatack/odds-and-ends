@@ -117,7 +117,7 @@ export function ItemsList(props: {
   // The sections, each filtered (best match first) when something is typed, and cut to `perSection` unless expanded.
   const groups = useMemo(() => {
     // What is typed is matched against every item the finder has, and those only the store gave it.
-    const known = [...items, ...[...extra.pinned, ...extra.unassigned].filter((u) => !items.some((i) => i.id === u.id))]
+    const known = [...items, ...[...extra.pinned, ...extra.unassigned, ...(given.history ?? [])].filter((u) => !items.some((i) => i.id === u.id))]
     const matched = text.trim() ? new Map(fuzzysort.go(text, known, { key: 'title', threshold: 0.2 }).map((r, i) => [r.obj.id, i])) : null
     const chosen = new Set(selected ?? [])
     const seen = new Set<string>(chosen)
@@ -150,7 +150,7 @@ export function ItemsList(props: {
       // A link section that can be added to shows even when empty, but not while something is typed.
       .filter((g) => g.count || (g.add && !matched))
     return botsLabel ? [...chosenGroup, ...itemGroups, ...botGroup] : [...chosenGroup, ...botGroup, ...itemGroups]
-  }, [items, recent, extra, sections, perSection, expanded, text, bots, botsLabel, selected, act])
+  }, [items, recent, given.history, extra, sections, perSection, expanded, text, bots, botsLabel, selected, act])
   const flat = groups.flatMap((g) => g.lines)
   const current = Math.min(at, Math.max(flat.length - 1, 0))
   const choose = (line: Line) => ('item' in line ? onOpen(line.item.id) : 'bot' in line ? onOpen(line.bot.id) : setExpanded([...expanded, line.more]))

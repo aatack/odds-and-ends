@@ -24,6 +24,8 @@ export type View =
   | { kind: 'phone' }
   | { kind: 'types' }
   | { kind: 'bots' }
+  /** What Back goes through (the stack below the top), in the finder: no item. For now only in a modal (Ctrl+T). */
+  | { kind: 'history' }
   /** The edit log: of one item, given its id; else of everything. */
   | { kind: 'log'; id?: string }
 

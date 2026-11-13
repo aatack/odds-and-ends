@@ -105,6 +105,16 @@ export function useWorkflows() {
     setForwards([...forwards, views[views.length - 1]].slice(-HISTORY_LIMIT))
   }, [views, setViews, forwards, setForwards])
 
+  /** Back as many times as it takes for the view at `index` on the stack to be on top (the History view's pick). */
+  const backTo = useCallback(
+    (index: number) => {
+      if (index < 0 || index >= views.length - 1) return
+      setViews(views.slice(0, index + 1))
+      setForwards([...forwards, ...views.slice(index + 1).reverse()].slice(-HISTORY_LIMIT))
+    },
+    [views, setViews, forwards, setForwards],
+  )
+
   /**
    * Puts the view Back last took off on top of the stack again. With nothing to put back, goes to what was last
    * reached straight from the task on screen, if anything was.
@@ -175,5 +185,5 @@ export function useWorkflows() {
     [setViewed, setViewedAt],
   )
 
-  return { recent, markViewed, overview, view, views, detail, catalog, selected, select, open, back, forward, next, act, actOn, error, empty }
+  return { recent, markViewed, overview, view, views, detail, catalog, selected, select, open, back, backTo, forward, next, act, actOn, error, empty }
 }

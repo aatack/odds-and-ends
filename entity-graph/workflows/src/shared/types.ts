@@ -409,6 +409,8 @@ export interface WorkflowsAPI {
   setInferredType: (itemId: string) => Promise<void>
   /** What the finder reads from the store for any of `who`: what is pinned to them, and what was assigned to them and no longer is (the latest first). */
   finder: (who: string[]) => Promise<{ pinned: Item[]; unassigned: Item[] }>
+  /** Items by id, in that order, leaving out ids no item has: the History view's rows. */
+  items: (ids: string[]) => Promise<Item[]>
   /** Gives an item to an owner (a username or a bot), or to nobody (null). */
   setOwner: (itemId: string, owner: string | null) => Promise<void>
   /** The open scripts an item type owns (`set_owner` to the type's name): the Types page's, and every item of it offers them. */
@@ -518,7 +520,7 @@ export interface LogEntry {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'cancel', 'runNow', 'close', 'reopen', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'moveItem', 'newNotes', 'subtree', 'viewText', 'setInferredType', 'finder', 'setOwner', 'editLog',
+  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'cancel', 'runNow', 'close', 'reopen', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'moveItem', 'newNotes', 'subtree', 'viewText', 'setInferredType', 'finder', 'items', 'setOwner', 'editLog',
   'typeScripts', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'trustBotFolders', 'slackView', 'slackConversations', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',
