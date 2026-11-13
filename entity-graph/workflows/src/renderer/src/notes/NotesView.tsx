@@ -77,7 +77,7 @@ function rowsOf(tree: NotesTree, root: string, collapsed: Set<string>, f: Filter
   const walk = (id: string, path: string[], depth: number) => {
     const info = tree.info(id)
     if (!info) return
-    const kids = info.type === 'topic' ? tree.kids(id) : []
+    const kids = info.type === 'topic' || id === root ? tree.kids(id) : []
     const shut = collapsed.has(resolve(id))
     out.push({ key: path.map(resolve).join('/'), id: resolve(id), path, depth, info, hasKids: kids.length > 0, collapsed: shut && kids.length > 0 })
     if (shut && !filtering) return

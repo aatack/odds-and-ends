@@ -3,7 +3,7 @@
 // - avatar: its picture, beside it in the chat (who said a note; any other item, its type);
 // - pill: inline in text, as `[id]()` is drawn: its icon and name, which open it;
 // - card: in a chat or a list, by its type (`CARDS`);
-// - focus: on its own, filling the view (`FOCUS`): a task or a bot as its chat, anything else as its details.
+// - focus: on its own, filling the view (`displayOf`): its focus, comments, notes or assignments.
 
 import type { ReactNode } from 'react'
 import type { Catalog, ItemKind, ItemInfo } from '../../shared/types'
@@ -86,4 +86,4 @@ export function ItemCard(props: CardProps) {
   return card ? <>{card(props)}</> : <Markdown text={props.info.message ?? props.info.summary} highlight={props.find} />
 }
 
-export { FOCUS } from '../../shared/views'
+export { DISPLAY } from '../../shared/views'

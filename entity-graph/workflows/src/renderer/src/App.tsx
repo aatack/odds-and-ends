@@ -21,7 +21,7 @@ import { Composer } from './Composer'
 import { ItemRefContext } from './components/ui/Markdown'
 import { ItemRef } from './ItemRef'
 import { Pill } from './sizes'
-import { focusKind } from '../../shared/views'
+import { DISPLAYS, displayOf, type Display } from '../../shared/views'
 import { FileFocus, uploadFiles } from './FileView'
 import { NotesView } from './notes/NotesView'
 import { ItemInfoIcon } from './icons'
@@ -378,6 +378,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
     )
   const e = d.info
   const debug = w.view.kind === 'debug'
+  const shown = displayOf(e)
   // The pins fill the right of the screen, beside the view (on a phone there is no room: the debug view has them).
   const withPins = (view: ReactNode) =>
     mobile ? (
@@ -392,7 +393,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
     )
   const actions = debug ? null : (
     <>
-      {e.type === 'topic' && <DisplayPicker info={e} act={w.act} />}
+      {!debug && <ViewPicker info={e} act={w.act} onDebug={() => w.open({ kind: 'debug', id: e.id })} />}
       {d.item && <AssigneePill item={d.item.item} overview={w.overview} act={w.actOn(e.id)} />}
       <HeaderActions actions={itemActions(e, { act: w.actOn(e.id), custom: w.customActions })} mobile={mobile} />
       {!mobile && (
@@ -413,24 +414,24 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
         onRename={e.type === 'topic' && !debug ? (title) => void w.act(() => api().rename(e.id, title)) : undefined}
       />
       {w.error && <div className="error">{w.error}</div>}
-      <div className={`view-body ${(d.item || e.type === 'file' || focusKind(e) === 'notes') && !debug ? 'fill' : ''}`}>
+      <div className={`view-body ${!debug && (shown !== 'focus' || e.type === 'file' || e.type === 'bot') ? 'fill' : ''}`}>
         {debug ? (
           <DebugView id={e.id}>
             <Pins id={e.id} pins={d.pins} pinnedIn={d.pinnedIn} catalog={w.catalog} act={w.act} onOpen={openItem} />
           </DebugView>
-        ) : focusKind(e) === 'chat' && e.type === 'bot' && d.item ? (
-          <div className="bot-page">
-            <BotView key={e.id} bot={w.overview.bots.find((b) => b.id === e.id) ?? null} act={w.act} mobile={mobile} />
-            <ItemView key={`${e.id}:chat`} detail={d.item} catalog={w.catalog} act={w.act} onOpen={openItem} mobile={mobile} />
-          </div>
+        ) : shown === 'assignments' ? (
+          // What is assigned to it, then what it owns: a person's or a bot's home, as the Tasks view is yours.
+          <ItemsList items={w.overview.items} recent={{ ...w.recent, who: [e.id] }} sections={SEARCH_SECTIONS} onOpen={openItem} mobile={mobile} />
+        ) : shown === 'notes' ? (
+          // Its pins fill the right, beside its tree, as they do beside a chat.
+          withPins(<NotesView key={e.id} info={e} tasks={w.overview.items} recent={w.recent} bots={everyone(w.overview)} onOpen={openItem} onBack={w.back} mobile={mobile} />)
+        ) : shown === 'comments' && d.item ? (
+          // Its pins fill the right of the screen, beside its chat, with New notes atop.
+          withPins(<ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openItem} mobile={mobile} />)
         ) : e.type === 'file' ? (
           <FileFocus key={e.id} info={e} mobile={mobile} />
-        ) : focusKind(e) === 'notes' ? (
-          // A note's pins fill the right, beside its tree, as a task's do beside its chat.
-          withPins(<NotesView key={e.id} info={e} tasks={w.overview.items} recent={w.recent} bots={everyone(w.overview)} onOpen={openItem} onBack={w.back} mobile={mobile} />)
-        ) : focusKind(e) === 'chat' && d.item ? (
-          // A task's pins fill the right of the screen, beside its chat, with New notes atop.
-          withPins(<ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openItem} mobile={mobile} />)
+        ) : e.type === 'bot' ? (
+          <BotView key={e.id} bot={w.overview.bots.find((b) => b.id === e.id) ?? null} act={w.act} mobile={mobile} />
         ) : (
           <ItemInfoView detail={d} catalog={w.catalog} act={w.act} onOpen={openItem} />
         )}
@@ -718,18 +719,25 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
 }
 
 /** A topic's display: its comments (a chat) or its notes (a tree), as its `display` value. */
-function DisplayPicker({ info, act }: { info: ItemInfo; act: (fn: () => Promise<unknown>) => unknown }) {
-  const display = info.params.display === 'notes' ? 'notes' : 'comments'
+/**
+ * Which of an item's views shows (its `display`, kept on it): its focus, comments, notes or assignments, the same for
+ * every type; Debug pushes the debug view.
+ */
+function ViewPicker({ info, act, onDebug }: { info: ItemInfo; act: (fn: () => Promise<unknown>) => unknown; onDebug: () => void }) {
   return (
     <select
       className="display-picker"
-      title="What this topic shows"
-      aria-label="Display"
-      value={display}
-      onChange={(ev) => void act(() => api().setValue(info.id, 'display', ev.target.value === 'notes' ? 'notes' : null))}
+      title="Which view this item shows"
+      aria-label="View"
+      value={displayOf(info)}
+      onChange={(ev) => (ev.target.value === 'debug' ? onDebug() : void act(() => api().setValue(info.id, 'display', ev.target.value as Display)))}
     >
-      <option value="comments">Comments</option>
-      <option value="notes">Notes</option>
+      {DISPLAYS.map((d) => (
+        <option key={d.id} value={d.id}>
+          {d.label}
+        </option>
+      ))}
+      <option value="debug">Debug</option>
     </select>
   )
 }

@@ -48,7 +48,7 @@ export async function load(root: string): Promise<void> {
   const byParent = new Map<string, string[]>()
   for (const i of list) {
     infos.set(i.id, i)
-    if (i.type === 'topic') byParent.set(i.id, [])
+    if (i.type === 'topic' || i.id === root) byParent.set(i.id, [])
   }
   for (const i of list) if (i.id !== root && i.parentId) byParent.get(i.parentId)?.push(i.id)
   for (const [id, ids] of byParent) kids.set(id, ids)

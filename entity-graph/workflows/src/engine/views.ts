@@ -1,6 +1,6 @@
 // The sizes anything is drawn at (the window's sizes.tsx), as text: what a bot reads of an item, in its prompt and
 // from get_item. Each size is built from the smaller ones: a pill is the item's type and name; a card is what a chat
-// shows of it; a focus is the whole of it, as its view fills the window (shared/views.ts `FOCUS`): a chat as the cards
+// shows of it; a focus is the whole of it, as its view fills the window (shared/views.ts `focusKind`): a chat as the cards
 // of what is in it, a note as its tree (each note in it at focus, anything else as its pill), anything else as its
 // values. An avatar has no text.
 

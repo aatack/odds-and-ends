@@ -117,8 +117,7 @@ shrink.
 - Everything is an **event**, topics included: one tree, held in egdb as entities joined by `comments` and `notes`
   links. A **topic** is the one type people write (a comment, a task, a note: the old `task` and `note`): `text` (its
   first line its title), `open` (true open, false closed, absent no status: a comment; a note's checkbox and a task's
-  open/closed are the same), `section`, and `display` (`comments`, the chat, by default; `notes`, the tree; the
-  header's `DisplayPicker` switches). Its comments are its history; its notes a tree of topics. Closing writes
+  open/closed are the same), `section`, and `display` (which view it opens on: see **Views** under UI). Its comments are its history; its notes a tree of topics. Closing writes
   `open: false`; topics never write `resolved`. Some items resolve as they are added (a comment); **blockers** wait
   until something happens (an approval). Topics don't depend on, or attach to, each other: an open topic in another is
   a card in its chat, and blocks nothing. There are ten types: `topic`, `approval` (the only way a person runs an
@@ -220,12 +219,12 @@ backwards, pins say where an item is referenced. `ItemInfo.pins` / `pinnedIn` li
 
 ## Notes
 
-A topic that shows its notes (`display: notes`) is drawn as a dense tree (`notes/NotesView.tsx`), worked as
+An item's Notes view (a topic made by New notes opens on it: `display: notes`) is a dense tree (`notes/NotesView.tsx`), worked as
 entity-graph's outliner is, with its pins beside it as its chat's are. Everything of it is in `src/renderer/src/notes/`
 (the view, its store, New notes, its CSS); what it shares it takes from the rest (the picker, the text box, the find
 line, markdown). A note is typed in the app's one text box (`TextInput`, as the chat input is: `@` inserts a reference)
 and drawn by the one `Markdown`. Its structure is only `notes` links: the items in each topic's notes (`subtree` walks
-into topics' notes; anything else is a leaf; added there by `addItems` with `notes`). New notes, atop the pins (always
+the root's notes, then topics' notes below it; anything else is a leaf; added there by `addItems` with `notes`). New notes, atop the pins (always
 shown on a desktop), makes a topic showing its notes, titled as typed, in no item and pinned to the item on screen, and
 opens it. Every change shows at once and is sent after (`notes/store.ts`: pending ops over what was read, in order, a new note
 on a temporary id until the backend gives its own), so nothing waits on the backend. It is set in the theme and serif
@@ -321,11 +320,17 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
     (`components/schema/`, with the `ui/` primitives they need and its `index.css`
     tokens). Keep them in step with entity-graph rather than editing them here.
 - **Four sizes.** Anything is drawn as an avatar (its picture in the chat), a pill (inline in text, as `[id]()` is),
-  a card (in a chat or list, by its type: `CARDS`) or its focus (filling the view: a chat, or its details: `FOCUS`).
+  a card (in a chat or list, by its type: `CARDS`) or its view (filling the window: see Views).
   They are all in `sizes.tsx`: a new type's views go there. Each but the avatar has a text version, for bots
   (`engine/views.ts`: `pillText`, `cardText`, `focusText`, each built from the smaller ones; `get_item` with `size`, and
-  the prompt's lines, which are cards). What both share (`FOCUS`, the pill's name) is in `shared/views.ts`: a type's
-  text goes in step with how it is drawn.
+  the prompt's lines, which are cards). What both share (`displayOf`, `focusKind`, the pill's name) is in
+  `shared/views.ts`: a type's text goes in step with how it is drawn.
+- **Views.** Every item, whatever its type, has the same views, chosen by the picker in its header (`ViewPicker`) and
+  kept as its `display` value; without one, its type's (`DISPLAY` in `shared/views.ts`): **Focus** (its type's own: a
+  file itself, a bot's settings and runs (`BotView`), anything else's details), **Comments** (its chat: any item can
+  be commented in), **Notes** (its tree: any item can have notes), **Assignments** (what is assigned to it, then what
+  it owns: the search page's two sections for that item; a person's or bot's home), and **Debug** (pushed, the same
+  for everything). People and bots open on Assignments; topics and scripts on Comments; the rest on Focus.
 - **The same design rules as entity-graph:** no motion, no pointer cursor,
   restrained colour, tone rather than borders. Tailwind v4 provides the tokens.
   The app's own CSS (`styles.css`) sits in `@layer components`, so the
@@ -338,8 +343,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   `themes.css` holds the overrides. Code is Fira Code everywhere; weights lean light.
 - **The content pane is a stack of views** (`views.ts`, a Jotai atom kept in
   local storage). The list and Next replace the stack; Open, Debug and links push
-  onto it; Back pops it. A view is `{ kind, id }`: `item` shows an item as its
-  type is shown (a topic as its chat or its tree, by `display`: `focusKind`; any other item as `ItemInfoView`); `debug`
+  onto it; Back pops it. A view is `{ kind, id }`: `item` shows an item in the view its `display` says (see Views); `debug`
   (`DebugView`) shows the item as egdb holds it (`Engine.inspect`): its id, who made it and when (who set its
   `type`), its values (a comment's are just `type` and `text`), and its links, each with when and by whom. A new kind of view is a new `kind`.
 - **There is no sidebar.** The content fills the window in a centred column.
@@ -369,8 +373,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
 - **Picking** is `ItemPicker`: the finder in a `Modal` over the blurred window, calling back with the item (or
   bot, or person) picked (Enter or a click); Tab only where a caller gives `onTab` (the Tasks view starts a topic). With `multiple`, its `value` and `setValue` are a list:
   what is selected shows first, ticked; picking a row adds it, or takes it off.
-- **Every item view's header** shows the item as its pill (icon, then title) and, for topics, bots and scripts (open
-  or closed), **who has it** at the top right (`AssigneePill`): their name, or with more than one, their pictures.
+- **Every item view's header** shows the item as its pill (icon, then title), the view picker, and **who has it** at the top right (`AssigneePill`): their name, or with more than one, their pictures.
   Clicking it opens the multiselect picker over people and bots.
 - **`@` in the chat input refers to a bot, a person or an item**: typed at the start of a word, it opens the finder
   (`ItemPicker`), and what is picked (or made, with Tab) takes its place as `[id]()`, and the cursor goes back to
@@ -407,10 +410,10 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   Everything is as that person sees it: `withYou`, Next, the recent lists. Another source starts with an
   empty stack of views.
 - **Bots** (`BotsPage`, in the menu) lists the bots, with what each has and whether it is working or when it
-  runs next, counting down), and creates new ones (a name and instructions; the rest has defaults). A bot opens as an
-  `item` view: `BotView` at the top (its model, cycle and state; Wake now; its last run in a line; Settings,
-  folded, as a `Form`, with Delete there, asking first, which hands what it had back), then
-  its own chat, like a topic's. Its header has no Delete.
+  runs next, counting down), and creates new ones (a name and instructions; the rest has defaults). A bot opens on its
+  Assignments; its Focus is `BotView` (its model, cycle and state; Wake now; its last run in a line; Settings,
+  folded, as a `Form`, with Delete there, asking first, which hands what it had back); its Comments are its own chat.
+  Its header has no Delete.
 - **Every item has a right-click menu** (`useItemMenu`): Open and Debug, then what can be done to it
   (`itemActions.ts`: Close for an open topic, Reopen for a closed one, nothing for one with no status; Cancel for
   another open item, not a bot or script; then the custom actions). The view header draws the same list as icon

@@ -401,11 +401,11 @@ export class Engine extends EventEmitter {
     return [...new Set(given.map((a) => a.to))]
   }
 
-  /** A topic in full, its comments being its chat; or a bot or script, its own chat being its comments. */
+  /** Any item in full, its comments being its chat (a bot's or script's own chat; a person's, a file's: any item has one). */
   detail(id: string, viewer = this.me()): ItemDetail | null {
     const r = this.row(id)
-    const item = r?.type === 'topic' || r?.type === 'bot' || r?.type === 'script' ? this.toItem(r, viewer) : null
-    if (!item) return null
+    if (!r) return null
+    const item = this.toItem(r, viewer)
     const parent = item.parentId ? this.get(item.parentId) : null
     return { item, parent: parent && { id: parent.id, title: parent.title }, children: this.children(id) }
   }
@@ -1444,8 +1444,8 @@ export class Engine extends EventEmitter {
   }
 
   /**
-   * A topic and its notes, the notes view's tree: the topic first, then each item in its notes, depth first, oldest
-   * first (each with its `parentId`). Only topics' notes are walked into: anything else is a leaf. At most `limit`.
+   * An item and its notes, the notes view's tree: the topic first, then each item in its notes, depth first, oldest
+   * first (each with its `parentId`). Below it, only topics' notes are walked into: anything else is a leaf. At most `limit`.
    */
   subtree(id: string, limit = 20_000): ItemInfo[] {
     const root = this.row(id)
@@ -1454,7 +1454,8 @@ export class Engine extends EventEmitter {
     const walk = (r: ItemRow) => {
       if (out.length >= limit) return
       out.push(this.toInfo(r))
-      if (r.type === 'topic') for (const k of this.store.children(r.id, 'notes')) walk(k)
+      // Any item has notes; within them, only topics' are walked into.
+      if (r === root || r.type === 'topic') for (const k of this.store.children(r.id, 'notes')) walk(k)
     }
     walk(root)
     return out

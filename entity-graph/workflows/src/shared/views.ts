@@ -4,26 +4,42 @@
 import type { ItemKind } from './types'
 
 /**
- * How each type fills the view on its own: as a chat (its comments, and the chat input), as its details, or as the tree
- * of its notes (`NotesView`). A topic says which by its `display` (`focusKind`).
+ * The views every item has, whatever its type (beside Debug, which is the same for everything): its focus (its type's
+ * own: a file itself, a bot's settings, anything else's details), its comments (a chat), its notes (a tree), or its
+ * assignments (what is assigned to it, then what it owns: a person's or a bot's home). An item's `display` value says
+ * which it opens on; without one, its type does (`DISPLAY`).
  */
-export const FOCUS: Record<ItemKind, 'chat' | 'details' | 'notes'> = {
-  topic: 'chat',
-  bot: 'chat',
-  approval: 'details',
-  script: 'details',
-  link: 'details',
-  search: 'details',
-  slack_message: 'details',
-  slack_channel: 'details',
-  // Its own view (FileFocus): the file itself, filling it.
-  file: 'details',
-  user: 'details',
+export type Display = 'focus' | 'comments' | 'notes' | 'assignments'
+export const DISPLAYS: { id: Display; label: string }[] = [
+  { id: 'focus', label: 'Focus' },
+  { id: 'comments', label: 'Comments' },
+  { id: 'notes', label: 'Notes' },
+  { id: 'assignments', label: 'Assignments' },
+]
+
+/** The view each type opens on, unless the item says (`display`). */
+export const DISPLAY: Record<ItemKind, Display> = {
+  topic: 'comments',
+  bot: 'assignments',
+  user: 'assignments',
+  script: 'comments',
+  approval: 'focus',
+  link: 'focus',
+  search: 'focus',
+  slack_message: 'focus',
+  slack_channel: 'focus',
+  file: 'focus',
 }
 
-/** How an item fills the view: a topic by its `display` (its comments as a chat, the default, or its notes as a tree); anything else by its type. */
-export const focusKind = (i: { type: ItemKind; params: Record<string, unknown> }): 'chat' | 'details' | 'notes' =>
-  i.type === 'topic' ? (i.params.display === 'notes' ? 'notes' : 'chat') : (FOCUS[i.type] ?? 'details')
+/** The view an item opens on: its `display`, else its type's. */
+export const displayOf = (i: { type: ItemKind; params: Record<string, unknown> }): Display =>
+  DISPLAYS.some((d) => d.id === i.params.display) ? (i.params.display as Display) : (DISPLAY[i.type] ?? 'focus')
+
+/** How an item reads at its focus as text, for bots: its comments as a chat, its notes as a tree, or its details. */
+export const focusKind = (i: { type: ItemKind; params: Record<string, unknown> }): 'chat' | 'details' | 'notes' => {
+  const d = displayOf(i)
+  return d === 'comments' ? 'chat' : d === 'notes' ? 'notes' : 'details'
+}
 
 /** An item's name as its pill shows it (`[id]()` in any text): the first line of what it says. */
 export const pillLabel = (i: { summary: string }): string => i.summary.split('\n')[0]
