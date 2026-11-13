@@ -1,4 +1,4 @@
-import { Plus, X } from 'lucide-react'
+import { Play, Plus, X } from 'lucide-react'
 import { useState } from 'react'
 import type { Item, ItemInfo } from '../../shared/types'
 import { pillText } from '../../shared/text'
@@ -7,6 +7,7 @@ import { ItemPicker } from './ItemPicker'
 import type { Recent } from './sections'
 import { Pill } from './sizes'
 import { api } from './useWorkflows'
+import { useOnScreen } from './ScriptCard'
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
@@ -26,6 +27,7 @@ export function Pins(props: { id: string; pins: ItemInfo[]; pinnedIn: ItemInfo[]
         pin={(other) => void act(() => api().pin(id, [other], true))}
         unpin={(other) => void act(() => api().pin(id, [other], false))}
         make={(title) => void act(() => api().newNotes(title, id))}
+        run={(script, focus) => void act(() => api().runNow(script, { item: id, focus }))}
       />
       <PinList
         title="Pinned in"
@@ -54,8 +56,11 @@ function PinList(props: {
   pin: (id: string) => void
   unpin: (id: string) => void
   make: (title: string) => void
+  /** Given, a script pinned here has a play button: it runs on the item it is pinned to, with the item on screen as focus. */
+  run?: (script: string, focus: string | null) => void
 }) {
   const { title, id, shown, onOpen } = props
+  const onScreen = useOnScreen()
   const [picking, setPicking] = useState(false)
   return (
     <section className="side-section">
@@ -72,6 +77,11 @@ function PinList(props: {
           {shown.map((e) => (
             <span key={e.id} className="side-pill">
               <Pill id={e.id} icon={<ItemInfoIcon info={e} />} label={pillText(e)} onOpen={() => onOpen(e.id)} />
+              {props.run && e.type === 'script' && !e.closed && (
+                <button data-ui className="pin-play" title={`Run ${pillText(e)} on this`} aria-label="Run" onClick={() => props.run!(e.id, onScreen)}>
+                  <Play className="icon" />
+                </button>
+              )}
               <button data-ui className="pin-off" title="Unpin" aria-label="Unpin" onClick={() => props.unpin(e.id)}>
                 <X className="icon" />
               </button>

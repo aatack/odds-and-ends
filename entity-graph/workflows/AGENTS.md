@@ -151,8 +151,15 @@ shrink.
   It is told never to close a topic unless someone explicitly asked it to. Its `last_run` value says how
   its last run went (egdb keeps the earlier ones, as old values); `seen` lists the items its session has seen.
 - A `script` is a bot without a model: it can sit on its own (with a `name`), is given topics as a bot is (`@` it,
-  or assign it), runs by the same rule, and runs its JavaScript on one topic a run (`context.topics` holds exactly
-  one), keeping its state on those topics (`set_value`, duck typed). Like a bot, it lasts till
+  or assign it), runs by the same rule, and runs its JavaScript on one topic a run. Its source is the body of a
+  function of `tools`, `item` (what it runs on) and `focus` (the item on screen, when a person ran it); the older
+  `context` is still in scope, and a source declaring its own `item` still runs (`runScript` nests it). The app keeps
+  what it has run on (`last_seen`); it need not. **The loop runs only the scripts reached from the person signed in**
+  along `owns` links, through bots they own, recursively (`runnableScripts`); any other runs only when pressed. A script
+  may be owned by an **item type** (`set_owner` to `topic`, `bot`…): every item of that type offers it in its right
+  pane, under its actions (`typeScripts`, in `ItemInfoDetail`), as a card that runs it on that item. A script's card
+  (`ScriptCard`: in a chat, pinned in the right pane) has a play button that runs it on the item it is in, with the
+  item on screen as focus (`runNow`'s `item` and `focus`). Like a bot, it lasts till
   someone cancels it: it can't end itself, a run that throws says so in its chat (once per new error) and it runs
   again on its cycle, and closing a topic it sits in leaves it be. `mentions(topic)` and
   `refs(item, type)` help it read what it was asked. See `SCRIPT_DOC` in `itemTypes.ts`. Useful scripts (Snooze, Slack wait, Merge) are
@@ -398,8 +405,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
 - **A topic with a status is a card** (`TaskCard`): its first line, with a tick once closed, a pending ring while
   open. Clicking it opens it.
 - **A topic's chat is its comments** (`Chat`: its `comments` links, in the order they were added), each as its
-  card: a comment its words; an open or closed topic its `TaskCard`; a script (`ScriptCard`) what it waits for, then a tick and
-  its output once done, a play button, and when it runs next (counting down);
+  card: a comment its words; an open or closed topic its `TaskCard`; a script (`ScriptCard`) its name, what it does, how it stands, and a play button;
   an approval its form while open. There is no separate blockers panel. Agents are told that what should show
   in the chat must be an item in the topic.
 - **When a topic closes, the app moves on.** Whatever the human does to the topic on screen (sends, approves,

@@ -21,13 +21,14 @@ import { Pill } from './sizes'
 import { DISPLAYS, displayOf, type Display } from '../../shared/views'
 import { FileFocus, uploadFiles } from './FileView'
 import { NotesView } from './notes/NotesView'
-import { ItemInfoIcon } from './icons'
+import { ItemInfoIcon, TYPE_NAME } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
 import { defaultActions } from './defaultActions'
 import { minutes, useNow } from './time'
 import { LogPage } from './LogPage'
 import { OverviewContext, StatusLine } from './status'
+import { ScriptCard } from './ScriptCard'
 import { api, useWorkflows } from './useWorkflows'
 import { findAtom, findFocusAtom, forwardAtom, menuAtom, renameAtom, searchFocusAtom, viewedAtom, viewsAtom, type View } from './views'
 import { FindLine } from './FindLine'
@@ -479,7 +480,8 @@ function ItemSide({ detail: d, act, pins }: { detail: ItemInfoDetail; act: Act; 
         )}
         <div className="side-row">
           <span className="side-label">Owner</span>
-          <OwnerPill id={e.id} owner={e.owner} overview={w.overview} act={act} />
+          {/* A script may be owned by an item type: it is then offered on every item of that type. */}
+          <OwnerPill id={e.id} owner={e.owner} overview={w.overview} act={act} types={e.type === 'script' ? (Object.keys(TYPE_NAME) as string[]) : []} />
         </div>
         {actions.length > 0 && (
           <div className="side-actions">
@@ -488,6 +490,14 @@ function ItemSide({ detail: d, act, pins }: { detail: ItemInfoDetail; act: Act; 
                 <a.icon className="icon" />
                 {a.label}
               </button>
+            ))}
+          </div>
+        )}
+        {/* The scripts this item's type owns, each a card that runs it on this item. */}
+        {d.typeScripts.length > 0 && (
+          <div className="side-scripts">
+            {d.typeScripts.map((s) => (
+              <ScriptCard key={s.id} info={s} on={e.id} act={act} whole />
             ))}
           </div>
         )}

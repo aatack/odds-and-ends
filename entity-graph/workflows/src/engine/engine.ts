@@ -297,10 +297,15 @@ export class Engine extends EventEmitter {
     return bot ? this.owner(bot) : null
   }
 
-  /** Gives an item to an owner (a person or a bot), or to nobody (null). */
+  /**
+   * Gives an item to an owner (a person or a bot), or to nobody (null). An item type (`topic`, `bot`…) may own scripts:
+   * they are offered in the right pane of every item of that type (`typeScripts`).
+   */
   async setOwner(itemId: string, owner: string | null, actor = this.me()): Promise<void> {
     if (!this.row(itemId)) throw new Error(`No item ${itemId}.`)
-    const to = owner === null ? null : this.resolveAssignee(owner)
+    const isType = owner !== null && this.itemTypes.some((t) => t.type === owner)
+    if (isType && this.row(itemId)!.type !== 'script') throw new Error(`Only a script can be owned by an item type (${owner}).`)
+    const to = owner === null ? null : isType ? owner : this.resolveAssignee(owner)
     this.store.setOwner(itemId, to, actor, this.now())
     this.emit('change')
   }
@@ -330,6 +335,35 @@ export class Engine extends EventEmitter {
       if (this.row(e.entity) && !this.assignees(e.entity).some((a) => who.includes(a))) ids.push(e.entity)
     }
     return { pinned: items(pinned), unassigned: items(ids) }
+  }
+
+  /** The open scripts an item type owns: offered in the right pane of every item of that type. */
+  typeScripts(type: string): ItemInfo[] {
+    return this.store.owned(type).flatMap((id) => {
+      const r = this.row(id)
+      return r?.type === 'script' && !r.resolved ? [this.toInfo(r)] : []
+    })
+  }
+
+  /**
+   * The scripts the loop runs: those the person signed in owns, or a bot they own does, or a bot that bot owns, and so
+   * on (a walk along `owns` links, through bots). Anyone else's, or nobody's, run only when pressed.
+   */
+  runnableScripts(): Set<string> {
+    const scripts = new Set<string>()
+    const seen = new Set<string>()
+    const walk = (owner: string) => {
+      if (seen.has(owner)) return
+      seen.add(owner)
+      for (const id of this.store.owned(owner)) {
+        const r = this.row(id)
+        if (!r || r.resolved) continue
+        if (r.type === 'script') scripts.add(id)
+        else if (r.type === 'bot') walk(id)
+      }
+    }
+    walk(this.me())
+    return scripts
   }
 
   /** Who an item is assigned to: its `assignees` links, the earliest first. */
@@ -440,6 +474,7 @@ export class Engine extends EventEmitter {
       pins: infos(info.pins),
       pinnedIn: infos(info.pinnedIn),
       item: this.detail(id, viewer),
+      typeScripts: this.typeScripts(info.type),
     }
   }
 
@@ -1201,13 +1236,23 @@ export class Engine extends EventEmitter {
     if (r.type === 'script') for (const t of this.assignedTo(itemId)) this.handBack(t, itemId, null, 'script')
   }
 
-  /** Runs a script now, once: its play button. A person's press gives it the unsafe tools. */
-  async runNow(itemId: string, actor = this.me()): Promise<void> {
+  /**
+   * Runs a script now, once: its play button, or its card in an item's right pane. A person's press gives it the unsafe
+   * tools. `item` is what it runs on (left out: the first topic it holds) and `focus` the item on screen.
+   */
+  async runNow(itemId: string, actor = this.me(), given: { item?: string | null; focus?: string | null } = {}): Promise<void> {
     const r = this.row(itemId)
     if (r?.type !== 'script' || r.resolved) throw new Error('There is nothing to run.')
     this.pressed.set(itemId, actor)
-    const error = await this.runScriptItem(itemId)
+    const error = await this.runScriptItem(itemId, given)
     if (error) throw new Error(error)
+  }
+
+  /** An item as a script is given it (`item`, `focus`): its id, type, title, values, owner, who has it and where it sits. */
+  private scriptItem(id: string | null | undefined): Record<string, unknown> | null {
+    const r = id ? this.row(id) : null
+    if (!r) return null
+    return { id: r.id, type: r.type, title: this.title(r.id, r.params), values: r.params, owner: this.owner(r.id), assignees: this.assignees(r.id), parentId: r.parent_id, closed: this.isClosed(r.id) }
   }
 
   /** Writes one param of an item: for the app's own bookkeeping, such as a bot's session and last run. */
@@ -1451,10 +1496,14 @@ export class Engine extends EventEmitter {
     await this.checkDue()
   }
 
-  /** Runs every script that is due (`due`, as bots are), at most `scripts.max_running` (MAX_SCRIPTS) at once, those due longest first. */
+  /**
+   * Runs every script the loop runs (`runnableScripts`: owned from the person signed in, through bots) that is due
+   * (`due`, as bots are), at most `scripts.max_running` (MAX_SCRIPTS) at once, those due longest first.
+   */
   async checkDue(): Promise<void> {
     const now = this.now()
-    const open = this.store.ofType('script').filter((r) => !r.resolved)
+    const runnable = this.runnableScripts()
+    const open = this.store.ofType('script').filter((r) => !r.resolved && runnable.has(r.id))
     for (const r of open) r.next_check_at = this.due(r.id)?.at ?? null
     const due = open.filter((r) => r.next_check_at !== null && r.next_check_at <= now && !this.checking.has(r.id)).sort((a, b) => a.next_check_at! - b.next_check_at!)
     const room = Math.max(0, Number(this.settings.get('scripts.max_running', MAX_SCRIPTS)) - this.checking.size)
@@ -1467,7 +1516,7 @@ export class Engine extends EventEmitter {
    * script never ends on its own: a run that throws is said in its chat (once, till the error changes) and it carries on,
    * on its cycle. Answers the run's error, if any.
    */
-  private runScriptItem(id: string): Promise<string | null> {
+  private runScriptItem(id: string, given: { item?: string | null; focus?: string | null } = {}): Promise<string | null> {
     this.checking.add(id)
     return this.serial(id, async () => {
       const row = this.row(id)
@@ -1479,8 +1528,9 @@ export class Engine extends EventEmitter {
       const actor = pressed ? pressedBy! : 'script'
       const woke = this.now()
       const due = this.due(id)
-      const topic = due && (pressed || due.at <= woke) ? due.item : pressed ? (this.assignedTo(id)[0] ?? null) : null
-      if (topic) this.setMark(id, topic, { n: this.store.moment(), at: woke })
+      // Pressed on an item, it runs on that; else on the topic it is due on (pressed: the first it holds), marked as seen.
+      const topic = given.item ?? (due && (pressed || due.at <= woke) ? due.item : pressed ? (this.assignedTo(id)[0] ?? null) : null)
+      if (topic && !given.item) this.setMark(id, topic, { n: this.store.moment(), at: woke })
       const { source, last_wake: _w, last_seen: _s, ...own } = row.params
       const context = {
         ...own,
@@ -1494,7 +1544,10 @@ export class Engine extends EventEmitter {
       }
       let error: string | null = null
       try {
-        const ran = await runScript(String(source ?? ''), context, (name, args) => this.callAction(name, args, { engine: this, author, actor, itemId: row.parent_id ?? id, runId: null }))
+        const ran = await runScript(String(source ?? ''), context, (name, args) => this.callAction(name, args, { engine: this, author, actor, itemId: row.parent_id ?? id, runId: null }), {
+          item: this.scriptItem(topic),
+          focus: this.scriptItem(given.focus),
+        })
         const parsed = scriptResult.safeParse(ran.value)
         if (!parsed.success) throw new Error(`It returned ${JSON.stringify(ran.value)?.slice(0, 200)}, not { messages?, assign?, state? }.`)
         const r = parsed.data ?? {}

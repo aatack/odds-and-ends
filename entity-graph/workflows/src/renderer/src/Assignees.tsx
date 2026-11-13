@@ -23,6 +23,8 @@ export function PickPill(props: {
   overview: Overview
   /** Bots and people to offer. */
   people?: boolean
+  /** Others to offer beside them (a script's owner may be an item type). */
+  others?: { id: string; name: string }[]
   /** Items to offer, and what the finder reads as recent. */
   items?: Item[]
   recent?: Recent
@@ -30,11 +32,13 @@ export function PickPill(props: {
   /** Picture a chosen one as working (a bot on it now). */
   working?: string | null
 }) {
-  const { title, none, value, setValue, overview, people = false, items = [], recent, verb = 'Choose', working = null } = props
+  const { title, none, value, setValue, overview, people = false, others = [], items = [], recent, verb = 'Choose', working = null } = props
   const [picking, setPicking] = useState(false)
   const item = (id: string) => items.find((i) => i.id === id)
   const name = (id: string) => {
     if (item(id)) return item(id)!.title
+    const other = others.find((o) => o.id === id)
+    if (other) return other.name
     const n = nameOf(overview, id)
     return n === 'you' ? 'You' : n
   }
@@ -64,7 +68,7 @@ export function PickPill(props: {
           recent={recent ?? { me: overview.me.id, viewed: [], users: overview.users, bots: overview.bots }}
           sections={items.length ? undefined : []}
           verb={verb}
-          bots={people ? everyone(overview).map((p) => ({ ...p, name: p.id === overview.me.id ? `${p.name} (you)` : p.name })) : []}
+          bots={[...(people ? everyone(overview).map((p) => ({ ...p, name: p.id === overview.me.id ? `${p.name} (you)` : p.name })) : []), ...others.map((o) => ({ ...o, bot: false }))]}
           multiple
           value={value}
           setValue={setValue}
@@ -97,13 +101,14 @@ export function AssigneePill({ item, overview, act }: { item: Item; overview: Ov
 }
 
 /** Who owns an item, in the right pane: one person or bot, or nobody (`PickPill`; picking another takes it from the last). */
-export function OwnerPill({ id, owner, overview, act }: { id: string; owner: string | null; overview: Overview; act: Act }) {
+export function OwnerPill({ id, owner, overview, act, types = [] }: { id: string; owner: string | null; overview: Overview; act: Act; types?: string[] }) {
   return (
     <PickPill
       title="Owner"
       none="Nobody"
       verb="Give"
       people
+      others={types.map((t) => ({ id: t, name: `Every ${t}` }))}
       overview={overview}
       value={owner ? [owner] : []}
       setValue={(next) => void act(() => api().setOwner(id, next.filter((o) => o !== owner).pop() ?? null))}

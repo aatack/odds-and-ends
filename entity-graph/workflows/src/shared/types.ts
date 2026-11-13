@@ -118,6 +118,8 @@ export interface ItemInfoDetail {
   pinnedIn: ItemInfo[]
   /** For an item, or a bot (whose own chat it is): it in full. */
   item: ItemDetail | null
+  /** The open scripts its type owns (an `owns` link from the type's name, `topic`, `bot`…): run from its right pane. */
+  typeScripts: ItemInfo[]
 }
 
 /**
@@ -371,7 +373,8 @@ export interface WorkflowsAPI {
   /** Ends a blocker without it happening. */
   cancel: (itemId: string) => Promise<void>
   /** Runs an open script that has no schedule, once. */
-  runNow: (itemId: string) => Promise<void>
+  /** Runs a script now: on `item` (left out, the first topic it holds), with `focus` the item on screen. */
+  runNow: (itemId: string, given?: { item?: string | null; focus?: string | null }) => Promise<void>
   close: (id: string) => Promise<void>
   /** Opens a closed task again. */
   reopen: (id: string) => Promise<void>

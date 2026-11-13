@@ -80,27 +80,31 @@ export const scriptResult = z
   .nullable()
 
 export const SCRIPT_DOC =
-  'A script: a bot without a model, running JavaScript. Give it a name, and topics as you would a bot (assign it, or @ it in a ' +
-  'note: "[id]() 2d"); one script serves every topic it is given. Use one for repetitive work that needs no LLM: a snooze, ' +
-  'watching a PR or a thread, a weekly chore. It costs nothing to run.\n' +
-  '- Make it on its own: add_items with no item_id.\n' +
-  '- It runs as a bot does: every minute the app gives it the first topic assigned to it (the longest held first) that it has not run ' +
-  'on in the last cycle_minutes (30), or that was assigned to it again since. A run handles that one topic.\n' +
-  '- Keep state on the topics it works on (set_value: any key, any value), and read it back with get_item (values).\n' +
-  '- `source` is the body of an async function: `context` and `tools` are in scope; it may await and return. context is the ' +
-  'script (id, name, its values, state, runs) with topics: [{ id, title }] (the topic it is run on), now (ISO time) and trigger. ' +
-  'tools.<name>(args) calls any MCP tool; unsafe ones only when a person presses its play button. mentions(topicId, who = itself) ' +
-  'answers the notes in a topic that mention it, newest first, each with text (what follows the mention); refs(itemId, type?) ' +
-  'answers the items in an item, of one type if given.\n' +
-  '- It returns (all optional): { messages: [{ item, text }] (item: its own chat if left out), assign: [{ item, to: [who] }], ' +
-  'state (for its next run) }. It never ends on its own: a run that throws says so in its chat, and it runs again on its cycle.'
+  'A script: a bot without a model, running JavaScript. Use one for repetitive work that needs no LLM: a snooze, watching a PR ' +
+  'or a thread, a weekly chore; or an action a person runs on an item from its right pane. It costs nothing to run.\n' +
+  '- `source` is the body of an async function of three arguments: `tools`, `item` and `focus`; it may await and return. ' +
+  'tools.<name>(args) calls any MCP tool (unsafe ones only when a person presses it). item is the item it is run on, and focus the ' +
+  'item on screen when a person ran it (else null); each is { id, type, title, values, owner, assignees, parentId, closed }, or null. ' +
+  'Also in scope: mentions(topicId, who = itself), the notes in a topic that mention it, newest first, each with text (what ' +
+  'follows the mention); refs(itemId, type?), the items in an item; and context, as older scripts had it (the script\'s id, name, ' +
+  'values, state, runs, topics, now and trigger).\n' +
+  '- It returns (all optional): { messages: [{ item, text }] (item: where it sits, if left out), assign: [{ item, to: [who] }], ' +
+  'state (kept for its next run: context.state) }. A run that throws says so where it sits; it runs again regardless.\n' +
+  '- Who runs it, and on what: every minute, the app walks from the person signed in along owns links, through bots they own (and ' +
+  'bots those own, and so on), to the scripts there; each is run on the first item assigned to it (the longest held first) that it ' +
+  'has not run on in its last cycle_minutes (30), or that was assigned to it again since. The app keeps what each has run on: a ' +
+  'script need not. A script nobody reaches so only runs when pressed. Give it topics as you would a bot (assign it, or @ it).\n' +
+  '- Pressed: a script\'s card has a play button wherever it shows (in a chat, pinned to a topic), which runs it on the item it is in ' +
+  'with the item on screen as focus. A script owned by an item type (set_owner with the type\'s name: "topic", "bot"…) shows as a ' +
+  'card in the right pane of every item of that type, under its actions; pressing it runs it on that item.\n' +
+  '- Make it on its own (add_items with no item_id), in a topic (it shows in the chat), or pinned to one.'
 
 export const script: ItemType = {
   type: 'script',
   description: SCRIPT_DOC,
   params: {
     name: z.string().optional().describe('What it is called: assign to it or @ it by this.'),
-    source: z.string().describe('The body of an async function, with context and tools in scope.'),
+    source: z.string().describe('The body of an async function of tools, item and focus: see the description.'),
     description: z.string().optional().describe('What it does, in a line.'),
     cycle_minutes: z.number().min(0).optional().describe('How long before it runs on a topic again that it still holds: 30 if left out.'),
   },

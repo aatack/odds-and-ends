@@ -9,13 +9,15 @@ const WALL_MS = 120_000
 
 /**
  * Runs `source` and answers what it returns (awaited), as JSON, with whatever it logged. A source is the body of an
- * async function: `context` and `tools` (and the helpers `mentions` and `refs`) are in scope, and it may `await` and
- * `return`. `tools.<name>(args)` calls `call` and resolves to its result.
+ * async function: `tools`, `item` and `focus` (the item it is run on, and the one on screen, each null if none: `given`),
+ * the older `context` (`input`), and the helpers `mentions` and `refs` are in scope, and it may `await` and `return`.
+ * `tools.<name>(args)` calls `call` and resolves to its result.
  */
 export async function runScript(
   source: string,
   input: unknown,
   call: (name: string, args: Record<string, unknown>) => Promise<unknown>,
+  given: { item?: unknown; focus?: unknown } = {},
 ): Promise<{ value: unknown; logs: string[] }> {
   const QuickJS = await getQuickJS()
   const runtime = QuickJS.newRuntime()
@@ -72,10 +74,12 @@ export async function runScript(
       }
       // The items in an item (where they sit, or linked in), of one type if given.
       const refs = async (id, type) => (await __children(id)).filter((c) => !type || c.type === type || ((type === 'note' || type === 'task') && c.type === 'topic'))
-      const fn = async (context, tools) => {
+      // The source in a function of its own, inside the one taking the arguments, so a script that declares its own
+      // item (from before scripts were given one) still runs.
+      const fn = async (tools, item, focus, context) => (async () => {
 ${source}
-}
-      return JSON.stringify((await fn(__input, tools)) ?? null)
+})()
+      return JSON.stringify((await fn(tools, ${JSON.stringify(given.item ?? null)}, ${JSON.stringify(given.focus ?? null)}, __input)) ?? null)
     })()`
     const handle = vm.unwrapResult(vm.evalCode(code, 'script.js'))
     const result = vm.resolvePromise(handle)

@@ -467,6 +467,32 @@ await engine.close(loose)
   await engine.close(t)
 }
 
+// Scripts: the loop runs only those reached from the person signed in along owns links (through bots); a script is
+// given tools, the item it runs on and the item on screen; one owned by an item type is offered on every item of it.
+{
+  const t = (await engine.create('Script target'))!
+  const src = 'return { messages: [{ item: item.id, text: `ran on ${item.title}, focus ${focus ? focus.id : "none"}` }] }'
+  const [mine, loose] = await engine.addItems(null, [{ type: 'script', params: { name: 'Mine', source: src } }, { type: 'script', params: { name: 'Loose', source: src } }])
+  await engine.setOwner(loose, null)
+  assert.ok(engine.runnableScripts().has(mine) && !engine.runnableScripts().has(loose), 'only what the person signed in owns, through bots')
+  await engine.assign(t, mine, true)
+  await engine.assign(t, loose, true)
+  await engine.checkDue()
+  const said = () => engine.children(t).map((c) => String(c.params.text ?? '')).filter((x) => x.startsWith('ran on'))
+  assert.deepEqual(said(), ['ran on Script target, focus none'], 'the loose script did not run')
+  await engine.setOwner(loose, 'topic')
+  assert.ok(engine.typeScripts('topic').some((i) => i.id === loose))
+  assert.equal(engine.itemInfoDetail(t)!.typeScripts.some((i) => i.id === loose), true)
+  await assert.rejects(engine.setOwner(t, 'topic'), /Only a script/)
+  await engine.runNow(loose, engine.me(), { item: t, focus: t })
+  assert.equal(said().at(-1), `ran on Script target, focus ${t}`)
+  // A script from before, declaring its own item, still runs.
+  const [old] = await engine.addItems(null, [{ type: 'script', params: { source: 'const item = 1; return { state: item }' } }])
+  await engine.runNow(old)
+  for (const id of [mine, loose, old]) await engine.cancel(id)
+  await engine.close(t)
+}
+
 // What is pinned to someone shows in their finder (finder: pinned).
 {
   const t = (await engine.create('Pinned to me'))!

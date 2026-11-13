@@ -198,7 +198,9 @@ export const itemActions: Action[] = [
     unsafe: false,
     description:
       'Give an item (a topic, a bot, a script) to an owner: a person (by username) or a bot (by name or id), or to nobody (owner: null). ' +
-      'Its owner is who it goes back to when a bot lets go of it, and it is listed under what they own. An `owns` link to it.',
+      'Its owner is who it goes back to when a bot lets go of it, and it is listed under what they own. An `owns` link to it. ' +
+      'A script may be owned by an item type instead (owner: "topic", "bot", "file"…): it is then offered in the right pane of every ' +
+      'item of that type, to run on it.',
     input: { item_id: itemId, owner: z.string().nullable() },
     run: async (a, ctx) => {
       await ctx.engine.setOwner(String(a.item_id), a.owner === null ? null : String(a.owner), ctx.actor)

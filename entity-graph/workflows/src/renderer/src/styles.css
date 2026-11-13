@@ -574,3 +574,17 @@ button[data-ui].assignee-card { display: flex; align-items: center; gap: 8px; wi
 .assignee-card .icon { width: 14px; height: 14px; flex: none; color: var(--muted); }
 .assignee-card .assignee-name { flex: none; }
 .assignee-card .status-line { margin-left: auto; min-width: 0; }
+
+/* ---- Scripts as cards (ScriptCard): in a chat, and in the right pane for an item's type; a play button runs one. ---- */
+.script-card { display: flex; align-items: flex-start; gap: 8px; }
+.script-card > .icon { width: 15px; height: 15px; flex: none; margin-top: 2px; color: var(--muted); }
+.script-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.script-card-name { font-weight: 500; }
+.script-card-description { font-size: 12px; }
+button[data-ui].script-play-button, button[data-ui].pin-play { flex: none; display: inline-flex; padding: 4px; border-radius: 6px; background: none; color: var(--muted); }
+button[data-ui].script-play-button:hover, button[data-ui].pin-play:hover { background: var(--color-gray-200); color: var(--ink); filter: none; }
+.script-play-button .icon, .pin-play .icon { width: 14px; height: 14px; }
+.side-scripts { display: flex; flex-direction: column; gap: 6px; }
+button[data-ui].script-card.whole { width: 100%; padding: 8px 10px; border-radius: 8px; background: var(--color-gray-100); text-align: left; font-size: 13px; }
+button[data-ui].script-card.whole:hover { background: var(--color-gray-200); filter: none; }
+.script-card.whole .script-play { width: 14px; height: 14px; flex: none; margin-top: 2px; color: var(--muted); }

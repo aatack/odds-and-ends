@@ -17,6 +17,7 @@ import { TaskCard } from './TaskCard'
 import { Marked } from './components/ui/Marked'
 import { cardText } from '../../shared/text'
 import { StatusDot, StatusLine } from './status'
+import { ScriptCard } from './ScriptCard'
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
@@ -68,6 +69,8 @@ export const CARDS: Partial<Record<ItemKind, (p: CardProps) => ReactNode>> = {
       <Markdown text={String(e.params.text ?? '')} highlight={find} />
     ),
   file: ({ info: e, onOpen }) => <FileCard info={e} onOpen={onOpen} />,
+  // A script: its name, what it does, how it stands, and a play button that runs it on the item it sits in.
+  script: ({ info: e, act }) => <ScriptCard info={e} on={e.parentId} act={act} />,
   link: ({ info: e, find }) => (
     <a className="link-card" href={String(e.params.url)} target="_blank" rel="noreferrer">
       <Marked text={String(e.params.title || e.params.url)} phrase={find} />
