@@ -210,7 +210,7 @@ function IntegrationCard({ integration: i, act }: { integration: IntegrationView
         {tools(i.read)}
       </details>
       <details>
-        <summary>Write · {i.write.length} (a person approves each)</summary>
+        <summary>Write · {i.write.length} (changes things outside the app)</summary>
         {tools(i.write)}
       </details>
       <details>

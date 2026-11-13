@@ -8,7 +8,7 @@
  * which stay open until something happens (a script says it is done, an approval
  * is given, a child item closes).
  */
-export type ItemKind = 'topic' | 'approval' | 'script' | 'link' | 'slack_message' | 'slack_channel' | 'file' | 'bot' | 'user'
+export type ItemKind = 'topic' | 'script' | 'link' | 'slack_message' | 'slack_channel' | 'file' | 'bot' | 'user'
 
 /** An item as it is added. `ref` names it, so another added alongside can point at it. */
 export interface ItemSpec {
@@ -91,7 +91,7 @@ export interface Item {
    * `assignees` links from the item, not items in it.
    */
   assignees: string[]
-  /** Open, assigned to the person looking, and blocked by nothing but people's own approvals: it is their turn. */
+  /** Open, assigned to the person looking, and blocked by nothing: it is their turn. */
   withYou: boolean
   /** The bot running on it now, if one is. Held in memory only. */
   bot: string | null
@@ -368,8 +368,6 @@ export interface WorkflowsAPI {
   create: (title: string, parentId: string | null) => Promise<string>
   /** Sends from the chat input: `text` through a preset. */
   send: (id: string, preset: string, text: string) => Promise<void>
-  /** Runs an approval blocker's action with the human's inputs. */
-  approve: (itemId: string, inputs: Record<string, unknown>) => Promise<void>
   /** Ends a blocker without it happening. */
   cancel: (itemId: string) => Promise<void>
   /** Runs an open script that has no schedule, once. */
@@ -537,7 +535,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'moveItem', 'newNotes', 'subtree', 'viewText', 'finder', 'setOwner', 'editLog',
+  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'cancel', 'runNow', 'close', 'reopen', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'moveItem', 'newNotes', 'subtree', 'viewText', 'finder', 'setOwner', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'trustBotFolders', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',

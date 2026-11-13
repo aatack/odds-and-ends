@@ -31,8 +31,8 @@ export function makeServer(engine: Engine, scope: Scope): McpServer {
     // What a run does is recorded as its bot's, and its calls are traced in the bot (a run may span items).
     return { engine, author: 'bot', actor: `bot:${run.agentId}`, itemId: run.agentId, runId: scope.runId }
   }
-  // The unsafe rule: no agent is given an unsafe action.
-  const offered = engine.actions.filter((a) => !a.unsafe)
+  // Every action, the unsafe ones (which change things outside the app) too: for now, bots may run them.
+  const offered = engine.actions
   // A tool's old parameters are taken too: what they name is then optional here, and required by callAction.
   const inputOf = (action: (typeof offered)[number]) => {
     const old = Object.entries(LEGACY_PARAMS[action.name] ?? {})

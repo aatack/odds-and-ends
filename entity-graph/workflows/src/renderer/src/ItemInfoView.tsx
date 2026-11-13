@@ -1,5 +1,4 @@
 import type { Catalog, ItemInfoDetail, ItemInfo } from '../../shared/types'
-import { Approval } from './Approval'
 import { minutes, time } from './Chat'
 import { TYPE_NAME } from './icons'
 import { SlackMessages } from './SlackView'
@@ -40,11 +39,6 @@ export function ItemInfoView({
         {e.lastError && <p className="error-text">{e.lastError}</p>}
       </section>
 
-      {e.type === 'approval' && !e.resolved && (
-        <section className="card">
-          <Approval b={e} catalog={catalog} act={act} />
-        </section>
-      )}
       {e.type === 'link' && (
         <section className="card">
           <a href={String(e.params.url)} target="_blank" rel="noreferrer">

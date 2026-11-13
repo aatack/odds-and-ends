@@ -53,23 +53,6 @@ export function asTopic(s: { type: string; params: Record<string, unknown> }): {
   return s
 }
 
-export const approval: ItemType = {
-  type: 'approval',
-  description:
-    'An unsafe action for the human to approve, change, or turn down. While only approvals are open, the item is the human\'s turn.',
-  params: {
-    action: z.string().describe('The unsafe action, by name: see unsafe_actions.'),
-    inputs: z.record(z.unknown()).describe('Its inputs, filled in as far as you can. The human may change them.'),
-    reason: z.string().optional().describe('Why, in a line.'),
-  },
-  data: '{ ran: true, inputs, changed: string[], output }',
-  blocking: true,
-  human: true,
-  bots: true,
-  describe: (p) => String(p.reason ?? `Run ${p.action}?`),
-  said: (p, d) => `Ran ${p.action}${(d.changed as string[] | undefined)?.length ? ` (changed ${(d.changed as string[]).join(', ')})` : ''}`,
-}
-
 /** What a script's run may return; null (or nothing) is `{}`. */
 export const scriptResult = z
   .object({
@@ -83,7 +66,7 @@ export const SCRIPT_DOC =
   'A script: a bot without a model, running JavaScript. Use one for repetitive work that needs no LLM: a snooze, watching a PR ' +
   'or a thread, a weekly chore; or an action a person runs on an item from its right pane. It costs nothing to run.\n' +
   '- `source` is the body of an async function of three arguments: `tools`, `item` and `focus`; it may await and return. ' +
-  'tools.<name>(args) calls any MCP tool (unsafe ones only when a person presses it). item is the item it is run on, and focus the ' +
+  'tools.<name>(args) calls any MCP tool. item is the item it is run on, and focus the ' +
   'item on screen when a person ran it (else null); each is { id, type, title, values, owner, assignees, parentId, closed }, or null. ' +
   'Also in scope: mentions(topicId, who = itself), the notes in a topic that mention it, newest first, each with text (what ' +
   'follows the mention); refs(itemId, type?), the items in an item; and context, as older scripts had it (the script\'s id, name, ' +
@@ -216,4 +199,4 @@ export const file: ItemType = {
   describe: (p) => String(p.title || p.name || p.path || 'File'),
 }
 
-export const ITEM_TYPES: ItemType[] = [topic, approval, script, link, file, slackMessage, slackChannel, bot, user]
+export const ITEM_TYPES: ItemType[] = [topic, script, link, file, slackMessage, slackChannel, bot, user]

@@ -23,7 +23,6 @@ export const DISPLAY: Record<ItemKind, Display> = {
   bot: 'assignments',
   user: 'assignments',
   script: 'comments',
-  approval: 'focus',
   link: 'focus',
   slack_message: 'focus',
   slack_channel: 'focus',

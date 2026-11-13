@@ -1,8 +1,8 @@
 // Custom actions: things the human defines, per item type, on the Types page.
 // One is a script (JavaScript, run in QuickJS like any other script) handed a
 // context (the item it was run on, and its item) and the safe actions. It is
-// usually written by a model from a description and some notes, so it is held
-// to the bots' rule: no unsafe actions; it asks for one with an approval item.
+// usually written by a model from a description and some notes; it may call any
+// action, as bots may.
 
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
@@ -112,18 +112,14 @@ export class CustomActions {
   async generate(a: { type: string; name: string; description: string; notes: string; source?: string }): Promise<string> {
     if (!a.description.trim() && !a.notes.trim()) throw new Error('Say what it should do first: a description, or notes.')
     const actions = this.engine.actions
-      .filter((x) => !x.unsafe)
       .map((x) => `- ${x.name}(${JSON.stringify(objectSchema(x.input).properties ?? {})}): ${x.description}`)
     const types = this.engine.itemTypes.filter((t) => t.bots).map((t) => `- ${t.type} ${JSON.stringify(objectSchema(t.params).properties ?? {})}: ${t.description}`)
-    const unsafe = this.engine.actions.filter((x) => x.unsafe).map((x) => `- ${x.name}: ${x.description}`)
     const system = `You write one custom action for a workflow app: the body of an async JavaScript function. Reply with the code only: no prose, no markdown fences.
 
 \`context\` and \`tools\` are in scope; it may await and return.
 - It runs on one item of type "${a.type}". context is { item: { id, title, parentId, closed, withYou }, event: { id, type, summary, params, data, resolved, parentId }, now (ISO time) }: item is the task it is in, and event the item it runs on. For a task, the two are the same.
-- tools.<name>(args) calls an action and resolves to its result (parsed JSON). These are the only ones it may call:
+- tools.<name>(args) calls an action and resolves to its result (parsed JSON). These are the ones it may call:
 ${actions.join('\n')}
-- It may not call unsafe actions (they change things outside the app). To get one done, return an approval item for the human: { type: 'approval', params: { action, inputs, reason } }. The unsafe actions are:
-${unsafe.join('\n')}
 - It returns null, a string (said in the item's chat), or { message?, items? }: items are added in the item. Item types it may add:
 ${types.join('\n')}
 - It runs in a sandbox (QuickJS): no fetch, no require, no timers. console.log is kept. Keep it short and plain.`

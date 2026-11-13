@@ -126,7 +126,7 @@ const blockers = (id: string) => item(id).blockers.map((b) => b.type)
 const last = (id: string, type: string) => engine.children(id).filter((e) => e.type === type).at(-1)!
 
 // The types there are; those from before are gone.
-assert.deepEqual(engine.itemTypes.map((t) => t.type), ['topic', 'approval', 'script', 'link', 'file', 'slack_message', 'slack_channel', 'bot', 'user'])
+assert.deepEqual(engine.itemTypes.map((t) => t.type), ['topic', 'script', 'link', 'file', 'slack_message', 'slack_channel', 'bot', 'user'])
 await assert.rejects(engine.addItems((await engine.create('x'))!, [{ type: 'message' as 'note', params: { text: 'x' } }]), /No item type message/)
 for (const i of engine.overview().items.filter((i) => i.type === 'topic')) await engine.close(i.id)
 
@@ -146,7 +146,7 @@ assert.ok(item(id).withYou)
 assert.equal(engine.next(), id)
 assert.equal(engine.next([id]), null)
 
-// ---- 2. Handed to a bot with a note; the bot asks a person to do something unsafe, and waits on a script ----
+// ---- 2. Handed to a bot with a note; the bot acts outside the app itself (unsafe tools are a bot's too, for now) ----
 let session = ''
 behaviours.push(async ({ call, prompt, system, schema, sessionId, resume, model, cwd }) => {
   session = sessionId
@@ -160,7 +160,7 @@ behaviours.push(async ({ call, prompt, system, schema, sessionId, resume, model,
   assert.ok(JSON.stringify(schema).includes('"enum":["topic"]'), 'a bot may add child tasks')
   assert.ok(JSON.stringify(schema).includes('"enum":["bot"]'), 'and bots')
   assert.equal(JSON.parse(await call('get_item', { item_id: id })).item.id, id)
-  await assert.rejects(call('post_somewhere', { text: 'x' }), /not found/i)
+  await call('post_somewhere', { text: 'Thanks!' })
   // It has the same tools as anyone connected, so it may act on other items too, as itself.
   const other = (await engine.create('Elsewhere'))!
   await call('add_items', { item_id: other, items: [{ type: 'note', params: { text: 'from a bot' } }] })
@@ -168,8 +168,7 @@ behaviours.push(async ({ call, prompt, system, schema, sessionId, resume, model,
   await engine.close(other)
   return out({
     item: id,
-    message: 'Drafted a reply. Post it?',
-    items: [{ type: 'approval', params: { action: 'post_somewhere', inputs: { text: 'Thanks!' } } }],
+    message: 'Posted a reply.',
   })
 })
 await toBot(id, 'Reply to the PR, please')
@@ -177,23 +176,20 @@ assert.deepEqual(engine.children(id).map((e) => [e.type, e.createdBy]), [['topic
 assert.deepEqual(item(id).assignees, [threepio], 'handing it to the bot took it off the sender')
 assert.deepEqual(engine.assignedTo(threepio), [id], "the bot's items: its assigned_to links, followed backwards")
 await settle()
-assert.deepEqual(blockers(id), ['approval'])
-assert.deepEqual(item(id).assignees, ['human'], 'a run that leaves the item waiting on a person hands it back')
-assert.ok(item(id).withYou, 'an approval is a person\'s turn')
-assert.equal(last(id, 'topic').params.text, 'Drafted a reply. Post it?')
+assert.deepEqual(posted, ['Thanks!'], 'the bot ran the unsafe tool itself')
+assert.deepEqual(blockers(id), [])
+assert.deepEqual(item(id).assignees, ['human'], 'a run that hands nothing on gives the item back to its owner')
+assert.ok(item(id).withYou)
+assert.equal(last(id, 'topic').params.text, 'Posted a reply.')
 assert.equal(last(id, 'topic').createdBy, `bot:${threepio}`)
 assert.deepEqual(engine.agent(threepio)!.lastRun!.items, [id], 'the bot keeps its last run as a value')
 assert.ok(engine.agent(threepio)!.lastRun!.endedAt)
 
-// ---- 3. The person changes it and approves; the unsafe action runs, as theirs ----
-const approval = item(id).blockers[0]
-await engine.approve(approval.id, { text: 'Thanks a lot!' })
-assert.deepEqual(posted, ['Thanks a lot!'])
-assert.deepEqual(engine.info(approval.id)!.data!.changed, ['text'])
-assert.equal(engine.info(approval.id)!.message, 'Ran post_somewhere (changed text)')
-for (const a of engine.actions.filter((a) => a.unsafe))
-  await assert.rejects(engine.callAction(a.name, { text: 'x' }, { engine, author: 'bot', actor: 'script', itemId: id, runId: null }), /unsafe/)
-await assert.rejects(engine.addItems(id, [{ type: 'approval', params: { action: 'list_items', inputs: {} } }]), /not an unsafe action/)
+// ---- 3. A script may run an unsafe action too ----
+posted.length = 0
+await engine.callAction('post_somewhere', { text: 'x' }, { engine, author: 'bot', actor: 'script', itemId: id, runId: null })
+assert.deepEqual(posted, ['x'])
+posted.length = 0
 
 // ---- 4. A bot that adds a wait keeps the item; the wait resolving is news, heard of in time ----
 behaviours.push(async ({ prompt, sessionId, resume, call }) => {
@@ -802,21 +798,16 @@ await engine.close(bad)
   await engine.runNow(manual)
   assert.equal(engine.info(manual)!.runs, 2)
   assert.ok(!engine.info(manual)!.resolved)
-  // Unsafe tools: a person's press has them; a run on its own never, whoever wrote it.
+  // Unsafe tools: a script has them, pressed or on its own, for now.
   const unsafeSource = `await tools.post_somewhere({ text: 'pressed' }); return null`
   const [press] = await engine.addItems(null, [{ type: 'script', params: { source: unsafeSource } }], 'bot', 'bot')
   await engine.runNow(press, 'human')
-  assert.equal(posted.pop(), 'pressed', 'pressed by a person, it may act outside')
-  await assert.rejects(engine.runNow(press, 'bot'), /unsafe/, 'a press that fails says why')
-  const [timed] = await engine.addItems(null, [{ type: 'script', params: { source: unsafeSource } }], 'human')
-  await engine.assign(b, timed, true)
-  clock += 1
-  await tick()
-  assert.match(String(engine.children(timed).find((e) => e.type === 'topic')?.params.text), /unsafe/)
-  // run_script: once, now, with the tools; an agent gets no unsafe ones.
+  assert.equal(posted.pop(), 'pressed')
+  await engine.runNow(press, 'bot')
+  assert.equal(posted.pop(), 'pressed')
+  // run_script: once, now, with the tools.
   const ran = (await engine.callAction('run_script', { source: 'return (await tools.list_items({})).length + context.n', context: { n: 1 } }, { engine, author: 'bot', actor: 'bot', itemId: null, runId: null })) as { result: number }
   assert.equal(typeof ran.result, 'number')
-  await assert.rejects(engine.callAction('run_script', { source: unsafeSource }, { engine, author: 'bot', actor: 'bot', itemId: null, runId: null }), /unsafe/)
   await engine.close(a)
   await engine.close(b)
 }
@@ -976,24 +967,25 @@ await engine.close(bad)
   await assert.rejects(ca.run(hello.id, task), /no code yet/)
   const source = await ca.generate({ type: 'task', name: 'Hello', description: 'Says hello to the task', notes: 'Use its title' })
   assert.equal(source, 'return `Hello ${context.item.title}`')
-  assert.doesNotMatch(generateArgs[generateArgs.indexOf('--system-prompt') + 1].split('The unsafe actions are:')[0], /post_somewhere/)
+  assert.match(generateArgs[generateArgs.indexOf('--system-prompt') + 1], /post_somewhere/, 'it may call any action')
   ca.save({ ...hello, source })
   await ca.run(hello.id, task)
   assert.equal(last(task, 'topic').params.text, 'Hello Custom')
   assert.equal(last(task, 'topic').createdBy, 'script')
   const sneaky = ca.save({ type: 'task', name: 'Post', description: '', notes: '', icon: 'zap', important: false, source: `return tools.post_somewhere({ text: 'x' })` })
-  await assert.rejects(ca.run(sneaky.id, task), /unsafe/)
+  await ca.run(sneaky.id, task)
+  assert.equal(posted.pop(), 'x')
   ca.remove(sneaky.id)
   assert.equal(ca.get(sneaky.id), null)
   await engine.close(task)
 }
 
-// ---- 14. The MCP endpoints: the same tools for a bot and anything else, and so no unsafe ones ----
+// ---- 14. The MCP endpoints: the same tools for a bot and anything else, the unsafe ones too ----
 {
   const probe = (await engine.create('Probe'))!
   const runId = engine.startRun(threepio, [probe])
   const asBot = await connect(mcp.runUrl(runId))
-  assert.deepEqual((await asBot.client.listTools()).tools.map((t) => t.name), engine.actions.filter((a) => !a.unsafe).map((a) => a.name))
+  assert.deepEqual((await asBot.client.listTools()).tools.map((t) => t.name), engine.actions.map((a) => a.name))
   await asBot.client.close()
   await engine.endRun(runId, { exitCode: 0, error: 'probe' })
   const { url } = mcp.operator()
@@ -1026,12 +1018,12 @@ await engine.close(bad)
   const linkedTo = (await engine.create('Linked by the old name'))!
   await outside.call('link_events', { item_id: linkedTo, event_ids: [said] })
   assert.deepEqual(engine.info(linkedTo)!.pins, [said], 'link_events pins, as link_items does')
-  const { ids: [waiting] } = JSON.parse(await outside.call('add_items', { item_id: probe, items: [{ type: 'approval', params: { action: 'post_somewhere', inputs: { text: 'x' } } }] }))
+  const { ids: [waiting] } = JSON.parse(await outside.call('add_items', { item_id: probe, items: [{ type: 'script', params: { source: 'return null' } }] }))
   await outside.call('cancel_event', { event_id: waiting })
-  assert.ok(engine.info(waiting)!.cancelled, 'cancel_event, with event_id')
-  const { ids: [again] } = JSON.parse(await outside.call('add_items', { item_id: probe, items: [{ type: 'approval', params: { action: 'post_somewhere', inputs: { text: 'y' } } }] }))
+  assert.ok(engine.isClosed(waiting), 'cancel_event, with event_id')
+  const { ids: [again] } = JSON.parse(await outside.call('add_items', { item_id: probe, items: [{ type: 'script', params: { source: 'return null' } }] }))
   await outside.call('cancel_item', { event_id: again })
-  assert.ok(engine.info(again)!.cancelled, 'cancel_item takes event_id too')
+  assert.ok(engine.isClosed(again), 'cancel_item takes event_id too')
   await engine.close(linkedTo)
   await outside.client.close()
   await engine.close(probe)

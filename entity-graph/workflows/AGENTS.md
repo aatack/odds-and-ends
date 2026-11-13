@@ -119,17 +119,16 @@ shrink.
   first line its title), `open` (true open, false closed, absent no status: a comment; a note's checkbox and a task's
   open/closed are the same), `section`, and `display` (which view it opens on: see **Views** under UI). Its comments are its history; its notes a tree of topics. Closing writes
   `open: false`; topics never write `resolved`. Some items resolve as they are added (a comment); **blockers** wait
-  until something happens (an approval). Topics don't depend on, or attach to, each other: an open topic in another is
-  a card in its chat, and blocks nothing. There are nine types: `topic`, `approval` (the only way a person runs an
-  unsafe action a bot asked for), `script`, `link`, `file`, `slack_message`,
-  `slack_channel`, `bot` and `user` (a person). An older build's `widget`, `process` and `search` items are left out on load.
+  until something happens. Topics don't depend on, or attach to, each other: an open topic in another is
+  a card in its chat, and blocks nothing. There are eight types: `topic`, `script`, `link`, `file`, `slack_message`,
+  `slack_channel`, `bot` and `user` (a person). An older build's `widget`, `process`, `search` and `approval` items are left out on load.
 - **People** are items too (`user` items, in no item, whose id is their username); they sign in to the
   app by typing their username (no password: the app is local). Anything can be **assigned** to people, bots and
   scripts: an `assignees` link from the item, not an item (`Engine.setAssignee`; what someone has is their links
   followed backwards). Topics, bots and scripts have an **owner**, a person or bot: an `owns` link to it, set as it is
   made (whoever made it if a person, else the owner of what it is in, else the owner of the bot that made it; the
   `set_owner` tool changes it). Who made an item, and when, is who set its `type` value; a move changes neither. An
-  item can have many blockers at once. It is a person's turn when they have it and nothing blocks it but approvals.
+  item can have many blockers at once. It is a person's turn when they have it and nothing blocks it.
 - A **bot** is an item of its own (a `bot` item, in no item, its settings in its params): a name,
   instructions, a provider and model (opus by default), a `cycle_minutes` (30), and a folder and
   Claude session of its own, which last. Its comments are its own chat; writing there assigns the bot item to the bot.
@@ -180,32 +179,18 @@ shrink.
 
 ## The unsafe rule
 
-**An action that changes anything outside this app is `unsafe: true`, and no
-agent is ever given one.** That covers posting, commenting, reviewing, merging,
-sending, deploying and deleting, in any integration.
+**An action that changes anything outside this app is `unsafe: true`.** That covers posting, commenting, reviewing,
+merging, sending, deploying and deleting, in any integration.
 
-- `unsafe` is a required field on `Action`, so every new action has to declare it.
-  If in doubt, it is unsafe.
-- Unsafe actions are part of the toolset, but whenever an agent is given the
-  tools they are left out: both MCP endpoints (a bot's, and the fixed one any
-  other agent connects to) offer every action but the unsafe ones. Scripts that
-  an agent wrote get none either. `Engine.callAction` refuses them to any caller
-  that is not the human.
-- Only the human runs one: through an `approval` item, in the app. An agent asks
-  for one by adding an approval; `unsafe_actions` tells it what it can ask for.
-- No item may act outside the app when an agent adds it.
-- **Scripts get unsafe tools only when a person presses play.** A script (a script item, a custom action, any
-  code the app runs) is handed the same tools as the MCP. When anything but a person's own press runs it (an
-  agent, a bot, its own schedule, another script), the unsafe ones are left out, whoever wrote it. This holds for
-  every tool added later: declaring `unsafe` is what keeps it out. (Custom actions are not given them yet.)
+- `unsafe` is a required field on `Action`, so every new action has to declare it. If in doubt, it is unsafe.
+- **For now it is a label, not a gate** (aatack, Nov 2026): bots, scripts and custom actions are given every tool,
+  unsafe ones too (the only ones are GitHub's and `slack_post`, which a bot could run with its shell anyway). The
+  bots' instructions say to act outside the app only when a person asked. The MCP page and the `/` tool runner mark
+  unsafe tools. There are no approvals any more: an older build's `approval` items are left out on load.
 - Slack (`slack.ts`) is the app's one integration with tools: its reads are safe (through a cache in the backend's
   memory: names a day, channels an hour, messages five minutes), and `slack_post` is unsafe. A Slack message's link
   in a comment (or pasted alone) is pulled in as a `slack_message`, whose card reads the message as it is shown.
-- **Bots have a shell** (auto mode), and `gh` is logged in. The rule binds them
-  there too: their instructions forbid doing anything unsafe with it, and the
-  auto-mode classifier stands between them and it. That is a weaker guarantee
-  than the MCP's, so give bots no new credentials lightly.
-- `test/engine.mts` checks the rule. Keep those checks passing; never loosen them.
+- **Bots have a shell** (auto mode), and `gh` is logged in. Give bots no new credentials lightly.
 
 ## Pins
 
@@ -266,7 +251,7 @@ any more: an older build's `search` item (its `sections`) is left out on load, a
 - **Auth is written once and reused**: a CLI's own login, a token, or OAuth. A new integration picks one rather than
   building its own.
 - **Tools are a registry**: thin wrappers round the service's calls, each marked **read** (safe) or **write**
-  (`unsafe`: only a person runs it, through an approval; see the unsafe rule). Their tools join the actions, so bots,
+  (`unsafe`: see the unsafe rule). Their tools join the actions, so bots,
   scripts and the MCP see them as any other. (Later: who may run each tool, per automation: allowed, not, with a
   person's approval, or for some users; for now, every write needs a person.)
 - **Setup** is custom where it must be, under rules: each value it is set up with (a token, a default repo, a channel
@@ -318,7 +303,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
     (`Composer`: one growing line, its preset's icon and hint, Tab between presets,
     Enter to send, Ctrl+Enter twice to close the topic; what is typed is kept per item in
     `draftsAtom`, in local storage, until it is sent). Keep them tight.
-  - Everything else (approvals, settings) uses `SchemaForm`, through
+  - Everything else (settings) uses `SchemaForm`, through
     `Form` in `forms.tsx`, which adds the app's own editors (`secret` for tokens).
     `withHints` gives the engine's schemas text boxes for prose fields.
   - `SchemaForm` and `SchemaBuilder` are copied from entity-graph
@@ -406,7 +391,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   open. Clicking it opens it.
 - **A topic's chat is its comments** (`Chat`: its `comments` links, in the order they were added), each as its
   card: a comment its words; an open or closed topic its `TaskCard`; a script (`ScriptCard`) its name, what it does, how it stands, and a play button;
-  an approval its form while open. There is no separate blockers panel. Agents are told that what should show
+  There is no separate blockers panel. Agents are told that what should show
   in the chat must be an item in the topic.
 - **When a topic closes, the app moves on.** Whatever the human does to the topic on screen (sends, approves,
   closes, from the chat, header or menu) goes through `actOn(id)`: afterwards, if it has closed, the next one

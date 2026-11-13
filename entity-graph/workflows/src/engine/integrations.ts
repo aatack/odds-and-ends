@@ -33,20 +33,16 @@ export interface ActionContext {
   itemId: string | null
   /** The bot run making the call, if one is. */
   runId: string | null
-  /** The human is running an approval's action: the approval's resolution records it, not an action item. */
-  approving?: boolean
 }
 
 /**
- * One thing anyone can do: the same list for people and scripts, less the unsafe
- * ones for bots.
+ * One thing anyone can do: the same list for people, bots and scripts.
  *
  * RULE: an action that changes anything outside this app (posts, comments,
- * reviews, merges, sends, deploys, deletes) is `unsafe: true`. Bots, and scripts
- * a bot wrote, never get one: it is left out of their MCP tools, and
- * `Engine.callAction` refuses it. A bot asks for one as the approval on a human
- * approval item, and the human runs it. Every action must say which it is: `unsafe` is
- * required so that the choice is never left to a default.
+ * reviews, merges, sends, deploys, deletes) is `unsafe: true`. For now that is a
+ * label (the MCP page and the `/` tool runner mark it), not a gate: bots and
+ * scripts may run it, and are told to only when a person asked. Every action must
+ * say which it is: `unsafe` is required so that the choice is never left to a default.
  */
 export interface Action {
   name: string
@@ -84,8 +80,6 @@ export interface ItemType {
    * does, whose reply is a message item of its own. Left out, it says `describe`.
    */
   said?: (params: Record<string, unknown>, data: Record<string, unknown>) => string | null
-  /** A blocker the human resolves (an approval): while only these are open, the item is still the human's. */
-  human?: boolean
   /** May a bot add it, in its output? */
   bots?: boolean
   /** Turns one item into those actually added. */

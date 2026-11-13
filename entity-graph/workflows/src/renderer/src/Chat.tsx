@@ -29,7 +29,7 @@ const words = (e: ItemInfo) => (e.type === 'topic' ? String(e.params.text ?? '')
  * A topic's chat: its comments (its `comments` links), in the order they were added, each as its card. What
  * the person looking added is on the right; everything else on the left, with who it came from as its picture (and,
  * for other people, their name). A note is its words; a child task, its card (which opens it); a script, its summary
- * as a message; an approval, its form while open. Cancelled items (but scripts) are small notes in the middle.
+ * as a message. Cancelled items (but scripts) are small notes in the middle.
  * While Ctrl+F's find line has a phrase in it, only what shows the phrase is left, with the phrase marked.
  */
 export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: Catalog; act: Act; onOpen: (id: string) => void; mobile?: boolean }) {

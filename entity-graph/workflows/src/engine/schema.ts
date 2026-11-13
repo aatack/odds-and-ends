@@ -63,7 +63,7 @@ export function botOutputSchema(types: ItemType[]): Record<string, unknown> {
             },
             items: {
               type: 'array',
-              description: 'Items to add in it: notes, approvals, scripts, child items.',
+              description: 'Items to add in it: comments, scripts, child topics.',
               items: itemSchema(types),
             },
             assign: {

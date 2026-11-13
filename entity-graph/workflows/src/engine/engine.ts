@@ -38,7 +38,7 @@ export interface BotUpdate {
   item: string
   /** To the people in it: what it did, or one direct question. */
   message?: string
-  /** Items to add in it: waits, approvals, child tasks. */
+  /** Items to add in it: comments, scripts, child topics. */
   items?: ItemSpec[]
   /** Who has the task from now on: people by username, bots by name or id. Left out: see Engine.settle. */
   assign?: string[]
@@ -396,17 +396,12 @@ export class Engine extends EventEmitter {
       owner: this.owner(id),
       blockers,
       assignees,
-      withYou: !closed && assignees.includes(viewer) && blockers.every((b) => this.waitsOnHuman(b)),
+      withYou: !closed && assignees.includes(viewer) && blockers.length === 0,
       bot,
       since: touched,
       createdAt: r.created_at,
       closedAt: r.resolved_at,
     }
-  }
-
-  /** A blocker a person resolves (an approval): the task is still the person's turn. */
-  private waitsOnHuman(b: ItemInfo): boolean {
-    return Boolean(this.type(b.type).human)
   }
 
   /** The item with this id as the lists read it (a topic, or anything else someone may have), or null; `withYou` for `viewer`. */
@@ -486,7 +481,7 @@ export class Engine extends EventEmitter {
   }
 
   /**
-   * What needs `viewer` next, of the open tasks assigned to them that nothing but approvals blocks: the one most
+   * What needs `viewer` next, of the open tasks assigned to them that nothing blocks: the one most
    * recently touched, so the few in hand get closed out before the rest come round. Those in `later` (what the window
    * says was viewed lately) go after all the rest.
    */
@@ -1103,7 +1098,7 @@ export class Engine extends EventEmitter {
     const agentId = run.agentId
     if (!this.assignees(itemId).includes(agentId) || run.assigned.has(itemId)) return
     const { blockers } = this.must(itemId)
-    if (blockers.some((b) => b.createdBy === `bot:${agentId}` && !this.waitsOnHuman(b))) return
+    if (blockers.some((b) => b.createdBy === `bot:${agentId}`)) return
     // A person wrote in it while it ran: the run did not see that, so the bot keeps it, and is due on it again.
     if (this.store.children(itemId).some((e) => after(e.added_n, e.created_at, run.mark) && this.isUser(e.created_by))) return void this.setMark(agentId, itemId, { ...run.mark, again: true })
     this.handBack(itemId, agentId, run.id)
@@ -1124,10 +1119,6 @@ export class Engine extends EventEmitter {
     const { name, args } = current(called, given ?? {})
     const action = this.actions.find((a) => a.name === name)
     if (!action) throw new Error(`No action ${name}.`)
-    // The rule on unsafe actions (see Action in integrations.ts), checked here
-    // too, whatever the caller was shown.
-    if (action.unsafe && ctx.author !== 'human')
-      throw new Error(`${name} is unsafe, so bots, and scripts bots wrote, may not run it. Ask a person: add an approval item for it.`)
     const parsed = z.object(action.input).safeParse(args ?? {})
     if (!parsed.success) throw new Error(`Bad arguments for ${name}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
     return action.run(parsed.data, ctx)
@@ -1146,8 +1137,6 @@ export class Engine extends EventEmitter {
         throw new Error(`Bad params for a ${s.type} item: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
       let params = parsed.data as Record<string, unknown>
       if (s.type === 'file') params = this.files.prepare(params)
-      if (s.type === 'approval' && !this.actions.find((a) => a.name === params.action)?.unsafe)
-        throw new Error(`${params.action} is not an unsafe action, so it needs no approval.`)
       // Who a new topic goes to, as ids.
       if (s.type === 'topic' && params.assignees) params.assignees = (params.assignees as string[]).map((a) => this.resolveAssignee(a))
       if (s.type === 'user' && this.row(String(params.username))) throw new Error(`The username ${params.username} is taken.`)
@@ -1354,19 +1343,6 @@ export class Engine extends EventEmitter {
   saveFileText(itemId: string, text: string): void {
     this.files.saveText(this.fileParams(itemId), text)
     this.emit('change')
-  }
-
-  /** Runs an approval's action with a person's inputs, which resolves it. */
-  async approve(itemId: string, inputs: Record<string, unknown>, actor = this.me()): Promise<void> {
-    const info = this.info(itemId)
-    if (!info || info.type !== 'approval' || info.resolved) throw new Error('No approval waiting with that id.')
-    const proposed = info.params.inputs as Record<string, unknown>
-    const changed = Object.keys({ ...proposed, ...inputs }).filter((k) => String(inputs[k] ?? '') !== String(proposed[k] ?? ''))
-    const name = String(info.params.action)
-    const output = await this.callAction(name, inputs, { engine: this, author: 'human', actor, itemId: info.parentId, runId: null, approving: true })
-    this.resolve(itemId, { ran: true, inputs, changed, output }, actor)
-    this.emit('change')
-    await this.idle()
   }
 
   /** The old name for `close`: ends a blocker without it happening, closes a topic, deletes a bot. */

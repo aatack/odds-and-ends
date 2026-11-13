@@ -25,7 +25,6 @@ export function handlers(engine: Engine, admin: Admin, me: string, source = ''):
     inspect: (id) => engine.inspect(id),
     create: (title, parentId) => engine.create(title, { parentId, actor: me }),
     send: (id, preset, text) => engine.send(id, preset, text, me),
-    approve: (itemId, inputs) => engine.approve(itemId, inputs, me),
     cancel: (itemId) => engine.cancel(itemId, me),
     runNow: (itemId, given) => engine.runNow(itemId, me, given ?? {}),
     close: (id) => engine.close(id, { actor: me }),

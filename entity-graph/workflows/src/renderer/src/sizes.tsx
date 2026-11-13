@@ -7,7 +7,6 @@
 
 import type { ReactNode } from 'react'
 import type { Catalog, ItemKind, ItemInfo } from '../../shared/types'
-import { Approval } from './Approval'
 import { Markdown } from './components/ui/Markdown'
 import { useItemMenu } from './ItemMenu'
 import { itemInfoIcon } from './icons'
@@ -78,12 +77,6 @@ export const CARDS: Partial<Record<ItemKind, (p: CardProps) => ReactNode>> = {
   ),
   slack_message: ({ info: e, find }) => <SlackCard info={e} find={find} />,
   slack_channel: ({ info: e, find }) => <SlackCard info={e} find={find} />,
-  approval: ({ info: e, find, catalog, act }) => (
-    <div className="item-card">
-      <Markdown text={e.resolved ? (e.message ?? e.summary) : e.summary} highlight={find} />
-      {!e.resolved && <Approval b={e} catalog={catalog} act={act} />}
-    </div>
-  ),
 }
 
 /** An item's card, by its type; else all the text it holds (`cardText`), and how it stands, if that says anything. */

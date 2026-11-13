@@ -40,13 +40,11 @@ assert.ok(calls.at(-1)!.includes('author:@me'))
 await engine.callAction('github_api_get', { path: '/repos/o/r/pulls' }, bot)
 assert.deepEqual(calls.at(-1), ['api', '--method', 'GET', 'repos/o/r/pulls'])
 
-// A write: never a bot's; a person's, yes.
-await assert.rejects(engine.callAction('github_pr_comment', { number: 7, body: 'hi' }, bot), /unsafe/)
+// A write: anyone's, bots' too for now.
 assert.match(String(await engine.callAction('github_pr_comment', { number: 7, body: 'hi' }, person)), /issuecomment/)
 assert.deepEqual(calls.at(-1), ['pr', 'comment', '7', '-R', 'o/r', '--body', 'hi'])
-// Auto-merge: a person's; a draft is marked ready first.
-await assert.rejects(engine.callAction('github_pr_automerge', { number: 7 }, bot), /unsafe/)
-await engine.callAction('github_pr_automerge', { number: 7 }, person)
+// Auto-merge: a draft is marked ready first.
+await engine.callAction('github_pr_automerge', { number: 7 }, bot)
 assert.deepEqual(calls.at(-1), ['pr', 'merge', '7', '-R', 'o/r', '--auto', '--squash', '--delete-branch'])
 assert.ok(!calls.some((c) => c[1] === 'ready'))
 await engine.callAction('github_pr_automerge', { number: 8 }, person)

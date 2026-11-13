@@ -107,16 +107,6 @@ export const itemActions: Action[] = [
       })),
   },
   {
-    name: 'unsafe_actions',
-    unsafe: false,
-    description:
-      'The unsafe actions: those that change things outside this app, which only a human may run. ' +
-      'A bot can not call them; it asks for one by adding an approval item that names it and fills in its inputs.',
-    input: {},
-    run: async (_a, { engine }) =>
-      engine.actions.filter((a) => a.unsafe).map((a) => ({ name: a.name, description: a.description, inputs: objectSchema(a.input) })),
-  },
-  {
     name: 'list_items',
     unsafe: false,
     description:
@@ -139,8 +129,8 @@ export const itemActions: Action[] = [
     name: 'items_waiting_on',
     unsafe: false,
     description:
-      "The open items waiting on one thing: a person (by username: their turn, so assigned to them and blocked by nothing but " +
-      'approvals), `bot` (assigned to any bot), a bot by its name, or any blocking item type (`script`, `approval`, `item` for ' +
+      "The open items waiting on one thing: a person (by username: their turn, so assigned to them and blocked by nothing), " +
+      '`bot` (assigned to any bot), a bot by its name, or any blocking item type (`script`, `item` for ' +
       "a child item: see item_types). Each with the blockers that match, longest-waiting first.",
     input: { on: z.string().describe("A person's username, bot, a bot's name, or a blocking item type.") },
     run: async (a, { engine }) => {
@@ -283,7 +273,7 @@ export const itemActions: Action[] = [
     unsafe: false,
     description:
       'Run JavaScript now, once, in the app: `source` is the body of an async function with `context` (what you pass, plus now) and `tools` ' +
-      '(every tool here, as tools.<name>(args); never the unsafe ones for an agent) in scope; it may await and return. Answers { result, logs }. ' +
+      '(every tool here, as tools.<name>(args)) in scope; it may await and return. Answers { result, logs }. ' +
       'For code that should run again, or hold a topic, add a script item instead (see item_types).',
     input: { source: z.string(), context: z.record(z.unknown()).optional() },
     run: async (a, ctx) => {
@@ -336,7 +326,7 @@ export const itemActions: Action[] = [
     name: 'add_items',
     unsafe: false,
     description:
-      "Add items in a topic's comments (or in a bot's chat): comments (topics with just text), approvals, scripts, open topics to split work off. " +
+      "Add items in a topic's comments (or in a bot's chat): comments (topics with just text), scripts, open topics to split work off. " +
       'With `via: notes`, in its notes (its tree) instead. With no item_id, add topics, bots, scripts or people that sit in none.',
     input: { item_id: itemId.optional(), items: z.array(spec), via: z.enum(['comments', 'notes']).optional() },
     run: async (a, ctx) => {

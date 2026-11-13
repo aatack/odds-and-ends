@@ -14,12 +14,12 @@ import { searchFocusAtom } from './views'
 
 /**
  * What a row says beside its icon: only what the icon can't. What a script
- * waits for, the approval asked for; for a bot, a child task, or your turn
+ * waits for; for a bot, a child task, or your turn
  * alone, nothing.
  */
 function detail(i: Item): string {
   if (i.closed) return ''
-  if (i.withYou) return i.blockers.find((b) => b.type === 'approval' && b.params.reason)?.summary ?? ''
+  if (i.withYou) return ''
   const b = waitingOn(i)
   if (b?.type === 'script' && b.params.description) return b.summary
   return ''

@@ -6,7 +6,6 @@ import type { ItemKind, Item, ItemInfo } from '../../shared/types'
 /** One icon an item type. */
 export const TYPE_ICON: Record<ItemKind, LucideIcon> = {
   topic: Layers,
-  approval: ShieldCheck,
   script: SquareCode,
   link: Link,
   slack_message: MessageCircle,
@@ -18,7 +17,6 @@ export const TYPE_ICON: Record<ItemKind, LucideIcon> = {
 
 export const TYPE_NAME: Record<ItemKind, string> = {
   topic: 'Topic',
-  approval: 'Approval',
   script: 'Script',
   link: 'Link',
   slack_message: 'Slack message',

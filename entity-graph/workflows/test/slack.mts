@@ -111,7 +111,6 @@ assert.deepEqual(inThread.map((m) => m.text), ['Thanks!', '*np*'])
 const ranged = (await engine.callAction('slack_messages', { after: '1700000140', before: '1700000170' }, ctx)) as { author: string }[]
 assert.deepEqual(ranged.map((m) => m.author), ['Alex', 'Sam'])
 assert.deepEqual(((await engine.callAction('slack_channels', { query: '#eng' }, ctx)) as { id: string }[]).map((c) => c.id), ['C9'])
-await assert.rejects(engine.callAction('slack_post', { channel: 'C9', text: 'x' }, ctx), /unsafe/, 'posting is a person\'s, through an approval')
 
 // A "Slack wait" script, as one would be made in the app: given a topic with a message ("[id]() <link>"), it keeps the
 // topic until something new appears after that message, then says what and hands it back. Its state is on the topic.
