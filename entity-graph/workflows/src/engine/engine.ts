@@ -57,6 +57,8 @@ export interface BotOutput {
 interface Mark {
   n: number
   at: number
+  /** Due again at once (a person wrote in the item while the run went on), though what came before `n` is not news. */
+  again?: boolean
 }
 /** Whether something at (`n`, `at`) came after `mark`. */
 const after = (n: number, at: number, mark: Mark) => n > mark.n || (n === mark.n && at > mark.at)
@@ -516,9 +518,12 @@ export class Engine extends EventEmitter {
 
   /** An item's values, as a query reads them: its type and params, how it stands, and keys made from its links. */
   private valuesOf(r: ItemRow): Record<string, unknown> {
+    const topic = r.type === 'topic'
     return {
       ...r.params,
-      type: r.type,
+      // A topic also answers to its old type, so queries kept from before still match: a task had a status, a note not.
+      type: topic ? ['topic', r.params.open === undefined ? 'note' : 'task'] : r.type,
+      ...(topic ? { title: this.title(r.id, r.params) } : {}),
       resolved: r.resolved,
       cancelled: r.cancelled,
       parent: r.parent_id,
@@ -813,14 +818,15 @@ export class Engine extends EventEmitter {
    * by hand, its first item is due at once. Null when it holds nothing.
    */
   due(agentId: string): { item: string; at: number } | null {
-    const self = [`bot:${agentId}`, agentId, 'script']
+    // Who it is when it writes: a bot as itself, a script as `script` (any script: they write by one name).
+    const self = this.row(agentId)?.type === 'bot' ? [`bot:${agentId}`] : [agentId, 'script']
     const cycle = this.cycleMinutes(agentId) * MINUTE
     let next: { item: string; at: number } | null = null
     const held = this.assignedTo(agentId)
     for (const itemId of held) {
       const mark = this.markOn(agentId, itemId)
       const given = this.store.assignment(itemId, agentId)!
-      const at = !mark || (after(given.n, given.at, mark) && !self.includes(given.by)) ? given.at : cycle ? mark.at + cycle : null
+      const at = !mark || (after(given.n, given.at, mark) && !self.includes(given.by)) ? given.at : mark.again ? mark.at : cycle ? mark.at + cycle : null
       if (at !== null && (!next || at < next.at)) next = { item: itemId, at }
       // The first that is due now is the one: the longest held go first.
       if (at !== null && at <= this.now()) return { item: itemId, at }
@@ -1071,7 +1077,7 @@ export class Engine extends EventEmitter {
           }
           if (to && !to.has(agentId) && !u.close && heard(u.item)) {
             to.add(agentId)
-            this.setMark(agentId, u.item, null)
+            this.setMark(agentId, u.item, { ...mark, again: true })
           }
           const specs: ItemSpec[] = [...(u.message ? [{ type: 'topic' as const, params: { text: u.message } }] : []), ...this.prepare(u.items ?? [], 'bot')]
           if (specs.length) this.add(u.item, specs, actor)
@@ -1111,7 +1117,7 @@ export class Engine extends EventEmitter {
     const { blockers } = this.must(itemId)
     if (blockers.some((b) => b.createdBy === `bot:${agentId}` && !this.waitsOnHuman(b))) return
     // A person wrote in it while it ran: the run did not see that, so the bot keeps it, and is due on it again.
-    if (this.store.children(itemId).some((e) => after(e.added_n, e.created_at, run.mark) && this.isUser(e.created_by))) return void this.setMark(agentId, itemId, null)
+    if (this.store.children(itemId).some((e) => after(e.added_n, e.created_at, run.mark) && this.isUser(e.created_by))) return void this.setMark(agentId, itemId, { ...run.mark, again: true })
     this.handBack(itemId, agentId, run.id)
   }
 

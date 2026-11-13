@@ -223,8 +223,8 @@ export class Store {
     this.index(row)
     const ops: Op[] = [set(row.id, 'type', row.type)]
     for (const [k, value] of Object.entries(row.params)) if (value !== undefined && value !== null) ops.push(set(row.id, k, value))
-    // A blocker says it is open; a plain item says nothing, being resolved as it is made.
-    if (!row.resolved) ops.push(set(row.id, 'resolved', false))
+    // A blocker says it is open; a plain item says nothing, being resolved as it is made; a topic's `open` says how it stands.
+    if (!row.resolved && row.type !== 'topic') ops.push(set(row.id, 'resolved', false))
     if (row.parent_id) ops.push({ link: { source: row.parent_id, destination: row.id, link_type: row.via ?? 'comments', sort: { explicit: row.seq } } })
     this.out(ops, row.created_by, row.created_at)
   }
@@ -468,7 +468,7 @@ export class Store {
     if (!row) throw new Error(`No item ${id}.`)
     const values: Record<string, unknown> = { type: row.type, ...row.params }
     // A blocker is one that was not resolved as it was added.
-    if (!row.resolved || row.resolved_n !== row.added_n) Object.assign(values, { resolved: row.resolved }, row.cancelled ? { cancelled: true } : {}, row.resolved ? { data: row.data } : {})
+    if (row.type !== 'topic' && (!row.resolved || row.resolved_n !== row.added_n)) Object.assign(values, { resolved: row.resolved }, row.cancelled ? { cancelled: true } : {}, row.resolved ? { data: row.data } : {})
     const owner = this.owner(id)
     const links: LinkView[] = [
       ...(row.parent_id ? [{ type: row.via ?? 'comments', direction: 'inbound' as const, other: row.parent_id, sort: row.seq, at: row.created_at, by: row.created_by }] : []),

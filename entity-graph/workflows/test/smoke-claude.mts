@@ -37,10 +37,10 @@ await wait()
 
 const show = (id: string, depth = 0) => {
   const it = engine.get(id)!
-  console.log(`${'  '.repeat(depth)}# ${it.title} (${it.closed ? it.how : 'open'}) assigned ${it.assignees.map((a) => engine.actorName(a)).join(', ')}`)
+  console.log(`${'  '.repeat(depth)}# ${it.title} (${it.closed ? 'closed' : 'open'}) assigned ${it.assignees.map((a) => engine.actorName(a)).join(', ')}`)
   for (const e of engine.children(id)) {
     console.log(`${'  '.repeat(depth)}- ${e.resolved ? 'done' : 'OPEN'} ${engine.actorName(e.createdBy).padEnd(10)} ${e.type.padEnd(8)} ${(e.message ?? e.summary).slice(0, 100)}`)
-    if (e.type === 'task') show(e.id, depth + 1)
+    if (e.type === 'topic' && e.params.open !== undefined) show(e.id, depth + 1)
   }
 }
 show(parent)

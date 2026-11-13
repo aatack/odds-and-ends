@@ -11,11 +11,10 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { z } from 'zod'
 import Ajv from 'ajv'
 import { Admin } from '../src/engine/admin.ts'
-import { DEFAULT_DEBOUNCE, DEFAULT_MODEL, Engine, MAX_SCRIPTS, PERIODIC_MINUTES, type BotOutput, type BotUpdate } from '../src/engine/engine.ts'
+import { CYCLE_MINUTES, DEFAULT_MODEL, Engine, MAX_SCRIPTS, type BotOutput, type BotUpdate } from '../src/engine/engine.ts'
 import { catalog, startMcp } from '../src/engine/mcp.ts'
 import { botOutputSchema } from '../src/engine/schema.ts'
 import { runScript } from '../src/engine/script.ts'
-import { dueAt } from '../src/engine/wakes.ts'
 import { trustFolders, trustTargets } from '../src/engine/trust.ts'
 import { ASK, BotRunner, limitedUntil, MAX_BOTS, promptFor, type SpawnBot } from '../src/engine/workers.ts'
 import { focusText } from '../src/engine/views.ts'
@@ -75,7 +74,10 @@ const spawnFake: SpawnBot = ({ prompt, system, schema, mcpUrl, sessionId, resume
   assert.ok(behaviour, `a bot ran that no test expected:\n${prompt}`)
   const done = (async () => {
     const { client, call } = await connect(mcpUrl)
-    const out = await behaviour({ call, prompt, system, schema, sessionId, resume, model, cwd })
+    const out = await behaviour({ call, prompt, system, schema, sessionId, resume, model, cwd }).catch((e: Error) => {
+      if (process.env.DEBUG_BOTS) console.error('a fake run failed:', e.message, '\n--- its prompt ---\n' + prompt)
+      throw e
+    })
     await client.close()
     onOutput(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Thinking out loud.' }] } }) + '\n')
     onOutput(JSON.stringify({ type: 'result', total_cost_usd: 0.01, num_turns: 3, structured_output: out ?? undefined }) + '\n')
@@ -124,17 +126,17 @@ const blockers = (id: string) => item(id).blockers.map((b) => b.type)
 const last = (id: string, type: string) => engine.children(id).filter((e) => e.type === type).at(-1)!
 
 // The types there are; those from before are gone.
-assert.deepEqual(engine.itemTypes.map((t) => t.type), ['task', 'note', 'approval', 'script', 'process', 'link', 'widget', 'file', 'search', 'slack_message', 'slack_channel', 'bot', 'user'])
+assert.deepEqual(engine.itemTypes.map((t) => t.type), ['topic', 'approval', 'script', 'link', 'file', 'search', 'slack_message', 'slack_channel', 'bot', 'user'])
 await assert.rejects(engine.addItems((await engine.create('x'))!, [{ type: 'message' as 'note', params: { text: 'x' } }]), /No item type message/)
-for (const i of engine.overview().items) await engine.close(i.id)
+for (const i of engine.overview().items.filter((i) => i.type === 'topic')) await engine.close(i.id)
 
 // The bots. Threepio does most things; a new bot runs on opus and waits a minute, unless it says otherwise.
 await assert.rejects(engine.send((await engine.create('Too soon'))!, 'note', '  '), /Nothing to send/)
-const threepio = await engine.saveAgent({ name: 'Threepio', instructions: 'You speak six million languages.', provider: 'claude', model: '', debounceMinutes: 0 })
+const threepio = await engine.saveAgent({ name: 'Threepio', instructions: 'You speak six million languages.', provider: 'claude', model: '' })
 assert.deepEqual([engine.agent(threepio)!.model, DEFAULT_MODEL], ['opus', 'opus'])
 assert.equal(engine.info(threepio)!.type, 'bot')
 const toBot = (id: string, text: string) => engine.send(id, `assign:${threepio}`, text)
-for (const i of engine.overview().items) await engine.close(i.id)
+for (const i of engine.overview().items.filter((i) => i.type === 'topic')) await engine.close(i.id)
 
 // ---- 1. A new item is its maker's, and their turn ----
 const id = (await engine.create('Answer the PR'))!
@@ -153,9 +155,9 @@ behaviours.push(async ({ call, prompt, system, schema, sessionId, resume, model,
   assert.match(system, /You are @Threepio/)
   assert.match(system, /six million languages/, "the bot's own instructions are its system prompt")
   assert.ok(cwd.startsWith(join(dataDir, 'bots', 'threepio-')) && existsSync(cwd), 'a folder of its own, under the data folder')
-  assert.ok(prompt.startsWith(`${ASK}\n\n---\n\n[current task ID: ${id}]\n\n[new to you: Answer the PR]`))
+  assert.ok(prompt.startsWith(`${ASK}\n\n---\n\n[current topic ID: ${id}]\n\n[new to you: Answer the PR]`))
   assert.match(prompt, /^human: Reply to the PR, please$/m, "a person's words as they are, after their name")
-  assert.ok(JSON.stringify(schema).includes('"enum":["task"]'), 'a bot may add child tasks')
+  assert.ok(JSON.stringify(schema).includes('"enum":["topic"]'), 'a bot may add child tasks')
   assert.ok(JSON.stringify(schema).includes('"enum":["bot"]'), 'and bots')
   assert.equal(JSON.parse(await call('get_item', { item_id: id })).item.id, id)
   await assert.rejects(call('post_somewhere', { text: 'x' }), /not found/i)
@@ -171,15 +173,15 @@ behaviours.push(async ({ call, prompt, system, schema, sessionId, resume, model,
   })
 })
 await toBot(id, 'Reply to the PR, please')
-assert.deepEqual(engine.children(id).map((e) => [e.type, e.createdBy]), [['note', 'human']], 'assignment is a link, not an item')
+assert.deepEqual(engine.children(id).map((e) => [e.type, e.createdBy]), [['topic', 'human']], 'assignment is a link, not an item')
 assert.deepEqual(item(id).assignees, [threepio], 'handing it to the bot took it off the sender')
 assert.deepEqual(engine.assignedTo(threepio), [id], "the bot's items: its assigned_to links, followed backwards")
 await settle()
 assert.deepEqual(blockers(id), ['approval'])
 assert.deepEqual(item(id).assignees, ['human'], 'a run that leaves the item waiting on a person hands it back')
 assert.ok(item(id).withYou, 'an approval is a person\'s turn')
-assert.equal(last(id, 'note').params.text, 'Drafted a reply. Post it?')
-assert.equal(last(id, 'note').createdBy, `bot:${threepio}`)
+assert.equal(last(id, 'topic').params.text, 'Drafted a reply. Post it?')
+assert.equal(last(id, 'topic').createdBy, `bot:${threepio}`)
 assert.deepEqual(engine.agent(threepio)!.lastRun!.items, [id], 'the bot keeps its last run as a value')
 assert.ok(engine.agent(threepio)!.lastRun!.endedAt)
 
@@ -197,10 +199,10 @@ await assert.rejects(engine.addItems(id, [{ type: 'approval', params: { action: 
 behaviours.push(async ({ prompt, sessionId, resume, call }) => {
   assert.equal(resume, true)
   assert.equal(sessionId, session, 'one session for the bot, across its runs')
-  assert.match(prompt, /\[task: Answer the PR\]/)
+  assert.match(prompt, /\[topic: Answer the PR\]/)
   assert.doesNotMatch(prompt, /Reply to the PR, please/, 'what the session has seen is not sent again')
   // It makes a script that checks CI, and hands it the task: the script hands it back when CI passes.
-  const { ids } = JSON.parse(await call('add_items', { items: [{ type: 'script', params: { name: 'CI', debounce_minutes: 0, cycle_minutes: 1 / 60, source: `if (!context.state) return { state: 1 }
+  const { ids } = JSON.parse(await call('add_items', { items: [{ type: 'script', params: { name: 'CI', cycle_minutes: 1 / 60, source: `if (!context.state) return { state: 1 }
 return { messages: [{ item: context.topics[0].id, text: 'CI passed' }], assign: [{ item: context.topics[0].id, to: ['Threepio'] }] }` } }] }))
   return out({ item: id, assign: [ids[0]] })
 })
@@ -236,16 +238,16 @@ behaviours.push(async () =>
 behaviours.push(async ({ prompt }) => {
   assert.match(prompt, /\[new to you: Child\]/)
   assert.match(prompt, /Do the child/)
-  const kid = engine.children(parent).find((e) => e.type === 'task')!.id
+  const kid = engine.children(parent).find((e) => e.type === 'topic')!.id
   return out({ item: kid, message: 'Child done.', close: true })
 })
 await toBot(parent, 'Split it')
 await settle()
 assert.deepEqual(blockers(parent), [], 'a task in another is no dependency of it')
 assert.ok(item(parent).withYou, 'so the parent went back to its owner')
-clock += PERIODIC_MINUTES * MINUTE
+clock += CYCLE_MINUTES * MINUTE
 await settle()
-const kid = engine.children(parent).find((e) => e.type === 'task')!.id
+const kid = engine.children(parent).find((e) => e.type === 'topic')!.id
 assert.ok(item(kid).closed)
 // Closing a task leaves the tasks in it as they are.
 const [loose] = await engine.addItems(parent, [{ type: 'task', params: { title: 'Still open' } }])
@@ -277,7 +279,7 @@ await engine.close(loose)
   await toBot(host, 'Tell the other task')
   await settle()
   assert.deepEqual(
-    engine.children(other).filter((e) => e.type === 'note').map((e) => [e.params.text, e.createdBy]),
+    engine.children(other).filter((e) => e.type === 'topic').map((e) => [e.params.text, e.createdBy]),
     [['By the tool.', `bot:${threepio}`], ['By the update.', `bot:${threepio}`]],
   )
   assert.ok(item(other).withYou, 'a task the bot was not given stays with whoever had it')
@@ -300,10 +302,7 @@ await engine.close(loose)
   })
   await toBot(busy, 'Do the first thing')
   await settle()
-  assert.equal(behaviours.length, 1, 'news in a topic it holds is not something happening to it: it waits for the cycle')
-  clock += PERIODIC_MINUTES * MINUTE
-  await settle()
-  assert.equal(behaviours.length, 0)
+  assert.equal(behaviours.length, 0, 'what a person said while it ran is due at once: the run never saw it')
   assert.deepEqual(engine.assignees(busy), [engine.me()], 'with nothing new, its update hands the task on')
   await engine.close(busy)
 }
@@ -311,7 +310,7 @@ await engine.close(loose)
 // Limits: at most `bots.max_running` bots run at once, and `scripts.max_running` scripts; the rest wait their turn.
 {
   engine.settings.set('bots.max_running', 1)
-  const other = await engine.saveAgent({ name: 'Other', instructions: '', provider: 'claude', model: '', debounceMinutes: 0 })
+  const other = await engine.saveAgent({ name: 'Other', instructions: '', provider: 'claude', model: '' })
   const [t1, t2] = [(await engine.create('One'))!, (await engine.create('Two'))!]
   const seen: number[] = []
   for (const _ of [1, 2])
@@ -338,8 +337,8 @@ await engine.close(loose)
   await assert.rejects(engine.assign(t1, other, true), /is cancelled, so it can't have tasks now/)
   engine.settings.set('scripts.max_running', 1)
   const [s1, s2] = await engine.addItems(null, [
-    { type: 'script', params: { source: 'return null', debounce_minutes: 0 } },
-    { type: 'script', params: { source: 'return null', debounce_minutes: 0 } },
+    { type: 'script', params: { source: 'return null' } },
+    { type: 'script', params: { source: 'return null' } },
   ])
   await engine.assign(t1, s1, true)
   await engine.assign(t2, s2, true)
@@ -362,8 +361,8 @@ await engine.close(loose)
   assert.ok(item(t).closed)
   await engine.reopen(t)
   assert.ok(!item(t).closed && item(t).withYou)
-  assert.match(String(last(t, 'note').params.text), /^Reopened by /)
-  assert.equal((await engine.inspect(t)).values.resolved, false)
+  assert.match(String(last(t, 'topic').params.text), /^Reopened by /)
+  assert.equal((await engine.inspect(t)).values.open, true)
   await engine.close(t)
 }
 
@@ -371,7 +370,7 @@ await engine.close(loose)
 {
   const from = (await engine.create('Discussion'))!
   await engine.send(from, 'note', 'We should fix the export')
-  const said = last(from, 'note').id
+  const said = last(from, 'topic').id
   const [made] = await engine.addItems(null, [{ type: 'task', params: { title: 'Fix the export' } }])
   await engine.callAction('pin', { item_id: made, item_ids: [said] }, { engine, author: 'bot', actor: `bot:${threepio}`, itemId: made, runId: null })
   // link_items, the old name, pins too.
@@ -405,15 +404,15 @@ await engine.close(loose)
   await engine.close(made)
 }
 
-// Notes: a set of notes is a note in no item, pinned where it was made; its tree is the items in it (contains links).
+// Notes: a set of notes is a topic in no item that shows its notes, pinned where it was made; its tree is its notes links.
 {
   const t = (await engine.create('Notes here'))!
   const root = engine.newNotes('Plan', t, 'alex')
   assert.equal(engine.info(root)!.parentId, null, 'a set of notes sits in no item')
   assert.deepEqual(engine.info(t)!.pins, [root], 'and is pinned where it was made')
   assert.ok(!engine.detail(t)!.children.some((c) => c.id === root), 'not in its chat')
-  const [a, b] = await engine.addItems(root, [{ type: 'note', params: { text: 'A' } }, { type: 'note', params: { text: 'B', section: true } }], 'alex')
-  const [a1] = await engine.addItems(a, [{ type: 'note', params: { text: 'A1', open: true } }], 'alex')
+  const [a, b] = await engine.addItems(root, [{ type: 'note', params: { text: 'A' } }, { type: 'note', params: { text: 'B', section: true } }], 'alex', 'human', 'notes')
+  const [a1] = await engine.addItems(a, [{ type: 'note', params: { text: 'A1', open: true } }], 'alex', 'human', 'notes')
   assert.deepEqual(engine.subtree(root).map((i) => [i.params.text, i.parentId]), [['Plan', null], ['A', root], ['A1', a], ['B', root]])
   assert.deepEqual([engine.info(b)!.params.section, engine.info(a1)!.params.open], [true, true], 'a heading and a checkbox are kept as they are added')
   // Moving: to the end of where it goes; never inside itself; out of everything with null.
@@ -426,55 +425,34 @@ await engine.close(loose)
   await engine.setValue(a1, 'open', false, 'alex')
   assert.equal(engine.info(a1)!.params.open, false)
   // Anything else in a note is a leaf of its tree.
-  const [inner] = await engine.addItems(b, [{ type: 'task', params: { title: 'Do it' } }], 'alex')
+  const [inner] = await engine.addItems(b, [{ type: 'task', params: { title: 'Do it' } }], 'alex', 'human', 'notes')
   await engine.addItems(inner, [{ type: 'note', params: { text: 'in the task' } }], 'alex')
   assert.deepEqual(engine.subtree(root).map((i) => i.id), [root, b, a1, inner])
   // A bot reads it at its focus (get_item): its tree under its pill, a note at focus, anything else as its pill.
   const ctx = { engine, author: 'bot' as const, actor: 'bot', itemId: null, runId: null }
   const got = (await engine.callAction('get_item', { item_id: root }, ctx)) as { focus: string; pinnedIn: { id: string }[] }
-  assert.equal(got.focus, `[note] Plan (${root})\n- # B (${b})\n  - [x] A1 (${a1})\n  - [task] Do it (${inner})`)
+  assert.equal(got.focus, `[topic] Plan (${root})\n- # B (${b})\n  - [x] A1 (${a1})\n  - [ ] Do it (${inner})`)
   assert.deepEqual(got.pinnedIn.map((p) => p.id), [t])
-  await engine.addItems(a1, Array.from({ length: 5 }, (_, i) => ({ type: 'note' as const, params: { text: `n${i}` } })), 'alex')
+  await engine.addItems(a1, Array.from({ length: 5 }, (_, i) => ({ type: 'note' as const, params: { text: `n${i}` } })), 'alex', 'human', 'notes')
   // Cut off at the limit, with the ids to ask for the rest.
   assert.match(focusText(engine, root, undefined, 4)!, new RegExp(`\\.\\.\\. 3 more under ${a1}: get_item it[^]*\\.\\.\\. 1 more under ${b}`))
   assert.equal(engine.view(inner + 'x', 'focus'), null)
   // The smaller sizes, and a task at its focus: the cards of what is in it.
-  assert.deepEqual(await engine.callAction('get_item', { item_id: inner, size: 'pill' }, ctx), { text: `[task] Do it (${inner})` })
-  assert.equal(engine.view(inner, 'focus'), `[task] Do it (${inner})\n[alex: in the task]`)
+  assert.deepEqual(await engine.callAction('get_item', { item_id: inner, size: 'pill' }, ctx), { text: `[topic] Do it (${inner})` })
+  assert.equal(engine.view(inner, 'focus'), `[topic] Do it (${inner})\n[alex: in the task]`)
   await engine.close(inner)
   await engine.close(t)
 }
 
-// A widget: its state is a value on its item, changed by a person, a bot or a script, and read back by anyone.
+// set_value: any param, checked; not how it stands, nor what the app keeps for itself.
 {
-  const t = (await engine.create('Widget'))!
-  const [w] = await engine.addItems(t, [{ type: 'widget', params: { title: 'Count', html: '<b id="n"></b>', widget_state: { count: 0 } } }], 'bot', 'bot')
-  assert.deepEqual(blockers(t), [], 'a widget blocks nothing')
-  await engine.setWidgetState(w, { count: 1 })
-  await engine.callAction('set_value', { item_id: w, key: 'widget_state', value: { count: 2 } }, { engine, author: 'bot', actor: 'bot', itemId: t, runId: null })
-  assert.deepEqual(engine.info(w)!.params.widget_state, { count: 2 })
-  await assert.rejects(engine.setWidgetState(t, {}), /No widget/)
-  // set_value: any param, checked; not how it stands, nor what the app keeps for itself.
-  await engine.setValue(t, 'title', 'Widget, renamed')
-  assert.equal(item(t).title, 'Widget, renamed')
+  const t = (await engine.create('Values'))!
+  await engine.setValue(t, 'text', 'Values, renamed')
+  assert.equal(item(t).title, 'Values, renamed')
   await assert.rejects(engine.setValue(t, 'resolved', true), /can't be set/)
   await engine.setValue(t, 'anything', { at: 1 })
   assert.deepEqual(engine.info(t)!.params.anything, { at: 1 }, 'duck typed: any key, any value')
   await assert.rejects(engine.setValue(threepio, 'session_id', 'x'), /can't be set/)
-  await engine.close(t)
-}
-
-// The task bots tell of what they lacked: named in every bot's instructions while it is open.
-{
-  const gaps = (await engine.create('Bot capability gaps'))!
-  const t = (await engine.create('Anything'))!
-  behaviours.push(async ({ system }) => {
-    assert.ok(system.includes(`add a note in [${gaps}]()`))
-    return out({ item: t, assign: [engine.me()] })
-  })
-  await toBot(t, 'x')
-  await settle()
-  await engine.close(gaps)
   await engine.close(t)
 }
 
@@ -523,11 +501,11 @@ await engine.close(loose)
 {
   const t = (await engine.create('Tools'))!
   await engine.runTool(t, 'list_people', {})
-  assert.match(String(last(t, 'note').params.text), /^Ran `list_people`:\n\n```json\n/)
+  assert.match(String(last(t, 'topic').params.text), /^Ran `list_people`:\n\n```json\n/)
   await engine.runTool(t, 'post_somewhere', { text: 'by hand' })
   assert.equal(posted.pop(), 'by hand')
   await assert.rejects(engine.runTool(t, 'nope', {}), /No action nope/)
-  assert.match(String(last(t, 'note').params.text), /it failed: No action nope/)
+  assert.match(String(last(t, 'topic').params.text), /it failed: No action nope/)
   await engine.close(t)
 }
 
@@ -650,9 +628,35 @@ return { state: { last: ids[0] } }`
   await engine.close(t)
 }
 
-// News waits out the debounce, even when the cycle is long overdue (a bot idle for an hour, given a task).
-assert.equal(dueAt({ lastWake: 0, edited: 3_600_000, debounceMs: 60_000, cycleMs: 900_000, hasWork: true }), 3_660_000)
-assert.equal(dueAt({ lastWake: 0, edited: null, debounceMs: 60_000, cycleMs: 900_000, hasWork: true }), 900_000)
+// The 30-minute rule: an item a bot ran on and still holds is due again only its cycle later, unless someone else
+// assigns it to the bot again since.
+{
+  const t = (await engine.create('Held'))!
+  behaviours.push(async () => out({ item: t, message: 'Keeping it.', assign: [threepio] }))
+  await toBot(t, 'keep it')
+  await settle()
+  const ran = engine.agent(threepio)!.lastRun!.id
+  assert.deepEqual(item(t).assignees, [threepio], 'it gave the topic to itself')
+  assert.equal(engine.agent(threepio)!.wakesAt, clock + CYCLE_MINUTES * MINUTE, 'due again a cycle after it last ran on it')
+  clock += (CYCLE_MINUTES - 1) * MINUTE
+  await settle()
+  assert.equal(engine.agent(threepio)!.lastRun!.id, ran, 'not before')
+  behaviours.push(async ({ prompt }) => {
+    assert.match(prompt, /\[nothing new\]/)
+    return out({ item: t, message: 'Still keeping it.', assign: [threepio] })
+  })
+  clock += MINUTE
+  await settle()
+  assert.equal(behaviours.length, 0, 'then it runs on it again')
+  // Assigned to it again by a person: due at once.
+  behaviours.push(async () => out({ item: t, assign: [engine.me()] }))
+  await engine.assign(t, threepio, false)
+  await engine.assign(t, threepio, true)
+  await settle()
+  assert.equal(behaviours.length, 0)
+  assert.deepEqual(item(t).assignees, [engine.me()])
+  await engine.close(t)
+}
 
 // One answer to who can hold a task: a person, a bot or an open script, by any name for it.
 {
@@ -670,7 +674,7 @@ assert.equal(dueAt({ lastWake: 0, edited: null, debounceMs: 60_000, cycleMs: 900
 }
 
 // A script on its own, given topics as a bot is: "[snooze]() 2h" hands the topic to it; it keeps it till then (its state
-// on the topic), and hands it back. It wakes when given a topic (its debounce after), and on its cycle; not on news.
+// on the topic), and hands it back. It runs when given a topic, and on its cycle; not on news.
 {
   const [snooze] = await engine.addItems(null, [{ type: 'script', params: { name: 'Snooze', source: SNOOZE_SOURCE, cycle_minutes: 5 } }])
   assert.equal(engine.holder('@snooze'), snooze, 'by its name')
@@ -679,10 +683,7 @@ assert.equal(dueAt({ lastWake: 0, edited: null, debounceMs: 60_000, cycleMs: 900
   assert.deepEqual(item(t).assignees, [snooze], 'handed to it, and off the sender')
   await engine.checkDue()
   await engine.idle()
-  assert.equal(engine.info(snooze)!.runs, 0, 'not before its debounce')
-  clock += MINUTE
-  await engine.checkDue()
-  await engine.idle()
+  assert.equal(engine.info(snooze)!.runs, 1, 'given a topic, it runs on it at once')
   assert.equal(engine.info(snooze)!.lastError, null)
   assert.equal(engine.info(t)!.params.sleepUntil, clock + 2 * 60 * MINUTE, 'its state is on the topic')
   await engine.send(t, 'note', 'news in the topic')
@@ -706,52 +707,58 @@ assert.equal(dueAt({ lastWake: 0, edited: null, debounceMs: 60_000, cycleMs: 900
   await engine.cancel(snooze)
 }
 
-// Processes are switched off: none can be added.
-await assert.rejects(engine.addItems((await engine.create('No process'))!, [{ type: 'process', params: { command: 'true' } }]), /switched off/)
+// Processes and widgets are gone: none can be added.
+for (const type of ['process', 'widget'])
+  await assert.rejects(engine.addItems((await engine.create('No ' + type))!, [{ type: type as 'topic', params: {} }]), new RegExp(`No item type ${type}`))
 
 // ---- 6. Output that can't be used, or an update that can't be applied, is said, and the item goes back ----
 const bad = (await engine.create('Bad'))!
 behaviours.push(async () => out({ item: bad, items: [{ type: 'user', params: { username: 'Not Valid' } }] }))
 await toBot(bad, 'x')
 await settle()
-assert.match(String(last(bad, 'note').params.text), /^@Threepio failed: its update could not be applied: Bad params for a user item/)
-assert.equal(last(bad, 'note').createdBy, 'system')
+assert.match(String(last(bad, 'topic').params.text), /^@Threepio failed: its update could not be applied: Bad params for a user item/)
+assert.equal(last(bad, 'topic').createdBy, 'system')
 assert.ok(item(bad).withYou)
 behaviours.push(async () => ({ updates: 'nonsense' }) as unknown as BotOutput)
 await toBot(bad, 'y')
 await settle()
-assert.match(String(last(bad, 'note').params.text), /The bot's output was not usable/)
+assert.match(String(last(bad, 'topic').params.text), /The bot's output was not usable/)
 await engine.close(bad)
 
-// ---- 7. Scripts: bots without a model. Given topics, they run (state kept), say things, hand topics on; they never end on their own ----
+// ---- 7. Scripts: bots without a model. Given topics, they run on one at a time (state kept), say things, hand topics on;
+// they never end on their own ----
 {
   const a = (await engine.create('Watched A'))!
   const b = (await engine.create('Watched B'))!
-  const [watch] = await engine.addItems(null, [{ type: 'script', params: { name: 'Watcher', debounce_minutes: 0, cycle_minutes: 1, source: `
+  const [watch] = await engine.addItems(null, [{ type: 'script', params: { name: 'Watcher', cycle_minutes: 1, source: `
     const items = await tools.list_items({})
     console.log('run', context.runs, 'items', items.length)
     const n = (context.state ?? 0) + 1
-    if (n < 2) return { state: n, messages: context.topics.map((t) => ({ item: t.id, text: 'Still waiting on ' + t.title })) }
+    if (n < 3) return { state: n, messages: context.topics.map((t) => ({ item: t.id, text: 'Still waiting on ' + t.title })) }
     return { state: n, assign: context.topics.map((t) => ({ item: t.id, to: ['human'] })), done: true }` } }])
   await engine.assign(a, watch, true)
   await engine.assign(b, watch, true)
   assert.deepEqual(blockers(a), [], 'it blocks nothing')
   clock += 1
   await tick()
-  assert.deepEqual([last(a, 'note').params.text, last(b, 'note').params.text], ['Still waiting on Watched A', 'Still waiting on Watched B'], 'given topics, it runs')
-  assert.equal(engine.info(watch)!.params.last_wake, clock, 'when it woke is kept, for a restart')
+  assert.equal(last(a, 'topic').params.text, 'Still waiting on Watched A', 'given topics, it runs on the one it has held longest')
+  assert.deepEqual(engine.children(b), [], 'and only that one')
+  assert.equal((engine.info(watch)!.params.last_seen as Record<string, number>)[a], clock, 'when it last ran on each is kept, for a restart')
   await tick()
-  assert.equal(engine.info(watch)!.runs, 1, 'its own messages are not something happening to it')
+  assert.equal(last(b, 'topic').params.text, 'Still waiting on Watched B', 'then the next')
+  await tick()
+  assert.equal(engine.info(watch)!.runs, 2, 'neither is due again before its cycle, and its own messages are not news')
   clock += MINUTE
+  await tick()
   await tick()
   assert.deepEqual([item(a).assignees, item(b).assignees], [['human'], ['human']], 'it hands its topics on')
   assert.ok(!engine.info(watch)!.resolved, 'and lasts (an old `done: true` is ignored)')
   // A run that throws says so in its chat, once till the error changes, and carries on.
-  const [bad2] = await engine.addItems(null, [{ type: 'script', params: { name: 'Bad', source: 'throw new Error("nope " + Math.min(context.runs, 1))', debounce_minutes: 0, cycle_minutes: 1 } }])
+  const [bad2] = await engine.addItems(null, [{ type: 'script', params: { name: 'Bad', source: 'throw new Error("nope " + Math.min(context.runs, 1))', cycle_minutes: 1 } }])
   await engine.assign(a, bad2, true)
   clock += 1
   await tick()
-  const said = () => engine.children(bad2).filter((e) => e.type === 'note').map((e) => String(e.params.text))
+  const said = () => engine.children(bad2).filter((e) => e.type === 'topic').map((e) => String(e.params.text))
   assert.ok(!engine.info(bad2)!.resolved, 'a failing run does not end it')
   assert.equal(said().length, 1)
   assert.match(said()[0], /^Bad failed: The script failed: nope 0$/)
@@ -778,11 +785,11 @@ await engine.close(bad)
   await engine.runNow(press, 'human')
   assert.equal(posted.pop(), 'pressed', 'pressed by a person, it may act outside')
   await assert.rejects(engine.runNow(press, 'bot'), /unsafe/, 'a press that fails says why')
-  const [timed] = await engine.addItems(null, [{ type: 'script', params: { source: unsafeSource, debounce_minutes: 0 } }], 'human')
+  const [timed] = await engine.addItems(null, [{ type: 'script', params: { source: unsafeSource } }], 'human')
   await engine.assign(b, timed, true)
   clock += 1
   await tick()
-  assert.match(String(engine.children(timed).find((e) => e.type === 'note')?.params.text), /unsafe/)
+  assert.match(String(engine.children(timed).find((e) => e.type === 'topic')?.params.text), /unsafe/)
   // run_script: once, now, with the tools; an agent gets no unsafe ones.
   const ran = (await engine.callAction('run_script', { source: 'return (await tools.list_items({})).length + context.n', context: { n: 1 } }, { engine, author: 'bot', actor: 'bot', itemId: null, runId: null })) as { result: number }
   assert.equal(typeof ran.result, 'number')
@@ -793,7 +800,7 @@ await engine.close(bad)
 
 // ---- 8. Deleting a bot while it runs: what it returns doesn't land, and its items go back ----
 {
-  const temp = await engine.saveAgent({ name: 'Temp', instructions: '', provider: 'claude', model: '', debounceMinutes: 0 })
+  const temp = await engine.saveAgent({ name: 'Temp', instructions: '', provider: 'claude', model: '' })
   let release = () => {}
   const held = new Promise<void>((r) => (release = r))
   const taken = (await engine.create('Take me'))!
@@ -835,10 +842,7 @@ await engine.close(bad)
   await engine.send(queue, 'note', 'three')
   releaseFirst()
   await settle()
-  assert.equal(prompts.length, 1, 'news came in while it ran: it keeps the item')
-  clock += PERIODIC_MINUTES * MINUTE
-  await settle()
-  assert.equal(prompts.length, 2, 'and is told of it on its cycle')
+  assert.equal(prompts.length, 2, 'what a person said while it ran keeps the item with it, due at once')
   assert.match(prompts[1], /two[\s\S]*three/)
   assert.doesNotMatch(prompts[1], /\bone\b/)
   assert.deepEqual(item(queue).assignees, ['human'])
@@ -848,7 +852,7 @@ await engine.close(bad)
 // ---- 10. A bot's own chat: a note in it wakes the bot, which answers there ----
 {
   behaviours.push(async ({ prompt }) => {
-    assert.match(prompt, new RegExp(`current task ID: ${threepio}\\]\\n\\n\\[your own chat`))
+    assert.match(prompt, new RegExp(`current topic ID: ${threepio}\\]\\n\\n\\[your own chat`))
     assert.match(prompt, /^human: What are you up to\?$/m)
     return out({ item: threepio, message: 'Not much.' })
   })
@@ -856,53 +860,54 @@ await engine.close(bad)
   await settle()
   const chat = engine.detail(threepio)!
   assert.deepEqual(chat.children.map((e) => [e.type, e.createdBy, e.params.text]), [
-    ['note', 'human', 'What are you up to?'],
-    ['note', `bot:${threepio}`, 'Not much.'],
+    ['topic', 'human', 'What are you up to?'],
+    ['topic', `bot:${threepio}`, 'Not much.'],
   ])
   assert.equal(chat.item.title, '@Threepio')
   assert.deepEqual(engine.agent(threepio)!.lastRun!.items, [threepio], 'its last run was for its chat')
-  await assert.rejects(engine.addItems(threepio, [{ type: 'script', params: { source: 'async () => null' } }]), /only notes/)
+  await assert.rejects(engine.addItems(threepio, [{ type: 'script', params: { source: 'async () => null' } }]), /only topics/)
 }
 
-// ---- 11. A bot's settings: changing them wakes it; a debounce gathers a burst of work into one run; waking by hand ----
+// ---- 11. A bot's settings; one item a run, the longest held first; waking by hand ----
 {
-  await assert.rejects(engine.saveAgent({ name: 'threepio', instructions: '', provider: 'claude', model: '', debounceMinutes: 0 }), /already/)
-  await assert.rejects(engine.saveAgent({ name: 'two words', instructions: '', provider: 'claude', model: '', debounceMinutes: 0 }), /name of letters/)
-  await assert.rejects(engine.saveAgent({ name: 'human', instructions: '', provider: 'claude', model: '', debounceMinutes: 0 }), /a person's username/)
-  const r2 = await engine.saveAgent({ name: 'R2', instructions: 'Beep.', provider: 'claude', model: '', debounceMinutes: '' as unknown as number })
-  assert.equal(engine.agent(r2)!.debounceMinutes, DEFAULT_DEBOUNCE, 'a minute, unless it says otherwise')
-  await engine.saveAgent({ id: r2, name: 'R2', instructions: 'Beep boop.', provider: 'claude', model: 'haiku', debounceMinutes: 5 })
+  await assert.rejects(engine.saveAgent({ name: 'threepio', instructions: '', provider: 'claude', model: '' }), /already/)
+  await assert.rejects(engine.saveAgent({ name: 'two words', instructions: '', provider: 'claude', model: '' }), /name of letters/)
+  await assert.rejects(engine.saveAgent({ name: 'human', instructions: '', provider: 'claude', model: '' }), /a person's username/)
+  const r2 = await engine.saveAgent({ name: 'R2', instructions: 'Beep.', provider: 'claude', model: '', cycleMinutes: '' as unknown as number })
+  assert.equal(engine.agent(r2)!.cycleMinutes, CYCLE_MINUTES, 'thirty minutes, unless it says otherwise')
+  await engine.saveAgent({ id: r2, name: 'R2', instructions: 'Beep boop.', provider: 'claude', model: 'haiku', cycleMinutes: 5 })
   const bot = engine.agent(r2)!
-  assert.deepEqual([bot.instructions, bot.model, bot.debounceMinutes], ['Beep boop.', 'haiku', 5])
+  assert.deepEqual([bot.instructions, bot.model, bot.cycleMinutes], ['Beep boop.', 'haiku', 5])
   assert.deepEqual(engine.children(r2), [], 'settings are its params, not items')
   const inspected2 = await engine.inspect(r2)
   assert.equal(inspected2.values.model, 'haiku', 'settings are plain values')
   assert.equal(inspected2.createdBy, 'human')
   assert.equal(engine.agent(r2)!.wakesAt, null, 'with nothing, it never wakes')
+  assert.deepEqual(engine.ownedBy('human').includes(r2), true, 'a bot is owned by the person who made it')
 
   const a = (await engine.create('A'))!
   const b = (await engine.create('B'))!
+  const seen: string[] = []
+  behaviours.push(async ({ prompt }) => {
+    seen.push(prompt)
+    return out({ item: a, message: 'Did A.', assign: ['R2'] })
+  })
+  behaviours.push(async ({ prompt }) => {
+    seen.push(prompt)
+    return out({ item: b, message: 'Did B.', close: true })
+  })
   await engine.send(a, 'note', `[${r2}]() this`)
   clock += 2 * MINUTE
   await engine.send(b, 'note', `and [${r2}]() this`)
   await settle()
-  assert.equal(engine.agent(r2)!.wakesAt, clock + 5 * MINUTE)
-  clock += 5 * MINUTE - 1
-  await settle()
-  assert.equal(engine.agent(r2)!.runId, null, 'not yet')
-  const seen: string[] = []
-  behaviours.push(async ({ prompt }) => {
-    seen.push(prompt)
-    return out({ item: a, message: 'Did A.', assign: ['R2'] }, { item: b, message: 'Did B.', close: true })
-  })
-  clock += 1
-  await settle()
-  assert.equal(seen.length, 1)
-  assert.match(seen[0], new RegExp(`current task ID: ${a}[\\s\\S]*---[\\s\\S]*current task ID: ${b}`), 'both items, in one prompt')
+  assert.equal(seen.length, 2, 'one run for each')
+  assert.match(seen[0], new RegExp(`current topic ID: ${a}`))
+  assert.doesNotMatch(seen[0], new RegExp(b))
+  assert.match(seen[1], new RegExp(`current topic ID: ${b}`))
   assert.ok(item(b).closed)
-  // Changing its settings wakes it, its debounce after; waking it by hand is now.
-  await engine.saveAgent({ id: r2, name: 'R2', instructions: 'Beep beep.', provider: 'claude', model: 'haiku', debounceMinutes: 5 })
-  assert.equal(engine.agent(r2)!.wakesAt, clock + 5 * MINUTE)
+  // Changing its settings doesn't wake it; waking it by hand runs it on the first it holds, now.
+  await engine.saveAgent({ id: r2, name: 'R2', instructions: 'Beep beep.', provider: 'claude', model: 'haiku', cycleMinutes: 5 })
+  assert.ok(engine.agent(r2)!.wakesAt! > clock)
   engine.wakeAgent(r2)
   behaviours.push(async ({ system }) => {
     assert.match(system, /Beep beep\./)
@@ -936,7 +941,7 @@ await engine.close(bad)
   await engine.close(u)
   await engine.rename(t, '  Renamed for Sam ')
   assert.equal(item(t).title, 'Renamed for Sam')
-  assert.deepEqual((await engine.inspect(t)).values, { type: 'task', title: 'Renamed for Sam', resolved: false }, 'a task keeps only its title, and whether it is resolved')
+  assert.deepEqual((await engine.inspect(t)).values, { type: 'topic', text: 'Renamed for Sam', open: true }, 'a topic keeps its text and status')
   await engine.close(t)
 }
 
@@ -951,8 +956,8 @@ await engine.close(bad)
   assert.doesNotMatch(generateArgs[generateArgs.indexOf('--system-prompt') + 1].split('The unsafe actions are:')[0], /post_somewhere/)
   ca.save({ ...hello, source })
   await ca.run(hello.id, task)
-  assert.equal(last(task, 'note').params.text, 'Hello Custom')
-  assert.equal(last(task, 'note').createdBy, 'script')
+  assert.equal(last(task, 'topic').params.text, 'Hello Custom')
+  assert.equal(last(task, 'topic').createdBy, 'script')
   const sneaky = ca.save({ type: 'task', name: 'Post', description: '', notes: '', icon: 'zap', important: false, source: `return tools.post_somewhere({ text: 'x' })` })
   await assert.rejects(ca.run(sneaky.id, task), /unsafe/)
   ca.remove(sneaky.id)
@@ -972,7 +977,7 @@ await engine.close(bad)
   await assert.rejects(connect(url, { Authorization: 'Bearer wrong' }), (e: { code?: number }) => e.code === 401)
   const outside = await connect(url, { Authorization: `Bearer ${engine.settings.mcpToken()}` })
   await outside.call('add_items', { item_id: probe, items: [{ type: 'note', params: { text: 'From outside' } }] })
-  assert.equal(last(probe, 'note').createdBy, 'mcp')
+  assert.equal(last(probe, 'topic').createdBy, 'mcp')
   // Assigning a bot wakes it.
   behaviours.push(async () => out({ item: probe, assign: ['human'] }))
   assert.ok(JSON.parse(await outside.call('assign', { item_id: probe, to: 'THREEPIO' })).assignees.includes(threepio))
@@ -983,7 +988,7 @@ await engine.close(bad)
   const onHuman = JSON.parse(await outside.call('items_waiting_on', { on: 'human' }))
   assert.deepEqual(onHuman.map((i: { id: string }) => i.id).sort(), engine.overview().items.filter((i) => !i.closed && i.withYou).map((i) => i.id).sort())
   await assert.rejects(outside.call('items_waiting_on', { on: 'nobody' }), /One of: a person/)
-  assert.match(await outside.call('paradigm'), /A task is a thing to be done/)
+  assert.match(await outside.call('paradigm'), /A topic is the one kind of thing people write/)
   const types = JSON.parse(await outside.call('item_types'))
   assert.deepEqual(types.map((t: { type: string }) => t.type), engine.itemTypes.map((t) => t.type))
   const { ids: [made] } = JSON.parse(await outside.call('add_items', { items: [{ type: 'bot', params: { name: 'Sneaky' } }] }))
@@ -994,7 +999,7 @@ await engine.close(bad)
   for (const old of ['event_types', 'add_events', 'link_events', 'cancel_event']) assert.ok(!listed.includes(old), `${old} is not listed`)
   assert.deepEqual(JSON.parse(await outside.call('event_types')).length, engine.itemTypes.length)
   const { ids: [said] } = JSON.parse(await outside.call('add_events', { item_id: probe, events: [{ type: 'note', params: { text: 'Old names' } }] }))
-  assert.equal(last(probe, 'note').params.text, 'Old names')
+  assert.equal(last(probe, 'topic').params.text, 'Old names')
   const linkedTo = (await engine.create('Linked by the old name'))!
   await outside.call('link_events', { item_id: linkedTo, event_ids: [said] })
   assert.deepEqual(engine.info(linkedTo)!.pins, [said], 'link_events pins, as link_items does')
@@ -1011,11 +1016,11 @@ await engine.close(bad)
 
 // ---- 15. What egdb holds; a run cut short hands its tasks back ----
 {
-  // A note keeps nothing but its text; who wrote it, and when, is the link to it.
-  const note = engine.children(id).find((e) => e.type === 'note')!
+  // A comment keeps nothing but its text; who wrote it, and when, is the link to it.
+  const note = engine.children(id).find((e) => e.type === 'topic')!
   const inspected = await engine.inspect(note.id)
-  assert.deepEqual(inspected.values, { type: 'note', text: 'Reply to the PR, please' })
-  assert.deepEqual([inspected.createdBy, inspected.links[0].type, inspected.links[0].other], ['human', 'contains', id])
+  assert.deepEqual(inspected.values, { type: 'topic', text: 'Reply to the PR, please' })
+  assert.deepEqual([inspected.createdBy, inspected.links[0].type, inspected.links[0].other], ['human', 'comments', id])
   assert.equal(engine.agent(threepio)!.lastRun!.output, 'Thinking out loud.')
   const admin = new Admin(engine, mcp)
   assert.deepEqual((await admin.integrations()).claude, { ok: true, detail: '2.1.309 (Claude Code)', bots: 1 })
@@ -1026,14 +1031,14 @@ await engine.close(bad)
 
   const e2 = new Engine({ now: () => clock, dataDir })
   await e2.signIn('human')
-  const b2 = await e2.saveAgent({ name: 'Cut', instructions: '', provider: 'claude', model: '', debounceMinutes: 0 })
+  const b2 = await e2.saveAgent({ name: 'Cut', instructions: '', provider: 'claude', model: '' })
   const t2 = (await e2.create('Cut short'))!
   await e2.assign(t2, b2, true)
   e2.startRun(b2, [t2])
   const e3 = new Engine({ store: e2.store, now: () => clock, dataDir })
   assert.deepEqual(e3.get(t2)!.assignees, ['human'])
   assert.match(String(e3.children(t2).at(-1)!.params.text), /was stopped/)
-  assert.equal(e3.wake(b2), null, 'and the bot does not wake for it')
+  assert.equal(e3.due(b2), null, 'and the bot does not wake for it')
 }
 
 assert.equal(promptFor([]), '')

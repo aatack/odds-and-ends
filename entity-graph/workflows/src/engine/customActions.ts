@@ -14,7 +14,9 @@ import type { CustomActionRow, Store } from './store'
 
 // The human's own actions, per item type: configuration, like settings, so
 // edited in place. Running one is recorded as an action item in the item.
-const toAction = ({ created_at: _c, updated_at: _u, ...a }: CustomActionRow): CustomAction => a
+// One kept for a task or a note, from before both were topics, is a topic's.
+const asTopicType = (type: string) => (type === 'task' || type === 'note' ? 'topic' : type)
+const toAction = ({ created_at: _c, updated_at: _u, ...a }: CustomActionRow): CustomAction => ({ ...a, type: asTopicType(a.type) })
 
 /** What a custom action's function may return: nothing, a line for the chat, or that and items to add in the item. */
 const result = z.union([
@@ -36,7 +38,7 @@ export class CustomActions {
 
   list(): CustomAction[] {
     return [...this.store.customActions.values()]
-      .sort((a, b) => a.type.localeCompare(b.type) || Number(b.important) - Number(a.important) || a.created_at - b.created_at)
+      .sort((a, b) => asTopicType(a.type).localeCompare(asTopicType(b.type)) || Number(b.important) - Number(a.important) || a.created_at - b.created_at)
       .map(toAction)
   }
 
@@ -46,7 +48,8 @@ export class CustomActions {
   }
 
   /** Adds one (no id) or changes one. */
-  save(a: Omit<CustomAction, 'id'> & { id?: string }): CustomAction {
+  save(given: Omit<CustomAction, 'id'> & { id?: string }): CustomAction {
+    const a = { ...given, type: asTopicType(given.type) }
     if (!this.engine.itemTypes.some((t) => t.type === a.type)) throw new Error(`No item type ${a.type}.`)
     if (!a.name.trim()) throw new Error('An action needs a name.')
     const now = this.engine.now()

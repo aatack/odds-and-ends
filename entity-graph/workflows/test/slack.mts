@@ -67,13 +67,13 @@ assert.equal(parseSlackLink(`https://acme.slack.com/archives/C9/p170000015000030
 const task = (await engine.create('Slack'))!
 await engine.send(task, 'note', `What happened here? ${link}`)
 await engine.send(task, 'note', `[see this](${link}) and [the docs](https://example.com/docs)`)
-assert.deepEqual(engine.children(task).map((e) => e.type), ['note', 'note'])
+assert.deepEqual(engine.children(task).map((e) => e.type), ['topic', 'topic'])
 assert.equal(engine.info(link)!.type, 'slack_message', 'its id is the URL')
 assert.equal(engine.info('https://example.com/docs')!.params.url, 'https://example.com/docs')
 const other = (await engine.create('Elsewhere'))!
 await engine.send(other, 'note', `again: ${link}`)
 assert.equal(engine.info(link)!.parentId, null, 'made once, in no topic')
-assert.deepEqual(engine.children(other).map((e) => e.type), ['note'])
+assert.deepEqual(engine.children(other).map((e) => e.type), ['topic'])
 await engine.send(other, 'note', 'https://acme.slack.com/archives/C9')
 assert.equal(engine.info('https://acme.slack.com/archives/C9')!.type, 'slack_channel')
 const msg = engine.info(link)!
@@ -157,7 +157,7 @@ return out`
   await engine.checkDue()
   await engine.idle()
   assert.deepEqual(engine.get(waiting)!.assignees, ['alex'], String(engine.info(w)!.data?.error ?? ''))
-  assert.match(String(engine.children(waiting).filter((e) => e.type === 'note').at(-1)!.params.text), /New on Slack, in #eng:\n\n\*\*Sam\*\*: Any news\?/)
+  assert.match(String(engine.children(waiting).filter((e) => e.type === 'topic').at(-1)!.params.text), /New on Slack, in #eng:\n\n\*\*Sam\*\*: Any news\?/)
 }
 
 console.log('slack: ok')

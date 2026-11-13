@@ -196,6 +196,7 @@ export async function loadStore(
   const assigned: { item: string; to: string; at: number; by: string }[] = []
   const owners: { item: string; owner: string; at: number; by: string }[] = []
   const old = { contains: new Map<string, (Placed & { sort: number })[]>(), assigned: [] as { item: string; to: string; at: number; by: string }[] }
+  let newest = migratedUntil
   const ids = [ROOT, ...stored.keys()]
   for (let i = 0; i < ids.length; i += 500) {
     const got = await client.links(branch, ids.slice(i, i + 500), LINK_TYPES.map((t) => [t, 'outbound'] as [string, 'outbound']))
@@ -212,11 +213,15 @@ export async function loadStore(
           } else if (g.link_type === 'pins') pinned.push({ from: l.source, id: l.destination, at: when, by: meta.by })
           else if (g.link_type === 'assignees') assigned.push({ item: l.source, to: l.destination, at: when, by: meta.by })
           else if (g.link_type === 'owns') owners.push({ item: l.destination, owner: l.source, at: when, by: meta.by })
-          else if (meta.at > migratedUntil && g.link_type === 'contains') {
-            const list = old.contains.get(l.destination) ?? []
-            list.push({ parent: l.source, via: 'comments', seq: Number(l.sort ?? 0), sort: Number(l.sort ?? 0), ...meta })
-            old.contains.set(l.destination, list)
-          } else if (meta.at > migratedUntil && g.link_type === 'assigned_to') old.assigned.push({ item: l.source, to: l.destination, at: when, by: meta.by })
+          else if (meta.at > migratedUntil) {
+            // An older build's, not read in yet.
+            newest = Math.max(newest, meta.at)
+            if (g.link_type === 'contains') {
+              const list = old.contains.get(l.destination) ?? []
+              list.push({ parent: l.source, via: 'comments', seq: Number(l.sort ?? 0), sort: Number(l.sort ?? 0), ...meta })
+              old.contains.set(l.destination, list)
+            } else old.assigned.push({ item: l.source, to: l.destination, at: when, by: meta.by })
+          }
         }
   }
   const migrating = old.contains.size > 0 || old.assigned.length > 0
@@ -254,8 +259,9 @@ export async function loadStore(
     pinned: pinned.filter((p) => kept.has(p.from) && kept.has(p.id)),
     owners: owners.filter((o) => kept.has(o.item)),
   })
-  // Read in up to now: the next load reads only what an older build adds after this.
-  if (migrating) store.setSetting(MIGRATED, at)
+  // Read in up to the newest of them (egdb's own times, which a clock behind can't trust): the next load reads only what an
+  // older build adds after.
+  if (migrating) store.setSetting(MIGRATED, newest)
   return { store, sink }
 }
 
@@ -287,19 +293,27 @@ function migrate(m: {
   const made = new Map<string, { parent: string | null; at: number; by: string }>()
   for (const [id, links] of old.contains) {
     if (!stored.has(id)) continue
-    const [first, ...later] = [...links].sort((a, b) => a.at - b.at || a.seq - b.seq)
+    const sorted = [...links].sort((a, b) => a.at - b.at || a.seq - b.seq)
+    const pin = (p: Placed) => {
+      if (p.parent === ROOT || !stored.has(p.parent) || pins.has(`${p.parent} ${id}`)) return
+      pins.add(`${p.parent} ${id}`)
+      pinned.push({ from: p.parent, id, at: p.at, by: p.by })
+      write(p.by, { link: { source: p.parent, destination: id, link_type: 'pins', sort: { explicit: p.at } } })
+    }
+    // The first places it, unless this build placed it already: then every one from elsewhere is a pin.
+    const where = placed.get(id)
+    if (where) {
+      for (const p of sorted) if (p.parent !== where.parent) pin(p)
+      continue
+    }
+    const [first, ...later] = sorted
     made.set(id, { parent: first.parent === ROOT ? null : first.parent, at: first.at, by: first.by })
-    if (!placed.has(id) && first.parent !== ROOT && stored.has(first.parent)) {
+    if (first.parent !== ROOT && stored.has(first.parent)) {
       const via: Via = typeOf(first.parent) === 'note' ? 'notes' : 'comments'
       placed.set(id, { parent: first.parent, via, seq: first.seq, at: first.at, by: first.by })
       write(first.by, { link: { source: first.parent, destination: id, link_type: via, sort: { explicit: first.seq } } })
     }
-    for (const p of later)
-      if (p.parent !== ROOT && stored.has(p.parent) && !pins.has(`${p.parent} ${id}`)) {
-        pins.add(`${p.parent} ${id}`)
-        pinned.push({ from: p.parent, id, at: p.at, by: p.by })
-        write(p.by, { link: { source: p.parent, destination: id, link_type: 'pins', sort: { explicit: p.at } } })
-      }
+    for (const p of later) pin(p)
   }
   for (const a of old.assigned) {
     if (!stored.has(a.item) || given.has(`${a.item} ${a.to}`)) continue
