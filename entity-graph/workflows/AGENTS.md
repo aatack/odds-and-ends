@@ -349,6 +349,10 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   anywhere else, an item's header opens its views (and Debug, and Rename for a topic). **Right** (`side-pane`): for an
   item, its assignees and owner (`AssigneePill`, `OwnerPill`) and its actions as buttons, then its pins
   (`Pins`); for Home, whose it is. On a phone the header has the assignees and actions instead.
+  The middle is its full width: the header always spans it and every scroller reaches the right pane. A chat, the
+  finder, notes and pages keep to a reading column by padding (`--gutter` in styles.css); a focus that wants the
+  whole width fills it (`view-body fill`: a file, a bot, a link, whose focus is the page itself in a frame,
+  `LinkFocus`; main/index.ts drops X-Frame-Options and CSP frame-ancestors for frames, so most sites show).
   **Next** (a button in every header on the desktop, in the menu on the phone, and Ctrl+D)
   goes to the next item assigned to you that you haven't looked at in the last half hour, never the one on screen; the
   app also moves on by itself once the topic on screen closes.

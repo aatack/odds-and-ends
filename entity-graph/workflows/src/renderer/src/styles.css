@@ -39,8 +39,8 @@ button[data-ui].link { background: none; color: var(--muted); padding: 0; }
 .error { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); padding: 8px 12px; border-radius: 6px; margin-bottom: 16px; white-space: pre-wrap; }
 .error-text { color: var(--danger); }
 .item { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
-.item-parent { padding: 0 32px; }
-.chat-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 32px; display: flex; flex-direction: column; }
+.item-parent { padding: 0 var(--gutter); }
+.chat-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--gutter); display: flex; flex-direction: column; }
 .chat-scroll .chat { margin-top: auto; padding-bottom: 8px; }
 .chat-scroll .chat-title { margin: auto 0 12px; font-size: 22px; font-weight: 500; }
 .chat-scroll .chat-title + .chat { margin-top: 0; }
@@ -89,7 +89,7 @@ button[data-ui].link { background: none; color: var(--muted); padding: 0; }
 /* Where else a message is: as a reply quotes what it answers, a bar above it with a coloured edge. */
 .item-ref .pill-label, .assignee-pill .pill-label { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; }
 .chat-working { font-size: 12px; color: var(--muted); padding: 0 4px 8px; }
-.composer { padding: 12px 32px 16px; display: flex; flex-direction: column; gap: 8px; }
+.composer { padding: 12px var(--gutter) 16px; display: flex; flex-direction: column; gap: 8px; }
 .composer-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .item h1 { font-size: 20px; font-weight: 500; margin: 0 0 6px; }
 .meta { display: flex; gap: 12px; align-items: center; color: var(--muted); font-size: 12px; flex-wrap: wrap; }
@@ -238,7 +238,7 @@ button[data-ui].avatar:hover { background: var(--color-gray-300); filter: none; 
 .task-card-title { overflow: hidden; text-overflow: ellipsis; }
 /* A searched phrase (Ctrl+F's, the finder's), wherever text shows it. */
 mark { background: rgb(250 204 21 / 0.35); color: inherit; border-radius: 0.125rem; }
-.find-line { flex: none; margin: 0 32px; width: auto; background: var(--color-gray-100); border-radius: 18px; }
+.find-line { flex: none; margin: 0 var(--gutter); width: auto; background: var(--color-gray-100); border-radius: 18px; }
 .find-line input { width: 100%; font: inherit; color: var(--ink); line-height: 20px; }
 /* Under what is typed, rather than over it: Ctrl+Enter's question, while there is text. */
 .hint.below { position: static; display: block; padding-bottom: 4px; }
@@ -280,9 +280,9 @@ button[data-ui].gather-chip { display: inline-flex; align-items: center; gap: 4p
 button[data-ui].back { display: flex; padding: 4px; background: none; color: var(--muted); }
 button[data-ui].back:hover { color: var(--ink); filter: none; }
 .back .icon { width: 18px; height: 18px; }
-.view-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 32px 24px; }
+.view-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px var(--gutter) 24px; }
 .view-body.fill { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
-.view > .error { margin: 0 32px 12px; }
+.view > .error { margin: 0 var(--gutter) 12px; }
 button[data-ui].blocker-text { text-align: left; padding: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .items-view { display: flex; flex-direction: column; gap: 16px; max-width: 900px; }
 .items-view .search { background: var(--color-gray-100); border-radius: 18px; }
@@ -291,7 +291,7 @@ button[data-ui].blocker-text { text-align: left; padding: 0; overflow: hidden; t
 .items-group .row { gap: 10px; }
 .row-status { flex: none; max-width: 40%; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row-age { flex: none; width: 64px; text-align: right; font-size: 12px; }
-.view-note { margin: 0 32px 8px; }
+.view-note { margin: 0 var(--gutter) 8px; }
 .items-view .row:hover { background: none; }
 .items-view .row.selected { background: var(--color-gray-100); box-shadow: none; }
 .items-view .search { padding-right: 150px; }
@@ -306,8 +306,11 @@ button[data-ui].blocker-text { text-align: left; padding: 0; overflow: hidden; t
 /* Three columns on a desktop: the pages (`.side-nav`), the view in a column that stays readable on a wide screen, and
    the item's people, actions and pins (`.side-pane`). A phone has the middle alone. */
 .app { display: flex; height: 100vh; }
-.main { flex: 1; min-width: 0; height: 100vh; padding: 0 24px; display: flex; flex-direction: row; justify-content: center; overflow: hidden; }
-.content { width: 100%; max-width: 920px; height: 100%; display: flex; flex-direction: column; }
+.main { flex: 1; min-width: 0; height: 100vh; padding: 0; display: flex; flex-direction: row; overflow: hidden; }
+/* The middle takes its full width: the header always does, and every scroller reaches the right pane, its scrollbar against
+   it. What reads better narrow (a chat, the finder, notes, pages) keeps to a column by padding (`--gutter`), not a width,
+   so it scrolls from the edge all the same; a focus that wants the whole width (a file, a web page, a bot) fills it. */
+.content { --gutter: max(32px, calc((100% - 920px) / 2)); width: 100%; height: 100%; display: flex; flex-direction: column; }
 .side-nav { flex: none; width: 200px; display: flex; flex-direction: column; justify-content: space-between; gap: 12px; padding: 12px 8px; border-right: 1px solid var(--line); }
 .side-nav-pages { display: flex; flex-direction: column; gap: 2px; }
 button[data-ui].side-nav-page { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 10px; border-radius: 6px; background: none; color: var(--muted); font-size: 13px; text-align: left; }
@@ -568,7 +571,7 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 .status-dot.waiting { background: transparent; box-shadow: inset 0 0 0 1px var(--muted); }
 .status-line { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .status-line .status-dot { margin-left: 0; }
-.assignee-cards { display: flex; flex-direction: column; gap: 4px; margin: 0 32px; }
+.assignee-cards { display: flex; flex-direction: column; gap: 4px; margin: 0 var(--gutter); }
 .app.mobile .assignee-cards { margin: 0 8px; }
 button[data-ui].assignee-card { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 10px; border-radius: 8px; background: var(--color-gray-100); font-size: 13px; text-align: left; }
 .assignee-card .icon { width: 14px; height: 14px; flex: none; color: var(--muted); }
@@ -595,3 +598,12 @@ button[data-ui].script-card.whole:hover { background: var(--color-gray-200); fil
 .type-scripts { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 .type-script { padding: 8px 10px; border-radius: 8px; background: var(--color-gray-100); font-size: 13px; }
 .type-script:hover { background: var(--color-gray-200); }
+
+/* Notes keep to the column too, their scroller reaching the edge. */
+.view-body.fill > .notes > * { padding-left: var(--gutter); padding-right: var(--gutter); }
+.app.mobile .view-body.fill > .notes > * { padding-left: 12px; padding-right: 12px; }
+/* A link's focus: the page itself, the whole width, under a line with its address. */
+.link-focus { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.link-focus-bar { display: flex; align-items: center; gap: 8px; padding: 4px 16px 8px; font-size: 12px; color: var(--muted); }
+.link-focus-bar a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link-focus iframe { flex: 1; min-height: 0; width: 100%; border: none; background: #fff; }

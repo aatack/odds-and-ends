@@ -22,6 +22,17 @@ async function main(): Promise<void> {
     title: 'YAWN',
     webPreferences: { preload: join(__dirname, '../preload/index.js'), sandbox: false },
   })
+  // A link's focus shows the page in a frame: most sites forbid being framed (X-Frame-Options, CSP frame-ancestors),
+  // which would leave it blank. For frames only (never the app's own page), those headers are dropped.
+  win.webContents.session.webRequest.onHeadersReceived({ urls: ['http://*/*', 'https://*/*'] }, (details, done) => {
+    if (details.resourceType !== 'subFrame' || !details.responseHeaders) return done({})
+    const headers = Object.fromEntries(
+      Object.entries(details.responseHeaders)
+        .filter(([k]) => k.toLowerCase() !== 'x-frame-options')
+        .map(([k, v]) => [k, k.toLowerCase() === 'content-security-policy' ? v.map((p) => p.replace(/frame-ancestors[^;]*;?/gi, '')) : v]),
+    )
+    done({ responseHeaders: headers })
+  })
 
   let current: Backend | null = null
   /** Opens a source (made if it is not there), letting go of the one open before; answers its file as an absolute path. */
