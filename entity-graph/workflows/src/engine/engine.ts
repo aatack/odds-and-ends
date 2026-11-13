@@ -151,6 +151,8 @@ export class Engine extends EventEmitter {
   private running = new Map<string, Run>()
   /** When each bot and script last ran on each item it holds (by bot, then item): what came after is new to it. */
   private marks = new Map<string, Map<string, Mark>>()
+  /** What each bot's session has seen (the items in its runs since the session began): kept in memory, not the store. */
+  private sessionSeen = new Map<string, string[]>()
   /** When each bot was woken by hand: it runs then, on its first item, whatever it last saw. */
   private woken = new Map<string, number>()
   /** The items being checked right now: a check never starts while the last is still going. */
@@ -860,7 +862,7 @@ export class Engine extends EventEmitter {
     const handoff = !resume && typeof this.agentParams(agentId).handoff === 'string' ? String(this.agentParams(agentId).handoff) : null
     if (!resume) {
       this.setParam(agentId, 'session_id', randomUUID(), `bot:${agentId}`)
-      this.setParam(agentId, 'seen', [], `bot:${agentId}`)
+      this.sessionSeen.set(agentId, [])
       if (handoff !== null) this.setParam(agentId, 'handoff', null, `bot:${agentId}`)
     }
     this.woken.delete(agentId)
@@ -910,15 +912,18 @@ export class Engine extends EventEmitter {
     ].filter(Boolean).join('\n\n')
   }
 
-  /** What a bot's session has seen: the tasks in its runs since the session began. */
+  /**
+   * What a bot's session has seen: the items in its runs since the session began. In memory only, so it is not in the
+   * store's history: after a restart a resumed session is told an item's whole history again, the first time.
+   */
   private seen(agentId: string): string[] {
-    const p = this.agentParams(agentId)
-    return p.session_id ? ((p.seen as string[] | undefined) ?? []) : []
+    return this.agentParams(agentId).session_id ? (this.sessionSeen.get(agentId) ?? []) : []
   }
 
   /**
    * Marks that a bot or script ran on an item (null: as if it never had): what comes after is new to it, and it is not
-   * due there again for its cycle. Kept as its `last_seen` value (each item's time), for the items it still holds.
+   * due there again for its cycle. In memory only (not the store's history), for the items it still holds; a store an
+   * older build wrote has `last_seen` values, read once as it loads.
    */
   private setMark(agentId: string, itemId: string, mark: Mark | null): void {
     const marks = this.marks.get(agentId) ?? new Map<string, Mark>()
@@ -927,7 +932,6 @@ export class Engine extends EventEmitter {
     this.marks.set(agentId, marks)
     const held = new Set(this.store.assignedTo(agentId))
     for (const k of marks.keys()) if (!held.has(k) && k !== itemId) marks.delete(k)
-    this.setParam(agentId, 'last_seen', Object.fromEntries([...marks].map(([k, m]) => [k, m.at])), this.row(agentId)?.type === 'bot' ? `bot:${agentId}` : 'script')
   }
 
   /** A run begins: the bot's `last_run` says so, and what comes after now in its item is new to it. */
@@ -941,7 +945,7 @@ export class Engine extends EventEmitter {
     this.setParam(agentId, 'last_run', lastRun, `bot:${agentId}`)
     const seen = this.seen(agentId)
     const unseen = itemIds.filter((i) => i !== agentId && !seen.includes(i))
-    if (unseen.length) this.setParam(agentId, 'seen', [...seen, ...unseen], `bot:${agentId}`)
+    if (unseen.length) this.sessionSeen.set(agentId, [...seen, ...unseen])
     this.emit('change')
     return id
   }
@@ -1034,7 +1038,7 @@ export class Engine extends EventEmitter {
       // when the runner lets it run again.
       if (error && end.limited) {
         for (const itemId of run.itemIds) this.setMark(agentId, itemId, run.before.mark ?? null)
-        this.setParam(agentId, 'seen', run.before.seen, actor)
+        this.sessionSeen.set(agentId, run.before.seen)
         return
       }
       if (error) {
@@ -1084,7 +1088,7 @@ export class Engine extends EventEmitter {
     if (handoff && !error && !this.row(agentId)?.resolved) {
       this.setParam(agentId, 'handoff', handoff, actor)
       this.setParam(agentId, 'session_id', null, actor)
-      this.setParam(agentId, 'seen', [], actor)
+      this.sessionSeen.set(agentId, [])
     }
     for (const itemId of closing) await this.close(itemId, { actor })
     this.emit('change')
