@@ -12,7 +12,6 @@ import { Markdown } from './components/ui/Markdown'
 import { useItemMenu } from './ItemMenu'
 import { itemInfoIcon } from './icons'
 import { SlackCard } from './SlackView'
-import { Widget } from './Widget'
 import { FileCard } from './FileView'
 import { TaskCard } from './TaskCard'
 import { Marked } from './components/ui/Marked'
@@ -56,13 +55,15 @@ export type CardProps = { info: ItemInfo; find: string; catalog: Catalog; act: A
 
 /** Each type's card: what it shows in a chat. A type left out shows what it says (`message`, or its summary). */
 export const CARDS: Partial<Record<ItemKind, (p: CardProps) => ReactNode>> = {
-  note: ({ info: e, find }) => <Markdown text={String(e.params.text ?? '')} highlight={find} />,
-  task: ({ info: e, onOpen, find }) => (
-    <button data-ui className="link card-link" onClick={() => onOpen(e.id)}>
-      <TaskCard info={e} find={find} />
-    </button>
-  ),
-  widget: ({ info: e }) => <Widget info={e} />,
+  // A topic with a status (a thing to be done) is a card that opens it; one with none (a comment) is what it says.
+  topic: ({ info: e, onOpen, find }) =>
+    typeof e.params.open === 'boolean' ? (
+      <button data-ui className="link card-link" onClick={() => onOpen(e.id)}>
+        <TaskCard info={e} find={find} />
+      </button>
+    ) : (
+      <Markdown text={String(e.params.text ?? '')} highlight={find} />
+    ),
   file: ({ info: e, onOpen }) => <FileCard info={e} onOpen={onOpen} />,
   link: ({ info: e, find }) => (
     <a className="link-card" href={String(e.params.url)} target="_blank" rel="noreferrer">

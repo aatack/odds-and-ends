@@ -5,10 +5,10 @@ import { fenced, Markdown } from './components/ui/Markdown'
 import { SECTIONS } from './sections'
 import { api } from './useWorkflows'
 
-const QUERY_EXAMPLE = { and: [{ eq: { key: 'type', value: 'task' } }, { eq: { key: 'resolved', value: false } }, { contains_ignore_case: { key: 'title', value: 'review' } }] }
+const QUERY_EXAMPLE = { and: [{ eq: { key: 'type', value: 'topic' } }, { eq: { key: 'open', value: true } }, { contains_ignore_case: { key: 'text', value: 'review' } }] }
 const FUNCTION_EXAMPLE = `// context.text is what is typed; tools are the MCP's (no unsafe ones). Answer rows.
 const items = await tools.list_items({})
-return items.filter((i) => !i.closed && i.assignees.length === 0).map((i) => ({ id: i.id, type: 'task', left: i.title, right: 'nobody has it' }))`
+return items.filter((i) => !i.closed && i.assignees.length === 0).map((i) => ({ id: i.id, type: 'topic', left: i.title, right: 'nobody has it' }))`
 
 /** A section, drafted: a query's filter as JSON text, so it can be typed. */
 type Draft = SearchSection & { filterText?: string; error?: string }

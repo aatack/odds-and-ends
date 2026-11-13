@@ -13,7 +13,6 @@ const draftOf = (b: Agent): BotDraft => ({
   instructions: b.instructions,
   provider: b.provider,
   model: b.model,
-  debounceMinutes: b.debounceMinutes,
   cycleMinutes: b.cycleMinutes,
   folder: b.folder,
 })
@@ -56,9 +55,9 @@ export function BotView({ bot, act, mobile = false }: { bot: Agent | null; act: 
           {open ? <ChevronDown className="icon" /> : <ChevronRight className="icon" />} Settings
         </button>
         <span className="muted">
-          {bot.model} · waits {bot.debounceMinutes}m · {botStatus(bot, now)}
+          {bot.model} · every {bot.cycleMinutes}m per item · {botStatus(bot, now)}
         </span>
-        <button data-ui disabled={!!bot.runId} onClick={() => void act(() => api().wakeBot(bot.id))} title="Run now, whatever the debounce says">
+        <button data-ui disabled={!!bot.runId} onClick={() => void act(() => api().wakeBot(bot.id))} title="Run now on its first item, whatever it last saw">
           Wake now
         </button>
       </div>

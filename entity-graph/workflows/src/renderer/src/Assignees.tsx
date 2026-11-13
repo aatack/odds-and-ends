@@ -61,7 +61,7 @@ export function PickPill(props: {
         <ItemPicker
           title={title}
           items={items}
-          recent={recent ?? { viewed: [], users: overview.users, bots: overview.bots }}
+          recent={recent ?? { me: overview.me.id, viewed: [], users: overview.users, bots: overview.bots }}
           sections={items.length ? undefined : []}
           verb={verb}
           bots={people ? everyone(overview).map((p) => ({ ...p, name: p.id === overview.me.id ? `${p.name} (you)` : p.name })) : []}

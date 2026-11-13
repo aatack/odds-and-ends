@@ -8,7 +8,7 @@ import { api } from './useWorkflows'
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 /** A bot's settings, as WorkflowsAPI.saveBot takes them. */
-export type BotDraft = { name: string; instructions: string; provider: string; model: string; debounceMinutes: number; cycleMinutes?: number; folder?: string }
+export type BotDraft = { name: string; instructions: string; provider: string; model: string; cycleMinutes?: number; folder?: string }
 
 /** All a bot's settings, on its own page. */
 export const BOT_FORM = {
@@ -22,11 +22,6 @@ export const BOT_FORM = {
       description: 'What it is for and how it works: its system prompt, after the app’s own.',
     },
     model: { type: 'string', title: 'Model', description: 'opus, sonnet, haiku, or a full model id.' },
-    debounceMinutes: {
-      type: 'number',
-      title: 'Debounce (minutes)',
-      description: 'How long it waits after the last thing that happened to it before it wakes: a burst of work goes in one run.',
-    },
     cycleMinutes: {
       type: 'number',
       title: 'Cycle (minutes)',
@@ -45,7 +40,7 @@ const NEW_BOT_FORM = {
   required: ['name'],
 }
 
-export const NEW_BOT: BotDraft = { name: '', instructions: '', provider: 'claude', model: 'opus', debounceMinutes: 1 }
+export const NEW_BOT: BotDraft = { name: '', instructions: '', provider: 'claude', model: 'opus' }
 
 /** Where a bot is: running, due to wake (and when), or idle; and how much it has. */
 export function botStatus(b: Agent, now = Date.now()): string {
@@ -85,7 +80,6 @@ export function BotsPage({ bots, act, onOpen, mobile = false }: { bots: Agent[];
               <span className="row-title">@{b.name}</span>
               <span className="muted row-status">
                 {b.model || 'default model'}
-                {b.debounceMinutes ? ` · waits ${b.debounceMinutes}m` : ''}
               </span>
               <span className="muted">{botStatus(b, now)}</span>
             </div>

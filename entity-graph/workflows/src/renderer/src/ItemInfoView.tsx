@@ -4,7 +4,6 @@ import { Pins } from './Pins'
 import { minutes, time } from './Chat'
 import { TYPE_NAME } from './icons'
 import { SlackMessages } from './SlackView'
-import { Widget } from './Widget'
 import { fenced, Markdown } from './components/ui/Markdown'
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
@@ -52,11 +51,6 @@ export function ItemInfoView({
           <a href={String(e.params.url)} target="_blank" rel="noreferrer">
             Open {String(e.params.url)} in the browser
           </a>
-        </section>
-      )}
-      {e.type === 'widget' && (
-        <section className="card">
-          <Widget info={e} tall />
         </section>
       )}
       {(e.type === 'slack_message' || e.type === 'slack_channel') && <SlackMessages info={e} />}

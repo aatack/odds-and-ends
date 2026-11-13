@@ -24,10 +24,10 @@ function ownerOf(o: Overview, by: string): { id: string; name: string } | null {
 }
 
 /** The words an item shows in the chat, for Ctrl+F. */
-const words = (e: ItemInfo) => (e.type === 'note' ? String(e.params.text ?? '') : [e.summary, e.message].filter(Boolean).join('\n'))
+const words = (e: ItemInfo) => (e.type === 'topic' ? String(e.params.text ?? '') : [e.summary, e.message].filter(Boolean).join('\n'))
 
 /**
- * The task's chat: every item in it (its `contains` links), in the order they were added, each as its card. What
+ * A topic's chat: its comments (its `comments` links), in the order they were added, each as its card. What
  * the person looking added is on the right; everything else on the left, with who it came from as its picture (and,
  * for other people, their name). A note is its words; a child task, its card (which opens it); a script, its summary
  * as a message; an approval, its form while open. Cancelled items (but scripts) are small notes in the middle.
@@ -48,7 +48,7 @@ export function Chat(props: { detail: ItemDetail; overview: Overview; catalog: C
     <section className={`chat ${props.mobile ? 'mobile' : ''}`}>
       {find && !shown.length && <div className="chat-note">Nothing here says “{find}”.</div>}
       {shown.map((e) =>
-        e.cancelled && e.type !== 'task' && e.type !== 'script' ? (
+        e.cancelled && e.type !== 'topic' && e.type !== 'script' ? (
           <div key={e.id} className="chat-note" title={time(e.createdAt)} {...menu(e.id)}>
             {e.message}
           </div>

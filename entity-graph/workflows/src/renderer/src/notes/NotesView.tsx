@@ -45,13 +45,13 @@ const pickingAtom = atom<Picking | null>(null)
 type Row = { key: string; id: string; path: string[]; depth: number; info: ItemInfo; hasKids: boolean; collapsed: boolean }
 type Filters = { find: string; sectionsOnly: boolean; openOnly: boolean }
 
-const textOf = (i: ItemInfo) => (i.type === 'note' ? String(i.params.text ?? '') : i.summary)
+const textOf = (i: ItemInfo) => (i.type === 'topic' ? String(i.params.text ?? '') : i.summary)
 
 /** The sets of notes (notes in no item), for the picker, after the sections it always has. */
 const NOTES_SECTION: SearchSection = {
   kind: 'query',
   label: 'Notes',
-  filter: { and: [{ eq: { key: 'type', value: 'note' } }, { is_null: { key: 'parent' } }] },
+  filter: { and: [{ eq: { key: 'type', value: 'topic' } }, { eq: { key: 'display', value: 'notes' } }, { is_null: { key: 'parent' } }] },
 }
 
 /**
@@ -77,7 +77,7 @@ function rowsOf(tree: NotesTree, root: string, collapsed: Set<string>, f: Filter
   const walk = (id: string, path: string[], depth: number) => {
     const info = tree.info(id)
     if (!info) return
-    const kids = info.type === 'note' ? tree.kids(id) : []
+    const kids = info.type === 'topic' ? tree.kids(id) : []
     const shut = collapsed.has(resolve(id))
     out.push({ key: path.map(resolve).join('/'), id: resolve(id), path, depth, info, hasKids: kids.length > 0, collapsed: shut && kids.length > 0 })
     if (shut && !filtering) return
@@ -146,7 +146,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
   const editing = editAt >= 0
 
   const startCreate = (values?: Record<string, unknown>) => {
-    if (!selected || selected.info.type !== 'note') return
+    if (!selected || selected.info.type !== 'topic') return
     setCollapsed(selected.id, false)
     setEdit({ mode: 'create', path: selected.path, draft: '', values })
   }
@@ -215,7 +215,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
       fn()
     }
     if (e.ctrlKey) {
-      if (k === '/' && selected?.info.type === 'note') run(() => setNoteValue(selected.id, 'section', selected.info.params.section ? null : true))
+      if (k === '/' && selected?.info.type === 'topic') run(() => setNoteValue(selected.id, 'section', selected.info.params.section ? null : true))
       return
     }
     if (!selected) return
@@ -230,7 +230,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
     else if (k === 'End') run(() => select(rows[rows.length - 1].path))
     else if (k === 'ArrowLeft') run(() => selected.hasKids && setCollapsed(selected.id, true))
     else if (k === 'ArrowRight') run(() => setCollapsed(selected.id, false))
-    else if (k === 'e') run(() => selected.info.type === 'note' && setEdit({ mode: 'edit', path: selected.path, draft: textOf(selected.info) }))
+    else if (k === 'e') run(() => selected.info.type === 'topic' && setEdit({ mode: 'edit', path: selected.path, draft: textOf(selected.info) }))
     else if (k === 'Enter') run(() => startCreate())
     else if (k === '/') run(() => startCreate({ section: true }))
     else if (k === '?') run(() => startCreate({ open: true }))
@@ -240,7 +240,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
     else if (k === 'd') run(() => selected.id !== root && onOpen(selected.id))
     else if (k === 'A') run(onBack)
     else if (k === 'x') run(() => parentPath.length && setPicking({ kind: 'move', subject: selected.id, label: textOf(selected.info) }))
-    else if (k === 'r') run(() => selected.info.type === 'note' && setPicking({ kind: 'link', subject: selected.id, label: textOf(selected.info) }))
+    else if (k === 'r') run(() => selected.info.type === 'topic' && setPicking({ kind: 'link', subject: selected.id, label: textOf(selected.info) }))
     else if ((k === 'Delete' || k === 'Backspace') && parentPath.length)
       // Out of its note, into none; the row above is selected, as in entity-graph.
       run(() => {
@@ -303,7 +303,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
           if (edit && !(e.target as HTMLElement).closest('textarea')) commit()
         }}
         onClick={() => select(r.path)}
-        onDoubleClick={() => r.info.type !== 'note' && r.id !== root && onOpen(r.id)}
+        onDoubleClick={() => r.info.type !== 'topic' && r.id !== root && onOpen(r.id)}
         {...menu(r.id)}
       >
         <span
@@ -314,7 +314,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
             else if (r.hasKids) setCollapsed(r.id, !r.collapsed)
           }}
         >
-          {r.info.type !== 'note' ? (
+          {r.info.type !== 'topic' ? (
             <ItemInfoIcon info={r.info} />
           ) : open === true ? (
             <Square className="icon" />
@@ -331,7 +331,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
         <div className="note-body">
           {typing ? (
             box(r.depth, section)
-          ) : r.info.type !== 'note' ? (
+          ) : r.info.type !== 'topic' ? (
             <span className="note-item">{r.info.summary}</span>
           ) : textOf(r.info) ? (
             <div className={section ? `note-section depth-${Math.min(r.depth, 3)}` : undefined}>

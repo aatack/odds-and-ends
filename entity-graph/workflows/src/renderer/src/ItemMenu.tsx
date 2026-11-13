@@ -147,7 +147,7 @@ export function ItemMenu({
         Pin to…
       </button>
       {/* A task on screen is renamed in its header. */}
-      {info?.id === menu.id && info.type === 'task' && sameView(views[views.length - 1], { kind: 'event', id: info.id }) && (
+      {info?.id === menu.id && info.type === 'topic' && sameView(views[views.length - 1], { kind: 'event', id: info.id }) && (
         <button
           onClick={() => {
             setRename(info.id)
@@ -157,8 +157,8 @@ export function ItemMenu({
           Rename
         </button>
       )}
-      {/* A message (anything but a task, a bot or a person) can be given a thumbs-up. */}
-      {info?.id === menu.id && me && !['task', 'bot', 'user'].includes(info.type) && (
+      {/* A message (anything but a topic with a status, a bot or a person) can be given a thumbs-up. */}
+      {info?.id === menu.id && me && !['bot', 'user'].includes(info.type) && !(info.type === 'topic' && typeof info.params.open === 'boolean') && (
         <button
           onClick={() => {
             setMenu(null)

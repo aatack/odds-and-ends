@@ -372,6 +372,8 @@ export class Engine extends EventEmitter {
   overview(viewer = this.me()): Overview {
     const since = this.now() - 24 * 60 * MINUTE
     const held = new Set(this.store.allAssignments().map((a) => a.item))
+    // What the viewer owns is listed too (their bots and scripts among it).
+    for (const id of this.ownedBy(viewer)) held.add(id)
     const items = [...this.store.items.values()]
       .filter((r) =>
         r.type === 'topic'
@@ -507,7 +509,7 @@ export class Engine extends EventEmitter {
         this.callAction(name, args, { engine: this, author: 'bot', actor: 'script', itemId: null, runId: null }),
       )
       if (!Array.isArray(ran.value)) throw new Error(`${section.label}: it returned ${JSON.stringify(ran.value)?.slice(0, 100)}, not a list of rows.`)
-      return (ran.value as SearchRow[]).filter((x) => x && typeof x.id === 'string').map((x) => ({ id: x.id, type: String(x.type ?? 'task'), left: String(x.left ?? x.id), right: x.right ? String(x.right) : '' }))
+      return (ran.value as SearchRow[]).filter((x) => x && typeof x.id === 'string').map((x) => ({ id: x.id, type: String(x.type ?? 'topic'), left: String(x.left ?? x.id), right: x.right ? String(x.right) : '' }))
     }
     return []
   }

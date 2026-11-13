@@ -19,8 +19,11 @@ export type Filter =
   | { or: Filter[] }
   | { not: Filter }
 
-/** The finder's own sections, built in: what was viewed, whose turn, what bots have, what waits, what closed today. */
-export const BUILTIN_SECTIONS = ['viewed', 'needsYou', 'withBots', 'waiting', 'closed'] as const
+/**
+ * The finder's own sections, built in: what is assigned to you, what you own, what was viewed, whose turn, what bots
+ * have, what waits, what closed today.
+ */
+export const BUILTIN_SECTIONS = ['assigned', 'owned', 'viewed', 'needsYou', 'withBots', 'waiting', 'closed'] as const
 export type BuiltinSection = (typeof BUILTIN_SECTIONS)[number]
 
 /** One section: built in; a query (a filter over every item); or a function (JavaScript that answers rows). */
@@ -37,8 +40,11 @@ export interface SearchRow {
   right?: string
 }
 
-/** The sections when nothing is configured. */
-export const DEFAULT_SECTIONS: SearchSection[] = BUILTIN_SECTIONS.map((id) => ({ kind: 'builtin', id }))
+/** The pickers' sections when nothing is configured. */
+export const DEFAULT_SECTIONS: SearchSection[] = BUILTIN_SECTIONS.filter((id) => id !== 'assigned' && id !== 'owned').map((id) => ({ kind: 'builtin', id }))
+
+/** The search (Ctrl+L): what is assigned to you, then what you own. */
+export const SEARCH_SECTIONS: SearchSection[] = [{ kind: 'builtin', id: 'assigned' }, { kind: 'builtin', id: 'owned' }]
 
 /** Whether a value-set (an item's values, and the keys made from its links) passes a filter. */
 export function matches(values: Record<string, unknown>, f: Filter): boolean {

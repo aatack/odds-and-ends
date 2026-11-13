@@ -178,7 +178,7 @@ export function useWorkflows() {
 
   // What the finder reads as recent: what was viewed here, and who there is.
   const [viewed, setViewed] = useAtom(viewedAtom)
-  const recent = useMemo(() => ({ viewed, users: overview.users, bots: overview.bots }), [viewed, overview.users, overview.bots])
+  const recent = useMemo(() => ({ me: overview.me.id, viewed, users: overview.users, bots: overview.bots }), [overview.me.id, viewed, overview.users, overview.bots])
   const markViewed = useCallback(
     (id: string) => {
       setViewed((v) => [id, ...v.filter((x) => x !== id)].slice(0, 50))

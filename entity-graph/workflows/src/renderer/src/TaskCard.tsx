@@ -1,22 +1,17 @@
-import { CircleCheck, CircleDashed, CircleX } from 'lucide-react'
+import { CircleCheck, CircleDashed } from 'lucide-react'
 import type { ItemInfo } from '../../shared/types'
 import { Marked } from './components/ui/Marked'
 
 /**
- * A task as it shows where another task mentions it (a child, in its parent's
- * chat or blockers): its title, with a tick once resolved, a cross if it was
- * cancelled, and a pending ring while it is open. `find` is marked in its title.
+ * A topic with a status as it shows where another mentions it (in its parent's chat): its first line, with a tick once
+ * closed and a pending ring while it is open. `find` is marked in its title.
  */
 export function TaskCard({ info: e, find }: { info: ItemInfo; find?: string }) {
-  const [Icon, label, tone] = !e.resolved
-    ? [CircleDashed, 'Open', 'pending']
-    : e.data?.how === 'cancelled'
-      ? [CircleX, 'Cancelled', 'cancelled']
-      : [CircleCheck, e.data?.how === 'handled_outside' ? 'Done outside' : 'Resolved', 'resolved']
+  const [Icon, label, tone] = e.params.open !== false ? [CircleDashed, 'Open', 'pending'] : [CircleCheck, 'Closed', 'resolved']
   return (
     <span className={`task-card ${tone}`}>
       <Icon className="icon" aria-label={label} />
-      <span className="task-card-title"><Marked text={e.summary} phrase={find} /></span>
+      <span className="task-card-title"><Marked text={e.summary.split('\n')[0]} phrase={find} /></span>
     </span>
   )
 }

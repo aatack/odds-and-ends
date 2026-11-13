@@ -19,7 +19,7 @@ import { sameView, searchFocusAtom, viewsAtom } from './views'
  * alone, nothing.
  */
 function detail(i: Item): string {
-  if (i.closed) return i.how === 'cancelled' ? 'cancelled' : ''
+  if (i.closed) return ''
   if (i.withYou) return i.blockers.find((b) => b.type === 'approval' && b.params.reason)?.summary ?? ''
   const b = waitingOn(i)
   if (b?.type === 'script' && b.params.description) return b.summary

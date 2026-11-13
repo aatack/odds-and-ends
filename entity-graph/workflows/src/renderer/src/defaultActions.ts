@@ -40,7 +40,7 @@ const waitForSlack = ({ detail, overview }: Ctx): DefaultAction[] => {
     const found =
       e.type === 'slack_message' && e.params.link
         ? [String(e.params.link)]
-        : e.type === 'note'
+        : e.type === 'topic'
           ? [...String(e.params.text ?? '').matchAll(new RegExp(SLACK_LINK, 'g'))].map((m) => m[0])
           : []
     for (const link of found) if (!links.includes(link)) links.push(link)

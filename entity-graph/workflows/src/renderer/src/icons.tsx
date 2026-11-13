@@ -1,16 +1,13 @@
 // Lucide (lucide.dev, ISC): its robot is what a bot looks like here, and the
 // rest come from it too so that they match.
-import { AppWindow, Bot, File, Search, Check, GitPullRequest, Hash, Layers, Link, MessageCircle, MessageSquare, Settings, ShieldCheck, SquareCode, SquareTerminal, User, type LucideIcon } from 'lucide-react'
+import { Bot, File, Search, Check, GitPullRequest, Hash, Layers, Link, MessageCircle, Settings, ShieldCheck, SquareCode, User, type LucideIcon } from 'lucide-react'
 import type { ItemKind, Item, ItemInfo } from '../../shared/types'
 
 /** One icon an item type. */
 export const TYPE_ICON: Record<ItemKind, LucideIcon> = {
-  task: Layers,
-  note: MessageSquare,
+  topic: Layers,
   approval: ShieldCheck,
   script: SquareCode,
-  process: SquareTerminal,
-  widget: AppWindow,
   link: Link,
   search: Search,
   slack_message: MessageCircle,
@@ -21,12 +18,9 @@ export const TYPE_ICON: Record<ItemKind, LucideIcon> = {
 }
 
 export const TYPE_NAME: Record<ItemKind, string> = {
-  task: 'Task',
-  note: 'Note',
+  topic: 'Topic',
   approval: 'Approval',
   script: 'Script',
-  process: 'Process',
-  widget: 'Widget',
   link: 'Link',
   search: 'Search page',
   slack_message: 'Slack message',
@@ -74,16 +68,15 @@ function whoIcon(by: string): [LucideIcon, string] {
 }
 
 /**
- * The one icon for an item, wherever it is drawn: a note is
- * whoever said (or ran) it; anything else is its type. The chat's pictures, the
- * blocker rows and the view header all use this.
+ * The one icon for an item, wherever it is drawn: a topic with no status (a comment, a note) is whoever said (or ran)
+ * it; anything else is its type. The chat's pictures, the blocker rows and the view header all use this.
  */
-export function itemInfoIcon(e: { type: ItemKind; createdBy: string }): [LucideIcon, string] {
-  return e.type === 'note' ? whoIcon(e.createdBy) : [TYPE_ICON[e.type], TYPE_NAME[e.type]]
+export function itemInfoIcon(e: { type: ItemKind; createdBy: string; params?: Record<string, unknown> }): [LucideIcon, string] {
+  return e.type === 'topic' && typeof e.params?.open !== 'boolean' ? whoIcon(e.createdBy) : [TYPE_ICON[e.type], TYPE_NAME[e.type]]
 }
 
 /** An item's icon, inline. */
-export function ItemInfoIcon({ info }: { info: { type: ItemKind; createdBy: string } }) {
+export function ItemInfoIcon({ info }: { info: { type: ItemKind; createdBy: string; params?: Record<string, unknown> } }) {
   const [Icon, name] = itemInfoIcon(info)
   return (
     <span className="type-icon" title={name}>

@@ -13,7 +13,7 @@ import { withBot } from './icons'
  * servers, and folders. Those are not items, so they wait on the finder picking
  * things other than items.
  */
-export type SectionId = 'viewed' | 'needsYou' | 'withBots' | 'waiting' | 'closed'
+export type SectionId = 'assigned' | 'owned' | 'viewed' | 'needsYou' | 'withBots' | 'waiting' | 'closed'
 
 export interface Section {
   label: string
@@ -22,7 +22,7 @@ export interface Section {
 }
 
 /** What the finder reads as recent: what was viewed here (kept by the app, not the store), and who there is. */
-export type Recent = { viewed: string[]; users: Overview['users']; bots: { id: string }[] }
+export type Recent = { me: string; viewed: string[]; users: Overview['users']; bots: { id: string }[] }
 
 const open = (i: Item) => !i.closed
 /** The items with these ids that the finder has, in the ids' order. */
@@ -32,6 +32,8 @@ const byIds = (ids: string[], items: Item[]): Item[] => {
 }
 
 export const SECTIONS: Record<SectionId, Section> = {
+  assigned: { label: 'Assigned to you', items: (items, r) => items.filter((i) => open(i) && i.assignees.includes(r.me)) },
+  owned: { label: 'You own', items: (items, r) => items.filter((i) => open(i) && i.owner === r.me && !i.assignees.includes(r.me) && i.open !== null) },
   viewed: { label: 'Recently viewed', items: (items, r) => byIds(r.viewed, items) },
   needsYou: { label: 'Needs you', items: (items) => items.filter((i) => open(i) && i.withYou) },
   withBots: { label: 'With bots', items: (items, r) => items.filter((i) => open(i) && !i.withYou && withBot(i, r.bots)) },

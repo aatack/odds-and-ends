@@ -48,7 +48,7 @@ export async function load(root: string): Promise<void> {
   const byParent = new Map<string, string[]>()
   for (const i of list) {
     infos.set(i.id, i)
-    if (i.type === 'note') byParent.set(i.id, [])
+    if (i.type === 'topic') byParent.set(i.id, [])
   }
   for (const i of list) if (i.id !== root && i.parentId) byParent.get(i.parentId)?.push(i.id)
   for (const [id, ids] of byParent) kids.set(id, ids)
@@ -64,7 +64,7 @@ let chain: Promise<void> = Promise.resolve()
 
 async function send(op: Op): Promise<void> {
   if (op.kind === 'create') {
-    const [id] = await api().addItems(resolve(op.parent), [{ type: 'note', params: op.params }])
+    const [id] = await api().addItems(resolve(op.parent), [{ type: 'topic', params: op.params }], 'notes')
     real.set(op.temp, id)
   } else if (op.kind === 'set') await api().setValue(resolve(op.id), op.key, op.value)
   else await api().moveItem(resolve(op.id), op.to && resolve(op.to))
@@ -158,11 +158,11 @@ function current(): NotesTree {
   return tree
 }
 
-/** A note made here, until the backend has it. */
+/** A note (a topic in another's notes) made here, until the backend has it. */
 function placeholder(id: string, parent: string, params: Record<string, unknown>): ItemInfo {
   const now = Date.now()
   return {
-    id, parentId: parent, type: 'note', params, createdBy: '', createdAt: now, resolved: true, resolvedAt: now, resolvedBy: null,
+    id, parentId: parent, via: 'notes', owner: null, type: 'topic', params, createdBy: '', createdAt: now, resolved: true, resolvedAt: now, resolvedBy: null,
     cancelled: false, data: null, actor: '', summary: String(params.text ?? ''), message: null, nextCheckAt: null, lastError: null,
     runs: 0, reactions: [], pins: [], pinnedIn: [],
   }

@@ -16,11 +16,12 @@ import { ItemPicker } from './ItemPicker'
 import { ItemsList } from './ItemsList'
 import { SearchSectionsContext } from './sections'
 import { SearchPage } from './SearchPage'
-import { DEFAULT_SECTIONS, type SearchSection } from '../../shared/search'
+import { DEFAULT_SECTIONS, SEARCH_SECTIONS, type SearchSection } from '../../shared/search'
 import { Composer } from './Composer'
 import { ItemRefContext } from './components/ui/Markdown'
 import { ItemRef } from './ItemRef'
-import { FOCUS, Pill } from './sizes'
+import { Pill } from './sizes'
+import { focusKind } from '../../shared/views'
 import { FileFocus, uploadFiles } from './FileView'
 import { NotesView } from './notes/NotesView'
 import { ItemInfoIcon } from './icons'
@@ -104,7 +105,7 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
   const setFind = useSetAtom(findAtom)
   const focusFind = useSetAtom(findFocusAtom)
   const { act } = items
-  const canFind = (!!items.detail?.item || items.detail?.info.type === 'note') && items.view?.kind === 'event'
+  const canFind = (!!items.detail?.item || items.detail?.info.type === 'topic') && items.view?.kind === 'event'
   // A find belongs to the view it was made in.
   const viewKey = JSON.stringify(items.view)
   useEffect(() => setFind(null), [viewKey, setFind])
@@ -344,8 +345,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
           <ItemsList
             items={w.overview.items}
             recent={w.recent}
-            bots={w.overview.bots.filter((b) => !b.deleted).map((b) => ({ id: b.id, name: b.name, status: botStatus(b) }))}
-            botsLabel="Bots"
+            sections={SEARCH_SECTIONS}
             onEscape={w.views.length > 0 ? w.back : undefined}
             onOpen={openFromItems}
             onTab={(title) => w.act(async () => openFromItems(await api().create(title || newTopicTitle(), null)))}
@@ -377,7 +377,8 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
     )
   const actions = debug ? null : (
     <>
-      {e.type === 'task' && d.item && !d.item.item.closed && <AssigneePill item={d.item.item} overview={w.overview} act={w.actOn(e.id)} />}
+      {e.type === 'topic' && <DisplayPicker info={e} act={w.act} />}
+      {d.item && !d.item.item.closed && e.type !== 'bot' && <AssigneePill item={d.item.item} overview={w.overview} act={w.actOn(e.id)} />}
       <HeaderActions actions={itemActions(e, { act: w.actOn(e.id), skip: w.skip, custom: w.customActions })} mobile={mobile} />
     </>
   )
@@ -386,28 +387,28 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
       <ViewHeader
         canGoBack={w.views.length > 0}
         onBack={w.back}
-        title={`${debug ? 'Debug: ' : ''}${e.summary}`}
+        title={`${debug ? 'Debug: ' : ''}${e.summary.split('\n')[0]}`}
         info={e}
         actions={actions}
-        onRename={e.type === 'task' && !debug ? (title) => void w.act(() => api().rename(e.id, title)) : undefined}
+        onRename={e.type === 'topic' && !debug ? (title) => void w.act(() => api().rename(e.id, title)) : undefined}
       />
       {w.error && <div className="error">{w.error}</div>}
-      <div className={`view-body ${(d.item || e.type === 'file' || FOCUS[e.type] === 'notes') && !debug ? 'fill' : ''}`}>
+      <div className={`view-body ${(d.item || e.type === 'file' || focusKind(e) === 'notes') && !debug ? 'fill' : ''}`}>
         {debug ? (
           <DebugView id={e.id}>
             <Pins id={e.id} pins={d.pins} pinnedIn={d.pinnedIn} catalog={w.catalog} act={w.act} onOpen={openItem} />
           </DebugView>
-        ) : FOCUS[e.type] === 'chat' && e.type === 'bot' && d.item ? (
+        ) : focusKind(e) === 'chat' && e.type === 'bot' && d.item ? (
           <div className="bot-page">
             <BotView key={e.id} bot={w.overview.bots.find((b) => b.id === e.id) ?? null} act={w.act} mobile={mobile} />
             <ItemView key={`${e.id}:chat`} detail={d.item} catalog={w.catalog} act={w.act} onOpen={openItem} mobile={mobile} />
           </div>
         ) : e.type === 'file' ? (
           <FileFocus key={e.id} info={e} mobile={mobile} />
-        ) : FOCUS[e.type] === 'notes' ? (
+        ) : focusKind(e) === 'notes' ? (
           // A note's pins fill the right, beside its tree, as a task's do beside its chat.
           withPins(<NotesView key={e.id} info={e} tasks={w.overview.items} recent={w.recent} bots={everyone(w.overview)} onOpen={openItem} onBack={w.back} mobile={mobile} />)
-        ) : FOCUS[e.type] === 'chat' && d.item ? (
+        ) : focusKind(e) === 'chat' && d.item ? (
           // A task's pins fill the right of the screen, beside its chat, with New notes atop.
           withPins(<ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openItem} mobile={mobile} />)
         ) : (
@@ -502,7 +503,7 @@ function ViewHeader(props: {
       >
         <ChevronLeft className="icon" />
       </button>
-      {props.info && props.info.type !== 'task' && <ItemInfoIcon info={props.info} />}
+      {props.info && (props.info.type !== 'topic' || typeof props.info.params.open !== 'boolean') && <ItemInfoIcon info={props.info} />}
       {editing !== null ? (
         <input
           className="view-title view-title-input"
@@ -692,5 +693,22 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
         )}
       </div>
     </div>
+  )
+}
+
+/** A topic's display: its comments (a chat) or its notes (a tree), as its `display` value. */
+function DisplayPicker({ info, act }: { info: ItemInfo; act: (fn: () => Promise<unknown>) => unknown }) {
+  const display = info.params.display === 'notes' ? 'notes' : 'comments'
+  return (
+    <select
+      className="display-picker"
+      title="What this topic shows"
+      aria-label="Display"
+      value={display}
+      onChange={(ev) => void act(() => api().setValue(info.id, 'display', ev.target.value === 'notes' ? 'notes' : null))}
+    >
+      <option value="comments">Comments</option>
+      <option value="notes">Notes</option>
+    </select>
   )
 }

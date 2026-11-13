@@ -61,7 +61,7 @@ export async function runScript(
         const who = mentionedId ?? __input.id
         const out = []
         for (const c of await __children(parentId)) {
-          if (c.type !== 'note') continue
+          if (c.type !== 'topic' && c.type !== 'note') continue
           const text = String(c.params.text ?? '')
           const at = [text.indexOf('[' + who + ']()'), text.indexOf('](' + who + ')')].filter((i) => i >= 0)
           if (!at.length) continue
@@ -71,7 +71,7 @@ export async function runScript(
         return out.sort((a, b) => b.at - a.at)
       }
       // The items in an item (where they sit, or linked in), of one type if given.
-      const refs = async (id, type) => (await __children(id)).filter((c) => !type || c.type === type)
+      const refs = async (id, type) => (await __children(id)).filter((c) => !type || c.type === type || ((type === 'note' || type === 'task') && c.type === 'topic'))
       const fn = async (context, tools) => {
 ${source}
 }
