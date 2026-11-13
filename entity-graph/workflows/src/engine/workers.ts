@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Agent, Item, ItemInfo } from '../shared/types'
-import { cardText, type Who } from './views'
+import { ANYONE, cardText, type Who } from './views'
 import type { Engine, PromptItem } from './engine'
 import { botOutputSchema } from './schema'
 import { MAX_BOTS } from './settings'
@@ -141,14 +141,23 @@ export function promptFor(items: PromptItem[], who?: Who): string {
     .map(({ item, children, first, own, pins = [] }) => {
       const lines = [
         ...pins.map((p) => `[pinned here: ${p.text}]`),
-        // A comment as it was said; anything else (a topic with a status, an approval, a file) with its id, to refer to.
-        ...children.map((e) => cardText(e, { who, ids: !(e.type === 'topic' && typeof e.params.open !== 'boolean') })),
+        ...children.map((e) => promptLine(e, who)),
       ]
       const head = own ? ['[your own chat: reply with an update for this id]'] : first ? [`[new to you: ${item.title}]`] : [`[topic: ${item.title}]`]
       const all = [...head, ...(lines.length ? lines : ['[nothing new]'])]
       return all.flatMap((l, i) => (i % ID_EVERY === 0 ? [`[current topic ID: ${item.id}]`, l] : [l])).join('\n\n')
     })
     .join('\n\n---\n\n')
+}
+
+/**
+ * One thing in a topic, as a bot is told it: a person's comment as they wrote it, after their name; anything else in
+ * brackets, after who added it, with its id (a topic with a status, an approval, a file), to refer to.
+ */
+function promptLine(e: ItemInfo, who: Who = ANYONE): string {
+  const comment = e.type === 'topic' && typeof e.params.open !== 'boolean'
+  if (comment && who.person(e.createdBy)) return `${who.name(e.createdBy)}: ${cardText(e)}`
+  return `[${who.name(e.createdBy)}: ${cardText(e, { ids: !comment })}]`
 }
 
 /** What a stream-json transcript says: the assistant's text, and the result message. */

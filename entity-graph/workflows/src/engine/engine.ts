@@ -272,7 +272,7 @@ export class Engine extends EventEmitter {
   /** An item's name: a topic's first line, a bot's @name, a script's name; anything else as its type describes it. */
   private title(id: string, params: Record<string, unknown>): string {
     const r = this.row(id)
-    if (r?.type === 'bot') return `@${this.agentName(id)}`
+    if (r?.type === 'bot') return this.agentName(id)
     if (r?.type === 'script') return String(params.name ?? params.description ?? 'Script')
     if (r?.type === 'topic') return String(params.text ?? '').split('\n')[0]
     return r ? this.type(r.type).describe(params).split('\n')[0] : id

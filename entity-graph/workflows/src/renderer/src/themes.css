@@ -344,3 +344,6 @@ html[data-theme='demo'][data-mode='dark'] .find-line { box-shadow: 0 0 0 1px rgb
 html[data-theme='demo'] button[data-ui].link.item-ref { border: none; border-radius: 4px; background: var(--color-gray-100); padding: 0 6px; }
 html[data-theme='demo'] button[data-ui].link.item-ref:hover { background: var(--color-gray-200); }
 html[data-theme='demo'] .list h3 { font-weight: 500; color: var(--color-gray-500); }
+
+/* A pin in the right pane is a card the pane's width, in every theme (after the themes' pills, so it wins). */
+html .side-pill button[data-ui].link.item-ref { padding: 6px 10px; border-radius: 8px; align-items: center; }

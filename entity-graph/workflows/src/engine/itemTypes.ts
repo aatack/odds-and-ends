@@ -129,7 +129,7 @@ export const bot: ItemType = {
   data: '{ cancelled: true }, once deleted',
   blocking: true,
   bots: true,
-  describe: (p) => `@${p.name}`,
+  describe: (p) => String(p.name),
 }
 
 export const user: ItemType = {

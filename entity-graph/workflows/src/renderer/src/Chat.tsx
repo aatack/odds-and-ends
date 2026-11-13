@@ -17,7 +17,7 @@ export { minutes, time } from './time'
 function ownerOf(o: Overview, by: string): { id: string; name: string } | null {
   const id = by.startsWith('bot:') ? by.slice(4) : by
   const bot = o.bots.find((b) => b.id === id)
-  if (bot) return { id, name: `@${bot.name}` }
+  if (bot) return { id, name: bot.name }
   const person = o.users.find((u) => u.id === id)
   return person ? { id, name: person.name } : null
 }

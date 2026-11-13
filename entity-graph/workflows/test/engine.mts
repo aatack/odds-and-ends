@@ -447,10 +447,10 @@ await engine.close(loose)
   // The smaller sizes, and a task at its focus: the cards of what is in it.
   assert.deepEqual(await engine.callAction('get_item', { item_id: inner, size: 'pill' }, ctx), { text: `[topic] Do it (${inner})` })
   const said = engine.children(inner)[0].id
-  assert.equal(engine.view(inner, 'focus'), `[topic] Do it (${inner})\n${said}  [alex: in the task]`)
+  assert.equal(engine.view(inner, 'focus'), `[topic] Do it (${inner})\n${said}  alex: in the task`)
   // A chat: the latest `limit` messages, the earlier ones said, to ask for with an offset.
   await engine.addItems(inner, [{ type: 'note', params: { text: 'later' } }], 'alex')
-  assert.match(engine.view(inner, 'focus', { ids: false, limit: 1 })!, /\.\.\. 1 earlier messages, left out \(offset 1 for them\)\n\[alex: later\]$/)
+  assert.match(engine.view(inner, 'focus', { ids: false, limit: 1 })!, /\.\.\. 1 earlier messages, left out \(offset 1 for them\)\nalex: later$/)
   await engine.close(inner)
   await engine.close(t)
 }
@@ -860,7 +860,7 @@ await engine.close(bad)
     ['topic', 'human', 'What are you up to?'],
     ['topic', `bot:${threepio}`, 'Not much.'],
   ])
-  assert.equal(chat.item.title, '@Threepio')
+  assert.equal(chat.item.title, 'Threepio')
   assert.deepEqual(engine.agent(threepio)!.lastRun!.items, [threepio], 'its last run was for its chat')
   await assert.rejects(engine.addItems(threepio, [{ type: 'script', params: { source: 'async () => null' } }]), /only topics/)
 }

@@ -77,7 +77,7 @@ export function BotsPage({ bots, act, onOpen, mobile = false }: { bots: Agent[];
           {bots.map((b) => (
             <div key={b.id} className="row" onClick={() => onOpen(b.id)}>
               <Bot className="icon" />
-              <span className="row-title">@{b.name}</span>
+              <span className="row-title">{b.name}</span>
               <span className="muted row-status">
                 {b.model || 'default model'}
               </span>

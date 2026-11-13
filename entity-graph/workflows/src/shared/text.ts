@@ -39,20 +39,12 @@ export function pillText(i: ItemInfo, { ids = false }: TextOptions = {}): string
 const mark = (i: ItemInfo): string => (i.type !== 'topic' ? '' : i.params.open === true ? '[ ] ' : i.params.open === false ? '[x] ' : '')
 
 /**
- * Whatever text an item holds, all of it: a topic's text (every paragraph), after its status mark; anything else what it
- * says (its message once it has one, else its summary). With `who`, who wrote it before it (a person's words as they
- * are; anyone else's, and anything not a topic, in brackets, as a bot is told them); with `ids`, its id after.
+ * Whatever text an item holds, all of it, and nothing else: a topic's text (every paragraph), after its status mark;
+ * anything else what it says (its message once it has one, else its summary). With `ids`, its id after.
  */
-export function cardText(e: ItemInfo, { ids = false, who }: TextOptions = {}): string {
-  const id = ids ? ` (${e.id})` : ''
-  if (e.type === 'topic') {
-    const text = `${mark(e)}${String(e.params.text ?? '')}`
-    if (!who) return `${text}${id}`
-    return who.person(e.createdBy) && !mark(e) ? `${who.name(e.createdBy)}${id}: ${text}` : `[${who.name(e.createdBy)}${id}: ${text}]`
-  }
-  const said = e.cancelled ? (e.message ?? `Cancelled: ${e.summary}`) : !e.resolved ? e.summary : (e.message ?? e.summary)
-  if (!who) return `${said}${id}`
-  return `[${e.type}${!e.resolved && !e.cancelled ? ` added by ${who.name(e.createdBy)}` : ''}${id}: ${said}]`
+export function cardText(e: ItemInfo, { ids = false }: { ids?: boolean } = {}): string {
+  const text = e.type === 'topic' ? `${mark(e)}${String(e.params.text ?? '')}` : e.cancelled ? (e.message ?? `Cancelled: ${e.summary}`) : !e.resolved ? e.summary : (e.message ?? e.summary)
+  return ids ? `${text} (${e.id})` : text
 }
 
 /** Lines with their ids in a column on the left, as wide as the widest. */
@@ -63,7 +55,7 @@ const withIds = (rows: { id: string; text: string }[]): string[] => {
 
 /**
  * An item's default view as text, under its pill. A chat: its messages' cards, the latest `limit` (`offset` skips that
- * many of the latest first); a tree of notes: nested bullets, the first `limit` rows (`offset` skips that many from the
+ * many of the latest first), each after who wrote it given `who`; a tree of notes: nested bullets, the first `limit` rows (`offset` skips that many from the
  * top), walking into topics' notes; anything else: its values. What is left out is said, with the offset to ask for
  * it. With `ids`, each item's id in a column on the left.
  */
@@ -92,7 +84,8 @@ export function focusText(read: Reader, id: string, opts: FocusOptions = {}): st
     const all = read.children(id)
     const end = Math.max(0, all.length - offset)
     const start = Math.max(0, end - limit)
-    const shown = all.slice(start, end).map((e) => ({ id: e.id, text: cardText(e, { who }) }))
+    // Each message after who wrote it, given `who`.
+    const shown = all.slice(start, end).map((e) => ({ id: e.id, text: `${who ? `${who.name(e.createdBy)}: ` : ''}${cardText(e)}` }))
     if (start > 0) body.push(`... ${start} earlier messages, left out (offset ${offset + (end - start)} for them)`)
     body.push(...(ids ? withIds(shown) : shown.map((r) => r.text)))
     if (offset > 0) body.push(`... ${all.length - end} later messages, left out (offset 0 for them)`)

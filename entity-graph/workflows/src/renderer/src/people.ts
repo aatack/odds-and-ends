@@ -16,12 +16,12 @@ export const everyone = (o: Pick<Overview, 'users' | 'bots'> & Partial<Pick<Over
   ...(o.scripts ?? []).filter((s) => s.named).map((s) => ({ id: s.id, name: s.name, bot: true })),
 ]
 
-/** Someone, for reading: "you" for whoever is signed in, a bot as @name, a person by name; a bot's run (`bot:<id>`) as its bot. */
+/** Someone, for reading: "you" for whoever is signed in, a bot or a person by name; a bot's run (`bot:<id>`) as its bot. */
 export function nameOf(o: Pick<Overview, 'users' | 'bots' | 'me'> & Partial<Pick<Overview, 'scripts'>>, id: string): string {
   const plain = id.startsWith('bot:') ? id.slice(4) : id
   if (plain === o.me.id) return 'you'
   const bot = o.bots.find((b) => b.id === plain)
-  if (bot) return `@${bot.name}`
+  if (bot) return bot.name
   const script = o.scripts?.find((s) => s.id === plain)
   if (script) return script.name
   return o.users.find((u) => u.id === plain)?.name ?? plain

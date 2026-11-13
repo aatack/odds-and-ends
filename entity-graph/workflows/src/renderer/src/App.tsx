@@ -144,7 +144,7 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
           <Pill
             id={id}
             icon={bot ? <Bot className="icon" /> : <UserIcon className="icon" />}
-            label={`@${bot?.name ?? person!.name}`}
+            label={bot?.name ?? person!.name}
             onOpen={bot ? () => open({ kind: 'event', id }) : undefined}
           />
         )

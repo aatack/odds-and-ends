@@ -247,7 +247,7 @@ export function ItemsList(props: {
               return (
                 <div key={line.key} className={`row ${selected}`} onClick={() => choose(line)} onMouseMove={hover}>
                   {line.chosen ? <Check className="icon" /> : line.bot.bot === false ? <User className="icon" /> : <Bot className="icon" />}
-                  <span className="row-title">@<Marked text={line.bot.name} phrase={text} /></span>
+                  <span className="row-title"><Marked text={line.bot.name} phrase={text} /></span>
                   <span className="muted row-status">{line.chosen ? 'Remove' : (line.bot.status ?? 'Assign')}</span>
                 </div>
               )
