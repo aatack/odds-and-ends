@@ -37,7 +37,8 @@ export function ItemPicker(
   }
   return (
     <Modal title={title} size="large" blur onClose={onClose}>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* The finder the modal's width, its search line held at the top as the list scrolls (`.picker` in styles.css). */}
+      <div className="picker min-h-0 flex-1 overflow-y-auto">
         <ItemsList
           items={items}
           recent={recent}
