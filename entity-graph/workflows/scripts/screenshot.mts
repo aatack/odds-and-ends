@@ -5,7 +5,7 @@
 //
 //   npx tsx scripts/screenshot.mts [view ...] [--out <dir>] [--seed <module>] [--press <keys>] [--theme <theme:mode>] [--no-build] [--desktop-only | --phone-only]
 //
-// Views: tasks (the default), task (the seeded task's chat), bot, bots, integrations, types, log, search, file,
+// Views: tasks (the default), task (the seeded task's chat), home, bot, bots, integrations, types, log, file,
 // item:<id>. Each is shot at a desktop width (1280×800) and a phone's (390×844), to <out>/<view>-<width>.png
 // (./screenshots by default); the paths are printed.
 //
@@ -70,7 +70,7 @@ function stackFor(name: string): View[] {
   if (name === 'tasks') return []
   if (name.startsWith('item:')) return item(name.slice(5))
   if (extra[name]) return item(extra[name])
-  if (['bots', 'integrations', 'types', 'log', 'search', 'mcp'].includes(name)) return [{ kind: name } as View]
+  if (['home', 'bots', 'integrations', 'types', 'log', 'mcp'].includes(name)) return [{ kind: name } as View]
   throw new Error(`No view ${name}: tasks, ${Object.keys(extra).join(', ')}, bots, integrations, types, log, search, item:<id>.`)
 }
 

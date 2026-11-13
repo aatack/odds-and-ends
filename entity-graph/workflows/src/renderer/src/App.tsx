@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Catalog, Item, ItemDetail, ItemInfo, ItemInfoDetail, Overview } from '../../shared/types'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { ChevronDown, ChevronLeft, ChevronUp, History, House, Menu, MoreHorizontal, Plug, Server, Shapes, SkipForward, Smartphone, type LucideIcon } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronUp, History, House, Inbox, Menu, MoreHorizontal, Plug, Server, Shapes, SkipForward, Smartphone, type LucideIcon } from 'lucide-react'
 import { itemActions, type ItemAction } from './itemActions'
 import { Dropdown, DropdownItem, DropdownSeparator } from './components/ui/Dropdown'
 import { TypesPage } from './TypesPage'
@@ -15,7 +15,7 @@ import { ItemInfoView } from './ItemInfoView'
 import { ItemPicker } from './ItemPicker'
 import { ItemsList } from './ItemsList'
 import { Composer } from './Composer'
-import { ItemRefContext } from './components/ui/Markdown'
+import { ItemRefContext, Markdown } from './components/ui/Markdown'
 import { ItemRef } from './ItemRef'
 import { Pill } from './sizes'
 import { DISPLAYS, displayOf, type Display } from '../../shared/views'
@@ -28,6 +28,7 @@ import { defaultActions } from './defaultActions'
 import { minutes, useNow } from './time'
 import { LogPage } from './LogPage'
 import { OverviewContext, StatusLine } from './status'
+import { PARADIGM } from '../../shared/paradigm'
 import { ScriptCard } from './ScriptCard'
 import { api, useWorkflows } from './useWorkflows'
 import { findAtom, findFocusAtom, forwardAtom, menuAtom, renameAtom, searchFocusAtom, viewedAtom, viewsAtom, type View } from './views'
@@ -175,8 +176,9 @@ const ItemsContext = createContext<ReturnType<typeof useWorkflows> | null>(null)
 const useItems = () => useContext(ItemsContext)!
 
 /** The pages, in the left pane, the one on screen marked. */
-const PAGES: { kind: 'items' | 'bots' | 'integrations' | 'types' | 'mcp' | 'phone' | 'log'; label: string; icon: LucideIcon; title?: string }[] = [
-  { kind: 'items', label: 'Home', icon: House, title: 'Home (Ctrl+L): what is assigned to you, then what you own' },
+const PAGES: { kind: 'home' | 'items' | 'bots' | 'integrations' | 'types' | 'mcp' | 'phone' | 'log'; label: string; icon: LucideIcon; title?: string }[] = [
+  { kind: 'home', label: 'Home', icon: House, title: 'How this works' },
+  { kind: 'items', label: 'Assignments', icon: Inbox, title: 'Assignments (Ctrl+L): what is assigned to you, what you own, what is pinned to you' },
   { kind: 'bots', label: 'Bots', icon: Bot },
   { kind: 'integrations', label: 'Integrations', icon: Plug },
   { kind: 'types', label: 'Types', icon: Shapes },
@@ -297,7 +299,8 @@ function AppMenu({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onSign
               Next <span className="menu-status">what needs you</span>
             </button>
           )}
-          <button onClick={() => go({ kind: 'items' })}>Tasks</button>
+          <button onClick={() => go({ kind: 'home' })}>Home</button>
+          <button onClick={() => go({ kind: 'items' })}>Assignments</button>
           <button onClick={() => go({ kind: 'bots' })}>
             Bots <span className="menu-status">{busy} of {w.overview.bots.length} working</span>
           </button>
@@ -391,6 +394,8 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
   if (w.view?.kind === 'integrations') return page('Integrations', <IntegrationsPage mobile={mobile} />)
   if (w.view?.kind === 'mcp') return page('MCP', <McpPage mobile={mobile} />)
   if (w.view?.kind === 'phone') return page('Phone', <PhonePage mobile={mobile} />)
+  // Home: how the app works, the same text the bots are given (shared/paradigm.ts), as markdown.
+  if (w.view?.kind === 'home') return page('Home', <Markdown className="home-doc" text={PARADIGM} />)
   // Home (nothing on the stack, or the items view) is the person signed in, shown as any item is: `selected` is them.
   const home = !w.view || w.view.kind === 'items'
   if (!d || !w.catalog)

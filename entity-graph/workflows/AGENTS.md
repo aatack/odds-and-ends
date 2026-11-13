@@ -237,7 +237,8 @@ indented tree with ids, cut at 100 lines with the ids to ask for the rest; a run
 
 ## The search page
 
-Home (Ctrl+L, the items view, or nothing on the stack) is the person signed in's own item, shown as any item is
+**Home** (the left pane's first page, `kind: 'home'`) shows the paradigm the bots are given (`shared/paradigm.ts`) as
+markdown: the user documentation. **Assignments** (Ctrl+L, the items view, or nothing on the stack) is the person signed in's own item, shown as any item is
 (`selected` in `useWorkflows` is them): its title is their name, it opens on their Assignments (the finder: see The
 finder, under UI), and its header, right pane and views are every item's. Only Home's finder makes topics with Tab and
 replaces itself with what it opens. A bot's or another person's home is their item. There are no configurable sections

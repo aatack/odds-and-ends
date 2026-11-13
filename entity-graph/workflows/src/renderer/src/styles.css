@@ -588,3 +588,6 @@ button[data-ui].script-play-button:hover, button[data-ui].pin-play:hover { backg
 button[data-ui].script-card.whole { width: 100%; padding: 8px 10px; border-radius: 8px; background: var(--color-gray-100); text-align: left; font-size: 13px; }
 button[data-ui].script-card.whole:hover { background: var(--color-gray-200); filter: none; }
 .script-card.whole .script-play { width: 14px; height: 14px; flex: none; margin-top: 2px; color: var(--muted); }
+
+/* Home: how this works, as a page to read. */
+.home-doc { max-width: 760px; line-height: 1.6; }

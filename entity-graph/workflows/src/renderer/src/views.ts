@@ -12,7 +12,10 @@ import { atomWithStorage, createJSONStorage } from 'jotai/utils'
  * bots (each opens as an `item`: its settings, runs and own chat). More kinds of view go here.
  */
 export type View =
+  /** The person signed in's assignments (their item, on its Assignments view): also what an empty stack shows. */
   | { kind: 'items' }
+  /** Home: how the app works (the paradigm the bots are given), as a person reads it. */
+  | { kind: 'home' }
   // 'event' is the old word for an item, kept: the stack is in local storage.
   | { kind: 'event'; id: string }
   | { kind: 'debug'; id: string }
