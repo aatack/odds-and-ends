@@ -995,9 +995,9 @@ export class Engine extends EventEmitter {
                 z.object({
                   item: z.string(),
                   message: z.string().optional(),
-                  items: z.array(z.object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional() })).optional(),
+                  items: z.array(z.object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional(), pin: z.boolean().optional() })).optional(),
                   // The old name (from when items were called items).
-                  events: z.array(z.object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional() })).optional(),
+                  events: z.array(z.object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional(), pin: z.boolean().optional() })).optional(),
                   assign: z.array(z.string()).optional(),
                   close: z.boolean().optional(),
                 }),
@@ -1167,7 +1167,8 @@ export class Engine extends EventEmitter {
 
   private addNow(parentId: string | null, specs: ItemSpec[], createdBy: string, pinTo = parentId, via: Via = 'comments'): string[] {
     // A detached topic sits in no topic, wherever it is added (and is pinned there, if it says so).
-    const detached = parentId ? specs.filter((s) => s.type === 'topic' && s.params.detached) : []
+    // So does anything else added with `pin` that may sit in none (a link, a file, a Slack message): it is pinned, not said.
+    const detached = parentId ? specs.filter((s) => (s.type === 'topic' && s.params.detached) || (s.pin && s.type !== 'topic' && SIT_IN_NONE.includes(s.type))) : []
     if (detached.length) return [...this.addNow(parentId, specs.filter((s) => !detached.includes(s)), createdBy, pinTo, via), ...this.addNow(null, detached, createdBy, parentId)]
     const keyed = (s: ItemSpec) => s.type === 'topic' && s.params.key && this.store.ofType('topic').some((r) => r.params.key === s.params.key)
     specs = specs.filter((s) => !keyed(s))

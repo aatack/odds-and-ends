@@ -12,7 +12,7 @@ import type { Engine } from './engine'
 
 const itemId = z.string().describe('The id of the item.')
 const spec = z
-  .object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional(), pin: z.boolean().optional().describe('Pin it to the item it is added in, as well: it shows beside that item, as something useful in actioning it (a pull request, a file, a link). A subtask is pinned anyway.') })
+  .object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional(), pin: z.boolean().optional().describe('Pin it to the item it is added in: it shows beside that item, as something useful in actioning it. A link, file or Slack message added so sits in no chat, only there; a topic stays in the chat too (a subtask is pinned anyway).') })
   .describe('An item: see item_types. ref names it, so an after in the same list can wait for it.')
 
 

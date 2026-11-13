@@ -33,7 +33,7 @@ export function itemSchema(types: ItemType[]): Record<string, unknown> {
           type: { type: 'string', enum: [t.type] },
           params: objectSchema(t.params),
           ref: { type: 'string', description: 'A name for this item, so another in the same list can refer to it.' },
-          pin: { type: 'boolean', description: 'Pin it to the item it is added in, as well: it shows beside that item, as something useful in actioning it (a pull request, a file, a link). A subtask is pinned anyway.' },
+          pin: { type: 'boolean', description: 'Pin it to the item it is added in: it shows beside that item, as something useful in actioning it. A link, file or Slack message added so sits in no chat, only there; a topic stays in the chat too (a subtask is pinned anyway).' },
         },
         required: ['type', 'params'],
         additionalProperties: false,
