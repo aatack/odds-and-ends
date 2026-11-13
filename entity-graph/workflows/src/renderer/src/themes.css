@@ -15,6 +15,8 @@ html[data-serif='crimson'] .mine .bubble .markdown, html[data-serif='crimson'] .
 
 /* The ⋯ menu in a header (a Dropdown), set like the right-click menu. Unlayered, so it wins over the Dropdown's utilities. */
 .popover { background: var(--color-gray-100); box-shadow: 0 0 0 1px var(--color-gray-200), var(--shadow-lg); }
+/* The app's one tooltip (components/ui/Tooltips.tsx), a small popover in place of the browser's own. */
+.tooltip { position: fixed; z-index: 80; max-width: 320px; padding: 4px 8px; border-radius: 6px; font-size: 12px; line-height: 1.4; color: var(--color-gray-700); pointer-events: none; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* ---- Terminal: set in Fira Code, square-ish, a soft green; not a green screen. Dark or light. ---- */
 html[data-theme='terminal'] {

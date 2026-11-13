@@ -308,6 +308,10 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
 
 ## UI
 
+- **One of each control.** Menus and pickers are the app's `Dropdown` (`components/ui/Dropdown.tsx`, with
+  `menuClassName="popover"`), not a native `<select>` (the Appearance and search-section settings still use one).
+  Tooltips are `title=` as ever: `Tooltips` (mounted once in `main.tsx`) moves each to `data-tip` on hover and draws it
+  as a small popover, so the browser's own never shows. Don't add another tooltip component.
 - **Two kinds of form.**
   - The forms used all day are condensed: the new-item form, and the chat input
     (`Composer`: one growing line, its preset's icon and hint, Tab between presets,

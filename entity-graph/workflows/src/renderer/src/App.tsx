@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Catalog, Item, ItemDetail, ItemInfo, Overview } from '../../shared/types'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { ChevronLeft, Menu, MoreHorizontal, SkipForward } from 'lucide-react'
+import { ChevronDown, ChevronLeft, Menu, MoreHorizontal, SkipForward } from 'lucide-react'
 import { itemActions, type ItemAction } from './itemActions'
-import { Dropdown, DropdownItem } from './components/ui/Dropdown'
+import { Dropdown, DropdownItem, DropdownSeparator } from './components/ui/Dropdown'
 import { TypesPage } from './TypesPage'
 import { IconButton } from './components/ui/IconButton'
 import { appearanceAtom, applyAppearance, MODES, SERIFS, THEMES } from './appearance'
@@ -718,26 +718,48 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
   )
 }
 
-/** A topic's display: its comments (a chat) or its notes (a tree), as its `display` value. */
 /**
  * Which of an item's views shows (its `display`, kept on it): its focus, comments, notes or assignments, the same for
- * every type; Debug pushes the debug view.
+ * every type; Debug pushes the debug view. The app's own dropdown, its trigger a pill as the assignee's is.
  */
 function ViewPicker({ info, act, onDebug }: { info: ItemInfo; act: (fn: () => Promise<unknown>) => unknown; onDebug: () => void }) {
+  const shown = displayOf(info)
   return (
-    <select
-      className="display-picker"
-      title="Which view this item shows"
-      aria-label="View"
-      value={displayOf(info)}
-      onChange={(ev) => (ev.target.value === 'debug' ? onDebug() : void act(() => api().setValue(info.id, 'display', ev.target.value as Display)))}
+    <Dropdown
+      align="right"
+      menuClassName="popover"
+      trigger={({ toggle }) => (
+        <button data-ui className="assignee-pill" title="Which view this item shows" aria-label="View" onClick={toggle}>
+          <span className="pill-label">{DISPLAYS.find((d) => d.id === shown)?.label ?? shown}</span>
+          <ChevronDown className="icon" />
+        </button>
+      )}
     >
-      {DISPLAYS.map((d) => (
-        <option key={d.id} value={d.id}>
-          {d.label}
-        </option>
-      ))}
-      <option value="debug">Debug</option>
-    </select>
+      {(close) => (
+        <>
+          {DISPLAYS.map((d) => (
+            <DropdownItem
+              key={d.id}
+              active={d.id === shown}
+              onClick={() => {
+                close()
+                if (d.id !== shown) void act(() => api().setValue(info.id, 'display', d.id as Display))
+              }}
+            >
+              {d.label}
+            </DropdownItem>
+          ))}
+          <DropdownSeparator />
+          <DropdownItem
+            onClick={() => {
+              close()
+              onDebug()
+            }}
+          >
+            Debug
+          </DropdownItem>
+        </>
+      )}
+    </Dropdown>
   )
 }

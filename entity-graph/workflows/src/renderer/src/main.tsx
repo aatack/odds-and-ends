@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import { Root } from './App'
+import { Tooltips } from './components/ui/Tooltips'
 import '@fontsource-variable/geist/index.css'
 import '@fontsource-variable/lora/index.css'
 import '@fontsource-variable/source-serif-4/index.css'
@@ -18,4 +19,10 @@ applyAppearance(storedAppearance())
 
 registerServiceWorker()
 
-createRoot(document.getElementById('root')!).render(<Root />)
+// Every `title` in the app is shown by Tooltips, as a popover, rather than by the browser.
+createRoot(document.getElementById('root')!).render(
+  <>
+    <Root />
+    <Tooltips />
+  </>,
+)
