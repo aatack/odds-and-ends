@@ -36,10 +36,36 @@ export async function slackCall(engine: Engine, which: unknown, method: string, 
   if (!READS.has(method)) throw new Error(`Slack is read only here: ${method} is not called.`)
   const w = slackWorkspace(engine, which)
   const query = new URLSearchParams(Object.entries(args).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)] as [string, string]))
-  const res = await engine.fetch(`https://slack.com/api/${method}?${query}`, { method: 'GET', headers: { Authorization: `Bearer ${w.token}` } })
-  const body = (await res.json()) as Record<string, unknown>
-  if (!body.ok) throw new Error(`Slack ${method}: ${body.error ?? res.status}`)
-  return body
+  const url = `https://slack.com/api/${method}?${query}`
+  // A dropped connection or a failed DNS lookup, or Slack's rate limit, is tried again a few times before it fails.
+  for (let attempt = 1; ; attempt++) {
+    let res: Response
+    try {
+      res = await engine.fetch(url, { method: 'GET', headers: { Authorization: `Bearer ${w.token}` } })
+    } catch (e) {
+      if (attempt < ATTEMPTS) {
+        await pause(attempt * 500)
+        continue
+      }
+      throw new Error(`Slack ${method}: couldn't reach Slack (${networkCause(e)}). Check the connection and try again.`)
+    }
+    if (res.status === 429 && attempt < ATTEMPTS) {
+      await pause(Math.min(Number(res.headers?.get?.('retry-after') ?? 1) || 1, 10) * 1000)
+      continue
+    }
+    const body = (await res.json()) as Record<string, unknown>
+    if (!body.ok) throw new Error(`Slack ${method}: ${body.error ?? res.status}`)
+    return body
+  }
+}
+
+const ATTEMPTS = 3
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/** Why a fetch failed: Node's "fetch failed" hides it in its cause (EAI_AGAIN, ECONNRESET…). */
+function networkCause(e: unknown): string {
+  const cause = (e as { cause?: { code?: string; message?: string } })?.cause
+  return cause?.code ?? cause?.message ?? (e instanceof Error ? e.message : String(e))
 }
 
 // ---- the cache ----

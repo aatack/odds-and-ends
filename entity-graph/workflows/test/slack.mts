@@ -8,6 +8,8 @@ import { Engine } from '../src/engine/engine.ts'
 import { parseSlackLink } from '../src/shared/slack.ts'
 
 const slackCalls: { method: string; body: Record<string, unknown> }[] = []
+/** How many of the next calls fail as a dropped network does. */
+let offline = 0
 let thread: { ts: string; user: string; text: string }[] = []
 const PEOPLE: Record<string, string> = { UME: 'Alex', USAM: 'Sam' }
 // #eng: a thread at 1700000100, with two replies, among other messages.
@@ -19,6 +21,7 @@ const eng: { ts: string; user: string; text: string; thread_ts?: string; reply_c
   { ts: '1700000200.000500', user: 'UME', text: 'Lunch?' },
 ]
 const fakeFetch = (async (url: string, init: { headers: Record<string, string>; body?: string }) => {
+  if (offline > 0 && offline--) throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'EAI_AGAIN' } })
   const u = new URL(url)
   const method = u.pathname.replace('/api/', '')
   const body = init.body ? JSON.parse(init.body) : Object.fromEntries(u.searchParams)
@@ -122,6 +125,12 @@ assert.equal(engine.info(convos[0].link)!.type, 'slack_channel')
 // Slack is read only: no tool posts, and the client calls nothing that writes.
 assert.ok(!engine.actions.some((x) => x.name.startsWith('slack_') && x.unsafe), 'no Slack write tools')
 await assert.rejects(slackCall(engine, undefined, 'chat.postMessage', { channel: 'C9', text: 'x' }), /read only/)
+
+// A dropped network is tried again; if it stays down, the error says why.
+offline = 1
+assert.equal((await slackCall(engine, undefined, 'auth.test', {})).ok, true)
+offline = 3
+await assert.rejects(slackCall(engine, undefined, 'auth.test', {}), /couldn't reach Slack \(EAI_AGAIN\)/)
 
 // What is new after a message: its thread's replies, and what came after it in the channel, marked mine or not.
 type New = { replies: { text: string; from_me: boolean }[]; after: { text: string }[]; others: number; newest: string }
