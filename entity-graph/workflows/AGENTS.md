@@ -245,10 +245,11 @@ indented tree with ids, cut at 100 lines with the ids to ask for the rest; a run
 
 ## The search page
 
-The search page (Ctrl+L, home) is the finder (see The finder, under UI) for whoever its picker at the top right says
-(`PickPill`, as the assignee pill is): you by default, or people and bots, any number (kept in local storage,
-`searchWhoAtom`). There are no configurable sections any more: an older build's `search` item (its `sections`) is
-left out on load, as `widget` and `process` are.
+Home (Ctrl+L, the items view, or nothing on the stack) is the person signed in's own item, shown as any item is
+(`selected` in `useWorkflows` is them): its title is their name, it opens on their Assignments (the finder: see The
+finder, under UI), and its header, right pane and views are every item's. Only Home's finder makes topics with Tab and
+replaces itself with what it opens. A bot's or another person's home is their item. There are no configurable sections
+any more: an older build's `search` item (its `sections`) is left out on load, as `widget` and `process` are.
 
 ## Integrations
 

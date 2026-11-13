@@ -27,7 +27,8 @@ export function useWorkflows() {
   const [views, setViews] = useAtom(viewsAtom)
   const [forwards, setForwards] = useAtom(forwardAtom)
   const view = views[views.length - 1] ?? null
-  const selected = view && 'id' in view ? view.id : null
+  // Home (the items view, or nothing on the stack) is the person signed in: their item, as any other is shown.
+  const selected = view && 'id' in view ? view.id : overview.me.id || null
   const [detail, setDetail] = useState<ItemInfoDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [empty, setEmpty] = useState(false)

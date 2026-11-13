@@ -28,7 +28,7 @@ import { defaultActions } from './defaultActions'
 import { minutes, useNow } from './time'
 import { LogPage } from './LogPage'
 import { api, useWorkflows } from './useWorkflows'
-import { findAtom, findFocusAtom, forwardAtom, menuAtom, renameAtom, searchFocusAtom, searchWhoAtom, viewedAtom, viewsAtom, type View } from './views'
+import { findAtom, findFocusAtom, forwardAtom, menuAtom, renameAtom, searchFocusAtom, viewedAtom, viewsAtom, type View } from './views'
 import { FindLine } from './FindLine'
 import { AssigneePill, OwnerPill, PickPill } from './Assignees'
 import { BotsPage, botStatus } from './BotsPage'
@@ -360,7 +360,6 @@ function AppMenu({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onSign
  */
 function ItemsMain({ mobile }: { mobile: boolean }) {
   const w = useItems()
-  const [who, setWho] = useAtom(searchWhoAtom)
   const openItem = (id: string) => w.open({ kind: 'event', id })
   // What the items view opens takes its place, so Back goes to where you were before it.
   const openFromItems = (id: string) => w.open({ kind: 'event', id }, { replace: w.view?.kind === 'items' })
@@ -388,52 +387,18 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
   if (w.view?.kind === 'integrations') return page('Integrations', <IntegrationsPage mobile={mobile} />)
   if (w.view?.kind === 'mcp') return page('MCP', <McpPage mobile={mobile} />)
   if (w.view?.kind === 'phone') return page('Phone', <PhonePage mobile={mobile} />)
-  // With nothing on the stack, home: what is assigned to you (or whoever is picked), then what you own.
-  if (!w.view || w.view.kind === 'items') {
-    const whose = (
-      <PickPill
-        title="Whose home"
-        none="You"
-        value={who.length ? who : [w.overview.me.id]}
-        setValue={(ids) => setWho(ids.length === 1 && ids[0] === w.overview.me.id ? [] : ids)}
-        overview={w.overview}
-        people
-      />
-    )
-    return frame(
-      <div className="view">
-        <ViewHeader canGoBack={w.views.length > 0} onBack={w.back} title="Home" actions={mobile ? whose : undefined} mobile={mobile} />
-        {w.error && <div className="error">{w.error}</div>}
-        {w.empty && <p className="muted view-note">Nothing needs you.</p>}
-        <div className="view-body">
-          <ItemsList
-            items={w.overview.items}
-            recent={{ ...w.recent, who }}
-            onEscape={w.views.length > 0 ? w.back : undefined}
-            onOpen={openFromItems}
-            act={w.act}
-            onTab={(title) => w.act(async () => openFromItems(await api().create(title || newTopicTitle(), null)))}
-            mobile={mobile}
-          />
-        </div>
-      </div>,
-      <section className="side-section">
-        <div className="side-row">
-          <span className="side-label">Whose</span>
-          {whose}
-        </div>
-      </section>,
-    )
-  }
+  // Home (nothing on the stack, or the items view) is the person signed in, shown as any item is: `selected` is them.
+  const home = !w.view || w.view.kind === 'items'
   if (!d || !w.catalog)
     return frame(
       <div className="view">
         <ViewHeader canGoBack={w.views.length > 0} onBack={w.back} mobile={mobile} />
-        <div className="empty">That item is not there any more.</div>
+        {/* Home waits a moment for who is signed in. */}
+        {!home && <div className="empty">That item is not there any more.</div>}
       </div>,
     )
   const e = d.info
-  const debug = w.view.kind === 'debug'
+  const debug = w.view?.kind === 'debug'
   const shown = displayOf(e)
   const act = w.actOn(e.id)
   // A view picked from the debug view takes its place.
@@ -462,12 +427,22 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
         onRename={e.type === 'topic' && !debug ? (title) => void w.act(() => api().rename(e.id, title)) : undefined}
       />
       {w.error && <div className="error">{w.error}</div>}
+      {home && w.empty && <p className="muted view-note">Nothing needs you.</p>}
       <div className={`view-body ${!debug && (shown === 'comments' || shown === 'notes' || (shown === 'focus' && (e.type === 'file' || e.type === 'bot'))) ? 'fill' : ''}`}>
         {debug ? (
           <DebugView id={e.id}>{mobile && pins}</DebugView>
         ) : shown === 'assignments' ? (
-          // What is assigned to it, then what it owns: a person's or a bot's home, as the Home view is yours.
-          <ItemsList items={w.overview.items} recent={{ ...w.recent, who: [e.id] }} onOpen={openItem} act={w.act} mobile={mobile} />
+          // What is assigned to it, what it owns, what is pinned to it: a person's or a bot's home. Yours, from Home,
+          // makes topics with Tab, and what it opens takes its place.
+          <ItemsList
+            items={w.overview.items}
+            recent={{ ...w.recent, who: [e.id] }}
+            onOpen={home ? openFromItems : openItem}
+            onEscape={home && w.views.length > 0 ? w.back : undefined}
+            onTab={home ? (title) => w.act(async () => openFromItems(await api().create(title || newTopicTitle(), null))) : undefined}
+            act={w.act}
+            mobile={mobile}
+          />
         ) : shown === 'notes' ? (
           <NotesView key={e.id} info={e} tasks={w.overview.items} recent={w.recent} bots={everyone(w.overview)} onOpen={openItem} onBack={w.back} mobile={mobile} />
         ) : shown === 'comments' && d.item ? (
