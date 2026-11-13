@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Item } from '../../shared/types'
-import { pillLabel } from '../../shared/views'
+import { pillText } from '../../shared/text'
 import { ItemIcon } from './icons'
 import { Pill } from './sizes'
 import { api } from './useWorkflows'
@@ -14,7 +14,7 @@ export function ItemRef({ id, item, label, onOpen }: { id: string; item: Item | 
   // undefined: not looked up yet; null: no such item.
   const [found, setFound] = useState<string | null | undefined>(undefined)
   useEffect(() => {
-    if (!item) void api().itemInfoDetail(id).then((d) => setFound(d ? pillLabel(d.info) : null))
+    if (!item) void api().itemInfoDetail(id).then((d) => setFound(d ? pillText(d.info) : null))
   }, [id, item])
   // A URL that is no item (one in text no note brought in) is a link, as it was.
   if (!item && found === null && /^https?:/.test(id))

@@ -27,13 +27,14 @@ import { McpPage } from './McpPage'
 import { defaultActions } from './defaultActions'
 import { minutes, useNow } from './time'
 import { LogPage } from './LogPage'
+import { OverviewContext, StatusLine } from './status'
 import { api, useWorkflows } from './useWorkflows'
 import { findAtom, findFocusAtom, forwardAtom, menuAtom, renameAtom, searchFocusAtom, viewedAtom, viewsAtom, type View } from './views'
 import { FindLine } from './FindLine'
 import { AssigneePill, OwnerPill, PickPill } from './Assignees'
 import { BotsPage, botStatus } from './BotsPage'
 import { BotView } from './BotView'
-import { Bot, User as UserIcon } from 'lucide-react'
+import { Bot, SquareCode, User as UserIcon } from 'lucide-react'
 import { everyone, nameOf, sourceAtom, userAtom, type Someone } from './people'
 import { Start } from './Start'
 import { inBrowser, REFUSED_EVENT, useMobile } from './phone'
@@ -153,6 +154,7 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
   )
   return (
     <ItemsContext.Provider value={items}>
+      <OverviewContext.Provider value={items.overview}>
       <ItemRefContext.Provider value={itemRef}>
         {/* On a desktop: the pages on the left, the view in the middle, the item's people, actions and pins on the right. */}
         <div className={`app ${mobile ? 'mobile' : ''}`}>
@@ -162,6 +164,7 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
         </div>
         <ItemMenu actOn={items.actOn} custom={items.customActions} overview={items.overview} recent={items.recent} />
       </ItemRefContext.Provider>
+      </OverviewContext.Provider>
     </ItemsContext.Provider>
   )
 }
@@ -666,32 +669,28 @@ function likeliest(detail: ItemDetail, overview: Overview): Someone[] {
   return ids.filter((id) => id !== overview.me.id).flatMap((id) => all.find((s) => s.id === id) ?? [])
 }
 
-/** How whoever has a task stands, in a line, unless the person looking has it: a bot (working, or when it wakes), or a script (running, or when it runs). */
-function ownerStatus(item: Item, o: Overview, now: number): string | null {
-  const ids = [...new Set([...(item.bot ? [item.bot] : []), ...(o.bots.some((b) => b.id === item.id) ? [item.id] : []), ...item.assignees])]
-  for (const id of ids) {
-    if (id === o.me.id) continue
-    const bot = o.bots.find((b) => b.id === id)
-    if (bot) {
-      if (bot.runId && bot.lastRun) return `@${bot.name} is working · ${minutes(now - bot.lastRun.startedAt)}`
-      if (bot.pausedUntil) return `@${bot.name} is waiting out a usage limit, till ${new Date(bot.pausedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-      if (bot.wakesAt !== null) return bot.wakesAt <= now ? `@${bot.name} is waking` : `@${bot.name} wakes in ${minutes(bot.wakesAt - now)}`
-      continue
-    }
-    const script = o.scripts.find((s) => s.id === id)
-    if (script) {
-      if (script.running) return `${script.name} is running`
-      if (script.wakesAt !== null) return script.wakesAt <= now ? `${script.name} runs now` : `${script.name} runs in ${minutes(script.wakesAt - now)}`
-      return `${script.name} waits to be run`
-    }
-  }
-  return null
-}
-
-/** `ownerStatus`, ticking by the second on its own, so the chat above it isn't drawn again each second. */
-function OwnerStatus({ item, overview }: { item: Item; overview: Overview }) {
-  const status = ownerStatus(item, overview, useNow())
-  return status ? <div className="chat-working">{status}</div> : null
+/**
+ * Who else has the item, over its chat's input: each as a card (their picture and name, which open them, and how they
+ * stand on the right: a bot working and for how long, or starting soon). Not the person looking: it is theirs anyway.
+ */
+function Assignees({ item, overview, onOpen }: { item: Item; overview: Overview; onOpen: (id: string) => void }) {
+  const others = item.assignees.filter((a) => a !== overview.me.id)
+  if (!others.length) return null
+  return (
+    <div className="assignee-cards">
+      {others.map((id) => {
+        const bot = overview.bots.some((b) => b.id === id)
+        const script = overview.scripts.some((s) => s.id === id)
+        return (
+          <button key={id} data-ui className="assignee-card" onClick={() => onOpen(id)}>
+            {bot ? <Bot className="icon" /> : script ? <SquareCode className="icon" /> : <UserIcon className="icon" />}
+            <span className="assignee-name">{nameOf(overview, id)}</span>
+            <StatusLine id={id} />
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 /** A task's chat and its input; `mobile` lays both out for a phone. */
@@ -760,8 +759,8 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
       <div className="chat-scroll" ref={scroller}>
         {short && <h2 className="chat-title">{item.title}</h2>}
         <Chat detail={detail} overview={w.overview} catalog={catalog} act={act} onOpen={onOpen} mobile={mobile} />
-        <OwnerStatus item={item} overview={w.overview} />
       </div>
+      <Assignees item={item} overview={w.overview} onOpen={onOpen} />
       <div className="composer">
         {item.closed ? (
           <div className="composer-bar muted">

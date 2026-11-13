@@ -1,7 +1,7 @@
 import { Plus, X } from 'lucide-react'
 import { useState } from 'react'
 import type { Item, ItemInfo } from '../../shared/types'
-import { pillLabel } from '../../shared/views'
+import { pillText } from '../../shared/text'
 import { ItemInfoIcon } from './icons'
 import { ItemPicker } from './ItemPicker'
 import type { Recent } from './sections'
@@ -71,7 +71,7 @@ function PinList(props: {
         <div className="side-pills">
           {shown.map((e) => (
             <span key={e.id} className="side-pill">
-              <Pill id={e.id} icon={<ItemInfoIcon info={e} />} label={pillLabel(e)} onOpen={() => onOpen(e.id)} />
+              <Pill id={e.id} icon={<ItemInfoIcon info={e} />} label={pillText(e)} onOpen={() => onOpen(e.id)} />
               <button data-ui className="pin-off" title="Unpin" aria-label="Unpin" onClick={() => props.unpin(e.id)}>
                 <X className="icon" />
               </button>

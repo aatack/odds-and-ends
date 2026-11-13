@@ -1,8 +1,8 @@
 // The four sizes anything is drawn at, from one place:
 //
 // - avatar: its picture, beside it in the chat (who said a note; any other item, its type);
-// - pill: inline in text, as `[id]()` is drawn: its icon and name, which open it;
-// - card: in a chat or a list, by its type (`CARDS`);
+// - pill: inline in text, as `[id]()` is drawn: its icon, its short title (`pillText`), which open it, and a dot for how it stands;
+// - card: in a chat or a list, by its type (`CARDS`); else all its text (`cardText`) and how it stands (status.tsx);
 // - focus: on its own, filling the view (`displayOf`): its focus, comments, notes or assignments.
 
 import type { ReactNode } from 'react'
@@ -15,6 +15,8 @@ import { SlackCard } from './SlackView'
 import { FileCard } from './FileView'
 import { TaskCard } from './TaskCard'
 import { Marked } from './components/ui/Marked'
+import { cardText } from '../../shared/text'
+import { StatusDot, StatusLine } from './status'
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
@@ -47,6 +49,7 @@ export function Pill({ id, label, icon, onOpen }: { id: string; label: ReactNode
     <button data-ui className="link item-ref" onClick={onOpen} {...menu(id)}>
       {icon}
       <span className="pill-label">{label}</span>
+      <StatusDot id={id} />
     </button>
   )
 }
@@ -80,10 +83,16 @@ export const CARDS: Partial<Record<ItemKind, (p: CardProps) => ReactNode>> = {
   ),
 }
 
-/** An item's card, by its type. */
+/** An item's card, by its type; else all the text it holds (`cardText`), and how it stands, if that says anything. */
 export function ItemCard(props: CardProps) {
   const card = CARDS[props.info.type]
-  return card ? <>{card(props)}</> : <Markdown text={props.info.message ?? props.info.summary} highlight={props.find} />
+  if (card) return <>{card(props)}</>
+  return (
+    <>
+      <Markdown text={cardText(props.info)} highlight={props.find} />
+      <StatusLine id={props.info.id} />
+    </>
+  )
 }
 
 export { DISPLAY } from '../../shared/views'

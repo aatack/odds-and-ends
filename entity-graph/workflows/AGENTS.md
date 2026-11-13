@@ -319,10 +319,15 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
     tokens). Keep them in step with entity-graph rather than editing them here.
 - **Four sizes.** Anything is drawn as an avatar (its picture in the chat), a pill (inline in text, as `[id]()` is),
   a card (in a chat or list, by its type: `CARDS`) or its view (filling the window: see Views).
-  They are all in `sizes.tsx`: a new type's views go there. Each but the avatar has a text version, for bots
-  (`engine/views.ts`: `pillText`, `cardText`, `focusText`, each built from the smaller ones; `get_item` with `size`, and
-  the prompt's lines, which are cards). What both share (`displayOf`, `focusKind`, the pill's name) is in
-  `shared/views.ts`: a type's text goes in step with how it is drawn.
+  They are all in `sizes.tsx`: a new type's views go there. Each but the avatar has a text version, what would appear
+  in it, for models (`shared/text.ts`): `pillText` (its short title, cut with an ellipsis at `PILL_MAX`), `cardText`
+  (all the text it holds) and `focusText` (its default view: a chat's latest messages, notes as nested bullets, else
+  its values; `offset` and `limit`, saying what was left out and the offset for it). `ids` adds ids (in focus, a column
+  on the left); bots always get them (`Engine.view`, `get_item` with `size`, the prompt's lines), Copy doesn't. The
+  default pill and card draw these. **Status** (`status.tsx`): where it says something (a bot working and for how long
+  on what, starting soon, at a usage limit; a script running or due), a dot after the pill's name, and the dot and a
+  line in a card. The other assignees of an item show as cards over its chat's input. What the text and the window
+  share (`displayOf`, `focusKind`) is in `shared/views.ts`: a type's text goes in step with how it is drawn.
 - **Views.** Every item, whatever its type, has the same views, chosen from its header (pressed anywhere but a button: `viewMenu`) and
   kept as its `display` value; without one, its type's (`DISPLAY` in `shared/views.ts`): **Focus** (its type's own: a
   file itself, a bot's settings and runs (`BotView`), anything else's details), **Comments** (its chat: any item can

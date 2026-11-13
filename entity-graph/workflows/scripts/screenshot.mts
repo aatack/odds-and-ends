@@ -139,6 +139,8 @@ async function fixture(e: Engine): Promise<Record<string, string>> {
   writeFileSync(png, gradientPng(320, 200))
   const [file] = await e.addItems(task, [{ type: 'file', params: { path: png, copy: true, title: 'Before' } }], ME)
   await e.addItems(task, [{ type: 'task', params: { title: 'Check it on the phone', items: [{ type: 'note', params: { text: 'Look at it at 390px.' } }] } }], `bot:${bot}`, 'bot')
+  // The bot has the task too, so its card (and how it stands) shows over the chat's input.
+  await e.assign(task, bot, true)
   await e.create('Snooze until Monday')
   return { task, bot, file }
 }
