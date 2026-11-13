@@ -126,7 +126,7 @@ const blockers = (id: string) => item(id).blockers.map((b) => b.type)
 const last = (id: string, type: string) => engine.children(id).filter((e) => e.type === type).at(-1)!
 
 // The types there are; those from before are gone.
-assert.deepEqual(engine.itemTypes.map((t) => t.type), ['topic', 'approval', 'script', 'link', 'file', 'search', 'slack_message', 'slack_channel', 'bot', 'user'])
+assert.deepEqual(engine.itemTypes.map((t) => t.type), ['topic', 'approval', 'script', 'link', 'file', 'slack_message', 'slack_channel', 'bot', 'user'])
 await assert.rejects(engine.addItems((await engine.create('x'))!, [{ type: 'message' as 'note', params: { text: 'x' } }]), /No item type message/)
 for (const i of engine.overview().items.filter((i) => i.type === 'topic')) await engine.close(i.id)
 
@@ -456,26 +456,12 @@ await engine.close(loose)
   await engine.close(t)
 }
 
-// The search page's sections: built in by default; a query and a function, set by a bot, kept on the search item.
+// What is pinned to someone shows in their finder (finder: pinned).
 {
-  assert.deepEqual(engine.searchSections().map((s) => s.kind), ['builtin', 'builtin', 'builtin', 'builtin', 'builtin'])
-  const t = (await engine.create('Searchable'))!
-  const bot = { engine, author: 'bot' as const, actor: `bot:${threepio}`, itemId: null, runId: null }
-  await engine.callAction('set_search_sections', { sections: [
-    { kind: 'builtin', id: 'needsYou' },
-    { kind: 'query', label: 'Searchable tasks', filter: { and: [{ eq: { key: 'type', value: 'task' } }, { contains: { key: 'title', value: 'Search' } }] } },
-    { kind: 'function', label: 'Echo', source: 'return [{ id: "x", type: "note", left: "You typed **" + context.text + "**" }]' },
-  ] }, bot)
-  const [, q, f] = engine.searchSections()
-  assert.deepEqual((await engine.runSearchSection(q, '')).map((r) => r.id), [t])
-  assert.deepEqual(await engine.runSearchSection(f, 'hi'), [{ id: 'x', type: 'note', left: 'You typed **hi**', right: '' }])
-  const mine = await engine.runSearchSection({ kind: 'query', label: 'Mine', filter: { and: [{ eq: { key: 'type', value: 'task' } }, { eq: { key: 'assignees', value: engine.me() } }, { eq: { key: 'title', value: 'Searchable' } }] } }, '')
-  assert.deepEqual(mine.map((r) => r.id), [t], 'who has it is a key, matched by any one')
-  await assert.rejects(engine.setSearchSections([{ kind: 'builtin', id: 'nope' as 'viewed' }]), /No built-in section/)
-  await assert.rejects(engine.setSearchSections([{ kind: 'query', label: 'x', filter: { bogus: 1 } as never }]), /Not a filter/)
-  assert.equal(engine.store.ofType('search').length, 1, 'one search item, changed in place')
-  await engine.setSearchSections(null)
-  assert.equal(engine.searchSections().length, 5)
+  const t = (await engine.create('Pinned to me'))!
+  await engine.pin(engine.me(), [t])
+  assert.deepEqual((await engine.finder([engine.me()])).pinned.map((i) => i.id), [t])
+  await engine.pin(engine.me(), [t], false)
   await engine.close(t)
 }
 

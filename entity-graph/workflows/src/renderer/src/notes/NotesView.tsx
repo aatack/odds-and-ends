@@ -8,13 +8,12 @@ import { atomWithStorage, createJSONStorage } from 'jotai/utils'
 import { ChevronDown, ChevronRight, Square, SquareCheck, X } from 'lucide-react'
 import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { Item, ItemInfo } from '../../../shared/types'
-import type { SearchSection } from '../../../shared/search'
 import { Markdown } from '../components/ui/Markdown'
 import { FindLine } from '../FindLine'
 import { ItemInfoIcon } from '../icons'
 import { useItemMenu } from '../ItemMenu'
 import { ItemPicker } from '../ItemPicker'
-import { SearchSectionsContext, type Recent } from '../sections'
+import type { Recent } from '../sections'
 import { modalOpen } from '../state/ui'
 import { TextInput, type Mentions } from '../TextInput'
 import { findAtom } from '../views'
@@ -46,13 +45,6 @@ type Row = { key: string; id: string; path: string[]; depth: number; info: ItemI
 type Filters = { find: string; sectionsOnly: boolean; openOnly: boolean }
 
 const textOf = (i: ItemInfo) => (i.type === 'topic' ? String(i.params.text ?? '') : i.summary)
-
-/** The sets of notes (notes in no item), for the picker, after the sections it always has. */
-const NOTES_SECTION: SearchSection = {
-  kind: 'query',
-  label: 'Notes',
-  filter: { and: [{ eq: { key: 'type', value: 'topic' } }, { eq: { key: 'display', value: 'notes' } }, { is_null: { key: 'parent' } }] },
-}
 
 /**
  * The rows on screen, depth first from the root. Folded notes hide what is in them, unless something is being looked
@@ -356,7 +348,6 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
     )
   }
 
-  const sections = useContext(SearchSectionsContext)
   return (
     <div className={`notes ${mobile ? 'mobile' : ''}`}>
       {info.parentId && (
@@ -413,7 +404,6 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
           title={picking.kind === 'move' ? 'Move into…' : 'Put in it…'}
           items={tasks}
           recent={recent}
-          sections={[...sections, NOTES_SECTION]}
           verb={picking.kind === 'move' ? 'Move here' : 'Put in'}
           onClose={() => setChoosing(false)}
           onPick={finish}

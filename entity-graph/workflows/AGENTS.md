@@ -27,7 +27,7 @@ an in-memory store; it costs runs, so use it only when the bot wiring changes.
 in-memory engine (never the user's source), and saves PNGs at desktop and phone widths to `./screenshots`, to look
 at with Read. **Treat it as expensive**: it costs a build, a browser and large images in your context. Run it only
 to check a UI change you just made (a layout, a theme, an empty state), for the one or two views it touches, and
-not as a routine step. Views: `tasks`, `task`, `file`, `bot`, `bots`, `integrations`, `types`, `log`, `search`,
+not as a routine step. Views: `tasks`, `task`, `file`, `bot`, `bots`, `integrations`, `types`, `log`,
 `item:<id>`; `--desktop-only` / `--phone-only` halve it, `--no-build` skips the build, `--seed <module>` seeds your own
 fixture, `--press <keys>` presses keys before each shot (see the script's header).
 
@@ -120,9 +120,9 @@ shrink.
   open/closed are the same), `section`, and `display` (which view it opens on: see **Views** under UI). Its comments are its history; its notes a tree of topics. Closing writes
   `open: false`; topics never write `resolved`. Some items resolve as they are added (a comment); **blockers** wait
   until something happens (an approval). Topics don't depend on, or attach to, each other: an open topic in another is
-  a card in its chat, and blocks nothing. There are ten types: `topic`, `approval` (the only way a person runs an
-  unsafe action a bot asked for), `script`, `link`, `file`, `search` (the finder's configuration), `slack_message`,
-  `slack_channel`, `bot` and `user` (a person). An older build's `widget` and `process` items are left out on load.
+  a card in its chat, and blocks nothing. There are nine types: `topic`, `approval` (the only way a person runs an
+  unsafe action a bot asked for), `script`, `link`, `file`, `slack_message`,
+  `slack_channel`, `bot` and `user` (a person). An older build's `widget`, `process` and `search` items are left out on load.
 - **People** are items too (`user` items, in no item, whose id is their username); they sign in to the
   app by typing their username (no password: the app is local). Anything can be **assigned** to people, bots and
   scripts: an `assignees` link from the item, not an item (`Engine.setAssignee`; what someone has is their links
@@ -245,17 +245,10 @@ indented tree with ids, cut at 100 lines with the ids to ask for the rest; a run
 
 ## The search page
 
-The search page (Ctrl+L, the Tasks view) has two sections: *Assigned to you* (anything open assigned to you), then
-*You own* (open topics, your bots and scripts, not already assigned to you). A picker at its top right (`PickPill`, as
-the assignee pill is) chooses whose search page it is: people and bots, any number; then the sections read
-*Assigned*/*Owned* for any of them (kept in local storage, `searchWhoAtom`). Every other finder (`@`, the pickers:
-`ItemsList`) shows the configured sections, kept as `sections` on the one `search` item (in no item;
-`src/shared/search.ts`). Each is built in (`sections.ts`), a **query** (egdb's `Filter`, run in memory over every
-item's values and `parent`, `assignees`, `owner`, `created_by`, `created_at`; a topic also answers to `type: task` or
-`note`, by whether it has a status, and has a `title`, so queries kept from before still match), or a **function** (a
-script body answering rows `{ id, type, left, right }`, told what is typed). The ⚙ in the search line opens its page;
-bots read and change it with `search_sections` / `set_search_sections` (`SEARCH_DOC` says how). A caller can still pass
-its own `sections` (the assignee picker passes none).
+The search page (Ctrl+L, home) is the finder (see The finder, under UI) for whoever its picker at the top right says
+(`PickPill`, as the assignee pill is): you by default, or people and bots, any number (kept in local storage,
+`searchWhoAtom`). There are no configurable sections any more: an older build's `search` item (its `sections`) is
+left out on load, as `widget` and `process` are.
 
 ## Integrations
 
@@ -309,7 +302,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
 ## UI
 
 - **One of each control.** Menus and pickers are the app's `Dropdown` (`components/ui/Dropdown.tsx`, with
-  `menuClassName="popover"`), not a native `<select>` (the Appearance and search-section settings still use one).
+  `menuClassName="popover"`), not a native `<select>` .
   Tooltips are `title=` as ever: `Tooltips` (mounted once in `main.tsx`) moves each to `data-tip` on hover and draws it
   as a small popover, so the browser's own never shows. Don't add another tooltip component.
 - **Two kinds of form.**
@@ -333,7 +326,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   kept as its `display` value; without one, its type's (`DISPLAY` in `shared/views.ts`): **Focus** (its type's own: a
   file itself, a bot's settings and runs (`BotView`), anything else's details), **Comments** (its chat: any item can
   be commented in), **Notes** (its tree: any item can have notes), **Assignments** (what is assigned to it, then what
-  it owns: the search page's two sections for that item; a person's or bot's home), and **Debug** (pushed, the same
+  it owns, and so on: the finder for that item; a person's or bot's home), and **Debug** (pushed, the same
   for everything). People and bots open on Assignments; topics and scripts on Comments; the rest on Focus.
 - **The same design rules as entity-graph:** no motion, no pointer cursor,
   restrained colour, tone rather than borders. Tailwind v4 provides the tokens.
@@ -369,12 +362,13 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   (`open(view, { replace: true })`), so Back goes to where you were before it rather than to the list.
 - **The finder** (`ItemsList`) is one view: home, an item's Assignments, and every item picker (`ItemPicker`, the
   same list in a modal, picking rather than opening: one item, or with `multiple` toggling each) show the same
-  **sections** (`finderSections` in `shared/search.ts`, given by `SearchSectionsContext`): what is assigned to whoever
-  it is for (`recent.who`, else you), what they own, **Recently unassigned** (what was assigned to them and no longer
-  is, the latest 16, from egdb's history of `assignees` links: `Engine.unassigned`), then the configured ones (the
-  `search` item), then, while something is typed, **Everything else** that matches. An item shows in the first section
-  that has it. People pickers offer people and bots alone (`sections={[]}`). Each section shows a number of rows
-  before an "n more" row (Enter or a click shows the rest). The Tasks view shows 12 a
+  **sections** (`FINDER_SECTIONS` in `sections.ts`), for whoever it is for (`recent.who`, else you): **Assigned**,
+  **Owned**, **Pinned** (what is pinned to them), **Recently unassigned** (what was assigned to them and no longer is,
+  the latest 16, from egdb's history of `assignees` links), then, while something is typed, **Everything else** that
+  matches. Pinned and Recently unassigned come from the store (`Engine.finder`). An item shows in the first section
+  that has it. Given `act` (home, Assignments), Assigned, Owned and Pinned show even when empty, each with a + that
+  opens the picker and links what is picked. People pickers offer people and bots alone (`sections={[]}`). Each
+  section shows a number of rows before an "n more" row (Enter or a click shows the rest). Home shows 12 a
   section; pickers in a modal, 6. Recently viewed is kept by the app, in local storage (`viewedAtom`). A
   row's grey text says only what its icon can't (what a script waits for); "needs you" and "waits for a bot" are
   the icon's job.

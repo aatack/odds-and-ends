@@ -14,9 +14,6 @@ import { ItemMenu } from './ItemMenu'
 import { ItemInfoView } from './ItemInfoView'
 import { ItemPicker } from './ItemPicker'
 import { ItemsList } from './ItemsList'
-import { SearchSectionsContext } from './sections'
-import { SearchPage } from './SearchPage'
-import { DEFAULT_SECTIONS, finderSections, type SearchSection } from '../../shared/search'
 import { Composer } from './Composer'
 import { ItemRefContext } from './components/ui/Markdown'
 import { ItemRef } from './ItemRef'
@@ -154,13 +151,8 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
     },
     [byId, bots, users, open],
   )
-  // The search page's sections, as configured: read again whenever anything changes (a bot may have set them).
-  const [sections, setSections] = useState<SearchSection[] | null>(null)
-  useEffect(() => void api().searchSections().then(setSections), [items.overview])
-  const finder = useMemo(() => finderSections(sections ?? DEFAULT_SECTIONS), [sections])
   return (
     <ItemsContext.Provider value={items}>
-      <SearchSectionsContext.Provider value={finder}>
       <ItemRefContext.Provider value={itemRef}>
         {/* On a desktop: the pages on the left, the view in the middle, the item's people, actions and pins on the right. */}
         <div className={`app ${mobile ? 'mobile' : ''}`}>
@@ -170,7 +162,6 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
         </div>
         <ItemMenu actOn={items.actOn} custom={items.customActions} overview={items.overview} recent={items.recent} />
       </ItemRefContext.Provider>
-      </SearchSectionsContext.Provider>
     </ItemsContext.Provider>
   )
 }
@@ -392,7 +383,6 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
     )
   if (w.view?.kind === 'types') return page('Types', w.catalog && <TypesPage catalog={w.catalog} custom={w.customActions} act={w.act} mobile={mobile} />)
   if (w.view?.kind === 'bots') return page('Bots', <BotsPage bots={w.overview.bots} act={w.act} onOpen={openItem} mobile={mobile} />)
-  if (w.view?.kind === 'search') return page('Search page sections', <SearchPage />)
   if (w.view?.kind === 'log')
     return page('Edit log', <LogPage key={w.view.id ?? ''} overview={w.overview} recent={w.recent} entities={w.view.id ? [w.view.id] : []} mobile={mobile} />)
   if (w.view?.kind === 'integrations') return page('Integrations', <IntegrationsPage mobile={mobile} />)
@@ -421,6 +411,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
             recent={{ ...w.recent, who }}
             onEscape={w.views.length > 0 ? w.back : undefined}
             onOpen={openFromItems}
+            act={w.act}
             onTab={(title) => w.act(async () => openFromItems(await api().create(title || newTopicTitle(), null)))}
             mobile={mobile}
           />
@@ -476,7 +467,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
           <DebugView id={e.id}>{mobile && pins}</DebugView>
         ) : shown === 'assignments' ? (
           // What is assigned to it, then what it owns: a person's or a bot's home, as the Home view is yours.
-          <ItemsList items={w.overview.items} recent={{ ...w.recent, who: [e.id] }} onOpen={openItem} mobile={mobile} />
+          <ItemsList items={w.overview.items} recent={{ ...w.recent, who: [e.id] }} onOpen={openItem} act={w.act} mobile={mobile} />
         ) : shown === 'notes' ? (
           <NotesView key={e.id} info={e} tasks={w.overview.items} recent={w.recent} bots={everyone(w.overview)} onOpen={openItem} onBack={w.back} mobile={mobile} />
         ) : shown === 'comments' && d.item ? (

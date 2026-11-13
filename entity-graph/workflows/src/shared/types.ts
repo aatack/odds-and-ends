@@ -1,4 +1,3 @@
-import type { SearchRow, SearchSection } from './search'
 // The shapes the main process and the renderer both read. docs/items.md is the
 // long form of what an item is.
 
@@ -9,7 +8,7 @@ import type { SearchRow, SearchSection } from './search'
  * which stay open until something happens (a script says it is done, an approval
  * is given, a child item closes).
  */
-export type ItemKind = 'topic' | 'approval' | 'script' | 'link' | 'search' | 'slack_message' | 'slack_channel' | 'file' | 'bot' | 'user'
+export type ItemKind = 'topic' | 'approval' | 'script' | 'link' | 'slack_message' | 'slack_channel' | 'file' | 'bot' | 'user'
 
 /** An item as it is added. `ref` names it, so another added alongside can point at it. */
 export interface ItemSpec {
@@ -389,12 +388,6 @@ export interface WorkflowsAPI {
   fileText: (itemId: string) => Promise<{ text: string | null; editable: boolean; path: string | null; size: number | null; missing: boolean }>
   /** Writes text over the file on this machine a file item refers to. */
   saveFileText: (itemId: string, text: string) => Promise<void>
-  /** The search page's sections (search.ts), as configured: the defaults when nothing is. */
-  searchSections: () => Promise<SearchSection[]>
-  /** Replaces the search page's sections; null goes back to the defaults. */
-  setSearchSections: (sections: SearchSection[] | null) => Promise<void>
-  /** A query or function section's rows, for what is typed. */
-  runSearchSection: (section: SearchSection, text: string) => Promise<SearchRow[]>
   /** Runs a tool (any action: the same registry as the MCP and a script's tools) as the person, from a task's `/`: what it answered is a note in the task. */
   runTool: (itemId: string, name: string, args: Record<string, unknown>) => Promise<unknown>
   /** Pins items to an item, or (with `on` false) unpins them. */
@@ -409,8 +402,8 @@ export interface WorkflowsAPI {
   subtree: (itemId: string) => Promise<ItemInfo[]>
   /** An item as text at a size, as bots read it (`engine/views.ts`): Copy in its menu. Null if there is no such item. */
   viewText: (itemId: string, size: 'pill' | 'card' | 'focus') => Promise<string | null>
-  /** What was assigned to any of `who` and no longer is (an `assignees` link to them removed), the latest first: the finder's Recently unassigned. */
-  unassigned: (who: string[]) => Promise<Item[]>
+  /** What the finder reads from the store for any of `who`: what is pinned to them, and what was assigned to them and no longer is (the latest first). */
+  finder: (who: string[]) => Promise<{ pinned: Item[]; unassigned: Item[] }>
   /** Gives an item to an owner (a username or a bot), or to nobody (null). */
   setOwner: (itemId: string, owner: string | null) => Promise<void>
   customActions: () => Promise<CustomAction[]>
@@ -541,7 +534,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'moveItem', 'newNotes', 'subtree', 'viewText', 'unassigned', 'searchSections', 'setSearchSections', 'runSearchSection', 'setOwner', 'editLog',
+  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'moveItem', 'newNotes', 'subtree', 'viewText', 'finder', 'setOwner', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'trustBotFolders', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',

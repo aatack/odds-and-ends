@@ -25,7 +25,6 @@ export const DISPLAY: Record<ItemKind, Display> = {
   script: 'comments',
   approval: 'focus',
   link: 'focus',
-  search: 'focus',
   slack_message: 'focus',
   slack_channel: 'focus',
   file: 'focus',

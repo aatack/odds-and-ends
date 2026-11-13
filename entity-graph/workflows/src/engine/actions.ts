@@ -3,8 +3,6 @@
 
 import { z } from 'zod'
 import { runScript } from './script'
-import { SEARCH_DOC } from './itemTypes'
-import type { SearchSection } from '../shared/search'
 import type { ItemSpec } from '../shared/types'
 import type { Action } from './integrations'
 import { PARADIGM } from './paradigm'
@@ -364,23 +362,6 @@ export const itemActions: Action[] = [
     run: async (a, ctx) => {
       for (const id of a.item_ids as string[]) await ctx.engine.moveItem(id, a.to as string | null, ctx.actor, (a.into as 'comments' | 'notes' | undefined) ?? 'comments')
       return 'Moved.'
-    },
-  },
-  {
-    name: 'search_sections',
-    unsafe: false,
-    description: "The search page's sections, as configured, and how they work (one list for the whole app). See set_search_sections.",
-    input: {},
-    run: async (_a, { engine }) => ({ sections: engine.searchSections(), how: SEARCH_DOC }),
-  },
-  {
-    name: 'set_search_sections',
-    unsafe: false,
-    description: "Replace the search page's sections (the Tasks view and every picker), or put the defaults back (sections: null). " + SEARCH_DOC,
-    input: { sections: z.array(z.record(z.unknown())).nullable() },
-    run: async (a, ctx) => {
-      await ctx.engine.setSearchSections(a.sections as SearchSection[] | null, ctx.actor)
-      return { sections: ctx.engine.searchSections() }
     },
   },
   {

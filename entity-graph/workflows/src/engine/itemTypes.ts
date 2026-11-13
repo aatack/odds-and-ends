@@ -132,31 +132,6 @@ export const bot: ItemType = {
   describe: (p) => `@${p.name}`,
 }
 
-export const SEARCH_DOC =
-  "The search page's sections: one list for the whole app (home, an item's Assignments, and every picker: @ in the chat input, and the rest). " +
-  'Every finder starts with what is assigned to whoever it is for, what they own, and what was assigned to them lately and is no longer; then these; then, while something is typed, everything else that matches. ' +
-  'It is kept on the one `search` item, which sits in no task; search_sections reads it, set_search_sections replaces it. Each section, in order:\n' +
-  "- { kind: 'builtin', id, label? }: one of the finder's own: viewed (recently viewed), needsYou, withBots, waiting, closed (today).\n" +
-  "- { kind: 'query', label, filter, limit? }: a filter, as egdb's find takes it ({ eq: { key, value } }, ne, lt/le/gt/ge, contains, " +
-  'contains_ignore_case, prefix, in: { key, values }, is_null, not_null, and: [], or: [], not), over every item\'s values (type, ' +
-  'title, text, description, resolved, the rest of its params) and these made from its links: parent (the task it sits in), assignees ' +
-  '(who has it: eq matches any one), created_by, created_at. Rows are the items that match, the newest first.\n' +
-  "- { kind: 'function', label, source }: JavaScript, run as a script's body is (context and tools in scope, no unsafe tools), with " +
-  'context.text the filter typed so far; it returns rows: [{ id, type, left, right? }] (left and right in markdown; id is what Enter opens).\n' +
-  'The label heads the section. What is typed filters every section at once; a function runs again as it changes.\n' +
-  "Example: [{ kind: 'builtin', id: 'needsYou' }, { kind: 'query', label: 'Open scripts', filter: { and: [{ eq: { key: 'type', value: 'script' } }, " +
-  "{ eq: { key: 'resolved', value: false } }] } }]"
-
-export const search: ItemType = {
-  type: 'search',
-  description: SEARCH_DOC,
-  params: { sections: z.array(z.record(z.unknown())).describe('The sections, in order: see the description.') },
-  data: '—',
-  blocking: false,
-  bots: false,
-  describe: () => 'Search page sections',
-}
-
 export const user: ItemType = {
   type: 'user',
   description:
@@ -237,4 +212,4 @@ export const file: ItemType = {
   describe: (p) => String(p.title || p.name || p.path || 'File'),
 }
 
-export const ITEM_TYPES: ItemType[] = [topic, approval, script, link, file, search, slackMessage, slackChannel, bot, user]
+export const ITEM_TYPES: ItemType[] = [topic, approval, script, link, file, slackMessage, slackChannel, bot, user]

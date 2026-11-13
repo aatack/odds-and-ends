@@ -1,4 +1,3 @@
-import { BUILTIN_SECTIONS, DEFAULT_SECTIONS, matches, type SearchRow, type SearchSection } from '../shared/search'
 import { runScript } from './script'
 import { github } from './github'
 import { slackActions } from './slack'
@@ -108,7 +107,7 @@ export interface PromptItem {
 }
 
 /** What may sit in no topic: what is its own (topics, bots, people, scripts, the search item), and what is pinned rather than said (links, Slack, files). */
-const SIT_IN_NONE = ['topic', 'bot', 'user', 'search', 'script', 'link', 'slack_message', 'slack_channel', 'file']
+const SIT_IN_NONE = ['topic', 'bot', 'user', 'script', 'link', 'slack_message', 'slack_channel', 'file']
 /** What has an owner (an `owns` link): who it goes back to. */
 const OWNED = ['topic', 'bot', 'script']
 
@@ -315,11 +314,14 @@ export class Engine extends EventEmitter {
   }
 
   /**
-   * What was assigned to any of `who` and no longer is, the latest first, at most `limit`: from egdb's history of
-   * `assignees` links (one removed is how an item left them). Empty in a store with no history (in memory).
+   * What the finder reads from the store for whoever it is for (any of `who`): what is pinned to them (their `pins`
+   * links), and what was assigned to them and no longer is, the latest first, at most `limit` (from egdb's history of
+   * `assignees` links: one removed is how an item left them; none in a store with no history, in memory).
    */
-  async unassigned(who: string[], limit = 16, viewer = this.me()): Promise<Item[]> {
-    if (!who.length) return []
+  async finder(who: string[], limit = 16, viewer = this.me()): Promise<{ pinned: Item[]; unassigned: Item[] }> {
+    const items = (ids: string[]) => ids.flatMap((id) => this.get(id, viewer) ?? [])
+    const pinned = [...new Set(who.flatMap((w) => this.store.pins(w).map((p) => p.id)))]
+    if (!who.length) return { pinned: [], unassigned: [] }
     const log = await this.store.log({ entities: who, keys: ['assignees'], limit: 1000 })
     const ids: string[] = []
     for (const e of log) {
@@ -327,7 +329,7 @@ export class Engine extends EventEmitter {
       if (e.kind !== 'link' || !e.removed || !e.other || !who.includes(e.other) || ids.includes(e.entity)) continue
       if (this.row(e.entity) && !this.assignees(e.entity).some((a) => who.includes(a))) ids.push(e.entity)
     }
-    return ids.flatMap((id) => this.get(id, viewer) ?? [])
+    return { pinned: items(pinned), unassigned: items(ids) }
   }
 
   /** Who an item is assigned to: its `assignees` links, the earliest first. */
@@ -487,67 +489,6 @@ export class Engine extends EventEmitter {
     this.add(itemId, [{ type: 'topic', params: { text } }], actor)
     await this.idle()
     return out
-  }
-
-  /** The search page's sections, as kept on the `search` item; the defaults when there is none. */
-  searchSections(): SearchSection[] {
-    const r = this.store.ofType('search')[0]
-    return r && Array.isArray(r.params.sections) ? (r.params.sections as SearchSection[]) : DEFAULT_SECTIONS
-  }
-
-  /** Replaces the search page's sections (null: the defaults again), checking each; the `search` item is made the first time. */
-  async setSearchSections(sections: SearchSection[] | null, actor = this.me()): Promise<void> {
-    const next = sections ?? DEFAULT_SECTIONS
-    for (const s of next) {
-      if (s.kind === 'builtin' && !(BUILTIN_SECTIONS as readonly string[]).includes(s.id)) throw new Error(`No built-in section ${s.id}: one of ${BUILTIN_SECTIONS.join(', ')}.`)
-      else if (s.kind === 'query') matches({}, s.filter)
-      else if (s.kind === 'function' && !String(s.source ?? '').trim()) throw new Error(`The function section ${s.label} has no source.`)
-      else if (!['builtin', 'query', 'function'].includes(s.kind)) throw new Error(`A section's kind is builtin, query or function, not ${(s as { kind: string }).kind}.`)
-    }
-    const r = this.store.ofType('search')[0]
-    if (r) this.store.setParams(r.id, { ...r.params, sections: next }, actor, this.now())
-    else this.add(null, [{ type: 'search', params: { sections: next } }], actor)
-    this.emit('change')
-  }
-
-  /** A query's or a function's rows, for what is typed (a function is told it; a query's rows are filtered by the finder). */
-  async runSearchSection(section: SearchSection, text: string): Promise<SearchRow[]> {
-    if (section.kind === 'query') {
-      const rows = [...this.store.items.values()]
-        .filter((r) => r.type !== 'search' && matches(this.valuesOf(r), section.filter))
-        .sort((a, b) => b.created_at - a.created_at)
-        .slice(0, section.limit ?? 50)
-      return rows.map((r) => {
-        const e = this.toInfo(r)
-        return { id: r.id, type: r.type, left: e.summary, right: r.resolved && this.type(r.type).blocking ? (r.cancelled ? 'cancelled' : 'closed') : '' }
-      })
-    }
-    if (section.kind === 'function') {
-      const ran = await runScript(section.source, { text, now: new Date(this.now()).toISOString() }, (name, args) =>
-        this.callAction(name, args, { engine: this, author: 'bot', actor: 'script', itemId: null, runId: null }),
-      )
-      if (!Array.isArray(ran.value)) throw new Error(`${section.label}: it returned ${JSON.stringify(ran.value)?.slice(0, 100)}, not a list of rows.`)
-      return (ran.value as SearchRow[]).filter((x) => x && typeof x.id === 'string').map((x) => ({ id: x.id, type: String(x.type ?? 'topic'), left: String(x.left ?? x.id), right: x.right ? String(x.right) : '' }))
-    }
-    return []
-  }
-
-  /** An item's values, as a query reads them: its type and params, how it stands, and keys made from its links. */
-  private valuesOf(r: ItemRow): Record<string, unknown> {
-    const topic = r.type === 'topic'
-    return {
-      ...r.params,
-      // A topic also answers to its old type, so queries kept from before still match: a task had a status, a note not.
-      type: topic ? ['topic', r.params.open === undefined ? 'note' : 'task'] : r.type,
-      ...(topic ? { title: this.title(r.id, r.params) } : {}),
-      resolved: r.resolved,
-      cancelled: r.cancelled,
-      parent: r.parent_id,
-      assignees: this.assignees(r.id),
-      owner: this.owner(r.id),
-      created_by: r.created_by,
-      created_at: r.created_at,
-    }
   }
 
   /**
@@ -1206,7 +1147,6 @@ export class Engine extends EventEmitter {
     const keyed = (s: ItemSpec) => s.type === 'topic' && s.params.key && this.store.ofType('topic').some((r) => r.params.key === s.params.key)
     specs = specs.filter((s) => !keyed(s))
     if (!parentId && specs.some((s) => !SIT_IN_NONE.includes(s.type))) throw new Error(`Only these can sit in no topic: ${SIT_IN_NONE.join(', ')}.`)
-    if (parentId && specs.some((s) => s.type === 'search')) throw new Error('The search item sits in no topic.')
     if (parentId && specs.some((s) => s.type === 'bot' || s.type === 'user')) throw new Error('Bots and people sit in no topic.')
     if (parentId && this.row(parentId)?.type === 'bot' && specs.some((s) => s.type !== 'topic')) throw new Error("A bot's own chat holds only topics.")
     const ids: string[] = []

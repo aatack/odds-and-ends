@@ -1,17 +1,16 @@
 import fuzzysort from 'fuzzysort'
-import { useAtom, useAtomValue } from 'jotai'
-import { Bot, Check, Circle, Search, Settings2, User } from 'lucide-react'
-import { useContext, useEffect, useMemo, useRef, useState } from 'react'
-import type { SearchRow, SearchSection } from '../../shared/search'
-import { Markdown } from './components/ui/Markdown'
+import { useAtomValue } from 'jotai'
+import { Bot, Check, Plus, Search, User } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Item } from '../../shared/types'
 import { minutes } from './Chat'
 import { useItemMenu } from './ItemMenu'
-import { ItemIcon, TYPE_ICON, waitingOn } from './icons'
-import { SearchSectionsContext, sectionLabel, SECTIONS, type Recent } from './sections'
+import { ItemPicker } from './ItemPicker'
+import { ItemIcon, waitingOn } from './icons'
+import { FINDER_SECTIONS, SECTIONS, type Recent, type SectionId } from './sections'
 import { api } from './useWorkflows'
 import { Marked } from './components/ui/Marked'
-import { sameView, searchFocusAtom, viewsAtom } from './views'
+import { searchFocusAtom } from './views'
 
 /**
  * What a row says beside its icon: only what the icon can't. What a script
@@ -30,28 +29,32 @@ function detail(i: Item): string {
 /** A bot or person a finder offers: `status` is what its row says (by default, Assign). */
 type Someone = { id: string; name: string; bot?: boolean; status?: string }
 
-type Line =
-  | { key: string; item: Item; chosen?: boolean }
-  | { key: string; bot: Someone; chosen?: boolean }
-  | { key: string; row: SearchRow }
-  | { key: string; more: string; n: number }
+type Line = { key: string; item: Item; chosen?: boolean } | { key: string; bot: Someone; chosen?: boolean } | { key: string; more: string; n: number }
+
+type Act = (fn: () => Promise<unknown>) => Promise<void>
+/** The sections that show a link from whoever the finder is for, and so can be added to (its + opens the picker). */
+const ADDABLE: Partial<Record<SectionId, { verb: string; title: string }>> = {
+  assigned: { verb: 'Assign', title: 'Assign something' },
+  owned: { verb: 'Own', title: 'Own something' },
+  pinned: { verb: 'Pin', title: 'Pin something' },
+}
 
 /**
- * The finder: items in sections (`sections`, in order; see `SECTIONS`), under a
- * search line like the chat input. Each section shows `perSection` rows, then
- * "n more", which shows the rest. Typing filters the titles fuzzily (an item
- * then shows in only the first section that has it); the arrow keys move through
- * what is left, Enter opens one (or shows a section's rest), and Tab makes a new
- * item with what was typed as its title (the Tasks view: `onTab`; a picker has none). The pickers are this too, with Enter
- * (and a click) picking instead: `verb` says which. With `selected`, what is
- * selected comes first, in a section of its own, ticked (a multiselect picker:
- * picking a row toggles it). Escape with nothing typed calls `onEscape`.
+ * The finder, one view wherever items are found: home, an item's Assignments, and every item picker (`ItemPicker`,
+ * this in a modal). Its sections (`FINDER_SECTIONS`, see `SECTIONS`) are the same everywhere: what is assigned to
+ * whoever it is for (`recent.who`, else you), what they own, what is pinned to them, what was assigned to them lately,
+ * then, while something is typed, everything else that matches. Each shows `perSection` rows, then "n more", which
+ * shows the rest; an item shows in the first section that has it. Typing filters the titles fuzzily; the arrow keys
+ * move through what is left, Enter opens one (or shows a section's rest), and Tab makes a new item with what was typed
+ * as its title (`onTab`; a picker has none). A picker picks rather than opens: `verb` says which. With `selected`,
+ * what is selected comes first, ticked (a multiselect: picking a row toggles it). Given `act`, the link sections show
+ * even when empty, each with a + that picks something to link. Escape with nothing typed calls `onEscape`.
  */
 export function ItemsList(props: {
   items: Item[]
   recent: Recent
-  /** Its sections, in order; left out, the search page's as configured (the `search` item). */
-  sections?: SearchSection[]
+  /** Its sections, in order; left out, every finder's. Empty: the bots and people alone (a picker of people). */
+  sections?: SectionId[]
   perSection?: number
   /** Enter, or a click: the row chosen. */
   onOpen: (id: string) => void
@@ -66,53 +69,44 @@ export function ItemsList(props: {
   selected?: string[]
   /** Escape with nothing typed. */
   onEscape?: () => void
+  /** Given, the link sections have a + (assign, own, pin something), done through this. */
+  act?: Act
   /** On a phone: buttons rather than keys (a New button for Tab), rows of two lines, and the search line focused only when asked (it raises the keyboard). */
   mobile?: boolean
 }) {
-  const configured = useContext(SearchSectionsContext)
-  const { items, recent: given, sections = configured, perSection = 12, onOpen, onTab, verb = 'Open', bots = [], botsLabel, selected, onEscape, mobile = false } = props
+  const { items, recent: given, sections = FINDER_SECTIONS, perSection = 12, onOpen, onTab, verb = 'Open', bots = [], botsLabel, selected, onEscape, act, mobile = false } = props
   const [text, setText] = useState('')
-  // Recently unassigned: read from the store's history for whoever the finder is for, again as anything changes.
-  const [unassigned, setUnassigned] = useState<Item[]>([])
-  const whoKey = (given.who?.length ? given.who : [given.me]).join(',')
-  const wantsUnassigned = sections.some((s) => s.kind === 'builtin' && s.id === 'unassigned')
-  useEffect(() => {
-    if (!wantsUnassigned) return setUnassigned([])
-    let live = true
-    void api()
-      .unassigned(whoKey.split(','))
-      .then((got) => live && setUnassigned(got), () => live && setUnassigned([]))
-    return () => {
-      live = false
-    }
-  }, [whoKey, wantsUnassigned, items])
-  const recent = useMemo(() => ({ ...given, unassigned }), [given, unassigned])
   const [at, setAt] = useState(0)
   const [expanded, setExpanded] = useState<string[]>([])
-  // A query's or a function's rows: asked for again a moment after the typing stops (a function is told what is typed).
-  const [rows, setRows] = useState<Record<number, SearchRow[] | { error: string }>>({})
-  const asked = useMemo(() => JSON.stringify(sections.map((s) => (s.kind === 'builtin' ? null : s))), [sections])
+  // What is pinned to whoever the finder is for, and what was assigned to them lately: read from the store (the latter
+  // from its history), again as anything changes.
+  const [extra, setExtra] = useState<{ pinned: Item[]; unassigned: Item[] }>({ pinned: [], unassigned: [] })
+  const who = given.who?.length ? given.who : [given.me]
+  const whoKey = who.join(',')
+  const wantsExtra = sections.includes('pinned') || sections.includes('unassigned')
   useEffect(() => {
-    const wanted = sections.map((s, i) => [s, i] as const).filter(([s]) => s.kind !== 'builtin')
-    if (!wanted.length) return setRows({})
+    if (!wantsExtra) return setExtra({ pinned: [], unassigned: [] })
     let live = true
-    const t = setTimeout(() => {
-      for (const [s, i] of wanted)
-        api()
-          .runSearchSection(s, text.trim())
-          .then(
-            (r) => live && setRows((all) => ({ ...all, [i]: r })),
-            (e: Error) => live && setRows((all) => ({ ...all, [i]: { error: e.message } })),
-          )
-    }, 250)
+    void api()
+      .finder(whoKey.split(','))
+      .then((got) => live && setExtra(got), () => live && setExtra({ pinned: [], unassigned: [] }))
     return () => {
       live = false
-      clearTimeout(t)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asked, text])
-  const [views, setViews] = useAtom(viewsAtom)
-  const configure = () => !sameView(views[views.length - 1], { kind: 'search' }) && setViews([...views, { kind: 'search' }])
+  }, [whoKey, wantsExtra, items])
+  const recent = useMemo(() => ({ ...given, ...extra }), [given, extra])
+  // The + of a link section: which link is being made, once something is picked.
+  const [adding, setAdding] = useState<SectionId | null>(null)
+  const add = (id: string) => {
+    const kind = adding
+    setAdding(null)
+    if (!act || !kind) return
+    void act(async () => {
+      if (kind === 'assigned') for (const w of who) await api().assign(id, w, true)
+      if (kind === 'owned') await api().setOwner(id, who[0])
+      if (kind === 'pinned') for (const w of who) await api().pin(w, [id], true)
+    })
+  }
   const box = useRef<HTMLInputElement>(null)
   const menu = useItemMenu()
   const focusAsked = useAtomValue(searchFocusAtom)
@@ -122,56 +116,43 @@ export function ItemsList(props: {
 
   // The sections, each filtered (best match first) when something is typed, and cut to `perSection` unless expanded.
   const groups = useMemo(() => {
-    // What is typed is matched against every item the finder has, and those only the store's history gave it.
-    const known = [...items, ...unassigned.filter((u) => !items.some((i) => i.id === u.id))]
-    const matched = text.trim()
-      ? new Map(fuzzysort.go(text, known, { key: 'title', threshold: 0.2 }).map((r, i) => [r.obj.id, i]))
-      : null
+    // What is typed is matched against every item the finder has, and those only the store gave it.
+    const known = [...items, ...[...extra.pinned, ...extra.unassigned].filter((u) => !items.some((i) => i.id === u.id))]
+    const matched = text.trim() ? new Map(fuzzysort.go(text, known, { key: 'title', threshold: 0.2 }).map((r, i) => [r.obj.id, i])) : null
     const chosen = new Set(selected ?? [])
     const seen = new Set<string>(chosen)
     const chosenLines: Line[] = [
       ...bots.filter((b) => chosen.has(b.id)).map((bot) => ({ key: `chosen:${bot.id}`, bot, chosen: true })),
-      ...items.filter((i) => chosen.has(i.id)).map((item) => ({ key: `chosen:${item.id}`, item, chosen: true })),
+      ...known.filter((i) => chosen.has(i.id)).map((item) => ({ key: `chosen:${item.id}`, item, chosen: true })),
     ]
-    const chosenGroup = chosenLines.length ? [{ id: 'selected', label: 'Selected', count: chosenLines.length, lines: chosenLines }] : []
+    const chosenGroup = chosenLines.length ? [{ id: 'selected', label: 'Selected', count: chosenLines.length, lines: chosenLines, add: false }] : []
     const others = bots.filter((b) => !chosen.has(b.id))
     const botLines: Line[] = (text.trim() ? fuzzysort.go(text, others, { key: 'name', threshold: 0.2 }).map((r) => r.obj) : others).map((bot) => ({
       key: `bot:${bot.id}`,
       bot,
     }))
     const botGroup = botLines.length
-      ? [{ id: 'bots', label: botsLabel ?? (selected ? 'Others' : 'People and bots'), count: botLines.length, lines: botLines }]
+      ? [{ id: 'bots', label: botsLabel ?? (selected ? 'Others' : 'People and bots'), count: botLines.length, lines: botLines, add: false }]
       : []
     const itemGroups = sections
-      .map((s, i) => {
-        const id = s.kind === 'builtin' ? s.id : `s${i}`
-        if (s.kind !== 'builtin') {
-          const got = rows[i]
-          if (got && 'error' in got) return { id, label: s.label, count: 1, lines: [{ key: `${id}:error`, row: { id: '', type: '', left: got.error } }] as Line[] }
-          let all = got ?? []
-          if (text.trim()) all = fuzzysort.go(text, all, { key: 'left', threshold: 0.2 }).map((r) => r.obj)
-          const shown = expanded.includes(id) ? all : all.slice(0, perSection)
-          const lines: Line[] = shown.map((row) => ({ key: `${id}:${row.id}`, row }))
-          if (shown.length < all.length) lines.push({ key: `${id}:more`, more: id, n: all.length - shown.length })
-          return { id, label: s.label, count: all.length, lines }
-        }
+      .map((id) => {
         // Everything else is only for what is typed; each item shows in the first section that has it.
-        let all = s.id === 'everything' && !matched ? [] : SECTIONS[s.id].items(items, recent)
+        let all = id === 'everything' && !matched ? [] : SECTIONS[id].items(items, recent)
         all = all.filter((i) => !chosen.has(i.id) && !seen.has(i.id))
         if (matched) all = all.filter((i) => matched.has(i.id)).sort((a, b) => matched.get(a.id)! - matched.get(b.id)!)
         all.forEach((i) => seen.add(i.id))
         const shown = expanded.includes(id) ? all : all.slice(0, perSection)
         const lines: Line[] = shown.map((item) => ({ key: `${id}:${item.id}`, item }))
         if (shown.length < all.length) lines.push({ key: `${id}:more`, more: id, n: all.length - shown.length })
-        return { id, label: s.label ?? sectionLabel(s.id, recent), count: all.length, lines }
+        return { id, label: SECTIONS[id].label, count: all.length, lines, add: !!act && !!ADDABLE[id] }
       })
-      .filter((g) => g.count)
+      // A link section that can be added to shows even when empty, but not while something is typed.
+      .filter((g) => g.count || (g.add && !matched))
     return botsLabel ? [...chosenGroup, ...itemGroups, ...botGroup] : [...chosenGroup, ...botGroup, ...itemGroups]
-  }, [items, recent, unassigned, sections, rows, perSection, expanded, text, bots, botsLabel, selected])
+  }, [items, recent, extra, sections, perSection, expanded, text, bots, botsLabel, selected, act])
   const flat = groups.flatMap((g) => g.lines)
   const current = Math.min(at, Math.max(flat.length - 1, 0))
-  const choose = (line: Line) =>
-    'item' in line ? onOpen(line.item.id) : 'bot' in line ? onOpen(line.bot.id) : 'row' in line ? line.row.id && onOpen(line.row.id) : setExpanded([...expanded, line.more])
+  const choose = (line: Line) => ('item' in line ? onOpen(line.item.id) : 'bot' in line ? onOpen(line.bot.id) : setExpanded([...expanded, line.more]))
   // The highlighted row stays in sight as the arrows move it.
   const list = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -234,9 +215,6 @@ export function ItemsList(props: {
           )
         ) : (
           <span className="keys">
-            <button data-ui className="search-configure" title="Configure the search page's sections" aria-label="Configure sections" onMouseDown={(e) => e.preventDefault()} onClick={configure}>
-              <Settings2 className="icon" />
-            </button>
             <span className="key-pill">
               <kbd>Enter</kbd> {verb}
             </span>
@@ -253,6 +231,11 @@ export function ItemsList(props: {
         <section key={g.id} className="list items-group">
           <h3>
             {g.label} <span className="count">{g.count}</span>
+            {g.add && (
+              <button data-ui className="side-add" title={ADDABLE[g.id as SectionId]!.title} aria-label={ADDABLE[g.id as SectionId]!.title} onClick={() => setAdding(g.id as SectionId)}>
+                <Plus className="icon" />
+              </button>
+            )}
           </h3>
           {g.lines.map((line) => {
             const selected = flat[current]?.key === line.key ? 'selected' : ''
@@ -265,17 +248,6 @@ export function ItemsList(props: {
                   <span className="muted row-status">{line.chosen ? 'Remove' : (line.bot.status ?? 'Assign')}</span>
                 </div>
               )
-            if ('row' in line) {
-              const r = line.row
-              const Icon = TYPE_ICON[r.type as keyof typeof TYPE_ICON] ?? Circle
-              return (
-                <div key={line.key} className={`row ${selected}`} onClick={() => choose(line)} onMouseMove={hover} {...(r.id ? menu(r.id) : {})}>
-                  {r.id ? <Icon className="icon" /> : null}
-                  <Markdown className={`row-title row-md ${r.id ? '' : 'error-text'}`} text={r.left} highlight={text} />
-                  {r.right && <Markdown className="muted row-status row-md" text={r.right} highlight={text} />}
-                </div>
-              )
-            }
             if (!('item' in line))
               return (
                 <div key={line.key} className={`row more ${selected}`} onClick={() => choose(line)} onMouseMove={hover}>
@@ -294,7 +266,17 @@ export function ItemsList(props: {
           })}
         </section>
       ))}
-      {!flat.length && <p className="muted">{text.trim() ? 'Nothing matches.' : 'No tasks.'}</p>}
+      {!flat.length && !groups.length && <p className="muted">{text.trim() ? 'Nothing matches.' : 'No tasks.'}</p>}
+      {adding && (
+        <ItemPicker
+          title={ADDABLE[adding]!.title}
+          verb={ADDABLE[adding]!.verb}
+          items={items.filter((i) => !SECTIONS[adding].items(items, recent).some((h) => h.id === i.id) && !who.includes(i.id))}
+          recent={given}
+          onPick={add}
+          onClose={() => setAdding(null)}
+        />
+      )}
     </div>
   )
 }

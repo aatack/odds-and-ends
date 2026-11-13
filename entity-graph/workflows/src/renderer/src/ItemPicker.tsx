@@ -1,8 +1,7 @@
 import type { Item } from '../../shared/types'
 import { Modal } from './components/ui/Modal'
 import { ItemsList } from './ItemsList'
-import type { SearchSection } from '../../shared/search'
-import type { Recent } from './sections'
+import type { Recent, SectionId } from './sections'
 
 /** One pick, which closes the picker; or a multiselect, whose `value` is what is selected and `setValue` changes it. */
 type Picking = { multiple?: false; onPick: (id: string) => void } | { multiple: true; value: string[]; setValue: (ids: string[]) => void }
@@ -21,7 +20,7 @@ export function ItemPicker(
     items: Item[]
     recent: Recent
     /** Left out, the search page's as configured. */
-    sections?: SearchSection[]
+    sections?: SectionId[]
     perSection?: number
     verb: string
     /** Tab: with what is typed. Left out, Tab does nothing. */
