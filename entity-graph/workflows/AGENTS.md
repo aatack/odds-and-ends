@@ -366,8 +366,8 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   **sections** (`FINDER_SECTIONS` in `sections.ts`), for whoever it is for (`recent.who`, else you): **Assigned**,
   **Owned**, **Pinned** (what is pinned to them), **Recently unassigned** (what was assigned to them and no longer is,
   the latest 16, from egdb's history of `assignees` links), then, while something is typed, **Everything else** that
-  matches. Pinned and Recently unassigned come from the store (`Engine.finder`). An item shows in the first section
-  that has it. Given `act` (home, Assignments), Assigned, Owned and Pinned show even when empty, each with a + that
+  matches. Pinned and Recently unassigned come from the store (`Engine.finder`). An item shows in every section
+  that has it (Everything else only has what none above does). Given `act` (home, Assignments), Assigned, Owned and Pinned show even when empty, each with a + that
   opens the picker and links what is picked. People pickers offer people and bots alone (`sections={[]}`). Each
   section shows a number of rows before an "n more" row (Enter or a click shows the rest). Home shows 12 a
   section; pickers in a modal, 6. Recently viewed is kept by the app, in local storage (`viewedAtom`). A

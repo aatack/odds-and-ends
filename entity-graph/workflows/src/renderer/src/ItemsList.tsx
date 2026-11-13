@@ -44,7 +44,7 @@ const ADDABLE: Partial<Record<SectionId, { verb: string; title: string }>> = {
  * this in a modal). Its sections (`FINDER_SECTIONS`, see `SECTIONS`) are the same everywhere: what is assigned to
  * whoever it is for (`recent.who`, else you), what they own, what is pinned to them, what was assigned to them lately,
  * then, while something is typed, everything else that matches. Each shows `perSection` rows, then "n more", which
- * shows the rest; an item shows in the first section that has it. Typing filters the titles fuzzily; the arrow keys
+ * shows the rest; an item shows in every section that has it. Typing filters the titles fuzzily; the arrow keys
  * move through what is left, Enter opens one (or shows a section's rest), and Tab makes a new item with what was typed
  * as its title (`onTab`; a picker has none). A picker picks rather than opens: `verb` says which. With `selected`,
  * what is selected comes first, ticked (a multiselect: picking a row toggles it). Given `act`, the link sections show
@@ -136,9 +136,10 @@ export function ItemsList(props: {
       : []
     const itemGroups = sections
       .map((id) => {
-        // Everything else is only for what is typed; each item shows in the first section that has it.
+        // An item shows in every section that has it (pinned to you and assigned to you, say). Everything else is only
+        // for what is typed, and only what no section above has.
         let all = id === 'everything' && !matched ? [] : SECTIONS[id].items(items, recent)
-        all = all.filter((i) => !chosen.has(i.id) && !seen.has(i.id))
+        all = all.filter((i) => !chosen.has(i.id) && (id !== 'everything' || !seen.has(i.id)))
         if (matched) all = all.filter((i) => matched.has(i.id)).sort((a, b) => matched.get(a.id)! - matched.get(b.id)!)
         all.forEach((i) => seen.add(i.id))
         const shown = expanded.includes(id) ? all : all.slice(0, perSection)
