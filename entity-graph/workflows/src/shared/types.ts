@@ -18,6 +18,8 @@ export interface ItemSpec {
   ref?: string
   /** Pin it to the item it is added in, too. */
   pin?: boolean
+  /** Nobody owns it or is given it, whoever made it: only its values (an open note, made in the notes view). */
+  bare?: boolean
 }
 
 /**
@@ -397,6 +399,8 @@ export interface WorkflowsAPI {
   pin: (itemId: string, itemIds: string[], on: boolean) => Promise<void>
   /** Sets one value on an item (null clears it): a topic's text, `section`, `open` (its status) or `display`. */
   setValue: (itemId: string, key: string, value: unknown) => Promise<void>
+  /** Sets an item's status and nothing else: no owner or assignees taken off or given back (a note, in the notes view). */
+  setOpen: (itemId: string, open: boolean | null) => Promise<void>
   /** Moves an item into another's notes (null: into none). */
   moveItem: (itemId: string, to: string | null) => Promise<void>
   /** Makes a set of notes: a topic titled so that shows its notes, in no item, pinned to `pinTo`. Answers its id. */
@@ -520,7 +524,7 @@ export interface LogEntry {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'cancel', 'runNow', 'close', 'reopen', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'moveItem', 'newNotes', 'subtree', 'viewText', 'setInferredType', 'finder', 'items', 'setOwner', 'editLog',
+  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'cancel', 'runNow', 'close', 'reopen', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'setOpen', 'moveItem', 'newNotes', 'subtree', 'viewText', 'setInferredType', 'finder', 'items', 'setOwner', 'editLog',
   'typeScripts', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'trustBotFolders', 'slackView', 'slackConversations', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',

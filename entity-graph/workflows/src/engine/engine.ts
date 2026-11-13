@@ -549,6 +549,20 @@ export class Engine extends EventEmitter {
     this.emit('change')
   }
 
+  /**
+   * Sets a topic's status (open, closed, or none) and nothing else: unlike `close` and `reopen`, its owner and who has
+   * it stay as they are, and nothing is cancelled or said. The notes view's, where a status is a checkbox.
+   */
+  async setOpen(id: string, open: boolean | null, actor = this.me()): Promise<void> {
+    const row = this.row(id)
+    if (!row) throw new Error(`No item ${id}.`)
+    if (row.type !== 'topic') throw new Error('Only a topic has a status of its own; close or reopen anything else.')
+    if (open !== true && open !== false && open !== null) throw new Error('An item is open (true), closed (false) or has no status (null).')
+    if ((row.params.open ?? null) === open) return
+    this.store.setOpen(id, open, actor, this.now())
+    this.emit('change')
+  }
+
   // ---- people, and who has what ----
 
   /** Every person, the first made first. */
@@ -1142,7 +1156,7 @@ export class Engine extends EventEmitter {
       // Prepared now, so a bad one fails the whole list; added in the topic as it is.
       for (const k of ['comments', 'notes'] as const) if (s.type === 'topic' && params[k]) params[k] = this.prepare(params[k] as ItemSpec[], author)
       const expanded = type.expand ? type.expand(params, author) : [{ type: s.type, params }]
-      return expanded.map((e, i) => ({ type: e.type as ItemSpec['type'], params: e.params, ref: i === 0 ? (s.ref ?? e.ref) : e.ref, ...(i === 0 && s.pin ? { pin: true } : {}) }))
+      return expanded.map((e, i) => ({ type: e.type as ItemSpec['type'], params: e.params, ref: i === 0 ? (s.ref ?? e.ref) : e.ref, ...(i === 0 && s.pin ? { pin: true } : {}), ...(i === 0 && s.bare ? { bare: true } : {}) }))
     })
   }
 
@@ -1195,7 +1209,7 @@ export class Engine extends EventEmitter {
         data: null, memo: null, next_check_at: null, last_error: null,
         runs: 0, added_n: 0, resolved_n: 0,
       })
-      if (OWNED.includes(spec.type)) {
+      if (OWNED.includes(spec.type) && !spec.bare) {
         const owner = this.ownerFor(createdBy, parentId)
         if (owner) this.store.setOwner(id, owner, createdBy, at)
       }
@@ -1203,7 +1217,7 @@ export class Engine extends EventEmitter {
         if (Array.isArray(comments) && comments.length) this.addNow(id, comments as ItemSpec[], createdBy, id, 'comments')
         if (Array.isArray(notes) && notes.length) this.addNow(id, notes as ItemSpec[], createdBy, id, 'notes')
         // A new open topic goes to those given; else, made by a person, to them; else (a bot made it) to nobody.
-        const to = Array.isArray(assignees) && assignees.length ? (assignees as string[]) : params.open === true && this.isUser(createdBy) ? [createdBy] : []
+        const to = Array.isArray(assignees) && assignees.length ? (assignees as string[]) : params.open === true && this.isUser(createdBy) && !spec.bare ? [createdBy] : []
         for (const a of to) this.setAssignee(id, a, true, createdBy)
       }
       // An open topic made in another is pinned to it (a subtask), as is anything added with `pin`.

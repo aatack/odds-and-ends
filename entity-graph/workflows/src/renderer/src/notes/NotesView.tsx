@@ -17,7 +17,7 @@ import type { Recent } from '../sections'
 import { modalOpen } from '../state/ui'
 import { TextInput, type Mentions } from '../TextInput'
 import { findAtom } from '../views'
-import { clearNotesError, createNote, notesError, moveNote, resolve, setNoteValue, useNotes, type NotesTree } from './store'
+import { clearNotesError, createNote, notesError, moveNote, resolve, setNoteOpen, setNoteValue, useNotes, type NotesTree } from './store'
 import './notes.css'
 
 const storage = <T,>() => createJSONStorage<T>(() => localStorage)
@@ -226,7 +226,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
     else if (k === 'Enter') run(() => startCreate())
     else if (k === '/') run(() => startCreate({ section: true }))
     else if (k === '?') run(() => startCreate({ open: true }))
-    else if (k === '>') run(() => setNoteValue(selected.id, 'open', selected.info.params.open === undefined ? true : selected.info.params.open === true ? false : null))
+    else if (k === '>') run(() => selected.info.type === 'topic' && setNoteOpen(selected.id, selected.info.params.open === undefined ? true : selected.info.params.open === true ? false : null))
     else if (k === 'q') run(() => setSectionsOnly((v) => !v))
     else if (k === 'Q') run(() => setOpenOnly((v) => !v))
     else if (k === 'd') run(() => selected.id !== root && onOpen(selected.id))

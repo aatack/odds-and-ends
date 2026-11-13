@@ -38,6 +38,7 @@ export function handlers(engine: Engine, admin: Admin, me: string, source = ''):
     runTool: (itemId, name, args) => engine.runTool(itemId, name, args, me),
     pin: (itemId, itemIds, on) => engine.pin(itemId, itemIds, on, me),
     setValue: (itemId, key, value) => engine.setValue(itemId, key, value, me),
+    setOpen: (itemId, open) => engine.setOpen(itemId, open, me),
     moveItem: (itemId, to) => engine.moveItem(itemId, to, me),
     newNotes: (title, pinTo) => engine.newNotes(title, pinTo, me),
     subtree: (itemId) => engine.subtree(itemId),

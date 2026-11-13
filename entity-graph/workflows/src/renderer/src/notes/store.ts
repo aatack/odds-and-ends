@@ -12,6 +12,7 @@ import { api } from '../useWorkflows'
 type Op =
   | { kind: 'create'; temp: string; parent: string; params: Record<string, unknown> }
   | { kind: 'set'; id: string; key: string; value: unknown }
+  | { kind: 'open'; id: string; value: boolean | null }
   | { kind: 'move'; id: string; to: string | null }
 
 type Pending = { op: Op; doneAt: number | null }
@@ -64,9 +65,11 @@ let chain: Promise<void> = Promise.resolve()
 
 async function send(op: Op): Promise<void> {
   if (op.kind === 'create') {
-    const [id] = await api().addItems(resolve(op.parent), [{ type: 'topic', params: op.params }], 'notes')
+    // An open note is only a checkbox: nobody owns it or is given it.
+    const [id] = await api().addItems(resolve(op.parent), [{ type: 'topic', params: op.params, ...(op.params.open === true ? { bare: true } : {}) }], 'notes')
     real.set(op.temp, id)
   } else if (op.kind === 'set') await api().setValue(resolve(op.id), op.key, op.value)
+  else if (op.kind === 'open') await api().setOpen(resolve(op.id), op.value)
   else await api().moveItem(resolve(op.id), op.to && resolve(op.to))
 }
 
@@ -98,6 +101,9 @@ export function createNote(parent: string, params: Record<string, unknown>): str
 
 /** Sets one value on an item (null clears it). */
 export const setNoteValue = (id: string, key: string, value: unknown) => enqueue({ kind: 'set', id, key, value })
+
+/** Sets a note's status (open, closed, or none: null) and nothing else: its owner and who has it stay as they are. */
+export const setNoteOpen = (id: string, value: boolean | null) => enqueue({ kind: 'open', id, value })
 
 /** Moves an item into another (null: into none). */
 export const moveNote = (id: string, to: string | null) => enqueue({ kind: 'move', id, to })
@@ -136,13 +142,14 @@ function current(): NotesTree {
       is.set(id, placeholder(id, parent, op.params))
       ks.set(id, ks.get(id) ?? [])
       ks.set(parent, [...(ks.get(parent) ?? []), id])
-    } else if (op.kind === 'set') {
+    } else if (op.kind === 'set' || op.kind === 'open') {
+      const [key, value] = op.kind === 'set' ? [op.key, op.value] : ['open', op.value]
       const id = resolve(op.id)
       const i = is.get(id)
       if (!i) continue
-      const params = { ...i.params, [op.key]: op.value }
-      if (op.value === null || op.value === undefined) delete params[op.key]
-      is.set(id, { ...i, params })
+      const params = { ...i.params, [key]: value }
+      if (value === null || value === undefined) delete params[key]
+      is.set(id, { ...i, params, ...(op.kind === 'open' ? { closed: value === false } : {}) })
     } else {
       const id = resolve(op.id)
       const to = op.to && resolve(op.to)
