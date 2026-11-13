@@ -305,26 +305,48 @@ button[data-ui].blocker-text { text-align: left; padding: 0; overflow: hidden; t
 .keys { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: flex; gap: 6px; pointer-events: none; }
 .key-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px 2px 3px; border-radius: 10px; background: var(--color-gray-200); color: var(--color-gray-600); font-size: 11px; }
 .key-pill kbd { font: inherit; font-size: 10px; padding: 1px 5px; border-radius: 6px; background: var(--color-gray-300); color: var(--ink); }
-/* No sidebar: the content fills the window, in a centred column that stays readable on a wide screen. */
-.app { display: block; height: 100vh; }
-/* The gutters keep the corner buttons (52px and 64px from the edges) clear of the column when the window is narrow. */
-.main { height: 100vh; padding: 0 72px; display: flex; flex-direction: row; justify-content: center; overflow: hidden; }
+/* Three columns on a desktop: the pages (`.side-nav`), the view in a column that stays readable on a wide screen, and
+   the item's people, actions and pins (`.side-pane`). A phone has the middle alone. */
+.app { display: flex; height: 100vh; }
+.main { flex: 1; min-width: 0; height: 100vh; padding: 0 24px; display: flex; flex-direction: row; justify-content: center; overflow: hidden; }
 .content { width: 100%; max-width: 920px; height: 100%; display: flex; flex-direction: column; }
-/* A task with pins: the column widens, and its pins take the right of it, beside the chat. */
-.content:has(.with-pins) { max-width: 1260px; }
-.with-pins { flex: 1; min-height: 0; display: flex; gap: 16px; }
-.with-pins > :first-child { flex: 1; min-width: 0; }
-.pins-pane { flex: none; width: 320px; overflow-y: auto; padding: 4px 16px 24px 0; }
-.pins { display: flex; flex-direction: column; gap: 16px; width: 100%; }
-.pin-list { display: flex; flex-direction: column; gap: 6px; }
-.pin-list h3 { margin: 0; font-size: 12px; font-weight: 500; }
-.pin-card { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: 10px; background: var(--color-gray-100); overflow-wrap: anywhere; }
-.pin-card:hover { background: var(--line); }
-.pin-card .type-icon { margin: 1px 0 0; }
-.pin-body { flex: 1; min-width: 0; max-height: 240px; overflow: hidden; }
+.side-nav { flex: none; width: 200px; display: flex; flex-direction: column; justify-content: space-between; gap: 12px; padding: 12px 8px; border-right: 1px solid var(--line); }
+.side-nav-pages { display: flex; flex-direction: column; gap: 2px; }
+button[data-ui].side-nav-page { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 10px; border-radius: 6px; background: none; color: var(--muted); font-size: 13px; text-align: left; }
+button[data-ui].side-nav-page:hover { background: var(--color-gray-100); color: var(--ink); filter: none; }
+button[data-ui].side-nav-page.chosen { background: var(--color-gray-100); color: var(--ink); }
+.side-nav-page .icon { width: 15px; height: 15px; flex: none; }
+.side-nav-page .menu-status { margin-left: auto; }
+.side-nav-me .pill-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-nav-chevron { color: var(--muted); }
+.side-choices { display: flex; flex-direction: column; gap: 2px; padding: 4px 6px; font-size: 12px; }
+.side-choices > span { padding: 0 6px; }
+.side-choices .menu-choices button[data-ui] { width: auto; padding: 3px 7px; font-size: 12px; border-radius: 5px; background: none; color: var(--ink); }
+.side-choices .menu-choices button[data-ui].chosen { background: var(--color-gray-300); }
+.side-pane { flex: none; width: 300px; overflow-y: auto; padding: 14px 16px 24px; border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 22px; }
+.side-section { display: flex; flex-direction: column; gap: 8px; }
+.side-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.side-label { flex: none; width: 72px; font-size: 12px; color: var(--muted); }
+.side-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+button[data-ui].side-action { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 12px; font-size: 12px; }
+.side-action .icon { width: 14px; height: 14px; }
+.side-heading { display: flex; align-items: center; justify-content: space-between; margin: 0; font-size: 12px; font-weight: 500; color: var(--muted); }
+button[data-ui].side-add { display: flex; padding: 2px; border-radius: 6px; background: none; color: var(--muted); }
+button[data-ui].side-add:hover { background: var(--color-gray-100); color: var(--ink); filter: none; }
+.side-add .icon { width: 15px; height: 15px; }
+.side-none { margin: 0; font-size: 12px; }
+.side-pills { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.side-pill { display: flex; align-items: center; gap: 2px; max-width: 100%; }
+.side-pill .item-ref { min-width: 0; }
 button[data-ui].pin-off { flex: none; padding: 2px; border-radius: 6px; background: none; color: var(--muted); visibility: hidden; }
-.pin-card:hover .pin-off { visibility: visible; }
+.side-pill:hover .pin-off { visibility: visible; }
 .pin-off .icon { width: 14px; height: 14px; }
+/* The header of an item's view opens its views when pressed. */
+.view-header.pickable { cursor: pointer; }
+.view-header.pickable:hover .view-chevron { color: var(--ink); }
+h1.view-title { display: flex; align-items: center; }
+.view-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.view-chevron { flex: none; width: 15px; height: 15px; margin-left: 6px; color: var(--muted); }
 .view { margin: 0; }
 .corner-button { position: fixed; bottom: 16px; display: flex; align-items: center; justify-content: center; z-index: 20; }
 button[data-ui].corner-button { left: 16px; width: 36px; height: 36px; padding: 0; border-radius: 18px; background: var(--color-gray-100); color: var(--color-gray-600); }
@@ -426,6 +448,7 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 }
 
 /* ---- Laid out for a phone: `.mobile`, set by the views given `mobile` (App.tsx decides it, once). ---- */
+.app.mobile { display: block; }
 .app.mobile, .app.mobile .main { height: 100dvh; }
 .app.mobile .main { padding: 0; }
 .app.mobile .content { max-width: none; }

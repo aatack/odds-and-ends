@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { Catalog, Item, ItemDetail, ItemInfo, Overview } from '../../shared/types'
+import type { Catalog, Item, ItemDetail, ItemInfo, ItemInfoDetail, Overview } from '../../shared/types'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { ChevronDown, ChevronLeft, Menu, MoreHorizontal, SkipForward } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronUp, History, House, Menu, MoreHorizontal, Plug, Server, Shapes, SkipForward, Smartphone, type LucideIcon } from 'lucide-react'
 import { itemActions, type ItemAction } from './itemActions'
 import { Dropdown, DropdownItem, DropdownSeparator } from './components/ui/Dropdown'
 import { TypesPage } from './TypesPage'
@@ -33,7 +33,7 @@ import { LogPage } from './LogPage'
 import { api, useWorkflows } from './useWorkflows'
 import { findAtom, findFocusAtom, forwardAtom, menuAtom, renameAtom, searchFocusAtom, searchWhoAtom, viewedAtom, viewsAtom, type View } from './views'
 import { FindLine } from './FindLine'
-import { AssigneePill, PickPill } from './Assignees'
+import { AssigneePill, OwnerPill, PickPill } from './Assignees'
 import { BotsPage, botStatus } from './BotsPage'
 import { BotView } from './BotView'
 import { Bot, User as UserIcon } from 'lucide-react'
@@ -161,13 +161,11 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
     <ItemsContext.Provider value={items}>
       <SearchSectionsContext.Provider value={sections ?? DEFAULT_SECTIONS}>
       <ItemRefContext.Provider value={itemRef}>
+        {/* On a desktop: the pages on the left, the view in the middle, the item's people, actions and pins on the right. */}
         <div className={`app ${mobile ? 'mobile' : ''}`}>
-          <main className="main">
-            <div className="content">
-              <ItemsMain mobile={mobile} />
-            </div>
-          </main>
-          <AppMenu mobile={mobile} onSignOut={onSignOut} onCloseSource={onCloseSource} />
+          {!mobile && <SideNav onSignOut={onSignOut} onCloseSource={onCloseSource} />}
+          <ItemsMain mobile={mobile} />
+          {mobile && <AppMenu mobile={mobile} onSignOut={onSignOut} onCloseSource={onCloseSource} />}
         </div>
         <ItemMenu actOn={items.actOn} custom={items.customActions} tasks={items.overview.items} recent={items.recent} />
       </ItemRefContext.Provider>
@@ -180,10 +178,96 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
 const ItemsContext = createContext<ReturnType<typeof useWorkflows> | null>(null)
 const useItems = () => useContext(ItemsContext)!
 
+/** The pages, in the left pane, the one on screen marked. */
+const PAGES: { kind: 'items' | 'bots' | 'integrations' | 'types' | 'mcp' | 'phone' | 'log'; label: string; icon: LucideIcon; title?: string }[] = [
+  { kind: 'items', label: 'Home', icon: House, title: 'Home (Ctrl+L): what is assigned to you, then what you own' },
+  { kind: 'bots', label: 'Bots', icon: Bot },
+  { kind: 'integrations', label: 'Integrations', icon: Plug },
+  { kind: 'types', label: 'Types', icon: Shapes },
+  { kind: 'mcp', label: 'MCP', icon: Server },
+  { kind: 'phone', label: 'Phone', icon: Smartphone },
+  { kind: 'log', label: 'Edit log', icon: History },
+]
+
 /**
- * The button in the bottom left: who is signed in, on which source (to leave either), the bots, and the way to the
- * other pages. On a phone it is at the top right, clear of the chat input, and offers Next, which has no key there.
+ * The left pane, on a desktop: the pages to go to, and below them a menu with who is signed in and on which source
+ * (to leave either), and how the app looks.
  */
+function SideNav({ onSignOut, onCloseSource }: { onSignOut: () => void; onCloseSource: () => void }) {
+  const w = useItems()
+  const busy = w.overview.bots.filter((b) => b.runId).length
+  const [look, setLook] = useAtom(appearanceAtom)
+  const source = useAtomValue(sourceAtom)
+  useEffect(() => applyAppearance(look), [look])
+  const at = w.view?.kind ?? 'items'
+  return (
+    <nav className="side-nav">
+      <div className="side-nav-pages">
+        {/* Only here, not on the phone: the phone may not change how it is reached. */}
+        {PAGES.filter((p) => p.kind !== 'phone' || !inBrowser).map((p) => (
+          <button key={p.kind} data-ui className={`side-nav-page ${at === p.kind ? 'chosen' : ''}`} title={p.title} onClick={() => w.open({ kind: p.kind })}>
+            <p.icon className="icon" />
+            {p.label}
+            {p.kind === 'bots' && busy > 0 && <span className="menu-status">{busy} working</span>}
+          </button>
+        ))}
+      </div>
+      <Dropdown
+        menuClassName="popover"
+        trigger={({ toggle }) => (
+          <button data-ui className="side-nav-page side-nav-me" title={source ?? undefined} onClick={toggle}>
+            <UserIcon className="icon" />
+            <span className="pill-label">{w.overview.me.name}</span>
+            <ChevronUp className="icon side-nav-chevron" />
+          </button>
+        )}
+      >
+        {(close) => (
+          <>
+            <DropdownItem
+              onClick={() => {
+                close()
+                onSignOut()
+              }}
+            >
+              Sign out <span className="menu-status">{w.overview.me.name}</span>
+            </DropdownItem>
+            <DropdownItem
+              onClick={() => {
+                close()
+                onCloseSource()
+              }}
+            >
+              {inBrowser ? 'Disconnect' : 'Close source'} <span className="menu-status">{source}</span>
+            </DropdownItem>
+            <DropdownSeparator />
+            <Choices label="Style" options={THEMES} value={look.theme} set={(theme) => setLook({ ...look, theme })} />
+            <Choices label="Mode" options={MODES} value={look.mode} set={(mode) => setLook({ ...look, mode })} />
+            <Choices label="Serif" options={SERIFS} value={look.serif} set={(serif) => setLook({ ...look, serif })} />
+          </>
+        )}
+      </Dropdown>
+    </nav>
+  )
+}
+
+/** One of the looks, in the left pane's menu: its name, then a chip per choice. */
+function Choices<T extends string>({ label, options, value, set }: { label: string; options: readonly { id: T; name: string }[]; value: T; set: (v: T) => void }) {
+  return (
+    <div className="side-choices">
+      <span className="muted">{label}</span>
+      <div className="menu-choices">
+        {options.map((o) => (
+          <button key={o.id} data-ui className={o.id === value ? 'chosen' : ''} onClick={() => set(o.id)}>
+            {o.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** On a phone, the button at the top right, clear of the chat input: the pages, who is signed in, on which source, and Next, which has no key there. */
 function AppMenu({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onSignOut: () => void; onCloseSource: () => void }) {
   const w = useItems()
   const [open, setOpen] = useState(false)
@@ -277,9 +361,10 @@ function AppMenu({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onSign
 }
 
 /**
- * The content pane: the top view on the stack. Its first line is always the
- * same: Back, the item as text, and what can be done to it, on the right.
- * Below is the view itself, which depends on the item's type.
+ * The middle of the window, and the right pane beside it: the top view on the stack. Every view's first line is the
+ * same (`ViewHeader`): Back, the item as its pill, and Next; pressed anywhere else, an item's offers its views. Below
+ * is the view itself. The right pane has the item's people and actions, then its pins (on a phone, there is none: the
+ * header has the people and actions, and the debug view the pins).
  */
 function ItemsMain({ mobile }: { mobile: boolean }) {
   const w = useItems()
@@ -288,72 +373,45 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
   // What the items view opens takes its place, so Back goes to where you were before it.
   const openFromItems = (id: string) => w.open({ kind: 'event', id }, { replace: w.view?.kind === 'items' })
   const d = w.detail
-  if (w.view?.kind === 'types')
-    return (
+  const frame = (view: ReactNode, side?: ReactNode) => (
+    <>
+      <main className="main">
+        <div className="content">{view}</div>
+      </main>
+      {!mobile && <aside className="side-pane">{side}</aside>}
+    </>
+  )
+  const page = (title: string, body: ReactNode) =>
+    frame(
       <div className="view">
-        <ViewHeader canGoBack onBack={w.back} title="Types" />
+        <ViewHeader canGoBack onBack={w.back} title={title} mobile={mobile} />
         {w.error && <div className="error">{w.error}</div>}
-        <div className="view-body">{w.catalog && <TypesPage catalog={w.catalog} custom={w.customActions} act={w.act} mobile={mobile} />}</div>
-      </div>
+        <div className="view-body">{body}</div>
+      </div>,
     )
-  if (w.view?.kind === 'bots')
-    return (
-      <div className="view">
-        <ViewHeader canGoBack onBack={w.back} title="Bots" />
-        {w.error && <div className="error">{w.error}</div>}
-        <div className="view-body">
-          <BotsPage bots={w.overview.bots} act={w.act} onOpen={openItem} mobile={mobile} />
-        </div>
-      </div>
-    )
-  if (w.view?.kind === 'search')
-    return (
-      <div className="view">
-        <ViewHeader canGoBack onBack={w.back} title="Search page sections" />
-        <div className="view-body">
-          <SearchPage />
-        </div>
-      </div>
-    )
+  if (w.view?.kind === 'types') return page('Types', w.catalog && <TypesPage catalog={w.catalog} custom={w.customActions} act={w.act} mobile={mobile} />)
+  if (w.view?.kind === 'bots') return page('Bots', <BotsPage bots={w.overview.bots} act={w.act} onOpen={openItem} mobile={mobile} />)
+  if (w.view?.kind === 'search') return page('Search page sections', <SearchPage />)
   if (w.view?.kind === 'log')
-    return (
-      <div className="view">
-        <ViewHeader canGoBack onBack={w.back} title="Edit log" />
-        <div className="view-body">
-          <LogPage key={w.view.id ?? ''} overview={w.overview} recent={w.recent} entities={w.view.id ? [w.view.id] : []} mobile={mobile} />
-        </div>
-      </div>
+    return page('Edit log', <LogPage key={w.view.id ?? ''} overview={w.overview} recent={w.recent} entities={w.view.id ? [w.view.id] : []} mobile={mobile} />)
+  if (w.view?.kind === 'integrations') return page('Integrations', <IntegrationsPage mobile={mobile} />)
+  if (w.view?.kind === 'mcp') return page('MCP', <McpPage mobile={mobile} />)
+  if (w.view?.kind === 'phone') return page('Phone', <PhonePage mobile={mobile} />)
+  // With nothing on the stack, home: what is assigned to you (or whoever is picked), then what you own.
+  if (!w.view || w.view.kind === 'items') {
+    const whose = (
+      <PickPill
+        title="Whose home"
+        none="You"
+        value={who.length ? who : [w.overview.me.id]}
+        setValue={(ids) => setWho(ids.length === 1 && ids[0] === w.overview.me.id ? [] : ids)}
+        overview={w.overview}
+        people
+      />
     )
-  if (w.view?.kind === 'integrations' || w.view?.kind === 'mcp' || w.view?.kind === 'phone') {
-    const kind = w.view.kind
-    return (
+    return frame(
       <div className="view">
-        <ViewHeader canGoBack onBack={w.back} title={kind === 'mcp' ? 'MCP' : kind === 'phone' ? 'Phone' : 'Integrations'} />
-        <div className="view-body">
-          {kind === 'mcp' ? <McpPage mobile={mobile} /> : kind === 'phone' ? <PhonePage mobile={mobile} /> : <IntegrationsPage mobile={mobile} />}
-        </div>
-      </div>
-    )
-  }
-  // With nothing on the stack, every item.
-  if (!w.view || w.view.kind === 'items')
-    return (
-      <div className="view">
-        <ViewHeader
-          canGoBack={w.views.length > 0}
-          onBack={w.back}
-          title="Tasks"
-          actions={
-            <PickPill
-              title="Whose search page"
-              none="You"
-              value={who.length ? who : [w.overview.me.id]}
-              setValue={(ids) => setWho(ids.length === 1 && ids[0] === w.overview.me.id ? [] : ids)}
-              overview={w.overview}
-              people
-            />
-          }
-        />
+        <ViewHeader canGoBack={w.views.length > 0} onBack={w.back} title="Home" actions={mobile ? whose : undefined} mobile={mobile} />
         {w.error && <div className="error">{w.error}</div>}
         {w.empty && <p className="muted view-note">Nothing needs you.</p>}
         <div className="view-body">
@@ -367,67 +425,62 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
             mobile={mobile}
           />
         </div>
-      </div>
+      </div>,
+      <section className="side-section">
+        <div className="side-row">
+          <span className="side-label">Whose</span>
+          {whose}
+        </div>
+      </section>,
     )
+  }
   if (!d || !w.catalog)
-    return (
+    return frame(
       <div className="view">
-        <ViewHeader canGoBack={w.views.length > 0} onBack={w.back} />
+        <ViewHeader canGoBack={w.views.length > 0} onBack={w.back} mobile={mobile} />
         <div className="empty">That item is not there any more.</div>
-      </div>
+      </div>,
     )
   const e = d.info
   const debug = w.view.kind === 'debug'
   const shown = displayOf(e)
-  // The pins fill the right of the screen, beside the view (on a phone there is no room: the debug view has them).
-  const withPins = (view: ReactNode) =>
-    mobile ? (
-      view
-    ) : (
-      <div className="with-pins">
-        {view}
-        <aside className="pins-pane">
-          <Pins id={e.id} pins={d.pins} pinnedIn={d.pinnedIn} catalog={w.catalog!} act={w.act} onOpen={openItem} />
-        </aside>
-      </div>
-    )
-  const actions = debug ? null : (
-    <>
-      {!debug && <ViewPicker info={e} act={w.act} onDebug={() => w.open({ kind: 'debug', id: e.id })} />}
-      {d.item && <AssigneePill item={d.item.item} overview={w.overview} act={w.actOn(e.id)} />}
-      <HeaderActions actions={itemActions(e, { act: w.actOn(e.id), custom: w.customActions })} mobile={mobile} />
-      {!mobile && (
-        <IconButton title="Next (Ctrl+D): the next thing assigned to you that you haven't looked at in the last half hour" onClick={() => void w.next()}>
-          <SkipForward className="size-[17px]" />
-        </IconButton>
-      )}
-    </>
-  )
-  return (
+  const act = w.actOn(e.id)
+  // A view picked from the debug view takes its place.
+  const pick = (display: Display) => {
+    if (display !== shown) void w.act(() => api().setValue(e.id, 'display', display))
+    if (debug) w.open({ kind: 'event', id: e.id }, { replace: true })
+  }
+  const pins = <Pins id={e.id} pins={d.pins} pinnedIn={d.pinnedIn} items={w.overview.items} recent={w.recent} act={w.act} onOpen={openItem} />
+  return frame(
     <div className="view">
       <ViewHeader
+        mobile={mobile}
         canGoBack={w.views.length > 0}
         onBack={w.back}
         title={`${debug ? 'Debug: ' : ''}${e.summary.split('\n')[0]}`}
         info={e}
-        actions={actions}
+        actions={
+          mobile && !debug ? (
+            <>
+              {d.item && <AssigneePill item={d.item.item} overview={w.overview} act={act} />}
+              <HeaderActions actions={itemActions(e, { act, custom: w.customActions })} mobile />
+            </>
+          ) : undefined
+        }
+        menu={viewMenu(debug ? 'debug' : shown, pick, () => w.open({ kind: 'debug', id: e.id }))}
         onRename={e.type === 'topic' && !debug ? (title) => void w.act(() => api().rename(e.id, title)) : undefined}
       />
       {w.error && <div className="error">{w.error}</div>}
-      <div className={`view-body ${!debug && (shown !== 'focus' || e.type === 'file' || e.type === 'bot') ? 'fill' : ''}`}>
+      <div className={`view-body ${!debug && ((shown !== 'focus' && shown !== 'assignments') || e.type === 'file' || e.type === 'bot') ? 'fill' : ''}`}>
         {debug ? (
-          <DebugView id={e.id}>
-            <Pins id={e.id} pins={d.pins} pinnedIn={d.pinnedIn} catalog={w.catalog} act={w.act} onOpen={openItem} />
-          </DebugView>
+          <DebugView id={e.id}>{mobile && pins}</DebugView>
         ) : shown === 'assignments' ? (
-          // What is assigned to it, then what it owns: a person's or a bot's home, as the Tasks view is yours.
+          // What is assigned to it, then what it owns: a person's or a bot's home, as the Home view is yours.
           <ItemsList items={w.overview.items} recent={{ ...w.recent, who: [e.id] }} sections={SEARCH_SECTIONS} onOpen={openItem} mobile={mobile} />
         ) : shown === 'notes' ? (
-          // Its pins fill the right, beside its tree, as they do beside a chat.
-          withPins(<NotesView key={e.id} info={e} tasks={w.overview.items} recent={w.recent} bots={everyone(w.overview)} onOpen={openItem} onBack={w.back} mobile={mobile} />)
+          <NotesView key={e.id} info={e} tasks={w.overview.items} recent={w.recent} bots={everyone(w.overview)} onOpen={openItem} onBack={w.back} mobile={mobile} />
         ) : shown === 'comments' && d.item ? (
-          // Its pins fill the right of the screen, beside its chat, with New notes atop.
-          withPins(<ItemView key={e.id} detail={d.item} catalog={w.catalog} act={w.actOn(e.id)} onOpen={openItem} mobile={mobile} />)
+          <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={act} onOpen={openItem} mobile={mobile} />
         ) : e.type === 'file' ? (
           <FileFocus key={e.id} info={e} mobile={mobile} />
         ) : e.type === 'bot' ? (
@@ -436,7 +489,42 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
           <ItemInfoView detail={d} catalog={w.catalog} act={w.act} onOpen={openItem} />
         )}
       </div>
-    </div>
+    </div>,
+    <ItemSide detail={d} act={act} pins={pins} />,
+  )
+}
+
+/** The top of the right pane for an item: who has it, who owns it, and what can be done to it. Its pins follow. */
+function ItemSide({ detail: d, act, pins }: { detail: ItemInfoDetail; act: Act; pins: ReactNode }) {
+  const w = useItems()
+  const e = d.info
+  const actions = itemActions(e, { act, custom: w.customActions })
+  return (
+    <>
+      <section className="side-section">
+        {d.item && (
+          <div className="side-row">
+            <span className="side-label">Assignees</span>
+            <AssigneePill item={d.item.item} overview={w.overview} act={act} />
+          </div>
+        )}
+        <div className="side-row">
+          <span className="side-label">Owner</span>
+          <OwnerPill id={e.id} owner={e.owner} overview={w.overview} act={act} />
+        </div>
+        {actions.length > 0 && (
+          <div className="side-actions">
+            {actions.map((a) => (
+              <button key={a.id} data-ui className={`side-action ${a.tone}`} title={a.title} onClick={a.run}>
+                <a.icon className="icon" />
+                {a.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+      {pins}
+    </>
   )
 }
 
@@ -487,18 +575,25 @@ function HeaderActions({ actions, mobile = false }: { actions: ItemAction[]; mob
   )
 }
 
-/** Back (to the items view, at the bottom of every stack; its place kept on the items view itself), the item as text, and its actions on the right. */
+/**
+ * Every view's first line: Back (to the items view, at the bottom of every stack; its place kept on the items view
+ * itself), the item as its pill, and Next. Given a `menu`, pressing anywhere in it but a button opens that menu (an
+ * item's views). Right-click the title for the item's menu.
+ */
 function ViewHeader(props: {
   canGoBack: boolean
   onBack: () => void
   title?: string
   info?: ItemInfo
+  /** On a phone, what the right pane has: drawn on the right of the line. */
   actions?: ReactNode
+  menu?: (close: () => void, rename?: () => void) => ReactNode
   /** Given, the title can be edited: Rename in its menu, then Enter (or leaving it) saves and Escape doesn't. */
   onRename?: (title: string) => void
+  mobile?: boolean
 }) {
+  const w = useItems()
   const [editing, setEditing] = useState<string | null>(null)
-  // Clicking the title opens the item's menu (Open, Debug, Rename, its actions), as a right-click does.
   const setMenu = useSetAtom(menuAtom)
   const [rename, setRename] = useAtom(renameAtom)
   const { info, onRename, title } = props
@@ -511,8 +606,11 @@ function ViewHeader(props: {
     if (editing !== null && editing.trim() && editing.trim() !== props.title) props.onRename?.(editing.trim())
     setEditing(null)
   }
-  return (
-    <header className="view-header">
+  const header = (toggle?: () => void) => (
+    <header
+      className={`view-header ${toggle ? 'pickable' : ''}`}
+      onClick={toggle && ((ev) => !(ev.target as HTMLElement).closest('button, input, a, .menu') && toggle())}
+    >
       <button
         data-ui
         className="back"
@@ -525,7 +623,7 @@ function ViewHeader(props: {
         <ChevronLeft className="icon" />
       </button>
       {/* The item as its pill, in every view's header: its icon (a topic's status), then its title. */}
-      {props.info && <ItemInfoIcon info={props.info} />}
+      {info && <ItemInfoIcon info={info} />}
       {editing !== null ? (
         <input
           className="view-title view-title-input"
@@ -549,8 +647,7 @@ function ViewHeader(props: {
         />
       ) : (
         <h1
-          className={`view-title ${info ? 'clickable' : ''}`}
-          onClick={info && ((e) => setMenu({ x: e.clientX, y: e.clientY, id: info.id }))}
+          className="view-title"
           onContextMenu={
             info &&
             ((e) => {
@@ -559,11 +656,25 @@ function ViewHeader(props: {
             })
           }
         >
-          {props.title}
+          <span className="view-title-text">{props.title}</span>
+          {toggle && <ChevronDown className="icon view-chevron" />}
         </h1>
       )}
       {props.actions && <div className="buttons">{props.actions}</div>}
+      {/* On a phone, Next is in the menu: there is no Ctrl+D. */}
+      {!props.mobile && (
+        <IconButton title="Next (Ctrl+D): the next thing assigned to you that you haven't looked at in the last half hour" onClick={() => void w.next()}>
+          <SkipForward className="size-[17px]" />
+        </IconButton>
+      )}
     </header>
+  )
+  const { menu } = props
+  if (!menu) return header()
+  return (
+    <Dropdown menuClassName="popover" trigger={({ toggle }) => header(toggle)}>
+      {(close) => menu(close, onRename && (() => setEditing(title ?? '')))}
+    </Dropdown>
   )
 }
 
@@ -719,47 +830,44 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
 }
 
 /**
- * Which of an item's views shows (its `display`, kept on it): its focus, comments, notes or assignments, the same for
- * every type; Debug pushes the debug view. The app's own dropdown, its trigger a pill as the assignee's is.
+ * An item's views, the menu its header opens: its focus, comments, notes or assignments (the same for every type,
+ * kept as its `display`), then Debug, and Rename for a topic.
  */
-function ViewPicker({ info, act, onDebug }: { info: ItemInfo; act: (fn: () => Promise<unknown>) => unknown; onDebug: () => void }) {
-  const shown = displayOf(info)
-  return (
-    <Dropdown
-      align="right"
-      menuClassName="popover"
-      trigger={({ toggle }) => (
-        <button data-ui className="assignee-pill" title="Which view this item shows" aria-label="View" onClick={toggle}>
-          <span className="pill-label">{DISPLAYS.find((d) => d.id === shown)?.label ?? shown}</span>
-          <ChevronDown className="icon" />
-        </button>
+function viewMenu(shown: Display | 'debug', pick: (d: Display) => void, onDebug: () => void) {
+  return (close: () => void, rename?: () => void) => (
+    <>
+      {DISPLAYS.map((d) => (
+        <DropdownItem
+          key={d.id}
+          active={d.id === shown}
+          onClick={() => {
+            close()
+            pick(d.id as Display)
+          }}
+        >
+          {d.label}
+        </DropdownItem>
+      ))}
+      <DropdownSeparator />
+      <DropdownItem
+        active={shown === 'debug'}
+        onClick={() => {
+          close()
+          if (shown !== 'debug') onDebug()
+        }}
+      >
+        Debug
+      </DropdownItem>
+      {rename && (
+        <DropdownItem
+          onClick={() => {
+            close()
+            rename()
+          }}
+        >
+          Rename
+        </DropdownItem>
       )}
-    >
-      {(close) => (
-        <>
-          {DISPLAYS.map((d) => (
-            <DropdownItem
-              key={d.id}
-              active={d.id === shown}
-              onClick={() => {
-                close()
-                if (d.id !== shown) void act(() => api().setValue(info.id, 'display', d.id as Display))
-              }}
-            >
-              {d.label}
-            </DropdownItem>
-          ))}
-          <DropdownSeparator />
-          <DropdownItem
-            onClick={() => {
-              close()
-              onDebug()
-            }}
-          >
-            Debug
-          </DropdownItem>
-        </>
-      )}
-    </Dropdown>
+    </>
   )
 }

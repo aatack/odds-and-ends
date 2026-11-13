@@ -190,7 +190,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
     const on = (e: WheelEvent) => {
       const el = scroller.current
       const t = e.target as HTMLElement | null
-      if (!el || e.defaultPrevented || t?.closest('.notes-scroll, .pins-pane, .modal, [role="dialog"], .menu, textarea')) return
+      if (!el || e.defaultPrevented || t?.closest('.notes-scroll, .side-pane, .side-nav, .modal, [role="dialog"], .menu, textarea')) return
       el.scrollBy({ top: e.deltaY, left: 0 })
     }
     window.addEventListener('wheel', on, { passive: true })

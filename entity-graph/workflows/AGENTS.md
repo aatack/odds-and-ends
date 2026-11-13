@@ -208,10 +208,11 @@ backwards, pins say where an item is referenced. `ItemInfo.pins` / `pinnedIn` li
 `pinnedIn` the items. Pinning moves nothing and counts for nothing else (blockers, runs, closing).
 
 - **Made**: the `pin` tool (`link_items`, its old name, still answers; `unpin: true` takes them off), `pin: true` on an
-  item in `add_items`, an open topic as it is made in another's comments (pinned to it), and a person's right-click: *Pin to
-  <the item on screen>* (or *Unpin from*) and *Pin to…* (a picker).
-- **Shown**: on the right of a topic's view, beside its chat or tree (`Pins`, desktop only, while there are any); in the debug
-  view and an item's details, as cards. A pin's × takes it off.
+  item in `add_items`, an open topic as it is made in another's comments (pinned to it), a person's right-click: *Pin to
+  <the item on screen>* (or *Unpin from*) and *Pin to…* (a picker), and the + beside either list in the right pane.
+- **Shown**: in the right pane of every item's view, as pills in two lists, *Pinned* and *Pinned in* (`Pins`); on a
+  phone, in the debug view. A pin's × takes it off; each list's + opens the picker, to pin what is picked, or (Tab) to
+  make a set of notes there.
 - **Older stores**: a `contains` link later than the one an item was made with (the old `link_items`) is read in by
   the migration (`migrate` in `egdb.ts`) as a `pins` link, written as its author; the old link stays as it was.
 - A URL mentioned in a topic's text is still pulled in as an item (its id the URL), but in no topic: it shows in no chat
@@ -219,14 +220,13 @@ backwards, pins say where an item is referenced. `ItemInfo.pins` / `pinnedIn` li
 
 ## Notes
 
-An item's Notes view (a topic made by New notes opens on it: `display: notes`) is a dense tree (`notes/NotesView.tsx`), worked as
-entity-graph's outliner is, with its pins beside it as its chat's are. Everything of it is in `src/renderer/src/notes/`
-(the view, its store, New notes, its CSS); what it shares it takes from the rest (the picker, the text box, the find
+An item's Notes view (a set of notes, made from the right pane's +, opens on it: `display: notes`) is a dense tree (`notes/NotesView.tsx`), worked as
+entity-graph's outliner is, with its pins in the right pane as every view's are. Everything of it is in `src/renderer/src/notes/`
+(the view, its store, its CSS); what it shares it takes from the rest (the picker, the text box, the find
 line, markdown). A note is typed in the app's one text box (`TextInput`, as the chat input is: `@` inserts a reference)
 and drawn by the one `Markdown`. Its structure is only `notes` links: the items in each topic's notes (`subtree` walks
-the root's notes, then topics' notes below it; anything else is a leaf; added there by `addItems` with `notes`). New notes, atop the pins (always
-shown on a desktop), makes a topic showing its notes, titled as typed, in no item and pinned to the item on screen, and
-opens it. Every change shows at once and is sent after (`notes/store.ts`: pending ops over what was read, in order, a new note
+the root's notes, then topics' notes below it; anything else is a leaf; added there by `addItems` with `notes`). Typing a title in the
+picker of the right pane's + and pressing Tab makes a topic showing its notes (`newNotes`), in no item, pinned there. Every change shows at once and is sent after (`notes/store.ts`: pending ops over what was read, in order, a new note
 on a temporary id until the backend gives its own), so nothing waits on the backend. It is set in the theme and serif
 chosen in the menu, as the app's lists are.
 
@@ -329,7 +329,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   (`engine/views.ts`: `pillText`, `cardText`, `focusText`, each built from the smaller ones; `get_item` with `size`, and
   the prompt's lines, which are cards). What both share (`displayOf`, `focusKind`, the pill's name) is in
   `shared/views.ts`: a type's text goes in step with how it is drawn.
-- **Views.** Every item, whatever its type, has the same views, chosen by the picker in its header (`ViewPicker`) and
+- **Views.** Every item, whatever its type, has the same views, chosen from its header (pressed anywhere but a button: `viewMenu`) and
   kept as its `display` value; without one, its type's (`DISPLAY` in `shared/views.ts`): **Focus** (its type's own: a
   file itself, a bot's settings and runs (`BotView`), anything else's details), **Comments** (its chat: any item can
   be commented in), **Notes** (its tree: any item can have notes), **Assignments** (what is assigned to it, then what
@@ -341,7 +341,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   components' utilities win over it. Its buttons are `button[data-ui]`, so it
   never styles the components' buttons.
 
-- **Styles on trial.** For now the menu switches between three themes (Linear, the default, dark; Notebook, light
+- **Styles on trial.** For now the left pane's menu switches between three themes (Linear, the default, dark; Notebook, light
   and warm; Terminal, dark and in Fira Code) and five serifs (or none: the UI's own font) for what the human typed (their messages, the chat
   input, topic titles). each in a light or a dark mode. `appearance.ts` keeps the choice and sets `data-theme`/`data-serif`/`data-mode` (and `.dark`) on `<html>`;
   `themes.css` holds the overrides. Code is Fira Code everywhere; weights lean light.
@@ -350,10 +350,14 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   onto it; Back pops it. A view is `{ kind, id }`: `item` shows an item in the view its `display` says (see Views); `debug`
   (`DebugView`) shows the item as egdb holds it (`Engine.inspect`): its id, who made it and when (who set its
   `type`), its values (a comment's are just `type` and `text`), and its links, each with when and by whom. A new kind of view is a new `kind`.
-- **There is no sidebar.** The content fills the window in a centred column.
-  The bottom-left button opens the menu (Tasks, Bots, with how many are working beside it, Integrations, Types,
-  MCP, Phone (only in the app, not on the phone), which are views on the stack like any other; Sign out, with the username beside it; Close source, with the
-  source beside it). **Next** (a button in every item's header on the desktop, in the menu on the phone, and Ctrl+D)
+- **Three columns, the same for every view** (on a desktop; a phone has the middle alone, and its menu at the top
+  right). **Left** (`SideNav`): the pages (Home, Bots, with how many are working, Integrations, Types, MCP, Phone
+  (only in the app), Edit log), views on the stack like any other; below them, a menu with Sign out, Close source and
+  the look (style, mode, serif). **Middle**: the view, under its header: Back, the item as its pill, and Next; pressed
+  anywhere else, an item's header opens its views (and Debug, and Rename for a topic). **Right** (`side-pane`): for an
+  item, its assignees and owner (`AssigneePill`, `OwnerPill`) and its actions as buttons, then its pins
+  (`Pins`); for Home, whose it is. On a phone the header has the assignees and actions instead.
+  **Next** (a button in every header on the desktop, in the menu on the phone, and Ctrl+D)
   goes to the next item assigned to you that you haven't looked at in the last half hour, never the one on screen; the
   app also moves on by itself once the topic on screen closes.
 - **The items view** (`ItemsList`) is what shows when the stack is empty, and
@@ -377,8 +381,8 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
 - **Picking** is `ItemPicker`: the finder in a `Modal` over the blurred window, calling back with the item (or
   bot, or person) picked (Enter or a click); Tab only where a caller gives `onTab` (the Tasks view starts a topic). With `multiple`, its `value` and `setValue` are a list:
   what is selected shows first, ticked; picking a row adds it, or takes it off.
-- **Every item view's header** shows the item as its pill (icon, then title), the view picker, and **who has it** at the top right (`AssigneePill`): their name, or with more than one, their pictures.
-  Clicking it opens the multiselect picker over people and bots.
+- **Who has an item** (`AssigneePill`, in the right pane) shows their name, or with more than one, their pictures;
+  clicking it opens the multiselect picker over people and bots. Its owner (`OwnerPill`) is one, or nobody.
 - **`@` in the chat input refers to a bot, a person or an item**: typed at the start of a word, it opens the finder
   (`ItemPicker`), and what is picked (or made, with Tab) takes its place as `[id]()`, and the cursor goes back to
   the chat input. `Markdown` draws such a link, to nowhere with an
@@ -396,7 +400,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
 - **When a topic closes, the app moves on.** Whatever the human does to the topic on screen (sends, approves,
   closes, from the chat, header or menu) goes through `actOn(id)`: afterwards, if it has closed, the next one
   that needs them is *pushed* (so Back returns). Handing it to someone else stays on it, for now.
-- **A view's title opens its item's menu** when clicked (or right-clicked): Open, Debug, Rename (for the topic on
+- **A view's title opens its item's menu** when right-clicked: Open, Debug, Rename (for the topic on
   screen: its first line becomes a text box, `renameAtom`) and its actions. `[id]()` references in text (topics, bots,
   people) have the same menu on right-click.
 - **The Types page** (`TypesPage`) lists every item type: what it is for, whether it blocks, its fields (the
@@ -405,23 +409,24 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   description, hidden notes, an icon, *important* or not, and a script `async (context, actions) => null | string |
   { message?, items? }` run in QuickJS with the item's context and only the safe actions. **Generate** has Sonnet write
   the script from the description and notes. What a run says is a comment in the item, by `script`. Important
-  actions are buttons in an item's header; the rest are in the ⋯ menu beside them; all are in the right-click menu.
+  actions are, as all an item's actions, buttons in the right pane, and in the right-click menu.
   Agents list and run them with `custom_actions` and `run_custom_action`.
 - **Starting** (`Start`, before anything else): a username and a source, both needed. Opening the source
   starts (or finds) its backend; signing in makes the person if there is nobody by that username yet. Both
   are kept in local storage (`userAtom`, `sourceAtom`), and the preload sends the username with every call.
-  The menu has Sign out and Close source (which stops the source's backend, if the app started it).
+  The left pane's menu has Sign out and Close source (which stops the source's backend, if the app started it).
   Everything is as that person sees it: `withYou`, Next, the recent lists. Another source starts with an
   empty stack of views.
-- **Bots** (`BotsPage`, in the menu) lists the bots, with what each has and whether it is working or when it
+- **Bots** (`BotsPage`, in the left pane) lists the bots, with what each has and whether it is working or when it
   runs next, counting down), and creates new ones (a name and instructions; the rest has defaults). A bot opens on its
   Assignments; its Focus is `BotView` (its model, cycle and state; Wake now; its last run in a line; Settings,
   folded, as a `Form`, with Delete there, asking first, which hands what it had back); its Comments are its own chat.
   Its header has no Delete.
 - **Every item has a right-click menu** (`useItemMenu`): Open and Debug, then what can be done to it
-  (`itemActions.ts`: Close for an open topic, Reopen for a closed one, nothing for one with no status; Cancel for
-  another open item, not a bot or script; then the custom actions). The view header draws the same list as icon
-  buttons (the less important, Close among them, in the ⋯ menu), so the two never differ. Spread
+  (`itemActions.ts`: Close for anything open, Reopen for anything closed; then the custom actions). The right pane
+  draws the same list as buttons (on a phone, the header's ⋯ menu), so they never differ. Closing anything sets its
+  `open` false and takes its owner and assignees off (kept as `last_owner`, `last_assignees`), so it floats free;
+  Reopen sets it true and puts them back. Spread
   it on anything that stands for an item. Clicking an item does nothing else.
 
 ## Rules

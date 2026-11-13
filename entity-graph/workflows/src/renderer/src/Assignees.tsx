@@ -95,3 +95,18 @@ export function AssigneePill({ item, overview, act }: { item: Item; overview: Ov
     />
   )
 }
+
+/** Who owns an item, in the right pane: one person or bot, or nobody (`PickPill`; picking another takes it from the last). */
+export function OwnerPill({ id, owner, overview, act }: { id: string; owner: string | null; overview: Overview; act: Act }) {
+  return (
+    <PickPill
+      title="Owner"
+      none="Nobody"
+      verb="Give"
+      people
+      overview={overview}
+      value={owner ? [owner] : []}
+      setValue={(next) => void act(() => api().setOwner(id, next.filter((o) => o !== owner).pop() ?? null))}
+    />
+  )
+}
