@@ -609,3 +609,7 @@ button[data-ui].script-card.whole:hover { background: var(--color-gray-200); fil
 .link-focus iframe { flex: 1; min-height: 0; width: 100%; border: none; background: #fff; }
 
 button[data-ui].debug-fix { margin-left: 10px; padding: 2px 8px; font-size: 12px; }
+
+/* Your Slack conversations, under your own Assignments. */
+.slack-channels { margin-top: 16px; max-width: 900px; }
+.slack-channels-error { margin-top: 16px; font-size: 12px; }

@@ -31,6 +31,7 @@ import { OverviewContext, StatusLine } from './status'
 import { PARADIGM } from '../../shared/paradigm'
 import { ScriptCard } from './ScriptCard'
 import { LinkFocus } from './LinkFocus'
+import { SlackChannels } from './SlackChannels'
 import { api, useWorkflows } from './useWorkflows'
 import { findAtom, findFocusAtom, forwardAtom, menuAtom, renameAtom, searchFocusAtom, viewedAtom, viewsAtom, type View } from './views'
 import { FindLine } from './FindLine'
@@ -444,15 +445,19 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
         ) : shown === 'assignments' ? (
           // What is assigned to it, what it owns, what is pinned to it: a person's or a bot's home. Yours, from Home,
           // makes topics with Tab, and what it opens takes its place.
-          <ItemsList
-            items={w.overview.items}
-            recent={{ ...w.recent, who: [e.id] }}
-            onOpen={home ? openFromItems : openItem}
-            onEscape={home && w.views.length > 0 ? w.back : undefined}
-            onTab={home ? (title) => w.act(async () => openFromItems(await api().create(title || newTopicTitle(), null))) : undefined}
-            act={w.act}
-            mobile={mobile}
-          />
+          <>
+            <ItemsList
+              items={w.overview.items}
+              recent={{ ...w.recent, who: [e.id] }}
+              onOpen={home ? openFromItems : openItem}
+              onEscape={home && w.views.length > 0 ? w.back : undefined}
+              onTab={home ? (title) => w.act(async () => openFromItems(await api().create(title || newTopicTitle(), null))) : undefined}
+              act={w.act}
+              mobile={mobile}
+            />
+            {/* Your own page only: your Slack conversations, while Slack is set up. */}
+            {e.id === w.overview.me.id && <SlackChannels onOpen={home ? openFromItems : openItem} />}
+          </>
         ) : shown === 'notes' ? (
           <NotesView key={e.id} info={e} tasks={w.overview.items} recent={w.recent} bots={everyone(w.overview)} onOpen={openItem} onBack={w.back} mobile={mobile} />
         ) : shown === 'comments' && d.item ? (

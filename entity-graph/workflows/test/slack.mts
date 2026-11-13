@@ -2,6 +2,7 @@
 // the actions; mrkdwn as markdown; links in notes and pasted.
 
 import assert from 'node:assert/strict'
+import { slackConversations } from '../src/engine/slack.ts'
 import { Admin } from '../src/engine/admin.ts'
 import { Engine } from '../src/engine/engine.ts'
 import { parseSlackLink } from '../src/shared/slack.ts'
@@ -111,6 +112,13 @@ assert.deepEqual(inThread.map((m) => m.text), ['Thanks!', '*np*'])
 const ranged = (await engine.callAction('slack_messages', { after: '1700000140', before: '1700000170' }, ctx)) as { author: string }[]
 assert.deepEqual(ranged.map((m) => m.author), ['Alex', 'Sam'])
 assert.deepEqual(((await engine.callAction('slack_channels', { query: '#eng' }, ctx)) as { id: string }[]).map((c) => c.id), ['C9'])
+// Every conversation, for the Assignments page: named, linked, opened as a Slack channel item by its link.
+const convos = await slackConversations(engine)
+assert.deepEqual(convos.map((c) => [c.label, c.kind]), [['eng', 'channel'], ['general', 'channel']])
+assert.equal(convos[0].link, 'https://acme.slack.com/archives/C9')
+await engine.setInferredType(convos[0].link)
+assert.equal(engine.info(convos[0].link)!.type, 'slack_channel')
+
 // What is new after a message: its thread's replies, and what came after it in the channel, marked mine or not.
 type New = { replies: { text: string; from_me: boolean }[]; after: { text: string }[]; others: number; newest: string }
 const got = (await engine.callAction('slack_replies', { link }, ctx)) as New

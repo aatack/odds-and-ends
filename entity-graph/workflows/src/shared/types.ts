@@ -458,6 +458,8 @@ export interface WorkflowsAPI {
   trustBotFolders: () => Promise<{ trusted: number; folders: string[] }>
   /** A slack_message's thread, or a slack_channel's messages; with `thread`, the replies to one of them. */
   slackView: (itemId: string, thread?: string) => Promise<SlackView>
+  /** Every Slack conversation the person is in (channels, private channels, group DMs, DMs), for the Assignments page; empty with no Slack. */
+  slackConversations: () => Promise<{ workspace: string; id: string; kind: 'channel' | 'private' | 'group' | 'dm'; label: string; link: string }[]>
   /** Keeps a Deepgram key (encrypted), or forgets it (null). */
   setDeepgramKey: (key: string | null) => Promise<void>
   /** The Deepgram key, for the window to stream what is said to Deepgram; null with none. */
@@ -518,7 +520,7 @@ export interface LogEntry {
 export const API_METHODS = [
   'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'cancel', 'runNow', 'close', 'reopen', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'moveItem', 'newNotes', 'subtree', 'viewText', 'setInferredType', 'finder', 'setOwner', 'editLog',
   'typeScripts', 'rename', 'saveBot', 'deleteBot',
-  'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'trustBotFolders', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
+  'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'trustBotFolders', 'slackView', 'slackConversations', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',
 ] as const satisfies readonly ApiMethod[]
 

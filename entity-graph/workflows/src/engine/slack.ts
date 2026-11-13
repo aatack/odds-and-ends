@@ -288,6 +288,26 @@ async function channelId(engine: Engine, w: SlackWorkspace, channel: string): Pr
   return found.id
 }
 
+/**
+ * Every conversation the operator is in, in every workspace, for the window's list: channels, private channels, group
+ * DMs and DMs, each with a name to read (a DM's person, a group DM's people) and its link (an item's id: a channel item).
+ */
+export async function slackConversations(engine: Engine): Promise<{ workspace: string; id: string; kind: 'channel' | 'private' | 'group' | 'dm'; label: string; link: string }[]> {
+  const out = []
+  for (const w of engine.settings.slackWorkspaces()) {
+    const all = await channelsOf(engine, w, true)
+    const base = (w.url ?? `https://${w.team}.slack.com/`).replace(/\/?$/, '/')
+    for (const c of all) {
+      const kind = c.user ? 'dm' : c.name.startsWith('mpdm-') ? 'group' : c.private ? 'private' : 'channel'
+      const label =
+        kind === 'dm' ? ((await userName(engine, w, c.user!)) ?? c.user!) : kind === 'group' ? c.name.replace(/^mpdm-/, '').replace(/-\d+$/, '').split('--').join(', ') : c.name
+      out.push({ workspace: w.name, id: c.id, kind, label, link: `${base}archives/${c.id}` } as const)
+    }
+  }
+  const order = { channel: 0, private: 1, group: 2, dm: 3 }
+  return out.sort((a, b) => order[a.kind] - order[b.kind] || a.label.localeCompare(b.label))
+}
+
 // ---- the actions ----
 
 export const slackActions: Action[] = [

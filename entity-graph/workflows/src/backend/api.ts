@@ -5,6 +5,7 @@
 // renderer's calls through to it (src/main/backend.ts).
 
 import type { WorkflowsAPI } from '../shared/types'
+import { slackConversations } from '../engine/slack'
 import type { Admin } from '../engine/admin'
 import type { Engine } from '../engine/engine'
 import { catalog } from '../engine/mcp'
@@ -61,6 +62,7 @@ export function handlers(engine: Engine, admin: Admin, me: string, source = ''):
     clearSlackCache: () => admin.clearSlackCache(),
     trustBotFolders: () => admin.trustBotFolders(),
     slackView: (itemId, thread) => admin.slackView(itemId, thread),
+    slackConversations: () => slackConversations(engine),
     setDeepgramKey: (key) => engine.settings.setDeepgramKey(key),
     hasDeepgram: () => engine.settings.deepgramKey() !== null,
     deepgramKey: () => engine.settings.deepgramKey()?.key ?? null,
